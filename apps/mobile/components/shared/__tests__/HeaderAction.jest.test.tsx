@@ -14,10 +14,10 @@ jest.mock("@repo/ui/components/text", () => ({
 const { HeaderIconAction, HeaderTextAction } = require("../HeaderAction");
 
 describe("header actions", () => {
-  it("labels and invokes a text action", () => {
+  it("labels and invokes a text action", async () => {
     const onPress = jest.fn();
 
-    renderNative(
+    await renderNative(
       <HeaderTextAction
         accessibilityLabel="Create goal"
         label="Create"
@@ -26,18 +26,18 @@ describe("header actions", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("create-goal"));
+    await fireEvent.press(screen.getByTestId("create-goal"));
 
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("create-goal").props.accessibilityLabel).toBe("Create goal");
     expect(screen.getByTestId("create-goal").props.className).toContain("min-h-11 min-w-11");
   });
 
-  it("disables an icon action while loading", () => {
+  it("disables an icon action while loading", async () => {
     const onPress = jest.fn();
     const Add = () => null;
 
-    renderNative(
+    await renderNative(
       <HeaderIconAction
         accessibilityLabel="Add item"
         icon={Add}

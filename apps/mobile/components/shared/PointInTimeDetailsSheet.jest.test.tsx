@@ -14,8 +14,8 @@ jest.mock("./AppBottomSheet", () => ({
 const PointInTimeDetailsSheet = require("./PointInTimeDetailsSheet").PointInTimeDetailsSheet;
 
 describe("PointInTimeDetailsSheet", () => {
-  it("opens expanded with body scrolling prioritized over sheet dragging", () => {
-    renderNative(
+  it("opens expanded with body scrolling prioritized over sheet dragging", async () => {
+    await renderNative(
       <PointInTimeDetailsSheet
         onClose={jest.fn()}
         portalName="test-sheet"

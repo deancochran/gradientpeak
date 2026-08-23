@@ -31,8 +31,8 @@ function overviewFixture(): AthletePerformanceOverview {
 }
 
 describe("PerformanceModelSummary", () => {
-  it("renders the shared canonical summary through native accessibility", () => {
-    renderNative(<PerformanceModelSummary overview={overviewFixture()} />);
+  it("renders the shared canonical summary through native accessibility", async () => {
+    await renderNative(<PerformanceModelSummary overview={overviewFixture()} />);
 
     expect(
       screen.getByLabelText(
@@ -52,7 +52,7 @@ describe("PerformanceModelSummary", () => {
     expect(screen.queryByText(/canonical|as-of|protocol|progressive|max-HR/i)).toBeNull();
   });
 
-  it("preserves the canonical stale guidance from the shared projection", () => {
+  it("preserves the canonical stale guidance from the shared projection", async () => {
     const overview = projectAthletePerformanceOverview(
       buildPerformanceTargetFactsFixture({
         asOf: "2026-07-31T12:00:00.000Z",
@@ -61,7 +61,7 @@ describe("PerformanceModelSummary", () => {
       }),
     );
 
-    renderNative(<PerformanceModelSummary overview={overview} />);
+    await renderNative(<PerformanceModelSummary overview={overview} />);
 
     expect(
       screen.getByLabelText(

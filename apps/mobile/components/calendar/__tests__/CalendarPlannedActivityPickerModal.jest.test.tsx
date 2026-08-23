@@ -217,8 +217,8 @@ describe("CalendarPlannedActivityPickerModal", () => {
     activityPlansState.error = null;
   });
 
-  it("renders browse-oriented sections and activity_category filters", () => {
-    renderNative(
+  it("renders browse-oriented sections and activity_category filters", async () => {
+    await renderNative(
       <CalendarPlannedActivityPickerModal
         visible
         selectedDate="2026-03-21"
@@ -234,8 +234,8 @@ describe("CalendarPlannedActivityPickerModal", () => {
     expect(screen.getByTestId("calendar-planned-activity-filter-run")).toBeTruthy();
   });
 
-  it("supports activity_category filtering and search-driven results", () => {
-    renderNative(
+  it("supports activity_category filtering and search-driven results", async () => {
+    await renderNative(
       <CalendarPlannedActivityPickerModal
         visible
         selectedDate="2026-03-21"
@@ -244,22 +244,22 @@ describe("CalendarPlannedActivityPickerModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("calendar-planned-activity-filter-run"));
+    await fireEvent.press(screen.getByTestId("calendar-planned-activity-filter-run"));
 
     expect(screen.getByText("Threshold Builder")).toBeTruthy();
     expect(screen.queryByText("Easy Recovery Spin")).toBeNull();
 
-    fireEvent.press(screen.getByTestId("calendar-planned-activity-filter-all"));
-    fireEvent.changeText(screen.getByTestId("calendar-planned-activity-search"), "Brick");
+    await fireEvent.press(screen.getByTestId("calendar-planned-activity-filter-all"));
+    await fireEvent.changeText(screen.getByTestId("calendar-planned-activity-search"), "Brick");
 
     expect(screen.getByTestId("calendar-planned-activity-section-search-results")).toBeTruthy();
     expect(screen.getByText("Brick Builder")).toBeTruthy();
     expect(screen.queryByText("Threshold Builder")).toBeNull();
   });
 
-  it("selects a plan through the canonical picker result", () => {
+  it("selects a plan through the canonical picker result", async () => {
     const onSelectPlan = jest.fn();
-    renderNative(
+    await renderNative(
       <CalendarPlannedActivityPickerModal
         visible
         selectedDate="2026-03-21"
@@ -268,15 +268,15 @@ describe("CalendarPlannedActivityPickerModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("calendar-planned-activity-option-favorite-1"));
+    await fireEvent.press(screen.getByTestId("calendar-planned-activity-option-favorite-1"));
 
     expect(onSelectPlan).toHaveBeenCalledWith("favorite-1");
   });
 
-  it("keeps loading, error, and empty states in the canonical picker", () => {
+  it("keeps loading, error, and empty states in the canonical picker", async () => {
     activityPlansState.items = [];
     activityPlansState.isLoading = true;
-    const { rerender } = renderNative(
+    const { rerender } = await renderNative(
       <CalendarPlannedActivityPickerModal
         visible
         selectedDate="2026-03-21"
@@ -289,7 +289,7 @@ describe("CalendarPlannedActivityPickerModal", () => {
 
     activityPlansState.isLoading = false;
     activityPlansState.error = new Error("Unavailable");
-    rerender(
+    await rerender(
       <CalendarPlannedActivityPickerModal
         visible
         selectedDate="2026-03-21"
@@ -300,7 +300,7 @@ describe("CalendarPlannedActivityPickerModal", () => {
     expect(screen.getByText("Could not load resources.")).toBeTruthy();
 
     activityPlansState.error = null;
-    rerender(
+    await rerender(
       <CalendarPlannedActivityPickerModal
         visible
         selectedDate="2026-03-21"

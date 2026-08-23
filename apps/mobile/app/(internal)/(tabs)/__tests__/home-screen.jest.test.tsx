@@ -84,8 +84,8 @@ describe("home screen", () => {
     });
   });
 
-  it("renders the feed tab shell", () => {
-    renderNative(<HomeScreen />);
+  it("renders the feed tab shell", async () => {
+    await renderNative(<HomeScreen />);
 
     expect(screen.getByText("Header:Home")).toBeTruthy();
     expect(screen.getByText("Latest activity")).toBeTruthy();
@@ -97,9 +97,9 @@ describe("home screen", () => {
     });
   });
 
-  it("shows only the personal training dashboard after selecting Dashboard", () => {
-    renderNative(<HomeScreen />);
-    fireEvent.press(screen.getByTestId("home-view-tab-dashboard"));
+  it("shows only the personal training dashboard after selecting Dashboard", async () => {
+    await renderNative(<HomeScreen />);
+    await fireEvent.press(screen.getByTestId("home-view-tab-dashboard"));
 
     expect(screen.getByText("Your training, at a glance")).toBeTruthy();
     expect(screen.getByText("Check your current load, consistency, and active plan.")).toBeTruthy();
@@ -118,7 +118,7 @@ describe("home screen", () => {
       selected: true,
     });
 
-    fireEvent.press(screen.getByTestId("home-view-tab-feed"));
+    await fireEvent.press(screen.getByTestId("home-view-tab-feed"));
 
     expect(screen.getByText("Feed list rendered")).toBeTruthy();
     expect(screen.queryByText("Your training, at a glance")).toBeNull();
@@ -140,10 +140,10 @@ describe("home screen", () => {
       { data: { currentLoadStatus: null }, isError: false, isLoading: false, refetch: jest.fn() },
       "Your training dashboard is not ready yet",
     ],
-  ])("shows the Dashboard %s state", (_state, queryState, expectedMessage) => {
+  ])("shows the Dashboard %s state", async (_state, queryState, expectedMessage) => {
     api.home.getDashboard.useQuery.mockReturnValue(queryState);
-    renderNative(<HomeScreen />);
-    fireEvent.press(screen.getByTestId("home-view-tab-dashboard"));
+    await renderNative(<HomeScreen />);
+    await fireEvent.press(screen.getByTestId("home-view-tab-dashboard"));
 
     expect(screen.getByText(expectedMessage)).toBeTruthy();
     expect(screen.queryByText("Feed list rendered")).toBeNull();

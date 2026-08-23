@@ -2,11 +2,11 @@ import { fireEvent, renderNative } from "../../test/render-native";
 import { BoundedNumberInput } from "./index.native";
 
 describe("BoundedNumberInput native", () => {
-  it("keeps partial values while typing and only clamps on blur", () => {
+  it("keeps partial values while typing and only clamps on blur", async () => {
     const onChange = jest.fn();
     const onNumberChange = jest.fn();
 
-    const { getByPlaceholderText } = renderNative(
+    const { getByPlaceholderText } = await renderNative(
       <BoundedNumberInput
         id="weight"
         label="Weight"
@@ -22,21 +22,21 @@ describe("BoundedNumberInput native", () => {
 
     const input = getByPlaceholderText("70.0");
 
-    fireEvent(input, "changeText", "7");
+    await fireEvent(input, "changeText", "7");
 
     expect(onChange).toHaveBeenLastCalledWith("7");
     expect(onNumberChange).toHaveBeenLastCalledWith(7);
 
-    fireEvent(input, "blur");
+    await fireEvent(input, "blur");
 
     expect(onChange).toHaveBeenLastCalledWith("30");
     expect(onNumberChange).toHaveBeenLastCalledWith(30);
   });
 
-  it("normalizes bounded values on blur", () => {
+  it("normalizes bounded values on blur", async () => {
     const onChange = jest.fn();
 
-    const { getByPlaceholderText } = renderNative(
+    const { getByPlaceholderText } = await renderNative(
       <BoundedNumberInput
         id="ftp"
         label="FTP"
@@ -50,14 +50,14 @@ describe("BoundedNumberInput native", () => {
     );
 
     const input = getByPlaceholderText("Enter ftp");
-    fireEvent(input, "changeText", "250.4");
-    fireEvent(input, "blur");
+    await fireEvent(input, "changeText", "250.4");
+    await fireEvent(input, "blur");
 
     expect(onChange).toHaveBeenLastCalledWith("250");
   });
 
-  it("forwards the test ID and uses the matching numeric keyboard", () => {
-    const { getByTestId } = renderNative(
+  it("forwards the test ID and uses the matching numeric keyboard", async () => {
+    const { getByTestId } = await renderNative(
       <>
         <BoundedNumberInput
           decimals={0}
@@ -80,11 +80,11 @@ describe("BoundedNumberInput native", () => {
     expect(getByTestId("intensity-factor-input").props.keyboardType).toBe("decimal-pad");
   });
 
-  it("blocks changes, commits, and presets while disabled", () => {
+  it("blocks changes, commits, and presets while disabled", async () => {
     const onChange = jest.fn();
     const onNumberChange = jest.fn();
 
-    const { getByLabelText, getByText } = renderNative(
+    const { getByLabelText, getByText } = await renderNative(
       <BoundedNumberInput
         disabled
         id="ftp"
@@ -99,9 +99,9 @@ describe("BoundedNumberInput native", () => {
     const input = getByLabelText("FTP");
 
     expect(input.props.editable).toBe(false);
-    fireEvent(input, "changeText", "300");
-    fireEvent(input, "blur");
-    fireEvent.press(getByText("Use 250"));
+    await fireEvent(input, "changeText", "300");
+    await fireEvent(input, "blur");
+    await fireEvent.press(getByText("Use 250"));
 
     expect(onChange).not.toHaveBeenCalled();
     expect(onNumberChange).not.toHaveBeenCalled();

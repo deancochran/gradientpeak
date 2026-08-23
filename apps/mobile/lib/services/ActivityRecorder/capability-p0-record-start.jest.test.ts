@@ -217,18 +217,4 @@ describe("record start capability", () => {
       expect.objectContaining({ plan }),
     );
   });
-
-  it("records a manual lap only while recording and persists its moving-time value", () => {
-    const { service, mutable } = createService();
-    mutable.state = "recording";
-    mutable.startTime = 1_000;
-    mutable.getMovingTime = jest.fn().mockReturnValueOnce(12_000).mockReturnValueOnce(20_000);
-
-    service.recordLap();
-    service.recordLap();
-
-    expect(service.getLaps()).toEqual([12_000, 8_000]);
-    expect(mutable.emit).toHaveBeenCalledWith("lapRecorded");
-    expect(mockCheckpoint).toHaveBeenCalledTimes(2);
-  });
 });

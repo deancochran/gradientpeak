@@ -122,18 +122,20 @@ export function TrainingPlanBuilderSheets({ controller }: TrainingPlanBuilderShe
         goBackSheet={goBackSheet}
         headerActionLabel={sheetActionLabel}
         hasSaveAction={sheetHasSaveAction}
-        headerContent={
-          activeSheet === "activityAssignment" ? (
-            <BuilderActivityAssignmentSheetHeader
-              activityPlanSort={activityPicker.sort}
-              categoryFilter={activityPicker.categoryFilter}
-              onClearSearch={() => activityPicker.setSearchQuery("")}
-              onOpenFilters={() => pushSheet("activityFilters")}
-              onSearchChange={activityPicker.setSearchQuery}
-              searchQuery={activityPicker.searchQuery}
-            />
-          ) : undefined
-        }
+        {...(activeSheet === "activityAssignment"
+          ? {
+              headerContent: (
+                <BuilderActivityAssignmentSheetHeader
+                  activityPlanSort={activityPicker.sort}
+                  categoryFilter={activityPicker.categoryFilter}
+                  onClearSearch={() => activityPicker.setSearchQuery("")}
+                  onOpenFilters={() => pushSheet("activityFilters")}
+                  onSearchChange={activityPicker.setSearchQuery}
+                  searchQuery={activityPicker.searchQuery}
+                />
+              ),
+            }
+          : {})}
         showTitleHeader
         showCloseAction
         initialSnapIndex={sheetPresentation.initialSnapIndex}

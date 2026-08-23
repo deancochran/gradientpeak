@@ -235,7 +235,7 @@ describe("event detail deleted record redirect", () => {
   });
 
   it("uses schedule-aware query freshness for event detail", async () => {
-    renderNative(<EventDetailScreen />);
+    await renderNative(<EventDetailScreen />);
 
     expect(mockQuery).toHaveBeenCalledWith(
       { id: "event-1" },
@@ -246,7 +246,7 @@ describe("event detail deleted record redirect", () => {
   });
 
   it("redirects away instead of showing a transient not-found state", async () => {
-    renderNative(<EventDetailScreen />);
+    await renderNative(<EventDetailScreen />);
 
     await waitFor(() => {
       expect(mockRouterNavigate).toHaveBeenCalledWith("/(internal)/(tabs)/calendar");

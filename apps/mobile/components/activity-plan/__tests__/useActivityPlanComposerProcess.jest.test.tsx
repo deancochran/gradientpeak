@@ -5,7 +5,7 @@ import { useActivityPlanComposerProcess } from "../useActivityPlanComposerProces
 const structure = { version: 3, segments: [] };
 
 describe("useActivityPlanComposerProcess", () => {
-  it("keeps header options stable while invoking the latest submit callback", () => {
+  it("keeps header options stable while invoking the latest submit callback", async () => {
     const navigation = {
       addListener: jest.fn(() => jest.fn()),
       dispatch: jest.fn(),
@@ -16,7 +16,7 @@ describe("useActivityPlanComposerProcess", () => {
     const allowNavigationRef = { current: false };
     let submit = initialSubmit;
 
-    const { rerender } = renderHook(() =>
+    const { rerender } = await renderHook(() =>
       useActivityPlanComposerProcess({
         activityCategory: "run",
         allowNavigationRef,
@@ -37,13 +37,13 @@ describe("useActivityPlanComposerProcess", () => {
     expect(navigation.setOptions).toHaveBeenCalledTimes(1);
 
     submit = latestSubmit;
-    rerender({});
+    await rerender({});
 
     expect(navigation.setOptions).toHaveBeenCalledTimes(1);
     const options = navigation.setOptions.mock.calls[0]?.[0];
     const headerButton = options?.headerRight();
 
-    act(() => {
+    await act(() => {
       headerButton.props.onPress();
     });
 
@@ -51,14 +51,14 @@ describe("useActivityPlanComposerProcess", () => {
     expect(latestSubmit).toHaveBeenCalledTimes(1);
   });
 
-  it("removes the Save header action for a blocked edit route", () => {
+  it("removes the Save header action for a blocked edit route", async () => {
     const navigation = {
       addListener: jest.fn(() => jest.fn()),
       dispatch: jest.fn(),
       setOptions: jest.fn(),
     };
 
-    renderHook(() =>
+    await renderHook(() =>
       useActivityPlanComposerProcess({
         activityCategory: "run",
         allowNavigationRef: { current: false },

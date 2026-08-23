@@ -1,12 +1,12 @@
 import { Text } from "@repo/ui/components/text";
-import { FlatList, Pressable } from "react-native";
+import { Pressable } from "react-native";
 import { fireEvent, renderNative } from "../../../test/render-native";
 import { DefaultErrorState, getResourceListMode, ResourceList } from "../ResourceList";
 
 describe("ResourceList", () => {
-  it("shows an initial error with retry instead of an empty state", () => {
+  it("shows an initial error with retry instead of an empty state", async () => {
     const onRetry = jest.fn();
-    const { getByText } = renderNative(
+    const { getByText } = await renderNative(
       <DefaultErrorState
         description="Network unavailable"
         onRetry={onRetry}
@@ -15,13 +15,13 @@ describe("ResourceList", () => {
     );
 
     expect(getByText("Unable to load routes")).toBeTruthy();
-    fireEvent.press(getByText("Try again"));
+    await fireEvent.press(getByText("Try again"));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps stale data visible with refresh failure copy and retry", () => {
+  it("keeps stale data visible with refresh failure copy and retry", async () => {
     const onRetry = jest.fn();
-    const { getByText } = renderNative(
+    const { getByText } = await renderNative(
       <ResourceList
         data={[{ id: "route-1", name: "River loop" }]}
         errorDescription="Refresh failed"
@@ -39,22 +39,26 @@ describe("ResourceList", () => {
     expect(getResourceListMode({ dataLength: 1, isError: true, isLoading: false })).toBe("data");
     expect(getByText("River loop")).toBeTruthy();
     expect(getByText("Refresh failed")).toBeTruthy();
-    fireEvent.press(getByText("Retry"));
+    await fireEvent.press(getByText("Retry"));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it("honors query-owned retry state", () => {
+  it("honors query-owned retry state", async () => {
     const onRetry = jest.fn();
-    const { UNSAFE_getByType } = renderNative(<DefaultErrorState isRetrying onRetry={onRetry} />);
+    const { container, getByText } = await renderNative(
+      <DefaultErrorState isRetrying onRetry={onRetry} />,
+    );
 
-    const retryButton = UNSAFE_getByType(Pressable);
+    const retryButton = container.queryAll((node) => node.type === "Pressable")[0];
+    if (!retryButton) throw new Error("Expected retry button");
+    expect(getByText("Retrying")).toBeTruthy();
     expect(retryButton.props.accessibilityState).toMatchObject({ busy: true, disabled: true });
-    fireEvent.press(retryButton);
+    await fireEvent.press(retryButton);
     expect(onRetry).not.toHaveBeenCalled();
   });
 
-  it("distinguishes active-query emptiness from a globally empty library", () => {
-    const rendered = renderNative(
+  it("distinguishes active-query emptiness from a globally empty library", async () => {
+    const rendered = await renderNative(
       <ResourceList
         data={[]}
         emptyDescription="Saved routes will appear here."
@@ -65,7 +69,8 @@ describe("ResourceList", () => {
       />,
     );
 
-    const list = rendered.UNSAFE_getByType(FlatList);
+    const list = rendered.container.queryAll((node) => node.type === "FlatList")[0];
+    if (!list) throw new Error("Expected a FlatList");
     expect(list.props.ListEmptyComponent.props.title).toBe("No matching results");
     expect(list.props.ListEmptyComponent.props.description).toBe(
       "Try adjusting your search or filters.",

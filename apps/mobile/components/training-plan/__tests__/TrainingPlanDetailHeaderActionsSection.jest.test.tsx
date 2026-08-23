@@ -28,8 +28,8 @@ jest.mock("../TrainingPlanSummaryHeader", () => ({
 }));
 
 describe("TrainingPlanDetailHeaderActionsSection", () => {
-  it("shows the simplified identity card with save action", () => {
-    renderNative(
+  it("shows the simplified identity card with save action", async () => {
+    await renderNative(
       <TrainingPlanDetailHeaderActionsSection
         handleToggleLike={jest.fn()}
         isLiked={false}
@@ -58,7 +58,7 @@ describe("TrainingPlanDetailHeaderActionsSection", () => {
   });
 
   it("shows saved state copy when liked with count", async () => {
-    renderNative(
+    await renderNative(
       <TrainingPlanDetailHeaderActionsSection
         handleToggleLike={jest.fn()}
         isLiked={true}

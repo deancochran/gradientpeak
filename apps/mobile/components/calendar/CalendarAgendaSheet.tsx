@@ -52,10 +52,12 @@ function CalendarAgendaItemCard({
       <GoalCard
         goal={{
           id: item.id,
-          objectiveSummary: item.goal?.objectiveSummary,
+          ...(item.goal?.objectiveSummary !== undefined
+            ? { objectiveSummary: item.goal.objectiveSummary }
+            : {}),
           targetDate: item.calendarDate,
           title: item.title,
-          typeLabel: item.goal?.typeLabel,
+          ...(item.goal?.typeLabel !== undefined ? { typeLabel: item.goal.typeLabel } : {}),
         }}
         onPress={() => onOpenItem(item)}
         testID={`calendar-agenda-goal-card-${item.id}`}

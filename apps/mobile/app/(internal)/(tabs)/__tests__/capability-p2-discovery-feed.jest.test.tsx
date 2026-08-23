@@ -222,7 +222,7 @@ describe("P2 discovery and feed capabilities", () => {
 
   it("discover.search-resources honors a deep-linked scope and search term", async () => {
     routeParams = { scope: "routes", q: " river " };
-    renderNative(<DiscoverScreen />);
+    await renderNative(<DiscoverScreen />);
 
     expect(screen.getByPlaceholderText("Search routes").props.value).toBe(" river ");
     expect(screen.getByTestId("route-route-1")).toBeTruthy();
@@ -231,7 +231,7 @@ describe("P2 discovery and feed capabilities", () => {
     );
   });
 
-  it("discover.users navigates to a user and loads the next page", () => {
+  it("discover.users navigates to a user and loads the next page", async () => {
     const fetchNextPage = jest.fn();
     usersQueryMock.mockReturnValue(
       queryResult([{ id: "user-1", full_name: "Alex Runner", username: "alex", is_public: true }], {
@@ -239,16 +239,16 @@ describe("P2 discovery and feed capabilities", () => {
         fetchNextPage,
       }),
     );
-    renderNative(<DiscoverScreen />);
-    fireEvent.press(screen.getByTestId("discover-scope-users"));
+    await renderNative(<DiscoverScreen />);
+    await fireEvent.press(screen.getByTestId("discover-scope-users"));
 
-    fireEvent.press(screen.getByTestId("discover-user-user-1"));
+    await fireEvent.press(screen.getByTestId("discover-user-user-1"));
     expect(navigateTo).toHaveBeenCalledWith({
       pathname: "/(internal)/(standard)/user/[userId]",
       params: { userId: "user-1" },
     });
 
-    fireEvent.scroll(screen.getByTestId("discover-results-list"), {
+    await fireEvent.scroll(screen.getByTestId("discover-results-list"), {
       nativeEvent: {
         contentOffset: { y: 800 },
         contentSize: { height: 1000 },
@@ -258,9 +258,9 @@ describe("P2 discovery and feed capabilities", () => {
     expect(fetchNextPage).toHaveBeenCalledTimes(1);
   });
 
-  it("feed.browse opens an activity from the real feed list", () => {
-    renderNative(<FeedList />);
-    fireEvent.press(screen.getByTestId("activity-activity-1"));
+  it("feed.browse opens an activity from the real feed list", async () => {
+    await renderNative(<FeedList />);
+    await fireEvent.press(screen.getByTestId("activity-activity-1"));
 
     expect(feedQueryMock).toHaveBeenCalledWith({ limit: 20 });
     expect(navigateTo).toHaveBeenCalledWith("/activity-detail?id=activity-1");
@@ -271,8 +271,8 @@ describe("P2 discovery and feed capabilities", () => {
     feedQueryMock.mockReturnValue(
       queryResult([], { isLoadingError: true, isError: true, refetch }),
     );
-    renderNative(<FeedList />);
-    fireEvent.press(screen.getByTestId("feed-retry"));
+    await renderNative(<FeedList />);
+    await fireEvent.press(screen.getByTestId("feed-retry"));
 
     await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1));
   });

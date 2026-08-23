@@ -27,16 +27,18 @@ jest.mock("@/lib/server-config", () => ({
 }));
 
 describe("ProfileCard", () => {
-  it("uses the full name as the primary identity while retaining the username", () => {
-    renderNative(<ProfileCard profile={{ full_name: "Ada Athlete", username: "ada-rides" }} />);
+  it("uses the full name as the primary identity while retaining the username", async () => {
+    await renderNative(
+      <ProfileCard profile={{ full_name: "Ada Athlete", username: "ada-rides" }} />,
+    );
 
     expect(screen.getByText("Ada Athlete")).toBeTruthy();
     expect(screen.getByText("@ada-rides")).toBeTruthy();
     expect(screen.getByText("A")).toBeTruthy();
   });
 
-  it("does not present absent or redacted social counts as zero", () => {
-    renderNative(
+  it("does not present absent or redacted social counts as zero", async () => {
+    await renderNative(
       <ProfileCard
         profile={{ followers_count: null, following_count: undefined, username: "private-rider" }}
       />,
@@ -47,8 +49,8 @@ describe("ProfileCard", () => {
     expect(screen.queryByText("0")).toBeNull();
   });
 
-  it("continues to render each available count, including a real zero", () => {
-    renderNative(
+  it("continues to render each available count, including a real zero", async () => {
+    await renderNative(
       <ProfileCard
         profile={{ followers_count: 0, following_count: null, username: "new-rider" }}
       />,
@@ -59,9 +61,9 @@ describe("ProfileCard", () => {
     expect(screen.queryByText("Following")).toBeNull();
   });
 
-  it("exposes selected and disabled selection semantics", () => {
+  it("exposes selected and disabled selection semantics", async () => {
     const onPress = jest.fn();
-    const rendered = renderNative(
+    const rendered = await renderNative(
       <ProfileCard
         disabled
         onPress={onPress}

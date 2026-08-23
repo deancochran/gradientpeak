@@ -142,7 +142,7 @@ jest.mock("@/components/groups", () => {
           onPress: () =>
             props.onSubmit({ title: "Updated ride", startsAt: "2026-05-28T12:00:00.000Z" }),
         },
-        "Submit form",
+        React.createElement("Text", null, "Submit form"),
       );
     }),
     GroupListSkeleton: createHost("GroupListSkeleton"),
@@ -188,10 +188,10 @@ describe("P2 group event capabilities", () => {
   });
 
   it("group-event.edit saves a one-off event from the screen header", async () => {
-    renderNative(<GroupEventEditRoute />);
+    await renderNative(<GroupEventEditRoute />);
 
     await act(async () => {
-      fireEvent.press(screen.getByText("Save"));
+      await fireEvent.press(screen.getByText("Save"));
     });
 
     await waitFor(() =>
@@ -203,8 +203,8 @@ describe("P2 group event capabilities", () => {
     );
   });
 
-  it("group-event.delete exposes one-off cancellation as a destructive menu action", () => {
-    renderNative(<GroupEventDetailRoute />);
+  it("group-event.delete exposes one-off cancellation as a destructive menu action", async () => {
+    await renderNative(<GroupEventDetailRoute />);
 
     const cancelAction = overflowActions.find(
       (action) => action.testID === "group-event-detail-cancel",
@@ -216,7 +216,7 @@ describe("P2 group event capabilities", () => {
       }),
     );
 
-    fireEvent.press(screen.getByTestId("group-event-detail-cancel"));
+    await fireEvent.press(screen.getByTestId("group-event-detail-cancel"));
 
     const nativeAlertMock = require("react-native").Alert.alert as jest.Mock;
     expect(nativeAlertMock).toHaveBeenCalledWith(
@@ -241,9 +241,9 @@ describe("P2 group event capabilities", () => {
   });
 
   it("group-event.rsvp sends the selected status from the real event detail control", async () => {
-    renderNative(<GroupEventDetailRoute />);
+    await renderNative(<GroupEventDetailRoute />);
 
-    fireEvent.press(screen.getByText("Going"));
+    await fireEvent.press(screen.getByText("Going"));
 
     await waitFor(() => expect(rsvpMock).toHaveBeenCalledWith(event.id, "going"));
   });

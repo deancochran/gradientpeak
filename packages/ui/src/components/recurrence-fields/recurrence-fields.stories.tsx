@@ -1,5 +1,5 @@
 import { DEFAULT_WEEKLY_COUNT_RECURRENCE } from "@repo/core/recurrence";
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { RecurrenceFields } from "./index.web";
 

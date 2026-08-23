@@ -25,11 +25,13 @@ jest.mock("@/components/training-plan/PlanningGoalCard", () => ({
 const { BuilderLocalGoalCreateContent } = require("../BuilderGoalEditorSheetContent");
 
 describe("BuilderLocalGoalCreateContent layout", () => {
-  it("requests intrinsic form sizing for BottomSheetScrollView measurement", () => {
-    const rendered = renderNative(
+  it("requests intrinsic form sizing for BottomSheetScrollView measurement", async () => {
+    const rendered = await renderNative(
       <BuilderLocalGoalCreateContent onSave={jest.fn()} planStartDate="2026-07-13" />,
     );
 
-    expect(rendered.UNSAFE_getByType(mockGoalEditorForm).props.contentSizing).toBe("intrinsic");
+    const goalEditorForm = rendered.container.queryAll((node) => node.type === "GoalEditorForm")[0];
+    if (!goalEditorForm) throw new Error("Expected a GoalEditorForm");
+    expect(goalEditorForm.props.contentSizing).toBe("intrinsic");
   });
 });

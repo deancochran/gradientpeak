@@ -352,10 +352,9 @@ export function ActivityListCard({
               metric.key !== "normalized_intensity"
                 ? `${metric.label} (partial)`
                 : metric.label,
-            tone:
-              metric.key === "common_load" || metric.key === "normalized_intensity"
-                ? "primary"
-                : undefined,
+            ...(metric.key === "common_load" || metric.key === "normalized_intensity"
+              ? { tone: "primary" as const }
+              : {}),
             value: formatDisplayMetric(metric, unitSystem),
           }))}
           testID="activity-card-metrics"

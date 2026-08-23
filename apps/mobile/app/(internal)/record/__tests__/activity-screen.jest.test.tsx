@@ -96,13 +96,13 @@ describe("record activity screen", () => {
     };
   });
 
-  it("omits GPS controls and saves category changes as GPS-free", () => {
-    renderNative(<ActivitySelectionScreen />);
+  it("omits GPS controls and saves category changes as GPS-free", async () => {
+    await renderNative(<ActivitySelectionScreen />);
 
     expect(screen.queryByTestId("record-gps-option-on")).toBeNull();
     expect(screen.queryByTestId("record-gps-option-off")).toBeNull();
-    fireEvent.press(screen.getByTestId("record-activity-option-bike"));
-    fireEvent.press(screen.getByTestId("record-activity-save-button"));
+    await fireEvent.press(screen.getByTestId("record-activity-option-bike"));
+    await fireEvent.press(screen.getByTestId("record-activity-save-button"));
 
     expect(service.selectActivityFromPayload).toHaveBeenCalledWith({
       activity_category: "bike",
@@ -111,13 +111,13 @@ describe("record activity screen", () => {
     expect(backMock).toHaveBeenCalled();
   });
 
-  it("does not offer a save path when a plan locks activity category", () => {
+  it("does not offer a save path when a plan locks activity category", async () => {
     sessionContractMock = {
       editing: { canEditActivity: false, canEditGps: true },
       guidance: { hasPlan: true },
     };
 
-    renderNative(<ActivitySelectionScreen />);
+    await renderNative(<ActivitySelectionScreen />);
 
     expect(screen.queryByTestId("record-gps-option-on")).toBeNull();
     expect(screen.getByTestId("record-activity-save-button").props.disabled).toBe(true);

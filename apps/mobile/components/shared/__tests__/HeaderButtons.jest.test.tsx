@@ -50,8 +50,8 @@ describe("header buttons", () => {
     navigateMock.mockReset();
   });
 
-  it("navigates to messages without stacking duplicate inbox routes", () => {
-    renderNative(<MessagesHeaderButton />);
+  it("navigates to messages without stacking duplicate inbox routes", async () => {
+    await renderNative(<MessagesHeaderButton />);
 
     const button = screen.getByTestId("messages-header-button");
 
@@ -63,13 +63,13 @@ describe("header buttons", () => {
     });
     expect(button.props.className).toContain("w-11 h-11");
 
-    fireEvent.press(button);
+    await fireEvent.press(button);
 
     expect(navigateMock).toHaveBeenCalledWith("/messages");
   });
 
-  it("navigates to notifications without stacking duplicate hub routes", () => {
-    renderNative(<NotificationsHeaderButton />);
+  it("navigates to notifications without stacking duplicate hub routes", async () => {
+    await renderNative(<NotificationsHeaderButton />);
 
     const button = screen.getByTestId("notifications-header-button");
 
@@ -81,13 +81,13 @@ describe("header buttons", () => {
     });
     expect(button.props.className).toContain("w-11 h-11");
 
-    fireEvent.press(button);
+    await fireEvent.press(button);
 
     expect(navigateMock).toHaveBeenCalledWith("/notifications");
   });
 
-  it("navigates to global search without using the Discover tab", () => {
-    renderNative(<SearchHeaderButton />);
+  it("navigates to global search without using the Discover tab", async () => {
+    await renderNative(<SearchHeaderButton />);
 
     const button = screen.getByTestId("search-header-button");
 
@@ -98,7 +98,7 @@ describe("header buttons", () => {
     });
     expect(button.props.className).toContain("w-11 h-11");
 
-    fireEvent.press(button);
+    await fireEvent.press(button);
 
     expect(navigateMock).toHaveBeenCalledWith("/search");
   });

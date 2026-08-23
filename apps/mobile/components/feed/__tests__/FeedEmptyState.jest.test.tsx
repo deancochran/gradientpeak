@@ -18,14 +18,14 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({ useAppNavigate: () => navi
 
 const { FeedEmptyState } = require("../FeedEmptyState");
 
-it("offers accessible record and athlete discovery actions", () => {
-  renderNative(<FeedEmptyState />);
+it("offers accessible record and athlete discovery actions", async () => {
+  await renderNative(<FeedEmptyState />);
   const record = screen.getByTestId("feed-empty-record");
   const discover = screen.getByTestId("feed-empty-find-athletes");
   expect(record.props.accessibilityRole).toBe("button");
   expect(discover.props.accessibilityRole).toBe("button");
-  fireEvent.press(record);
-  fireEvent.press(discover);
+  await fireEvent.press(record);
+  await fireEvent.press(discover);
   expect(navigateTo).toHaveBeenNthCalledWith(1, "/record");
   expect(navigateTo).toHaveBeenNthCalledWith(2, "/search");
 });

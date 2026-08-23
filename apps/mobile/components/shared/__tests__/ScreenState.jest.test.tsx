@@ -2,8 +2,8 @@ import { render } from "@testing-library/react-native";
 import { LoadingState } from "../ScreenState";
 
 describe("LoadingState", () => {
-  it("announces one busy live-region status with the visible message", () => {
-    const { getByRole, getByText } = render(
+  it("announces one busy live-region status with the visible message", async () => {
+    const { getByRole, getByText } = await render(
       <LoadingState message="Loading training plans..." testID="plans-loading" />,
     );
 

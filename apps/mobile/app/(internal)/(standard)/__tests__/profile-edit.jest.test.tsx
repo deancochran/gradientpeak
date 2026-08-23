@@ -155,10 +155,10 @@ beforeEach(() => {
   });
 });
 
-it("renders the loaded required full name above username", () => {
-  renderNative(<ProfileEdit />);
+it("renders the loaded required full name above username", async () => {
+  await renderNative(<ProfileEdit />);
 
-  const fields = screen.UNSAFE_getAllByType("FormTextField" as never);
+  const fields = screen.container.queryAll((node) => node.type === "FormTextField");
   expect(fields.map((field) => field.props.name)).toEqual([
     "full_name",
     "username",
@@ -170,10 +170,10 @@ it("renders the loaded required full name above username", () => {
 });
 
 it("uploads with the returned path and commits it through profile media CAS", async () => {
-  renderNative(<ProfileEdit />);
+  await renderNative(<ProfileEdit />);
 
-  fireEvent.press(screen.getByTestId("profile-edit-avatar-button"));
-  fireEvent.press(screen.getByTestId("profile-avatar-source-library"));
+  await fireEvent.press(screen.getByTestId("profile-edit-avatar-button"));
+  await fireEvent.press(screen.getByTestId("profile-avatar-source-library"));
 
   await waitFor(() =>
     expect(mockCompareAndSwapMedia).toHaveBeenCalledWith({
@@ -194,10 +194,10 @@ it("deletes the just-uploaded object when media CAS fails", async () => {
       data: { code: "CONFLICT" },
     }),
   );
-  renderNative(<ProfileEdit />);
+  await renderNative(<ProfileEdit />);
 
-  fireEvent.press(screen.getByTestId("profile-edit-avatar-button"));
-  fireEvent.press(screen.getByTestId("profile-avatar-source-library"));
+  await fireEvent.press(screen.getByTestId("profile-edit-avatar-button"));
+  await fireEvent.press(screen.getByTestId("profile-avatar-source-library"));
 
   await waitFor(() =>
     expect(mockDeleteFile).toHaveBeenCalledWith({ filePath: "user-1/new-avatar.jpg" }),
@@ -207,9 +207,9 @@ it("deletes the just-uploaded object when media CAS fails", async () => {
 
 it("clears with the stored value as expected and deletes only the prior owned path", async () => {
   mockProfile = { ...mockProfile, avatar_url: "user-1/old-avatar.jpg" };
-  renderNative(<ProfileEdit />);
+  await renderNative(<ProfileEdit />);
 
-  fireEvent.press(screen.getByLabelText("Remove profile picture"));
+  await fireEvent.press(screen.getByLabelText("Remove profile picture"));
 
   await waitFor(() =>
     expect(mockCompareAndSwapMedia).toHaveBeenCalledWith({
@@ -227,9 +227,9 @@ it.each([
   "another-user/avatar.jpg",
 ])("does not delete an unowned prior value after a successful clear: %s", async (unownedValue) => {
   mockProfile = { ...mockProfile, avatar_url: unownedValue };
-  renderNative(<ProfileEdit />);
+  await renderNative(<ProfileEdit />);
 
-  fireEvent.press(screen.getByLabelText("Remove profile picture"));
+  await fireEvent.press(screen.getByLabelText("Remove profile picture"));
 
   await waitFor(() =>
     expect(mockCompareAndSwapMedia).toHaveBeenCalledWith({

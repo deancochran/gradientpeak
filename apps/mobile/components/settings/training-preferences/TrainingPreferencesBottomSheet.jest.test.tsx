@@ -1,4 +1,5 @@
 import React from "react";
+import { Text } from "react-native";
 import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
 import { TrainingPreferencesBottomSheet } from "./TrainingPreferencesBottomSheet";
@@ -34,15 +35,15 @@ jest.mock("@/components/shared/AppBottomSheet", () => ({
 }));
 
 describe("TrainingPreferencesBottomSheet", () => {
-  it("uses the inspector preset and labels draft restoration clearly", () => {
-    renderNative(
+  it("uses the inspector preset and labels draft restoration clearly", async () => {
+    await renderNative(
       <TrainingPreferencesBottomSheet
         onClose={jest.fn()}
         onReset={jest.fn()}
         onSave={jest.fn()}
         visible
       >
-        Preferences
+        <Text>Preferences</Text>
       </TrainingPreferencesBottomSheet>,
     );
 

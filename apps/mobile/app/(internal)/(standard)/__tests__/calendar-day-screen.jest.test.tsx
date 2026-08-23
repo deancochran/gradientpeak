@@ -45,14 +45,6 @@ type AuthStoreState = {
   session: { user: { id: string } };
 };
 
-type StackScreenNode = {
-  props: { options: { title?: string } };
-};
-
-type UnsafeTypeQuery = {
-  UNSAFE_getByType: (type: "StackScreen") => StackScreenNode;
-};
-
 let eventItems: CalendarEvent[] = [];
 let groupEventItems: CalendarEvent[] = [];
 let completedActivityItems: CalendarEvent[] = [];
@@ -332,16 +324,17 @@ describe("calendar day screen", () => {
     jest.useRealTimers();
   });
 
-  it("sets the full-date header and persists the selected day", () => {
-    const rendered = renderNative(<CalendarDayScreen />);
+  it("sets the full-date header and persists the selected day", async () => {
+    const rendered = await renderNative(<CalendarDayScreen />);
 
     expect(setActiveDateMock).toHaveBeenCalledWith(today);
-    const stackScreen = (rendered as unknown as UnsafeTypeQuery).UNSAFE_getByType("StackScreen");
+    const stackScreen = rendered.container.queryAll((node) => node.type === "StackScreen")[0];
+    if (!stackScreen) throw new Error("Expected a StackScreen");
     expect(stackScreen.props.options.title).toBe("Today, March 23");
   });
 
-  it("only enables day queries with validated date and planning-timezone boundaries", () => {
-    renderNative(<CalendarDayScreen />);
+  it("only enables day queries with validated date and planning-timezone boundaries", async () => {
+    await renderNative(<CalendarDayScreen />);
 
     expect(mockEventsUseQuery).toHaveBeenCalledWith(
       { date: today },
@@ -349,7 +342,7 @@ describe("calendar day screen", () => {
     );
   });
 
-  it("renders standalone completed activities from the calendar day projection", () => {
+  it("planning.view-day-agenda shows planned and completed information for the selected day", async () => {
     completedActivityItems = [
       {
         id: "activity-1",
@@ -361,16 +354,21 @@ describe("calendar day screen", () => {
       },
     ];
 
-    renderNative(<CalendarDayScreen />);
+    await renderNative(<CalendarDayScreen />);
 
+    expect(mockEventsUseQuery).toHaveBeenCalledWith(
+      { date: today },
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(screen.getByText("Tempo Builder")).toBeTruthy();
     expect(screen.getByTestId("calendar-day-activity-row-activity-1")).toBeTruthy();
     expect(screen.getByText("3 events")).toBeTruthy();
   });
 
-  it("uses valid dormant inputs without executing queries for an invalid route date", () => {
+  it("uses valid dormant inputs without executing queries for an invalid route date", async () => {
     paramsState = { date: "not-a-date" };
 
-    renderNative(<CalendarDayScreen />);
+    await renderNative(<CalendarDayScreen />);
 
     expect(mockEventsUseQuery).toHaveBeenCalledWith(
       { date: "1970-01-01" },
@@ -381,10 +379,10 @@ describe("calendar day screen", () => {
     expect(setActiveDateMock).not.toHaveBeenCalledWith("not-a-date");
   });
 
-  it("opens agenda creation with the selected day prefilled", () => {
-    renderNative(<CalendarDayScreen />);
+  it("opens agenda creation with the selected day prefilled", async () => {
+    await renderNative(<CalendarDayScreen />);
 
-    fireEvent.press(screen.getByTestId("calendar-day-create-event-button"));
+    await fireEvent.press(screen.getByTestId("calendar-day-create-event-button"));
 
     expect(pushMock).toHaveBeenCalledWith({
       pathname: "/(internal)/(standard)/agenda-create",
@@ -392,7 +390,7 @@ describe("calendar day screen", () => {
     });
   });
 
-  it("shows a plan suggestion and passes it into event creation", () => {
+  it("shows a plan suggestion and passes it into event creation", async () => {
     paramsState = {
       date: tomorrow,
       trainingPlanId: "training-plan-1",
@@ -401,14 +399,14 @@ describe("calendar day screen", () => {
       planSuggestionDescription: "Add load to close the readiness gap.",
     };
 
-    renderNative(<CalendarDayScreen />);
+    await renderNative(<CalendarDayScreen />);
 
     expect(screen.getByTestId("calendar-day-plan-suggestion")).toBeTruthy();
     expect(screen.getByText("Plan suggestion")).toBeTruthy();
     expect(screen.getByText("Add about ~75 Load")).toBeTruthy();
     expect(screen.getByText("Add load to close the readiness gap.")).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId("calendar-day-create-from-plan-suggestion"));
+    await fireEvent.press(screen.getByTestId("calendar-day-create-from-plan-suggestion"));
 
     expect(pushMock).toHaveBeenCalledWith({
       pathname: "/(internal)/(standard)/agenda-create",
@@ -420,7 +418,7 @@ describe("calendar day screen", () => {
     });
   });
 
-  it("does not show scheduled session candidates for a reduce-load suggestion", () => {
+  it("does not show scheduled session candidates for a reduce-load suggestion", async () => {
     paramsState = {
       date: today,
       trainingPlanId: "training-plan-1",
@@ -429,7 +427,7 @@ describe("calendar day screen", () => {
       planSuggestionDescription: "Reduce load to protect readiness.",
     };
 
-    renderNative(<CalendarDayScreen />);
+    await renderNative(<CalendarDayScreen />);
 
     expect(screen.getByText("Reduce about ~40 Load")).toBeTruthy();
     expect(screen.getByText("Reduce load to protect readiness.")).toBeTruthy();
@@ -438,40 +436,40 @@ describe("calendar day screen", () => {
     expect(screen.queryByText("Scheduled sessions to review")).toBeNull();
   });
 
-  it("shows the canonical planned activity row and opens event detail on tap", () => {
-    renderNative(<CalendarDayScreen />);
+  it("shows the canonical planned activity row and opens event detail on tap", async () => {
+    await renderNative(<CalendarDayScreen />);
 
     expect(screen.getByText("Goal")).toBeTruthy();
     expect(screen.getByText("Spring A Race")).toBeTruthy();
     expect(screen.getByText("Tempo Builder")).toBeTruthy();
-    fireEvent.press(screen.getByTestId("calendar-day-planned_activity-row-event-1"));
+    await fireEvent.press(screen.getByTestId("calendar-day-planned_activity-row-event-1"));
 
     expect(pushMock).toHaveBeenCalledWith("/event-detail?id=event-1");
   });
 
-  it("opens goal detail from the goal anchor card", () => {
-    renderNative(<CalendarDayScreen />);
+  it("opens goal detail from the goal anchor card", async () => {
+    await renderNative(<CalendarDayScreen />);
 
-    fireEvent.press(screen.getByTestId("calendar-day-goal-anchor"));
+    await fireEvent.press(screen.getByTestId("calendar-day-goal-anchor"));
 
     expect(pushMock).toHaveBeenCalledWith("/goal-detail?id=goal-1");
   });
 
-  it("shows normal events as plain calendar entries", () => {
-    renderNative(<CalendarDayScreen />);
+  it("shows normal events as plain calendar entries", async () => {
+    await renderNative(<CalendarDayScreen />);
 
     expect(screen.getByText("Mobility session")).toBeTruthy();
     expect(screen.getByText("Gentle evening mobility.")).toBeTruthy();
     expect(screen.getByTestId("calendar-day-event-row-event-2")).toBeTruthy();
   });
 
-  it("keeps planned agenda items scan-first without a quick action button", () => {
-    renderNative(<CalendarDayScreen />);
+  it("keeps planned agenda items scan-first without a quick action button", async () => {
+    await renderNative(<CalendarDayScreen />);
 
     expect(screen.queryByTestId("schedule-event-action-event-1")).toBeNull();
   });
 
-  it("renders recurring events through the canonical event row", () => {
+  it("renders recurring events through the canonical event row", async () => {
     eventItems = [
       {
         id: "event-recurring",
@@ -484,22 +482,22 @@ describe("calendar day screen", () => {
       },
     ];
 
-    renderNative(<CalendarDayScreen />);
+    await renderNative(<CalendarDayScreen />);
 
     expect(screen.getByTestId("calendar-day-event-row-event-recurring")).toBeTruthy();
   });
 
-  it("shows goal anchors even when the day has no events", () => {
+  it("shows goal anchors even when the day has no events", async () => {
     eventItems = [];
 
-    renderNative(<CalendarDayScreen />);
+    await renderNative(<CalendarDayScreen />);
 
     expect(screen.getByTestId("calendar-day-goal-anchor")).toBeTruthy();
     expect(screen.getByText("No events scheduled")).toBeTruthy();
     expect(screen.queryByText("Rest day")).toBeNull();
   });
 
-  it("keeps custom events visible without inferring a rest day", () => {
+  it("keeps custom events visible without inferring a rest day", async () => {
     paramsState = { date: tomorrow };
     eventItems = [
       {
@@ -515,14 +513,14 @@ describe("calendar day screen", () => {
       },
     ];
 
-    renderNative(<CalendarDayScreen />);
+    await renderNative(<CalendarDayScreen />);
 
     expect(screen.queryByTestId(`calendar-rest-day-state-${tomorrow}`)).toBeNull();
     expect(screen.queryByText("Rest day")).toBeNull();
     expect(screen.getByText("Dinner reservation")).toBeTruthy();
   });
 
-  it("keeps events on their scheduled date even when starts_at crosses a local timezone boundary", () => {
+  it("keeps events on their scheduled date even when starts_at crosses a local timezone boundary", async () => {
     eventItems = [
       {
         id: "event-timezone-shift",
@@ -534,7 +532,7 @@ describe("calendar day screen", () => {
       },
     ];
 
-    renderNative(<CalendarDayScreen />);
+    await renderNative(<CalendarDayScreen />);
 
     expect(screen.getByText("Early travel day")).toBeTruthy();
     expect(screen.queryByTestId(`calendar-rest-day-state-${today}`)).toBeNull();

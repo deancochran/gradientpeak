@@ -36,9 +36,19 @@ export function clearRecord(record: Record<string, unknown>) {
   }
 }
 
+function renderHostChildren(type: string, children: React.ReactNode) {
+  if (type === "Text") return children;
+
+  return React.Children.map(children, (child) =>
+    typeof child === "string" || typeof child === "number"
+      ? React.createElement("Text", null, String(child))
+      : child,
+  );
+}
+
 export function createHostComponent(type: string) {
   return function HostComponent({ children, ...props }: HostProps) {
-    return React.createElement(type, props, children);
+    return React.createElement(type, props, renderHostChildren(type, children));
   };
 }
 
@@ -61,7 +71,7 @@ export function createPressableHost(type = "Pressable") {
         onPress: disabled ? undefined : onPress,
         testID: testID ?? testId,
       },
-      children,
+      renderHostChildren(type, children),
     );
   };
 }
@@ -70,7 +80,7 @@ export const createButtonComponent = createPressableHost;
 
 export function createStackComponent() {
   function Stack({ children, ...props }: HostProps) {
-    return React.createElement("Stack", props, children);
+    return React.createElement("Stack", props, renderHostChildren("Stack", children));
   }
 
   Stack.Screen = function StackScreen({
@@ -82,7 +92,7 @@ export function createStackComponent() {
     return React.createElement(
       "StackScreen",
       { ...props, name, options, testID: name ? `stack-screen-${name}` : undefined },
-      children,
+      renderHostChildren("StackScreen", children),
     );
   };
 

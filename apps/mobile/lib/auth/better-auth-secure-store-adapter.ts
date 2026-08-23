@@ -12,7 +12,9 @@ export const MAX_BETTER_AUTH_CHUNK_COUNT = 32;
 
 type BetterAuthSecureStore = {
   getItem(key: string): string | null;
+  getItemAsync(key: string): Promise<string | null>;
   setItem(key: string, value: string): void;
+  setItemAsync(key: string, value: string): Promise<void>;
 };
 
 export function isAllowedBetterAuthSecureStoreWriteKey(key: string): boolean {
@@ -35,11 +37,18 @@ export function createBetterAuthSecureStoreAdapter(
 ): BetterAuthSecureStore {
   return {
     getItem: (key) => storage.getItem(key),
+    getItemAsync: (key) => storage.getItemAsync(key),
     setItem: (key, value) => {
       if (!isAllowedBetterAuthSecureStoreWriteKey(key)) {
         throw new Error("Better Auth SecureStore chunk count exceeds the supported reset sweep");
       }
       storage.setItem(key, value);
+    },
+    setItemAsync: async (key, value) => {
+      if (!isAllowedBetterAuthSecureStoreWriteKey(key)) {
+        throw new Error("Better Auth SecureStore chunk count exceeds the supported reset sweep");
+      }
+      await storage.setItemAsync(key, value);
     },
   };
 }

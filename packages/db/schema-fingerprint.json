@@ -566,16 +566,16 @@
   "columns": [
     {
       "name": "id",
-      "type": "text",
+      "type": "uuid",
       "table": "accounts",
-      "default": "",
+      "default": "gen_random_uuid()",
       "notNull": true,
       "identity": "",
       "position": 1,
       "generated": ""
     },
     {
-      "name": "account_id",
+      "name": "issuer",
       "type": "text",
       "table": "accounts",
       "default": "",
@@ -585,7 +585,7 @@
       "generated": ""
     },
     {
-      "name": "provider_id",
+      "name": "account_id",
       "type": "text",
       "table": "accounts",
       "default": "",
@@ -595,13 +595,23 @@
       "generated": ""
     },
     {
+      "name": "provider_id",
+      "type": "text",
+      "table": "accounts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
       "name": "user_id",
       "type": "uuid",
       "table": "accounts",
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 4,
+      "position": 5,
       "generated": ""
     },
     {
@@ -611,7 +621,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 5,
+      "position": 6,
       "generated": ""
     },
     {
@@ -621,7 +631,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 6,
+      "position": 7,
       "generated": ""
     },
     {
@@ -631,7 +641,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 7,
+      "position": 8,
       "generated": ""
     },
     {
@@ -641,7 +651,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 8,
+      "position": 9,
       "generated": ""
     },
     {
@@ -651,7 +661,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 9,
+      "position": 10,
       "generated": ""
     },
     {
@@ -661,7 +671,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 10,
+      "position": 11,
       "generated": ""
     },
     {
@@ -671,7 +681,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 11,
+      "position": 12,
       "generated": ""
     },
     {
@@ -681,7 +691,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 12,
+      "position": 13,
       "generated": ""
     },
     {
@@ -691,7 +701,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 13,
+      "position": 14,
       "generated": ""
     },
     {
@@ -7796,9 +7806,9 @@
     },
     {
       "name": "id",
-      "type": "text",
+      "type": "uuid",
       "table": "rate_limits",
-      "default": "",
+      "default": "gen_random_uuid()",
       "notNull": true,
       "identity": "",
       "position": 1,
@@ -7836,9 +7846,9 @@
     },
     {
       "name": "id",
-      "type": "text",
+      "type": "uuid",
       "table": "sessions",
-      "default": "",
+      "default": "gen_random_uuid()",
       "notNull": true,
       "identity": "",
       "position": 1,
@@ -8748,7 +8758,7 @@
       "name": "id",
       "type": "uuid",
       "table": "users",
-      "default": "",
+      "default": "gen_random_uuid()",
       "notNull": true,
       "identity": "",
       "position": 1,
@@ -8816,9 +8826,9 @@
     },
     {
       "name": "id",
-      "type": "text",
+      "type": "uuid",
       "table": "verifications",
-      "default": "",
+      "default": "gen_random_uuid()",
       "notNull": true,
       "identity": "",
       "position": 1,
@@ -8876,6 +8886,11 @@
     }
   ],
   "indexes": [
+    {
+      "name": "accounts_issuer_accountId_uidx",
+      "table": "accounts",
+      "definition": "CREATE UNIQUE INDEX \"accounts_issuer_accountId_uidx\" ON public.accounts USING btree (issuer, account_id)"
+    },
     {
       "name": "accounts_pkey",
       "table": "accounts",

@@ -160,8 +160,8 @@ describe("ActivityPlanCard", () => {
     toggleLikeMutateMock.mockReset();
   });
 
-  it("shows the owner and category footer on one justified row", () => {
-    const { getByTestId } = renderNative(
+  it("shows the owner and category footer on one justified row", async () => {
+    const { getByTestId } = await renderNative(
       <ActivityPlanCard
         activityPlan={{
           id: "plan-1",
@@ -183,8 +183,8 @@ describe("ActivityPlanCard", () => {
     expect(getByTestId("resource-owner-action-row").props.className).toContain("justify-between");
   });
 
-  it("shows owner and last updated metadata in the footer", () => {
-    renderNative(
+  it("shows owner and last updated metadata in the footer", async () => {
+    await renderNative(
       <ActivityPlanCard
         activityPlan={{
           id: "plan-1",
@@ -205,8 +205,8 @@ describe("ActivityPlanCard", () => {
     expect(screen.queryByText("Updated Mar 21, 2026")).toBeNull();
   });
 
-  it("shows the canonical plan activity category", () => {
-    renderNative(
+  it("shows the canonical plan activity category", async () => {
+    await renderNative(
       <ActivityPlanCard
         activityPlan={{
           id: "plan-run",
@@ -221,8 +221,8 @@ describe("ActivityPlanCard", () => {
     expect(screen.queryByLabelText("Open activity plan Run builder")).toBeNull();
   });
 
-  it("keeps unsupported canonical quantification unavailable without retired fields", () => {
-    const rendered = renderNative(
+  it("keeps unsupported canonical quantification unavailable without retired fields", async () => {
+    const rendered = await renderNative(
       <ActivityPlanCard
         activityPlan={{
           id: "plan-load",
@@ -262,8 +262,8 @@ describe("ActivityPlanCard", () => {
     );
   });
 
-  it("does not duplicate aggregate metrics for a single-activity-category plan", () => {
-    renderNative(
+  it("does not duplicate aggregate metrics for a single-activity-category plan", async () => {
+    await renderNative(
       <ActivityPlanCard
         activityPlan={{
           id: "plan-single-activity-category-load",
@@ -282,10 +282,10 @@ describe("ActivityPlanCard", () => {
     expect(screen.queryByText(/RPE|Prescribed intensity/)).toBeNull();
   });
 
-  it("keeps compact cards visual, focused, and tappable", () => {
+  it("keeps compact cards visual, focused, and tappable", async () => {
     const onPress = jest.fn();
 
-    renderNative(
+    await renderNative(
       <ActivityPlanCard
         activityPlan={{
           id: "plan-list-1",
@@ -326,12 +326,12 @@ describe("ActivityPlanCard", () => {
     expect(screen.queryByText("Like")).toBeNull();
     expect(screen.getByText("Progressive tempo with a strong finish.")).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId("activity-plan-compact-card"));
+    await fireEvent.press(screen.getByTestId("activity-plan-compact-card"));
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it("renders the full authored workout timeline through the canonical preview", () => {
-    renderNative(
+  it("renders the full authored activity timeline through the canonical preview", async () => {
+    await renderNative(
       <ActivityPlanCard
         activityPlan={{
           id: "plan-route-preview",
@@ -351,10 +351,10 @@ describe("ActivityPlanCard", () => {
     });
   });
 
-  it("keeps navigation and the like action independent", () => {
+  it("keeps navigation and the like action independent", async () => {
     const onPress = jest.fn();
 
-    renderNative(
+    await renderNative(
       <ActivityPlanCard
         activityPlan={{
           id: "plan-like-boundary",
@@ -366,12 +366,12 @@ describe("ActivityPlanCard", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Open activity plan Tempo Builder"));
+    await fireEvent.press(screen.getByLabelText("Open activity plan Tempo Builder"));
 
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(toggleLikeMutateMock).not.toHaveBeenCalled();
 
-    fireEvent.press(screen.getByLabelText("Like, 3 likes"));
+    await fireEvent.press(screen.getByLabelText("Like, 3 likes"));
 
     expect(toggleLikeMutateMock).toHaveBeenCalledWith({
       entity_id: "plan-like-boundary",

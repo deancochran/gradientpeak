@@ -57,18 +57,21 @@ describe("route edit screen", () => {
 
   async function renderScreen() {
     const RouteEditScreen = (await import("../route-edit")).default;
-    return renderNative(<RouteEditScreen />);
+    return await renderNative(<RouteEditScreen />);
   }
 
   it("hydrates, validates, and persists editable route metadata", async () => {
     await renderScreen();
 
     expect(screen.getByTestId("route-edit-name-input").props.value).toBe("Ridge loop");
-    fireEvent.changeText(screen.getByTestId("route-edit-name-input"), "  Updated ridge loop  ");
-    fireEvent.changeText(screen.getByTestId("route-edit-description-input"), "   ");
+    await fireEvent.changeText(
+      screen.getByTestId("route-edit-name-input"),
+      "  Updated ridge loop  ",
+    );
+    await fireEvent.changeText(screen.getByTestId("route-edit-description-input"), "   ");
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("route-edit-submit-button"));
+      await fireEvent.press(screen.getByTestId("route-edit-submit-button"));
     });
 
     await waitFor(() =>
@@ -84,10 +87,10 @@ describe("route edit screen", () => {
 
   it("blocks an empty route name", async () => {
     await renderScreen();
-    fireEvent.changeText(screen.getByTestId("route-edit-name-input"), "");
+    await fireEvent.changeText(screen.getByTestId("route-edit-name-input"), "");
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("route-edit-submit-button"));
+      await fireEvent.press(screen.getByTestId("route-edit-submit-button"));
     });
 
     expect(await screen.findByText("Route name is required")).toBeTruthy();

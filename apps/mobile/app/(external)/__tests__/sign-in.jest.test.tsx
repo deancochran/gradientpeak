@@ -154,11 +154,11 @@ describe("sign-in screen", () => {
   });
 
   it("refreshes session and routes home after successful sign in", async () => {
-    renderNative(<SignInScreen />);
+    await renderNative(<SignInScreen />);
 
-    fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
-    fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
-    fireEvent.press(screen.getByTestId("sign-in-button"));
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await fireEvent.press(screen.getByTestId("sign-in-button"));
 
     await waitFor(() => {
       expect(signInMock).toHaveBeenCalledWith({
@@ -169,16 +169,16 @@ describe("sign-in screen", () => {
     });
   });
 
-  it("marks the password field for credential-manager autofill", () => {
-    renderNative(<SignInScreen />);
+  it("marks the password field for credential-manager autofill", async () => {
+    await renderNative(<SignInScreen />);
 
     expect(screen.getByTestId("password-input").props.autoComplete).toBe("current-password");
   });
 
-  it("navigates to the real forgot-password screen", () => {
-    renderNative(<SignInScreen />);
+  it("navigates to the real forgot-password screen", async () => {
+    await renderNative(<SignInScreen />);
 
-    fireEvent.press(screen.getByTestId("forgot-password-button"));
+    await fireEvent.press(screen.getByTestId("forgot-password-button"));
 
     expect(navigateToMock).toHaveBeenCalledWith("/(external)/forgot-password");
   });
@@ -186,11 +186,11 @@ describe("sign-in screen", () => {
   it("maps invalid credentials to the root form error", async () => {
     signInMock.mockResolvedValue({ error: { message: "Invalid login credentials" } });
 
-    renderNative(<SignInScreen />);
+    await renderNative(<SignInScreen />);
 
-    fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
-    fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
-    fireEvent.press(screen.getByTestId("sign-in-button"));
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await fireEvent.press(screen.getByTestId("sign-in-button"));
 
     await waitFor(() => {
       expect(screen.getByTestId("root-error-container")).toBeTruthy();
@@ -202,11 +202,11 @@ describe("sign-in screen", () => {
       error: { message: "The email of this account is not verified" },
     });
 
-    renderNative(<SignInScreen />);
+    await renderNative(<SignInScreen />);
 
-    fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
-    fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
-    fireEvent.press(screen.getByTestId("sign-in-button"));
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await fireEvent.press(screen.getByTestId("sign-in-button"));
 
     await waitFor(() => {
       expect(replaceMock).toHaveBeenCalledWith({

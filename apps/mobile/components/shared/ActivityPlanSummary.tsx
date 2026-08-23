@@ -170,8 +170,9 @@ export function ActivityPlanMetricsRow({
     return {
       label: estimateLabels[key],
       value: metric ? (formatMetricValue(metric) ?? "Unavailable") : "Unavailable",
-      tone:
-        key === "common_load" || key === "normalized_intensity" ? ("primary" as const) : undefined,
+      ...(key === "common_load" || key === "normalized_intensity"
+        ? { tone: "primary" as const }
+        : {}),
     };
   });
 
@@ -218,15 +219,15 @@ export function ActivityPlanSummary({
       </View>
 
       <ActivityPlanMetricsRow
-        projectionMetrics={projectionMetrics}
-        prescriptionQuantification={prescriptionQuantification}
+        {...(projectionMetrics !== undefined ? { projectionMetrics } : {})}
+        {...(prescriptionQuantification !== undefined ? { prescriptionQuantification } : {})}
       />
 
       {showAttribution ? (
         <ActivityPlanAttributionRow
           compact={variant !== "standalone"}
-          owner={owner}
-          updatedAt={updatedAt}
+          {...(owner !== undefined ? { owner } : {})}
+          {...(updatedAt !== undefined ? { updatedAt } : {})}
         />
       ) : null}
     </View>

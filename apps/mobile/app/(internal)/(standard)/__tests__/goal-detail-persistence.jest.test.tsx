@@ -275,15 +275,15 @@ describe("goal detail persistence", () => {
   });
 
   it("routes editing through the dedicated goal edit screen", async () => {
-    renderNative(<GoalDetailScreen />);
+    await renderNative(<GoalDetailScreen />);
 
-    fireEvent.press(screen.getByTestId("goal-detail-options-edit"));
+    await fireEvent.press(screen.getByTestId("goal-detail-options-edit"));
 
     expect(navigateMock).toHaveBeenCalledWith("/goal-edit?id=goal-1");
   });
 
   it("queries the canonical goal assessment", async () => {
-    renderNative(<GoalDetailScreen />);
+    await renderNative(<GoalDetailScreen />);
 
     expect(assessmentUseQueryMock).toHaveBeenLastCalledWith(
       { goalId: "goal-1" },
@@ -292,7 +292,7 @@ describe("goal detail persistence", () => {
   });
 
   it("does not render legacy readiness or outcome forecast claims", async () => {
-    renderNative(<GoalDetailScreen />);
+    await renderNative(<GoalDetailScreen />);
 
     expect(screen.queryByText(/forecast/i)).toBeNull();
     expect(screen.queryByText(/completion likelihood|finish prediction|medical|risk/i)).toBeNull();

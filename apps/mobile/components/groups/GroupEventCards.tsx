@@ -149,7 +149,12 @@ export function GroupEventCard({
       >
         <View className="flex-row items-start justify-between gap-3">
           <View className="min-w-0 flex-1">
-            {event.group ? <GroupEventOwnerRow group={event.group} onPress={onGroupPress} /> : null}
+            {event.group ? (
+              <GroupEventOwnerRow
+                group={event.group}
+                {...(onGroupPress !== undefined ? { onPress: onGroupPress } : {})}
+              />
+            ) : null}
           </View>
           <View
             className={

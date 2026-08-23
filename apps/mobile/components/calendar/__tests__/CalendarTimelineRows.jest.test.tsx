@@ -14,8 +14,8 @@ jest.mock("@/lib/hooks/usePreferredUnitSystem", () => ({
 }));
 
 describe("CalendarScheduleObjectCard", () => {
-  it("renders expired planned sessions as unverified with accessible completion copy", () => {
-    renderNative(
+  it("renders expired planned sessions as unverified with accessible completion copy", async () => {
+    await renderNative(
       <CalendarScheduleObjectCard
         object={createCalendarProjectionItem({
           id: "event-1",
@@ -42,8 +42,8 @@ describe("CalendarScheduleObjectCard", () => {
     expect(screen.getByLabelText(/Unverified, Recovery ride, No completion recorded/)).toBeTruthy();
   });
 
-  it("renders a cancelled linked session as cancelled rather than completed", () => {
-    renderNative(
+  it("renders a cancelled linked session as cancelled rather than completed", async () => {
+    await renderNative(
       <CalendarScheduleObjectCard
         object={createCalendarProjectionItem({
           id: "event-cancelled",
@@ -69,8 +69,8 @@ describe("CalendarScheduleObjectCard", () => {
     expect(screen.getByLabelText(/Cancelled, Cancelled ride/)).toBeTruthy();
   });
 
-  it("uses the recorded completed activity name", () => {
-    renderNative(
+  it("uses the recorded completed activity name", async () => {
+    await renderNative(
       <CalendarScheduleObjectCard
         object={createCalendarProjectionItem({
           id: "activity-1",
@@ -90,8 +90,8 @@ describe("CalendarScheduleObjectCard", () => {
     expect(screen.getByLabelText(/^Done, Auto-generated morning ride/)).toBeTruthy();
   });
 
-  it("emphasizes useful metrics without unavailable placeholders", () => {
-    renderNative(
+  it("emphasizes useful metrics without unavailable placeholders", async () => {
+    await renderNative(
       <CalendarScheduleObjectCard
         object={createCalendarProjectionItem({
           id: "activity-partial",
@@ -125,8 +125,8 @@ describe("CalendarScheduleObjectCard", () => {
     expect(screen.queryByText(/Load 0|Intensity 0\.00/)).toBeNull();
   });
 
-  it("renders a cross-date group event in its event timezone", () => {
-    renderNative(
+  it("renders a cross-date group event in its event timezone", async () => {
+    await renderNative(
       <CalendarScheduleObjectCard
         object={createCalendarProjectionItem({
           id: "tokyo-event",

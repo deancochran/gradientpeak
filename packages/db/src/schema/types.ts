@@ -62,7 +62,9 @@ import type {
   trainingPlans,
 } from "./tables";
 
-type InferUpdateModel<TTable extends Table> = Partial<InferInsertModel<TTable>>;
+type InferUpdateModel<TTable extends Table> = {
+  [Key in keyof InferInsertModel<TTable>]?: InferInsertModel<TTable>[Key] | undefined;
+};
 
 export type ProfileRow = InferSelectModel<typeof profiles>;
 export type ProfileInsert = InferInsertModel<typeof profiles>;

@@ -42,17 +42,6 @@ type FlatListProps = {
   [key: string]: unknown;
 };
 
-type ActivityPlanCardNode = {
-  props: {
-    plan: ActivityPlan;
-    variant?: string;
-  };
-};
-
-type UnsafeTypeQuery = {
-  UNSAFE_getByType: (type: "ActivityPlanCard") => ActivityPlanCardNode;
-};
-
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
@@ -168,41 +157,42 @@ describe("activity plans list screen", () => {
     activityPlansListUseQueryMock.mockClear();
   });
 
-  it("queries canonical plans without compatibility filters", () => {
-    renderNative(<ActivityPlansListScreen />);
+  it("queries canonical plans without compatibility filters", async () => {
+    await renderNative(<ActivityPlansListScreen />);
     expect(activityPlansListUseQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ ownerScope: "own" }),
     );
 
-    fireEvent.press(screen.getByTestId("activity-plans-list-filter-button"));
-    fireEvent.press(screen.getByTestId("activity-plans-list-filter-activity_category-run"));
-    fireEvent.press(screen.getByTestId("activity-plans-list-filter-sheet-apply"));
+    await fireEvent.press(screen.getByTestId("activity-plans-list-filter-button"));
+    await fireEvent.press(screen.getByTestId("activity-plans-list-filter-activity_category-run"));
+    await fireEvent.press(screen.getByTestId("activity-plans-list-filter-sheet-apply"));
     expect(activityPlansListUseQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ activityCategories: ["run"] }),
     );
 
-    fireEvent.press(screen.getByTestId("activity-plans-list-filter-button"));
-    fireEvent.press(screen.getByTestId("activity-plans-list-filter-sheet-reset"));
-    fireEvent.press(screen.getByTestId("activity-plans-list-filter-sheet-apply"));
+    await fireEvent.press(screen.getByTestId("activity-plans-list-filter-button"));
+    await fireEvent.press(screen.getByTestId("activity-plans-list-filter-sheet-reset"));
+    await fireEvent.press(screen.getByTestId("activity-plans-list-filter-sheet-apply"));
     expect(activityPlansListUseQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ activityCategories: undefined }),
     );
   });
 
-  it("opens activity plan detail when tapping a row", () => {
-    renderNative(<ActivityPlansListScreen />);
+  it("opens activity plan detail when tapping a row", async () => {
+    await renderNative(<ActivityPlansListScreen />);
 
-    fireEvent.press(screen.getByTestId("activity-plan-list-item-plan-1"));
+    await fireEvent.press(screen.getByTestId("activity-plan-list-item-plan-1"));
 
     expect(pushMock).toHaveBeenCalledWith("/activity-plan-detail?id=plan-1");
   });
 
-  it("renders each plan with its owner and the rich default card", () => {
-    const rendered = renderNative(<ActivityPlansListScreen />);
+  it("renders each plan with its owner and the rich default card", async () => {
+    const rendered = await renderNative(<ActivityPlansListScreen />);
 
-    const activityPlanCard = (rendered as unknown as UnsafeTypeQuery).UNSAFE_getByType(
-      "ActivityPlanCard",
-    );
+    const activityPlanCard = rendered.container.queryAll(
+      (node) => node.type === "ActivityPlanCard",
+    )[0];
+    if (!activityPlanCard) throw new Error("Expected an ActivityPlanCard");
 
     expect(activityPlanCard.props.plan.owner).toEqual(
       expect.objectContaining({

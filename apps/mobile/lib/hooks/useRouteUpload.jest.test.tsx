@@ -65,8 +65,8 @@ describe("useRouteUpload", () => {
     jest.restoreAllMocks();
   });
 
-  function renderRouteUpload(onRouteUploaded = jest.fn()) {
-    const hook = renderHook(() =>
+  async function renderRouteUpload(onRouteUploaded = jest.fn()) {
+    const hook = await renderHook(() =>
       useRouteUpload({ contextLabel: "recording session", onRouteUploaded }),
     );
     return { ...hook, onRouteUploaded };
@@ -81,7 +81,7 @@ describe("useRouteUpload", () => {
       canceled: false,
       assets: [{ ...gpxFile, name, mimeType }],
     });
-    const { result, onRouteUploaded } = renderRouteUpload();
+    const { result, onRouteUploaded } = await renderRouteUpload();
 
     await act(async () => result.current.pickGpxFile());
 
@@ -111,10 +111,10 @@ describe("useRouteUpload", () => {
     getDocumentAsyncMock.mockImplementationOnce(
       () => new Promise((resolve) => (resolvePicker = resolve)),
     );
-    const { result } = renderRouteUpload();
+    const { result } = await renderRouteUpload();
 
     let firstUpload!: Promise<void>;
-    act(() => {
+    await act(() => {
       firstUpload = result.current.pickGpxFile();
     });
     expect(result.current.isUploadingRoute).toBe(true);
@@ -136,7 +136,7 @@ describe("useRouteUpload", () => {
       canceled: false,
       assets: [{ ...gpxFile, size }],
     });
-    const { result } = renderRouteUpload();
+    const { result } = await renderRouteUpload();
 
     await act(async () => result.current.pickGpxFile());
 
@@ -152,7 +152,7 @@ describe("useRouteUpload", () => {
       ok: true,
       text: jest.fn().mockResolvedValue("é".repeat(MAX_ROUTE_FILE_SIZE_BYTES / 2 + 1)),
     });
-    const { result } = renderRouteUpload();
+    const { result } = await renderRouteUpload();
 
     await act(async () => result.current.pickGpxFile());
 
@@ -164,7 +164,7 @@ describe("useRouteUpload", () => {
   });
 
   it("rejects unsupported and oversized selections before reading", async () => {
-    const { result } = renderRouteUpload();
+    const { result } = await renderRouteUpload();
     getDocumentAsyncMock.mockResolvedValueOnce({
       canceled: false,
       assets: [{ ...gpxFile, name: "route.fit" }],
@@ -189,7 +189,7 @@ describe("useRouteUpload", () => {
   });
 
   it("uses distinct safe selection, read, and upload errors and always clears busy", async () => {
-    const { result } = renderRouteUpload();
+    const { result } = await renderRouteUpload();
     getDocumentAsyncMock.mockRejectedValueOnce(new Error("private picker detail"));
     await act(async () => result.current.pickGpxFile());
     expect(Alert.alert).toHaveBeenLastCalledWith(

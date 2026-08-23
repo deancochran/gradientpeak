@@ -4,9 +4,9 @@ import { fireEvent, renderNative } from "../../test/render-native";
 import { DateInput } from "./index.native";
 
 describe("DateInput native", () => {
-  it("exposes a disabled date control and prevents opening or clearing", () => {
+  it("exposes a disabled date control and prevents opening or clearing", async () => {
     const onChange = jest.fn();
-    const { getByLabelText, getByTestId, queryByText } = renderNative(
+    const { getByLabelText, getByTestId, queryByText } = await renderNative(
       <DateInput
         clearable
         disabled
@@ -22,14 +22,14 @@ describe("DateInput native", () => {
     expect(control.props.disabled).toBe(true);
     expect(control.props.accessibilityState).toEqual({ disabled: true });
 
-    fireEvent.press(control);
-    fireEvent.press(getByLabelText("Clear date"));
+    await fireEvent.press(control);
+    await fireEvent.press(getByLabelText("Clear date"));
 
     expect(queryByText("Done")).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("ignores an Android modal picker selection after becoming disabled", () => {
+  it("ignores an Android modal picker selection after becoming disabled", async () => {
     const onChange = jest.fn();
     const props = {
       id: "start-date",
@@ -42,15 +42,15 @@ describe("DateInput native", () => {
     Platform.OS = "android";
 
     try {
-      const { getByTestId, rerender } = renderNative(<DateInput {...props} />);
+      const { getByTestId, rerender } = await renderNative(<DateInput {...props} />);
 
-      fireEvent.press(getByTestId("start-date"));
+      await fireEvent.press(getByTestId("start-date"));
       const open = DateTimePickerAndroid.open as jest.Mock;
       const pickerOptions = open.mock.calls[0]?.[0];
 
       expect(pickerOptions).toBeDefined();
 
-      rerender(<DateInput {...props} disabled />);
+      await rerender(<DateInput {...props} disabled />);
       pickerOptions.onChange({}, new Date(2026, 2, 24));
 
       expect(onChange).not.toHaveBeenCalled();
@@ -59,7 +59,7 @@ describe("DateInput native", () => {
     }
   });
 
-  it("keeps an open native modal dismissible after becoming disabled", () => {
+  it("keeps an open native modal dismissible after becoming disabled", async () => {
     const onChange = jest.fn();
     const props = {
       id: "start-date",
@@ -68,13 +68,13 @@ describe("DateInput native", () => {
       testId: "start-date",
       value: "2026-03-23",
     };
-    const { getByTestId, getByText, queryByText, rerender } = renderNative(
+    const { getByTestId, getByText, queryByText, rerender } = await renderNative(
       <DateInput {...props} />,
     );
 
-    fireEvent.press(getByTestId("start-date"));
-    rerender(<DateInput {...props} disabled />);
-    fireEvent.press(getByText("Cancel"));
+    await fireEvent.press(getByTestId("start-date"));
+    await rerender(<DateInput {...props} disabled />);
+    await fireEvent.press(getByText("Cancel"));
 
     expect(queryByText("Done")).toBeNull();
     expect(onChange).not.toHaveBeenCalled();

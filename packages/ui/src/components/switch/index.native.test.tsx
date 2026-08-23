@@ -13,10 +13,10 @@ import { Switch } from "./index.native";
 import { SWITCH_NATIVE_MINIMUM_HIT_SLOP } from "./shared";
 
 describe("Switch native", () => {
-  it("maps normalized test props for the native-only switch", () => {
+  it("maps normalized test props for the native-only switch", async () => {
     const onCheckedChange = jest.fn();
 
-    const { getByLabelText } = renderNative(
+    const { getByLabelText } = await renderNative(
       <Switch {...switchFixtures.notifications} checked onCheckedChange={onCheckedChange} />,
     );
 
@@ -26,7 +26,7 @@ describe("Switch native", () => {
     expect(switchRoot.props.nativeID).toBe(switchFixtures.notifications.id);
     expect(switchRoot.props.hitSlop).toEqual(SWITCH_NATIVE_MINIMUM_HIT_SLOP);
 
-    fireEvent(switchRoot, "onCheckedChange", false);
+    await fireEvent(switchRoot, "onCheckedChange", false);
     expect(onCheckedChange).toHaveBeenCalledWith(false);
   });
 });

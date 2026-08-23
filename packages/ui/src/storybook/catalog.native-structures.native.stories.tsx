@@ -1,5 +1,5 @@
 import { DEFAULT_WEEKLY_COUNT_RECURRENCE } from "@repo/core/recurrence";
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-native";
 import type * as React from "react";
 import { useForm } from "react-hook-form";
 import { View } from "react-native";

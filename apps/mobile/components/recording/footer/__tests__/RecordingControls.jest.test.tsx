@@ -7,7 +7,7 @@ jest.mock("@repo/ui/components/text", () => ({
 
 const { RecordingControls } = require("../RecordingControls");
 
-function renderControls(
+async function renderControls(
   recordingState: "not_started" | "recording" | "paused",
   handlers = {
     onStart: jest.fn(),
@@ -18,16 +18,16 @@ function renderControls(
     onDiscard: jest.fn(),
   },
 ) {
-  renderNative(<RecordingControls recordingState={recordingState} {...handlers} />);
+  await renderNative(<RecordingControls recordingState={recordingState} {...handlers} />);
   return handlers;
 }
 
 describe("RecordingControls", () => {
-  it("renders an accessible Start control and preserves its action", () => {
-    const handlers = renderControls("not_started");
+  it("renders an accessible Start control and preserves its action", async () => {
+    const handlers = await renderControls("not_started");
     const start = screen.getByTestId("recording-start-button");
 
-    fireEvent.press(start);
+    await fireEvent.press(start);
 
     expect(handlers.onStart).toHaveBeenCalledTimes(1);
     expect(start.props.accessibilityLabel).toBe("Start recording");
@@ -36,13 +36,13 @@ describe("RecordingControls", () => {
     expect(start.props.className).toContain("active:opacity-80");
   });
 
-  it("renders accessible Pause and Lap controls while recording", () => {
-    const handlers = renderControls("recording");
+  it("renders accessible Pause and Lap controls while recording", async () => {
+    const handlers = await renderControls("recording");
     const pause = screen.getByTestId("recording-pause-button");
     const lap = screen.getByTestId("recording-lap-button");
 
-    fireEvent.press(pause);
-    fireEvent.press(lap);
+    await fireEvent.press(pause);
+    await fireEvent.press(lap);
 
     expect(handlers.onPause).toHaveBeenCalledTimes(1);
     expect(handlers.onLap).toHaveBeenCalledTimes(1);
@@ -60,13 +60,13 @@ describe("RecordingControls", () => {
     expect(lap.props.className).toContain("active:opacity-80");
   });
 
-  it("renders accessible Resume and Finish controls while paused", () => {
-    const handlers = renderControls("paused");
+  it("renders accessible Resume and Finish controls while paused", async () => {
+    const handlers = await renderControls("paused");
     const resume = screen.getByTestId("recording-resume-button");
     const finish = screen.getByTestId("recording-finish-button");
 
-    fireEvent.press(resume);
-    fireEvent.press(finish);
+    await fireEvent.press(resume);
+    await fireEvent.press(finish);
 
     expect(handlers.onResume).toHaveBeenCalledTimes(1);
     expect(handlers.onFinish).toHaveBeenCalledTimes(1);

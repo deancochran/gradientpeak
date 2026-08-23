@@ -75,14 +75,15 @@
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "drizzle-zod": "^0.8.3",
-    "pg": "^8.22.0",
+    "pg": "^8.23.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
+    "@types/node": "24.13.3",
     "drizzle-kit": "^0.31.10",
-    "supabase": "2.109.1",
-    "tsx": "^4.23.1",
-    "typescript": "5.9.3"
+    "supabase": "2.115.0",
+    "tsx": "^4.23.12",
+    "typescript": "6.0.3"
   }
 }

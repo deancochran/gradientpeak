@@ -34,7 +34,6 @@ does not authorize registry changes.
 | `activity.import-historical-file` | both; implemented/runtime/active; implemented/screen/component/active | Import FIT/GPX/TCX and recover failed import; mobile device flow missing |
 | `activity.record-session-rpe` | both; implemented/runtime/active; implemented/screen/component/active | Save and reload perceived effort; mobile runtime gap |
 | `activity.like-and-comment` | both; implemented/runtime/active; partial/source-only/active | Like/comment with retry-safe feedback; mobile proof gap |
-| `activity-plan.import-content` | both; missing/none/active; implemented/screen/component/active | Import structured content; web implementation missing |
 | `activity-plan.browse-and-inspect` | both; implemented/runtime/active; implemented/screen/component/active | Find and inspect plan structure/targets; mobile runtime gap |
 | `activity-plan.create` | both; implemented/runtime/active; implemented/screen/component/active | Create initial plan identity/metadata; mobile runtime gap |
 | `activity-plan.edit-basics` | both; implemented/runtime/active; implemented/screen/component/active | Edit owner-controlled basics; mobile runtime gap |
@@ -53,14 +52,14 @@ does not authorize registry changes.
 | `routes.browse-and-inspect` | both; implemented/runtime/active; implemented/screen/component/active | Browse and inspect a persisted route; mobile runtime gap |
 | `routes.upload` | both; partial/runtime/active; implemented/screen/component/active | Upload/retry and reload a route; mobile runtime gap |
 | `routes.edit-metadata` | both; implemented/runtime/active; implemented/screen/component/active | Edit route metadata; mobile runtime gap |
-| `routes.attach-to-calendar-event` | both; partial/screen/component/active; partial/source-only/active | Attach route to an event; both implementations/proof incomplete |
+| `routes.attach-to-calendar-event` | both; implemented/runtime/active; partial/source-only/active | Persist a route assignment on an event; mobile implementation incomplete |
 | `training-plan.browse` | both; implemented/runtime/active; implemented/screen/component/active | Browse owned/template plans; mobile runtime gap |
 | `training-plan.create` | both; implemented/runtime/active; implemented/screen/component/active | Create/reload a training plan; mobile runtime gap |
 | `training-plan.edit` | both; implemented/runtime/active; implemented/screen/component/active | Edit/reload a training plan; mobile runtime gap |
 | `training-plan.apply-and-remove-schedule` | both; partial/source-only/active; partial/screen/component/active | Apply/remove schedule exactly once; both implementation/proof gaps |
 | `training-preferences.edit` | both; implemented/runtime/active; implemented/screen/component/active | Validate, save, and reload preferences; mobile runtime gap |
 
-The registry snapshot contains 28 P1 records, including the IDs above. The
+The registry snapshot contains 27 P1 records, including the IDs above. The
 registry's current classifications remain factual; this playbook makes no phase
 certification claim.
 

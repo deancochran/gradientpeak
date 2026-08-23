@@ -44,17 +44,16 @@ export function GoalCard({ goal, onPress, testID, variant = "default" }: GoalCar
 
   return (
     <ResourceCardShell
-      accessibilityLabel={onPress ? `Open goal ${goal.title}` : undefined}
+      {...(onPress ? { accessibilityLabel: `Open goal ${goal.title}`, onPress } : {})}
       compact={compact}
       contentClassName={compact ? "gap-3 px-2" : "gap-3 px-3"}
-      onPress={onPress}
       testID={testID ?? `goal-card-${goal.id}`}
     >
       <ResourceCardHeader
         compact={compact}
-        description={goal.objectiveSummary}
+        {...(goal.objectiveSummary !== undefined ? { description: goal.objectiveSummary } : {})}
         descriptionFallback="A target on your training timeline."
-        descriptionNumberOfLines={compact ? 2 : undefined}
+        {...(compact ? { descriptionNumberOfLines: 2 } : {})}
         icon={Target}
         iconClassName="text-amber-600"
         iconContainerClassName="bg-amber-500/15"

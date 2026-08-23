@@ -284,7 +284,9 @@ export function ActivityPlanContentPreview({
                                           target,
                                           activityCategory: structure?.activity_category ?? "other",
                                           personalizeTargets,
-                                          performanceTargets,
+                                          ...(performanceTargets !== undefined
+                                            ? { performanceTargets }
+                                            : {}),
                                           asOf,
                                         }),
                                     )),

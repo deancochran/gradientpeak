@@ -475,8 +475,7 @@ export default function TrainingPlanOverview() {
   );
 
   const activityPlanItems = activityPlansData?.items ?? [];
-  const linkedActivityPlanItems =
-    ((linkedActivityPlansData?.items ?? []) as ActivityPlanListItem[]) ?? [];
+  const linkedActivityPlanItems = (linkedActivityPlansData?.items ?? []) as ActivityPlanListItem[];
   const linkedActivityPlanById = useMemo(
     () => new Map(linkedActivityPlanItems.map((item) => [item.id, item])),
     [linkedActivityPlanItems],

@@ -96,7 +96,7 @@ function getFirstByTestId(testID: string) {
   return first;
 }
 
-const renderEditor = (
+const renderEditor = async (
   selectedWeekIndex: number,
   overrides: Partial<React.ComponentProps<typeof BuilderScheduleEditor>> = {},
 ) => {
@@ -127,7 +127,7 @@ const renderEditor = (
     ...overrides,
   } as unknown as React.ComponentProps<typeof BuilderScheduleEditor>;
 
-  renderNative(<BuilderScheduleEditor {...props} />);
+  await renderNative(<BuilderScheduleEditor {...props} />);
 
   return props;
 };
@@ -136,17 +136,17 @@ describe("BuilderScheduleEditor selected day planning", () => {
   beforeEach(() => {
     mockScrollViewCount = 0;
   });
-  it("adds a activity at the selected week start offset", () => {
-    const props = renderEditor(2);
+  it("adds a activity at the selected week start offset", async () => {
+    const props = await renderEditor(2);
 
-    fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
 
     expect(props.onAddSessionAtOffset).toHaveBeenCalledTimes(1);
     expect(props.onAddSessionAtOffset).toHaveBeenCalledWith(14);
   });
 
-  it("adds a activity at the selected day offset when the chart has a selected day", () => {
-    const props = renderEditor(1, {
+  it("adds a activity at the selected day offset when the chart has a selected day", async () => {
+    const props = await renderEditor(1, {
       chartReview: {
         chart: { weeks: makeWeeks() },
         extendEnd: jest.fn(),
@@ -161,14 +161,14 @@ describe("BuilderScheduleEditor selected day planning", () => {
       },
     } as unknown as Partial<React.ComponentProps<typeof BuilderScheduleEditor>>);
 
-    fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
 
     expect(props.onAddSessionAtOffset).toHaveBeenCalledTimes(1);
     expect(props.onAddSessionAtOffset).toHaveBeenCalledWith(10);
   });
 
-  it("renders selected-day sessions in the parent vertical flow without a capped inner scroll area", () => {
-    const props = renderEditor(0, {
+  it("renders selected-day sessions in the parent vertical flow without a capped inner scroll area", async () => {
+    const props = await renderEditor(0, {
       viewModel: {
         timelineWeeks: [
           {
@@ -184,10 +184,10 @@ describe("BuilderScheduleEditor selected day planning", () => {
 
     expect(screen.getAllByTestId("mock-event-card")).toHaveLength(2);
     expect(mockScrollViewCount).toBe(0);
-    fireEvent.press(getFirstByTestId("event-edit"));
-    fireEvent.press(getFirstByTestId("event-duplicate"));
-    fireEvent.press(getFirstByTestId("event-move"));
-    fireEvent.press(getFirstByTestId("event-remove"));
+    await fireEvent.press(getFirstByTestId("event-edit"));
+    await fireEvent.press(getFirstByTestId("event-duplicate"));
+    await fireEvent.press(getFirstByTestId("event-move"));
+    await fireEvent.press(getFirstByTestId("event-remove"));
     expect(props.onPressSession).toHaveBeenCalledWith("session-1");
     expect(props.onDuplicateSession).toHaveBeenCalledWith("session-1");
     expect(props.onMoveSessionByDays).toHaveBeenCalledWith("session-1", 1);

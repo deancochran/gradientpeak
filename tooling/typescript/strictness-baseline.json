@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "typescriptVersion": "5.9.3",
+  "typescriptVersion": "6.0.3",
   "projects": [
     "apps/mobile/tsconfig.json",
     "apps/web/tsconfig.json",
@@ -49,7 +49,7 @@
       "project": "apps/mobile/tsconfig.json"
     }
   ],
-  "total": 1299,
+  "total": 1201,
   "buckets": [
     {
       "flag": "exactOptionalPropertyTypes",
@@ -201,13 +201,6 @@
     {
       "flag": "exactOptionalPropertyTypes",
       "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/app/(internal)/(standard)/profile-metric-edit.tsx",
-      "code": 2375,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
       "path": "apps/mobile/app/(internal)/(standard)/route-detail.tsx",
       "code": 2345,
       "count": 2
@@ -341,20 +334,6 @@
     {
       "flag": "exactOptionalPropertyTypes",
       "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/components/calendar/CalendarWeekStrip.tsx",
-      "code": 2375,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/components/calendar/useCalendarTimelineController.ts",
-      "code": 2379,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
       "path": "apps/mobile/components/charts/ZoneDistributionOverTimeChart.tsx",
       "code": 2322,
       "count": 1
@@ -390,28 +369,7 @@
     {
       "flag": "exactOptionalPropertyTypes",
       "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/components/feed/FeedList.tsx",
-      "code": 2375,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
       "path": "apps/mobile/components/groups/GroupActions.tsx",
-      "code": 2375,
-      "count": 5
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/components/groups/GroupEventCards.tsx",
-      "code": 2375,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/components/groups/GroupEventDetail.tsx",
       "code": 2375,
       "count": 5
     },
@@ -456,13 +414,6 @@
       "path": "apps/mobile/components/plan/GoalReadinessRing.tsx",
       "code": 2379,
       "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/components/plan/training-path/DailyTrainingAdjustmentChart.tsx",
-      "code": 2379,
-      "count": 4
     },
     {
       "flag": "exactOptionalPropertyTypes",
@@ -665,20 +616,6 @@
       "project": "apps/mobile/tsconfig.json",
       "path": "apps/mobile/components/shared/ActivityPlanCard.tsx",
       "code": 2375,
-      "count": 2
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/components/shared/ActivityPlanSummary.tsx",
-      "code": 2375,
-      "count": 2
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/components/shared/ActivityPlanSummary.tsx",
-      "code": 2379,
       "count": 1
     },
     {
@@ -791,20 +728,6 @@
       "project": "apps/mobile/tsconfig.json",
       "path": "apps/mobile/components/shared/SearchField.tsx",
       "code": 2375,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/components/shared/TrainingPlanCard.tsx",
-      "code": 2375,
-      "count": 2
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/components/shared/TrainingPlanCard.tsx",
-      "code": 2379,
       "count": 1
     },
     {
@@ -992,13 +915,6 @@
     {
       "flag": "exactOptionalPropertyTypes",
       "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/lib/services/ActivityRecorder/fitRecordWriter.ts",
-      "code": 2412,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
       "path": "apps/mobile/lib/services/ActivityRecorder/index.ts",
       "code": 2345,
       "count": 2
@@ -1015,14 +931,14 @@
       "project": "apps/mobile/tsconfig.json",
       "path": "apps/mobile/lib/services/ActivityRecorder/index.ts",
       "code": 2379,
-      "count": 11
+      "count": 10
     },
     {
       "flag": "exactOptionalPropertyTypes",
       "project": "apps/mobile/tsconfig.json",
       "path": "apps/mobile/lib/services/ActivityRecorder/index.ts",
       "code": 2412,
-      "count": 29
+      "count": 27
     },
     {
       "flag": "exactOptionalPropertyTypes",
@@ -1036,7 +952,7 @@
       "project": "apps/mobile/tsconfig.json",
       "path": "apps/mobile/lib/services/ActivityRecorder/LiveMetricsManager.ts",
       "code": 2412,
-      "count": 15
+      "count": 14
     },
     {
       "flag": "exactOptionalPropertyTypes",
@@ -1072,13 +988,6 @@
       "path": "apps/mobile/lib/services/ActivityRecorder/sensors.ts",
       "code": 2412,
       "count": 11
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/lib/services/ActivityRecorder/StreamBuffer.ts",
-      "code": 2379,
-      "count": 3
     },
     {
       "flag": "exactOptionalPropertyTypes",
@@ -1128,13 +1037,6 @@
       "path": "apps/mobile/lib/training-path/trainingTimelineAdapters.ts",
       "code": 2322,
       "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/lib/training-plan-creation/useTrainingPlanCreationService.ts",
-      "code": 2379,
-      "count": 2
     },
     {
       "flag": "exactOptionalPropertyTypes",
@@ -1286,13 +1188,6 @@
     {
       "flag": "exactOptionalPropertyTypes",
       "project": "apps/mobile/tsconfig.json",
-      "path": "packages/api/src/routers/groups/events.ts",
-      "code": 2379,
-      "count": 6
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
       "path": "packages/api/src/routers/onboarding.ts",
       "code": 2379,
       "count": 1
@@ -1303,13 +1198,6 @@
       "path": "packages/api/src/routers/planning/training-plans/base.ts",
       "code": 2375,
       "count": 2
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "packages/api/src/routers/profile-metrics.ts",
-      "code": 2379,
-      "count": 1
     },
     {
       "flag": "exactOptionalPropertyTypes",
@@ -1352,20 +1240,6 @@
       "path": "packages/core/activity-files/activity-file-parser.ts",
       "code": 2379,
       "count": 2
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "packages/core/athlete-intelligence/policies/activity-readiness.ts",
-      "code": 2379,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "packages/core/athlete-intelligence/policies/projection.ts",
-      "code": 2379,
-      "count": 1
     },
     {
       "flag": "exactOptionalPropertyTypes",
@@ -1734,13 +1608,6 @@
     {
       "flag": "exactOptionalPropertyTypes",
       "project": "apps/mobile/tsconfig.json",
-      "path": "packages/ui/src/components/slider/index.native.tsx",
-      "code": 2769,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
       "path": "packages/ui/src/components/switch/index.native.tsx",
       "code": 2379,
       "count": 1
@@ -1777,13 +1644,6 @@
       "flag": "exactOptionalPropertyTypes",
       "project": "apps/mobile/tsconfig.json",
       "path": "packages/ui/src/components/time-input/index.native.tsx",
-      "code": 2379,
-      "count": 2
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "packages/ui/src/components/toggle-group/index.native.tsx",
       "code": 2379,
       "count": 2
     },
@@ -1918,27 +1778,6 @@
       "project": "apps/web/tsconfig.json",
       "path": "apps/web/src/routes/_protected/plan.tsx",
       "code": 2375,
-      "count": 2
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/web/tsconfig.json",
-      "path": "apps/web/src/routes/_protected/record/index.tsx",
-      "code": 2379,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/web/tsconfig.json",
-      "path": "apps/web/src/routes/_protected/record/plan.tsx",
-      "code": 2322,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/web/tsconfig.json",
-      "path": "apps/web/src/routes/_protected/record/route/index.tsx",
-      "code": 2322,
       "count": 1
     },
     {
@@ -2189,13 +2028,6 @@
     {
       "flag": "exactOptionalPropertyTypes",
       "project": "apps/web/tsconfig.json",
-      "path": "packages/api/src/routers/groups/events.ts",
-      "code": 2379,
-      "count": 6
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/web/tsconfig.json",
       "path": "packages/api/src/routers/onboarding.ts",
       "code": 2379,
       "count": 1
@@ -2206,13 +2038,6 @@
       "path": "packages/api/src/routers/planning/training-plans/base.ts",
       "code": 2375,
       "count": 2
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/web/tsconfig.json",
-      "path": "packages/api/src/routers/profile-metrics.ts",
-      "code": 2379,
-      "count": 1
     },
     {
       "flag": "exactOptionalPropertyTypes",
@@ -2255,20 +2080,6 @@
       "path": "packages/core/activity-files/activity-file-parser.ts",
       "code": 2379,
       "count": 2
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/web/tsconfig.json",
-      "path": "packages/core/athlete-intelligence/policies/activity-readiness.ts",
-      "code": 2379,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/web/tsconfig.json",
-      "path": "packages/core/athlete-intelligence/policies/projection.ts",
-      "code": 2379,
-      "count": 1
     },
     {
       "flag": "exactOptionalPropertyTypes",
@@ -2840,13 +2651,6 @@
     {
       "flag": "exactOptionalPropertyTypes",
       "project": "packages/api/tsconfig.json",
-      "path": "packages/api/src/routers/groups/events.ts",
-      "code": 2379,
-      "count": 6
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "packages/api/tsconfig.json",
       "path": "packages/api/src/routers/onboarding.ts",
       "code": 2379,
       "count": 1
@@ -2857,13 +2661,6 @@
       "path": "packages/api/src/routers/planning/training-plans/base.ts",
       "code": 2375,
       "count": 2
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "packages/api/tsconfig.json",
-      "path": "packages/api/src/routers/profile-metrics.ts",
-      "code": 2379,
-      "count": 1
     },
     {
       "flag": "exactOptionalPropertyTypes",
@@ -2906,20 +2703,6 @@
       "path": "packages/core/activity-files/activity-file-parser.ts",
       "code": 2379,
       "count": 2
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "packages/api/tsconfig.json",
-      "path": "packages/core/athlete-intelligence/policies/activity-readiness.ts",
-      "code": 2379,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "packages/api/tsconfig.json",
-      "path": "packages/core/athlete-intelligence/policies/projection.ts",
-      "code": 2379,
-      "count": 1
     },
     {
       "flag": "exactOptionalPropertyTypes",
@@ -3137,20 +2920,6 @@
       "path": "packages/core/activity-files/activity-file-parser.ts",
       "code": 2379,
       "count": 2
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "packages/core/tsconfig.json",
-      "path": "packages/core/athlete-intelligence/policies/activity-readiness.ts",
-      "code": 2379,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "packages/core/tsconfig.json",
-      "path": "packages/core/athlete-intelligence/policies/projection.ts",
-      "code": 2379,
-      "count": 1
     },
     {
       "flag": "exactOptionalPropertyTypes",
@@ -3387,20 +3156,6 @@
       "flag": "exactOptionalPropertyTypes",
       "project": "packages/db/tsconfig.json",
       "path": "packages/core/activity-analysis/stress.ts",
-      "code": 2379,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "packages/db/tsconfig.json",
-      "path": "packages/core/athlete-intelligence/policies/activity-readiness.ts",
-      "code": 2379,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "packages/db/tsconfig.json",
-      "path": "packages/core/athlete-intelligence/policies/projection.ts",
       "code": 2379,
       "count": 1
     },
@@ -3981,13 +3736,6 @@
     {
       "flag": "exactOptionalPropertyTypes",
       "project": "packages/ui/tsconfig.json",
-      "path": "packages/ui/src/components/slider/index.native.tsx",
-      "code": 2769,
-      "count": 1
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "packages/ui/tsconfig.json",
       "path": "packages/ui/src/components/slider/index.web.tsx",
       "code": 2379,
       "count": 2
@@ -4352,20 +4100,6 @@
     {
       "flag": "noUncheckedIndexedAccess",
       "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/components/groups/GroupEventDetail.tsx",
-      "code": 18048,
-      "count": 13
-    },
-    {
-      "flag": "noUncheckedIndexedAccess",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/components/groups/GroupEventDetail.tsx",
-      "code": 2339,
-      "count": 2
-    },
-    {
-      "flag": "noUncheckedIndexedAccess",
-      "project": "apps/mobile/tsconfig.json",
       "path": "apps/mobile/components/plan/calendar/ActivityStepChart.tsx",
       "code": 18048,
       "count": 10
@@ -4429,13 +4163,6 @@
     {
       "flag": "noUncheckedIndexedAccess",
       "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/lib/groups/types.ts",
-      "code": 2339,
-      "count": 1
-    },
-    {
-      "flag": "noUncheckedIndexedAccess",
-      "project": "apps/mobile/tsconfig.json",
       "path": "apps/mobile/lib/services/ActivityRecorder/DataBuffer.ts",
       "code": 18048,
       "count": 4
@@ -4444,13 +4171,6 @@
       "flag": "noUncheckedIndexedAccess",
       "project": "apps/mobile/tsconfig.json",
       "path": "apps/mobile/lib/services/ActivityRecorder/DataBuffer.ts",
-      "code": 2345,
-      "count": 3
-    },
-    {
-      "flag": "noUncheckedIndexedAccess",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/lib/services/ActivityRecorder/DataBuffer.ts",
       "code": 2532,
       "count": 1
     },
@@ -4466,7 +4186,7 @@
       "project": "apps/mobile/tsconfig.json",
       "path": "apps/mobile/lib/services/ActivityRecorder/LiveMetricsManager.ts",
       "code": 2532,
-      "count": 23
+      "count": 17
     },
     {
       "flag": "noUncheckedIndexedAccess",
@@ -4488,13 +4208,6 @@
       "path": "apps/mobile/lib/services/ActivityRecorder/routeController.ts",
       "code": 18048,
       "count": 8
-    },
-    {
-      "flag": "noUncheckedIndexedAccess",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/lib/services/ActivityRecorder/routeController.ts",
-      "code": 2345,
-      "count": 1
     },
     {
       "flag": "noUncheckedIndexedAccess",
@@ -4522,13 +4235,6 @@
       "project": "apps/mobile/tsconfig.json",
       "path": "apps/mobile/lib/services/ActivityRecorder/sensors.ts",
       "code": 2345,
-      "count": 2
-    },
-    {
-      "flag": "noUncheckedIndexedAccess",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/lib/services/ActivityRecorder/StreamBuffer.ts",
-      "code": 2322,
       "count": 2
     },
     {

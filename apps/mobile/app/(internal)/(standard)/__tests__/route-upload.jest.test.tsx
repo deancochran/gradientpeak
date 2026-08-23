@@ -92,7 +92,7 @@ describe("route upload screen", () => {
 
   async function renderScreen() {
     const UploadRouteScreen = (await import("../route-upload")).default;
-    return renderNative(<UploadRouteScreen />);
+    return await renderNative(<UploadRouteScreen />);
   }
 
   async function pickFile(
@@ -100,7 +100,7 @@ describe("route upload screen", () => {
   ) {
     getDocumentAsyncMock.mockResolvedValueOnce({ canceled: false, assets: [file] });
     await act(async () => {
-      fireEvent.press(screen.getByTestId("route-upload-file-input"));
+      await fireEvent.press(screen.getByTestId("route-upload-file-input"));
     });
   }
 
@@ -143,7 +143,7 @@ describe("route upload screen", () => {
     expect(screen.queryByText("<TrainingCenterDatabase />")).toBeNull();
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("route-upload-submit-button"));
+      await fireEvent.press(screen.getByTestId("route-upload-submit-button"));
     });
 
     await waitFor(() => expect(uploadRouteMock).toHaveBeenCalledTimes(1));
@@ -165,7 +165,7 @@ describe("route upload screen", () => {
 
     getDocumentAsyncMock.mockResolvedValueOnce({ canceled: true, assets: [] });
     await act(async () => {
-      fireEvent.press(screen.getByTestId("route-upload-file-input"));
+      await fireEvent.press(screen.getByTestId("route-upload-file-input"));
     });
     expect(screen.getByText(/ridge-loop\.tcx/)).toBeTruthy();
 
@@ -179,7 +179,7 @@ describe("route upload screen", () => {
     await pickFile({ ...routeFile, size: 10 * 1024 * 1024 + 1 });
     expect(await screen.findByText("Choose a route file no larger than 10 MB.")).toBeTruthy();
     await act(async () => {
-      fireEvent.press(screen.getByTestId("route-upload-submit-button"));
+      await fireEvent.press(screen.getByTestId("route-upload-submit-button"));
     });
     expect(global.fetch).not.toHaveBeenCalled();
     expect(uploadRouteMock).not.toHaveBeenCalled();
@@ -195,7 +195,7 @@ describe("route upload screen", () => {
     });
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("route-upload-submit-button"));
+      await fireEvent.press(screen.getByTestId("route-upload-submit-button"));
     });
 
     expect(await screen.findByText(/larger than 10 MB/i)).toBeTruthy();
@@ -212,9 +212,15 @@ describe("route upload screen", () => {
     });
     (global.fetch as jest.Mock).mockRejectedValueOnce(new Error("read failed"));
 
+    const submit = screen.getByTestId("route-upload-submit-button").props.onPress;
+    if (typeof submit !== "function") throw new Error("Expected route upload submit action");
+    let firstSubmit: Promise<unknown> | undefined;
+    await act(() => {
+      firstSubmit = Promise.resolve(submit());
+      submit();
+    });
     await act(async () => {
-      fireEvent.press(screen.getByTestId("route-upload-submit-button"));
-      fireEvent.press(screen.getByTestId("route-upload-submit-button"));
+      await firstSubmit;
     });
 
     expect(await screen.findByText(/could not be read/i)).toBeTruthy();
@@ -222,9 +228,7 @@ describe("route upload screen", () => {
     expect(uploadRouteMock).not.toHaveBeenCalled();
     expect(screen.queryByText("<TrainingCenterDatabase />")).toBeNull();
 
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("route-upload-submit-button"));
-    });
+    await fireEvent.press(screen.getByTestId("route-upload-submit-button"));
     await waitFor(() => expect(uploadRouteMock).toHaveBeenCalledTimes(1));
     expect(global.fetch).toHaveBeenCalledTimes(2);
   });
@@ -237,12 +241,12 @@ describe("route upload screen", () => {
     await pickFile();
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("route-upload-submit-button"));
+      await fireEvent.press(screen.getByTestId("route-upload-submit-button"));
     });
     expect(await screen.findByText(/response lost/i)).toBeTruthy();
     const firstId = uploadRouteMock.mock.calls[0]?.[0].idempotencyKey;
     await act(async () => {
-      fireEvent.press(screen.getByTestId("route-upload-submit-button"));
+      await fireEvent.press(screen.getByTestId("route-upload-submit-button"));
     });
     await waitFor(() => expect(uploadRouteMock).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(backMock).toHaveBeenCalledTimes(1));
@@ -258,7 +262,7 @@ describe("route upload screen", () => {
     await pickFile();
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("route-upload-submit-button"));
+      await fireEvent.press(screen.getByTestId("route-upload-submit-button"));
     });
 
     expect(await screen.findByText("Uploaded")).toBeTruthy();
@@ -266,7 +270,7 @@ describe("route upload screen", () => {
     expect(
       await screen.findByText(/Route uploaded, but this screen could not close/i),
     ).toBeTruthy();
-    fireEvent.press(screen.getByTestId("route-upload-submit-button"));
+    await fireEvent.press(screen.getByTestId("route-upload-submit-button"));
     expect(uploadRouteMock).toHaveBeenCalledTimes(1);
   });
 });

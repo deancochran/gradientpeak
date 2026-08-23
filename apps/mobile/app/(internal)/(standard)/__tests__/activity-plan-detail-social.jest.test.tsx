@@ -21,14 +21,6 @@ type AddCommentMutationOptions = {
   onSuccess?: () => void;
 };
 
-type TestNode = {
-  props?: { children?: React.ReactNode; onChangeText?: (value: string) => void };
-};
-
-type UnsafeTypeQuery = {
-  UNSAFE_getAllByType: (type: string) => TestNode[];
-};
-
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
   ...jest.requireActual("@tanstack/react-query"),
@@ -229,7 +221,7 @@ const getTextContent = (children: React.ReactNode): string => {
 
 const getAllByTypeOrEmpty = (type: string) => {
   try {
-    return (screen as unknown as UnsafeTypeQuery).UNSAFE_getAllByType(type);
+    return screen.container.queryAll((node) => node.type === type);
   } catch {
     return [];
   }
@@ -253,7 +245,7 @@ describe("activity plan detail social orchestration", () => {
     });
   });
 
-  it("toggles like through the social mutation", () => {
+  it("toggles like through the social mutation", async () => {
     localSearchParamsMock.template = JSON.stringify(
       createActivityPlanSummary({
         id: "11111111-1111-1111-1111-111111111111",
@@ -261,9 +253,9 @@ describe("activity plan detail social orchestration", () => {
       }),
     );
 
-    renderNative(<ActivityPlanDetail />);
+    await renderNative(<ActivityPlanDetail />);
 
-    act(() => {
+    await act(() => {
       screen.getByTestId("activity-plan-like-button").props.onPress();
     });
 
@@ -281,10 +273,10 @@ describe("activity plan detail social orchestration", () => {
       }),
     );
 
-    renderNative(<ActivityPlanDetail />);
+    await renderNative(<ActivityPlanDetail />);
 
     const textarea = getAllByTypeOrEmpty("Textarea")[0];
-    act(() => {
+    await act(() => {
       textarea?.props?.onChangeText?.("  Great work  ");
     });
 

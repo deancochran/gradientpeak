@@ -220,7 +220,7 @@ describe("TrainingPreferencesEditor persistence ownership", () => {
   });
 
   it("keeps full-surface changes in the existing profile-settings save flow", async () => {
-    renderNative(<TrainingPreferencesEditor showLauncher={false} />);
+    await renderNative(<TrainingPreferencesEditor showLauncher={false} />);
 
     await act(async () => {
       screen.getByTestId("training-preferences-test-change").props.onPress();
@@ -248,7 +248,7 @@ describe("TrainingPreferencesEditor persistence ownership", () => {
   });
 
   it("persists availability as numeric minute payloads including the 1440 sentinel", async () => {
-    renderNative(<TrainingPreferencesEditor showLauncher={false} />);
+    await renderNative(<TrainingPreferencesEditor showLauncher={false} />);
 
     await act(async () =>
       screen.getByTestId("training-preferences-test-availability").props.onPress(),
@@ -277,7 +277,7 @@ describe("TrainingPreferencesEditor persistence ownership", () => {
   });
 
   it("visibly disables Save when the form is invalid", async () => {
-    renderNative(<TrainingPreferencesEditor showLauncher={false} />);
+    await renderNative(<TrainingPreferencesEditor showLauncher={false} />);
 
     await act(async () =>
       screen.getByTestId("training-preferences-test-availability").props.onPress(),
@@ -308,7 +308,7 @@ describe("TrainingPreferencesEditor persistence ownership", () => {
         },
       ],
     };
-    renderNative(<TrainingPreferencesEditor showLauncher={false} />);
+    await renderNative(<TrainingPreferencesEditor showLauncher={false} />);
 
     expect(screen.getByTestId("training-preferences-test-availability-state").props.value).toEqual([
       {
@@ -357,7 +357,7 @@ describe("TrainingPreferencesEditor persistence ownership", () => {
         },
       ],
     };
-    renderNative(<TrainingPreferencesEditor showLauncher={false} />);
+    await renderNative(<TrainingPreferencesEditor showLauncher={false} />);
 
     await act(async () =>
       screen.getByTestId(`training-preferences-test-remove-window-${index}`).props.onPress(),
@@ -381,7 +381,7 @@ describe("TrainingPreferencesEditor persistence ownership", () => {
         },
       ],
     };
-    renderNative(<TrainingPreferencesEditor showLauncher={false} />);
+    await renderNative(<TrainingPreferencesEditor showLauncher={false} />);
 
     await act(async () =>
       screen.getByTestId("training-preferences-test-remove-window-0").props.onPress(),

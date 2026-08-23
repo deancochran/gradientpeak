@@ -7,5 +7,8 @@ export function buildCalendarItemRoute(item: CalendarProjectionItem) {
   if (item.kind === "group_event") {
     return { pathname: "/group-event-detail", params: { groupEventId: item.id } };
   }
-  return buildOpenEventRoute({ id: item.id, event_type: item.event?.type });
+  return buildOpenEventRoute({
+    id: item.id,
+    ...(item.event?.type !== undefined ? { event_type: item.event.type } : {}),
+  });
 }

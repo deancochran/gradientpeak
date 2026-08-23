@@ -170,7 +170,7 @@ describe("activities list screen filters", () => {
     localSearchParamsMock = {};
   });
 
-  it("opts list cards into the canonical social actions without requesting an alternate layout", () => {
+  it("opts list cards into the canonical social actions without requesting an alternate layout", async () => {
     activityItems = [
       {
         id: "activity-1",
@@ -179,12 +179,9 @@ describe("activities list screen filters", () => {
       },
     ];
 
-    const rendered = renderNative(<ActivitiesListScreen />);
-    const activityCard = (
-      rendered as unknown as {
-        UNSAFE_getByType: (type: "ActivityCard") => { props: Record<string, unknown> };
-      }
-    ).UNSAFE_getByType("ActivityCard");
+    const rendered = await renderNative(<ActivitiesListScreen />);
+    const activityCard = rendered.container.queryAll((node) => node.type === "ActivityCard")[0];
+    if (!activityCard) throw new Error("Expected an ActivityCard");
 
     expect(activityCard.props).toMatchObject({
       dateMode: "absolute",
@@ -196,8 +193,8 @@ describe("activities list screen filters", () => {
     expect(activityCard.props).not.toHaveProperty("variant");
   });
 
-  it("includes multisport in the default query", () => {
-    renderNative(<ActivitiesListScreen />);
+  it("includes multisport in the default query", async () => {
+    await renderNative(<ActivitiesListScreen />);
 
     expect(activitiesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
       {
@@ -212,18 +209,18 @@ describe("activities list screen filters", () => {
     );
   });
 
-  it("does not expose stored activity names through list search", () => {
-    renderNative(<ActivitiesListScreen />);
+  it("does not expose stored activity names through list search", async () => {
+    await renderNative(<ActivitiesListScreen />);
 
     expect(screen.queryByTestId("activities-list-search-input")).toBeNull();
     expect(screen.queryByText("Search activities")).toBeNull();
   });
 
-  it("filters the activity list to a valid imported batch route parameter", () => {
+  it("filters the activity list to a valid imported batch route parameter", async () => {
     const importRunId = "77777777-7777-4777-8777-777777777777";
     localSearchParamsMock = { importRunId };
 
-    renderNative(<ActivitiesListScreen />);
+    await renderNative(<ActivitiesListScreen />);
 
     expect(activitiesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ importRunId }),
@@ -233,41 +230,41 @@ describe("activities list screen filters", () => {
     expect(screen.getByText("No matching results")).toBeTruthy();
   });
 
-  it("applies and resets the multisport composition filter", () => {
-    renderNative(<ActivitiesListScreen />);
+  it("applies and resets the multisport composition filter", async () => {
+    await renderNative(<ActivitiesListScreen />);
 
-    fireEvent.press(screen.getByTestId("activities-list-filter-button"));
-    fireEvent.press(screen.getByTestId("activities-list-filter-include-multisport"));
-    fireEvent.press(screen.getByTestId("activities-list-filter-sheet-apply"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-button"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-include-multisport"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-sheet-apply"));
     expect(activitiesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ composition_mode: "single_only" }),
       expect.any(Object),
     );
 
-    fireEvent.press(screen.getByTestId("activities-list-filter-button"));
-    fireEvent.press(screen.getByTestId("activities-list-filter-sheet-reset"));
-    fireEvent.press(screen.getByTestId("activities-list-filter-sheet-apply"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-button"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-sheet-reset"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-sheet-apply"));
     expect(activitiesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ composition_mode: "include_multisport" }),
       expect.any(Object),
     );
   });
 
-  it("applies category filter and clears it on reset", () => {
-    renderNative(<ActivitiesListScreen />);
+  it("applies category filter and clears it on reset", async () => {
+    await renderNative(<ActivitiesListScreen />);
 
-    fireEvent.press(screen.getByTestId("activities-list-filter-button"));
-    fireEvent.press(screen.getByTestId("activities-list-filter-category-run"));
-    fireEvent.press(screen.getByTestId("activities-list-filter-sheet-apply"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-button"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-category-run"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-sheet-apply"));
 
     expect(activitiesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ activity_category: "run", sort_by: "date" }),
       expect.any(Object),
     );
 
-    fireEvent.press(screen.getByTestId("activities-list-filter-button"));
-    fireEvent.press(screen.getByTestId("activities-list-filter-sheet-reset"));
-    fireEvent.press(screen.getByTestId("activities-list-filter-sheet-apply"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-button"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-sheet-reset"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-sheet-apply"));
     expect(activitiesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
         activity_category: undefined,
@@ -277,33 +274,33 @@ describe("activities list screen filters", () => {
     );
   });
 
-  it("keeps a truly empty library state when only sort changes", () => {
-    renderNative(<ActivitiesListScreen />);
+  it("keeps a truly empty library state when only sort changes", async () => {
+    await renderNative(<ActivitiesListScreen />);
 
-    fireEvent.press(screen.getByTestId("activities-list-filter-button"));
-    fireEvent.press(screen.getByTestId("activities-list-filter-sort-distance"));
-    fireEvent.press(screen.getByTestId("activities-list-filter-sheet-apply"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-button"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-sort-distance"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-sheet-apply"));
 
     expect(screen.getByText("No activities yet")).toBeTruthy();
     expect(screen.queryByText("No matching results")).toBeNull();
     expect(screen.getByTestId("activities-list-filter-button-dot")).toBeTruthy();
   });
 
-  it("does not offer legacy TSS sorting", () => {
-    renderNative(<ActivitiesListScreen />);
+  it("does not offer legacy TSS sorting", async () => {
+    await renderNative(<ActivitiesListScreen />);
 
-    fireEvent.press(screen.getByTestId("activities-list-filter-button"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-button"));
 
     expect(screen.queryByTestId("activities-list-filter-sort-tss")).toBeNull();
     expect(screen.queryByText("TSS")).toBeNull();
   });
 
-  it("shows filtered-empty copy when a category filter is active", () => {
-    renderNative(<ActivitiesListScreen />);
+  it("shows filtered-empty copy when a category filter is active", async () => {
+    await renderNative(<ActivitiesListScreen />);
 
-    fireEvent.press(screen.getByTestId("activities-list-filter-button"));
-    fireEvent.press(screen.getByTestId("activities-list-filter-category-run"));
-    fireEvent.press(screen.getByTestId("activities-list-filter-sheet-apply"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-button"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-category-run"));
+    await fireEvent.press(screen.getByTestId("activities-list-filter-sheet-apply"));
 
     expect(screen.getByText("No matching results")).toBeTruthy();
     expect(screen.queryByText("No activities yet")).toBeNull();

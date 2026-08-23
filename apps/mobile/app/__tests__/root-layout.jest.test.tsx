@@ -50,7 +50,7 @@ jest.mock("react-native", () => ({
   View: createHost("View"),
 }));
 
-jest.mock("@react-navigation/native", () => ({
+jest.mock("expo-router/react-navigation", () => ({
   __esModule: true,
   ThemeProvider: ({ children }: React.PropsWithChildren) => children,
 }));
@@ -229,7 +229,7 @@ describe("root layout auth guard", () => {
     authState.isAuthenticated = false;
     segmentsValue = ["(internal)", "(tabs)"];
 
-    renderNative(<RootLayout />);
+    await renderNative(<RootLayout />);
 
     await waitFor(() =>
       expect(screen.getByTestId("redirect-target").props.children).toContain("sign-in"),
@@ -241,7 +241,7 @@ describe("root layout auth guard", () => {
     authState.userStatus = "pending";
     segmentsValue = ["(internal)", "(tabs)"];
 
-    renderNative(<RootLayout />);
+    await renderNative(<RootLayout />);
 
     await waitFor(() =>
       expect(screen.getByTestId("redirect-target").props.children).toContain("verify"),
@@ -254,7 +254,7 @@ describe("root layout auth guard", () => {
     authState.userStatus = "unverified";
     segmentsValue = ["(external)", "sign-up"];
 
-    renderNative(<RootLayout />);
+    await renderNative(<RootLayout />);
 
     await waitFor(() =>
       expect(screen.getByTestId("redirect-target").props.children).toContain("verify"),
@@ -266,7 +266,7 @@ describe("root layout auth guard", () => {
     authState.onboardingStatus = "processing";
     segmentsValue = ["(internal)", "(tabs)"];
 
-    renderNative(<RootLayout />);
+    await renderNative(<RootLayout />);
 
     await waitFor(() =>
       expect(screen.getByTestId("redirect-target").props.children).toContain("onboarding"),
@@ -274,7 +274,7 @@ describe("root layout auth guard", () => {
   });
 
   it("renders the internal app slot for fully eligible users", async () => {
-    renderNative(<RootLayout />);
+    await renderNative(<RootLayout />);
 
     await waitFor(() => expect(screen.getByText("Internal app content")).toBeTruthy());
   });
@@ -288,7 +288,7 @@ describe("root layout auth guard", () => {
         }),
     );
 
-    renderNative(<RootLayout />);
+    await renderNative(<RootLayout />);
 
     expect(screen.getByTestId("contract-epoch-loading")).toBeTruthy();
     expect(screen.queryByText("Internal app content")).toBeNull();
@@ -300,7 +300,7 @@ describe("root layout auth guard", () => {
   it("shows a blocking retry UI when the contract reset fails", async () => {
     initializeContractEpochMock.mockRejectedValueOnce(new Error("disk busy"));
 
-    renderNative(<RootLayout />);
+    await renderNative(<RootLayout />);
 
     await waitFor(() => expect(screen.getByTestId("contract-epoch-retry")).toBeTruthy());
     expect(screen.queryByText("Internal app content")).toBeNull();
@@ -309,7 +309,7 @@ describe("root layout auth guard", () => {
   it("exposes an accessible shared loading state while the theme initializes", async () => {
     themeState.isLoaded = false;
 
-    renderNative(<RootLayout />);
+    await renderNative(<RootLayout />);
 
     await waitFor(() =>
       expect(screen.getByTestId("app-theme-loading").props).toMatchObject({
@@ -330,7 +330,7 @@ describe("root layout auth guard", () => {
       },
     ]);
 
-    renderNative(<RootLayout />);
+    await renderNative(<RootLayout />);
 
     await waitFor(() => expect(loadActivitySubmissionQueueJobsMock).toHaveBeenCalledTimes(1));
     expect(cleanupStreamRecordingsMock).not.toHaveBeenCalled();
@@ -346,7 +346,7 @@ describe("root layout auth guard", () => {
       },
     ]);
 
-    renderNative(<RootLayout />);
+    await renderNative(<RootLayout />);
 
     await waitFor(() => expect(cleanupStreamRecordingsMock).toHaveBeenCalledTimes(1));
     expect(cleanupFitRecordingsMock).toHaveBeenCalledTimes(1);

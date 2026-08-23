@@ -66,7 +66,11 @@ jest.mock("@/components/shared/HeaderAction", () => ({
 jest.mock("@/components/shared/RouteCard", () => ({
   __esModule: true,
   RouteCard: ({ onPress, route }: { onPress?: () => void; route: { name: string } }) =>
-    React.createElement("Pressable", { onPress, testID: "routes-list-route-card" }, route.name),
+    React.createElement(
+      "Pressable",
+      { onPress, testID: "routes-list-route-card" },
+      React.createElement("Text", null, route.name),
+    ),
 }));
 jest.mock("@/components/shared/ResourceList", () => ({
   __esModule: true,
@@ -102,12 +106,6 @@ jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   Alert: { alert: jest.fn() },
-  InteractionManager: {
-    runAfterInteractions: (callback: () => void) => {
-      callback();
-      return { cancel: jest.fn() };
-    },
-  },
 }));
 jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
   __esModule: true,
@@ -194,7 +192,7 @@ jest.mock("@/components/shared/RouteCard", () => ({
     React.createElement(
       "Pressable",
       { onPress, testID: "routes-list-route-card" },
-      route?.name ?? "Route",
+      React.createElement("Text", null, route?.name ?? "Route"),
     ),
 }));
 jest.mock("@/lib/api", () => ({
@@ -229,16 +227,16 @@ describe("routes P1 capability boundaries", () => {
     routesListUseInfiniteQueryMock.mockClear();
   });
 
-  it("routes.browse-and-inspect opens a persisted route from the library", () => {
-    renderNative(<RoutesListScreen />);
+  it("routes.browse-and-inspect opens a persisted route from the library", async () => {
+    await renderNative(<RoutesListScreen />);
 
-    fireEvent.press(screen.getByTestId("routes-list-route-card"));
+    await fireEvent.press(screen.getByTestId("routes-list-route-card"));
 
     expect(navigateToMock).toHaveBeenCalledWith("/route-detail?id=route-1");
   });
 
-  it("routes.attach-to-calendar-event is missing its route attachment control", () => {
-    renderNative(<RouteDetailScreen />);
+  it("routes.attach-to-calendar-event lets an athlete assign a route to an event", async () => {
+    await renderNative(<RouteDetailScreen />);
 
     expect(screen.getByTestId("route-detail-options-attach-calendar-event")).toBeTruthy();
   });

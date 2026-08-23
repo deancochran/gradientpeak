@@ -75,8 +75,8 @@ const chartReview = {
 } as unknown as ComponentProps<typeof BuilderProjectionOverview>["chartReview"];
 
 describe("BuilderProjectionOverview", () => {
-  it("shows a compact accessible outcome and opens the full chart explicitly", () => {
-    render(<BuilderProjectionOverview chartReview={chartReview} />);
+  it("shows a compact accessible outcome and opens the full chart explicitly", async () => {
+    await render(<BuilderProjectionOverview chartReview={chartReview} />);
 
     expect(screen.getByText("Fitness 40 → 48")).toBeTruthy();
     expect(screen.getByText("240 Load/wk")).toBeTruthy();
@@ -86,15 +86,15 @@ describe("BuilderProjectionOverview", () => {
     );
     expect(screen.queryByTestId("full-builder-training-path")).toBeNull();
 
-    fireEvent.press(screen.getByLabelText("Review full training projection"));
+    await fireEvent.press(screen.getByLabelText("Review full training projection"));
     expect(screen.getByTestId("builder-projection-modal")).toBeTruthy();
     expect(screen.getByTestId("full-builder-training-path")).toBeTruthy();
 
-    fireEvent.press(screen.getByText("Close projection"));
+    await fireEvent.press(screen.getByText("Close projection"));
     expect(screen.queryByTestId("builder-projection-modal")).toBeNull();
   });
 
-  it("is the projection surface rendered by the production strategy composer", () => {
+  it("is the projection surface rendered by the production strategy composer", async () => {
     const props = {
       chartReview,
       saveReadiness: { detail: "Ready to review", label: "Review plan", status: "review" },
@@ -121,7 +121,7 @@ describe("BuilderProjectionOverview", () => {
       },
     } as unknown as ComponentProps<typeof BuilderStrategyComposer>;
 
-    const { rerender } = render(<BuilderStrategyComposer {...props} />);
+    const { rerender } = await render(<BuilderStrategyComposer {...props} />);
 
     expect(screen.getByTestId("builder-strategy-composer")).toBeTruthy();
     expect(screen.getByTestId("builder-projection-overview")).toBeTruthy();
@@ -130,7 +130,7 @@ describe("BuilderProjectionOverview", () => {
     );
     expect(screen.queryByTestId("full-builder-training-path")).toBeNull();
 
-    rerender(
+    await rerender(
       <BuilderStrategyComposer
         {...props}
         state={{ ...props.state, details: { ...props.state.details, description: "", name: "" } }}
@@ -141,7 +141,7 @@ describe("BuilderProjectionOverview", () => {
     );
   });
 
-  it("keeps schedule setup visible and wires its primary actions", () => {
+  it("keeps schedule setup visible and wires its primary actions", async () => {
     const onAddActivity = jest.fn();
     const props = {
       chartReview,
@@ -169,7 +169,7 @@ describe("BuilderProjectionOverview", () => {
       },
     } as unknown as ComponentProps<typeof BuilderStrategyComposer>;
 
-    const { rerender } = render(<BuilderStrategyComposer {...props} />);
+    const { rerender } = await render(<BuilderStrategyComposer {...props} />);
 
     expect(screen.getByTestId("builder-configuration-grid")).toBeTruthy();
     expect(screen.getByTestId("builder-configuration-grid-row-1").props.className).toContain(
@@ -193,12 +193,12 @@ describe("BuilderProjectionOverview", () => {
     );
     expect(screen.getByTestId("builder-readiness")).toBeTruthy();
     expect(screen.getByText("Review plan")).toBeTruthy();
-    fireEvent.press(screen.getByText("Add activity"));
+    await fireEvent.press(screen.getByText("Add activity"));
 
     expect(onAddActivity).toHaveBeenCalledTimes(1);
     expect(screen.queryByText("Schedule preview")).toBeNull();
 
-    rerender(
+    await rerender(
       <BuilderStrategyComposer
         {...props}
         state={{
@@ -211,7 +211,7 @@ describe("BuilderProjectionOverview", () => {
     expect(screen.getByText("Needs assignment")).toBeTruthy();
     expect(screen.getByTestId("builder-add-activity").props.className).toContain("w-full");
 
-    rerender(
+    await rerender(
       <BuilderStrategyComposer
         {...props}
         state={{

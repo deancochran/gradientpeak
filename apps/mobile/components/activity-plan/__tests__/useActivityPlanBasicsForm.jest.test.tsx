@@ -26,10 +26,10 @@ function Harness({ name, onNameChange }: HarnessProps) {
 describe("useActivityPlanBasicsForm", () => {
   it("separates external hydration from user-originated changes", async () => {
     const onNameChange = jest.fn();
-    const view = render(<Harness name="Draft plan" onNameChange={onNameChange} />);
+    const view = await render(<Harness name="Draft plan" onNameChange={onNameChange} />);
 
     await act(async () => {
-      view.rerender(<Harness name="Hydrated plan" onNameChange={onNameChange} />);
+      await view.rerender(<Harness name="Hydrated plan" onNameChange={onNameChange} />);
     });
 
     await waitFor(() => {
@@ -38,7 +38,7 @@ describe("useActivityPlanBasicsForm", () => {
     expect(onNameChange).not.toHaveBeenCalled();
 
     await act(async () => {
-      fireEvent(view.getByLabelText("Plan name"), "changeText", "Edited plan");
+      await fireEvent(view.getByLabelText("Plan name"), "changeText", "Edited plan");
     });
 
     expect(onNameChange).toHaveBeenCalledTimes(1);

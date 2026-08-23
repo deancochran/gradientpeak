@@ -35,7 +35,12 @@ describe("GradientPeak auth clients", () => {
   });
 
   it("configures fixed headers without changing Expo storage semantics", () => {
-    const storage = { getItem: vi.fn(), setItem: vi.fn() };
+    const storage = {
+      getItem: vi.fn(),
+      getItemAsync: vi.fn(),
+      setItem: vi.fn(),
+      setItemAsync: vi.fn(),
+    };
     createGradientPeakExpoAuthClient({
       baseURL: "https://app.example.test/api/auth",
       scheme: "gradientpeak",

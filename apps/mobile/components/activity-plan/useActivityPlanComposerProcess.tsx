@@ -1,6 +1,6 @@
-import type { NavigationAction } from "@react-navigation/native";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
+import type { NavigationAction } from "expo-router/react-navigation";
 import type { ReactNode } from "react";
 import { type RefObject, useEffect, useMemo, useRef } from "react";
 import { Alert } from "react-native";

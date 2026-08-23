@@ -1,6 +1,75 @@
 import { describe, expect, it } from "vitest";
 
-import { parseAuthTrustedOrigins, resolveDevelopmentAuthTrustedOrigins } from "./env";
+import {
+  parseAuthTrustedOrigins,
+  resolveAuthBootstrapEnv,
+  resolveDevelopmentAuthTrustedOrigins,
+} from "./env";
+
+describe("resolveAuthBootstrapEnv", () => {
+  it.each(["development", "test"])("keeps local defaults in %s", (nodeEnv) => {
+    expect(resolveAuthBootstrapEnv({ nodeEnv })).toEqual({
+      appUrl: "http://localhost:3000",
+      mobileScheme: "gradientpeak",
+    });
+  });
+
+  it("requires an explicit APP_URL before production auth can initialize", () => {
+    expect(() =>
+      resolveAuthBootstrapEnv({ nodeEnv: "production", mobileScheme: "gradientpeak" }),
+    ).toThrow("APP_URL is required");
+  });
+
+  it("requires an explicit mobile scheme before production auth can initialize", () => {
+    expect(() =>
+      resolveAuthBootstrapEnv({ nodeEnv: "production", appUrl: "https://app.example.com" }),
+    ).toThrow("AUTH_MOBILE_SCHEME is required");
+  });
+
+  it("rejects HTTP and non-origin production APP_URL values", () => {
+    expect(() =>
+      resolveAuthBootstrapEnv({
+        nodeEnv: "production",
+        appUrl: "http://app.example.com",
+        mobileScheme: "gradientpeak",
+      }),
+    ).toThrow("APP_URL must use HTTPS");
+    expect(() =>
+      resolveAuthBootstrapEnv({
+        nodeEnv: "production",
+        appUrl: "https://app.example.com/auth",
+        mobileScheme: "gradientpeak",
+      }),
+    ).toThrow();
+  });
+
+  it("rejects broad or browser-executable production mobile schemes", () => {
+    expect(() =>
+      resolveAuthBootstrapEnv({
+        nodeEnv: "production",
+        appUrl: "https://app.example.com",
+        mobileScheme: "https",
+      }),
+    ).toThrow("Mobile scheme must not be browser-executable or reserved");
+    expect(() =>
+      resolveAuthBootstrapEnv({
+        nodeEnv: "production",
+        appUrl: "https://app.example.com",
+        mobileScheme: "gradientpeak://callback",
+      }),
+    ).toThrow("Mobile scheme must be a bare custom URL scheme");
+  });
+
+  it("accepts and normalizes explicit production origins and schemes", () => {
+    expect(
+      resolveAuthBootstrapEnv({
+        nodeEnv: "production",
+        appUrl: "https://app.example.com/",
+        mobileScheme: "gradientpeak",
+      }),
+    ).toEqual({ appUrl: "https://app.example.com", mobileScheme: "gradientpeak" });
+  });
+});
 
 describe("parseAuthTrustedOrigins", () => {
   it("accepts comma-separated exact origins and removes duplicates", () => {

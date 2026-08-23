@@ -81,7 +81,7 @@ jest.mock("@/components/plan/GoalListItem", () => ({
     return React.createElement(
       "TouchableOpacity",
       { onPress: props.onPress, testID: props.testID },
-      props.goal.title,
+      React.createElement("Text", null, props.goal.title),
     );
   },
 }));
@@ -131,8 +131,8 @@ describe("goals list screen", () => {
     goalListItemPropsMock.mockClear();
   });
 
-  it("uses lifecycle labels without deprecated goal intelligence props", () => {
-    renderNative(<GoalsListScreen />);
+  it("uses lifecycle labels without deprecated goal intelligence props", async () => {
+    await renderNative(<GoalsListScreen />);
 
     const propsByGoalId = new Map(
       goalListItemPropsMock.mock.calls.map(([props]) => [props.goal.id, props]),
@@ -148,10 +148,10 @@ describe("goals list screen", () => {
     }
   });
 
-  it("opens canonical goal detail when a goal is tapped", () => {
-    renderNative(<GoalsListScreen />);
+  it("opens canonical goal detail when a goal is tapped", async () => {
+    await renderNative(<GoalsListScreen />);
 
-    fireEvent.press(screen.getByTestId("goals-list-row-upcoming-goal"));
+    await fireEvent.press(screen.getByTestId("goals-list-row-upcoming-goal"));
 
     expect(navigateToMock).toHaveBeenCalledWith("/goal-detail?id=upcoming-goal");
   });

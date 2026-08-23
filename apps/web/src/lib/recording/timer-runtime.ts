@@ -375,7 +375,7 @@ export function restoreFinishedTimerOnlyRecording(artifact: {
   finishedAt: string;
   elapsedMs: number;
   movingMs: number;
-  planExecution?: PortableWebPlanExecutionState;
+  planExecution?: PortableWebPlanExecutionState | undefined;
 }): TimerOnlyRecordingState {
   let state = createInitialTimerOnlyRecordingState();
   for (const command of [

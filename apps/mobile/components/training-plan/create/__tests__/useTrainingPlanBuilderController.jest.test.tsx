@@ -52,17 +52,17 @@ describe("useTrainingPlanBuilderController chart selection", () => {
     jest.clearAllMocks();
   });
 
-  it("keeps an immediately selected in-week date even when daily data is temporarily sparse", () => {
-    const { result } = renderHook(() => useTrainingPlanBuilderController({ mode: "create" }));
+  it("keeps an immediately selected in-week date even when daily data is temporarily sparse", async () => {
+    const { result } = await renderHook(() => useTrainingPlanBuilderController({ mode: "create" }));
 
-    act(() => result.current.chartReview.selectDate("2026-01-06"));
+    await act(() => result.current.chartReview.selectDate("2026-01-06"));
 
     expect(result.current.chartReview.selectedDate).toBe("2026-01-06");
     expect(result.current.chartReview.selectedWeekStart).toBe("2026-01-05");
   });
 
-  it("exposes a finite projection without inactive date-extension controls", () => {
-    const { result } = renderHook(() => useTrainingPlanBuilderController({ mode: "create" }));
+  it("exposes a finite projection without inactive date-extension controls", async () => {
+    const { result } = await renderHook(() => useTrainingPlanBuilderController({ mode: "create" }));
 
     expect(result.current.chartReview.chart.weeks).toHaveLength(1);
     expect(result.current.chartReview.chart.dailyPoints).toHaveLength(1);
@@ -70,18 +70,18 @@ describe("useTrainingPlanBuilderController chart selection", () => {
     expect(result.current.chartReview).not.toHaveProperty("extendStart");
   });
 
-  it("does not remove a activity before destructive confirmation", () => {
+  it("does not remove a activity before destructive confirmation", async () => {
     const alert = jest.spyOn(Alert, "alert").mockImplementation(jest.fn());
-    const { result } = renderHook(() => useTrainingPlanBuilderController({ mode: "create" }));
+    const { result } = await renderHook(() => useTrainingPlanBuilderController({ mode: "create" }));
 
-    act(() => result.current.actions.confirmRemoveSession("session-1"));
+    await act(() => result.current.actions.confirmRemoveSession("session-1"));
 
     expect(mockBuilder.actions.removeSession).not.toHaveBeenCalled();
     const buttons = alert.mock.calls[0]?.[2];
     expect(buttons?.[0]).toMatchObject({ style: "cancel", text: "Cancel" });
     expect(buttons?.[1]).toMatchObject({ style: "destructive", text: "Remove" });
 
-    act(() => buttons?.[1]?.onPress?.());
+    await act(() => buttons?.[1]?.onPress?.());
 
     expect(mockBuilder.actions.removeSession).toHaveBeenCalledWith("session-1");
     alert.mockRestore();

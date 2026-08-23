@@ -318,8 +318,8 @@ describe("usePlanTrainingPathData", () => {
     });
   });
 
-  it("loads the entire Plan tab through one bounded server projection", () => {
-    const { result } = renderHook(() => usePlanTrainingPathData());
+  it("loads the entire Plan tab through one bounded server projection", async () => {
+    const { result } = await renderHook(() => usePlanTrainingPathData());
 
     expect(mockProjectionUseQuery).toHaveBeenLastCalledWith(
       { startDate: "2026-02-23", endDate: "2026-05-17" },
@@ -332,8 +332,8 @@ describe("usePlanTrainingPathData", () => {
     expect(result.current.hasUsableData).toBe(true);
   });
 
-  it("maps server-owned load, goals, scheduled items, and completions without source queries", () => {
-    const { result } = renderHook(() => usePlanTrainingPathData());
+  it("maps server-owned load, goals, scheduled items, and completions without source queries", async () => {
+    const { result } = await renderHook(() => usePlanTrainingPathData());
 
     expect(result.current.dailyTrainingPathPoints).toEqual(
       expect.arrayContaining([
@@ -357,10 +357,10 @@ describe("usePlanTrainingPathData", () => {
     ]);
   });
 
-  it("keeps one stable projection window while the selected day changes", () => {
-    const { result } = renderHook(() => usePlanTrainingPathData());
+  it("keeps one stable projection window while the selected day changes", async () => {
+    const { result } = await renderHook(() => usePlanTrainingPathData());
 
-    act(() => result.current.handleSelectedDateChange("2026-08-01"));
+    await act(() => result.current.handleSelectedDateChange("2026-08-01"));
 
     expect(mockProjectionUseQuery).toHaveBeenLastCalledWith(
       { startDate: "2026-02-23", endDate: "2026-05-17" },
@@ -368,9 +368,9 @@ describe("usePlanTrainingPathData", () => {
     );
   });
 
-  it("reconciles selection when the authoritative range shifts", () => {
-    const { result, rerender } = renderHook(() => usePlanTrainingPathData());
-    act(() => result.current.handleSelectedDateChange("2026-03-30"));
+  it("reconciles selection when the authoritative range shifts", async () => {
+    const { result, rerender } = await renderHook(() => usePlanTrainingPathData());
+    await act(() => result.current.handleSelectedDateChange("2026-03-30"));
 
     mockProjectionData = {
       ...projection,
@@ -380,11 +380,11 @@ describe("usePlanTrainingPathData", () => {
         endDate: "2026-04-12",
       },
     } as unknown as typeof projection;
-    rerender({});
+    await rerender({});
     expect(result.current.selectedDate).toBe("2026-04-06");
     expect(result.current.trainingPath.selectedWeekSummary?.weekStart).toBe("2026-04-06");
 
-    act(() => result.current.handleSelectedDateChange("2026-04-12"));
+    await act(() => result.current.handleSelectedDateChange("2026-04-12"));
     const shiftedDay = projection.timeline.days[0];
     if (!shiftedDay) throw new Error("Expected projection day fixture");
     mockProjectionData = {
@@ -399,14 +399,14 @@ describe("usePlanTrainingPathData", () => {
         "2026-05-04": projection.dayLoads["2026-04-06"],
       },
     } as unknown as typeof projection;
-    rerender({});
+    await rerender({});
 
     expect(result.current.selectedDate).toBe("2026-05-04");
     expect(result.current.trainingPath.selectedWeekSummary?.weekStart).toBe("2026-05-04");
   });
 
-  it("uses one normal query and exposes no gesture-driven fetch actions", () => {
-    const { result } = renderHook(() => usePlanTrainingPathData());
+  it("uses one normal query and exposes no gesture-driven fetch actions", async () => {
+    const { result } = await renderHook(() => usePlanTrainingPathData());
 
     expect(
       new Set(mockProjectionUseQuery.mock.calls.map(([input]) => JSON.stringify(input))).size,
@@ -415,10 +415,10 @@ describe("usePlanTrainingPathData", () => {
     expect(result.current).not.toHaveProperty("extendTrainingPathWindowEnd");
   });
 
-  it("uses UTC as a safe request anchor when a legacy profile has no planning timezone", () => {
+  it("uses UTC as a safe request anchor when a legacy profile has no planning timezone", async () => {
     mockPlanningTimezone = null;
 
-    const { result } = renderHook(() => usePlanTrainingPathData());
+    const { result } = await renderHook(() => usePlanTrainingPathData());
 
     expect(mockProjectionUseQuery).toHaveBeenCalledWith(
       { startDate: "2026-02-23", endDate: "2026-05-17" },
@@ -433,7 +433,7 @@ describe("usePlanTrainingPathData", () => {
   });
 
   it("refreshes only the projection and profile readiness source", async () => {
-    const { result } = renderHook(() => usePlanTrainingPathData());
+    const { result } = await renderHook(() => usePlanTrainingPathData());
 
     await act(async () => result.current.handleRefresh());
 

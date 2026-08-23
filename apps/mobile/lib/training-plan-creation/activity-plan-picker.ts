@@ -16,10 +16,10 @@ export type ActivityPlanPickerSort = NonNullable<
 export type ActivityPlanPickerItem = {
   id: string;
   name: string;
-  created_at?: string | null;
-  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
-  activity_category?: string | null;
-  structure?: unknown;
+  created_at?: string | null | undefined;
+  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null | undefined;
+  activity_category?: string | null | undefined;
+  structure?: unknown | undefined;
 };
 
 export type ActivityPlanPickerPage<TItem extends ActivityPlanPickerItem = ActivityPlanPickerItem> =
@@ -63,13 +63,23 @@ export function deriveActivityPlanPickerState<TItem extends ActivityPlanPickerIt
   );
   const estimateById = new Map(
     athleteContext
-      ? items.map(
-          (item) =>
-            [
-              item.id,
-              estimatePlanningActivityPlanForAthlete({ activityPlan: item, athleteContext }),
-            ] as const,
-        )
+      ? items.map((item) => {
+          const activityPlan = {
+            id: item.id,
+            name: item.name,
+            ...(item.activity_category !== undefined
+              ? { activity_category: item.activity_category }
+              : {}),
+            ...(item.prescriptionQuantification !== undefined
+              ? { prescriptionQuantification: item.prescriptionQuantification }
+              : {}),
+            ...(item.structure !== undefined ? { structure: item.structure } : {}),
+          };
+          return [
+            item.id,
+            estimatePlanningActivityPlanForAthlete({ activityPlan, athleteContext }),
+          ] as const;
+        })
       : [],
   );
 

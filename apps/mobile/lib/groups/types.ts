@@ -23,7 +23,7 @@ export type GroupEventListItem = GroupEventListResult["items"][number];
 export type GroupEventSeriesOccurrencesResult = GroupOutputs["events"]["seriesOccurrences"];
 export type GroupEventSeriesOccurrence = GroupEventSeriesOccurrencesResult["items"][number];
 export type GroupEventDetailResult = GroupOutputs["events"]["detail"];
-export type GroupEventDetail = GroupEventDetailResult["event"];
+export type GroupEventDetail = NonNullable<GroupEventDetailResult["event"]>;
 export type CurrentGroupEventPlan = GroupEventListItem;
 export type GroupEventRsvp = NonNullable<GroupEventDetail["viewerRsvp"]>;
 

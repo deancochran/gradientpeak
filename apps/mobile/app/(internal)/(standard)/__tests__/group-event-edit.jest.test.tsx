@@ -63,7 +63,7 @@ jest.mock("@/components/groups", () => ({
           props.onSubmit({ title: "Occurrence override", startsAt: "2026-05-28T12:00:00.000Z" }),
         testID: "mock-group-event-form-submit",
       },
-      "Submit form",
+      React.createElement("Text", null, "Submit form"),
     );
   }),
   GroupListSkeleton: mockCreateHost("GroupListSkeleton"),
@@ -99,10 +99,10 @@ describe("GroupEventEditRoute", () => {
   });
 
   it("sends recurring occurrence edits through the occurrence override mutation", async () => {
-    renderNative(<GroupEventEditRoute />);
+    await renderNative(<GroupEventEditRoute />);
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("mock-group-event-form-submit"));
+      await fireEvent.press(screen.getByTestId("mock-group-event-form-submit"));
     });
 
     await waitFor(() => {

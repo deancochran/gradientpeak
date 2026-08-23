@@ -59,7 +59,7 @@ export function ActivityPlanCard({
 
       {presentation?.occurrences.length ? (
         <div className="mt-4 space-y-2">
-          <p className="text-sm font-medium text-foreground">Workout prescription</p>
+          <p className="text-sm font-medium text-foreground">Activity prescription</p>
           <ActivityPlanTimelineChart
             compact
             height={72}

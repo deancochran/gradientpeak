@@ -159,23 +159,23 @@ describe("P1 training-plan mobile capability", () => {
     listQueryInput = undefined;
   });
 
-  it("opens the create screen from the owned plan browse screen", () => {
-    renderNative(<TrainingPlansListScreen />);
+  it("opens the create screen from the owned plan browse screen", async () => {
+    await renderNative(<TrainingPlansListScreen />);
 
-    fireEvent.press(screen.getByTestId("training-plans-list-create-trigger"));
+    await fireEvent.press(screen.getByTestId("training-plans-list-create-trigger"));
 
     expect(navigateMock).toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.CREATE);
   });
 
-  it("passes search and applied visibility filters to the real list screen query", () => {
-    renderNative(<TrainingPlansListScreen />);
+  it("passes search and applied visibility filters to the real list screen query", async () => {
+    await renderNative(<TrainingPlansListScreen />);
 
-    fireEvent.changeText(screen.getByTestId("training-plans-list-search-input"), "marathon");
+    await fireEvent.changeText(screen.getByTestId("training-plans-list-search-input"), "marathon");
     expect(listQueryInput).toMatchObject({ search: "marathon", visibility: undefined });
 
-    fireEvent.press(screen.getByTestId("training-plans-list-filter-trigger"));
-    fireEvent.press(screen.getByTestId("training-plans-list-filter-visibility-public"));
-    fireEvent.press(screen.getByTestId("training-plans-list-filter-apply"));
+    await fireEvent.press(screen.getByTestId("training-plans-list-filter-trigger"));
+    await fireEvent.press(screen.getByTestId("training-plans-list-filter-visibility-public"));
+    await fireEvent.press(screen.getByTestId("training-plans-list-filter-apply"));
 
     expect(listQueryInput).toMatchObject({ search: "marathon", visibility: "public" });
   });

@@ -115,20 +115,20 @@ describe("notifications screen", () => {
     markReadMutateMock.mockReset();
   });
 
-  it("navigates to the messages hub for message notifications", () => {
-    renderNative(<NotificationsScreen />);
+  it("navigates to the messages hub for message notifications", async () => {
+    await renderNative(<NotificationsScreen />);
 
-    fireEvent.press(screen.getByTestId("notification-item-notification-1"));
+    await fireEvent.press(screen.getByTestId("notification-item-notification-1"));
 
     expect(markReadMutateMock).toHaveBeenCalledWith({ notification_ids: ["notification-1"] });
     expect(navigateMock).toHaveBeenCalledWith("/messages");
     expect(pushMock).not.toHaveBeenCalled();
   });
 
-  it("marks all notifications as read from the direct header action", () => {
-    renderNative(<NotificationsScreen />);
+  it("marks all notifications as read from the direct header action", async () => {
+    await renderNative(<NotificationsScreen />);
 
-    fireEvent.press(screen.getByTestId("notifications-read-all-trigger"));
+    await fireEvent.press(screen.getByTestId("notifications-read-all-trigger"));
 
     expect(markReadMutateMock).toHaveBeenCalledWith({ notification_ids: ["notification-1"] });
   });

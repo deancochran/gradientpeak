@@ -24,10 +24,10 @@ jest.mock("@/lib/utils/plan/colors", () => ({
   __esModule: true,
   getActivityColor: () => ({ bg: "bg-primary", text: "text-primary" }),
 }));
-function renderCard(
+async function renderCard(
   prescriptionQuantification: ReturnType<typeof createPrescriptionQuantificationBundleFixture>,
 ) {
-  return renderNative(
+  return await renderNative(
     <CalendarEventCard
       canStart
       event={
@@ -51,31 +51,31 @@ function renderCard(
 }
 
 describe("CalendarEventCard common Load", () => {
-  it("renders canonical Load and qualitative Intensity without TSS or IF", () => {
-    renderCard(createPrescriptionQuantificationBundleFixture({ estimated: false }));
+  it("renders canonical Load and qualitative Intensity without TSS or IF", async () => {
+    await renderCard(createPrescriptionQuantificationBundleFixture({ estimated: false }));
 
     expect(screen.getAllByText("Common Load 64").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Normalized intensity 0.80").length).toBeGreaterThan(0);
     expect(screen.queryByText(/TSS|\bIF\b|88|0\.9/)).toBeNull();
   });
 
-  it("normalizes partial planned metrics to zero", () => {
-    renderCard(createPrescriptionQuantificationBundleFixture({ status: "partial" }));
+  it("normalizes partial planned metrics to zero", async () => {
+    await renderCard(createPrescriptionQuantificationBundleFixture({ status: "partial" }));
 
     expect(screen.getAllByText("Common Load 0").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Normalized intensity 0.00").length).toBeGreaterThan(0);
     expect(screen.queryByText(/partial|unavailable|incomplete/i)).toBeNull();
   });
 
-  it("normalizes unavailable planned Load to zero", () => {
-    renderCard(createPrescriptionQuantificationBundleFixture({ status: "private" }));
+  it("normalizes unavailable planned Load to zero", async () => {
+    await renderCard(createPrescriptionQuantificationBundleFixture({ status: "private" }));
 
     expect(screen.getAllByText("Common Load 0").length).toBeGreaterThan(0);
     expect(screen.queryByText(/private|unavailable|incomplete/i)).toBeNull();
   });
 
-  it("uses zero for unsupported planned load instead of legacy estimates", () => {
-    const rendered = renderCard(
+  it("uses zero for unsupported planned load instead of legacy estimates", async () => {
+    const rendered = await renderCard(
       createPrescriptionQuantificationBundleFixture({ status: "unsupported" }),
     );
 

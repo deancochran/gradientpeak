@@ -6,8 +6,8 @@ import { CollapsibleSection } from "./CollapsibleSection";
 const TestIcon = (() => null) as unknown as LucideIcon;
 
 describe("CollapsibleSection", () => {
-  it("exposes a named, expanded-aware 44dp disclosure button", () => {
-    renderNative(
+  it("exposes a named, expanded-aware 44dp disclosure button", async () => {
+    await renderNative(
       <CollapsibleSection icon={TestIcon} title="Training load">
         <View />
       </CollapsibleSection>,
@@ -17,7 +17,7 @@ describe("CollapsibleSection", () => {
     expect(trigger.props.accessibilityState).toEqual({ expanded: true });
     expect(trigger.props.className).toContain("min-h-11");
 
-    fireEvent.press(trigger);
+    await fireEvent.press(trigger);
 
     expect(screen.getByLabelText("Training load").props.accessibilityState).toEqual({
       expanded: false,

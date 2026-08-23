@@ -52,16 +52,16 @@ function FormHarness({ invalid = false }: { invalid?: boolean }) {
 }
 
 describe("Form native", () => {
-  it("renders shared form primitives with description and message", () => {
-    const { getByTestId, getByText } = renderNative(<FormHarness />);
+  it("renders shared form primitives with description and message", async () => {
+    const { getByTestId, getByText } = await renderNative(<FormHarness />);
 
     expect(getByTestId("email-input").props.accessibilityLabel).toBe("Email address");
     expect(getByText("Used for weekly updates.")).toBeTruthy();
     expect(getByText("Field is required.")).toBeTruthy();
   });
 
-  it("associates the visible label while preserving supported explicit accessibility props", () => {
-    const { getByTestId, getByText } = renderNative(<FormHarness />);
+  it("associates the visible label while preserving supported explicit accessibility props", async () => {
+    const { getByTestId, getByText } = await renderNative(<FormHarness />);
     const control = getByTestId("email-input");
     const label = getByText("Email");
 
@@ -73,8 +73,8 @@ describe("Form native", () => {
     expect(control.props).not.toHaveProperty("accessibilityInvalid");
   });
 
-  it("exposes invalid state and announces validation errors", () => {
-    const { getByTestId, getByText } = renderNative(<FormHarness invalid />);
+  it("exposes invalid state and announces validation errors", async () => {
+    const { getByTestId, getByText } = await renderNative(<FormHarness invalid />);
     const control = getByTestId("email-input");
     const message = getByText("Email is required.");
 

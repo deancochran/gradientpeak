@@ -111,8 +111,8 @@ describe("P2 group mobile boundaries", () => {
   });
 
   it("groups.browse-and-join joins a discoverable group from its real detail screen", async () => {
-    renderNative(<GroupDetailScreen />);
-    fireEvent.press(screen.getByText("Join group"));
+    await renderNative(<GroupDetailScreen />);
+    await fireEvent.press(screen.getByText("Join group"));
     await waitFor(() => expect(joinGroupMock).toHaveBeenCalledWith("group-1"));
   });
 });

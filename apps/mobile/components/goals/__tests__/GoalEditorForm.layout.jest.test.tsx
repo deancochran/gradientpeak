@@ -110,8 +110,8 @@ jest.mock("@/components/shared/AppFormModal", () => ({
 const { GoalEditorForm } = require("../GoalEditorModal");
 
 describe("GoalEditorForm layout", () => {
-  it("fills its host by default for backwards compatibility", () => {
-    renderNative(
+  it("fills its host by default for backwards compatibility", async () => {
+    await renderNative(
       <GoalEditorForm
         initialValue={createEmptyGoalDraft()}
         onSubmit={jest.fn()}
@@ -122,8 +122,8 @@ describe("GoalEditorForm layout", () => {
     expect(screen.getByTestId("goal-editor-form").props.className).toBe("flex-1 gap-3");
   });
 
-  it("uses intrinsic height when content sizing is requested", () => {
-    renderNative(
+  it("uses intrinsic height when content sizing is requested", async () => {
+    await renderNative(
       <GoalEditorForm
         contentSizing="intrinsic"
         initialValue={createEmptyGoalDraft()}
@@ -137,7 +137,7 @@ describe("GoalEditorForm layout", () => {
 });
 
 describe("GoalEditorForm draft observation", () => {
-  it("emits the initial draft and current edits without duplicating a controlled reset", () => {
+  it("emits the initial draft and current edits without duplicating a controlled reset", async () => {
     const initialValue = {
       ...createEmptyGoalDraft(),
       title: "Initial goal",
@@ -145,7 +145,7 @@ describe("GoalEditorForm draft observation", () => {
     };
     const onDraftChange = jest.fn<void, [GoalEditorDraft]>();
     const onSubmit = jest.fn();
-    const { rerender } = renderNative(
+    const { rerender } = await renderNative(
       <GoalEditorForm
         contentSizing="intrinsic"
         initialValue={initialValue}
@@ -158,7 +158,7 @@ describe("GoalEditorForm draft observation", () => {
     expect(onDraftChange).toHaveBeenCalledTimes(1);
     expect(onDraftChange).toHaveBeenLastCalledWith(expect.objectContaining(initialValue));
 
-    fireEvent.press(screen.getByLabelText("Use 10K Race preset"));
+    await fireEvent.press(screen.getByLabelText("Use 10K Race preset"));
 
     expect(onDraftChange).toHaveBeenCalledTimes(2);
     const currentDraft = onDraftChange.mock.calls[1]?.[0];
@@ -170,7 +170,7 @@ describe("GoalEditorForm draft observation", () => {
       }),
     );
 
-    rerender(
+    await rerender(
       <GoalEditorForm
         contentSizing="intrinsic"
         initialValue={currentDraft ?? initialValue}
@@ -183,7 +183,7 @@ describe("GoalEditorForm draft observation", () => {
     expect(onDraftChange).toHaveBeenCalledTimes(2);
   });
 
-  it("preserves submit behavior", () => {
+  it("preserves submit behavior", async () => {
     const initialValue = {
       ...createEmptyGoalDraft(),
       title: "Finish a 10K",
@@ -192,9 +192,9 @@ describe("GoalEditorForm draft observation", () => {
       raceDistanceKm: 10,
     };
     const onSubmit = jest.fn<void, [GoalEditorDraft]>();
-    renderNative(<GoalEditorForm initialValue={initialValue} onSubmit={onSubmit} />);
+    await renderNative(<GoalEditorForm initialValue={initialValue} onSubmit={onSubmit} />);
 
-    fireEvent.press(screen.getByText("Save Goal"));
+    await fireEvent.press(screen.getByText("Save Goal"));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining(initialValue));

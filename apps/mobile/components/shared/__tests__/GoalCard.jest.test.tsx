@@ -37,9 +37,9 @@ jest.mock("../ResourceCardPrimitives", () => ({
 const GoalCard = require("../GoalCard").GoalCard;
 
 describe("GoalCard", () => {
-  it("renders canonical goal identity and opens the goal", () => {
+  it("renders canonical goal identity and opens the goal", async () => {
     const onPress = jest.fn();
-    renderNative(
+    await renderNative(
       <GoalCard
         goal={{
           id: "goal-1",
@@ -52,19 +52,17 @@ describe("GoalCard", () => {
       />,
     );
 
-    expect(screen.getByTestId("goal-card-header").props.children).toEqual([
-      "Autumn marathon",
-      "Finish under four hours",
-    ]);
-    expect(screen.getByTestId("goal-card-metrics").props.children).toEqual([
-      "Goal type",
-      "Race",
-      "Target date",
-      "Oct 18, 2026",
-    ]);
+    expect(screen.getByTestId("goal-card-header")).toBeTruthy();
+    expect(screen.getByText("Autumn marathon")).toBeTruthy();
+    expect(screen.getByText("Finish under four hours")).toBeTruthy();
+    expect(screen.getByTestId("goal-card-metrics")).toBeTruthy();
+    expect(screen.getByText("Goal type")).toBeTruthy();
+    expect(screen.getByText("Race")).toBeTruthy();
+    expect(screen.getByText("Target date")).toBeTruthy();
+    expect(screen.getByText("Oct 18, 2026")).toBeTruthy();
     const card = screen.getByTestId("goal-card-goal-1");
     expect(card.props.accessibilityLabel).toBe("Open goal Autumn marathon");
-    fireEvent.press(card);
+    await fireEvent.press(card);
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 });

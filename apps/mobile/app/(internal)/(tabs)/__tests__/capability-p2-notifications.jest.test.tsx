@@ -143,17 +143,17 @@ describe("P2 notifications mobile capability boundaries", () => {
     getDataMock.mockReturnValue([followRequest]);
   });
 
-  it("notifications.browse renders a notification from the real screen", () => {
-    renderNative(<NotificationsScreen />);
+  it("notifications.browse renders a notification from the real screen", async () => {
+    await renderNative(<NotificationsScreen />);
 
     expect(screen.getByTestId("notification-item-notification-1")).toBeTruthy();
     expect(screen.getByText("New Message")).toBeTruthy();
   });
 
   it("notifications.follow_request runs optimistic removal and refresh callbacks", async () => {
-    renderNative(<NotificationsScreen />);
+    await renderNative(<NotificationsScreen />);
 
-    fireEvent.press(screen.getByTestId("notification-accept-notification-follow-request"), {
+    await fireEvent.press(screen.getByTestId("notification-accept-notification-follow-request"), {
       stopPropagation: jest.fn(),
     });
 

@@ -40,8 +40,8 @@ describe("GroupRows", () => {
     navigateToMock.mockReset();
   });
 
-  it("opens a member profile from the member row", () => {
-    renderNative(
+  it("opens a member profile from the member row", async () => {
+    await renderNative(
       <GroupMemberRow
         member={
           {
@@ -55,13 +55,13 @@ describe("GroupRows", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("group-member-profile-link-user-1"));
+    await fireEvent.press(screen.getByTestId("group-member-profile-link-user-1"));
 
     expect(navigateToMock).toHaveBeenCalledWith("/user/user-1");
   });
 
-  it("opens a join requester profile from the requester identity row", () => {
-    renderNative(
+  it("opens a join requester profile from the requester identity row", async () => {
+    await renderNative(
       <GroupJoinRequestRow
         joinRequest={
           {
@@ -76,7 +76,7 @@ describe("GroupRows", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("group-join-request-profile-link-user-2"));
+    await fireEvent.press(screen.getByTestId("group-join-request-profile-link-user-2"));
 
     expect(navigateToMock).toHaveBeenCalledWith("/user/user-2");
   });

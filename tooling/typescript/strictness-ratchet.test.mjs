@@ -274,21 +274,21 @@ test("TypeScript version changes fail normal checks and require only their revie
     checks: [{ flag: "exactOptionalPropertyTypes", project: projects[0] }],
     buckets: [],
   };
-  const previous = baselineFrom(projects, analysis, "5.9.2");
-  const comparison = compareBaseline(projects, analysis, previous, "5.9.3");
+  const previous = baselineFrom(projects, analysis, "6.0.2");
+  const comparison = compareBaseline(projects, analysis, previous, "6.0.3");
 
   assert.deepEqual(comparison.baselineErrors, []);
   assert(
-    comparison.versionErrors.some((error) => error.includes("5.9.2") && error.includes("5.9.3")),
+    comparison.versionErrors.some((error) => error.includes("6.0.2") && error.includes("6.0.3")),
   );
   assert.throws(() => assertBaselineUpdateAllowed(comparison), /--allow-typescript-version-change/);
   assert.doesNotThrow(() =>
     assertBaselineUpdateAllowed(comparison, { allowTypescriptVersionChange: true }),
   );
 
-  const migrated = baselineFrom(projects, analysis, "5.9.3");
+  const migrated = baselineFrom(projects, analysis, "6.0.3");
   assert.deepEqual(validateBaseline(migrated), []);
-  assert.deepEqual(validateBaselineVersion(migrated, "5.9.3"), []);
+  assert.deepEqual(validateBaselineVersion(migrated, "6.0.3"), []);
 
   assert.throws(
     () =>

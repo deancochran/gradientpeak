@@ -52,9 +52,9 @@ describe("PlannedActivityCard", () => {
     },
   ];
 
-  it("keeps a dedicated planned-activity card when the rich plan preview is unavailable", () => {
+  it("keeps a dedicated planned-activity card when the rich plan preview is unavailable", async () => {
     const onPress = jest.fn();
-    renderNative(
+    await renderNative(
       <PlannedActivityCard
         onPress={onPress}
         plannedActivity={{
@@ -79,14 +79,14 @@ describe("PlannedActivityCard", () => {
       { label: "Status", value: "Planned" },
     ]);
     const card = screen.getByTestId("planned-activity-card-planned-1");
-    fireEvent.press(card);
+    await fireEvent.press(card);
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it("reuses ActivityPlanCard when the scheduled plan preview is available", () => {
+  it("reuses ActivityPlanCard when the scheduled plan preview is available", async () => {
     const onPress = jest.fn();
     const plan = { id: "plan-1" };
-    renderNative(
+    await renderNative(
       <PlannedActivityCard
         onPress={onPress}
         plannedActivity={{
@@ -103,7 +103,7 @@ describe("PlannedActivityCard", () => {
 
     const card = screen.getByTestId("planned-activity-card-planned-1");
     expect(card.props.plan).toEqual({ id: "plan-1", metrics });
-    fireEvent.press(card);
+    await fireEvent.press(card);
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 });

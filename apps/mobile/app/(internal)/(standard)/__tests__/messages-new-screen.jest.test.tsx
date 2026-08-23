@@ -166,7 +166,7 @@ describe("new message screen", () => {
       isFetchingNextPage: false,
       fetchNextPage: jest.fn(),
     }));
-    const view = renderNative(<NewMessageScreen />);
+    const view = await renderNative(<NewMessageScreen />);
 
     expect(searchUsersUseInfiniteQueryMock).toHaveBeenLastCalledWith(
       { query: undefined, limit: 20 },
@@ -175,9 +175,9 @@ describe("new message screen", () => {
     expect(screen.getByTestId("messages-new-user-user-1")).toBeTruthy();
 
     const searchInput = screen.getByLabelText("Search recipients");
-    fireEvent.changeText(searchInput, "c");
-    fireEvent.changeText(searchInput, "co");
-    fireEvent.changeText(searchInput, "  coach  ");
+    await fireEvent.changeText(searchInput, "c");
+    await fireEvent.changeText(searchInput, "co");
+    await fireEvent.changeText(searchInput, "  coach  ");
     expect(screen.getByTestId("messages-new-search-input").props.value).toBe("  coach  ");
     expect(
       searchUsersUseInfiniteQueryMock.mock.calls.filter(([input]) => input.query === "coach"),
@@ -196,7 +196,7 @@ describe("new message screen", () => {
       disabled: false,
     });
 
-    fireEvent.press(screen.getByTestId("messages-new-search-clear"));
+    await fireEvent.press(screen.getByTestId("messages-new-search-clear"));
     expect(screen.getByTestId("messages-new-search-input").props.value).toBe("");
     await act(() => jest.advanceTimersByTime(300));
     expect(searchUsersUseInfiniteQueryMock).toHaveBeenLastCalledWith(
@@ -205,14 +205,14 @@ describe("new message screen", () => {
     );
     expect(screen.getByTestId("messages-new-user-user-1")).toBeTruthy();
 
-    view.unmount();
+    await view.unmount();
   });
 
   it("creates or opens a DM when starting a single-recipient conversation", async () => {
-    renderNative(<NewMessageScreen />);
+    await renderNative(<NewMessageScreen />);
 
-    fireEvent.press(screen.getByTestId("messages-new-user-user-1"));
-    fireEvent.press(screen.getByTestId("messages-new-next-trigger"));
+    await fireEvent.press(screen.getByTestId("messages-new-user-user-1"));
+    await fireEvent.press(screen.getByTestId("messages-new-next-trigger"));
 
     expect(createDMMutateMock).toHaveBeenCalledWith({ target_user_id: "user-1" });
     await waitFor(() => {
@@ -220,13 +220,13 @@ describe("new message screen", () => {
     });
   });
 
-  it("creates a group conversation when multiple recipients are selected", () => {
-    renderNative(<NewMessageScreen />);
+  it("creates a group conversation when multiple recipients are selected", async () => {
+    await renderNative(<NewMessageScreen />);
 
-    fireEvent.press(screen.getByTestId("messages-new-user-user-1"));
-    fireEvent.press(screen.getByTestId("messages-new-user-user-2"));
-    fireEvent.changeText(screen.getByTestId("messages-new-group-name-input"), "Ride Group");
-    fireEvent.press(screen.getByTestId("messages-new-next-trigger"));
+    await fireEvent.press(screen.getByTestId("messages-new-user-user-1"));
+    await fireEvent.press(screen.getByTestId("messages-new-user-user-2"));
+    await fireEvent.changeText(screen.getByTestId("messages-new-group-name-input"), "Ride Group");
+    await fireEvent.press(screen.getByTestId("messages-new-next-trigger"));
 
     expect(createConversationMutateMock).toHaveBeenCalledWith({
       participant_ids: ["user-1", "user-2"],

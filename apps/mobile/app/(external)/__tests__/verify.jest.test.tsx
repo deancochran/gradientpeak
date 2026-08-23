@@ -49,7 +49,15 @@ jest.mock("@/lib/auth/client", () => ({
 jest.mock("@repo/ui/components/alert", () => {
   const React = require("react");
   const host = (type: string) => (props: HostProps) =>
-    React.createElement(type, props, props.children);
+    React.createElement(
+      type,
+      props,
+      React.Children.map(props.children, (child: React.ReactNode) =>
+        typeof child === "string" || typeof child === "number"
+          ? React.createElement("Text", null, String(child))
+          : child,
+      ),
+    );
 
   return {
     __esModule: true,
@@ -76,7 +84,15 @@ jest.mock("@repo/ui/components/button", () => ({
 jest.mock("@repo/ui/components/card", () => {
   const React = require("react");
   const host = (type: string) => (props: HostProps) =>
-    React.createElement(type, props, props.children);
+    React.createElement(
+      type,
+      props,
+      React.Children.map(props.children, (child: React.ReactNode) =>
+        typeof child === "string" || typeof child === "number"
+          ? React.createElement("Text", null, String(child))
+          : child,
+      ),
+    );
 
   return {
     __esModule: true,
@@ -173,9 +189,9 @@ describe("verify screen", () => {
   });
 
   it("shows a resend confirmation message", async () => {
-    renderNative(<VerifyScreen />);
+    await renderNative(<VerifyScreen />);
 
-    fireEvent.press(screen.getByTestId("resend-code-button"));
+    await fireEvent.press(screen.getByTestId("resend-code-button"));
 
     await waitFor(() => {
       expect(resendMock).toHaveBeenCalledWith({
@@ -191,9 +207,9 @@ describe("verify screen", () => {
   it("shows resend failures returned by the auth client", async () => {
     resendMock.mockResolvedValue({ error: { message: "SMTP connection refused" } });
 
-    renderNative(<VerifyScreen />);
+    await renderNative(<VerifyScreen />);
 
-    fireEvent.press(screen.getByTestId("resend-code-button"));
+    await fireEvent.press(screen.getByTestId("resend-code-button"));
 
     await waitFor(() => {
       expect(screen.getByTestId("resend-message").props.children).toBe("SMTP connection refused");
@@ -205,9 +221,9 @@ describe("verify screen", () => {
       error: { message: "Email already verified. Sign in instead." },
     });
 
-    renderNative(<VerifyScreen />);
+    await renderNative(<VerifyScreen />);
 
-    fireEvent.press(screen.getByTestId("resend-code-button"));
+    await fireEvent.press(screen.getByTestId("resend-code-button"));
 
     await waitFor(() => {
       expect(screen.getByTestId("resend-message").props.children).toBe(
@@ -216,18 +232,18 @@ describe("verify screen", () => {
     });
   });
 
-  it("offers a way back to sign in", () => {
-    renderNative(<VerifyScreen />);
+  it("offers a way back to sign in", async () => {
+    await renderNative(<VerifyScreen />);
 
-    fireEvent.press(screen.getByTestId("back-to-sign-in-button"));
+    await fireEvent.press(screen.getByTestId("back-to-sign-in-button"));
 
     expect(replaceMock).toHaveBeenCalledWith("/(external)/sign-in");
   });
 
-  it("redirects verified users back into the app", () => {
+  it("redirects verified users back into the app", async () => {
     authState.isEmailVerified = true;
 
-    renderNative(<VerifyScreen />);
+    await renderNative(<VerifyScreen />);
 
     expect(replaceMock).toHaveBeenCalledWith("/");
   });

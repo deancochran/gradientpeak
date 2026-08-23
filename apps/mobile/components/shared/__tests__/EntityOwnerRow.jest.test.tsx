@@ -16,9 +16,9 @@ describe("EntityOwnerRow", () => {
     navigateMock.mockReset();
   });
 
-  it("names a pressable owner as a 44dp profile button and preserves the override callback", () => {
+  it("names a pressable owner as a 44dp profile button and preserves the override callback", async () => {
     const onPress = jest.fn();
-    const { getByLabelText } = renderNative(
+    const { getByLabelText } = await renderNative(
       <EntityOwnerRow
         displayNameOverride="Coach Kim"
         onPress={onPress}
@@ -31,13 +31,13 @@ describe("EntityOwnerRow", () => {
     expect(ownerButton.props.className).toContain("min-h-11");
     expect(ownerButton.props.className).toContain("min-w-11");
 
-    fireEvent.press(ownerButton);
+    await fireEvent.press(ownerButton);
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(navigateMock).not.toHaveBeenCalled();
   });
 
-  it("keeps a static owner row noninteractive", () => {
-    const { getByTestId, queryByLabelText } = renderNative(
+  it("keeps a static owner row noninteractive", async () => {
+    const { getByTestId, queryByLabelText } = await renderNative(
       <EntityOwnerRow owner={{ username: "Static Coach" }} testID="static-owner" />,
     );
 
@@ -47,12 +47,12 @@ describe("EntityOwnerRow", () => {
     expect(queryByLabelText("Open profile for Static Coach")).toBeNull();
   });
 
-  it("retains canonical profile navigation when no override callback is provided", () => {
-    const { getByLabelText } = renderNative(
+  it("retains canonical profile navigation when no override callback is provided", async () => {
+    const { getByLabelText } = await renderNative(
       <EntityOwnerRow owner={{ id: "owner-2", username: "Coach Lee" }} />,
     );
 
-    fireEvent.press(getByLabelText("Open profile for Coach Lee"));
+    await fireEvent.press(getByLabelText("Open profile for Coach Lee"));
 
     expect(navigateMock).toHaveBeenCalledWith({
       pathname: "/user/[userId]",

@@ -301,7 +301,7 @@ describe("verification request token extraction", () => {
     const request = new Request("https://app.example/api/auth/verify-email?token=secret");
     const id = verificationConsumptionIdFromRequest(request);
 
-    expect(id).toMatch(/^email-verification:[a-f0-9]{64}$/);
+    expect(id).toMatch(/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/);
     expect(id).not.toContain("secret");
     expect(
       verificationConsumptionIdFromRequest(

@@ -191,7 +191,7 @@ jest.mock("@/components/shared/resource-picker", () => ({
               ),
             testID: `event-detail-update-${scope === "routes" ? "route" : "activity-plan"}-option-${item.id}`,
           },
-          item.name,
+          React.createElement("Text", null, item.name),
         ),
       ),
     );
@@ -266,13 +266,21 @@ describe("event detail update screen", () => {
   });
 
   it("saves edits from the dedicated update route", async () => {
-    renderNative(<EventDetailUpdateScreen />);
+    await renderNative(<EventDetailUpdateScreen />);
 
-    fireEvent(screen.getByTestId("event-detail-update-title-input"), "changeText", "Updated Event");
-    fireEvent(screen.getByTestId("event-detail-update-notes-input"), "changeText", "Updated notes");
+    await fireEvent(
+      screen.getByTestId("event-detail-update-title-input"),
+      "changeText",
+      "Updated Event",
+    );
+    await fireEvent(
+      screen.getByTestId("event-detail-update-notes-input"),
+      "changeText",
+      "Updated notes",
+    );
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
+      await fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
     });
 
     await waitFor(() => {
@@ -292,12 +300,16 @@ describe("event detail update screen", () => {
   it("edits only the selected recurring occurrence without exposing series controls", async () => {
     eventDetailData.recurrence_rule = "FREQ=WEEKLY;UNTIL=20260530T235959Z";
 
-    renderNative(<EventDetailUpdateScreen />);
+    await renderNative(<EventDetailUpdateScreen />);
 
-    fireEvent(screen.getByTestId("event-detail-update-title-input"), "changeText", "Updated Event");
+    await fireEvent(
+      screen.getByTestId("event-detail-update-title-input"),
+      "changeText",
+      "Updated Event",
+    );
     expect(screen.queryByTestId("event-detail-update-repeat-row")).toBeNull();
     await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
+      await fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
     });
 
     await waitFor(() => {
@@ -318,15 +330,15 @@ describe("event detail update screen", () => {
     eventDetailData.occurrence_key = "2026-03-23";
     eventDetailData.original_starts_at = "2026-03-23T09:00:00.000Z";
 
-    renderNative(<EventDetailUpdateScreen />);
+    await renderNative(<EventDetailUpdateScreen />);
 
-    fireEvent(
+    await fireEvent(
       screen.getByTestId("event-detail-update-title-input"),
       "changeText",
       "Override Title",
     );
     await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
+      await fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
     });
 
     await waitFor(() => {
@@ -358,18 +370,18 @@ describe("event detail update screen", () => {
       refetch: jest.fn(),
     });
 
-    renderNative(<EventDetailUpdateScreen />);
+    await renderNative(<EventDetailUpdateScreen />);
 
-    fireEvent.press(screen.getByTestId("event-detail-update-type-planned"));
-    fireEvent.press(screen.getByTestId("event-detail-update-change-activity-plan-button"));
-    fireEvent.press(
+    await fireEvent.press(screen.getByTestId("event-detail-update-type-planned"));
+    await fireEvent.press(screen.getByTestId("event-detail-update-change-activity-plan-button"));
+    await fireEvent.press(
       screen.getByTestId(
         "event-detail-update-activity-plan-option-11111111-1111-4111-8111-111111111111",
       ),
     );
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
+      await fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
     });
 
     await waitFor(() => {
@@ -394,11 +406,11 @@ describe("event detail update screen", () => {
       name: "Tempo Run",
       activityCategory: "run",
     });
-    renderNative(<EventDetailUpdateScreen />);
-    fireEvent.press(screen.getByTestId("event-detail-update-remove-activity-plan-button"));
+    await renderNative(<EventDetailUpdateScreen />);
+    await fireEvent.press(screen.getByTestId("event-detail-update-remove-activity-plan-button"));
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
+      await fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
     });
 
     await waitFor(() => {

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import type { APIRequestContext, TestInfo } from "@playwright/test";
+import { hash } from "bcryptjs";
 import { Pool, type PoolClient } from "pg";
 import { seedOwnedActivityPlan, TEST_ACTIVITY_PLAN_ID } from "../seeds/activity-plans";
 import {
@@ -358,6 +359,53 @@ async function provisionActor(request: APIRequestContext, role: TestUserRole) {
   }
 }
 
+function canRepairReservedLocalActor(role: TestUserRole) {
+  const actor = TEST_USERS[role];
+  return (
+    actor.email.endsWith("@gradientpeak.local") &&
+    process.env[`E2E_${role.toUpperCase()}_EMAIL`] === undefined
+  );
+}
+
+async function repairIncompleteReservedLocalActor(role: TestUserRole) {
+  if (!canRepairReservedLocalActor(role)) {
+    throw new Error(
+      `Refusing to repair a custom ${role} E2E actor. Provide matching E2E_${role.toUpperCase()}_* credentials instead.`,
+    );
+  }
+
+  const actor = TEST_USERS[role];
+  const passwordHash = await hash(actor.password, 10);
+  const pool = new Pool({ connectionString: getLocalDatabaseUrl() });
+  try {
+    await pool.query("begin");
+    const userResult = await pool.query<{ id: string }>(
+      'select "id" from "users" where "email" = $1',
+      [actor.email],
+    );
+    const userId = userResult.rows[0]?.id;
+    if (!userId) {
+      throw new Error(`The reserved ${role} E2E actor does not exist to repair.`);
+    }
+    await pool.query('delete from "accounts" where "user_id" = $1 and "provider_id" = $2', [
+      userId,
+      "credential",
+    ]);
+    await pool.query(
+      `insert into "accounts" (
+        "issuer", "account_id", "provider_id", "user_id", "password", "created_at", "updated_at"
+      ) values ($1, $2, $3, $4, $5, now(), now())`,
+      ["local:credential", userId, "credential", userId, passwordHash],
+    );
+    await pool.query("commit");
+  } catch (error) {
+    await pool.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    await pool.end();
+  }
+}
+
 export async function authenticateTestActor(
   request: APIRequestContext,
   role: TestUserRole,
@@ -366,6 +414,11 @@ export async function authenticateTestActor(
   let response = await signIn(request, role);
   if (!response.ok()) {
     await provisionActor(request, role);
+    response = await signIn(request, role);
+  }
+
+  if (!response.ok()) {
+    await repairIncompleteReservedLocalActor(role);
     response = await signIn(request, role);
   }
 

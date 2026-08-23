@@ -154,7 +154,7 @@ describe("ActivityPlansPage cards", () => {
     expect(screen.getByLabelText("Load, 72, Personalized")).toBeTruthy();
     expect(screen.getByLabelText("Intensity, 0.80, Personalized")).toBeTruthy();
     expect(screen.queryByText(/~30m|approximately 30m/i)).toBeNull();
-    expect(screen.getByText("Workout prescription")).toBeTruthy();
+    expect(screen.getByText("Activity prescription")).toBeTruthy();
     expect(
       screen.getByRole("img", {
         name: /widths are normalized.*height and color reflect authored intensity/i,

@@ -152,7 +152,7 @@ describe("ActivityCard", () => {
     mockUsePreferredUnitSystem.mockReturnValue("metric");
   });
 
-  it("uses one canonical notes and metrics layout across interaction contexts", () => {
+  it("uses one canonical notes and metrics layout across interaction contexts", async () => {
     const activity = {
       id: "activity-1",
       title: "Morning Run",
@@ -171,7 +171,7 @@ describe("ActivityCard", () => {
       ],
       engagement: { likes: 2, comments: 0, viewerHasLiked: false },
     };
-    const rendered = renderNative(<ActivityCard activity={activity} />);
+    const rendered = await renderNative(<ActivityCard activity={activity} />);
 
     expect(screen.getByText("Morning Run")).toBeTruthy();
     expect(screen.getByText("Steady aerobic work.").props.numberOfLines).toBe(2);
@@ -182,7 +182,7 @@ describe("ActivityCard", () => {
     expect(screen.getByTestId("activity-card-comment-button-activity-1")).toBeTruthy();
     expect(screen.getByTestId("activity-card-share-button-activity-1")).toBeTruthy();
 
-    rendered.rerender(<ActivityCard activity={activity} onPress={jest.fn()} />);
+    await rendered.rerender(<ActivityCard activity={activity} onPress={jest.fn()} />);
 
     expect(screen.getByText("Morning Run")).toBeTruthy();
     expect(screen.getByText("Steady aerobic work.").props.numberOfLines).toBe(2);
@@ -192,8 +192,8 @@ describe("ActivityCard", () => {
     expect(screen.getByTestId("activity-card-like-button-activity-1")).toBeTruthy();
   });
 
-  it("shows an icon and label for every unique multisport category", () => {
-    renderNative(
+  it("shows an icon and label for every unique multisport category", async () => {
+    await renderNative(
       <ActivityCard
         activity={{
           id: "activity-multisport",
@@ -210,8 +210,8 @@ describe("ActivityCard", () => {
     expect(screen.getAllByText("Bike").length).toBeGreaterThan(0);
   });
 
-  it("does not show the legacy activity-category-specific breakdown for multisport activities", () => {
-    renderNative(
+  it("does not show the legacy activity-category-specific breakdown for multisport activities", async () => {
+    await renderNative(
       <ActivityCard
         activity={{
           id: "activity-multisport-load",
@@ -246,8 +246,8 @@ describe("ActivityCard", () => {
     expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
   });
 
-  it("shows the canonical activity summary metrics", () => {
-    renderNative(
+  it("shows the canonical activity summary metrics", async () => {
+    await renderNative(
       <ActivityCard
         activity={{
           id: "activity-1",
@@ -293,8 +293,8 @@ describe("ActivityCard", () => {
     expect(screen.queryByText("Avg HR")).toBeNull();
   });
 
-  it("uses elapsed time before active time for the Elapsed metric", () => {
-    renderNative(
+  it("uses elapsed time before active time for the Elapsed metric", async () => {
+    await renderNative(
       <ActivityCard
         activity={{
           id: "activity-elapsed",
@@ -318,8 +318,8 @@ describe("ActivityCard", () => {
     expect(screen.queryByText("Active")).toBeNull();
   });
 
-  it("labels active-only timing as Active", () => {
-    renderNative(
+  it("labels active-only timing as Active", async () => {
+    await renderNative(
       <ActivityCard
         activity={{
           id: "activity-active-only",
@@ -343,8 +343,8 @@ describe("ActivityCard", () => {
     expect(screen.queryByText("Elapsed")).toBeNull();
   });
 
-  it("marks partial Load and Intensity values as estimates", () => {
-    renderNative(
+  it("marks partial Load and Intensity values as estimates", async () => {
+    await renderNative(
       <ActivityCard
         activity={{
           id: "activity-partial",
@@ -380,8 +380,8 @@ describe("ActivityCard", () => {
     expect(screen.queryByText(/Derived · Partial/)).toBeNull();
   });
 
-  it("does not render an unavailable-load diagnostic in the card", () => {
-    renderNative(
+  it("does not render an unavailable-load diagnostic in the card", async () => {
+    await renderNative(
       <ActivityCard
         activity={{
           id: "activity-unsupported",
@@ -399,10 +399,10 @@ describe("ActivityCard", () => {
     ).toBeNull();
   });
 
-  it("formats activity distance in the viewer's imperial units", () => {
+  it("formats activity distance in the viewer's imperial units", async () => {
     mockUsePreferredUnitSystem.mockReturnValue("imperial");
 
-    renderNative(
+    await renderNative(
       <ActivityCard
         activity={{
           id: "activity-1",
@@ -425,8 +425,8 @@ describe("ActivityCard", () => {
     expect(screen.getByText("3.1 mi")).toBeTruthy();
   });
 
-  it("keeps load metric slots visible when derived values are unavailable", () => {
-    renderNative(
+  it("keeps load metric slots visible when derived values are unavailable", async () => {
+    await renderNative(
       <ActivityCard
         activity={{
           id: "activity-1",
@@ -461,8 +461,8 @@ describe("ActivityCard", () => {
     expect(screen.queryByText("0")).toBeNull();
   });
 
-  it("distinguishes absent canonical evidence from an unavailable canonical bundle", () => {
-    const { rerender } = renderNative(
+  it("distinguishes absent canonical evidence from an unavailable canonical bundle", async () => {
+    const { rerender } = await renderNative(
       <ActivityCard
         activity={{
           id: "activity-1",
@@ -477,7 +477,7 @@ describe("ActivityCard", () => {
     expect(screen.getByText("Intensity")).toBeTruthy();
     expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
 
-    rerender(
+    await rerender(
       <ActivityCard
         activity={{
           id: "activity-1",
@@ -496,8 +496,8 @@ describe("ActivityCard", () => {
     ).toBeNull();
   });
 
-  it("emits canonical fields without retired metric aliases", () => {
-    const rendered = renderNative(
+  it("emits canonical fields without retired metric aliases", async () => {
+    const rendered = await renderNative(
       <ActivityCard
         activity={{
           id: "activity-1",
@@ -514,8 +514,8 @@ describe("ActivityCard", () => {
     );
   });
 
-  it("toggles likes using the activity entity type", () => {
-    renderNative(
+  it("toggles likes using the activity entity type", async () => {
+    await renderNative(
       <ActivityCard
         activity={{
           id: "activity-1",
@@ -525,7 +525,7 @@ describe("ActivityCard", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("activity-card-like-button-activity-1"));
+    await fireEvent.press(screen.getByTestId("activity-card-like-button-activity-1"));
 
     expect(toggleLikeMutateMock).toHaveBeenCalledWith({
       entity_id: "activity-1",
@@ -533,13 +533,13 @@ describe("ActivityCard", () => {
     });
   });
 
-  it("keeps the shared social action layout and navigation independent", () => {
+  it("keeps the shared social action layout and navigation independent", async () => {
     const onCommentPress = jest.fn();
     const onLikePress = jest.fn();
     const onPress = jest.fn();
     const onTopRightActionPress = jest.fn();
 
-    renderNative(
+    await renderNative(
       <ActivityCard
         activity={{
           id: "activity-boundaries",
@@ -570,30 +570,30 @@ describe("ActivityCard", () => {
     expect(like.props.accessibilityRole).toBe("button");
     expect(screen.getByTestId("activity-card-social-actions")).toBeTruthy();
 
-    fireEvent.press(navigation);
+    await fireEvent.press(navigation);
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(onCommentPress).not.toHaveBeenCalled();
     expect(onLikePress).not.toHaveBeenCalled();
 
-    fireEvent.press(comment);
+    await fireEvent.press(comment);
     expect(onCommentPress).toHaveBeenCalledTimes(1);
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(onLikePress).not.toHaveBeenCalled();
 
-    fireEvent.press(like);
+    await fireEvent.press(like);
     expect(onLikePress).toHaveBeenCalledTimes(1);
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(onCommentPress).toHaveBeenCalledTimes(1);
 
-    fireEvent.press(topRightAction);
+    await fireEvent.press(topRightAction);
     expect(onTopRightActionPress).toHaveBeenCalledTimes(1);
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it("uses the same share placement as the activity detail header", () => {
+  it("uses the same share placement as the activity detail header", async () => {
     const onSharePress = jest.fn();
 
-    renderNative(
+    await renderNative(
       <ActivityCard
         activity={{ id: "activity-share", title: "Shareable Run" }}
         onSharePress={onSharePress}
@@ -606,24 +606,25 @@ describe("ActivityCard", () => {
     expect(
       screen
         .getByTestId("activity-share-card-action-region")
-        .findAllByProps({ testID: "activity-card-share-button-activity-share" }).length,
+        .queryAll((node) => node.props["testID"] === "activity-card-share-button-activity-share")
+        .length,
     ).toBeGreaterThan(0);
     expect(share.props.accessibilityLabel).toBe("Share activity");
 
-    fireEvent.press(share);
+    await fireEvent.press(share);
 
     expect(onSharePress).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps Share visible and explains when a private activity cannot be shared", () => {
+  it("keeps Share visible and explains when a private activity cannot be shared", async () => {
     const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
-    renderNative(
+    await renderNative(
       <ActivityCard
         activity={{ id: "activity-private", title: "Private Run", visibility: "private" }}
       />,
     );
 
-    fireEvent.press(screen.getByTestId("activity-card-share-button-activity-private"));
+    await fireEvent.press(screen.getByTestId("activity-card-share-button-activity-private"));
 
     expect(alert).toHaveBeenCalledWith(
       "Not public",
@@ -634,13 +635,13 @@ describe("ActivityCard", () => {
   it("explains when native sharing fails", async () => {
     shareMock.mockRejectedValueOnce(new Error("share failed"));
     const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
-    renderNative(
+    await renderNative(
       <ActivityCard
         activity={{ id: "activity-public", title: "Public Run", visibility: "public" }}
       />,
     );
 
-    fireEvent.press(screen.getByTestId("activity-card-share-button-activity-public"));
+    await fireEvent.press(screen.getByTestId("activity-card-share-button-activity-public"));
 
     await waitFor(() =>
       expect(alert).toHaveBeenCalledWith(
@@ -650,8 +651,8 @@ describe("ActivityCard", () => {
     );
   });
 
-  it("keeps top-right actions in the owner region and below-metrics actions after metrics", () => {
-    renderNative(
+  it("keeps top-right actions in the owner region and below-metrics actions after metrics", async () => {
+    await renderNative(
       <ActivityCard
         activity={{
           id: "activity-accessory",
@@ -675,20 +676,20 @@ describe("ActivityCard", () => {
     expect(
       screen
         .getByTestId("activity-card-accessory-placement-action-region")
-        .findAllByProps({ testID: "activity-card-top-right-action" }).length,
+        .queryAll((node) => node.props["testID"] === "activity-card-top-right-action").length,
     ).toBeGreaterThan(0);
     expect(
       screen
         .getByTestId("activity-card-below-metrics-actions")
-        .findAllByProps({ testID: "activity-card-content-action" }).length,
+        .queryAll((node) => node.props["testID"] === "activity-card-content-action").length,
     ).toBeGreaterThan(0);
   });
 
-  it("keeps owner profile and card navigation independent", () => {
+  it("keeps owner profile and card navigation independent", async () => {
     const onOwnerPress = jest.fn();
     const onPress = jest.fn();
 
-    renderNative(
+    await renderNative(
       <ActivityCard
         activity={{ id: "activity-owner-boundary", title: "Owner Run" }}
         onOwnerPress={onOwnerPress}
@@ -700,17 +701,17 @@ describe("ActivityCard", () => {
     const owner = screen.getByLabelText("Open profile for Coach Kim");
     const navigation = screen.getByLabelText("Open activity Owner Run");
 
-    fireEvent.press(owner);
+    await fireEvent.press(owner);
     expect(onOwnerPress).toHaveBeenCalledTimes(1);
     expect(onPress).not.toHaveBeenCalled();
 
-    fireEvent.press(navigation);
+    await fireEvent.press(navigation);
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(onOwnerPress).toHaveBeenCalledTimes(1);
   });
 
-  it("never renders route previews or route indicators", () => {
-    renderNative(
+  it("never renders route previews or route indicators", async () => {
+    await renderNative(
       <ActivityCard
         activity={{
           id: "activity-1",
@@ -731,8 +732,8 @@ describe("ActivityCard", () => {
     expect(screen.queryByText("Route available")).toBeNull();
   });
 
-  it("does not show ingestion text in feed and list cards", () => {
-    renderNative(
+  it("does not show ingestion text in feed and list cards", async () => {
+    await renderNative(
       <ActivityCard
         activity={{
           id: "activity-1",

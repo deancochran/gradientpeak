@@ -3,16 +3,16 @@
   "devDependencies": {
     "@biomejs/biome": "2.4.8",
     "kill-port": "^2.0.1",
-    "knip": "^6.29.0",
+    "knip": "^6.32.2",
     "lefthook": "^2.1.10",
-    "turbo": "^2.10.7",
-    "typescript": "5.9.3",
-    "vitest": "^4.1.10"
+    "turbo": "^2.10.11",
+    "typescript": "6.0.3",
+    "vitest": "^4.1.11"
   },
   "engines": {
-    "node": ">=24.11.1 <25"
+    "node": ">=24.19.0 <25"
   },
-  "packageManager": "pnpm@10.33.0",
+  "packageManager": "pnpm@10.34.5",
   "private": true,
   "scripts": {
     "build": "turbo run build",
@@ -31,7 +31,6 @@
     "dev:web": "pnpm --filter web dev",
     "dev:web:local": "pnpm --filter web dev:local",
     "dev:web:tunnel": "pnpm --filter web dev:tunnel",
-    "dev:web:scan": "pnpm --filter web dev:scan",
     "dev:mobile": "pnpm --filter mobile dev",
     "dev:e2e:web": "pnpm --filter web dev:e2e",
     "dev:e2e:mobile": "pnpm --filter mobile dev:e2e",

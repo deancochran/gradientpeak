@@ -23,9 +23,9 @@ describe("useAppNavigate", () => {
 
   it("routes through navigate to reuse existing stack entries", async () => {
     const { useAppNavigate } = await import("../useAppNavigate");
-    const { result } = renderHook(() => useAppNavigate());
+    const { result } = await renderHook(() => useAppNavigate());
 
-    act(() => {
+    await act(() => {
       result.current("/messages" as Href);
     });
 
@@ -36,9 +36,9 @@ describe("useAppNavigate", () => {
   it("falls back to push when navigate is unavailable", async () => {
     routerState.value = { push: pushMock };
     const { useAppNavigate } = await import("../useAppNavigate");
-    const { result } = renderHook(() => useAppNavigate());
+    const { result } = await renderHook(() => useAppNavigate());
 
-    act(() => {
+    await act(() => {
       result.current("/messages" as Href);
     });
 

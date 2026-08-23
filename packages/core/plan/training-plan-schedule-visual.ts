@@ -17,7 +17,7 @@ export const trainingPlanScheduleVisualWeekSchema = z.strictObject({
 
 /**
  * A presentation-neutral view of the authored schedule. It deliberately has no
- * training phase, workout intensity, or athlete-specific load fields because a
+ * training phase, activity intensity, or athlete-specific load fields because a
  * training-plan structure does not author those facts.
  */
 export const trainingPlanScheduleVisualModelSchema = z.strictObject({

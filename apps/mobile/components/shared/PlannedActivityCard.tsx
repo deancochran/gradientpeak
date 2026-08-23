@@ -36,7 +36,7 @@ export function PlannedActivityCard({
   if (plannedActivity.plan) {
     return (
       <ActivityPlanCard
-        onPress={onPress}
+        {...(onPress !== undefined ? { onPress } : {})}
         plan={{ ...plannedActivity.plan, metrics: plannedActivity.metrics }}
         showScheduleInfo
         testID={testID ?? `planned-activity-card-${plannedActivity.id}`}
@@ -48,17 +48,18 @@ export function PlannedActivityCard({
   const compact = variant === "compact";
   return (
     <ResourceCardShell
-      accessibilityLabel={onPress ? `Open planned activity ${plannedActivity.title}` : undefined}
+      {...(onPress
+        ? { accessibilityLabel: `Open planned activity ${plannedActivity.title}`, onPress }
+        : {})}
       compact={compact}
       contentClassName={compact ? "gap-3 px-2" : "gap-3 px-3"}
-      onPress={onPress}
       testID={testID ?? `planned-activity-card-${plannedActivity.id}`}
     >
       <ResourceCardHeader
         compact={compact}
         description={plannedActivity.subtitle}
         descriptionFallback="Activity details are not available yet."
-        descriptionNumberOfLines={compact ? 2 : undefined}
+        {...(compact ? { descriptionNumberOfLines: 2 } : {})}
         icon={CalendarDays}
         iconClassName="text-blue-600"
         iconContainerClassName="bg-blue-500/15"

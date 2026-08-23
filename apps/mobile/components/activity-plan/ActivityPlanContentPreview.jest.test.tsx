@@ -58,8 +58,8 @@ const structure = {
 };
 
 describe("ActivityPlanContentPreview", () => {
-  it("shows the interval chart without an embedded profile heading", () => {
-    renderNative(
+  it("shows the interval chart without an embedded profile heading", async () => {
+    await renderNative(
       <ActivityPlanContentPreview
         plan={{ structure }}
         size="medium"
@@ -71,8 +71,8 @@ describe("ActivityPlanContentPreview", () => {
     expect(screen.getByTestId("structured-plan-preview-timeline")).toBeTruthy();
   });
 
-  it("does not render an empty visual wrapper for a metrics-only plan", () => {
-    renderNative(
+  it("does not render an empty visual wrapper for a metrics-only plan", async () => {
+    await renderNative(
       <ActivityPlanContentPreview plan={{}} size="medium" testIDPrefix="metrics-only-preview" />,
     );
 
@@ -80,8 +80,8 @@ describe("ActivityPlanContentPreview", () => {
     expect(screen.queryByText("Intensity profile")).toBeNull();
   });
 
-  it("collapses repeated segment, activity_category, interval, and step labels", () => {
-    renderNative(
+  it("collapses repeated segment, activity_category, interval, and step labels", async () => {
+    await renderNative(
       <ActivityPlanContentPreview
         plan={{
           structure: {
@@ -120,8 +120,8 @@ describe("ActivityPlanContentPreview", () => {
     expect(screen.getByText("5 RPE · 20min")).toBeTruthy();
   });
 
-  it("keeps distinct hierarchy labels and formats longer target summaries", () => {
-    renderNative(
+  it("keeps distinct hierarchy labels and formats longer target summaries", async () => {
+    await renderNative(
       <ActivityPlanContentPreview
         plan={{
           structure: {
@@ -164,7 +164,7 @@ describe("ActivityPlanContentPreview", () => {
     expect(screen.getByText("30 km/h · 90 rpm · 10min")).toBeTruthy();
   });
 
-  it("shows authored fallback by default and viewer-personalized output only when enabled", () => {
+  it("shows authored fallback by default and viewer-personalized output only when enabled", async () => {
     const bikeStructure = structuredClone(structure);
     bikeStructure.activity_category = "bike";
     const bikeSegment = bikeStructure.segments[0];
@@ -179,7 +179,7 @@ describe("ActivityPlanContentPreview", () => {
       athleteId: "viewer-1",
       bikeThresholdWatts: 300,
     });
-    const { rerender } = renderNative(
+    const { rerender } = await renderNative(
       <ActivityPlanContentPreview
         performanceTargets={performanceTargets}
         plan={{ structure: bikeStructure }}
@@ -190,7 +190,7 @@ describe("ActivityPlanContentPreview", () => {
     expect(screen.getByText(/80% FTP/)).toBeTruthy();
     expect(screen.queryByText(/240 W/)).toBeNull();
 
-    rerender(
+    await rerender(
       <ActivityPlanContentPreview
         personalizeTargets
         performanceTargets={performanceTargets}
@@ -201,8 +201,8 @@ describe("ActivityPlanContentPreview", () => {
     expect(screen.getByText(/240 W \(80% FTP\)/)).toBeTruthy();
   });
 
-  it("shows every authored instruction annotation on the full detail preview", () => {
-    renderNative(
+  it("shows every authored instruction annotation on the full detail preview", async () => {
+    await renderNative(
       <ActivityPlanContentPreview
         plan={{
           structure: {

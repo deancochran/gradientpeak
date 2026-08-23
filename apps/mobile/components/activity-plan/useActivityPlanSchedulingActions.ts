@@ -1,6 +1,6 @@
 import { invalidateActivityPlanQueries } from "@repo/api/react";
 import type { ActivityPlanDetail, ActivityPlanSummary } from "@repo/core";
-import type { Router } from "expo-router";
+import type { ImperativeRouter } from "expo-router";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
@@ -16,7 +16,7 @@ interface UseActivityPlanSchedulingActionsParams {
   canDuplicatePlan?: boolean;
   canSchedulePlan?: boolean;
   queryClient: ReturnType<typeof import("@tanstack/react-query").useQueryClient>;
-  router: Pick<Router, "back" | "navigate" | "replace">;
+  router: Pick<ImperativeRouter, "back" | "navigate" | "replace">;
   utils: ReturnType<typeof api.useUtils>;
 }
 

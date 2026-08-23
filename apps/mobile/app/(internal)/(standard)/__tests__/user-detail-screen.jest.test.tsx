@@ -176,19 +176,19 @@ describe("user detail own vs other controls", () => {
     replaceMock.mockReset();
   });
 
-  it("redirects own profile detail requests to profile settings", () => {
+  it("redirects own profile detail requests to profile settings", async () => {
     localSearchParamsMock.userId = authState.user.id;
     authState.profile.username = "Owner";
     profileQueryState.data.username = "Owner";
 
-    renderNative(<UserDetailScreenWithErrorBoundary />);
+    await renderNative(<UserDetailScreenWithErrorBoundary />);
 
     expect(replaceMock).toHaveBeenCalledWith("/(internal)/(tabs)/profile");
     expect(screen.getByText("Opening profile settings...")).toBeTruthy();
     expect(screen.queryByTestId("user-detail-options-trigger")).toBeNull();
   });
 
-  it("hides own-only controls on other user profile", () => {
+  it("hides own-only controls on other user profile", async () => {
     localSearchParamsMock.userId = "22222222-2222-4222-8222-222222222222";
     profileQueryState.data = {
       id: "22222222-2222-4222-8222-222222222222",
@@ -200,14 +200,14 @@ describe("user detail own vs other controls", () => {
       language: null,
     };
 
-    renderNative(<UserDetailScreenWithErrorBoundary />);
+    await renderNative(<UserDetailScreenWithErrorBoundary />);
 
     expect(screen.queryByTestId("user-detail-options-trigger")).toBeNull();
     expect(screen.queryByTestId("account-section")).toBeNull();
     expect(screen.getByText("Public Paceline")).toBeTruthy();
   });
 
-  it("hides private profile details and graph navigation until access is accepted", () => {
+  it("hides private profile details and graph navigation until access is accepted", async () => {
     localSearchParamsMock.userId = "33333333-3333-4333-8333-333333333333";
     profileQueryState.data = {
       id: "33333333-3333-4333-8333-333333333333",
@@ -224,7 +224,7 @@ describe("user detail own vs other controls", () => {
       preferred_units: "imperial",
     };
 
-    renderNative(<UserDetailScreenWithErrorBoundary />);
+    await renderNative(<UserDetailScreenWithErrorBoundary />);
 
     expect(screen.getByText("This account is private")).toBeTruthy();
     expect(screen.getByTestId("user-detail-requested-button")).toBeTruthy();
@@ -234,7 +234,7 @@ describe("user detail own vs other controls", () => {
     expect(screen.getByTestId("user-detail-summary-following").props.disabled).toBe(true);
   });
 
-  it("shows private profile details after follow access is accepted", () => {
+  it("shows private profile details after follow access is accepted", async () => {
     localSearchParamsMock.userId = "44444444-4444-4444-8444-444444444444";
     profileQueryState.data = {
       id: "44444444-4444-4444-8444-444444444444",
@@ -251,7 +251,7 @@ describe("user detail own vs other controls", () => {
       preferred_units: "imperial",
     };
 
-    renderNative(<UserDetailScreenWithErrorBoundary />);
+    await renderNative(<UserDetailScreenWithErrorBoundary />);
 
     expect(screen.queryByText("This account is private")).toBeNull();
     expect(screen.getByText("Visible after access")).toBeTruthy();

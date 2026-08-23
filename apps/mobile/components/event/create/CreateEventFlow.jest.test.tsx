@@ -98,10 +98,10 @@ describe("CreateEventFlow existing event editability", () => {
     updateMutateMock.mockClear();
   });
 
-  it("fails closed for a top-level ID with a null relation, including an imperative stale submission", () => {
+  it("fails closed for a top-level ID with a null relation, including an imperative stale submission", async () => {
     const planReference = { activity_plan_id: "plan-1", activity_plan: null };
     const ref = createRef<{ submit: () => void }>();
-    renderNative(
+    await renderNative(
       <CreateEventFlow
         ref={ref}
         onCancel={jest.fn()}
@@ -118,8 +118,8 @@ describe("CreateEventFlow existing event editability", () => {
   it.each([
     ["a linked event", { activity_plan: { id: "plan-1" } }],
     ["an unlinked event", {}],
-  ])("keeps %s editable", (_label, planReference) => {
-    renderNative(
+  ])("keeps %s editable", async (_label, planReference) => {
+    await renderNative(
       <CreateEventFlow
         onCancel={jest.fn()}
         onCreated={jest.fn()}

@@ -37,8 +37,8 @@ const manualService = {
 };
 
 describe("FTMS control accessibility", () => {
-  it("labels treadmill controls with their adjustment and unit", () => {
-    renderNative(
+  it("labels treadmill controls with their adjustment and unit", async () => {
+    await renderNative(
       <TreadmillControlUI service={manualService} controlMode="manual" hasPlan={false} />,
     );
 
@@ -49,8 +49,10 @@ describe("FTMS control accessibility", () => {
     expect(screen.getByLabelText("Apply incline in percent").props.className).toContain("h-12");
   });
 
-  it("labels rower controls with their adjustment units", () => {
-    renderNative(<RowerControlUI service={manualService} controlMode="manual" hasPlan={false} />);
+  it("labels rower controls with their adjustment units", async () => {
+    await renderNative(
+      <RowerControlUI service={manualService} controlMode="manual" hasPlan={false} />,
+    );
 
     expect(screen.getByLabelText("Decrease damper by one level").props.accessibilityRole).toBe(
       "button",
@@ -61,8 +63,8 @@ describe("FTMS control accessibility", () => {
     expect(screen.getByLabelText("Apply resistance level").props.className).toContain("h-12");
   });
 
-  it("marks elliptical controls disabled in auto mode", () => {
-    renderNative(
+  it("marks elliptical controls disabled in auto mode", async () => {
+    await renderNative(
       <EllipticalControlUI service={manualService} controlMode="auto" hasPlan={false} />,
     );
 

@@ -1,7 +1,7 @@
 import { act } from "@testing-library/react-native";
 import React from "react";
 import type { Control, ControllerRenderProps, FieldValues } from "react-hook-form";
-import type { ReactTestInstance } from "react-test-renderer";
+import type { TestInstance as ReactTestInstance } from "test-renderer";
 import {
   createActivityPlanDetail,
   createActivityPlanSummary,
@@ -49,10 +49,8 @@ type FormFieldMockProps = {
   testId?: string;
 };
 type MockControllerField = ControllerRenderProps<FieldValues, string>;
-type HostQueries = { UNSAFE_getByType(type: string): ReactTestInstance };
-
-function getHostByType(rendered: ReturnType<typeof renderNative>, type: string) {
-  return (rendered as typeof rendered & HostQueries).UNSAFE_getByType(type);
+function getHostByType(rendered: Awaited<ReturnType<typeof renderNative>>, type: string) {
+  return rendered.container.queryAll((node) => node.type === type)[0] as ReactTestInstance;
 }
 
 jest.mock("@tanstack/react-query", () => ({
@@ -140,7 +138,7 @@ jest.mock("@/components/shared/resource-picker", () => ({
               onSelect({ kind: "activityPlan", id: item.id, label: item.name, activityPlan: item }),
             testID: `event-detail-activity-plan-option-${item.id}`,
           },
-          item.name,
+          React.createElement("Text", null, item.name),
         ),
       ),
       React.createElement("Button", {
@@ -372,18 +370,18 @@ describe("event detail create mode", () => {
   });
 
   it("prefills the selected date and requires the user to pick a type in the form", async () => {
-    const rendered = renderNative(<EventDetailScreen />);
+    const rendered = await renderNative(<EventDetailScreen />);
 
     expect(getHostByType(rendered, "StackScreen").props.options.title).toBe("Create Event");
     expect(screen.getByTestId("event-detail-start-date-button").props.children).toBe(
       "Tuesday, Mar 24, 2026",
     );
 
-    fireEvent.press(screen.getByTestId("event-detail-type-custom"));
-    fireEvent(screen.getByTestId("event-detail-title-input"), "changeText", "Swim test");
+    await fireEvent.press(screen.getByTestId("event-detail-type-custom"));
+    await fireEvent(screen.getByTestId("event-detail-title-input"), "changeText", "Swim test");
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-save-button"));
+      await fireEvent.press(screen.getByTestId("event-detail-save-button"));
     });
 
     await waitFor(() => {
@@ -413,17 +411,21 @@ describe("event detail create mode", () => {
       refetch: jest.fn(),
     });
 
-    renderNative(<EventDetailScreen />);
+    await renderNative(<EventDetailScreen />);
 
-    fireEvent.press(screen.getByTestId("event-detail-type-planned"));
+    await fireEvent.press(screen.getByTestId("event-detail-type-planned"));
     expect(screen.queryByTestId("event-detail-recurrence-weekly")).toBeNull();
     expect(screen.queryByTestId("event-detail-activity-plan-search-input")).toBeNull();
-    fireEvent.press(screen.getByTestId("event-detail-change-activity-plan-button"));
-    fireEvent(screen.getByTestId("event-detail-activity-plan-search-input"), "changeText", "tempo");
-    fireEvent.press(screen.getByTestId("event-detail-activity-plan-option-plan-1"));
+    await fireEvent.press(screen.getByTestId("event-detail-change-activity-plan-button"));
+    await fireEvent(
+      screen.getByTestId("event-detail-activity-plan-search-input"),
+      "changeText",
+      "tempo",
+    );
+    await fireEvent.press(screen.getByTestId("event-detail-activity-plan-option-plan-1"));
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-save-button"));
+      await fireEvent.press(screen.getByTestId("event-detail-save-button"));
     });
 
     await waitFor(() => {
@@ -439,12 +441,12 @@ describe("event detail create mode", () => {
   });
 
   it("uses the shared date field to set and clear a recurrence end date", async () => {
-    renderNative(<EventDetailScreen />);
+    await renderNative(<EventDetailScreen />);
 
-    fireEvent.press(screen.getByTestId("event-detail-type-custom"));
-    fireEvent(screen.getByTestId("event-detail-title-input"), "changeText", "Swim test");
-    fireEvent.press(screen.getByTestId("event-detail-repeat-row"));
-    fireEvent.press(screen.getByTestId("event-detail-recurrence-weekly"));
+    await fireEvent.press(screen.getByTestId("event-detail-type-custom"));
+    await fireEvent(screen.getByTestId("event-detail-title-input"), "changeText", "Swim test");
+    await fireEvent.press(screen.getByTestId("event-detail-repeat-row"));
+    await fireEvent.press(screen.getByTestId("event-detail-recurrence-weekly"));
 
     const recurrenceEndDate = screen.getByTestId("event-detail-recurrence-end-date-button");
     expect(recurrenceEndDate.props.accessibilityHint).toBe("Choose when this series should end");
@@ -453,8 +455,8 @@ describe("event detail create mode", () => {
     await act(async () => {
       recurrenceEndDate.props.onChange("2026-04-01");
     });
-    fireEvent.press(screen.getByTestId("event-detail-repeat-done-button"));
-    fireEvent.press(screen.getByTestId("event-detail-save-button"));
+    await fireEvent.press(screen.getByTestId("event-detail-repeat-done-button"));
+    await fireEvent.press(screen.getByTestId("event-detail-save-button"));
 
     await waitFor(() => {
       expect(createEventMutateMock).toHaveBeenCalledWith(
@@ -464,12 +466,12 @@ describe("event detail create mode", () => {
       );
     });
 
-    fireEvent.press(screen.getByTestId("event-detail-repeat-row"));
+    await fireEvent.press(screen.getByTestId("event-detail-repeat-row"));
     await act(async () => {
       screen.getByTestId("event-detail-recurrence-end-date-button").props.onChange(null);
     });
-    fireEvent.press(screen.getByTestId("event-detail-repeat-done-button"));
-    fireEvent.press(screen.getByTestId("event-detail-save-button"));
+    await fireEvent.press(screen.getByTestId("event-detail-repeat-done-button"));
+    await fireEvent.press(screen.getByTestId("event-detail-save-button"));
 
     await waitFor(() => {
       expect(screen.getByText("Choose when this repeating series should end.")).toBeTruthy();
@@ -497,18 +499,18 @@ describe("event detail create mode", () => {
       refetch: jest.fn(),
     });
 
-    renderNative(<EventDetailScreen />);
+    await renderNative(<EventDetailScreen />);
 
-    fireEvent.press(screen.getByTestId("event-detail-type-planned"));
-    fireEvent.press(screen.getByTestId("event-detail-change-activity-plan-button"));
-    fireEvent.press(screen.getByTestId("event-detail-activity-plan-option-plan-1"));
-    fireEvent.press(screen.getByTestId("event-detail-change-activity-plan-button"));
-    fireEvent.press(screen.getByTestId("event-detail-activity-plan-option-plan-2"));
+    await fireEvent.press(screen.getByTestId("event-detail-type-planned"));
+    await fireEvent.press(screen.getByTestId("event-detail-change-activity-plan-button"));
+    await fireEvent.press(screen.getByTestId("event-detail-activity-plan-option-plan-1"));
+    await fireEvent.press(screen.getByTestId("event-detail-change-activity-plan-button"));
+    await fireEvent.press(screen.getByTestId("event-detail-activity-plan-option-plan-2"));
 
     expect(screen.getByTestId("event-detail-title-input").props.value).toBe("Recovery Ride");
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-save-button"));
+      await fireEvent.press(screen.getByTestId("event-detail-save-button"));
     });
 
     await waitFor(() => {
@@ -544,7 +546,7 @@ describe("event detail create mode", () => {
       refetch: jest.fn(),
     });
 
-    renderNative(<EventDetailScreen />);
+    await renderNative(<EventDetailScreen />);
 
     await waitFor(() => {
       expect(screen.getByTestId("event-detail-selected-activity-plan")).toBeTruthy();
@@ -552,7 +554,7 @@ describe("event detail create mode", () => {
     expect(createEventMutateMock).not.toHaveBeenCalled();
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-save-button"));
+      await fireEvent.press(screen.getByTestId("event-detail-save-button"));
     });
 
     await waitFor(() => {
@@ -597,12 +599,12 @@ describe("event detail create mode", () => {
       refetch: jest.fn(),
     });
 
-    renderNative(<EventDetailScreen />);
+    await renderNative(<EventDetailScreen />);
 
     expect(screen.queryByTestId("event-detail-selected-activity-plan")).toBeNull();
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-save-button"));
+      await fireEvent.press(screen.getByTestId("event-detail-save-button"));
     });
 
     expect(createEventMutateMock).not.toHaveBeenCalled();
@@ -617,10 +619,10 @@ describe("event detail create mode", () => {
       planSuggestionDescription: "Reduce load to protect readiness.",
     };
 
-    renderNative(<EventDetailScreen />);
+    await renderNative(<EventDetailScreen />);
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("event-detail-save-button"));
+      await fireEvent.press(screen.getByTestId("event-detail-save-button"));
     });
 
     await waitFor(() => {

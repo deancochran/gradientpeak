@@ -76,8 +76,8 @@ describe("RouteCard", () => {
     mockUsePreferredUnitSystem.mockReturnValue("metric");
   });
 
-  it("shows owner and last updated metadata in the footer", () => {
-    renderNative(
+  it("shows owner and last updated metadata in the footer", async () => {
+    await renderNative(
       <RouteCard
         route={{
           id: "route-1",
@@ -101,8 +101,8 @@ describe("RouteCard", () => {
     expect(screen.getByText("Mar 21, 2026 • 8:00 AM")).toBeTruthy();
   });
 
-  it("renders a dense list card without preview, social, or attribution metadata", () => {
-    renderNative(
+  it("renders a dense list card without preview, social, or attribution metadata", async () => {
+    await renderNative(
       <RouteCard
         route={{
           id: "route-2",
@@ -137,10 +137,10 @@ describe("RouteCard", () => {
     expect(screen.getByTestId("route-card-route-2")).toBeTruthy();
   });
 
-  it("formats route distance and elevation in the viewer's imperial units", () => {
+  it("formats route distance and elevation in the viewer's imperial units", async () => {
     mockUsePreferredUnitSystem.mockReturnValue("imperial");
 
-    renderNative(
+    await renderNative(
       <RouteCard
         route={{
           id: "route-2",
@@ -158,8 +158,8 @@ describe("RouteCard", () => {
     expect(screen.getAllByText("328.1 ft")).toHaveLength(2);
   });
 
-  it("allows list attribution and likes when explicitly requested", () => {
-    renderNative(
+  it("allows list attribution and likes when explicitly requested", async () => {
+    await renderNative(
       <RouteCard
         route={{
           id: "route-3",
@@ -184,8 +184,8 @@ describe("RouteCard", () => {
     expect(screen.getByTestId("route-card-like-button-route-3")).toBeTruthy();
   });
 
-  it("allows likes without adding attribution to a list card", () => {
-    renderNative(
+  it("allows likes without adding attribution to a list card", async () => {
+    await renderNative(
       <RouteCard
         route={{
           id: "route-4",
@@ -207,12 +207,12 @@ describe("RouteCard", () => {
     expect(screen.queryByText("Coach Rey")).toBeNull();
   });
 
-  it("keeps list likes and standalone accessories independent from navigation", () => {
+  it("keeps list likes and standalone accessories independent from navigation", async () => {
     const onAccessoryPress = jest.fn();
     const onLikePress = jest.fn();
     const onPress = jest.fn();
 
-    renderNative(
+    await renderNative(
       <RouteCard
         headerAccessory={
           <ResourceCardActionButton accessibilityLabel="Route options" onPress={onAccessoryPress}>
@@ -234,17 +234,17 @@ describe("RouteCard", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Route options"));
+    await fireEvent.press(screen.getByLabelText("Route options"));
     expect(onAccessoryPress).toHaveBeenCalledTimes(1);
     expect(onPress).not.toHaveBeenCalled();
     expect(onLikePress).not.toHaveBeenCalled();
 
-    fireEvent.press(screen.getByLabelText("Like, 3 likes"));
+    await fireEvent.press(screen.getByLabelText("Like, 3 likes"));
     expect(onLikePress).toHaveBeenCalledTimes(1);
     expect(onPress).not.toHaveBeenCalled();
     expect(onAccessoryPress).toHaveBeenCalledTimes(1);
 
-    fireEvent.press(screen.getByLabelText("Open route City Run"));
+    await fireEvent.press(screen.getByLabelText("Open route City Run"));
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(onLikePress).toHaveBeenCalledTimes(1);
     expect(onAccessoryPress).toHaveBeenCalledTimes(1);

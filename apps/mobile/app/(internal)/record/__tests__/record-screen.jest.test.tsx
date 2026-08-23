@@ -54,12 +54,6 @@ type CockpitProps = {
   onFinish: () => void;
   onOpenPlan: () => void;
 };
-type ResourcePickerNode = {
-  props: { onSelect: (item: { id: string }) => void };
-};
-type UnsafeTypeQuery = {
-  UNSAFE_getByType: (type: "ResourcePickerModal") => ResourcePickerNode;
-};
 type AlertButtonFixture = { text?: string; onPress?: () => void | Promise<void> };
 
 const service = {
@@ -333,7 +327,7 @@ describe("record screen", () => {
   });
 
   it("initializes from the shared activity selection store", async () => {
-    renderNative(<RecordScreen />);
+    await renderNative(<RecordScreen />);
 
     await waitFor(() => {
       expect(service.selectActivityFromPayload).toHaveBeenCalledWith(
@@ -359,11 +353,11 @@ describe("record screen", () => {
         },
       }),
     };
-    const rendered = renderNative(<RecordScreen />);
+    const rendered = await renderNative(<RecordScreen />);
 
-    fireEvent.press(screen.getByText("Open plan"));
-    const picker = (rendered as unknown as UnsafeTypeQuery).UNSAFE_getByType("ResourcePickerModal");
-    fireEvent(picker as never, "select", { id: "shared-plan-1" });
+    await fireEvent.press(screen.getByText("Open plan"));
+    const picker = rendered.container.queryAll((node) => node.type === "ResourcePickerModal")[0];
+    await fireEvent(picker as never, "select", { id: "shared-plan-1" });
 
     await waitFor(() => {
       expect(Alert.alert).toHaveBeenCalledWith(
@@ -375,7 +369,7 @@ describe("record screen", () => {
   });
 
   it("hydrates owner-only performance targets at one explicit recording operation timestamp", async () => {
-    renderNative(<RecordScreen />);
+    await renderNative(<RecordScreen />);
 
     await waitFor(() => {
       expect(service.updatePerformanceTargets).toHaveBeenCalledWith(mockPerformanceTargets);
@@ -394,7 +388,7 @@ describe("record screen", () => {
   });
 
   it("hydrates only non-target recording profile data from the profile projection", async () => {
-    renderNative(<RecordScreen />);
+    await renderNative(<RecordScreen />);
 
     await waitFor(() => {
       expect(service.updateMetrics).toHaveBeenCalledWith({ weightKg: 72 });
@@ -408,8 +402,8 @@ describe("record screen", () => {
   });
 
   it("refreshes performance targets at the start operation before recording", async () => {
-    renderNative(<RecordScreen />);
-    fireEvent.press(await screen.findByText("Start"));
+    await renderNative(<RecordScreen />);
+    await fireEvent.press(await screen.findByText("Start"));
 
     await waitFor(() => {
       expect(startMock).toHaveBeenCalled();
@@ -427,8 +421,8 @@ describe("record screen", () => {
 
   it("stages explicit unavailable targets when the start-time query fails", async () => {
     mockFetchPublishedState.mockRejectedValueOnce(new Error("offline"));
-    renderNative(<RecordScreen />);
-    fireEvent.press(await screen.findByText("Start"));
+    await renderNative(<RecordScreen />);
+    await fireEvent.press(await screen.findByText("Start"));
 
     await waitFor(() => {
       expect(startMock).toHaveBeenCalled();
@@ -468,8 +462,8 @@ describe("record screen", () => {
       missingMetrics: [{ name: "FTP", description: "Needed for ERG targets." }],
       warnings: [],
     });
-    renderNative(<RecordScreen />);
-    fireEvent.press(await screen.findByText("Start"));
+    await renderNative(<RecordScreen />);
+    await fireEvent.press(await screen.findByText("Start"));
 
     await waitFor(() => {
       expect(Alert.alert).toHaveBeenCalledWith(
@@ -494,7 +488,7 @@ describe("record screen", () => {
       routeId: "route-1",
     });
 
-    renderNative(<RecordScreen />);
+    await renderNative(<RecordScreen />);
 
     await waitFor(() => {
       expect(service.selectActivityFromPayload).toHaveBeenCalledWith(
@@ -514,7 +508,7 @@ describe("record screen", () => {
     mockRecordingLifecycle = "setup";
     activitySelectionStoreMock.peekSelection.mockReturnValue(null);
 
-    renderNative(<RecordScreen />);
+    await renderNative(<RecordScreen />);
 
     await waitFor(() => {
       expect(screen.getByText("Start")).toBeTruthy();
@@ -527,7 +521,7 @@ describe("record screen", () => {
   it("does not apply launch payload over active recording", async () => {
     mockRecordingLifecycle = "active";
 
-    renderNative(<RecordScreen />);
+    await renderNative(<RecordScreen />);
 
     await waitFor(() => {
       expect(screen.getByText("Start")).toBeTruthy();
@@ -540,13 +534,13 @@ describe("record screen", () => {
   it("keeps the close button available during active recording", async () => {
     mockRecordingLifecycle = "active";
 
-    renderNative(<RecordScreen />);
+    await renderNative(<RecordScreen />);
 
     await waitFor(() => {
       expect(screen.getByTestId("record-close-button")).toBeTruthy();
     });
 
-    fireEvent.press(screen.getByTestId("record-close-button"));
+    await fireEvent.press(screen.getByTestId("record-close-button"));
 
     expect(backMock).toHaveBeenCalled();
   });
@@ -555,13 +549,13 @@ describe("record screen", () => {
     useAllPermissionsGranted.mockReturnValue({ allGranted: false, isLoading: false });
     service.refreshAndCheckRecordingPermissions.mockResolvedValue(false);
 
-    renderNative(<RecordScreen />);
+    await renderNative(<RecordScreen />);
 
     await waitFor(() => {
       expect(screen.getByText("Start")).toBeTruthy();
     });
 
-    fireEvent.press(screen.getByText("Start"));
+    await fireEvent.press(screen.getByText("Start"));
 
     await waitFor(() => {
       expect(startMock).toHaveBeenCalled();
@@ -576,13 +570,13 @@ describe("record screen", () => {
       warnings: [],
     });
 
-    renderNative(<RecordScreen />);
+    await renderNative(<RecordScreen />);
 
     await waitFor(() => {
       expect(screen.getByText("Start")).toBeTruthy();
     });
 
-    fireEvent.press(screen.getByText("Start"));
+    await fireEvent.press(screen.getByText("Start"));
 
     await waitFor(() => {
       expect(Alert.alert).toHaveBeenCalledWith(
@@ -601,13 +595,13 @@ describe("record screen", () => {
   });
 
   it("finalizes the recording and opens the submit screen", async () => {
-    renderNative(<RecordScreen />);
+    await renderNative(<RecordScreen />);
 
     await waitFor(() => {
       expect(screen.getByText("Finish")).toBeTruthy();
     });
 
-    fireEvent.press(screen.getByText("Finish"));
+    await fireEvent.press(screen.getByText("Finish"));
 
     await waitFor(() => {
       expect(finishMock).toHaveBeenCalled();

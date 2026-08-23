@@ -80,7 +80,9 @@ function PlanGrid({ plans, onOpen }: { plans: LibraryPlan[]; onOpen: (id: string
               <TrainingPlanPlannedPreview
                 compact
                 planId={plan.id}
-                preview={plan.plannedSchedulePreview}
+                {...(plan.plannedSchedulePreview !== undefined
+                  ? { preview: plan.plannedSchedulePreview }
+                  : {})}
                 structure={plan.structure}
               />
               <Button

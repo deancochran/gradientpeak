@@ -1,5 +1,6 @@
 import { fireEvent } from "@testing-library/react-native";
 import React from "react";
+import { Text } from "react-native";
 import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
 import { IndexFilterSheet } from "../IndexFilterSheet";
@@ -30,12 +31,12 @@ jest.mock("../AppBottomSheet", () => ({
 }));
 
 describe("IndexFilterSheet", () => {
-  it("uses the canonical sheet contract and preserves filter actions", () => {
+  it("uses the canonical sheet contract and preserves filter actions", async () => {
     const onApply = jest.fn();
     const onClose = jest.fn();
     const onReset = jest.fn();
 
-    renderNative(
+    await renderNative(
       <IndexFilterSheet
         description="Refine the index."
         onApply={onApply}
@@ -45,7 +46,7 @@ describe("IndexFilterSheet", () => {
         title="Sort & Filters"
         visible
       >
-        Filter controls
+        <Text>Filter controls</Text>
       </IndexFilterSheet>,
     );
 
@@ -58,18 +59,18 @@ describe("IndexFilterSheet", () => {
       visible: true,
     });
     expect(screen.getByText("Clear filters")).toBeTruthy();
-    fireEvent.press(screen.getByTestId("index-filter-sheet-reset"));
-    fireEvent.press(screen.getByTestId("index-filter-sheet-apply"));
+    await fireEvent.press(screen.getByTestId("index-filter-sheet-reset"));
+    await fireEvent.press(screen.getByTestId("index-filter-sheet-apply"));
 
     expect(onReset).toHaveBeenCalledTimes(1);
     expect(onApply).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps disabled reset and apply actions inert", () => {
+  it("keeps disabled reset and apply actions inert", async () => {
     const onApply = jest.fn();
     const onReset = jest.fn();
 
-    renderNative(
+    await renderNative(
       <IndexFilterSheet
         description="Refine the index."
         isApplyDisabled
@@ -81,7 +82,7 @@ describe("IndexFilterSheet", () => {
         title="Sort & Filters"
         visible
       >
-        Filter controls
+        <Text>Filter controls</Text>
       </IndexFilterSheet>,
     );
 

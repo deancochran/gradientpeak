@@ -157,8 +157,8 @@ describe("tabs layout", () => {
     mockRecordingLifecycle = "idle";
   });
 
-  it("configures all primary tabs", () => {
-    renderNative(<TabsLayout />);
+  it("configures all primary tabs", async () => {
+    await renderNative(<TabsLayout />);
 
     expect(screen.getByText("Home")).toBeTruthy();
     expect(screen.getByText("Plan")).toBeTruthy();
@@ -169,10 +169,10 @@ describe("tabs layout", () => {
     expect(screen.queryByTestId("tab-config-trends")).toBeNull();
   });
 
-  it("routes the record tab through the navigation guard", () => {
-    renderNative(<TabsLayout />);
+  it("routes the record tab through the navigation guard", async () => {
+    await renderNative(<TabsLayout />);
 
-    fireEvent.press(screen.getByTestId("tab-button-record"));
+    await fireEvent.press(screen.getByTestId("tab-button-record"));
 
     expect(guardNavigationMock).toHaveBeenCalledTimes(1);
     expect(setSelectionMock).toHaveBeenCalledTimes(1);
@@ -180,21 +180,21 @@ describe("tabs layout", () => {
     expect(pushMock).not.toHaveBeenCalled();
   });
 
-  it("does not reset recording setup from the record tab", () => {
+  it("does not reset recording setup from the record tab", async () => {
     mockRecordingLifecycle = "setup";
-    renderNative(<TabsLayout />);
+    await renderNative(<TabsLayout />);
 
-    fireEvent.press(screen.getByTestId("tab-button-record"));
+    await fireEvent.press(screen.getByTestId("tab-button-record"));
 
     expect(setSelectionMock).not.toHaveBeenCalled();
     expect(navigateToMock).toHaveBeenCalledWith("/record");
   });
 
-  it("does not reset active recording from the record tab", () => {
+  it("does not reset active recording from the record tab", async () => {
     mockRecordingLifecycle = "active";
-    renderNative(<TabsLayout />);
+    await renderNative(<TabsLayout />);
 
-    fireEvent.press(screen.getByTestId("tab-button-record"));
+    await fireEvent.press(screen.getByTestId("tab-button-record"));
 
     expect(setSelectionMock).not.toHaveBeenCalled();
     expect(navigateToMock).toHaveBeenCalledWith("/record");

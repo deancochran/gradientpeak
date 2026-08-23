@@ -55,7 +55,7 @@ describe("useReliableMutation", () => {
     const onSuccess = jest.fn();
     const mutation = createMutationHook(mutationFn);
 
-    const { result } = renderHook(
+    const { result } = await renderHook(
       () =>
         useReliableMutation(mutation, {
           invalidate: [{ invalidate }],
@@ -98,7 +98,7 @@ describe("useReliableMutation", () => {
     });
     const mutation = createMutationHook(mutationFn);
 
-    const { result } = renderHook(
+    const { result } = await renderHook(
       () =>
         useReliableMutation(mutation, {
           retry: 1,
@@ -111,7 +111,7 @@ describe("useReliableMutation", () => {
     );
 
     let handledRejection: Promise<Error> | undefined;
-    act(() => {
+    await act(() => {
       handledRejection = result.current.mutateAsync({ id: "plan-2" }).then(
         () => new Error("Expected mutation to reject"),
         (mutationError: Error) => {
@@ -144,7 +144,7 @@ describe("useReliableMutation", () => {
 
     process.on("unhandledRejection", unhandledRejection);
     try {
-      const { result } = renderHook(
+      const { result } = await renderHook(
         () =>
           useReliableMutation(mutation, {
             retry: false,

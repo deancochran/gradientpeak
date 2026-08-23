@@ -64,10 +64,9 @@ export function ActivityPlanEstimateRow({
           accessibilityLabel: `${estimate.label}, ${value}, ${estimate.provenanceLabel}`,
           key: estimate.key,
           label: estimate.label,
-          tone:
-            estimate.key === "common_load" || estimate.key === "normalized_intensity"
-              ? "primary"
-              : undefined,
+          ...(estimate.key === "common_load" || estimate.key === "normalized_intensity"
+            ? { tone: "primary" as const }
+            : {}),
           value,
         };
       })}

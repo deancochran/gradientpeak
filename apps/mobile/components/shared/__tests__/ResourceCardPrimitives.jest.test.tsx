@@ -12,10 +12,10 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
 }));
 
 describe("ResourceCardPrimitives", () => {
-  it("keeps named navigation and action controls as independent siblings", () => {
+  it("keeps named navigation and action controls as independent siblings", async () => {
     const onActionPress = jest.fn();
     const onNavigationPress = jest.fn();
-    const { getByLabelText, getByTestId } = renderNative(
+    const { getByLabelText, getByTestId } = await renderNative(
       <ResourceCardShell
         accessibilityLabel="Open route Ridge loop"
         actionRegion={
@@ -40,23 +40,23 @@ describe("ResourceCardPrimitives", () => {
     expect(navigation.props.accessibilityRole).toBe("button");
     expect(action.props.accessibilityRole).toBe("button");
     expect(
-      navigation.findAll((node) => node.props.accessibilityLabel === "Route options"),
+      navigation.queryAll((node) => node.props.accessibilityLabel === "Route options"),
     ).toHaveLength(0);
     expect(
-      actionRegion.findAll((node) => node.props.accessibilityLabel === "Open route Ridge loop"),
+      actionRegion.queryAll((node) => node.props.accessibilityLabel === "Open route Ridge loop"),
     ).toHaveLength(0);
 
-    fireEvent.press(navigation);
+    await fireEvent.press(navigation);
     expect(onNavigationPress).toHaveBeenCalledTimes(1);
     expect(onActionPress).not.toHaveBeenCalled();
 
-    fireEvent.press(action);
+    await fireEvent.press(action);
     expect(onActionPress).toHaveBeenCalledTimes(1);
     expect(onNavigationPress).toHaveBeenCalledTimes(1);
   });
 
-  it("preserves static noninteractive card content", () => {
-    const { getByText, queryByRole } = renderNative(
+  it("preserves static noninteractive card content", async () => {
+    const { getByText, queryByRole } = await renderNative(
       <ResourceCardShell>
         <Text>Static summary</Text>
       </ResourceCardShell>,
@@ -66,9 +66,9 @@ describe("ResourceCardPrimitives", () => {
     expect(queryByRole("button")).toBeNull();
   });
 
-  it("preserves disabled and selected semantics without invoking navigation", () => {
+  it("preserves disabled and selected semantics without invoking navigation", async () => {
     const onPress = jest.fn();
-    const { getByLabelText } = renderNative(
+    const { getByLabelText } = await renderNative(
       <ResourceCardShell
         accessibilityLabel="Open selected group"
         accessibilityState={{ selected: true }}
@@ -85,8 +85,8 @@ describe("ResourceCardPrimitives", () => {
     expect(onPress).not.toHaveBeenCalled();
   });
 
-  it("exposes like state and an explicit 44dp minimum target", () => {
-    const { getByLabelText } = renderNative(
+  it("exposes like state and an explicit 44dp minimum target", async () => {
+    const { getByLabelText } = await renderNative(
       <ResourceLikeButton isLiked likeCount={3} onPress={jest.fn()} />,
     );
     const button = getByLabelText("Unlike, 3 likes");
@@ -98,9 +98,9 @@ describe("ResourceCardPrimitives", () => {
     expect(button.props.hitSlop).toBe(8);
   });
 
-  it("provides canonical accessory semantics and geometry", () => {
+  it("provides canonical accessory semantics and geometry", async () => {
     const onPress = jest.fn();
-    const { getByLabelText } = renderNative(
+    const { getByLabelText } = await renderNative(
       <ResourceCardActionButton accessibilityLabel="Route options" onPress={onPress}>
         <Text>Options</Text>
       </ResourceCardActionButton>,
@@ -112,7 +112,7 @@ describe("ResourceCardPrimitives", () => {
     expect(button.props.className).toContain("min-h-11");
     expect(button.props.className).toContain("min-w-11");
 
-    fireEvent.press(button);
+    await fireEvent.press(button);
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 });

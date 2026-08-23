@@ -80,8 +80,8 @@ describe("goal create route", () => {
     mutationOptions = undefined;
   });
 
-  it("uses the platform-specific keyboard avoidance structure, one vertical form surface, and a header Create action", () => {
-    renderNative(<GoalCreateScreen />);
+  it("uses the platform-specific keyboard avoidance structure, one vertical form surface, and a header Create action", async () => {
+    await renderNative(<GoalCreateScreen />);
 
     expect(screen.getAllByTestId("goal-create-screen")).toHaveLength(1);
     expect(screen.getByTestId("goal-create-screen").props.behavior).toBe("padding");
@@ -91,12 +91,12 @@ describe("goal create route", () => {
     expect(screen.getAllByTestId("goal-create-scroll")).toHaveLength(1);
     expect(screen.getByTestId("goal-editor-form").props.contentSizing).toBe("intrinsic");
 
-    fireEvent.press(screen.getByText("Create"));
+    await fireEvent.press(screen.getByText("Create"));
     expect(submitMock).toHaveBeenCalledTimes(1);
   });
 
   it("publishes a created profile goal and returns to the training-plan cockpit", async () => {
-    renderNative(<GoalCreateScreen />);
+    await renderNative(<GoalCreateScreen />);
 
     await mutationOptions?.onSuccess?.({
       activity_category: "run",

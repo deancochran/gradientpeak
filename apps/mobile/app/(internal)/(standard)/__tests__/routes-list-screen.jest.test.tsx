@@ -110,22 +110,22 @@ describe("routes list empty states", () => {
     routesListUseInfiniteQueryMock.mockClear();
   });
 
-  it("keeps a truly empty library state when only sort changes", () => {
-    renderNative(<RoutesListScreen />);
+  it("keeps a truly empty library state when only sort changes", async () => {
+    await renderNative(<RoutesListScreen />);
 
-    fireEvent.press(screen.getByTestId("routes-list-filter-button"));
-    fireEvent.press(screen.getByTestId("routes-list-filter-sort-oldest"));
-    fireEvent.press(screen.getByTestId("routes-list-filter-sheet-apply"));
+    await fireEvent.press(screen.getByTestId("routes-list-filter-button"));
+    await fireEvent.press(screen.getByTestId("routes-list-filter-sort-oldest"));
+    await fireEvent.press(screen.getByTestId("routes-list-filter-sheet-apply"));
 
     expect(screen.getByText("No routes yet")).toBeTruthy();
     expect(screen.queryByText("No matching results")).toBeNull();
     expect(screen.getByTestId("routes-list-filter-button-dot")).toBeTruthy();
   });
 
-  it("shows filtered-empty copy when search is active", () => {
-    renderNative(<RoutesListScreen />);
+  it("shows filtered-empty copy when search is active", async () => {
+    await renderNative(<RoutesListScreen />);
 
-    fireEvent(screen.getByTestId("routes-list-search-input"), "changeText", "hills");
+    await fireEvent(screen.getByTestId("routes-list-search-input"), "changeText", "hills");
 
     expect(screen.getByText("No matching results")).toBeTruthy();
     expect(screen.queryByText("No routes yet")).toBeNull();

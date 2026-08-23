@@ -14,12 +14,12 @@ may be inspected or refactored only when they do not require those integrations.
 
 | Measure | Current result |
 |---|---:|
-| Registered capabilities | 98 |
-| Required platform entries | 187 |
-| Implemented required entries | 135 / 187 |
-| Required entries declaring Playwright or Maestro runtime evidence | 78 / 187 |
-| Required entries with an implementation gap | 52 |
-| Implemented entries with a runtime-proof gap | 63 |
+| Registered capabilities | 96 |
+| Required platform entries | 183 |
+| Implemented required entries | 135 / 183 |
+| Required entries declaring Playwright or Maestro runtime evidence | 79 / 183 |
+| Required entries with an implementation gap | 48 |
+| Implemented entries with a runtime-proof gap | 62 |
 | Records with an intentional platform difference or absence | 15 |
 | Unclassified discovered surfaces | 0 |
 | Stale or missing evidence references | 0 |

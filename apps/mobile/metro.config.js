@@ -1,59 +1,16 @@
-const path = require("node:path");
 const { getSentryExpoConfig } = require("@sentry/react-native/metro");
+const { withStorybook } = require("@storybook/react-native/metro/withStorybook");
 const { withNativewind } = require("nativewind/metro");
 
-const isStorybookEnabled = process.env.EXPO_PUBLIC_STORYBOOK_ENABLED === "1";
-
-function getWithStorybook() {
-  if (!isStorybookEnabled) {
-    return (metroConfig) => metroConfig;
-  }
-
-  try {
-    return require("@storybook/react-native/metro/withStorybook");
-  } catch (error) {
-    throw new Error(
-      "Storybook is enabled, but @storybook/react-native is not available in this install. Run `pnpm install` before starting Storybook.",
-      { cause: error },
-    );
-  }
-}
+const isStorybookEnabled =
+  process.env.EXPO_PUBLIC_STORYBOOK_ENABLED === "1" && process.env.NODE_ENV !== "production";
 
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = withNativewind(getSentryExpoConfig(__dirname), {
   input: "./global.css",
 });
 
-const existingResolveRequest = config.resolver?.resolveRequest;
-const disabledStorybookModule = path.resolve(__dirname, "lib/storybook/disabled.tsx");
-
-config.resolver = {
-  ...config.resolver,
-  resolveRequest(context, moduleName, platform) {
-    if (!isStorybookEnabled && moduleName.includes(".rnstorybook")) {
-      return {
-        type: "sourceFile",
-        filePath: disabledStorybookModule,
-      };
-    }
-
-    if (
-      moduleName === "tty" ||
-      moduleName === "node:tty" ||
-      moduleName === "os" ||
-      moduleName === "node:os"
-    ) {
-      return {
-        type: "empty",
-      };
-    }
-
-    const resolve = existingResolveRequest ?? context.resolveRequest;
-    return resolve(context, moduleName, platform);
-  },
-};
-
-module.exports = getWithStorybook()(config, {
+module.exports = withStorybook(config, {
   enabled: isStorybookEnabled,
-  configPath: path.resolve(__dirname, ".rnstorybook"),
+  configPath: "./.rnstorybook",
 });

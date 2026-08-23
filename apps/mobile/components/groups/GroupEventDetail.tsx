@@ -287,8 +287,8 @@ export function GroupEventFutureOccurrencesSection({
         <GroupEventCard
           event={occurrence}
           key={occurrence.id}
-          onGroupPress={onGroupPress}
-          onPress={onOccurrencePress}
+          {...(onGroupPress !== undefined ? { onGroupPress } : {})}
+          {...(onOccurrencePress !== undefined ? { onPress: onOccurrencePress } : {})}
         />
       ))}
     </View>
@@ -336,7 +336,12 @@ export function GroupEventDetailScreen({
     <View className="gap-4">
       <View className="gap-4 rounded-3xl bg-card p-5">
         <View className="gap-4">
-          {event.group ? <GroupEventOwnerRow group={event.group} onPress={onGroupPress} /> : null}
+          {event.group ? (
+            <GroupEventOwnerRow
+              group={event.group}
+              {...(onGroupPress !== undefined ? { onPress: onGroupPress } : {})}
+            />
+          ) : null}
           <View className="gap-2">
             {event.cancelled_at ? (
               <View className="self-start rounded-full bg-destructive/10 px-2.5 py-1">
@@ -393,13 +398,17 @@ export function GroupEventDetailScreen({
 
       <GroupEventActivityPlanOptionsSection
         event={event}
-        onActivityPlanPress={onActivityPlanPress}
+        {...(onActivityPlanPress !== undefined ? { onActivityPlanPress } : {})}
       />
-      <GroupEventRsvpPanel event={event} isSubmitting={isWorking} onRsvp={onRsvp} />
+      <GroupEventRsvpPanel
+        event={event}
+        isSubmitting={isWorking}
+        {...(onRsvp !== undefined ? { onRsvp } : {})}
+      />
       <GroupEventSeriesRsvpPanel
         event={event}
         isSubmitting={isWorking}
-        onRsvpSeries={onRsvpSeries}
+        {...(onRsvpSeries !== undefined ? { onRsvpSeries } : {})}
       />
       {event.is_recurring_series || event.is_recurring_occurrence ? (
         <GroupEventFutureOccurrencesSection

@@ -10,7 +10,7 @@ import {
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 
 describe("public profile previews", () => {
-  it("derives a schedule-level weekly preview without claiming workout intensity", () => {
+  it("derives a schedule-level weekly preview without claiming activity intensity", () => {
     const preview = deriveTrainingPlanPlannedSchedulePreview({
       version: 1,
       durationWeeks: { recommended: 3 },

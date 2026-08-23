@@ -201,8 +201,8 @@ describe("route detail screen", () => {
     reliableMutationOptions = undefined;
   });
 
-  it("shows the new identity-first route layout", () => {
-    renderNative(<RouteDetailScreen />);
+  it("shows the new identity-first route layout", async () => {
+    await renderNative(<RouteDetailScreen />);
 
     expect(screen.getByText("River Loop")).toBeTruthy();
     expect(screen.getByText("Flat start, climb home.")).toBeTruthy();
@@ -215,45 +215,45 @@ describe("route detail screen", () => {
     expect(screen.getByText("4")).toBeTruthy();
   });
 
-  it("moves owner management into the header overflow menu", () => {
-    renderNative(<RouteDetailScreen />);
+  it("moves owner management into the header overflow menu", async () => {
+    await renderNative(<RouteDetailScreen />);
 
     expect(screen.getByTestId("route-detail-options-trigger")).toBeTruthy();
     expect(screen.getByTestId("route-detail-options-edit")).toBeTruthy();
     expect(screen.getByTestId("route-detail-options-delete")).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId("route-detail-options-edit"));
+    await fireEvent.press(screen.getByTestId("route-detail-options-edit"));
     expect(navigateMock).toHaveBeenCalledWith(
       "/route-edit?id=11111111-1111-4111-8111-111111111111",
     );
   });
 
-  it("hides owner-only delete action for non-owners", () => {
+  it("hides owner-only delete action for non-owners", async () => {
     authState.user.id = "profile-2";
 
-    renderNative(<RouteDetailScreen />);
+    await renderNative(<RouteDetailScreen />);
 
     expect(screen.getByTestId("route-detail-options-trigger")).toBeTruthy();
     expect(screen.queryByTestId("route-detail-options-edit")).toBeNull();
     expect(screen.queryByTestId("route-detail-options-delete")).toBeNull();
   });
 
-  it("uses a confirm modal before deleting a route", () => {
-    renderNative(<RouteDetailScreen />);
+  it("uses a confirm modal before deleting a route", async () => {
+    await renderNative(<RouteDetailScreen />);
 
-    fireEvent.press(screen.getByTestId("route-detail-options-delete"));
+    await fireEvent.press(screen.getByTestId("route-detail-options-delete"));
 
     expect(screen.getByTestId("route-detail-delete-modal")).toBeTruthy();
     expect(deleteMutateMock).not.toHaveBeenCalled();
 
-    fireEvent.press(screen.getByTestId("route-detail-delete-confirm"));
+    await fireEvent.press(screen.getByTestId("route-detail-delete-confirm"));
 
     expect(deleteMutateMock).toHaveBeenCalledWith({ id: "11111111-1111-4111-8111-111111111111" });
   });
 
   it("renders deletion-pending routes as a retry-only owner state", async () => {
     routeLifecycleState.storageState = "deletion_pending";
-    renderNative(<RouteDetailScreen />);
+    await renderNative(<RouteDetailScreen />);
 
     expect(screen.getByTestId("route-detail-deletion-pending")).toBeTruthy();
     expect(screen.getByText("Route deletion pending")).toBeTruthy();
@@ -266,7 +266,7 @@ describe("route detail screen", () => {
       ),
     ).toBe(true);
 
-    fireEvent.press(screen.getByTestId("route-detail-options-delete"));
+    await fireEvent.press(screen.getByTestId("route-detail-options-delete"));
     expect(screen.getByTestId("route-detail-delete-modal")).toBeTruthy();
     await act(async () => {
       await reliableMutationOptions?.onError?.();

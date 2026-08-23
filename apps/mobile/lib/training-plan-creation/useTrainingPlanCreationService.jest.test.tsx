@@ -118,7 +118,7 @@ describe("useTrainingPlanCreationService performance target hydration", () => {
   });
 
   it("replaces the fail-closed fallback when the canonical query recovers", async () => {
-    const hook = renderHook(() => useTrainingPlanCreationService());
+    const hook = await renderHook(() => useTrainingPlanCreationService());
 
     await waitFor(() => {
       expect(
@@ -132,7 +132,7 @@ describe("useTrainingPlanCreationService performance target hydration", () => {
         data: creationContext("2026-06-01T00:00:01.000Z"),
       },
     };
-    hook.rerender({});
+    await hook.rerender({});
 
     await waitFor(() => {
       expect(
@@ -158,14 +158,14 @@ describe("useTrainingPlanCreationService performance target hydration", () => {
         },
       },
     };
-    const hook = renderHook(() => useTrainingPlanCreationService());
+    const hook = await renderHook(() => useTrainingPlanCreationService());
 
     await waitFor(() => {
       expect(
         hook.result.current.state.athleteContext.physiology.planningThresholdPowerWatts.value,
       ).toBe(250);
     });
-    act(() => {
+    await act(() => {
       hook.result.current.actions.overrideAthleteContextField({
         key: "weightKg",
         value: 81,
@@ -180,7 +180,7 @@ describe("useTrainingPlanCreationService performance target hydration", () => {
         data: creationContext("2026-06-01T00:00:02.000Z"),
       },
     };
-    hook.rerender({});
+    await hook.rerender({});
 
     expect(hook.result.current.state.athleteContext.body.weightKg.value).toBe(81);
     expect(hook.result.current.state.athleteContext.performanceTargets.asOf).toBe(
@@ -200,9 +200,9 @@ describe("useTrainingPlanCreationService authoritative projection", () => {
   });
 
   it("uses the authoritative server preview for the canonical draft", async () => {
-    const hook = renderHook(() => useTrainingPlanCreationService());
+    const hook = await renderHook(() => useTrainingPlanCreationService());
 
-    act(() => {
+    await act(() => {
       hook.result.current.actions.updateDetails({ name: "Projected plan" });
       const session = hook.result.current.actions.addSession(1);
       hook.result.current.actions.assignActivityPlan(session.localId, projectedActivityPlan());
@@ -219,7 +219,7 @@ describe("useTrainingPlanCreationService authoritative projection", () => {
 
   it("refuses to commit without a current authoritative preview", async () => {
     mockPreviewQuery.data = undefined;
-    const hook = renderHook(() => useTrainingPlanCreationService());
+    const hook = await renderHook(() => useTrainingPlanCreationService());
 
     await waitFor(() => expect(hook.result.current.derived.savePlan.canSave).toBe(false));
     await act(async () => hook.result.current.derived.savePlan.execute());
@@ -239,9 +239,9 @@ describe("useTrainingPlanCreationService authoritative projection", () => {
       currentPlanStructureHash: null,
     });
     const onCreated = jest.fn();
-    const hook = renderHook(() => useTrainingPlanCreationService({ onCreated }));
+    const hook = await renderHook(() => useTrainingPlanCreationService({ onCreated }));
 
-    act(() => {
+    await act(() => {
       hook.result.current.actions.updateDetails({ name: "Draft retained" });
       const session = hook.result.current.actions.addSession(1);
       hook.result.current.actions.assignActivityPlan(session.localId, projectedActivityPlan());
@@ -273,7 +273,7 @@ describe("useTrainingPlanCreationService authoritative projection", () => {
       },
     };
     mockPreviewQuery.data = canonicalPreview(5, 55, 45);
-    hook.rerender({});
+    await hook.rerender({});
     await waitFor(() => {
       const projection = hook.result.current.derived.authoritativeProjectionState;
       expect(projection.status).toBe("available");

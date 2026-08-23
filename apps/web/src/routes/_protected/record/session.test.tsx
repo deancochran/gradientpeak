@@ -172,12 +172,10 @@ describe("recording session UI", () => {
     expect(screen.queryByText(/heart rate|power|cadence|speed|distance/i)).toBeNull();
     expect(document.querySelector("[aria-live]")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Complete / Next" }));
-    fireEvent.click(screen.getByRole("button", { name: "Lap" }));
     expect(mocks.completeStep).toHaveBeenCalledTimes(1);
-    expect(mocks.lap).toHaveBeenCalledTimes(1);
   });
 
-  it("reviews completed, skipped, remaining, laps, and marks manual fields honestly", () => {
+  it("reviews completed, skipped, and remaining work and marks manual fields honestly", () => {
     const recording = baseRecording();
     mocks.recording = {
       ...recording,
@@ -197,7 +195,7 @@ describe("recording session UI", () => {
         planExecution: {
           completedOccurrenceIds: [occurrence.occurrenceId],
           skippedOccurrenceIds: [],
-          laps: [{ lapNumber: 1, elapsedMs: 60_000, movingMs: 50_000 }],
+          laps: [],
         },
       },
     };
@@ -205,7 +203,6 @@ describe("recording session UI", () => {
 
     expect(screen.getByText(/Completed steps:/)).toBeTruthy();
     expect(screen.getByText(/Remaining steps:/)).toBeTruthy();
-    expect(screen.getByText(/Lap 1: 00:01:00 elapsed/)).toBeTruthy();
     expect(screen.getByText(/Target adherence is unavailable/)).toBeTruthy();
     expect(screen.getByText("Manual distance (metres, optional)")).toBeTruthy();
     expect(screen.getByText("Manual calories (optional)")).toBeTruthy();

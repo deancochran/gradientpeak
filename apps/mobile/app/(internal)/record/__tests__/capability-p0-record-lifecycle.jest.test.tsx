@@ -89,11 +89,11 @@ import RecordScreen from "../index";
 describe("record screen lifecycle capability", () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it("exposes pause, resume, and finish as public recording actions", () => {
-    renderNative(<RecordScreen />);
-    fireEvent.press(screen.getByTestId("pause"));
-    fireEvent.press(screen.getByTestId("resume"));
-    fireEvent.press(screen.getByTestId("finish"));
+  it("exposes pause, resume, and finish as public recording actions", async () => {
+    await renderNative(<RecordScreen />);
+    await fireEvent.press(screen.getByTestId("pause"));
+    await fireEvent.press(screen.getByTestId("resume"));
+    await fireEvent.press(screen.getByTestId("finish"));
     expect(callbacks.pause).toHaveBeenCalledTimes(1);
     expect(callbacks.resume).toHaveBeenCalledTimes(1);
     expect(callbacks.finish).toHaveBeenCalledTimes(1);

@@ -15,9 +15,13 @@ GradientPeak is a product monorepo for the web app, mobile app, shared UI, backe
 
 For the supported full development environment, install dependencies and start the Turbo task graph:
 
+Activate mise in your shell first so every command uses the versions in `mise.toml`. For Bash, add
+`eval "$(mise activate bash)"` to `~/.bashrc` once and open a new terminal.
+
 ```bash
 mise trust
 mise install
+node --version # must satisfy the version in package.json
 pnpm install
 cp apps/web/.env.example apps/web/.env.local
 cp apps/mobile/.env.example apps/mobile/.env
@@ -46,7 +50,6 @@ pnpm exec turbo run dev --filter=mobile
 `pnpm dev` remains a convenience wrapper for `pnpm exec turbo run dev`. Use `pnpm dev:web:local` when
 you intentionally want the web app and Wahoo worker without a public tunnel. `pnpm dev:web:tunnel` remains an
 explicit web-only alias for the default tunneled web development task.
-`pnpm dev:web:scan` is a web-only performance-inspection command.
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for the first-contribution checklist, environment setup,
 verification progression, and specialist lanes.

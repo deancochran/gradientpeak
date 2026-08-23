@@ -12,8 +12,8 @@ jest.mock("@/lib/utils/durationConversion", () => ({
 import { useActivityPlanDetailViewModel } from "../useActivityPlanDetailViewModel";
 
 describe("useActivityPlanDetailViewModel", () => {
-  it("prefers planned activity plan over other sources and derives overview data", () => {
-    const { result } = renderHook(() =>
+  it("prefers planned activity plan over other sources and derives overview data", async () => {
+    const { result } = await renderHook(() =>
       useActivityPlanDetailViewModel({
         activityPlanParam: JSON.stringify({
           id: "param-plan",
@@ -80,8 +80,8 @@ describe("useActivityPlanDetailViewModel", () => {
     expect(result.current.detailBadges).toEqual(["run", "Scheduled"]);
   });
 
-  it("falls back through malformed params without crashing", () => {
-    const { result } = renderHook(() =>
+  it("falls back through malformed params without crashing", async () => {
+    const { result } = await renderHook(() =>
       useActivityPlanDetailViewModel({
         activityPlanParam: "{bad json",
         fetchedPlan: null,

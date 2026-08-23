@@ -63,13 +63,6 @@ jest.mock("react-native", () => ({
   },
 }));
 
-jest.mock("react-native/Libraries/AppState/AppState", () => ({
-  __esModule: true,
-  AppState: {
-    addEventListener: jest.fn(() => ({ remove: jest.fn() })),
-  },
-}));
-
 jest.mock("@/lib/auth/account-management", () => ({
   __esModule: true,
   updateMobileEmail: jest.fn(async () => ({ error: null })),
@@ -130,8 +123,8 @@ describe("useAuth optimistic onboarding precedence", () => {
     authStoreState.profile = createProfile({ full_name: "Optimistic Name" });
   });
 
-  it("uses the explicit status returned by the profile query", () => {
-    const { result } = renderHook(() => useAuth());
+  it("uses the explicit status returned by the profile query", async () => {
+    const { result } = await renderHook(() => useAuth());
 
     expect(result.current.onboardingStatus).toBe("processing");
     expect(result.current.profile).toEqual(
@@ -148,10 +141,10 @@ describe("useAuth optimistic onboarding precedence", () => {
     expect(setProfileMock).toHaveBeenCalled();
   });
 
-  it("does not fetch the profile for unverified users", () => {
+  it("does not fetch the profile for unverified users", async () => {
     authStoreState.user = { id: "user-1", email: "athlete@test.com", emailVerified: false };
 
-    renderHook(() => useAuth());
+    await renderHook(() => useAuth());
 
     expect(profileQueryUseQueryMock).toHaveBeenCalledWith(
       undefined,
@@ -159,7 +152,7 @@ describe("useAuth optimistic onboarding precedence", () => {
     );
   });
 
-  it("syncs fresh profile data when only updated_at changes", () => {
+  it("syncs fresh profile data when only updated_at changes", async () => {
     authStoreState.onboardingStatus = "processing";
     authStoreState.profile = createProfile({
       onboarding_status: "processing",
@@ -177,7 +170,7 @@ describe("useAuth optimistic onboarding precedence", () => {
       }),
     });
 
-    renderHook(() => useAuth());
+    await renderHook(() => useAuth());
 
     expect(setProfileMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -198,7 +191,7 @@ describe("useAuth optimistic onboarding precedence", () => {
       bio: null,
       dob: null,
     });
-    const { result } = renderHook(() => useAuth());
+    const { result } = await renderHook(() => useAuth());
     authStoreState.onboardingStatus = "processing";
     authStoreState.profile = createProfile({
       onboarding_status: "processing",
@@ -231,7 +224,7 @@ describe("useAuth optimistic onboarding precedence", () => {
   it("refreshes a null local profile from the query without creating a partial profile", async () => {
     authStoreState.onboardingStatus = null;
     authStoreState.profile = null;
-    const { result } = renderHook(() => useAuth());
+    const { result } = await renderHook(() => useAuth());
     authStoreState.onboardingStatus = null;
     authStoreState.profile = null;
     setProfileMock.mockClear();

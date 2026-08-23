@@ -127,9 +127,9 @@ jest.mock("@/components/calendar/CalendarAgendaSheet", () => ({
   },
 }));
 
-jest.mock("@react-navigation/native", () => ({
+jest.mock("expo-router/react-navigation", () => ({
   __esModule: true,
-  ...jest.requireActual("@react-navigation/native"),
+  ...jest.requireActual("expo-router/react-navigation"),
   useFocusEffect: (callback: () => void) => callback(),
 }));
 
@@ -954,8 +954,8 @@ describe("plan dashboard navigation", () => {
     eventQueryOptionsRef.current = [];
   });
 
-  it("uses schedule-aware freshness for plan dashboard queries", () => {
-    renderNative(<PlanScreenWithErrorBoundary />);
+  it("uses schedule-aware freshness for plan dashboard queries", async () => {
+    await renderNative(<PlanScreenWithErrorBoundary />);
 
     expect(activePlanQueryOptionsRef.current).not.toHaveProperty("staleTime");
     expect(activePlanQueryOptionsRef.current).not.toHaveProperty("refetchOnMount");
@@ -965,8 +965,8 @@ describe("plan dashboard navigation", () => {
     }
   });
 
-  it("renders the training path section on the plan tab", () => {
-    renderNative(<PlanScreenWithErrorBoundary />);
+  it("renders the training path section on the plan tab", async () => {
+    await renderNative(<PlanScreenWithErrorBoundary />);
 
     expect(screen.getByTestId("training-path-section")).toBeTruthy();
     expect(screen.getByText("Weekly Training Path")).toBeTruthy();
@@ -979,11 +979,11 @@ describe("plan dashboard navigation", () => {
     );
   });
 
-  it("opens point-in-time planning details over the Plan tab", () => {
-    renderNative(<PlanScreenWithErrorBoundary />);
+  it("opens point-in-time planning details over the Plan tab", async () => {
+    await renderNative(<PlanScreenWithErrorBoundary />);
 
     expect(navigateMock).not.toHaveBeenCalled();
-    fireEvent.press(screen.getByTestId("training-path-view-details"));
+    await fireEvent.press(screen.getByTestId("training-path-view-details"));
 
     expect(navigateMock).not.toHaveBeenCalled();
     expect(screen.getByTestId("planning-ledger-sheet").props.selection).toEqual({
@@ -992,18 +992,18 @@ describe("plan dashboard navigation", () => {
     });
   });
 
-  it("uses the calendar day sheet for a daily Plan selection", () => {
-    renderNative(<PlanScreenWithErrorBoundary />);
+  it("uses the calendar day sheet for a daily Plan selection", async () => {
+    await renderNative(<PlanScreenWithErrorBoundary />);
 
-    fireEvent.press(screen.getByTestId("training-path-view-day-details"));
+    await fireEvent.press(screen.getByTestId("training-path-view-day-details"));
 
     expect(screen.getByTestId("calendar-agenda-sheet").props.dateKey).toBe("2026-04-15");
     expect(screen.queryByTestId("planning-ledger-sheet")).toBeNull();
     expect(navigateMock).not.toHaveBeenCalled();
   });
 
-  it("keeps removed legacy plan-tab panels out of the current training path flow", () => {
-    renderNative(<PlanScreenWithErrorBoundary />);
+  it("keeps removed legacy plan-tab panels out of the current training path flow", async () => {
+    await renderNative(<PlanScreenWithErrorBoundary />);
 
     expect(screen.queryByTestId("plan-goal-outlook")).toBeNull();
     expect(screen.queryByTestId("plan-analysis-section")).toBeNull();

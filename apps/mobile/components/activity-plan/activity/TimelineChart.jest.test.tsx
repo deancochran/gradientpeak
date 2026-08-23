@@ -104,8 +104,8 @@ function occurrence(index: number) {
 }
 
 describe("TimelineChart", () => {
-  it("renders occurrences in compiled order with correct testIDs and labels", () => {
-    renderNative(<TimelineChart structure={structure} height={120} />);
+  it("renders occurrences in compiled order with correct testIDs and labels", async () => {
+    await renderNative(<TimelineChart structure={structure} height={120} />);
 
     expect(
       Array.from({ length: 6 }, (_, index) => occurrence(index).props.accessibilityLabel),
@@ -119,8 +119,8 @@ describe("TimelineChart", () => {
     ]);
   });
 
-  it("applies boundary and activity heights based on role and intensity", () => {
-    renderNative(<TimelineChart structure={structure} height={120} />);
+  it("applies boundary and activity heights based on role and intensity", async () => {
+    await renderNative(<TimelineChart structure={structure} height={120} />);
 
     // Boundary segments have fixed height 28
     expect(occurrence(0).props.style.height).toBe(28);
@@ -140,8 +140,8 @@ describe("TimelineChart", () => {
     }
   });
 
-  it("uses Core intensity colors without category labels or category stripes", () => {
-    renderNative(<TimelineChart compact structure={structure} />);
+  it("uses Core intensity colors without category labels or category stripes", async () => {
+    await renderNative(<TimelineChart compact structure={structure} />);
 
     expect(occurrence(1).props.style.backgroundColor).toBe("#38bdf8");
     expect(occurrence(3).props.style.backgroundColor).toBe("#eab308");
@@ -150,35 +150,35 @@ describe("TimelineChart", () => {
     expect(screen.queryByTestId("timeline-occurrence-1-category")).toBeNull();
   });
 
-  it("presses the interval represented by an expanded occurrence", () => {
+  it("presses the interval represented by an expanded occurrence", async () => {
     const onIntervalPress = jest.fn();
-    renderNative(<TimelineChart structure={structure} onIntervalPress={onIntervalPress} />);
+    await renderNative(<TimelineChart structure={structure} onIntervalPress={onIntervalPress} />);
 
-    fireEvent.press(occurrence(1));
+    await fireEvent.press(occurrence(1));
 
     expect(occurrence(1).props.accessibilityRole).toBe("button");
     expect(onIntervalPress).toHaveBeenCalledWith(id(3));
     expect(onIntervalPress).toHaveBeenCalledTimes(1);
   });
 
-  it("marks the selected interval for assistive technology", () => {
-    renderNative(<TimelineChart structure={structure} selectedIntervalId={id(3)} />);
+  it("marks the selected interval for assistive technology", async () => {
+    await renderNative(<TimelineChart structure={structure} selectedIntervalId={id(3)} />);
 
     expect(occurrence(1).props.accessibilityState).toEqual({ selected: true });
     expect(occurrence(2).props.accessibilityState).toEqual({ selected: true });
   });
 
-  it("does not call onIntervalPress for boundary segments", () => {
+  it("does not call onIntervalPress for boundary segments", async () => {
     const onIntervalPress = jest.fn();
-    renderNative(<TimelineChart structure={structure} onIntervalPress={onIntervalPress} />);
+    await renderNative(<TimelineChart structure={structure} onIntervalPress={onIntervalPress} />);
 
-    fireEvent.press(occurrence(0));
+    await fireEvent.press(occurrence(0));
 
     expect(onIntervalPress).not.toHaveBeenCalled();
   });
 
-  it("renders occurrences for distance and repetition durations", () => {
-    renderNative(
+  it("renders occurrences for distance and repetition durations", async () => {
+    await renderNative(
       <TimelineChart
         height={120}
         structure={{

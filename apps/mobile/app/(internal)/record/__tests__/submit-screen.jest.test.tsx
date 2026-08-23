@@ -71,7 +71,7 @@ beforeEach(() => {
   };
 });
 
-it("shows a recorded indoor session summary and its laps before saving", () => {
+it("shows a recorded indoor session summary before saving", async () => {
   submissionState = {
     ...submissionState,
     activity: {
@@ -84,19 +84,17 @@ it("shows a recorded indoor session summary and its laps before saving", () => {
       notes: null,
       content_visibility: "private",
     },
-    artifact: { sessionId: "artifact-1", finalStats: { manualLapsMs: [300000, 620000] } },
+    artifact: { sessionId: "artifact-1", finalStats: { manualLapsMs: [] } },
   };
 
-  renderNative(<Submit />);
+  await renderNative(<Submit />);
 
   expect(screen.getByTestId("recording-review-summary")).toBeTruthy();
   expect(screen.getByText("Review your bike")).toBeTruthy();
   expect(screen.getByText("10.20 km")).toBeTruthy();
-  expect(screen.getByTestId("recording-review-laps")).toBeTruthy();
-  expect(screen.getByText("Laps · 2")).toBeTruthy();
 });
 
-it("never renders the stored recorded activity name in submission review", () => {
+it("never renders the stored recorded activity name in submission review", async () => {
   submissionState = {
     ...submissionState,
     activity: {
@@ -107,21 +105,21 @@ it("never renders the stored recorded activity name in submission review", () =>
     artifact: { sessionId: "artifact-1" },
   };
 
-  renderNative(<Submit />);
+  await renderNative(<Submit />);
 
   expect(screen.queryByTestId("activity-name-input")).toBeNull();
   expect(screen.queryByText("Private stored recording name")).toBeNull();
 });
 
-it("retries loading by remounting submission recovery", () => {
-  renderNative(<Submit />);
-  fireEvent.press(screen.getByTestId("activity-submit-retry-load"));
+it("retries loading by remounting submission recovery", async () => {
+  await renderNative(<Submit />);
+  await fireEvent.press(screen.getByTestId("activity-submit-retry-load"));
   expect(hookCalls).toBe(2);
 });
 
 it("exits after confirmation when no finalized artifact is available", async () => {
-  renderNative(<Submit />);
-  fireEvent.press(screen.getByTestId("activity-submit-discard-exit"));
+  await renderNative(<Submit />);
+  await fireEvent.press(screen.getByTestId("activity-submit-discard-exit"));
   const destructive = (Alert.alert as jest.Mock).mock.calls[0][2][1];
   await destructive.onPress();
   expect(discardFinalizedArtifact).toHaveBeenCalled();
@@ -131,8 +129,8 @@ it("exits after confirmation when no finalized artifact is available", async () 
 
 it("keeps the discard screen recoverable when the durable discard transition fails", async () => {
   discardFinalizedArtifact.mockRejectedValueOnce(new Error("sqlite unavailable"));
-  renderNative(<Submit />);
-  fireEvent.press(screen.getByTestId("activity-submit-discard-exit"));
+  await renderNative(<Submit />);
+  await fireEvent.press(screen.getByTestId("activity-submit-discard-exit"));
   const destructive = (Alert.alert as jest.Mock).mock.calls.at(-1)[2][1];
   await act(async () => {
     await destructive.onPress();

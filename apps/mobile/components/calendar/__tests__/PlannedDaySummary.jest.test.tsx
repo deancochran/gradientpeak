@@ -39,8 +39,8 @@ const data: MobilePlannedDaySummaryData = {
 };
 
 describe("PlannedDaySummary", () => {
-  it("presents known planned totals and a stable, unique activity_category mix", () => {
-    renderNative(
+  it("presents known planned totals and a stable, unique activity_category mix", async () => {
+    await renderNative(
       <PlannedDaySummary data={data} error={false} isLoading={false} onRetry={jest.fn()} />,
     );
 
@@ -62,8 +62,8 @@ describe("PlannedDaySummary", () => {
     expect(formatPlannedDayActivityCategories(["run", "run"])).toBe("Run");
   });
 
-  it("uses composition language without arrows, combined-activity, or multisport labels", () => {
-    renderNative(
+  it("uses composition language without arrows, combined-activity, or multisport labels", async () => {
+    await renderNative(
       <PlannedDaySummary data={data} error={false} isLoading={false} onRetry={jest.fn()} />,
     );
 
@@ -88,12 +88,12 @@ describe("PlannedDaySummary", () => {
         }),
     );
     const announce = jest.mocked(announcePlannedDaySummaryRetryStatus);
-    renderNative(<PlannedDaySummary error isLoading={false} onRetry={retry} />);
+    await renderNative(<PlannedDaySummary error isLoading={false} onRetry={retry} />);
 
     const button = screen.getByTestId("calendar-day-planned-summary-retry");
     expect(button.props.accessibilityRole).toBe("button");
     expect(button.props.accessibilityHint).toMatch(/Attempts to load/);
-    fireEvent.press(button);
+    await fireEvent.press(button);
     expect(button.props.accessibilityState).toEqual({ busy: true, disabled: true });
     expect(button.props.disabled).toBe(true);
     expect(screen.getByText("Retrying planned workload.")).toBeTruthy();
@@ -110,10 +110,10 @@ describe("PlannedDaySummary", () => {
   it("announces a handled retry failure and re-enables the retry button", async () => {
     const retry = jest.fn(() => Promise.reject(new Error("offline")));
     const announce = jest.mocked(announcePlannedDaySummaryRetryStatus);
-    renderNative(<PlannedDaySummary error isLoading={false} onRetry={retry} />);
+    await renderNative(<PlannedDaySummary error isLoading={false} onRetry={retry} />);
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("calendar-day-planned-summary-retry"));
+      await fireEvent.press(screen.getByTestId("calendar-day-planned-summary-retry"));
     });
     expect(screen.getByTestId("calendar-day-planned-summary-retry").props.disabled).toBe(false);
     expect(
@@ -126,19 +126,19 @@ describe("PlannedDaySummary", () => {
 
   it("distinguishes empty, loading, retry, and unavailable estimate states", async () => {
     const retry = jest.fn(() => Promise.resolve());
-    const { rerender } = renderNative(
+    const { rerender } = await renderNative(
       <PlannedDaySummary error={false} isLoading onRetry={retry} />,
     );
     expect(screen.getByText("Loading planned workload...")).toBeTruthy();
 
-    rerender(<PlannedDaySummary error isLoading={false} onRetry={retry} />);
+    await rerender(<PlannedDaySummary error isLoading={false} onRetry={retry} />);
     expect(screen.getByText("Planned workload could not be loaded.")).toBeTruthy();
     await act(async () => {
-      fireEvent.press(screen.getByTestId("calendar-day-planned-summary-retry"));
+      await fireEvent.press(screen.getByTestId("calendar-day-planned-summary-retry"));
     });
     expect(retry).toHaveBeenCalledTimes(1);
 
-    rerender(
+    await rerender(
       <PlannedDaySummary
         data={{
           ...data,
@@ -167,7 +167,7 @@ describe("PlannedDaySummary", () => {
     expect(screen.getByText(/Partial information:/)).toBeTruthy();
     expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
 
-    rerender(
+    await rerender(
       <PlannedDaySummary
         data={{ ...data, summary: { ...data.summary, eventCount: 0 } }}
         error={false}

@@ -2,8 +2,8 @@ import { render } from "@testing-library/react-native";
 import { ConstraintIndicator } from "./ConstraintIndicator";
 
 describe("ConstraintIndicator", () => {
-  it("normalizes missing planned Load to a satisfied zero state", () => {
-    const view = render(
+  it("normalizes missing planned Load to a satisfied zero state", async () => {
+    const view = await render(
       <ConstraintIndicator
         label="Weekly Load"
         status="violated"

@@ -397,7 +397,7 @@ function ActivityPlanDetailPage() {
       ) : (
         <Card data-testid="activity-plan-unavailable-structure">
           <CardHeader>
-            <CardTitle>Workout prescription unavailable</CardTitle>
+            <CardTitle>Activity prescription unavailable</CardTitle>
             <CardDescription>
               This plan does not contain a valid structure that can be displayed.
             </CardDescription>

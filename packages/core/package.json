@@ -103,17 +103,18 @@
   },
   "dependencies": {
     "@deancochran/ftms": "0.2.0",
-    "@garmin/fitsdk": "^21.208.0",
+    "@garmin/fitsdk": "^21.213.0",
     "@mapbox/polyline": "^1.2.1",
-    "@xmldom/xmldom": "^0.8.13",
+    "@xmldom/xmldom": "^0.8.15",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
     "@types/mapbox__polyline": "^1.0.5",
+    "@types/node": "24.13.3",
     "chokidar-cli": "^3.0.0",
     "concurrently": "^9.2.4",
-    "typescript": "5.9.3",
-    "vitest": "^4.1.10"
+    "typescript": "6.0.3",
+    "vitest": "^4.1.11"
   }
 }

@@ -59,15 +59,15 @@ describe("GroupEventCard", () => {
     expect(label).toContain("1:30 AM");
   });
 
-  it("exposes a default identity and accessible navigation action", () => {
+  it("exposes a default identity and accessible navigation action", async () => {
     const onPress = jest.fn();
-    renderNative(<GroupEventCard event={event} onPress={onPress} />);
+    await renderNative(<GroupEventCard event={event} onPress={onPress} />);
 
     const card = screen.getByTestId("group-event-card-event-1");
     expect(card.props.accessibilityRole).toBe("button");
     expect(card.props.accessibilityLabel).toBe("Open group event Long ride");
 
-    fireEvent.press(card);
+    await fireEvent.press(card);
     expect(onPress).toHaveBeenCalledWith(event);
   });
 });

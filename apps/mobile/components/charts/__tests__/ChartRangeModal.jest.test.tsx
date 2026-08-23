@@ -30,10 +30,10 @@ describe("ChartRangeModal", () => {
     { value: "30d", label: "30D", accessibilityLabel: "Last 30 days" },
   ] as const;
 
-  it("exposes modal controls and updates its typed range", () => {
+  it("exposes modal controls and updates its typed range", async () => {
     const onClose = jest.fn();
 
-    renderNative(
+    await renderNative(
       <ChartRangeModal
         visible
         title="Training load"
@@ -50,15 +50,15 @@ describe("ChartRangeModal", () => {
       selected: true,
     });
 
-    fireEvent.press(screen.getByLabelText("Last 30 days range"));
+    await fireEvent.press(screen.getByLabelText("Last 30 days range"));
     expect(screen.getByTestId("selected-range").props.children).toBe("30d");
 
-    fireEvent.press(screen.getByLabelText("Close chart details"));
+    await fireEvent.press(screen.getByLabelText("Close chart details"));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("resets to a new default and never retains a removed option", () => {
-    const { rerender } = renderNative(
+  it("resets to a new default and never retains a removed option", async () => {
+    const { rerender } = await renderNative(
       <ChartRangeModal
         visible
         title="Training load"
@@ -70,10 +70,10 @@ describe("ChartRangeModal", () => {
       </ChartRangeModal>,
     );
 
-    fireEvent.press(screen.getByLabelText("Last 30 days range"));
+    await fireEvent.press(screen.getByLabelText("Last 30 days range"));
     expect(screen.getByTestId("selected-range").props.children).toBe("30d");
 
-    rerender(
+    await rerender(
       <ChartRangeModal
         visible
         title="Training load"
@@ -86,7 +86,7 @@ describe("ChartRangeModal", () => {
     );
     expect(screen.getByTestId("selected-range").props.children).toBe("7d");
 
-    rerender(
+    await rerender(
       <ChartRangeModal
         visible
         title="Training load"

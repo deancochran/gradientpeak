@@ -31,8 +31,8 @@ jest.mock("lucide-react-native", () => ({
 const StandardLayout = require("../_layout").default;
 
 describe("standard layout plan detail routes", () => {
-  it("declares event, goal, preferences, and training plan list screens", () => {
-    renderNative(<StandardLayout />);
+  it("declares event, goal, preferences, and training plan list screens", async () => {
+    await renderNative(<StandardLayout />);
 
     expect(screen.getByTestId("stack-screen-event-detail").props.options).toMatchObject({
       title: "Event Details",

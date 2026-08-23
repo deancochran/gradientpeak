@@ -194,7 +194,11 @@ export function PlanDashboard() {
                   <DialogHeader>
                     <DialogTitle>Create goal</DialogTitle>
                   </DialogHeader>
-                  <PlanGoalForm profileId={profileQuery.data?.id} />
+                  <PlanGoalForm
+                    {...(profileQuery.data?.id !== undefined
+                      ? { profileId: profileQuery.data.id }
+                      : {})}
+                  />
                 </DialogContent>
               </Dialog>
               <Button asChild size="sm" variant="outline">

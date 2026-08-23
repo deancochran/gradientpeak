@@ -129,7 +129,9 @@ export function TrainingPlanDetailHeaderActionsSection({
 
       <TrainingPlanPlannedPreview
         planId={typeof plan.id === "string" ? plan.id : "detail"}
-        preview={plan.plannedSchedulePreview}
+        {...(plan.plannedSchedulePreview !== undefined
+          ? { preview: plan.plannedSchedulePreview }
+          : {})}
         structure={plan.structure}
       />
 

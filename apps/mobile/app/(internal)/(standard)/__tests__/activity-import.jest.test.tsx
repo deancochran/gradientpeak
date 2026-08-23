@@ -245,9 +245,7 @@ const ActivityImportScreen = require("../activity-import").default;
 
 async function chooseFile(file = defaultPickedFitFile) {
   getDocumentAsyncMock.mockResolvedValueOnce({ canceled: false, assets: [file] });
-  await act(async () => {
-    fireEvent.press(screen.getByTestId("activity-import-file-input"));
-  });
+  await fireEvent.press(screen.getByTestId("activity-import-file-input"));
 }
 
 describe("activity import screen", () => {
@@ -268,11 +266,9 @@ describe("activity import screen", () => {
   afterAll(() => consoleErrorSpy.mockRestore());
 
   it("uses native MIME filters and hides required activity-name persistence metadata", async () => {
-    renderNative(<ActivityImportScreen />);
+    await renderNative(<ActivityImportScreen />);
 
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("activity-import-submit-button"));
-    });
+    await fireEvent.press(screen.getByTestId("activity-import-submit-button"));
     expect(screen.getByText("Select exactly one file")).toBeTruthy();
     expect(getSignedUrlMock).not.toHaveBeenCalled();
 
@@ -290,29 +286,27 @@ describe("activity import screen", () => {
 
     expect(screen.queryByTestId("activity-import-name-input")).toBeNull();
     expect(screen.queryByText("Activity name")).toBeNull();
-    fireEvent.changeText(screen.getByTestId("activity-import-notes-input"), "n".repeat(5001));
+    await fireEvent.changeText(screen.getByTestId("activity-import-notes-input"), "n".repeat(5001));
     await act(async () => {
-      fireEvent.press(screen.getByTestId("activity-import-submit-button"));
+      await fireEvent.press(screen.getByTestId("activity-import-submit-button"));
     });
     expect(screen.getByText("Notes must be at most 5000 characters")).toBeTruthy();
     expect(getSignedUrlMock).not.toHaveBeenCalled();
   });
 
   it("preserves the selected file when replacement picking is canceled", async () => {
-    renderNative(<ActivityImportScreen />);
+    await renderNative(<ActivityImportScreen />);
     await chooseFile();
 
     getDocumentAsyncMock.mockResolvedValueOnce({ canceled: true, assets: [] });
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("activity-import-file-input"));
-    });
+    await fireEvent.press(screen.getByTestId("activity-import-file-input"));
 
     expect(screen.getByText("morning-ride.fit")).toBeTruthy();
     expect(screen.queryByTestId("activity-import-name-input")).toBeNull();
   });
 
   it("updates the hidden derived persistence name when replacing a file", async () => {
-    renderNative(<ActivityImportScreen />);
+    await renderNative(<ActivityImportScreen />);
     await chooseFile();
 
     await chooseFile({
@@ -321,9 +315,7 @@ describe("activity import screen", () => {
       uri: "file:///evening-run.gpx",
       mimeType: "application/gpx+xml",
     });
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("activity-import-submit-button"));
-    });
+    await fireEvent.press(screen.getByTestId("activity-import-submit-button"));
     await waitFor(() =>
       expect(processActivityFileMock).toHaveBeenCalledWith(
         expect.objectContaining({ name: "evening-run" }),
@@ -336,12 +328,10 @@ describe("activity import screen", () => {
     ["oversize", { ...defaultPickedFitFile, size: 50 * 1024 * 1024 + 1 }],
     ["unsupported extension", { ...defaultPickedFitFile, name: "activity.csv" }],
   ])("rejects an %s file before signing", async (_label, file) => {
-    renderNative(<ActivityImportScreen />);
+    await renderNative(<ActivityImportScreen />);
     await chooseFile(file);
 
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("activity-import-submit-button"));
-    });
+    await fireEvent.press(screen.getByTestId("activity-import-submit-button"));
 
     expect(getSignedUrlMock).not.toHaveBeenCalled();
     if (file.name.endsWith(".csv")) {
@@ -369,10 +359,13 @@ describe("activity import screen", () => {
       }),
     );
 
-    renderNative(<ActivityImportScreen />);
+    await renderNative(<ActivityImportScreen />);
     await chooseFile();
-    await act(async () => {
-      fireEvent.press(screen.getByTestId("activity-import-submit-button"));
+    let importPromise: Promise<unknown> | undefined;
+    const submit = screen.getByTestId("activity-import-submit-button").props.onPress;
+    if (typeof submit !== "function") throw new Error("Expected activity import submit action");
+    await act(() => {
+      importPromise = Promise.resolve(submit());
     });
 
     expect(screen.getByText("Step 1 of 3: Preparing upload…")).toBeTruthy();
@@ -389,9 +382,10 @@ describe("activity import screen", () => {
     await act(async () => resolveUpload({ success: true }));
     expect(screen.getByText("Step 3 of 3: Processing activity…")).toBeTruthy();
 
-    await act(async () =>
-      resolveProcessing({ activity: { id: "activity-1", name: "Morning Ride" } }),
-    );
+    await act(async () => {
+      resolveProcessing({ activity: { id: "activity-1", name: "Morning Ride" } });
+      await importPromise;
+    });
     await waitFor(() => expect(screen.getByText("Historical activity imported")).toBeTruthy());
   });
 
@@ -403,16 +397,21 @@ describe("activity import screen", () => {
       }),
     );
 
-    renderNative(<ActivityImportScreen />);
-    fireEvent.press(screen.getByTestId("activity-import-submit-button"));
+    await renderNative(<ActivityImportScreen />);
+    await fireEvent.press(screen.getByTestId("activity-import-submit-button"));
     await waitFor(() => expect(screen.getByText("Select exactly one file")).toBeTruthy());
     expect(getSignedUrlMock).not.toHaveBeenCalled();
 
     await chooseFile();
 
     const submitButton = screen.getByTestId("activity-import-submit-button");
-    fireEvent.press(submitButton);
-    fireEvent.press(submitButton);
+    const submit = submitButton.props.onPress;
+    if (typeof submit !== "function") throw new Error("Expected activity import submit action");
+    let firstSubmit: Promise<unknown> | undefined;
+    await act(() => {
+      firstSubmit = Promise.resolve(submit());
+      submit();
+    });
 
     await waitFor(() => expect(getSignedUrlMock).toHaveBeenCalledTimes(1));
     await act(async () => {
@@ -420,6 +419,7 @@ describe("activity import screen", () => {
         signedUrl: "https://upload.example.test",
         filePath: "activities/user/uploads/123_morning-ride.fit",
       });
+      await firstSubmit;
     });
 
     await waitFor(() => expect(screen.getByText("Historical activity imported")).toBeTruthy());
@@ -430,11 +430,11 @@ describe("activity import screen", () => {
 
   it("preserves metadata after a root error, clears it on edit, and retries the uploader", async () => {
     uploadToSignedUrlMock.mockResolvedValueOnce({ success: false, error: "network unavailable" });
-    renderNative(<ActivityImportScreen />);
+    await renderNative(<ActivityImportScreen />);
     await chooseFile();
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("activity-import-submit-button"));
+      await fireEvent.press(screen.getByTestId("activity-import-submit-button"));
     });
     expect(
       await screen.findByText(
@@ -443,13 +443,13 @@ describe("activity import screen", () => {
     ).toBeTruthy();
     expect(screen.getByText("morning-ride.fit")).toBeTruthy();
 
-    fireEvent.changeText(screen.getByTestId("activity-import-notes-input"), "Retrying");
+    await fireEvent.changeText(screen.getByTestId("activity-import-notes-input"), "Retrying");
     expect(
       screen.queryByText("The activity file could not be imported right now. Please try again."),
     ).toBeNull();
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("activity-import-submit-button"));
+      await fireEvent.press(screen.getByTestId("activity-import-submit-button"));
     });
     await waitFor(() => expect(screen.getByText("Historical activity imported")).toBeTruthy());
     expect(getSignedUrlMock).toHaveBeenCalledTimes(2);
@@ -463,7 +463,7 @@ describe("activity import screen", () => {
       "https://storage.test/upload?token=super-secret-token",
     ] as const;
     processActivityFileMock.mockRejectedValueOnce(new Error(privateCanaries.join(" ")));
-    renderNative(<ActivityImportScreen />);
+    await renderNative(<ActivityImportScreen />);
     consoleErrorSpy.mockClear();
     await chooseFile({
       ...defaultPickedFitFile,
@@ -472,7 +472,7 @@ describe("activity import screen", () => {
     });
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("activity-import-submit-button"));
+      await fireEvent.press(screen.getByTestId("activity-import-submit-button"));
     });
 
     expect(
@@ -492,10 +492,10 @@ describe("activity import screen", () => {
       throw new Error("navigation unavailable");
     });
 
-    renderNative(<ActivityImportScreen />);
+    await renderNative(<ActivityImportScreen />);
     await chooseFile();
     await act(async () => {
-      fireEvent.press(screen.getByTestId("activity-import-submit-button"));
+      await fireEvent.press(screen.getByTestId("activity-import-submit-button"));
     });
 
     await waitFor(() => expect(screen.getByText("Historical activity imported")).toBeTruthy());
@@ -505,7 +505,7 @@ describe("activity import screen", () => {
     expect(screen.getByTestId("activity-import-submit-button").props.disabled).toBe(true);
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("activity-import-submit-button"));
+      await fireEvent.press(screen.getByTestId("activity-import-submit-button"));
     });
     expect(getSignedUrlMock).toHaveBeenCalledTimes(1);
     expect(uploadToSignedUrlMock).toHaveBeenCalledTimes(1);
@@ -514,7 +514,7 @@ describe("activity import screen", () => {
     expect(invalidateActivitiesMock).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      fireEvent.press(screen.getByText("View Activity"));
+      await fireEvent.press(screen.getByText("View Activity"));
     });
     expect(
       screen.getByText("Could not open the activity. Tap View Activity to try again."),
@@ -522,7 +522,7 @@ describe("activity import screen", () => {
     expect(screen.getByText("Historical activity imported")).toBeTruthy();
 
     await act(async () => {
-      fireEvent.press(screen.getByText("View Activity"));
+      await fireEvent.press(screen.getByText("View Activity"));
     });
     expect(pushMock).toHaveBeenCalledTimes(2);
     expect(pushMock).toHaveBeenLastCalledWith("/activity-detail?id=activity-1");
@@ -535,12 +535,15 @@ describe("activity import screen", () => {
   });
 
   it("submits the canonical payload, invalidates caches, and navigates", async () => {
-    renderNative(<ActivityImportScreen />);
+    await renderNative(<ActivityImportScreen />);
     await chooseFile();
-    fireEvent.changeText(screen.getByTestId("activity-import-notes-input"), "  From archive  ");
+    await fireEvent.changeText(
+      screen.getByTestId("activity-import-notes-input"),
+      "  From archive  ",
+    );
 
     await act(async () => {
-      fireEvent.press(screen.getByTestId("activity-import-submit-button"));
+      await fireEvent.press(screen.getByTestId("activity-import-submit-button"));
     });
 
     await waitFor(() => {
@@ -553,7 +556,7 @@ describe("activity import screen", () => {
       expect(invalidateActivitiesMock).toHaveBeenCalled();
     });
 
-    fireEvent.press(screen.getByText("View Activity"));
+    await fireEvent.press(screen.getByText("View Activity"));
     expect(pushMock).toHaveBeenCalledWith("/activity-detail?id=activity-1");
   });
 });

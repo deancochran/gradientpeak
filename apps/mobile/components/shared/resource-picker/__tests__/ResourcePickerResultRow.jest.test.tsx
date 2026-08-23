@@ -69,10 +69,10 @@ describe("ResourcePickerResultRow", () => {
     mockUsePreferredUnitSystem.mockReturnValue("metric");
   });
 
-  it("renders an activity plan through the dense canonical card while preserving selection", () => {
+  it("renders an activity plan through the dense canonical card while preserving selection", async () => {
     const onPress = jest.fn();
 
-    renderNative(
+    await renderNative(
       <ResourcePickerResultRow
         isSelected
         item={{
@@ -90,12 +90,12 @@ describe("ResourcePickerResultRow", () => {
     expect(activityPlanCard.props.variant).toBe("compact");
     expect(activityPlanCard.props.plan).toEqual(expect.objectContaining({ id: "plan-1" }));
     expect(screen.getByTestId("resource-picker-result-selected-plan-1")).toBeTruthy();
-    fireEvent.press(screen.getByTestId("resource-picker-result-plan-1"));
+    await fireEvent.press(screen.getByTestId("resource-picker-result-plan-1"));
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it("renders routes through the list card without map, social, or attribution affordances", () => {
-    renderNative(
+  it("renders routes through the list card without map, social, or attribution affordances", async () => {
+    await renderNative(
       <ResourcePickerResultRow
         isSelected={false}
         item={{
@@ -115,8 +115,8 @@ describe("ResourcePickerResultRow", () => {
     expect(routeCard.props.showLike).toBe(false);
   });
 
-  it("keeps explicit external items selectable and disabled with accessible minimum hit target parity", () => {
-    renderNative(
+  it("keeps explicit external items selectable and disabled with accessible minimum hit target parity", async () => {
+    await renderNative(
       <ResourcePickerResultRow
         disabled
         isSelected={false}
@@ -133,10 +133,10 @@ describe("ResourcePickerResultRow", () => {
     expect(screen.queryByTestId("resource-picker-route-card")).toBeNull();
   });
 
-  it("formats external route metadata in the viewer's preferred units", () => {
+  it("formats external route metadata in the viewer's preferred units", async () => {
     mockUsePreferredUnitSystem.mockReturnValue("imperial");
 
-    renderNative(
+    await renderNative(
       <ResourcePickerResultRow
         isSelected={false}
         item={{

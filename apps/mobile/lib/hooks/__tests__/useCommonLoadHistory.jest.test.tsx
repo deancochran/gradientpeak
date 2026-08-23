@@ -35,8 +35,8 @@ describe("useCommonLoadHistory", () => {
     });
   });
 
-  it("queries the server-owned planning boundary without device input", () => {
-    renderHook(() => useCommonLoadHistory());
+  it("queries the server-owned planning boundary without device input", async () => {
+    await renderHook(() => useCommonLoadHistory());
 
     expect(commonLoadQueryMock).toHaveBeenLastCalledWith(
       {
@@ -51,7 +51,7 @@ describe("useCommonLoadHistory", () => {
     );
   });
 
-  it("exposes available history and its authoritative identity", () => {
+  it("exposes available history and its authoritative identity", async () => {
     const data = {
       status: "available",
       points: [],
@@ -69,7 +69,7 @@ describe("useCommonLoadHistory", () => {
       refetch: queryRefetchMock,
     });
 
-    const { result } = renderHook(() => useCommonLoadHistory());
+    const { result } = await renderHook(() => useCommonLoadHistory());
 
     expect(result.current).toMatchObject({
       status: "available",
@@ -80,7 +80,7 @@ describe("useCommonLoadHistory", () => {
     });
   });
 
-  it("keeps API abstention distinct from transport failure", () => {
+  it("keeps API abstention distinct from transport failure", async () => {
     const data = { status: "unavailable", reason: "insufficient_history" };
     commonLoadQueryMock.mockReturnValue({
       data,
@@ -89,7 +89,7 @@ describe("useCommonLoadHistory", () => {
       refetch: queryRefetchMock,
     });
 
-    const { result } = renderHook(() => useCommonLoadHistory());
+    const { result } = await renderHook(() => useCommonLoadHistory());
 
     expect(result.current).toMatchObject({
       status: "unavailable",
@@ -99,7 +99,7 @@ describe("useCommonLoadHistory", () => {
     });
   });
 
-  it("preserves available cached history when a background refetch fails", () => {
+  it("preserves available cached history when a background refetch fails", async () => {
     const backgroundError = new Error("refresh failed");
     const data = {
       status: "available",
@@ -115,7 +115,7 @@ describe("useCommonLoadHistory", () => {
       refetch: queryRefetchMock,
     });
 
-    const { result } = renderHook(() => useCommonLoadHistory());
+    const { result } = await renderHook(() => useCommonLoadHistory());
 
     expect(result.current).toMatchObject({ status: "available", data, error: backgroundError });
   });
@@ -128,7 +128,7 @@ describe("useCommonLoadHistory", () => {
       isLoading: false,
       refetch: queryRefetchMock,
     });
-    const { result } = renderHook(() => useCommonLoadHistory());
+    const { result } = await renderHook(() => useCommonLoadHistory());
 
     expect(result.current).toMatchObject({ status: "error", error });
     await act(async () => {

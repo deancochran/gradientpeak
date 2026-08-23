@@ -42,8 +42,8 @@ function intelligence() {
 }
 
 describe("GoalIntelligenceCard", () => {
-  it("renders readiness and reasons without internal assessment detail", () => {
-    renderNative(<GoalIntelligenceCard assessment={intelligence()} />);
+  it("renders readiness and reasons without internal assessment detail", async () => {
+    await renderNative(<GoalIntelligenceCard assessment={intelligence()} />);
 
     expect(screen.getByText("Goal readiness")).toBeTruthy();
     expect(screen.getByText("watch · readiness 48")).toBeTruthy();
@@ -52,20 +52,22 @@ describe("GoalIntelligenceCard", () => {
     expect(screen.queryByText("Fitness 56 · specificity 45")).toBeNull();
   });
 
-  it("does not render forbidden action language", () => {
-    renderNative(<GoalIntelligenceCard assessment={intelligence()} />);
+  it("does not render forbidden action language", async () => {
+    await renderNative(<GoalIntelligenceCard assessment={intelligence()} />);
 
     expect(
       screen.queryByText(/recommend|training|schedule|prediction|forecast|medical|risk/i),
     ).toBeNull();
   });
 
-  it("keeps cached assessment visible and offers retry when the latest request fails", () => {
+  it("keeps cached assessment visible and offers retry when the latest request fails", async () => {
     const onRetry = jest.fn();
-    renderNative(<GoalIntelligenceCard assessment={intelligence()} isError onRetry={onRetry} />);
+    await renderNative(
+      <GoalIntelligenceCard assessment={intelligence()} isError onRetry={onRetry} />,
+    );
 
     expect(screen.getByText(/displayed assessment may be stale/)).toBeTruthy();
-    fireEvent.press(screen.getByTestId("goal-intelligence-retry"));
+    await fireEvent.press(screen.getByTestId("goal-intelligence-retry"));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 });

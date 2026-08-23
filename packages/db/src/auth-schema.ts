@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -7,11 +7,12 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
-  id: uuid("id").primaryKey(),
+  id: uuid("id").default(sql`pg_catalog.gen_random_uuid()`).primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").default(false).notNull(),
@@ -26,12 +27,11 @@ export const users = pgTable("users", {
 export const sessions = pgTable(
   "sessions",
   {
-    id: text("id").primaryKey(),
+    id: uuid("id").default(sql`pg_catalog.gen_random_uuid()`).primaryKey(),
     expiresAt: timestamp("expires_at").notNull(),
     token: text("token").notNull().unique(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
-      .defaultNow()
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
     ipAddress: text("ip_address"),
@@ -46,7 +46,8 @@ export const sessions = pgTable(
 export const accounts = pgTable(
   "accounts",
   {
-    id: text("id").primaryKey(),
+    id: uuid("id").default(sql`pg_catalog.gen_random_uuid()`).primaryKey(),
+    issuer: text("issuer").notNull(),
     accountId: text("account_id").notNull(),
     providerId: text("provider_id").notNull(),
     userId: uuid("user_id")
@@ -61,17 +62,19 @@ export const accounts = pgTable(
     password: text("password"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
-      .defaultNow()
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
   },
-  (table) => [index("accounts_userId_idx").on(table.userId)],
+  (table) => [
+    uniqueIndex("accounts_issuer_accountId_uidx").on(table.issuer, table.accountId),
+    index("accounts_userId_idx").on(table.userId),
+  ],
 );
 
 export const verifications = pgTable(
   "verifications",
   {
-    id: text("id").primaryKey(),
+    id: uuid("id").default(sql`pg_catalog.gen_random_uuid()`).primaryKey(),
     identifier: text("identifier").notNull(),
     value: text("value").notNull(),
     expiresAt: timestamp("expires_at").notNull(),
@@ -85,7 +88,7 @@ export const verifications = pgTable(
 );
 
 export const rateLimits = pgTable("rate_limits", {
-  id: text("id").primaryKey(),
+  id: uuid("id").default(sql`pg_catalog.gen_random_uuid()`).primaryKey(),
   key: text("key").notNull().unique(),
   count: integer("count").notNull(),
   lastRequest: bigint("last_request", { mode: "number" }).notNull(),
@@ -97,14 +100,14 @@ export const usersRelations = relations(users, ({ many }) => ({
 }));
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
-  users: one(users, {
+  user: one(users, {
     fields: [sessions.userId],
     references: [users.id],
   }),
 }));
 
 export const accountsRelations = relations(accounts, ({ one }) => ({
-  users: one(users, {
+  user: one(users, {
     fields: [accounts.userId],
     references: [users.id],
   }),

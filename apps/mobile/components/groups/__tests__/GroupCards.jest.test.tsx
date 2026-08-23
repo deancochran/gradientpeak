@@ -49,21 +49,21 @@ const group = {
 } as Parameters<typeof GroupCard>[0]["group"];
 
 describe("GroupCard", () => {
-  it("renders compact identity and metadata, and forwards its press contract", () => {
+  it("renders compact identity and metadata, and forwards its press contract", async () => {
     const onPress = jest.fn();
 
-    renderNative(
+    await renderNative(
       <GroupCard group={group} onPress={onPress} testID="group-card" variant="compact" />,
     );
 
     expect(screen.getByText("Sunday Riders")).toBeTruthy();
     expect(screen.getByText("Weekly rides and coffee")).toBeTruthy();
-    fireEvent.press(screen.getByTestId("group-card"));
+    await fireEvent.press(screen.getByTestId("group-card"));
     expect(onPress).toHaveBeenCalledWith(group);
   });
 
-  it("uses policy metadata and exposes disabled and selected accessibility state", () => {
-    renderNative(
+  it("uses policy metadata and exposes disabled and selected accessibility state", async () => {
+    await renderNative(
       <GroupCard
         disabled
         group={{ ...group, description: "" }}
@@ -80,8 +80,8 @@ describe("GroupCard", () => {
     });
   });
 
-  it("renders the rich default identity and access badges through the canonical shell", () => {
-    renderNative(<GroupCard group={group} onPress={jest.fn()} />);
+  it("renders the rich default identity and access badges through the canonical shell", async () => {
+    await renderNative(<GroupCard group={group} onPress={jest.fn()} />);
 
     expect(screen.getByLabelText("View group Sunday Riders")).toBeTruthy();
     expect(screen.getByText("@sunday-riders")).toBeTruthy();

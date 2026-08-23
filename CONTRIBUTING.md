@@ -7,9 +7,13 @@ does not require a public tunnel, provider credentials, a mobile device, or E2E 
 
 1. Install the pinned tools and dependencies:
 
+   Activate mise first so `node` and `pnpm` resolve to the project versions. For Bash, add
+   `eval "$(mise activate bash)"` to `~/.bashrc` once and open a new terminal.
+
    ```bash
    mise trust
    mise install
+   node --version
    pnpm install
    ```
 

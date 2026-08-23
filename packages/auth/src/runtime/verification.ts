@@ -7,7 +7,14 @@ export const AUTH_TOKEN_POLICY = Object.freeze({
 });
 
 export function verificationConsumptionId(token: string) {
-  return `email-verification:${createHash("sha256").update(token).digest("hex")}`;
+  const digest = createHash("sha256").update(token).digest("hex");
+  return [
+    digest.slice(0, 8),
+    digest.slice(8, 12),
+    digest.slice(12, 16),
+    digest.slice(16, 20),
+    digest.slice(20, 32),
+  ].join("-");
 }
 
 export interface VerificationConsumptionStore {
@@ -33,7 +40,7 @@ export function createVerificationAdvisoryLock(
   pool: VerificationAdvisoryLockPool,
 ): VerificationRequestLock {
   return async (id, operation) => {
-    const digest = id.slice("email-verification:".length);
+    const digest = id.replaceAll("-", "");
     const lockKey = BigInt.asIntN(64, BigInt(`0x${digest.slice(0, 16)}`)).toString();
     const client = await pool.connect();
     let locked = false;

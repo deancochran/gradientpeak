@@ -128,8 +128,8 @@ export const getApiUrl = () => {
   return url;
 };
 
-export function createMobileHeaders() {
-  const authHeaders = getSessionAuthHeaders();
+export async function createMobileHeaders() {
+  const authHeaders = await getSessionAuthHeaders();
   authHeaders.set(CONTRACT_EPOCH_HEADER, String(CURRENT_CONTRACT_EPOCH));
   authHeaders.set("x-client-type", "mobile");
   authHeaders.set("x-api-source", "react-native");

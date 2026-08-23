@@ -3,8 +3,8 @@ import { radioGroupFixtures } from "./fixtures";
 import { RadioGroup, RadioGroupItem } from "./index.native";
 
 describe("RadioGroup native", () => {
-  it("renders the root and item content", () => {
-    const { getByTestId } = renderNative(
+  it("renders the root and item content", async () => {
+    const { getByTestId } = await renderNative(
       <RadioGroup
         onValueChange={() => {}}
         testID={radioGroupFixtures.activityCategory.testId}

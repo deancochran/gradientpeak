@@ -5,7 +5,7 @@ import { ApiRequestTimeoutError, createMobileHeaders, fetchWithTimeout } from ".
 
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 vi.mock("@/lib/auth/auth-headers", () => ({
-  getSessionAuthHeaders: () => new Headers({ Cookie: "better-auth.session_token=redacted" }),
+  getSessionAuthHeaders: async () => new Headers({ Cookie: "better-auth.session_token=redacted" }),
 }));
 vi.mock("@/lib/logging/mobile-action-log", () => ({
   getMobileDeviceKind: () => "simulator",
@@ -182,8 +182,8 @@ describe("fetchWithTimeout", () => {
 });
 
 describe("createMobileHeaders", () => {
-  it("adds the current contract epoch without replacing auth headers", () => {
-    const headers = createMobileHeaders();
+  it("adds the current contract epoch without replacing awaited auth headers", async () => {
+    const headers = await createMobileHeaders();
 
     expect(headers.get(CONTRACT_EPOCH_HEADER)).toBe(String(CURRENT_CONTRACT_EPOCH));
     expect(headers.get("cookie")).toBe("better-auth.session_token=redacted");

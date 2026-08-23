@@ -1,5 +1,5 @@
 import React from "react";
-import type { ReactTestInstance } from "react-test-renderer";
+import type { TestInstance as ReactTestInstance } from "test-renderer";
 import type { HostProps } from "../../../test/mock-components";
 
 import { renderNative, screen } from "../../../test/render-native";
@@ -68,12 +68,12 @@ jest.mock("@/lib/stores/theme-store", () => ({
 }));
 
 function getHostNodes(type: string) {
-  return screen.UNSAFE_root.findAll((node: ReactTestInstance) => String(node.type) === type);
+  return screen.container.queryAll((node: ReactTestInstance) => String(node.type) === type);
 }
 
 describe("PlanVsActualChart", () => {
-  it("renders the core series for a weekly timeline", () => {
-    renderNative(
+  it("renders the core series for a weekly timeline", async () => {
+    await renderNative(
       <PlanVsActualChart
         timeline={[
           {
@@ -111,8 +111,8 @@ describe("PlanVsActualChart", () => {
     expect(areas.length).toBe(2);
   });
 
-  it("renders multiple goal markers instead of only the first goal", () => {
-    renderNative(
+  it("renders multiple goal markers instead of only the first goal", async () => {
+    await renderNative(
       <PlanVsActualChart
         timeline={[
           {
@@ -162,8 +162,8 @@ describe("PlanVsActualChart", () => {
     expect(goalLines).toHaveLength(2);
   });
 
-  it("renders explicitly established zero planned and completed load", () => {
-    renderNative(
+  it("renders explicitly established zero planned and completed load", async () => {
+    await renderNative(
       <PlanVsActualChart
         timeline={[
           {
@@ -194,8 +194,8 @@ describe("PlanVsActualChart", () => {
     expect(screen.getByText("Actual")).toBeTruthy();
   });
 
-  it("keeps unavailable planned and completed load as chart gaps", () => {
-    renderNative(
+  it("keeps unavailable planned and completed load as chart gaps", async () => {
+    await renderNative(
       <PlanVsActualChart
         timeline={[
           {

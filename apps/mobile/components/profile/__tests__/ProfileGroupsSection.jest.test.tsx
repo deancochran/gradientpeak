@@ -62,12 +62,12 @@ describe("ProfileGroupsSection", () => {
     navigateToMock.mockReset();
   });
 
-  it("uses the canonical GroupCard compact variant and opens its detail", () => {
-    renderNative(<ProfileGroupsSection profileId="profile-1" />);
+  it("uses the canonical GroupCard compact variant and opens its detail", async () => {
+    await renderNative(<ProfileGroupsSection profileId="profile-1" />);
 
     const card = screen.getByTestId("profile-groups-section-group-group-1");
     expect(card.props.variant).toBe("compact");
-    fireEvent.press(card);
+    await fireEvent.press(card);
     expect(navigateToMock).toHaveBeenCalledWith({
       params: { groupId: "group-1" },
       pathname: "/group-detail",

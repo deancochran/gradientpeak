@@ -3,8 +3,8 @@ import { Text } from "../text/index.native";
 import { InlineLoadingStatus, LoadingButton } from "./index.native";
 
 describe("Loading native", () => {
-  it("merges busy and disabled state while hiding the decorative spinner", () => {
-    const { getByLabelText, queryByRole } = renderNative(
+  it("merges busy and disabled state while hiding the decorative spinner", async () => {
+    const { getByLabelText, queryByRole } = await renderNative(
       <LoadingButton
         accessibilityLabel="Saving changes"
         accessibilityState={{ selected: true }}
@@ -23,8 +23,8 @@ describe("Loading native", () => {
     expect(queryByRole("progressbar")).toBeNull();
   });
 
-  it("exposes one labeled busy status and hides its decorative spinner", () => {
-    const { getAllByRole, getByLabelText } = renderNative(
+  it("exposes one labeled busy status and hides its decorative spinner", async () => {
+    const { getAllByRole, getByLabelText } = await renderNative(
       <InlineLoadingStatus label="Loading activities..." />,
     );
 
@@ -34,8 +34,8 @@ describe("Loading native", () => {
     expect(getAllByRole("progressbar")).toHaveLength(1);
   });
 
-  it("keeps loading labels aligned with the button variant", () => {
-    const { getByText } = renderNative(
+  it("keeps loading labels aligned with the button variant", async () => {
+    const { getByText } = await renderNative(
       <LoadingButton loading loadingLabel="Saving" variant="outline">
         Save
       </LoadingButton>,

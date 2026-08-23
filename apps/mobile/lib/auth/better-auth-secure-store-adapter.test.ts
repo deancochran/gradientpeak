@@ -12,7 +12,11 @@ const secureStoreMock = SecureStore as typeof SecureStore & { __store: Map<strin
 function createAdapter() {
   return createBetterAuthSecureStoreAdapter({
     getItem: (key) => secureStoreMock.__store.get(key) ?? null,
+    getItemAsync: async (key) => secureStoreMock.__store.get(key) ?? null,
     setItem: (key, value) => {
+      secureStoreMock.__store.set(key, value);
+    },
+    setItemAsync: async (key, value) => {
       secureStoreMock.__store.set(key, value);
     },
   });
@@ -59,5 +63,19 @@ describe("Better Auth SecureStore write bound", () => {
     expect(isAllowedBetterAuthSecureStoreWriteKey("unrelated.preference.999")).toBe(true);
     expect(secureStoreMock.__store.get("gradientpeak_cookie")).toBe("base-value");
     expect(secureStoreMock.__store.get("unrelated.preference.999")).toBe("allowed");
+  });
+
+  it("applies the same chunk bound to asynchronous writes", async () => {
+    const storage = createAdapter();
+
+    await storage.setItemAsync("gradientpeak_cookie", "base-value");
+    await expect(
+      storage.setItemAsync(`gradientpeak_cookie.${MAX_BETTER_AUTH_CHUNK_COUNT}`, "over-bound"),
+    ).rejects.toThrow("chunk count exceeds");
+
+    await expect(storage.getItemAsync("gradientpeak_cookie")).resolves.toBe("base-value");
+    expect(secureStoreMock.__store.has(`gradientpeak_cookie.${MAX_BETTER_AUTH_CHUNK_COUNT}`)).toBe(
+      false,
+    );
   });
 });

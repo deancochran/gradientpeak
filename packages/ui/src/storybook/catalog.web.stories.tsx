@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Bell, CircleAlert, Info, LayoutGrid, Settings2 } from "lucide-react";
 import { ThemeProvider } from "next-themes";
 import type * as React from "react";

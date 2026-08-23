@@ -22,8 +22,8 @@ import {
 } from "./permissions";
 
 export function resolveGroupEventRsvpStatus(input: {
-  occurrenceStatus?: GroupEventRsvpStatus | null;
-  seriesStatus?: GroupEventRsvpStatus | null;
+  occurrenceStatus?: GroupEventRsvpStatus | null | undefined;
+  seriesStatus?: GroupEventRsvpStatus | null | undefined;
 }): GroupEventRsvpStatus | null {
   if (input.occurrenceStatus !== null && input.occurrenceStatus !== undefined) {
     return input.occurrenceStatus;
@@ -32,8 +32,8 @@ export function resolveGroupEventRsvpStatus(input: {
 }
 
 export function isGroupEventGoing(input: {
-  occurrenceStatus?: GroupEventRsvpStatus | null;
-  seriesStatus?: GroupEventRsvpStatus | null;
+  occurrenceStatus?: GroupEventRsvpStatus | null | undefined;
+  seriesStatus?: GroupEventRsvpStatus | null | undefined;
 }): boolean {
   return resolveGroupEventRsvpStatus(input) !== "declined";
 }

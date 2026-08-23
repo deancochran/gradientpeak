@@ -1,5 +1,5 @@
 import React, { act } from "react";
-import type { ReactTestInstance } from "react-test-renderer";
+import type { TestInstance as ReactTestInstance } from "test-renderer";
 import { createActivityPlanDetail } from "../../test/activity-plan-projection-fixture";
 import { createHost, type HostProps } from "../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../test/render-native";
@@ -187,21 +187,21 @@ describe("ScheduleActivityModal", () => {
     existingActivityData = null;
   });
 
-  it("shows the selected activity preview", () => {
-    const rendered = renderNative(
+  it("shows the selected activity preview", async () => {
+    const rendered = await renderNative(
       <ScheduleActivityModal visible onClose={jest.fn()} activityPlanId="plan-1" />,
     );
 
     expect(screen.getByTestId("schedule-preview-details")).toBeTruthy();
     expect(
-      rendered.UNSAFE_root.find(
+      rendered.container.queryAll(
         (node: ReactTestInstance) => String(node.type) === "ActivityPlanCard",
-      ).props.variant,
+      )[0]?.props.variant,
     ).toBe("compact");
   });
 
-  it("submits a date-key-only planned activity", () => {
-    renderNative(
+  it("submits a date-key-only planned activity", async () => {
+    await renderNative(
       <ScheduleActivityModal
         visible
         onClose={jest.fn()}
@@ -210,7 +210,7 @@ describe("ScheduleActivityModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("schedule-submit-button"));
+    await fireEvent.press(screen.getByTestId("schedule-submit-button"));
 
     expect(createMutateMock).toHaveBeenCalledWith({
       activity_plan_id: "plan-1",
@@ -230,11 +230,11 @@ describe("ScheduleActivityModal", () => {
       activityPlanSummary: createActivityPlanDetail(),
     };
 
-    renderNative(<ScheduleActivityModal visible onClose={jest.fn()} eventId="event-1" />);
+    await renderNative(<ScheduleActivityModal visible onClose={jest.fn()} eventId="event-1" />);
 
     expect(screen.getByTestId("scheduled-date-button")).toBeTruthy();
 
-    const buttons = screen.UNSAFE_root.findAll(
+    const buttons = screen.container.queryAll(
       (node: ReactTestInstance) => String(node.type) === "Button",
     );
     const submitButton = buttons.at(-1);
@@ -257,7 +257,7 @@ describe("ScheduleActivityModal", () => {
     });
   });
 
-  it("does not expose update controls or mutate for a top-level plan ID with a null relation", () => {
+  it("does not expose update controls or mutate for a top-level plan ID with a null relation", async () => {
     existingActivityData = {
       id: "event-1",
       scheduled_date: "2026-03-23",
@@ -268,7 +268,7 @@ describe("ScheduleActivityModal", () => {
       activityPlanSummary: null,
     };
 
-    renderNative(<ScheduleActivityModal visible onClose={jest.fn()} eventId="event-1" />);
+    await renderNative(<ScheduleActivityModal visible onClose={jest.fn()} eventId="event-1" />);
 
     expect(screen.getByText("This event is read-only on mobile")).toBeTruthy();
     expect(screen.queryByTestId("schedule-submit-button")).toBeNull();

@@ -49,11 +49,15 @@ jest.mock("@/components/shared", () => ({
 }));
 jest.mock("@/components/shared/HeaderAction", () => ({
   HeaderTextAction: ({ label, onPress, testID }: HeaderActionProps) =>
-    React.createElement("button", { onClick: onPress, testID, type: "button" }, label),
+    React.createElement("Pressable", { onPress, testID }, React.createElement("Text", null, label)),
 }));
 jest.mock("@/components/shared/ScreenState", () => ({
   EmptyState: ({ title, testID }: EmptyStateProps) =>
-    React.createElement("div", { testID: testID ?? "goal-not-found" }, title),
+    React.createElement(
+      "View",
+      { testID: testID ?? "goal-not-found" },
+      React.createElement("Text", null, title),
+    ),
   LoadingState: createHost("LoadingState"),
   ErrorState: createHost("ErrorState"),
 }));
@@ -98,24 +102,24 @@ describe("P1 goal mobile boundaries", () => {
     back.mockReset();
   });
 
-  it("goals.browse-and-inspect distinguishes an empty library from a loading failure", () => {
-    renderNative(<GoalsListScreen />);
+  it("goals.browse-and-inspect distinguishes an empty library from a loading failure", async () => {
+    await renderNative(<GoalsListScreen />);
 
     expect(screen.getByTestId("goals-list-screen")).toBeTruthy();
     expect(screen.queryByTestId("goals-list-row-any-goal")).toBeNull();
     expect(screen.getByTestId("goals-list-create-button")).toBeTruthy();
   });
 
-  it("goals.create exposes the library entry point without hiding it in the list", () => {
-    renderNative(<GoalsListScreen />);
+  it("goals.create exposes the library entry point without hiding it in the list", async () => {
+    await renderNative(<GoalsListScreen />);
 
-    fireEvent.press(screen.getByTestId("goals-list-create-button"));
+    await fireEvent.press(screen.getByTestId("goals-list-create-button"));
 
     expect(navigate).toHaveBeenCalledWith("/goal-create");
   });
 
-  it("goals.edit offers recovery when the requested goal is unavailable", () => {
-    renderNative(<GoalEditScreen />);
+  it("goals.edit offers recovery when the requested goal is unavailable", async () => {
+    await renderNative(<GoalEditScreen />);
 
     expect(screen.getByTestId("goal-not-found")).toBeTruthy();
   });

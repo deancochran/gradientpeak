@@ -239,7 +239,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
         anchorDate: windowAnchorDateRef.current,
         maxPoints: boundedRendererPointLimit,
         points,
-        selectedDate,
+        ...(selectedDate !== undefined ? { selectedDate } : {}),
       }).visiblePoints,
   );
   const visiblePointsRef = useRef(visiblePoints);
@@ -251,7 +251,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
         anchorDate,
         maxPoints: boundedRendererPointLimit,
         points: latestPointsRef.current,
-        selectedDate,
+        ...(selectedDate !== undefined ? { selectedDate } : {}),
       });
       const current = visiblePointsRef.current;
       const next = nextWindow.visiblePoints;
@@ -308,7 +308,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
         anchorDate: windowAnchorDateRef.current,
         maxPoints: boundedRendererPointLimit,
         points: visiblePoints,
-        selectedDate,
+        ...(selectedDate !== undefined ? { selectedDate } : {}),
       }),
     [boundedRendererPointLimit, selectedDate, visiblePoints],
   );
@@ -353,10 +353,10 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     onInteractionStart: () => {
       interactionActiveRef.current = true;
     },
-    onPreviewSelectedDateChange,
-    onSelectedDateChange,
+    ...(onPreviewSelectedDateChange !== undefined ? { onPreviewSelectedDateChange } : {}),
+    ...(onSelectedDateChange !== undefined ? { onSelectedDateChange } : {}),
     points: visiblePoints,
-    selectedDate: selectedDate === undefined ? undefined : visibleSelectedDate,
+    ...(selectedDate !== undefined ? { selectedDate: visibleSelectedDate } : {}),
     slotWidth,
     suppressSelectionScroll: anchorRestorationActive,
     indexForOffset: (offsetX) =>
@@ -365,11 +365,11 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   });
 
   const nextPresentation = useDailyTrainingAdjustmentChartPresentation({
-    formatDateLabel,
+    ...(formatDateLabel !== undefined ? { formatDateLabel } : {}),
     bucketCenters: rendererGeometry.map((geometry) => geometry.datumX),
     points: visiblePoints,
     range,
-    todayDate,
+    ...(todayDate !== undefined ? { todayDate } : {}),
   });
   const interactionPresentationRef = useRef(nextPresentation);
   if (!interactionActiveRef.current) {

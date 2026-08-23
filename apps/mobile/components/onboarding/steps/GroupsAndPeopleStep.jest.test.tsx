@@ -28,8 +28,18 @@ jest.mock("@/lib/api", () => ({
   },
 }));
 
-jest.mock("@/components/groups/GroupCards", () => ({ GroupCard: () => null }));
-jest.mock("@/components/profile/ProfileCard", () => ({ ProfileCard: () => null }));
+jest.mock("@/components/groups/GroupCards", () => ({
+  GroupCard: (props: Record<string, unknown>) => {
+    const React = jest.requireActual("react");
+    return React.createElement("GroupCard", props);
+  },
+}));
+jest.mock("@/components/profile/ProfileCard", () => ({
+  ProfileCard: (props: Record<string, unknown>) => {
+    const React = jest.requireActual("react");
+    return React.createElement("ProfileCard", props);
+  },
+}));
 
 describe("GroupsAndPeopleStep search", () => {
   beforeEach(() => {
@@ -43,8 +53,8 @@ describe("GroupsAndPeopleStep search", () => {
     jest.clearAllMocks();
   });
 
-  it("keeps group and people search controlled, loading, clearable, and independently debounced", () => {
-    const { getByLabelText, getByTestId } = render(
+  it("keeps group and people search controlled, loading, clearable, and independently debounced", async () => {
+    const { getByLabelText, getByTestId } = await render(
       <GroupsAndPeopleStep
         data={
           {
@@ -61,8 +71,8 @@ describe("GroupsAndPeopleStep search", () => {
 
     expect(getByLabelText("Loading groups")).toBeTruthy();
     expect(getByLabelText("Loading people")).toBeTruthy();
-    fireEvent(getByTestId("onboarding-groups-search"), "changeText", " runners ");
-    fireEvent(getByTestId("onboarding-people-search"), "changeText", " alex ");
+    await fireEvent(getByTestId("onboarding-groups-search"), "changeText", " runners ");
+    await fireEvent(getByTestId("onboarding-people-search"), "changeText", " alex ");
 
     expect(mockGroupsQuery).toHaveBeenLastCalledWith(
       { limit: 5, search: undefined },
@@ -73,13 +83,13 @@ describe("GroupsAndPeopleStep search", () => {
       expect.any(Object),
     );
 
-    act(() => jest.advanceTimersByTime(299));
+    await act(() => jest.advanceTimersByTime(299));
     expect(mockGroupsQuery).toHaveBeenLastCalledWith(
       { limit: 5, search: undefined },
       expect.any(Object),
     );
 
-    act(() => jest.advanceTimersByTime(1));
+    await act(() => jest.advanceTimersByTime(1));
     expect(mockGroupsQuery).toHaveBeenLastCalledWith(
       { limit: 5, search: "runners" },
       expect.any(Object),
@@ -89,8 +99,77 @@ describe("GroupsAndPeopleStep search", () => {
       expect.any(Object),
     );
 
-    fireEvent.press(getByTestId("onboarding-groups-search-clear"));
+    await fireEvent.press(getByTestId("onboarding-groups-search-clear"));
     expect(getByTestId("onboarding-groups-search").props.value).toBe("");
     expect(getByTestId("onboarding-people-search").props.value).toBe(" alex ");
+  });
+
+  it("onboarding.select-people-and-groups records follow and group membership actions", async () => {
+    mockGroupsQuery.mockReturnValue({
+      ...queryResult,
+      data: {
+        pages: [
+          {
+            items: [
+              {
+                id: "group-1",
+                name: "Morning Runners",
+                viewer: { canJoin: true, canRequestToJoin: false },
+              },
+            ],
+          },
+        ],
+      },
+      isFetching: false,
+    });
+    mockPeopleQuery.mockReturnValue({
+      ...queryResult,
+      data: {
+        pages: [
+          {
+            users: [
+              {
+                id: "profile-1",
+                follow_status: null,
+                username: "alex",
+              },
+            ],
+          },
+        ],
+      },
+      isFetching: false,
+    });
+    const updateData = jest.fn();
+
+    const { getByTestId } = await render(
+      <GroupsAndPeopleStep
+        data={
+          {
+            selected_follow_profile_ids: [],
+            selected_group_actions: [],
+            selected_group_ids: [],
+            selected_invitation_ids: [],
+            social_action_statuses: {},
+          } as never
+        }
+        updateData={updateData}
+      />,
+    );
+
+    await fireEvent.press(getByTestId("onboarding-group-group-1"));
+    expect(updateData).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selected_group_actions: [expect.objectContaining({ action: "join", group_id: "group-1" })],
+        selected_group_ids: ["group-1"],
+      }),
+    );
+
+    await fireEvent.press(getByTestId("onboarding-profile-profile-1"));
+    expect(updateData).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selected_follow_profile_ids: ["profile-1"],
+        social_action_statuses: expect.objectContaining({ "follow:profile-1": "pending" }),
+      }),
+    );
   });
 });

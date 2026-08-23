@@ -1,11 +1,23 @@
 import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import type React from "react";
-import type { ReactTestInstance } from "react-test-renderer";
+import type { TestInstance as ReactTestInstance } from "test-renderer";
 import { DailyTrainingAdjustmentChart } from "./DailyTrainingAdjustmentChart";
 import { hasCompletedActivityWithoutLoad } from "./dailyTrainingAdjustmentChartPresentation";
 import { deriveTrainingPathChartWindow } from "./trainingPathChartWindow";
 
 const mockScrollTo = jest.fn();
+
+function requireValue<T>(value: T | undefined, description: string): T {
+  if (value === undefined) throw new Error(`Expected ${description}`);
+  return value;
+}
+
+function getCartesianChart(): ReactTestInstance {
+  return requireValue(
+    screen.container.queryAll((node) => node.type === "CartesianChart")[0],
+    "a CartesianChart",
+  );
+}
 
 jest.mock("react-native-gesture-handler", () => {
   const ReactRuntime = jest.requireActual("react") as typeof React;
@@ -49,8 +61,8 @@ describe("DailyTrainingAdjustmentChart", () => {
     ).toBe(false);
   });
 
-  it("marks a known-zero completed load at the chart baseline", () => {
-    render(
+  it("marks a known-zero completed load at the chart baseline", async () => {
+    await render(
       <DailyTrainingAdjustmentChart
         points={[
           {
@@ -63,12 +75,12 @@ describe("DailyTrainingAdjustmentChart", () => {
     );
 
     expect(
-      screen.UNSAFE_root.findByProps({
-        testID: "known-zero-completed-load-marker-2026-06-01",
-      }),
+      screen.container.queryAll(
+        (node) => node.props.testID === "known-zero-completed-load-marker-2026-06-01",
+      )[0],
     ).toBeTruthy();
     expect(
-      screen.UNSAFE_root.findAll(
+      screen.container.queryAll(
         (node: ReactTestInstance) =>
           String(node.type) === "Rect" &&
           node.props.height === 3 &&
@@ -95,8 +107,8 @@ describe("DailyTrainingAdjustmentChart", () => {
     ).toBe(false);
   });
 
-  it("highlights every completed activity without a calculated load", () => {
-    render(
+  it("highlights every completed activity without a calculated load", async () => {
+    await render(
       <DailyTrainingAdjustmentChart
         selectedDate="2026-06-02"
         points={[
@@ -126,23 +138,23 @@ describe("DailyTrainingAdjustmentChart", () => {
     );
 
     expect(
-      screen.UNSAFE_root.findByProps({
-        testID: "completed-activity-without-load-highlight-2026-06-01",
-      }),
+      screen.container.queryAll(
+        (node) => node.props.testID === "completed-activity-without-load-highlight-2026-06-01",
+      )[0],
     ).toBeTruthy();
     expect(
       screen.queryByLabelText("Completed activity without estimated load on 2026-06-01"),
     ).toBeNull();
     expect(
-      screen.UNSAFE_root.findByProps({
-        testID: "completed-activity-without-load-highlight-2026-06-02",
-      }),
+      screen.container.queryAll(
+        (node) => node.props.testID === "completed-activity-without-load-highlight-2026-06-02",
+      )[0],
     ).toBeTruthy();
     expect(
       screen.queryByLabelText("Completed activity without estimated load on 2026-06-02"),
     ).toBeNull();
     expect(screen.queryByTestId("completed-activity-without-load-highlight-2026-06-03")).toBeNull();
-    const bottomMarkers = screen.UNSAFE_root.findAll(
+    const bottomMarkers = screen.container.queryAll(
       (node: ReactTestInstance) =>
         String(node.type) === "Rect" && node.props.height === 3 && node.props.y === 97,
     );
@@ -193,8 +205,8 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(secondWindow.visiblePoints).toEqual(firstWindow.visiblePoints);
   });
 
-  it("renders the selected daily adjustment tray", () => {
-    render(
+  it("renders the selected daily adjustment tray", async () => {
+    await render(
       <DailyTrainingAdjustmentChart
         selectedDate="2026-06-02"
         points={[
@@ -216,8 +228,8 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(screen.queryByText("Target")).toBeNull();
   });
 
-  it("omits recommendation and target-comparison copy when target load is unavailable", () => {
-    render(
+  it("omits recommendation and target-comparison copy when target load is unavailable", async () => {
+    await render(
       <DailyTrainingAdjustmentChart
         selectedDate="2026-06-02"
         points={[
@@ -236,8 +248,8 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(screen.queryByText("On target")).toBeNull();
   });
 
-  it("keeps recommendation data out of chart layers while preserving reusable tray compatibility", () => {
-    render(
+  it("keeps recommendation data out of chart layers while preserving reusable tray compatibility", async () => {
+    await render(
       <DailyTrainingAdjustmentChart
         selectedDate="2026-06-02"
         points={[
@@ -258,8 +270,8 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(screen.queryByText("1000")).toBeNull();
   });
 
-  it("centers the initial controlled date only after viewport and content readiness", () => {
-    render(
+  it("centers the initial controlled date only after viewport and content readiness", async () => {
+    await render(
       <DailyTrainingAdjustmentChart
         points={[
           { date: "2026-06-01", effectiveLoadStatus: "complete", effectiveLoad: 40 },
@@ -277,12 +289,12 @@ describe("DailyTrainingAdjustmentChart", () => {
 
     expect(mockScrollTo).not.toHaveBeenCalled();
 
-    fireEvent(screen.getByTestId("daily-training-adjustment-chart-viewport"), "layout", {
+    await fireEvent(screen.getByTestId("daily-training-adjustment-chart-viewport"), "layout", {
       nativeEvent: { layout: { height: 230, width: 240, x: 0, y: 0 } },
     });
     expect(mockScrollTo).not.toHaveBeenCalled();
 
-    fireEvent(
+    await fireEvent(
       screen.getByTestId("daily-training-adjustment-chart-scroll"),
       "contentSizeChange",
       600,
@@ -293,8 +305,8 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(mockScrollTo).toHaveBeenCalledWith({ animated: false, x: 0, y: 0 });
   });
 
-  it("does not let passive native mount scrolling replace the controlled date", () => {
-    render(
+  it("does not let passive native mount scrolling replace the controlled date", async () => {
+    await render(
       <DailyTrainingAdjustmentChart
         points={[
           { date: "2026-06-01", effectiveLoadStatus: "complete", effectiveLoad: 40 },
@@ -306,19 +318,19 @@ describe("DailyTrainingAdjustmentChart", () => {
     );
 
     const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
-    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 0, y: 0 } } });
+    await fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 0, y: 0 } } });
     expect(screen.getByText("2026-06-03")).toBeTruthy();
   });
 
-  it("renders an empty state", () => {
-    render(<DailyTrainingAdjustmentChart points={[]} />);
+  it("renders an empty state", async () => {
+    await render(<DailyTrainingAdjustmentChart points={[]} />);
 
     expect(screen.getByText("No daily training adjustments yet.")).toBeTruthy();
   });
 
-  it("selects the nearest day when scrolling settles", () => {
+  it("selects the nearest day when scrolling settles", async () => {
     const onSelectedDateChange = jest.fn();
-    render(
+    await render(
       <DailyTrainingAdjustmentChart
         onSelectedDateChange={onSelectedDateChange}
         points={[
@@ -329,16 +341,20 @@ describe("DailyTrainingAdjustmentChart", () => {
       />,
     );
 
-    fireEvent(screen.getByTestId("daily-training-adjustment-chart-scroll"), "momentumScrollEnd", {
-      nativeEvent: { contentOffset: { x: 0, y: 0 } },
-    });
+    await fireEvent(
+      screen.getByTestId("daily-training-adjustment-chart-scroll"),
+      "momentumScrollEnd",
+      {
+        nativeEvent: { contentOffset: { x: 0, y: 0 } },
+      },
+    );
 
     expect(screen.getByText("2026-06-02")).toBeTruthy();
     expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-02");
   });
 
-  it("lets native momentum carry between snap points", () => {
-    render(
+  it("lets native momentum carry between snap points", async () => {
+    await render(
       <DailyTrainingAdjustmentChart
         points={[
           { date: "2026-06-01", targetLoad: 40, actualOrScheduledLoad: 35 },
@@ -356,10 +372,10 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(scrollView.props.snapToInterval).toBeGreaterThan(0);
   });
 
-  it("commits a slow drag without momentum exactly once", () => {
+  it("commits a slow drag without momentum exactly once", async () => {
     jest.useFakeTimers();
     const onSelectedDateChange = jest.fn();
-    render(
+    await render(
       <DailyTrainingAdjustmentChart
         onSelectedDateChange={onSelectedDateChange}
         points={[
@@ -376,24 +392,24 @@ describe("DailyTrainingAdjustmentChart", () => {
     );
     const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
 
-    fireEvent(scrollView, "scrollBeginDrag");
-    fireEvent(scrollView, "scrollEndDrag", {
+    await fireEvent(scrollView, "scrollBeginDrag");
+    await fireEvent(scrollView, "scrollEndDrag", {
       nativeEvent: { contentOffset: { x: 34, y: 0 } },
     });
     expect(onSelectedDateChange).not.toHaveBeenCalled();
 
-    act(() => jest.runOnlyPendingTimers());
+    await act(() => jest.runOnlyPendingTimers());
     expect(onSelectedDateChange).toHaveBeenCalledTimes(1);
     expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-02");
-    act(() => jest.runOnlyPendingTimers());
+    await act(() => jest.runOnlyPendingTimers());
     expect(mockScrollTo).not.toHaveBeenCalled();
     jest.useRealTimers();
   });
 
-  it("cancels drag settlement when momentum starts and commits momentum once", () => {
+  it("cancels drag settlement when momentum starts and commits momentum once", async () => {
     jest.useFakeTimers();
     const onSelectedDateChange = jest.fn();
-    render(
+    await render(
       <DailyTrainingAdjustmentChart
         onSelectedDateChange={onSelectedDateChange}
         points={[
@@ -407,23 +423,23 @@ describe("DailyTrainingAdjustmentChart", () => {
     const dragEvent = { nativeEvent: { contentOffset: { x: 31, y: 0 } } };
     const momentumEvent = { nativeEvent: { contentOffset: { x: 96, y: 0 } } };
 
-    fireEvent(scrollView, "scrollBeginDrag");
-    fireEvent(scrollView, "scrollEndDrag", dragEvent);
-    fireEvent(scrollView, "momentumScrollBegin");
-    act(() => jest.runOnlyPendingTimers());
+    await fireEvent(scrollView, "scrollBeginDrag");
+    await fireEvent(scrollView, "scrollEndDrag", dragEvent);
+    await fireEvent(scrollView, "momentumScrollBegin");
+    await act(() => jest.runOnlyPendingTimers());
     expect(onSelectedDateChange).not.toHaveBeenCalled();
 
-    fireEvent(scrollView, "momentumScrollEnd", momentumEvent);
-    fireEvent(scrollView, "momentumScrollEnd", momentumEvent);
+    await fireEvent(scrollView, "momentumScrollEnd", momentumEvent);
+    await fireEvent(scrollView, "momentumScrollEnd", momentumEvent);
     expect(onSelectedDateChange).toHaveBeenCalledTimes(1);
     expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-03");
     jest.useRealTimers();
   });
 
-  it("waits for momentum when drag-end velocity is present", () => {
+  it("waits for momentum when drag-end velocity is present", async () => {
     jest.useFakeTimers();
     const onSelectedDateChange = jest.fn();
-    render(
+    await render(
       <DailyTrainingAdjustmentChart
         onSelectedDateChange={onSelectedDateChange}
         points={[
@@ -435,15 +451,15 @@ describe("DailyTrainingAdjustmentChart", () => {
     );
     const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
 
-    fireEvent(scrollView, "scrollBeginDrag");
-    fireEvent(scrollView, "scrollEndDrag", {
+    await fireEvent(scrollView, "scrollBeginDrag");
+    await fireEvent(scrollView, "scrollEndDrag", {
       nativeEvent: { contentOffset: { x: 31, y: 0 }, velocity: { x: 1, y: 0 } },
     });
-    act(() => jest.advanceTimersByTime(499));
+    await act(() => jest.advanceTimersByTime(499));
     expect(onSelectedDateChange).not.toHaveBeenCalled();
 
-    fireEvent(scrollView, "momentumScrollBegin");
-    fireEvent(scrollView, "momentumScrollEnd", {
+    await fireEvent(scrollView, "momentumScrollBegin");
+    await fireEvent(scrollView, "momentumScrollEnd", {
       nativeEvent: { contentOffset: { x: 96, y: 0 } },
     });
     expect(onSelectedDateChange).toHaveBeenCalledTimes(1);
@@ -451,7 +467,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     jest.useRealTimers();
   });
 
-  it("keeps the viewport stable when a velocity drag settles without momentum events", () => {
+  it("keeps the viewport stable when a velocity drag settles without momentum events", async () => {
     jest.useFakeTimers();
     const onSelectedDateChange = jest.fn();
     const initialPoints = [
@@ -459,7 +475,7 @@ describe("DailyTrainingAdjustmentChart", () => {
       { date: "2026-06-02", targetLoad: 50 },
       { date: "2026-06-03", targetLoad: 60 },
     ];
-    const { rerender } = render(
+    const { rerender } = await render(
       <DailyTrainingAdjustmentChart
         onSelectedDateChange={onSelectedDateChange}
         points={initialPoints}
@@ -467,11 +483,11 @@ describe("DailyTrainingAdjustmentChart", () => {
     );
     const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
 
-    fireEvent(scrollView, "scrollBeginDrag");
-    fireEvent(scrollView, "scrollEndDrag", {
+    await fireEvent(scrollView, "scrollBeginDrag");
+    await fireEvent(scrollView, "scrollEndDrag", {
       nativeEvent: { contentOffset: { x: 31, y: 0 }, velocity: { x: 1, y: 0 } },
     });
-    rerender(
+    await rerender(
       <DailyTrainingAdjustmentChart
         onSelectedDateChange={onSelectedDateChange}
         points={[
@@ -483,7 +499,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     );
 
     expect(screen.queryByTestId("daily-training-adjustment-chart-bucket-2026-06-05")).toBeNull();
-    act(() => jest.advanceTimersByTime(500));
+    await act(() => jest.advanceTimersByTime(500));
 
     expect(onSelectedDateChange).toHaveBeenCalledTimes(1);
     expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-02");
@@ -491,9 +507,9 @@ describe("DailyTrainingAdjustmentChart", () => {
     jest.useRealTimers();
   });
 
-  it("previews the selected day instantly while scrolling without committing until settle", () => {
+  it("previews the selected day instantly while scrolling without committing until settle", async () => {
     const onSelectedDateChange = jest.fn();
-    render(
+    await render(
       <DailyTrainingAdjustmentChart
         onSelectedDateChange={onSelectedDateChange}
         points={[
@@ -505,27 +521,27 @@ describe("DailyTrainingAdjustmentChart", () => {
     );
 
     const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
-    fireEvent(scrollView, "scrollBeginDrag");
-    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 96, y: 0 } } });
+    await fireEvent(scrollView, "scrollBeginDrag");
+    await fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 96, y: 0 } } });
 
     expect(screen.getByText("2026-06-03")).toBeTruthy();
     expect(onSelectedDateChange).not.toHaveBeenCalled();
 
-    fireEvent(scrollView, "momentumScrollEnd", {
+    await fireEvent(scrollView, "momentumScrollEnd", {
       nativeEvent: { contentOffset: { x: 96, y: 0 } },
     });
 
     expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-03");
   });
 
-  it("keeps a controlled local commit selected until the parent acknowledges it", () => {
+  it("keeps a controlled local commit selected until the parent acknowledges it", async () => {
     const onSelectedDateChange = jest.fn();
     const points = [
       { date: "2026-06-01", targetLoad: 40 },
       { date: "2026-06-02", targetLoad: 50 },
       { date: "2026-06-03", targetLoad: 60 },
     ];
-    const { rerender } = render(
+    const { rerender } = await render(
       <DailyTrainingAdjustmentChart
         onSelectedDateChange={onSelectedDateChange}
         points={points}
@@ -534,14 +550,14 @@ describe("DailyTrainingAdjustmentChart", () => {
     );
     const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
 
-    fireEvent(scrollView, "scrollBeginDrag");
-    fireEvent(scrollView, "momentumScrollBegin");
-    fireEvent(scrollView, "momentumScrollEnd", {
+    await fireEvent(scrollView, "scrollBeginDrag");
+    await fireEvent(scrollView, "momentumScrollBegin");
+    await fireEvent(scrollView, "momentumScrollEnd", {
       nativeEvent: { contentOffset: { x: 96, y: 0 } },
     });
     expect(screen.getByText("2026-06-03")).toBeTruthy();
 
-    rerender(
+    await rerender(
       <DailyTrainingAdjustmentChart
         onSelectedDateChange={onSelectedDateChange}
         points={points}
@@ -550,7 +566,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     );
     expect(screen.getByText("2026-06-03")).toBeTruthy();
 
-    rerender(
+    await rerender(
       <DailyTrainingAdjustmentChart
         onSelectedDateChange={onSelectedDateChange}
         points={points}
@@ -561,9 +577,9 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(screen.getByText("2026-06-03")).toBeTruthy();
   });
 
-  it("exposes one adjustable chart control for selecting adjacent dates", () => {
+  it("exposes one adjustable chart control for selecting adjacent dates", async () => {
     const onSelectedDateChange = jest.fn();
-    render(
+    await render(
       <DailyTrainingAdjustmentChart
         onSelectedDateChange={onSelectedDateChange}
         points={[
@@ -587,33 +603,34 @@ describe("DailyTrainingAdjustmentChart", () => {
     });
     expect(adjustable.props.accessibilityHint).toBe("Adjust to select the next or previous date");
 
-    fireEvent(adjustable, "accessibilityAction", {
+    await fireEvent(adjustable, "accessibilityAction", {
       nativeEvent: { actionName: "increment" },
     });
     expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-03");
     expect(screen.getByText("2026-06-03")).toBeTruthy();
   });
 
-  it("provides a 44-point period target aligned to each bucket", () => {
+  it("provides a 44-point period target aligned to each bucket", async () => {
     const onSelectedDateChange = jest.fn();
-    render(
+    await render(
       <DailyTrainingAdjustmentChart
         onSelectedDateChange={onSelectedDateChange}
         points={[{ date: "2026-06-01", effectiveRemainingLoad: 20 }]}
       />,
     );
 
-    const target = screen.UNSAFE_root.findByProps({
-      testID: "daily-training-adjustment-chart-bucket-2026-06-01",
-    });
+    const target = screen.container.queryAll(
+      (node) => node.props.testID === "daily-training-adjustment-chart-bucket-2026-06-01",
+    )[0];
+    if (!target) throw new Error("Expected the daily training adjustment bucket");
     expect(target.props.accessible).toBe(false);
     expect(target.props.style.width).toBeGreaterThanOrEqual(44);
-    fireEvent.press(target);
+    await fireEvent.press(target);
     expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-01");
   });
 
-  it("passes center-valued x data and the x field to CartesianChart", () => {
-    render(
+  it("passes center-valued x data and the x field to CartesianChart", async () => {
+    await render(
       <DailyTrainingAdjustmentChart
         points={[
           { date: "2026-06-01", effectiveRemainingLoad: 20 },
@@ -622,12 +639,12 @@ describe("DailyTrainingAdjustmentChart", () => {
       />,
     );
 
-    const chart = screen.UNSAFE_getByType("CartesianChart" as never);
+    const chart = getCartesianChart();
     expect(chart.props.data.map((datum: { x: number }) => datum.x)).toEqual([60, 180]);
   });
 
-  it("announces available selected load, fitness, and unavailable completed-load state", () => {
-    render(
+  it("announces available selected load, fitness, and unavailable completed-load state", async () => {
+    await render(
       <DailyTrainingAdjustmentChart
         points={[
           {
@@ -666,8 +683,8 @@ describe("DailyTrainingAdjustmentChart", () => {
     });
   });
 
-  it("renders metric axes, projection styles, and a visible Today boundary", () => {
-    render(
+  it("renders metric axes, projection styles, and a visible Today boundary", async () => {
+    await render(
       <DailyTrainingAdjustmentChart
         points={[
           {
@@ -706,13 +723,13 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(screen.getByLabelText("Right axis: Fitness / Fatigue")).toBeTruthy();
     expect(screen.getByText("Form line shows recovery")).toBeTruthy();
     expect(
-      screen.UNSAFE_root.findByProps({
-        testID: "daily-training-adjustment-chart-today-boundary",
-      }),
+      screen.container.queryAll(
+        (node) => node.props.testID === "daily-training-adjustment-chart-today-boundary",
+      )[0],
     ).toBeTruthy();
     expect(screen.queryByLabelText("Today boundary at 2026-06-01")).toBeNull();
 
-    const lines = screen.UNSAFE_root.findAll(
+    const lines = screen.container.queryAll(
       (node: ReactTestInstance) => String(node.type) === "Line",
     );
     const currentFitness = lines.find(
@@ -743,15 +760,15 @@ describe("DailyTrainingAdjustmentChart", () => {
       lines.find((line: ReactTestInstance) => line.props.color === "rgba(15, 23, 42, 0.44)"),
     ).toBeUndefined();
     expect(
-      screen.UNSAFE_root.findAll(
+      screen.container.queryAll(
         (node: ReactTestInstance) =>
           String(node.type) === "SkiaText" && node.props.text === "TODAY",
       ),
     ).toHaveLength(1);
   });
 
-  it("keeps a visible line gap for a missing training-state value", () => {
-    render(
+  it("keeps a visible line gap for a missing training-state value", async () => {
+    await render(
       <DailyTrainingAdjustmentChart
         points={[
           { date: "2026-06-01", fitnessCtl: 40 },
@@ -761,17 +778,17 @@ describe("DailyTrainingAdjustmentChart", () => {
       />,
     );
 
-    const fitnessLine = screen.UNSAFE_root.findAll(
-      (node: ReactTestInstance) => String(node.type) === "Line",
-    ).find((line: ReactTestInstance) => line.props.color === "rgba(22, 163, 74, 0.95)");
+    const fitnessLine = screen.container
+      .queryAll((node: ReactTestInstance) => String(node.type) === "Line")
+      .find((line: ReactTestInstance) => line.props.color === "rgba(22, 163, 74, 0.95)");
     expect(fitnessLine?.props.connectMissingData).toBe(false);
     expect(
       fitnessLine?.props.points.map((point: { yValue: number | null }) => point.yValue),
     ).toEqual([40, null, 44]);
   });
 
-  it("shows the native horizontal exploration indicator", () => {
-    render(
+  it("shows the native horizontal exploration indicator", async () => {
+    await render(
       <DailyTrainingAdjustmentChart
         points={[
           { date: "2026-06-01", plannedLoad: 10 },
@@ -785,7 +802,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(scrollView.props.persistentScrollbar).toBe(true);
   });
 
-  it("keeps today's plotted values unchanged after windowing backward and forward", () => {
+  it("keeps today's plotted values unchanged after windowing backward and forward", async () => {
     const points = Array.from({ length: 25 }, (_, index) => {
       const day = index + 1;
       return {
@@ -797,39 +814,40 @@ describe("DailyTrainingAdjustmentChart", () => {
         formTsb: day - 15,
       };
     });
-    render(
+    await render(
       <DailyTrainingAdjustmentChart
         maxVisiblePoints={10}
         points={points}
         selectedDate="2026-06-15"
       />,
     );
-    fireEvent(screen.getByTestId("daily-training-adjustment-chart-viewport"), "layout", {
+    await fireEvent(screen.getByTestId("daily-training-adjustment-chart-viewport"), "layout", {
       nativeEvent: { layout: { height: 230, width: 240, x: 0, y: 0 } },
     });
     const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
-    fireEvent(scrollView, "contentSizeChange", 720, 230);
-    const todayBefore = screen.UNSAFE_getByType("CartesianChart" as never).props.data[5];
+    await fireEvent(scrollView, "contentSizeChange", 720, 230);
+    const todayBefore = requireValue(getCartesianChart().props.data[5], "today's chart point");
 
-    fireEvent(scrollView, "scrollBeginDrag");
-    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 0, y: 0 } } });
-    fireEvent(scrollView, "momentumScrollEnd", {
+    await fireEvent(scrollView, "scrollBeginDrag");
+    await fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 0, y: 0 } } });
+    await fireEvent(scrollView, "momentumScrollEnd", {
       nativeEvent: { contentOffset: { x: 0, y: 0 } },
     });
     expect(screen.getByText("06/15", { includeHiddenElements: true })).toBeTruthy();
 
-    fireEvent(scrollView, "scrollBeginDrag");
-    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 480, y: 0 } } });
-    fireEvent(scrollView, "momentumScrollEnd", {
+    await fireEvent(scrollView, "scrollBeginDrag");
+    await fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 480, y: 0 } } });
+    await fireEvent(scrollView, "momentumScrollEnd", {
       nativeEvent: { contentOffset: { x: 480, y: 0 } },
     });
 
-    const todayAfter = screen
-      .UNSAFE_getByType("CartesianChart" as never)
-      .props.data.find(
+    const todayAfter = requireValue(
+      getCartesianChart().props.data.find(
         (point: { actualFitness: number | null }) =>
           point.actualFitness === todayBefore.actualFitness,
-      );
+      ),
+      "today's updated chart point",
+    );
     expect(todayAfter).toMatchObject({
       actualFitness: todayBefore.actualFitness,
       completedLoad: todayBefore.completedLoad,
@@ -840,7 +858,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(screen.getByText("06/15", { includeHiddenElements: true })).toBeTruthy();
   });
 
-  it("keeps the same dates visible when data arrives during drag and momentum", () => {
+  it("keeps the same dates visible when data arrives during drag and momentum", async () => {
     const buildPoints = (startDay: number, endDay: number) =>
       Array.from({ length: endDay - startDay + 1 }, (_, index) => ({
         date: `2026-06-${String(startDay + index).padStart(2, "0")}`,
@@ -848,7 +866,7 @@ describe("DailyTrainingAdjustmentChart", () => {
       }));
     const onSelectedDateChange = jest.fn();
 
-    const { rerender } = render(
+    const { rerender } = await render(
       <DailyTrainingAdjustmentChart
         maxVisiblePoints={10}
         onSelectedDateChange={onSelectedDateChange}
@@ -856,10 +874,10 @@ describe("DailyTrainingAdjustmentChart", () => {
         selectedDate="2026-06-15"
       />,
     );
-    fireEvent(screen.getByTestId("daily-training-adjustment-chart-viewport"), "layout", {
+    await fireEvent(screen.getByTestId("daily-training-adjustment-chart-viewport"), "layout", {
       nativeEvent: { layout: { height: 230, width: 240, x: 0, y: 0 } },
     });
-    fireEvent(
+    await fireEvent(
       screen.getByTestId("daily-training-adjustment-chart-scroll"),
       "contentSizeChange",
       600,
@@ -868,11 +886,11 @@ describe("DailyTrainingAdjustmentChart", () => {
     mockScrollTo.mockClear();
     const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
 
-    fireEvent(scrollView, "scrollBeginDrag");
-    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 0, y: 0 } } });
-    const chartDataBefore = screen.UNSAFE_getByType("CartesianChart" as never).props.data;
+    await fireEvent(scrollView, "scrollBeginDrag");
+    await fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 0, y: 0 } } });
+    const chartDataBefore = getCartesianChart().props.data;
 
-    rerender(
+    await rerender(
       <DailyTrainingAdjustmentChart
         maxVisiblePoints={10}
         onSelectedDateChange={onSelectedDateChange}
@@ -880,11 +898,11 @@ describe("DailyTrainingAdjustmentChart", () => {
         selectedDate="2026-06-15"
       />,
     );
-    expect(screen.UNSAFE_getByType("CartesianChart" as never).props.data).toBe(chartDataBefore);
+    expect(getCartesianChart().props.data).toBe(chartDataBefore);
     expect(screen.queryByTestId("daily-training-adjustment-chart-bucket-2026-06-05")).toBeNull();
 
-    fireEvent(scrollView, "momentumScrollBegin");
-    rerender(
+    await fireEvent(scrollView, "momentumScrollBegin");
+    await rerender(
       <DailyTrainingAdjustmentChart
         maxVisiblePoints={10}
         onSelectedDateChange={onSelectedDateChange}
@@ -892,20 +910,20 @@ describe("DailyTrainingAdjustmentChart", () => {
         selectedDate="2026-06-15"
       />,
     );
-    expect(screen.UNSAFE_getByType("CartesianChart" as never).props.data).toBe(chartDataBefore);
+    expect(getCartesianChart().props.data).toBe(chartDataBefore);
 
-    fireEvent(scrollView, "momentumScrollEnd", {
+    await fireEvent(scrollView, "momentumScrollEnd", {
       nativeEvent: { contentOffset: { x: 0, y: 0 } },
     });
 
-    expect(screen.UNSAFE_getByType("CartesianChart" as never).props.data).not.toBe(chartDataBefore);
+    expect(getCartesianChart().props.data).not.toBe(chartDataBefore);
     expect(onSelectedDateChange).toHaveBeenLastCalledWith("2026-06-12");
     expect(screen.getByText("2026-06-12")).toBeTruthy();
     expect(screen.queryByTestId("daily-training-adjustment-chart-bucket-2026-06-05")).toBeNull();
     expect(
-      screen.UNSAFE_root.findByProps({
-        testID: "daily-training-adjustment-chart-bucket-2026-06-12",
-      }),
+      screen.container.queryAll(
+        (node) => node.props.testID === "daily-training-adjustment-chart-bucket-2026-06-12",
+      )[0],
     ).toBeTruthy();
     expect(mockScrollTo).not.toHaveBeenCalled();
   });

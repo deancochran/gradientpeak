@@ -1,4 +1,4 @@
-import type React from "react";
+import React from "react";
 import { createHost } from "../../../../test/mock-components";
 import { act, renderNative } from "../../../../test/render-native";
 
@@ -17,12 +17,6 @@ jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   Alert: { alert: jest.fn() },
-  InteractionManager: {
-    runAfterInteractions: (cb: () => void) => {
-      cb();
-      return { cancel: jest.fn() };
-    },
-  },
 }));
 jest.mock("@/components/shared/detail", () => ({
   __esModule: true,
@@ -49,9 +43,9 @@ jest.mock("@/components/shared/detail", () => ({
     return (
       <>
         {actions.map((action) => (
-          <button key={action.label} type="button" onClick={action.onPress}>
-            {action.label}
-          </button>
+          <React.Fragment key={action.label}>
+            {React.createElement("Text", null, action.label)}
+          </React.Fragment>
         ))}
       </>
     );
@@ -64,11 +58,7 @@ jest.mock("@/components/shared/detail", () => ({
     entityName: string;
   }) => {
     confirmPress = onConfirm;
-    return (
-      <button type="button" onClick={onConfirm}>
-        Confirm delete {entityName}
-      </button>
-    );
+    return <>{React.createElement("Text", null, `Confirm delete ${entityName}`)}</>;
   },
 }));
 jest.mock("@/components/shared/RouteCard", () => ({ RouteCard: createHost("RouteCard") }));
@@ -160,16 +150,16 @@ describe("P0 route deletion boundary", () => {
     confirmPress = undefined;
   });
 
-  it("confirms an owned route deletion through the route mutation boundary", () => {
-    renderNative(<RouteDetailScreen />);
-    act(() => deletePress?.());
-    act(() => confirmPress?.());
+  it("confirms an owned route deletion through the route mutation boundary", async () => {
+    await renderNative(<RouteDetailScreen />);
+    await act(() => deletePress?.());
+    await act(() => confirmPress?.());
 
     expect(mutate).toHaveBeenCalledWith({ id: "route-1" });
   });
 
-  it("returns to the route library after deletion succeeds", () => {
-    renderNative(<RouteDetailScreen />);
+  it("returns to the route library after deletion succeeds", async () => {
+    await renderNative(<RouteDetailScreen />);
     mutationOptions?.onSuccess?.();
     expect(back).toHaveBeenCalled();
   });

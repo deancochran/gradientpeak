@@ -1,6 +1,6 @@
+import { act } from "react";
 import { Controller } from "react-hook-form";
 import { Pressable, Text } from "react-native";
-import { act } from "react-test-renderer";
 import { z } from "zod";
 import { useZodForm } from "../../hooks/use-zod-form";
 import { useZodFormSubmit } from "../../hooks/use-zod-form-submit";
@@ -43,10 +43,10 @@ function FormHarness({ onSubmit }: { onSubmit: (value: { pace: number }) => void
 }
 
 describe("PaceSecondsField native", () => {
-  it("retains an incomplete draft and emits a corrected valid value before blur", () => {
+  it("retains an incomplete draft and emits a corrected valid value before blur", async () => {
     const onBlur = jest.fn();
     const onChangeSeconds = jest.fn();
-    const { getByTestId } = renderNative(
+    const { getByTestId } = await renderNative(
       <PaceSecondsField
         id="pace"
         label="Pace"
@@ -58,22 +58,22 @@ describe("PaceSecondsField native", () => {
     );
     const input = getByTestId("pace-input");
 
-    fireEvent(input, "changeText", "4:3");
+    await fireEvent(input, "changeText", "4:3");
     expect(getByTestId("pace-input").props.value).toBe("4:3");
     expect(onChangeSeconds).not.toHaveBeenCalled();
 
-    fireEvent(getByTestId("pace-input"), "changeText", "4:35");
+    await fireEvent(getByTestId("pace-input"), "changeText", "4:35");
     expect(onChangeSeconds).toHaveBeenCalledWith(275);
     expect(onBlur).not.toHaveBeenCalled();
-    fireEvent(getByTestId("pace-input"), "blur");
+    await fireEvent(getByTestId("pace-input"), "blur");
 
     expect(onChangeSeconds).toHaveBeenCalledWith(275);
     expect(onBlur).toHaveBeenCalledTimes(1);
   });
 
-  it("treats empty text as an intentional clear", () => {
+  it("treats empty text as an intentional clear", async () => {
     const onChangeSeconds = jest.fn();
-    const { getByTestId } = renderNative(
+    const { getByTestId } = await renderNative(
       <PaceSecondsField
         id="pace"
         label="Pace"
@@ -83,18 +83,18 @@ describe("PaceSecondsField native", () => {
       />,
     );
 
-    fireEvent(getByTestId("pace-input"), "changeText", "");
+    await fireEvent(getByTestId("pace-input"), "changeText", "");
 
     expect(onChangeSeconds).toHaveBeenCalledWith(null);
   });
 
   it("flushes a valid focused draft before submit", async () => {
     const onSubmit = jest.fn();
-    const { findByText, getByTestId } = renderNative(<FormHarness onSubmit={onSubmit} />);
+    const { findByText, getByTestId } = await renderNative(<FormHarness onSubmit={onSubmit} />);
 
-    fireEvent(getByTestId("pace-input"), "changeText", "5:45");
+    await fireEvent(getByTestId("pace-input"), "changeText", "5:45");
     await act(async () => {
-      fireEvent.press(await findByText("Save"));
+      await fireEvent.press(await findByText("Save"));
     });
 
     expect(onSubmit).toHaveBeenCalledWith({ pace: 345 });
@@ -102,11 +102,11 @@ describe("PaceSecondsField native", () => {
 
   it("retains an incomplete submitted draft and exposes the error to accessibility", async () => {
     const onSubmit = jest.fn();
-    const { findByText, getByTestId } = renderNative(<FormHarness onSubmit={onSubmit} />);
+    const { findByText, getByTestId } = await renderNative(<FormHarness onSubmit={onSubmit} />);
 
-    fireEvent(getByTestId("pace-input"), "changeText", "4:3");
+    await fireEvent(getByTestId("pace-input"), "changeText", "4:3");
     await act(async () => {
-      fireEvent.press(await findByText("Save"));
+      await fireEvent.press(await findByText("Save"));
     });
 
     const input = getByTestId("pace-input");
@@ -117,17 +117,17 @@ describe("PaceSecondsField native", () => {
   });
 
   it("discards a same-value pending draft on reset", async () => {
-    const { findByText, getByTestId } = renderNative(<FormHarness onSubmit={jest.fn()} />);
-    fireEvent(getByTestId("pace-input"), "changeText", "4:3");
+    const { findByText, getByTestId } = await renderNative(<FormHarness onSubmit={jest.fn()} />);
+    await fireEvent(getByTestId("pace-input"), "changeText", "4:3");
 
-    fireEvent.press(await findByText("Reset"));
+    await fireEvent.press(await findByText("Reset"));
 
     expect(getByTestId("pace-input").props.value).toBe("5:30");
   });
 
-  it("resynchronizes when the external value changes", () => {
+  it("resynchronizes when the external value changes", async () => {
     const onChangeSeconds = jest.fn();
-    const { getByTestId, rerender } = renderNative(
+    const { getByTestId, rerender } = await renderNative(
       <PaceSecondsField
         id="pace"
         label="Pace"
@@ -136,9 +136,9 @@ describe("PaceSecondsField native", () => {
         valueSeconds={330}
       />,
     );
-    fireEvent(getByTestId("pace-input"), "changeText", "4:3");
+    await fireEvent(getByTestId("pace-input"), "changeText", "4:3");
 
-    rerender(
+    await rerender(
       <PaceSecondsField
         id="pace"
         label="Pace"

@@ -117,8 +117,8 @@ function Harness({
 }
 
 describe("AvailabilitySection", () => {
-  it("renders the first and every persisted window without hiding later windows", () => {
-    renderNative(<Harness />);
+  it("renders the first and every persisted window without hiding later windows", async () => {
+    await renderNative(<Harness />);
 
     expect(screen.getByTestId("preferences-availability-window-monday-0")).toBeTruthy();
     expect(screen.getByTestId("preferences-availability-window-monday-1")).toBeTruthy();
@@ -133,15 +133,17 @@ describe("AvailabilitySection", () => {
     );
   });
 
-  it("adds an adjacent window and removes an extra window", () => {
-    renderNative(<Harness initialWindows={[fourWindows[0]]} />);
+  it("adds an adjacent window and removes an extra window", async () => {
+    await renderNative(<Harness initialWindows={[fourWindows[0]]} />);
 
-    act(() => screen.getByTestId("preferences-availability-window-monday-add").props.onPress());
+    await act(() =>
+      screen.getByTestId("preferences-availability-window-monday-add").props.onPress(),
+    );
     expect(screen.getByTestId("preferences-availability-window-monday-1-start").props.value).toBe(
       "08:00",
     );
 
-    act(() =>
+    await act(() =>
       screen.getByTestId("preferences-availability-window-monday-1-remove").props.onPress(),
     );
     expect(screen.queryByTestId("preferences-availability-window-monday-1")).toBeNull();
@@ -151,9 +153,9 @@ describe("AvailabilitySection", () => {
     ["first", 0],
     ["middle", 1],
     ["last", 2],
-  ])("allows removing the %s window", (_position, index) => {
+  ])("allows removing the %s window", async (_position, index) => {
     let observed: AthleteTrainingSettingsFormInput["availability"] | undefined;
-    renderNative(
+    await renderNative(
       <Harness initialWindows={fourWindows.slice(0, 3)}>
         {(value) => {
           observed = value;
@@ -162,40 +164,44 @@ describe("AvailabilitySection", () => {
       </Harness>,
     );
 
-    act(() =>
+    await act(() =>
       screen.getByTestId(`preferences-availability-window-monday-${index}-remove`).props.onPress(),
     );
 
     expect(observed?.weekly_windows?.[0]?.windows).toHaveLength(2);
   });
 
-  it("explains when no room remains for another window", () => {
-    renderNative(
+  it("explains when no room remains for another window", async () => {
+    await renderNative(
       <Harness initialWindows={[{ start_minute_of_day: 1260, end_minute_of_day: 1440 }]} />,
     );
 
-    act(() => screen.getByTestId("preferences-availability-window-monday-add").props.onPress());
+    await act(() =>
+      screen.getByTestId("preferences-availability-window-monday-add").props.onPress(),
+    );
 
     expect(screen.getByText("No room remains after the last window.")).toBeTruthy();
   });
 
-  it("clears no-room feedback when a window changes", () => {
-    renderNative(
+  it("clears no-room feedback when a window changes", async () => {
+    await renderNative(
       <Harness initialWindows={[{ start_minute_of_day: 1260, end_minute_of_day: 1440 }]} />,
     );
 
-    act(() => screen.getByTestId("preferences-availability-window-monday-add").props.onPress());
+    await act(() =>
+      screen.getByTestId("preferences-availability-window-monday-add").props.onPress(),
+    );
     expect(screen.getByText("No room remains after the last window.")).toBeTruthy();
 
-    act(() =>
+    await act(() =>
       screen.getByTestId("preferences-availability-window-monday-0-end").props.onChange("23:00"),
     );
     expect(screen.queryByText("No room remains after the last window.")).toBeNull();
   });
 
-  it("keeps picker values numeric in React Hook Form and maps end midnight to 1440", () => {
+  it("keeps picker values numeric in React Hook Form and maps end midnight to 1440", async () => {
     let observed: AthleteTrainingSettingsFormInput["availability"] | undefined;
-    renderNative(
+    await renderNative(
       <Harness initialWindows={[fourWindows[0]]}>
         {(value) => {
           observed = value;
@@ -204,7 +210,7 @@ describe("AvailabilitySection", () => {
       </Harness>,
     );
 
-    act(() => {
+    await act(() => {
       screen.getByTestId("preferences-availability-window-monday-0-end").props.onChange("00:00");
     });
 

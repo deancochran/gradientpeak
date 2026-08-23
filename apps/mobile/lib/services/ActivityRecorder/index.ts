@@ -515,7 +515,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private pausedTime: number = 0;
   private lastPauseTime?: number;
   private elapsedTimeInterval?: ReturnType<typeof setInterval> | number;
-  private sessionUpdateTimer?: ReturnType<typeof setTimeout> | number;
+  private sessionUpdateTimer: ReturnType<typeof setTimeout> | number | undefined;
   private lastSessionUpdateAt = 0;
   private fitRecordingUpdateInFlight = false;
   private fitRecordingUpdatePending = false;

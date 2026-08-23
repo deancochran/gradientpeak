@@ -127,10 +127,10 @@ describe("forgot-password screen", () => {
   });
 
   it("shows the success state after requesting a reset email", async () => {
-    renderNative(<ForgotPasswordScreen />);
+    await renderNative(<ForgotPasswordScreen />);
 
-    fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
-    fireEvent.press(screen.getByTestId("send-reset-button"));
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.press(screen.getByTestId("send-reset-button"));
 
     await waitFor(() => {
       expect(resetMock).toHaveBeenCalledWith({
@@ -144,10 +144,10 @@ describe("forgot-password screen", () => {
   it("acknowledges unknown identities exactly like existing identities", async () => {
     resetMock.mockResolvedValue({ error: { message: "User not found" } });
 
-    renderNative(<ForgotPasswordScreen />);
+    await renderNative(<ForgotPasswordScreen />);
 
-    fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
-    fireEvent.press(screen.getByTestId("send-reset-button"));
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.press(screen.getByTestId("send-reset-button"));
 
     await waitFor(() => {
       expect(screen.getByText("Check your email")).toBeTruthy();
@@ -163,10 +163,10 @@ describe("forgot-password screen", () => {
   it("acknowledges thrown transport failures exactly like existing identities", async () => {
     resetMock.mockRejectedValue(new Error("provider unavailable: athlete@example.com"));
 
-    renderNative(<ForgotPasswordScreen />);
+    await renderNative(<ForgotPasswordScreen />);
 
-    fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
-    fireEvent.press(screen.getByTestId("send-reset-button"));
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.press(screen.getByTestId("send-reset-button"));
 
     await waitFor(() => {
       expect(screen.getByText("Check your email")).toBeTruthy();

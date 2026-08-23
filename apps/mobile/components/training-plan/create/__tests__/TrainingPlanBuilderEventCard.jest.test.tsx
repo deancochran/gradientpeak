@@ -63,12 +63,12 @@ const session = {
 };
 
 describe("TrainingPlanBuilderEventCard actions", () => {
-  it("exposes assigned activity actions in a non-wrapping grid", () => {
+  it("exposes assigned activity actions in a non-wrapping grid", async () => {
     const onDuplicate = jest.fn();
     const onMoveByDays = jest.fn();
     const onRemove = jest.fn();
 
-    renderNative(
+    await renderNative(
       <TrainingPlanBuilderEventCard
         event={session}
         onDuplicate={onDuplicate}
@@ -78,9 +78,9 @@ describe("TrainingPlanBuilderEventCard actions", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Duplicate"));
-    fireEvent.press(screen.getByLabelText("Move later"));
-    fireEvent.press(screen.getByLabelText("Remove"));
+    await fireEvent.press(screen.getByLabelText("Duplicate"));
+    await fireEvent.press(screen.getByLabelText("Move later"));
+    await fireEvent.press(screen.getByLabelText("Remove"));
 
     expect(onDuplicate).toHaveBeenCalledTimes(1);
     expect(onMoveByDays).toHaveBeenCalledWith(1);
@@ -93,8 +93,8 @@ describe("TrainingPlanBuilderEventCard actions", () => {
     );
   });
 
-  it("uses checked radio semantics and full weekday labels in the session editor", () => {
-    renderNative(
+  it("uses checked radio semantics and full weekday labels in the session editor", async () => {
+    await renderNative(
       <TrainingPlanBuilderEventEditor
         event={session}
         onChange={jest.fn()}
@@ -114,8 +114,8 @@ describe("TrainingPlanBuilderEventCard actions", () => {
     });
   });
 
-  it("renders partial planned estimates without substituting zero metrics", () => {
-    renderNative(
+  it("renders partial planned estimates without substituting zero metrics", async () => {
+    await renderNative(
       <TrainingPlanBuilderEventCard
         event={{
           ...session,
@@ -141,8 +141,8 @@ describe("TrainingPlanBuilderEventCard actions", () => {
     expect(screen.queryByText(/^Normalized intensity: 0\.00$/)).toBeNull();
   });
 
-  it("does not revive missing canonical estimates from session intent", () => {
-    renderNative(
+  it("does not revive missing canonical estimates from session intent", async () => {
+    await renderNative(
       <TrainingPlanBuilderEventCard
         event={{
           ...session,

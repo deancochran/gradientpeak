@@ -12,10 +12,10 @@ import { buttonFixtures } from "./fixtures";
 import { Button, IconButton } from "./index.native";
 
 describe("Button native", () => {
-  it("maps normalized test props and handles presses", () => {
+  it("maps normalized test props and handles presses", async () => {
     const onPress = jest.fn();
 
-    const { getByLabelText } = renderNative(
+    const { getByLabelText } = await renderNative(
       <Button {...buttonFixtures.save} onPress={onPress}>
         <Text>{buttonFixtures.save.children}</Text>
       </Button>,
@@ -26,12 +26,12 @@ describe("Button native", () => {
     expect(button.props.testID).toBe(buttonFixtures.save.testId);
     expect(button.props.nativeID).toBe(buttonFixtures.save.id);
 
-    fireEvent.press(button);
+    await fireEvent.press(button);
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it("enforces a 48dp target and merges disabled accessibility state", () => {
-    const { getByLabelText } = renderNative(
+  it("enforces a 48dp target and merges disabled accessibility state", async () => {
+    const { getByLabelText } = await renderNative(
       <Button
         accessibilityLabel="Disabled action"
         accessibilityState={{ busy: true, selected: true }}
@@ -54,8 +54,8 @@ describe("Button native", () => {
     });
   });
 
-  it("provides a labeled, stable icon-only button contract", () => {
-    const { getByLabelText } = renderNative(
+  it("provides a labeled, stable icon-only button contract", async () => {
+    const { getByLabelText } = await renderNative(
       <IconButton {...buttonFixtures.moreActions}>
         <Text>⋯</Text>
       </IconButton>,
@@ -69,8 +69,8 @@ describe("Button native", () => {
     expect(button.props.className).toContain("min-w-12");
   });
 
-  it("uses the contrast-safe destructive surface token", () => {
-    const { getByLabelText } = renderNative(
+  it("uses the contrast-safe destructive surface token", async () => {
+    const { getByLabelText } = await renderNative(
       <Button accessibilityLabel="Delete item" variant="destructive">
         <Text>Delete</Text>
       </Button>,

@@ -1,5 +1,4 @@
 import React from "react";
-import { Pressable } from "react-native";
 
 import { createHost, type HostProps } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
@@ -39,11 +38,11 @@ jest.mock("lucide-react-native", () => ({
 const { RecordingActivityQuickEdit } = require("../RecordingActivityQuickEdit");
 
 describe("RecordingActivityQuickEdit", () => {
-  it("does not emit activity changes when activity editing is locked", () => {
+  it("does not emit activity changes when activity editing is locked", async () => {
     const onClose = jest.fn();
     const onActivitySelect = jest.fn();
 
-    renderNative(
+    await renderNative(
       <RecordingActivityQuickEdit
         visible
         onClose={onClose}
@@ -53,14 +52,14 @@ describe("RecordingActivityQuickEdit", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("activity-select-run"));
+    await fireEvent.press(screen.getByTestId("activity-select-run"));
 
     expect(onActivitySelect).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("does not render GPS controls", () => {
-    renderNative(
+  it("does not render GPS controls", async () => {
+    await renderNative(
       <RecordingActivityQuickEdit
         visible
         onClose={jest.fn()}
@@ -75,8 +74,8 @@ describe("RecordingActivityQuickEdit", () => {
     expect(screen.queryByText(/GPS/i)).toBeNull();
   });
 
-  it("provides accessible controls and hides the visual dismissal backdrop", () => {
-    renderNative(
+  it("provides accessible controls and hides the visual dismissal backdrop", async () => {
+    await renderNative(
       <RecordingActivityQuickEdit
         visible
         onClose={jest.fn()}
@@ -94,7 +93,7 @@ describe("RecordingActivityQuickEdit", () => {
       accessibilityRole: "button",
       accessibilityState: { disabled: false, selected: true },
     });
-    const [backdrop] = screen.UNSAFE_getAllByType(Pressable);
+    const [backdrop] = screen.container.queryAll((node) => node.type === "Pressable");
     expect(backdrop?.props).toMatchObject({
       accessible: false,
       importantForAccessibility: "no-hide-descendants",

@@ -73,8 +73,8 @@ const scheduledItem = {
   title: "Track session",
 };
 
-function renderSheet(onOpenItem = jest.fn()) {
-  return renderNative(
+async function renderSheet(onOpenItem = jest.fn()) {
+  return await renderNative(
     <CalendarAgendaSheet
       dateKey="2026-04-15"
       onClose={jest.fn()}
@@ -102,8 +102,8 @@ describe("CalendarAgendaSheet", () => {
     });
   });
 
-  it("combines performance insights and the canonical day schedule", () => {
-    renderSheet();
+  it("combines performance insights and the canonical day schedule", async () => {
+    await renderSheet();
 
     expect(dayQueryMock).toHaveBeenCalledWith(
       { date: "2026-04-15" },
@@ -114,38 +114,37 @@ describe("CalendarAgendaSheet", () => {
       { enabled: true },
     );
     expect(screen.getByTestId("planning-ledger-performance-insights")).toBeTruthy();
-    expect(screen.getByTestId("calendar-agenda-event-row-event-1").props.children).toBe(
-      "Track session",
-    );
+    expect(screen.getByTestId("calendar-agenda-event-row-event-1")).toBeTruthy();
+    expect(screen.getByText("Track session")).toBeTruthy();
   });
 
-  it("keeps the schedule visible when performance insights fail", () => {
+  it("keeps the schedule visible when performance insights fail", async () => {
     ledgerQueryMock.mockReturnValue({
       data: undefined,
       isError: true,
       isLoading: false,
       refetch: refetchMock,
     });
-    renderSheet();
+    await renderSheet();
 
     expect(screen.getByTestId("calendar-day-insights-error")).toBeTruthy();
     expect(screen.getByTestId("calendar-agenda-event-row-event-1")).toBeTruthy();
   });
 
-  it("keeps performance insights visible when the schedule fails", () => {
+  it("keeps performance insights visible when the schedule fails", async () => {
     dayQueryMock.mockReturnValue({
       data: undefined,
       isError: true,
       isLoading: false,
       refetch: refetchMock,
     });
-    renderSheet();
+    await renderSheet();
 
     expect(screen.getByTestId("planning-ledger-performance-insights")).toBeTruthy();
     expect(screen.getByTestId("calendar-agenda-error")).toBeTruthy();
   });
 
-  it("uses canonical cards for completed activities, planned activities, and goals", () => {
+  it("uses canonical cards for completed activities, planned activities, and goals", async () => {
     const onOpenItem = jest.fn();
     const completedActivity = {
       id: "activity-1",
@@ -199,7 +198,7 @@ describe("CalendarAgendaSheet", () => {
       refetch: refetchMock,
     });
 
-    renderSheet(onOpenItem);
+    await renderSheet(onOpenItem);
 
     const activityCard = screen.getByTestId("calendar-agenda-activity-card-activity-1");
     const plannedActivityCard = screen.getByTestId(
@@ -228,9 +227,9 @@ describe("CalendarAgendaSheet", () => {
     });
     expect(goalCard.props.variant).toBeUndefined();
     expect(screen.getByTestId("calendar-agenda-event-row-event-1")).toBeTruthy();
-    fireEvent.press(activityCard);
-    fireEvent.press(plannedActivityCard);
-    fireEvent.press(goalCard);
+    await fireEvent.press(activityCard);
+    await fireEvent.press(plannedActivityCard);
+    await fireEvent.press(goalCard);
     expect(onOpenItem).toHaveBeenNthCalledWith(1, completedActivity);
     expect(onOpenItem).toHaveBeenNthCalledWith(2, plannedActivity);
     expect(onOpenItem).toHaveBeenNthCalledWith(3, goal);

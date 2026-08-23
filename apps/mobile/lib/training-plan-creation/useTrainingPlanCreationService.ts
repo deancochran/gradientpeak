@@ -184,13 +184,13 @@ export function useTrainingPlanCreationService({
     publishedStateQuery,
     commitPlanMutation,
   } = useTrainingPlanCreationQueries({
-    activityPlanPicker,
-    mode,
-    onCreated,
-    onCreateError,
-    onUpdated,
-    onUpdateError,
-    planId,
+    ...(activityPlanPicker !== undefined ? { activityPlanPicker } : {}),
+    ...(mode !== undefined ? { mode } : {}),
+    ...(onCreated !== undefined ? { onCreated } : {}),
+    ...(onCreateError !== undefined ? { onCreateError } : {}),
+    ...(onUpdated !== undefined ? { onUpdated } : {}),
+    ...(onUpdateError !== undefined ? { onUpdateError } : {}),
+    ...(planId !== undefined ? { planId } : {}),
   });
   const isEditMode = mode === "edit" && !!planId;
 
@@ -392,10 +392,14 @@ export function useTrainingPlanCreationService({
   const activityPlanPickerState = useMemo(() => {
     return deriveActivityPlanPickerState({
       athleteContext: state.athleteContext,
-      pages: activityPlansQuery.data?.pages,
-      selectedSessionId: activityPlanPicker?.selectedSessionId,
+      ...(activityPlansQuery.data?.pages !== undefined
+        ? { pages: activityPlansQuery.data.pages }
+        : {}),
+      ...(activityPlanPicker?.selectedSessionId !== undefined
+        ? { selectedSessionId: activityPlanPicker.selectedSessionId }
+        : {}),
       sessions: state.structure.sessions,
-      sort: activityPlanPicker?.sort,
+      ...(activityPlanPicker?.sort !== undefined ? { sort: activityPlanPicker.sort } : {}),
     });
   }, [
     activityPlanPicker?.selectedSessionId,

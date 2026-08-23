@@ -121,8 +121,8 @@ describe("PlanningLedgerSheet", () => {
     });
   });
 
-  it("does not request or display details without a selection", () => {
-    renderNative(
+  it("does not request or display details without a selection", async () => {
+    await renderNative(
       <PlanningLedgerSheet onClose={jest.fn()} onOpenEntry={openEntryMock} selection={null} />,
     );
 
@@ -133,14 +133,14 @@ describe("PlanningLedgerSheet", () => {
     expect(screen.queryByTestId("planning-ledger-sheet")).toBeNull();
   });
 
-  it("loads the selected period into the standard point-in-time sheet", () => {
+  it("loads the selected period into the standard point-in-time sheet", async () => {
     ledgerQueryMock.mockReturnValue({
       data: ledgerFixture,
       isError: false,
       isLoading: false,
       refetch: refetchMock,
     });
-    renderNative(
+    await renderNative(
       <PlanningLedgerSheet onClose={jest.fn()} onOpenEntry={openEntryMock} selection={selection} />,
     );
 
@@ -149,23 +149,23 @@ describe("PlanningLedgerSheet", () => {
     expect(screen.getByTestId("planning-ledger-sheet-data-warning")).toBeTruthy();
     expect(screen.getByLabelText("Planned: 0")).toBeTruthy();
     expect(screen.getByLabelText("Remaining: 10. Partial")).toBeTruthy();
-    fireEvent.press(screen.getByTestId("planning-ledger-entry-event-event-1"));
+    await fireEvent.press(screen.getByTestId("planning-ledger-entry-event-event-1"));
     expect(openEntryMock).toHaveBeenCalledWith({ id: "event-1", target: "event" });
   });
 
-  it("announces a load failure and retries", () => {
+  it("announces a load failure and retries", async () => {
     ledgerQueryMock.mockReturnValue({
       data: undefined,
       isError: true,
       isLoading: false,
       refetch: refetchMock,
     });
-    renderNative(
+    await renderNative(
       <PlanningLedgerSheet onClose={jest.fn()} onOpenEntry={openEntryMock} selection={selection} />,
     );
 
     expect(screen.getByTestId("planning-ledger-sheet-error").props.accessibilityRole).toBe("alert");
-    fireEvent.press(screen.getByTestId("planning-ledger-sheet-retry"));
+    await fireEvent.press(screen.getByTestId("planning-ledger-sheet-retry"));
     expect(refetchMock).toHaveBeenCalledTimes(1);
   });
 });

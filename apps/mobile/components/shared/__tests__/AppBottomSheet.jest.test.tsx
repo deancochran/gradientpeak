@@ -1,4 +1,5 @@
 import React from "react";
+import { Text } from "react-native";
 
 import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
@@ -94,16 +95,20 @@ describe("AppBottomSheet safe-area spacing", () => {
     });
   });
 
-  it("adds the bottom safe-area inset to explicit scroll content padding", () => {
-    renderNative(<AppBottomSheetContent paddingBottom={24}>Content</AppBottomSheetContent>);
+  it("adds the bottom safe-area inset to explicit scroll content padding", async () => {
+    await renderNative(
+      <AppBottomSheetContent paddingBottom={24}>
+        <Text>Content</Text>
+      </AppBottomSheetContent>,
+    );
 
     expect(screen.getByTestId("bottom-sheet-scroll-view").props.contentContainerStyle).toEqual(
       expect.arrayContaining([expect.objectContaining({ paddingBottom: 58 })]),
     );
   });
 
-  it("positions a fixed footer above the bottom safe area and clears scroll content", () => {
-    renderNative(
+  it("positions a fixed footer above the bottom safe area and clears scroll content", async () => {
+    await renderNative(
       <AppBottomSheet
         contentPaddingBottom={40}
         footer="Footer"
@@ -111,7 +116,7 @@ describe("AppBottomSheet safe-area spacing", () => {
         title="Safe sheet"
         visible
       >
-        Content
+        <Text>Content</Text>
       </AppBottomSheet>,
     );
 
@@ -124,11 +129,11 @@ describe("AppBottomSheet safe-area spacing", () => {
     );
   });
 
-  it("provides a labeled, stable back action", () => {
+  it("provides a labeled, stable back action", async () => {
     const onBack = jest.fn();
-    renderNative(
+    await renderNative(
       <AppBottomSheet onBack={onBack} onClose={jest.fn()} title="Filters" visible>
-        Content
+        <Text>Content</Text>
       </AppBottomSheet>,
     );
 
@@ -139,14 +144,14 @@ describe("AppBottomSheet safe-area spacing", () => {
       role: "button",
       size: "icon",
     });
-    fireEvent.press(backButton);
+    await fireEvent.press(backButton);
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps Close opt-in and marks the title as a header", () => {
-    renderNative(
+  it("keeps Close opt-in and marks the title as a header", async () => {
+    await renderNative(
       <AppBottomSheet onClose={jest.fn()} title="Default sheet" visible>
-        Content
+        <Text>Content</Text>
       </AppBottomSheet>,
     );
 
@@ -154,9 +159,9 @@ describe("AppBottomSheet safe-area spacing", () => {
     expect(screen.getByText("Default sheet").props.accessibilityRole).toBe("header");
   });
 
-  it("provides an explicit opt-in Close action and can place a custom header in normal layout", () => {
+  it("provides an explicit opt-in Close action and can place a custom header in normal layout", async () => {
     const onClose = jest.fn();
-    renderNative(
+    await renderNative(
       <AppBottomSheet
         contentMode="custom"
         customHeaderInLayout
@@ -165,11 +170,11 @@ describe("AppBottomSheet safe-area spacing", () => {
         title="Activity"
         visible
       >
-        Content
+        <Text>Content</Text>
       </AppBottomSheet>,
     );
 
-    fireEvent.press(screen.getByTestId("app-bottom-sheet-close"));
+    await fireEvent.press(screen.getByTestId("app-bottom-sheet-close"));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("app-bottom-sheet").props.style).toEqual({ flex: 1 });
   });

@@ -61,18 +61,18 @@ jest.mock("expo-router", () => ({ useRouter: () => ({ navigate: jest.fn() }) }))
 
 const Plan = require("../plan").default;
 
-it("retains usable plan data and retries partial failures", () => {
-  renderNative(<Plan />);
+it("retains usable plan data and retries partial failures", async () => {
+  await renderNative(<Plan />);
   expect(screen.getByText("Some plan details could not be refreshed")).toBeTruthy();
   expect(screen.getByTestId("training-path")).toBeTruthy();
   expect(screen.getAllByTestId("plan-query-error")).toHaveLength(1);
-  fireEvent.press(screen.getByTestId("plan-query-retry"));
+  await fireEvent.press(screen.getByTestId("plan-query-retry"));
   expect(refresh).toHaveBeenCalled();
 });
 
-it("labels a full load failure accurately", () => {
+it("labels a full load failure accurately", async () => {
   hasUsableData = false;
-  renderNative(<Plan />);
+  await renderNative(<Plan />);
   expect(screen.getByText("Your plan could not be loaded")).toBeTruthy();
   expect(screen.queryByTestId("training-path")).toBeNull();
   expect(screen.getAllByTestId("plan-query-error")).toHaveLength(1);

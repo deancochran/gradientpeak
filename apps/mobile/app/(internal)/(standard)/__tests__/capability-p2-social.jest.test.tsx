@@ -82,7 +82,12 @@ jest.mock("@/components/shared/ScreenState", () => ({
     description: string;
     testID: string;
   }) =>
-    React.createElement("View", { testID }, React.createElement("Text", null, title), description),
+    React.createElement(
+      "View",
+      { testID },
+      React.createElement("Text", null, title),
+      React.createElement("Text", null, description),
+    ),
   ErrorState: ({
     title,
     onAction,
@@ -91,7 +96,12 @@ jest.mock("@/components/shared/ScreenState", () => ({
     title: string;
     onAction: () => void;
     testID: string;
-  }) => React.createElement("Pressable", { testID, onPress: onAction }, title),
+  }) =>
+    React.createElement(
+      "Pressable",
+      { testID, onPress: onAction },
+      React.createElement("Text", null, title),
+    ),
   LoadingState: createHost("LoadingState"),
 }));
 jest.mock("@/components/shared/ResourceList", () => ({
@@ -173,32 +183,32 @@ describe("P2 social mobile capability boundaries", () => {
     };
   });
 
-  it("social.request-follow sends a follow request from the private profile screen", () => {
-    renderNative(<UserDetailScreen />);
+  it("social.request-follow sends a follow request from the private profile screen", async () => {
+    await renderNative(<UserDetailScreen />);
 
-    fireEvent.press(screen.getByTestId("user-detail-follow-button"));
+    await fireEvent.press(screen.getByTestId("user-detail-follow-button"));
 
     expect(followMutateMock).toHaveBeenCalledWith({ target_user_id: "target-user" });
   });
 
-  it("social.browse-followers opens a follower profile from the current list", () => {
-    renderNative(<FollowersScreen />);
+  it("social.browse-followers opens a follower profile from the current list", async () => {
+    await renderNative(<FollowersScreen />);
 
-    fireEvent.press(screen.getByText("Rider"));
+    await fireEvent.press(screen.getByText("Rider"));
 
     expect(navigateMock).toHaveBeenCalledWith("/user/follower-1");
   });
 
-  it("social.browse-followers shows an empty state for an empty list", () => {
+  it("social.browse-followers shows an empty state for an empty list", async () => {
     followersQuery.data = { pages: [{ total: 0, users: [] }] };
 
-    renderNative(<FollowersScreen />);
+    await renderNative(<FollowersScreen />);
 
     expect(screen.getByTestId("followers-empty-state")).toBeTruthy();
     expect(screen.getByText("No followers yet")).toBeTruthy();
   });
 
-  it("social.browse-followers retries an ordinary load failure", () => {
+  it("social.browse-followers retries an ordinary load failure", async () => {
     followersQuery = {
       ...followersQuery,
       data: undefined as never,
@@ -206,8 +216,8 @@ describe("P2 social mobile capability boundaries", () => {
       isError: true,
     };
 
-    renderNative(<FollowersScreen />);
-    fireEvent.press(screen.getByTestId("followers-error-state"));
+    await renderNative(<FollowersScreen />);
+    await fireEvent.press(screen.getByTestId("followers-error-state"));
 
     expect(refetchMock).toHaveBeenCalled();
   });

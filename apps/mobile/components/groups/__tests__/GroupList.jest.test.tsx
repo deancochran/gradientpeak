@@ -34,8 +34,8 @@ jest.mock("../GroupStates", () => ({
 }));
 
 describe("GroupList", () => {
-  it("passes compact density directly to the canonical GroupCard", () => {
-    renderNative(
+  it("passes compact density directly to the canonical GroupCard", async () => {
+    await renderNative(
       <GroupList
         groups={[
           {

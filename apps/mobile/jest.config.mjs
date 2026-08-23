@@ -2,6 +2,8 @@ export default {
   clearMocks: true,
   moduleFileExtensions: ["native.tsx", "native.ts", "tsx", "ts", "jsx", "js", "json"],
   moduleNameMapper: {
+    "\\.(gif|jpe?g|png|svg|webp)$": "<rootDir>/test/asset-mock.js",
+    "^expo-router/react-navigation$": "<rootDir>/test/expo-router-react-navigation-mock.js",
     "^@/(.*)$": "<rootDir>/$1",
     "^@repo/core$": "<rootDir>/../../packages/core/index.ts",
     "^@repo/core/(.*)$": "<rootDir>/../../packages/core/$1",

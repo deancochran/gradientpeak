@@ -320,7 +320,14 @@ const implemented = (
   sources: readonly string[],
   tests: readonly TestReference[] = [],
   proofGap?: string,
-) => platform(steps, { evidenceStrength, implementation: "implemented", proofGap, sources, tests });
+) =>
+  platform(steps, {
+    evidenceStrength,
+    implementation: "implemented",
+    ...(proofGap !== undefined ? { proofGap } : {}),
+    sources,
+    tests,
+  });
 
 const partial = (
   steps: readonly string[],
@@ -755,8 +762,9 @@ export const atomicCapabilityRegistry = [
   }),
   capability({
     id: "onboarding.select-people-and-groups",
-    title: "Select people and groups during onboarding",
-    outcome: "A new user discovers and selects people or groups during setup.",
+    title: "Follow people and groups during onboarding",
+    outcome:
+      "A new user discovers and follows people and joins or requests to join groups during setup.",
     steps: ["complete"],
     mobile: implemented(
       ["complete"],
@@ -1084,22 +1092,6 @@ export const atomicCapabilityRegistry = [
     ),
   }),
   capability({
-    id: "activity-plan.import-content",
-    title: "Import activity-plan content",
-    outcome: "An athlete imports supported structured activity-plan content.",
-    steps: ["complete"],
-    mobile: implemented(
-      ["complete"],
-      "screen/component",
-      [mobileScreen("(internal)/(standard)/activity-import.tsx")],
-      [mobileTest("app/(internal)/(standard)/__tests__/activity-import.jest.test.tsx")],
-    ),
-    web: missing(
-      ["complete"],
-      "The web ledger identifies completed-activity file import but no corresponding activity-plan content import flow.",
-    ),
-  }),
-  capability({
     id: "activity.record-session-rpe",
     title: "Record session effort",
     outcome: "An athlete records perceived exertion for a completed activity.",
@@ -1352,7 +1344,7 @@ export const atomicCapabilityRegistry = [
   capability({
     id: "activity-plan.edit-structured-steps",
     title: "Edit structured activity-plan steps",
-    outcome: "An athlete adds, edits, and validates structured workout steps.",
+    outcome: "An athlete adds, edits, and validates structured activity steps.",
     steps: ["edit", "complete"],
     mobile: implemented(
       ["edit", "complete"],
@@ -1799,28 +1791,10 @@ export const atomicCapabilityRegistry = [
     ),
   }),
   capability({
-    id: "record.manual-lap",
-    title: "Record a manual lap",
-    outcome: "An athlete marks manual laps and sees them in recording review.",
-    steps: ["complete"],
-    mobile: implemented(
-      ["complete"],
-      "screen/component",
-      [mobileScreen("(internal)/record/index.tsx"), mobileScreen("(internal)/record/submit.tsx")],
-      [
-        mobileTest("lib/services/ActivityRecorder/lifecycle.jest.test.ts"),
-        mobileTest("app/(internal)/record/__tests__/record-screen.jest.test.tsx"),
-      ],
-    ),
-    web: missing(
-      ["complete"],
-      "The web timer recorder does not expose an evidenced manual-lap outcome.",
-    ),
-  }),
-  capability({
     id: "record.attach-route",
     title: "Attach a route to recording",
-    outcome: "An athlete selects or uploads a route and attaches it to recording configuration.",
+    outcome:
+      "An athlete selects or uploads a route, attaches it to recording configuration, and retains the association on the resulting activity.",
     steps: ["complete"],
     mobile: implemented(
       ["complete"],
@@ -1842,7 +1816,12 @@ export const atomicCapabilityRegistry = [
         webRoute("_protected/record/route/index.tsx"),
         webRoute("_protected/record/route-preview/$routeId.tsx"),
       ],
-      [mobileTest("app/(internal)/(standard)/__tests__/activity-detail-screen.jest.test.tsx")],
+      [
+        webE2e(
+          "capability-p0-route-gaps.spec.ts",
+          "recording route preview carries the selected route into recording setup",
+        ),
+      ],
       {
         complete: {
           detail:
@@ -2010,7 +1989,7 @@ export const atomicCapabilityRegistry = [
     id: "record.ftms-command",
     title: "Execute an FTMS trainer command",
     outcome:
-      "A mobile athlete or planned workout sends one supported target command to a connected trainer.",
+      "A mobile athlete or planned activity sends one supported target command to a connected trainer.",
     steps: ["complete"],
     policy: "mobile_only",
     mobile: implemented(
@@ -2220,19 +2199,25 @@ export const atomicCapabilityRegistry = [
     ),
   }),
   capability({
-    id: "planning.inspect-ledger",
-    title: "Inspect the planning ledger",
-    outcome: "An athlete compares planned and actual load in a ledger view.",
+    id: "planning.view-day-agenda",
+    title: "View a day agenda",
+    outcome:
+      "An athlete selects any day and sees its planned and completed information in one agenda.",
     steps: ["complete"],
     mobile: implemented(
       ["complete"],
       "screen/component",
-      [mobileScreen("(internal)/(standard)/planning-ledger.tsx")],
-      [mobileTest("app/(internal)/(standard)/__tests__/planning-ledger-screen.jest.test.tsx")],
+      [
+        mobileScreen("(internal)/(standard)/calendar-day.tsx"),
+        mobileScreen("(internal)/(standard)/planning-ledger.tsx"),
+      ],
+      [mobileTest("app/(internal)/(standard)/__tests__/calendar-day-screen.jest.test.tsx")],
     ),
-    web: missing(
+    web: implemented(
       ["complete"],
-      "No dedicated web planning-ledger surface was identified in the web ledger.",
+      "screen/component",
+      [webRoute("_protected/calendar/day/$date.tsx")],
+      [vitest(`${W}/src/routes/_protected/calendar/day/$date.test.tsx`)],
     ),
   }),
   capability({
@@ -2621,7 +2606,7 @@ export const atomicCapabilityRegistry = [
         mobileScreen("(internal)/(standard)/event-detail-update.tsx"),
         mobileScreen("(internal)/(standard)/route-detail.tsx"),
       ],
-      [],
+      [mobileTest("app/(internal)/(standard)/__tests__/capability-p1-routes.jest.test.tsx")],
       {
         complete: {
           detail:
@@ -2629,20 +2614,20 @@ export const atomicCapabilityRegistry = [
         },
       },
     ),
-    web: partial(
+    web: implemented(
       ["complete"],
-      "screen/component",
+      "runtime",
       [
         webRoute("_protected/routes/$routeId/index.tsx"),
         `${W}/src/components/routes/route-event-attachment.tsx`,
       ],
-      [vitest(`${W}/src/components/routes/route-event-attachment.test.tsx`)],
-      {
-        complete: {
-          detail:
-            "No Playwright journey proves persisted route attachment from the event or calendar surface.",
-        },
-      },
+      [
+        webE2e(
+          "capability-p1-routes.spec.ts",
+          "routes.attach-to-calendar-event persists the selected route on an event",
+        ),
+        vitest(`${W}/src/components/routes/route-event-attachment.test.tsx`),
+      ],
     ),
   }),
   capability({

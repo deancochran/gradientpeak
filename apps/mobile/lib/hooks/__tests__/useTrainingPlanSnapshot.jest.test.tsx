@@ -143,8 +143,8 @@ describe("useTrainingPlanSnapshot", () => {
     Object.values(queries).forEach((query) => query.mockClear());
   });
 
-  it("adapts canonical history and authoritative projection data", () => {
-    const { result } = renderHook(() =>
+  it("adapts canonical history and authoritative projection data", async () => {
+    const { result } = await renderHook(() =>
       useTrainingPlanSnapshot({ planId: "11111111-1111-4111-8111-111111111111" }),
     );
 
@@ -167,7 +167,7 @@ describe("useTrainingPlanSnapshot", () => {
   });
 
   it("refreshes every current snapshot dependency", async () => {
-    const { result } = renderHook(() => useTrainingPlanSnapshot());
+    const { result } = await renderHook(() => useTrainingPlanSnapshot());
     await act(async () => result.current.refetchAll());
     expect(refetch).toHaveBeenCalled();
   });

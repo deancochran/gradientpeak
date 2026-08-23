@@ -48,15 +48,15 @@ jest.mock("@/lib/api", () => ({
 describe("SessionRpeCard", () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it("debounces slider changes before saving without a client-recorded timestamp", () => {
+  it("debounces slider changes before saving without a client-recorded timestamp", async () => {
     jest.useFakeTimers();
-    renderNative(<SessionRpeCard activityId="activity-1" effectiveSessionRpe={null} />);
+    await renderNative(<SessionRpeCard activityId="activity-1" effectiveSessionRpe={null} />);
 
     expect(screen.getByText("0/10 · No value found")).toBeTruthy();
     expect(
       screen.getByText("No value found. Select a value from 1 to 10 to record session effort."),
     ).toBeTruthy();
-    fireEvent(screen.getByLabelText("Session RPE"), "valueChange", 7);
+    await fireEvent(screen.getByLabelText("Session RPE"), "valueChange", 7);
     expect(screen.getByText("7/10")).toBeTruthy();
     expect(screen.getByText("Very hard — difficult to sustain.")).toBeTruthy();
     expect(mutate).not.toHaveBeenCalled();
@@ -72,7 +72,7 @@ describe("SessionRpeCard", () => {
   });
 
   it("invalidates both Plan read models after RPE success", async () => {
-    renderNative(<SessionRpeCard activityId="activity-1" effectiveSessionRpe={null} />);
+    await renderNative(<SessionRpeCard activityId="activity-1" effectiveSessionRpe={null} />);
     await act(async () => mutationOptions.onSuccess?.({ id: "evidence-1" }));
     expect(mockInvalidatePostActivityIngestionQueries).toHaveBeenCalledTimes(1);
   });

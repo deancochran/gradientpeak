@@ -19,12 +19,12 @@ describe("E2ERuntimeErrorStatus", () => {
     }
   });
 
-  it("rerenders its beacon when a classified query error is captured and cleared", () => {
-    renderNative(<E2ERuntimeErrorStatus />);
+  it("rerenders its beacon when a classified query error is captured and cleared", async () => {
+    await renderNative(<E2ERuntimeErrorStatus />);
     expect(screen.getByText("E2E_RUNTIME_ERRORS=0")).toBeTruthy();
 
     const error = new Error("Failed query: << query #1 trainingPlan.list");
-    act(() => {
+    await act(() => {
       captureE2EQueryError(error, "query_cache");
       captureE2EQueryError(error, "query_cache");
     });
@@ -33,7 +33,7 @@ describe("E2ERuntimeErrorStatus", () => {
       screen.getByText("E2E_RUNTIME_LATEST=server_query_failure:trainingPlan.list"),
     ).toBeTruthy();
 
-    act(() => {
+    await act(() => {
       captureE2EQueryError(
         new Error('TRPCClientError: Aborted << query #2 activity.list {"elapsedMs": 30000}'),
         "query_cache",
@@ -42,7 +42,7 @@ describe("E2ERuntimeErrorStatus", () => {
     expect(screen.getByText("E2E_RUNTIME_ERRORS=2")).toBeTruthy();
     expect(screen.getByText("E2E_RUNTIME_LATEST=timeout_abort:activity.list")).toBeTruthy();
 
-    act(() => {
+    await act(() => {
       captureE2EQueryError(
         new Error('TRPCClientError: Aborted << query #3 activity.get {"elapsedMs": 100}'),
         "query_cache",
@@ -50,7 +50,7 @@ describe("E2ERuntimeErrorStatus", () => {
     });
     expect(screen.getByText("E2E_RUNTIME_ERRORS=2")).toBeTruthy();
 
-    act(() => {
+    await act(() => {
       clearE2ERuntimeErrors();
     });
     expect(screen.getByText("E2E_RUNTIME_ERRORS=0")).toBeTruthy();

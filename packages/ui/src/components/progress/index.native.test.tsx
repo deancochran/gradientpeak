@@ -2,8 +2,8 @@ import { renderNative } from "../../test/render-native";
 import { ProgressBar } from "./index.native";
 
 describe("Progress native", () => {
-  it("maps normalized test props onto the root progress bar", () => {
-    const { getByLabelText } = renderNative(
+  it("maps normalized test props onto the root progress bar", async () => {
+    const { getByLabelText } = await renderNative(
       <ProgressBar
         accessibilityLabel="Upload progress"
         id="upload-progress"
@@ -20,8 +20,8 @@ describe("Progress native", () => {
     expect(progress.props.accessibilityValue).toEqual({ min: 0, max: 100, now: 55 });
   });
 
-  it("clamps values to the accessible range", () => {
-    const { getByLabelText } = renderNative(
+  it("clamps values to the accessible range", async () => {
+    const { getByLabelText } = await renderNative(
       <ProgressBar accessibilityLabel="Upload progress" value={120} />,
     );
     expect(getByLabelText("Upload progress").props.accessibilityValue.now).toBe(100);

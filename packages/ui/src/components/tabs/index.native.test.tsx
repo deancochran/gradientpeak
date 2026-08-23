@@ -1,4 +1,5 @@
 import * as React from "react";
+import { Text } from "react-native";
 
 jest.mock("@rn-primitives/slot", () => {
   return {
@@ -50,18 +51,18 @@ import { tabsFixtures } from "./fixtures";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./index.native";
 
 describe("Tabs native", () => {
-  it("maps normalized test props for root, trigger, and active content", () => {
+  it("maps normalized test props for root, trigger, and active content", async () => {
     const fixture = tabsFixtures.settings;
 
-    const { getByTestId } = renderNative(
+    const { getByTestId, getByText } = await renderNative(
       <Tabs onValueChange={() => {}} testId={fixture.rootTestId} value={fixture.values.profile}>
         <TabsList testId={fixture.listTestId}>
           <TabsTrigger testId={fixture.triggers.profile.testId} value={fixture.values.profile}>
-            {fixture.triggers.profile.label}
+            <Text>{fixture.triggers.profile.label}</Text>
           </TabsTrigger>
         </TabsList>
         <TabsContent testId={fixture.contentTestIds.profile} value={fixture.values.profile}>
-          {fixture.content.profile}
+          <Text>{fixture.content.profile}</Text>
         </TabsContent>
       </Tabs>,
     );
@@ -70,7 +71,7 @@ describe("Tabs native", () => {
     const content = getByTestId(fixture.contentTestIds.profile);
 
     expect(getByTestId(fixture.rootTestId)).toBeTruthy();
-    expect(trigger.props.children).toBe(fixture.triggers.profile.label);
-    expect(content.props.children).toBe(fixture.content.profile);
+    expect(getByText(fixture.triggers.profile.label)).toBeTruthy();
+    expect(getByText(fixture.content.profile)).toBeTruthy();
   });
 });

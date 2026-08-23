@@ -38,9 +38,9 @@ function overview(provider: Provider, connected: boolean) {
 }
 
 describe("mobile provider onboarding steps", () => {
-  it("renders and dispatches a generic multiple-provider selection fixture", () => {
+  it("renders and dispatches a generic multiple-provider selection fixture", async () => {
     const onConnect = jest.fn();
-    renderNative(
+    await renderNative(
       <ProviderSelectionStep
         integrations={[overview("alpha", true), overview("beta", false)]}
         onConnect={onConnect}
@@ -50,12 +50,12 @@ describe("mobile provider onboarding steps", () => {
     expect(screen.getByText("Alpha")).toBeTruthy();
     expect(screen.getByText("Beta")).toBeTruthy();
     expect(screen.queryByText(/imported ·/i)).toBeNull();
-    fireEvent.press(screen.getByLabelText("Connect Beta"));
+    await fireEvent.press(screen.getByLabelText("Connect Beta"));
     expect(onConnect).toHaveBeenCalledWith("beta");
   });
 
-  it("shows aggregate processing progress without the deprecated stage matrix", () => {
-    renderNative(
+  it("shows aggregate processing progress without the deprecated stage matrix", async () => {
+    await renderNative(
       <ProviderProcessingStep
         isBusy={false}
         onRecovery={jest.fn()}
@@ -86,9 +86,9 @@ describe("mobile provider onboarding steps", () => {
     ).toBe("polite");
   });
 
-  it("dispatches the exact aggregate recovery action", () => {
+  it("dispatches the exact aggregate recovery action", async () => {
     const onRecovery = jest.fn();
-    renderNative(
+    await renderNative(
       <ProviderProcessingStep
         isBusy={false}
         onRecovery={onRecovery}
@@ -108,7 +108,7 @@ describe("mobile provider onboarding steps", () => {
         }}
       />,
     );
-    fireEvent.press(screen.getByText("Return to account selection"));
+    await fireEvent.press(screen.getByText("Return to account selection"));
     const recoveryAlert = screen.getByLabelText(
       "Return to account selection to reconnect or choose another account.",
     );

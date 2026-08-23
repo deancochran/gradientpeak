@@ -81,10 +81,10 @@ describe("PersonalPlannedSessionCreate", () => {
   });
 
   it("sends the selected plan identity so the server creates the snapshot", async () => {
-    renderNative(<PersonalPlannedSessionCreate planningDate="2026-08-16" />);
+    await renderNative(<PersonalPlannedSessionCreate planningDate="2026-08-16" />);
 
-    fireEvent.press(screen.getByText("Tempo run"));
-    fireEvent.press(screen.getByTestId("personal-planned-session-submit"));
+    await fireEvent.press(screen.getByText("Tempo run"));
+    await fireEvent.press(screen.getByTestId("personal-planned-session-submit"));
 
     await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
     expect((createMock as jest.Mock).mock.calls[0]?.[0]).toMatchObject({
@@ -97,7 +97,7 @@ describe("PersonalPlannedSessionCreate", () => {
   });
 
   it("refreshes calendar pages after a scheduling conflict without reading a per-day session range", async () => {
-    renderNative(<PersonalPlannedSessionCreate planningDate="2026-08-16" />);
+    await renderNative(<PersonalPlannedSessionCreate planningDate="2026-08-16" />);
 
     await plannedSessionMutationOptions?.onConflict();
 

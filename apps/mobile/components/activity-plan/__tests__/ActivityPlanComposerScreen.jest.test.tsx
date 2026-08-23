@@ -96,10 +96,10 @@ function blockedForm() {
 }
 
 describe("ActivityPlanComposerScreen blocked edit routes", () => {
-  it("renders an unavailable plan without mounting editable composer content", () => {
+  it("renders an unavailable plan without mounting editable composer content", async () => {
     formHookMock.mockReturnValue(blockedForm());
 
-    const screen = render(<ActivityPlanComposerScreen mode="edit" planId="unknown-plan" />);
+    const screen = await render(<ActivityPlanComposerScreen mode="edit" planId="unknown-plan" />);
 
     expect(screen.getByText("Plan unavailable")).toBeTruthy();
     expect(screen.queryByText("EditableBasics")).toBeNull();

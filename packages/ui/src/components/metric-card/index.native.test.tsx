@@ -6,8 +6,8 @@ import { metricCardFixtures } from "./fixtures";
 import { MetricCard } from "./index.native";
 
 describe("MetricCard native", () => {
-  it("renders comparison fixture content", () => {
-    const { getByText } = renderNative(
+  it("renders comparison fixture content", async () => {
+    const { getByText } = await renderNative(
       <MetricCard {...metricCardFixtures.distance} icon={Activity} />,
     );
 
@@ -16,8 +16,8 @@ describe("MetricCard native", () => {
     expect(getByText(String(metricCardFixtures.distance.comparisonValue))).toBeTruthy();
   });
 
-  it("uses semantic status colors", () => {
-    const { getByText } = renderNative(
+  it("uses semantic status colors", async () => {
+    const { getByText } = await renderNative(
       <MetricCard {...metricCardFixtures.distance} variant="success" />,
     );
 

@@ -27,9 +27,9 @@ jest.mock("@repo/ui/components/text", () => ({
 }));
 
 describe("StepDurationField", () => {
-  it("keeps a partial kilometer decimal editable before committing the canonical duration", () => {
+  it("keeps a partial kilometer decimal editable before committing the canonical duration", async () => {
     const setValue = jest.fn();
-    renderNative(
+    await renderNative(
       <StepDurationField
         form={{
           getValues: () => ({ duration: { type: "distance", meters: 1000 } }),
@@ -39,12 +39,12 @@ describe("StepDurationField", () => {
     );
 
     const input = screen.getByTestId("step-duration-value");
-    fireEvent.changeText(input, "1.");
+    await fireEvent.changeText(input, "1.");
 
     expect(setValue).not.toHaveBeenCalled();
     expect(screen.getByTestId("step-duration-value").props.value).toBe("1.");
 
-    fireEvent.changeText(input, "1.5");
+    await fireEvent.changeText(input, "1.5");
 
     expect(setValue).toHaveBeenLastCalledWith(
       "duration",
@@ -54,9 +54,9 @@ describe("StepDurationField", () => {
     expect(screen.getByTestId("step-duration-value").props.value).toBe("1.5");
   });
 
-  it("allows a temporary empty draft and restores the canonical duration when it blurs", () => {
+  it("allows a temporary empty draft and restores the canonical duration when it blurs", async () => {
     const setValue = jest.fn();
-    renderNative(
+    await renderNative(
       <StepDurationField
         form={{
           getValues: () => ({ duration: { type: "time", seconds: 600 } }),
@@ -66,12 +66,12 @@ describe("StepDurationField", () => {
     );
 
     const input = screen.getByTestId("step-duration-value");
-    fireEvent.changeText(input, "");
+    await fireEvent.changeText(input, "");
 
     expect(setValue).not.toHaveBeenCalled();
     expect(screen.getByTestId("step-duration-value").props.value).toBe("");
 
-    fireEvent(input, "blur");
+    await fireEvent(input, "blur");
 
     expect(setValue).not.toHaveBeenCalled();
     expect(screen.getByTestId("step-duration-value").props.value).toBe("10");

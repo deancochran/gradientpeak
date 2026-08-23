@@ -82,7 +82,7 @@ describe("record finalized screen outcomes", () => {
   });
 
   it("keeps a failed saved submission available through the current Save Activity action", async () => {
-    renderNative(<Submit />);
+    await renderNative(<Submit />);
 
     const action = screen.getAllByText("Save Activity").at(-1);
     if (!action) throw new Error("Save Activity action was not rendered");

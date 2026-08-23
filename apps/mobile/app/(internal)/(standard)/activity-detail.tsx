@@ -14,15 +14,7 @@ import { skipToken, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Activity, Lock, Waves } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  InteractionManager,
-  Pressable,
-  ScrollView,
-  Share,
-  View,
-} from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, Share, View } from "react-native";
 import { ActivityPlanComparison, ZoneDistributionCard } from "@/components/activity";
 import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
 import { StreamChart } from "@/components/activity/charts/StreamChart";
@@ -392,11 +384,11 @@ function ActivityDetailScreen() {
       return;
     }
 
-    const task = InteractionManager.runAfterInteractions(() => {
+    const idleCallback = requestIdleCallback(() => {
       setShouldLoadDetailedStreams(true);
     });
 
-    return () => task.cancel();
+    return () => cancelIdleCallback(idleCallback);
   }, [canLoadDetailedStreams]);
 
   const {

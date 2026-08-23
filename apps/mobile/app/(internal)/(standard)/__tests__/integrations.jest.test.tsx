@@ -309,8 +309,8 @@ describe("integrations screen", () => {
     deepLinkHandlerMock = null;
   });
 
-  it("renders compact provider cards with one action", () => {
-    renderNative(<IntegrationsScreen />);
+  it("renders compact provider cards with one action", async () => {
+    await renderNative(<IntegrationsScreen />);
 
     expect(screen.getByTestId("integration-provider-strava")).toBeTruthy();
     expect(screen.getByTestId("integration-provider-wahoo")).toBeTruthy();
@@ -355,18 +355,18 @@ describe("integrations screen", () => {
         primaryAction: "disconnect",
       },
     ];
-    renderNative(<IntegrationsScreen />);
+    await renderNative(<IntegrationsScreen />);
     await act(async () => {
-      fireEvent.press(screen.getByTestId("integration-sync-now-wahoo"));
+      await fireEvent.press(screen.getByTestId("integration-sync-now-wahoo"));
     });
     await act(async () => {
-      fireEvent.press(screen.getByTestId("integration-refresh-setup-wahoo"));
+      await fireEvent.press(screen.getByTestId("integration-refresh-setup-wahoo"));
     });
     expect(screen.getByTestId("integration-sync-now-wahoo")).toBeTruthy();
     expect(screen.getByTestId("integration-refresh-setup-wahoo")).toBeTruthy();
   });
 
-  it("shows the durable disconnect transition without offering a false reconnect", () => {
+  it("shows the durable disconnect transition without offering a false reconnect", async () => {
     integrationOverviewMock = [
       {
         actions: [],
@@ -408,7 +408,7 @@ describe("integrations screen", () => {
       },
     ];
 
-    renderNative(<IntegrationsScreen />);
+    await renderNative(<IntegrationsScreen />);
 
     expect(screen.getByText("Disconnecting")).toBeTruthy();
     expect(screen.getByText("Revoking provider access")).toBeTruthy();
@@ -416,47 +416,47 @@ describe("integrations screen", () => {
     expect(screen.queryByTestId("integration-disconnect-wahoo")).toBeNull();
   });
 
-  it("navigates back from the custom header", () => {
-    renderNative(<IntegrationsScreen />);
+  it("navigates back from the custom header", async () => {
+    await renderNative(<IntegrationsScreen />);
 
-    fireEvent.press(screen.getByTestId("back-button"));
+    await fireEvent.press(screen.getByTestId("back-button"));
     expect(backMock).toHaveBeenCalled();
   });
 
-  it("explains that local GradientPeak data remains on disconnect", () => {
-    renderNative(<IntegrationsScreen />);
+  it("explains that local GradientPeak data remains on disconnect", async () => {
+    await renderNative(<IntegrationsScreen />);
 
-    fireEvent.press(screen.getByTestId("integration-disconnect-strava"));
+    await fireEvent.press(screen.getByTestId("integration-disconnect-strava"));
 
     expect(
       screen.getAllByText("Disconnect Strava? Your GradientPeak data stays. Sync stops.").length,
     ).toBeTruthy();
   });
 
-  it("shows the missing-credentials state for a successful empty response", () => {
+  it("shows the missing-credentials state for a successful empty response", async () => {
     integrationOverviewMock = [];
-    renderNative(<IntegrationsScreen />);
+    await renderNative(<IntegrationsScreen />);
 
     expect(screen.getByText("Server credentials are not configured.")).toBeTruthy();
     expect(screen.queryByTestId("integration-provider-list-error")).toBeNull();
   });
 
-  it("shows a retryable query error without enabling unknown providers", () => {
+  it("shows a retryable query error without enabling unknown providers", async () => {
     integrationOverviewErrorMock = new Error("network unavailable");
-    renderNative(<IntegrationsScreen />);
+    await renderNative(<IntegrationsScreen />);
 
     expect(screen.getByTestId("integration-provider-list-error")).toBeTruthy();
     expect(screen.queryByTestId("integration-provider-fallback-strava")).toBeNull();
     expect(screen.queryByTestId("integration-connect-strava")).toBeNull();
-    fireEvent.press(screen.getByTestId("integration-provider-list-retry"));
+    await fireEvent.press(screen.getByTestId("integration-provider-list-retry"));
     expect(refetchMock).toHaveBeenCalled();
   });
 
-  it("keeps only cached configured providers actionable during a refresh error", () => {
+  it("keeps only cached configured providers actionable during a refresh error", async () => {
     integrationOverviewErrorMock = new Error("network unavailable");
     integrationOverviewHasCachedDataMock = true;
 
-    renderNative(<IntegrationsScreen />);
+    await renderNative(<IntegrationsScreen />);
 
     expect(screen.getByTestId("integration-provider-list-error")).toBeTruthy();
     expect(screen.getByTestId("integration-provider-strava")).toBeTruthy();
@@ -464,10 +464,10 @@ describe("integrations screen", () => {
     expect(screen.queryByTestId("integration-provider-fallback-strava")).toBeNull();
   });
 
-  it("shows non-sensitive copy for a provider identity callback failure", () => {
-    renderNative(<IntegrationsScreen />);
+  it("shows non-sensitive copy for a provider identity callback failure", async () => {
+    await renderNative(<IntegrationsScreen />);
 
-    act(() => {
+    await act(() => {
       deepLinkHandlerMock?.({
         url: "gradientpeak-dev://integrations?error=provider_identity_failed&error_detail=provider-account-42",
       });
@@ -477,10 +477,10 @@ describe("integrations screen", () => {
     expect(screen.queryByText("provider-account-42")).toBeNull();
   });
 
-  it("explains how to recover from Wahoo's active-authorization limit", () => {
-    renderNative(<IntegrationsScreen />);
+  it("explains how to recover from Wahoo's active-authorization limit", async () => {
+    await renderNative(<IntegrationsScreen />);
 
-    act(() => {
+    await act(() => {
       deepLinkHandlerMock?.({
         url: "gradientpeak-dev://integrations?integration=failed&provider=wahoo&error=wahoo_token_limit_exceeded",
       });

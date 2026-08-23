@@ -63,40 +63,42 @@ export function TrainingPlanCard({
   } = useResourceLike({
     entityId: plan.id,
     entityType: "training_plan",
-    initialCount: plan.likes_count,
-    initialLiked: plan.has_liked,
+    ...(plan.likes_count !== undefined ? { initialCount: plan.likes_count } : {}),
+    ...(plan.has_liked !== undefined ? { initialLiked: plan.has_liked } : {}),
   });
 
   return (
     <ResourceCardShell
       accessibilityLabel={`Open training plan ${plan.name || "Untitled training plan"}`}
-      actionRegion={
-        isList ? undefined : (
-          <ResourceOwnerActionRow
-            actions={
-              <>
-                {headerAccessory}
-                <ResourceLikeButton
-                  disabled={isLikePending}
-                  isLiked={isLiked}
-                  likeCount={likeCount}
-                  onPress={toggleLike}
-                  testID={`training-plan-card-like-button-${plan.id}`}
-                />
-              </>
-            }
-            categoryIcon={CalendarRange}
-            categoryIconClassName="text-primary"
-            categoryLabel="Training plan"
-            compact={isCompact}
-            fallbackLabel="GradientPeak"
-            owner={showAttribution ? (plan.owner ?? null) : null}
-            timestamp={showAttribution ? (plan.created_at ?? plan.updated_at ?? null) : null}
-          />
-        )
-      }
+      {...(!isList
+        ? {
+            actionRegion: (
+              <ResourceOwnerActionRow
+                actions={
+                  <>
+                    {headerAccessory}
+                    <ResourceLikeButton
+                      disabled={isLikePending}
+                      isLiked={isLiked}
+                      likeCount={likeCount}
+                      onPress={toggleLike}
+                      testID={`training-plan-card-like-button-${plan.id}`}
+                    />
+                  </>
+                }
+                categoryIcon={CalendarRange}
+                categoryIconClassName="text-primary"
+                categoryLabel="Training plan"
+                compact={isCompact}
+                fallbackLabel="GradientPeak"
+                owner={showAttribution ? (plan.owner ?? null) : null}
+                timestamp={showAttribution ? (plan.created_at ?? plan.updated_at ?? null) : null}
+              />
+            ),
+          }
+        : {})}
       compact={isCompact || isList}
-      onPress={onPress}
+      {...(onPress !== undefined ? { onPress } : {})}
       testID={testID ?? `training-plan-card-${plan.id}`}
     >
       {isList ? (
@@ -123,9 +125,9 @@ export function TrainingPlanCard({
         <>
           <ResourceCardHeader
             compact={isCompact}
-            description={plan.description}
+            {...(plan.description !== undefined ? { description: plan.description } : {})}
             descriptionFallback="Structured plan template with enough detail to preview before scheduling."
-            descriptionNumberOfLines={isCompact ? 2 : undefined}
+            {...(isCompact ? { descriptionNumberOfLines: 2 } : {})}
             title={plan.name}
             titleFallback="Untitled training plan"
           />
@@ -143,7 +145,9 @@ export function TrainingPlanCard({
           <TrainingPlanPlannedPreview
             compact={isCompact}
             planId={plan.id}
-            preview={plan.plannedSchedulePreview}
+            {...(plan.plannedSchedulePreview !== undefined
+              ? { preview: plan.plannedSchedulePreview }
+              : {})}
             structure={plan.structure}
           />
         </>

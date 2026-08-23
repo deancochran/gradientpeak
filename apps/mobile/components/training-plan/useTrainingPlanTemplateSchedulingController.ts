@@ -1,5 +1,5 @@
 import { addDaysDateKey } from "@repo/core";
-import type { Router } from "expo-router";
+import type { ImperativeRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
@@ -14,7 +14,7 @@ interface UseTrainingPlanTemplateSchedulingControllerParams {
   handleOpenCalendar: () => void;
   planId?: string;
   queryClient: ReturnType<typeof import("@tanstack/react-query").useQueryClient>;
-  router: Pick<Router, "navigate" | "replace">;
+  router: Pick<ImperativeRouter, "navigate" | "replace">;
   utils: ReturnType<typeof api.useUtils>;
 }
 

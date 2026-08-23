@@ -71,7 +71,11 @@ jest.mock("@/components/groups", () => ({
   __esModule: true,
   GroupAccessLevelBadge: createHost("GroupAccessLevelBadge"),
   GroupEventCard: ({ event }: { event: GroupEventSummary }) =>
-    React.createElement("View", { testID: `group-event-card-${event.id}` }, event.title),
+    React.createElement(
+      "View",
+      { testID: `group-event-card-${event.id}` },
+      React.createElement("Text", null, event.title),
+    ),
   GroupEventEmptyState: ({ title }: { title: string }) => React.createElement("Text", null, title),
   GroupEventListSkeleton: createHost("GroupEventListSkeleton"),
   GroupJoinPolicyBadge: createHost("GroupJoinPolicyBadge"),
@@ -130,8 +134,8 @@ jest.mock("@/lib/groups", () => ({
 const GroupDetailScreen = require("../group-detail").default;
 
 describe("group detail events", () => {
-  it("shows upcoming concrete events without a separate current-plan panel", () => {
-    renderNative(<GroupDetailScreen />);
+  it("shows upcoming concrete events without a separate current-plan panel", async () => {
+    await renderNative(<GroupDetailScreen />);
 
     expect(screen.queryByTestId("current-event-event-current")).toBeNull();
     expect(screen.getByTestId("group-event-card-event-current")).toBeTruthy();

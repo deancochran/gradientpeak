@@ -108,20 +108,20 @@ describe("useActivityPlanForm", () => {
     });
   });
 
-  it("rejects a missing segment list", () => {
-    const { result } = renderHook(() => useActivityPlanForm());
+  it("rejects a missing segment list", async () => {
+    const { result } = await renderHook(() => useActivityPlanForm());
     expect(result.current.canSubmit).toBe(false);
     expect(Object.values(result.current.validation.errors)[0]).toContain("Too small");
   });
 
-  it("counts compiled repeats and explicit boundary time", () => {
+  it("counts compiled repeats and explicit boundary time", async () => {
     useActivityPlanCreationStore.setState({ structure: validStructure() });
-    const { result } = renderHook(() => useActivityPlanForm());
+    const { result } = await renderHook(() => useActivityPlanForm());
     expect(result.current.metrics.stepCount).toBe(3);
     expect(result.current.metrics.duration).toBe(15);
   });
 
-  it("maps segment paths to interval and step UI error keys", () => {
+  it("maps segment paths to interval and step UI error keys", async () => {
     const structure = validStructure();
     const firstActivity = structure.segments[0];
     const secondActivity = structure.segments[1];
@@ -137,7 +137,7 @@ describe("useActivityPlanForm", () => {
     };
     useActivityPlanCreationStore.setState({ structure });
 
-    const { result } = renderHook(() => useActivityPlanForm());
+    const { result } = await renderHook(() => useActivityPlanForm());
 
     expect(result.current.validation.errors[`interval:${ids.interval}:repetitions`]).toBeDefined();
     expect(
@@ -147,7 +147,7 @@ describe("useActivityPlanForm", () => {
 
   it("submits only strict structures without a synthetic activity_category field", async () => {
     useActivityPlanCreationStore.setState({ structure: validStructure() });
-    const { result } = renderHook(() => useActivityPlanForm());
+    const { result } = await renderHook(() => useActivityPlanForm());
     await act(async () => {
       await expect(result.current.submit()).resolves.toEqual({ id: "created-1" });
     });
@@ -177,7 +177,7 @@ describe("useActivityPlanForm", () => {
       },
       isLoading: false,
     } as never);
-    const { result } = renderHook(() => useActivityPlanForm({ planId: "plan-1" }));
+    const { result } = await renderHook(() => useActivityPlanForm({ planId: "plan-1" }));
     await act(async () => undefined);
 
     expect(result.current.editStatus).toBe("editable");

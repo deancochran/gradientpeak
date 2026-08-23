@@ -91,8 +91,8 @@ const sessionContract = {
   },
 };
 
-function renderDock(overrides: Partial<React.ComponentProps<typeof RecordControlDock>> = {}) {
-  return renderNative(
+async function renderDock(overrides: Partial<React.ComponentProps<typeof RecordControlDock>> = {}) {
+  return await renderNative(
     <RecordControlDock
       activeSurface="route"
       onChangeSurface={jest.fn()}
@@ -114,14 +114,14 @@ function renderDock(overrides: Partial<React.ComponentProps<typeof RecordControl
 }
 
 describe("RecordControlDock", () => {
-  it("renders contract quick actions and routes presses to the matching handlers", () => {
+  it("renders contract quick actions and routes presses to the matching handlers", async () => {
     const onOpenActivity = jest.fn();
     const onOpenPlan = jest.fn();
     const onOpenRoute = jest.fn();
     const onOpenFtms = jest.fn();
     const onOpenSensors = jest.fn();
 
-    renderDock({
+    await renderDock({
       onOpenActivity,
       onOpenPlan,
       onOpenRoute,
@@ -129,11 +129,11 @@ describe("RecordControlDock", () => {
       onOpenSensors,
     });
 
-    fireEvent.press(screen.getByTestId("record-dock-quick-action-activity"));
-    fireEvent.press(screen.getByTestId("record-dock-quick-action-plan"));
-    fireEvent.press(screen.getByTestId("record-dock-quick-action-route"));
-    fireEvent.press(screen.getByTestId("record-dock-quick-action-trainer"));
-    fireEvent.press(screen.getByTestId("record-dock-quick-action-sensors"));
+    await fireEvent.press(screen.getByTestId("record-dock-quick-action-activity"));
+    await fireEvent.press(screen.getByTestId("record-dock-quick-action-plan"));
+    await fireEvent.press(screen.getByTestId("record-dock-quick-action-route"));
+    await fireEvent.press(screen.getByTestId("record-dock-quick-action-trainer"));
+    await fireEvent.press(screen.getByTestId("record-dock-quick-action-sensors"));
 
     expect(onOpenActivity).toHaveBeenCalledTimes(1);
     expect(onOpenPlan).toHaveBeenCalledTimes(1);
@@ -142,20 +142,20 @@ describe("RecordControlDock", () => {
     expect(onOpenSensors).toHaveBeenCalledTimes(1);
   });
 
-  it("switches available primary surfaces from the dock", () => {
+  it("switches available primary surfaces from the dock", async () => {
     const onChangeSurface = jest.fn();
 
-    renderDock({ onChangeSurface });
+    await renderDock({ onChangeSurface });
 
-    fireEvent.press(screen.getByTestId("record-dock-surface-activity"));
-    fireEvent.press(screen.getByTestId("record-dock-surface-metrics"));
+    await fireEvent.press(screen.getByTestId("record-dock-surface-activity"));
+    await fireEvent.press(screen.getByTestId("record-dock-surface-metrics"));
 
     expect(onChangeSurface).toHaveBeenNthCalledWith(1, "activity");
     expect(onChangeSurface).toHaveBeenNthCalledWith(2, "metrics");
   });
 
-  it("exposes descriptive, touch-friendly accessible dock controls", () => {
-    renderDock();
+  it("exposes descriptive, touch-friendly accessible dock controls", async () => {
+    await renderDock();
 
     const activity = screen.getByTestId("record-dock-quick-action-activity");
     const route = screen.getByTestId("record-dock-surface-route");
@@ -185,20 +185,20 @@ describe("RecordControlDock", () => {
     expect(route.props.className).toContain("active:opacity-80");
   });
 
-  it("forwards primary recording control actions", () => {
+  it("forwards primary recording control actions", async () => {
     const onStart = jest.fn();
     const onPause = jest.fn();
     const onResume = jest.fn();
     const onLap = jest.fn();
     const onFinish = jest.fn();
 
-    renderDock({ onStart, onPause, onResume, onLap, onFinish });
+    await renderDock({ onStart, onPause, onResume, onLap, onFinish });
 
-    fireEvent.press(screen.getByTestId("controls-start"));
-    fireEvent.press(screen.getByTestId("controls-pause"));
-    fireEvent.press(screen.getByTestId("controls-resume"));
-    fireEvent.press(screen.getByTestId("controls-lap"));
-    fireEvent.press(screen.getByTestId("controls-finish"));
+    await fireEvent.press(screen.getByTestId("controls-start"));
+    await fireEvent.press(screen.getByTestId("controls-pause"));
+    await fireEvent.press(screen.getByTestId("controls-resume"));
+    await fireEvent.press(screen.getByTestId("controls-lap"));
+    await fireEvent.press(screen.getByTestId("controls-finish"));
 
     expect(onStart).toHaveBeenCalledTimes(1);
     expect(onPause).toHaveBeenCalledTimes(1);

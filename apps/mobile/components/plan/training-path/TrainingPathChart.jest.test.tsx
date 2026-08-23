@@ -1,5 +1,5 @@
 import React from "react";
-import type { ReactTestInstance } from "react-test-renderer";
+import type { TestInstance as ReactTestInstance } from "test-renderer";
 import type { HostProps } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 import { TrainingPathChart } from "./TrainingPathChart";
@@ -111,7 +111,7 @@ jest.mock("@/assets/fonts/SpaceMono-Regular.ttf", () => ({
 }));
 
 function getHostNodes(type: string) {
-  return screen.UNSAFE_root.findAll((node: ReactTestInstance) => String(node.type) === type);
+  return screen.container.queryAll((node: ReactTestInstance) => String(node.type) === type);
 }
 
 function getHostNode(type: string) {
@@ -195,8 +195,8 @@ describe("TrainingPathChart interactions", () => {
     global.requestAnimationFrame = originalRequestAnimationFrame;
   });
 
-  it("avoids competing Victory press gestures while horizontal scrolling is active", () => {
-    renderNative(
+  it("avoids competing Victory press gestures while horizontal scrolling is active", async () => {
+    await renderNative(
       <TrainingPathChart
         model={model}
         range="season"
@@ -213,9 +213,9 @@ describe("TrainingPathChart interactions", () => {
     expect(screen.queryByTestId("training-path-week-2026-04-13")).toBeNull();
   });
 
-  it("exposes selected weekly load and fitness through an adjustable control", () => {
+  it("exposes selected weekly load and fitness through an adjustable control", async () => {
     const onSelectedWeekChange = jest.fn();
-    renderNative(
+    await renderNative(
       <TrainingPathChart
         model={model}
         range="season"
@@ -234,17 +234,17 @@ describe("TrainingPathChart interactions", () => {
     expect(adjustable.props.accessibilityValue.text).not.toContain("Recommended Common Load");
     expect(adjustable.props.accessibilityValue.text).toContain("Planned projection 42");
 
-    fireEvent(adjustable, "accessibilityAction", {
+    await fireEvent(adjustable, "accessibilityAction", {
       nativeEvent: { actionName: "increment" },
     });
     expect(onSelectedWeekChange).toHaveBeenCalledWith("2026-04-13");
   });
 
-  it("does not publish React week changes from continuous scroll ticks", () => {
+  it("does not publish React week changes from continuous scroll ticks", async () => {
     const onDisplayedWeekChange = jest.fn();
     const onSelectedWeekChange = jest.fn();
 
-    renderNative(
+    await renderNative(
       <TrainingPathChart
         model={model}
         range="season"
@@ -254,7 +254,7 @@ describe("TrainingPathChart interactions", () => {
       />,
     );
 
-    fireEvent(getHostNode("AnimatedScrollView"), "scroll", {
+    await fireEvent(getHostNode("AnimatedScrollView"), "scroll", {
       contentOffset: { x: 38 },
       contentSize: { width: 300 },
       layoutMeasurement: { width: 100 },
@@ -264,8 +264,8 @@ describe("TrainingPathChart interactions", () => {
     expect(onSelectedWeekChange).not.toHaveBeenCalled();
   });
 
-  it("can render as a scroll-only preview without week review snapping", () => {
-    renderNative(
+  it("can render as a scroll-only preview without week review snapping", async () => {
+    await renderNative(
       <TrainingPathChart
         model={model}
         range="season"
@@ -288,8 +288,8 @@ describe("TrainingPathChart interactions", () => {
     expect(renderedRects).toHaveLength(0);
   });
 
-  it("renders only the scheduled load layer", () => {
-    renderNative(
+  it("renders only the scheduled load layer", async () => {
+    await renderNative(
       <TrainingPathChart model={model} range="season" onSelectedWeekChange={jest.fn()} />,
     );
 
@@ -304,7 +304,7 @@ describe("TrainingPathChart interactions", () => {
     expect(strokedBars).toHaveLength(0);
   });
 
-  it("renders current and planned fitness solid while keeping goal-backed data out of the legend", () => {
+  it("renders current and planned fitness solid while keeping goal-backed data out of the legend", async () => {
     const recommendationModel: TrainingPathViewModel = {
       ...model,
       goalMarkers: [
@@ -316,7 +316,7 @@ describe("TrainingPathChart interactions", () => {
         recommendedLoad: week.targetLoad,
       })),
     };
-    renderNative(
+    await renderNative(
       <>
         <TrainingPathChart model={recommendationModel} range="season" />
         <TrainingPathLegend range="season" showTargetFitness showTargetLoad />
@@ -340,12 +340,16 @@ describe("TrainingPathChart interactions", () => {
     expect(screen.getByText("Planned fitness projection")).toBeTruthy();
     expect(screen.queryByText("Recommended projection")).toBeNull();
     expect(screen.queryByText("Recommended")).toBeNull();
-    expect(screen.UNSAFE_root.findByProps({ testID: "training-path-today-boundary" })).toBeTruthy();
+    expect(
+      screen.container.queryAll(
+        (node) => node.props["testID"] === "training-path-today-boundary",
+      )[0],
+    ).toBeTruthy();
     expect(screen.getByLabelText("Left axis: Load, Common Load")).toBeTruthy();
     expect(screen.getByLabelText("Right axis: Fitness")).toBeTruthy();
   });
 
-  it("renders completed and planned common Load without the legacy target series", () => {
+  it("renders completed and planned common Load without the legacy target series", async () => {
     const sparseModel: TrainingPathViewModel = {
       ...model,
       weeks: [
@@ -360,7 +364,7 @@ describe("TrainingPathChart interactions", () => {
       ],
     };
 
-    renderNative(
+    await renderNative(
       <TrainingPathChart
         model={sparseModel}
         range="season"
@@ -382,7 +386,7 @@ describe("TrainingPathChart interactions", () => {
     );
   });
 
-  it("renders the explicit common-Load recommendation instead of the legacy weekly target", () => {
+  it("renders the explicit common-Load recommendation instead of the legacy weekly target", async () => {
     const recommendationModel: TrainingPathViewModel = {
       ...model,
       goalMarkers: [
@@ -398,7 +402,7 @@ describe("TrainingPathChart interactions", () => {
       ],
     };
 
-    renderNative(
+    await renderNative(
       <TrainingPathChart
         model={recommendationModel}
         range="season"
@@ -416,7 +420,7 @@ describe("TrainingPathChart interactions", () => {
     ).toContain("Recommended Common Load 80");
   });
 
-  it("does not use zero for an unavailable weekly planned base", () => {
+  it("does not use zero for an unavailable weekly planned base", async () => {
     const unavailablePlannedModel: TrainingPathViewModel = {
       ...model,
       weeks: [
@@ -428,7 +432,7 @@ describe("TrainingPathChart interactions", () => {
       ],
     };
 
-    renderNative(
+    await renderNative(
       <TrainingPathChart
         model={unavailablePlannedModel}
         onSelectedWeekChange={jest.fn()}
@@ -447,7 +451,7 @@ describe("TrainingPathChart interactions", () => {
     ).toContain("Planned Common Load unavailable");
   });
 
-  it("keeps weekly fitness gaps and exposes horizontal exploration", () => {
+  it("keeps weekly fitness gaps and exposes horizontal exploration", async () => {
     const sparseFitnessModel: TrainingPathViewModel = {
       ...model,
       weeks: [
@@ -463,7 +467,7 @@ describe("TrainingPathChart interactions", () => {
       ],
     };
 
-    renderNative(
+    await renderNative(
       <TrainingPathChart
         model={sparseFitnessModel}
         range="season"
@@ -484,13 +488,13 @@ describe("TrainingPathChart interactions", () => {
     expect(scrollView.props.persistentScrollbar).toBe(true);
   });
 
-  it("keeps unavailable-load markers visible for selected and unselected weeks", () => {
+  it("keeps unavailable-load markers visible for selected and unselected weeks", async () => {
     const unavailableModel: TrainingPathViewModel = {
       ...model,
       weeks: model.weeks.map((week) => ({ ...week, completedLoadUnavailable: true })),
     };
 
-    renderNative(
+    await renderNative(
       <TrainingPathChart
         model={unavailableModel}
         range="season"
@@ -500,14 +504,14 @@ describe("TrainingPathChart interactions", () => {
     );
 
     expect(
-      screen.UNSAFE_root.findByProps({
-        testID: "completed-activity-without-load-highlight-2026-04-06",
-      }),
+      screen.container.queryAll(
+        (node) => node.props["testID"] === "completed-activity-without-load-highlight-2026-04-06",
+      )[0],
     ).toBeTruthy();
     expect(
-      screen.UNSAFE_root.findByProps({
-        testID: "completed-activity-without-load-highlight-2026-04-13",
-      }),
+      screen.container.queryAll(
+        (node) => node.props["testID"] === "completed-activity-without-load-highlight-2026-04-13",
+      )[0],
     ).toBeTruthy();
     const bottomMarkers = getHostNodes("SkiaRect").filter(
       (rect: ReactTestInstance) => rect.props.height === 3 && rect.props.y === 117,
@@ -515,8 +519,8 @@ describe("TrainingPathChart interactions", () => {
     expect(bottomMarkers).toHaveLength(2);
   });
 
-  it("describes only the layers rendered by the weekly fallback chart", () => {
-    renderNative(<TrainingPathLegend mode="weekly" range="season" />);
+  it("describes only the layers rendered by the weekly fallback chart", async () => {
+    await renderNative(<TrainingPathLegend mode="weekly" range="season" />);
 
     expect(screen.getByText("Completed")).toBeTruthy();
     expect(screen.getByText("Planned")).toBeTruthy();
@@ -526,7 +530,7 @@ describe("TrainingPathChart interactions", () => {
     expect(screen.queryByText("Form (zero centered)")).toBeNull();
   });
 
-  it("renders sparse two-week common Load bars without completed load anchors", () => {
+  it("renders sparse two-week common Load bars without completed load anchors", async () => {
     const sparseModel: TrainingPathViewModel = {
       ...model,
       weeks: model.weeks.map((week) => ({
@@ -537,7 +541,7 @@ describe("TrainingPathChart interactions", () => {
       })),
     };
 
-    renderNative(
+    await renderNative(
       <TrainingPathChart
         model={sparseModel}
         range="season"
@@ -555,7 +559,7 @@ describe("TrainingPathChart interactions", () => {
     expect(loadBarWidths).toEqual(expect.arrayContaining([28, 28]));
   });
 
-  it("expands the load domain to fit common Load bars", () => {
+  it("expands the load domain to fit common Load bars", async () => {
     const highLoadModel: TrainingPathViewModel = {
       ...model,
       domains: { ...model.domains, load: [0, 100] },
@@ -571,7 +575,7 @@ describe("TrainingPathChart interactions", () => {
       ],
     };
 
-    renderNative(<TrainingPathChart model={highLoadModel} range="season" />);
+    await renderNative(<TrainingPathChart model={highLoadModel} range="season" />);
 
     const chart = getHostNode("CartesianChart");
     expect(chart.props.yAxis[0].domain[1]).toBeGreaterThan(240);

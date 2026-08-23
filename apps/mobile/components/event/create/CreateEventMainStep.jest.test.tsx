@@ -19,8 +19,8 @@ jest.mock("@/components/shared/RouteCard", () => ({
 const { CreateEventMainStep } = require("./CreateEventMainStep");
 
 describe("CreateEventMainStep", () => {
-  it("renders only accessible unavailable-plan guidance for a read-only existing event", () => {
-    renderNative(
+  it("renders only accessible unavailable-plan guidance for a read-only existing event", async () => {
+    await renderNative(
       <CreateEventMainStep
         control={{}}
         draft={{

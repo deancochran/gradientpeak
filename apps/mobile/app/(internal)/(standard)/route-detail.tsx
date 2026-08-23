@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { Alert, InteractionManager } from "react-native";
+import { Alert } from "react-native";
 import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
 import {
   DetailDeleteConfirmModal,
@@ -118,11 +118,11 @@ export default function RouteDetailScreen() {
       return;
     }
 
-    const task = InteractionManager.runAfterInteractions(() => {
+    const idleCallback = requestIdleCallback(() => {
       setShouldLoadGeometry(true);
     });
 
-    return () => task.cancel();
+    return () => cancelIdleCallback(idleCallback);
   }, [route?.storage_state, routeId]);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);

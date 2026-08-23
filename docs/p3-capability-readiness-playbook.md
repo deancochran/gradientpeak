@@ -14,7 +14,7 @@ this session.
 The accepted planning IDs are `navigation.not-found-recovery`,
 `navigation.primary-destinations`, `startup.restore-session-and-recording`,
 `onboarding.complete-identity`, `onboarding.select-people-and-groups`,
-`planning.view-training-path`, `planning.inspect-ledger`,
+`planning.view-training-path`, `planning.view-day-agenda`,
 `settings.select-theme`, `profile.view`, `profile.edit`,
 `coaching.protected-entry`, and `coaching.view-dashboard`.
 
@@ -30,9 +30,9 @@ registry; no status is inferred from this document.
 | `navigation.primary-destinations` | both; implemented/runtime/active; implemented/screen/component/active | Reach primary areas; mobile runtime gap |
 | `startup.restore-session-and-recording` | both; implemented/runtime/active; implemented/screen/component/active | Restore valid session/recording; process-death device proof missing |
 | `onboarding.complete-identity` | both; implemented/runtime/active; implemented/screen/component/active | Complete identity once; mobile runtime gap |
-| `onboarding.select-people-and-groups` | both; missing/none/active; implemented/screen/component/active | Select people/groups where supported; web flow missing |
+| `onboarding.select-people-and-groups` | both; missing/none/active; implemented/screen/component/active | Follow people and join or request to join groups during onboarding; web flow missing |
 | `planning.view-training-path` | both; implemented/runtime/active; implemented/screen/component/active | View composed training path; mobile runtime gap |
-| `planning.inspect-ledger` | both; missing/none/active; implemented/screen/component/active | Inspect planning ledger; web implementation missing |
+| `planning.view-day-agenda` | both; implemented/screen/component/active; implemented/screen/component/active | Select any day and view its planned and completed agenda information |
 | `settings.select-theme` | both; partial/screen/component/active; implemented/screen/component/active | Choose/reload theme; web persistence/proof gap |
 | `profile.view` | both; implemented/runtime/active; implemented/screen/component/active | View profile; mobile runtime gap |
 | `profile.edit` | both; partial/runtime/active; implemented/screen/component/active | Edit/reload owned profile; web implementation/proof gap |

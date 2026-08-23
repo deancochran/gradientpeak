@@ -1,9 +1,16 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import type { ConfigContext } from "expo/config";
 import { describe, expect, it } from "vitest";
-import { getDevelopmentTransportSecurity } from "../app.config";
+import getAppConfig, { getDevelopmentTransportSecurity } from "../app.config";
 
-describe("app config transport security", () => {
+describe("app config", () => {
+  it("derives OTA compatibility from the native project fingerprint", () => {
+    const config = getAppConfig({ config: {} } as ConfigContext);
+
+    expect(config.runtimeVersion).toEqual({ policy: "fingerprint" });
+  });
+
   it("omits arbitrary HTTP loads in production", () => {
     expect(getDevelopmentTransportSecurity("production")).toEqual({});
   });

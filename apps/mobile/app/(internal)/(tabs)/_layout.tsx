@@ -1,10 +1,10 @@
-import type { BottomTabBarButtonProps } from "@react-navigation/bottom-tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Tabs } from "expo-router";
+import type { BottomTabBarButtonProps } from "expo-router/js-tabs";
 import { CalendarDays, Circle, Home, Route } from "lucide-react-native";
-import { TouchableOpacity, View } from "react-native";
+import { type ColorValue, TouchableOpacity, View } from "react-native";
 import { TrainingPreferencesEditor } from "@/components/settings/training-preferences/TrainingPreferencesEditor";
 import { useSessionView } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -45,7 +45,7 @@ function MeasuredTabButton({
   );
 }
 
-function ProfileTabIcon({ color }: { color: string }) {
+function ProfileTabIcon({ color }: { color: ColorValue }) {
   const { profile, user } = useAuth();
   const avatarUri = profile?.avatar_url ? getReachableSupabaseStorageUrl(profile.avatar_url) : null;
   const fallback =

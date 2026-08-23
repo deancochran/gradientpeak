@@ -13,7 +13,7 @@ jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHos
 const CalendarMonthPage = require("./CalendarMonthPage").CalendarMonthPage;
 
 describe("CalendarMonthPage", () => {
-  it("renders the date and exposes the completed-load story to assistive technology", () => {
+  it("renders the date and exposes the completed-load story to assistive technology", async () => {
     const completed = createCalendarProjectionItem({
       id: "completed-1",
       kind: "completed_activity",
@@ -41,7 +41,7 @@ describe("CalendarMonthPage", () => {
       partial: true,
     });
 
-    renderNative(
+    await renderNative(
       <CalendarMonthPage
         activeMonthKey="2026-08-01"
         itemsByDate={new Map([["2026-08-19", [completed]]])}
@@ -65,7 +65,7 @@ describe("CalendarMonthPage", () => {
     ).toBeTruthy();
   });
 
-  it("uses only planned, completed, combined, and goal marks while leaving rest days bare", () => {
+  it("uses only planned, completed, combined, and goal marks while leaving rest days bare", async () => {
     const planned = createCalendarProjectionItem({
       id: "planned",
       kind: "planned_activity",
@@ -95,7 +95,7 @@ describe("CalendarMonthPage", () => {
       status: "active",
     });
 
-    renderNative(
+    await renderNative(
       <CalendarMonthPage
         activeMonthKey="2026-08-01"
         itemsByDate={

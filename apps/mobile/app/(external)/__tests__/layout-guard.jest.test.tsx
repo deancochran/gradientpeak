@@ -67,7 +67,7 @@ describe("external layout guard", () => {
     authState.isAuthenticated = true;
     authState.isEmailVerified = true;
 
-    renderNative(<ExternalLayout />);
+    await renderNative(<ExternalLayout />);
 
     await waitFor(() => {
       expect(replaceMock).toHaveBeenCalledWith("/");
@@ -79,7 +79,7 @@ describe("external layout guard", () => {
     authState.isEmailVerified = false;
     pathnameState.value = "/(external)/sign-in";
 
-    renderNative(<ExternalLayout />);
+    await renderNative(<ExternalLayout />);
 
     await waitFor(() => {
       expect(replaceMock).toHaveBeenCalledWith("/(external)/verify");
@@ -91,7 +91,7 @@ describe("external layout guard", () => {
     authState.isEmailVerified = false;
     pathnameState.value = "/(external)/verify";
 
-    renderNative(<ExternalLayout />);
+    await renderNative(<ExternalLayout />);
 
     await waitFor(() => {
       expect(replaceMock).not.toHaveBeenCalled();
@@ -105,7 +105,7 @@ describe("external layout guard", () => {
     runtimeGlobal.__DEV__ = true;
     process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
 
-    renderNative(<ExternalLayout />);
+    await renderNative(<ExternalLayout />);
 
     await waitFor(() => {
       expect(replaceMock).not.toHaveBeenCalled();

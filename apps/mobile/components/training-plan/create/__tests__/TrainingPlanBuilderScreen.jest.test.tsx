@@ -697,11 +697,11 @@ describe("TrainingPlanBuilderScreen", () => {
     });
   });
 
-  it("opens plan metadata editing from the main composer", () => {
-    renderNative(<TrainingPlanBuilderScreen />);
+  it("opens plan metadata editing from the main composer", async () => {
+    await renderNative(<TrainingPlanBuilderScreen />);
 
     expect(screen.getByTestId("builder-strategy-composer")).toBeTruthy();
-    fireEvent.press(screen.getByText("Name your plan"));
+    await fireEvent.press(screen.getByText("Name your plan"));
 
     expect(
       screen.getByPlaceholderText("Base builder, race prep, return to training..."),
@@ -709,10 +709,10 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(screen.getByPlaceholderText("What this plan is designed to do")).toBeTruthy();
   });
 
-  it("opens builder-local goals off the main composer", () => {
-    renderNative(<TrainingPlanBuilderScreen />);
+  it("opens builder-local goals off the main composer", async () => {
+    await renderNative(<TrainingPlanBuilderScreen />);
 
-    fireEvent.press(screen.getByText("Goals"));
+    await fireEvent.press(screen.getByText("Goals"));
 
     expect(screen.getByTestId("builder-goal-editor-modal")).toBeTruthy();
     expect(screen.getByTestId("builder-no-goal-choice")).toBeTruthy();
@@ -720,53 +720,53 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(screen.getByText("New profile goal")).toBeTruthy();
   });
 
-  it("renders the compact production configuration rows", () => {
-    renderNative(<TrainingPlanBuilderScreen />);
+  it("renders the compact production configuration rows", async () => {
+    await renderNative(<TrainingPlanBuilderScreen />);
 
     expect(screen.getByTestId("builder-configuration-rows")).toBeTruthy();
     expect(screen.getByLabelText(/Goals: No goals selected/)).toBeTruthy();
     expect(screen.getByLabelText(/Schedule:/)).toBeTruthy();
   });
 
-  it("creates a full plan-local goal without using profile goal creation", () => {
-    renderNative(<TrainingPlanBuilderScreen />);
+  it("creates a full plan-local goal without using profile goal creation", async () => {
+    await renderNative(<TrainingPlanBuilderScreen />);
 
-    fireEvent.press(screen.getByText("Goals"));
-    fireEvent.press(screen.getByTestId("builder-create-plan-goal"));
+    await fireEvent.press(screen.getByText("Goals"));
+    await fireEvent.press(screen.getByTestId("builder-create-plan-goal"));
 
     expect(screen.getByTestId("builder-local-goal-create-form")).toBeTruthy();
-    fireEvent.changeText(
+    await fireEvent.changeText(
       screen.getByPlaceholderText("Finish a 10K, raise FTP, train consistently..."),
       "Finish a local 10K",
     );
-    fireEvent.press(screen.getByTestId("builder-local-goal-save"));
+    await fireEvent.press(screen.getByTestId("builder-local-goal-save"));
 
     expect(screen.getByTestId("builder-goal-editor-modal")).toBeTruthy();
     expect(screen.getAllByText("Finish a local 10K").length).toBeGreaterThan(0);
   });
 
-  it("opens profile, metrics, and efforts from one athlete context form", () => {
-    renderNative(<TrainingPlanBuilderScreen />);
+  it("opens profile, metrics, and efforts from one athlete context form", async () => {
+    await renderNative(<TrainingPlanBuilderScreen />);
 
     expect(screen.getByText("Athlete")).toBeTruthy();
 
-    fireEvent.press(screen.getByText("Athlete"));
+    await fireEvent.press(screen.getByText("Athlete"));
 
     expect(screen.getByTestId("builder-athlete-context-form")).toBeTruthy();
   });
 
-  it("opens sparse planning constraints off the main composer", () => {
-    renderNative(<TrainingPlanBuilderScreen />);
+  it("opens sparse planning constraints off the main composer", async () => {
+    await renderNative(<TrainingPlanBuilderScreen />);
 
-    fireEvent.press(screen.getByText("Preferences"));
+    await fireEvent.press(screen.getByText("Preferences"));
 
     expect(screen.getByTestId("builder-planning-constraints-form")).toBeTruthy();
   });
 
-  it("opens date-free plan settings from the strategy composer", () => {
-    renderNative(<TrainingPlanBuilderScreen />);
+  it("opens date-free plan settings from the strategy composer", async () => {
+    await renderNative(<TrainingPlanBuilderScreen />);
 
-    fireEvent.press(screen.getByText("Name your plan"));
+    await fireEvent.press(screen.getByText("Name your plan"));
 
     expect(
       screen.getByPlaceholderText("Base builder, race prep, return to training..."),
@@ -775,12 +775,12 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(screen.queryByText("Start date")).toBeNull();
   });
 
-  it("opens activity assignment from the schedule editor", () => {
-    renderNative(<TrainingPlanBuilderScreen />);
+  it("opens activity assignment from the schedule editor", async () => {
+    await renderNative(<TrainingPlanBuilderScreen />);
 
     expect(screen.getByTestId("builder-sessions-workspace")).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
 
     expect(screen.getByTestId("training-plan-builder-activity-picker-search")).toBeTruthy();
     expect(screen.getByTestId("training-plan-builder-activity-picker-filter")).toBeTruthy();
@@ -788,7 +788,9 @@ describe("TrainingPlanBuilderScreen", () => {
       screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
     ).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`));
+    await fireEvent.press(
+      screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
+    );
 
     expect(screen.getByTestId("builder-session-editor-modal")).toBeTruthy();
   });
@@ -798,9 +800,9 @@ describe("TrainingPlanBuilderScreen", () => {
       status: "available",
       simulation: authoritativeSimulation,
     };
-    renderNative(<TrainingPlanBuilderScreen />);
+    await renderNative(<TrainingPlanBuilderScreen />);
 
-    act(() =>
+    await act(() =>
       publishTrainingPlanGoalCreation({
         id: "profile-goal-1",
         title: "Raise FTP",
@@ -816,19 +818,21 @@ describe("TrainingPlanBuilderScreen", () => {
         },
       }),
     );
-    fireEvent.press(screen.getByText("Name your plan"));
-    fireEvent.changeText(
+    await fireEvent.press(screen.getByText("Name your plan"));
+    await fireEvent.changeText(
       screen.getByPlaceholderText("Base builder, race prep, return to training..."),
       "FTP build",
     );
-    fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
-    fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
-    fireEvent.press(screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`));
-    fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
+    await fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
+    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    await fireEvent.press(
+      screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
+    );
+    await fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
     await waitFor(() => {
       expect(screen.getByText("Create")).toBeTruthy();
     });
-    fireEvent.press(screen.getByText("Create"));
+    await fireEvent.press(screen.getByText("Create"));
 
     await waitFor(() => {
       expect(mockMutations.create).toHaveBeenCalledTimes(1);
@@ -855,38 +859,40 @@ describe("TrainingPlanBuilderScreen", () => {
 
   it("blocks authoritative commit when preview feedback is unavailable", async () => {
     mockAuthoritativePreviewError = new Error("offline");
-    renderNative(<TrainingPlanBuilderScreen />);
+    await renderNative(<TrainingPlanBuilderScreen />);
 
-    fireEvent.press(screen.getByText("Name your plan"));
-    fireEvent.changeText(
+    await fireEvent.press(screen.getByText("Name your plan"));
+    await fireEvent.changeText(
       screen.getByPlaceholderText("Base builder, race prep, return to training..."),
       "FTP build",
     );
-    fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
-    fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
-    fireEvent.press(screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`));
-    fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
+    await fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
+    await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
+    await fireEvent.press(
+      screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
+    );
+    await fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
     await waitFor(() => {
       expect(screen.getByText("Create")).toBeTruthy();
     });
-    fireEvent.press(screen.getByText("Create"));
+    await fireEvent.press(screen.getByText("Create"));
 
     expect(mockMutations.create).not.toHaveBeenCalled();
     expect(screen.getByText("Projection could not be loaded.")).toBeTruthy();
   });
 
-  it("surfaces performance-model context failures and retries its query", () => {
+  it("surfaces performance-model context failures and retries its query", async () => {
     mockPerformanceModelError = new Error("Performance model unavailable");
-    renderNative(<TrainingPlanBuilderScreen />);
+    await renderNative(<TrainingPlanBuilderScreen />);
 
     expect(screen.getByText("Athlete context unavailable")).toBeTruthy();
-    fireEvent.press(screen.getByLabelText("Retry athlete context unavailable"));
+    await fireEvent.press(screen.getByLabelText("Retry athlete context unavailable"));
 
     expect(mockProjectionRefetch.baseline).toHaveBeenCalledTimes(1);
   });
 
   it("hydrates edit mode into the new builder save flow", async () => {
-    renderNative(
+    await renderNative(
       <TrainingPlanBuilderScreen mode="edit" planId="22222222-2222-4222-8222-222222222222" />,
     );
 
@@ -894,24 +900,24 @@ describe("TrainingPlanBuilderScreen", () => {
       expect(screen.getByText("Save")).toBeTruthy();
       expect(screen.getByText("Existing builder plan")).toBeTruthy();
     });
-    fireEvent.press(screen.getByText("Existing builder plan"));
+    await fireEvent.press(screen.getByText("Existing builder plan"));
     expect(screen.getByLabelText("Private training plan").props.accessibilityState).toEqual({
       checked: true,
     });
-    fireEvent.press(screen.getByLabelText("Followers training plan"));
+    await fireEvent.press(screen.getByLabelText("Followers training plan"));
     expect(screen.getByLabelText("Followers training plan").props.accessibilityState).toEqual({
       checked: true,
     });
-    fireEvent.press(screen.getByLabelText("Public training plan"));
+    await fireEvent.press(screen.getByLabelText("Public training plan"));
     expect(screen.getByLabelText("Public training plan").props.accessibilityState).toEqual({
       checked: true,
     });
   });
 
-  it("shows an explicit retry state when edit hydration fails", () => {
+  it("shows an explicit retry state when edit hydration fails", async () => {
     mockEditPlanError = new Error("Plan unavailable");
 
-    renderNative(
+    await renderNative(
       <TrainingPlanBuilderScreen mode="edit" planId="22222222-2222-4222-8222-222222222222" />,
     );
 

@@ -54,8 +54,8 @@ const structure = {
 };
 
 describe("ActivityPlanSummary", () => {
-  it("shows unavailable summary quantities without inventing authored values", () => {
-    renderNative(
+  it("shows unavailable summary quantities without inventing authored values", async () => {
+    await renderNative(
       <ActivityPlanSummary showAttribution={false} structure={structure} title="Tempo repeats" />,
     );
 
@@ -66,8 +66,8 @@ describe("ActivityPlanSummary", () => {
     expect(screen.queryByText(/^0(?:\.00|m)?$/)).toBeNull();
   });
 
-  it("shows canonical prescribed Common Load and normalized intensity", () => {
-    renderNative(
+  it("shows canonical prescribed Common Load and normalized intensity", async () => {
+    await renderNative(
       <ActivityPlanSummary
         prescriptionQuantification={createPrescriptionQuantificationBundleFixture()}
         showAttribution={false}
@@ -82,8 +82,8 @@ describe("ActivityPlanSummary", () => {
     expect(screen.queryByText(/RPE|Prescribed/)).toBeNull();
   });
 
-  it("keeps cards summary-only beside a complete planned estimate", () => {
-    renderNative(
+  it("keeps cards summary-only beside a complete planned estimate", async () => {
+    await renderNative(
       <ActivityPlanSummary
         prescriptionQuantification={createPrescriptionQuantificationBundleFixture({
           estimated: false,
@@ -96,8 +96,8 @@ describe("ActivityPlanSummary", () => {
     expect(screen.queryByText(/RPE|Prescribed/)).toBeNull();
   });
 
-  it("labels partial planned evidence without substituting zero", () => {
-    renderNative(
+  it("labels partial planned evidence without substituting zero", async () => {
+    await renderNative(
       <ActivityPlanSummary
         prescriptionQuantification={createPrescriptionQuantificationBundleFixture({
           status: "partial",
@@ -112,8 +112,8 @@ describe("ActivityPlanSummary", () => {
     expect(screen.queryByText(/^0(?:\.00|m)?$/)).toBeNull();
   });
 
-  it("shows known partial projection values as partial", () => {
-    renderNative(
+  it("shows known partial projection values as partial", async () => {
+    await renderNative(
       <ActivityPlanSummary
         projectionMetrics={[
           {
@@ -151,8 +151,8 @@ describe("ActivityPlanSummary", () => {
     expect(screen.getByText(/0\.90 known \(partial\)/)).toBeTruthy();
   });
 
-  it("omits private calculated quantities and emits no invented zero", () => {
-    const rendered = renderNative(
+  it("omits private calculated quantities and emits no invented zero", async () => {
+    const rendered = await renderNative(
       <ActivityPlanSummary
         prescriptionQuantification={createPrescriptionQuantificationBundleFixture({
           status: "private",

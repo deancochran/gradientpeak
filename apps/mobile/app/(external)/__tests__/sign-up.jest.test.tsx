@@ -85,7 +85,15 @@ jest.mock("@/lib/stores/auth-store", () => ({
 jest.mock("@repo/ui/components/alert", () => {
   const React = require("react");
   const host = (type: string) => (props: HostProps) =>
-    React.createElement(type, props, props.children);
+    React.createElement(
+      type,
+      props,
+      React.Children.map(props.children, (child: React.ReactNode) =>
+        typeof child === "string" || typeof child === "number"
+          ? React.createElement("Text", null, String(child))
+          : child,
+      ),
+    );
 
   return {
     __esModule: true,
@@ -105,14 +113,26 @@ jest.mock("@repo/ui/components/button", () => ({
         onPress: disabled ? undefined : onPress,
         testID: props.testID ?? props.testId,
       },
-      children,
+      React.Children.map(children, (child) =>
+        typeof child === "string" || typeof child === "number"
+          ? React.createElement("Text", null, String(child))
+          : child,
+      ),
     ),
 }));
 
 jest.mock("@repo/ui/components/card", () => {
   const React = require("react");
   const host = (type: string) => (props: HostProps) =>
-    React.createElement(type, props, props.children);
+    React.createElement(
+      type,
+      props,
+      React.Children.map(props.children, (child: React.ReactNode) =>
+        typeof child === "string" || typeof child === "number"
+          ? React.createElement("Text", null, String(child))
+          : child,
+      ),
+    );
 
   return {
     __esModule: true,
@@ -213,12 +233,12 @@ describe("sign-up screen", () => {
   });
 
   it("routes to verify after successful sign up", async () => {
-    renderNative(<SignUpScreen />);
+    await renderNative(<SignUpScreen />);
 
-    fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
-    fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
-    fireEvent.changeText(screen.getByTestId("repeat-password-input"), "Password123");
-    fireEvent.press(screen.getByTestId("sign-up-button"));
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await fireEvent.changeText(screen.getByTestId("repeat-password-input"), "Password123");
+    await fireEvent.press(screen.getByTestId("sign-up-button"));
 
     await waitFor(() => {
       expect(signUpMock).toHaveBeenCalledWith(
@@ -234,8 +254,8 @@ describe("sign-up screen", () => {
     });
   });
 
-  it("marks new password fields for credential-manager generation", () => {
-    renderNative(<SignUpScreen />);
+  it("marks new password fields for credential-manager generation", async () => {
+    await renderNative(<SignUpScreen />);
 
     expect(screen.getByTestId("password-input").props.autoComplete).toBe("new-password");
     expect(screen.getByTestId("repeat-password-input").props.autoComplete).toBe("new-password");
@@ -246,12 +266,12 @@ describe("sign-up screen", () => {
       user: { id: "user-1", email: "athlete@example.com", emailVerified: true },
     });
 
-    renderNative(<SignUpScreen />);
+    await renderNative(<SignUpScreen />);
 
-    fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
-    fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
-    fireEvent.changeText(screen.getByTestId("repeat-password-input"), "Password123");
-    fireEvent.press(screen.getByTestId("sign-up-button"));
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await fireEvent.changeText(screen.getByTestId("repeat-password-input"), "Password123");
+    await fireEvent.press(screen.getByTestId("sign-up-button"));
 
     await waitFor(() => {
       expect(replaceMock).toHaveBeenCalledWith("/");
@@ -261,12 +281,12 @@ describe("sign-up screen", () => {
   it("maps duplicate-email errors onto the email field", async () => {
     signUpMock.mockResolvedValue({ error: { message: "User already exists. Use another email." } });
 
-    renderNative(<SignUpScreen />);
+    await renderNative(<SignUpScreen />);
 
-    fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
-    fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
-    fireEvent.changeText(screen.getByTestId("repeat-password-input"), "Password123");
-    fireEvent.press(screen.getByTestId("sign-up-button"));
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await fireEvent.changeText(screen.getByTestId("repeat-password-input"), "Password123");
+    await fireEvent.press(screen.getByTestId("sign-up-button"));
 
     await waitFor(() => {
       expect(screen.getByText("An account with this email already exists")).toBeTruthy();

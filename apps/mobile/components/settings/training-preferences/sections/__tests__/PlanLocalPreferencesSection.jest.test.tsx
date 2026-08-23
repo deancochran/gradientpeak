@@ -84,11 +84,11 @@ jest.mock("@/components/settings/training-preferences/TrainingPreferenceFieldRen
 const { PlanLocalPreferencesSection } = require("../PlanLocalPreferencesSection");
 
 describe("PlanLocalPreferencesSection", () => {
-  it("uses an accessible 44pt group select, exposes only editable groups, and preserves field callbacks", () => {
+  it("uses an accessible 44pt group select, exposes only editable groups, and preserves field callbacks", async () => {
     const onChangeField = jest.fn();
     const onRemoveField = jest.fn();
     mockScrollViewCount = 0;
-    renderNative(
+    await renderNative(
       <PlanLocalPreferencesSection
         fields={[
           { key: "durationWeeks", value: { overridden: true, value: 6 } },
@@ -105,11 +105,11 @@ describe("PlanLocalPreferencesSection", () => {
     expect(mockScrollViewCount).toBe(0);
 
     const select = screen.getByTestId("preference-group-select");
-    fireEvent(select, "onValueChange", { value: "recovery" });
+    await fireEvent(select, "onValueChange", { value: "recovery" });
 
     expect(screen.getByTestId("field-recovery-field")).toBeTruthy();
-    fireEvent.press(screen.getByTestId("change-recovery-field"));
-    fireEvent.press(screen.getByTestId("clear-recovery-field"));
+    await fireEvent.press(screen.getByTestId("change-recovery-field"));
+    await fireEvent.press(screen.getByTestId("clear-recovery-field"));
     expect(onChangeField).toHaveBeenCalledWith("recoveryPriority", 8);
     expect(onRemoveField).toHaveBeenCalledWith("recoveryPriority");
   });

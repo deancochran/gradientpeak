@@ -16,22 +16,22 @@ const baseline = {
 };
 
 describe("BuilderAuthoritativeProjectionCard", () => {
-  it("announces loading and retryable error states", () => {
+  it("announces loading and retryable error states", async () => {
     const onRetry = jest.fn();
-    const view = render(
+    const view = await render(
       <BuilderAuthoritativeProjectionCard onRetry={onRetry} projection={{ status: "loading" }} />,
     );
     expect(screen.getByLabelText("Loading athlete baseline projection")).toBeTruthy();
 
-    view.rerender(
+    await view.rerender(
       <BuilderAuthoritativeProjectionCard onRetry={onRetry} projection={{ status: "error" }} />,
     );
     expect(screen.getByText("Projection could not be loaded.")).toBeTruthy();
-    fireEvent.press(screen.getByLabelText("Retry athlete baseline projection"));
+    await fireEvent.press(screen.getByLabelText("Retry athlete baseline projection"));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it("renders stale projected metrics and explicit unavailable readiness", () => {
+  it("renders stale projected metrics and explicit unavailable readiness", async () => {
     const simulation = simulateTrainingPlan({
       baseline,
       plannedSessions: [
@@ -48,7 +48,7 @@ describe("BuilderAuthoritativeProjectionCard", () => {
       goal: null,
     });
 
-    render(
+    await render(
       <BuilderAuthoritativeProjectionCard
         onRetry={jest.fn()}
         projection={{ status: "stale", importStatus: "active", simulation }}

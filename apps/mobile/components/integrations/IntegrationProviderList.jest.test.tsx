@@ -53,8 +53,8 @@ function createIntegration(
 }
 
 describe("IntegrationProviderList", () => {
-  it("uses an accessible shared loading status without a duplicate header announcement", () => {
-    const { getAllByText, getByRole } = render(
+  it("uses an accessible shared loading status without a duplicate header announcement", async () => {
+    const { getAllByText, getByRole } = await render(
       <IntegrationProviderList integrations={[]} isLoading onConnect={jest.fn()} />,
     );
 
@@ -64,9 +64,9 @@ describe("IntegrationProviderList", () => {
     expect(getAllByText("Checking…")).toHaveLength(1);
   });
 
-  it("uses a labeled 48dp icon-sized Button for provider actions and preserves callbacks", () => {
+  it("uses a labeled 48dp icon-sized Button for provider actions and preserves callbacks", async () => {
     const onConnect = jest.fn();
-    const { getByTestId } = render(
+    const { getByTestId } = await render(
       <IntegrationProviderList integrations={[createIntegration()]} onConnect={onConnect} />,
     );
 
@@ -75,11 +75,11 @@ describe("IntegrationProviderList", () => {
     expect(connectButton.props.accessibilityRole).toBe("button");
     expect(connectButton.props.accessibilityState).toEqual({ disabled: false });
     expect(connectButton.props.className).toContain("min-h-12");
-    fireEvent.press(connectButton);
+    await fireEvent.press(connectButton);
     expect(onConnect).toHaveBeenCalledWith("wahoo");
   });
 
-  it("uses semantic success and info status colors", () => {
+  it("uses semantic success and info status colors", async () => {
     const connected = createIntegration({
       connected: true,
       integrationId: "integration-1",
@@ -102,13 +102,13 @@ describe("IntegrationProviderList", () => {
         title: "Wahoo",
       },
     });
-    const connectedView = render(
+    const connectedView = await render(
       <IntegrationProviderList integrations={[connected]} onConnect={jest.fn()} />,
     );
     expect(connectedView.getByText("Connected").props.className).toContain(
       "text-success-subtle-foreground",
     );
-    connectedView.rerender(
+    await connectedView.rerender(
       <IntegrationProviderList integrations={[syncing]} onConnect={jest.fn()} />,
     );
     expect(connectedView.getByText("Syncing").props.className).toContain(
@@ -116,8 +116,8 @@ describe("IntegrationProviderList", () => {
     );
   });
 
-  it("announces a pending provider action once through the shared spinner", () => {
-    const { getByLabelText, queryByText } = render(
+  it("announces a pending provider action once through the shared spinner", async () => {
+    const { getByLabelText, queryByText } = await render(
       <IntegrationProviderList
         integrations={[createIntegration()]}
         onConnect={jest.fn()}
@@ -133,16 +133,16 @@ describe("IntegrationProviderList", () => {
     expect(queryByText("Wahoo action in progress")).toBeNull();
   });
 
-  it("renders transitional cached data without published state as unavailable", () => {
+  it("renders transitional cached data without published state as unavailable", async () => {
     const transitional = createIntegration();
-    const { getByText } = render(
+    const { getByText } = await render(
       <IntegrationProviderList integrations={[transitional]} onConnect={jest.fn()} />,
     );
 
     expect(getByText("State unavailable")).toBeTruthy();
   });
 
-  it("shows truthful rebuild state and opens the exact imported batch", () => {
+  it("shows truthful rebuild state and opens the exact imported batch", async () => {
     const onViewImportedActivities = jest.fn();
     const importRunId = "77777777-7777-4777-8777-777777777777";
     const integration = createIntegration({
@@ -161,7 +161,7 @@ describe("IntegrationProviderList", () => {
         status: "synced",
       },
     });
-    const { getByTestId, getByText } = render(
+    const { getByTestId, getByText } = await render(
       <IntegrationProviderList
         integrations={[integration]}
         onConnect={jest.fn()}
@@ -185,7 +185,7 @@ describe("IntegrationProviderList", () => {
     );
 
     expect(getByText(/State rebuilding/)).toBeTruthy();
-    fireEvent.press(getByTestId("integration-view-import-wahoo"));
+    await fireEvent.press(getByTestId("integration-view-import-wahoo"));
     expect(onViewImportedActivities).toHaveBeenCalledWith(importRunId);
   });
 
@@ -194,9 +194,9 @@ describe("IntegrationProviderList", () => {
     ["rebuilding", "State rebuilding"],
     ["fresh", "State current"],
     ["failed_incomplete", "History incomplete after failed import"],
-  ] as const)("renders truthful athlete-state status %s", (status, expected) => {
+  ] as const)("renders truthful athlete-state status %s", async (status, expected) => {
     const integration = createIntegration();
-    const { getByText } = render(
+    const { getByText } = await render(
       <IntegrationProviderList
         integrations={[integration]}
         onConnect={jest.fn()}
@@ -220,7 +220,7 @@ describe("IntegrationProviderList", () => {
     expect(getByText(expected)).toBeTruthy();
   });
 
-  it("keeps a persisted disabled provider visible and disconnectable", () => {
+  it("keeps a persisted disabled provider visible and disconnectable", async () => {
     const integration = createIntegration({
       configured: false,
       connected: true,
@@ -228,14 +228,14 @@ describe("IntegrationProviderList", () => {
       providerHealth: { lastError: null, status: "connected" },
     });
     const onDisconnect = jest.fn();
-    const { getByTestId } = render(
+    const { getByTestId } = await render(
       <IntegrationProviderList
         integrations={[integration]}
         onConnect={jest.fn()}
         onDisconnect={onDisconnect}
       />,
     );
-    fireEvent.press(getByTestId("integration-disconnect-wahoo"));
+    await fireEvent.press(getByTestId("integration-disconnect-wahoo"));
     expect(onDisconnect).toHaveBeenCalledWith(integration);
   });
 });

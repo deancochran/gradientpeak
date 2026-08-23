@@ -53,7 +53,7 @@ describe("startup activity submission recovery", () => {
   it("invalidates post-ingestion reads after a recovered submission completes", async () => {
     prepareMobileRecordingStartup.mockResolvedValue({ queueJobs: [job] });
 
-    renderHook(() => useStartupActivitySubmissionRecovery("profile-1"));
+    await renderHook(() => useStartupActivitySubmissionRecovery("profile-1"));
 
     await waitFor(() =>
       expect(invalidatePostActivityIngestionQueries).toHaveBeenCalledWith(queryClient),
@@ -61,18 +61,18 @@ describe("startup activity submission recovery", () => {
   });
 
   it("does not over-invalidate for an empty queue", async () => {
-    const empty = renderHook(() => useStartupActivitySubmissionRecovery("profile-1"));
+    const empty = await renderHook(() => useStartupActivitySubmissionRecovery("profile-1"));
     await waitFor(() => expect(prepareMobileRecordingStartup).toHaveBeenCalled());
     expect(invalidatePostActivityIngestionQueries).not.toHaveBeenCalled();
-    empty.unmount();
+    await empty.unmount();
   });
 
   it("does not over-invalidate when recovery remains failed", async () => {
     prepareMobileRecordingStartup.mockResolvedValue({ queueJobs: [job] });
     runActivitySubmissionQueueJob.mockResolvedValue({ ...job, status: "failed" });
-    const failed = renderHook(() => useStartupActivitySubmissionRecovery("profile-1"));
+    const failed = await renderHook(() => useStartupActivitySubmissionRecovery("profile-1"));
     await waitFor(() => expect(runActivitySubmissionQueueJob).toHaveBeenCalled());
     expect(invalidatePostActivityIngestionQueries).not.toHaveBeenCalled();
-    failed.unmount();
+    await failed.unmount();
   });
 });

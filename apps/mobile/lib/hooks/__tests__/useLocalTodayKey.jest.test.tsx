@@ -12,14 +12,14 @@ describe("useLocalTodayKey", () => {
     jest.useRealTimers();
   });
 
-  it("updates after the device crosses local midnight", () => {
+  it("updates after the device crosses local midnight", async () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date(2026, 6, 13, 23, 59, 30));
 
-    const { result } = renderHook(() => useLocalTodayKey());
+    const { result } = await renderHook(() => useLocalTodayKey());
     expect(result.current).toBe("2026-07-13");
 
-    act(() => {
+    await act(() => {
       jest.advanceTimersByTime(60_000);
     });
 

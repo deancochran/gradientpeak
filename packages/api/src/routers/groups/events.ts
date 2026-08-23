@@ -134,8 +134,10 @@ function buildMaterializedGroupEventOccurrences(input: {
     interval,
     count,
     untilDateKey,
-    recurrenceTimeZone: input.recurrenceTimezone,
-    eventTimeZone: input.timezone,
+    ...(input.recurrenceTimezone !== undefined
+      ? { recurrenceTimeZone: input.recurrenceTimezone }
+      : {}),
+    ...(input.timezone !== undefined ? { eventTimeZone: input.timezone } : {}),
   });
 
   if (occurrences.length === 0) {
@@ -499,9 +501,9 @@ export const groupEventsRouter = createTRPCRouter({
       const group = await getActiveGroup(db, input.groupId);
       await requireGroupAdmin(db, input.groupId, profileId);
       await assertGroupEventResourcesAvailable(db, {
-        activityPlanId: input.activityPlanId,
+        ...(input.activityPlanId !== undefined ? { activityPlanId: input.activityPlanId } : {}),
         profileId,
-        routeId: input.routeId,
+        ...(input.routeId !== undefined ? { routeId: input.routeId } : {}),
       });
 
       const [event] = await db
@@ -538,9 +540,9 @@ export const groupEventsRouter = createTRPCRouter({
       await getActiveGroup(db, input.groupId);
       await requireGroupAdmin(db, input.groupId, profileId);
       await assertGroupEventResourcesAvailable(db, {
-        activityPlanId: input.activityPlanId,
+        ...(input.activityPlanId !== undefined ? { activityPlanId: input.activityPlanId } : {}),
         profileId,
-        routeId: input.routeId,
+        ...(input.routeId !== undefined ? { routeId: input.routeId } : {}),
       });
 
       const event = await db.transaction(async (tx) => {
@@ -573,7 +575,9 @@ export const groupEventsRouter = createTRPCRouter({
           startsAt: input.startsAt,
           endsAt: input.endsAt ?? null,
           recurrenceRule: input.recurrenceRule,
-          recurrenceTimezone: input.recurrenceTimezone,
+          ...(input.recurrenceTimezone !== undefined
+            ? { recurrenceTimezone: input.recurrenceTimezone }
+            : {}),
           timezone: input.timezone,
         });
 
@@ -659,9 +663,9 @@ export const groupEventsRouter = createTRPCRouter({
       assertOneOffEvent(existingEvent);
       await requireGroupAdmin(db, existingEvent.group_id, profileId);
       await assertGroupEventResourcesAvailable(db, {
-        activityPlanId: input.activityPlanId,
+        ...(input.activityPlanId !== undefined ? { activityPlanId: input.activityPlanId } : {}),
         profileId,
-        routeId: input.routeId,
+        ...(input.routeId !== undefined ? { routeId: input.routeId } : {}),
       });
 
       const [event] = await db.transaction(async (tx) => {
@@ -712,9 +716,9 @@ export const groupEventsRouter = createTRPCRouter({
       assertSeriesOccurrence(existingEvent);
       await requireGroupAdmin(db, existingEvent.group_id, profileId);
       await assertGroupEventResourcesAvailable(db, {
-        activityPlanId: input.activityPlanId,
+        ...(input.activityPlanId !== undefined ? { activityPlanId: input.activityPlanId } : {}),
         profileId,
-        routeId: input.routeId,
+        ...(input.routeId !== undefined ? { routeId: input.routeId } : {}),
       });
 
       const [event] = await db.transaction(async (tx) => {

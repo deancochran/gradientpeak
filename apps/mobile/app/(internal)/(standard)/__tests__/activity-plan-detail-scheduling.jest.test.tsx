@@ -31,14 +31,6 @@ type DuplicateMutationOptions = {
   onSuccess?: (result: { id: string }) => void;
 };
 
-type TestNode = {
-  props?: { children?: React.ReactNode };
-};
-
-type UnsafeTypeQuery = {
-  UNSAFE_getAllByType: (type: string) => TestNode[];
-};
-
 var fetchedPlanMock = {
   current: null as ActivityPlanMock | null,
 };
@@ -320,7 +312,7 @@ const getTextContent = (children: React.ReactNode): string => {
 
 const getAllByTypeOrEmpty = (type: string) => {
   try {
-    return (screen as unknown as UnsafeTypeQuery).UNSAFE_getAllByType(type);
+    return screen.container.queryAll((node) => node.type === type);
   } catch {
     return [];
   }
@@ -352,7 +344,7 @@ describe("activity plan detail scheduling", () => {
     resetTestState();
   });
 
-  it("opens event creation for a schedulable template plan", () => {
+  it("opens event creation for a schedulable template plan", async () => {
     localSearchParamsMock.template = JSON.stringify(
       createActivityPlanSummary({
         id: "11111111-1111-1111-1111-111111111111",
@@ -360,9 +352,9 @@ describe("activity plan detail scheduling", () => {
       }),
     );
 
-    renderNative(<ActivityPlanDetail />);
+    await renderNative(<ActivityPlanDetail />);
 
-    act(() => {
+    await act(() => {
       screen.getByTestId("activity-plan-options-schedule").props.onPress();
     });
 
@@ -376,7 +368,7 @@ describe("activity plan detail scheduling", () => {
     });
   });
 
-  it("keeps shared-plan scheduling available while rendering the authored prescription", () => {
+  it("keeps shared-plan scheduling available while rendering the authored prescription", async () => {
     localSearchParamsMock.template = JSON.stringify(
       createActivityPlanSummary({
         id: "11111111-1111-1111-1111-111111111111",
@@ -392,7 +384,7 @@ describe("activity plan detail scheduling", () => {
       }),
     );
 
-    renderNative(<ActivityPlanDetail />);
+    await renderNative(<ActivityPlanDetail />);
 
     expect(screen.getByTestId("activity-plan-options-schedule")).toBeTruthy();
     expect(screen.queryByTestId("activity-plan-options-duplicate")).toBeNull();
@@ -401,7 +393,7 @@ describe("activity plan detail scheduling", () => {
     expect(screen.getByTestId("activity-plan-content-preview")).toBeTruthy();
     expect(screen.getByText("5 RPE · 5min")).toBeTruthy();
 
-    act(() => {
+    await act(() => {
       screen.getByTestId("activity-plan-options-schedule").props.onPress();
     });
 
@@ -432,7 +424,7 @@ describe("activity plan detail scheduling", () => {
       }),
     );
 
-    renderNative(<ActivityPlanDetail />);
+    await renderNative(<ActivityPlanDetail />);
 
     await act(async () => {
       screen.getByTestId("activity-plan-options-duplicate").props.onPress();
@@ -453,7 +445,7 @@ describe("activity plan detail scheduling", () => {
     const duplicateAlertButtons = nativeAlertMock.mock.calls.at(-1)?.[2] as
       | Array<{ onPress?: () => void }>
       | undefined;
-    act(() => {
+    await act(() => {
       duplicateAlertButtons?.[0]?.onPress?.();
     });
     await waitFor(() => {
@@ -472,7 +464,7 @@ describe("activity plan detail scheduling", () => {
     localSearchParamsMock.planId = "owned-plan-1";
     localSearchParamsMock.action = "schedule";
 
-    renderNative(<ActivityPlanDetail />);
+    await renderNative(<ActivityPlanDetail />);
 
     await waitFor(() => {
       expect(routerMock.navigate).toHaveBeenCalledWith({
@@ -496,7 +488,7 @@ describe("activity plan detail scheduling", () => {
     localSearchParamsMock.action = "schedule";
     plannedActivityMock.current = { id: "event-1", scheduled_date: "2026-05-21" };
 
-    renderNative(<ActivityPlanDetail />);
+    await renderNative(<ActivityPlanDetail />);
 
     await waitFor(() => {
       expect(routerMock.navigate).toHaveBeenCalledWith("/event-detail-update?id=event-1");
@@ -504,15 +496,15 @@ describe("activity plan detail scheduling", () => {
     expect(nativeAlertMock).not.toHaveBeenCalled();
   });
 
-  it("navigates to event creation when scheduling a fetched plan", () => {
+  it("navigates to event creation when scheduling a fetched plan", async () => {
     fetchedPlanMock.current = createActivityPlanDetail({
       id: "owned-plan-1",
       name: "Owned Builder",
     });
 
-    renderNative(<ActivityPlanDetail />);
+    await renderNative(<ActivityPlanDetail />);
 
-    act(() => {
+    await act(() => {
       screen.getByTestId("activity-plan-options-schedule").props.onPress();
     });
 
@@ -525,7 +517,7 @@ describe("activity plan detail scheduling", () => {
     });
   });
 
-  it("hides schedule actions when the plan is opened from an event", () => {
+  it("hides schedule actions when the plan is opened from an event", async () => {
     fetchedPlanMock.current = createActivityPlanDetail({
       id: "owned-plan-1",
       name: "Owned Builder",
@@ -533,14 +525,14 @@ describe("activity plan detail scheduling", () => {
     localSearchParamsMock.planId = "owned-plan-1";
     localSearchParamsMock.eventId = "event-1";
 
-    renderNative(<ActivityPlanDetail />);
+    await renderNative(<ActivityPlanDetail />);
 
     expect(screen.queryByTestId("activity-plan-options-schedule")).toBeNull();
     expect(screen.queryByTestId("activity-plan-options-open-event")).toBeNull();
     expect(screen.queryByTestId("activity-plan-options-remove-schedule")).toBeNull();
   });
 
-  it("shows the new summary-first detail context and hides placeholder share UI", () => {
+  it("shows the new summary-first detail context and hides placeholder share UI", async () => {
     localSearchParamsMock.template = JSON.stringify(
       createActivityPlanDetail({
         id: "11111111-1111-1111-1111-111111111111",
@@ -550,7 +542,7 @@ describe("activity plan detail scheduling", () => {
       }),
     );
 
-    renderNative(<ActivityPlanDetail />);
+    await renderNative(<ActivityPlanDetail />);
 
     expect(screen.getByText("Controlled tempo intervals.")).toBeTruthy();
     expect(screen.getByText("Keep the recoveries honest.")).toBeTruthy();
@@ -558,7 +550,7 @@ describe("activity plan detail scheduling", () => {
     expect(screen.queryByText("Share")).toBeNull();
   });
 
-  it("defaults an eligible owner session flow on without changing the authored API projection", () => {
+  it("defaults an eligible owner session flow on without changing the authored API projection", async () => {
     const plan = createActivityPlanDetail({ id: "bike-plan-1", activityCategory: "bike" });
     if (!plan.structure) throw new Error("Expected owner authoring structure");
     const structure = structuredClone(plan.structure);
@@ -574,7 +566,7 @@ describe("activity plan detail scheduling", () => {
       structure,
     });
 
-    const view = renderNative(<ActivityPlanDetail />);
+    const view = await renderNative(<ActivityPlanDetail />);
 
     const toggle = screen.getByTestId("activity-plan-personalize-targets");
     expect(toggle.props.checked).toBe(true);
@@ -585,7 +577,7 @@ describe("activity plan detail scheduling", () => {
       expect.objectContaining({ enabled: true, refetchOnWindowFocus: false }),
     );
 
-    act(() => toggle.props.onCheckedChange(false));
+    await act(() => toggle.props.onCheckedChange(false));
 
     expect(screen.getByText(/80% FTP/)).toBeTruthy();
     expect(screen.queryByText(/240 W/)).toBeNull();
@@ -600,17 +592,17 @@ describe("activity plan detail scheduling", () => {
       structure,
     });
     localSearchParamsMock.planId = "bike-plan-2";
-    view.rerender(<ActivityPlanDetail />);
+    await view.rerender(<ActivityPlanDetail />);
     expect(screen.getByTestId("activity-plan-personalize-targets").props.checked).toBe(true);
   });
 
-  it("keeps an owner RPE session flow off and explains why it cannot be personalized", () => {
+  it("keeps an owner RPE session flow off and explains why it cannot be personalized", async () => {
     fetchedPlanMock.current = createActivityPlanDetail({
       id: "rpe-plan-1",
       activityCategory: "run",
     });
 
-    renderNative(<ActivityPlanDetail />);
+    await renderNative(<ActivityPlanDetail />);
 
     const toggle = screen.getByTestId("activity-plan-personalize-targets");
     expect(toggle.props.checked).toBe(false);

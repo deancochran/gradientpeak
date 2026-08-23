@@ -2,24 +2,24 @@ import { fireEvent, renderNative } from "../../test/render-native";
 import { PaceInput } from "./index.native";
 
 describe("PaceInput native", () => {
-  it("normalizes pace input on blur", () => {
+  it("normalizes pace input on blur", async () => {
     const onChange = jest.fn();
 
-    const { getByPlaceholderText } = renderNative(
+    const { getByPlaceholderText } = await renderNative(
       <PaceInput id="pace" label="Pace" value="" onChange={onChange} />,
     );
 
     const input = getByPlaceholderText("e.g., 4:15");
-    fireEvent(input, "changeText", "04:05");
-    fireEvent(input, "blur");
+    await fireEvent(input, "changeText", "04:05");
+    await fireEvent(input, "blur");
 
     expect(onChange).toHaveBeenLastCalledWith("4:05");
   });
 
-  it("forwards disabled, test, required, error, and blur semantics", () => {
+  it("forwards disabled, test, required, error, and blur semantics", async () => {
     const onBlur = jest.fn();
     const onChange = jest.fn();
-    const { getByTestId, rerender } = renderNative(
+    const { getByTestId, rerender } = await renderNative(
       <PaceInput
         disabled
         error="Invalid pace"
@@ -35,7 +35,7 @@ describe("PaceInput native", () => {
     );
     const input = getByTestId("pace-input");
 
-    fireEvent(input, "changeText", "5:00");
+    await fireEvent(input, "changeText", "5:00");
 
     expect(input.props.editable).toBe(false);
     expect(input.props["aria-required"]).toBe(true);
@@ -44,7 +44,7 @@ describe("PaceInput native", () => {
     expect(input.props.accessibilityHint).toContain("Error: Invalid pace");
     expect(onChange).not.toHaveBeenCalled();
 
-    rerender(
+    await rerender(
       <PaceInput
         id="pace"
         label="Pace"
@@ -54,7 +54,7 @@ describe("PaceInput native", () => {
         value="4:30"
       />,
     );
-    fireEvent(getByTestId("pace-input"), "blur");
+    await fireEvent(getByTestId("pace-input"), "blur");
     expect(onBlur).toHaveBeenCalled();
   });
 });

@@ -46,8 +46,8 @@ describe("useTrainingPlanHeaderSocialActions", () => {
     commitMutateAsyncMock.mockReset();
   });
 
-  it("blocks likes for invalid plan ids", () => {
-    const { result } = renderHook(() =>
+  it("blocks likes for invalid plan ids", async () => {
+    const { result } = await renderHook(() =>
       useTrainingPlanHeaderSocialActions({
         plan: {
           id: "not-a-uuid",
@@ -61,7 +61,7 @@ describe("useTrainingPlanHeaderSocialActions", () => {
       }),
     );
 
-    act(() => {
+    await act(() => {
       result.current.handleToggleLike();
     });
 
@@ -72,8 +72,8 @@ describe("useTrainingPlanHeaderSocialActions", () => {
     expect(toggleLikeMutateMock).not.toHaveBeenCalled();
   });
 
-  it("optimistically toggles likes and dispatches the social mutation", () => {
-    const { result } = renderHook(() =>
+  it("optimistically toggles likes and dispatches the social mutation", async () => {
+    const { result } = await renderHook(() =>
       useTrainingPlanHeaderSocialActions({
         plan: {
           id: "11111111-1111-1111-1111-111111111111",
@@ -88,7 +88,7 @@ describe("useTrainingPlanHeaderSocialActions", () => {
       }),
     );
 
-    act(() => {
+    await act(() => {
       result.current.handleToggleLike();
     });
 

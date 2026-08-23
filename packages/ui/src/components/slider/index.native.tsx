@@ -1,4 +1,4 @@
-import RNSlider from "@react-native-community/slider";
+import RNSlider, { type SliderRef as RNSliderRef } from "@react-native-community/slider";
 import * as React from "react";
 import { Platform, useColorScheme } from "react-native";
 
@@ -6,7 +6,7 @@ import { getResolvedNativeTheme } from "../../lib/native-theme";
 import { getNativeTestProps } from "../../lib/test-props";
 import type { SliderProps } from "./shared";
 
-const Slider = React.forwardRef<RNSlider, SliderProps>(
+const Slider = React.forwardRef<RNSliderRef, SliderProps>(
   (
     {
       value = 0,
@@ -41,17 +41,17 @@ const Slider = React.forwardRef<RNSlider, SliderProps>(
 
     return (
       <RNSlider
-        ref={ref as never}
+        ref={ref}
         value={value}
-        onValueChange={onValueChange}
-        onSlidingStart={onSlidingStart}
-        onSlidingComplete={onSlidingComplete}
+        {...(onValueChange ? { onValueChange } : {})}
+        {...(onSlidingStart ? { onSlidingStart } : {})}
+        {...(onSlidingComplete ? { onSlidingComplete } : {})}
         minimumValue={minimumValue}
         maximumValue={maximumValue}
         step={step}
         minimumTrackTintColor={defaultMinimumTrackTintColor}
         maximumTrackTintColor={defaultMaximumTrackTintColor}
-        thumbTintColor={Platform.OS === "ios" ? defaultThumbTintColor : undefined}
+        {...(Platform.OS === "ios" ? { thumbTintColor: defaultThumbTintColor } : {})}
         disabled={disabled}
         style={{ opacity: disabled ? 0.5 : 1 }}
         {...nativeTestProps}

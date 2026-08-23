@@ -61,8 +61,8 @@ describe("TrainingPlanCard", () => {
     toggleLikeMutateMock.mockReset();
   });
 
-  it("renders title, an authored-average metric, and a truthful compact schedule distribution", () => {
-    renderNative(
+  it("renders title, an authored-average metric, and a truthful compact schedule distribution", async () => {
+    await renderNative(
       <TrainingPlanCard
         plan={{
           id: "training-plan-1",
@@ -94,8 +94,8 @@ describe("TrainingPlanCard", () => {
     expect(screen.getByText("Mar 21, 2026 • 8:00 AM")).toBeTruthy();
   });
 
-  it("shows owner and last updated metadata in the footer", () => {
-    renderNative(
+  it("shows owner and last updated metadata in the footer", async () => {
+    await renderNative(
       <TrainingPlanCard
         plan={{
           id: "training-plan-1",
@@ -116,10 +116,10 @@ describe("TrainingPlanCard", () => {
     expect(screen.getByText("Mar 21, 2026 • 8:00 AM")).toBeTruthy();
   });
 
-  it("renders a dense list card without social, attribution, or visual content", () => {
+  it("renders a dense list card without social, attribution, or visual content", async () => {
     const onPress = jest.fn();
 
-    renderNative(
+    await renderNative(
       <TrainingPlanCard
         onPress={onPress}
         plan={{
@@ -147,15 +147,15 @@ describe("TrainingPlanCard", () => {
     expect(screen.queryByTestId("training-plan-planned-preview-training-plan-1")).toBeNull();
     expect(screen.getByTestId("training-plan-card-training-plan-1")).toBeTruthy();
 
-    fireEvent.press(screen.getByText("Half Marathon Build"));
+    await fireEvent.press(screen.getByText("Half Marathon Build"));
 
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps navigation and training plan likes independent", () => {
+  it("keeps navigation and training plan likes independent", async () => {
     const onPress = jest.fn();
 
-    renderNative(
+    await renderNative(
       <TrainingPlanCard
         onPress={onPress}
         plan={{
@@ -167,12 +167,12 @@ describe("TrainingPlanCard", () => {
       />,
     );
 
-    fireEvent.press(screen.getByLabelText("Open training plan Half Marathon Build"));
+    await fireEvent.press(screen.getByLabelText("Open training plan Half Marathon Build"));
 
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(toggleLikeMutateMock).not.toHaveBeenCalled();
 
-    fireEvent.press(screen.getByTestId("training-plan-card-like-button-training-plan-1"));
+    await fireEvent.press(screen.getByTestId("training-plan-card-like-button-training-plan-1"));
 
     expect(toggleLikeMutateMock).toHaveBeenCalledWith({
       entity_id: "training-plan-1",
@@ -182,8 +182,8 @@ describe("TrainingPlanCard", () => {
     expect(screen.queryByText("Plan schedule")).toBeNull();
   });
 
-  it("uses the explicit session target instead of deriving an authored average", () => {
-    renderNative(
+  it("uses the explicit session target instead of deriving an authored average", async () => {
+    await renderNative(
       <TrainingPlanCard
         plan={{
           id: "training-plan-1",
@@ -197,8 +197,8 @@ describe("TrainingPlanCard", () => {
     expect(screen.getByText("Target: 4/week")).toBeTruthy();
   });
 
-  it("renders metadata from a flattened public template projection", () => {
-    renderNative(
+  it("renders metadata from a flattened public template projection", async () => {
+    await renderNative(
       <TrainingPlanCard
         plan={{
           id: "template-1",

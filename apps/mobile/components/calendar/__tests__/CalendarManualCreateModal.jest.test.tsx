@@ -116,8 +116,8 @@ describe("CalendarManualCreateModal", () => {
     jest.clearAllMocks();
   });
 
-  it("submits bounded weekly recurrence for user-created custom events", () => {
-    renderNative(
+  it("submits bounded weekly recurrence for user-created custom events", async () => {
+    await renderNative(
       <CalendarManualCreateModal
         visible
         activeDate="2026-06-02"
@@ -128,9 +128,9 @@ describe("CalendarManualCreateModal", () => {
       />,
     );
 
-    fireEvent.changeText(screen.getByTestId("manual-create-title-input"), "Tuesday mobility");
-    fireEvent(screen.getByLabelText("Repeat weekly"), "onCheckedChange", true);
-    fireEvent.press(screen.getByTestId("manual-create-submit"));
+    await fireEvent.changeText(screen.getByTestId("manual-create-title-input"), "Tuesday mobility");
+    await fireEvent(screen.getByLabelText("Repeat weekly"), "onCheckedChange", true);
+    await fireEvent.press(screen.getByTestId("manual-create-submit"));
 
     expect(submitMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -146,8 +146,8 @@ describe("CalendarManualCreateModal", () => {
     );
   });
 
-  it("keeps custom-event recurrence within supported bounds", () => {
-    renderNative(
+  it("keeps custom-event recurrence within supported bounds", async () => {
+    await renderNative(
       <CalendarManualCreateModal
         visible
         activeDate="2026-06-02"
@@ -158,12 +158,12 @@ describe("CalendarManualCreateModal", () => {
       />,
     );
 
-    fireEvent.changeText(screen.getByTestId("manual-create-title-input"), "Tuesday mobility");
-    fireEvent(screen.getByLabelText("Repeat weekly"), "onCheckedChange", true);
+    await fireEvent.changeText(screen.getByTestId("manual-create-title-input"), "Tuesday mobility");
+    await fireEvent(screen.getByLabelText("Repeat weekly"), "onCheckedChange", true);
     for (let index = 0; index < 60; index++) {
-      fireEvent.press(screen.getByLabelText("Increase occurrence count"));
+      await fireEvent.press(screen.getByLabelText("Increase occurrence count"));
     }
-    fireEvent.press(screen.getByTestId("manual-create-submit"));
+    await fireEvent.press(screen.getByTestId("manual-create-submit"));
 
     expect(submitMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -176,9 +176,9 @@ describe("CalendarManualCreateModal", () => {
 
     submitMock.mockClear();
     for (let index = 0; index < 60; index++) {
-      fireEvent.press(screen.getByLabelText("Decrease occurrence count"));
+      await fireEvent.press(screen.getByLabelText("Decrease occurrence count"));
     }
-    fireEvent.press(screen.getByTestId("manual-create-submit"));
+    await fireEvent.press(screen.getByTestId("manual-create-submit"));
 
     expect(submitMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -190,8 +190,8 @@ describe("CalendarManualCreateModal", () => {
     );
   });
 
-  it("omits recurrence when weekly repeat is disabled", () => {
-    renderNative(
+  it("omits recurrence when weekly repeat is disabled", async () => {
+    await renderNative(
       <CalendarManualCreateModal
         visible
         activeDate="2026-06-02"
@@ -202,8 +202,8 @@ describe("CalendarManualCreateModal", () => {
       />,
     );
 
-    fireEvent.changeText(screen.getByTestId("manual-create-title-input"), "Tuesday mobility");
-    fireEvent.press(screen.getByTestId("manual-create-submit"));
+    await fireEvent.changeText(screen.getByTestId("manual-create-title-input"), "Tuesday mobility");
+    await fireEvent.press(screen.getByTestId("manual-create-submit"));
 
     expect(submitMock).toHaveBeenCalledWith(expect.objectContaining({ recurrence: undefined }));
   });
@@ -211,8 +211,8 @@ describe("CalendarManualCreateModal", () => {
   it.each([
     ["UTC+14", -14 * 60, "00:30", "2026-06-01T10:30:00.000Z", 1, "MO"],
     ["UTC-12", 12 * 60, "23:30", "2026-06-03T11:30:00.000Z", 3, "WE"],
-  ] as const)("derives BYDAY from the persisted startsAt instant in %s", (_timezone, timezoneOffsetMinutes, scheduledTime, expectedStartsAt, expectedUtcDay, expectedByDay) => {
-    renderNative(
+  ] as const)("derives BYDAY from the persisted startsAt instant in %s", async (_timezone, timezoneOffsetMinutes, scheduledTime, expectedStartsAt, expectedUtcDay, expectedByDay) => {
+    await renderNative(
       <CalendarManualCreateModal
         visible
         activeDate="2026-06-02"
@@ -223,9 +223,9 @@ describe("CalendarManualCreateModal", () => {
       />,
     );
 
-    fireEvent.changeText(screen.getByTestId("manual-create-title-input"), "Boundary event");
-    fireEvent.changeText(screen.getByTestId("manual-create-time-button"), scheduledTime);
-    fireEvent(screen.getByLabelText("Repeat weekly"), "onCheckedChange", true);
+    await fireEvent.changeText(screen.getByTestId("manual-create-title-input"), "Boundary event");
+    await fireEvent.changeText(screen.getByTestId("manual-create-time-button"), scheduledTime);
+    await fireEvent(screen.getByLabelText("Repeat weekly"), "onCheckedChange", true);
 
     const RealDate = Date;
     class MockLocalDate extends RealDate {
@@ -251,7 +251,7 @@ describe("CalendarManualCreateModal", () => {
 
     global.Date = MockLocalDate as DateConstructor;
     try {
-      fireEvent.press(screen.getByTestId("manual-create-submit"));
+      await fireEvent.press(screen.getByTestId("manual-create-submit"));
     } finally {
       global.Date = RealDate;
     }

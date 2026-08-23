@@ -38,8 +38,8 @@ const compactValue: CompactTrainingPreferencesValue = {
 };
 
 describe("TrainingPreferencesSurface compact presentation", () => {
-  it("renders only compact controls and a concise summary", () => {
-    renderNative(
+  it("renders only compact controls and a concise summary", async () => {
+    await renderNative(
       <TrainingPreferencesSurface
         presentation="compact"
         value={compactValue}
@@ -58,9 +58,9 @@ describe("TrainingPreferencesSurface compact presentation", () => {
     expect(screen.queryByTestId("training-preferences-tab-baseline-fitness")).toBeNull();
   });
 
-  it("emits controlled preset and dose-limit changes", () => {
+  it("emits controlled preset and dose-limit changes", async () => {
     const onChange = jest.fn();
-    renderNative(
+    await renderNative(
       <TrainingPreferencesSurface
         presentation="compact"
         value={compactValue}
@@ -68,19 +68,19 @@ describe("TrainingPreferencesSurface compact presentation", () => {
       />,
     );
 
-    act(() => {
+    await act(() => {
       screen.getByTestId("training-preferences-preset-safer").props.onPress();
     });
     expect(onChange).toHaveBeenLastCalledWith({ preset: "safer" });
 
-    act(() => {
+    await act(() => {
       screen.getByTestId("training-preferences-compact-max-weekly").props.onChange(480);
     });
     expect(onChange).toHaveBeenLastCalledWith({ maxWeeklyMinutes: 480 });
   });
 
-  it("exposes presets as a labeled native radio group", () => {
-    renderNative(
+  it("exposes presets as a labeled native radio group", async () => {
+    await renderNative(
       <TrainingPreferencesSurface
         presentation="compact"
         value={compactValue}

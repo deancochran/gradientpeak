@@ -47,7 +47,15 @@ jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
   Button: ({ children, onPress, testId, ...props }: MockHostProps) => {
     const ReactActual = jest.requireActual<typeof import("react")>("react");
-    return ReactActual.createElement("Pressable", { ...props, onPress, testID: testId }, children);
+    return ReactActual.createElement(
+      "Pressable",
+      { ...props, onPress, testID: testId },
+      ReactActual.Children.map(children, (child) =>
+        typeof child === "string" || typeof child === "number"
+          ? ReactActual.createElement("Text", null, String(child))
+          : child,
+      ),
+    );
   },
 }));
 jest.mock("@repo/ui/components/date-input", () => ({
@@ -108,26 +116,26 @@ function ControlledHarness({
 }
 
 describe("AthleteBaselineFields", () => {
-  it("does not expose performance-threshold controls", () => {
-    renderNative(<AthleteBaselineFields value={baseValue} onChange={jest.fn()} />);
+  it("does not expose performance-threshold controls", async () => {
+    await renderNative(<AthleteBaselineFields value={baseValue} onChange={jest.fn()} />);
 
     expect(screen.queryByLabelText("Running threshold pace (Optional)")).toBeNull();
     expect(screen.queryByTestId("athlete-baseline-ftp")).toBeNull();
     expect(screen.queryByLabelText("Swimming threshold pace (Optional)")).toBeNull();
   });
 
-  it("reports optional clears with an explicit cleared source", () => {
+  it("reports optional clears with an explicit cleared source", async () => {
     const onChange = jest.fn();
-    renderNative(
+    await renderNative(
       <AthleteBaselineFields value={{ ...baseValue, restingHr: 52 }} onChange={onChange} />,
     );
 
-    fireEvent.changeText(screen.getByTestId("athlete-baseline-resting-hr"), "");
+    await fireEvent.changeText(screen.getByTestId("athlete-baseline-resting-hr"), "");
     expect(onChange).toHaveBeenCalledWith({ field: "restingHr", value: null, source: "cleared" });
   });
 
-  it("describes excluded metric evidence without claiming it was cleared", () => {
-    renderNative(
+  it("describes excluded metric evidence without claiming it was cleared", async () => {
+    await renderNative(
       <AthleteBaselineFields
         value={baseValue}
         onChange={jest.fn()}
@@ -139,14 +147,14 @@ describe("AthleteBaselineFields", () => {
     expect(screen.queryByText("Cleared")).toBeNull();
   });
 
-  it("offers an honest setup-scoped exclusion action for metrics", () => {
+  it("offers an honest setup-scoped exclusion action for metrics", async () => {
     const onChange = jest.fn();
-    renderNative(
+    await renderNative(
       <AthleteBaselineFields value={{ ...baseValue, restingHr: 52 }} onChange={onChange} />,
     );
 
     expect(screen.getByText("Exclude from setup")).toBeTruthy();
-    fireEvent.press(screen.getByTestId("athlete-baseline-restingHr-exclude"));
+    await fireEvent.press(screen.getByTestId("athlete-baseline-restingHr-exclude"));
     expect(onChange).toHaveBeenCalledWith({
       field: "restingHr",
       value: null,
@@ -154,8 +162,8 @@ describe("AthleteBaselineFields", () => {
     });
   });
 
-  it("exposes experience and gender as labeled radio groups with checked state", () => {
-    renderNative(
+  it("exposes experience and gender as labeled radio groups with checked state", async () => {
+    await renderNative(
       <AthleteBaselineFields
         value={{ ...baseValue, experience: "intermediate", gender: "female" }}
         onChange={jest.fn()}
@@ -186,26 +194,26 @@ describe("AthleteBaselineFields", () => {
     });
   });
 
-  it("uses a separate clear action instead of deselecting a checked radio", () => {
+  it("uses a separate clear action instead of deselecting a checked radio", async () => {
     const onChange = jest.fn();
-    renderNative(
+    await renderNative(
       <AthleteBaselineFields value={{ ...baseValue, gender: "female" }} onChange={onChange} />,
     );
 
-    fireEvent.press(screen.getByTestId("athlete-baseline-gender-female"));
+    await fireEvent.press(screen.getByTestId("athlete-baseline-gender-female"));
     expect(onChange).toHaveBeenLastCalledWith({
       field: "gender",
       value: "female",
       source: "manual",
     });
 
-    fireEvent.press(screen.getByTestId("athlete-baseline-gender-clear"));
+    await fireEvent.press(screen.getByTestId("athlete-baseline-gender-clear"));
     expect(onChange).toHaveBeenLastCalledWith({ field: "gender", value: null, source: "cleared" });
   });
 
-  it("marks reset-to-estimate as estimated rather than manual", () => {
+  it("marks reset-to-estimate as estimated rather than manual", async () => {
     const onChange = jest.fn();
-    renderNative(
+    await renderNative(
       <AthleteBaselineFields
         value={{ ...baseValue, maxHr: 190 }}
         onChange={onChange}
@@ -214,40 +222,40 @@ describe("AthleteBaselineFields", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("athlete-baseline-maxHr-reset-estimate"));
+    await fireEvent.press(screen.getByTestId("athlete-baseline-maxHr-reset-estimate"));
     expect(onChange).toHaveBeenCalledWith({ field: "maxHr", value: 185, source: "estimated" });
   });
 
-  it("keeps kilograms canonical while editing in pounds", () => {
+  it("keeps kilograms canonical while editing in pounds", async () => {
     const onChange = jest.fn();
-    renderNative(
+    await renderNative(
       <AthleteBaselineFields
         value={{ ...baseValue, weightDisplayUnit: "lbs" }}
         onChange={onChange}
       />,
     );
 
-    fireEvent.changeText(screen.getByTestId("athlete-baseline-weight"), "154.3");
+    await fireEvent.changeText(screen.getByTestId("athlete-baseline-weight"), "154.3");
     expect(onChange).toHaveBeenCalledWith({ field: "weightKg", value: 70, source: "manual" });
   });
 
-  it("shows canonical kilogram feedback for out-of-range weight", () => {
-    renderNative(<ControlledHarness />);
+  it("shows canonical kilogram feedback for out-of-range weight", async () => {
+    await renderNative(<ControlledHarness />);
 
-    fireEvent.changeText(screen.getByTestId("athlete-baseline-weight"), "29.9");
+    await fireEvent.changeText(screen.getByTestId("athlete-baseline-weight"), "29.9");
     expect(screen.getByTestId("athlete-baseline-weight").props.error).toBe(
       "Enter a weight from 30 to 300 kg.",
     );
 
-    fireEvent.changeText(screen.getByTestId("athlete-baseline-weight"), "30");
+    await fireEvent.changeText(screen.getByTestId("athlete-baseline-weight"), "30");
     expect(screen.getByTestId("athlete-baseline-weight").props.error).toBeUndefined();
   });
 
-  it("submits only the current non-threshold baseline contract", () => {
+  it("submits only the current non-threshold baseline contract", async () => {
     const onNext = jest.fn();
-    renderNative(<ControlledHarness onNext={onNext} />);
+    await renderNative(<ControlledHarness onNext={onNext} />);
 
-    fireEvent.press(screen.getByTestId("athlete-baseline-next"));
+    await fireEvent.press(screen.getByTestId("athlete-baseline-next"));
 
     const submitted = onNext.mock.calls[0]?.[0];
     expect(submitted).not.toHaveProperty("ftp");

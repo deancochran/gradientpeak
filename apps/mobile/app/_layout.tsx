@@ -1,10 +1,10 @@
 // apps/native/app/_layout.tsx
 import "../polyfills";
-import { ThemeProvider } from "@react-navigation/native";
 import { NATIVE_THEME_VARIABLES } from "@repo/tailwindcss/native";
 import { Button } from "@repo/ui/components/button";
 import { Spinner } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
+import { ThemeProvider } from "expo-router/react-navigation";
 import "@/global.css";
 import { PortalHost } from "@rn-primitives/portal";
 import { router, Slot } from "expo-router";

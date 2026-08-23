@@ -10,10 +10,10 @@ import {
 } from "./index.native";
 
 describe("Select native", () => {
-  it("renders trigger and option content", () => {
+  it("renders trigger and option content", async () => {
     const selectedOption = selectFixtures.sessionFocus.options[1]!;
 
-    const { getByTestId } = renderNative(
+    const { getByTestId } = await renderNative(
       <Select onValueChange={() => {}} value={selectedOption as never}>
         <SelectTrigger testID={`${selectFixtures.sessionFocus.testId}-trigger`}>
           <SelectValue placeholder={selectFixtures.sessionFocus.placeholder} />
@@ -35,8 +35,8 @@ describe("Select native", () => {
     expect(getByTestId(`${selectedOption.value}-option`)).toBeTruthy();
   });
 
-  it("defaults the option list to a bounded nested scroll view", () => {
-    const { getByTestId } = renderNative(
+  it("defaults the option list to a bounded nested scroll view", async () => {
+    const { getByTestId } = await renderNative(
       <NativeSelectScrollView testID="native-select-scroll-view" />,
     );
 
@@ -49,9 +49,9 @@ describe("Select native", () => {
     );
   });
 
-  it("composes caller styles and allows native scroll props to override defaults", () => {
+  it("composes caller styles and allows native scroll props to override defaults", async () => {
     const callerStyle = { maxHeight: 320 };
-    const { getByTestId } = renderNative(
+    const { getByTestId } = await renderNative(
       <NativeSelectScrollView
         keyboardShouldPersistTaps="always"
         nestedScrollEnabled={false}
@@ -67,8 +67,8 @@ describe("Select native", () => {
     expect(scrollView.props.style).toEqual([{ maxHeight: 208 }, callerStyle]);
   });
 
-  it("preserves a caller-provided NativeWind max-height override", () => {
-    const { getByTestId } = renderNative(
+  it("preserves a caller-provided NativeWind max-height override", async () => {
+    const { getByTestId } = await renderNative(
       <NativeSelectScrollView className="max-h-80" testID="class-height-select-scroll-view" />,
     );
 

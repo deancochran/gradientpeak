@@ -1,6 +1,6 @@
-import type { Meta, StoryObj } from "@storybook/react";
-import { expect, fn } from "@storybook/test";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ChevronRight } from "lucide-react";
+import { expect, fn } from "storybook/test";
 
 import { buttonFixtures } from "./fixtures";
 import { Button, IconButton } from "./index.web";

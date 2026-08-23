@@ -37,7 +37,7 @@ describe("TrainingPathLoadChartSection", () => {
     mockDailyChartProps.length = 0;
   });
 
-  it("keeps an existing chart mounted while a wider date range loads", () => {
+  it("keeps an existing chart mounted while a wider date range loads", async () => {
     const props = {
       dailyPoints: [
         {
@@ -47,17 +47,17 @@ describe("TrainingPathLoadChartSection", () => {
         },
       ],
     };
-    const { rerender } = render(<TrainingPathLoadChartSection {...props} />);
+    const { rerender } = await render(<TrainingPathLoadChartSection {...props} />);
 
     expect(screen.getByTestId("training-path-daily-adjustment-chart")).toBeTruthy();
 
-    rerender(<TrainingPathLoadChartSection {...props} loading />);
+    await rerender(<TrainingPathLoadChartSection {...props} loading />);
 
     expect(screen.getByTestId("training-path-daily-adjustment-chart")).toBeTruthy();
     expect(screen.queryByText("Loading training path…")).toBeNull();
   });
 
-  it("renders chartable daily data instead of a no-goal state", () => {
+  it("renders chartable daily data instead of a no-goal state", async () => {
     const emptyModel = {
       domains: { fitness: [0, 1] as [number, number], load: [0, 1] as [number, number] },
       emptyState: "noGoal" as const,
@@ -67,7 +67,7 @@ describe("TrainingPathLoadChartSection", () => {
       weeks: [],
     };
 
-    render(
+    await render(
       <TrainingPathLoadChartSection
         dailyPoints={[{ date: "2026-06-02", effectiveCompletedLoad: 42 }]}
         model={emptyModel}
@@ -80,7 +80,7 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.queryByText("Add goal")).toBeNull();
   });
 
-  it("keeps the no-goal action when date buckets contain no chartable data", () => {
+  it("keeps the no-goal action when date buckets contain no chartable data", async () => {
     const emptyModel = {
       domains: { fitness: [0, 1] as [number, number], load: [0, 1] as [number, number] },
       emptyState: "noGoal" as const,
@@ -90,7 +90,7 @@ describe("TrainingPathLoadChartSection", () => {
       weeks: [],
     };
 
-    render(
+    await render(
       <TrainingPathLoadChartSection
         dailyPoints={[{ date: "2026-06-02" }]}
         model={emptyModel}
@@ -103,7 +103,7 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.queryByTestId("training-path-daily-adjustment-chart")).toBeNull();
   });
 
-  it("does not let a legacy weekly target suppress the no-goal state", () => {
+  it("does not let a legacy weekly target suppress the no-goal state", async () => {
     const emptyModel = {
       domains: { fitness: [0, 1] as [number, number], load: [0, 1] as [number, number] },
       emptyState: "noGoal" as const,
@@ -130,7 +130,7 @@ describe("TrainingPathLoadChartSection", () => {
       ],
     };
 
-    render(
+    await render(
       <TrainingPathLoadChartSection
         model={emptyModel}
         onCreateGoal={jest.fn()}
@@ -142,7 +142,7 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.queryByTestId("weekly-training-path-chart")).toBeNull();
   });
 
-  it("prefers an explicit unavailable state over the model empty state", () => {
+  it("prefers an explicit unavailable state over the model empty state", async () => {
     const emptyModel = {
       domains: { fitness: [0, 1] as [number, number], load: [0, 1] as [number, number] },
       emptyState: "noGoal" as const,
@@ -152,7 +152,7 @@ describe("TrainingPathLoadChartSection", () => {
       weeks: [],
     };
 
-    render(
+    await render(
       <TrainingPathLoadChartSection
         emptyState={{
           body: "Check your connection and try again.",
@@ -169,8 +169,8 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.queryByTestId("weekly-training-path-chart")).toBeNull();
   });
 
-  it("renders only the range selector and factual chart legend", () => {
-    render(
+  it("renders only the range selector and factual chart legend", async () => {
+    await render(
       <TrainingPathLoadChartSection
         dailyPoints={[
           { date: "2026-06-02", effectiveLoadStatus: "complete", effectiveRemainingLoad: 50 },
@@ -199,16 +199,16 @@ describe("TrainingPathLoadChartSection", () => {
     expect(helpButton.props.className).toContain("h-11 w-11");
     expect(screen.queryByTestId("training-path-settings-button")).toBeNull();
 
-    fireEvent.press(helpButton);
+    await fireEvent.press(helpButton);
     expect(screen.getByTestId("training-path-legend-modal")).toBeTruthy();
     expect(screen.getAllByText("Actual fitness")).toHaveLength(2);
     expect(screen.getAllByText("Planned fitness projection")).toHaveLength(2);
     expect(screen.queryByText("Recommended projection")).toBeNull();
   });
 
-  it("aggregates only the loaded bounded window when the range changes", () => {
+  it("aggregates only the loaded bounded window when the range changes", async () => {
     const onViewDetails = jest.fn();
-    render(
+    await render(
       <TrainingPathLoadChartSection
         dailyPoints={[
           {
@@ -229,13 +229,13 @@ describe("TrainingPathLoadChartSection", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("training-path-range-dropdown-weekly"));
+    await fireEvent.press(screen.getByTestId("training-path-range-dropdown-weekly"));
     expect(mockDailyChartProps.at(-1)).toMatchObject({
       range: "weekly",
       points: [expect.objectContaining({ date: "2026-06-29", effectiveCompletedLoad: 15 })],
     });
 
-    fireEvent.press(screen.getByTestId("training-path-range-dropdown-monthly"));
+    await fireEvent.press(screen.getByTestId("training-path-range-dropdown-monthly"));
     expect(mockDailyChartProps.at(-1)).toMatchObject({
       range: "monthly",
       points: [
@@ -246,14 +246,14 @@ describe("TrainingPathLoadChartSection", () => {
     expect(
       screen.getByText("Monthly totals use the 84-day Plan range; edge months may be partial."),
     ).toBeTruthy();
-    fireEvent.press(screen.getByTestId("training-path-view-details"));
+    await fireEvent.press(screen.getByTestId("training-path-view-details"));
     expect(onViewDetails).toHaveBeenCalledWith({ period: "month", anchorDate: "2026-06-01" });
   });
 
-  it("maps a controlled persisted range to the selected ledger period and factual summary", () => {
+  it("maps a controlled persisted range to the selected ledger period and factual summary", async () => {
     const onViewDetails = jest.fn();
     const onChartRangeChange = jest.fn();
-    render(
+    await render(
       <TrainingPathLoadChartSection
         chartRange="weekly"
         dailyPoints={[
@@ -285,14 +285,14 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.getByLabelText("Fitness: 40")).toBeTruthy();
     expect(screen.queryByLabelText("Actual fatigue: 44")).toBeNull();
     expect(screen.queryByLabelText("Planned fatigue: 46")).toBeNull();
-    fireEvent.press(screen.getByTestId("training-path-view-details"));
+    await fireEvent.press(screen.getByTestId("training-path-view-details"));
     expect(onViewDetails).toHaveBeenCalledWith({ period: "week", anchorDate: "2026-06-29" });
-    fireEvent.press(screen.getByTestId("training-path-range-dropdown-monthly"));
+    await fireEvent.press(screen.getByTestId("training-path-range-dropdown-monthly"));
     expect(onChartRangeChange).toHaveBeenCalledWith("monthly");
   });
 
-  it("keeps the compact selected-period indicator visible above View details", () => {
-    render(
+  it("keeps the compact selected-period indicator visible above View details", async () => {
+    await render(
       <TrainingPathLoadChartSection
         dailyPoints={[
           {
@@ -313,8 +313,8 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.getByTestId("training-path-view-details")).toBeTruthy();
   });
 
-  it("keeps unavailable and known-zero workload distinct in the compact summary", () => {
-    const { rerender } = render(
+  it("keeps unavailable and known-zero workload distinct in the compact summary", async () => {
+    const { rerender } = await render(
       <TrainingPathLoadChartSection
         dailyPoints={[
           {
@@ -331,7 +331,7 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.getByLabelText("Completed load: 0")).toBeTruthy();
     expect(screen.getByLabelText("Planned load: 0 · No planned load")).toBeTruthy();
 
-    rerender(
+    await rerender(
       <TrainingPathLoadChartSection
         dailyPoints={[
           {
@@ -347,7 +347,7 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.getByLabelText("Completed load: Unavailable")).toBeTruthy();
     expect(screen.getByLabelText("Planned load: Not available")).toBeTruthy();
 
-    rerender(
+    await rerender(
       <TrainingPathLoadChartSection
         dailyPoints={[
           {
@@ -365,8 +365,8 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.getByLabelText("Planned load: Not available")).toBeTruthy();
   });
 
-  it("labels a finite partial planned Load as incomplete", () => {
-    render(
+  it("labels a finite partial planned Load as incomplete", async () => {
+    await render(
       <TrainingPathLoadChartSection
         dailyPoints={[
           {
@@ -382,7 +382,7 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.getByLabelText("Planned load: 30 incomplete")).toBeTruthy();
   });
 
-  it("restores the compact selected-period summary in the Plan chart section", () => {
+  it("restores the compact selected-period summary in the Plan chart section", async () => {
     const model = {
       domains: { fitness: [0, 100] as [number, number], load: [0, 100] as [number, number] },
       emptyState: null,
@@ -392,7 +392,7 @@ describe("TrainingPathLoadChartSection", () => {
       weeks: [],
     };
 
-    render(
+    await render(
       <TrainingPathSection
         dailyPoints={[
           {
@@ -413,8 +413,8 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.getByLabelText("Planned load: 20")).toBeTruthy();
   });
 
-  it("uses the available tab height with only View details below the chart", () => {
-    render(
+  it("uses the available tab height with only View details below the chart", async () => {
+    await render(
       <TrainingPathLoadChartSection
         dailyPoints={[{ date: "2026-06-29", effectiveCompletedLoad: 10 }]}
         fillAvailableHeight
@@ -431,8 +431,8 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.getByTestId("training-path-view-details")).toBeTruthy();
   });
 
-  it("keeps the legend behind the Help button when inline legend space is disabled", () => {
-    render(
+  it("keeps the legend behind the Help button when inline legend space is disabled", async () => {
+    await render(
       <TrainingPathLoadChartSection
         dailyPoints={[{ date: "2026-06-29", effectiveRemainingLoad: 20 }]}
         showInlineLegend={false}
@@ -440,12 +440,12 @@ describe("TrainingPathLoadChartSection", () => {
     );
 
     expect(screen.queryByTestId("training-path-primary-legend")).toBeNull();
-    fireEvent.press(screen.getByTestId("training-path-legend-button"));
+    await fireEvent.press(screen.getByTestId("training-path-legend-button"));
     expect(screen.getByTestId("training-path-legend-modal")).toBeTruthy();
   });
 
-  it("explains the unavailable completed-load marker only when it is rendered", () => {
-    const { rerender } = render(
+  it("explains the unavailable completed-load marker only when it is rendered", async () => {
+    const { rerender } = await render(
       <TrainingPathLoadChartSection
         dailyPoints={[
           { date: "2026-06-29", fitnessCtl: 40, hasCompletedActivityWithoutLoad: true },
@@ -455,7 +455,7 @@ describe("TrainingPathLoadChartSection", () => {
 
     expect(screen.getByText("Completed load unavailable")).toBeTruthy();
 
-    rerender(
+    await rerender(
       <TrainingPathLoadChartSection
         dailyPoints={[{ date: "2026-06-29", fitnessCtl: 40, plannedLoad: 0 }]}
       />,
@@ -464,7 +464,7 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.queryByText("Completed load unavailable")).toBeNull();
   });
 
-  it("uses the weekly fallback legend when daily layers cannot render", () => {
+  it("uses the weekly fallback legend when daily layers cannot render", async () => {
     const weeklyModel = {
       domains: { fitness: [0, 100] as [number, number], load: [0, 100] as [number, number] },
       emptyState: null,
@@ -493,7 +493,9 @@ describe("TrainingPathLoadChartSection", () => {
       ],
     };
 
-    render(<TrainingPathLoadChartSection model={weeklyModel} onSelectedWeekChange={jest.fn()} />);
+    await render(
+      <TrainingPathLoadChartSection model={weeklyModel} onSelectedWeekChange={jest.fn()} />,
+    );
 
     expect(screen.getByTestId("weekly-training-path-chart")).toBeTruthy();
     expect(screen.getByText("Current fitness")).toBeTruthy();
@@ -501,8 +503,8 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.queryByText("Form (zero centered)")).toBeNull();
   });
 
-  it("does not render the Plan activity/event feed beneath the analytical chart", () => {
-    render(
+  it("does not render the Plan activity/event feed beneath the analytical chart", async () => {
+    await render(
       <TrainingPathLoadChartSection
         dailyPoints={[{ date: "2026-06-02", effectiveRemainingLoad: 20 }]}
         renderBelowChart={() => createElement("Text", null, "Activity and event feed")}
@@ -512,7 +514,7 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.queryByText("Activity and event feed")).toBeNull();
   });
 
-  it("never renders recommendation layers for goal-backed data", () => {
+  it("never renders recommendation layers for goal-backed data", async () => {
     const modelWithoutGoal = {
       domains: { fitness: [0, 100] as [number, number], load: [0, 100] as [number, number] },
       emptyState: null,
@@ -536,7 +538,7 @@ describe("TrainingPathLoadChartSection", () => {
         targetFitnessCtl: 42,
       },
     ];
-    const { rerender } = render(
+    const { rerender } = await render(
       <TrainingPathLoadChartSection dailyPoints={dailyPoints} model={modelWithoutGoal} />,
     );
 
@@ -544,7 +546,9 @@ describe("TrainingPathLoadChartSection", () => {
     expect(screen.queryByText("Recommended projection")).toBeNull();
     expect(mockDailyChartProps.at(-1)).not.toHaveProperty("showRecommendedProjection");
 
-    rerender(<TrainingPathLoadChartSection dailyPoints={dailyPoints} model={modelWithGoal} />);
+    await rerender(
+      <TrainingPathLoadChartSection dailyPoints={dailyPoints} model={modelWithGoal} />,
+    );
 
     expect(screen.queryByText("Recommended")).toBeNull();
     expect(screen.queryByText("Recommended projection")).toBeNull();

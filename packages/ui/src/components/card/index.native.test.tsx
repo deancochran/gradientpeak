@@ -11,8 +11,8 @@ import { cardFixtures } from "./fixtures";
 import { Card, CardContent, CardHeader, CardTitle } from "./index.native";
 
 describe("Card native", () => {
-  it("maps normalized test props and renders heading content", () => {
-    const { getByLabelText, getByTestId, getByText } = renderNative(
+  it("maps normalized test props and renders heading content", async () => {
+    const { getByLabelText, getByTestId, getByText } = await renderNative(
       <Card {...cardFixtures.profile}>
         <CardHeader>
           <CardTitle>{cardFixtures.profile.title}</CardTitle>

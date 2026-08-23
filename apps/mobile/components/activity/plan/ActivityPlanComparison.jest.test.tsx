@@ -29,8 +29,8 @@ jest.mock("@/components/activity-plan/activity/TimelineChart", () => ({
 }));
 
 describe("ActivityPlanComparison", () => {
-  it("uses canonical Common Load and normalized intensity", () => {
-    const rendered = renderNative(
+  it("uses canonical Common Load and normalized intensity", async () => {
+    const rendered = await renderNative(
       <ActivityPlanComparison
         activityPlan={{
           id: "plan-1",

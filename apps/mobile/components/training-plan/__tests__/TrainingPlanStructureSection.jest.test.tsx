@@ -1,6 +1,6 @@
 import { act } from "@testing-library/react-native";
 import { isValidElement, type ReactNode } from "react";
-import type { ReactTestInstance } from "react-test-renderer";
+import type { TestInstance as ReactTestInstance } from "test-renderer";
 import { createHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
 import { TrainingPlanStructureSection } from "../TrainingPlanStructureSection";
@@ -26,7 +26,7 @@ jest.mock("@repo/ui/components/dialog", () => ({
 jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
 
 const getAllByTypeOrEmpty = (type: string) =>
-  screen.UNSAFE_root.findAll((node: ReactTestInstance) => node.type === type);
+  screen.container.queryAll((node: ReactTestInstance) => node.type === type);
 
 const getNodeText = (children: ReactNode): string => {
   if (typeof children === "string") return children;
@@ -44,14 +44,14 @@ const findTouchableByText = (text: string) =>
     }
 
     return (
-      node.findAll((child: ReactTestInstance) => getNodeText(child.props.children) === text)
+      node.queryAll((child: ReactTestInstance) => getNodeText(child.props.children) === text)
         .length > 0
     );
   });
 
 describe("TrainingPlanStructureSection", () => {
-  it("renders the session-view empty state", () => {
-    renderNative(
+  it("renders the session-view empty state", async () => {
+    await renderNative(
       <TrainingPlanStructureSection
         activityPlanItems={[]}
         activityPlanNameById={new Map()}
@@ -73,10 +73,10 @@ describe("TrainingPlanStructureSection", () => {
     expect(screen.getByText(/No structured sessions found in this template yet./)).toBeTruthy();
   });
 
-  it("delegates picker close events back to the route owner", () => {
+  it("delegates picker close events back to the route owner", async () => {
     const onActivityPickerOpenChange = jest.fn();
 
-    renderNative(
+    await renderNative(
       <TrainingPlanStructureSection
         activityPlanItems={[]}
         activityPlanNameById={new Map()}
@@ -99,17 +99,17 @@ describe("TrainingPlanStructureSection", () => {
       (node: ReactTestInstance) => getNodeText(node.props.children) === "Close",
     );
     if (!closeButton) throw new Error("Expected a Close button");
-    act(() => {
+    await act(() => {
       closeButton.props.onPress();
     });
 
     expect(onActivityPickerOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("opens the activity picker for an owned session", () => {
+  it("opens the activity picker for an owned session", async () => {
     const onOpenActivityPickerForSession = jest.fn();
 
-    renderNative(
+    await renderNative(
       <TrainingPlanStructureSection
         activityPlanItems={[]}
         activityPlanNameById={new Map([["activity-1", "Activity"]])}
@@ -148,7 +148,7 @@ describe("TrainingPlanStructureSection", () => {
 
     const trigger = findTouchableByText("Change");
     if (!trigger) throw new Error("Expected a Change control");
-    act(() => {
+    await act(() => {
       trigger.props.onPress();
     });
 

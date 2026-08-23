@@ -84,7 +84,7 @@ function getBackdropCopy(mode: RecordingBackdropModel["mode"]) {
   }
   return {
     label: "Recording focus",
-    description: "Track time, workout steps, and connected sensor metrics without location.",
+    description: "Track time, activity steps, and connected sensor metrics without location.",
   };
 }
 

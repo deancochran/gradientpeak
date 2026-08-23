@@ -571,10 +571,10 @@ function buildWeeks(input: NormalizedTrainingPathInput, sources: TrainingPathSou
         !load.completedAggregateInvalid
           ? Math.round(load.completedLoad)
           : null,
-      completedLoadStatus,
+      ...(completedLoadStatus !== undefined ? { completedLoadStatus } : {}),
       completedLoadUnavailable: completedLoadStatus === "unavailable",
       plannedLoad: load?.plannedHasKnownLoad ? Math.round(load.plannedLoad) : null,
-      plannedLoadStatus,
+      ...(plannedLoadStatus !== undefined ? { plannedLoadStatus } : {}),
       targetLoad:
         hasCompleteTargetCoverage && typeof load?.targetLoad === "number"
           ? Math.round(load.targetLoad)

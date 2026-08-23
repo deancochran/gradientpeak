@@ -154,7 +154,7 @@ function DraftHarness() {
   );
 }
 
-function renderDraftHarness({
+async function renderDraftHarness({
   activeSheet = "activityFilters",
   categoryFilter = "bike",
   sort = "oldest",
@@ -169,7 +169,7 @@ function renderDraftHarness({
   onApplyPlanningPreferences?: jest.Mock;
   onApplyMetadata?: jest.Mock;
 } = {}) {
-  renderNative(
+  await renderNative(
     <TrainingPlanBuilderSheetDraftsProvider
       activeSheet={activeSheet}
       activityPlanCategoryFilter={categoryFilter}
@@ -190,31 +190,31 @@ function renderDraftHarness({
 
 describe("TrainingPlanBuilderSheetDraftsProvider", () => {
   it("resets, applies, and cancels activity filter drafts without committing stale values", async () => {
-    const { onApplyActivityFilters } = renderDraftHarness();
+    const { onApplyActivityFilters } = await renderDraftHarness();
 
     expect(screen.getByTestId("activity-filter-draft").props.children).toBe("bike|oldest");
 
-    fireEvent.press(screen.getByTestId("activity-filter-set-run-name"));
+    await fireEvent.press(screen.getByTestId("activity-filter-set-run-name"));
     await waitFor(() => {
       expect(screen.getByTestId("activity-filter-draft").props.children).toBe("run|name");
     });
 
-    fireEvent.press(screen.getByTestId("activity-filter-reset"));
+    await fireEvent.press(screen.getByTestId("activity-filter-reset"));
     await waitFor(() => {
       expect(screen.getByTestId("activity-filter-draft").props.children).toBe("all|newest");
     });
-    fireEvent.press(screen.getByTestId("activity-filter-apply"));
+    await fireEvent.press(screen.getByTestId("activity-filter-apply"));
     expect(onApplyActivityFilters).toHaveBeenLastCalledWith({
       categoryFilter: null,
       sort: "newest",
     });
 
-    fireEvent.press(screen.getByTestId("activity-filter-set-run-name"));
-    fireEvent.press(screen.getByTestId("activity-filter-cancel"));
+    await fireEvent.press(screen.getByTestId("activity-filter-set-run-name"));
+    await fireEvent.press(screen.getByTestId("activity-filter-cancel"));
     await waitFor(() => {
       expect(screen.getByTestId("activity-filter-draft").props.children).toBe("bike|oldest");
     });
-    fireEvent.press(screen.getByTestId("activity-filter-apply"));
+    await fireEvent.press(screen.getByTestId("activity-filter-apply"));
     expect(onApplyActivityFilters).toHaveBeenLastCalledWith({
       categoryFilter: "bike",
       sort: "oldest",
@@ -222,30 +222,30 @@ describe("TrainingPlanBuilderSheetDraftsProvider", () => {
   });
 
   it("cancels planning preference drafts before apply and only commits explicit applies", async () => {
-    const { onApplyPlanningPreferences } = renderDraftHarness({ activeSheet: "preferences" });
+    const { onApplyPlanningPreferences } = await renderDraftHarness({ activeSheet: "preferences" });
 
     expect(screen.getByTestId("preferences-can-revert").props.children).toBe("no");
-    fireEvent.press(screen.getByTestId("preferences-set-duration"));
+    await fireEvent.press(screen.getByTestId("preferences-set-duration"));
     await waitFor(() => {
       expect(screen.getByTestId("preferences-draft").props.children).toContain("8");
       expect(screen.getByTestId("preferences-can-revert").props.children).toBe("yes");
     });
 
-    fireEvent.press(screen.getByTestId("preferences-clear-duration"));
+    await fireEvent.press(screen.getByTestId("preferences-clear-duration"));
     await waitFor(() => {
       expect(screen.getByTestId("preferences-can-revert").props.children).toBe("no");
     });
 
-    fireEvent.press(screen.getByTestId("preferences-set-duration"));
-    fireEvent.press(screen.getByTestId("preferences-cancel"));
+    await fireEvent.press(screen.getByTestId("preferences-set-duration"));
+    await fireEvent.press(screen.getByTestId("preferences-cancel"));
     await waitFor(() => {
       expect(screen.getByTestId("preferences-can-revert").props.children).toBe("no");
     });
-    fireEvent.press(screen.getByTestId("preferences-apply"));
+    await fireEvent.press(screen.getByTestId("preferences-apply"));
     expect(onApplyPlanningPreferences).toHaveBeenLastCalledWith(basePlanPreferences);
 
-    fireEvent.press(screen.getByTestId("preferences-set-duration"));
-    fireEvent.press(screen.getByTestId("preferences-apply"));
+    await fireEvent.press(screen.getByTestId("preferences-set-duration"));
+    await fireEvent.press(screen.getByTestId("preferences-apply"));
     expect(onApplyPlanningPreferences).toHaveBeenLastCalledWith({
       ...basePlanPreferences,
       durationWeeks: 8,
@@ -253,34 +253,34 @@ describe("TrainingPlanBuilderSheetDraftsProvider", () => {
   });
 
   it("blocks impossible planning preference drafts from applying", async () => {
-    const { onApplyPlanningPreferences } = renderDraftHarness({ activeSheet: "preferences" });
+    const { onApplyPlanningPreferences } = await renderDraftHarness({ activeSheet: "preferences" });
 
     expect(screen.getByTestId("preferences-can-save").props.children).toBe("yes");
-    fireEvent.press(screen.getByTestId("preferences-set-impossible-frequency"));
+    await fireEvent.press(screen.getByTestId("preferences-set-impossible-frequency"));
 
     await waitFor(() => {
       expect(screen.getByTestId("preferences-can-save").props.children).toBe("no");
     });
 
-    fireEvent.press(screen.getByTestId("preferences-apply"));
+    await fireEvent.press(screen.getByTestId("preferences-apply"));
     expect(onApplyPlanningPreferences).not.toHaveBeenCalled();
   });
 
   it("keeps metadata local until save and restores it on cancel", async () => {
-    const { onApplyMetadata } = renderDraftHarness({ activeSheet: "metadata" });
+    const { onApplyMetadata } = await renderDraftHarness({ activeSheet: "metadata" });
 
-    fireEvent.press(screen.getByTestId("metadata-set-name"));
-    fireEvent.press(screen.getByTestId("metadata-set-public"));
+    await fireEvent.press(screen.getByTestId("metadata-set-name"));
+    await fireEvent.press(screen.getByTestId("metadata-set-public"));
     expect(onApplyMetadata).not.toHaveBeenCalled();
 
-    fireEvent.press(screen.getByTestId("metadata-cancel"));
+    await fireEvent.press(screen.getByTestId("metadata-cancel"));
     await waitFor(() => {
       expect(screen.getByTestId("metadata-draft").props.children).toContain('"Plan"');
     });
 
-    fireEvent.press(screen.getByTestId("metadata-set-name"));
-    fireEvent.press(screen.getByTestId("metadata-set-public"));
-    fireEvent.press(screen.getByTestId("metadata-apply"));
+    await fireEvent.press(screen.getByTestId("metadata-set-name"));
+    await fireEvent.press(screen.getByTestId("metadata-set-public"));
+    await fireEvent.press(screen.getByTestId("metadata-apply"));
     expect(onApplyMetadata).toHaveBeenCalledWith({
       name: "Updated plan",
       description: "",
@@ -289,12 +289,12 @@ describe("TrainingPlanBuilderSheetDraftsProvider", () => {
   });
 
   it("marks invalid metadata drafts unsaveable", async () => {
-    renderDraftHarness({ activeSheet: "metadata" });
-    fireEvent.press(screen.getByTestId("metadata-set-invalid-name"));
+    await renderDraftHarness({ activeSheet: "metadata" });
+    await fireEvent.press(screen.getByTestId("metadata-set-invalid-name"));
     await waitFor(() => {
       expect(screen.getByTestId("metadata-can-save").props.children).toBe("no");
     });
-    fireEvent.press(screen.getByTestId("metadata-apply"));
+    await fireEvent.press(screen.getByTestId("metadata-apply"));
     await waitFor(() => {
       expect(screen.getByTestId("metadata-apply-result").props.children).toBe("false");
     });

@@ -163,7 +163,7 @@ jest.mock("@/components/shared/detail", () => ({
         React.createElement(
           "Button",
           { key: action.testID, onPress: action.onPress, testID: action.testID },
-          action.label,
+          React.createElement("Text", null, action.label),
         ),
       ),
     ),
@@ -255,12 +255,12 @@ describe("group event detail route", () => {
     groupVm.viewer = { canCreateGroupEvent: false };
   });
 
-  it("does not render protected event details when access is denied", () => {
+  it("does not render protected event details when access is denied", async () => {
     detailVm.event = null;
     detailVm.error = new Error("You don't have permission to view this group");
     detailVm.isError = true;
 
-    renderNative(<GroupEventDetailRoute />);
+    await renderNative(<GroupEventDetailRoute />);
 
     expect(screen.getByTestId("group-event-detail-unavailable")).toBeTruthy();
     expect(screen.getByText("Unable to load event")).toBeTruthy();
@@ -290,13 +290,13 @@ describe("group event detail route", () => {
       },
     ];
 
-    renderNative(<GroupEventDetailRoute />);
+    await renderNative(<GroupEventDetailRoute />);
 
     expect(screen.getByText("Repeating event")).toBeTruthy();
     expect(screen.getByText("Next Occurrence")).toBeTruthy();
 
-    fireEvent.press(screen.getByText("Apply to series"));
-    fireEvent.press(screen.getByText("Going to series"));
+    await fireEvent.press(screen.getByText("Apply to series"));
+    await fireEvent.press(screen.getByText("Going to series"));
 
     await waitFor(() => {
       expect(rsvpEventSeriesMock).toHaveBeenCalledWith({
@@ -307,7 +307,7 @@ describe("group event detail route", () => {
     expect(refetchMock).toHaveBeenCalled();
   });
 
-  it("shows occurrence query failures and retries them", () => {
+  it("shows occurrence query failures and retries them", async () => {
     detailVm.event = { ...baseEvent, is_recurring_series: true };
     detailVm.seriesOccurrencesQuery = {
       error: new Error("Network unavailable"),
@@ -317,15 +317,15 @@ describe("group event detail route", () => {
       refetch: refetchMock,
     };
 
-    renderNative(<GroupEventDetailRoute />);
+    await renderNative(<GroupEventDetailRoute />);
 
     expect(screen.getByText("Unable to load future dates")).toBeTruthy();
     expect(screen.getByText("Network unavailable")).toBeTruthy();
-    fireEvent.press(screen.getByText("Try again"));
+    await fireEvent.press(screen.getByText("Try again"));
     expect(refetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("shows the owning group avatar row and links to the group detail page", () => {
+  it("shows the owning group avatar row and links to the group detail page", async () => {
     detailVm.event = {
       ...baseEvent,
       group: {
@@ -336,12 +336,12 @@ describe("group event detail route", () => {
       },
     };
 
-    renderNative(<GroupEventDetailRoute />);
+    await renderNative(<GroupEventDetailRoute />);
 
     expect(screen.getByText("Ride Club")).toBeTruthy();
     expect(screen.getByText("RC")).toBeTruthy();
 
-    fireEvent.press(screen.getByLabelText("Open group Ride Club"));
+    await fireEvent.press(screen.getByLabelText("Open group Ride Club"));
 
     expect(pushMock).toHaveBeenCalledWith({
       pathname: "/group-detail",
@@ -349,7 +349,7 @@ describe("group event detail route", () => {
     });
   });
 
-  it("does not expose removed copy-series-plans management for occurrences", () => {
+  it("does not expose removed copy-series-plans management for occurrences", async () => {
     detailVm.event = {
       ...baseEvent,
       id: "44444444-4444-4444-8444-444444444444",
@@ -359,7 +359,7 @@ describe("group event detail route", () => {
     };
     groupVm.viewer = { canCreateGroupEvent: true };
 
-    renderNative(<GroupEventDetailRoute />);
+    await renderNative(<GroupEventDetailRoute />);
 
     expect(screen.queryByTestId("group-event-detail-copy-series-plans")).toBeNull();
   });

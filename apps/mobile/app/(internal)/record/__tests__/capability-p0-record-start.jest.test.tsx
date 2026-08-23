@@ -82,12 +82,11 @@ jest.mock(
   () => new Proxy({}, { get: (_target, name) => createHost(String(name)) }),
 );
 jest.mock("@/components/recording/cockpit", () => ({
-  RecordingLiveCockpit: ({ onStart, onLap }: { onStart: () => void; onLap: () => void }) =>
+  RecordingLiveCockpit: ({ onStart }: { onStart: () => void }) =>
     React.createElement(
       "View",
       null,
       React.createElement(mockButtonHost, { onPress: onStart }, "Start"),
-      React.createElement(mockButtonHost, { onPress: onLap }, "Lap"),
     ),
 }));
 
@@ -96,18 +95,16 @@ const RecordScreen = require("../index").default;
 describe("record screen start controls", () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it("exposes manual start and lap actions to the live recording surface", async () => {
-    renderNative(<RecordScreen />);
+  it("record.start exposes the manual start action to the live recording surface", async () => {
+    await renderNative(<RecordScreen />);
 
-    await waitFor(() => expect(screen.UNSAFE_getAllByType(mockButtonHost)).toHaveLength(2));
-    const [startButton, lapButton] = screen.UNSAFE_getAllByType(mockButtonHost);
-    if (!startButton || !lapButton) {
-      throw new Error("Recording cockpit must expose start and lap buttons");
-    }
-    fireEvent.press(startButton);
-    fireEvent.press(lapButton);
+    await waitFor(() =>
+      expect(screen.container.queryAll((node) => node.type === "Button")).toHaveLength(1),
+    );
+    const [startButton] = screen.container.queryAll((node) => node.type === "Button");
+    if (!startButton) throw new Error("Recording cockpit must expose a start button");
+    await fireEvent.press(startButton);
 
     await waitFor(() => expect(start).toHaveBeenCalled());
-    expect(recordLap).toHaveBeenCalledTimes(1);
   });
 });

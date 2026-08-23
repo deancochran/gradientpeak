@@ -73,13 +73,14 @@ const distanceStream = {
 } as any;
 
 describe("ElevationProfileChart", () => {
-  it("defaults to metric labels without converting the plotted elevation data", () => {
-    renderNative(
+  it("defaults to metric labels without converting the plotted elevation data", async () => {
+    await renderNative(
       <ElevationProfileChart elevationStream={elevationStream} distanceStream={distanceStream} />,
     );
 
-    const chart = (screen as any).UNSAFE_getByType("CartesianChart");
-    const card = (screen as any).UNSAFE_getByType("ChartCard");
+    const chart = screen.container.queryAll((node) => node.type === "CartesianChart")[0];
+    const card = screen.container.queryAll((node) => node.type === "ChartCard")[0];
+    if (!chart || !card) throw new Error("Expected the elevation chart and summary card");
 
     expect(chart.props.data).toEqual([
       { elevation: 100, x: 0 },
@@ -95,8 +96,8 @@ describe("ElevationProfileChart", () => {
     ]);
   });
 
-  it("uses Core conversions for imperial labels, accessibility text, and active tray values", () => {
-    renderNative(
+  it("uses Core conversions for imperial labels, accessibility text, and active tray values", async () => {
+    await renderNative(
       <ElevationProfileChart
         elevationStream={elevationStream}
         distanceStream={distanceStream}
@@ -104,9 +105,12 @@ describe("ElevationProfileChart", () => {
       />,
     );
 
-    const chart = (screen as any).UNSAFE_getByType("CartesianChart");
-    const card = (screen as any).UNSAFE_getByType("ChartCard");
-    const tray = (screen as any).UNSAFE_getByType("InteractiveChartValueTray");
+    const chart = screen.container.queryAll((node) => node.type === "CartesianChart")[0];
+    const card = screen.container.queryAll((node) => node.type === "ChartCard")[0];
+    const tray = screen.container.queryAll((node) => node.type === "InteractiveChartValueTray")[0];
+    if (!chart || !card || !tray) {
+      throw new Error("Expected the elevation chart, summary card, and value tray");
+    }
 
     expect(chart.props.axisOptions.formatYLabel(100)).toBe("328 ft");
     expect(chart.props.axisOptions.formatXLabel(1)).toBe("0.6 mi");

@@ -10,15 +10,15 @@ jest.mock("../HeaderButtons", () => ({
 }));
 
 describe("AppHeader", () => {
-  it("renders the caller-supplied destination title", () => {
-    renderNative(<AppHeader title="Calendar" />);
+  it("renders the caller-supplied destination title", async () => {
+    await renderNative(<AppHeader title="Calendar" />);
 
     expect(screen.getByText("Calendar")).toBeTruthy();
     expect(screen.queryByText("GradientPeak")).toBeNull();
   });
 
-  it("keeps the product title as a fallback", () => {
-    renderNative(<AppHeader />);
+  it("keeps the product title as a fallback", async () => {
+    await renderNative(<AppHeader />);
 
     expect(screen.getByText("GradientPeak")).toBeTruthy();
   });

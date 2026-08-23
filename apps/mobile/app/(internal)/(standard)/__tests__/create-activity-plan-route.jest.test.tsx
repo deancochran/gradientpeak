@@ -48,7 +48,7 @@ describe("create-activity-plan route", () => {
   it("uses the same composer in create mode and resets draft state", async () => {
     const CreateActivityPlanRoute = (await import("../create-activity-plan")).default;
 
-    renderNative(<CreateActivityPlanRoute />);
+    await renderNative(<CreateActivityPlanRoute />);
 
     expect(screen.getByTestId("activity-plan-composer").props).toMatchObject({ mode: "create" });
     expect(resetMock).toHaveBeenCalledTimes(1);
@@ -59,7 +59,7 @@ describe("create-activity-plan route", () => {
 
     paramsRef.planId = "plan-42";
 
-    renderNative(<CreateActivityPlanRoute />);
+    await renderNative(<CreateActivityPlanRoute />);
 
     expect(screen.getByTestId("activity-plan-composer").props).toMatchObject({
       mode: "edit",

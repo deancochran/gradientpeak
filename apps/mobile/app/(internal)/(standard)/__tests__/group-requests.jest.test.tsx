@@ -145,7 +145,7 @@ describe("group requests invite search", () => {
   });
 
   it("keeps invite enablement and sort while debouncing an accessible clearable search", async () => {
-    renderNative(<GroupRequestsScreen />);
+    await renderNative(<GroupRequestsScreen />);
 
     expect(searchUsersUseQueryMock).toHaveBeenLastCalledWith(
       { query: undefined, limit: 20, sort_by: "newest" },
@@ -153,7 +153,7 @@ describe("group requests invite search", () => {
     );
 
     searchUsersUseQueryMock.mockReturnValue({ data: { users: [] }, isFetching: true });
-    fireEvent.press(screen.getByTestId("group-requests-header-invite"));
+    await fireEvent.press(screen.getByTestId("group-requests-header-invite"));
     const input = screen.getByLabelText("Search athletes to invite");
     expect(screen.getByTestId("group-requests-invite-search-input")).toBe(input);
     expect(input.props.accessibilityState).toEqual({ busy: true });
@@ -162,7 +162,7 @@ describe("group requests invite search", () => {
       { enabled: true },
     );
 
-    fireEvent.changeText(input, "rider");
+    await fireEvent.changeText(input, "rider");
     expect(searchUsersUseQueryMock).toHaveBeenLastCalledWith(
       { query: undefined, limit: 20, sort_by: "newest" },
       { enabled: true },
@@ -174,7 +174,7 @@ describe("group requests invite search", () => {
       { enabled: true },
     );
 
-    fireEvent.press(screen.getByTestId("group-requests-invite-search-clear"));
+    await fireEvent.press(screen.getByTestId("group-requests-invite-search-clear"));
     expect(screen.getByTestId("group-requests-invite-search-input").props.value).toBe("");
   });
 });

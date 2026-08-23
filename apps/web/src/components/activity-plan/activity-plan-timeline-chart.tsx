@@ -46,7 +46,7 @@ function durationLabel(duration: TimelineOccurrence["duration"]): string {
 export function ActivityPlanTimelineChart({
   compact = false,
   height = 112,
-  label = "Workout prescription timeline",
+  label = "Activity prescription timeline",
   presentation,
   structure,
   testIDPrefix = "activity-plan-timeline",

@@ -110,10 +110,10 @@ describe("messages screen", () => {
     pushMock.mockReset();
   });
 
-  it("opens the new message flow from the header action", () => {
-    renderNative(<MessagesScreen />);
+  it("opens the new message flow from the header action", async () => {
+    await renderNative(<MessagesScreen />);
 
-    fireEvent.press(screen.getByTestId("messages-new-trigger"));
+    await fireEvent.press(screen.getByTestId("messages-new-trigger"));
 
     expect(pushMock).toHaveBeenCalledWith("/messages/new");
   });

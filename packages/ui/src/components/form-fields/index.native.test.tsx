@@ -1,4 +1,5 @@
-import { act, type ReactTestInstance } from "react-test-renderer";
+import { act } from "react";
+import type { TestInstance as ReactTestInstance } from "test-renderer";
 import { z } from "zod";
 
 import { useZodForm } from "../../hooks/use-zod-form";
@@ -254,42 +255,42 @@ function DraftSubmitHarness({ onSubmit }: { onSubmit: (values: { amount: number 
 }
 
 describe("Form fields native", () => {
-  it("binds shared controlled wrappers to react-hook-form", () => {
-    const { getAllByText, getByLabelText, getByTestId, getByText, UNSAFE_getAllByType } =
-      renderNative(<FormFieldsHarness />);
-    const getAllByTypeName = UNSAFE_getAllByType as unknown as (
-      type: string,
-    ) => ReactTestInstance[];
+  it("binds shared controlled wrappers to react-hook-form", async () => {
+    const { container, getAllByText, getByLabelText, getByTestId, getByText } = await renderNative(
+      <FormFieldsHarness />,
+    );
+    const getAllByTypeName = (type: string) =>
+      container.queryAll((node) => node.type === type) as ReactTestInstance[];
 
-    fireEvent(getByLabelText("Username"), "changeText", "Taylor");
-    fireEvent(getByLabelText("Bio"), "changeText", "Coach");
-    fireEvent.press(getByTestId("wake-time-field"));
+    await fireEvent(getByLabelText("Username"), "changeText", "Taylor");
+    await fireEvent(getByLabelText("Bio"), "changeText", "Coach");
+    await fireEvent.press(getByTestId("wake-time-field"));
     const timePicker = getLastNode(
       getAllByTypeName("DateTimePicker").filter((node) => node.props.mode === "time"),
       "time picker",
     );
-    fireEvent(timePicker, "change", {}, new Date(2026, 2, 23, 3, 45));
-    fireEvent.press(getLastNode(getAllByText("Done"), "Done button"));
-    fireEvent(getByLabelText("Duration"), "changeText", "45:00");
-    fireEvent(getByLabelText("Duration"), "blur");
-    fireEvent.press(getByText("+"));
-    fireEvent.press(getByTestId("recorded-at-field-date"));
+    await fireEvent(timePicker, "change", {}, new Date(2026, 2, 23, 3, 45));
+    await fireEvent.press(getLastNode(getAllByText("Done"), "Done button"));
+    await fireEvent(getByLabelText("Duration"), "changeText", "45:00");
+    await fireEvent(getByLabelText("Duration"), "blur");
+    await fireEvent.press(getByText("+"));
+    await fireEvent.press(getByTestId("recorded-at-field-date"));
     const datePicker = getPickerByMode(getAllByTypeName("DateTimePicker"), "date");
-    fireEvent(datePicker, "change", {}, new Date(2026, 2, 24, 0, 0));
-    fireEvent.press(getLastNode(getAllByText("Done"), "Done button"));
-    fireEvent.press(getByTestId("recorded-at-field-time"));
+    await fireEvent(datePicker, "change", {}, new Date(2026, 2, 24, 0, 0));
+    await fireEvent.press(getLastNode(getAllByText("Done"), "Done button"));
+    await fireEvent.press(getByTestId("recorded-at-field-time"));
     const recordedTimePicker = getPickerByMode(getAllByTypeName("DateTimePicker"), "time");
-    fireEvent(recordedTimePicker, "change", {}, new Date(2026, 2, 24, 4, 15));
-    fireEvent.press(getLastNode(getAllByText("Done"), "Done button"));
-    fireEvent.press(getByTestId("activity-category-field-bike"));
-    fireEvent(getByLabelText("FTP"), "changeText", "300");
-    fireEvent(getByLabelText("FTP"), "blur");
-    fireEvent(getByLabelText("Pace"), "changeText", "04:05");
-    fireEvent(getByLabelText("Pace"), "blur");
-    fireEvent(getByLabelText("Recovery Priority"), "changeText", "75");
-    fireEvent(getByLabelText("Recovery Priority"), "blur");
-    fireEvent(getByLabelText("Weight"), "changeText", "72.5");
-    fireEvent(getByLabelText("Weight"), "blur");
+    await fireEvent(recordedTimePicker, "change", {}, new Date(2026, 2, 24, 4, 15));
+    await fireEvent.press(getLastNode(getAllByText("Done"), "Done button"));
+    await fireEvent.press(getByTestId("activity-category-field-bike"));
+    await fireEvent(getByLabelText("FTP"), "changeText", "300");
+    await fireEvent(getByLabelText("FTP"), "blur");
+    await fireEvent(getByLabelText("Pace"), "changeText", "04:05");
+    await fireEvent(getByLabelText("Pace"), "blur");
+    await fireEvent(getByLabelText("Recovery Priority"), "changeText", "75");
+    await fireEvent(getByLabelText("Recovery Priority"), "blur");
+    await fireEvent(getByLabelText("Weight"), "changeText", "72.5");
+    await fireEvent(getByLabelText("Weight"), "blur");
 
     expect(getByText(/"username":"Taylor"/)).toBeTruthy();
     expect(getByText(/"bio":"Coach"/)).toBeTruthy();
@@ -304,16 +305,16 @@ describe("Form fields native", () => {
     expect(getByText(/"weight_kg":72.5/)).toBeTruthy();
   });
 
-  it("throws a clear error when form subcomponents render outside FormField", () => {
-    expect(() => renderNative(<DetachedFormLabelHarness />)).toThrow(
+  it("throws a clear error when form subcomponents render outside FormField", async () => {
+    await expect(renderNative(<DetachedFormLabelHarness />)).rejects.toThrow(
       "useFormField should be used within <FormField>",
     );
   });
 
-  it("announces switch validation errors without unsupported control props", () => {
-    const { getByTestId, getByText } = renderNative(<SwitchValidationHarness />);
+  it("announces switch validation errors without unsupported control props", async () => {
+    const { getByTestId, getByText } = await renderNative(<SwitchValidationHarness />);
 
-    fireEvent.press(getByTestId("set-switch-error"));
+    await fireEvent.press(getByTestId("set-switch-error"));
 
     const message = getByText("Choose an availability");
     const control = getByTestId("enabled-switch");
@@ -325,27 +326,27 @@ describe("Form fields native", () => {
     expect(control.props.accessibilityState?.invalid).toBeUndefined();
   });
 
-  it("forwards disabled and blur behavior for bounded number fields", () => {
-    const { getByLabelText, getByTestId, getByText } = renderNative(<FormFieldsHarness />);
+  it("forwards disabled and blur behavior for bounded number fields", async () => {
+    const { getByLabelText, getByTestId, getByText } = await renderNative(<FormFieldsHarness />);
     const ftp = getByLabelText("FTP");
 
-    fireEvent(ftp, "blur");
+    await fireEvent(ftp, "blur");
 
     expect(getByText(/"ftp":true/)).toBeTruthy();
     expect(getByTestId("date-of-birth").props.disabled).toBe(true);
   });
 
-  it("keeps partial number drafts stable and commits a normalized value on blur", () => {
-    const { getByLabelText, getByText } = renderNative(<FormFieldsHarness />);
+  it("keeps partial number drafts stable and commits a normalized value on blur", async () => {
+    const { getByLabelText, getByText } = await renderNative(<FormFieldsHarness />);
     const input = getByLabelText("Target Power");
 
-    fireEvent(input, "changeText", "-");
+    await fireEvent(input, "changeText", "-");
     expect(input.props.value).toBe("-");
     expect(getByText(/"target_power":180/)).toBeTruthy();
 
-    fireEvent(input, "changeText", "12.");
+    await fireEvent(input, "changeText", "12.");
     expect(input.props.value).toBe("12.");
-    fireEvent(input, "blur");
+    await fireEvent(input, "blur");
 
     expect(input.props.value).toBe("12");
     expect(getByText(/"target_power":12/)).toBeTruthy();
@@ -353,13 +354,13 @@ describe("Form fields native", () => {
 
   it("flushes a focused number draft before constructing the submit payload", async () => {
     const onSubmit = jest.fn();
-    const { getByLabelText, getByTestId } = renderNative(
+    const { getByLabelText, getByTestId } = await renderNative(
       <DraftSubmitHarness onSubmit={onSubmit} />,
     );
 
-    fireEvent(getByLabelText("Amount"), "changeText", "12.");
+    await fireEvent(getByLabelText("Amount"), "changeText", "12.");
     await act(async () => {
-      fireEvent.press(getByTestId("submit-amount"));
+      await fireEvent.press(getByTestId("submit-amount"));
     });
 
     expect(onSubmit).toHaveBeenCalledWith({ amount: 12 });
@@ -367,26 +368,26 @@ describe("Form fields native", () => {
 
   it("discards a focused number draft when reset restores the same value", async () => {
     const onSubmit = jest.fn();
-    const { getByLabelText, getByTestId } = renderNative(
+    const { getByLabelText, getByTestId } = await renderNative(
       <DraftSubmitHarness onSubmit={onSubmit} />,
     );
     const input = getByLabelText("Amount");
 
-    fireEvent(input, "changeText", "12.");
-    fireEvent.press(getByTestId("reset-amount"));
+    await fireEvent(input, "changeText", "12.");
+    await fireEvent.press(getByTestId("reset-amount"));
 
     expect(input.props.value).toBe("10");
 
     await act(async () => {
-      fireEvent.press(getByTestId("submit-amount"));
+      await fireEvent.press(getByTestId("submit-amount"));
     });
 
     expect(onSubmit).toHaveBeenCalledWith({ amount: 10 });
     expect(input.props.value).toBe("10");
   });
 
-  it("exposes native hints, invalid state, required state, and disabled state", () => {
-    const { getByLabelText, getByTestId, unmount } = renderNative(<FormFieldsHarness />);
+  it("exposes native hints, invalid state, required state, and disabled state", async () => {
+    const { getByLabelText, getByTestId, unmount } = await renderNative(<FormFieldsHarness />);
     const date = getByLabelText("Date of Birth");
 
     expect(date.props.accessibilityHint).toContain("Required");
@@ -394,15 +395,15 @@ describe("Form fields native", () => {
     expect(date.props.accessibilityState).toEqual({ disabled: true });
     expect(date.props["aria-required"]).toBe(true);
 
-    fireEvent.press(getByTestId("set-date-error"));
+    await fireEvent.press(getByTestId("set-date-error"));
 
     expect(getByLabelText("Date of Birth").props["aria-invalid"]).toBe(true);
     expect(getByLabelText("Date of Birth").props.accessibilityHint).toContain(
       "Error: Birth date is invalid",
     );
 
-    unmount();
-    const disabledPercent = renderNative(<DisabledPercentHarness />).getByTestId(
+    await unmount();
+    const disabledPercent = (await renderNative(<DisabledPercentHarness />)).getByTestId(
       "recovery-priority",
     );
     expect(disabledPercent.props.editable).toBe(false);

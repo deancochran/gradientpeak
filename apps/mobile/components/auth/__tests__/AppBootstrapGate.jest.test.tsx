@@ -42,7 +42,7 @@ describe("AppBootstrapGate onboarding status", () => {
   });
 
   it("redirects completed users away from onboarding", async () => {
-    renderNative(
+    await renderNative(
       <AppBootstrapGate>{React.createElement("Text", null, "content")}</AppBootstrapGate>,
     );
     await waitFor(() => expect(screen.getByTestId("redirect-target")).toBeTruthy());
@@ -54,7 +54,7 @@ describe("AppBootstrapGate onboarding status", () => {
     "review",
   ])("keeps %s users in onboarding", async (status) => {
     authState.onboardingStatus = status;
-    renderNative(
+    await renderNative(
       <AppBootstrapGate>
         {React.createElement("Text", null, "Onboarding content")}
       </AppBootstrapGate>,

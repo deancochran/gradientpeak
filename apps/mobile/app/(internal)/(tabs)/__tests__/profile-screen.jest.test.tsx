@@ -270,17 +270,17 @@ describe("ProfileTabScreen", () => {
     authState = defaultAuthState;
   });
 
-  it("routes content library entry points from the profile hub", () => {
-    renderNative(<ProfileTabScreen />);
+  it("routes content library entry points from the profile hub", async () => {
+    await renderNative(<ProfileTabScreen />);
 
     expect(screen.queryByTestId("profile-tab-scheduled-activities")).toBeNull();
     expect(screen.queryByTestId("profile-tab-training-preferences")).toBeNull();
 
-    fireEvent.press(screen.getByTestId("profile-tab-goals"));
-    fireEvent.press(screen.getByTestId("profile-tab-activities"));
-    fireEvent.press(screen.getByTestId("profile-tab-activity-plans"));
-    fireEvent.press(screen.getByTestId("profile-tab-training-plans"));
-    fireEvent.press(screen.getByTestId("profile-tab-routes"));
+    await fireEvent.press(screen.getByTestId("profile-tab-goals"));
+    await fireEvent.press(screen.getByTestId("profile-tab-activities"));
+    await fireEvent.press(screen.getByTestId("profile-tab-activity-plans"));
+    await fireEvent.press(screen.getByTestId("profile-tab-training-plans"));
+    await fireEvent.press(screen.getByTestId("profile-tab-routes"));
 
     expect(navigateToMock).toHaveBeenCalledWith("/goals-list");
     expect(navigateToMock).toHaveBeenCalledWith("/activities-list");
@@ -289,44 +289,50 @@ describe("ProfileTabScreen", () => {
     expect(navigateToMock).toHaveBeenCalledWith("/routes-list");
   });
 
-  it("keeps the active user's identity summary on profile settings", () => {
-    renderNative(<ProfileTabScreen />);
+  it("keeps the active user's identity summary on profile settings", async () => {
+    await renderNative(<ProfileTabScreen />);
 
-    fireEvent.press(screen.getByTestId("profile-tab-summary-identity"));
+    await fireEvent.press(screen.getByTestId("profile-tab-summary-identity"));
 
     expect(navigateToMock).toHaveBeenCalledWith("/(internal)/(tabs)/profile");
   });
 
-  it("shows groups the active profile belongs to", () => {
-    renderNative(<ProfileTabScreen />);
+  it("shows groups the active profile belongs to", async () => {
+    await renderNative(<ProfileTabScreen />);
 
     expect(screen.getByTestId("profile-tab-groups")).toBeTruthy();
     expect(screen.getByText("Morning Climbers")).toBeTruthy();
   });
 
   it("submits account email and password actions", async () => {
-    renderNative(<ProfileTabScreen />);
+    await renderNative(<ProfileTabScreen />);
 
-    React.act(() => {
-      fireEvent.press(screen.getByTestId("profile-tab-update-email"));
-    });
-    React.act(() => {
-      fireEvent.changeText(screen.getByTestId("profile-tab-email-input"), "new@example.com");
+    await React.act(async () => {
+      await fireEvent.press(screen.getByTestId("profile-tab-update-email"));
     });
     await React.act(async () => {
-      fireEvent.press(screen.getByTestId("profile-tab-email-submit-button"));
-    });
-
-    React.act(() => {
-      fireEvent.press(screen.getByTestId("profile-tab-change-password"));
-    });
-    React.act(() => {
-      fireEvent.changeText(screen.getByTestId("profile-tab-current-password-input"), "old-pass");
-      fireEvent.changeText(screen.getByTestId("profile-tab-new-password-input"), "new-pass");
-      fireEvent.changeText(screen.getByTestId("profile-tab-confirm-password-input"), "new-pass");
+      await fireEvent.changeText(screen.getByTestId("profile-tab-email-input"), "new@example.com");
     });
     await React.act(async () => {
-      fireEvent.press(screen.getByTestId("profile-tab-password-submit-button"));
+      await fireEvent.press(screen.getByTestId("profile-tab-email-submit-button"));
+    });
+
+    await React.act(async () => {
+      await fireEvent.press(screen.getByTestId("profile-tab-change-password"));
+    });
+    await React.act(async () => {
+      await fireEvent.changeText(
+        screen.getByTestId("profile-tab-current-password-input"),
+        "old-pass",
+      );
+      await fireEvent.changeText(screen.getByTestId("profile-tab-new-password-input"), "new-pass");
+      await fireEvent.changeText(
+        screen.getByTestId("profile-tab-confirm-password-input"),
+        "new-pass",
+      );
+    });
+    await React.act(async () => {
+      await fireEvent.press(screen.getByTestId("profile-tab-password-submit-button"));
     });
 
     expect(updateEmailMock).toHaveBeenCalledWith({ newEmail: "new@example.com" });
@@ -336,14 +342,14 @@ describe("ProfileTabScreen", () => {
     });
   });
 
-  it("keeps provider-managed email updates unavailable", () => {
+  it("keeps provider-managed email updates unavailable", async () => {
     authState = {
       ...defaultAuthState,
       canUpdateEmail: false,
       updateEmailUnavailableReason: "Provider-managed email addresses cannot be changed here.",
     };
 
-    renderNative(<ProfileTabScreen />);
+    await renderNative(<ProfileTabScreen />);
 
     expect(screen.getByText("Unavailable")).toBeTruthy();
     expect(screen.queryByTestId("profile-tab-email-input")).toBeNull();
@@ -351,19 +357,19 @@ describe("ProfileTabScreen", () => {
   });
 
   it("blocks invalid email updates before calling the profile capability", async () => {
-    renderNative(<ProfileTabScreen />);
+    await renderNative(<ProfileTabScreen />);
 
-    React.act(() => {
-      fireEvent.press(screen.getByTestId("profile-tab-update-email"));
+    await React.act(async () => {
+      await fireEvent.press(screen.getByTestId("profile-tab-update-email"));
     });
-    React.act(() => {
-      fireEvent.changeText(screen.getByTestId("profile-tab-email-input"), "not-an-email");
+    await React.act(async () => {
+      await fireEvent.changeText(screen.getByTestId("profile-tab-email-input"), "not-an-email");
     });
     await waitFor(() => {
       expect(screen.getByDisplayValue("not-an-email")).toBeTruthy();
     });
     await React.act(async () => {
-      fireEvent.press(screen.getByTestId("profile-tab-email-submit-button"));
+      await fireEvent.press(screen.getByTestId("profile-tab-email-submit-button"));
     });
 
     expect(Alert.alert).toHaveBeenCalledWith("Error", "Please enter a valid email address");
@@ -371,18 +377,18 @@ describe("ProfileTabScreen", () => {
   });
 
   it("guards password changes against mismatch and no-op updates", async () => {
-    renderNative(<ProfileTabScreen />);
+    await renderNative(<ProfileTabScreen />);
 
-    React.act(() => {
-      fireEvent.press(screen.getByTestId("profile-tab-change-password"));
+    await React.act(async () => {
+      await fireEvent.press(screen.getByTestId("profile-tab-change-password"));
     });
-    React.act(() => {
-      fireEvent.changeText(
+    await React.act(async () => {
+      await fireEvent.changeText(
         screen.getByTestId("profile-tab-current-password-input"),
         "current-pass",
       );
-      fireEvent.changeText(screen.getByTestId("profile-tab-new-password-input"), "new-pass");
-      fireEvent.changeText(
+      await fireEvent.changeText(screen.getByTestId("profile-tab-new-password-input"), "new-pass");
+      await fireEvent.changeText(
         screen.getByTestId("profile-tab-confirm-password-input"),
         "different-pass",
       );
@@ -391,23 +397,29 @@ describe("ProfileTabScreen", () => {
       expect(screen.getByDisplayValue("different-pass")).toBeTruthy();
     });
     await React.act(async () => {
-      fireEvent.press(screen.getByTestId("profile-tab-password-submit-button"));
+      await fireEvent.press(screen.getByTestId("profile-tab-password-submit-button"));
     });
 
     expect(Alert.alert).toHaveBeenCalledWith("Error", "New passwords do not match");
     expect(updatePasswordMock).not.toHaveBeenCalled();
 
     jest.clearAllMocks();
-    React.act(() => {
-      fireEvent.changeText(screen.getByTestId("profile-tab-current-password-input"), "same-pass");
-      fireEvent.changeText(screen.getByTestId("profile-tab-new-password-input"), "same-pass");
-      fireEvent.changeText(screen.getByTestId("profile-tab-confirm-password-input"), "same-pass");
+    await React.act(async () => {
+      await fireEvent.changeText(
+        screen.getByTestId("profile-tab-current-password-input"),
+        "same-pass",
+      );
+      await fireEvent.changeText(screen.getByTestId("profile-tab-new-password-input"), "same-pass");
+      await fireEvent.changeText(
+        screen.getByTestId("profile-tab-confirm-password-input"),
+        "same-pass",
+      );
     });
     await waitFor(() => {
       expect(screen.getAllByDisplayValue("same-pass")).toHaveLength(3);
     });
     await React.act(async () => {
-      fireEvent.press(screen.getByTestId("profile-tab-password-submit-button"));
+      await fireEvent.press(screen.getByTestId("profile-tab-password-submit-button"));
     });
 
     expect(Alert.alert).toHaveBeenCalledWith(
@@ -417,46 +429,46 @@ describe("ProfileTabScreen", () => {
     expect(updatePasswordMock).not.toHaveBeenCalled();
   });
 
-  it("shows social counts as loading while public profile stats load", () => {
+  it("shows social counts as loading while public profile stats load", async () => {
     publicProfileState = undefined;
     publicProfileIsLoading = true;
 
-    renderNative(<ProfileTabScreen />);
+    await renderNative(<ProfileTabScreen />);
 
     expect(screen.getAllByText("Loading...")).toHaveLength(2);
     expect(screen.queryByText("0")).toBeNull();
   });
 
-  it("shows unavailable social counts when public profile stats fail", () => {
+  it("shows unavailable social counts when public profile stats fail", async () => {
     publicProfileState = undefined;
     publicProfileIsError = true;
 
-    renderNative(<ProfileTabScreen />);
+    await renderNative(<ProfileTabScreen />);
 
     expect(screen.getAllByText("Unavailable")).toHaveLength(2);
     expect(screen.queryByText("0")).toBeNull();
   });
 
-  it("shows confirmed zero social counts from the public profile", () => {
+  it("shows confirmed zero social counts from the public profile", async () => {
     publicProfileState = { followers_count: 0, following_count: 0 };
 
-    renderNative(<ProfileTabScreen />);
+    await renderNative(<ProfileTabScreen />);
 
     expect(screen.getAllByText("0")).toHaveLength(2);
   });
 
-  it("toggles dark mode from profile settings", () => {
-    renderNative(<ProfileTabScreen />);
+  it("toggles dark mode from profile settings", async () => {
+    await renderNative(<ProfileTabScreen />);
 
-    fireEvent.press(screen.getByTestId("profile-tab-dark-mode"));
+    await fireEvent.press(screen.getByTestId("profile-tab-dark-mode"));
 
     expect(setThemeMock).toHaveBeenCalledWith("dark");
   });
 
-  it("signs out after the confirmation action is selected", () => {
-    renderNative(<ProfileTabScreen />);
+  it("signs out after the confirmation action is selected", async () => {
+    await renderNative(<ProfileTabScreen />);
 
-    fireEvent.press(screen.getByTestId("profile-tab-sign-out"));
+    await fireEvent.press(screen.getByTestId("profile-tab-sign-out"));
 
     expect(Alert.alert).toHaveBeenCalledWith(
       "Sign Out",

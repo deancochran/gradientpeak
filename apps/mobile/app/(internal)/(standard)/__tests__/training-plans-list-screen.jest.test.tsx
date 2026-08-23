@@ -123,22 +123,22 @@ describe("training plans list screen", () => {
     pushMock.mockReset();
   });
 
-  it("navigates to the selected plan detail route", () => {
-    renderNative(<TrainingPlansListScreenWithBoundary />);
+  it("navigates to the selected plan detail route", async () => {
+    await renderNative(<TrainingPlansListScreenWithBoundary />);
 
-    fireEvent.press(screen.getByText("Marathon Build"));
+    await fireEvent.press(screen.getByText("Marathon Build"));
     expect(pushMock).toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.DETAIL("plan-1"));
   });
 
-  it("renders the plan summary before rows", () => {
-    renderNative(<TrainingPlansListScreenWithBoundary />);
+  it("renders the plan summary before rows", async () => {
+    await renderNative(<TrainingPlansListScreenWithBoundary />);
 
     expect(screen.getByTestId("training-plans-list-summary")).toBeTruthy();
     expect(screen.getByText("1 plan")).toBeTruthy();
   });
 
-  it("renders each training plan with the rich default card", () => {
-    renderNative(<TrainingPlansListScreenWithBoundary />);
+  it("renders each training plan with the rich default card", async () => {
+    await renderNative(<TrainingPlansListScreenWithBoundary />);
 
     expect(screen.getByTestId("mock-training-plan-card-plan-1").props.variant).toBeUndefined();
   });

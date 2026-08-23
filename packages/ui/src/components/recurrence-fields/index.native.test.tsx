@@ -4,32 +4,32 @@ import { fireEvent, renderNative } from "../../test/render-native";
 import { RecurrenceFields } from "./index.native";
 
 describe("RecurrenceFields native", () => {
-  it("is controlled and exposes bounded accessible controls", () => {
+  it("is controlled and exposes bounded accessible controls", async () => {
     function Harness() {
       const [value, setValue] = useState(DEFAULT_WEEKLY_COUNT_RECURRENCE);
       return <RecurrenceFields onChange={setValue} testIdPrefix="test" value={value} />;
     }
 
-    const { getByLabelText, getByTestId, queryByTestId } = renderNative(<Harness />);
+    const { getByLabelText, getByTestId, queryByTestId } = await renderNative(<Harness />);
     const toggle = getByLabelText("Repeat weekly");
 
     expect(toggle.props.checked).toBe(false);
     expect(queryByTestId("test-repeat-count")).toBeNull();
 
-    fireEvent(toggle, "onCheckedChange", true);
+    await fireEvent(toggle, "onCheckedChange", true);
     expect(getByTestId("test-repeat-count").props.children.join("")).toBe(
       "Ends after 4 occurrences",
     );
 
-    fireEvent.press(getByLabelText("Decrease occurrence count"));
+    await fireEvent.press(getByLabelText("Decrease occurrence count"));
     expect(getByTestId("test-repeat-count").props.children.join("")).toBe(
       "Ends after 3 occurrences",
     );
   });
 
-  it("disables interaction and announces errors", () => {
+  it("disables interaction and announces errors", async () => {
     const onChange = jest.fn();
-    const { getByLabelText, getByRole } = renderNative(
+    const { getByLabelText, getByRole } = await renderNative(
       <RecurrenceFields
         disabled
         error="Choose a supported count"

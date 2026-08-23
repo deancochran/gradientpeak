@@ -47,7 +47,8 @@ CREATE TYPE "public"."planned_session_status" AS ENUM('scheduled', 'cancelled', 
 CREATE TYPE "public"."profile_metric_type" AS ENUM('weight_kg', 'resting_hr', 'sleep_hours', 'hrv_rmssd', 'vo2_max', 'body_fat_percentage', 'hydration_level', 'stress_score', 'soreness_level', 'wellness_score', 'max_hr');
 CREATE TYPE "public"."threshold_evidence_status" AS ENUM('active', 'superseded', 'deleted');
 CREATE TABLE "accounts" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" uuid DEFAULT pg_catalog.gen_random_uuid() PRIMARY KEY NOT NULL,
+	"issuer" text NOT NULL,
 	"account_id" text NOT NULL,
 	"provider_id" text NOT NULL,
 	"user_id" uuid NOT NULL,
@@ -63,7 +64,7 @@ CREATE TABLE "accounts" (
 );
 
 CREATE TABLE "rate_limits" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" uuid DEFAULT pg_catalog.gen_random_uuid() PRIMARY KEY NOT NULL,
 	"key" text NOT NULL,
 	"count" integer NOT NULL,
 	"last_request" bigint NOT NULL,
@@ -71,7 +72,7 @@ CREATE TABLE "rate_limits" (
 );
 
 CREATE TABLE "sessions" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" uuid DEFAULT pg_catalog.gen_random_uuid() PRIMARY KEY NOT NULL,
 	"expires_at" timestamp NOT NULL,
 	"token" text NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
@@ -83,7 +84,7 @@ CREATE TABLE "sessions" (
 );
 
 CREATE TABLE "users" (
-	"id" uuid PRIMARY KEY NOT NULL,
+	"id" uuid DEFAULT pg_catalog.gen_random_uuid() PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
 	"email" text NOT NULL,
 	"email_verified" boolean DEFAULT false NOT NULL,
@@ -94,7 +95,7 @@ CREATE TABLE "users" (
 );
 
 CREATE TABLE "verifications" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" uuid DEFAULT pg_catalog.gen_random_uuid() PRIMARY KEY NOT NULL,
 	"identifier" text NOT NULL,
 	"value" text NOT NULL,
 	"expires_at" timestamp NOT NULL,
@@ -1507,6 +1508,7 @@ ALTER TABLE "provider_webhook_receipts" ADD CONSTRAINT "provider_webhook_receipt
 ALTER TABLE "provider_webhook_receipts" ADD CONSTRAINT "provider_webhook_receipts_job_id_provider_sync_jobs_id_fk" FOREIGN KEY ("job_id") REFERENCES "public"."provider_sync_jobs"("id") ON DELETE set null ON UPDATE no action;
 ALTER TABLE "training_plans" ADD CONSTRAINT "training_plans_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
 CREATE INDEX "accounts_userId_idx" ON "accounts" USING btree ("user_id");
+CREATE UNIQUE INDEX "accounts_issuer_accountId_uidx" ON "accounts" USING btree ("issuer","account_id");
 CREATE INDEX "sessions_userId_idx" ON "sessions" USING btree ("user_id");
 CREATE INDEX "verifications_identifier_idx" ON "verifications" USING btree ("identifier");
 CREATE INDEX "idx_activities_activity_plan" ON "activities" USING btree ("activity_plan_id") WHERE "activities"."activity_plan_id" is not null;

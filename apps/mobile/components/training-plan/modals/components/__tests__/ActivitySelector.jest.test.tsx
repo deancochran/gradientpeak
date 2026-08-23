@@ -62,10 +62,10 @@ describe("ActivitySelector", () => {
     emptyStateMock.mockClear();
   });
 
-  it("renders compact canonical cards and selects the tapped activity", () => {
+  it("renders compact canonical cards and selects the tapped activity", async () => {
     const onSelect = jest.fn();
 
-    renderNative(
+    await renderNative(
       <ActivitySelector activities={activities} onSelect={onSelect} selectedActivityId="tempo" />,
     );
 
@@ -80,27 +80,27 @@ describe("ActivitySelector", () => {
       selected: true,
     });
 
-    fireEvent.press(screen.getByTestId("activity-selector-activity-plan-strength"));
+    await fireEvent.press(screen.getByTestId("activity-selector-activity-plan-strength"));
 
     expect(onSelect).toHaveBeenCalledWith(activities[1]);
   });
 
-  it("preserves search filtering and the shared empty state", () => {
-    renderNative(
+  it("preserves search filtering and the shared empty state", async () => {
+    await renderNative(
       <ActivitySelector activities={activities} onSelect={jest.fn()} selectedActivityId={null} />,
     );
 
-    fireEvent(screen.getByLabelText("Search activities"), "changeText", "swim");
+    await fireEvent(screen.getByLabelText("Search activities"), "changeText", "swim");
 
     expect(emptyStateMock).toHaveBeenCalledWith(
       expect.objectContaining({ title: "No activities match your search" }),
     );
   });
 
-  it("prevents activity card interaction while disabled", () => {
+  it("prevents activity card interaction while disabled", async () => {
     const onSelect = jest.fn();
 
-    renderNative(
+    await renderNative(
       <ActivitySelector
         activities={activities}
         disabled

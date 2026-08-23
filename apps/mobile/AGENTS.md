@@ -77,7 +77,7 @@ Use this file when working in `apps/mobile`.
 - https://docs.expo.dev/router/basics/core-concepts/
 - https://docs.expo.dev/router/advanced/authentication/
 - https://tanstack.com/query/latest/docs/framework/react/react-native
-- https://reactnative.dev/docs/0.81/appstate
+- https://reactnative.dev/docs/0.86/appstate
 - https://react-hook-form.com/docs
 - https://react-hook-form.com/docs/usecontroller
 - https://react-hook-form.com/docs/useformcontext

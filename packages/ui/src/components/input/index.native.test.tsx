@@ -5,8 +5,8 @@ import { inputFixtures } from "./fixtures";
 import { Input } from "./index.native";
 
 describe("Input native", () => {
-  it("maps normalized test props onto the native input", () => {
-    const { getByLabelText, getByTestId } = renderNative(<Input {...inputFixtures.email} />);
+  it("maps normalized test props onto the native input", async () => {
+    const { getByLabelText, getByTestId } = await renderNative(<Input {...inputFixtures.email} />);
 
     expect(getByLabelText(inputFixtures.email.accessibilityLabel)).toBeTruthy();
 
@@ -16,8 +16,10 @@ describe("Input native", () => {
     expect(input.props.nativeID).toBe(inputFixtures.email.id);
   });
 
-  it("applies theme-aware text and placeholder colors", () => {
-    const { getByTestId } = renderNative(<Input {...inputFixtures.email} placeholder="Email" />);
+  it("applies theme-aware text and placeholder colors", async () => {
+    const { getByTestId } = await renderNative(
+      <Input {...inputFixtures.email} placeholder="Email" />,
+    );
 
     const input = getByTestId(inputFixtures.email.testId);
 

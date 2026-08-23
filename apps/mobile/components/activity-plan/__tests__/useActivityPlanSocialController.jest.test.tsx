@@ -50,14 +50,14 @@ describe("useActivityPlanSocialController", () => {
     toggleLikeMutateMock.mockReset();
   });
 
-  it("shows an error alert when toggling like with an invalid plan ID", () => {
-    const { result } = renderHook(() =>
+  it("shows an error alert when toggling like with an invalid plan ID", async () => {
+    const { result } = await renderHook(() =>
       useActivityPlanSocialController({
         planId: "not-a-valid-uuid",
       }),
     );
 
-    act(() => {
+    await act(() => {
       result.current.handleToggleLike();
     });
 
@@ -68,8 +68,8 @@ describe("useActivityPlanSocialController", () => {
     expect(toggleLikeMutateMock).not.toHaveBeenCalled();
   });
 
-  it("toggles like for a valid activity plan", () => {
-    const { result } = renderHook(() =>
+  it("toggles like for a valid activity plan", async () => {
+    const { result } = await renderHook(() =>
       useActivityPlanSocialController({
         planId: "11111111-1111-1111-1111-111111111111",
       }),
@@ -78,7 +78,7 @@ describe("useActivityPlanSocialController", () => {
     expect(result.current.isLiked).toBe(false);
     expect(result.current.likesCount).toBe(0);
 
-    act(() => {
+    await act(() => {
       result.current.handleToggleLike();
     });
 

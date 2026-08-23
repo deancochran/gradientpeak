@@ -47,13 +47,13 @@ describe("auth.open-access-options", () => {
     jest.clearAllMocks();
   });
 
-  it("lets a signed-out visitor choose sign-in or account creation", () => {
-    renderNative(<WelcomeScreen />);
+  it("lets a signed-out visitor choose sign-in or account creation", async () => {
+    await renderNative(<WelcomeScreen />);
 
-    fireEvent.press(screen.getByTestId("login-button"));
+    await fireEvent.press(screen.getByTestId("login-button"));
     expect(replaceMock).toHaveBeenCalledWith({ pathname: "/(external)/sign-in" });
 
-    fireEvent.press(screen.getByTestId("signup-button"));
+    await fireEvent.press(screen.getByTestId("signup-button"));
     expect(replaceMock).toHaveBeenCalledWith({ pathname: "/(external)/sign-up" });
   });
 });

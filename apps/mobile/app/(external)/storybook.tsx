@@ -66,7 +66,7 @@ export default function StorybookScreen() {
     return (
       <UnavailableRoute
         title="Storybook is disabled"
-        description="Start the mobile app with `pnpm --filter mobile storybook` and reopen this route to load the on-device component catalog."
+        description="Start the mobile app with `pnpm --filter mobile storybook:start` and reopen this route to load the on-device component catalog."
       />
     );
   }

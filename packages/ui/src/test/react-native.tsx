@@ -18,7 +18,16 @@ function resolveItemKey(item: unknown, index: number): string {
 
 const createHost = (type: string) =>
   function MockComponent(props: HostProps) {
-    return React.createElement(type, props, props.children);
+    const children =
+      type === "Text"
+        ? props.children
+        : React.Children.map(props.children, (child) =>
+            typeof child === "string" || typeof child === "number"
+              ? React.createElement("Text", null, String(child))
+              : child,
+          );
+
+    return React.createElement(type, props, children);
   };
 
 export const Modal = createHost("Modal");
@@ -117,13 +126,6 @@ export const Appearance = {
 
 export const Alert = {
   alert: jest.fn(),
-};
-
-export const InteractionManager = {
-  runAfterInteractions: jest.fn((callback: () => void) => {
-    callback();
-    return { cancel: jest.fn() };
-  }),
 };
 
 export const Platform = {

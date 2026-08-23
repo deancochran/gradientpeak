@@ -66,9 +66,9 @@ describe("Plan range hydration", () => {
   it.each([
     "weekly",
     "monthly",
-  ] as const)("keeps the chart mounted with saved %s while hydration completes", (savedRange) => {
+  ] as const)("keeps the chart mounted with saved %s while hydration completes", async (savedRange) => {
     range = savedRange;
-    const rendered = renderNative(<Plan />);
+    const rendered = await renderNative(<Plan />);
     expect(screen.getByTestId("training-path")).toBeTruthy();
     expect(sectionProps).toHaveBeenCalledWith(expect.objectContaining({ chartRange: savedRange }));
     expect(sectionProps).toHaveBeenCalledWith(
@@ -79,7 +79,7 @@ describe("Plan range hydration", () => {
     );
 
     hydrated = true;
-    rendered.rerender(<Plan />);
+    await rendered.rerender(<Plan />);
     expect(sectionProps).toHaveBeenCalledWith(expect.objectContaining({ chartRange: savedRange }));
   });
 });

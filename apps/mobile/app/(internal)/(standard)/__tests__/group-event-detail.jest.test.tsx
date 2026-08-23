@@ -73,7 +73,7 @@ jest.mock("@/components/shared/detail", () => ({
         React.createElement(
           "Button",
           { key: action.testID, onPress: action.onPress, testID: action.testID },
-          action.label,
+          React.createElement("Text", null, action.label),
         ),
       ),
     );
@@ -120,12 +120,12 @@ jest.mock("@/components/groups", () => ({
           onPress: () => onRsvp("going", "44444444-4444-4444-8444-444444444444"),
           testID: "mock-rsvp-occurrence",
         },
-        "Going",
+        React.createElement("Text", null, "Going"),
       ),
       React.createElement(
         "Button",
         { onPress: () => onRsvpSeries("going"), testID: "mock-rsvp-series" },
-        "Going to series",
+        React.createElement("Text", null, "Going to series"),
       ),
       React.createElement(
         "Button",
@@ -133,7 +133,7 @@ jest.mock("@/components/groups", () => ({
           onPress: () => onOccurrencePress({ id: "77777777-7777-4777-8777-777777777777" }),
           testID: "mock-open-occurrence",
         },
-        "Future occurrence",
+        React.createElement("Text", null, "Future occurrence"),
       ),
     ),
 }));
@@ -169,7 +169,7 @@ describe("group event detail route", () => {
     });
   });
 
-  it("renders unavailable state without event content when the detail query is denied", () => {
+  it("renders unavailable state without event content when the detail query is denied", async () => {
     useGroupEventDetailViewModelMock.mockReturnValue({
       event: null,
       isError: true,
@@ -180,7 +180,7 @@ describe("group event detail route", () => {
     });
     useGroupDetailViewModelMock.mockReturnValue({ viewer: null });
 
-    renderNative(<GroupEventDetailRoute />);
+    await renderNative(<GroupEventDetailRoute />);
 
     expect(screen.getByText("Unable to load event")).toBeTruthy();
     expect(screen.getByText("This group event may be unavailable.")).toBeTruthy();
@@ -188,10 +188,10 @@ describe("group event detail route", () => {
     expect(screen.queryByTestId("group-event-detail-overflow")).toBeNull();
   });
 
-  it("keeps management actions hidden from viewers without create-event permission", () => {
+  it("keeps management actions hidden from viewers without create-event permission", async () => {
     useGroupDetailViewModelMock.mockReturnValue({ viewer: { canCreateGroupEvent: false } });
 
-    renderNative(<GroupEventDetailRoute />);
+    await renderNative(<GroupEventDetailRoute />);
 
     expect(screen.getByText("Members Only Ride")).toBeTruthy();
     expect(screen.queryByTestId("group-event-detail-overflow")).toBeNull();
@@ -199,16 +199,16 @@ describe("group event detail route", () => {
     expect(screen.queryByTestId("group-event-detail-cancel")).toBeNull();
   });
 
-  it("does not expose removed copy-series-plans management for occurrences", () => {
-    renderNative(<GroupEventDetailRoute />);
+  it("does not expose removed copy-series-plans management for occurrences", async () => {
+    await renderNative(<GroupEventDetailRoute />);
 
     expect(screen.queryByTestId("group-event-detail-copy-series-plans")).toBeNull();
   });
 
-  it("offers occurrence editing without exposing series editing", () => {
-    renderNative(<GroupEventDetailRoute />);
+  it("offers occurrence editing without exposing series editing", async () => {
+    await renderNative(<GroupEventDetailRoute />);
 
-    fireEvent.press(screen.getByTestId("group-event-detail-edit"));
+    await fireEvent.press(screen.getByTestId("group-event-detail-edit"));
     expect(routerPushMock).toHaveBeenCalledWith({
       pathname: "/group-event-edit",
       params: { groupEventId: "99999999-9999-4999-8999-999999999999" },
@@ -217,8 +217,8 @@ describe("group event detail route", () => {
     expect(screen.queryByTestId("group-event-detail-edit-series")).toBeNull();
   });
 
-  it("exposes cancel from the management menu for recurring occurrences", () => {
-    renderNative(<GroupEventDetailRoute />);
+  it("exposes cancel from the management menu for recurring occurrences", async () => {
+    await renderNative(<GroupEventDetailRoute />);
 
     expect(overflowActions.some((action) => action.testID === "group-event-detail-cancel")).toBe(
       true,
@@ -226,10 +226,10 @@ describe("group event detail route", () => {
   });
 
   it("sends occurrence and series RSVP mutations to the correct targets", async () => {
-    renderNative(<GroupEventDetailRoute />);
+    await renderNative(<GroupEventDetailRoute />);
 
-    fireEvent.press(screen.getByTestId("mock-rsvp-occurrence"));
-    fireEvent.press(screen.getByTestId("mock-rsvp-series"));
+    await fireEvent.press(screen.getByTestId("mock-rsvp-occurrence"));
+    await fireEvent.press(screen.getByTestId("mock-rsvp-series"));
 
     await waitFor(() => {
       expect(rsvpMock).toHaveBeenCalledWith("99999999-9999-4999-8999-999999999999", "going");
@@ -240,10 +240,10 @@ describe("group event detail route", () => {
     });
   });
 
-  it("opens future occurrences without losing the occurrence id", () => {
-    renderNative(<GroupEventDetailRoute />);
+  it("opens future occurrences without losing the occurrence id", async () => {
+    await renderNative(<GroupEventDetailRoute />);
 
-    fireEvent.press(screen.getByTestId("mock-open-occurrence"));
+    await fireEvent.press(screen.getByTestId("mock-open-occurrence"));
 
     expect(routerPushMock).toHaveBeenCalledWith({
       pathname: "/group-event-detail",

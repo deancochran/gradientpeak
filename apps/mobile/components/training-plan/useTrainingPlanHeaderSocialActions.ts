@@ -1,7 +1,7 @@
 import { invalidateTrainingPlanQueries } from "@repo/api/react";
 import { type ContentVisibility, formatDateOnlyInTimeZone } from "@repo/core";
 import { trainingPlanSchema } from "@repo/core/schemas";
-import type { Router } from "expo-router";
+import type { ImperativeRouter } from "expo-router";
 import { Alert, Share } from "react-native";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
@@ -48,7 +48,7 @@ interface UseTrainingPlanHeaderSocialActionsParams {
       structureHash: string;
     } | null;
   } | null;
-  router: Pick<Router, "replace">;
+  router: Pick<ImperativeRouter, "replace">;
   utils: ReturnType<typeof api.useUtils>;
 }
 

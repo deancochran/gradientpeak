@@ -2,11 +2,11 @@ import { fireEvent, render } from "@testing-library/react-native";
 import { FilterChip, IndexResultsSummary, IndexSearchBar } from "../IndexSearchBar";
 
 describe("IndexSearchBar", () => {
-  it("keeps shared search and filter actions independently selectable", () => {
+  it("keeps shared search and filter actions independently selectable", async () => {
     const onChangeText = jest.fn();
     const onClear = jest.fn();
     const onFilterPress = jest.fn();
-    const { getByTestId } = render(
+    const { getByTestId } = await render(
       <IndexSearchBar
         hasActiveFilters
         onChangeText={onChangeText}
@@ -18,9 +18,9 @@ describe("IndexSearchBar", () => {
       />,
     );
 
-    fireEvent(getByTestId("activities-list-search-input"), "changeText", "recovery");
-    fireEvent.press(getByTestId("activities-list-search-clear"));
-    fireEvent.press(getByTestId("activities-list-filter-button"));
+    await fireEvent(getByTestId("activities-list-search-input"), "changeText", "recovery");
+    await fireEvent.press(getByTestId("activities-list-search-clear"));
+    await fireEvent.press(getByTestId("activities-list-filter-button"));
 
     expect(onChangeText).toHaveBeenCalledWith("recovery");
     expect(onClear).toHaveBeenCalledTimes(1);
@@ -32,9 +32,9 @@ describe("IndexSearchBar", () => {
     expect(getByTestId("activities-list-filter-button").props.className).toContain("min-h-12");
   });
 
-  it("exposes filter chips as selected 48dp buttons", () => {
+  it("exposes filter chips as selected 48dp buttons", async () => {
     const onPress = jest.fn();
-    const { getByTestId } = render(
+    const { getByTestId } = await render(
       <FilterChip isActive label="Cycling" onPress={onPress} testID="cycling-filter" />,
     );
 
@@ -42,12 +42,12 @@ describe("IndexSearchBar", () => {
     expect(chip.props.accessibilityRole).toBe("button");
     expect(chip.props.accessibilityState).toEqual({ selected: true, disabled: false });
     expect(chip.props.className).toContain("min-h-12");
-    fireEvent.press(chip);
+    await fireEvent.press(chip);
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it("labels partial pagination counts as loaded results", () => {
-    const { getByText } = render(
+  it("labels partial pagination counts as loaded results", async () => {
+    const { getByText } = await render(
       <IndexResultsSummary count={20} countKind="loaded" singularLabel="route" />,
     );
 

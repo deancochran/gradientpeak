@@ -26,7 +26,7 @@ describe("FileInput native", () => {
         },
       ],
     });
-    const rendered = renderNative(
+    const rendered = await renderNative(
       <FileInput
         accept=".fit,.gpx"
         label="Activity files"
@@ -57,7 +57,7 @@ describe("FileInput native", () => {
   it("preserves the current selection when the picker is cancelled", async () => {
     const onFilesChange = jest.fn();
     mockedGetDocumentAsync.mockResolvedValueOnce({ canceled: true, assets: null });
-    const rendered = renderNative(
+    const rendered = await renderNative(
       <FileInput
         files={[{ name: "keep.fit", size: 2048, uri: "file:///keep.fit" }]}
         label="Activity file"
@@ -86,7 +86,7 @@ describe("FileInput native", () => {
         },
       ],
     });
-    const rendered = renderNative(
+    const rendered = await renderNative(
       <FileInput
         files={[
           { name: "old.fit", size: 10 },
@@ -103,15 +103,15 @@ describe("FileInput native", () => {
     await fireEvent.press(rendered.getByTestId("activity-file"));
     expect(onFilesChange).toHaveBeenLastCalledWith([expect.objectContaining({ name: "new.fit" })]);
 
-    fireEvent.press(rendered.getByTestId("activity-file-remove-0"));
+    await fireEvent.press(rendered.getByTestId("activity-file-remove-0"));
     expect(onFilesChange).toHaveBeenLastCalledWith([{ name: "other.fit", size: 20 }]);
-    fireEvent.press(rendered.getByTestId("activity-file-clear"));
+    await fireEvent.press(rendered.getByTestId("activity-file-clear"));
     expect(onFilesChange).toHaveBeenLastCalledWith([]);
   });
 
   it("blocks all interactions while disabled", async () => {
     const onFilesChange = jest.fn();
-    const rendered = renderNative(
+    const rendered = await renderNative(
       <FileInput
         disabled
         files={[{ name: "locked.fit", size: 10 }]}
@@ -124,14 +124,14 @@ describe("FileInput native", () => {
     expect(rendered.getByTestId("locked-file").props.disabled).toBe(true);
     expect(rendered.getByTestId("locked-file").props["aria-required"]).toBe(false);
     await fireEvent.press(rendered.getByTestId("locked-file"));
-    fireEvent.press(rendered.getByTestId("locked-file-remove-0"));
-    fireEvent.press(rendered.getByTestId("locked-file-clear"));
+    await fireEvent.press(rendered.getByTestId("locked-file-remove-0"));
+    await fireEvent.press(rendered.getByTestId("locked-file-clear"));
     expect(mockedGetDocumentAsync).not.toHaveBeenCalled();
     expect(onFilesChange).not.toHaveBeenCalled();
   });
 
-  it("associates its label, helper, error, required state, id, name, and selector", () => {
-    const rendered = renderNative(
+  it("associates its label, helper, error, required state, id, name, and selector", async () => {
+    const rendered = await renderNative(
       <FileInput
         error="Choose a supported file"
         helperText="FIT only"
@@ -150,11 +150,7 @@ describe("FileInput native", () => {
     expect(button.props["aria-invalid"]).toBe(true);
     expect(button.props["aria-required"]).toBe(true);
     expect(rendered.getByText("Choose a supported file").props.nativeID).toBe("upload-error");
-    const views = (
-      rendered as unknown as {
-        UNSAFE_getAllByType: (type: string) => Array<{ props: Record<string, unknown> }>;
-      }
-    ).UNSAFE_getAllByType("View");
+    const views = rendered.container.queryAll((node) => node.type === "View");
     expect(views.some((view) => view.props.name === "upload_file")).toBe(true);
   });
 });

@@ -90,8 +90,8 @@ describe("simplified onboarding lifecycle", () => {
     progressError = null;
   });
 
-  it("shows identity with an optional provider and finishes without starting provider processing", () => {
-    renderNative(<OnboardingScreen />);
+  it("shows identity with an optional provider and finishes without starting provider processing", async () => {
+    await renderNative(<OnboardingScreen />);
     expect(screen.getByTestId("onboarding-provider-selection")).toBeTruthy();
     expect(screen.getByTestId("provider-selection-controls")).toBeTruthy();
     expect(screen.getByTestId("identity-form")).toBeTruthy();
@@ -99,11 +99,11 @@ describe("simplified onboarding lifecycle", () => {
     expect(screen.queryByText("Training baseline")).toBeNull();
     expect(screen.queryByText("Initial goal")).toBeNull();
     expect(screen.queryByText("Groups and people")).toBeNull();
-    fireEvent.press(screen.getByTestId("onboarding-finish-button"));
+    await fireEvent.press(screen.getByTestId("onboarding-finish-button"));
     expect(handleComplete).toHaveBeenCalledTimes(1);
   });
 
-  it("shows provider selection after restart even if stale processing progress remains cached", () => {
+  it("shows provider selection after restart even if stale processing progress remains cached", async () => {
     lifecycleStatus = "provider_selection";
     progress = {
       status: "processing",
@@ -114,12 +114,12 @@ describe("simplified onboarding lifecycle", () => {
       provider_summary: [],
       recovery: null,
     };
-    renderNative(<OnboardingScreen />);
+    await renderNative(<OnboardingScreen />);
     expect(screen.getByTestId("onboarding-provider-selection")).toBeTruthy();
     expect(screen.queryByTestId("provider-processing-evidence")).toBeNull();
   });
 
-  it("renders processing progress without any editable onboarding form", () => {
+  it("renders processing progress without any editable onboarding form", async () => {
     lifecycleStatus = "processing";
     progress = {
       status: "processing",
@@ -130,7 +130,7 @@ describe("simplified onboarding lifecycle", () => {
       provider_summary: [],
       recovery: null,
     };
-    renderNative(<OnboardingScreen />);
+    await renderNative(<OnboardingScreen />);
     expect(screen.getByTestId("onboarding-processing")).toBeTruthy();
     expect(screen.getByTestId("provider-processing-evidence")).toBeTruthy();
     expect(screen.queryByTestId("provider-selection-controls")).toBeNull();
@@ -138,7 +138,7 @@ describe("simplified onboarding lifecycle", () => {
     expect(screen.queryByTestId("onboarding-finish-button")).toBeNull();
   });
 
-  it("retains processing progress while showing a recoverable transient error", () => {
+  it("retains processing progress while showing a recoverable transient error", async () => {
     lifecycleStatus = "processing";
     progress = {
       status: "processing",
@@ -150,20 +150,20 @@ describe("simplified onboarding lifecycle", () => {
       recovery: null,
     };
     progressError = new Error("temporary");
-    renderNative(<OnboardingScreen />);
+    await renderNative(<OnboardingScreen />);
     expect(screen.getByTestId("provider-processing-evidence")).toBeTruthy();
     expect(screen.getByText("Retry progress")).toBeTruthy();
   });
 
-  it("shows an initial processing status instead of a blank screen", () => {
+  it("shows an initial processing status instead of a blank screen", async () => {
     lifecycleStatus = "processing";
-    renderNative(<OnboardingScreen />);
+    await renderNative(<OnboardingScreen />);
     expect(screen.getByText("Loading preparation progress")).toBeTruthy();
   });
 
-  it("renders only identity in review and finalizes with one action", () => {
+  it("renders only identity in review and finalizes with one action", async () => {
     lifecycleStatus = "review";
-    renderNative(<OnboardingScreen />);
+    await renderNative(<OnboardingScreen />);
     expect(screen.getByTestId("onboarding-identity")).toBeTruthy();
     expect(screen.getByTestId("identity-form")).toBeTruthy();
     expect(screen.queryByTestId("baseline-form")).toBeNull();
@@ -171,13 +171,13 @@ describe("simplified onboarding lifecycle", () => {
     expect(screen.queryByTestId("social-form")).toBeNull();
     expect(screen.queryByTestId("provider-selection-controls")).toBeNull();
     expect(screen.queryByTestId("provider-processing-evidence")).toBeNull();
-    fireEvent.press(screen.getByTestId("onboarding-finish-button"));
+    await fireEvent.press(screen.getByTestId("onboarding-finish-button"));
     expect(handleComplete).toHaveBeenCalledTimes(1);
   });
 
-  it("renders nothing once AppBootstrapGate owns completed navigation", () => {
+  it("renders nothing once AppBootstrapGate owns completed navigation", async () => {
     lifecycleStatus = "completed";
-    const rendered = renderNative(<OnboardingScreen />);
+    const rendered = await renderNative(<OnboardingScreen />);
     expect(rendered.toJSON()).toBeNull();
   });
 });

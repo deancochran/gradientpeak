@@ -73,7 +73,7 @@ jest.mock("@/components/calendar/CalendarTimelineRows", () => ({
     require("react").createElement(
       "CalendarScheduleObjectCard",
       { onPress: () => onPress(object), testID: `calendar-agenda-item-${object.id}` },
-      object.title,
+      require("react").createElement("Text", null, object.title),
     ),
 }));
 jest.mock("@/components/plan/ledger/PlanningLedgerView", () => ({
@@ -205,8 +205,8 @@ describe("calendar fixed month page", () => {
     calendarPageUseQueryMock.mockReturnValue(queryResult());
   });
 
-  it("loads one Monday-first six-week page and exposes all calendar controls", () => {
-    renderNative(<CalendarScreen />);
+  it("loads one Monday-first six-week page and exposes all calendar controls", async () => {
+    await renderNative(<CalendarScreen />);
     expect(calendarPageUseQueryMock).toHaveBeenCalledWith(
       expect.objectContaining({ pageStartDate: "2026-02-23", pageSizeDays: 42 }),
       expect.objectContaining({ placeholderData: expect.any(Function) }),
@@ -226,62 +226,62 @@ describe("calendar fixed month page", () => {
     expect(screen.queryByText(/Fill is completed load/)).toBeNull();
   });
 
-  it("opens the selected-day agenda in place and lets users open an item", () => {
-    renderNative(<CalendarScreen />);
-    fireEvent.press(screen.getByTestId("calendar-day-select-2026-03-24"));
+  it("opens the selected-day agenda in place and lets users open an item", async () => {
+    await renderNative(<CalendarScreen />);
+    await fireEvent.press(screen.getByTestId("calendar-day-select-2026-03-24"));
     expect(screen.getByLabelText(/^Open agenda for 2026-03-24\./)).toBeTruthy();
     expect(pushMock).not.toHaveBeenCalled();
-    fireEvent.press(screen.getByTestId("calendar-day-select-2026-03-24"));
+    await fireEvent.press(screen.getByTestId("calendar-day-select-2026-03-24"));
     expect(screen.getByTestId("calendar-agenda-sheet")).toBeTruthy();
     expect(screen.getByTestId("planning-ledger-performance-insights")).toBeTruthy();
     expect(screen.getByText("Rest day")).toBeTruthy();
     expect(pushMock).not.toHaveBeenCalled();
 
-    fireEvent.press(screen.getByTestId("calendar-day-select-2026-03-23"));
-    fireEvent.press(screen.getByTestId("calendar-day-select-2026-03-23"));
-    fireEvent.press(screen.getByTestId("calendar-agenda-item-event-1"));
+    await fireEvent.press(screen.getByTestId("calendar-day-select-2026-03-23"));
+    await fireEvent.press(screen.getByTestId("calendar-day-select-2026-03-23"));
+    await fireEvent.press(screen.getByTestId("calendar-agenda-item-event-1"));
     expect(pushMock).toHaveBeenCalledWith("/event/event-1");
   });
 
-  it("moves month pages while retaining the selected day-of-month and keeps ready content while loading", () => {
+  it("moves month pages while retaining the selected day-of-month and keeps ready content while loading", async () => {
     calendarPageUseQueryMock.mockReturnValue(queryResult({ isFetching: true }));
-    renderNative(<CalendarScreen />);
-    fireEvent.press(screen.getByTestId("calendar-next-month"));
+    await renderNative(<CalendarScreen />);
+    await fireEvent.press(screen.getByTestId("calendar-next-month"));
     expect(useCalendarStore.getState().activeDate).toBe("2026-04-23");
     expect(screen.getByTestId("calendar-month-loading")).toBeTruthy();
     expect(screen.getByTestId("calendar-screen-ready")).toBeTruthy();
     expect(screen.getByTestId("calendar-month-page-2026-04-01")).toBeTruthy();
   });
 
-  it("clamps month navigation from January 31 to February 28", () => {
+  it("clamps month navigation from January 31 to February 28", async () => {
     useCalendarStore.setState({ activeDate: "2026-01-31" });
-    renderNative(<CalendarScreen />);
+    await renderNative(<CalendarScreen />);
 
-    fireEvent.press(screen.getByTestId("calendar-next-month"));
+    await fireEvent.press(screen.getByTestId("calendar-next-month"));
 
     expect(useCalendarStore.getState().activeDate).toBe("2026-02-28");
   });
 
-  it("selects the date chosen in the date picker", () => {
-    renderNative(<CalendarScreen />);
+  it("selects the date chosen in the date picker", async () => {
+    await renderNative(<CalendarScreen />);
 
-    fireEvent.press(screen.getByTestId("calendar-date-jump-entry"));
-    fireEvent(
+    await fireEvent.press(screen.getByTestId("calendar-date-jump-entry"));
+    await fireEvent(
       screen.getByTestId("calendar-date-picker"),
       "change",
       { type: "set" },
       new Date(2026, 8, 8, 12),
     );
-    fireEvent.press(screen.getByTestId("calendar-date-jump-confirm"));
+    await fireEvent.press(screen.getByTestId("calendar-date-jump-confirm"));
 
     expect(useCalendarStore.getState().activeDate).toBe("2026-09-08");
     expect(screen.getByLabelText(/^Open agenda for 2026-09-08\./)).toBeTruthy();
   });
 
-  it("retries a failed calendar page", () => {
+  it("retries a failed calendar page", async () => {
     calendarPageUseQueryMock.mockReturnValue(queryResult({ data: undefined, isError: true }));
-    renderNative(<CalendarScreen />);
-    fireEvent.press(screen.getByTestId("calendar-retry"));
+    await renderNative(<CalendarScreen />);
+    await fireEvent.press(screen.getByTestId("calendar-retry"));
     expect(refetchMock).toHaveBeenCalled();
   });
 });

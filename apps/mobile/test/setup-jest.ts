@@ -1,31 +1,50 @@
-import React from "react";
+import mockReact from "react";
 
 import "@repo/ui/test/setup-native";
 
 (globalThis as { __DEV__?: boolean }).__DEV__ = false;
 
-type HostProps = Record<string, unknown> & { children?: React.ReactNode };
+globalThis.requestIdleCallback = jest.fn((callback: IdleRequestCallback) => {
+  callback({
+    didTimeout: false,
+    timeRemaining: () => 50,
+  });
+  return 0;
+});
+globalThis.cancelIdleCallback = jest.fn();
+
+type HostProps = Record<string, unknown> & { children?: mockReact.ReactNode };
 type CartesianChartProps = Record<string, unknown> & {
-  children?: React.ReactNode | ((context: Record<string, unknown>) => React.ReactNode);
+  children?: mockReact.ReactNode | ((context: Record<string, unknown>) => mockReact.ReactNode);
   data?: Record<string, unknown>[];
 };
 type BottomSheetFlatListMockProps<Item = unknown> = Record<string, unknown> & {
   data?: Item[];
-  keyExtractor?: (item: Item, index: number) => React.Key;
-  ListEmptyComponent?: React.ComponentType | React.ReactNode;
-  ListFooterComponent?: React.ComponentType | React.ReactNode;
-  ListHeaderComponent?: React.ComponentType | React.ReactNode;
-  renderItem: (info: { item: Item; index: number }) => React.ReactNode;
+  keyExtractor?: (item: Item, index: number) => mockReact.Key;
+  ListEmptyComponent?: mockReact.ComponentType | mockReact.ReactNode;
+  ListFooterComponent?: mockReact.ComponentType | mockReact.ReactNode;
+  ListHeaderComponent?: mockReact.ComponentType | mockReact.ReactNode;
+  renderItem: (info: { item: Item; index: number }) => mockReact.ReactNode;
 };
 
-const createHost = (type: string) =>
+const mockRenderHostChildren = (type: string, children: mockReact.ReactNode) => {
+  if (type === "Text") return children;
+
+  return mockReact.Children.map(children, (child) =>
+    typeof child === "string" || typeof child === "number"
+      ? mockReact.createElement("Text", null, String(child))
+      : child,
+  );
+};
+
+const mockCreateHost = (type: string) =>
   function HostComponent({ children, ...props }: HostProps) {
-    return React.createElement(type, props, children);
+    return mockReact.createElement(type, props, mockRenderHostChildren(type, children));
   };
 
-const createLeafHost = (type: string) =>
+const mockCreateLeafHost = (type: string) =>
   function LeafHostComponent(props: Record<string, unknown>) {
-    return React.createElement(type, props);
+    return mockReact.createElement(type, props);
   };
 
 process.env.EXPO_PUBLIC_API_URL ??= "http://localhost:3000";
@@ -103,15 +122,15 @@ jest.mock("@sentry/react-native", () => ({
 
 jest.mock("react-native-gesture-handler", () => ({
   __esModule: true,
-  GestureHandlerRootView: createHost("GestureHandlerRootView"),
-  ScrollView: createHost("GestureHandlerScrollView"),
+  GestureHandlerRootView: mockCreateHost("GestureHandlerRootView"),
+  ScrollView: mockCreateHost("GestureHandlerScrollView"),
 }));
 
 jest.mock("react-native-maps", () => ({
   __esModule: true,
-  default: createHost("MapView"),
-  Marker: createHost("Marker"),
-  Polyline: createLeafHost("Polyline"),
+  default: mockCreateHost("MapView"),
+  Marker: mockCreateHost("Marker"),
+  Polyline: mockCreateLeafHost("Polyline"),
   PROVIDER_DEFAULT: "default",
 }));
 
@@ -122,15 +141,17 @@ jest.mock("@gorhom/bottom-sheet", () => ({
     footerComponent: FooterComponent,
     ...props
   }: HostProps & {
-    footerComponent?: React.ComponentType<Record<string, unknown>>;
+    footerComponent?: mockReact.ComponentType<Record<string, unknown>>;
   }) =>
-    React.createElement(
+    mockReact.createElement(
       "BottomSheet",
       props,
       children,
-      FooterComponent ? React.createElement(FooterComponent, { animatedFooterPosition: 0 }) : null,
+      FooterComponent
+        ? mockReact.createElement(FooterComponent, { animatedFooterPosition: 0 })
+        : null,
     ),
-  BottomSheetBackdrop: createLeafHost("BottomSheetBackdrop"),
+  BottomSheetBackdrop: mockCreateLeafHost("BottomSheetBackdrop"),
   BottomSheetFlatList: ({
     data = [],
     keyExtractor,
@@ -140,30 +161,30 @@ jest.mock("@gorhom/bottom-sheet", () => ({
     renderItem,
     ...props
   }: BottomSheetFlatListMockProps) =>
-    React.createElement(
+    mockReact.createElement(
       "BottomSheetFlatList",
       props,
       typeof ListHeaderComponent === "function"
-        ? React.createElement(ListHeaderComponent)
+        ? mockReact.createElement(ListHeaderComponent)
         : ListHeaderComponent,
       data.length === 0
         ? typeof ListEmptyComponent === "function"
-          ? React.createElement(ListEmptyComponent)
+          ? mockReact.createElement(ListEmptyComponent)
           : ListEmptyComponent
         : data.map((item, index) =>
-            React.createElement(
-              React.Fragment,
+            mockReact.createElement(
+              mockReact.Fragment,
               { key: keyExtractor ? keyExtractor(item, index) : index },
               renderItem({ item, index }),
             ),
           ),
       typeof ListFooterComponent === "function"
-        ? React.createElement(ListFooterComponent)
+        ? mockReact.createElement(ListFooterComponent)
         : ListFooterComponent,
     ),
-  BottomSheetFooter: createHost("BottomSheetFooter"),
-  BottomSheetScrollView: createHost("BottomSheetScrollView"),
-  BottomSheetView: createHost("BottomSheetView"),
+  BottomSheetFooter: mockCreateHost("BottomSheetFooter"),
+  BottomSheetScrollView: mockCreateHost("BottomSheetScrollView"),
+  BottomSheetView: mockCreateHost("BottomSheetView"),
 }));
 
 jest.mock("@better-auth/expo", () => ({
@@ -176,7 +197,7 @@ jest.mock("@better-auth/expo/client", () => ({
   expoClient: jest.fn(() => ({
     id: "expo",
     version: "test",
-    getActions: jest.fn(() => ({ getCookie: jest.fn(() => "") })),
+    getActions: jest.fn(() => ({ getCookie: jest.fn(async () => "") })),
     fetchPlugins: [],
   })),
 }));
@@ -224,8 +245,8 @@ jest.mock("react-native-css/native", () => ({
 
 jest.mock("react-native-css/components/react-native-safe-area-context", () => ({
   __esModule: true,
-  SafeAreaProvider: createHost("SafeAreaProvider"),
-  SafeAreaView: createHost("SafeAreaView"),
+  SafeAreaProvider: mockCreateHost("SafeAreaProvider"),
+  SafeAreaView: mockCreateHost("SafeAreaView"),
 }));
 
 jest.mock("react-native-safe-area-context", () => ({
@@ -236,8 +257,8 @@ jest.mock("react-native-safe-area-context", () => ({
   },
   SafeAreaConsumer: ({ children }: { children: (insets: unknown) => unknown }) =>
     children({ bottom: 0, left: 0, right: 0, top: 0 }),
-  SafeAreaProvider: createHost("SafeAreaProvider"),
-  SafeAreaView: createHost("SafeAreaView"),
+  SafeAreaProvider: mockCreateHost("SafeAreaProvider"),
+  SafeAreaView: mockCreateHost("SafeAreaView"),
   useSafeAreaFrame: () => ({ height: 844, width: 390, x: 0, y: 0 }),
   useSafeAreaInsets: () => ({ bottom: 0, left: 0, right: 0, top: 0 }),
 }));
@@ -290,26 +311,26 @@ jest.mock("@garmin/fitsdk", () => ({
 
 jest.mock("@shopify/react-native-skia", () => ({
   __esModule: true,
-  Canvas: createHost("Canvas"),
-  Circle: createLeafHost("Circle"),
-  DashPathEffect: createLeafHost("DashPathEffect"),
-  Group: createHost("Group"),
-  LinearGradient: createLeafHost("LinearGradient"),
-  Line: createLeafHost("SkiaLine"),
-  Path: createLeafHost("Path"),
-  Rect: createLeafHost("Rect"),
+  Canvas: mockCreateHost("Canvas"),
+  Circle: mockCreateLeafHost("Circle"),
+  DashPathEffect: mockCreateLeafHost("DashPathEffect"),
+  Group: mockCreateHost("Group"),
+  LinearGradient: mockCreateLeafHost("LinearGradient"),
+  Line: mockCreateLeafHost("SkiaLine"),
+  Path: mockCreateLeafHost("Path"),
+  Rect: mockCreateLeafHost("Rect"),
   Skia: {
     Path: { Make: () => ({ lineTo: jest.fn(), moveTo: jest.fn() }) },
   },
-  Text: createLeafHost("SkiaText"),
+  Text: mockCreateLeafHost("SkiaText"),
   useFont: jest.fn(() => ({ getTextWidth: () => 24 })),
   vec: jest.fn((x: number, y: number) => ({ x, y })),
 }));
 
 jest.mock("victory-native", () => ({
   __esModule: true,
-  Area: createLeafHost("Area"),
-  Bar: createLeafHost("Bar"),
+  Area: mockCreateLeafHost("Area"),
+  Bar: mockCreateLeafHost("Bar"),
   CartesianChart: ({ children, data = [] }: CartesianChartProps) => {
     const pointSeries = (key: string) =>
       data.map((datum, index) => ({
@@ -318,7 +339,7 @@ jest.mock("victory-native", () => ({
         yValue: typeof datum[key] === "number" ? Number(datum[key]) : null,
       }));
 
-    return React.createElement(
+    return mockReact.createElement(
       "CartesianChart",
       { data },
       typeof children === "function"
@@ -347,8 +368,8 @@ jest.mock("victory-native", () => ({
         : children,
     );
   },
-  Line: createLeafHost("Line"),
-  Scatter: createLeafHost("Scatter"),
+  Line: mockCreateLeafHost("Line"),
+  Scatter: mockCreateLeafHost("Scatter"),
   useChartPressState: jest.fn(() => ({
     isActive: false,
     state: {
@@ -362,8 +383,8 @@ jest.mock("victory-native", () => ({
 }));
 
 jest.mock("react-native-svg", () => {
-  const MockSvg = createHost("svg");
-  const MockCircle = createHost("circle");
+  const MockSvg = mockCreateHost("svg");
+  const MockCircle = mockCreateHost("circle");
 
   return {
     __esModule: true,

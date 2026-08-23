@@ -166,8 +166,8 @@ describe("navigation capabilities", () => {
     setSelectionMock.mockReset();
   });
 
-  it("keeps every primary destination reachable from its tab button", () => {
-    renderNative(<TabsLayout />);
+  it("keeps every primary destination reachable from its tab button", async () => {
+    await renderNative(<TabsLayout />);
 
     for (const [routeName, testID] of [
       ["index", "tab-button-home"],
@@ -176,7 +176,7 @@ describe("navigation capabilities", () => {
       ["calendar", "tab-button-calendar"],
       ["profile", "tab-button-profile"],
     ] as const) {
-      fireEvent.press(screen.getByTestId(testID));
+      await fireEvent.press(screen.getByTestId(testID));
       if (routeName !== "record-launcher") {
         expect(tabPressMocks.get(routeName)).toHaveBeenCalledTimes(1);
       }
@@ -187,19 +187,19 @@ describe("navigation capabilities", () => {
     expect(navigateToMock).toHaveBeenCalledWith("/record");
   });
 
-  it("recovers an authenticated missing route to the internal home", () => {
-    renderNative(<NotFoundScreen />);
+  it("recovers an authenticated missing route to the internal home", async () => {
+    await renderNative(<NotFoundScreen />);
 
-    fireEvent.press(screen.getByText("Go Home"));
+    await fireEvent.press(screen.getByText("Go Home"));
 
     expect(replaceMock).toHaveBeenCalledWith("/(internal)/(tabs)");
   });
 
-  it("recovers an unauthenticated missing route to the public home", () => {
+  it("recovers an unauthenticated missing route to the public home", async () => {
     authenticated = false;
-    renderNative(<NotFoundScreen />);
+    await renderNative(<NotFoundScreen />);
 
-    fireEvent.press(screen.getByText("Go Home"));
+    await fireEvent.press(screen.getByText("Go Home"));
 
     expect(replaceMock).toHaveBeenCalledWith("/");
   });

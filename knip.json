@@ -14,8 +14,6 @@
         "@react-native-community/netinfo",
         "buffer",
         "expo-blur",
-        "expo-font",
-        "expo-image",
         "expo-updates",
         "dotenv-cli",
         "eas-build-cache-provider"

@@ -14,6 +14,8 @@ const ICON = "./assets/images/icons/splash-icon-prod.png";
 const ADAPTIVE_ICON = "./assets/images/icons/splash-icon-prod.png";
 const SCHEME = "gradientpeak";
 
+const RUNTIME_VERSION_POLICY = { policy: "fingerprint" } as const;
+
 export default ({ config }: ConfigContext): ExpoConfig => {
   const environment =
     (process.env.APP_ENV as "development" | "preview" | "production") || "development";
@@ -32,7 +34,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     slug: PROJECT_SLUG,
     orientation: "portrait",
     userInterfaceStyle: "automatic",
-    newArchEnabled: true, // Required for TurboModules
     icon,
     scheme,
     ios: {
@@ -61,7 +62,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         backgroundColor: "#ffffff",
       },
       package: packageName,
-      edgeToEdgeEnabled: true,
       permissions: [
         "android.permission.BLUETOOTH_SCAN",
         "android.permission.BLUETOOTH_CONNECT",
@@ -85,9 +85,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         : {
             url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
           },
-    runtimeVersion: {
-      policy: "appVersion",
-    },
+    runtimeVersion: RUNTIME_VERSION_POLICY,
     extra: {
       eas: {
         projectId: EAS_PROJECT_ID,
@@ -104,9 +102,13 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       "expo-router",
       "expo-web-browser",
       "expo-build-properties",
+      "@react-native-community/datetimepicker",
+      "expo-font",
+      "expo-image",
       "expo-secure-store",
       "expo-sqlite",
       "expo-localization",
+      "expo-status-bar",
       "posthog-react-native/expo",
       [
         "expo-dev-client",
@@ -142,7 +144,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       // ],
     ],
     experiments: {
-      autolinkingModuleResolution: true,
       typedRoutes: true,
       buildCacheProvider: "eas",
     },

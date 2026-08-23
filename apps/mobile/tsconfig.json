@@ -1,7 +1,6 @@
 {
   "extends": "@repo/typescript-config/expo.json",
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./*"],
       "@repo/auth": ["../../packages/auth/src/client.ts"],
@@ -11,7 +10,8 @@
         "../../packages/auth/src/client/*",
         "../../packages/auth/src/runtime/*"
       ]
-    }
+    },
+    "types": ["jest", "node"]
   },
   "include": [
     "**/*.ts",

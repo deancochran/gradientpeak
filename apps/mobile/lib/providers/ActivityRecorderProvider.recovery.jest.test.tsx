@@ -100,7 +100,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
   });
 
   it("stages the single owner and resumes through the user prompt", async () => {
-    render(
+    await render(
       <ActivityRecorderProvider profile={{ id: "profile-1" }}>
         <Text>child</Text>
       </ActivityRecorderProvider>,
@@ -140,7 +140,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
       checkpoint: { ...checkpoint, lifecycle: "finishing" },
     });
 
-    render(
+    await render(
       <ActivityRecorderProvider profile={{ id: "profile-1" }}>
         <Text>child</Text>
       </ActivityRecorderProvider>,
@@ -166,7 +166,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
   });
 
   it("requires a second confirmation before discard", async () => {
-    render(
+    await render(
       <ActivityRecorderProvider profile={{ id: "profile-1" }}>
         <Text>child</Text>
       </ActivityRecorderProvider>,
@@ -176,7 +176,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
       text: string;
       onPress: () => void;
     }>;
-    act(() => promptButtons.find((button) => button.text === "Discard")?.onPress());
+    await act(() => promptButtons.find((button) => button.text === "Discard")?.onPress());
     expect(serviceMock.discardRecoveredRecording).not.toHaveBeenCalled();
     const confirmButtons = alertMock.mock.calls.at(-1)?.[2] as Array<{
       text: string;
@@ -190,7 +190,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
     serviceMock.discardRecoveredRecording
       .mockRejectedValueOnce(new Error("Checkpoint storage unavailable"))
       .mockResolvedValueOnce(undefined);
-    render(
+    await render(
       <ActivityRecorderProvider profile={{ id: "profile-1" }}>
         <RecoveryStatus />
       </ActivityRecorderProvider>,
@@ -204,7 +204,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
       ),
     );
 
-    act(() => pressLatestAlertButton("Discard"));
+    await act(() => pressLatestAlertButton("Discard"));
     await act(async () => pressLatestAlertButton("Discard"));
 
     await waitFor(() =>
@@ -223,7 +223,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
 
   it("quarantines a checkpoint when durable stream replay is corrupt", async () => {
     serviceMock.stageRecoveredCheckpoint.mockRejectedValueOnce(new Error("Corrupt stream chunk"));
-    render(
+    await render(
       <ActivityRecorderProvider profile={{ id: "profile-1" }}>
         <Text>child</Text>
       </ActivityRecorderProvider>,
@@ -252,7 +252,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
     );
 
     try {
-      render(
+      await render(
         <ActivityRecorderProvider profile={{ id: "profile-1" }}>
           <Text>child</Text>
         </ActivityRecorderProvider>,
@@ -277,7 +277,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
       hasQuarantinedEvidence: false,
       finalizedArtifactRecovery: [],
     });
-    const view = render(
+    const view = await render(
       <ActivityRecorderProvider profile={{ id: "profile-1" }}>
         <Text>child</Text>
       </ActivityRecorderProvider>,
@@ -292,7 +292,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
         }),
     );
 
-    view.rerender(
+    await view.rerender(
       <ActivityRecorderProvider profile={{ id: "profile-2" }}>
         <Text>child</Text>
       </ActivityRecorderProvider>,
@@ -312,7 +312,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
       hasQuarantinedEvidence: false,
       finalizedArtifactRecovery: [],
     }));
-    const view = render(
+    const view = await render(
       <ActivityRecorderProvider profile={{ id: "profile-1" }}>
         <RecoveryStatus />
       </ActivityRecorderProvider>,
@@ -330,7 +330,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
       onPress: () => void;
     }>;
 
-    view.rerender(
+    await view.rerender(
       <ActivityRecorderProvider profile={{ id: "profile-2" }}>
         <RecoveryStatus />
       </ActivityRecorderProvider>,
@@ -356,14 +356,14 @@ describe("ActivityRecorderProvider recovery prompt", () => {
           finishStaging = resolve;
         }),
     );
-    const view = render(
+    const view = await render(
       <ActivityRecorderProvider profile={{ id: "profile-1" }}>
         <RecoveryStatus />
       </ActivityRecorderProvider>,
     );
     await waitFor(() => expect(serviceMock.stageRecoveredCheckpoint).toHaveBeenCalled());
 
-    view.rerender(
+    await view.rerender(
       <ActivityRecorderProvider profile={{ id: "profile-2" }}>
         <RecoveryStatus />
       </ActivityRecorderProvider>,
@@ -387,7 +387,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
   });
 
   it("retains a resumed claim until the owning profile service is disposed", async () => {
-    const view = render(
+    const view = await render(
       <ActivityRecorderProvider profile={{ id: "profile-1" }}>
         <RecoveryStatus />
       </ActivityRecorderProvider>,
@@ -410,7 +410,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
       finalizedArtifactRecovery: [],
     });
 
-    view.rerender(
+    await view.rerender(
       <ActivityRecorderProvider profile={{ id: "profile-2" }}>
         <RecoveryStatus />
       </ActivityRecorderProvider>,
@@ -440,19 +440,19 @@ describe("ActivityRecorderProvider recovery prompt", () => {
           finishStaging = resolve;
         }),
     );
-    const view = render(
+    const view = await render(
       <ActivityRecorderProvider profile={{ id: "profile-1" }}>
         <RecoveryStatus />
       </ActivityRecorderProvider>,
     );
     await waitFor(() => expect(serviceMock.stageRecoveredCheckpoint).toHaveBeenCalled());
 
-    view.rerender(
+    await view.rerender(
       <ActivityRecorderProvider profile={{ id: "profile-2" }}>
         <RecoveryStatus />
       </ActivityRecorderProvider>,
     );
-    view.rerender(
+    await view.rerender(
       <ActivityRecorderProvider profile={{ id: "profile-1" }}>
         <RecoveryStatus />
       </ActivityRecorderProvider>,
@@ -472,7 +472,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
       hasQuarantinedEvidence: false,
       finalizedArtifactRecovery: [],
     });
-    const view = render(
+    const view = await render(
       <ActivityRecorderProvider profile={{ id: "profile-1" }}>
         <Text>child</Text>
       </ActivityRecorderProvider>,
@@ -480,7 +480,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
     await waitFor(() => expect(recorderConstructorMock).toHaveBeenCalledWith({ id: "profile-1" }));
     serviceMock.cleanup.mockRejectedValueOnce(new Error("Native teardown still settling"));
 
-    view.rerender(
+    await view.rerender(
       <ActivityRecorderProvider profile={{ id: "profile-2" }}>
         <Text>child</Text>
       </ActivityRecorderProvider>,
@@ -497,7 +497,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
       hasQuarantinedEvidence: false,
       finalizedArtifactRecovery: [],
     });
-    const view = render(
+    const view = await render(
       <ActivityRecorderProvider profile={{ id: "profile-1" }}>
         <Text>child</Text>
       </ActivityRecorderProvider>,
@@ -507,7 +507,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
       .mockRejectedValueOnce(new Error("Native teardown still settling"))
       .mockRejectedValueOnce(new Error("Native teardown still settling"));
 
-    view.rerender(
+    await view.rerender(
       <ActivityRecorderProvider profile={{ id: "profile-2" }}>
         <Text>child</Text>
       </ActivityRecorderProvider>,
@@ -542,7 +542,7 @@ describe("ActivityRecorderProvider recovery prompt", () => {
           finishDiscard = resolve;
         }),
     );
-    const view = render(
+    const view = await render(
       <ActivityRecorderProvider profile={{ id: "profile-1" }}>
         <RecoveryCommandProbe />
       </ActivityRecorderProvider>,
@@ -550,10 +550,10 @@ describe("ActivityRecorderProvider recovery prompt", () => {
     await waitFor(() => expect(screen.getByText("Recovery available")).toBeTruthy());
 
     let discard: Promise<void> | undefined;
-    act(() => {
+    await act(() => {
       discard = recoveryCommands?.discard();
     });
-    view.rerender(
+    await view.rerender(
       <ActivityRecorderProvider profile={{ id: "profile-2" }}>
         <RecoveryCommandProbe />
       </ActivityRecorderProvider>,

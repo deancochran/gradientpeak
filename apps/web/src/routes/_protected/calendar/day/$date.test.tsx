@@ -249,7 +249,14 @@ describe("CalendarDayPage planned workload", () => {
     expect(screen.getByText("2 calendar items")).toBeTruthy();
   });
 
-  it("renders completed activities and selected group events from the day projection", () => {
+  it("planning.view-day-agenda shows planned and completed information for the selected day", () => {
+    mocks.events = [
+      {
+        id: "planned-ride",
+        starts_at: "2026-07-27T08:00:00.000Z",
+        title: "Planned ride",
+      },
+    ];
     mocks.completedActivities = [
       {
         id: "activity-1",
@@ -272,6 +279,8 @@ describe("CalendarDayPage planned workload", () => {
 
     render(<CalendarDayPage />);
 
+    expect(mocks.summaryInputs).toEqual([{ date: "2026-07-27" }]);
+    expect(screen.getByText("Planned ride")).toBeTruthy();
     expect(
       screen.getByRole("link", { name: "Open activity Morning ride" }).getAttribute("href"),
     ).toBe("/activities/activity-1");
@@ -279,7 +288,7 @@ describe("CalendarDayPage planned workload", () => {
     expect(screen.getByRole("link", { name: /Club run/i }).getAttribute("href")).toBe(
       "/groups/events/group-event-1",
     );
-    expect(screen.getByText("2 calendar items")).toBeTruthy();
+    expect(screen.getByText("3 calendar items")).toBeTruthy();
   });
 
   it("renders a cross-date group event label in the event timezone", () => {

@@ -24,38 +24,35 @@ import { TimeInput } from "./time-input/index.native";
 import { weightInputFieldFixtures } from "./weight-input-field/fixtures";
 import { WeightInputField } from "./weight-input-field/index.native";
 
-type NativeRenderWithTypeQueries = ReturnType<typeof renderNative> & {
-  queryAllByType?: (type: string) => unknown[];
-  UNSAFE_getAllByType: (type: string) => unknown[];
-};
-
-function getNativeNodesByType(rendered: ReturnType<typeof renderNative>, type: string) {
-  return (rendered as NativeRenderWithTypeQueries).UNSAFE_getAllByType(type);
+function getNativeNodesByType(rendered: Awaited<ReturnType<typeof renderNative>>, type: string) {
+  return rendered.container.queryAll((node) => node.type === type);
 }
 
-function queryNativeNodesByType(rendered: ReturnType<typeof renderNative>, type: string) {
-  return (rendered as NativeRenderWithTypeQueries).queryAllByType?.(type) ?? [];
+function queryNativeNodesByType(rendered: Awaited<ReturnType<typeof renderNative>>, type: string) {
+  return rendered.container.queryAll((node) => node.type === type);
 }
 
 describe("extracted inputs native", () => {
-  it("DateInput clears a selected value", () => {
+  it("DateInput clears a selected value", async () => {
     const onChange = jest.fn();
-    const { getByLabelText } = renderNative(
+    const { getByLabelText } = await renderNative(
       <DateInput {...dateInputFixtures.raceDay} clearable onChange={onChange} />,
     );
 
-    fireEvent.press(getByLabelText("Clear date"));
+    await fireEvent.press(getByLabelText("Clear date"));
 
     expect(onChange).toHaveBeenCalledWith(undefined);
   });
 
-  it("DateInput opens the native picker in a modal by default instead of inline below the field", () => {
+  it("DateInput opens the native picker in a modal by default instead of inline below the field", async () => {
     const onChange = jest.fn();
-    const rendered = renderNative(<DateInput {...dateInputFixtures.raceDay} onChange={onChange} />);
+    const rendered = await renderNative(
+      <DateInput {...dateInputFixtures.raceDay} onChange={onChange} />,
+    );
 
     expect(queryNativeNodesByType(rendered, "DateTimePicker")).toHaveLength(0);
 
-    fireEvent.press(rendered.getByTestId("race-day-input"));
+    await fireEvent.press(rendered.getByTestId("race-day-input"));
 
     expect(getNativeNodesByType(rendered, "DateTimePicker")).toHaveLength(1);
     expect(rendered.getByText("Done")).toBeTruthy();
@@ -63,7 +60,7 @@ describe("extracted inputs native", () => {
 
   it("FileInput returns picked files", async () => {
     const onFilesChange = jest.fn();
-    const { getByText } = renderNative(
+    const { getByText } = await renderNative(
       <FileInput {...fileInputFixtures.avatar} onFilesChange={onFilesChange} />,
     );
 
@@ -79,9 +76,9 @@ describe("extracted inputs native", () => {
     ]);
   });
 
-  it("BoundedNumberInput commits preset values", () => {
+  it("BoundedNumberInput commits preset values", async () => {
     const onChange = jest.fn();
-    const { getByText } = renderNative(
+    const { getByText } = await renderNative(
       <BoundedNumberInput
         {...boundedNumberInputFixtures.ftp}
         onChange={onChange}
@@ -89,47 +86,51 @@ describe("extracted inputs native", () => {
       />,
     );
 
-    fireEvent.press(getByText("Sweet Spot"));
+    await fireEvent.press(getByText("Sweet Spot"));
 
     expect(onChange).toHaveBeenCalledWith("285");
   });
 
-  it("IntegerStepper increments with the plus button", () => {
+  it("IntegerStepper increments with the plus button", async () => {
     const onChange = jest.fn();
-    const { getByText } = renderNative(
+    const { getByText } = await renderNative(
       <IntegerStepper {...integerStepperFixtures.weeks} onChange={onChange} />,
     );
 
-    fireEvent.press(getByText("+"));
+    await fireEvent.press(getByText("+"));
 
     expect(onChange).toHaveBeenCalledWith(7);
   });
 
-  it("DurationInput forwards typed values", () => {
+  it("DurationInput forwards typed values", async () => {
     const onChange = jest.fn();
-    const { getByDisplayValue } = renderNative(
+    const { getByDisplayValue } = await renderNative(
       <DurationInput {...durationInputFixtures.activity} onChange={onChange} />,
     );
 
-    fireEvent(getByDisplayValue(durationInputFixtures.activity.value), "changeText", "1:45:00");
+    await fireEvent(
+      getByDisplayValue(durationInputFixtures.activity.value),
+      "changeText",
+      "1:45:00",
+    );
 
     expect(onChange).toHaveBeenCalledWith("1:45:00");
   });
 
-  it("PaceInput forwards typed values", () => {
+  it("PaceInput forwards typed values", async () => {
     const onChange = jest.fn();
-    const { getByDisplayValue } = renderNative(
+    const { getByDisplayValue } = await renderNative(
       <PaceInput {...paceInputFixtures.threshold} onChange={onChange} />,
     );
 
-    fireEvent(getByDisplayValue(paceInputFixtures.threshold.value), "changeText", "4:05");
+    await fireEvent(getByDisplayValue(paceInputFixtures.threshold.value), "changeText", "4:05");
 
     expect(onChange).toHaveBeenCalledWith("4:05");
   });
 
-  it("NumberSliderInput commits numeric entry on blur", () => {
+  it("NumberSliderInput commits numeric entry on blur", async () => {
     const onChange = jest.fn();
-    const { getByDisplayValue } = renderNative(
+    const { getByDisplayValue } = await renderNative(
       <NumberSliderInput
         {...numberSliderInputFixtures.intensity}
         onChange={onChange}
@@ -138,43 +139,43 @@ describe("extracted inputs native", () => {
     );
 
     const input = getByDisplayValue("0.75");
-    fireEvent(input, "changeText", "0.95");
-    fireEvent(input, "blur");
+    await fireEvent(input, "changeText", "0.95");
+    await fireEvent(input, "blur");
 
     expect(onChange).toHaveBeenCalledWith(0.95);
   });
 
-  it("PercentSliderInput commits numeric entry on blur", () => {
+  it("PercentSliderInput commits numeric entry on blur", async () => {
     const onChange = jest.fn();
-    const { getByDisplayValue } = renderNative(
+    const { getByDisplayValue } = await renderNative(
       <PercentSliderInput {...percentSliderInputFixtures.recovery} onChange={onChange} />,
     );
 
     const input = getByDisplayValue("12");
-    fireEvent(input, "changeText", "15");
-    fireEvent(input, "blur");
+    await fireEvent(input, "changeText", "15");
+    await fireEvent(input, "blur");
 
     expect(onChange).toHaveBeenCalledWith(15);
   });
 
-  it("PaceSecondsField converts pace text into seconds", () => {
+  it("PaceSecondsField converts pace text into seconds", async () => {
     const onChangeSeconds = jest.fn();
-    const { getByDisplayValue, getByTestId } = renderNative(
+    const { getByDisplayValue, getByTestId } = await renderNative(
       <PaceSecondsField {...paceSecondsFieldFixtures.easy} onChangeSeconds={onChangeSeconds} />,
     );
 
     const input = getByDisplayValue("5:30");
     expect(getByTestId("easy-pace-seconds-field")).toBe(input);
-    fireEvent(input, "changeText", "5:45");
-    fireEvent(input, "blur");
+    await fireEvent(input, "changeText", "5:45");
+    await fireEvent(input, "blur");
 
     expect(onChangeSeconds).toHaveBeenLastCalledWith(345);
   });
 
-  it("WeightInputField lets callers switch units", () => {
+  it("WeightInputField lets callers switch units", async () => {
     const onChangeKg = jest.fn();
     const onUnitChange = jest.fn();
-    const { getByText } = renderNative(
+    const { getByText } = await renderNative(
       <WeightInputField
         {...weightInputFieldFixtures.athlete}
         onChangeKg={onChangeKg}
@@ -182,31 +183,31 @@ describe("extracted inputs native", () => {
       />,
     );
 
-    fireEvent.press(getByText("LBS"));
+    await fireEvent.press(getByText("LBS"));
 
     expect(onUnitChange).toHaveBeenCalledWith("lbs");
   });
 
-  it("TimeInput clears a selected value", () => {
+  it("TimeInput clears a selected value", async () => {
     const onChange = jest.fn();
-    const { getByLabelText } = renderNative(
+    const { getByLabelText } = await renderNative(
       <TimeInput {...timeInputFixtures.startTime} clearable onChange={onChange} />,
     );
 
-    fireEvent.press(getByLabelText("Clear time"));
+    await fireEvent.press(getByLabelText("Clear time"));
 
     expect(onChange).toHaveBeenCalledWith(undefined);
   });
 
-  it("TimeInput opens the native picker in a modal by default instead of inline below the field", () => {
+  it("TimeInput opens the native picker in a modal by default instead of inline below the field", async () => {
     const onChange = jest.fn();
-    const rendered = renderNative(
+    const rendered = await renderNative(
       <TimeInput {...timeInputFixtures.startTime} onChange={onChange} />,
     );
 
     expect(queryNativeNodesByType(rendered, "DateTimePicker")).toHaveLength(0);
 
-    fireEvent.press(rendered.getByTestId("start-time-input"));
+    await fireEvent.press(rendered.getByTestId("start-time-input"));
 
     expect(getNativeNodesByType(rendered, "DateTimePicker")).toHaveLength(1);
     expect(rendered.getByText("Done")).toBeTruthy();

@@ -197,15 +197,15 @@ describe("event detail provenance", () => {
     jest.clearAllMocks();
   });
 
-  it("shows tappable training plan provenance", () => {
-    renderNative(<EventDetailScreen />);
+  it("shows tappable training plan provenance", async () => {
+    await renderNative(<EventDetailScreen />);
 
     expect(screen.queryByText("Event details")).toBeNull();
     expect(screen.getByText("Source")).toBeTruthy();
     expect(screen.getByText("Spring Build")).toBeTruthy();
     expect(screen.queryByTestId("event-detail-options-open-training-plan")).toBeNull();
 
-    fireEvent.press(screen.getByTestId("event-detail-source-training-plan"));
+    await fireEvent.press(screen.getByTestId("event-detail-source-training-plan"));
 
     expect(mockNavigateTo).toHaveBeenCalledWith("/training-plan-detail?id=plan-123");
   });

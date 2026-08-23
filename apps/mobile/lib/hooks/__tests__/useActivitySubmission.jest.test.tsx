@@ -191,7 +191,7 @@ describe("useActivitySubmission", () => {
   afterEach(() => queueStorage.setActivitySubmissionQueueJobsForTests());
 
   it("queues an unplanned finalized artifact with its canonical segment and reaches submission preparation", async () => {
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useActivitySubmission(service as unknown as ActivityRecorderService),
     );
 
@@ -277,7 +277,7 @@ describe("useActivitySubmission", () => {
       updatedAt: "2026-01-01T11:05:00.000Z",
     });
 
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useActivitySubmission(service as unknown as ActivityRecorderService),
     );
     await waitFor(() => expect(result.current.ingestionId).toBe("ingestion-existing"));
@@ -329,7 +329,7 @@ describe("useActivitySubmission", () => {
     });
     createFromRecordingSummaryMock.mockRejectedValueOnce(new Error("server unavailable"));
 
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useActivitySubmission(service as unknown as ActivityRecorderService),
     );
     await waitFor(() => expect(result.current.artifact).not.toBeNull());
@@ -349,7 +349,7 @@ describe("useActivitySubmission", () => {
       getFinalizedArtifact: () => ({ ...artifact, profileId: "profile-2" }),
     };
 
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useActivitySubmission(otherProfileService as unknown as ActivityRecorderService),
     );
     await waitFor(() => expect(result.current.error).toContain("different profile"));
@@ -364,7 +364,7 @@ describe("useActivitySubmission", () => {
     "rejected",
   ] as const)("does not run submission effects for atomic %s", async (outcome) => {
     atomicHandoffMock.mockResolvedValueOnce(outcome);
-    const { result } = renderHook(() =>
+    const { result } = await renderHook(() =>
       useActivitySubmission(service as unknown as ActivityRecorderService),
     );
     await waitFor(() => expect(result.current.isReady).toBe(true));

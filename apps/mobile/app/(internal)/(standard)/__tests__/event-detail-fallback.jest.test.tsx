@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 import React from "react";
-import type { ReactTestInstance } from "react-test-renderer";
+import type { TestInstance as ReactTestInstance } from "test-renderer";
 import { ROUTES } from "@/lib/constants/routes";
 import { createActivityPlanSummary } from "../../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../../test/mock-components";
@@ -15,10 +15,8 @@ type ActivityPlanFixture = {
   estimated_duration: number;
 };
 type EventQueryError = { data: { code: string }; message?: string };
-type HostQueries = { UNSAFE_getByType(type: string): ReactTestInstance };
-
-function getHostByType(rendered: ReturnType<typeof renderNative>, type: string) {
-  return (rendered as typeof rendered & HostQueries).UNSAFE_getByType(type);
+function getHostByType(rendered: Awaited<ReturnType<typeof renderNative>>, type: string) {
+  return rendered.container.queryAll((node) => node.type === type)[0] as ReactTestInstance;
 }
 
 const eventDetailData: {
@@ -324,8 +322,8 @@ describe("event detail fallback screen", () => {
     };
   });
 
-  it("renders planned activity content directly instead of the fallback note", () => {
-    const rendered = renderNative(<EventDetailScreen />);
+  it("renders planned activity content directly instead of the fallback note", async () => {
+    const rendered = await renderNative(<EventDetailScreen />);
 
     expect(screen.queryByText("Advanced event detail")).toBeNull();
     expect(getHostByType(rendered, "ActivityPlanCard").props.plan).toEqual(
@@ -342,20 +340,20 @@ describe("event detail fallback screen", () => {
     expect(getActivityColorMock).toHaveBeenCalledWith("run");
   });
 
-  it("does not present a cancelled linked event as completed", () => {
+  it("does not present a cancelled linked event as completed", async () => {
     eventDetailData.status = "cancelled";
     eventDetailData.linked_activity_id = "activity-cancelled";
 
-    renderNative(<EventDetailScreen />);
+    await renderNative(<EventDetailScreen />);
 
     expect(screen.getByText("Cancelled")).toBeTruthy();
     expect(screen.queryByText("Activity Completed")).toBeNull();
   });
 
-  it("hides cached event details when profile access is denied", () => {
+  it("hides cached event details when profile access is denied", async () => {
     eventQueryState.error = { data: { code: "FORBIDDEN" }, message: "Forbidden" };
 
-    renderNative(<EventDetailScreen />);
+    await renderNative(<EventDetailScreen />);
 
     expect(screen.getByText("Event unavailable")).toBeTruthy();
     expect(screen.getByText("You do not have permission to view this event.")).toBeTruthy();
@@ -365,7 +363,7 @@ describe("event detail fallback screen", () => {
     expect(screen.queryByText("Comments (0)")).toBeNull();
   });
 
-  it("renders and opens the event-owned route separately from the activity plan", () => {
+  it("renders and opens the event-owned route separately from the activity plan", async () => {
     eventDetailData.route_id = "route-1";
     eventDetailData.route = {
       id: "route-1",
@@ -374,7 +372,7 @@ describe("event detail fallback screen", () => {
       total_descent: 230,
       total_distance: 12500,
     };
-    const rendered = renderNative(<EventDetailScreen />);
+    const rendered = await renderNative(<EventDetailScreen />);
 
     const routeCard = getHostByType(rendered, "RouteCard");
     expect(routeCard.props.route).toEqual(
@@ -387,65 +385,65 @@ describe("event detail fallback screen", () => {
     );
     expect(routeCard.props.onPress).toEqual(expect.any(Function));
 
-    fireEvent.press(routeCard);
+    await fireEvent.press(routeCard);
     expect(navigateToMock).toHaveBeenCalledWith(ROUTES.ROUTES.DETAIL("route-1"));
   });
 
-  it("routes the overflow edit action to the dedicated update screen", () => {
-    renderNative(<EventDetailScreen />);
+  it("routes the overflow edit action to the dedicated update screen", async () => {
+    await renderNative(<EventDetailScreen />);
 
-    fireEvent.press(screen.getByTestId("event-detail-options-edit"));
+    await fireEvent.press(screen.getByTestId("event-detail-options-edit"));
 
     expect(routerNavigateMock).toHaveBeenCalledWith(ROUTES.PLAN.EVENT_UPDATE("event-1"));
   });
 
-  it("goes straight to delete confirmation for recurring planned events", () => {
+  it("goes straight to delete confirmation for recurring planned events", async () => {
     eventDetailData.recurrence_rule = "FREQ=WEEKLY;UNTIL=20260530T235959Z";
 
-    renderNative(<EventDetailScreen />);
+    await renderNative(<EventDetailScreen />);
 
     expect(screen.getAllByText("Recurring").length).toBeGreaterThan(0);
     expect(screen.getByText("Every week until May 30, 2026")).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId("event-detail-options-delete"));
+    await fireEvent.press(screen.getByTestId("event-detail-options-delete"));
 
     expect(screen.getByTestId("event-detail-delete-confirm-modal")).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId("event-detail-delete-confirm"));
+    await fireEvent.press(screen.getByTestId("event-detail-delete-confirm"));
 
     expect(deleteEventMutateMock).toHaveBeenCalledWith({ id: "event-1", scope: "single" });
   });
 
-  it("requires an explicit delete scope for recurring custom events", () => {
+  it("requires an explicit delete scope for recurring custom events", async () => {
     eventDetailData.event_type = "custom";
     eventDetailData.activity_plan = null;
     eventDetailData.recurrence_rule = "FREQ=WEEKLY;UNTIL=20260530T235959Z";
 
-    renderNative(<EventDetailScreen />);
+    await renderNative(<EventDetailScreen />);
 
-    fireEvent.press(screen.getByTestId("event-detail-options-delete"));
+    await fireEvent.press(screen.getByTestId("event-detail-options-delete"));
 
     expect(screen.getByTestId("event-detail-delete-scope-modal")).toBeTruthy();
     expect(deleteEventMutateMock).not.toHaveBeenCalled();
 
-    fireEvent.press(screen.getByTestId("event-detail-delete-scope-series"));
-    fireEvent.press(screen.getByTestId("event-detail-delete-confirm"));
+    await fireEvent.press(screen.getByTestId("event-detail-delete-scope-series"));
+    await fireEvent.press(screen.getByTestId("event-detail-delete-confirm"));
 
     expect(deleteEventMutateMock).toHaveBeenCalledWith({ id: "event-1", scope: "series" });
   });
 
-  it("treats series-backed occurrence overrides as recurring even without a rule on the row", () => {
+  it("treats series-backed occurrence overrides as recurring even without a rule on the row", async () => {
     eventDetailData.series_id = "series-1";
     eventDetailData.occurrence_key = "2026-03-23";
     eventDetailData.original_starts_at = "2026-03-23T09:00:00.000Z";
 
-    renderNative(<EventDetailScreen />);
+    await renderNative(<EventDetailScreen />);
 
     expect(screen.getAllByText("Recurring").length).toBeGreaterThan(0);
     expect(screen.getByText("Repeats")).toBeTruthy();
 
-    fireEvent.press(screen.getByTestId("event-detail-options-delete"));
-    fireEvent.press(screen.getByTestId("event-detail-delete-confirm"));
+    await fireEvent.press(screen.getByTestId("event-detail-options-delete"));
+    await fireEvent.press(screen.getByTestId("event-detail-delete-confirm"));
 
     expect(deleteEventMutateMock).toHaveBeenCalledWith({ id: "event-1", scope: "single" });
   });
@@ -454,7 +452,7 @@ describe("event detail fallback screen", () => {
     eventQueryState.data = null;
     eventQueryState.error = { data: { code: "NOT_FOUND" }, message: "Event not found" };
 
-    renderNative(<EventDetailScreen />);
+    await renderNative(<EventDetailScreen />);
 
     expect(screen.queryByText("Tempo Builder")).toBeNull();
     expect(screen.queryByText("Bring gels")).toBeNull();

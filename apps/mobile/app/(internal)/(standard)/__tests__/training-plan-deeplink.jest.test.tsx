@@ -422,10 +422,10 @@ const TrainingPlanOverview = require("../training-plan-detail").default;
 const { Alert: nativeAlert }: { Alert: { alert: jest.Mock<void, Parameters<NativeAlert>> } } =
   require("react-native");
 const nativeAlertMock = nativeAlert.alert;
-let renderedPlan: ReturnType<typeof renderNative> | undefined;
+let renderedPlan: Awaited<ReturnType<typeof renderNative>> | undefined;
 
-const renderPlan = () => {
-  renderedPlan = renderNative(<TrainingPlanOverview />);
+const renderPlan = async () => {
+  renderedPlan = await renderNative(<TrainingPlanOverview />);
   return renderedPlan;
 };
 
@@ -450,7 +450,7 @@ const getNodeText = (children: unknown): string => {
 
 const getAllByTypeOrEmpty = (type: string) => {
   if (!renderedPlan) return [];
-  return renderedPlan.UNSAFE_root.findAll((node) => node.type === type);
+  return renderedPlan.container.queryAll((node) => node.type === type);
 };
 
 const hasTextContaining = (text: string) =>
@@ -462,7 +462,7 @@ const findTouchableByText = (text: string) => {
       return false;
     }
 
-    return candidate.findAll((child) => getNodeText(child.props.children) === text).length > 0;
+    return candidate.queryAll((child) => getNodeText(child.props.children) === text).length > 0;
   });
   if (!node) throw new Error(`Unable to find touchable with text: ${text}`);
   return node;
@@ -538,23 +538,23 @@ describe("TrainingPlanOverview deep-link routing", () => {
     resetTestState();
   });
 
-  it("redirects to create when no selected plan id exists", () => {
-    renderPlan();
+  it("redirects to create when no selected plan id exists", async () => {
+    await renderPlan();
 
     expect(mockRouterReplace).toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.CREATE);
   });
 
-  it("keeps deep-link context when selected plan id is provided", () => {
+  it("keeps deep-link context when selected plan id is provided", async () => {
     mockLocalSearchParams.id = "plan-library-selection-1";
 
-    renderPlan();
+    await renderPlan();
 
     expect(mockRouterReplace).not.toHaveBeenCalledWith(ROUTES.PLAN.TRAINING_PLAN.CREATE);
     expect(hasTextContaining("No Training Plan")).toBe(true);
     expect(mockRouterPush).not.toHaveBeenCalled();
   });
 
-  it("renders focused banner and routes manage intent", () => {
+  it("renders focused banner and routes manage intent", async () => {
     mockSnapshotState.plan = {
       id: "plan-1",
       name: "Plan One",
@@ -567,11 +567,11 @@ describe("TrainingPlanOverview deep-link routing", () => {
     mockLocalSearchParams.id = "plan-1";
     mockLocalSearchParams.nextStep = "settings";
 
-    renderPlan();
+    await renderPlan();
 
     expect(hasTextContaining("Manage Plan")).toBe(true);
 
-    act(() => {
+    await act(() => {
       findTouchableByText("Manage Plan").props.onPress();
     });
 
@@ -581,7 +581,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     });
   });
 
-  it("routes edit-structure intent CTA to structure section", () => {
+  it("routes edit-structure intent CTA to structure section", async () => {
     mockSnapshotState.plan = {
       id: "plan-2",
       name: "Plan Two",
@@ -594,11 +594,11 @@ describe("TrainingPlanOverview deep-link routing", () => {
     mockLocalSearchParams.id = "plan-2";
     mockLocalSearchParams.nextStep = "edit-structure";
 
-    renderPlan();
+    await renderPlan();
 
     expect(hasTextContaining("Edit Plan Structure")).toBe(true);
 
-    act(() => {
+    await act(() => {
       findTouchableByText("Structure").props.onPress();
     });
 
@@ -608,7 +608,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     });
   });
 
-  it("shows schedule-first plan actions for owned plans", () => {
+  it("shows schedule-first plan actions for owned plans", async () => {
     mockSnapshotState.plan = {
       id: "plan-owned-1",
       name: "Owned Plan",
@@ -620,7 +620,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     };
     mockLocalSearchParams.id = "plan-owned-1";
 
-    renderPlan();
+    await renderPlan();
 
     expect(hasTextContaining("Schedule")).toBe(true);
     expect(hasTextContaining("Edit Plan")).toBe(true);
@@ -628,7 +628,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     expect(hasTextContaining("Edit Structure")).toBe(false);
   });
 
-  it("shows the new plan snapshot and overview copy for owned plans", () => {
+  it("shows the new plan snapshot and overview copy for owned plans", async () => {
     mockSnapshotState.plan = {
       id: "plan-owned-snapshot-1",
       name: "Owned Plan",
@@ -649,7 +649,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     };
     mockLocalSearchParams.id = "plan-owned-snapshot-1";
 
-    renderPlan();
+    await renderPlan();
 
     expect(hasTextContaining("Plan schedule")).toBe(true);
     expect(screen.getByTestId("training-plan-planned-preview-plan-owned-snapshot-1")).toBeTruthy();
@@ -659,7 +659,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     expect(hasTextContaining("Route-backed activities")).toBe(false);
   });
 
-  it("shows one clear schedule anchor mode instead of start plus target dates", () => {
+  it("shows one clear schedule anchor mode instead of start plus target dates", async () => {
     mockSnapshotState.plan = {
       id: "plan-owned-anchor-1",
       name: "Anchor Plan",
@@ -671,9 +671,9 @@ describe("TrainingPlanOverview deep-link routing", () => {
     };
     mockLocalSearchParams.id = "plan-owned-anchor-1";
 
-    renderPlan();
+    await renderPlan();
 
-    act(() => {
+    await act(() => {
       findNodeByTestId("training-plan-options-schedule").props.onPress();
     });
 
@@ -685,7 +685,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     expect(hasTextContaining("Start Date")).toBe(false);
   });
 
-  it("sends only the selected finish-by anchor to scheduling", () => {
+  it("sends only the selected finish-by anchor to scheduling", async () => {
     mockSnapshotState.plan = {
       id: "plan-owned-anchor-2",
       name: "Anchor Plan",
@@ -697,23 +697,23 @@ describe("TrainingPlanOverview deep-link routing", () => {
     };
     mockLocalSearchParams.id = "plan-owned-anchor-2";
 
-    renderPlan();
+    await renderPlan();
 
-    act(() => {
+    await act(() => {
       findNodeByTestId("training-plan-options-schedule").props.onPress();
     });
 
-    act(() => {
+    await act(() => {
       findTouchableByText("Finish By").props.onPress();
     });
 
     const [finishDateField] = getDateFields();
     if (!finishDateField) throw new Error("Expected the finish-date field");
-    act(() => {
+    await act(() => {
       finishDateField.props.onChange("2026-04-30");
     });
 
-    act(() => {
+    await act(() => {
       findButtonByTestId("training-plan-schedule-confirm").props.onPress();
     });
 
@@ -739,7 +739,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     };
     mockLocalSearchParams.id = "plan-owned-anchor-3";
 
-    renderPlan();
+    await renderPlan();
 
     await act(async () => {
       findNodeByTestId("training-plan-options-schedule").props.onPress();
@@ -775,7 +775,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     mockLocalSearchParams.id = "plan-owned-anchor-4";
     mockActivePlanData = { id: "active-plan-1" };
 
-    renderPlan();
+    await renderPlan();
 
     await act(async () => {
       findNodeByTestId("training-plan-options-schedule").props.onPress();
@@ -803,7 +803,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     mockLocalSearchParams.id = "plan-owned-anchor-4b";
     mockActivePlanData = { id: "active-plan-1" };
 
-    renderPlan();
+    await renderPlan();
 
     await act(async () => {
       findNodeByTestId("training-plan-options-schedule").props.onPress();
@@ -841,7 +841,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     mockLocalSearchParams.id = "plan-owned-anchor-5";
     mockActivePlanData = { id: "active-plan-1" };
 
-    renderPlan();
+    await renderPlan();
 
     await act(async () => {
       findNodeByTestId("training-plan-options-schedule").props.onPress();
@@ -877,7 +877,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
       scheduled_sessions_replaced: 0,
     };
 
-    renderPlan();
+    await renderPlan();
 
     await act(async () => {
       findNodeByTestId("training-plan-options-schedule").props.onPress();
@@ -896,7 +896,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
 
     const successButtons = nativeAlertMock.mock.calls.at(-1)?.[2];
 
-    act(() => {
+    await act(() => {
       successButtons?.[0]?.onPress?.();
     });
 
@@ -905,7 +905,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     );
   });
 
-  it("shows a remove scheduled sessions action when viewing the active plan", () => {
+  it("shows a remove scheduled sessions action when viewing the active plan", async () => {
     mockSnapshotState.plan = {
       id: "active-plan-1",
       name: "Active Plan",
@@ -918,7 +918,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     mockLocalSearchParams.id = "active-plan-1";
     mockActivePlanData = { id: "active-plan-1" };
 
-    renderPlan();
+    await renderPlan();
 
     expect(hasTextContaining("currently scheduled plan")).toBe(true);
     expect(hasTextContaining("Remove Scheduled Sessions")).toBe(true);
@@ -940,9 +940,9 @@ describe("TrainingPlanOverview deep-link routing", () => {
       scheduleBatchId: "33333333-3333-4333-8333-333333333333",
     };
 
-    renderPlan();
+    await renderPlan();
 
-    act(() => {
+    await act(() => {
       findNodeByTestId("training-plan-options-remove-scheduled").props.onPress();
     });
 
@@ -956,7 +956,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     });
   });
 
-  it("routes review-activity intent CTA to activity detail", () => {
+  it("routes review-activity intent CTA to activity detail", async () => {
     mockSnapshotState.plan = {
       id: "plan-3",
       name: "Plan Three",
@@ -969,18 +969,18 @@ describe("TrainingPlanOverview deep-link routing", () => {
     mockLocalSearchParams.nextStep = "review-activity";
     mockLocalSearchParams.activityId = "activity-99";
 
-    renderPlan();
+    await renderPlan();
 
     expect(hasTextContaining("Review Planned Activity")).toBe(true);
 
-    act(() => {
+    await act(() => {
       findTouchableByText("Open Activity").props.onPress();
     });
 
     expect(mockRouterPush).toHaveBeenCalledWith(ROUTES.PLAN.ACTIVITY_DETAIL("activity-99"));
   });
 
-  it("does not show focus banner for unknown nextStep", () => {
+  it("does not show focus banner for unknown nextStep", async () => {
     mockSnapshotState.plan = {
       id: "plan-4",
       name: "Plan Four",
@@ -992,7 +992,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     mockLocalSearchParams.id = "plan-4";
     mockLocalSearchParams.nextStep = "totally-unsupported-intent";
 
-    renderPlan();
+    await renderPlan();
 
     expect(hasTextContaining("Manage Plan")).toBe(false);
     expect(hasTextContaining("Refine Plan")).toBe(false);
@@ -1020,7 +1020,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     };
     mockLocalSearchParams.id = "plan-shared-1";
 
-    renderPlan();
+    await renderPlan();
 
     await act(async () => {
       await findNodeByTestId("training-plan-options-duplicate").props.onPress();

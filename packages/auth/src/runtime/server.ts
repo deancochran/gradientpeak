@@ -21,6 +21,7 @@ import {
 import {
   authRuntimeEnvSchema,
   parseAuthRuntimeEnv,
+  resolveAuthBootstrapEnv,
   resolveDevelopmentAuthTrustedOrigins,
 } from "./env";
 import { createAuthMailer, type SendAuthEmailInput } from "./mailer";
@@ -219,7 +220,7 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
     ...(secret ? { secret } : {}),
     advanced: {
       database: {
-        generateId: () => crypto.randomUUID(),
+        generateId: "uuid",
       },
     },
     baseURL: env.appUrl,
@@ -257,7 +258,7 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
           userEmail: user.email,
         });
       },
-      // Better Auth 1.6 applies emailVerified before invoking this callback.
+      // Better Auth applies emailVerified before invoking this callback.
       // Duplicate delivery therefore leaves an idempotently verified user while
       // the unique digest marker allows only the lock-winning request to succeed.
       afterEmailVerification: async (_updatedUser, request) => {
@@ -331,16 +332,21 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
 
 export function getGradientPeakAuth() {
   if (!authSingleton) {
+    const bootstrapEnv = resolveAuthBootstrapEnv({
+      nodeEnv: process.env["NODE_ENV"],
+      appUrl: process.env["APP_URL"],
+      mobileScheme: process.env["AUTH_MOBILE_SCHEME"],
+    });
     const developmentTrustedOrigins = resolveDevelopmentAuthTrustedOrigins(
       process.env["NODE_ENV"],
       process.env["AUTH_TRUSTED_ORIGINS"],
       ["http://100.119.109.24:3000"],
     );
     authSingleton = createGradientPeakAuth({
-      appUrl: process.env["APP_URL"] ?? "http://localhost:3000",
+      appUrl: bootstrapEnv.appUrl,
       databaseUrl: resolveDatabaseUrl(process.env),
       ...(process.env["BETTER_AUTH_SECRET"] ? { secret: process.env["BETTER_AUTH_SECRET"] } : {}),
-      mobileScheme: process.env["AUTH_MOBILE_SCHEME"] ?? "gradientpeak",
+      mobileScheme: bootstrapEnv.mobileScheme,
       trustedOrigins: developmentTrustedOrigins,
     });
   }
