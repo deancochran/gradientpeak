@@ -49,11 +49,11 @@ describe("local E2E database safety", () => {
       }),
     ).toThrow(/POSTGRES_URL is local-only/);
     expect(() => localE2EDatabaseEnvironment({ DATABASE_URL: "" })).toThrow(/valid PostgreSQL URL/);
-    expect(
+    expect(() =>
       localE2EDatabaseEnvironment({
         DATABASE_URL: "postgresql://tester:***@localhost:54322/e2e",
-      }).DATABASE_URL,
-    ).toBe("postgresql://tester:***@localhost:55322/e2e");
+      }),
+    ).toThrow(/dedicated PostgreSQL port 55322/);
   });
 
   it("loads Playwright with the isolated web server and no stale-server reuse", async () => {
@@ -88,6 +88,19 @@ describe("local E2E database safety", () => {
       else process.env.DATABASE_URL = previousDatabaseUrl;
       if (previousPostgresUrl === undefined) delete process.env.POSTGRES_URL;
       else process.env.POSTGRES_URL = previousPostgresUrl;
+      vi.resetModules();
+    }
+  });
+
+  it("fails Playwright config loading when the web port is not the dedicated E2E port", async () => {
+    const previousPort = process.env.E2E_WEB_PORT;
+    process.env.E2E_WEB_PORT = "3000";
+    vi.resetModules();
+    try {
+      await expect(import("../../playwright.config")).rejects.toThrow(/requires E2E_WEB_PORT=3100/);
+    } finally {
+      if (previousPort === undefined) delete process.env.E2E_WEB_PORT;
+      else process.env.E2E_WEB_PORT = previousPort;
       vi.resetModules();
     }
   });

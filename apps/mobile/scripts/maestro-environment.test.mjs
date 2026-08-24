@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveMaestroE2EEnvironment } from "./maestro-environment.mjs";
+import {
+  requireAdbReverses,
+  resolveMaestroE2EEnvironment,
+} from "./maestro-environment.mjs";
 
 test("defaults Maestro to the dedicated emulator and loopback E2E ports", () => {
   assert.deepEqual(resolveMaestroE2EEnvironment({}), {
@@ -29,4 +32,17 @@ test("rejects manual ports, non-loopback URLs, and multiple devices", () => {
     () => resolveMaestroE2EEnvironment({ MAESTRO_DEVICE_ID: "emulator-5554,emulator-5556" }),
     /exactly one device/,
   );
+});
+
+test("fails closed when any required targeted ADB reverse cannot be established", () => {
+  const attempted = [];
+  assert.throws(
+    () =>
+      requireAdbReverses([3100, 8082, 55321], (port) => {
+        attempted.push(port);
+        return port !== 8082;
+      }),
+    /required ADB reverse for port 8082/,
+  );
+  assert.deepEqual(attempted, [3100, 8082]);
 });
