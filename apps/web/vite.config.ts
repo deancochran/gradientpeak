@@ -58,13 +58,14 @@ const config = defineConfig(({ mode }) => {
   }
 
   return {
+    cacheDir: process.env.VITE_CACHE_DIR,
     server: {
       allowedHosts: ["dev.gradientpeak.com", "tokyo.goose-noodlefish.ts.net"],
-      host: "127.0.0.1",
+      host: process.env.DEV_HOST ?? "0.0.0.0",
       port: Number(process.env.PORT ?? 3000),
     },
     preview: {
-      host: "127.0.0.1",
+      host: process.env.DEV_HOST ?? "0.0.0.0",
       port: Number(process.env.PORT ?? 3000),
     },
     resolve: {

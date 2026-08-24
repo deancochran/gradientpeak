@@ -63,7 +63,6 @@ test("changed paths select static, web, mobile, backend, or full verification", 
 test("runtime profiles point directly to maintained browser and Maestro smoke tests", () => {
   const web = createProfilePlan({ profile: "web", includeStatic: false });
   assert.deepEqual(web.commands, [
-    { command: "pnpm", args: ["dev:e2e:web"], phase: "start", port: 3000 },
     {
       command: "pnpm",
       args: [
@@ -191,7 +190,7 @@ test("service startup failures clean up owned hosts without touching unknown pro
   const events = [];
   const web = child({ pid: 101 });
   const runner = createRunner({
-    portAvailable: async (port) => port !== 8081,
+    portAvailable: async (port) => port !== 8082,
     spawnProcess(_, args) {
       events.push(args);
       return args.includes("dev:e2e:web") ? web : child({ exitCode: 0, pid: 102 });

@@ -38,7 +38,8 @@ before starting the full development lane. Copy `apps/web/.env.tunnel.example` t
 The first time local Supabase starts, copy its local API keys from `pnpm db:status` into
 `apps/web/.env.local` and `apps/mobile/.env`. Re-run `pnpm run doctor -- --lane dev`, then restart
 `pnpm exec turbo run dev`. A successful onboarding session has the web app at http://localhost:3000
-and no required Doctor failures.
+and no required Doctor failures. The persistent manual lane is available over Tailscale at
+`http://100.119.109.24:3000` (web/API) and `http://100.119.109.24:8081` (Metro).
 
 Use a focused Turbo command when you only need one surface:
 
@@ -53,6 +54,9 @@ explicit web-only alias for the default tunneled web development task.
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for the first-contribution checklist, environment setup,
 verification progression, and specialist lanes.
+
+See [docs/local-environments.md](./docs/local-environments.md) for the isolated manual and E2E
+ports, database lifecycle, emulator routing, cache namespaces, and targeted shutdown command.
 
 Run the narrowest relevant check while iterating. Before integration, run the repository gate:
 

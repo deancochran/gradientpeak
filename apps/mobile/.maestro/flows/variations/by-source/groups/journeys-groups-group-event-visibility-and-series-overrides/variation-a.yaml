@@ -1,0 +1,18 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — journeys/groups/group_event_visibility_and_series_overrides.yaml — series RSVP and occurrence override persist"
+properties: { junitId: variation.mobile.journeys_groups_group_event_visibility_and_series_overrides.a, junitClassname: variation.mobile.groups, sourceIdentity: journeys/groups/group_event_visibility_and_series_overrides.yaml }
+tags: [variation, groups, by-source]
+---
+- runFlow: { file: ../../../../reusable/authenticated_home.yaml, env: { STANDARD_USER_EMAIL: "${GROUP_EVENT_USER_EMAIL_A}", STANDARD_USER_PASS: "${GROUP_EVENT_USER_PASS_A}" } }
+- runFlow: ../../../../reusable/open_groups_tab.yaml
+- scrollUntilVisible: { element: "${GROUP_EVENT_TITLE}", direction: DOWN }
+- tapOn: "${GROUP_EVENT_TITLE}"
+- assertVisible: { id: "group-event-detail-screen" }
+- assertVisible: "Series RSVP"
+- tapOn: "Going to series"
+- assertVisible: "Going to series"
+- tapOn: "Not going"
+- assertVisible: "Not going"
+- back
+- tapOn: "${GROUP_EVENT_TITLE}"
+- assertVisible: "Not going"

@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import { isTrpcProcedure } from "../../pages/network";
 
 export const DISCOVERY_SCOPES = [
   { label: "Activity plans", procedure: "activityPlans.list" },
@@ -9,7 +10,5 @@ export const DISCOVERY_SCOPES = [
 ] as const;
 
 export async function waitForProcedure(page: Page, procedure: string) {
-  return page.waitForResponse(
-    (response) => response.url().includes("/api/trpc/") && response.url().includes(procedure),
-  );
+  return page.waitForResponse((response) => isTrpcProcedure(new URL(response.url()), procedure));
 }

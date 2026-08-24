@@ -1,0 +1,44 @@
+appId: ${MAESTRO_APP_ID}
+name: "route sources discover/route_detail_open, journeys/routes/*, contracts/p0/event_route_attach_reopen, contracts/p1/route_delete_persists,route_edit_persists,route_upload_success — library reopen, upload, recording attach and delete confirmation"
+tags: [variation, routes, baseline-source-pair-b, intentional-red]
+---
+- runFlow:
+    file: ../../../reusable/open_own_profile.yaml
+    env: { STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}", STANDARD_USER_PASS: "${STANDARD_USER_PASS}" }
+- tapOn: { id: "my-routes" }
+- assertVisible: { id: "routes-list-screen" }
+- scrollUntilVisible: { element: { id: "routes-list-item-${STANDARD_ROUTE_ID}" }, direction: DOWN }
+- tapOn: { id: "routes-list-item-${STANDARD_ROUTE_ID}" }
+- assertVisible: "${STANDARD_ROUTE_NAME}"
+- back
+- tapOn: { id: "routes-list-item-${STANDARD_ROUTE_ID}" }
+- assertVisible: { id: "route-detail-summary" }
+- back
+- tapOn: { id: "routes-list-upload-trigger" }
+- assertVisible: "GPX or TCX File *"
+- tapOn: { id: "route-upload-file-input" }
+- tapOn: "${ROUTE_FILE_DISPLAY_NAME}"
+- tapOn: { id: "route-upload-name-input" }
+- inputText: "${ROUTE_UPLOAD_NAME}"
+- hideKeyboard
+- tapOn: { id: "route-upload-submit-button" }
+- assertVisible: "${ROUTE_UPLOAD_NAME}"
+- runFlow: ../../../reusable/open_record_tab.yaml
+- tapOn: { id: "recording-setup-action-route" }
+- tapOn: { id: "discover-search-input" }
+- inputText: "${RECORDING_ROUTE_NAME}"
+- hideKeyboard
+- tapOn: "${RECORDING_ROUTE_NAME}"
+- tapOn: { id: "route-preview-attach-button" }
+- assertVisible: { id: "recording-setup-remove-route" }
+- openLink: "${MAESTRO_APP_SCHEME}://route-detail?id=${DELETE_ROUTE_ID}"
+- tapOn: { id: "route-detail-options-trigger" }
+- tapOn: { id: "route-detail-options-delete" }
+- assertVisible: { id: "route-detail-delete-modal" }
+- back
+- assertVisible: "${DELETE_ROUTE_NAME}"
+- tapOn: { id: "route-detail-options-trigger" }
+- tapOn: { id: "route-detail-options-delete" }
+- tapOn: { id: "route-detail-delete-confirm" }
+- openLink: "${MAESTRO_APP_SCHEME}://route-detail?id=${DELETE_ROUTE_ID}"
+- assertVisible: "Route not found"

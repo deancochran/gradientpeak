@@ -102,7 +102,9 @@ function PublicActivityPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Performance details</CardTitle>
+          <CardTitle aria-level={2} role="heading">
+            Performance details
+          </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 text-sm sm:grid-cols-2">
           <Detail

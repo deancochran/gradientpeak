@@ -276,6 +276,7 @@ function UiPreviewSurface() {
                 label="Username"
                 name="username"
                 rules={{ required: "Username is required." }}
+                selectTextOnFocus
                 testId={uiPreviewFormFields.usernameTestId}
               />
               <FormSelectField

@@ -2,11 +2,13 @@ import type { AuthSession } from "@repo/auth/session";
 import type { OnboardingStatus } from "@repo/core/schemas/onboarding";
 import { redirect } from "@tanstack/react-router";
 import { createMiddleware, createServerFn } from "@tanstack/react-start";
+import { setResponseHeader } from "@tanstack/react-start/server";
 
 import { getWebAuthSession } from "./client";
 
 export const authSessionMiddleware = createMiddleware({ type: "request" }).server(
   async ({ next, request }) => {
+    setResponseHeader("Cache-Control", "private, no-store");
     const { resolveAuthSessionFromHeaders } = await import("@repo/auth/server");
     const session = await resolveAuthSessionFromHeaders(new Headers(request.headers));
     let onboardingStatus: OnboardingStatus | null = null;

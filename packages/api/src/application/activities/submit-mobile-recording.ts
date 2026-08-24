@@ -6,7 +6,7 @@ import {
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { parseActivityFile } from "@repo/core/server/activity-files";
 import { safeDecodeFitFile } from "@repo/core/server/fit-sdk-parser";
-import { activities, activityPlans, profiles } from "@repo/db";
+import { activities, activityPlans, activityRoutes, profiles } from "@repo/db";
 import { and, eq } from "drizzle-orm";
 import type { MobileRecordingSubmissionInput } from "../../contracts/recording-submission";
 import type { getRequiredDb } from "../../db";
@@ -212,6 +212,28 @@ async function resolveRecordingActivityPlanId(
   return plan.id;
 }
 
+async function resolveRecordingRouteId(
+  db: DbClient,
+  input: { profileId: string; routeId: string | null | undefined },
+) {
+  if (!input.routeId) return null;
+  const [route] = await db
+    .select({ id: activityRoutes.id })
+    .from(activityRoutes)
+    .where(
+      and(
+        eq(activityRoutes.id, input.routeId),
+        eq(activityRoutes.profile_id, input.profileId),
+        eq(activityRoutes.storage_state, "ready"),
+      ),
+    )
+    .limit(1);
+  if (!route) {
+    throw new MobileRecordingSubmissionError("forbidden", "Route is not available for recording");
+  }
+  return route.id;
+}
+
 async function loadAcceptedSubmission(
   db: DbClient,
   input: { profileId: string; replayIdentity: string },
@@ -357,6 +379,10 @@ export async function submitMobileRecording(
     activityPlanId: submission.activityPlanId,
     profileId: submission.profileId,
   });
+  const resolvedRouteId = await resolveRecordingRouteId(db, {
+    profileId: submission.profileId,
+    routeId: submission.routeId,
+  });
   let segmentSet: CompletedActivitySegmentSet;
   try {
     segmentSet = segmentSetFromExecutionManifest(submission);
@@ -454,6 +480,7 @@ export async function submitMobileRecording(
           requestedActivityId: activityId,
           profileId: submission.profileId,
           activityPlanId: resolvedActivityPlanId,
+          routeId: resolvedRouteId,
           name: submission.name,
           notes: submission.notes ?? null,
           contentVisibility,

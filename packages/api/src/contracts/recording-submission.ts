@@ -48,6 +48,7 @@ const recordingSummarySubmissionBaseShape = {
   startedAt: z.string().datetime({ offset: true }),
   finishedAt: z.string().datetime({ offset: true }),
   activityPlanId: z.string().uuid().nullable().optional(),
+  routeId: z.string().uuid().nullable().optional(),
   executionManifest: recordingExecutionManifestSchema,
   laps: activityLapRecordListSchema.optional(),
   sessionTiming: z

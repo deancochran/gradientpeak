@@ -1,4 +1,7 @@
 appId: ${MAESTRO_APP_ID}
+properties:
+  lifecyclePolicy: authenticated-clean
+tags: [smoke, smoke-expected-pass]
 ---
 - runFlow:
     file: ../reusable/authenticated_home.yaml

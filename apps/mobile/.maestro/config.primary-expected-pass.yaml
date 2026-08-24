@@ -1,0 +1,11 @@
+flows:
+  - flows/variations/by-source/**
+includeTags:
+  - variation
+excludeTags:
+  - intentional-red
+  - integrations
+  - document-picker
+  - manual
+  - hardware
+testOutputDir: artifacts/test-output/primary-expected-pass

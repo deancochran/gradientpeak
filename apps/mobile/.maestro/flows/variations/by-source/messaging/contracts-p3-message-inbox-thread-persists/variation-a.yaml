@@ -1,0 +1,13 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — contracts/p3/message_inbox_thread_persists.yaml — thread remains in inbox after relaunch"
+properties: { junitId: variation.mobile.contracts_p3_message_inbox_thread_persists.a, junitClassname: variation.mobile.messaging, sourceIdentity: contracts/p3/message_inbox_thread_persists.yaml }
+tags: [variation, messaging, contract, by-source]
+---
+- runFlow: { file: ../../../../reusable/authenticated_home.yaml, env: { STANDARD_USER_EMAIL: "${MESSAGE_THREAD_USER_EMAIL_A}", STANDARD_USER_PASS: "${MESSAGE_THREAD_USER_PASS_A}" } }
+- runFlow: ../../../../reusable/open_messages_inbox.yaml
+- tapOn: { id: "messages-conversation-${MESSAGE_THREAD_CONVERSATION_ID_A}" }
+- assertVisible: "${MESSAGE_THREAD_EXISTING_TEXT_A}"
+- back
+- runFlow: { file: ../../../../reusable/preserve_state_relaunch.yaml, env: { EXPECTED_BOUNDARY_ID: "home-screen" } }
+- runFlow: ../../../../reusable/open_messages_inbox.yaml
+- assertVisible: { id: "messages-conversation-${MESSAGE_THREAD_CONVERSATION_ID_A}" }

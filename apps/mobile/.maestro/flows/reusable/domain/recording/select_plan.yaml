@@ -1,0 +1,11 @@
+appId: ${MAESTRO_APP_ID}
+# @purpose Select one exact activity plan from recording setup.
+# @arg PLAN_NAME text required
+# @ready recording-setup-remove-plan
+---
+- tapOn: { id: "recording-setup-action-plan" }
+- tapOn: { id: "discover-search-input" }
+- inputText: "${PLAN_NAME}"
+- hideKeyboard
+- tapOn: "${PLAN_NAME}"
+- assertVisible: { id: "recording-setup-remove-plan" }

@@ -11,7 +11,7 @@ describe("validateRecordingSearch", () => {
     });
   });
 
-  it("forces indoor authored mode and disregards legacy route and personalization values", () => {
+  it("forces indoor authored mode while retaining a valid selected route", () => {
     expect(
       validateRecordingSearch({
         activity_category: "bike",
@@ -22,6 +22,7 @@ describe("validateRecordingSearch", () => {
     ).toEqual({
       activity_category: "bike",
       gps: "off",
+      routeId: "11111111-1111-4111-8111-111111111111",
       eventId: undefined,
       activityPlanId: undefined,
     });

@@ -1,0 +1,14 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — contracts/p1/activity_public_share_handoff_android.yaml — share from public detail"
+properties:
+  junitId: variation.mobile.contracts_p1_activity_public_share_handoff_android.a
+  junitClassname: variation.mobile.activities
+  sourceIdentity: contracts/p1/activity_public_share_handoff_android.yaml
+tags: [variation, activities, by-source, android-share]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: { file: ../../../../reusable/domain/details/open_activity.yaml, env: { ACTIVITY_ID: "${PUBLIC_ACTIVITY_ID}" } }
+- assertVisible: { id: "activity-detail-summary" }
+- tapOn: { id: "activity-card-share-button-${PUBLIC_ACTIVITY_ID}" }
+- extendedWaitUntil: { visible: "Share with", timeout: 10000 }
+- assertNotVisible: "Not public"

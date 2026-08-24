@@ -1,0 +1,16 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — smoke/ui_preview_contract.yaml — switch preview tabs and selection controls"
+properties: { junitId: variation.mobile.smoke_ui_preview_contract.a, junitClassname: variation.mobile.shell, sourceIdentity: smoke/ui_preview_contract.yaml }
+tags: [variation, shell, preview, by-source]
+---
+- runFlow: ../../../../reusable/clean_app_launch_signed_out.yaml
+- openLink: "${MAESTRO_APP_SCHEME}://storybook"
+- assertVisible: { id: "ui-preview-surface" }
+- assertVisible: { id: "profile-card" }
+- scrollUntilVisible: { element: { id: "settings-tabs-trigger-sessions" }, direction: DOWN }
+- tapOn: { id: "settings-tabs-trigger-sessions" }
+- assertVisible: { id: "settings-tabs-content-sessions" }
+- scrollUntilVisible: { element: { id: "accept-terms-checkbox" }, direction: DOWN }
+- tapOn: { id: "accept-terms-checkbox" }
+- tapOn: { id: "email-notifications-switch" }
+- assertVisible: { id: "preferred-activity-category-radio-group" }

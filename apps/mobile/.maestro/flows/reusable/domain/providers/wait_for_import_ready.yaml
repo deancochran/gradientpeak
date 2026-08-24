@@ -1,0 +1,8 @@
+appId: ${MAESTRO_APP_ID}
+# @purpose Start one provider sync and wait for its import handoff.
+# @arg PROVIDER_ID identifier required
+# @ready integration-view-import-PROVIDER_ID
+---
+- tapOn: { id: "integration-sync-now-${PROVIDER_ID}" }
+- extendedWaitUntil: { visible: { id: "integration-view-import-${PROVIDER_ID}" }, timeout: 30000 }
+- assertVisible: { id: "integration-view-import-${PROVIDER_ID}" }

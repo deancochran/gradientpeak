@@ -1,0 +1,19 @@
+appId: ${MAESTRO_APP_ID}
+name: "record source journeys/record/permissions_and_continue_without_metrics — warning cancellation preserves setup, then plan reselection reaches recording"
+tags: [variation, recording, permissions, baseline-source-second]
+---
+- runFlow: { file: ../../../reusable/authenticated_home.yaml, env: { STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}", STANDARD_USER_PASS: "${STANDARD_USER_PASS}" } }
+- runFlow: ../../../reusable/open_record_tab.yaml
+- runFlow: { file: ../../../reusable/domain/recording/select_plan.yaml, env: { PLAN_NAME: "${REQUIRED_METRICS_PLAN_NAME}" } }
+- tapOn: { id: "recording-start-button" }
+- assertVisible: "Profile Setup Required"
+- assertVisible: "Continue Anyway"
+- back
+- assertVisible: { id: "recording-setup-remove-plan" }
+- tapOn: { id: "recording-setup-remove-plan" }
+- assertVisible: { id: "recording-setup-action-plan" }
+- tapOn: { id: "recording-setup-action-plan" }
+- tapOn: "${REQUIRED_METRICS_PLAN_NAME}"
+- tapOn: { id: "recording-start-button" }
+- tapOn: "Continue Anyway"
+- assertVisible: { id: "recording-pause-button" }

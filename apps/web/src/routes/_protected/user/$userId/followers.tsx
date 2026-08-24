@@ -27,7 +27,7 @@ function FollowersPage() {
   const limit = 20;
   const followersQuery = api.social.getFollowers.useQuery(
     { user_id: userId, limit, cursor },
-    { enabled: Boolean(userId) },
+    { enabled: Boolean(userId), retry: false },
   );
 
   const users = useMemo(() => followersQuery.data?.users ?? [], [followersQuery.data]);

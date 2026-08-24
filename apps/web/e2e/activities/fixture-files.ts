@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import type { Page, TestInfo } from "@playwright/test";
+import { ActivitiesPage } from "../pages/activities";
+import { createE2EExecutionIdentity } from "../support/identity";
 
-const ACTIVITY_RUN_ID = `${process.pid}-${Date.now().toString(36)}`;
 const FIT_CRC_TABLE = [
   0x0000, 0xcc01, 0xd801, 0x1400, 0xf001, 0x3c00, 0x2800, 0xe401, 0xa001, 0x6c00, 0x7800, 0xb401,
   0x5000, 0x9c01, 0x8801, 0x4400,
@@ -78,31 +79,17 @@ export function activityFileForIdentity(fixture: ActivityFileFixture, identity: 
 }
 
 export async function importActivity(page: Page, fixture: ActivityFileFixture, name: string) {
-  await page.goto("/activities/import");
-  await page
-    .getByTestId("activity-import-file-input")
-    .setInputFiles(activityFileForIdentity(fixture, name));
-  await page.getByTestId("activity-import-name-input").waitFor({ state: "detached" });
-  await page.getByRole("button", { name: "Import activity" }).click();
-  await page.waitForURL(/\/activities\/[0-9a-f-]+\/?$/);
-  return page.url().match(/\/activities\/([0-9a-f-]+)/)?.[1] ?? "";
+  return new ActivitiesPage(page).importFile(activityFileForIdentity(fixture, name));
 }
 
 export function activityFixtureIdentity(testInfo: TestInfo, label: string) {
-  const provenance = [
-    testInfo.project.name,
-    ...testInfo.titlePath,
-    `repeat-${testInfo.repeatEachIndex}`,
-    `retry-${testInfo.retry}`,
-    `run-${ACTIVITY_RUN_ID}`,
-  ].join("|");
-  const digest = createHash("sha256").update(provenance).digest("hex").slice(0, 12);
-  return `Parity ${label} ${digest}`;
+  return createE2EExecutionIdentity(testInfo).name(`Parity ${label}`);
 }
 
 export async function deleteImportedActivity(page: Page, activityId: string) {
   if (!activityId || page.isClosed()) return;
-  await page.goto(`/activities/${activityId}`);
+  const activities = new ActivitiesPage(page);
+  await activities.openDetail(activityId);
   const deleteButton = page.getByRole("button", { name: "Delete", exact: true });
   const outcome = await Promise.race([
     deleteButton.waitFor({ state: "visible", timeout: 10_000 }).then(() => "delete" as const),
@@ -112,8 +99,7 @@ export async function deleteImportedActivity(page: Page, activityId: string) {
       .then(() => "missing" as const),
   ]);
   if (outcome === "missing") return;
-  await deleteButton.click();
-  await page.getByRole("button", { name: "Delete activity", exact: true }).click();
+  await activities.deleteFromDetail();
   const deletionOutcome = await Promise.race([
     page.waitForURL(/\/activities\/?$/, { timeout: 15_000 }).then(() => "deleted" as const),
     page

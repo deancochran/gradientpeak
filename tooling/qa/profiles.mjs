@@ -80,19 +80,19 @@ const dbCheck = [
 const commands = {
   static: [["pnpm", ["quality:agent:static"]]],
   db: [["pnpm", ["quality:agent:db:static"]], dbCheck],
-  web: [["pnpm", ["quality:agent:static"]], ["pnpm", ["dev:e2e:web"], "start", 3000], webSmoke],
+  web: [["pnpm", ["quality:agent:static"]], webSmoke],
   mobile: [
     ["pnpm", ["quality:agent:static"]],
-    ["pnpm", ["dev:e2e:web"], "start", 3000],
-    ["pnpm", ["--filter", "mobile", "dev:e2e"], "start", 8081],
+    ["pnpm", ["dev:e2e:web"], "start", 3100],
+    ["pnpm", ["--filter", "mobile", "dev:e2e"], "start", 8082],
     mobileSmoke,
   ],
   full: [
     ["pnpm", ["quality:agent:db:static"]],
     dbCheck,
-    ["pnpm", ["dev:e2e:web"], "start", 3000],
-    ["pnpm", ["--filter", "mobile", "dev:e2e"], "start", 8081],
     webSmoke,
+    ["pnpm", ["dev:e2e:web"], "start", 3100],
+    ["pnpm", ["--filter", "mobile", "dev:e2e"], "start", 8082],
     mobileSmoke,
   ],
 };

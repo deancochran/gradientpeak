@@ -1,0 +1,18 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — journeys/calendar/scheduled_event_open_and_start_record.yaml — open selected agenda event and return"
+properties:
+  junitId: variation.mobile.journeys_calendar_scheduled_event_open_and_start_record.b
+  junitClassname: variation.mobile.calendar
+  sourceIdentity: journeys/calendar/scheduled_event_open_and_start_record.yaml
+tags: [variation, calendar, by-source]
+---
+- runFlow: { file: ../../../../reusable/authenticated_home.yaml, env: { STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}", STANDARD_USER_PASS: "${STANDARD_USER_PASS}" } }
+- runFlow: { file: ../../../../reusable/domain/details/open_calendar_day.yaml, env: { CALENDAR_DATE: "${AGENDA_DATE}" } }
+- tapOn: { id: "calendar-day-planned-activity-row-${AGENDA_PLANNED_EVENT_ID}" }
+- assertVisible: { id: "activity-plan-content-preview" }
+- tapOn: { id: "activity-plan-options-trigger" }
+- assertVisible: { id: "activity-plan-options-start" }
+- back
+- assertVisible: { id: "calendar-day-planned-activity-row-${AGENDA_PLANNED_EVENT_ID}" }
+- tapOn: { id: "calendar-day-planned-activity-row-${AGENDA_PLANNED_EVENT_ID}" }
+- assertVisible: { id: "activity-plan-estimates" }

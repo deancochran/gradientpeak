@@ -1,0 +1,20 @@
+appId: ${MAESTRO_APP_ID}
+name: Route edit cancels safely then saves and persists on reopen
+tags: [variation, routes, edit-persist]
+---
+- runFlow: { file: ../../../reusable/authenticated_home.yaml, env: { STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}", STANDARD_USER_PASS: "${STANDARD_USER_PASS}" } }
+- runFlow: { file: ../../../reusable/domain/details/open_route.yaml, env: { ROUTE_ID: "${EDIT_ROUTE_ID}" } }
+- runFlow: ../../../reusable/domain/forms/open_route_name_editor.yaml
+- inputText: "Unsaved route variation"
+- hideKeyboard
+- back
+- assertVisible: "${EDIT_ROUTE_NAME}"
+- runFlow: ../../../reusable/domain/forms/open_route_name_editor.yaml
+- inputText: "${ROUTE_EDITED_NAME}"
+- hideKeyboard
+- tapOn:
+    id: "route-edit-submit-button"
+- assertVisible: "${ROUTE_EDITED_NAME}"
+- back
+- runFlow: { file: ../../../reusable/domain/details/open_route.yaml, env: { ROUTE_ID: "${EDIT_ROUTE_ID}" } }
+- assertVisible: "${ROUTE_EDITED_NAME}"

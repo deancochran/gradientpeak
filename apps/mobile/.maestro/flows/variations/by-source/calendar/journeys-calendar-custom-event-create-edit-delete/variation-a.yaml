@@ -1,0 +1,24 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — journeys/calendar/custom_event_create_edit_delete.yaml — cancel draft then create event"
+properties:
+  junitId: variation.mobile.journeys_calendar_custom_event_create_edit_delete.a
+  junitClassname: variation.mobile.calendar
+  sourceIdentity: journeys/calendar/custom_event_create_edit_delete.yaml
+tags: [variation, calendar, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: ../../../../reusable/open_calendar_tab.yaml
+- tapOn: { id: "create-event-entry" }
+- tapOn: { id: "create-type-custom" }
+- tapOn: { id: "manual-create-title-input" }
+- inputText: "Unsaved custom event variation A"
+- hideKeyboard
+- tapOn: "Cancel"
+- assertNotVisible: "Unsaved custom event variation A"
+- tapOn: { id: "create-event-entry" }
+- tapOn: { id: "create-type-custom" }
+- tapOn: { id: "manual-create-title-input" }
+- inputText: "Custom event source variation A"
+- hideKeyboard
+- tapOn: { id: "manual-create-submit" }
+- assertVisible: "Custom event source variation A"

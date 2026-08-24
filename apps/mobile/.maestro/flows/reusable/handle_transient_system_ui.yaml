@@ -1,0 +1,67 @@
+appId: ${MAESTRO_APP_ID}
+---
+# This flow may adapt only to transient Expo Dev Client or operating-system UI.
+# App-owned readiness is asserted by the lifecycle flow that calls it.
+- runFlow:
+    when:
+      visible: "${EXPO_DEV_SERVER_LABEL}"
+    commands:
+      - tapOn: "${EXPO_DEV_SERVER_LABEL}"
+- runFlow:
+    when:
+      visible: "http://10.0.2.2:8081"
+    commands:
+      - tapOn: "http://10.0.2.2:8081"
+- runFlow:
+    when:
+      visible: "http://localhost:8081"
+    commands:
+      - tapOn: "http://localhost:8081"
+- runFlow:
+    when:
+      visible: "http://127.0.0.1:8081"
+    commands:
+      - tapOn: "http://127.0.0.1:8081"
+- runFlow:
+    when:
+      visible: "Got It"
+    commands:
+      - tapOn: "Got It"
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+- runFlow:
+    when:
+      visible: "Connect"
+    commands:
+      - openLink: ${EXPO_DEV_CLIENT_URL}
+- runFlow:
+    when:
+      visible: "Continue"
+    commands:
+      - tapOn: "Continue"
+- runFlow:
+    when:
+      visible: "Connect"
+    commands:
+      - openLink: ${EXPO_DEV_CLIENT_URL}
+- runFlow:
+    when:
+      visible: "Go home"
+    commands:
+      - tapOn: "Go home"
+- runFlow:
+    when:
+      visible: "Connect"
+    commands:
+      - openLink: ${EXPO_DEV_CLIENT_URL}
+- runFlow:
+    when:
+      visible: "Toggle performance monitor"
+    commands:
+      - swipe:
+          from:
+            text: "Toggle performance monitor"
+          direction: DOWN

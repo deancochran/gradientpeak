@@ -1,0 +1,11 @@
+appId: ${MAESTRO_APP_ID}
+# @purpose Enter a Discover search and wait for its exact fixture result.
+# @arg DISCOVER_QUERY text required
+# @arg DISCOVER_RESULT_ID selector-id required
+# @ready DISCOVER_RESULT_ID
+---
+- tapOn: { id: "discover-search-input" }
+- eraseText
+- inputText: "${DISCOVER_QUERY}"
+- hideKeyboard
+- assertVisible: { id: "${DISCOVER_RESULT_ID}" }

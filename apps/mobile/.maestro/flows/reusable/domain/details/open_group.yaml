@@ -1,0 +1,7 @@
+appId: ${MAESTRO_APP_ID}
+# @purpose Open one accessible group by canonical app link.
+# @arg GROUP_ID uuid required
+# @ready group-detail-screen
+---
+- openLink: "${MAESTRO_APP_SCHEME}://group-detail?groupId=${GROUP_ID}"
+- assertVisible: { id: "group-detail-screen" }

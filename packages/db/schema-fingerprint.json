@@ -755,13 +755,23 @@
       "generated": ""
     },
     {
+      "name": "route_id",
+      "type": "uuid",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
       "name": "name",
       "type": "text",
       "table": "activities",
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 6,
+      "position": 7,
       "generated": ""
     },
     {
@@ -771,7 +781,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 7,
+      "position": 8,
       "generated": ""
     },
     {
@@ -781,7 +791,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 8,
+      "position": 9,
       "generated": ""
     },
     {
@@ -791,7 +801,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 9,
+      "position": 10,
       "generated": ""
     },
     {
@@ -801,7 +811,7 @@
       "default": "'private'::text",
       "notNull": true,
       "identity": "",
-      "position": 10,
+      "position": 11,
       "generated": ""
     },
     {
@@ -811,7 +821,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 11,
+      "position": 12,
       "generated": ""
     },
     {
@@ -821,7 +831,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 12,
+      "position": 13,
       "generated": ""
     },
     {
@@ -831,7 +841,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 13,
+      "position": 14,
       "generated": ""
     },
     {
@@ -841,7 +851,7 @@
       "default": "'unavailable'::text",
       "notNull": true,
       "identity": "",
-      "position": 14,
+      "position": 15,
       "generated": ""
     },
     {
@@ -851,7 +861,7 @@
       "default": "1",
       "notNull": true,
       "identity": "",
-      "position": 15,
+      "position": 16,
       "generated": ""
     },
     {
@@ -861,7 +871,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 16,
+      "position": 17,
       "generated": ""
     },
     {
@@ -871,7 +881,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 17,
+      "position": 18,
       "generated": ""
     },
     {
@@ -881,7 +891,7 @@
       "default": "",
       "notNull": true,
       "identity": "",
-      "position": 18,
+      "position": 19,
       "generated": ""
     },
     {
@@ -891,7 +901,7 @@
       "default": "'inferred_fallback'::text",
       "notNull": true,
       "identity": "",
-      "position": 19,
+      "position": 20,
       "generated": ""
     },
     {
@@ -901,7 +911,7 @@
       "default": "now()",
       "notNull": true,
       "identity": "",
-      "position": 20,
+      "position": 21,
       "generated": ""
     },
     {
@@ -911,7 +921,7 @@
       "default": "0",
       "notNull": true,
       "identity": "",
-      "position": 21,
+      "position": 22,
       "generated": ""
     },
     {
@@ -921,7 +931,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 22,
+      "position": 23,
       "generated": ""
     },
     {
@@ -931,7 +941,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 23,
+      "position": 24,
       "generated": ""
     },
     {
@@ -941,7 +951,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 24,
+      "position": 25,
       "generated": ""
     },
     {
@@ -951,7 +961,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 25,
+      "position": 26,
       "generated": ""
     },
     {
@@ -961,7 +971,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 26,
+      "position": 27,
       "generated": ""
     },
     {
@@ -971,7 +981,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 27,
+      "position": 28,
       "generated": ""
     },
     {
@@ -981,7 +991,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 28,
+      "position": 29,
       "generated": ""
     },
     {
@@ -991,7 +1001,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 29,
+      "position": 30,
       "generated": ""
     },
     {
@@ -1001,7 +1011,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 30,
+      "position": 31,
       "generated": ""
     },
     {
@@ -1011,7 +1021,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 31,
+      "position": 32,
       "generated": ""
     },
     {
@@ -1021,7 +1031,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 32,
+      "position": 33,
       "generated": ""
     },
     {
@@ -1031,7 +1041,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 33,
+      "position": 34,
       "generated": ""
     },
     {
@@ -1041,7 +1051,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 34,
+      "position": 35,
       "generated": ""
     },
     {
@@ -1051,7 +1061,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 35,
+      "position": 36,
       "generated": ""
     },
     {
@@ -1061,7 +1071,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 36,
+      "position": 37,
       "generated": ""
     },
     {
@@ -1071,7 +1081,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 37,
+      "position": 38,
       "generated": ""
     },
     {
@@ -1081,7 +1091,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 38,
+      "position": 39,
       "generated": ""
     },
     {
@@ -1091,7 +1101,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 39,
+      "position": 40,
       "generated": ""
     },
     {
@@ -1101,7 +1111,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 40,
+      "position": 41,
       "generated": ""
     },
     {
@@ -1111,7 +1121,7 @@
       "default": "'[]'::jsonb",
       "notNull": true,
       "identity": "",
-      "position": 41,
+      "position": 42,
       "generated": ""
     },
     {
@@ -1121,7 +1131,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 42,
+      "position": 43,
       "generated": ""
     },
     {
@@ -1131,7 +1141,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 43,
+      "position": 44,
       "generated": ""
     },
     {
@@ -1141,7 +1151,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 44,
+      "position": 45,
       "generated": ""
     },
     {
@@ -1151,7 +1161,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 45,
+      "position": 46,
       "generated": ""
     },
     {
@@ -1161,7 +1171,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 46,
+      "position": 47,
       "generated": ""
     },
     {
@@ -1171,7 +1181,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 47,
+      "position": 48,
       "generated": ""
     },
     {
@@ -1181,7 +1191,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 48,
+      "position": 49,
       "generated": ""
     },
     {
@@ -1191,7 +1201,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 49,
+      "position": 50,
       "generated": ""
     },
     {
@@ -1201,7 +1211,7 @@
       "default": "",
       "notNull": false,
       "identity": "",
-      "position": 50,
+      "position": 51,
       "generated": ""
     },
     {
@@ -8932,6 +8942,11 @@
       "definition": "CREATE INDEX idx_activities_profile_started ON public.activities USING btree (profile_id, started_at)"
     },
     {
+      "name": "idx_activities_route",
+      "table": "activities",
+      "definition": "CREATE INDEX idx_activities_route ON public.activities USING btree (route_id) WHERE (route_id IS NOT NULL)"
+    },
+    {
       "name": "idx_activities_started",
       "table": "activities",
       "definition": "CREATE INDEX idx_activities_started ON public.activities USING btree (started_at)"
@@ -11163,6 +11178,13 @@
       "table": "activities",
       "validated": true,
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "f",
+      "name": "activities_route_id_activity_routes_id_fk",
+      "table": "activities",
+      "validated": true,
+      "definition": "FOREIGN KEY (route_id) REFERENCES activity_routes(id) ON DELETE SET NULL"
     },
     {
       "kind": "c",

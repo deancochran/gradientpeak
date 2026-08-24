@@ -4,27 +4,22 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveMaestroE2EEnvironment } from "./maestro-environment.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const appId = process.env.MAESTRO_APP_ID || "com.deancochran.gradientpeak.dev";
 const appScheme = process.env.MAESTRO_APP_SCHEME || "gradientpeak-dev";
 
-function resolvePort(value, fallback, name) {
-  const port = Number(value ?? fallback);
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-    throw new Error(`${name} must be an integer between 1 and 65535`);
-  }
-  return port;
-}
-
-const expoPort = resolvePort(process.env.EXPO_PORT, 8081, "EXPO_PORT");
-const webPort = resolvePort(process.env.PORT, 3000, "PORT");
-const defaultServerLabel =
-  process.env.MAESTRO_EXPO_DEV_SERVER_LABEL || `http://10.0.2.2:${expoPort}`;
-const artifactDir = process.env.MAESTRO_ARTIFACT_DIR || ".maestro/artifacts";
+let expoPort;
+let webPort;
+let defaultServerLabel;
+let forwardedPorts;
+const expoDevClientScheme = process.env.MAESTRO_EXPO_DEV_CLIENT_SCHEME || "exp+gradientpeak";
+let expoDevClientUrl;
+const runId = process.env.E2E_RUN_ID || `run-${Date.now()}-${process.pid}`;
+const artifactDir = process.env.MAESTRO_ARTIFACT_DIR || `.maestro/artifacts/${runId}`;
 const defaultCheckFlows = [".maestro/flows/smoke", ".maestro/flows/reusable"];
 const defaultTestFlows = [".maestro/flows/smoke"];
-const forwardedPorts = [...new Set([expoPort, webPort, 8081, 3000, 3100, 54321])];
 const loadedEnvKeys = new Set();
 
 const command = process.argv[2] || "test";
@@ -90,7 +85,11 @@ function run(bin, commandArgs, options = {}) {
 }
 
 function adb(args, options = {}) {
-  return run(process.env.ADB_BIN || "adb", args, options);
+  const deviceArgs =
+    process.env.MAESTRO_DEVICE_ID && !process.env.MAESTRO_DEVICE_ID.includes(",")
+      ? ["-s", process.env.MAESTRO_DEVICE_ID]
+      : [];
+  return run(process.env.ADB_BIN || "adb", [...deviceArgs, ...args], options);
 }
 
 function prepareAndroid() {
@@ -118,6 +117,26 @@ function prepare() {
 
   prepareAndroid();
   launchApp();
+}
+
+function waitForEndpoint(url, label) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    if (
+      run("curl", ["--silent", "--show-error", "--max-time", "2", "--output", "/dev/null", url], {
+        optional: true,
+      })
+    ) {
+      return;
+    }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1_000);
+  }
+  throw new Error(`${label} did not become ready at its dedicated E2E endpoint.`);
+}
+
+function requireE2EReadiness() {
+  waitForEndpoint(`${e2eEnvironment.apiUrl}/`, "E2E web/API");
+  waitForEndpoint(`http://127.0.0.1:${expoPort}/status`, "E2E Metro");
+  waitForEndpoint(`${e2eEnvironment.supabaseUrl}/rest/v1/`, "E2E Supabase");
 }
 
 function clean() {
@@ -162,12 +181,15 @@ function buildMaestroArgs(flowArgs) {
 
   const maestroArgs = [
     "test",
+    "--no-reinstall-driver",
     "--debug-output",
     debugOutput,
     "--test-output-dir",
     testOutput,
     "--env",
     `EXPO_DEV_SERVER_LABEL=${process.env.EXPO_DEV_SERVER_LABEL || defaultServerLabel}`,
+    "--env",
+    `EXPO_DEV_CLIENT_URL=${expoDevClientUrl}`,
     "--env",
     `MAESTRO_APP_ID=${appId}`,
     "--env",
@@ -228,6 +250,16 @@ if (process.env.SIGNUP_EMAIL === undefined) {
   loadedEnvKeys.add("SIGNUP_EMAIL");
 }
 
+const e2eEnvironment = resolveMaestroE2EEnvironment(process.env);
+expoPort = e2eEnvironment.expoPort;
+webPort = e2eEnvironment.webPort;
+forwardedPorts = e2eEnvironment.forwardedPorts;
+process.env.MAESTRO_DEVICE_ID = e2eEnvironment.deviceId;
+process.env.EXPO_PUBLIC_MAESTRO_E2E_API_URL = e2eEnvironment.apiUrl;
+process.env.EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL = e2eEnvironment.supabaseUrl;
+defaultServerLabel = process.env.MAESTRO_EXPO_DEV_SERVER_LABEL || `http://127.0.0.1:${expoPort}`;
+expoDevClientUrl = `${expoDevClientScheme}://expo-development-client/?url=${encodeURIComponent(`http://127.0.0.1:${expoPort}`)}`;
+
 switch (command) {
   case "prepare":
     prepare();
@@ -242,11 +274,14 @@ switch (command) {
     checkSyntax(args);
     break;
   case "test":
-    prepare();
     if (process.env.MAESTRO_DRY_RUN === "1") {
-      console.log([process.env.MAESTRO_BIN || "maestro", ...buildMaestroArgs(args)].join(" "));
+      console.log(
+        `[maestro] dry-run device=${e2eEnvironment.deviceId} metro=127.0.0.1:${expoPort} api=127.0.0.1:${webPort} supabase=127.0.0.1:55321 forwards=${forwardedPorts.join(",")} artifacts=${artifactDir}`,
+      );
       break;
     }
+    requireE2EReadiness();
+    prepare();
     run(process.env.MAESTRO_BIN || "maestro", buildMaestroArgs(args));
     if (process.env.MAESTRO_JUNIT_OUTPUT) {
       process.stdout.write(readFileSync(resolve(root, process.env.MAESTRO_JUNIT_OUTPUT), "utf8"));

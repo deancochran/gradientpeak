@@ -12,7 +12,7 @@ export type FreshBaseline = {
   version: string;
 };
 
-/** Small fresh-only guard: Supabase owns exactly one regular transactional MVP baseline. */
+/** Guard one transactional MVP baseline followed only by ordered forward migrations. */
 export function requireFreshBaseline(root = dbPackageRoot): FreshBaseline {
   const authority = resolve(root, "supabase/migrations");
   const retiredActiveArtifacts = [
@@ -26,16 +26,30 @@ export function requireFreshBaseline(root = dbPackageRoot): FreshBaseline {
   if (!lstatSync(authority).isDirectory() || lstatSync(authority).isSymbolicLink()) {
     throw new Error("baseline authority must be a real directory");
   }
-  const entries = readdirSync(authority, { withFileTypes: true });
+  const entries = readdirSync(authority, { withFileTypes: true }).sort((left, right) =>
+    left.name.localeCompare(right.name),
+  );
   if (
-    entries.length !== 1 ||
-    !entries[0]?.isFile() ||
-    entries[0].isSymbolicLink() ||
-    !/^\d{14}_mvp_baseline\.sql$/.test(entries[0].name)
+    entries.length === 0 ||
+    entries.some(
+      (entry) =>
+        !entry.isFile() || entry.isSymbolicLink() || !/^\d{14}_[a-z0-9_]+\.sql$/.test(entry.name),
+    )
   ) {
-    throw new Error("baseline authority must contain exactly one regular MVP baseline SQL file");
+    throw new Error("migration authority must contain only regular timestamped SQL files");
   }
-  const filename = entries[0].name;
+  const baselineEntries = entries.filter((entry) => /^\d{14}_mvp_baseline\.sql$/.test(entry.name));
+  if (baselineEntries.length !== 1 || entries[0]?.name !== baselineEntries[0]?.name) {
+    throw new Error(
+      "migration authority must begin with exactly one regular MVP baseline SQL file",
+    );
+  }
+  const versions = entries.map((entry) => entry.name.slice(0, 14));
+  if (new Set(versions).size !== versions.length) {
+    throw new Error("migration authority requires unique ordered timestamp versions");
+  }
+  const filename = baselineEntries[0]?.name;
+  if (!filename) throw new Error("migration authority is missing the MVP baseline SQL file");
   const sourcePath = resolve(authority, filename);
   const sql = readFileSync(sourcePath, "utf8").trim();
   if (!/^BEGIN;/i.test(sql) || !/COMMIT;$/i.test(sql)) {
@@ -51,7 +65,7 @@ export function requireFreshBaseline(root = dbPackageRoot): FreshBaseline {
 
 function check() {
   requireFreshBaseline(process.env.GRADIENTPEAK_BASELINE_WORKFLOW_ROOT ?? dbPackageRoot);
-  console.log("[db:baseline:check] exactly one transactional Supabase MVP baseline OK");
+  console.log("[db:baseline:check] transactional MVP baseline and ordered forward migrations OK");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

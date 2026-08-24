@@ -1,0 +1,12 @@
+appId: ${MAESTRO_APP_ID}
+---
+# A clearState launch destroys app-local recorder recovery data. Fail closed if
+# either active-recording control is visible after a non-destructive launch.
+- launchApp:
+    appId: ${MAESTRO_APP_ID}
+    clearState: false
+- runFlow: ./handle_transient_system_ui.yaml
+- assertNotVisible:
+    id: "recording-pause-button"
+- assertNotVisible:
+    id: "recording-resume-button"

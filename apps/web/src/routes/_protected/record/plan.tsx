@@ -69,6 +69,7 @@ export function RecordPlanPage() {
         gps: "off",
         activityPlanId: detail.id,
         ...(selected.eventId ? { eventId: selected.eventId } : {}),
+        ...(launcher.routeId ? { routeId: launcher.routeId } : {}),
       },
     });
   };
@@ -266,7 +267,11 @@ export function RecordPlanPage() {
                     onClick={() =>
                       void navigate({
                         to: "/record",
-                        search: { activity_category: launcher.activity_category, gps: "off" },
+                        search: {
+                          activity_category: launcher.activity_category,
+                          gps: "off",
+                          ...(launcher.routeId ? { routeId: launcher.routeId } : {}),
+                        },
                       })
                     }
                   >

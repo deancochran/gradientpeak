@@ -1,0 +1,15 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — journeys/calendar/inaccessible_event_detail_blocked.yaml — reject inaccessible detail controls"
+properties:
+  junitId: variation.mobile.journeys_calendar_inaccessible_event_detail_blocked.a
+  junitClassname: variation.mobile.calendar
+  sourceIdentity: journeys/calendar/inaccessible_event_detail_blocked.yaml
+tags: [variation, calendar, by-source, intentional-red]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- openLink: "${MAESTRO_APP_SCHEME}://event-detail?id=${INACCESSIBLE_EVENT_ID}"
+- extendedWaitUntil: { visible: "This event may be unavailable.", timeout: 15000 }
+- assertNotVisible: { id: "event-detail-options-trigger" }
+- assertNotVisible: "Attach Activity Plan"
+- assertVisible: { id: "calendar-screen-ready" }
+- assertVisible: { id: "create-event-entry" }

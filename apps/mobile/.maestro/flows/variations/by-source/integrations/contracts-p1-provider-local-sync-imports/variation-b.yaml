@@ -1,0 +1,19 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — contracts/p1/provider_local_sync_imports.yaml — revisit imported provider history"
+properties:
+  junitId: variation.mobile.contracts_p1_provider_local_sync_imports.b
+  junitClassname: variation.mobile.integrations
+  sourceIdentity: contracts/p1/provider_local_sync_imports.yaml
+tags: [variation, integrations, by-source, intentional-red]
+---
+- runFlow:
+    file: ../../../../reusable/authenticated_home.yaml
+    env: { STANDARD_USER_EMAIL: "${PROVIDER_SYNC_USER_EMAIL_B}", STANDARD_USER_PASS: "${PROVIDER_SYNC_USER_PASS_B}" }
+- openLink: "${MAESTRO_APP_SCHEME}://integrations"
+- assertVisible: { id: "integration-provider-${PROVIDER_SYNC_ID_B}" }
+- tapOn: { id: "integration-view-history-${PROVIDER_SYNC_ID_B}" }
+- assertVisible: { id: "activities-list-item-${PROVIDER_SYNC_IMPORTED_ACTIVITY_ID_B}" }
+- tapOn: { id: "activities-list-item-${PROVIDER_SYNC_IMPORTED_ACTIVITY_ID_B}" }
+- assertVisible: { id: "activity-detail-summary" }
+- back
+- assertVisible: { id: "activities-list-import-trigger" }

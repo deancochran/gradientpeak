@@ -1,0 +1,20 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — contracts/p2/training_preferences_persist.yaml — retain saved rest day across Plan navigation"
+properties:
+  junitId: variation.mobile.contracts_p2_training_preferences_persist.b
+  junitClassname: variation.mobile.plans
+  sourceIdentity: contracts/p2/training_preferences_persist.yaml
+tags: [variation, plans, by-source]
+---
+- runFlow:
+    file: ../../../../reusable/authenticated_home.yaml
+    env: { STANDARD_USER_EMAIL: "${TRAINING_PREF_USER_EMAIL_B}", STANDARD_USER_PASS: "${TRAINING_PREF_USER_PASS_B}" }
+- runFlow: ../../../../reusable/domain/details/open_training_preferences.yaml
+- tapOn: { id: "training-preferences-tab-availability" }
+- tapOn: { id: "preferences-hard-rest-day-monday" }
+- tapOn: { id: "training-preferences-save-button" }
+- runFlow: ../../../../reusable/open_plan_tab.yaml
+- tapOn: { id: "plan-signals-settings-button" }
+- tapOn: { id: "training-preferences-tab-availability" }
+- assertVisible: "Remove Monday hard rest day"
+- assertVisible: { id: "preferences-weekly-windows" }

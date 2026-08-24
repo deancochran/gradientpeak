@@ -1,0 +1,22 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — journeys/record/route_based_start_and_preview.yaml — preview, attach, remove, and reattach route"
+properties:
+  junitId: variation.mobile.journeys_record_route_based_start_and_preview.a
+  junitClassname: variation.mobile.recording
+  sourceIdentity: journeys/record/route_based_start_and_preview.yaml
+tags: [variation, recording, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: ../../../../reusable/open_record_tab.yaml
+- tapOn: { id: "recording-setup-action-route" }
+- tapOn: { id: "discover-search-input" }
+- inputText: "${RECORDING_ROUTE_NAME}"
+- hideKeyboard
+- tapOn: "${RECORDING_ROUTE_NAME}"
+- assertVisible: { id: "route-preview-screen" }
+- tapOn: { id: "route-preview-attach-button" }
+- assertVisible: { id: "recording-setup-remove-route" }
+- tapOn: { id: "recording-setup-remove-route" }
+- tapOn: { id: "recording-setup-action-route" }
+- tapOn: "${RECORDING_ROUTE_NAME}"
+- assertVisible: { id: "route-preview-attach-button" }

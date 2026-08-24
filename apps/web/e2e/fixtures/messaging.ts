@@ -1,207 +1,97 @@
-import { type BrowserContext, test as base, expect, type Page } from "@playwright/test";
-import { Pool } from "pg";
-import { currentContractEpochHeaders } from "../utils/contractEpoch";
+import type { Page } from "@playwright/test";
 
-const actors = {
-  a: {
-    email: "messaging-a@gradientpeak.local",
-    name: "Messaging Alpha",
-    username: "messaging_alpha",
-  },
-  b: {
-    email: "messaging-b@gradientpeak.local",
-    name: "Messaging Bravo",
-    username: "messaging_bravo",
-  },
-  c: {
-    email: "messaging-c@gradientpeak.local",
-    name: "Messaging Charlie",
-    username: "messaging_charlie",
-  },
+import { expect, test as sharedTest } from "../fixtures";
+import type { AuthenticatedE2EActor } from "../support/actors";
+import type { E2EQuery } from "../support/database";
+
+const actorNames = {
+  a: { name: "Messaging Alpha", username: "messaging_alpha" },
+  b: { name: "Messaging Bravo", username: "messaging_bravo" },
+  c: { name: "Messaging Charlie", username: "messaging_charlie" },
 } as const;
-// biome-ignore lint/security/noSecrets: Public local-only E2E credential.
-const password = "MessagingPlaywright123!";
 
-type ActorKey = keyof typeof actors;
-type Actor = { context: BrowserContext; id: string; page: Page; username: string };
+type ActorKey = keyof typeof actorNames;
+type Actor = AuthenticatedE2EActor & { page: Page; username: string };
 type MessagingHarness = {
   actors: Record<ActorKey, Actor>;
   seedFollowRequest: (from: ActorKey, to: ActorKey) => Promise<void>;
   readFollowStatus: (from: ActorKey, to: ActorKey) => Promise<string | null>;
 };
 
-function databaseUrl() {
-  const value =
-    process.env.DATABASE_URL ??
-    // biome-ignore lint/security/noSecrets: Supabase's documented local-only database URL.
-    "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
-  const url = new URL(value);
-  if (!["127.0.0.1", "localhost"].includes(url.hostname)) {
-    throw new Error("Messaging E2E support only mutates a local database.");
-  }
-  return value;
-}
-
-async function provision(context: BrowserContext, key: ActorKey, pool: Pool): Promise<Actor> {
-  const actor = actors[key];
-  let response = await context.request.post("/api/auth/sign-in/email", {
-    data: { email: actor.email, password },
-    headers: currentContractEpochHeaders,
-  });
-  if (!response.ok()) {
-    const signUpResponse = await context.request.post("/api/auth/sign-up/email", {
-      data: { email: actor.email, name: actor.name, password },
-      headers: currentContractEpochHeaders,
+export const test = sharedTest.extend<{ messaging: MessagingHarness }>({
+  messaging: async ({ actorFactory, e2eCleanup, e2eDatabase, e2eIdentity }, use) => {
+    const entries = await Promise.all(
+      (Object.keys(actorNames) as ActorKey[]).map(async (key) => {
+        const definition = actorNames[key];
+        const actor = await actorFactory.create("athlete", {
+          fullName: definition.name,
+          label: `messaging-${key}`,
+          primary: key === "a",
+          username: `${definition.username}_${e2eIdentity.suffix(`messaging-${key}`)}`,
+        });
+        if (!actor.username) throw new Error(`Messaging actor ${key} has no username.`);
+        const page = await actor.createPage("/");
+        return [key, Object.assign(actor, { page, username: actor.username })] as const;
+      }),
+    );
+    const actors = Object.fromEntries(entries) as Record<ActorKey, Actor>;
+    const actorIds = entries.map(([, actor]) => actor.profileId);
+    await clearActorState(e2eDatabase, actorIds);
+    e2eCleanup.registerExactId({
+      kind: "messaging-actor-state",
+      id: actorIds.join(":"),
+      cleanup: (database) => clearActorState(database, actorIds),
     });
-    if (![200, 201, 409, 422].includes(signUpResponse.status())) {
-      throw new Error(
-        `Unable to provision messaging actor ${key} (HTTP ${signUpResponse.status()}).`,
-      );
-    }
-    await pool.query('update "users" set "email_verified" = true where "email" = $1', [
-      actor.email,
-    ]);
-    response = await context.request.post("/api/auth/sign-in/email", {
-      data: { email: actor.email, password },
-      headers: currentContractEpochHeaders,
+
+    await use({
+      actors,
+      seedFollowRequest: async (from, to) => {
+        const follower = actors[from].profileId;
+        const following = actors[to].profileId;
+        await e2eDatabase.query(
+          `insert into "follows" ("follower_id", "following_id", "status", "created_at", "updated_at")
+           values ($1, $2, 'pending', now(), now())
+           on conflict ("follower_id", "following_id") do update
+           set "status" = 'pending', "updated_at" = now()`,
+          [follower, following],
+        );
+        await e2eDatabase.query(
+          `delete from "notifications"
+           where "user_id" = $2 and "actor_id" = $1 and "type" = 'follow_request'`,
+          [follower, following],
+        );
+        await e2eDatabase.query(
+          `insert into "notifications" ("id", "user_id", "actor_id", "type", "created_at")
+           values (gen_random_uuid(), $2, $1, 'follow_request', now())`,
+          [follower, following],
+        );
+      },
+      readFollowStatus: async (from, to) => {
+        const result = await e2eDatabase.query<{ status: string }>(
+          'select "status" from "follows" where "follower_id" = $1 and "following_id" = $2',
+          [actors[from].profileId, actors[to].profileId],
+        );
+        return result.rows[0]?.status ?? null;
+      },
     });
-  }
-  if (!response.ok()) {
-    throw new Error(`Unable to authenticate messaging actor ${key} (HTTP ${response.status()}).`);
-  }
-  const user = await pool.query<{ id: string }>('select "id" from "users" where "email" = $1', [
-    actor.email,
-  ]);
-  const id = user.rows[0]?.id;
-  if (!id) throw new Error(`Messaging actor ${key} has no user row.`);
-  await pool.query(
-    `insert into "profiles" ("id", "email", "full_name", "username", "onboarding_status", "is_public")
-     values ($1, $2, $3, $4, 'completed', true)
-     on conflict ("id") do update set
-       "email" = excluded."email", "full_name" = excluded."full_name",
-       "username" = excluded."username", "onboarding_status" = 'completed', "is_public" = true`,
-    [id, actor.email, actor.name, actor.username],
-  );
-  const page = await context.newPage();
-  return { context, id, page, username: actor.username };
-}
-
-export const test = base.extend<{ messaging: MessagingHarness }>({
-  messaging: async ({ baseURL, browser }, use) => {
-    if (!baseURL) {
-      throw new Error("Messaging E2E support requires Playwright use.baseURL.");
-    }
-    const pool = new Pool({ connectionString: databaseUrl(), max: 1 });
-    const lock = "gradientpeak-web-e2e:shared-actor-state";
-    let lockAcquired = false;
-    const contexts: BrowserContext[] = [];
-    let actorIds: string[] = [];
-    let primaryError: unknown;
-    try {
-      // biome-ignore lint/security/noSecrets: Static PostgreSQL lock query, not a credential.
-      await pool.query("select pg_advisory_lock(hashtext($1))", [lock]);
-      lockAcquired = true;
-      await pool.query('delete from "rate_limits"');
-      await pool.query('delete from "api_rate_limit_windows"');
-      const entries = await Promise.all(
-        (Object.keys(actors) as ActorKey[]).map(async (key) => {
-          const context = await browser.newContext({ baseURL });
-          contexts.push(context);
-          return [key, await provision(context, key, pool)] as const;
-        }),
-      );
-      const actorMap = Object.fromEntries(entries) as Record<ActorKey, Actor>;
-      actorIds = entries.map(([, actor]) => actor.id);
-      await clearActorState(pool, actorIds);
-      await use({
-        actors: actorMap,
-        seedFollowRequest: async (from, to) => {
-          const follower = actorMap[from].id;
-          const following = actorMap[to].id;
-          await pool.query(
-            `insert into "follows" ("follower_id", "following_id", "status", "created_at", "updated_at")
-             values ($1, $2, 'pending', now(), now())
-             on conflict ("follower_id", "following_id") do update set "status" = 'pending', "updated_at" = now()`,
-            [follower, following],
-          );
-          await pool.query(
-            `delete from "notifications"
-             where "user_id" = $2 and "actor_id" = $1 and "type" = 'follow_request'`,
-            [follower, following],
-          );
-          await pool.query(
-            `insert into "notifications" ("id", "user_id", "actor_id", "type", "created_at")
-             values (gen_random_uuid(), $2, $1, 'follow_request', now())`,
-            [follower, following],
-          );
-        },
-        readFollowStatus: async (from, to) => {
-          const result = await pool.query<{ status: string }>(
-            'select "status" from "follows" where "follower_id" = $1 and "following_id" = $2',
-            [actorMap[from].id, actorMap[to].id],
-          );
-          return result.rows[0]?.status ?? null;
-        },
-      });
-    } catch (error) {
-      primaryError = error;
-    }
-
-    let cleanupError: unknown;
-    for (const context of contexts) {
-      try {
-        await context.close();
-      } catch (error) {
-        cleanupError ??= error;
-      }
-    }
-    try {
-      if (actorIds.length > 0) {
-        await clearActorState(pool, actorIds);
-      }
-    } catch (error) {
-      cleanupError ??= error;
-    } finally {
-      try {
-        if (lockAcquired) {
-          // biome-ignore lint/security/noSecrets: Static PostgreSQL unlock query, not a credential.
-          await pool.query("select pg_advisory_unlock(hashtext($1))", [lock]);
-        }
-      } catch (error) {
-        cleanupError ??= error;
-      } finally {
-        try {
-          await pool.end();
-        } catch (error) {
-          cleanupError ??= error;
-        }
-      }
-    }
-    if (primaryError !== undefined) throw primaryError;
-    if (cleanupError !== undefined) throw cleanupError;
   },
 });
 
-async function clearActorState(pool: Pool, actorIds: string[]) {
-  await pool.query(
+async function clearActorState(database: E2EQuery, actorIds: string[]) {
+  await database.query(
     `delete from "conversations" where "id" in (
        select "conversation_id" from "conversation_participants" where "user_id" = any($1::uuid[])
      )`,
     [actorIds],
   );
-  await pool.query(
+  await database.query(
     `delete from "notifications" where "user_id" = any($1::uuid[]) or "actor_id" = any($1::uuid[])`,
     [actorIds],
   );
-  await pool.query(
+  await database.query(
     `delete from "follows" where "follower_id" = any($1::uuid[]) or "following_id" = any($1::uuid[])`,
     [actorIds],
   );
-}
-
-export async function openAppPage(page: Page, path: string) {
-  await page.goto(path);
-  await page.waitForLoadState("domcontentloaded");
 }
 
 export { expect };

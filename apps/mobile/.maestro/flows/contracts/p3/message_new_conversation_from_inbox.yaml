@@ -1,0 +1,36 @@
+appId: ${MAESTRO_APP_ID}
+name: P3 new conversation can be started from inbox
+properties:
+  junitId: p3.messaging.new_conversation
+  junitClassname: contract.mobile.p3
+---
+- runFlow:
+    file: ../../reusable/authenticated_home.yaml
+    env:
+      STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}"
+      STANDARD_USER_PASS: "${STANDARD_USER_PASS}"
+- runFlow: ../../reusable/open_messages_inbox.yaml
+- tapOn:
+    id: "messages-new-trigger"
+- extendedWaitUntil:
+    visible:
+      id: "messages-new-screen"
+    timeout: 10000
+- tapOn: "Search recipients"
+- inputText: "${MESSAGE_TARGET_USERNAME}"
+- hideKeyboard
+- tapOn:
+    id: "messages-new-user-${MESSAGE_TARGET_USER_ID}"
+- tapOn:
+    id: "messages-new-next-trigger"
+- extendedWaitUntil:
+    visible:
+      id: "message-thread-screen"
+    timeout: 15000
+- tapOn:
+    id: "message-input"
+- inputText: "${MESSAGE_TEXT}"
+- hideKeyboard
+- tapOn:
+    id: "message-send-button"
+- assertVisible: "${MESSAGE_TEXT}"

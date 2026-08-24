@@ -42,7 +42,7 @@ function GoalsPage() {
       sort_order: search.sort === "priority" ? "desc" : "asc",
       limit: 50,
     },
-    { enabled: Boolean(profileQuery.data?.id) },
+    { enabled: Boolean(profileQuery.data?.id), retry: false },
   );
   const isProfileUnavailable = profileQuery.isSuccess && !profileQuery.data;
   const hasQueryError = profileQuery.isError || isProfileUnavailable || goalsQuery.isError;

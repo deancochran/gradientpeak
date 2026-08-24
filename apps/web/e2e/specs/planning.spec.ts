@@ -1,5 +1,7 @@
 import { expect, test } from "../fixtures";
+import { expectNoHorizontalOverflow } from "../pages";
 import { withPlanningPathFixture } from "../planning/data";
+import { withDayAgendaFixture } from "../planning/day-agenda";
 import { openPlanningRoute, planningJourneyIds, planningTestIdentity } from "../planning/journeys";
 
 test("planning.training-path and calendar.navigation expose the server-composed scheduled path", async ({
@@ -47,9 +49,7 @@ test("planning.training-path and calendar.navigation expose the server-composed 
     await expect(firmItemRow).toBeVisible();
     await expect(firmItemRow.getByText(/^Common Load \d+(?:\.\d+)?$/)).toBeVisible();
     await expect(athletePage.getByText(/\b(?:TSS|IF|CTL|ATL|TSB)\b/)).toHaveCount(0);
-    await expect(
-      athletePage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-    ).resolves.toBe(true);
+    await expectNoHorizontalOverflow(athletePage);
   });
 
   await openPlanningRoute(
@@ -91,7 +91,7 @@ test("planning.training-path and calendar.navigation expose the server-composed 
     "active",
   );
   await athletePage.goto("/calendar?month=2026-07&date=2026-07-20&view=month");
-  await athletePage.getByRole("link", { name: "Open calendar day 2026-07-20" }).click();
+  await athletePage.getByRole("link", { name: /^2026-07-20\./ }).click();
   await expect(athletePage).toHaveURL(/\/calendar\/day\/2026-07-20/);
   await expect(athletePage.getByText("Day agenda and goal anchors.")).toBeVisible();
   await athletePage.getByText("Previous day", { exact: true }).click();
@@ -100,12 +100,10 @@ test("planning.training-path and calendar.navigation expose the server-composed 
   await expect(athletePage).toHaveURL(/\/calendar\/day\/2026-07-20/);
   await athletePage.getByText("Back to calendar", { exact: true }).click();
   await expect(athletePage).toHaveURL(/date=2026-07-20.*month=2026-07.*view=month/);
-  await athletePage.getByRole("link", { name: "Open calendar day 2026-07-20" }).click();
+  await athletePage.getByRole("link", { name: /^2026-07-20\./ }).click();
   await athletePage.getByText("Create event for this day", { exact: true }).click();
-  await expect(athletePage).toHaveURL(/\/calendar\/new\?date=2026-07-20&type=custom/);
-  await expect(
-    athletePage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-  ).resolves.toBe(true);
+  await expect(athletePage).toHaveURL(/\/calendar\/new\?date=2026-07-20$/);
+  await expectNoHorizontalOverflow(athletePage);
 });
 
 type PlanTabResponse = {
@@ -164,4 +162,39 @@ test("agenda.create and events.recurrence persist a bounded series and honor del
   await athletePage.getByLabel("Delete recurrence scope").selectOption("series");
   await athletePage.getByRole("button", { name: /delete event/i }).click();
   await expect(athletePage).toHaveURL(/\/calendar/);
+});
+
+test("[P0] selected-day agenda shows planned and completed information for an arbitrary date", async ({
+  athletePage,
+}, testInfo) => {
+  await withDayAgendaFixture(testInfo, async (fixture) => {
+    await athletePage.goto(`/calendar/day/${fixture.date}?month=2026-11&view=agenda`);
+    await expect(athletePage.getByRole("heading", { name: "Agenda", exact: true })).toBeVisible();
+    await expect(
+      athletePage.getByRole("link", {
+        name: `Open planned activity ${fixture.plannedPlanName}`,
+      }),
+    ).toBeVisible();
+    await expect(athletePage.getByText(fixture.completedName, { exact: true })).toBeVisible();
+    await expect(athletePage.getByTestId(`activity-card-${fixture.activityId}`)).toBeVisible();
+
+    await athletePage.getByText("Previous day", { exact: true }).click();
+    await expect(athletePage.getByText(fixture.completedName, { exact: true })).toHaveCount(0);
+    await expect(
+      athletePage.getByRole("link", {
+        name: `Open planned activity ${fixture.plannedPlanName}`,
+      }),
+    ).toHaveCount(0);
+
+    await athletePage.getByText("Next day", { exact: true }).click();
+    await expect(athletePage).toHaveURL(new RegExp(`/calendar/day/${fixture.date}`));
+    await expect(athletePage.getByText(fixture.completedName, { exact: true })).toBeVisible();
+    await athletePage.reload();
+    await expect(
+      athletePage.getByRole("link", {
+        name: `Open planned activity ${fixture.plannedPlanName}`,
+      }),
+    ).toBeVisible();
+    await expect(athletePage.getByText(fixture.completedName, { exact: true })).toBeVisible();
+  });
 });

@@ -1,7 +1,5 @@
 appId: com.deancochran.gradientpeak.dev
 env:
-  STANDARD_USER_EMAIL: "test@example.com"
-  STANDARD_USER_PASS: "password123"
   TARGET_USERNAME: "coachcasey"
   TARGET_USER_ID: "coachcasey"
 ---
@@ -17,7 +15,5 @@ env:
 - extendedWaitUntil:
     visible: "No efforts recorded"
     timeout: 10000
-    optional: true
 - assertVisible:
     text: "Record your best efforts for power and speed across different activities."
-    optional: true

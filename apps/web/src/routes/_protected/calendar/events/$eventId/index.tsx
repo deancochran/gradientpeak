@@ -76,6 +76,10 @@ function EventDetailPage() {
     { enabled: Boolean(eventQuery.data?.activityPlanSummary?.capabilities.canEdit) },
   );
   const event = eventQuery.data;
+  const routeQuery = api.routes.get.useQuery(
+    { id: event?.route_id ?? "00000000-0000-0000-0000-000000000000" },
+    { enabled: Boolean(event?.route_id) },
+  );
   const trainingPlanQuery = api.trainingPlans.get.useQuery(
     { id: event?.training_plan_id ?? "00000000-0000-0000-0000-000000000000" },
     { enabled: Boolean(event?.training_plan_id) },
@@ -221,6 +225,22 @@ function EventDetailPage() {
               label="Generated from training plan"
               value={trainingPlanQuery.data?.name ?? "Not linked"}
             />
+            <div className="grid gap-1 sm:grid-cols-[11rem_1fr] sm:items-start">
+              <dt className="text-sm font-medium text-muted-foreground">Route</dt>
+              <dd className="min-w-0 text-sm">
+                {event.route_id ? (
+                  <Link
+                    className="font-medium text-primary underline-offset-4 hover:underline"
+                    to="/routes/$routeId"
+                    params={{ routeId: event.route_id }}
+                  >
+                    {routeQuery.data?.name ?? "Open attached route"}
+                  </Link>
+                ) : (
+                  "None attached"
+                )}
+              </dd>
+            </div>
             <DetailRow label="Notes" value={event.notes?.trim() || "No notes yet."} />
           </CardContent>
         </Card>

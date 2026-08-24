@@ -1,13 +1,4 @@
 appId: ${MAESTRO_APP_ID}
 ---
-- runFlow: expo_dev_client_setup.yaml
-- extendedWaitUntil:
-    visible:
-      id: "sign-in-screen"
-    timeout: 3000
-    optional: true
-- extendedWaitUntil:
-    visible:
-      id: "search-header-button"
-    timeout: 10000
-    optional: true
+# Compatibility wrapper. New flows should name the lifecycle they require.
+- runFlow: ./clean_app_launch_signed_out.yaml

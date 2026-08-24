@@ -1,0 +1,19 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — contracts/p2/training_preferences_persist.yaml — save Monday rest day and reopen"
+properties:
+  junitId: variation.mobile.contracts_p2_training_preferences_persist.a
+  junitClassname: variation.mobile.plans
+  sourceIdentity: contracts/p2/training_preferences_persist.yaml
+tags: [variation, plans, by-source]
+---
+- runFlow:
+    file: ../../../../reusable/authenticated_home.yaml
+    env: { STANDARD_USER_EMAIL: "${TRAINING_PREF_USER_EMAIL_A}", STANDARD_USER_PASS: "${TRAINING_PREF_USER_PASS_A}" }
+- runFlow: ../../../../reusable/domain/details/open_training_preferences.yaml
+- tapOn: { id: "training-preferences-tab-availability" }
+- tapOn: { id: "preferences-hard-rest-day-monday" }
+- assertVisible: "Remove Monday hard rest day"
+- tapOn: { id: "training-preferences-save-button" }
+- runFlow: ../../../../reusable/domain/details/open_training_preferences.yaml
+- tapOn: { id: "training-preferences-tab-availability" }
+- assertVisible: "Remove Monday hard rest day"

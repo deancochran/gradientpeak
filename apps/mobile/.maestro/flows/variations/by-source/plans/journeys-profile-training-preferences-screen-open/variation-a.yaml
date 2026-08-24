@@ -1,0 +1,17 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — journeys/profile/training_preferences_screen_open.yaml — inspect all preference tabs"
+properties:
+  junitId: variation.mobile.journeys_profile_training_preferences_screen_open.a
+  junitClassname: variation.mobile.plans
+  sourceIdentity: journeys/profile/training_preferences_screen_open.yaml
+tags: [variation, plans, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: ../../../../reusable/domain/details/open_training_preferences.yaml
+- assertVisible: { id: "training-preferences-screen" }
+- assertVisible: { id: "training-preferences-tab-schedule" }
+- assertVisible: { id: "training-preferences-tab-availability" }
+- tapOn: { id: "training-preferences-tab-availability" }
+- assertVisible: { id: "preferences-hard-rest-days" }
+- tapOn: { id: "training-preferences-tab-schedule" }
+- assertVisible: { id: "preferences-max-weekly-duration" }

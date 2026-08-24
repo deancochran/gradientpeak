@@ -141,6 +141,7 @@ export default function SignInScreen() {
                   label="Email"
                   name="email"
                   placeholder="Email address"
+                  selectTextOnFocus={process.env.EXPO_PUBLIC_MAESTRO_E2E === "1"}
                   testId="email-input"
                 />
 
@@ -151,6 +152,7 @@ export default function SignInScreen() {
                   name="password"
                   placeholder="Password"
                   secureTextEntry
+                  selectTextOnFocus={process.env.EXPO_PUBLIC_MAESTRO_E2E === "1"}
                   testId="password-input"
                 />
 

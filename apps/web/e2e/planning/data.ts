@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 import type { TestInfo } from "@playwright/test";
-import { Pool, type PoolClient } from "pg";
-
-import { TEST_ACTIVITY_PLAN_ID, TEST_USERS } from "../utils/testData";
+import { currentE2EActor } from "../support/actors";
+import { currentE2ECleanupRegistry } from "../support/cleanup";
+import { type E2EQuery, LocalE2EDatabase } from "../support/database";
+import { createE2EExecutionIdentity } from "../support/identity";
 
 type PlanningFixture = {
   date: string;
@@ -37,19 +37,6 @@ export type GoalFixture = {
   rememberGoalTitle: (title: string) => void;
 };
 
-function localDatabaseUrl() {
-  const value =
-    process.env.DATABASE_URL ??
-    process.env.POSTGRES_URL ??
-    // biome-ignore lint/security/noSecrets: Supabase's documented local-only database URL.
-    "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
-  const url = new URL(value);
-  if (!["127.0.0.1", "localhost"].includes(url.hostname)) {
-    throw new Error("Area 8 planning fixtures only support the local database.");
-  }
-  return value;
-}
-
 function dateKey(value: Date) {
   return value.toISOString().slice(0, 10);
 }
@@ -60,23 +47,19 @@ function addDays(value: Date, days: number) {
   return next;
 }
 
-function deterministicUuid(digest: string) {
-  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-8${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+async function athleteProfileId(client: E2EQuery) {
+  void client;
+  return currentE2EActor("athlete").profileId;
 }
 
-async function athleteProfileId(client: PoolClient) {
-  const result = await client.query<{ id: string }>(
-    `select p."id" from "profiles" p inner join "users" u on u."id" = p."id"
-     where lower(u."email") = lower($1) limit 1`,
-    [TEST_USERS.athlete.email],
-  );
-  const id = result.rows[0]?.id;
-  if (!id) throw new Error("The local authenticated athlete fixture was not provisioned.");
+function athleteActivityPlanId() {
+  const id = currentE2EActor("athlete").activityPlanId;
+  if (!id) throw new Error("The isolated athlete activity-plan fixture was not provisioned.");
   return id;
 }
 
 async function deletePlanningPerformanceEvidence(
-  client: PoolClient,
+  client: E2EQuery,
   profileId: string,
   activityIds: readonly string[],
 ) {
@@ -90,55 +73,33 @@ export async function withPlanningPathFixture(
   testInfo: TestInfo,
   run: (fixture: PlanningFixture) => Promise<void>,
 ) {
-  const fixtureDigest = createHash("sha256")
-    .update(`${testInfo.project.name}|${testInfo.titlePath.join("|")}`)
-    .digest("hex");
-  const digest = fixtureDigest.slice(0, 12);
-  const eventId = deterministicUuid(
-    createHash("sha256").update(`${fixtureDigest}|event`).digest("hex"),
-  );
+  const identity = createE2EExecutionIdentity(testInfo);
+  const eventId = identity.uuid("planning-event");
   const performanceActivities = [0, 1].map((index) => {
     const completedAt = new Date(Date.now() - (30 + index) * 86_400_000);
     return {
-      activityId: deterministicUuid(
-        createHash("sha256").update(`${fixtureDigest}|performance-activity|${index}`).digest("hex"),
-      ),
+      activityId: identity.uuid(`planning-performance-activity-${index}`),
       completedAt,
-      segmentId: deterministicUuid(
-        createHash("sha256").update(`${fixtureDigest}|performance-segment|${index}`).digest("hex"),
-      ),
+      segmentId: identity.uuid(`planning-performance-segment-${index}`),
       startedAt: new Date(completedAt.getTime() - 3_600_000),
     };
   });
-  const performanceEfforts = [
-    { activityIndex: 0, durationSeconds: 300, powerWatts: 320 },
-    { activityIndex: 1, durationSeconds: 600, powerWatts: 280 },
-    { activityIndex: 0, durationSeconds: 1_200, powerWatts: 260 },
-    { activityIndex: 1, durationSeconds: 1_800, powerWatts: 253.33333333333334 },
-  ].map((effort) => ({
-    ...effort,
-    id: deterministicUuid(
-      createHash("sha256")
-        .update(`${fixtureDigest}|performance-effort|${effort.durationSeconds}`)
-        .digest("hex"),
-    ),
-  }));
-  const title = `Playwright Area 8 firm ${digest}`;
+  const title = identity.name("Playwright Area 8 firm");
   const today = new Date();
-  const weekStart = addDays(
-    new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())),
-    -today.getUTCDay(),
+  const currentDate = new Date(
+    Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
   );
+  const weekStart = addDays(currentDate, -today.getUTCDay());
   // Keep the seeded work in the server-resolved week and not in its past portion.
   const scheduled = addDays(weekStart, 6);
   const fixture = {
     date: dateKey(scheduled),
-    endDate: dateKey(addDays(weekStart, 6)),
+    endDate: dateKey(addDays(currentDate, 89)),
     eventId,
-    startDate: dateKey(weekStart),
+    startDate: dateKey(currentDate),
     title,
   };
-  const pool = new Pool({ connectionString: localDatabaseUrl() });
+  const pool = new LocalE2EDatabase();
   const client = await pool.connect();
   let profileId: string | undefined;
   let planningTimezone: string | null | undefined;
@@ -146,7 +107,7 @@ export async function withPlanningPathFixture(
   try {
     profileId = await athleteProfileId(client);
     const plan = await client.query('select "id" from "activity_plans" where "id" = $1 limit 1', [
-      TEST_ACTIVITY_PLAN_ID,
+      athleteActivityPlanId(),
     ]);
     if (!plan.rows[0]) throw new Error("The canonical Area 8 activity-plan fixture is absent.");
     planningTimezone = (
@@ -212,53 +173,6 @@ export async function withPlanningPathFixture(
         ],
       );
     }
-    for (const effort of performanceEfforts) {
-      const activity = performanceActivities[effort.activityIndex];
-      if (!activity) throw new Error("The planning performance fixture activity is absent.");
-      const startOffsetSeconds = 3_600 - effort.durationSeconds;
-      const completedAtSeconds = activity.completedAt.getTime() / 1_000;
-      await client.query(
-        `insert into "activity_efforts" (
-          "id", "created_at", "updated_at", "profile_id", "activity_id", "segment_id",
-          "recorded_at", "activity_category", "effort_type", "duration_seconds",
-          "start_offset", "unit", "value", "source", "method", "calculation_version", "provenance"
-        ) values (
-          $1::uuid, $2::timestamptz, $2::timestamptz, $3::uuid, $4::uuid, $5::uuid,
-          $2::timestamptz, 'bike', 'power', $6, $7, 'watts', $8,
-          'imported', 'activity_file_best_effort', 'best-effort-extraction-v1', $9::jsonb
-        )`,
-        [
-          effort.id,
-          activity.completedAt.toISOString(),
-          profileId,
-          activity.activityId,
-          activity.segmentId,
-          effort.durationSeconds,
-          startOffsetSeconds,
-          effort.powerWatts,
-          JSON.stringify({
-            observation_id: effort.id,
-            activity_id: activity.activityId,
-            segment_id: activity.segmentId,
-            derived_from: "activity_file_stream",
-            source_series: "power",
-            interval_convention: "current_sample_applies_to_preceding_interval",
-            exact_window_start_timestamp_seconds: completedAtSeconds - effort.durationSeconds,
-            exact_window_end_timestamp_seconds: completedAtSeconds,
-            exact_window_start_offset_seconds: startOffsetSeconds,
-            exact_window_end_offset_seconds: 3_600,
-            duration_seconds: effort.durationSeconds,
-            contributing_duration_seconds: effort.durationSeconds,
-            window_coverage: 1,
-            source_time_coverage: 1,
-            extraction_status: "available",
-            extraction_reason: null,
-            persisted_start_offset_quantization: "floor_seconds_v1",
-            calculation_version: "best-effort-extraction-v1",
-          }),
-        ],
-      );
-    }
     const insertedEvent = await client.query<{ id: string }>(
       `insert into "events" ("id", "profile_id", "event_type", "status", "title", "all_day", "timezone", "starts_at", "ends_at", "scheduled_date", "activity_plan_id")
         values ($1, $2, 'planned', 'scheduled', $3, false, 'UTC', $4::timestamptz, $5::timestamptz, $6, $7)
@@ -270,7 +184,7 @@ export async function withPlanningPathFixture(
         `${fixture.date}T12:00:00.000Z`,
         `${fixture.date}T12:30:00.000Z`,
         fixture.date,
-        TEST_ACTIVITY_PLAN_ID,
+        athleteActivityPlanId(),
       ],
     );
     const insertedEventId = insertedEvent.rows[0]?.id;
@@ -304,7 +218,7 @@ export async function withPlanningPathFixture(
       }
     } finally {
       client.release();
-      await pool.end();
+      await pool.close();
     }
   }
 }
@@ -316,7 +230,7 @@ export async function withPlanningPathFixture(
 export async function withCalendarEventFixture(
   run: (fixture: CalendarEventFixture) => Promise<void>,
 ) {
-  const pool = new Pool({ connectionString: localDatabaseUrl() });
+  const pool = new LocalE2EDatabase();
   const client = await pool.connect();
   let profileId: string;
   try {
@@ -324,11 +238,27 @@ export async function withCalendarEventFixture(
   } finally {
     client.release();
   }
-  const anchorIds = new Set<string>();
-  const eventIds = new Set<string>();
+  const cleanup = currentE2ECleanupRegistry();
   try {
     await run({
-      rememberSeries: (anchorId) => anchorIds.add(anchorId),
+      rememberSeries: (anchorId) => {
+        cleanup.registerExactId({
+          kind: "calendar-event-series",
+          id: anchorId,
+          cleanup: (database) =>
+            database.transaction(async (query) => {
+              await query.query(
+                `delete from "comments" where "entity_type" = 'event' and "entity_id" in
+                  (select "id" from "events" where "id" = $1 or "series_id" = $1)`,
+                [anchorId],
+              );
+              await query.query(
+                `delete from "events" where "profile_id" = $1 and ("id" = $2 or "series_id" = $2)`,
+                [profileId, anchorId],
+              );
+            }),
+        });
+      },
       getSeries: async (anchorId) => {
         const result = await pool.query<{
           id: string;
@@ -344,7 +274,17 @@ export async function withCalendarEventFixture(
           [profileId, anchorId],
         );
         return result.rows.map((row) => {
-          eventIds.add(row.id);
+          cleanup.registerExactId({
+            kind: "calendar-event",
+            id: row.id,
+            cleanup: (database) =>
+              database
+                .query('delete from "events" where "profile_id" = $1 and "id" = $2', [
+                  profileId,
+                  row.id,
+                ])
+                .then(() => undefined),
+          });
           return {
             id: row.id,
             notes: row.notes,
@@ -356,37 +296,37 @@ export async function withCalendarEventFixture(
       },
     });
   } finally {
-    try {
-      if (eventIds.size > 0) {
-        await pool.query(
-          'delete from "events" where "profile_id" = $1 and "id" = any($2::uuid[])',
-          [profileId, [...eventIds]],
-        );
-      }
-      for (const anchorId of anchorIds) {
-        await pool.query(
-          `delete from "events"
-           where "profile_id" = $1 and ("id" = $2 or "series_id" = $2)`,
-          [profileId, anchorId],
-        );
-      }
-    } finally {
-      await pool.end();
-    }
+    await pool.close();
   }
 }
 
 /** Browser-created goal IDs and exact unique titles are registered before inspection. */
 export async function withGoalFixture(run: (fixture: GoalFixture) => Promise<void>) {
-  const pool = new Pool({ connectionString: localDatabaseUrl() });
+  const pool = new LocalE2EDatabase();
   const client = await pool.connect();
   let profileId: string | undefined;
   const goalIds = new Set<string>();
   const goalTitles = new Set<string>();
+  const cleanup = currentE2ECleanupRegistry();
+  const rememberGoal = (id: string) => {
+    if (!profileId) throw new Error("The goal cleanup owner is unavailable.");
+    goalIds.add(id);
+    cleanup.registerExactId({
+      kind: "profile-goal",
+      id,
+      cleanup: (database) =>
+        database
+          .query('delete from "profile_goals" where "profile_id" = $1 and "id" = $2', [
+            profileId,
+            id,
+          ])
+          .then(() => undefined),
+    });
+  };
   try {
     profileId = await athleteProfileId(client);
     await run({
-      rememberGoal: (id) => goalIds.add(id),
+      rememberGoal,
       rememberGoalTitle: (title) => goalTitles.add(title),
       getGoal: async (id) => {
         if (!profileId || !goalIds.has(id))
@@ -419,17 +359,17 @@ export async function withGoalFixture(run: (fixture: GoalFixture) => Promise<voi
     });
   } finally {
     try {
-      if (profileId && (goalIds.size || goalTitles.size)) {
-        await client.query(
-          `delete from "profile_goals"
-           where "profile_id" = $1
-             and ("id" = any($2::uuid[]) or "title" = any($3::text[]))`,
-          [profileId, [...goalIds], [...goalTitles]],
+      if (profileId && goalTitles.size) {
+        const unresolved = await client.query<{ id: string }>(
+          `select "id" from "profile_goals"
+           where "profile_id" = $1 and "title" = any($2::text[])`,
+          [profileId, [...goalTitles]],
         );
+        for (const row of unresolved.rows) rememberGoal(row.id);
       }
     } finally {
       client.release();
-      await pool.end();
+      await pool.close();
     }
   }
 }

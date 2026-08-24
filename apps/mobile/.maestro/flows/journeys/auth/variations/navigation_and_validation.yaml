@@ -1,0 +1,30 @@
+appId: ${MAESTRO_APP_ID}
+name: Authentication stack preserves validation while moving between sign-up and recovery
+tags: [variation, auth, forms-navigation]
+---
+- runFlow: ../../../reusable/ensure_signed_out.yaml
+- tapOn:
+    id: "email-input"
+- inputText: "not-an-email"
+- tapOn:
+    id: "password-input"
+- inputText: "short"
+- hideKeyboard
+- tapOn:
+    id: "sign-in-button"
+- assertVisible:
+    id: "sign-in-screen"
+- tapOn:
+    id: "forgot-password-button"
+- assertVisible:
+    id: "forgot-password-screen"
+- back
+- assertVisible:
+    id: "sign-in-screen"
+- tapOn:
+    id: "sign-up-link-button"
+- assertVisible:
+    id: "sign-up-screen"
+- back
+- assertVisible:
+    id: "sign-in-screen"

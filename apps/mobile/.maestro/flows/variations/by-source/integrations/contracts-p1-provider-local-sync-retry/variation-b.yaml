@@ -1,0 +1,20 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — contracts/p1/provider_local_sync_retry.yaml — retry then inspect imported result"
+properties:
+  junitId: variation.mobile.contracts_p1_provider_local_sync_retry.b
+  junitClassname: variation.mobile.integrations
+  sourceIdentity: contracts/p1/provider_local_sync_retry.yaml
+tags: [variation, integrations, by-source, intentional-red]
+---
+- runFlow:
+    file: ../../../../reusable/authenticated_home.yaml
+    env: { STANDARD_USER_EMAIL: "${PROVIDER_RETRY_USER_EMAIL_B}", STANDARD_USER_PASS: "${PROVIDER_RETRY_USER_PASS_B}" }
+- openLink: "${MAESTRO_APP_SCHEME}://integrations"
+- tapOn: { id: "integration-sync-now-${PROVIDER_RETRY_ID_B}" }
+- assertVisible: { id: "integration-provider-sync-error-${PROVIDER_RETRY_ID_B}" }
+- tapOn: { id: "integration-retry-sync-${PROVIDER_RETRY_ID_B}" }
+- extendedWaitUntil: { visible: { id: "integration-view-import-${PROVIDER_RETRY_ID_B}" }, timeout: 30000 }
+- tapOn: { id: "integration-view-import-${PROVIDER_RETRY_ID_B}" }
+- assertVisible: { id: "activities-list-item-${PROVIDER_RETRY_IMPORTED_ACTIVITY_ID_B}" }
+- tapOn: { id: "activities-list-item-${PROVIDER_RETRY_IMPORTED_ACTIVITY_ID_B}" }
+- assertVisible: { id: "activity-detail-summary" }

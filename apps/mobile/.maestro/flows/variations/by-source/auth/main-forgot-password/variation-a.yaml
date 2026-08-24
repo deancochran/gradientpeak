@@ -1,0 +1,14 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — main/forgot_password.yaml — reset request reaches confirmation and returns"
+properties: { junitId: variation.mobile.main_forgot_password.a, junitClassname: variation.mobile.auth, sourceIdentity: main/forgot_password.yaml }
+tags: [variation, auth, recovery, by-source]
+---
+- runFlow: ../../../../reusable/ensure_signed_out.yaml
+- tapOn: { id: "forgot-password-button" }
+- tapOn: "Email address"
+- inputText: "${RESET_EMAIL}"
+- hideKeyboard
+- tapOn: { id: "send-reset-button" }
+- extendedWaitUntil: { visible: { id: "reset-email-sent-screen" }, timeout: 15000 }
+- tapOn: { id: "back-to-signin-button" }
+- assertVisible: { id: "sign-in-screen" }

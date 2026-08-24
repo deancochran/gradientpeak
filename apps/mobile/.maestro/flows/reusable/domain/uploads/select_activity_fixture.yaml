@@ -1,0 +1,9 @@
+appId: ${MAESTRO_APP_ID}
+# @purpose Select one pre-provisioned FIT file from the system picker.
+# @arg ACTIVITY_FILE_DISPLAY_NAME filename required
+# @ready activity-import-file-input-clear
+---
+- tapOn: { id: "activity-import-file-input" }
+- extendedWaitUntil: { visible: "${ACTIVITY_FILE_DISPLAY_NAME}", timeout: 10000 }
+- tapOn: "${ACTIVITY_FILE_DISPLAY_NAME}"
+- assertVisible: { id: "activity-import-file-input-clear" }

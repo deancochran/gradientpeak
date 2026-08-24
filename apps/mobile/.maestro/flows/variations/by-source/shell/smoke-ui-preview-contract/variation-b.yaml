@@ -1,0 +1,19 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — smoke/ui_preview_contract.yaml — fail then correct preview form validation"
+properties: { junitId: variation.mobile.smoke_ui_preview_contract.b, junitClassname: variation.mobile.shell, sourceIdentity: smoke/ui_preview_contract.yaml }
+tags: [variation, shell, preview, by-source]
+---
+- runFlow: ../../../../reusable/clean_app_launch_signed_out.yaml
+- openLink: "${MAESTRO_APP_SCHEME}://storybook"
+- scrollUntilVisible: { element: { id: "ui-preview-form-username" }, direction: DOWN }
+- tapOn: { id: "ui-preview-form-username" }
+- eraseText
+- hideKeyboard
+- tapOn: { id: "ui-preview-form-submit" }
+- assertVisible: { id: "ui-preview-form-username-error" }
+- tapOn: { id: "ui-preview-form-username" }
+- inputText: "maestro_runner"
+- hideKeyboard
+- tapOn: { id: "ui-preview-form-is-public" }
+- tapOn: { id: "ui-preview-form-submit" }
+- assertNotVisible: { id: "ui-preview-form-username-error" }

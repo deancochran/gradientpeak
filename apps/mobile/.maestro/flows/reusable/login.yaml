@@ -1,34 +1,26 @@
+# @arg email email required
+# @arg password secret required
 appId: ${MAESTRO_APP_ID}
 ---
+- runFlow: ./require_signed_out.yaml
 - tapOn:
-    id: "login-button"
-    optional: true
+    id: "email-input"
+- waitForAnimationToEnd
+- inputText: "x"
+- eraseText: 1
+- inputText: "${email}"
 - tapOn:
-    id: "sign-in-link-button"
-    optional: true
+    id: "password-input"
+- waitForAnimationToEnd
+- inputText: "x"
+- eraseText: 1
+- inputText: "${password}"
+- hideKeyboard
 - tapOn:
-    id: "back-to-signin-link-button"
-    optional: true
+    id: "sign-in-button"
 - extendedWaitUntil:
     visible:
-      id: "sign-in-screen"
-    timeout: 10000
-    optional: true
-- runFlow:
-    when:
-      visible:
-        id: "sign-in-screen"
-    commands:
-      - tapOn:
-          id: "email-input"
-      - inputText: "${email}"
-      - tapOn:
-          id: "password-input"
-      - inputText: "${password}"
-      - hideKeyboard
-      - tapOn:
-          id: "sign-in-button"
-      - extendedWaitUntil:
-          visible:
-            id: "tab-button-plan"
-          timeout: 20000
+      id: "tab-button-home"
+    timeout: 20000
+- assertNotVisible:
+    id: "sign-in-screen"

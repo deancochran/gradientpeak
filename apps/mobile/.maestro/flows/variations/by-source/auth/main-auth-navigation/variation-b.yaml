@@ -1,0 +1,16 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — main/auth_navigation.yaml — form drafts do not break authentication navigation"
+properties: { junitId: variation.mobile.main_auth_navigation.b, junitClassname: variation.mobile.auth, sourceIdentity: main/auth_navigation.yaml }
+tags: [variation, auth, by-source]
+---
+- runFlow: ../../../../reusable/ensure_signed_out.yaml
+- tapOn: { id: "email-input" }
+- inputText: "draft@example.com"
+- tapOn: { id: "forgot-password-button" }
+- assertVisible: { id: "forgot-password-screen" }
+- back
+- assertVisible: { id: "sign-in-screen" }
+- tapOn: { id: "sign-up-link-button" }
+- assertVisible: { id: "sign-up-screen" }
+- back
+- assertVisible: { id: "sign-in-screen" }

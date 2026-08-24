@@ -11,6 +11,7 @@ import {
   uniqueAuthActor,
   waitForAuthMail,
 } from "../lane-support/auth/mailbox";
+import { AuthPage, expectNoHorizontalOverflow } from "../pages";
 import { currentContractEpochHeaders } from "../utils/contractEpoch";
 
 async function navigateThroughClientRedirect(page: Parameters<typeof login>[0], url: string) {
@@ -69,10 +70,7 @@ test("sign-up verification rejects expiry and replay while preserving responsive
   await login(page, actor);
   await expect(page).toHaveURL(/\/onboarding/);
   const viewport = page.viewportSize();
-  const overflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-  expect(overflow).toBeLessThanOrEqual(0);
+  await expectNoHorizontalOverflow(page);
   expect(viewport?.width).toBeGreaterThan(0);
 });
 
@@ -112,16 +110,12 @@ test("real password reset changes the credential and revokes a second session", 
     const after = Date.now();
     // Password recovery is public-only; use the original unauthenticated
     // context so the public route's authenticated-user guard cannot redirect it.
-    await recoveryPage.goto("/auth/forgot-password");
-    await recoveryPage.getByLabel(/^email/i).fill(actor.email);
-    await recoveryPage.getByRole("button", { name: /send reset email/i }).click();
+    const recoveryAuth = new AuthPage(recoveryPage);
+    await recoveryAuth.requestPasswordReset(actor.email);
     const resetMail = await waitForAuthMail({ to: actor.email, kind: "reset-password", after });
 
     const nextPassword = "ChangedPass456!";
-    await recoveryPage.goto(resetMail.actionUrl);
-    await recoveryPage.getByLabel(/^new password/i).fill(nextPassword);
-    await recoveryPage.getByLabel(/^confirm password/i).fill(nextPassword);
-    await recoveryPage.getByRole("button", { name: /save new password/i }).click();
+    await recoveryAuth.resetPassword(resetMail.actionUrl, nextPassword);
     await expect(recoveryPage).toHaveURL(/\/auth\/login/);
 
     await secondSession.goto("/settings");
@@ -130,9 +124,7 @@ test("real password reset changes the credential and revokes a second session", 
     await page.goto("/settings");
     await expect(page).toHaveURL(/\/auth\/login\?redirect=/);
 
-    await recoveryPage.getByLabel(/^email/i).fill(actor.email);
-    await recoveryPage.getByLabel(/^password/i).fill(actor.password);
-    await recoveryPage.getByRole("button", { name: /^login$/i }).click();
+    await recoveryAuth.signIn(actor);
     await expect(recoveryPage.getByText(/invalid email or password/i)).toBeVisible();
 
     // The login form journey is covered above. Exercise the actual Better Auth

@@ -1,0 +1,17 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — contracts/p1/provider_local_connect_persists.yaml — cancel disconnect from connected provider"
+properties:
+  junitId: variation.mobile.contracts_p1_provider_local_connect_persists.b
+  junitClassname: variation.mobile.integrations
+  sourceIdentity: contracts/p1/provider_local_connect_persists.yaml
+tags: [variation, integrations, by-source]
+---
+- runFlow: { file: ../../../../reusable/authenticated_home.yaml, env: { STANDARD_USER_EMAIL: "${PROVIDER_CONNECT_USER_EMAIL_B}", STANDARD_USER_PASS: "${PROVIDER_CONNECT_USER_PASS_B}" } }
+- runFlow: ../../../../reusable/domain/details/open_integrations.yaml
+- assertVisible: { id: "integration-sync-now-${PROVIDER_CONNECT_ID_B}" }
+- tapOn: { id: "integration-disconnect-${PROVIDER_CONNECT_ID_B}" }
+- assertVisible: { id: "integration-disconnect-modal" }
+- assertVisible: { id: "integration-disconnect-confirm" }
+- back
+- assertVisible: { id: "integration-sync-now-${PROVIDER_CONNECT_ID_B}" }
+- assertVisible: { id: "integration-disconnect-${PROVIDER_CONNECT_ID_B}" }

@@ -102,12 +102,14 @@ export function ActivitySwimDetailCards({
   activityCategory,
   laps,
   lengths,
+  poolLengthMeters,
   scopeDescription,
   summary,
 }: {
   activityCategory?: string | null;
   laps?: readonly unknown[] | null;
   lengths?: readonly unknown[] | null;
+  poolLengthMeters?: number | null;
   scopeDescription?: string;
   summary?: Record<string, unknown> | null;
 }) {
@@ -117,6 +119,7 @@ export function ActivitySwimDetailCards({
     ...(summary === undefined ? {} : { summary }),
     ...(lengths === undefined ? {} : { lengths }),
   });
+  const resolvedPoolLengthMeters = swim.poolLengthMeters ?? poolLengthMeters ?? null;
   const normalizedLaps = normalizeWebActivityLaps(laps);
 
   return (
@@ -135,9 +138,9 @@ export function ActivitySwimDetailCards({
             <div>
               <dt className="text-muted-foreground">Pool length</dt>
               <dd className="font-medium text-foreground">
-                {swim.poolLengthMeters === null
+                {resolvedPoolLengthMeters === null
                   ? "Unavailable"
-                  : formatNumber(swim.poolLengthMeters, " meters")}
+                  : formatNumber(resolvedPoolLengthMeters, " meters")}
               </dd>
             </div>
             <div>

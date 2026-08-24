@@ -146,6 +146,7 @@ beforeEach(() => {
     currentArtifact: null,
     ingestion: { status: "ready", lastErrorMessage: null },
     routePolyline: null,
+    linkedRoute: null,
   };
 });
 

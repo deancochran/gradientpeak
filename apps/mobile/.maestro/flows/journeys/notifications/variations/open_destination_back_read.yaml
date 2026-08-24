@@ -1,0 +1,20 @@
+appId: ${MAESTRO_APP_ID}
+name: Notification destination returns to inbox with read state retained
+tags: [variation, notifications, destination]
+---
+- runFlow:
+    file: ../../../reusable/authenticated_home.yaml
+    env:
+      STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}"
+      STANDARD_USER_PASS: "${STANDARD_USER_PASS}"
+- runFlow: ../../../reusable/open_notifications_inbox.yaml
+- tapOn:
+    id: "notification-open-${DESTINATION_NOTIFICATION_ID}"
+- assertVisible:
+    id: "message-thread-screen"
+- back
+- assertNotVisible:
+    id: "notification-unread-${DESTINATION_NOTIFICATION_ID}"
+- tapOn:
+    id: "notification-open-${DESTINATION_NOTIFICATION_ID}"
+- assertVisible: "${DESTINATION_NOTIFICATION_TEXT}"

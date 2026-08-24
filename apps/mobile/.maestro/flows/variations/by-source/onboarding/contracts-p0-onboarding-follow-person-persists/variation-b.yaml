@@ -1,0 +1,25 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — contracts/p0/onboarding_follow_person_persists.yaml — clear search, inspect profile, then persist follow"
+properties: { junitId: variation.mobile.contracts_p0_onboarding_follow_person_persists.b, junitClassname: variation.mobile.onboarding, sourceIdentity: contracts/p0/onboarding_follow_person_persists.yaml }
+tags: [variation, onboarding, contract, by-source, intentional-red]
+---
+- runFlow: ../../../../reusable/ensure_signed_out.yaml
+- tapOn: { id: "email-input" }
+- inputText: "${ONBOARDING_FOLLOW_USER_EMAIL_B}"
+- tapOn: { id: "password-input" }
+- inputText: "${ONBOARDING_FOLLOW_USER_PASS_B}"
+- hideKeyboard
+- tapOn: { id: "sign-in-button" }
+- assertVisible: { id: "groups-people-step" }
+- tapOn: { id: "onboarding-people-search" }
+- inputText: "missing-person"
+- tapOn: { id: "onboarding-people-search-clear" }
+- inputText: "${PUBLIC_TARGET_USERNAME}"
+- hideKeyboard
+- tapOn: { id: "onboarding-profile-open-${PUBLIC_TARGET_USER_ID}" }
+- assertVisible: { id: "user-detail-summary" }
+- back
+- tapOn: { id: "onboarding-profile-${PUBLIC_TARGET_USER_ID}" }
+- tapOn: { id: "onboarding-finish-button" }
+- openLink: "${MAESTRO_APP_SCHEME}://user/${PUBLIC_TARGET_USER_ID}"
+- assertVisible: { id: "user-detail-unfollow-button" }

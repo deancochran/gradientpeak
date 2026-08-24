@@ -1,3 +1,7 @@
+# @arg STANDARD_USER_EMAIL email required
+# @arg STANDARD_USER_PASS secret required
+# @arg TARGET_USERNAME text required
+# @arg TARGET_USER_ID identifier required
 appId: ${MAESTRO_APP_ID}
 ---
 - runFlow:

@@ -16,12 +16,18 @@ env:
 - hideKeyboard
 - tapOn:
     id: "sign-in-button"
+- extendedWaitUntil:
+    visible:
+      id: "root-error-container"
+    timeout: 10000
 - tapOn:
     id: "sign-in-button"
-    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "root-error-container"
+    timeout: 10000
 - tapOn:
     id: "sign-in-button"
-    optional: true
 - extendedWaitUntil:
     visible:
       id: "root-error-container"

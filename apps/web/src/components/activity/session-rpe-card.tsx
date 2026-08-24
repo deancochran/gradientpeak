@@ -1,5 +1,6 @@
+import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import { Slider } from "@repo/ui/components/slider";
+import { Input } from "@repo/ui/components/input";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../lib/api/client";
@@ -32,16 +33,15 @@ export function SessionRpeCard({
   estimatedMethod?: string | null;
 }) {
   const utils = api.useUtils();
-  const [rpe, setRpe] = useState(0);
+  const [rpe, setRpe] = useState(effectiveSessionRpe?.rpe ?? 5);
   const [savedEvidenceId, setSavedEvidenceId] = useState<string | null>(null);
   const [hasPendingChange, setHasPendingChange] = useState(false);
   const evidenceId = effectiveSessionRpe?.id ?? savedEvidenceId;
   const isCorrection = evidenceId !== null;
 
   useEffect(() => {
-    if (!effectiveSessionRpe) return;
-    setRpe(effectiveSessionRpe.rpe);
-    setSavedEvidenceId(effectiveSessionRpe.id);
+    setRpe(effectiveSessionRpe?.rpe ?? 5);
+    setSavedEvidenceId(effectiveSessionRpe?.id ?? null);
     setHasPendingChange(false);
   }, [effectiveSessionRpe]);
 
@@ -59,22 +59,19 @@ export function SessionRpeCard({
         utils.trainingPlans.preview.invalidate(),
       ]);
       setHasPendingChange(false);
+      toast.success("Session RPE saved.");
     },
   });
 
-  useEffect(() => {
-    if (!hasPendingChange || rpe === 0 || recordRpe.isPending) return;
-    const timeout = window.setTimeout(() => {
-      recordRpe.mutate({
-        activity_id: activityId,
-        operation_id: crypto.randomUUID(),
-        rpe,
-        source: isCorrection ? "manual" : "user",
-        ...(isCorrection ? { correction_of_id: evidenceId } : {}),
-      });
-    }, 500);
-    return () => window.clearTimeout(timeout);
-  }, [activityId, evidenceId, hasPendingChange, isCorrection, recordRpe, rpe]);
+  const saveRpe = () => {
+    recordRpe.mutate({
+      activity_id: activityId,
+      operation_id: crypto.randomUUID(),
+      rpe,
+      source: isCorrection ? "manual" : "user",
+      ...(isCorrection ? { correction_of_id: evidenceId } : {}),
+    });
+  };
 
   return (
     <Card>
@@ -86,23 +83,36 @@ export function SessionRpeCard({
       <CardContent>
         <div className="space-y-2">
           <output aria-live="polite" className="block text-center text-sm font-medium">
-            {rpe === 0 ? "0/10 · No value found" : `${rpe}/10`}
+            {effectiveSessionRpe || savedEvidenceId
+              ? `Current RPE ${rpe}/10`
+              : `${rpe}/10 · Not saved`}
           </output>
           <p aria-live="polite" className="text-center text-xs text-muted-foreground">
             {RPE_DESCRIPTIONS[rpe]}
           </p>
-          <Slider
-            accessibilityLabel="Session RPE"
-            maximumValue={10}
-            minimumValue={0}
-            onValueChange={(nextRpe) => {
-              if (nextRpe === 0 && isCorrection) return;
+          <label className="block text-sm font-medium" htmlFor={`session-rpe-${activityId}`}>
+            Perceived exertion
+          </label>
+          <Input
+            id={`session-rpe-${activityId}`}
+            max={10}
+            min={1}
+            onChange={(event) => {
+              const nextRpe = Number(event.currentTarget.value);
               setRpe(nextRpe);
-              setHasPendingChange(nextRpe !== 0);
+              setHasPendingChange(nextRpe !== effectiveSessionRpe?.rpe);
             }}
             step={1}
+            type="number"
             value={rpe}
           />
+          <Button
+            disabled={!hasPendingChange || recordRpe.isPending}
+            onClick={saveRpe}
+            type="button"
+          >
+            {recordRpe.isPending ? "Saving RPE…" : "Save RPE"}
+          </Button>
         </div>
       </CardContent>
     </Card>

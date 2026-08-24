@@ -1,0 +1,20 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — main/calendar_custom_event.yaml — validate custom-event form and cancel"
+properties:
+  junitId: variation.mobile.main_calendar_custom_event.a
+  junitClassname: variation.mobile.calendar
+  sourceIdentity: main/calendar_custom_event.yaml
+tags: [variation, calendar, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: ../../../../reusable/open_calendar_tab.yaml
+- tapOn: { id: "create-event-entry" }
+- tapOn: { id: "create-type-custom" }
+- assertVisible: { id: "manual-create-modal" }
+- assertVisible: { id: "manual-create-title-input" }
+- assertVisible: { id: "manual-create-submit" }
+- tapOn: { id: "manual-create-title-input" }
+- inputText: "Main calendar draft variation"
+- hideKeyboard
+- tapOn: "Cancel"
+- assertNotVisible: { id: "manual-create-modal" }

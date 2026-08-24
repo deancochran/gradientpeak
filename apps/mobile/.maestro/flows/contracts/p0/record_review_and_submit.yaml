@@ -1,0 +1,45 @@
+appId: ${MAESTRO_APP_ID}
+name: P0 recording review and successful submission
+properties:
+  junitId: p0.record.review_submit
+  junitClassname: contract.mobile.p0
+---
+- runFlow:
+    file: ../../reusable/authenticated_home.yaml
+    env:
+      STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}"
+      STANDARD_USER_PASS: "${STANDARD_USER_PASS}"
+- runFlow: ../../reusable/open_record_tab.yaml
+- tapOn:
+    id: "recording-start-button"
+- extendedWaitUntil:
+    visible:
+      id: "recording-pause-button"
+    timeout: 10000
+- tapOn:
+    id: "recording-finish-button"
+- extendedWaitUntil:
+    visible:
+      id: "recording-review-summary"
+    timeout: 15000
+- assertVisible:
+    id: "recording-review-metrics"
+- tapOn: "Save Activity"
+- extendedWaitUntil:
+    visible:
+      id: "home-screen"
+    timeout: 30000
+- tapOn:
+    id: "tab-button-profile"
+- scrollUntilVisible:
+    element:
+      id: "my-activities"
+    direction: DOWN
+- tapOn:
+    id: "my-activities"
+- extendedWaitUntil:
+    visible:
+      id: "activities-list-content"
+    timeout: 15000
+- assertVisible:
+    id: "activities-list-item-.*"

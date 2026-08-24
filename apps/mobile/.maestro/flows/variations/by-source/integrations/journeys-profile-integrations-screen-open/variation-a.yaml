@@ -1,0 +1,18 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — journeys/profile/integrations_screen_open.yaml — inspect provider rows from profile"
+properties:
+  junitId: variation.mobile.journeys_profile_integrations_screen_open.a
+  junitClassname: variation.mobile.integrations
+  sourceIdentity: journeys/profile/integrations_screen_open.yaml
+tags: [variation, integrations, by-source]
+---
+- runFlow:
+    file: ../../../../reusable/open_own_profile.yaml
+    env: { STANDARD_USER_EMAIL: "${PROVIDER_SCREEN_USER_EMAIL_A}", STANDARD_USER_PASS: "${PROVIDER_SCREEN_USER_PASS_A}" }
+- tapOn: { id: "manage-integrations-button" }
+- assertVisible: { id: "integrations-screen" }
+- assertVisible: { id: "integration-provider-strava" }
+- assertVisible: { id: "integration-provider-${PROVIDER_SCREEN_ID_A}" }
+- assertVisible: { id: "integration-connect-${PROVIDER_SCREEN_ID_A}" }
+- back
+- assertVisible: { id: "manage-integrations-button" }

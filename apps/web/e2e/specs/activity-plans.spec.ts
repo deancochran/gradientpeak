@@ -1,22 +1,26 @@
 import { expect, test } from "../fixtures";
+import { ActivityPlansPage, expectNoHorizontalOverflow, ShellPage } from "../pages";
 import {
   cleanupOwnedActivityPlans,
   e2eArtifactIdentity,
-  resetLocalAuthRateLimits,
   runWithE2ECleanup,
 } from "../utils/testData";
 
 const duplicatedPlanDefaultName = "Playwright Tempo Builder (Copy)";
-test("athlete can discover and open the activity plan library", async ({ athletePage }) => {
-  await athletePage.getByRole("button", { name: /open user menu/i }).click();
-
-  const activityPlansLink = athletePage.getByRole("menuitem", { name: /activity plans/i });
+test("athlete can discover and open the activity plan library", async ({
+  athleteActor,
+  athletePage,
+}) => {
+  const shell = new ShellPage(athletePage);
+  const plans = new ActivityPlansPage(athletePage);
+  await shell.openAccountMenu();
+  const activityPlansLink = shell.accountDestination(/activity plans/i);
   await expect(activityPlansLink).toBeVisible();
   await activityPlansLink.click();
 
   await expect(athletePage).toHaveURL(/\/activity-plans$/);
   await expect(athletePage.getByRole("heading", { name: /^activity plans$/i })).toBeVisible();
-  const search = athletePage.getByRole("searchbox", { name: /search activity plans/i });
+  const search = plans.searchInput();
   await expect(search).toBeVisible();
   await expect(athletePage.getByText("20+ activity plans loaded")).toBeVisible();
 
@@ -28,11 +32,11 @@ test("athlete can discover and open the activity plan library", async ({ athlete
 
   await athletePage.getByRole("button", { name: /^all$/i }).click();
   await search.fill("Tempo Builder");
-  const planCard = athletePage.getByRole("button", { name: /playwright tempo builder/i });
+  const planCard = plans.card(/playwright tempo builder/i);
   await expect(planCard).toBeVisible();
   await planCard.click();
 
-  await expect(athletePage).toHaveURL(/\/activity-plans\/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee$/);
+  await expect(athletePage).toHaveURL(`/activity-plans/${athleteActor.activityPlanId}`);
   await expect(
     athletePage.getByRole("heading", { name: /playwright tempo builder/i }),
   ).toBeVisible();
@@ -41,12 +45,11 @@ test("athlete can discover and open the activity plan library", async ({ athlete
   await expect(athletePage.getByTestId("activity-plan-comments")).toBeVisible();
   await expect(athletePage.getByText("Owner", { exact: true })).toBeVisible();
   await expect(athletePage.getByRole("button", { name: /^like$/i })).toBeVisible();
-  await expect(
-    athletePage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-  ).resolves.toBe(true);
+  await expectNoHorizontalOverflow(athletePage);
 });
 
 test("athlete can duplicate a shared plan into an owned editable copy", async ({
+  athleteActor,
   athletePage,
 }, testInfo) => {
   const duplicatedPlanName = e2eArtifactIdentity(testInfo, "duplicated activity plan");
@@ -56,8 +59,9 @@ test("athlete can duplicate a shared plan into an owned editable copy", async ({
     });
 
   await runWithE2ECleanup(testInfo, cleanup, async () => {
-    await athletePage.goto("/activity-plans/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
-    await athletePage.getByRole("button", { name: /^duplicate$/i }).click();
+    const plans = new ActivityPlansPage(athletePage);
+    await athletePage.goto(`/activity-plans/${athleteActor.activityPlanId}`);
+    await plans.duplicate();
 
     await expect(
       athletePage.getByRole("heading", { name: duplicatedPlanDefaultName }),
@@ -73,7 +77,7 @@ test("athlete can duplicate a shared plan into an owned editable copy", async ({
     await athletePage.getByRole("button", { name: /^delete plan$/i }).click();
     await expect(athletePage).toHaveURL(/\/activity-plans$/);
 
-    await athletePage.goto("/activity-plans/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
+    await athletePage.goto(`/activity-plans/${athleteActor.activityPlanId}`);
     await expect(
       athletePage.getByRole("heading", { name: "Playwright Tempo Builder" }),
     ).toBeVisible();
@@ -92,15 +96,13 @@ test("athlete can author, edit, schedule, comment on, and dependency-delete a pl
     });
 
   await runWithE2ECleanup(testInfo, cleanup, async () => {
-    await athletePage.goto("/activity-plans");
-    await athletePage.getByRole("button", { name: /create activity plan/i }).click();
-    await athletePage.getByLabel("Plan name").fill(authoredPlanName);
-    await athletePage.getByLabel("Description").fill("A structured browser-authored activity plan");
-    await athletePage.getByLabel("Plan activity category").selectOption("bike");
-    await athletePage.getByRole("textbox", { name: "Step 1" }).fill("Controlled threshold");
-    await athletePage.getByRole("button", { name: /create plan/i }).click();
-
-    await expect(athletePage.getByRole("heading", { name: authoredPlanName })).toBeVisible();
+    const plans = new ActivityPlansPage(athletePage);
+    await plans.create({
+      name: authoredPlanName,
+      description: "A structured browser-authored activity plan",
+      category: "bike",
+      firstStep: "Controlled threshold",
+    });
     await expect(athletePage.getByText("Controlled threshold")).toBeVisible();
 
     await athletePage.getByRole("button", { name: /^edit$/i }).click();
@@ -121,8 +123,7 @@ test("athlete can author, edit, schedule, comment on, and dependency-delete a pl
     await athletePage.getByRole("button", { name: /post comment/i }).click();
     await expect(athletePage.getByText("Ready for Tuesday")).toBeVisible();
 
-    await athletePage.getByLabel("Schedule date").fill("2026-08-04");
-    await athletePage.getByRole("button", { name: /^schedule$/i }).click();
+    await plans.schedule("2026-08-04");
     await expect(athletePage.getByRole("button", { name: /^reschedule$/i })).toBeVisible();
 
     await athletePage.getByLabel("Schedule date").fill("2026-08-05");
@@ -132,8 +133,7 @@ test("athlete can author, edit, schedule, comment on, and dependency-delete a pl
     await athletePage.getByRole("button", { name: /remove from schedule/i }).click();
     await expect(athletePage.getByRole("button", { name: /^schedule$/i })).toBeVisible();
 
-    await athletePage.getByLabel("Schedule date").fill("2026-08-06");
-    await athletePage.getByRole("button", { name: /^schedule$/i }).click();
+    await plans.schedule("2026-08-06");
     await expect(athletePage.getByRole("button", { name: /^reschedule$/i })).toBeVisible();
 
     await athletePage.getByRole("button", { name: /^delete$/i }).click();
@@ -150,11 +150,9 @@ test("athlete can correct an invalid structure and retry authoring", async ({
   const cleanup = () => cleanupOwnedActivityPlans({ planNames: [authoredPlanName] });
 
   await runWithE2ECleanup(testInfo, cleanup, async () => {
-    // The fixture's root-route bootstrap can consume the local shared actor's request bucket.
-    // Reset its local-only state before this independent retry journey begins.
-    await resetLocalAuthRateLimits();
-    await athletePage.goto("/activity-plans");
-    await athletePage.getByRole("button", { name: /create activity plan/i }).click();
+    const plans = new ActivityPlansPage(athletePage);
+    await plans.openLibrary();
+    await plans.startCreate();
     await athletePage.getByLabel("Plan name").fill(authoredPlanName);
 
     await athletePage.getByRole("button", { name: "Delete segment" }).click();

@@ -1,7 +1,4 @@
 appId: com.deancochran.gradientpeak.dev
-env:
-  STANDARD_USER_EMAIL: "test@example.com"
-  STANDARD_USER_PASS: "password123"
 ---
 - runFlow:
     file: ../../reusable/authenticated_home.yaml

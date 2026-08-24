@@ -95,6 +95,7 @@ function ActivityDetailPage() {
   const [likesCount, setLikesCount] = useState(0);
   const [failedLikeIntent, setFailedLikeIntent] = useState<boolean | null>(null);
   const [deleteFailed, setDeleteFailed] = useState(false);
+  const [visibilityDialogOpen, setVisibilityDialogOpen] = useState(false);
   const activityQuery = api.activities.getById.useQuery({ id: activityId });
   const effortsQuery = api.activities.getEfforts.useQuery({ id: activityId });
   const detail = activityQuery.data?.detail;
@@ -150,15 +151,19 @@ function ActivityDetailPage() {
   const isOwner = activity?.capabilities.canEdit ?? false;
   const ingestion = detail?.ingestion;
   const ingestionStatus = ingestion?.status ?? null;
+  const hasFailedIngestion = ingestionStatus?.startsWith("failed") ?? false;
   const isStreamProcessing = Boolean(
-    ingestionStatus && ingestionStatus !== "ready" && ingestionStatus !== "failed",
+    ingestionStatus &&
+      ingestionStatus !== "ready" &&
+      ingestionStatus !== "succeeded" &&
+      !hasFailedIngestion,
   );
   const canLoadStreamAnalysis = Boolean(
     detail?.currentArtifact &&
       primaryStreamSegment &&
       isOwner &&
       !isStreamProcessing &&
-      ingestionStatus !== "failed",
+      !hasFailedIngestion,
   );
   const profileQuery = api.profiles.getPublicById.useQuery(
     { id: activity?.owner.id ?? "00000000-0000-0000-0000-000000000000" },
@@ -182,15 +187,14 @@ function ActivityDetailPage() {
       ? "processing"
       : !isOwner
         ? "private"
-        : ingestionStatus === "failed" || streamsQuery.isError
+        : hasFailedIngestion || streamsQuery.isError
           ? "error"
           : streamsQuery.isLoading
             ? "loading"
             : "ready";
-  const streamErrorMessage =
-    ingestionStatus === "failed"
-      ? (ingestion?.lastErrorMessage ?? "Activity file processing failed.")
-      : streamsQuery.error?.message;
+  const streamErrorMessage = hasFailedIngestion
+    ? (ingestion?.lastErrorMessage ?? "Activity file processing failed.")
+    : streamsQuery.error?.message;
   const retryLikeLabel =
     failedLikeIntent === null ? undefined : failedLikeIntent ? "Retry like" : "Retry unlike";
   const toggleLikeMutation = api.social.toggleLike.useMutation({
@@ -201,6 +205,7 @@ function ActivityDetailPage() {
     onSuccess: async (_data, variables) => {
       await utils.activities.getById.invalidate({ id: variables.id });
       void utils.activities.listPaginated.invalidate();
+      setVisibilityDialogOpen(false);
       toast.success("Visibility updated");
     },
   });
@@ -317,7 +322,7 @@ function ActivityDetailPage() {
               {...(retryLikeLabel ? { retryLabel: retryLikeLabel } : {})}
             />
             {isOwner ? (
-              <Dialog>
+              <Dialog open={visibilityDialogOpen} onOpenChange={setVisibilityDialogOpen}>
                 <DialogTrigger asChild>
                   <Button type="button" variant="outline">
                     <Lock className="mr-2 h-4 w-4" />
@@ -335,6 +340,7 @@ function ActivityDetailPage() {
                     {VISIBILITY_OPTIONS.map((option) => (
                       <Button
                         key={option.value}
+                        aria-pressed={option.value === contentVisibility}
                         disabled={updateMutation.isPending || option.value === contentVisibility}
                         onClick={() =>
                           updateMutation.mutate({
@@ -390,6 +396,7 @@ function ActivityDetailPage() {
         categories={categories}
         description={activity.notes || "No notes attached to this activity."}
         eyebrow="Activity detail"
+        title="Activity"
       />
 
       <ActivityListCard activity={activity} />
@@ -610,6 +617,18 @@ function ActivityDetailPage() {
                 <p className="text-sm text-muted-foreground">{detail.linkedPlan.name}</p>
               </div>
             ) : null}
+            {detail.linkedRoute ? (
+              <div>
+                <p className="text-sm font-medium text-foreground">Linked route</p>
+                <Link
+                  className="text-sm text-primary hover:underline"
+                  params={{ routeId: detail.linkedRoute.id }}
+                  to="/routes/$routeId"
+                >
+                  {detail.linkedRoute.name}
+                </Link>
+              </div>
+            ) : null}
             <div>
               <p className="text-sm font-medium text-foreground">Source artifact</p>
               <p className="text-sm text-muted-foreground">
@@ -654,6 +673,7 @@ function ActivityDetailPage() {
         {...(streamsQuery.data?.lengths === undefined
           ? {}
           : { lengths: streamsQuery.data.lengths })}
+        poolLengthMeters={detail.performance.poolLengthMeters}
         {...(streamScopeDescription ? { scopeDescription: streamScopeDescription } : {})}
         {...(streamsQuery.data?.summary === undefined
           ? {}

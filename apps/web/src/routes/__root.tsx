@@ -16,7 +16,7 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import { AppProviders } from "../components/providers/app-providers";
 
@@ -84,7 +84,10 @@ export const Route = createRootRoute({
 });
 
 function RootDocument({ children }: { children: ReactNode }) {
+  const [hydrated, setHydrated] = useState(false);
+
   useEffect(() => {
+    setHydrated(true);
     const handlePreloadError = (event: Event) => {
       recoverFromVitePreloadError(event, {
         now: Date.now,
@@ -104,7 +107,11 @@ function RootDocument({ children }: { children: ReactNode }) {
       </head>
       <body className="min-h-screen bg-background text-foreground font-sans antialiased">
         <AppProviders>
-          <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-12 pt-8 sm:px-6 lg:px-8 has-[>.gp-protected-shell]:max-w-none has-[>.gp-protected-shell]:px-0 has-[>.gp-protected-shell]:pb-0 has-[>.gp-protected-shell]:pt-0">
+          <div
+            aria-busy={!hydrated}
+            className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-12 pt-8 sm:px-6 lg:px-8 has-[>.gp-protected-shell]:max-w-none has-[>.gp-protected-shell]:px-0 has-[>.gp-protected-shell]:pb-0 has-[>.gp-protected-shell]:pt-0"
+            inert={!hydrated}
+          >
             {children}
           </div>
           <Toaster richColors position="top-right" />
@@ -187,7 +194,7 @@ export function RootNotFoundPage() {
           <p className="text-sm font-medium uppercase tracking-[0.2em] text-muted-foreground">
             404
           </p>
-          <CardTitle className="text-3xl tracking-tight">Page not found</CardTitle>
+          <h1 className="text-3xl font-semibold tracking-tight">Page not found</h1>
           <CardDescription className="text-base">
             The page you requested does not exist or may have moved.
           </CardDescription>

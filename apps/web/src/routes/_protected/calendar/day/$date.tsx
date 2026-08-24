@@ -129,7 +129,9 @@ function CalendarDayPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Agenda</CardTitle>
+          <CardTitle aria-level={2} role="heading">
+            Agenda
+          </CardTitle>
           <CardDescription>
             {agendaCount === 0
               ? "Nothing scheduled yet."

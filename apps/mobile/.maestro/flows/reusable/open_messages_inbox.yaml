@@ -2,7 +2,5 @@ appId: ${MAESTRO_APP_ID}
 ---
 - tapOn:
     id: "messages-header-button"
-- extendedWaitUntil:
-    visible:
-      id: "messages-screen"
-    timeout: 10000
+    retryTapIfNoChange: true
+- assertVisible: { id: "messages-screen" }

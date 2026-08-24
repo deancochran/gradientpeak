@@ -1,7 +1,10 @@
 appId: ${MAESTRO_APP_ID}
+properties:
+  lifecyclePolicy: system-ui
+tags: [smoke, smoke-expected-pass, system-ui]
 ---
 - runFlow:
-    file: ../reusable/expo_dev_client_setup.yaml
+    file: ../reusable/clean_app_launch_signed_out.yaml
 - openLink: "${MAESTRO_APP_SCHEME}://storybook"
 - assertVisible: "E2E_RUNTIME_ERRORS=0"
 - assertVisible:
@@ -22,8 +25,10 @@ appId: ${MAESTRO_APP_ID}
     id: "settings-tabs"
 - assertVisible:
     id: "settings-tabs-trigger-overview"
-- assertVisible:
-    id: "settings-tabs-content-overview"
+- scrollUntilVisible:
+    element:
+      id: "settings-tabs-content-overview"
+    direction: DOWN
 - tapOn:
     id: "settings-tabs-trigger-sessions"
 - assertVisible:
@@ -36,10 +41,14 @@ appId: ${MAESTRO_APP_ID}
     element:
       id: "ui-preview-scenario-selection-controls"
     direction: DOWN
-- assertVisible:
-    id: "session-focus-select"
-- assertVisible:
-    id: "preferred-activity-category-radio-group"
+- scrollUntilVisible:
+    element:
+      id: "session-focus-select"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      id: "preferred-activity-category-radio-group"
+    direction: DOWN
 - tapOn:
     id: "accept-terms-checkbox"
 - tapOn:
@@ -48,10 +57,14 @@ appId: ${MAESTRO_APP_ID}
     element:
       id: "ui-preview-scenario-form-fields"
     direction: DOWN
-- assertVisible:
-    id: "ui-preview-form-bio"
-- assertVisible:
-    id: "ui-preview-form-activity-category"
+- scrollUntilVisible:
+    element:
+      id: "ui-preview-form-bio"
+    direction: DOWN
+- scrollUntilVisible:
+    element:
+      id: "ui-preview-form-activity-category"
+    direction: DOWN
 - tapOn:
     id: "ui-preview-form-username"
 - eraseText
@@ -60,6 +73,5 @@ appId: ${MAESTRO_APP_ID}
     id: "ui-preview-form-is-public"
 - tapOn:
     id: "ui-preview-form-submit"
-- assertVisible:
-    id: "ui-preview-form-username-error"
+- assertVisible: "Username is required."
 - assertVisible: "E2E_RUNTIME_ERRORS=0"

@@ -1,0 +1,19 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — journeys/plans/goal_entry_open.yaml — inspect new-goal editor controls"
+properties:
+  junitId: variation.mobile.journeys_plans_goal_entry_open.a
+  junitClassname: variation.mobile.plans
+  sourceIdentity: journeys/plans/goal_entry_open.yaml
+tags: [variation, plans, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: ../../../../reusable/open_plan_tab.yaml
+- tapOn: { id: "plan-add-goal-button" }
+- assertVisible: { id: "goal-editor-form" }
+- assertVisible: { id: "goal-editor-title-input" }
+- assertVisible: "Save Goal"
+- tapOn: { id: "goal-editor-title-input" }
+- inputText: "Unsaved goal entry variation"
+- hideKeyboard
+- back
+- assertVisible: { id: "plan-screen" }

@@ -48,6 +48,7 @@ type ActivityDetailSource = {
   laps: unknown[];
   segments: ActivityDetailSegmentSource[];
   activity_plans: { id: string; name: string } | null;
+  activity_routes: { id: string; name: string } | null;
   current_artifact: {
     id: string;
     format: string;
@@ -382,6 +383,9 @@ export function toActivityDetailDisplay(input: {
     })),
     linkedPlan: activity.activity_plans
       ? { id: activity.activity_plans.id, name: activity.activity_plans.name }
+      : null,
+    linkedRoute: activity.activity_routes
+      ? { id: activity.activity_routes.id, name: activity.activity_routes.name }
       : null,
     currentArtifact: activity.current_artifact
       ? {

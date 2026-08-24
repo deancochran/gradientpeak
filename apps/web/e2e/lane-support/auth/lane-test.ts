@@ -1,9 +1,10 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import type { BrowserContextOptions } from "@playwright/test";
 import { expect, test as sharedTest } from "../../fixtures";
+import { localE2EDatabaseUrl } from "../../support/database";
+import { createE2EExecutionIdentity } from "../../support/identity";
 import {
   AuthArtifactRegistry,
   activatePlaywrightAuthArtifactRegistry,
@@ -124,13 +125,12 @@ export const test = sharedTest.extend<AuthLaneFixtures, AuthLaneWorkerFixtures>(
     { auto: true },
   ],
   laneServer: async ({ laneProcess }, use, testInfo) => {
-    const digest = createHash("sha256")
-      .update(`${testInfo.workerIndex}:${testInfo.testId}:${testInfo.retry}`)
-      .digest();
-    const octet = (index: number) => ((digest[index] ?? 0) % 254) + 1;
+    const digest = createE2EExecutionIdentity(testInfo).suffix("auth-lane-client-ip", 6);
+    const octet = (index: number) =>
+      (Number.parseInt(digest.slice(index, index + 2), 16) % 254) + 1;
     await use({
       ...laneProcess,
-      clientIp: `127.${octet(0)}.${octet(1)}.${octet(2)}`,
+      clientIp: `127.${octet(0)}.${octet(2)}.${octet(4)}`,
     });
   },
   laneProcess: [
@@ -139,10 +139,12 @@ export const test = sharedTest.extend<AuthLaneFixtures, AuthLaneWorkerFixtures>(
       const port = 32_000 + (process.pid % 1_000) * 10 + workerInfo.workerIndex;
       const baseURL = `http://127.0.0.1:${port}`;
       const capturePath = `/tmp/gradientpeak-auth-mail-${process.pid}-${workerInfo.workerIndex}.jsonl`;
+      const viteCacheDir = `/tmp/gradientpeak-auth-vite-${process.pid}-${workerInfo.workerIndex}`;
       const secret = "gradientpeak-playwright-lane-secret-that-is-long-and-test-only";
       const childEnv = { ...process.env };
       delete childEnv.PORT;
       await rm(capturePath, { force: true });
+      await rm(viteCacheDir, { force: true, recursive: true });
       process.env.AUTH_EMAIL_CAPTURE_PATH = capturePath;
       process.env.BETTER_AUTH_SECRET = secret;
       const child = spawn(
@@ -161,14 +163,14 @@ export const test = sharedTest.extend<AuthLaneFixtures, AuthLaneWorkerFixtures>(
             // on this worker's isolated Vite server rather than inheriting a
             // developer tunnel or another long-running web server.
             APP_URL: baseURL,
+            // Every auth lane runs its own Vite server. Sharing Vite's default
+            // dependency cache with Playwright's main server can invalidate
+            // optimized modules while this page is hydrating.
+            VITE_CACHE_DIR: viteCacheDir,
             NODE_OPTIONS: [process.env.NODE_OPTIONS, "--preserve-symlinks"]
               .filter(Boolean)
               .join(" "),
-            DATABASE_URL:
-              process.env.DATABASE_URL ??
-              process.env.POSTGRES_URL ??
-              // biome-ignore lint/security/noSecrets: Supabase's documented disposable local database URL.
-              "postgresql://postgres:postgres@127.0.0.1:54322/postgres",
+            DATABASE_URL: localE2EDatabaseUrl(),
           },
           stdio: "pipe",
         },
@@ -179,6 +181,7 @@ export const test = sharedTest.extend<AuthLaneFixtures, AuthLaneWorkerFixtures>(
       } finally {
         await stopLaneServer(child);
         await rm(capturePath, { force: true });
+        await rm(viteCacheDir, { force: true, recursive: true });
       }
     },
     { scope: "worker", auto: true, timeout: 120_000 },

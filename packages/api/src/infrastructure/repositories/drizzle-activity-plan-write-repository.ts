@@ -41,6 +41,26 @@ export function createActivityPlanWriteRepository(db: DrizzleDbClient) {
           .limit(1);
         if (linkedGroupEvent) return "linked_events";
 
+        // Comments and likes use polymorphic entity IDs, so PostgreSQL cannot
+        // cascade them from the activity-plan row. Keep their cleanup atomic
+        // with the owned plan deletion.
+        await tx
+          .delete(schema.comments)
+          .where(
+            and(
+              eq(schema.comments.entity_type, "activity_plan"),
+              eq(schema.comments.entity_id, input.planId),
+            ),
+          );
+        await tx
+          .delete(schema.likes)
+          .where(
+            and(
+              eq(schema.likes.entity_type, "activity_plan"),
+              eq(schema.likes.entity_id, input.planId),
+            ),
+          );
+
         const deleted = await tx
           .delete(schema.activityPlans)
           .where(

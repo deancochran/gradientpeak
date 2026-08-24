@@ -1,0 +1,18 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — contracts/p0/event_route_attach_reopen.yaml — reopen event and traverse attached route"
+properties:
+  junitId: variation.mobile.contracts_p0_event_route_attach_reopen.b
+  junitClassname: variation.mobile.routes
+  sourceIdentity: contracts/p0/event_route_attach_reopen.yaml
+tags: [variation, routes, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: { file: ../../../../reusable/domain/details/open_event.yaml, env: { EVENT_ID: "${ROUTE_ASSIGNMENT_EVENT_ID_B}" } }
+- assertVisible: "${EVENT_ROUTE_NAME_B}"
+- tapOn: "${EVENT_ROUTE_NAME_B}"
+- assertVisible: { id: "route-detail-screen" }
+- assertVisible: { id: "route-card-${EVENT_ROUTE_ID_B}" }
+- assertVisible: { id: "route-card-map-preview-${EVENT_ROUTE_ID_B}" }
+- back
+- assertVisible: "${EVENT_ROUTE_NAME_B}"
+- assertVisible: { id: "event-detail-options-trigger" }

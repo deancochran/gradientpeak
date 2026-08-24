@@ -1,7 +1,5 @@
 appId: com.deancochran.gradientpeak.dev
 env:
-  STANDARD_USER_EMAIL: "test@example.com"
-  STANDARD_USER_PASS: "password123"
   TARGET_USERNAME: "coachcasey"
   TARGET_USER_ID: "coachcasey"
 ---
@@ -18,7 +16,6 @@ env:
     id: "user-detail-screen"
 - tapOn:
     text: "Sign Out"
-    optional: true
 - extendedWaitUntil:
     visible:
       id: "sign-in-screen"

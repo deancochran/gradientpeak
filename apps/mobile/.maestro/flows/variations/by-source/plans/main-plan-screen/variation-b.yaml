@@ -1,0 +1,18 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — main/plan_screen.yaml — open goal and training preferences from Plan"
+properties:
+  junitId: variation.mobile.main_plan_screen.b
+  junitClassname: variation.mobile.plans
+  sourceIdentity: main/plan_screen.yaml
+tags: [variation, plans, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: ../../../../reusable/open_plan_tab.yaml
+- tapOn: { id: "plan-add-goal-button" }
+- assertVisible: { id: "goal-editor-form" }
+- assertVisible: { id: "goal-editor-title-input" }
+- back
+- tapOn: { id: "plan-signals-settings-button" }
+- assertVisible: { id: "training-preferences-screen" }
+- assertVisible: { id: "training-preferences-tab-schedule" }
+- assertVisible: { id: "preferences-min-sessions" }

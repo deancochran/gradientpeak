@@ -109,6 +109,7 @@ CREATE TABLE "activities" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"profile_id" uuid NOT NULL,
 	"activity_plan_id" uuid,
+	"route_id" uuid,
 	"name" text NOT NULL,
 	"started_at" timestamp with time zone NOT NULL,
 	"finished_at" timestamp with time zone NOT NULL,
@@ -1391,6 +1392,7 @@ ALTER TABLE "accounts" ADD CONSTRAINT "accounts_user_id_users_id_fk" FOREIGN KEY
 ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "activities" ADD CONSTRAINT "activities_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "activities" ADD CONSTRAINT "activities_activity_plan_id_activity_plans_id_fk" FOREIGN KEY ("activity_plan_id") REFERENCES "public"."activity_plans"("id") ON DELETE set null ON UPDATE no action;
+ALTER TABLE "activities" ADD CONSTRAINT "activities_route_id_activity_routes_id_fk" FOREIGN KEY ("route_id") REFERENCES "public"."activity_routes"("id") ON DELETE set null ON UPDATE no action;
 ALTER TABLE "activity_analysis_revisions" ADD CONSTRAINT "activity_analysis_revisions_activity_profile_fkey" FOREIGN KEY ("activity_id","profile_id") REFERENCES "public"."activities"("id","profile_id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "activity_artifact_links" ADD CONSTRAINT "activity_artifact_links_activity_profile_fkey" FOREIGN KEY ("activity_id","profile_id") REFERENCES "public"."activities"("id","profile_id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "activity_artifact_links" ADD CONSTRAINT "activity_artifact_links_artifact_profile_fkey" FOREIGN KEY ("artifact_id","profile_id") REFERENCES "public"."activity_artifacts"("id","profile_id") ON DELETE restrict ON UPDATE no action;
@@ -1512,6 +1514,7 @@ CREATE UNIQUE INDEX "accounts_issuer_accountId_uidx" ON "accounts" USING btree (
 CREATE INDEX "sessions_userId_idx" ON "sessions" USING btree ("user_id");
 CREATE INDEX "verifications_identifier_idx" ON "verifications" USING btree ("identifier");
 CREATE INDEX "idx_activities_activity_plan" ON "activities" USING btree ("activity_plan_id") WHERE "activities"."activity_plan_id" is not null;
+CREATE INDEX "idx_activities_route" ON "activities" USING btree ("route_id") WHERE "activities"."route_id" is not null;
 CREATE INDEX "idx_activities_profile_started" ON "activities" USING btree ("profile_id","started_at");
 CREATE INDEX "idx_activities_athlete_state_replay" ON "activities" USING btree ("profile_id","finished_at","id") WHERE "athlete_state_common_load" is not null and "athlete_state_activity_category" is not null and "athlete_state_evidence_confidence" is not null and "athlete_state_input_version" is not null and "athlete_state_computed_at" is not null;
 CREATE INDEX "idx_activities_started" ON "activities" USING btree ("started_at");

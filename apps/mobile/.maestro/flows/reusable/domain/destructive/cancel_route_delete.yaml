@@ -1,0 +1,9 @@
+appId: ${MAESTRO_APP_ID}
+# @purpose Open and cancel the route deletion confirmation.
+# @ready route-detail-screen
+---
+- tapOn: { id: "route-detail-options-trigger" }
+- tapOn: { id: "route-detail-options-delete" }
+- assertVisible: { id: "route-detail-delete-modal" }
+- back
+- assertVisible: { id: "route-detail-screen" }

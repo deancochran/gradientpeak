@@ -1,0 +1,10 @@
+appId: ${MAESTRO_APP_ID}
+# @purpose Open one scheduled plan event from its selected day agenda.
+# @arg CALENDAR_DATE date required
+# @arg SCHEDULED_EVENT_ID uuid required
+# @ready event-detail-activity-plan-card
+---
+- runFlow: { file: ../details/open_calendar_day.yaml, env: { CALENDAR_DATE: "${CALENDAR_DATE}" } }
+- scrollUntilVisible: { element: { id: "calendar-day-planned-activity-row-${SCHEDULED_EVENT_ID}" }, direction: DOWN }
+- tapOn: { id: "calendar-day-planned-activity-row-${SCHEDULED_EVENT_ID}" }
+- assertVisible: { id: "event-detail-activity-plan-card" }

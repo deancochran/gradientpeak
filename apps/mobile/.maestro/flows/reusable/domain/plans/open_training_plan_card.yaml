@@ -1,0 +1,8 @@
+appId: ${MAESTRO_APP_ID}
+# @purpose Open one canonical training-plan card from the Plan screen.
+# @arg TRAINING_PLAN_ID uuid required
+# @ready training-plan-schedule
+---
+- scrollUntilVisible: { element: { id: "plan-training-plan-card-${TRAINING_PLAN_ID}" }, direction: DOWN }
+- tapOn: { id: "plan-training-plan-card-${TRAINING_PLAN_ID}" }
+- assertVisible: { id: "training-plan-schedule" }

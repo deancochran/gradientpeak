@@ -349,6 +349,7 @@ export interface ActivitySubmission {
   name: string;
   notes: string | null;
   activityPlanId?: string | null;
+  routeId?: string | null;
   contentVisibility: ContentVisibility;
   startedAt: Date;
   finishedAt: Date;
@@ -988,6 +989,7 @@ export async function submitActivity(
             .set({
               ...safeSummaryValues,
               ...baseValues,
+              ...(input.kind === "enrich" ? {} : { route_id: input.routeId ?? null }),
               ...(input.kind === "enrich"
                 ? {}
                 : {
@@ -1016,6 +1018,7 @@ export async function submitActivity(
             id: activityId,
             profile_id: input.profileId,
             ...baseValues,
+            route_id: input.routeId ?? null,
             distance_meters: input.distanceMeters,
             elevation_gain_meters: input.elevationGainMeters,
             calories: input.calories,

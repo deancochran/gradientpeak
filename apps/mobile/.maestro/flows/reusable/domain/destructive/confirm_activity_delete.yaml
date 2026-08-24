@@ -1,0 +1,9 @@
+appId: ${MAESTRO_APP_ID}
+# @purpose Confirm activity deletion and wait for its detail to close.
+# @ready activity-detail-screen absent
+---
+- tapOn: { id: "activity-detail-options-trigger" }
+- tapOn: { id: "activity-detail-options-delete" }
+- assertVisible: { id: "activity-detail-delete-modal" }
+- tapOn: { id: "activity-detail-delete-confirm" }
+- extendedWaitUntil: { notVisible: { id: "activity-detail-screen" }, timeout: 30000 }

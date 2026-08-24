@@ -56,12 +56,13 @@ describe("web recording finalization", () => {
         activity: {
           eventId: "11111111-1111-4111-8111-111111111111",
           activityPlanId: "22222222-2222-4222-8222-222222222222",
-          routeId: null,
+          routeId: "33333333-3333-4333-8333-333333333333",
         },
       },
     });
     expect(artifact.fileText).toContain('<Activity Sport="Running">');
-    expect(artifact.fileText).not.toContain("<Trackpoint>");
+    expect(artifact.fileText).toContain("<Trackpoint>");
+    expect(artifact.fileText).not.toContain("<Position>");
     expect(artifact.fileText).not.toContain("<DistanceMeters>");
   });
 
@@ -111,7 +112,7 @@ describe("web recording finalization", () => {
       uploadedArtifact: { ingestionId: "55555555-5555-4555-8555-555555555555" },
     });
     expect(artifact.fileText).toContain("<DistanceMeters>1500</DistanceMeters>");
-    expect(artifact.fileText).not.toContain("<Trackpoint>");
+    expect(artifact.fileText).not.toContain("<Position>");
   });
 
   it("encodes each manual lap in TCX and the structured persistence payload", async () => {
@@ -145,7 +146,7 @@ describe("web recording finalization", () => {
 
     expect(artifact.fileText.match(/<Lap /g)).toHaveLength(3);
     expect(artifact.fileText.match(/<TriggerMethod>Manual<\/TriggerMethod>/g)).toHaveLength(2);
-    expect(artifact.fileText).not.toContain("<Trackpoint>");
+    expect(artifact.fileText).not.toContain("<Position>");
     expect(input.laps).toMatchObject([
       { lapNumber: 1, durationSeconds: 600, totalTimerTime: 600, timingSource: "manual_timer" },
       { lapNumber: 2, durationSeconds: 600, totalTimerTime: 600, timingSource: "manual_timer" },
@@ -265,7 +266,10 @@ describe("web recording finalization", () => {
       digest: async () => "d".repeat(64),
     });
 
-    expect(artifact.snapshot.activity).toMatchObject({ gpsMode: "off", routeId: null });
+    expect(artifact.snapshot.activity).toMatchObject({
+      gpsMode: "off",
+      routeId: "33333333-3333-4333-8333-333333333333",
+    });
     expect(artifact.snapshot.capabilities.canTrackLocation).toBe(false);
   });
 

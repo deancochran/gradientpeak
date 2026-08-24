@@ -1,0 +1,20 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — journeys/record/quick_start_pause_resume_finish.yaml — select activity type then finish"
+properties:
+  junitId: variation.mobile.journeys_record_quick_start_pause_resume_finish.b
+  junitClassname: variation.mobile.recording
+  sourceIdentity: journeys/record/quick_start_pause_resume_finish.yaml
+tags: [variation, recording, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: ../../../../reusable/open_record_tab.yaml
+- tapOn: { id: "recording-activity-control-button" }
+- tapOn: { id: "record-activity-option-bike" }
+- tapOn: { id: "record-activity-save-button" }
+- assertVisible: "Bike"
+- tapOn: { id: "recording-start-button" }
+- tapOn: { id: "recording-pause-button" }
+- tapOn: { id: "recording-resume-button" }
+- tapOn: { id: "recording-finish-button" }
+- assertVisible: { id: "recording-review-summary" }
+- assertVisible: "Bike"

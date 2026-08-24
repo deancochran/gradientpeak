@@ -1,0 +1,15 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — journeys/notifications/read_all.yaml — unread filter empties after mark-all and relaunch"
+properties: { junitId: variation.mobile.journeys_notifications_read_all.b, junitClassname: variation.mobile.notifications, sourceIdentity: journeys/notifications/read_all.yaml }
+tags: [variation, notifications, by-source, intentional-red]
+---
+- runFlow: { file: ../../../../reusable/authenticated_home.yaml, env: { STANDARD_USER_EMAIL: "${NOTIFICATION_READ_ALL_USER_EMAIL_B}", STANDARD_USER_PASS: "${NOTIFICATION_READ_ALL_USER_PASS_B}" } }
+- runFlow: ../../../../reusable/open_notifications_inbox.yaml
+- tapOn: { id: "notifications-unread-filter" }
+- assertVisible: { id: "notification-item-${NOTIFICATION_READ_ALL_DESTINATION_ID_B}" }
+- tapOn: { id: "notifications-read-all-trigger" }
+- assertVisible: { id: "notifications-empty-state" }
+- runFlow: { file: ../../../../reusable/preserve_state_relaunch.yaml, env: { EXPECTED_BOUNDARY_ID: "home-screen" } }
+- runFlow: ../../../../reusable/open_notifications_inbox.yaml
+- tapOn: { id: "notifications-unread-filter" }
+- assertVisible: { id: "notifications-empty-state" }

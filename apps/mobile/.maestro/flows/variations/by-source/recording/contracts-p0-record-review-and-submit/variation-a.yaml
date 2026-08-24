@@ -1,0 +1,20 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — contracts/p0/record_review_and_submit.yaml — inspect review then submit to history"
+properties:
+  junitId: variation.mobile.contracts_p0_record_review_and_submit.a
+  junitClassname: variation.mobile.recording
+  sourceIdentity: contracts/p0/record_review_and_submit.yaml
+tags: [variation, recording, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: ../../../../reusable/open_record_tab.yaml
+- tapOn: { id: "recording-start-button" }
+- tapOn: { id: "recording-finish-button" }
+- assertVisible: { id: "recording-review-summary" }
+- assertVisible: { id: "recording-review-metrics" }
+- tapOn: "Save Activity"
+- extendedWaitUntil: { visible: { id: "home-screen" }, timeout: 30000 }
+- tapOn: { id: "tab-button-profile" }
+- scrollUntilVisible: { element: { id: "my-activities" }, direction: DOWN }
+- tapOn: { id: "my-activities" }
+- assertVisible: { id: "activities-list-item-.*" }

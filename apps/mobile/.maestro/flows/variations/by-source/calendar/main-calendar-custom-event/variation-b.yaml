@@ -1,0 +1,21 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — main/calendar_custom_event.yaml — create and reopen custom event"
+properties:
+  junitId: variation.mobile.main_calendar_custom_event.b
+  junitClassname: variation.mobile.calendar
+  sourceIdentity: main/calendar_custom_event.yaml
+tags: [variation, calendar, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: ../../../../reusable/open_calendar_tab.yaml
+- tapOn: { id: "create-event-entry" }
+- tapOn: { id: "create-type-custom" }
+- tapOn: { id: "manual-create-title-input" }
+- inputText: "Main calendar saved variation"
+- hideKeyboard
+- tapOn: { id: "manual-create-submit" }
+- tapOn: "Main calendar saved variation"
+- assertVisible: { id: "event-detail-options-trigger" }
+- back
+- tapOn: "Main calendar saved variation"
+- assertVisible: "Main calendar saved variation"

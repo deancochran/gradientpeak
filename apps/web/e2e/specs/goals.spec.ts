@@ -1,26 +1,15 @@
-import type { Page, Route } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { expect, test } from "../fixtures";
+import { expectNoHorizontalOverflow, withTrpcFailure } from "../pages";
 import { type GoalFixture, withGoalFixture } from "../planning/data";
-import { authenticateTestActor, resetLocalAuthRateLimits } from "../utils/testData";
+import { createE2EExecutionIdentity } from "../support/identity";
 
 function title(suffix: string) {
-  return `Playwright goal ${suffix} ${Date.now()}`;
+  return createE2EExecutionIdentity(test.info()).name(`Playwright goal ${suffix}`);
 }
-
-const trpcPattern = "**/api/trpc/**";
 
 function goalCard(page: Page, id: string) {
   return page.getByTestId(`goal-card-${id}`);
-}
-
-function abortProcedure(procedure: string) {
-  return async (route: Route) => {
-    if (route.request().url().includes(procedure)) {
-      await route.abort();
-      return;
-    }
-    await route.continue();
-  };
 }
 
 async function createGoal(
@@ -57,6 +46,7 @@ async function createGoal(
 
 test("goals.lifecycle and goals.intelligence persist exact owned goals", async ({
   athletePage,
+  coachActor,
 }) => {
   test.setTimeout(120_000);
   await withGoalFixture(async (fixture) => {
@@ -134,14 +124,13 @@ test("goals.lifecycle and goals.intelligence persist exact owned goals", async (
     await expect(athletePage.getByText(/% confidence$/i)).toBeVisible({ timeout: 15_000 });
     await expect(athletePage.getByText(/^As of /i)).toBeVisible();
 
-    const intelligenceFailure = abortProcedure("athleteIntelligence.getGoalAssessment");
-    await athletePage.route(trpcPattern, intelligenceFailure);
-    await athletePage.reload();
-    await expect(athletePage.getByRole("heading", { name: firstTitle })).toBeVisible();
-    await expect(athletePage.getByTestId("goal-intelligence-retry")).toBeVisible({
-      timeout: 15_000,
+    await withTrpcFailure(athletePage, "athleteIntelligence.getGoalAssessment", async () => {
+      await athletePage.reload();
+      await expect(athletePage.getByRole("heading", { name: firstTitle })).toBeVisible();
+      await expect(athletePage.getByTestId("goal-intelligence-retry")).toBeVisible({
+        timeout: 15_000,
+      });
     });
-    await athletePage.unroute(trpcPattern, intelligenceFailure);
     const intelligenceRetry = athletePage.waitForResponse((retryResponse) =>
       retryResponse.url().includes("athleteIntelligence.getGoalAssessment"),
     );
@@ -174,20 +163,10 @@ test("goals.lifecycle and goals.intelligence persist exact owned goals", async (
     await athletePage.getByTestId(`goal-delete-${firstId}-confirm`).click();
     await expect(athletePage).toHaveURL(/\/goals(?:\?|$)/);
     await expect.poll(() => fixture.getGoal(firstId)).toBeNull();
-    await expect(
-      athletePage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-    ).resolves.toBe(true);
+    await expectNoHorizontalOverflow(athletePage);
 
-    // The athlete fixture owns the shared actor-state lock. Switch this context only after
-    // athlete mutations complete, then prove an ordinary coach cannot discover the remaining goal.
-    await athletePage.context().clearCookies();
-    await authenticateTestActor(athletePage.context().request, "coach", {
-      persistStorageState: false,
-    });
-    await resetLocalAuthRateLimits();
-    const coachPage = await athletePage.context().newPage();
+    const coachPage = await coachActor.createPage(`/goals/${secondId}`);
     try {
-      await coachPage.goto(`/goals/${secondId}`);
       await expect(coachPage.getByText(/goal could not be loaded/i)).toBeVisible();
       await expect(goalCard(coachPage, secondId)).toHaveCount(0);
       await expect(coachPage.getByTestId(`goal-edit-${secondId}`)).toHaveCount(0);
@@ -202,15 +181,13 @@ test("goals.lifecycle and goals.intelligence persist exact owned goals", async (
 test("goal list transport failures remain distinct from an empty result and recover", async ({
   athletePage,
 }) => {
-  const goalsFailure = abortProcedure("goals.list");
-  await athletePage.route(trpcPattern, goalsFailure);
-  await athletePage.goto("/goals?q=nothing+matches+this+exact+goal");
-  await expect(athletePage.getByRole("alert")).toContainText("Goals could not be loaded", {
-    timeout: 15_000,
+  await withTrpcFailure(athletePage, "goals.list", async () => {
+    await athletePage.goto("/goals?q=nothing+matches+this+exact+goal");
+    await expect(athletePage.getByRole("alert")).toContainText("Goals could not be loaded", {
+      timeout: 15_000,
+    });
+    await expect(athletePage.getByText(/no goals match these filters/i)).toHaveCount(0);
   });
-  await expect(athletePage.getByText(/no goals match these filters/i)).toHaveCount(0);
-
-  await athletePage.unroute(trpcPattern, goalsFailure);
   const retryResponse = athletePage.waitForResponse((response) =>
     response.url().includes("goals.list"),
   );

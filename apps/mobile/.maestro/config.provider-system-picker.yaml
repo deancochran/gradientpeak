@@ -1,0 +1,11 @@
+flows:
+  - flows/variations/by-source/integrations/**
+  - flows/variations/by-source/routes/**
+includeTags:
+  - integrations
+  - document-picker
+excludeTags:
+  - intentional-red
+  - manual
+  - hardware
+testOutputDir: artifacts/test-output/provider-system-picker

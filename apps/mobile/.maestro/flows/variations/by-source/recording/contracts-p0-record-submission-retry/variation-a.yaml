@@ -1,0 +1,22 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — contracts/p0/record_submission_retry.yaml — expose failure and retry upload"
+properties:
+  junitId: variation.mobile.contracts_p0_record_submission_retry.a
+  junitClassname: variation.mobile.recording
+  sourceIdentity: contracts/p0/record_submission_retry.yaml
+tags: [variation, recording, by-source, network-recovery]
+---
+- runFlow:
+    file: ../../../../reusable/authenticated_home.yaml
+    env: { STANDARD_USER_EMAIL: "${RECORD_RETRY_USER_EMAIL_A}", STANDARD_USER_PASS: "${RECORD_RETRY_USER_PASS_A}" }
+- runFlow: ../../../../reusable/open_record_tab.yaml
+- tapOn: { id: "recording-start-button" }
+- tapOn: { id: "recording-finish-button" }
+- assertVisible: { id: "recording-review-summary" }
+- setAirplaneMode: enabled
+- tapOn: "Save Activity"
+- extendedWaitUntil: { visible: "Retry upload", timeout: 30000 }
+- assertVisible: { id: "activity-submit-status" }
+- setAirplaneMode: disabled
+- tapOn: "Retry upload"
+- extendedWaitUntil: { visible: { id: "home-screen" }, timeout: 30000 }

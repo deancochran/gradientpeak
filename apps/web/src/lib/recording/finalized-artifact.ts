@@ -83,6 +83,7 @@ export function buildUploadedRecordingSummaryInput(
     startedAt: artifact.startedAt,
     finishedAt: artifact.finishedAt,
     activityPlanId: artifact.snapshot.activity.activityPlanId,
+    routeId: artifact.snapshot.activity.routeId,
     executionManifest: {
       version: 1 as const,
       compilerVersion: artifact.snapshot.planExecution?.compilerVersion ?? 1,
@@ -191,24 +192,29 @@ function buildTimerTcxLaps({
     const manualDistance = distanceEnteredManually
       ? `<DistanceMeters>${distanceMeters}</DistanceMeters>`
       : "";
-    return `<Lap StartTime="${startedAt}"><TotalTimeSeconds>${elapsedSeconds}</TotalTimeSeconds>${manualDistance}<Intensity>Active</Intensity><TriggerMethod>Stop</TriggerMethod><Notes>${escapeXml(name)}</Notes></Lap>`;
+    return `<Lap StartTime="${startedAt}"><TotalTimeSeconds>${elapsedSeconds}</TotalTimeSeconds>${manualDistance}<Intensity>Active</Intensity><TriggerMethod>Stop</TriggerMethod>${timerTcxTrack(startedAt)}<Notes>${escapeXml(name)}</Notes></Lap>`;
   }
 
   let previousElapsedMs = 0;
   let previousTimestamp = startedAt;
   const values = laps.map((lap) => {
     const durationSeconds = Math.max(0, lap.elapsedMs - previousElapsedMs) / 1_000;
-    const value = `<Lap StartTime="${previousTimestamp}"><TotalTimeSeconds>${durationSeconds}</TotalTimeSeconds><Intensity>Active</Intensity><TriggerMethod>Manual</TriggerMethod><Notes>${escapeXml(`${name} · Lap ${lap.lapNumber}`)}</Notes></Lap>`;
+    const value = `<Lap StartTime="${previousTimestamp}"><TotalTimeSeconds>${durationSeconds}</TotalTimeSeconds><Intensity>Active</Intensity><TriggerMethod>Manual</TriggerMethod>${timerTcxTrack(previousTimestamp)}<Notes>${escapeXml(`${name} · Lap ${lap.lapNumber}`)}</Notes></Lap>`;
     previousElapsedMs = lap.elapsedMs;
     previousTimestamp = lap.timestamp;
     return value;
   });
   if (previousElapsedMs < elapsedSeconds * 1_000) {
     values.push(
-      `<Lap StartTime="${previousTimestamp}"><TotalTimeSeconds>${Math.max(0, elapsedSeconds - previousElapsedMs / 1_000)}</TotalTimeSeconds><Intensity>Active</Intensity><TriggerMethod>Stop</TriggerMethod><Notes>${escapeXml(`${name} · Finish`)}</Notes></Lap>`,
+      `<Lap StartTime="${previousTimestamp}"><TotalTimeSeconds>${Math.max(0, elapsedSeconds - previousElapsedMs / 1_000)}</TotalTimeSeconds><Intensity>Active</Intensity><TriggerMethod>Stop</TriggerMethod>${timerTcxTrack(previousTimestamp)}<Notes>${escapeXml(`${name} · Finish`)}</Notes></Lap>`,
     );
   }
   return values.join("");
+}
+
+/** TCX import requires at least one timestamped record; this deliberately contains no position. */
+function timerTcxTrack(timestamp: string): string {
+  return `<Track><Trackpoint><Time>${timestamp}</Time></Trackpoint></Track>`;
 }
 
 function buildPersistedManualLaps(artifact: PortableWebRecordingArtifact) {

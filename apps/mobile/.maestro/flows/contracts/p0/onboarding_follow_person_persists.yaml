@@ -1,0 +1,37 @@
+appId: ${MAESTRO_APP_ID}
+name: P0 onboarding follow person persists
+properties:
+  junitId: p0.onboarding.follow_person
+  junitClassname: contract.mobile.p0
+---
+- runFlow: ../../reusable/ensure_signed_out.yaml
+- tapOn:
+    id: "email-input"
+- inputText: "${ONBOARDING_FOLLOW_USER_EMAIL}"
+- tapOn:
+    id: "password-input"
+- inputText: "${ONBOARDING_FOLLOW_USER_PASS}"
+- hideKeyboard
+- tapOn:
+    id: "sign-in-button"
+- extendedWaitUntil:
+    visible:
+      id: "onboarding-screen"
+    timeout: 20000
+- assertVisible:
+    id: "groups-people-step"
+- tapOn:
+    id: "onboarding-people-search"
+- inputText: "${PUBLIC_TARGET_USERNAME}"
+- hideKeyboard
+- tapOn:
+    id: "onboarding-profile-${PUBLIC_TARGET_USER_ID}"
+- tapOn:
+    id: "onboarding-finish-button"
+- extendedWaitUntil:
+    visible:
+      id: "home-screen"
+    timeout: 30000
+- openLink: "${MAESTRO_APP_SCHEME}://user/${PUBLIC_TARGET_USER_ID}"
+- assertVisible:
+    id: "user-detail-unfollow-button"

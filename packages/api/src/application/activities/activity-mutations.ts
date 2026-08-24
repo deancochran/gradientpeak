@@ -108,6 +108,15 @@ export async function deleteActivityForProfile({
     // The self-referencing threshold chain is removed first; deleting the source
     // activity then cascades its efforts, normalized links, and evaluations.
     await deleteThresholdChainsForImpacts(tx, { profileId, impacts });
+    // Engagement tables use polymorphic entity IDs and therefore cannot declare
+    // an activity foreign key. Remove only this activity's engagement in the
+    // same transaction so a hard delete never leaves orphaned actor-owned rows.
+    await tx.execute(
+      sql`delete from comments where entity_type = 'activity' and entity_id = ${activityId}::uuid`,
+    );
+    await tx.execute(
+      sql`delete from likes where entity_type = 'activity' and entity_id = ${activityId}::uuid`,
+    );
     const [deleted] = await tx
       .delete(activities)
       .where(and(eq(activities.id, activityId), eq(activities.profile_id, profileId)))

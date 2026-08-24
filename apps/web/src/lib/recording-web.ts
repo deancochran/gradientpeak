@@ -10,7 +10,7 @@ export type RecordingLauncherSearch = {
   gps: RecordingGpsMode;
   eventId?: string;
   activityPlanId?: string;
-  /** Accepted only to safely discard route context from legacy links. */
+  /** Selected route to retain through the recording launcher. */
   routeId?: string;
 };
 
@@ -53,7 +53,7 @@ export function validateRecordingSearch(search: Record<string, unknown>): Record
 
   return {
     activity_category: activityCategory,
-    // GPS and route values in old links are deliberately ignored. Web recording is indoor only.
+    // Web recording remains indoor only; the selected route is retained as activity context.
     gps: "off",
     eventId:
       typeof search.eventId === "string" && uuidPattern.test(search.eventId)
@@ -62,6 +62,10 @@ export function validateRecordingSearch(search: Record<string, unknown>): Record
     activityPlanId:
       typeof search.activityPlanId === "string" && uuidPattern.test(search.activityPlanId)
         ? search.activityPlanId
+        : undefined,
+    routeId:
+      typeof search.routeId === "string" && uuidPattern.test(search.routeId)
+        ? search.routeId
         : undefined,
   };
 }

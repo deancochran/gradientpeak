@@ -1,0 +1,12 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — contracts/p2/social_private_follow_request_persists.yaml — private request survives relaunch"
+properties: { junitId: variation.mobile.contracts_p2_social_private_follow_request_persists.a, junitClassname: variation.mobile.social, sourceIdentity: contracts/p2/social_private_follow_request_persists.yaml }
+tags: [variation, social, contract, by-source]
+---
+- runFlow: { file: ../../../../reusable/authenticated_home.yaml, env: { STANDARD_USER_EMAIL: "${SOCIAL_PRIVATE_FOLLOW_USER_EMAIL_A}", STANDARD_USER_PASS: "${SOCIAL_PRIVATE_FOLLOW_USER_PASS_A}" } }
+- runFlow: { file: ../../../../reusable/domain/details/open_user.yaml, env: { USER_ID: "${PRIVATE_TARGET_USER_ID}" } }
+- tapOn: { id: "user-detail-follow-button" }
+- assertVisible: { id: "user-detail-requested-button" }
+- runFlow: { file: ../../../../reusable/preserve_state_relaunch.yaml, env: { EXPECTED_BOUNDARY_ID: "home-screen" } }
+- runFlow: { file: ../../../../reusable/domain/details/open_user.yaml, env: { USER_ID: "${PRIVATE_TARGET_USER_ID}" } }
+- assertVisible: { id: "user-detail-requested-button" }

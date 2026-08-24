@@ -25,7 +25,7 @@ export const Route = createFileRoute("/_protected/record/")({
   component: RecordPage,
 });
 
-export function RecordPage() {
+function RecordPage() {
   const navigate = Route.useNavigate();
   const launcher = Route.useSearch();
   const recording = useTimerOnlyRecording();
@@ -44,11 +44,17 @@ export function RecordPage() {
     snapshot?.activity.activityPlanId ??
     launcher.activityPlanId ??
     selectedEvent.data?.activityPlanSummary?.id;
+  const routeId = snapshot?.activity.routeId ?? launcher.routeId;
   const selectedPlanQuery = api.activityPlans.getById.useQuery(
     { id: activityPlanId ?? "", personalize: false },
     { enabled: Boolean(activityPlanId), retry: false },
   );
   const selectedPlan = selectedPlanQuery.data?.detail;
+  const selectedRouteQuery = api.routes.get.useQuery(
+    { id: routeId ?? "" },
+    { enabled: Boolean(routeId), retry: false },
+  );
+  const selectedRoute = selectedRouteQuery.data;
   const activityCategory =
     snapshot?.activity.activity_category ??
     selectedPlan?.activityCategory ??
@@ -79,6 +85,7 @@ export function RecordPage() {
         activity_category: activityCategory,
         ...(eventId ? { eventId } : {}),
         ...(activityPlanId ? { activityPlanId } : {}),
+        ...(routeId ? { routeId } : {}),
         ...(selectedPlan?.capabilities.canRecord &&
         selectedPlan.structure &&
         selectedPlan.structureHash
@@ -112,7 +119,19 @@ export function RecordPage() {
             <Badge>Indoor recording</Badge>
             <Badge variant="outline">Foreground only</Badge>
           </div>
-          <CardTitle className="text-3xl">Start an indoor activity</CardTitle>
+
+          {routeId ? (
+            <div className="space-y-3 rounded-lg border p-4 text-sm">
+              <p className="font-medium">Route</p>
+              <p className="text-muted-foreground">
+                {selectedRoute?.name ??
+                  (selectedRouteQuery.isLoading ? "Loading route…" : "Route unavailable")}
+              </p>
+            </div>
+          ) : null}
+          <CardTitle aria-level={1} className="text-3xl" role="heading">
+            Start an indoor activity
+          </CardTitle>
           <CardDescription>
             Keep this tab open. The recorder tracks time and plan progress, not GPS or sensor data.
           </CardDescription>
@@ -210,6 +229,7 @@ export function RecordPage() {
                     search: {
                       activity_category: launcher.activity_category,
                       gps: "off",
+                      ...(routeId ? { routeId } : {}),
                     },
                     replace: true,
                   })

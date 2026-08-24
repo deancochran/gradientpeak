@@ -46,16 +46,16 @@ describe("server-config", () => {
 
   it("uses configurable Maestro E2E server defaults", async () => {
     process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
-    process.env.EXPO_PUBLIC_MAESTRO_E2E_API_URL = "http://10.0.2.2:3000/";
-    process.env.EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL = "http://10.0.2.2:54321/";
+    process.env.EXPO_PUBLIC_MAESTRO_E2E_API_URL = "http://127.0.0.1:3100/";
+    process.env.EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL = "http://127.0.0.1:55321/";
     const { module } = await loadServerConfigModule();
 
     await module.initializeServerConfig();
 
     expect(module.getServerConfig()).toMatchObject({
       initialized: true,
-      apiUrl: "http://10.0.2.2:3000",
-      supabaseUrl: "http://10.0.2.2:54321",
+      apiUrl: "http://127.0.0.1:3100",
+      supabaseUrl: "http://127.0.0.1:55321",
       overrideUrl: null,
     });
   });
@@ -85,7 +85,7 @@ describe("server-config", () => {
 
     expect(module.getServerConfig()).toMatchObject({
       apiUrl: "http://127.0.0.1:3100",
-      supabaseUrl: "http://127.0.0.1:54321",
+      supabaseUrl: "http://127.0.0.1:55321",
       overrideUrl: "http://127.0.0.1:3100",
     });
   });

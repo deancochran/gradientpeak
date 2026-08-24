@@ -44,6 +44,7 @@ export function ActivityPlanSessionFlow({
   personalizeTargets = false,
   onPersonalizeTargetsChange,
   showPersonalizationControl = false,
+  showStepNames = true,
   personalizationFactsLoading = false,
 }: {
   structure: unknown;
@@ -51,6 +52,7 @@ export function ActivityPlanSessionFlow({
   personalizeTargets?: boolean;
   onPersonalizeTargetsChange?: (enabled: boolean) => void;
   showPersonalizationControl?: boolean;
+  showStepNames?: boolean;
   personalizationFactsLoading?: boolean;
 }) {
   const resolution = resolveActivityPlanSessionFlow({
@@ -133,9 +135,10 @@ export function ActivityPlanSessionFlow({
                         <p className="mt-1 text-sm text-muted-foreground">{interval.notes}</p>
                       ) : null}
                       <ul className="mt-1 space-y-1 text-sm text-muted-foreground">
-                        {interval.steps.map((step) => (
+                        {interval.steps.map((step, stepIndex) => (
                           <li key={step.id}>
-                            {step.name} · {durationLabel(step.duration)}
+                            {showStepNames ? step.name : `Step ${stepIndex + 1}`} ·{" "}
+                            {durationLabel(step.duration)}
                             {getActivityPlanSessionFlowTargetPresentations(resolution, step.id).map(
                               (target) => (
                                 <span key={`${step.id}-${target.sourceLabel}`}>

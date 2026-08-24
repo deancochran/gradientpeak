@@ -34,21 +34,24 @@ function ScheduleQuantification({
 
 function DashboardPage() {
   const { user } = useAuth();
-  const dashboardQuery = api.home.getDashboard.useQuery();
+  const dashboardQuery = api.home.getDashboard.useQuery(undefined, { retry: false });
 
   if (dashboardQuery.isError) {
     return (
-      <Card role="alert">
-        <CardHeader>
-          <CardTitle>Dashboard unavailable</CardTitle>
-          <CardDescription>We could not load your dashboard. Please try again.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button type="button" onClick={() => void dashboardQuery.refetch()}>
-            Retry dashboard
-          </Button>
-        </CardContent>
-      </Card>
+      <div className="space-y-8">
+        <h1 className="text-3xl font-semibold tracking-tight">Welcome back</h1>
+        <Card role="alert">
+          <CardHeader>
+            <CardTitle>Dashboard unavailable</CardTitle>
+            <CardDescription>We could not load your dashboard. Please try again.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button type="button" onClick={() => void dashboardQuery.refetch()}>
+              Retry dashboard
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 

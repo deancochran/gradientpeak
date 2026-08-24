@@ -1,0 +1,15 @@
+# @arg EXPECTED_BOUNDARY_ID selector-id required
+appId: ${MAESTRO_APP_ID}
+---
+# EXPECTED_BOUNDARY_ID is mandatory. This flow proves auth/bootstrap hydration;
+# the caller must still assert the feature-specific persisted outcome.
+- launchApp:
+    appId: ${MAESTRO_APP_ID}
+    clearState: false
+- runFlow: ./handle_transient_system_ui.yaml
+- extendedWaitUntil:
+    visible:
+      id: "${EXPECTED_BOUNDARY_ID}"
+    timeout: 15000
+- assertVisible:
+    id: "${EXPECTED_BOUNDARY_ID}"

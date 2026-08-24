@@ -1,0 +1,12 @@
+appId: ${MAESTRO_APP_ID}
+# @purpose Search Discover and open an exact text-only result whose card has no stable ID.
+# @arg DISCOVER_QUERY text required
+# @arg DETAIL_READY_ID selector-id required
+# @ready DETAIL_READY_ID
+---
+- tapOn: { id: "discover-search-input" }
+- eraseText
+- inputText: "${DISCOVER_QUERY}"
+- hideKeyboard
+- tapOn: "${DISCOVER_QUERY}"
+- assertVisible: { id: "${DETAIL_READY_ID}" }

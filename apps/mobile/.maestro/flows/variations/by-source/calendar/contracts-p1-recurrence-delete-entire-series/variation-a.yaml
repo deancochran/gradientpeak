@@ -1,0 +1,17 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — contracts/p1/recurrence_delete_entire_series.yaml — cancel series deletion"
+properties:
+  junitId: variation.mobile.contracts_p1_recurrence_delete_entire_series.a
+  junitClassname: variation.mobile.calendar
+  sourceIdentity: contracts/p1/recurrence_delete_entire_series.yaml
+tags: [variation, calendar, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: { file: ../../../../reusable/domain/details/open_event.yaml, env: { EVENT_ID: "${RECURRING_SERIES_EVENT_ID_A}" } }
+- tapOn: { id: "event-detail-options-trigger" }
+- tapOn: { id: "event-detail-options-delete" }
+- assertVisible: { id: "event-detail-delete-scope-modal" }
+- tapOn: { id: "event-detail-delete-scope-series" }
+- assertVisible: { id: "event-detail-delete-confirm-modal" }
+- back
+- assertVisible: { id: "event-detail-screen" }

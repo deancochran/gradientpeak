@@ -1,0 +1,17 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — contracts/p1/recurrence_edit_occurrence_only.yaml — select occurrence scope without saving"
+properties:
+  junitId: variation.mobile.contracts_p1_recurrence_edit_occurrence_only.a
+  junitClassname: variation.mobile.calendar
+  sourceIdentity: contracts/p1/recurrence_edit_occurrence_only.yaml
+tags: [variation, calendar, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: { file: ../../../../reusable/domain/details/open_event.yaml, env: { EVENT_ID: "${RECURRING_SINGLE_EVENT_ID_A}" } }
+- tapOn: { id: "event-detail-options-trigger" }
+- tapOn: { id: "event-detail-options-edit" }
+- assertVisible: { id: "event-detail-update-repeat-row" }
+- tapOn: { id: "event-detail-update-save-button" }
+- assertVisible: "This event only"
+- tapOn: { id: "event-detail-update-scope-single" }
+- assertVisible: { id: "event-detail-screen" }

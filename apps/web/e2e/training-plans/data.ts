@@ -1,27 +1,16 @@
 import { createHash } from "node:crypto";
 import type { TestInfo } from "@playwright/test";
-import { activityPlanStructureSchema } from "@repo/core";
-import { Pool, type PoolClient } from "pg";
-
-import { TEST_ACTIVITY_PLAN_ID, TEST_USERS } from "../utils/testData";
+import { activityPlanStructureSchema, defaultAthletePreferenceProfile } from "@repo/core";
+import { currentE2EActor } from "../support/actors";
+import { currentE2ECleanupRegistry } from "../support/cleanup";
+import { type E2EQuery, LocalE2EDatabase } from "../support/database";
+import { createE2EExecutionIdentity } from "../support/identity";
+import { registerTrainingPlanCleanup } from "./cleanup";
 
 type TrainingPlanFixture = {
   ownedName: string;
   templateName: string;
 };
-
-function localDatabaseUrl() {
-  const value =
-    process.env.DATABASE_URL ??
-    process.env.POSTGRES_URL ??
-    // biome-ignore lint/security/noSecrets: Supabase's documented local-only database URL.
-    "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
-  const url = new URL(value);
-  if (!["127.0.0.1", "localhost"].includes(url.hostname)) {
-    throw new Error("Training-plan E2E fixtures only support the local database.");
-  }
-  return value;
-}
 
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value === "boolean" || typeof value === "string") {
@@ -46,40 +35,25 @@ function structureHash(structure: unknown) {
 }
 
 function fixtureNames(testInfo: TestInfo): TrainingPlanFixture {
-  const digest = createHash("sha256")
-    .update(`${testInfo.project.name}|${testInfo.titlePath.join("|")}`)
-    .digest("hex")
-    .slice(0, 12);
+  const identity = createE2EExecutionIdentity(testInfo);
   return {
-    ownedName: `Playwright Training Plan ${digest}`,
-    templateName: `Playwright Training Template ${digest}`,
+    ownedName: identity.name("Playwright Training Plan"),
+    templateName: identity.name("Playwright Training Template"),
   };
 }
 
-async function actorProfileId(client: PoolClient) {
-  const result = await client.query<{ id: string }>(
-    `select p."id" from "profiles" p
-     inner join "users" u on u."id" = p."id"
-     where lower(u."email") = lower($1) limit 1`,
-    [TEST_USERS.athlete.email],
-  );
-  const id = result.rows[0]?.id;
-  if (!id) throw new Error("The local athlete fixture was not provisioned.");
+async function actorProfileId(client: E2EQuery) {
+  void client;
+  return currentE2EActor("athlete").profileId;
+}
+
+function actorActivityPlanId() {
+  const id = currentE2EActor("athlete").activityPlanId;
+  if (!id) throw new Error("The isolated athlete activity plan was not provisioned.");
   return id;
 }
 
-async function cleanup(client: PoolClient, profileId: string, names: TrainingPlanFixture) {
-  await client.query(
-    `delete from "events" where "profile_id" = $1
-     and "training_plan_id" in (select "id" from "training_plans" where "name" = any($2::text[]))`,
-    [profileId, [names.ownedName]],
-  );
-  await client.query('delete from "training_plans" where "name" = any($1::text[])', [
-    [names.ownedName, names.templateName],
-  ]);
-}
-
-async function normalizeSeededActivityPlanHash(client: PoolClient) {
+async function normalizeSeededActivityPlanHash(client: E2EQuery) {
   const result = await client.query<{
     content_visibility: string;
     structure: unknown;
@@ -87,7 +61,7 @@ async function normalizeSeededActivityPlanHash(client: PoolClient) {
   }>(
     `select "structure", "structure_hash", "content_visibility"
      from "activity_plans" where "id" = $1 limit 1`,
-    [TEST_ACTIVITY_PLAN_ID],
+    [actorActivityPlanId()],
   );
   const original = result.rows[0];
   const parsed = activityPlanStructureSchema.safeParse(result.rows[0]?.structure);
@@ -100,17 +74,19 @@ async function normalizeSeededActivityPlanHash(client: PoolClient) {
     `update "activity_plans"
      set "structure_hash" = $2, "content_visibility" = 'public'
      where "id" = $1`,
-    [TEST_ACTIVITY_PLAN_ID, structureHash(parsed.data)],
+    [actorActivityPlanId(), structureHash(parsed.data)],
   );
   return original;
 }
 
 export async function prepareTrainingPlanPrerequisites() {
-  const pool = new Pool({ connectionString: localDatabaseUrl() });
+  const pool = new LocalE2EDatabase();
   const client = await pool.connect();
   let original: Awaited<ReturnType<typeof normalizeSeededActivityPlanHash>> | undefined;
+  const activityPlanId = actorActivityPlanId();
   let profileId: string | undefined;
   let planningTimezone: string | null | undefined;
+  let originalSettings: { settings: unknown; updated_at: string | Date } | undefined;
   try {
     original = await normalizeSeededActivityPlanHash(client);
     profileId = await actorProfileId(client);
@@ -119,29 +95,69 @@ export async function prepareTrainingPlanPrerequisites() {
       [profileId],
     );
     planningTimezone = profile.rows[0]?.planning_timezone;
+    originalSettings = (
+      await client.query<{ settings: unknown; updated_at: string | Date }>(
+        'select "settings", "updated_at" from "profile_training_settings" where "profile_id" = $1',
+        [profileId],
+      )
+    ).rows[0];
+    await client.query(
+      `insert into "profile_training_settings" ("profile_id", "settings", "updated_at")
+       values ($1, $2::jsonb, now())
+       on conflict ("profile_id") do update
+       set "settings" = excluded."settings", "updated_at" = excluded."updated_at"`,
+      [profileId, JSON.stringify(defaultAthletePreferenceProfile)],
+    );
+    await client.query(
+      `insert into "profile_athlete_state" (
+         "profile_id", "source_revision", "published_revision", "fitness", "fatigue",
+         "evidence_confidence", "computed_at", "updated_at"
+       ) values ($1, 1, 1, 0, 0, 0, now(), now())
+       on conflict ("profile_id") do update set
+         "source_revision" = 1, "published_revision" = 1, "dirty_from_at" = null,
+         "fitness" = 0, "fatigue" = 0, "evidence_confidence" = 0,
+         "computed_at" = now(), "updated_at" = now()`,
+      [profileId],
+    );
     await client.query('update "profiles" set "planning_timezone" = $2 where "id" = $1', [
       profileId,
       "UTC",
     ]);
   } finally {
     client.release();
-    await pool.end();
+    await pool.close();
   }
   return async () => {
-    const restorePool = new Pool({ connectionString: localDatabaseUrl() });
+    const restorePool = new LocalE2EDatabase();
     try {
       await restorePool.query(
         `update "activity_plans"
          set "structure_hash" = $2, "content_visibility" = $3
          where "id" = $1`,
-        [TEST_ACTIVITY_PLAN_ID, original.structure_hash, original.content_visibility],
+        [activityPlanId, original.structure_hash, original.content_visibility],
       );
       await restorePool.query('update "profiles" set "planning_timezone" = $2 where "id" = $1', [
         profileId,
         planningTimezone,
       ]);
+      if (originalSettings) {
+        await restorePool.query(
+          `insert into "profile_training_settings" ("profile_id", "settings", "updated_at")
+           values ($1, $2::jsonb, $3)
+           on conflict ("profile_id") do update
+           set "settings" = excluded."settings", "updated_at" = excluded."updated_at"`,
+          [profileId, JSON.stringify(originalSettings.settings), originalSettings.updated_at],
+        );
+      } else {
+        await restorePool.query('delete from "profile_training_settings" where "profile_id" = $1', [
+          profileId,
+        ]);
+      }
+      await restorePool.query('delete from "profile_athlete_state" where "profile_id" = $1', [
+        profileId,
+      ]);
     } finally {
-      await restorePool.end();
+      await restorePool.close();
     }
   };
 }
@@ -150,8 +166,9 @@ export async function withTrainingPlanLibraryFixture(
   testInfo: TestInfo,
   run: (fixture: TrainingPlanFixture) => Promise<void>,
 ) {
+  const identity = createE2EExecutionIdentity(testInfo);
   const names = fixtureNames(testInfo);
-  const pool = new Pool({ connectionString: localDatabaseUrl() });
+  const pool = new LocalE2EDatabase();
   const client = await pool.connect();
   let originalActivityPlan: Awaited<ReturnType<typeof normalizeSeededActivityPlanHash>> | undefined;
   let profileId: string | undefined;
@@ -168,44 +185,65 @@ export async function withTrainingPlanLibraryFixture(
       "UTC",
     ]);
     originalActivityPlan = await normalizeSeededActivityPlanHash(client);
-    const structure = {
+    const structureBase = {
       version: 1,
       sessions: [
         {
-          activity_plan_id: TEST_ACTIVITY_PLAN_ID,
+          activity_plan_id: actorActivityPlanId(),
           offset_days: 0,
           event_overrides: { title: "Playwright tempo" },
         },
       ],
     };
-    await cleanup(client, profileId, names);
-    await client.query(
+    const ownedId = identity.uuid("training-plan-owned");
+    const templateId = identity.uuid("training-plan-template");
+    const ownedStructure = { id: ownedId, ...structureBase };
+    const templateStructure = { id: templateId, ...structureBase };
+    const inserted = await client.query<{
+      id: string;
+      is_system_template: boolean;
+      profile_id: string | null;
+    }>(
       `insert into "training_plans" (
         "id", "profile_id", "name", "description", "structure", "structure_hash",
-        "content_visibility", "is_system_template"
+        "content_visibility", "is_system_template", "system_content_key",
+        "system_content_version", "system_content_hash"
       ) values
-        (gen_random_uuid(), $1, $2, 'Owned browser-library fixture', $4::jsonb, $5, 'private', false),
-        (gen_random_uuid(), null, $3, 'System browser-library fixture', $4::jsonb, $5, 'public', true)`,
+        ($4::uuid, $1, $2, 'Owned browser-library fixture', $6::jsonb, $7, 'private', false, null, null, null),
+        ($5::uuid, null, $3, 'System browser-library fixture', $8::jsonb, $9, 'public', true, $10, 1, $9)
+       returning "id", "profile_id", "is_system_template"`,
       [
         profileId,
         names.ownedName,
         names.templateName,
-        JSON.stringify(structure),
-        structureHash(structure),
+        ownedId,
+        templateId,
+        JSON.stringify(ownedStructure),
+        structureHash(ownedStructure),
+        JSON.stringify(templateStructure),
+        structureHash(templateStructure),
+        `e2e:${names.templateName}`,
       ],
     );
+    const registry = currentE2ECleanupRegistry();
+    for (const plan of inserted.rows) {
+      registerTrainingPlanCleanup(registry, {
+        id: plan.id,
+        ownerProfileId: plan.profile_id,
+        scheduledByProfileId: profileId,
+        systemTemplate: plan.is_system_template,
+      });
+    }
     await run(names);
   } finally {
     try {
-      const cleanupProfileId = await actorProfileId(client);
-      await cleanup(client, cleanupProfileId, names);
       if (originalActivityPlan) {
         await client.query(
           `update "activity_plans"
            set "structure_hash" = $2, "content_visibility" = $3
            where "id" = $1`,
           [
-            TEST_ACTIVITY_PLAN_ID,
+            actorActivityPlanId(),
             originalActivityPlan.structure_hash,
             originalActivityPlan.content_visibility,
           ],
@@ -219,20 +257,7 @@ export async function withTrainingPlanLibraryFixture(
       }
     } finally {
       client.release();
-      await pool.end();
+      await pool.close();
     }
-  }
-}
-
-export async function cleanupTrainingPlanByName(name: string) {
-  const pool = new Pool({ connectionString: localDatabaseUrl() });
-  const client = await pool.connect();
-  try {
-    const profileId = await actorProfileId(client);
-    const names = { ownedName: name, templateName: name };
-    await cleanup(client, profileId, names);
-  } finally {
-    client.release();
-    await pool.end();
   }
 }

@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
-import { Pool, type PoolClient } from "pg";
+import { type E2EQuery, withLocalE2EDatabase } from "../../support/database";
 
 const TEST_ACTOR_DOMAIN = "@example.test";
 const VERIFICATION_CONSUMPTION_ID = /^email-verification:[a-f0-9]{64}$/;
@@ -124,47 +124,25 @@ export function registerCapturedVerification(actionUrl: string) {
   currentRegistry().registerVerificationConsumptionId(`email-verification:${digest}`);
 }
 
-function localDatabaseUrl() {
-  const value =
-    process.env.DATABASE_URL ??
-    process.env.POSTGRES_URL ??
-    // biome-ignore lint/security/noSecrets: Supabase's documented disposable local database URL.
-    "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
-  const url = new URL(value);
-  if (!["127.0.0.1", "localhost"].includes(url.hostname)) {
-    throw new Error("Auth lane cleanup is restricted to a local PostgreSQL database");
-  }
-  return value;
-}
-
 export async function cleanupAuthArtifacts(snapshot: AuthArtifactSnapshot) {
   if (snapshot.actorEmails.length === 0 && snapshot.verificationConsumptionIds.length === 0) {
     return;
   }
 
-  const pool = new Pool({ connectionString: localDatabaseUrl(), max: 1 });
-  let client: PoolClient | undefined;
-  try {
-    client = await pool.connect();
-    await client.query("begin");
-    if (snapshot.actorEmails.length > 0) {
-      for (const statement of AUTH_ACTOR_CLEANUP_ORDER) {
-        await client.query(AUTH_ARTIFACT_CLEANUP_SQL[statement], [snapshot.actorEmails]);
+  await withLocalE2EDatabase((database) =>
+    database.transaction(async (client: E2EQuery) => {
+      if (snapshot.actorEmails.length > 0) {
+        for (const statement of AUTH_ACTOR_CLEANUP_ORDER) {
+          await client.query(AUTH_ARTIFACT_CLEANUP_SQL[statement], [snapshot.actorEmails]);
+        }
       }
-    }
-    if (snapshot.verificationConsumptionIds.length > 0) {
-      await client.query(AUTH_ARTIFACT_CLEANUP_SQL.verificationConsumptionMarkers, [
-        snapshot.verificationConsumptionIds,
-      ]);
-    }
-    await client.query("commit");
-  } catch (error) {
-    await client?.query("rollback").catch(() => undefined);
-    throw error;
-  } finally {
-    client?.release();
-    await pool.end();
-  }
+      if (snapshot.verificationConsumptionIds.length > 0) {
+        await client.query(AUTH_ARTIFACT_CLEANUP_SQL.verificationConsumptionMarkers, [
+          snapshot.verificationConsumptionIds,
+        ]);
+      }
+    }),
+  );
 }
 
 export async function cleanupRegisteredAuthActor(email: string) {

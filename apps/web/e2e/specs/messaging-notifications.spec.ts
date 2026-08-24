@@ -1,35 +1,24 @@
-import { expect, openAppPage, test } from "../fixtures/messaging";
+import { expect, test } from "../fixtures/messaging";
+import { MessagingPage, NotificationsPage } from "../pages";
 
 test("creates a DM and a three-actor group with independent unread state", async ({
   messaging,
 }) => {
   const { a, b, c } = messaging.actors;
-  await openAppPage(a.page, "/messages?compose=true");
-  await a.page.getByRole("searchbox", { name: "Search message recipients" }).fill(b.username);
-  await a.page.getByRole("button", { name: /^search$/i }).click();
-  await a.page.getByRole("button", { name: new RegExp(`@${b.username}`, "i") }).click();
-  await a.page.getByRole("button", { name: "Start conversation" }).click();
+  const sender = new MessagingPage(a.page);
+  await sender.startDirectMessage(b.username);
   await expect(a.page).toHaveURL(/conversationId=/);
 
-  await openAppPage(a.page, "/messages?compose=true");
-  for (const actor of [b, c]) {
-    const search = a.page.getByRole("searchbox", { name: "Search message recipients" });
-    await search.fill(actor.username);
-    await a.page.getByRole("button", { name: /^search$/i }).click();
-    await a.page.getByRole("button", { name: new RegExp(`@${actor.username}`, "i") }).click();
-  }
-  await a.page.getByLabel("Group name").fill("Three Actor Persisted Group");
-  await a.page.getByRole("button", { name: "Create conversation" }).click();
-  await a.page.getByPlaceholder("Type a message...").fill("Three actor persisted hello");
-  await a.page.getByRole("button", { name: /^send message$/i }).click();
+  await sender.createGroup("Three Actor Persisted Group", [b.username, c.username]);
+  await sender.send("Three actor persisted hello");
 
-  await openAppPage(b.page, "/messages");
+  await new MessagingPage(b.page).openInbox();
   const bGroup = b.page.getByRole("link", { name: /Three Actor Persisted Group/i }).first();
   await expect(bGroup.getByText("1", { exact: true })).toBeVisible();
   await bGroup.click();
   await expect(b.page.getByText("Three actor persisted hello").last()).toBeVisible();
 
-  await openAppPage(c.page, "/messages");
+  await new MessagingPage(c.page).openInbox();
   const cGroup = c.page.getByRole("link", { name: /Three Actor Persisted Group/i }).first();
   await expect(cGroup.getByText("1", { exact: true })).toBeVisible();
   await cGroup.click();
@@ -38,13 +27,14 @@ test("creates a DM and a three-actor group with independent unread state", async
 
 test("rejects and accepts follow requests from notifications", async ({ messaging }) => {
   const { a } = messaging.actors;
+  const notifications = new NotificationsPage(a.page);
   await messaging.seedFollowRequest("b", "a");
-  await openAppPage(a.page, "/notifications");
-  await a.page.getByRole("button", { name: "Reject" }).click();
+  await notifications.open();
+  await notifications.respondToFollowRequest("Reject");
   await expect.poll(() => messaging.readFollowStatus("b", "a")).toBeNull();
 
   await messaging.seedFollowRequest("c", "a");
-  await openAppPage(a.page, "/notifications");
-  await a.page.getByRole("button", { name: "Accept" }).click();
+  await notifications.open();
+  await notifications.respondToFollowRequest("Accept");
   await expect.poll(() => messaging.readFollowStatus("c", "a")).toBe("accepted");
 });

@@ -1,9 +1,10 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "../fixtures";
 import { type GoalFixture, withGoalFixture } from "../planning/data";
+import { createE2EExecutionIdentity } from "../support/identity";
 
 async function createGoal(page: Page, fixture: GoalFixture) {
-  const title = `Confirmation goal ${Date.now()}`;
+  const title = createE2EExecutionIdentity(test.info()).name("Confirmation goal");
   await page.goto("/goals/new?date=2026-09-20");
   const form = page.getByTestId("goal-form");
   await form.getByLabel("Title").fill(title);

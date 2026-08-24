@@ -62,8 +62,8 @@ function ActivityPlanDetailPage() {
   );
   const today = getTodayDateKey();
   const scheduleQuery = api.calendar.range.useQuery({
-    startDate: today,
-    endDateExclusive: shiftDateKey(today, 366),
+    startDate: shiftDateKey(today, -183),
+    endDateExclusive: shiftDateKey(today, 183),
     activityPlanId,
     includeAdhoc: true,
     limit: 100,
@@ -72,6 +72,10 @@ function ActivityPlanDetailPage() {
   const [liked, setLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(0);
   const [scheduleDate, setScheduleDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [scheduledEventOverride, setScheduledEventOverride] = useState<{
+    id: string;
+    calendarDate: string;
+  } | null>(null);
   const detail = planQuery.data?.detail;
   const edit = planQuery.data?.edit;
   const scheduledEvents = (scheduleQuery.data?.items ?? []).filter(
@@ -80,7 +84,13 @@ function ActivityPlanDetailPage() {
       item.status === "scheduled" &&
       item.plan?.id === activityPlanId,
   );
-  const scheduledEvent = scheduledEvents[0];
+  const scheduledEvent = scheduledEventOverride ?? scheduledEvents[0];
+  const scheduledDependencyIds = [
+    ...new Set([
+      ...scheduledEvents.map((event) => event.id),
+      ...(scheduledEventOverride ? [scheduledEventOverride.id] : []),
+    ]),
+  ];
   const isOwner = detail?.capabilities.canEdit ?? false;
   const parsedStructure = activityPlanStructureSchema.safeParse(detail?.structure);
   const displayStructure = parsedStructure.success ? parsedStructure.data : null;
@@ -143,7 +153,8 @@ function ActivityPlanDetailPage() {
     },
   });
   const createSchedule = api.events.create.useMutation({
-    onSuccess: async () => {
+    onSuccess: async (event) => {
+      setScheduledEventOverride({ id: event.id, calendarDate: event.scheduled_date });
       await utils.calendar.invalidate();
       toast.success("Activity plan scheduled");
     },
@@ -151,6 +162,7 @@ function ActivityPlanDetailPage() {
   });
   const updateSchedule = api.events.update.useMutation({
     onSuccess: async (event) => {
+      setScheduledEventOverride({ id: event.id, calendarDate: event.scheduled_date });
       await Promise.all([
         utils.calendar.invalidate(),
         utils.events.getById.invalidate({ id: event.id, personalize: false }),
@@ -161,20 +173,28 @@ function ActivityPlanDetailPage() {
     onError: (error) => toast.error(error.message || "Activity plan could not be rescheduled"),
   });
   const removeSchedule = api.events.delete.useMutation({
-    onSuccess: async () => {
-      await utils.calendar.invalidate();
+    onSuccess: () => {
+      setScheduledEventOverride(null);
+      void utils.calendar.invalidate();
       toast.success("Activity plan removed from the schedule");
     },
     onError: (error) => toast.error(error.message || "Scheduled activity could not be removed"),
   });
   const deletePlan = api.activityPlans.delete.useMutation({
-    onSuccess: async () => {
-      await utils.activityPlans.invalidate();
-      toast.success("Activity plan deleted");
+    onSuccess: () => {
       void navigate({ to: "/activity-plans" } as never);
+      void utils.activityPlans.invalidate();
+      toast.success("Activity plan deleted");
     },
     onError: (error) => toast.error(error.message || "Activity plan could not be deleted"),
   });
+
+  const removeSchedulesAndDelete = async () => {
+    for (const eventId of scheduledDependencyIds) {
+      await removeSchedule.mutateAsync({ id: eventId });
+    }
+    await deletePlan.mutateAsync({ id: activityPlanId });
+  };
 
   if (planQuery.isLoading) {
     return (
@@ -286,7 +306,7 @@ function ActivityPlanDetailPage() {
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
-                    disabled={scheduleQuery.isLoading || scheduleQuery.isError}
+                    disabled={!scheduledEvent && scheduleQuery.isLoading && !scheduleQuery.data}
                     type="button"
                     variant="destructive"
                   >
@@ -297,18 +317,24 @@ function ActivityPlanDetailPage() {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete activity plan?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      {scheduledEvents.length > 0
-                        ? "This plan has linked scheduled sessions. Remove every linked session before deleting the plan."
+                      {scheduledDependencyIds.length > 0
+                        ? `This plan has ${scheduledDependencyIds.length} scheduled session${scheduledDependencyIds.length === 1 ? "" : "s"}. Remove linked schedules before deleting the plan.`
                         : "This permanently removes the plan from your library. Deletion will be blocked if any linked schedule exists."}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
-                      disabled={deletePlan.isPending}
-                      onClick={() => deletePlan.mutate({ id: activityPlanId })}
+                      disabled={deletePlan.isPending || removeSchedule.isPending}
+                      onClick={() =>
+                        scheduledDependencyIds.length > 0
+                          ? void removeSchedulesAndDelete()
+                          : deletePlan.mutate({ id: activityPlanId })
+                      }
                     >
-                      Delete plan
+                      {scheduledDependencyIds.length > 0
+                        ? "Remove schedules and delete"
+                        : "Delete plan"}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -388,6 +414,7 @@ function ActivityPlanDetailPage() {
             personalizeTargets={personalizeTargets}
             onPersonalizeTargetsChange={setPersonalizationChoice}
             showPersonalizationControl={isOwner}
+            showStepNames={false}
             personalizationFactsLoading={performanceTargetsQuery.isLoading}
           />
           <div className="print:hidden">

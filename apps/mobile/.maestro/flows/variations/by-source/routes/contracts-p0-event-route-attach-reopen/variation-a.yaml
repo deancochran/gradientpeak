@@ -1,0 +1,20 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — contracts/p0/event_route_attach_reopen.yaml — attach exact route through picker"
+properties:
+  junitId: variation.mobile.contracts_p0_event_route_attach_reopen.a
+  junitClassname: variation.mobile.routes
+  sourceIdentity: contracts/p0/event_route_attach_reopen.yaml
+tags: [variation, routes, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: { file: ../../../../reusable/domain/details/open_event.yaml, env: { EVENT_ID: "${ROUTE_ASSIGNMENT_EVENT_ID_A}" } }
+- tapOn: { id: "event-detail-options-trigger" }
+- tapOn: { id: "event-detail-options-edit" }
+- tapOn: { id: "event-detail-update-choose-route-card" }
+- tapOn: "Search routes"
+- inputText: "${EVENT_ROUTE_NAME_A}"
+- hideKeyboard
+- tapOn: { id: "resource-picker-result-${EVENT_ROUTE_ID_A}" }
+- assertVisible: { id: "event-detail-update-route-row" }
+- tapOn: { id: "event-detail-update-save-button" }
+- assertVisible: "${EVENT_ROUTE_NAME_A}"

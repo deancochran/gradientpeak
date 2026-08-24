@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Pool } from "pg";
+import type { E2EQuery } from "../support/database";
 
 function canonicalSeedJson(value: unknown): string {
   if (value === null || typeof value === "boolean" || typeof value === "string")
@@ -23,11 +23,13 @@ function activityPlanSeedStructureHash(structure: unknown) {
   return `v1:sha256:${createHash("sha256").update(canonicalSeedJson(structure)).digest("hex")}`;
 }
 
-export const TEST_ACTIVITY_PLAN_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
-
-export async function seedOwnedActivityPlan(pool: Pool, profileId: string) {
-  await pool.query('delete from "activity_plans" where "profile_id" = $1', [profileId]);
-
+export async function seedOwnedActivityPlan(
+  pool: E2EQuery,
+  profileId: string,
+  isolatedNamespace: string,
+) {
+  const fixtureId = (label: string) => deterministicFixtureUuid(`${isolatedNamespace}|${label}`);
+  const activityPlanId = fixtureId("primary");
   const structure = {
     version: 3,
     activity_category: "bike",
@@ -57,7 +59,7 @@ export async function seedOwnedActivityPlan(pool: Pool, profileId: string) {
 
   await upsertActivityPlan(pool, {
     description: "A deterministic tempo activity plan for browser journeys.",
-    id: TEST_ACTIVITY_PLAN_ID,
+    id: activityPlanId,
     name: "Playwright Tempo Builder",
     notes: "Bring bottles",
     profileId,
@@ -95,17 +97,23 @@ export async function seedOwnedActivityPlan(pool: Pool, profileId: string) {
 
     await upsertActivityPlan(pool, {
       description: `Deterministic ${activity_category} library fixture ${index}.`,
-      id: `f0000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      id: fixtureId(`library-${index}`),
       name: `Playwright Library ${String(index).padStart(2, "0")}`,
       notes: null,
       profileId,
       structure: libraryStructure,
     });
   }
+  return { activityPlanId };
+}
+
+function deterministicFixtureUuid(value: string) {
+  const digest = createHash("sha256").update(value).digest("hex");
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-8${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
 }
 
 async function upsertActivityPlan(
-  pool: Pool,
+  pool: E2EQuery,
   plan: {
     description: string;
     id: string;

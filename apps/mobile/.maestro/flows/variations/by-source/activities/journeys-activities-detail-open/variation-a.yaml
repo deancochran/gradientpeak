@@ -1,0 +1,16 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — journeys/activities/detail_open.yaml — inspect activity summary, map, and metrics"
+properties:
+  junitId: variation.mobile.journeys_activities_detail_open.a
+  junitClassname: variation.mobile.activities
+  sourceIdentity: journeys/activities/detail_open.yaml
+tags: [variation, activities, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: { file: ../../../../reusable/domain/details/open_activity.yaml, env: { ACTIVITY_ID: "${FILTER_ACTIVITY_ID}" } }
+- extendedWaitUntil: { visible: { id: "activity-detail-summary" }, timeout: 15000 }
+- assertVisible: "${FILTER_ACTIVITY_TITLE}"
+- assertVisible: { id: "activity-card-metrics" }
+- assertVisible: { id: "activity-card-like-button-${FILTER_ACTIVITY_ID}" }
+- tapOn: { id: "activity-detail-tab-analysis" }
+- assertVisible: "Elevation Profile"

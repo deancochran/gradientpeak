@@ -1,0 +1,34 @@
+appId: ${MAESTRO_APP_ID}
+name: "onboarding sources journeys/auth/onboarding_skip_path, main/onboarding_happy_path, contracts/p0/onboarding_follow_person_persists, onboarding_join_open_group_persists, onboarding_request_closed_group_persists — search, clear, select and persist"
+tags: [variation, onboarding, baseline-source-pair-a, intentional-red]
+---
+- runFlow: ../../../reusable/ensure_signed_out.yaml
+- tapOn: { id: "email-input" }
+- inputText: "${ONBOARDING_FOLLOW_USER_EMAIL}"
+- tapOn: { id: "password-input" }
+- inputText: "${ONBOARDING_FOLLOW_USER_PASS}"
+- hideKeyboard
+- tapOn: { id: "sign-in-button" }
+- assertVisible: { id: "onboarding-provider-selection" }
+- assertVisible: { id: "groups-people-step" }
+- tapOn: { id: "onboarding-people-search" }
+- inputText: "no-such-maestro-person"
+- hideKeyboard
+- assertVisible: "No people found"
+- tapOn: { id: "onboarding-people-search-clear" }
+- tapOn: { id: "onboarding-people-search" }
+- inputText: "${PUBLIC_TARGET_USERNAME}"
+- hideKeyboard
+- tapOn: { id: "onboarding-profile-${PUBLIC_TARGET_USER_ID}" }
+- assertVisible: { id: "onboarding-profile-selected-${PUBLIC_TARGET_USER_ID}" }
+- tapOn: { id: "onboarding-group-${OPEN_GROUP_ID}" }
+- assertVisible: { id: "onboarding-group-selected-${OPEN_GROUP_ID}" }
+- tapOn: { id: "onboarding-group-${CLOSED_GROUP_ID}" }
+- assertVisible: { id: "onboarding-group-requested-${CLOSED_GROUP_ID}" }
+- tapOn: { id: "onboarding-finish-button" }
+- openLink: "${MAESTRO_APP_SCHEME}://user/${PUBLIC_TARGET_USER_ID}"
+- assertVisible: { id: "user-detail-unfollow-button" }
+- openLink: "${MAESTRO_APP_SCHEME}://group-detail?groupId=${OPEN_GROUP_ID}"
+- assertVisible: "Member"
+- openLink: "${MAESTRO_APP_SCHEME}://group-detail?groupId=${CLOSED_GROUP_ID}"
+- assertVisible: "Request pending"

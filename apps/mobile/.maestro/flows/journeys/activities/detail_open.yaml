@@ -1,7 +1,9 @@
+# @arg STANDARD_USER_EMAIL email required
+# @arg STANDARD_USER_PASS secret required
+# @arg TARGET_USERNAME text required
+# @arg TARGET_USER_ID identifier required
 appId: com.deancochran.gradientpeak.dev
 env:
-  STANDARD_USER_EMAIL: "test@example.com"
-  STANDARD_USER_PASS: "password123"
   TARGET_USERNAME: "coachcasey"
   TARGET_USER_ID: "coachcasey"
 ---

@@ -19,6 +19,7 @@ import {
   activityArtifacts,
   activityFileIngestions,
   activityPlans,
+  activityRoutes,
   activitySourceReferences,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
@@ -544,9 +545,10 @@ export async function getActivityByIdForViewer({
     });
   const [record, likeStats, ingestion, currentArtifact] = await Promise.all([
     db
-      .select({ activity: activities, activityPlan: activityPlans })
+      .select({ activity: activities, activityPlan: activityPlans, activityRoute: activityRoutes })
       .from(activities)
       .leftJoin(activityPlans, eq(activities.activity_plan_id, activityPlans.id))
+      .leftJoin(activityRoutes, eq(activities.route_id, activityRoutes.id))
       .where(eq(activities.id, activityId))
       .limit(1),
     loadLikeStats(db, {
@@ -688,6 +690,10 @@ export async function getActivityByIdForViewer({
   const activityDetailSource: Parameters<typeof toActivityDetailDisplay>[0]["activity"] = {
     ...response.activity,
     activity_plans: response.activity.activity_plans ?? null,
+    activity_routes:
+      activity.profile_id === viewerId && row.activityRoute
+        ? { id: row.activityRoute.id, name: row.activityRoute.name }
+        : null,
     segments: activity.segments.map((segment) => ({
       id: segment.id,
       activity_id: segment.activity_id,

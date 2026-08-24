@@ -1,0 +1,9 @@
+appId: ${MAESTRO_APP_ID}
+# @purpose Select one pre-provisioned route file from the system picker.
+# @arg ROUTE_FILE_DISPLAY_NAME filename required
+# @ready route-upload-file-input-clear
+---
+- tapOn: { id: "route-upload-file-input" }
+- extendedWaitUntil: { visible: "${ROUTE_FILE_DISPLAY_NAME}", timeout: 10000 }
+- tapOn: "${ROUTE_FILE_DISPLAY_NAME}"
+- assertVisible: { id: "route-upload-file-input-clear" }

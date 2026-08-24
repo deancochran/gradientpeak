@@ -15,8 +15,8 @@ The semantic usage contract for athlete observations and effort curves is docume
 ## Source of truth
 
 - Drizzle schema in `src/schema/**` is the relational source of truth.
-- `supabase/migrations/` contains exactly one mutable pre-release MVP baseline authority.
-- No active forward chain, backfill, or upgrade path exists; verify only fresh disposable targets and reset only the guarded repository-managed local target.
+- `supabase/migrations/` begins with exactly one transactional MVP baseline followed by ordered forward-only migrations.
+- Applied migrations are immutable. Corrective work uses a new migration and breaking work follows expand-migrate-contract.
 - Drizzle has no deploy command. Its config points at the Supabase authority, while Studio remains available for inspection.
 
 ## Common commands
@@ -32,6 +32,10 @@ pnpm --filter @repo/db self-host:up
 pnpm --filter @repo/db db:verify:static
 pnpm --filter @repo/db db:verify
 pnpm --filter @repo/db db:baseline:check
+pnpm --filter @repo/db db:e2e:start
+pnpm --filter @repo/db db:e2e:migrate
+pnpm --filter @repo/db db:e2e:status
+pnpm --filter @repo/db db:e2e:stop
 pnpm --filter @repo/db db:fresh:verify
 pnpm --filter @repo/db db:reset:mvp # destructive: repository-managed local DB only
 pnpm --filter @repo/db db:schema:check
@@ -43,15 +47,17 @@ pnpm --filter @repo/db seed-training-plans
 pnpm --filter @repo/db self-host:down
 ```
 
-## Fresh-only MVP workflow
+## Baseline and forward migration workflow
 
-`supabase/migrations/` contains exactly one transactional MVP baseline. Fresh disposable targets are the only supported endpoint.
+`supabase/migrations/` begins with one transactional MVP baseline. New changes are ordered, forward-only migration files.
 
-1. Treat the Supabase baseline as the only authoring location. Never add a second active SQL file.
-2. Run `db:baseline:check` to require exactly one regular transactional MVP baseline and reject reintroduced Drizzle mirror, policy, or active-ledger artifacts.
-3. Run `db:fresh:verify` or `db:verify` only against guarded disposable local targets. They apply exactly that baseline, then verify parity, fingerprint, storage, security, lint, and an empty schema diff.
+1. Never edit an applied migration. Add a corrective migration and use expand-migrate-contract for breaking changes.
+2. Run `db:baseline:check` to require one leading transactional MVP baseline plus unique ordered forward migrations and reject reintroduced Drizzle mirror, policy, or active-ledger artifacts.
+3. Run `db:fresh:verify` or `db:verify` only against guarded disposable local targets. They apply the ordered migration set, then verify parity, fingerprint, storage, security, lint, and an empty schema diff.
 4. `db:diff` builds that same disposable target and requires an empty public-schema shadow diff.
 5. `db:reset:mvp` is the only reset command. It accepts no flags, validates the one baseline first, refuses any configured database other than the repository-managed local target, runs `supabase db reset --local`, then seeds the Core-owned activity and training-plan catalogues. It discards that local target's data and restores each system row's Core key, version, and content hash; it never accepts linked or URL targets.
+
+The dedicated `gradientpeak_e2e` project uses ports 55320–55329 and durable data across ordinary stop/start. `db:e2e:migrate` bootstraps only a genuinely empty public schema, then uses Supabase migration history to apply pending migrations. Its fail-closed guards reject the manual project and ports.
 
 The checked-in fingerprint covers every public relation and sequence (including unmanaged extras), managed columns/defaults/indexes/constraints/enums, RLS and ACL state, default privileges for policy-declared owners, policy-declared extensions, public/auth functions and triggers, and owned storage buckets/policies. Supabase platform extensions and platform-role default privileges are intentionally outside repository ownership and are not serialized as environment noise. Update the fingerprint only with `db:fresh:verify -- --write-fingerprint`; direct edits and unguarded writers are unsupported.
 

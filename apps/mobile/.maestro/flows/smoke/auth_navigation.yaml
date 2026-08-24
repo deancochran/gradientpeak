@@ -3,6 +3,8 @@ name: Authentication navigation
 properties:
   junitId: auth.sign_in
   junitClassname: parity.mobile
+  lifecyclePolicy: clean
+tags: [smoke, smoke-expected-pass]
 ---
 - runFlow:
     file: ../reusable/ensure_signed_out.yaml

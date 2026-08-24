@@ -1,0 +1,12 @@
+appId: ${MAESTRO_APP_ID}
+# @purpose Attach one exact route from recording setup.
+# @arg ROUTE_NAME text required
+# @ready recording-setup-remove-route
+---
+- tapOn: { id: "recording-setup-action-route" }
+- tapOn: { id: "discover-search-input" }
+- inputText: "${ROUTE_NAME}"
+- hideKeyboard
+- tapOn: "${ROUTE_NAME}"
+- tapOn: { id: "route-preview-attach-button" }
+- assertVisible: { id: "recording-setup-remove-route" }

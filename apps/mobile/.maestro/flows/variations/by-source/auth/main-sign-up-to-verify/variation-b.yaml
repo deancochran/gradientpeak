@@ -1,0 +1,23 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — main/sign_up_to_verify.yaml — mismatched passwords recover into verification"
+properties: { junitId: variation.mobile.main_sign_up_to_verify.b, junitClassname: variation.mobile.auth, sourceIdentity: main/sign_up_to_verify.yaml }
+tags: [variation, auth, signup, by-source]
+---
+- runFlow: ../../../../reusable/ensure_signed_out.yaml
+- tapOn: { id: "sign-up-link-button" }
+- tapOn: { id: "email-input" }
+- inputText: "${SIGNUP_EMAIL_B}"
+- tapOn: { id: "password-input" }
+- inputText: "${SIGNUP_PASSWORD}"
+- swipe: { direction: UP }
+- tapOn: { id: "repeat-password-input" }
+- inputText: "different-password"
+- hideKeyboard
+- tapOn: { id: "sign-up-button" }
+- assertVisible: { id: "sign-up-screen" }
+- tapOn: { id: "repeat-password-input" }
+- eraseText
+- inputText: "${SIGNUP_PASSWORD}"
+- hideKeyboard
+- tapOn: { id: "sign-up-button" }
+- extendedWaitUntil: { visible: { id: "verify-screen" }, timeout: 15000 }

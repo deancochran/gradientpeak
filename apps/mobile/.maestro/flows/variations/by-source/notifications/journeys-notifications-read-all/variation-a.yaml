@@ -1,0 +1,14 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — journeys/notifications/read_all.yaml — mark all read removes unread count after reopen"
+properties: { junitId: variation.mobile.journeys_notifications_read_all.a, junitClassname: variation.mobile.notifications, sourceIdentity: journeys/notifications/read_all.yaml }
+tags: [variation, notifications, by-source]
+---
+- runFlow: { file: ../../../../reusable/authenticated_home.yaml, env: { STANDARD_USER_EMAIL: "${NOTIFICATION_READ_ALL_USER_EMAIL_A}", STANDARD_USER_PASS: "${NOTIFICATION_READ_ALL_USER_PASS_A}" } }
+- runFlow: ../../../../reusable/open_notifications_inbox.yaml
+- assertVisible: "${NOTIFICATION_READ_ALL_UNREAD_SUMMARY_A}"
+- tapOn: { id: "notifications-read-all-trigger" }
+- extendedWaitUntil: { visible: "${NOTIFICATION_READ_ALL_READ_SUMMARY_A}", timeout: 15000 }
+- back
+- runFlow: ../../../../reusable/open_notifications_inbox.yaml
+- assertVisible: "${NOTIFICATION_READ_ALL_READ_SUMMARY_A}"
+- assertNotVisible: "${NOTIFICATION_READ_ALL_UNREAD_SUMMARY_A}"

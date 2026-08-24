@@ -1,0 +1,18 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — journeys/plans/preferences_screen_open.yaml — inspect availability and rest-day controls"
+properties:
+  junitId: variation.mobile.journeys_plans_preferences_screen_open.b
+  junitClassname: variation.mobile.plans
+  sourceIdentity: journeys/plans/preferences_screen_open.yaml
+tags: [variation, plans, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: ../../../../reusable/open_plan_tab.yaml
+- tapOn: { id: "plan-signals-settings-button" }
+- tapOn: { id: "training-preferences-tab-availability" }
+- assertVisible: { id: "preferences-hard-rest-days" }
+- assertVisible: { id: "preferences-weekly-windows" }
+- tapOn: { id: "preferences-hard-rest-day-monday" }
+- assertVisible: "Remove Monday hard rest day"
+- back
+- assertVisible: { id: "plan-screen" }

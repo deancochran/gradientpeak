@@ -1,0 +1,27 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — journeys/integrations/historical_fit_import.yaml — validate missing file then retry with deterministic FIT"
+properties:
+  junitId: variation.mobile.journeys_integrations_historical_fit_import.b
+  junitClassname: variation.mobile.integrations
+  sourceIdentity: journeys/integrations/historical_fit_import.yaml
+tags: [variation, integrations, by-source]
+---
+- runFlow: { file: ../../../../reusable/authenticated_home.yaml, env: { STANDARD_USER_EMAIL: "${FIT_IMPORT_USER_EMAIL_B}", STANDARD_USER_PASS: "${FIT_IMPORT_USER_PASS_B}" } }
+- runFlow: ../../../../reusable/domain/uploads/open_activity_import.yaml
+- tapOn: { id: "activity-import-notes-input" }
+- inputText: "Historical FIT source variation"
+- hideKeyboard
+- tapOn: { id: "activity-import-submit-button" }
+- assertVisible: "Choose a FIT, GPX, or TCX file."
+- assertVisible: { id: "activity-import-file-input" }
+- runFlow: { file: ../../../../reusable/domain/uploads/select_activity_fixture.yaml, env: { ACTIVITY_FILE_DISPLAY_NAME: "${FIT_IMPORT_FILE_DISPLAY_NAME_B}" } }
+- assertVisible: "${FIT_IMPORT_FILE_DISPLAY_NAME_B}"
+- tapOn: { id: "activity-import-submit-button" }
+- extendedWaitUntil: { visible: { id: "activity-import-summary" }, timeout: 60000 }
+- assertVisible: "Historical activity imported"
+- tapOn: { id: "activity-import-view-activity-button" }
+- extendedWaitUntil: { visible: { id: "activity-detail-screen" }, timeout: 30000 }
+- assertVisible: { id: "activity-detail-summary" }
+- assertVisible: "${FIT_IMPORT_ACTIVITY_TITLE_B}"
+- tapOn: { id: "activity-detail-tab-breakdown" }
+- assertVisible: { id: "activity-derived-efforts" }

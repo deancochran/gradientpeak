@@ -270,6 +270,12 @@ export const activityDetailDisplaySchema = z.strictObject({
       name: z.string().trim().min(1).max(100),
     })
     .nullable(),
+  linkedRoute: z
+    .strictObject({
+      id: identifierSchema,
+      name: z.string().trim().min(1).max(100),
+    })
+    .nullable(),
   currentArtifact: z
     .strictObject({
       id: identifierSchema,

@@ -1,0 +1,7 @@
+appId: ${MAESTRO_APP_ID}
+# @purpose Open one activity by canonical app link.
+# @arg ACTIVITY_ID uuid required
+# @ready activity-detail-screen
+---
+- openLink: "${MAESTRO_APP_SCHEME}://activity-detail?id=${ACTIVITY_ID}"
+- assertVisible: { id: "activity-detail-screen" }

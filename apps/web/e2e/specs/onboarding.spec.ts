@@ -5,6 +5,7 @@ import {
   test,
 } from "../lane-support/auth/lane-test";
 import { signUp, uniqueAuthActor } from "../lane-support/auth/mailbox";
+import { createE2EExecutionIdentity } from "../support/identity";
 import { currentContractEpochHeaders } from "../utils/contractEpoch";
 
 async function createVerifiedOnboardingSession({
@@ -57,7 +58,11 @@ for (const viewport of [
     await expect(page.getByLabel("Goal title")).toHaveCount(0);
     await expect(page.getByLabel("Target date")).toHaveCount(0);
     await page.getByLabel("Full name").fill(`Web ${viewport.name} Athlete`);
-    await page.getByLabel("Username").fill(`identity_first_${viewport.name}_${Date.now()}`);
+    await page
+      .getByLabel("Username")
+      .fill(
+        `identity_first_${viewport.name}_${createE2EExecutionIdentity(test.info()).suffix(`onboarding-${viewport.name}`, 12)}`,
+      );
     await page.getByRole("button", { name: "Finish setup" }).click();
     await expect(page).toHaveURL(/\/$/, { timeout: 15_000 });
 

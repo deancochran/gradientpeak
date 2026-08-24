@@ -1,6 +1,6 @@
 import type { APIRequestContext } from "@playwright/test";
-import { Pool } from "pg";
-import { authenticateTestActor, TEST_USERS } from "../../utils/testData";
+import { currentE2EActor } from "../../support/actors";
+import { LocalE2EDatabase } from "../../support/database";
 
 type FollowSnapshot = {
   created_at: Date;
@@ -35,28 +35,14 @@ export type SeededSocialState = {
   cleanup: () => Promise<void>;
 };
 
-const configuredConnectionString =
-  process.env.DATABASE_URL ??
-  process.env.POSTGRES_URL ??
-  // biome-ignore lint/security/noSecrets: Supabase's documented local-only database URL.
-  "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
-
-function getLocalConnectionString() {
-  const url = new URL(configuredConnectionString);
-  if (!["127.0.0.1", "localhost"].includes(url.hostname)) {
-    throw new Error("Area 4 social E2E seeding is local-only.");
-  }
-  return configuredConnectionString;
-}
-
 export async function seedSocialState(request: APIRequestContext): Promise<SeededSocialState> {
-  const connectionString = getLocalConnectionString();
-  await authenticateTestActor(request, "coach", { persistStorageState: false });
+  void request;
+  const athleteActor = currentE2EActor("athlete");
+  const coachActor = currentE2EActor("coach");
 
-  const pool = new Pool({
-    connectionString,
+  const pool = new LocalE2EDatabase({
     connectionTimeoutMillis: 10_000,
-    query_timeout: 10_000,
+    queryTimeout: 10_000,
   });
   const client = await pool.connect();
   let athlete: ProfileSnapshot | undefined;
@@ -70,11 +56,11 @@ export async function seedSocialState(request: APIRequestContext): Promise<Seede
       `select p."id", p."username", p."full_name", p."bio", p."is_public", p."updated_at"
        from "profiles" p
        join "users" u on u."id" = p."id"
-       where lower(u."email") in (lower($1), lower($2))`,
-      [TEST_USERS.athlete.email, TEST_USERS.coach.email],
+       where p."id" = any($1::uuid[])`,
+      [[athleteActor.profileId, coachActor.profileId]],
     );
-    athlete = profiles.rows.find((profile) => profile.username === TEST_USERS.athlete.username);
-    coach = profiles.rows.find((profile) => profile.username === TEST_USERS.coach.username);
+    athlete = profiles.rows.find((profile) => profile.id === athleteActor.profileId);
+    coach = profiles.rows.find((profile) => profile.id === coachActor.profileId);
     if (!athlete || !coach) {
       throw new Error("Area 4 requires local athlete and coach E2E profiles.");
     }
@@ -119,7 +105,7 @@ export async function seedSocialState(request: APIRequestContext): Promise<Seede
     throw error;
   } finally {
     client.release();
-    await pool.end();
+    await pool.close();
   }
 
   if (!athlete || !coach) {
@@ -130,10 +116,9 @@ export async function seedSocialState(request: APIRequestContext): Promise<Seede
     athleteId: athlete.id,
     coachId: coach.id,
     cleanup: async () => {
-      const cleanupPool = new Pool({
-        connectionString,
+      const cleanupPool = new LocalE2EDatabase({
         connectionTimeoutMillis: 10_000,
-        query_timeout: 10_000,
+        queryTimeout: 10_000,
       });
       const cleanupClient = await cleanupPool.connect();
       try {
@@ -189,7 +174,7 @@ export async function seedSocialState(request: APIRequestContext): Promise<Seede
         throw error;
       } finally {
         cleanupClient.release();
-        await cleanupPool.end();
+        await cleanupPool.close();
       }
     },
   };

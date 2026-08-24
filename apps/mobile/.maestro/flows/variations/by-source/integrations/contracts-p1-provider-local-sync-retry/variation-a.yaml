@@ -1,0 +1,18 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — contracts/p1/provider_local_sync_retry.yaml — expose provider failure and retry"
+properties:
+  junitId: variation.mobile.contracts_p1_provider_local_sync_retry.a
+  junitClassname: variation.mobile.integrations
+  sourceIdentity: contracts/p1/provider_local_sync_retry.yaml
+tags: [variation, integrations, by-source, intentional-red]
+---
+- runFlow:
+    file: ../../../../reusable/authenticated_home.yaml
+    env: { STANDARD_USER_EMAIL: "${PROVIDER_RETRY_USER_EMAIL_A}", STANDARD_USER_PASS: "${PROVIDER_RETRY_USER_PASS_A}" }
+- openLink: "${MAESTRO_APP_SCHEME}://integrations"
+- tapOn: { id: "integration-sync-now-${PROVIDER_RETRY_ID_A}" }
+- extendedWaitUntil: { visible: { id: "integration-provider-sync-error-${PROVIDER_RETRY_ID_A}" }, timeout: 20000 }
+- assertVisible: { id: "integration-retry-sync-${PROVIDER_RETRY_ID_A}" }
+- tapOn: { id: "integration-retry-sync-${PROVIDER_RETRY_ID_A}" }
+- extendedWaitUntil: { visible: { id: "integration-view-import-${PROVIDER_RETRY_ID_A}" }, timeout: 30000 }
+- assertVisible: { id: "integration-sync-now-${PROVIDER_RETRY_ID_A}" }

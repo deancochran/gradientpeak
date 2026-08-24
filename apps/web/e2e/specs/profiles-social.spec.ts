@@ -1,14 +1,15 @@
 import { expect, test } from "../fixtures";
 import { waitForProcedure } from "../lane-support/feed/discovery";
 import { seedSocialState } from "../lane-support/social/social-state";
+import { ProfilePage, withTrpcResponse } from "../pages";
 
 test("profile hub and settings expose owned profile journeys", async ({ athletePage }) => {
-  await athletePage.getByRole("button", { name: /open user menu/i }).click();
-  await athletePage.getByRole("menuitem", { name: /^profile$/i }).click();
+  const profile = new ProfilePage(athletePage);
+  await profile.openOwnedProfile();
 
   await expect(athletePage.getByRole("heading", { name: /your library/i })).toBeVisible();
   await expect(athletePage.getByRole("heading", { name: /^groups$/i })).toBeVisible();
-  await athletePage.getByRole("link", { name: /edit profile/i }).click();
+  await profile.openSettings();
 
   await expect(athletePage).toHaveURL(/\/settings/);
   await expect(athletePage.getByLabel("Full name")).toBeVisible();
@@ -20,6 +21,7 @@ test("profile hub and settings expose owned profile journeys", async ({ athleteP
 
 test("private profiles protect details while a follow request persists and is restored", async ({
   athletePage,
+  coachActor: _coachActor,
   request,
 }) => {
   const social = await seedSocialState(request);
@@ -54,6 +56,7 @@ test("private profiles protect details while a follow request persists and is re
 
 test("social graph pages expose data, empty, error recovery, and bounded controls", async ({
   athletePage,
+  coachActor: _coachActor,
   request,
 }) => {
   test.setTimeout(120_000);
@@ -72,33 +75,31 @@ test("social graph pages expose data, empty, error recovery, and bounded control
     await test.step("surface and recover from retained follower refetch failure", async () => {
       await expect(athletePage.getByRole("link", { name: "playwright_coach" })).toBeVisible();
       await expect(athletePage.getByRole("button", { name: "Refresh followers" })).toBeVisible();
-      await athletePage.route("**/api/trpc/**", async (route) => {
-        if (route.request().url().includes("social.getFollowers")) {
-          await route.fulfill({
-            status: 503,
-            contentType: "application/json",
-            body: JSON.stringify({
-              error: {
-                json: {
-                  code: -32603,
-                  data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 503 },
-                  message: "Injected follower refetch failure",
-                },
+      await withTrpcResponse(
+        athletePage,
+        "social.getFollowers",
+        {
+          status: 503,
+          body: {
+            error: {
+              json: {
+                code: -32603,
+                data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 503 },
+                message: "Injected follower refetch failure",
               },
-            }),
+            },
+          },
+        },
+        async () => {
+          await athletePage
+            .getByRole("button", { name: "Refresh followers" })
+            .click({ timeout: 10_000 });
+          await expect(athletePage.getByRole("alert")).toContainText("Unable to load followers", {
+            timeout: 15_000,
           });
-          return;
-        }
-        await route.continue();
-      });
-      await athletePage
-        .getByRole("button", { name: "Refresh followers" })
-        .click({ timeout: 10_000 });
-      await expect(athletePage.getByRole("alert")).toContainText("Unable to load followers", {
-        timeout: 15_000,
-      });
-      await expect(athletePage.getByRole("link", { name: "playwright_coach" })).toBeVisible();
-      await athletePage.unroute("**/api/trpc/**");
+          await expect(athletePage.getByRole("link", { name: "playwright_coach" })).toBeVisible();
+        },
+      );
       const retryResponse = waitForProcedure(athletePage, "social.getFollowers");
       await athletePage.getByRole("button", { name: "Try again" }).click();
       await expect((await retryResponse).ok()).toBeTruthy();

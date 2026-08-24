@@ -1,10 +1,8 @@
 appId: ${MAESTRO_APP_ID}
 ---
 - runFlow:
-    file: ./reset_to_home.yaml
+    file: ./reset_navigation_to_home.yaml
 - tapOn:
     id: "tab-button-plan"
-- extendedWaitUntil:
-    visible:
-      id: "plan-screen"
-    timeout: 10000
+    retryTapIfNoChange: true
+- assertVisible: { id: "plan-screen" }

@@ -72,6 +72,12 @@ export function RecordSessionPage() {
   const activityPersistenceName = recording.artifact?.review.name ?? "Activity";
   const planStatus = recording.planStatus;
   const planSnapshot = snapshot?.planExecution;
+  const routeId =
+    recording.artifact?.snapshot.activity.routeId ?? snapshot?.activity.routeId ?? null;
+  const selectedRouteQuery = api.routes.get.useQuery(
+    { id: routeId ?? "" },
+    { enabled: Boolean(routeId), retry: false },
+  );
   const currentOccurrence = planStatus?.currentOccurrence ?? null;
   const currentTargetLabels = currentOccurrence
     ? (planSnapshot?.targetPresentations.find(
@@ -489,6 +495,18 @@ export function RecordSessionPage() {
                     {recording.artifact.snapshot.activity.activity_category}
                   </span>
                 </p>
+                {routeId && selectedRouteQuery.data ? (
+                  <p>
+                    Route:{" "}
+                    <Link
+                      className="font-medium underline underline-offset-4"
+                      params={{ routeId }}
+                      to="/routes/$routeId"
+                    >
+                      {selectedRouteQuery.data.name}
+                    </Link>
+                  </p>
+                ) : null}
                 {recording.artifact.planExecution && recording.artifact.snapshot.planExecution ? (
                   <>
                     <p>
@@ -658,6 +676,9 @@ export function RecordSessionPage() {
               {ingestionStatusQuery.data ? (
                 <p role="status" className="text-sm text-muted-foreground">
                   Server intake: {ingestionStatusQuery.data.status.replaceAll("_", " ")}
+                  {"failureCode" in ingestionStatusQuery.data
+                    ? ` (${ingestionStatusQuery.data.failureCode.replaceAll("_", " ")})`
+                    : ""}
                 </p>
               ) : null}
               {recording.submissionJob?.activityId ? (

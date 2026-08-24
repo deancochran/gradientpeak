@@ -1,23 +1,10 @@
 appId: ${MAESTRO_APP_ID}
 ---
 - runFlow:
-    file: ./reset_to_home.yaml
+    file: ./reset_navigation_to_home.yaml
 - tapOn:
     id: "tab-button-calendar"
-- repeat:
-    times: 2
-    commands:
-      - tapOn:
-          id: "tab-button-calendar"
-- extendedWaitUntil:
-    visible:
-      text: "Calendar"
-    timeout: 10000
-- extendedWaitUntil:
-    visible:
-      id: "calendar-screen-ready"
-    timeout: 15000
-- extendedWaitUntil:
-    visible:
-      id: "create-event-entry"
-    timeout: 15000
+    retryTapIfNoChange: true
+- assertVisible: { text: "Calendar" }
+- assertVisible: { id: "calendar-screen-ready" }
+- assertVisible: { id: "create-event-entry" }

@@ -1,0 +1,9 @@
+flows:
+  - flows/journeys/**
+  - flows/contracts/**
+includeTags:
+  - hardware
+  - manual
+excludeTags:
+  - intentional-red
+testOutputDir: artifacts/test-output/hardware-manual

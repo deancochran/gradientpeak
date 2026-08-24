@@ -1,0 +1,14 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — journeys/notifications/inbox_expect_text.yaml — unread filter isolates expected notification before navigation"
+properties: { junitId: variation.mobile.journeys_notifications_inbox_expect_text.b, junitClassname: variation.mobile.notifications, sourceIdentity: journeys/notifications/inbox_expect_text.yaml }
+tags: [variation, notifications, by-source, intentional-red]
+---
+- runFlow: { file: ../../../../reusable/authenticated_home.yaml, env: { STANDARD_USER_EMAIL: "${NOTIFICATION_EXPECT_USER_EMAIL_B}", STANDARD_USER_PASS: "${NOTIFICATION_EXPECT_USER_PASS_B}" } }
+- runFlow: ../../../../reusable/open_notifications_inbox.yaml
+- tapOn: { id: "notifications-unread-filter" }
+- assertVisible: { id: "notification-item-${NOTIFICATION_EXPECT_DESTINATION_ID_B}" }
+- assertVisible: "${NOTIFICATION_EXPECT_TEXT_B}"
+- tapOn: { id: "notification-item-${NOTIFICATION_EXPECT_DESTINATION_ID_B}" }
+- assertVisible: { id: "messages-screen" }
+- back
+- assertNotVisible: "${NOTIFICATION_EXPECT_UNREAD_BADGE_B}"

@@ -1,0 +1,24 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — contracts/p0/record_submission_retry.yaml — retain retry state through app navigation"
+properties:
+  junitId: variation.mobile.contracts_p0_record_submission_retry.b
+  junitClassname: variation.mobile.recording
+  sourceIdentity: contracts/p0/record_submission_retry.yaml
+tags: [variation, recording, by-source, network-recovery]
+---
+- runFlow:
+    file: ../../../../reusable/authenticated_home.yaml
+    env: { STANDARD_USER_EMAIL: "${RECORD_RETRY_USER_EMAIL_B}", STANDARD_USER_PASS: "${RECORD_RETRY_USER_PASS_B}" }
+- runFlow: ../../../../reusable/open_record_tab.yaml
+- tapOn: { id: "recording-start-button" }
+- tapOn: { id: "recording-finish-button" }
+- setAirplaneMode: enabled
+- tapOn: "Save Activity"
+- extendedWaitUntil: { visible: { id: "activity-submit-status" }, timeout: 30000 }
+- back
+- tapOn: { id: "tab-button-record" }
+- assertVisible: { id: "activity-submit-status" }
+- assertVisible: "Retry upload"
+- setAirplaneMode: disabled
+- tapOn: "Retry upload"
+- extendedWaitUntil: { notVisible: { id: "activity-submit-status" }, timeout: 30000 }

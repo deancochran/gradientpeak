@@ -52,13 +52,8 @@ export function MobileCardPreviewSurface() {
       </PreviewSection>
 
       <PreviewSection testID="mobile-card-route" title="Route">
-        <RouteCard onPress={noOp} route={fixtures.route} routeFull={fixtures.routeFull} />
-        <RouteCard
-          onPress={noOp}
-          route={fixtures.route}
-          routeFull={fixtures.routeFull}
-          variant="compact"
-        />
+        <RouteCard onPress={noOp} route={fixtures.route} />
+        <RouteCard onPress={noOp} route={fixtures.route} variant="compact" />
       </PreviewSection>
 
       <PreviewSection testID="mobile-card-group" title="Group">

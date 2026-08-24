@@ -392,8 +392,12 @@ export async function resetRecordingEvidenceJournal(): Promise<void> {
   const pendingDatabase = databasePromise;
   databasePromise = undefined;
   claimedCheckpointSessionId = null;
-  const database = await pendingDatabase;
+  // A fresh install has no cached handle and may not have a database file yet.
+  // Open it first so deletion remains idempotent on that same startup path.
+  const database = (await (pendingDatabase ??
+    getRecordingEvidenceDatabase())) as RecordingEvidenceDatabaseHandle;
   if (database?.closeAsync) await database.closeAsync();
+  databasePromise = undefined;
   const SQLite = await import("expo-sqlite");
   await SQLite.deleteDatabaseAsync(DATABASE_NAME);
   await getRecordingEvidenceDatabase();

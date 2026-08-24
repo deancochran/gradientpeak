@@ -291,7 +291,11 @@ describe("timer-only web recording runtime", () => {
   });
 
   it("restores a finalized artifact as immutable finished state after refresh", async () => {
-    let state = configure().state;
+    let state = configureTimerOnlyRecording(createInitialTimerOnlyRecordingState(), {
+      activity_category: "run",
+      eventId: "00000000-0000-4000-8000-000000000001",
+      routeId: "00000000-0000-4000-8000-000000000002",
+    }).state;
     state = startTimerOnlyRecording(state, 2_000, "web-session-1").state;
     state = finishTimerOnlyRecording(state, 5_000).state;
     const snapshot = state.reducer.snapshot;
@@ -311,7 +315,9 @@ describe("timer-only web recording runtime", () => {
       activity_category: "run",
       eventId: "00000000-0000-4000-8000-000000000001",
     });
-    expect(restored.configuration).not.toHaveProperty("routeId");
+    expect(restored.configuration).toMatchObject({
+      routeId: "00000000-0000-4000-8000-000000000002",
+    });
     expect(getTimerOnlyRecordingTimes(restored, 99_000)).toEqual({
       elapsedSeconds: 3,
       activeSeconds: 3,
@@ -319,15 +325,17 @@ describe("timer-only web recording runtime", () => {
     });
   });
 
-  it("forces location off and removes legacy route identity from new snapshots", () => {
+  it("forces location off while retaining selected route identity in new snapshots", () => {
     const configured = configureTimerOnlyRecording(createInitialTimerOnlyRecordingState(), {
       activity_category: "bike",
-      routeId: "legacy-route-id",
-    } as never);
+      routeId: "00000000-0000-4000-8000-000000000002",
+    });
     const started = startTimerOnlyRecording(configured.state, 2_000, "web-session-1");
 
     expect(started.state.reducer.snapshot?.activity.gpsMode).toBe("off");
-    expect(started.state.reducer.snapshot?.activity.routeId).toBeNull();
+    expect(started.state.reducer.snapshot?.activity.routeId).toBe(
+      "00000000-0000-4000-8000-000000000002",
+    );
   });
 
   it("clears legacy device metadata while recovering an indoor draft", () => {

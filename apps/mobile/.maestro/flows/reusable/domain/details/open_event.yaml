@@ -1,0 +1,7 @@
+appId: ${MAESTRO_APP_ID}
+# @purpose Open one accessible calendar event by canonical app link.
+# @arg EVENT_ID uuid required
+# @ready event-detail-screen
+---
+- openLink: "${MAESTRO_APP_SCHEME}://event-detail?id=${EVENT_ID}"
+- assertVisible: { id: "event-detail-screen" }

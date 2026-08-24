@@ -1,0 +1,16 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — contracts/p0/completed_activity_route_persistence.yaml — traverse activity route relation"
+properties:
+  junitId: variation.mobile.contracts_p0_completed_activity_route_persistence.a
+  junitClassname: variation.mobile.activities
+  sourceIdentity: contracts/p0/completed_activity_route_persistence.yaml
+tags: [variation, activities, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: { file: ../../../../reusable/domain/details/open_activity.yaml, env: { ACTIVITY_ID: "${ROUTE_ACTIVITY_ID}" } }
+- assertVisible: { id: "activity-detail-linked-route-${RECORDING_ROUTE_ID}" }
+- tapOn: { id: "activity-detail-linked-route-${RECORDING_ROUTE_ID}" }
+- assertVisible: { id: "route-card-${RECORDING_ROUTE_ID}" }
+- assertVisible: { id: "route-card-map-preview-${RECORDING_ROUTE_ID}" }
+- back
+- assertVisible: { id: "activity-detail-linked-route-${RECORDING_ROUTE_ID}" }

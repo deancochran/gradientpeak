@@ -43,9 +43,13 @@ export function getPlaywrightCommand(playwrightArgs, isolateGpu) {
     : { command: command[0], args: command.slice(1) };
 }
 
+export function normalizePlaywrightArgs(playwrightArgs) {
+  return playwrightArgs[0] === "--" ? playwrightArgs.slice(1) : playwrightArgs;
+}
+
 export function runPlaywright(playwrightArgs) {
   const isolateGpu = shouldIsolateGpu();
-  const { command, args } = getPlaywrightCommand(playwrightArgs, isolateGpu);
+  const { command, args } = getPlaywrightCommand(normalizePlaywrightArgs(playwrightArgs), isolateGpu);
   const result = spawnSync(command, args, { stdio: "inherit" });
   if (result.error) throw result.error;
   return result.status ?? 1;

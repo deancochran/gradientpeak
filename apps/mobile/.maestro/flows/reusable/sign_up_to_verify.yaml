@@ -1,12 +1,10 @@
+# @arg email email required
+# @arg password secret required
 appId: ${MAESTRO_APP_ID}
 ---
 - runFlow: ensure_signed_out.yaml
 - tapOn:
-    id: "signup-button"
-    optional: true
-- tapOn:
     id: "sign-up-link-button"
-    optional: true
 - assertVisible:
     id: "sign-up-screen"
 - tapOn:

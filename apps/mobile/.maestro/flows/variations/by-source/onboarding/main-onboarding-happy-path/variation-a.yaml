@@ -1,0 +1,27 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — main/onboarding_happy_path.yaml — choose a person and open group then verify both"
+properties: { junitId: variation.mobile.main_onboarding_happy_path.a, junitClassname: variation.mobile.onboarding, sourceIdentity: main/onboarding_happy_path.yaml }
+tags: [variation, onboarding, by-source, intentional-red]
+---
+- runFlow: ../../../../reusable/ensure_signed_out.yaml
+- tapOn: { id: "email-input" }
+- inputText: "${ONBOARDING_HAPPY_USER_EMAIL_A}"
+- tapOn: { id: "password-input" }
+- inputText: "${ONBOARDING_HAPPY_USER_PASS_A}"
+- hideKeyboard
+- tapOn: { id: "sign-in-button" }
+- extendedWaitUntil: { visible: { id: "onboarding-provider-selection" }, timeout: 20000 }
+- assertVisible: { id: "groups-people-step" }
+- tapOn: { id: "onboarding-people-search" }
+- inputText: "${PUBLIC_TARGET_USERNAME}"
+- hideKeyboard
+- tapOn: { id: "onboarding-profile-${PUBLIC_TARGET_USER_ID}" }
+- tapOn: { id: "onboarding-groups-search" }
+- inputText: "${OPEN_GROUP_NAME}"
+- hideKeyboard
+- tapOn: { id: "onboarding-group-${OPEN_GROUP_ID}" }
+- tapOn: { id: "onboarding-finish-button" }
+- openLink: "${MAESTRO_APP_SCHEME}://user/${PUBLIC_TARGET_USER_ID}"
+- assertVisible: { id: "user-detail-unfollow-button" }
+- openLink: "${MAESTRO_APP_SCHEME}://group-detail?groupId=${OPEN_GROUP_ID}"
+- assertVisible: "Member"

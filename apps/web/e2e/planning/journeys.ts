@@ -1,4 +1,5 @@
-import type { Page } from "@playwright/test";
+import { type Page, test } from "@playwright/test";
+import { createE2EExecutionIdentity } from "../support/identity";
 
 export const planningJourneyIds = [
   "planning.training-path",
@@ -10,8 +11,7 @@ export const planningJourneyIds = [
 ] as const;
 
 export function planningTestIdentity(prefix: string) {
-  const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `${prefix} ${suffix}`;
+  return createE2EExecutionIdentity(test.info()).name(prefix);
 }
 
 export async function openPlanningRoute(page: Page, path: string, heading: RegExp) {

@@ -1,0 +1,26 @@
+appId: ${MAESTRO_APP_ID}
+name: "integration sources journeys/integrations/historical_fit_import, profile/integrations_import_entry_open,profile/integrations_screen_open, contracts/p1/provider_local_connect_persists,provider_local_sync_imports,provider_local_sync_retry — visible failure, retry, disconnect cancel/confirm and retained history"
+tags: [variation, integrations, baseline-source-pair-b]
+---
+- runFlow:
+    file: ../../../reusable/authenticated_home.yaml
+    env: { STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}", STANDARD_USER_PASS: "${STANDARD_USER_PASS}" }
+- openLink: "${MAESTRO_APP_SCHEME}://integrations"
+- tapOn: { id: "integration-sync-now-${LOCAL_PROVIDER_ID}" }
+- assertVisible: { id: "integration-provider-sync-error-${LOCAL_PROVIDER_ID}" }
+- tapOn: { id: "integration-retry-sync-${LOCAL_PROVIDER_ID}" }
+- assertVisible: { id: "integration-view-import-${LOCAL_PROVIDER_ID}" }
+- tapOn: { id: "integration-disconnect-${LOCAL_PROVIDER_ID}" }
+- assertVisible: "Disconnect"
+- back
+- assertVisible: { id: "integration-sync-now-${LOCAL_PROVIDER_ID}" }
+- tapOn: { id: "integration-disconnect-${LOCAL_PROVIDER_ID}" }
+- tapOn: "Disconnect"
+- assertVisible: { id: "integration-connect-${LOCAL_PROVIDER_ID}" }
+- tapOn: { id: "integration-view-history-${LOCAL_PROVIDER_ID}" }
+- assertVisible: { id: "activities-list-item-${LOCAL_PROVIDER_IMPORTED_ACTIVITY_ID}" }
+- tapOn: { id: "activities-list-item-${LOCAL_PROVIDER_IMPORTED_ACTIVITY_ID}" }
+- assertVisible: { id: "activity-detail-summary" }
+- back
+- tapOn: { id: "activities-list-import-trigger" }
+- assertVisible: { id: "activity-import-file-input" }

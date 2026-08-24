@@ -1,0 +1,34 @@
+appId: ${MAESTRO_APP_ID}
+name: "social sources discover/profile_detail_open, main/discover_user_profile, main/profile_screen, journeys/social/follow_target_from_profile,activity_detail_like_and_comment, contracts/p2/social_private_follow_request_persists,social_public_follow_persists — search, follow, activity social and return"
+tags: [variation, social, discover, baseline-source-pair-a]
+---
+- runFlow:
+    file: ../../../reusable/authenticated_home.yaml
+    env: { STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}", STANDARD_USER_PASS: "${STANDARD_USER_PASS}" }
+- runFlow: ../../../reusable/open_discover_tab.yaml
+- tapOn: { id: "discover-scope-users" }
+- tapOn: { id: "discover-search-input" }
+- inputText: "no-such-maestro-profile"
+- hideKeyboard
+- assertVisible: "No profiles"
+- tapOn: { id: "discover-search-clear" }
+- tapOn: { id: "discover-search-input" }
+- inputText: "${PUBLIC_TARGET_USERNAME}"
+- hideKeyboard
+- tapOn: { id: "discover-user-${PUBLIC_TARGET_USER_ID}" }
+- assertVisible: { id: "user-detail-summary" }
+- tapOn: { id: "user-detail-follow-button" }
+- assertVisible: { id: "user-detail-unfollow-button" }
+- scrollUntilVisible: { element: { id: "user-detail-activity-${PUBLIC_TARGET_ACTIVITY_ID}" }, direction: DOWN }
+- tapOn: { id: "user-detail-activity-${PUBLIC_TARGET_ACTIVITY_ID}" }
+- assertVisible: { id: "activity-detail-summary" }
+- tapOn: { id: "activity-detail-like-button" }
+- assertVisible: { id: "activity-detail-liked" }
+- tapOn: { id: "activity-detail-comment-input" }
+- inputText: "Maestro social source A"
+- tapOn: { id: "activity-detail-comment-submit" }
+- assertVisible: "Maestro social source A"
+- back
+- assertVisible: { id: "user-detail-unfollow-button" }
+- back
+- assertVisible: { id: "discover-user-${PUBLIC_TARGET_USER_ID}" }

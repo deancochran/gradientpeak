@@ -10,7 +10,7 @@ export function ActivityFeed() {
   const navigate = useNavigate();
   const feedQuery = api.feed.getFeed.useInfiniteQuery(
     { limit: 20 },
-    { getNextPageParam: (page) => page.nextCursor ?? undefined },
+    { getNextPageParam: (page) => page.nextCursor ?? undefined, retry: false },
   );
   const activities = feedQuery.data?.pages.flatMap((page) => page.items) ?? [];
 

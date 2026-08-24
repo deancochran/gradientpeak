@@ -7,13 +7,13 @@ const appEnvironment = process.env.APP_ENV ?? "development";
 
 const hostedApiUrl = useLocalE2EHost
   ? requireUrl(
-      process.env.EXPO_PUBLIC_MAESTRO_E2E_API_URL ?? "http://127.0.0.1:3000",
+      process.env.EXPO_PUBLIC_MAESTRO_E2E_API_URL ?? "http://127.0.0.1:3100",
       "EXPO_PUBLIC_MAESTRO_E2E_API_URL",
     )
   : requireUrl(process.env.EXPO_PUBLIC_API_URL, "EXPO_PUBLIC_API_URL");
 const hostedSupabaseUrl = useLocalE2EHost
   ? requireUrl(
-      process.env.EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL ?? "http://127.0.0.1:54321",
+      process.env.EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL ?? "http://127.0.0.1:55321",
       "EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL",
     )
   : requireUrl(process.env.EXPO_PUBLIC_SUPABASE_URL, "EXPO_PUBLIC_SUPABASE_URL");
@@ -85,7 +85,7 @@ function deriveSupabaseUrl(apiUrl: string): string {
     const parsed = new URL(apiUrl);
     const isLocalHost = ["127.0.0.1", "localhost", "10.0.2.2"].includes(parsed.hostname);
     if (isLocalHost && ["3000", "3100"].includes(parsed.port)) {
-      parsed.port = "54321";
+      parsed.port = parsed.port === "3100" ? "55321" : "54321";
       parsed.pathname = "";
       return parsed.origin;
     }

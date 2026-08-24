@@ -1,0 +1,16 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation A — journeys/messaging/direct_message_from_profile.yaml — discover profile, open thread, and send"
+properties: { junitId: variation.mobile.journeys_messaging_direct_message_from_profile.a, junitClassname: variation.mobile.messaging, sourceIdentity: journeys/messaging/direct_message_from_profile.yaml }
+tags: [variation, messaging, by-source]
+---
+- runFlow: { file: ../../../../reusable/authenticated_home.yaml, env: { STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}", STANDARD_USER_PASS: "${STANDARD_USER_PASS}" } }
+- runFlow: ../../../../reusable/open_discover_tab.yaml
+- runFlow: { file: ../../../../reusable/domain/discover/choose_scope.yaml, env: { DISCOVER_SCOPE: users } }
+- runFlow: { file: ../../../../reusable/domain/discover/search_result.yaml, env: { DISCOVER_QUERY: "${MESSAGE_TARGET_USERNAME}", DISCOVER_RESULT_ID: "discover-user-${MESSAGE_TARGET_USER_ID}" } }
+- tapOn: { id: "discover-user-${MESSAGE_TARGET_USER_ID}" }
+- tapOn: { id: "user-detail-message-button" }
+- assertVisible: { id: "message-thread-screen" }
+- tapOn: { id: "message-input" }
+- inputText: "${DIRECT_MESSAGE_A}"
+- tapOn: { id: "message-send-button" }
+- assertVisible: "${DIRECT_MESSAGE_A}"

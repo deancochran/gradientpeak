@@ -1,46 +1,17 @@
-import type { Browser, BrowserContext, Page } from "@playwright/test";
+import type { BrowserContext, Page } from "@playwright/test";
 import { expect, test } from "../fixtures";
 import {
   createOneOffEvent,
   createOpenGroup,
-  resetLocalGroupE2ERateLimits,
+  createRequestGroup,
 } from "../lane-support/groups/journeys";
-import { openAppPage } from "../utils/navigation";
-import {
-  authenticateTestActor,
-  cleanupOwnedGroups,
-  e2eArtifactIdentity,
-  runWithE2ECleanup,
-  type TestUserRole,
-} from "../utils/testData";
+import { expectNoOwnerControls, GroupsPage } from "../pages";
+import type { AuthenticatedE2EActor } from "../support/actors";
+import { cleanupOwnedGroups, e2eArtifactIdentity, runWithE2ECleanup } from "../utils/testData";
 
-function loopbackIdentity(role: TestUserRole, projectName: string) {
-  const projectOffset =
-    Array.from(projectName).reduce((total, character) => total + character.charCodeAt(0), 0) % 200;
-  const roleOffset = role === "coach" ? 20 : 10;
-  return `127.0.0.${roleOffset + projectOffset}`;
-}
-
-async function openLocalActor(
-  browser: Browser,
-  input: {
-    baseURL: string;
-    projectName: string;
-    role: TestUserRole;
-    viewport: { height: number; width: number };
-  },
-) {
-  const context = await browser.newContext({
-    baseURL: input.baseURL,
-    extraHTTPHeaders: {
-      "x-forwarded-for": loopbackIdentity(input.role, input.projectName),
-    },
-    viewport: input.viewport,
-  });
-  await authenticateTestActor(context.request, input.role, { persistStorageState: false });
-  const page = await context.newPage();
-  await openAppPage(page, "/groups");
-  return { context, page };
+async function openLocalActor(actor: AuthenticatedE2EActor) {
+  const page = await actor.createPage("/groups");
+  return { context: page.context(), page };
 }
 
 async function closeActors(...actors: Array<{ context: BrowserContext; page: Page }>) {
@@ -53,11 +24,11 @@ test("owner creates, edits, RSVPs to, cancels an event, and archives its group",
   const groupName = e2eArtifactIdentity(testInfo, "group");
   const eventTitle = e2eArtifactIdentity(testInfo, "group event");
 
-  await resetLocalGroupE2ERateLimits();
   await runWithE2ECleanup(
     testInfo,
     () => cleanupOwnedGroups([groupName]),
     async () => {
+      const groups = new GroupsPage(athletePage);
       await createOpenGroup(athletePage, groupName);
 
       await athletePage.getByRole("button", { name: "Edit group" }).click();
@@ -69,9 +40,9 @@ test("owner creates, edits, RSVPs to, cancels an event, and archives its group",
       await expect(
         athletePage.getByText("Effective response: no response (defaults to going)"),
       ).toBeVisible();
-      await athletePage.getByRole("button", { name: "Decline", exact: true }).click();
+      await groups.setRsvp("Decline");
       await expect(athletePage.getByText(/Effective response: declined/)).toBeVisible();
-      await athletePage.getByRole("button", { name: "Restore Going", exact: true }).click();
+      await groups.setRsvp("Restore Going");
       await expect(athletePage.getByText(/Effective response: going/)).toBeVisible();
 
       await athletePage.getByRole("button", { name: "Edit event", exact: true }).click();
@@ -93,12 +64,11 @@ test("owner creates, edits, RSVPs to, cancels an event, and archives its group",
 
 test("a member discovers, joins, reloads, RSVPs, and cannot manage the owner's group", async ({
   athletePage,
-  browser,
+  coachActor,
 }, testInfo) => {
   testInfo.setTimeout(120_000);
   const groupName = e2eArtifactIdentity(testInfo, "multi-actor group");
   const eventTitle = e2eArtifactIdentity(testInfo, "member event");
-  await resetLocalGroupE2ERateLimits();
   let member: Awaited<ReturnType<typeof openLocalActor>> | undefined;
 
   try {
@@ -119,25 +89,21 @@ test("a member discovers, joins, reloads, RSVPs, and cannot manage the owner's g
         await expect(athletePage.getByText("No pending invitations.")).toBeVisible();
         await expect(athletePage.getByText("No pending requests.")).toBeVisible();
 
-        member = await openLocalActor(browser, {
-          baseURL: testInfo.project.use.baseURL ?? "http://127.0.0.1:3000",
-          projectName: testInfo.project.name,
-          role: "coach",
-          viewport: testInfo.project.use.viewport ?? { height: 720, width: 1280 },
-        });
+        member = await openLocalActor(coachActor);
+        const memberGroups = new GroupsPage(member.page);
         await member.page.goto(groupUrl);
         await expect(member.page.getByRole("button", { name: "Join group" })).toBeVisible();
-        await member.page.getByRole("button", { name: "Join group" }).click();
+        await memberGroups.join();
         await expect(member.page.getByText("member", { exact: true })).toBeVisible();
         await member.page.reload();
         await expect(member.page.getByRole("button", { name: "Join group" })).toHaveCount(0);
         await expect(member.page.getByRole("button", { name: "View members" })).toBeVisible();
-        await expect(member.page.getByRole("button", { name: "Edit group" })).toHaveCount(0);
-        await expect(member.page.getByRole("button", { name: "Archive group" })).toHaveCount(0);
-        await expect(member.page.getByRole("button", { name: "Create event" })).toHaveCount(0);
-        await expect(
-          member.page.getByRole("button", { name: "Requests and invitations" }),
-        ).toHaveCount(0);
+        await expectNoOwnerControls(member.page, [
+          "Edit group",
+          "Archive group",
+          "Create event",
+          "Requests and invitations",
+        ]);
 
         await member.page.goto("/groups");
         await member.page.getByRole("tab", { name: "Invitations" }).click();
@@ -155,15 +121,79 @@ test("a member discovers, joins, reloads, RSVPs, and cannot manage the owner's g
 
         await member.page.goto(eventUrl);
         await expect(member.page.getByRole("heading", { name: eventTitle })).toBeVisible();
-        await expect(member.page.getByRole("button", { name: "Edit event" })).toHaveCount(0);
-        await expect(member.page.getByRole("button", { name: "Cancel event" })).toHaveCount(0);
+        await expectNoOwnerControls(member.page, ["Edit event", "Cancel event"]);
         await expect(
           member.page.getByText("Effective response: no response (defaults to going)"),
         ).toBeVisible();
-        await member.page.getByRole("button", { name: "Decline", exact: true }).click();
+        await memberGroups.setRsvp("Decline");
         await expect(member.page.getByText(/Effective response: declined/)).toBeVisible();
-        await member.page.getByRole("button", { name: "Restore Going", exact: true }).click();
+        await memberGroups.setRsvp("Restore Going");
         await expect(member.page.getByText(/Effective response: going/)).toBeVisible();
+      },
+    );
+  } finally {
+    if (member) await closeActors(member);
+  }
+});
+
+test("[P1] owner approves a closed-group request and persists member role management", async ({
+  athletePage,
+  coachActor,
+}, testInfo) => {
+  testInfo.setTimeout(120_000);
+  const groupName = e2eArtifactIdentity(testInfo, "request managed group");
+  let member: Awaited<ReturnType<typeof openLocalActor>> | undefined;
+
+  try {
+    await runWithE2ECleanup(
+      testInfo,
+      () => cleanupOwnedGroups([groupName]),
+      async () => {
+        const ownerGroups = new GroupsPage(athletePage);
+        await createRequestGroup(athletePage, groupName);
+        const groupUrl = athletePage.url();
+
+        member = await openLocalActor(coachActor);
+        const memberGroups = new GroupsPage(member.page);
+        await member.page.goto(groupUrl);
+        await memberGroups.requestAccess();
+        await expect(member.page.getByText("Request pending", { exact: true })).toBeVisible();
+        await member.page.reload();
+        await expect(member.page.getByText("Request pending", { exact: true })).toBeVisible();
+
+        await athletePage.goto(groupUrl);
+        await ownerGroups.openRequests();
+        const request = ownerGroups.requestFor("playwright_coach");
+        await expect(request).toBeVisible();
+        await request.getByRole("button", { name: "Approve" }).click();
+        await expect(athletePage.getByText("No pending requests.", { exact: true })).toBeVisible();
+
+        await member.page.reload();
+        await expect(member.page.getByText("member", { exact: true })).toBeVisible();
+        await expect(member.page.getByRole("button", { name: "View members" })).toBeVisible();
+
+        await athletePage.goto(groupUrl);
+        await athletePage.getByRole("button", { name: "View members" }).click();
+        const memberRow = athletePage.getByRole("article").filter({ hasText: "playwright_coach" });
+        await memberRow.getByRole("button", { name: "Promote to admin" }).click();
+        await expect(memberRow.getByText("admin", { exact: true })).toBeVisible();
+        await athletePage.reload();
+        const persistedAdmin = athletePage
+          .getByRole("article")
+          .filter({ hasText: "playwright_coach" });
+        await expect(persistedAdmin.getByText("admin", { exact: true })).toBeVisible();
+
+        await persistedAdmin.getByRole("button", { name: "Demote to member" }).click();
+        await expect(persistedAdmin.getByText("member", { exact: true })).toBeVisible();
+        athletePage.once("dialog", (dialog) => dialog.accept());
+        await persistedAdmin.getByRole("button", { name: "Remove", exact: true }).click();
+        await expect(
+          athletePage.getByRole("article").filter({ hasText: "playwright_coach" }),
+        ).toHaveCount(0);
+
+        await member.page.reload();
+        await expect(member.page.getByRole("button", { name: "Request access" })).toBeVisible();
+        await expect(member.page.getByRole("button", { name: "View members" })).toHaveCount(0);
       },
     );
   } finally {

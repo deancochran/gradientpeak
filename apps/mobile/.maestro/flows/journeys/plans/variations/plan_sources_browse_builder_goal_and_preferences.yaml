@@ -1,0 +1,59 @@
+appId: ${MAESTRO_APP_ID}
+name: "plan sources journeys/activity-plans/shared_*, discover/activity_plan_detail_open, journeys/plans/*, journeys/training-plans/*, main/plan_screen,main/plan_projection_settings, smoke/plan_available, contracts/p0/plan_calendar_record_complete, contracts/p2/goal_edit_persists,training_preferences_persist — browse, builder, goal and settings"
+tags: [variation, plans, baseline-source-pair-a]
+---
+- runFlow:
+    file: ../../../reusable/authenticated_home.yaml
+    env: { STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}", STANDARD_USER_PASS: "${STANDARD_USER_PASS}" }
+- runFlow: ../../../reusable/open_plan_tab.yaml
+- assertVisible: { id: "plan-screen" }
+- assertVisible: { id: "training-path-section" }
+- scrollUntilVisible: { element: { id: "plan-activity-plan-card-${PLAN_ACTIVITY_PLAN_ID}" }, direction: DOWN }
+- tapOn: { id: "plan-activity-plan-card-${PLAN_ACTIVITY_PLAN_ID}" }
+- assertVisible: "${PLAN_ACTIVITY_PLAN_NAME}"
+- assertVisible: { id: "activity-plan-structure" }
+- assertVisible: { id: "activity-plan-targets" }
+- back
+- scrollUntilVisible: { element: { id: "plan-training-plan-card-${PLAN_TRAINING_PLAN_ID}" }, direction: DOWN }
+- tapOn: { id: "plan-training-plan-card-${PLAN_TRAINING_PLAN_ID}" }
+- assertVisible: "${PLAN_TRAINING_PLAN_NAME}"
+- assertVisible: { id: "training-plan-schedule" }
+- back
+- tapOn: { id: "plan-add-goal-button" }
+- assertVisible: "Goal"
+- back
+- openLink: "${MAESTRO_APP_SCHEME}://goal-detail?id=${EDIT_GOAL_ID}"
+- tapOn: { id: "goal-detail-options-trigger" }
+- tapOn: { id: "goal-detail-options-edit" }
+- assertVisible: { id: "goal-editor-title-input" }
+- back
+- assertVisible: { id: "goal-detail-screen" }
+- tapOn: { id: "plan-signals-settings-button" }
+- assertVisible: { id: "training-preferences-tab-schedule" }
+- tapOn: { id: "training-preferences-tab-availability" }
+- tapOn: { id: "preferences-hard-rest-day-monday" }
+- assertVisible: "Remove Monday hard rest day"
+- tapOn: { id: "training-preferences-save-button" }
+- back
+- runFlow: ../../../reusable/open_own_profile.yaml
+- tapOn: { id: "my-training-plans" }
+- assertVisible: { id: "training-plans-list-create-trigger" }
+- tapOn: { id: "training-plans-list-create-trigger" }
+- tapOn: { id: "builder-edit-plan" }
+- tapOn: { id: "builder-plan-name-input" }
+- inputText: "Maestro paired plan draft"
+- tapOn: { id: "training-plan-builder-sheet-save" }
+- assertVisible: { id: "builder-strategy-composer" }
+- tapOn: { id: "builder-add-workout" }
+- assertVisible: { id: "training-plan-builder-activity-picker-search-input" }
+- tapOn: { id: "training-plan-builder-sheet-close" }
+- assertVisible: { id: "training-plan-save-button" }
+- runFlow: ../../../reusable/open_discover_tab.yaml
+- tapOn: { id: "discover-scope-activityPlans" }
+- tapOn: { id: "discover-search-input" }
+- inputText: "${SHARED_ACTIVITY_PLAN_NAME}"
+- hideKeyboard
+- tapOn: "${SHARED_ACTIVITY_PLAN_NAME}"
+- tapOn: { id: "activity-plan-options-trigger" }
+- assertVisible: { id: "activity-plan-options-schedule" }
+- assertVisible: { id: "activity-plan-options-duplicate" }

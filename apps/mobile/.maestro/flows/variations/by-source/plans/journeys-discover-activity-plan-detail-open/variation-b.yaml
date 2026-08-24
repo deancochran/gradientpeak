@@ -1,0 +1,20 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — journeys/discover/activity_plan_detail_open.yaml — return to results and reopen exact plan"
+properties:
+  junitId: variation.mobile.journeys_discover_activity_plan_detail_open.b
+  junitClassname: variation.mobile.plans
+  sourceIdentity: journeys/discover/activity_plan_detail_open.yaml
+tags: [variation, plans, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: ../../../../reusable/open_discover_tab.yaml
+- tapOn: { id: "discover-scope-activityPlans" }
+- tapOn: { id: "discover-search-input" }
+- inputText: "${PLAN_ACTIVITY_PLAN_NAME}"
+- hideKeyboard
+- tapOn: "${PLAN_ACTIVITY_PLAN_NAME}"
+- assertVisible: { id: "activity-plan-content-preview" }
+- back
+- assertVisible: "${PLAN_ACTIVITY_PLAN_NAME}"
+- tapOn: "${PLAN_ACTIVITY_PLAN_NAME}"
+- assertVisible: { id: "activity-plan-estimates" }

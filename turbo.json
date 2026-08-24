@@ -53,10 +53,19 @@
       "outputs": []
     },
     "dev:e2e": {
-      "dependsOn": ["@repo/db#dev:setup"],
+      "dependsOn": ["@repo/db#db:e2e:start", "@repo/db#db:e2e:migrate"],
       "cache": false,
-      "passThroughEnv": ["EXPO_PORT", "PORT"],
+      "passThroughEnv": ["E2E_RUN_ID", "E2E_WEB_PORT", "EXPO_PORT", "MAESTRO_DEVICE_ID", "PORT"],
       "persistent": true
+    },
+    "db:e2e:start": {
+      "cache": false,
+      "outputs": []
+    },
+    "db:e2e:migrate": {
+      "dependsOn": ["db:e2e:start"],
+      "cache": false,
+      "outputs": []
     },
     "test": {
       "dependsOn": ["^build"],

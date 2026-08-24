@@ -1,0 +1,5 @@
+flows:
+  - flows/variations/by-source/**
+includeTags:
+  - intentional-red
+testOutputDir: artifacts/test-output/intentional-red

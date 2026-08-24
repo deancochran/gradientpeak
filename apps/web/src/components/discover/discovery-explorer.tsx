@@ -69,7 +69,11 @@ export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string
       sort_by: activitySort as "newest" | "oldest",
       limit: 20,
     },
-    { enabled: scope === "activityPlans", getNextPageParam: (page) => page.nextCursor },
+    {
+      enabled: scope === "activityPlans",
+      getNextPageParam: (page) => page.nextCursor,
+      retry: false,
+    },
   );
   const trainingPlans = api.trainingPlans.listTemplates.useInfiniteQuery(
     {
@@ -89,7 +93,11 @@ export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string
         | "sessions_asc",
       limit: 20,
     },
-    { enabled: scope === "trainingPlans", getNextPageParam: (page) => page.nextCursor },
+    {
+      enabled: scope === "trainingPlans",
+      getNextPageParam: (page) => page.nextCursor,
+      retry: false,
+    },
   );
   const routes = api.routes.list.useInfiniteQuery(
     {
@@ -100,7 +108,7 @@ export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string
       sort_by: routeSort as "newest" | "oldest" | "distance_desc" | "distance_asc",
       limit: 20,
     },
-    { enabled: scope === "routes", getNextPageParam: (page) => page.nextCursor },
+    { enabled: scope === "routes", getNextPageParam: (page) => page.nextCursor, retry: false },
   );
   const users = api.social.searchUsers.useInfiniteQuery(
     {
@@ -108,11 +116,15 @@ export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string
       sort_by: profileSort as "newest" | "oldest" | "username_asc" | "username_desc",
       limit: 20,
     },
-    { enabled: scope === "users", getNextPageParam: (page) => page.nextCursor },
+    { enabled: scope === "users", getNextPageParam: (page) => page.nextCursor, retry: false },
   );
   const groups = api.groups.listDiscoverable.useInfiniteQuery(
     { search: search || undefined, sort_by: profileSort as "newest" | "oldest", limit: 20 },
-    { enabled: scope === "groups", getNextPageParam: (page) => page.nextCursor ?? undefined },
+    {
+      enabled: scope === "groups",
+      getNextPageParam: (page) => page.nextCursor ?? undefined,
+      retry: false,
+    },
   );
 
   const activeQuery = { activityPlans, trainingPlans, routes, users, groups }[scope] as QueryState;
@@ -163,6 +175,7 @@ export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string
             type="button"
             role="tab"
             aria-selected={scope === option.id}
+            data-state={scope === option.id ? "active" : "inactive"}
             variant={scope === option.id ? "default" : "outline"}
             onClick={() => {
               setScope(option.id);

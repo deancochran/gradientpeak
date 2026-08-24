@@ -1,0 +1,6 @@
+appId: ${MAESTRO_APP_ID}
+# @purpose Open route upload by canonical app link.
+# @ready route-upload-screen
+---
+- openLink: "${MAESTRO_APP_SCHEME}://route-upload"
+- assertVisible: { id: "route-upload-screen" }

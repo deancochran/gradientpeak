@@ -1,0 +1,6 @@
+appId: ${MAESTRO_APP_ID}
+# @purpose Open the protected integrations screen by canonical app link.
+# @ready integrations-screen
+---
+- openLink: "${MAESTRO_APP_SCHEME}://integrations"
+- assertVisible: { id: "integrations-screen" }

@@ -1,24 +1,30 @@
-import type { Pool } from "pg";
+import type { E2EQuery } from "../support/database";
 
-export const TEST_CONVERSATION_ID = "a1000000-0000-4000-8000-000000000001";
-export const TEST_INCOMING_MESSAGE_ID = "a2000000-0000-4000-8000-000000000001";
-export const TEST_HISTORY_MESSAGE_ID = "a2000000-0000-4000-8000-000000000002";
-export const TEST_NOTIFICATION_IDS = {
-  message: "a3000000-0000-4000-8000-000000000001",
-  invitation: "a3000000-0000-4000-8000-000000000002",
-  follower: "a3000000-0000-4000-8000-000000000003",
-} as const;
+export type MessagingNotificationSeedIds = {
+  conversationId: string;
+  historyMessageId: string;
+  incomingMessageId: string;
+  notificationIds: {
+    follower: string;
+    invitation: string;
+    message: string;
+  };
+};
 
-export async function clearMessagingNotifications(pool: Pool) {
+export async function clearMessagingNotifications(
+  pool: E2EQuery,
+  ids: MessagingNotificationSeedIds,
+) {
   await pool.query('delete from "notifications" where "id" = any($1::uuid[])', [
-    Object.values(TEST_NOTIFICATION_IDS),
+    Object.values(ids.notificationIds),
   ]);
-  await pool.query('delete from "conversations" where "id" = $1', [TEST_CONVERSATION_ID]);
+  await pool.query('delete from "conversations" where "id" = $1', [ids.conversationId]);
 }
 
 export async function seedMessagingNotifications(
-  pool: Pool,
+  pool: E2EQuery,
   actors: { athleteEmail: string; coachEmail: string },
+  ids: MessagingNotificationSeedIds,
 ) {
   const actorResult = await pool.query<{ email: string; id: string }>(
     'select "id", "email" from "profiles" where "email" = any($1::text[])',
@@ -35,19 +41,19 @@ export async function seedMessagingNotifications(
 
   await pool.query("begin");
   try {
-    await clearMessagingNotifications(pool);
+    await clearMessagingNotifications(pool, ids);
 
     await pool.query(
       `insert into "conversations" ("id", "is_group", "created_at", "last_message_at")
        values ($1, false, '2026-07-20T08:00:00.000Z', '2026-07-20T08:10:00.000Z')`,
-      [TEST_CONVERSATION_ID],
+      [ids.conversationId],
     );
     await pool.query(
       `insert into "conversation_participants" ("conversation_id", "user_id", "created_at")
        values
          ($1, $2, '2026-07-20T08:00:00.000Z'),
          ($1, $3, '2026-07-20T08:00:00.000Z')`,
-      [TEST_CONVERSATION_ID, athleteId, coachId],
+      [ids.conversationId, athleteId, coachId],
     );
     await pool.query(
       `insert into "messages" (
@@ -55,7 +61,7 @@ export async function seedMessagingNotifications(
        ) values
          ($1, $3, $4, 'Earlier training note', '2026-07-20T08:05:00.000Z', '2026-07-20T08:06:00.000Z'),
          ($2, $3, $4, 'Seeded unread hello', '2026-07-20T08:10:00.000Z', null)`,
-      [TEST_HISTORY_MESSAGE_ID, TEST_INCOMING_MESSAGE_ID, TEST_CONVERSATION_ID, coachId],
+      [ids.historyMessageId, ids.incomingMessageId, ids.conversationId, coachId],
     );
     await pool.query(
       `insert into "notifications" (
@@ -65,12 +71,12 @@ export async function seedMessagingNotifications(
          ($2, $4, $5, 'coaching_invitation', null, null, '2026-07-20T08:50:00.000Z'),
          ($3, $4, $5, 'new_follower', null, '2026-07-20T08:45:00.000Z', '2026-07-20T08:40:00.000Z')`,
       [
-        TEST_NOTIFICATION_IDS.message,
-        TEST_NOTIFICATION_IDS.invitation,
-        TEST_NOTIFICATION_IDS.follower,
+        ids.notificationIds.message,
+        ids.notificationIds.invitation,
+        ids.notificationIds.follower,
         athleteId,
         coachId,
-        TEST_CONVERSATION_ID,
+        ids.conversationId,
       ],
     );
     await pool.query("commit");

@@ -1,0 +1,32 @@
+appId: ${MAESTRO_APP_ID}
+name: P0 onboarding open-group join persists
+properties:
+  junitId: p0.onboarding.join_open_group
+  junitClassname: contract.mobile.p0
+---
+- runFlow: ../../reusable/ensure_signed_out.yaml
+- tapOn:
+    id: "email-input"
+- inputText: "${ONBOARDING_OPEN_GROUP_USER_EMAIL}"
+- tapOn:
+    id: "password-input"
+- inputText: "${ONBOARDING_OPEN_GROUP_USER_PASS}"
+- hideKeyboard
+- tapOn:
+    id: "sign-in-button"
+- extendedWaitUntil:
+    visible:
+      id: "onboarding-screen"
+    timeout: 20000
+- assertVisible:
+    id: "groups-people-step"
+- tapOn:
+    id: "onboarding-group-${OPEN_GROUP_ID}"
+- tapOn:
+    id: "onboarding-finish-button"
+- extendedWaitUntil:
+    visible:
+      id: "home-screen"
+    timeout: 30000
+- openLink: "${MAESTRO_APP_SCHEME}://group-detail?groupId=${OPEN_GROUP_ID}"
+- assertVisible: "Member"

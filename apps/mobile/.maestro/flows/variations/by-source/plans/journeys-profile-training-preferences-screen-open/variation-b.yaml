@@ -1,0 +1,17 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — journeys/profile/training_preferences_screen_open.yaml — change rest-day draft and cancel"
+properties:
+  junitId: variation.mobile.journeys_profile_training_preferences_screen_open.b
+  junitClassname: variation.mobile.plans
+  sourceIdentity: journeys/profile/training_preferences_screen_open.yaml
+tags: [variation, plans, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: ../../../../reusable/domain/details/open_training_preferences.yaml
+- tapOn: { id: "training-preferences-tab-availability" }
+- tapOn: { id: "preferences-hard-rest-day-monday" }
+- assertVisible: "Remove Monday hard rest day"
+- assertVisible: { id: "training-preferences-save-button" }
+- back
+- runFlow: ../../../../reusable/open_plan_tab.yaml
+- assertVisible: { id: "plan-signals-settings-button" }

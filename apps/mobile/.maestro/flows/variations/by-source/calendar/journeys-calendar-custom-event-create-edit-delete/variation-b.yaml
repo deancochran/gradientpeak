@@ -1,0 +1,29 @@
+appId: ${MAESTRO_APP_ID}
+name: "Variation B — journeys/calendar/custom_event_create_edit_delete.yaml — create, rename, and delete event"
+properties:
+  junitId: variation.mobile.journeys_calendar_custom_event_create_edit_delete.b
+  junitClassname: variation.mobile.calendar
+  sourceIdentity: journeys/calendar/custom_event_create_edit_delete.yaml
+tags: [variation, calendar, by-source]
+---
+- runFlow: ../../../../reusable/authenticated_home.yaml
+- runFlow: ../../../../reusable/open_calendar_tab.yaml
+- tapOn: { id: "create-event-entry" }
+- tapOn: { id: "create-type-custom" }
+- tapOn: { id: "manual-create-title-input" }
+- inputText: "Custom event source variation B"
+- hideKeyboard
+- tapOn: { id: "manual-create-submit" }
+- tapOn: "Custom event source variation B"
+- tapOn: { id: "event-detail-options-trigger" }
+- tapOn: { id: "event-detail-options-edit" }
+- tapOn: { id: "event-detail-update-title-input" }
+- eraseText
+- inputText: "Renamed custom event variation B"
+- hideKeyboard
+- tapOn: { id: "event-detail-update-save-button" }
+- assertVisible: "Renamed custom event variation B"
+- tapOn: { id: "event-detail-options-trigger" }
+- tapOn: { id: "event-detail-options-delete" }
+- tapOn: "Delete"
+- assertNotVisible: "Renamed custom event variation B"

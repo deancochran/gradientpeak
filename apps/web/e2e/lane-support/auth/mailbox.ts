@@ -1,6 +1,8 @@
 import { createHmac } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import type { Page } from "@playwright/test";
+import { type Page, test } from "@playwright/test";
+import { AuthPage } from "../../pages/auth";
+import { createE2EExecutionIdentity } from "../../support/identity";
 
 import {
   cleanupRegisteredAuthActor,
@@ -50,7 +52,7 @@ export async function waitForAuthMail(input: {
 }
 
 export function uniqueAuthActor(prefix: string) {
-  const suffix = `${Date.now()}-${process.pid}`;
+  const suffix = createE2EExecutionIdentity(test.info()).suffix(`auth-actor-${prefix}`, 16);
   // biome-ignore lint/security/noSecrets: Public test-only credential for disposable local actors.
   const actor = { email: `${prefix}-${suffix}@example.test`, password: "TestPass123!" };
   registerAuthActor(actor.email);
@@ -60,19 +62,14 @@ export function uniqueAuthActor(prefix: string) {
 export async function signUp(page: Page, actor: { email: string; password: string }) {
   await cleanupRegisteredAuthActor(actor.email);
   const after = Date.now();
-  await page.goto("/auth/sign-up");
-  await page.getByLabel(/^email/i).fill(actor.email);
-  await page.getByLabel(/^password/i).fill(actor.password);
-  await page.getByLabel(/repeat password/i).fill(actor.password);
-  await page.getByRole("button", { name: /^sign up$/i }).click();
+  await new AuthPage(page).signUp(actor);
   return waitForAuthMail({ to: actor.email, kind: "verification", after });
 }
 
 export async function login(page: Page, actor: { email: string; password: string }) {
-  await page.goto("/auth/login");
-  await page.getByLabel(/^email/i).fill(actor.email);
-  await page.getByLabel(/^password/i).fill(actor.password);
-  await page.getByRole("button", { name: /^login$/i }).click();
+  const auth = new AuthPage(page);
+  await auth.openLogin();
+  await auth.signIn(actor);
 }
 
 export function expiredVerificationUrl(actionUrl: string) {

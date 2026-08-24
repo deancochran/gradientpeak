@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
-import { Pool } from "pg";
 import { expect, test } from "../fixtures";
+import { RoutesPage } from "../pages";
+import { withLocalE2EDatabase } from "../support/database";
 import { e2eArtifactIdentity } from "../utils/testData";
 
 const validGpx = `<?xml version="1.0"?>
@@ -12,37 +13,23 @@ const validGpx = `<?xml version="1.0"?>
   </trkseg></trk>
 </gpx>`;
 
-function localDatabaseUrl() {
-  const value =
-    process.env.DATABASE_URL ??
-    process.env.POSTGRES_URL ??
-    "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
-  const url = new URL(value);
-  if (!["127.0.0.1", "localhost"].includes(url.hostname)) {
-    throw new Error("Route E2E lifecycle fixtures only support the local database.");
-  }
-  return value;
-}
-
 async function setRouteStorageState(routeId: string, state: "deletion_pending" | "ready") {
-  const pool = new Pool({ connectionString: localDatabaseUrl(), max: 1 });
-  try {
-    const result = await pool.query(
+  return withLocalE2EDatabase(async (database) => {
+    const result = await database.query(
       `update public.activity_routes
        set storage_state = $2, updated_at = now()
        where id = $1::uuid`,
       [routeId, state],
     );
     return result.rowCount ?? 0;
-  } finally {
-    await pool.end();
-  }
+  });
 }
 
 async function deleteOwnedRouteIfPresent(page: Page, routeName: string) {
+  const routes = new RoutesPage(page);
   for (let attempt = 0; attempt < 10; attempt += 1) {
     try {
-      await page.goto(`/routes?search=${encodeURIComponent(routeName)}&ownerScope=own&page=1`);
+      await routes.openLibrary({ name: routeName, ownerScope: "own", page: 1 });
     } catch (error) {
       if (
         error instanceof Error &&
@@ -54,19 +41,12 @@ async function deleteOwnedRouteIfPresent(page: Page, routeName: string) {
       throw error;
     }
     await expect(page.getByRole("heading", { name: "Find a route" })).toBeVisible();
-    await expect(page.getByText("Loading routes...", { exact: true })).toHaveCount(0);
-
-    const matchingRoute = page
-      .locator('[data-testid^="route-card-"]')
-      .filter({ hasText: routeName })
-      .first();
+    const matchingRoute = routes.card(routeName);
     if ((await matchingRoute.count()) === 0) return;
 
-    await matchingRoute.locator('[data-testid$="-open"]').click();
+    await routes.openCard(routeName);
     await expect(page.getByRole("heading", { name: new RegExp(routeName) })).toBeVisible();
-    await page.getByRole("button", { name: "Delete", exact: true }).click();
-    await page.getByRole("button", { name: "Delete route", exact: true }).click();
-    await expect(page).toHaveURL(/\/routes(?:\?.*)?$/);
+    await routes.deleteFromDetail();
   }
 
   throw new Error(`Could not clean all ${routeName} route fixtures`);
@@ -86,7 +66,9 @@ test.describe("authenticated route journey", () => {
 
   test("athlete can retry an XML upload and use the persisted route journey", async ({
     athletePage,
+    e2eData,
   }, testInfo) => {
+    const routes = new RoutesPage(athletePage);
     const routeName = e2eArtifactIdentity(testInfo, "route");
     const updatedRouteName = `${routeName} Updated`;
     let createdRouteId: string | null = null;
@@ -119,6 +101,7 @@ test.describe("authenticated route journey", () => {
       await expect(athletePage).toHaveURL(/\/routes\/[0-9a-f-]+\/?$/);
       createdRouteId = athletePage.url().match(/\/routes\/([0-9a-f-]+)/)?.[1] ?? null;
       if (!createdRouteId) throw new Error("Uploaded route URL did not include a route ID");
+      e2eData.routes.register(createdRouteId);
       await expect(athletePage.getByRole("heading", { name: routeName })).toBeVisible();
       await expect(athletePage.getByText("Map preview", { exact: true })).toBeVisible();
       await expect(athletePage.getByText("Elevation profile", { exact: true })).toBeVisible();
@@ -148,9 +131,7 @@ test.describe("authenticated route journey", () => {
       await expect(athletePage.getByRole("button", { name: /like/i })).toHaveCount(0);
       expect(await setRouteStorageState(createdRouteId, "ready")).toBe(1);
 
-      await athletePage.goto(
-        `/routes?search=${encodeURIComponent(routeName)}&sort=distance_desc&page=1`,
-      );
+      await routes.openLibrary({ name: routeName, sort: "distance_desc", page: 1 });
       await expect(athletePage.getByRole("searchbox", { name: "Search routes" })).toHaveValue(
         routeName,
       );
@@ -162,7 +143,7 @@ test.describe("authenticated route journey", () => {
       await expect(routeCard.getByRole("heading", { name: updatedRouteName })).toBeVisible();
       await expect(athletePage.getByRole("button", { name: "Previous page" })).toBeDisabled();
 
-      await athletePage.getByTestId(`route-card-${createdRouteId}-open`).click();
+      await routes.openCard(updatedRouteName);
       await athletePage.getByTestId(`route-detail-delete-${createdRouteId}`).click();
       await athletePage.getByTestId(`route-detail-delete-${createdRouteId}-confirm`).click();
       await expect(athletePage).toHaveURL(/\/routes(?:\?.*)?$/);
@@ -170,7 +151,7 @@ test.describe("authenticated route journey", () => {
     } finally {
       if (!routeDeleted) {
         if (createdRouteId) await setRouteStorageState(createdRouteId, "ready");
-        await deleteOwnedRouteIfPresent(athletePage, routeName);
+        else await deleteOwnedRouteIfPresent(athletePage, routeName);
       }
     }
   });

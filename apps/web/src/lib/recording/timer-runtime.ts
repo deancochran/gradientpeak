@@ -33,7 +33,7 @@ export type TimerOnlyRecordingConfiguration = {
   activity_category: RecordingActivityCategory;
   eventId?: string;
   activityPlanId?: string;
-  /** Accepted solely to discard route identity carried by legacy launch state. */
+  /** Selected route retained as context for the saved activity. */
   routeId?: string;
   plan?: TimerOnlyRecordingPlanConfiguration;
 };
@@ -313,6 +313,7 @@ export function recoverTimerOnlyRecording(untrustedDraft: unknown): TimerOnlyRec
         activity_category: activity.activity_category,
         ...(activity.eventId ? { eventId: activity.eventId } : {}),
         ...(activity.activityPlanId ? { activityPlanId: activity.activityPlanId } : {}),
+        ...(activity.routeId ? { routeId: activity.routeId } : {}),
       },
       timer: {
         startedAtMs: Date.parse(draft.timing.startedAt),
@@ -349,7 +350,6 @@ function sanitizeTimerOnlyDraft(draft: PortableTimerRecordingDraft): PortableTim
       activity: {
         ...draft.sessionSnapshot.activity,
         gpsMode: "off",
-        routeId: null,
       },
       devices: {
         ...draft.sessionSnapshot.devices,
@@ -399,6 +399,7 @@ export function restoreFinishedTimerOnlyRecording(artifact: {
       activity_category: activity.activity_category,
       ...(activity.eventId ? { eventId: activity.eventId } : {}),
       ...(activity.activityPlanId ? { activityPlanId: activity.activityPlanId } : {}),
+      ...(activity.routeId ? { routeId: activity.routeId } : {}),
     },
     timer: {
       startedAtMs: Date.parse(artifact.startedAt),
@@ -463,8 +464,7 @@ function createTimerOnlySnapshot(
       gpsMode: "off",
       eventId: configuration.eventId ?? null,
       activityPlanId: configuration.activityPlanId ?? null,
-      // Web recordings never carry route identity, including when started from a legacy link.
-      routeId: null,
+      routeId: configuration.routeId ?? null,
     },
     profileSnapshot: {},
     performanceTargets: createUnavailableAthletePerformanceTargetFacts(startedAt),

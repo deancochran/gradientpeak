@@ -5,6 +5,7 @@ import {
   getDeviceIsolationMode,
   getPlaywrightCommand,
   hasNvidiaDevices,
+  normalizePlaywrightArgs,
   shouldIsolateGpu,
 } from "./run-playwright.mjs";
 
@@ -109,6 +110,16 @@ test("preserves Playwright arguments for isolated and ordinary commands", () => 
       ...playwrightArgs,
     ],
   });
+});
+
+test("removes pnpm's script argument separator before invoking Playwright", () => {
+  assert.deepEqual(
+    normalizePlaywrightArgs(["--", "e2e/specs/capability-p0-auth-recovery.spec.ts", "--workers=1"]),
+    ["e2e/specs/capability-p0-auth-recovery.spec.ts", "--workers=1"],
+  );
+  assert.deepEqual(normalizePlaywrightArgs(["e2e/specs/smoke.spec.ts"]), [
+    "e2e/specs/smoke.spec.ts",
+  ]);
 });
 
 test("recognizes NVIDIA device nodes and validates the isolation switch", () => {

@@ -1327,6 +1327,7 @@ export const activities = pgTable(
     activity_plan_id: uuid("activity_plan_id").references(() => activityPlans.id, {
       onDelete: "set null",
     }),
+    route_id: uuid("route_id").references(() => activityRoutes.id, { onDelete: "set null" }),
     name: text("name").notNull(),
     started_at: timestamp("started_at", { withTimezone: true, mode: "date" }).notNull(),
     finished_at: timestamp("finished_at", { withTimezone: true, mode: "date" }).notNull(),
@@ -1416,6 +1417,7 @@ export const activities = pgTable(
     index("idx_activities_activity_plan")
       .on(table.activity_plan_id)
       .where(sql`${table.activity_plan_id} is not null`),
+    index("idx_activities_route").on(table.route_id).where(sql`${table.route_id} is not null`),
     index("idx_activities_profile_started").on(table.profile_id, table.started_at),
     index("idx_activities_athlete_state_replay")
       .on(table.profile_id, table.finished_at, table.id)

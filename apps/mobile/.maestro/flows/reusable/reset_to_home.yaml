@@ -1,15 +1,4 @@
 appId: ${MAESTRO_APP_ID}
 ---
-- runFlow:
-    when:
-      visible:
-        id: "discover-screen"
-    commands:
-      - hideKeyboard
-      - back
-- tapOn:
-    id: "tab-button-home"
-- extendedWaitUntil:
-    visible:
-      id: "search-header-button"
-    timeout: 10000
+# Compatibility wrapper. This resets navigation only; it never clears data.
+- runFlow: ./reset_navigation_to_home.yaml

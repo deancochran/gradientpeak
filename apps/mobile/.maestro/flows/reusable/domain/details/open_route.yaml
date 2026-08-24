@@ -1,0 +1,7 @@
+appId: ${MAESTRO_APP_ID}
+# @purpose Open one route by canonical app link.
+# @arg ROUTE_ID uuid required
+# @ready route-detail-screen
+---
+- openLink: "${MAESTRO_APP_SCHEME}://route-detail?id=${ROUTE_ID}"
+- assertVisible: { id: "route-detail-screen" }
