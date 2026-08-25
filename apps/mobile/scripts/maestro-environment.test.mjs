@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   requireAdbReverses,
   resolveMaestroE2EEnvironment,
+  runWithRequiredMaestroPreparation,
 } from "./maestro-environment.mjs";
 
 test("defaults Maestro to the dedicated emulator and loopback E2E ports", () => {
@@ -45,4 +46,56 @@ test("fails closed when any required targeted ADB reverse cannot be established"
     /required ADB reverse for port 8082/,
   );
   assert.deepEqual(attempted, [3100, 8082]);
+});
+
+test("real Maestro execution rejects preparation bypasses", () => {
+  for (const bypass of ["MAESTRO_SKIP_ADB_REVERSE", "MAESTRO_SKIP_PREPARE"]) {
+    let executed = false;
+    assert.throws(
+      () =>
+        runWithRequiredMaestroPreparation({
+          environment: { [bypass]: "1" },
+          execute: () => {
+            executed = true;
+          },
+          ports: [3100, 8082, 55321],
+          reverse: () => true,
+        }),
+      new RegExp(`${bypass} cannot bypass real Maestro E2E preparation`),
+    );
+    assert.equal(executed, false);
+  }
+});
+
+test("real Maestro execution starts only after every required reverse succeeds", () => {
+  const attempted = [];
+  let executed = false;
+
+  assert.throws(
+    () =>
+      runWithRequiredMaestroPreparation({
+        environment: {},
+        execute: () => {
+          executed = true;
+        },
+        ports: [3100, 8082, 55321],
+        reverse: (port) => {
+          attempted.push(port);
+          return port !== 55321;
+        },
+      }),
+    /required ADB reverse for port 55321/,
+  );
+  assert.deepEqual(attempted, [3100, 8082, 55321]);
+  assert.equal(executed, false);
+
+  runWithRequiredMaestroPreparation({
+    environment: {},
+    execute: () => {
+      executed = true;
+    },
+    ports: [3100, 8082, 55321],
+    reverse: () => true,
+  });
+  assert.equal(executed, true);
 });

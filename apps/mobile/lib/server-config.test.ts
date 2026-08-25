@@ -60,6 +60,24 @@ describe("server-config", () => {
     });
   });
 
+  it("ignores a persisted server override in Maestro E2E mode", async () => {
+    process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
+    process.env.EXPO_PUBLIC_MAESTRO_E2E_API_URL = "http://127.0.0.1:3100";
+    process.env.EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL = "http://127.0.0.1:55321";
+    const { module, secureStore } = await loadServerConfigModule();
+    await secureStore.setItemAsync("server_url_override", "http://127.0.0.1:3000");
+
+    await module.initializeServerConfig();
+
+    expect(module.isServerUrlOverrideEnabled()).toBe(false);
+    expect(module.getServerConfig()).toMatchObject({
+      initialized: true,
+      apiUrl: "http://127.0.0.1:3100",
+      supabaseUrl: "http://127.0.0.1:55321",
+      overrideUrl: null,
+    });
+  });
+
   it("persists and applies a custom override URL", async () => {
     const { module } = await loadServerConfigModule();
 

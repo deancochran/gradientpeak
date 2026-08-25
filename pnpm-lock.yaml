@@ -282,6 +282,9 @@ importers:
       '@jest/globals':
         specifier: 29.7.0
         version: 29.7.0
+      '@posthog/cli':
+        specifier: ^0.15.0
+        version: 0.15.0
       '@repo/typescript-config':
         specifier: workspace:*
         version: link:../../tooling/typescript
@@ -3309,6 +3312,11 @@ packages:
 
   '@posthog/browser-common@0.5.0':
     resolution: {integrity: sha512-8DaxVZS1bQPbA514RePurLNbYjei3P4jhnC206DwVv5XThmZM3QdlsXenI2ujE3pLbgQ79hYn9o1Kda8I3WK/Q==}
+
+  '@posthog/cli@0.15.0':
+    resolution: {integrity: sha512-bMjjlvdWyl5aSzLi6s2mvPojw+xSgVl56H3BBy1tuDo1DbTTWg7QTBk7EBEW0VFvomaWpRqAvavJHHbDn4VqPw==}
+    engines: {node: '>=14.14', npm: '>=6'}
+    hasBin: true
 
   '@posthog/core@1.48.8':
     resolution: {integrity: sha512-LAOBOjMQrQmgcbZxnubl74l2GQd5OWqxCJJ8mzcWdZRWbfO6Y/A6E3fqWjDtm68hY4LxC/bbopG60cxZW8cfWw==}
@@ -13225,6 +13233,10 @@ snapshots:
     dependencies:
       '@posthog/core': 1.48.8
       '@posthog/types': 1.405.1
+
+  '@posthog/cli@0.15.0':
+    dependencies:
+      detect-libc: 2.1.2
 
   '@posthog/core@1.48.8':
     dependencies:

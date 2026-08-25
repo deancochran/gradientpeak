@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+import { resolveE2EWebEnvironment } from "../../scripts/start-e2e-web.mjs";
 import { isTrpcProcedure } from "../pages/network";
 import { registerTrainingPlanCleanup } from "../training-plans/cleanup";
 import { isolatedActorIdentity } from "./actors";
@@ -58,7 +59,11 @@ describe("local E2E database safety", () => {
 
   it("loads Playwright with the isolated web server and no stale-server reuse", async () => {
     const previousPort = process.env.PORT;
+    const previousDatabaseUrl = process.env.DATABASE_URL;
+    const previousPostgresUrl = process.env.POSTGRES_URL;
     delete process.env.PORT;
+    process.env.DATABASE_URL = "postgresql://tester:***@127.0.0.1:55322/e2e";
+    process.env.POSTGRES_URL = "postgresql://tester:***@127.0.0.1:55322/e2e";
     vi.resetModules();
     try {
       const { default: config } = await import("../../playwright.config");
@@ -71,6 +76,10 @@ describe("local E2E database safety", () => {
     } finally {
       if (previousPort === undefined) delete process.env.PORT;
       else process.env.PORT = previousPort;
+      if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDatabaseUrl;
+      if (previousPostgresUrl === undefined) delete process.env.POSTGRES_URL;
+      else process.env.POSTGRES_URL = previousPostgresUrl;
       vi.resetModules();
     }
   });
@@ -103,6 +112,34 @@ describe("local E2E database safety", () => {
       else process.env.E2E_WEB_PORT = previousPort;
       vi.resetModules();
     }
+  });
+
+  it("routes the direct dev:e2e launcher only to the isolated web, database, and Supabase ports", () => {
+    const packageJson = JSON.parse(
+      readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+    ) as { scripts: Record<string, string> };
+    expect(packageJson.scripts["dev:app:e2e"]).toBe("node scripts/start-e2e-web.mjs");
+
+    expect(resolveE2EWebEnvironment({})).toMatchObject({
+      APP_URL: "http://127.0.0.1:3100",
+      DATABASE_URL: expect.stringContaining("@127.0.0.1:55322/"),
+      NEXT_PRIVATE_SUPABASE_URL: "http://127.0.0.1:55321",
+      NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:55321",
+      PORT: "3100",
+      POSTGRES_URL: expect.stringContaining("@127.0.0.1:55322/"),
+    });
+
+    expect(() => resolveE2EWebEnvironment({ PORT: "3000" })).toThrow(/PORT=3100/);
+    expect(() =>
+      resolveE2EWebEnvironment({
+        DATABASE_URL: "postgresql://tester:***@127.0.0.1:54322/postgres",
+      }),
+    ).toThrow(/dedicated PostgreSQL port 55322/);
+    expect(() =>
+      resolveE2EWebEnvironment({
+        NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
+      }),
+    ).toThrow(/Supabase URL http:\/\/127\.0\.0\.1:55321/);
   });
 });
 

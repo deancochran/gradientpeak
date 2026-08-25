@@ -45,7 +45,6 @@ function validateLocalPostgresUrl(variable: keyof E2EDatabaseEnvironment, value:
       `Web E2E ${variable} is local-only; refused host ${url.hostname || "<empty>"}.`,
     );
   }
-  if (url.port === "54322") url.port = "55322";
   if (url.port !== "55322") {
     throw new Error(`Web E2E ${variable} requires the dedicated PostgreSQL port 55322.`);
   }

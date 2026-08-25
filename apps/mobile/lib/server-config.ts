@@ -38,7 +38,10 @@ const listeners = new Set<() => void>();
 let initializePromise: Promise<void> | null = null;
 
 export function isServerUrlOverrideEnabled() {
-  return appEnvironment !== "production" || process.env.EXPO_PUBLIC_ENABLE_SERVER_OVERRIDE === "1";
+  return (
+    !useLocalE2EHost &&
+    (appEnvironment !== "production" || process.env.EXPO_PUBLIC_ENABLE_SERVER_OVERRIDE === "1")
+  );
 }
 
 function emit() {

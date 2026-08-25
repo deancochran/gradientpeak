@@ -8,7 +8,7 @@
     "dev:tunnel": "concurrently --names app,wahoo-worker,cloudflared --kill-others-on-fail \"pnpm run dev:app:tunnel\" \"pnpm run dev:wahoo-drain:tunnel\" \"pnpm run dev:webhooks\"",
     "dev:e2e": "pnpm --dir ../.. db:e2e:start && pnpm --dir ../.. db:e2e:migrate && pnpm run dev:app:e2e",
     "dev:app": "pnpm exec dotenv -o -e .env.local -- sh -c 'VITE_CACHE_DIR=/tmp/gradientpeak-web-vite-manual NODE_OPTIONS=\"--import ./instrument.server.mjs\" vite dev --host 0.0.0.0 --port 3000 --strictPort'",
-    "dev:app:e2e": "pnpm exec dotenv -e .env.local -- sh -c 'PORT=3100 NODE_OPTIONS=\"--import ./instrument.server.mjs\" vite dev --host 127.0.0.1 --port 3100 --strictPort'",
+    "dev:app:e2e": "node scripts/start-e2e-web.mjs",
     "dev:app:tunnel": "pnpm exec dotenv -o -e .env.local -e .env.tunnel -- sh -c 'VITE_CACHE_DIR=/tmp/gradientpeak-web-vite-manual NODE_OPTIONS=\"--import ./instrument.server.mjs\" vite dev --host 0.0.0.0 --port 3000 --strictPort'",
     "dev:wahoo-drain": "pnpm exec dotenv -o -e .env.local -- node scripts/drain-wahoo-provider-sync.mjs",
     "dev:wahoo-drain:tunnel": "pnpm exec dotenv -o -e .env.local -e .env.tunnel -- node scripts/drain-wahoo-provider-sync.mjs",

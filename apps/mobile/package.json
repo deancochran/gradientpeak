@@ -115,6 +115,7 @@
   "devDependencies": {
     "@babel/core": "7.29.7",
     "@jest/globals": "29.7.0",
+    "@posthog/cli": "^0.15.0",
     "@repo/typescript-config": "workspace:*",
     "@storybook/addon-ondevice-actions": "^10.5.4",
     "@storybook/addon-ondevice-controls": "^10.5.4",

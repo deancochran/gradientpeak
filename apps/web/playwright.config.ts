@@ -8,6 +8,9 @@ for (const [key, value] of Object.entries(env)) {
 }
 
 const PORT = Number(process.env.E2E_WEB_PORT ?? 3100);
+if (PORT !== 3100) {
+  throw new Error("Playwright E2E requires E2E_WEB_PORT=3100.");
+}
 const baseURL = `http://127.0.0.1:${PORT}`;
 // This runs while Playwright loads its config, before it can start or reuse a web server.
 const databaseEnvironment = localE2EDatabaseEnvironment(process.env);

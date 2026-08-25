@@ -4,7 +4,11 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveMaestroE2EEnvironment } from "./maestro-environment.mjs";
+import {
+  requireAdbReverses,
+  resolveMaestroE2EEnvironment,
+  runWithRequiredMaestroPreparation,
+} from "./maestro-environment.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const appId = process.env.MAESTRO_APP_ID || "com.deancochran.gradientpeak.dev";
@@ -97,9 +101,9 @@ function prepareAndroid() {
     return;
   }
 
-  for (const port of forwardedPorts) {
-    adb(["reverse", `tcp:${port}`, `tcp:${port}`], { optional: true });
-  }
+  requireAdbReverses(forwardedPorts, (port) =>
+    adb(["reverse", `tcp:${port}`, `tcp:${port}`], { optional: true }),
+  );
 }
 
 function launchApp() {
@@ -281,8 +285,18 @@ switch (command) {
       break;
     }
     requireE2EReadiness();
-    prepare();
-    run(process.env.MAESTRO_BIN || "maestro", buildMaestroArgs(args));
+    runWithRequiredMaestroPreparation({
+      environment: process.env,
+      execute: () => {
+        launchApp();
+        run(process.env.MAESTRO_BIN || "maestro", buildMaestroArgs(args));
+      },
+      ports: forwardedPorts,
+      reverse: (port) =>
+        adb(["reverse", `tcp:${port}`, `tcp:${port}`], {
+          optional: true,
+        }),
+    });
     if (process.env.MAESTRO_JUNIT_OUTPUT) {
       process.stdout.write(readFileSync(resolve(root, process.env.MAESTRO_JUNIT_OUTPUT), "utf8"));
     }

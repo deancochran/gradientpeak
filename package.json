@@ -28,7 +28,7 @@
     "dev": "turbo run dev",
     "dev:clean": "pnpm exec kill-port 3000 3100 8081 8082 || true && pnpm run self-host:down >/dev/null 2>&1 || true && printf '[dev-clean] local web/mobile dev servers and Supabase stopped\n'",
     "dev:e2e": "turbo run dev:e2e --concurrency=4 --ui tui",
-    "dev:e2e:stop": "pnpm exec kill-port 3100 8082 || true && pnpm db:e2e:stop",
+    "dev:e2e:stop": "node tooling/e2e/stop-servers.mjs && pnpm db:e2e:stop",
     "dev:web": "pnpm --filter web dev",
     "dev:web:local": "pnpm --filter web dev:local",
     "dev:web:tunnel": "pnpm --filter web dev:tunnel",

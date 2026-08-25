@@ -1,6 +1,25 @@
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost"]);
 const MANUAL_PORTS = new Set([3000, 8081, 54321]);
 
+export function requireAdbReverses(ports, reverse) {
+  for (const port of ports) {
+    if (!reverse(port)) {
+      throw new Error(`Maestro E2E could not establish required ADB reverse for port ${port}.`);
+    }
+  }
+}
+
+export function runWithRequiredMaestroPreparation({ environment, execute, ports, reverse }) {
+  for (const bypass of ["MAESTRO_SKIP_ADB_REVERSE", "MAESTRO_SKIP_PREPARE"]) {
+    if (environment[bypass] === "1") {
+      throw new Error(`${bypass} cannot bypass real Maestro E2E preparation.`);
+    }
+  }
+
+  requireAdbReverses(ports, reverse);
+  execute();
+}
+
 export function resolveMaestroE2EEnvironment(environment = process.env) {
   const expoPort = parsePort(environment.EXPO_PORT ?? "8082", "EXPO_PORT");
   const webPort = parsePort(environment.PORT ?? "3100", "PORT");
