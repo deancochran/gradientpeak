@@ -4,9 +4,8 @@ import { AppHeader } from "../AppHeader";
 
 jest.mock("../HeaderButtons", () => ({
   __esModule: true,
-  MessagesHeaderButton: createHost("MessagesHeaderButton"),
-  NotificationsHeaderButton: createHost("NotificationsHeaderButton"),
-  SearchHeaderButton: createHost("SearchHeaderButton"),
+  InboxHeaderButton: createHost("InboxHeaderButton"),
+  MeHeaderButton: createHost("MeHeaderButton"),
 }));
 
 describe("AppHeader", () => {

@@ -29,7 +29,7 @@ jest.mock("@/components/activity-plan/activity/TimelineChart", () => ({
 }));
 
 describe("ActivityPlanComparison", () => {
-  it("uses canonical Common Load and normalized intensity", async () => {
+  it("uses canonical Common Load and objective intensity", async () => {
     const rendered = await renderNative(
       <ActivityPlanComparison
         activityPlan={{
@@ -38,20 +38,31 @@ describe("ActivityPlanComparison", () => {
           structure: createActivityPlanStructure(),
           metrics: [
             {
+              key: "elapsed_duration",
+              label: "Duration",
+              value: 300,
+              unit: "seconds",
+              status: "available",
+              reason: null,
+              provenance: "authored",
+            },
+            {
               key: "common_load",
               label: "Common Load",
               value: 64,
-              unit: "load",
+              unit: "score",
               status: "available",
               reason: null,
+              provenance: "estimated",
             },
             {
-              key: "normalized_intensity",
-              label: "Normalized intensity",
+              key: "objective_intensity",
+              label: "Intensity",
               value: 0.8,
               unit: "ratio",
               status: "available",
               reason: null,
+              provenance: "estimated",
             },
           ],
         }}
@@ -66,12 +77,54 @@ describe("ActivityPlanComparison", () => {
 
     expect(screen.getByText("Common Load")).toBeTruthy();
     expect(screen.getByText("64")).toBeTruthy();
+    expect(screen.getByText("Plan: 5m")).toBeTruthy();
     expect(screen.getByText("Plan: ~64")).toBeTruthy();
-    expect(screen.getByText("Normalized intensity")).toBeTruthy();
+    expect(screen.getByText("Actual normalized intensity")).toBeTruthy();
     expect(screen.getByText("0.80")).toBeTruthy();
-    expect(screen.getByText("Plan: ~0.80")).toBeTruthy();
+    expect(screen.getByText("Plan objective intensity: ~0.80")).toBeTruthy();
     expect(JSON.stringify(rendered.toJSON())).not.toMatch(/TSS|\bIF\b|intensityFactor/);
     expect(JSON.stringify(rendered.toJSON())).toContain("Plan comparison");
     expect(screen.queryByText(/adherence/)).toBeNull();
+  });
+
+  it("renders unavailable planned objective intensity as an em dash", async () => {
+    await renderNative(
+      <ActivityPlanComparison
+        activityPlan={{
+          id: "plan-1",
+          name: "Active Recovery Ride",
+          structure: createActivityPlanStructure(),
+          metrics: [
+            {
+              key: "common_load",
+              label: "Common Load",
+              value: null,
+              unit: "load",
+              status: "unavailable",
+              reason: "incomplete_members",
+              provenance: null,
+            },
+            {
+              key: "objective_intensity",
+              label: "Intensity",
+              value: null,
+              unit: "ratio",
+              status: "unavailable",
+              reason: "incomplete_objective_coverage",
+              provenance: null,
+            },
+          ],
+        }}
+        actualMetrics={{
+          duration: 2_700,
+          observationQuantification: createObservationQuantificationBundleFixture({
+            estimated: false,
+          }),
+        }}
+      />,
+    );
+
+    expect(screen.queryByText("Plan: ~12")).toBeNull();
+    expect(screen.getByText("Plan objective intensity: —")).toBeTruthy();
   });
 });

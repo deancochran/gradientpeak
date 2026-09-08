@@ -420,7 +420,7 @@ describe("trainingPathUtils", () => {
       },
       expectedSummary: {
         completedLoad: 50,
-        body: "Completed Common Load is partial for this week.",
+        body: "Completed Common Load is based on available activity evidence for this week.",
       },
     },
   ])("keeps weekly completed load truthful for $label", ({

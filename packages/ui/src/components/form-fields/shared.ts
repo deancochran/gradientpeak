@@ -28,6 +28,7 @@ type SharedTextFieldInputProps = {
   placeholder?: TextInputProps["placeholder"];
   readOnly?: boolean;
   secureTextEntry?: TextInputProps["secureTextEntry"];
+  selectTextOnFocus?: TextInputProps["selectTextOnFocus"];
   type?: React.InputHTMLAttributes<HTMLInputElement>["type"];
 };
 

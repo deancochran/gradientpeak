@@ -1,4 +1,5 @@
 import type { TestInfo } from "@playwright/test";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 
 import { currentE2EActor } from "../support/actors";
 import { LocalE2EDatabase } from "../support/database";
@@ -97,6 +98,7 @@ export async function withDayAgendaFixture(
         JSON.stringify({
           version: 1,
           timing: { timingCoverage: "complete", activeMs: 2_400_000, movingMs: 2_400_000 },
+          normalizedPowerResult: calculateCyclingNormalizedPower({ samples: [] }),
         }),
       ],
     );

@@ -61,6 +61,7 @@ export function CalendarEventForm({ event, month, view }: CalendarEventFormProps
   const [date, setDate] = useState(event.scheduled_date ?? "");
   const [time, setTime] = useState("09:00");
   const [allDay, setAllDay] = useState(Boolean(event.all_day));
+  const recurring = Boolean(event.series_id || event.recurrence_rule);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submittingRef = useRef(false);
@@ -114,7 +115,22 @@ export function CalendarEventForm({ event, month, view }: CalendarEventFormProps
       >
         <input {...contractEpochFormInputProps} />
         <input type="hidden" name="event_id" value={event.id} />
-        <input type="hidden" name="scope" value="single" />
+        {recurring ? (
+          <label className="grid gap-1 text-sm font-medium">
+            Apply changes to
+            <select
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              defaultValue="single"
+              name="scope"
+            >
+              <option value="single">This event</option>
+              <option value="future">This and future events</option>
+              <option value="series">Entire series</option>
+            </select>
+          </label>
+        ) : (
+          <input type="hidden" name="scope" value="single" />
+        )}
         <input
           type="hidden"
           name="redirectTo"

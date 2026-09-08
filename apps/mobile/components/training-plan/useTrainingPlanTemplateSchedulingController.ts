@@ -1,4 +1,4 @@
-import { addDaysDateKey } from "@repo/core";
+import { skipToken } from "@tanstack/react-query";
 import type { ImperativeRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Alert } from "react-native";
@@ -22,42 +22,32 @@ export function useTrainingPlanTemplateSchedulingController({
   planId,
   queryClient,
   router,
+  utils,
 }: UseTrainingPlanTemplateSchedulingControllerParams) {
   const [scheduleAnchorMode, setScheduleAnchorMode] = useState<ScheduleAnchorMode>("start");
   const [scheduleApplicationMode, setScheduleApplicationMode] =
     useState<ScheduleApplicationMode>("full");
   const [templateAnchorDate, setTemplateAnchorDate] = useState("");
   const [showApplyModal, setShowApplyModal] = useState(false);
-  const [showConcurrencyWarning, setShowConcurrencyWarning] = useState(false);
 
   const handleCloseScheduleFlow = useCallback(() => {
     setShowApplyModal(false);
-    setShowConcurrencyWarning(false);
   }, []);
 
-  const today = new Date().toISOString().slice(0, 10);
-  const { data: planTabProjection } = api.trainingPlans.getPlanTabProjection.useQuery(
-    { startDate: today, endDate: addDaysDateKey(today, 89) },
+  const { data: appliedSchedule } = api.trainingPlans.getAppliedSchedule.useQuery(
+    planId ? { training_plan_id: planId } : skipToken,
     scheduleAwareReadQueryOptions,
   );
-  const activePlan = planTabProjection?.currentScheduledPlan;
-
-  const handleOpenCurrentPlan = useCallback(() => {
-    handleCloseScheduleFlow();
-
-    if (typeof activePlan?.id === "string") {
-      router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(activePlan.id));
-      return;
-    }
-
-    router.navigate(ROUTES.PLAN.INDEX);
-  }, [activePlan?.id, handleCloseScheduleFlow, router]);
 
   const applyTemplateMutation = api.trainingPlans.applyTemplate.useMutation({
     onSuccess: (result) => {
       setShowApplyModal(false);
-      setShowConcurrencyWarning(false);
-      void refreshScheduleViews(queryClient, "trainingPlanSchedulingMutation");
+      void Promise.all([
+        refreshScheduleViews(queryClient, "trainingPlanSchedulingMutation"),
+        planId
+          ? utils.trainingPlans.getAppliedSchedule.invalidate({ training_plan_id: planId })
+          : Promise.resolve(),
+      ]);
       const successActions: Array<{ text: string; onPress: () => void }> = [];
 
       if (typeof result.applied_plan_id === "string") {
@@ -69,31 +59,11 @@ export function useTrainingPlanTemplateSchedulingController({
 
       Alert.alert(
         "Plan scheduled",
-        result.scheduled_sessions_replaced
-          ? `Replaced your scheduled sessions and created ${result.scheduled_sessions_created} session${result.scheduled_sessions_created === 1 ? "" : "s"}.`
-          : `Scheduled ${result.scheduled_sessions_created} session${result.scheduled_sessions_created === 1 ? "" : "s"}.`,
+        `Scheduled ${result.scheduled_sessions_created} session${result.scheduled_sessions_created === 1 ? "" : "s"}.`,
         successActions,
       );
     },
     onError: (error) => {
-      if (
-        error.message?.includes("active training plan") ||
-        error.message?.includes("Replace them first")
-      ) {
-        Alert.alert(
-          "Current plan already scheduled",
-          "You already have scheduled sessions from a training plan. Open it to review, or replace the scheduled sessions from the plan detail screen.",
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Open Current Plan",
-              onPress: handleOpenCurrentPlan,
-            },
-          ],
-        );
-        return;
-      }
-
       Alert.alert("Schedule failed", error.message || "Could not schedule this training plan");
     },
   });
@@ -103,7 +73,6 @@ export function useTrainingPlanTemplateSchedulingController({
       normalizedAnchorDate: string,
       anchorMode: ScheduleAnchorMode,
       applicationMode: ScheduleApplicationMode,
-      replaceExisting: boolean,
     ) => {
       if (!planId) {
         Alert.alert("Schedule failed", "This training plan is unavailable.");
@@ -119,7 +88,6 @@ export function useTrainingPlanTemplateSchedulingController({
             : undefined,
         target_date:
           anchorMode === "finish" && normalizedAnchorDate ? normalizedAnchorDate : undefined,
-        replace_existing: replaceExisting || undefined,
       });
     },
     [applyTemplateMutation, planId],
@@ -211,19 +179,8 @@ export function useTrainingPlanTemplateSchedulingController({
       return;
     }
 
-    if (activePlan) {
-      setShowApplyModal(false);
-      setShowConcurrencyWarning(true);
-    } else {
-      executeApplyTemplate(
-        normalizedAnchorDate,
-        scheduleAnchorMode,
-        scheduleApplicationMode,
-        false,
-      );
-    }
+    executeApplyTemplate(normalizedAnchorDate, scheduleAnchorMode, scheduleApplicationMode);
   }, [
-    activePlan,
     executeApplyTemplate,
     planId,
     scheduleAnchorContent.emptyDateMessage,
@@ -234,29 +191,19 @@ export function useTrainingPlanTemplateSchedulingController({
     templateAnchorDate,
   ]);
 
-  const handleReplaceScheduledPlan = useCallback(() => {
-    const normalizedAnchorDate = templateAnchorDate.trim();
-    setShowConcurrencyWarning(false);
-    executeApplyTemplate(normalizedAnchorDate, scheduleAnchorMode, scheduleApplicationMode, true);
-  }, [executeApplyTemplate, scheduleApplicationMode, scheduleAnchorMode, templateAnchorDate]);
-
   return {
-    activePlan,
+    appliedSchedule,
     applyTemplateMutation,
     handleApplyTemplate,
-    handleOpenActivePlan: handleOpenCurrentPlan,
     handleCloseScheduleFlow,
-    handleReplaceScheduledPlan,
     handleSelectScheduleApplicationMode,
     handleSelectScheduleAnchorMode,
     scheduleApplicationMode,
     scheduleAnchorContent,
     scheduleAnchorMode,
     setShowApplyModal,
-    setShowConcurrencyWarning,
     setTemplateAnchorDate,
     showApplyModal,
-    showConcurrencyWarning,
     templateAnchorDate,
   };
 }

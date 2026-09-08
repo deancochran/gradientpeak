@@ -138,6 +138,49 @@ describe("common Load recommendation v1", () => {
     });
   });
 
+  it("retains partial aggregate coverage without publishing its numeric Load estimate", () => {
+    const unavailable = {
+      status: "unavailable",
+      model: "gradientpeak_relative_load",
+      version: "1",
+      activity_category: "bike",
+      method: null,
+      quality: null,
+      thresholdEvidence: null,
+      evidenceFingerprint: null,
+      computedAsOf,
+      contributingDurationSeconds: 2_100,
+      reason: "threshold_missing",
+    } as const;
+    const result = build({
+      startDate: "2026-07-30",
+      items: [
+        {
+          scheduledItemId: firstItemId,
+          recommendationDate: "2026-07-30",
+          commonLoad: available(600),
+        },
+        {
+          scheduledItemId: secondItemId,
+          recommendationDate: "2026-07-30",
+          commonLoad: unavailable,
+        },
+      ],
+    });
+
+    expect(result.points[0]).toMatchObject({
+      state: "partial",
+      load: null,
+      intensity: null,
+      aggregate: {
+        status: "partial",
+        contributingDurationSeconds: 600,
+        knownDurationSeconds: 2_700,
+        knownDurationCoverage: 600 / 2_700,
+      },
+    });
+  });
+
   it.each([
     [{ sourceStatus: "partial" }, "source_incomplete"],
     [{ trainingPlanId: null, items: [] }, "no_active_training_plan"],

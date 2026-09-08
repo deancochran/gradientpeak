@@ -10,7 +10,7 @@ import type {
   TestInfo,
   WorkerInfo,
 } from "@playwright/test";
-import { seedOwnedActivityPlan } from "../seeds/activity-plans";
+import { seedOwnedActivityPlan, seedOwnedActivityRoute } from "../seeds/activity-plans";
 import { currentContractEpochHeaders } from "../utils/contractEpoch";
 import type { E2ECleanupRegistry } from "./cleanup";
 import type { LocalE2EDatabase } from "./database";
@@ -193,6 +193,7 @@ export class E2EActorPool {
       if (role === "athlete" || role === "profile") {
         activityPlanId = (await seedOwnedActivityPlan(this.database, userId, identity.digest))
           .activityPlanId;
+        await seedOwnedActivityRoute(this.database, userId, identity.digest);
       }
 
       const signIn = await request.post("/api/auth/sign-in/email", {
@@ -234,13 +235,33 @@ export class E2EActorPool {
         kind: "isolated-actor",
         id: userId,
         cleanup: async (database) => {
-          await database.query(
-            `delete from "organization_membership_role_grants"
-             where "membership_id" in (
-               select "id" from "organization_memberships" where "profile_id" = $1
-             )`,
+          const retainedMembership = await database.query(
+            'select 1 from "organization_memberships" where "profile_id" = $1 limit 1',
             [userId],
           );
+          if (retainedMembership.rowCount) return;
+          await database.transaction(async (query) => {
+            await query.query('delete from "activities" where "profile_id" = $1', [userId]);
+            await query.query(
+              `select set_config('gradientpeak.artifact_lifecycle_authorized', 'on', true)`,
+            );
+            await query.query(
+              `update "activity_artifacts"
+               set "availability" = 'deletion_pending', "deletion_requested_at" = now()
+               where "profile_id" = $1 and "availability" = 'accepted'`,
+              [userId],
+            );
+            await query.query(
+              `update "activity_artifacts"
+               set "availability" = 'deleted', "deleted_at" = now()
+               where "profile_id" = $1 and "availability" = 'deletion_pending'`,
+              [userId],
+            );
+            await query.query(
+              `select set_config('gradientpeak.artifact_hard_delete_authorized', 'on', true)`,
+            );
+            await query.query('delete from "activity_artifacts" where "profile_id" = $1', [userId]);
+          });
           await database.query('delete from "organization_memberships" where "profile_id" = $1', [
             userId,
           ]);
@@ -248,9 +269,6 @@ export class E2EActorPool {
             userId,
           ]);
           await database.query('delete from "groups" where "created_by_profile_id" = $1', [userId]);
-          await database.query('delete from "activity_artifacts" where "profile_id" = $1', [
-            userId,
-          ]);
           await database.query('delete from "users" where "id" = $1 and "email" = $2', [
             userId,
             identity.email,
@@ -333,7 +351,10 @@ export function createActorFactory(
 ): E2EActorFactory {
   let sequence = 0;
   const common = (label: string) => ({
-    contextOptions: input.contextOptions,
+    contextOptions: retainedSuccessContextOptions(
+      input.contextOptions,
+      input.testInfo.outputPath("video"),
+    ),
     identity: input.identity,
     label,
     outputDirectory: input.testInfo.outputPath(".auth"),
@@ -358,6 +379,18 @@ export function createActorFactory(
       sequence += 1;
       return pool.anonymous(common(options.label ?? `anonymous-${sequence}`));
     },
+  };
+}
+
+export function retainedSuccessContextOptions(
+  contextOptions: BrowserContextOptions,
+  videoDirectory: string,
+  enabled = process.env.E2E_SUCCESS_ARTIFACTS === "1",
+): BrowserContextOptions {
+  if (!enabled) return contextOptions;
+  return {
+    ...contextOptions,
+    recordVideo: contextOptions.recordVideo ?? { dir: videoDirectory },
   };
 }
 
@@ -474,7 +507,8 @@ function actorName(role: AuthenticatedE2EActorRole, suffix: string) {
 }
 
 function actorUsername(role: AuthenticatedE2EActorRole, suffix: string) {
-  return `playwright_${role}_${suffix}`;
+  const prefix = `playwright_${role}_`;
+  return `${prefix}${suffix.slice(0, 30 - prefix.length)}`;
 }
 
 function octet(digest: string, offset: number) {

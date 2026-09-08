@@ -9,4 +9,5 @@ export {
   CalendarLoadingScreen,
   CalendarReadyScreen,
 } from "./CalendarTabScaffold";
+export { CalendarTabView } from "./CalendarTabView";
 export { CalendarTimelineToolbar } from "./CalendarTimelineToolbar";

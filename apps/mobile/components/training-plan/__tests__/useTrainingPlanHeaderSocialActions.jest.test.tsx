@@ -2,12 +2,15 @@ import { act, renderHook } from "@testing-library/react-native";
 
 const alertMock = jest.fn();
 const toggleLikeMutateMock = jest.fn();
+const toggleLikeMutateAsyncMock = jest.fn();
 const duplicateMutateMock = jest.fn();
 const commitMutateAsyncMock = jest.fn();
+const shareMock = jest.fn();
 
 jest.mock("react-native", () => ({
   __esModule: true,
   Alert: { alert: alertMock },
+  Share: { share: shareMock },
 }));
 
 jest.mock("@repo/api/react", () => ({
@@ -28,7 +31,11 @@ jest.mock("@/lib/api", () => ({
     },
     social: {
       toggleLike: {
-        useMutation: () => ({ mutate: toggleLikeMutateMock, isPending: false }),
+        useMutation: () => ({
+          mutate: toggleLikeMutateMock,
+          mutateAsync: toggleLikeMutateAsyncMock,
+          isPending: false,
+        }),
       },
     },
   },
@@ -37,13 +44,18 @@ jest.mock("@/lib/api", () => ({
 import { useTrainingPlanHeaderSocialActions } from "../useTrainingPlanHeaderSocialActions";
 
 const emptyUtils = {} as Parameters<typeof useTrainingPlanHeaderSocialActions>[0]["utils"];
+const ReactNative = require("react-native") as typeof import("react-native");
+Object.defineProperty(ReactNative, "Share", { configurable: true, value: { share: shareMock } });
 
 describe("useTrainingPlanHeaderSocialActions", () => {
   beforeEach(() => {
     alertMock.mockReset();
+    (ReactNative.Alert.alert as jest.Mock).mockReset();
     toggleLikeMutateMock.mockReset();
+    toggleLikeMutateAsyncMock.mockReset().mockResolvedValue(undefined);
     duplicateMutateMock.mockReset();
     commitMutateAsyncMock.mockReset();
+    shareMock.mockReset();
   });
 
   it("blocks likes for invalid plan ids", async () => {
@@ -61,8 +73,8 @@ describe("useTrainingPlanHeaderSocialActions", () => {
       }),
     );
 
-    await act(() => {
-      result.current.handleToggleLike();
+    await act(async () => {
+      await result.current.handleToggleLike();
     });
 
     expect(require("react-native").Alert.alert as jest.Mock).toHaveBeenCalledWith(
@@ -88,15 +100,160 @@ describe("useTrainingPlanHeaderSocialActions", () => {
       }),
     );
 
-    await act(() => {
-      result.current.handleToggleLike();
+    await act(async () => {
+      await result.current.handleToggleLike();
     });
 
-    expect(toggleLikeMutateMock).toHaveBeenCalledWith({
+    expect(toggleLikeMutateAsyncMock).toHaveBeenCalledWith({
       entity_id: "11111111-1111-1111-1111-111111111111",
       entity_type: "training_plan",
     });
     expect(result.current.isLiked).toBe(true);
     expect(result.current.likesCount).toBe(1);
+  });
+
+  it("prevents overlapping like toggles while the mutation is pending", async () => {
+    let resolveMutation: (() => void) | undefined;
+    toggleLikeMutateAsyncMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveMutation = resolve;
+        }),
+    );
+    const { result } = await renderHook(() =>
+      useTrainingPlanHeaderSocialActions({
+        plan: {
+          id: "11111111-1111-1111-1111-111111111111",
+          structure_hash: `v1:sha256:${"1".repeat(64)}`,
+        },
+        router: { replace: jest.fn() },
+        utils: emptyUtils,
+      }),
+    );
+
+    await act(() => {
+      void result.current.handleToggleLike();
+      void result.current.handleToggleLike();
+    });
+    expect(toggleLikeMutateAsyncMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveMutation?.();
+    });
+  });
+
+  it("reports a share-sheet failure", async () => {
+    shareMock.mockRejectedValueOnce(new Error("unavailable"));
+    const { result } = await renderHook(() =>
+      useTrainingPlanHeaderSocialActions({
+        plan: {
+          id: "11111111-1111-1111-1111-111111111111",
+          structure_hash: `v1:sha256:${"1".repeat(64)}`,
+          content_visibility: "public",
+        },
+        router: { replace: jest.fn() },
+        utils: emptyUtils,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.handleShare();
+    });
+    expect(ReactNative.Alert.alert as jest.Mock).toHaveBeenCalledWith(
+      "Share failed",
+      "Could not open the share sheet. Please try again.",
+    );
+  });
+
+  it("uses the configured public web origin for training-plan shares", async () => {
+    process.env.EXPO_PUBLIC_API_URL = "https://api.gradientpeak.test";
+    process.env.EXPO_PUBLIC_WEB_URL = "https://share.gradientpeak.test";
+    shareMock.mockResolvedValueOnce(undefined);
+    const { result } = await renderHook(() =>
+      useTrainingPlanHeaderSocialActions({
+        plan: {
+          id: "11111111-1111-1111-1111-111111111111",
+          structure_hash: `v1:sha256:${"1".repeat(64)}`,
+          content_visibility: "public",
+        },
+        router: { replace: jest.fn() },
+        utils: emptyUtils,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.handleShare();
+    });
+
+    expect(shareMock).toHaveBeenCalledWith({
+      message:
+        "https://share.gradientpeak.test/share/training-plans/11111111-1111-1111-1111-111111111111",
+      url: "https://share.gradientpeak.test/share/training-plans/11111111-1111-1111-1111-111111111111",
+    });
+    delete process.env.EXPO_PUBLIC_API_URL;
+    delete process.env.EXPO_PUBLIC_WEB_URL;
+  });
+
+  it("blocks sharing and concurrent commits while a visibility update is pending", async () => {
+    let resolveProfile: ((value: { id: string; planning_timezone: string }) => void) | undefined;
+    const profileFetch = jest.fn(
+      () =>
+        new Promise<{ id: string; planning_timezone: string }>((resolve) => {
+          resolveProfile = resolve;
+        }),
+    );
+    const utils = {
+      athleteIntelligence: { getReadModel: { fetch: jest.fn() } },
+      profiles: { get: { fetch: profileFetch } },
+    } as unknown as Parameters<typeof useTrainingPlanHeaderSocialActions>[0]["utils"];
+    const { result } = await renderHook(() =>
+      useTrainingPlanHeaderSocialActions({
+        plan: {
+          id: "11111111-1111-1111-1111-111111111111",
+          structure: {},
+          structure_hash: `v1:sha256:${"1".repeat(64)}`,
+          content_visibility: "private",
+          editor: { revision: 1, structureHash: `v1:sha256:${"1".repeat(64)}` },
+        },
+        router: { replace: jest.fn() },
+        utils,
+      }),
+    );
+
+    await act(() => {
+      result.current.handleChangeVisibility();
+    });
+    const visibilityAlert = (ReactNative.Alert.alert as jest.Mock).mock.calls.find(
+      ([title]) => title === "Change visibility",
+    );
+    expect(visibilityAlert).toBeDefined();
+    const publicAction = (
+      visibilityAlert?.[2] as Array<{
+        text: string;
+        onPress?: () => void;
+      }>
+    ).find((action) => action.text === "Public");
+    expect(publicAction?.onPress).toBeDefined();
+
+    await act(() => {
+      publicAction?.onPress?.();
+      publicAction?.onPress?.();
+    });
+    expect(result.current.visibilityPending).toBe(true);
+    expect(profileFetch).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await result.current.handleShare();
+    });
+    expect(shareMock).not.toHaveBeenCalled();
+    expect(ReactNative.Alert.alert as jest.Mock).toHaveBeenLastCalledWith(
+      "Updating visibility",
+      "Wait for the visibility update to finish before sharing.",
+    );
+
+    await act(async () => {
+      resolveProfile?.({ id: "profile-1", planning_timezone: "UTC" });
+      await Promise.resolve();
+    });
   });
 });

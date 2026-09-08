@@ -134,9 +134,8 @@ jest.mock("react-native-maps", () => ({
   PROVIDER_DEFAULT: "default",
 }));
 
-jest.mock("@gorhom/bottom-sheet", () => ({
-  __esModule: true,
-  default: ({
+jest.mock("@gorhom/bottom-sheet", () => {
+  const renderSheet = ({
     children,
     footerComponent: FooterComponent,
     ...props
@@ -150,42 +149,49 @@ jest.mock("@gorhom/bottom-sheet", () => ({
       FooterComponent
         ? mockReact.createElement(FooterComponent, { animatedFooterPosition: 0 })
         : null,
-    ),
-  BottomSheetBackdrop: mockCreateLeafHost("BottomSheetBackdrop"),
-  BottomSheetFlatList: ({
-    data = [],
-    keyExtractor,
-    ListEmptyComponent,
-    ListFooterComponent,
-    ListHeaderComponent,
-    renderItem,
-    ...props
-  }: BottomSheetFlatListMockProps) =>
-    mockReact.createElement(
-      "BottomSheetFlatList",
-      props,
-      typeof ListHeaderComponent === "function"
-        ? mockReact.createElement(ListHeaderComponent)
-        : ListHeaderComponent,
-      data.length === 0
-        ? typeof ListEmptyComponent === "function"
-          ? mockReact.createElement(ListEmptyComponent)
-          : ListEmptyComponent
-        : data.map((item, index) =>
-            mockReact.createElement(
-              mockReact.Fragment,
-              { key: keyExtractor ? keyExtractor(item, index) : index },
-              renderItem({ item, index }),
+    );
+
+  return {
+    __esModule: true,
+    default: renderSheet,
+    BottomSheetModal: renderSheet,
+    BottomSheetModalProvider: ({ children }: { children?: mockReact.ReactNode }) => children,
+    BottomSheetBackdrop: mockCreateLeafHost("BottomSheetBackdrop"),
+    BottomSheetFlatList: ({
+      data = [],
+      keyExtractor,
+      ListEmptyComponent,
+      ListFooterComponent,
+      ListHeaderComponent,
+      renderItem,
+      ...props
+    }: BottomSheetFlatListMockProps) =>
+      mockReact.createElement(
+        "BottomSheetFlatList",
+        props,
+        typeof ListHeaderComponent === "function"
+          ? mockReact.createElement(ListHeaderComponent)
+          : ListHeaderComponent,
+        data.length === 0
+          ? typeof ListEmptyComponent === "function"
+            ? mockReact.createElement(ListEmptyComponent)
+            : ListEmptyComponent
+          : data.map((item, index) =>
+              mockReact.createElement(
+                mockReact.Fragment,
+                { key: keyExtractor ? keyExtractor(item, index) : index },
+                renderItem({ item, index }),
+              ),
             ),
-          ),
-      typeof ListFooterComponent === "function"
-        ? mockReact.createElement(ListFooterComponent)
-        : ListFooterComponent,
-    ),
-  BottomSheetFooter: mockCreateHost("BottomSheetFooter"),
-  BottomSheetScrollView: mockCreateHost("BottomSheetScrollView"),
-  BottomSheetView: mockCreateHost("BottomSheetView"),
-}));
+        typeof ListFooterComponent === "function"
+          ? mockReact.createElement(ListFooterComponent)
+          : ListFooterComponent,
+      ),
+    BottomSheetFooter: mockCreateHost("BottomSheetFooter"),
+    BottomSheetScrollView: mockCreateHost("BottomSheetScrollView"),
+    BottomSheetView: mockCreateHost("BottomSheetView"),
+  };
+});
 
 jest.mock("@better-auth/expo", () => ({
   __esModule: true,
@@ -331,7 +337,7 @@ jest.mock("victory-native", () => ({
   __esModule: true,
   Area: mockCreateLeafHost("Area"),
   Bar: mockCreateLeafHost("Bar"),
-  CartesianChart: ({ children, data = [] }: CartesianChartProps) => {
+  CartesianChart: ({ children, data = [], xKey, yAxis, yKeys }: CartesianChartProps) => {
     const pointSeries = (key: string) =>
       data.map((datum, index) => ({
         x: index,
@@ -341,7 +347,7 @@ jest.mock("victory-native", () => ({
 
     return mockReact.createElement(
       "CartesianChart",
-      { data },
+      { data, xKey, yAxis, yKeys },
       typeof children === "function"
         ? children({
             chartBounds: { bottom: 100, left: 0, right: 100, top: 0 },
@@ -349,8 +355,10 @@ jest.mock("victory-native", () => ({
               actual: data,
               actualFitness: pointSeries("actualFitness"),
               actualFatigue: pointSeries("actualFatigue"),
+              actualForm: pointSeries("actualForm"),
               completedLoad: pointSeries("completedLoad"),
               fitness: pointSeries("fitness"),
+              fatigue: pointSeries("fatigue"),
               form: pointSeries("form"),
               goal: data,
               planned: data,
@@ -358,6 +366,7 @@ jest.mock("victory-native", () => ({
               projection: data,
               projectedFitness: pointSeries("projectedFitness"),
               projectedFatigue: pointSeries("projectedFatigue"),
+              projectedForm: pointSeries("projectedForm"),
               recommendedFitness: pointSeries("recommendedFitness"),
               scheduledFitness: pointSeries("scheduledFitness"),
               targetFitness: pointSeries("targetFitness"),

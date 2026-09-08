@@ -1,17 +1,20 @@
 import {
   type ActivityPlanDetail,
+  type ActivityPlanMetric,
+  type ActivityPlanPlanningEstimate,
   type ActivityPlanSummary,
   activityPlanDetailSchema,
   activityPlanPrescriptionQuantificationBundleSchema,
+  activityPlanProjectionSchema,
   activityPlanStructureSchema,
   activityPlanSummarySchema,
-  createSemanticMetric,
+  createActivityPlanMetric,
+  createActivityPlanQuantificationIdentities,
   createUnavailableAthletePerformanceTargetFacts,
   estimateActivityPlanForTrainingContext,
   getPlannedEstimate,
   type PlannedEstimate,
   type ScheduledActivityPlanSummary,
-  type SemanticMetric,
   scheduledActivityPlanSummarySchema,
 } from "@repo/core";
 import { z } from "zod";
@@ -41,8 +44,13 @@ const planProjectionSourceSchema = z.looseObject({
     .nullable()
     .optional(),
   prescriptionQuantification: z.unknown().nullable().optional(),
+  planProjection: z.unknown().nullable().optional(),
 });
 type PlanProjectionSource = z.infer<typeof planProjectionSourceSchema>;
+type ResolvedProjectionEvidence = {
+  prescriptionQuantification: ActivityPlanPlanningEstimate["prescriptionQuantification"];
+  planProjection: NonNullable<ActivityPlanPlanningEstimate["planProjection"]>;
+};
 
 export function canDuplicateFullActivityPlan(
   plan: Pick<PlanProjectionSource, "profile_id" | "is_system_template">,
@@ -51,85 +59,105 @@ export function canDuplicateFullActivityPlan(
   return plan.profile_id === viewerId || plan.is_system_template;
 }
 
-function planMetrics(
-  plan: PlanProjectionSource,
-  structure: ReturnType<typeof activityPlanStructureSchema.parse>,
-  includePersonalizedQuantification: boolean,
-): SemanticMetric[] {
-  // Non-owner projections are recalculated from authored structure with an
-  // intentionally empty, synthetic athlete context. The incoming bundle is
-  // never inspected, so private thresholds and calibration evidence cannot
-  // influence or cross this boundary.
-  const quantification = activityPlanPrescriptionQuantificationBundleSchema.safeParse(
-    includePersonalizedQuantification ? plan.prescriptionQuantification : null,
-  );
-  const estimate = quantification.success
-    ? getPlannedEstimate(quantification.data)
-    : getPlannedEstimate(
-        estimateActivityPlanForTrainingContext({
-          asOf: new Date(plan.updated_at).toISOString(),
-          planId: plan.id,
-          performanceTargets: createUnavailableAthletePerformanceTargetFacts(
-            new Date(plan.updated_at).toISOString(),
-            `authored-plan-projection:${plan.id}`,
-          ),
-          stage: "plan",
-          structure,
-        }).prescriptionQuantification,
-      );
+function planPresentation(evidence: ResolvedProjectionEvidence): ActivityPlanMetric[] {
+  const estimate = getPlannedEstimate(evidence.prescriptionQuantification);
 
   const metric = (
-    key: SemanticMetric["key"],
+    key: ActivityPlanMetric["key"],
     label: string,
     unit: string,
     quantity:
       | PlannedEstimate["distanceMeters"]
       | PlannedEstimate["durationSeconds"]
       | PlannedEstimate["load"],
-    provenance: SemanticMetric["provenance"],
-  ): SemanticMetric =>
-    quantity.status === "unavailable" || quantity.value === null
-      ? createSemanticMetric({
+    provenance: ActivityPlanMetric["provenance"],
+  ): ActivityPlanMetric =>
+    quantity.status === "unavailable" || quantity.value === null || quantity.status === "partial"
+      ? createActivityPlanMetric({
           key,
           label,
           status: "unavailable",
           value: null,
           unit,
-          reason: quantity.reason,
+          reason: quantity.status === "partial" ? "incomplete_members" : quantity.reason,
           provenance: null,
         })
-      : createSemanticMetric({
+      : createActivityPlanMetric({
           key,
           label,
-          status: quantity.status === "partial" ? "partial" : "available",
+          status: "available",
           value: quantity.value,
           unit,
-          reason: quantity.status === "partial" ? quantity.reason : null,
+          reason: null,
           provenance,
         });
   const authoredProvenance = (
     quantity: PlannedEstimate["distanceMeters"] | PlannedEstimate["durationSeconds"],
-  ): SemanticMetric["provenance"] =>
+  ): ActivityPlanMetric["provenance"] =>
     quantity.status === "unavailable"
       ? null
       : quantity.status === "estimated"
         ? "estimated"
         : "authored";
-  const calculatedProvenance = (quantity: PlannedEstimate["load"]): SemanticMetric["provenance"] =>
-    quantity.status === "unavailable" || quantity.basis === null
-      ? null
-      : quantity.basis === "plan_intent"
-        ? "plan_intent"
-        : "personalized";
+  const calculatedProvenance = (
+    quantity: PlannedEstimate["load"],
+  ): ActivityPlanMetric["provenance"] =>
+    quantity.status === "unavailable" || quantity.basis === null ? null : "estimated";
+  const distanceProjection = evidence.planProjection.distance;
+  const distanceMetric =
+    distanceProjection.status === "unavailable" || distanceProjection.value === null
+      ? createActivityPlanMetric({
+          key: "distance",
+          label: "Distance",
+          status: "unavailable",
+          value: null,
+          unit: "meters",
+          reason: distanceProjection.reason,
+          provenance: null,
+        })
+      : distanceProjection.status === "partial"
+        ? createActivityPlanMetric({
+            key: "distance",
+            label: "Distance",
+            status: "unavailable",
+            value: null,
+            unit: "meters",
+            reason: distanceProjection.reason,
+            provenance: null,
+          })
+        : createActivityPlanMetric({
+            key: "distance",
+            label: "Distance",
+            status: "available",
+            value: distanceProjection.value,
+            unit: "meters",
+            reason: null,
+            provenance: distanceProjection.provenance === "authored" ? "authored" : "estimated",
+          });
+  const projectedIntensity = evidence.planProjection.objectiveIntensity;
+  const objectiveIntensity: ActivityPlanMetric =
+    projectedIntensity.status === "unavailable"
+      ? createActivityPlanMetric({
+          key: "objective_intensity",
+          label: "Intensity",
+          status: "unavailable",
+          value: null,
+          unit: "ratio",
+          reason: projectedIntensity.reason,
+          provenance: null,
+        })
+      : createActivityPlanMetric({
+          key: "objective_intensity",
+          label: "Intensity",
+          status: "available",
+          value: projectedIntensity.value,
+          unit: "ratio",
+          reason: null,
+          provenance: "estimated",
+        });
 
   return [
-    metric(
-      "distance",
-      "Distance",
-      "meters",
-      estimate.distanceMeters,
-      authoredProvenance(estimate.distanceMeters),
-    ),
+    distanceMetric,
     metric(
       "elapsed_duration",
       "Duration",
@@ -138,41 +166,90 @@ function planMetrics(
       authoredProvenance(estimate.durationSeconds),
     ),
     metric("common_load", "Load", "score", estimate.load, calculatedProvenance(estimate.load)),
-    metric(
-      "normalized_intensity",
-      "Intensity",
-      "ratio",
-      estimate.normalizedIntensity,
-      calculatedProvenance(estimate.normalizedIntensity),
-    ),
+    objectiveIntensity,
   ];
+}
+
+function authoredPlanning(
+  plan: PlanProjectionSource,
+  structure: ReturnType<typeof activityPlanStructureSchema.parse>,
+): ActivityPlanPlanningEstimate {
+  const asOf = new Date(plan.updated_at).toISOString();
+  return estimateActivityPlanForTrainingContext({
+    asOf,
+    planId: plan.id,
+    performanceTargets: createUnavailableAthletePerformanceTargetFacts(
+      asOf,
+      `authored-plan-projection:${plan.id}`,
+    ),
+    stage: "plan",
+    structure,
+  });
+}
+
+function resolveProjectionEvidence(
+  plan: PlanProjectionSource,
+  structure: ReturnType<typeof activityPlanStructureSchema.parse>,
+  allowPersonalized: boolean,
+): ResolvedProjectionEvidence {
+  const authored = authoredPlanning(plan, structure);
+  if (!authored.planProjection) {
+    throw new Error("Authored activity-plan estimation did not produce a plan projection");
+  }
+  const currentRevisionFingerprint = createActivityPlanQuantificationIdentities({
+    structure,
+    stage: "plan",
+    planId: plan.id,
+  }).evidenceIdentity.revisionFingerprint;
+  if (currentRevisionFingerprint === null) {
+    throw new Error("Current activity-plan revision did not produce a fingerprint");
+  }
+  const quantification = activityPlanPrescriptionQuantificationBundleSchema.safeParse(
+    allowPersonalized ? plan.prescriptionQuantification : null,
+  );
+  const projection = activityPlanProjectionSchema.safeParse(
+    allowPersonalized ? plan.planProjection : null,
+  );
+  const currentQuantification =
+    quantification.success &&
+    quantification.data.summary.subjectIdentity.subjectType === "plan" &&
+    quantification.data.summary.subjectIdentity.planId === plan.id &&
+    quantification.data.members.every(
+      (member) => member.evidenceIdentity.revisionFingerprint === currentRevisionFingerprint,
+    );
+  const currentProjection =
+    projection.success && projection.data.revisionFingerprint === currentRevisionFingerprint;
+  return {
+    prescriptionQuantification: currentQuantification
+      ? quantification.data
+      : authored.prescriptionQuantification,
+    planProjection: currentProjection ? projection.data : authored.planProjection,
+  };
 }
 
 export function createActivityPlanProjectionMetrics(input: {
   id: string;
   structure: unknown;
   updatedAt: Date | string;
-}): SemanticMetric[] {
+}): ActivityPlanMetric[] {
   const structure = activityPlanStructureSchema.parse(input.structure);
-  return planMetrics(
-    planProjectionSourceSchema.parse({
-      id: input.id,
-      profile_id: null,
-      name: "Authored plan projection",
-      description: null,
-      structure,
-      structure_hash: "public-projection",
-      revision: 1,
-      gps_recording_enabled: false,
-      content_visibility: "public",
-      is_system_template: false,
-      created_at: input.updatedAt,
-      updated_at: input.updatedAt,
-      prescriptionQuantification: null,
-    }),
+  const plan = planProjectionSourceSchema.parse({
+    id: input.id,
+    profile_id: null,
+    name: "Authored plan projection",
+    description: null,
     structure,
-    false,
-  );
+    structure_hash: "public-projection",
+    revision: 1,
+    gps_recording_enabled: false,
+    content_visibility: "public",
+    is_system_template: false,
+    created_at: input.updatedAt,
+    updated_at: input.updatedAt,
+    prescriptionQuantification: null,
+    planProjection: null,
+  });
+  return planPresentation(resolveProjectionEvidence(plan, structure, false));
 }
 
 function projectionOwner(plan: PlanProjectionSource) {
@@ -188,6 +265,9 @@ function projectionOwner(plan: PlanProjectionSource) {
 function summaryValue(plan: PlanProjectionSource, viewerId: string) {
   const structure = activityPlanStructureSchema.parse(plan.structure);
   const isOwner = plan.profile_id === viewerId;
+  const allowPersonalized =
+    isOwner && !plan.is_system_template && plan.content_visibility !== "public";
+  const evidence = resolveProjectionEvidence(plan, structure, allowPersonalized);
   return {
     contractVersion: "activity-plan-summary-v1" as const,
     id: plan.id,
@@ -200,12 +280,9 @@ function summaryValue(plan: PlanProjectionSource, viewerId: string) {
     activityCategory: structure.activity_category,
     activityPlanRevision: plan.revision,
     structure,
-    ...(isOwner
-      ? {
-          prescriptionQuantification: plan.prescriptionQuantification ?? null,
-        }
-      : {}),
-    metrics: planMetrics(plan, structure, isOwner),
+    planProjection: evidence.planProjection,
+    ...(isOwner ? { prescriptionQuantification: evidence.prescriptionQuantification } : {}),
+    metrics: planPresentation(evidence),
     visibility: plan.content_visibility,
     isSystemTemplate: plan.is_system_template,
     engagement: { likes: plan.likes_count ?? 0, viewerHasLiked: plan.has_liked ?? false },

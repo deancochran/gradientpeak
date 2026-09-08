@@ -1748,7 +1748,7 @@ describe("eventsRouter generalization", () => {
     expect(callLog).toEqual([]);
   });
 
-  it("update rejects future-scope mutations", async () => {
+  it("updates event details across the future scope", async () => {
     const { caller, callLog } = createCaller({
       events: [
         {
@@ -1788,11 +1788,11 @@ describe("eventsRouter generalization", () => {
         scope: "future",
         patch: { notes: "move this week" },
       } as any),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(callLog.some((call) => call.operation === "update")).toBe(false);
+    ).resolves.toMatchObject({ affected_count: 2, mutation_scope: "future" });
+    expect(callLog.some((call) => call.operation === "update")).toBe(true);
   });
 
-  it("rejects future-scope detail changes before preserving every occurrence", async () => {
+  it("updates future-scope details while preserving every occurrence date", async () => {
     const anchor = createEventRow({
       event_type: "custom",
       series_id: "series-1",
@@ -1817,8 +1817,8 @@ describe("eventsRouter generalization", () => {
         scope: "future",
         patch: { title: "Updated series" },
       } as any),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(callLog.some((call) => call.operation === "update")).toBe(false);
+    ).resolves.toMatchObject({ affected_count: 2, mutation_scope: "future" });
+    expect(callLog.some((call) => call.operation === "update")).toBe(true);
     expect([anchor, future].map((event) => event.scheduled_date)).toEqual([
       "2026-05-01",
       "2026-05-08",
@@ -1929,7 +1929,7 @@ describe("eventsRouter generalization", () => {
 
     await expect(
       caller.update({ id: anchor.id, scope, patch: { title: "No partial update" } } as any),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    ).rejects.toMatchObject({ code: "CONFLICT" });
 
     expect(callLog.some((call) => call.operation === "update")).toBe(false);
     expect(anchor.title).toBe("Planned Activity");

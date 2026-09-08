@@ -21,6 +21,10 @@ function score(value: number) {
   return Math.round(value).toString();
 }
 
+function freshnessLabel(value: string) {
+  return value === "fresh" ? "Current" : formatLabel(value);
+}
+
 export function GoalIntelligenceCard({
   assessment,
   isError = false,
@@ -83,6 +87,11 @@ export function GoalIntelligenceCard({
                 {formatLabel(readiness.status)} · readiness {score(readiness.readiness)}
               </Text>
             </View>
+            <Text className="text-xs text-muted-foreground" testID="goal-intelligence-freshness">
+              {freshnessLabel(assessment.freshness)} state ·{" "}
+              {Math.round(assessment.assessmentConfidence * 100)}% confidence · calculated{" "}
+              {new Date(assessment.computedAt).toLocaleString()}
+            </Text>
             <View className="gap-2">
               <Text className="text-xs font-medium text-foreground">Why this assessment</Text>
               {readiness.reasonCodes.map((reason) => (

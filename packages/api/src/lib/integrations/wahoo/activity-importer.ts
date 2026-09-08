@@ -23,6 +23,7 @@ import {
 } from "../../../application/activities/submit-activity";
 import { ActivityAnalysisValidationError } from "../../../application/activity-file-ingestion/analyze-parsed-activity-file";
 import { ImportedActivityAnalysisError } from "../../../application/activity-file-ingestion/submit-imported-activity-artifact";
+import { ActivitySourceInactiveError } from "../../../repositories/activity-source-reference-repository";
 import { logger } from "../../logger";
 import {
   buildImportedActivityCreateInput,
@@ -704,17 +705,28 @@ export class WahooActivityImporter {
           incomingProviderRevision,
         })
       ) {
-        await this.deps.repository.enrichImportedActivitySourceReference({
-          activityId: repairCandidate.activityId,
-          artifactSha256: activityFile.sha256,
-          externalId: summary.id.toString(),
-          ...(options.importRunId ? { importRunId: options.importRunId } : {}),
-          integrationGeneration: options.integrationGeneration,
-          integrationId: integration.integrationId,
-          profileId: integration.profileId,
-          provider: "wahoo",
-          providerUpdatedAt: incomingProviderRevision,
-        });
+        try {
+          await this.deps.repository.enrichImportedActivitySourceReference({
+            activityId: repairCandidate.activityId,
+            artifactSha256: activityFile.sha256,
+            externalId: summary.id.toString(),
+            ...(options.importRunId ? { importRunId: options.importRunId } : {}),
+            integrationGeneration: options.integrationGeneration,
+            integrationId: integration.integrationId,
+            profileId: integration.profileId,
+            provider: "wahoo",
+            providerUpdatedAt: incomingProviderRevision,
+          });
+        } catch (error) {
+          if (error instanceof ActivitySourceInactiveError) {
+            return {
+              success: true,
+              skipped: true,
+              reason: "Activity import was suppressed by its source status",
+            };
+          }
+          throw error;
+        }
         logger.info("Wahoo activity import skipped", {
           operation: "import_activity",
           outcome: "exact_redelivery",
@@ -812,6 +824,16 @@ export class WahooActivityImporter {
           }
         }
       } catch (insertError) {
+        if (insertError instanceof ActivitySourceInactiveError) {
+          return {
+            success: true,
+            skipped: true,
+            reason:
+              insertError.status === "review"
+                ? "Activity import is awaiting duplicate review"
+                : "Activity import was suppressed by its source status",
+          };
+        }
         if (
           insertError instanceof ImportedActivityAnalysisError &&
           (insertError.code === "activity_laps_invalid" ||
@@ -897,17 +919,28 @@ export class WahooActivityImporter {
             })
           ) {
             options.signal?.throwIfAborted();
-            await this.deps.repository.enrichImportedActivitySourceReference({
-              activityId: concurrentImport.activityId,
-              artifactSha256: activityFile.sha256,
-              externalId: summary.id.toString(),
-              ...(options.importRunId ? { importRunId: options.importRunId } : {}),
-              integrationGeneration: options.integrationGeneration,
-              integrationId: integration.integrationId,
-              profileId: integration.profileId,
-              provider: "wahoo",
-              providerUpdatedAt: incomingProviderRevision,
-            });
+            try {
+              await this.deps.repository.enrichImportedActivitySourceReference({
+                activityId: concurrentImport.activityId,
+                artifactSha256: activityFile.sha256,
+                externalId: summary.id.toString(),
+                ...(options.importRunId ? { importRunId: options.importRunId } : {}),
+                integrationGeneration: options.integrationGeneration,
+                integrationId: integration.integrationId,
+                profileId: integration.profileId,
+                provider: "wahoo",
+                providerUpdatedAt: incomingProviderRevision,
+              });
+            } catch (error) {
+              if (error instanceof ActivitySourceInactiveError) {
+                return {
+                  success: true,
+                  skipped: true,
+                  reason: "Activity import was suppressed by its source status",
+                };
+              }
+              throw error;
+            }
             return {
               success: true,
               skipped: true,

@@ -223,7 +223,7 @@ export async function derivePersistedPlanStimuli(input: {
   });
   const facts = estimated.map((plan) => {
     const load = plan.prescriptionQuantification.summary.commonLoad;
-    if (load.status === "unavailable" || load.load === null) return null;
+    if (load.status !== "complete") return null;
     return {
       activityPlanId: plan.id,
       activityCategory:

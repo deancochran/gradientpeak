@@ -130,6 +130,8 @@ export function formatActivityNativeIntensity(value: ActivityNativeIntensityValu
       return formatMagnitude(value.magnitude, " bpm");
     case "perceived_exertion":
       return `RPE ${formatMagnitude(value.magnitude, "/10")}`;
+    case "cadence":
+      return formatMagnitude(value.magnitude, " rpm");
     case "zone":
       return `${value.scale === "heart_rate" ? "Heart-rate" : `${value.scale.charAt(0).toUpperCase()}${value.scale.slice(1)}`} zone ${value.value}`;
   }
@@ -190,8 +192,7 @@ function appendStatusEvidence(
   labels: readonly string[],
   status: ActivityQuantificationPresentationStatus,
 ): string {
-  const statusLabel =
-    status === "partial" ? "Partial" : status === "unavailable" ? "Unavailable" : null;
+  const statusLabel = status === "unavailable" ? "Unavailable" : null;
   return uniqueLabels([...labels, statusLabel]).join(" · ");
 }
 
@@ -283,7 +284,7 @@ function getNativeIntensityPresentation(
         : "Native intensity is preserved independently of Common Load and normalized intensity.",
     label: nativeIntensityLabel(quantification),
     status,
-    value: values.length > 0 ? values.join(" · ") : "Unavailable",
+    value: values.length > 0 ? values.join(" · ") : "—",
     values,
   };
 }
@@ -297,7 +298,7 @@ function unavailablePresentation(): ActivityQuantificationPresentation {
       explanation,
       label: activityQuantificationLabels.nativeIntensity,
       status: "unavailable",
-      value: "Unavailable",
+      value: "—",
       values: [],
     },
     commonLoad: {
@@ -308,7 +309,7 @@ function unavailablePresentation(): ActivityQuantificationPresentation {
       method: null,
       status: "unavailable",
       unavailableReason: null,
-      value: "Unavailable",
+      value: "—",
     },
     normalizedIntensity: {
       diagnostic: null,
@@ -318,7 +319,7 @@ function unavailablePresentation(): ActivityQuantificationPresentation {
       method: null,
       status: "unavailable",
       unavailableReason: null,
-      value: "Unavailable",
+      value: "—",
     },
   };
 }
@@ -375,14 +376,15 @@ export function getActivityQuantificationPresentation(
       explanation:
         commonStatus === "unavailable"
           ? `Common Load is unavailable${methodPhrase}.`
-          : commonStatus === "partial"
-            ? `Common Load is partial${methodPhrase}; missing evidence is not treated as zero.`
-            : `Common Load is available${methodPhrase}.`,
+          : `Common Load is available${methodPhrase}.`,
       label: activityQuantificationLabels.commonLoad,
       method,
       status: commonStatus,
       unavailableReason,
-      value: commonValue === null ? "Unavailable" : formatCommonLoad(commonValue),
+      value:
+        commonValue === null
+          ? "—"
+          : `${commonStatus === "partial" ? "~" : ""}${formatCommonLoad(commonValue)}`,
     },
     normalizedIntensity: {
       diagnostic: null,
@@ -390,14 +392,15 @@ export function getActivityQuantificationPresentation(
       explanation:
         normalizedStatus === "unavailable"
           ? "Normalized intensity is unavailable because the canonical Common Load result is unavailable."
-          : normalizedStatus === "partial"
-            ? "Normalized intensity is partial and comes directly from the canonical Common Load result."
-            : "Normalized intensity comes directly from the canonical Common Load result.",
+          : "Normalized intensity comes directly from the canonical Common Load result.",
       label: activityQuantificationLabels.normalizedIntensity,
       method,
       status: normalizedStatus,
       unavailableReason,
-      value: normalizedValue === null ? "Unavailable" : normalizedValue.toFixed(2),
+      value:
+        normalizedValue === null
+          ? "—"
+          : `${normalizedStatus === "partial" ? "~" : ""}${normalizedValue.toFixed(2)}`,
     },
   };
 }

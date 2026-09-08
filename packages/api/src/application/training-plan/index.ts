@@ -5,6 +5,7 @@ export * from "./current-planning-week";
 export * from "./effective-plan-composition";
 export * from "./get-effective-plan-load";
 export * from "./mutationUseCases";
+export * from "./periodReviewService";
 export * from "./plan-alignment";
 export * from "./planTabProjectionService";
 export * from "./readinessForecastBaseline";

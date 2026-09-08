@@ -1,6 +1,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import { SearchField } from "@repo/ui/components/search-field";
+import { Tabs, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
@@ -48,38 +49,36 @@ function RequestsTabMenu({
   if (tabs.length <= 1) return null;
 
   return (
-    <View
-      accessibilityRole="tablist"
-      className="flex-row rounded-2xl border border-border bg-muted/40 p-1"
-    >
-      {tabs.map((tab) => {
-        const isActive = activeTab === tab.key;
-        return (
-          <Pressable
-            accessibilityRole="tab"
-            accessibilityState={{ selected: isActive }}
-            className={
-              isActive
-                ? "flex-1 rounded-xl bg-background px-3 py-2 shadow-sm"
-                : "flex-1 rounded-xl px-3 py-2"
-            }
-            key={tab.key}
-            onPress={() => onTabChange(tab.key)}
-            testID={`group-requests-tab-${tab.key}`}
-          >
-            <Text
+    <Tabs onValueChange={(tab) => onTabChange(tab as GroupRequestsTab)} value={activeTab}>
+      <TabsList className="flex-row rounded-2xl border border-border bg-muted/40 p-1">
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.key;
+          return (
+            <TabsTrigger
+              accessibilityState={{ selected: isActive }}
               className={
                 isActive
-                  ? "text-center text-sm font-semibold text-foreground"
-                  : "text-center text-sm font-semibold text-muted-foreground"
+                  ? "flex-1 rounded-xl bg-background px-3 py-2 shadow-sm"
+                  : "flex-1 rounded-xl px-3 py-2"
               }
+              key={tab.key}
+              testId={`group-requests-tab-${tab.key}`}
+              value={tab.key}
             >
-              {tab.label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
+              <Text
+                className={
+                  isActive
+                    ? "text-center text-sm font-semibold text-foreground"
+                    : "text-center text-sm font-semibold text-muted-foreground"
+                }
+              >
+                {tab.label}
+              </Text>
+            </TabsTrigger>
+          );
+        })}
+      </TabsList>
+    </Tabs>
   );
 }
 

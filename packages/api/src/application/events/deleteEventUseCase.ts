@@ -12,7 +12,7 @@ type ProtectedContext = Context & {
 };
 
 type DbEventType = "planned" | "race_target" | "custom";
-type EventMutationScope = "single" | "series";
+type EventMutationScope = "single" | "future" | "series";
 
 type EventRecord = {
   activity_plan_id: string | null;

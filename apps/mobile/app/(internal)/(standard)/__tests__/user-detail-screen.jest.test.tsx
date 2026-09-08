@@ -183,7 +183,7 @@ describe("user detail own vs other controls", () => {
 
     await renderNative(<UserDetailScreenWithErrorBoundary />);
 
-    expect(replaceMock).toHaveBeenCalledWith("/(internal)/(tabs)/profile");
+    expect(replaceMock).toHaveBeenCalledWith("/me");
     expect(screen.getByText("Opening profile settings...")).toBeTruthy();
     expect(screen.queryByTestId("user-detail-options-trigger")).toBeNull();
   });

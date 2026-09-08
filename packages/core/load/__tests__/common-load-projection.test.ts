@@ -86,6 +86,10 @@ describe("projectCommonLoadTrend", () => {
     expect(firstProjected?.recentLoad).toBeCloseTo(50 + recentAlpha * 50, 10);
     expect(result.points[2]?.longTermLoad).toBeLessThan(firstProjected?.longTermLoad ?? 0);
     expect(result.points[2]?.recentLoad).toBeLessThan(firstProjected?.recentLoad ?? 0);
+    expect(result.points[2]?.loadBalance).toBeCloseTo(
+      (result.points[2]?.longTermLoad ?? 0) - (result.points[2]?.recentLoad ?? 0),
+      10,
+    );
   });
 
   it("stops before an incomplete day instead of treating it as zero", () => {

@@ -55,7 +55,7 @@
     "dev:e2e": {
       "dependsOn": ["@repo/db#db:e2e:start", "@repo/db#db:e2e:migrate"],
       "cache": false,
-      "passThroughEnv": ["E2E_RUN_ID", "E2E_WEB_PORT", "EXPO_PORT", "MAESTRO_DEVICE_ID", "PORT"],
+      "passThroughEnv": ["E2E_RUN_ID", "E2E_WEB_PORT", "PORT"],
       "persistent": true
     },
     "db:e2e:start": {

@@ -43,46 +43,12 @@ jest.mock("@repo/ui/components/loading-skeletons", () => ({
   PlanCalendarSkeleton: createHost("PlanCalendarSkeleton"),
 }));
 jest.mock("@/components/shared", () => ({ __esModule: true, AppHeader: createHost("AppHeader") }));
-jest.mock("@rn-primitives/portal", () => ({
-  __esModule: true,
-  Portal: ({ children }: { children: unknown }) => children,
-}));
-jest.mock("@/components/shared/AppBottomSheet", () => {
-  const React = require("react");
-  return {
-    __esModule: true,
-    AppBottomSheet: ({ children, visible, ...props }: { children: unknown; visible: boolean }) =>
-      visible ? React.createElement("AppBottomSheet", props, children) : null,
-  };
-});
 jest.mock("@/components/ErrorBoundary", () => ({
   __esModule: true,
   ErrorBoundary: ({ children }: React.PropsWithChildren) => children,
   ScreenErrorFallback: createHost("ScreenErrorFallback"),
 }));
 jest.mock("@/lib/performance", () => ({ __esModule: true, usePerformanceScreenReady: jest.fn() }));
-jest.mock("@/components/calendar/CalendarTimelineRows", () => ({
-  __esModule: true,
-  CalendarScheduleObjectCard: ({
-    object,
-    onPress,
-  }: {
-    object: { id: string; title: string };
-    onPress: (item: unknown) => void;
-  }) =>
-    require("react").createElement(
-      "CalendarScheduleObjectCard",
-      { onPress: () => onPress(object), testID: `calendar-agenda-item-${object.id}` },
-      require("react").createElement("Text", null, object.title),
-    ),
-}));
-jest.mock("@/components/plan/ledger/PlanningLedgerView", () => ({
-  __esModule: true,
-  PlanningLedgerPerformanceInsights: () =>
-    createHost("PlanningLedgerPerformanceInsights")({
-      testID: "planning-ledger-performance-insights",
-    }),
-}));
 jest.mock("@react-native-community/datetimepicker", () => ({
   __esModule: true,
   DateTimePickerAndroid: { open: dateTimePickerAndroidOpenMock },
@@ -142,34 +108,14 @@ jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
     calendar: {
-      day: {
-        useQuery: (input: { date: string }) => ({
-          data: {
-            projection: { items: input.date === today ? queryResult().data.items : [] },
-          },
-          isError: false,
-          isLoading: false,
-          refetch: refetchMock,
-        }),
-      },
       page: {
         useQuery: (input: unknown, options: unknown) => calendarPageUseQueryMock(input, options),
-      },
-    },
-    trainingPlans: {
-      getPlanningLedger: {
-        useQuery: () => ({
-          data: { contractVersion: "planning-ledger-v3" },
-          isError: false,
-          isLoading: false,
-          refetch: refetchMock,
-        }),
       },
     },
   },
 }));
 
-const CalendarScreen = require("../calendar").default;
+const CalendarScreen = require("@/components/calendar/CalendarTabView").CalendarTabView;
 
 function queryResult(overrides: Record<string, unknown> = {}) {
   return {
@@ -226,21 +172,14 @@ describe("calendar fixed month page", () => {
     expect(screen.queryByText(/Fill is completed load/)).toBeNull();
   });
 
-  it("opens the selected-day agenda in place and lets users open an item", async () => {
+  it("opens the canonical day training breakdown from a calendar selection", async () => {
     await renderNative(<CalendarScreen />);
     await fireEvent.press(screen.getByTestId("calendar-day-select-2026-03-24"));
-    expect(screen.getByLabelText(/^Open agenda for 2026-03-24\./)).toBeTruthy();
-    expect(pushMock).not.toHaveBeenCalled();
-    await fireEvent.press(screen.getByTestId("calendar-day-select-2026-03-24"));
-    expect(screen.getByTestId("calendar-agenda-sheet")).toBeTruthy();
-    expect(screen.getByTestId("planning-ledger-performance-insights")).toBeTruthy();
-    expect(screen.getByText("Rest day")).toBeTruthy();
-    expect(pushMock).not.toHaveBeenCalled();
-
-    await fireEvent.press(screen.getByTestId("calendar-day-select-2026-03-23"));
-    await fireEvent.press(screen.getByTestId("calendar-day-select-2026-03-23"));
-    await fireEvent.press(screen.getByTestId("calendar-agenda-item-event-1"));
-    expect(pushMock).toHaveBeenCalledWith("/event/event-1");
+    expect(useCalendarStore.getState().activeDate).toBe("2026-03-24");
+    expect(pushMock).toHaveBeenCalledWith({
+      pathname: "/planning-ledger",
+      params: { anchorDate: "2026-03-24", period: "day" },
+    });
   });
 
   it("moves month pages while retaining the selected day-of-month and keeps ready content while loading", async () => {
@@ -275,7 +214,7 @@ describe("calendar fixed month page", () => {
     await fireEvent.press(screen.getByTestId("calendar-date-jump-confirm"));
 
     expect(useCalendarStore.getState().activeDate).toBe("2026-09-08");
-    expect(screen.getByLabelText(/^Open agenda for 2026-09-08\./)).toBeTruthy();
+    expect(screen.getByLabelText(/^Open training breakdown for 2026-09-08\./)).toBeTruthy();
   });
 
   it("retries a failed calendar page", async () => {

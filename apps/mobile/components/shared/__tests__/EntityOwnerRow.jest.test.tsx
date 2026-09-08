@@ -47,6 +47,13 @@ describe("EntityOwnerRow", () => {
     expect(queryByLabelText("Open profile for Static Coach")).toBeNull();
   });
 
+  it("uses a product attribution fallback rather than an unknown-user label", async () => {
+    const { getByText, queryByText } = await renderNative(<EntityOwnerRow />);
+
+    expect(getByText("GradientPeak athlete")).toBeTruthy();
+    expect(queryByText("Unknown User")).toBeNull();
+  });
+
   it("retains canonical profile navigation when no override callback is provided", async () => {
     const { getByLabelText } = await renderNative(
       <EntityOwnerRow owner={{ id: "owner-2", username: "Coach Lee" }} />,

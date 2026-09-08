@@ -2,8 +2,11 @@ import {
   addDaysDateKey,
   buildTrainingTimelineWindow,
   type CompletedTrainingItem,
+  canonicalActivityCategorySchema,
   compareTrainingLoad,
+  completedSegmentSummarySchema,
   dateOnlySchema,
+  PLAN_ANALYSIS_WINDOW_MAX_DAYS,
   type ScheduledTrainingItem,
   type TrainingLoadTimelineInputPoint,
   trainingTimelineWindowSchema,
@@ -16,10 +19,16 @@ import {
   type CommonLoadRecommendation,
   type CommonLoadTrendProjectionDay,
   projectCommonLoadTrend,
-  reconstructCommonLoadTrendHistory,
 } from "@repo/core/load";
-import { activities, activityPlans, events, profileGoals, trainingPlans } from "@repo/db";
-import { and, asc, eq, gte, inArray, isNotNull } from "drizzle-orm";
+import {
+  activities,
+  activityPlans,
+  activitySegments,
+  events,
+  profileGoals,
+  trainingPlans,
+} from "@repo/db";
+import { and, asc, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { type DrizzleQueryExecutor, withRepeatableReadSnapshot } from "../../db";
 import { createEventReadRepository } from "../../infrastructure/repositories";
@@ -29,9 +38,11 @@ import {
 } from "../athlete-intelligence/athlete-read-model";
 import { type EffectivePlanLoadDto, getEffectivePlanLoad } from "./get-effective-plan-load";
 
-const MAX_PLAN_TAB_RANGE_DAYS = 90;
-const MAX_PLANNING_RANGE_DAYS = 366;
-export const PLAN_TAB_PROJECTION_VERSION = "plan-tab-projection-v1" as const;
+const MAX_PLAN_TAB_RANGE_DAYS = PLAN_ANALYSIS_WINDOW_MAX_DAYS;
+const MAX_PLANNING_RANGE_DAYS = PLAN_ANALYSIS_WINDOW_MAX_DAYS;
+const MAX_CATEGORY_COMPOSITION_ACTIVITIES = 2_000;
+const MAX_CATEGORY_COMPOSITION_SEGMENT_ROWS = 8_000;
+export const PLAN_TAB_PROJECTION_VERSION = "plan-tab-projection-v2" as const;
 
 export const planTabProjectionInputSchema = z
   .object({
@@ -58,6 +69,20 @@ export const planTabProjectionInputSchema = z
   });
 
 const loadStatusSchema = z.enum(["complete", "partial", "known_zero", "unavailable"]);
+const compositionMetricSchema = z
+  .object({
+    status: loadStatusSchema,
+    value: z.number().finite().nonnegative().nullable(),
+  })
+  .strict();
+const ledgerItemCategoryDoseSchema = z
+  .object({
+    activityCategory: canonicalActivityCategorySchema,
+    durationSeconds: compositionMetricSchema,
+    distanceMeters: compositionMetricSchema,
+    elevationGainMeters: compositionMetricSchema,
+  })
+  .strict();
 const planTabLoadSummarySchema = z
   .object({
     status: loadStatusSchema,
@@ -66,8 +91,10 @@ const planTabLoadSummarySchema = z
     contributingDurationSeconds: z.number().finite().nonnegative().nullable(),
     completedLoadStatus: loadStatusSchema,
     completedLoad: z.number().finite().nonnegative().nullable(),
+    knownCompletedLoadSubtotal: z.number().finite().nonnegative().nullable().optional(),
     scheduledLoadStatus: loadStatusSchema,
     scheduledLoad: z.number().finite().nonnegative().nullable(),
+    knownScheduledLoadSubtotal: z.number().finite().nonnegative().nullable().optional(),
     remainingLoadStatus: loadStatusSchema,
     remainingLoad: z.number().finite().nonnegative().nullable(),
     hasUnavailableCompletedLoad: z.boolean(),
@@ -92,6 +119,7 @@ const goalMarkerSchema = z
   .object({
     id: z.string().uuid(),
     label: z.string().min(1),
+    priority: z.number().int().min(0).max(10),
     targetDate: dateOnlySchema,
     activityCategory: z.string().nullable(),
   })
@@ -104,12 +132,23 @@ const fitnessPointSchema = z
     loadBalance: z.number().finite(),
   })
   .strict();
+const fitnessHistorySchema = z
+  .object({
+    status: z.enum(["current", "historical", "unavailable"]),
+    verifiedThrough: dateOnlySchema.nullable(),
+    maturity: z.enum(["establishing_baseline", "mature"]).nullable(),
+  })
+  .strict();
 const currentScheduledPlanSchema = z
   .object({
     id: z.string().uuid(),
     name: z.string().min(1),
     scheduleBatchId: z.string().uuid().nullable(),
+    nextEventId: z.string().uuid(),
+    nextEventTitle: z.string().min(1),
+    nextEventDate: dateOnlySchema,
     nextEventAt: z.string().datetime({ offset: true }),
+    nextActivityPlanId: z.string().uuid().nullable(),
   })
   .strict();
 const recommendationPointSchema = z
@@ -125,6 +164,9 @@ const ledgerItemSchema = z
     date: dateOnlySchema,
     kind: z.enum(["completed", "planned"]),
     title: z.string().min(1),
+    activityCategory: z.string().nullable().optional(),
+    categoryDoses: z.array(ledgerItemCategoryDoseSchema).max(8).optional(),
+    categoryDoseStatus: z.enum(["complete", "unavailable"]).optional(),
     loadStatus: loadStatusSchema,
     load: z.number().finite().nonnegative().nullable(),
     intensityStatus: loadStatusSchema,
@@ -149,10 +191,12 @@ export const planTabProjectionSchema = z
         recommended: z.array(fitnessPointSchema),
       })
       .strict(),
+    fitnessHistory: fitnessHistorySchema.optional(),
     recommendationPoints: z.array(recommendationPointSchema),
     ledgerItems: z.array(ledgerItemSchema),
     sourceCoverage: sourceCoverageSchema,
     goalMarkers: z.array(goalMarkerSchema).max(100),
+    goalMarkersTruncated: z.boolean().optional(),
     publishedRevision: z.number().int().nonnegative().nullable(),
     algorithmVersion: z.string().min(1).nullable(),
   })
@@ -172,8 +216,92 @@ type CurrentScheduledPlan = z.infer<typeof currentScheduledPlanSchema>;
 type GoalMarker = z.infer<typeof goalMarkerSchema>;
 type ItemMetadata = {
   scheduled: Map<string, { title: string; activityCategory: string | null }>;
-  completed: Map<string, { title: string; activityCategory: string | null }>;
+  completed: Map<
+    string,
+    {
+      title: string;
+      activityCategory: string | null;
+      categoryDoses?: z.infer<typeof ledgerItemCategoryDoseSchema>[];
+      categoryDoseStatus?: "complete" | "unavailable";
+    }
+  >;
 };
+
+type CompositionMetric = z.infer<typeof compositionMetricSchema>;
+
+function unavailableCompositionMetric(): CompositionMetric {
+  return { status: "unavailable", value: null };
+}
+
+function aggregateCompositionMetrics(values: CompositionMetric[]): CompositionMetric {
+  const known = values.flatMap((entry) => (entry.value === null ? [] : [entry.value]));
+  if (known.length === 0) return unavailableCompositionMetric();
+  const value = known.reduce((total, entry) => total + entry, 0);
+  if (known.length !== values.length || values.some((entry) => entry.status === "partial")) {
+    return { status: "partial", value };
+  }
+  return { status: value === 0 ? "known_zero" : "complete", value };
+}
+
+function segmentCompositionMetric(
+  value: number | undefined,
+  status: "complete" | "partial" = "complete",
+): CompositionMetric {
+  if (value === undefined || !Number.isFinite(value) || value < 0) {
+    return unavailableCompositionMetric();
+  }
+  return { status: value === 0 ? "known_zero" : status, value };
+}
+
+export function completedCategoryDoses(
+  rows: Array<{
+    activityCategory: string | null;
+    segmentCategory: string | null;
+    summary: unknown;
+  }>,
+) {
+  const byCategory = new Map<
+    z.infer<typeof canonicalActivityCategorySchema>,
+    {
+      durationSeconds: CompositionMetric[];
+      distanceMeters: CompositionMetric[];
+      elevationGainMeters: CompositionMetric[];
+    }
+  >();
+  for (const row of rows) {
+    const categoryResult = canonicalActivityCategorySchema.safeParse(
+      row.segmentCategory ?? row.activityCategory,
+    );
+    if (!categoryResult.success) continue;
+    const summaryResult = completedSegmentSummarySchema.safeParse(row.summary);
+    const summary = summaryResult.success ? summaryResult.data : null;
+    const timing = summary?.timing;
+    const durationSeconds =
+      timing && "activeMs" in timing && timing.activeMs !== undefined
+        ? segmentCompositionMetric(
+            timing.activeMs / 1_000,
+            timing.timingCoverage === "partial" ? "partial" : "complete",
+          )
+        : unavailableCompositionMetric();
+    const group = byCategory.get(categoryResult.data) ?? {
+      durationSeconds: [],
+      distanceMeters: [],
+      elevationGainMeters: [],
+    };
+    group.durationSeconds.push(durationSeconds);
+    group.distanceMeters.push(segmentCompositionMetric(summary?.distanceMeters));
+    group.elevationGainMeters.push(segmentCompositionMetric(summary?.ascentMeters));
+    byCategory.set(categoryResult.data, group);
+  }
+  return [...byCategory.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([activityCategory, metrics]) => ({
+      activityCategory,
+      durationSeconds: aggregateCompositionMetrics(metrics.durationSeconds),
+      distanceMeters: aggregateCompositionMetrics(metrics.distanceMeters),
+      elevationGainMeters: aggregateCompositionMetrics(metrics.elevationGainMeters),
+    }));
+}
 
 export type PlanTabProjectionDependencies = {
   readModel: (input: {
@@ -235,10 +363,20 @@ const defaultDependencies: PlanTabProjectionDependencies = {
         id: trainingPlans.id,
         name: trainingPlans.name,
         scheduleBatchId: events.schedule_batch_id,
+        nextEventId: events.id,
+        nextEventTitle: events.title,
+        nextEventDate: events.scheduled_date,
         nextEventAt: events.starts_at,
+        nextActivityPlanId: events.activity_plan_id,
       })
       .from(events)
-      .innerJoin(trainingPlans, eq(trainingPlans.id, events.training_plan_id))
+      .innerJoin(
+        trainingPlans,
+        and(
+          eq(trainingPlans.id, events.training_plan_id),
+          eq(trainingPlans.profile_id, events.profile_id),
+        ),
+      )
       .where(
         and(
           eq(events.profile_id, profileId),
@@ -255,7 +393,11 @@ const defaultDependencies: PlanTabProjectionDependencies = {
           id: row.id,
           name: row.name,
           scheduleBatchId: row.scheduleBatchId,
+          nextEventId: row.nextEventId,
+          nextEventTitle: row.nextEventTitle,
+          nextEventDate: row.nextEventDate,
           nextEventAt: row.nextEventAt.toISOString(),
+          nextActivityPlanId: row.nextActivityPlanId,
         }
       : null;
   },
@@ -264,13 +406,14 @@ const defaultDependencies: PlanTabProjectionDependencies = {
       .select({
         id: profileGoals.id,
         label: profileGoals.title,
+        priority: profileGoals.priority,
         targetDate: profileGoals.target_date,
         activityCategory: profileGoals.activity_category,
       })
       .from(profileGoals)
       .where(eq(profileGoals.profile_id, profileId))
-      .orderBy(asc(profileGoals.target_date), asc(profileGoals.priority))
-      .limit(100);
+      .orderBy(desc(profileGoals.priority), asc(profileGoals.target_date), asc(profileGoals.id))
+      .limit(101);
     return rows.map((row) => ({ ...row, activityCategory: row.activityCategory ?? null }));
   },
   readItemMetadata: async ({ db, profileId, scheduledIds, completedIds }) => {
@@ -287,6 +430,7 @@ const defaultDependencies: PlanTabProjectionDependencies = {
             .from(events)
             .leftJoin(activityPlans, eq(activityPlans.id, events.activity_plan_id))
             .where(and(eq(events.profile_id, profileId), inArray(events.id, scheduledIds)));
+    const includeCategoryDoses = completedIds.length <= MAX_CATEGORY_COMPOSITION_ACTIVITIES;
     const completedRows =
       completedIds.length === 0
         ? []
@@ -298,6 +442,43 @@ const defaultDependencies: PlanTabProjectionDependencies = {
             })
             .from(activities)
             .where(and(eq(activities.profile_id, profileId), inArray(activities.id, completedIds)));
+    const segmentRows =
+      completedIds.length === 0 || !includeCategoryDoses
+        ? []
+        : await db
+            .select({
+              id: activities.id,
+              activityCategory: activities.athlete_state_activity_category,
+              segmentCategory: activitySegments.activity_category,
+              summary: activitySegments.summary,
+            })
+            .from(activitySegments)
+            .innerJoin(
+              activities,
+              and(
+                eq(activitySegments.activity_id, activities.id),
+                eq(activitySegments.profile_id, activities.profile_id),
+                eq(activitySegments.segment_revision, activities.segments_revision),
+              ),
+            )
+            .where(
+              and(
+                eq(activities.profile_id, profileId),
+                inArray(activities.id, completedIds),
+                eq(activitySegments.role, "activity"),
+              ),
+            )
+            .limit(MAX_CATEGORY_COMPOSITION_SEGMENT_ROWS + 1);
+    const segmentRowsOverflow = segmentRows.length > MAX_CATEGORY_COMPOSITION_SEGMENT_ROWS;
+    const acceptedSegmentRows = segmentRowsOverflow
+      ? []
+      : segmentRows.slice(0, MAX_CATEGORY_COMPOSITION_SEGMENT_ROWS);
+    const segmentRowsById = new Map<string, typeof acceptedSegmentRows>();
+    for (const row of acceptedSegmentRows) {
+      const rows = segmentRowsById.get(row.id) ?? [];
+      rows.push(row);
+      segmentRowsById.set(row.id, rows);
+    }
     return {
       scheduled: new Map(
         scheduledRows.map((row) => [
@@ -309,13 +490,21 @@ const defaultDependencies: PlanTabProjectionDependencies = {
         ]),
       ),
       completed: new Map(
-        completedRows.map((row) => [
-          row.id,
-          {
-            title: row.title.trim() || "Completed activity",
-            activityCategory: row.activityCategory ?? null,
-          },
-        ]),
+        completedRows.map((row) => {
+          const categoryDoses = completedCategoryDoses(segmentRowsById.get(row.id) ?? []);
+          return [
+            row.id,
+            {
+              title: row.title.trim() || "Completed activity",
+              activityCategory: row.activityCategory ?? null,
+              categoryDoses,
+              categoryDoseStatus:
+                includeCategoryDoses && !segmentRowsOverflow && categoryDoses.length > 0
+                  ? ("complete" as const)
+                  : ("unavailable" as const),
+            },
+          ];
+        }),
       ),
     };
   },
@@ -335,7 +524,17 @@ function envelopeIntensity(envelope: EffectiveItem["commonLoad"]): number | null
   return envelope.status === "unavailable" ? null : envelope.intensity;
 }
 
-function aggregateValue(items: EffectiveItem[], preservePartial: boolean) {
+function knownIncompleteLoadSubtotal(items: EffectiveItem[]): number | null {
+  if (items.length === 0) return null;
+  const values = items.flatMap((item) => {
+    if (item.commonLoad.status === "unavailable") return [];
+    const load = item.commonLoad.load;
+    return load === null ? [] : [load];
+  });
+  return values.length === 0 ? null : values.reduce((total, load) => total + load, 0);
+}
+
+function aggregateValue(items: EffectiveItem[]) {
   if (items.length === 0) {
     return {
       status: "known_zero" as const,
@@ -352,15 +551,42 @@ function aggregateValue(items: EffectiveItem[], preservePartial: boolean) {
         intensity: null,
         contributingDurationSeconds: null,
       }
-    : {
-        status:
-          preservePartial && aggregate.status === "partial"
-            ? ("partial" as const)
-            : ("complete" as const),
-        load: aggregate.load,
-        intensity: aggregate.intensity,
-        contributingDurationSeconds: aggregate.contributingDurationSeconds,
-      };
+    : aggregate.status === "partial"
+      ? {
+          status: "partial" as const,
+          load: aggregate.load,
+          intensity: aggregate.intensity,
+          contributingDurationSeconds: aggregate.contributingDurationSeconds,
+        }
+      : {
+          status: "complete" as const,
+          load: aggregate.load,
+          intensity: aggregate.intensity,
+          contributingDurationSeconds: aggregate.contributingDurationSeconds,
+        };
+}
+
+function applySourceCoverage(
+  aggregate: ReturnType<typeof aggregateValue>,
+  source: "complete" | "partial" | undefined,
+) {
+  if (source === "complete" || aggregate.status === "unavailable") return aggregate;
+  if (source === "partial") {
+    return aggregate.status === "known_zero"
+      ? {
+          status: "unavailable" as const,
+          load: null,
+          intensity: null,
+          contributingDurationSeconds: null,
+        }
+      : { ...aggregate, status: "partial" as const };
+  }
+  return {
+    status: "unavailable" as const,
+    load: null,
+    intensity: null,
+    contributingDurationSeconds: null,
+  };
 }
 
 function recommendationForDate(
@@ -372,7 +598,12 @@ function recommendationForDate(
   }
   const point = recommendation.points.find((candidate) => candidate.date === date);
   if (!point || point.state === "unavailable") return { status: "unavailable", load: null };
-  if (point.state === "partial") return { status: "partial", load: point.load };
+  if (point.state === "partial") {
+    return {
+      status: "partial",
+      load: point.aggregate.status === "unavailable" ? null : point.aggregate.load,
+    };
+  }
   if (point.state === "known_zero") return { status: "known_zero", load: 0 };
   return { status: point.state, load: point.load };
 }
@@ -387,8 +618,10 @@ function unavailableLoadSummary(
     contributingDurationSeconds: null,
     completedLoadStatus: "unavailable",
     completedLoad: null,
+    knownCompletedLoadSubtotal: null,
     scheduledLoadStatus: "unavailable",
     scheduledLoad: null,
+    knownScheduledLoadSubtotal: null,
     remainingLoadStatus: "unavailable",
     remainingLoad: null,
     hasUnavailableCompletedLoad: false,
@@ -420,26 +653,30 @@ function summarizeDate(response: EffectivePlanLoadDto, date: string) {
   ) {
     return unavailableLoadSummary(recommendation);
   }
-  const completedAggregate = aggregateValue(
-    items.filter((item) => item.kind === "completed"),
-    true,
+  const completedItems = items.filter((item) => item.kind === "completed");
+  const completedAggregate = aggregateValue(completedItems);
+  const completed = applySourceCoverage(
+    completedAggregate,
+    response.sourceCoverage.activities?.status,
   );
-  const completed =
-    response.sourceCoverage.activities?.status === "complete"
-      ? completedAggregate
-      : completedAggregate.status === "complete" || completedAggregate.status === "partial"
-        ? { ...completedAggregate, status: "partial" as const }
-        : {
-            status: "unavailable" as const,
-            load: null,
-            intensity: null,
-            contributingDurationSeconds: null,
-          };
   const scheduledItems = items.filter((item) => item.kind === "scheduled");
-  const scheduled = aggregateValue(scheduledItems, true);
+  const scheduledAggregate = aggregateValue(scheduledItems);
+  const scheduled = applySourceCoverage(
+    scheduledAggregate,
+    response.sourceCoverage.scheduledItems?.status,
+  );
   const scheduledLoadStatus = scheduled.status;
   const scheduledLoad = scheduled.load;
-  const effective = aggregateValue(items, scheduledItems.length > 0);
+  const effectiveAggregate = aggregateValue(items);
+  const effectiveSource =
+    response.sourceCoverage.activities?.status === undefined ||
+    response.sourceCoverage.scheduledItems?.status === undefined
+      ? undefined
+      : response.sourceCoverage.activities.status === "partial" ||
+          response.sourceCoverage.scheduledItems.status === "partial"
+        ? ("partial" as const)
+        : ("complete" as const);
+  const effective = applySourceCoverage(effectiveAggregate, effectiveSource);
   const loadComparison = compareTrainingLoad({
     scheduledLoad,
     scheduledLoadStatus,
@@ -453,12 +690,17 @@ function summarizeDate(response: EffectivePlanLoadDto, date: string) {
     contributingDurationSeconds: effective.contributingDurationSeconds,
     completedLoadStatus: completed.status,
     completedLoad: completed.load,
+    knownCompletedLoadSubtotal:
+      completed.status === "partial" ? knownIncompleteLoadSubtotal(completedItems) : null,
     scheduledLoadStatus,
     scheduledLoad,
+    knownScheduledLoadSubtotal:
+      scheduled.status === "partial" ? knownIncompleteLoadSubtotal(scheduledItems) : null,
     remainingLoadStatus: loadComparison.remainingLoadStatus,
     remainingLoad: loadComparison.remainingLoad,
     hasUnavailableCompletedLoad:
-      items.some((item) => item.kind === "completed") && completed.status === "unavailable",
+      items.some((item) => item.kind === "completed") &&
+      (completed.status === "partial" || completed.status === "unavailable"),
     recommendedLoadStatus: recommendation.status,
     recommendedLoad: recommendation.load,
   });
@@ -478,15 +720,25 @@ function toProjectionDay(summary: z.infer<typeof planTabLoadSummarySchema>, date
   if (summary.remainingLoadStatus === "complete" && summary.remainingLoad !== null) {
     return { date, state: "available" as const, load: summary.remainingLoad };
   }
+  if (summary.remainingLoadStatus === "partial" && summary.remainingLoad !== null) {
+    return { date, state: "available" as const, load: summary.remainingLoad };
+  }
   if (summary.remainingLoadStatus === "known_zero") {
     return { date, state: "known_zero" as const };
   }
-  return {
-    date,
-    state: "unavailable" as const,
-    reason:
-      summary.remainingLoadStatus === "partial" ? ("partial" as const) : ("unavailable" as const),
-  };
+  if (
+    summary.knownScheduledLoadSubtotal !== null &&
+    summary.knownScheduledLoadSubtotal !== undefined
+  ) {
+    return { date, state: "available" as const, load: summary.knownScheduledLoadSubtotal };
+  }
+  // A missing planned Load is a zero-Load trajectory assumption, not a reason
+  // to remove every later Fitness/Fatigue/Form point from the chart.
+  return { date, state: "known_zero" as const };
+}
+
+function assumedCompletedLoad(summary: z.infer<typeof planTabLoadSummarySchema> | undefined) {
+  return summary?.completedLoad ?? summary?.knownCompletedLoadSubtotal ?? 0;
 }
 
 function recommendationProjectionDays(recommendation: CommonLoadRecommendation | undefined) {
@@ -507,10 +759,18 @@ function recommendationProjectionDays(recommendation: CommonLoadRecommendation |
 function buildFitness(input: {
   readModel: AthleteReadModel;
   dayLoads: Record<string, z.infer<typeof planTabLoadSummarySchema>>;
+  today: string | null;
   recommendation?: CommonLoadRecommendation;
 }) {
+  const today = input.today;
   const history = input.readModel.loadHistory?.result;
   const historyPoints = history?.status === "available" ? history.points : [];
+  const historyEndDate =
+    history?.status === "available" && "identity" in history ? history.identity.endDate : null;
+  const historyIsCurrent =
+    historyEndDate !== null &&
+    input.readModel.currentBaseline?.currentPlanningDate !== undefined &&
+    historyEndDate === addDaysDateKey(input.readModel.currentBaseline.currentPlanningDate, -1);
   const publishedBaseline = input.readModel.currentBaseline?.baseline;
   const currentPlanningDate = input.readModel.currentBaseline?.currentPlanningDate;
   const currentBaselinePoint =
@@ -522,6 +782,9 @@ function buildFitness(input: {
           loadBalance: publishedBaseline.loadBalance,
         }
       : null;
+  const requestedDates = Object.keys(input.dayLoads).sort();
+  const firstRequestedDate = requestedDates[0];
+  const lastRequestedDate = requestedDates.at(-1);
   let actual = historyPoints
     .map((point) => ({
       date: point.date,
@@ -531,76 +794,147 @@ function buildFitness(input: {
     }))
     .sort((left, right) => left.date.localeCompare(right.date));
 
-  if (actual.length > 0 && currentBaselinePoint) {
+  if (actual.length > 0 && currentBaselinePoint && historyIsCurrent) {
     if (!actual.some((point) => point.date === currentBaselinePoint.date)) {
       actual = [...actual, currentBaselinePoint].sort((left, right) =>
         left.date.localeCompare(right.date),
       );
     }
-  } else if (
-    actual.length === 0 &&
-    currentBaselinePoint &&
-    // A past-only prefetched segment does not contain the intervening loads
-    // needed to invert today's state accurately. Never present that synthetic
-    // decline as observed fitness history.
-    Object.hasOwn(input.dayLoads, currentBaselinePoint.date)
-  ) {
-    const requestedPastDates = Object.keys(input.dayLoads)
-      .filter((date) => date <= currentBaselinePoint.date)
-      .sort();
-    const oldestBoundedDate = addDaysDateKey(
-      currentBaselinePoint.date,
-      -(MAX_PLANNING_RANGE_DAYS - 1),
-    );
-    const requestedStart = requestedPastDates[0] ?? currentBaselinePoint.date;
-    let reconstructionStart =
-      requestedStart < oldestBoundedDate ? oldestBoundedDate : requestedStart;
-    if (reconstructionStart >= currentBaselinePoint.date) {
-      reconstructionStart = addDaysDateKey(currentBaselinePoint.date, -1);
+  } else if (actual.length === 0) {
+    const requestedActualDates = requestedDates.filter((date) => !today || date <= today);
+    const firstActualDate = requestedActualDates[0];
+    if (firstActualDate) {
+      const seedDate = addDaysDateKey(firstActualDate, -1);
+      actual = projectCommonLoadTrend({
+        baseline: { date: seedDate, longTermLoad: 0, recentLoad: 0 },
+        days: requestedActualDates.map((date) => ({
+          date,
+          state: "available" as const,
+          load: assumedCompletedLoad(input.dayLoads[date]),
+        })),
+      }).points.filter((point) => point.date !== seedDate);
     }
-    const reconstructionDays = dateKeys(reconstructionStart, currentBaselinePoint.date).map(
-      (date) => {
-        const load = input.dayLoads[date]?.completedLoad;
-        return load === null || load === undefined ? null : { date, load };
+    if (currentBaselinePoint && Object.hasOwn(input.dayLoads, currentBaselinePoint.date)) {
+      actual = [
+        ...actual.filter((point) => point.date !== currentBaselinePoint.date),
+        currentBaselinePoint,
+      ].sort((left, right) => left.date.localeCompare(right.date));
+    } else if (actual.length === 0 && currentBaselinePoint) {
+      actual = [currentBaselinePoint];
+    }
+  }
+
+  const firstActual = actual[0];
+  if (firstRequestedDate && firstActual && firstRequestedDate < firstActual.date) {
+    const assumedPrefix = projectCommonLoadTrend({
+      baseline: {
+        date: addDaysDateKey(firstRequestedDate, -1),
+        longTermLoad: 0,
+        recentLoad: 0,
       },
-    );
-    const reconstruction = reconstructionDays.some((day) => day === null)
-      ? null
-      : reconstructCommonLoadTrendHistory({
-          baseline: currentBaselinePoint,
-          days: reconstructionDays.filter((day) => day !== null),
-        });
-    actual =
-      reconstruction?.status === "complete"
-        ? reconstruction.points
-        : [
-            {
-              ...currentBaselinePoint,
-              date: addDaysDateKey(currentBaselinePoint.date, -1),
-            },
-            currentBaselinePoint,
-          ];
-  } else if (actual.length === 0 && currentBaselinePoint) {
-    actual = [currentBaselinePoint];
+      days: requestedDates
+        .filter((date) => date < firstActual.date && (!today || date <= today))
+        .map((date) => ({
+          date,
+          state: "available" as const,
+          load: assumedCompletedLoad(input.dayLoads[date]),
+        })),
+    });
+    actual = [
+      ...assumedPrefix.points.filter((point) => point.date >= firstRequestedDate),
+      ...actual,
+    ];
+  }
+
+  const lastActual = actual.at(-1);
+  const lastRequestedActualDate = requestedDates.filter((date) => !today || date <= today).at(-1);
+  if (lastActual && lastRequestedActualDate && lastActual.date < lastRequestedActualDate) {
+    const useExistingState =
+      diffDateOnlyUtcDays(lastActual.date, lastRequestedActualDate) <= MAX_PLANNING_RANGE_DAYS;
+    const extensionBaseline = useExistingState
+      ? lastActual
+      : {
+          date: addDaysDateKey(firstRequestedDate ?? lastRequestedActualDate, -1),
+          longTermLoad: 0,
+          recentLoad: 0,
+        };
+    const extension = projectCommonLoadTrend({
+      baseline: extensionBaseline,
+      days: dateKeys(addDaysDateKey(extensionBaseline.date, 1), lastRequestedActualDate).map(
+        (date) => ({
+          date,
+          state: "available" as const,
+          load: assumedCompletedLoad(input.dayLoads[date]),
+        }),
+      ),
+    });
+    actual = [
+      ...actual,
+      ...extension.points.filter(
+        (point) =>
+          point.date > lastActual.date &&
+          point.date >= (firstRequestedDate ?? point.date) &&
+          point.date <= lastRequestedActualDate,
+      ),
+    ];
+  }
+  if (currentBaselinePoint && Object.hasOwn(input.dayLoads, currentBaselinePoint.date)) {
+    actual = [
+      ...actual.filter((point) => point.date !== currentBaselinePoint.date),
+      currentBaselinePoint,
+    ].sort((left, right) => left.date.localeCompare(right.date));
   }
 
   const baseline =
+    currentBaselinePoint ??
     (currentPlanningDate
       ? actual.find((point) => point.date === currentPlanningDate)
-      : undefined) ?? actual.at(-1);
-  if (!baseline) return { actual, scheduled: [], recommended: [] };
+      : undefined) ??
+    actual.at(-1);
+  if (!baseline) {
+    if (!firstRequestedDate || !lastRequestedDate) {
+      return { actual, scheduled: [], recommended: [] };
+    }
+    const seedDate = addDaysDateKey(firstRequestedDate, -1);
+    const trajectory = projectCommonLoadTrend({
+      baseline: { date: seedDate, longTermLoad: 0, recentLoad: 0 },
+      days: requestedDates.map((date) => {
+        const summary = input.dayLoads[date];
+        if (today && date <= today) {
+          return { date, state: "available" as const, load: assumedCompletedLoad(summary) };
+        }
+        return summary ? toProjectionDay(summary, date) : { date, state: "known_zero" as const };
+      }),
+    }).points.filter((point) => point.date !== seedDate);
+    return {
+      actual: today ? trajectory.filter((point) => point.date <= today) : [],
+      scheduled: today ? trajectory.filter((point) => point.date >= today) : trajectory,
+      recommended: [],
+    };
+  }
   const futureDates = Object.keys(input.dayLoads)
     .filter((date) => date > baseline.date)
     .sort();
   const lastFutureDate = futureDates.at(-1);
+  const projectionBaseline =
+    firstRequestedDate &&
+    lastFutureDate &&
+    diffDateOnlyUtcDays(baseline.date, lastFutureDate) > MAX_PLANNING_RANGE_DAYS
+      ? { date: addDaysDateKey(firstRequestedDate, -1), longTermLoad: 0, recentLoad: 0 }
+      : baseline;
   const scheduledProjection = projectCommonLoadTrend({
-    baseline,
+    baseline: projectionBaseline,
     days: lastFutureDate
-      ? dateKeys(addDaysDateKey(baseline.date, 1), lastFutureDate).map((date) => {
+      ? dateKeys(addDaysDateKey(projectionBaseline.date, 1), lastFutureDate).map((date) => {
           const summary = input.dayLoads[date];
-          return summary
-            ? toProjectionDay(summary, date)
-            : { date, state: "unavailable" as const, reason: "unavailable" as const };
+          if (today && date <= today) {
+            return {
+              date,
+              state: "available" as const,
+              load: assumedCompletedLoad(summary),
+            };
+          }
+          return summary ? toProjectionDay(summary, date) : { date, state: "known_zero" as const };
         })
       : [],
   });
@@ -611,18 +945,55 @@ function buildFitness(input: {
     ),
   });
   const mapProjection = (points: typeof scheduledProjection.points) =>
-    points.length > 1
-      ? points.map((point) => ({
-          date: point.date,
-          longTermLoad: point.longTermLoad,
-          recentLoad: point.recentLoad,
-          loadBalance: point.loadBalance,
-        }))
-      : [];
+    points.map((point) => ({
+      date: point.date,
+      longTermLoad: point.longTermLoad,
+      recentLoad: point.recentLoad,
+      loadBalance: point.loadBalance,
+    }));
+  const actualExtension = scheduledProjection.points.filter(
+    (point) =>
+      projectionBaseline.date === baseline.date &&
+      today &&
+      point.date > baseline.date &&
+      point.date <= today,
+  );
+  if (actualExtension.length > 0) {
+    actual = [
+      ...actual,
+      ...mapProjection(actualExtension).filter(
+        (point) => !actual.some((actualPoint) => actualPoint.date === point.date),
+      ),
+    ].sort((left, right) => left.date.localeCompare(right.date));
+  }
+  const scheduledStartDate =
+    today && firstRequestedDate && today > firstRequestedDate ? today : firstRequestedDate;
+  const scheduledPoints =
+    futureDates.length === 0
+      ? []
+      : scheduledStartDate
+        ? scheduledProjection.points.filter((point) => point.date >= scheduledStartDate)
+        : scheduledProjection.points;
   return {
     actual,
-    scheduled: mapProjection(scheduledProjection.points),
+    scheduled: mapProjection(scheduledPoints),
     recommended: mapProjection(recommendedProjection.points),
+  };
+}
+
+function fitnessHistoryMetadata(readModel: AthleteReadModel): z.infer<typeof fitnessHistorySchema> {
+  const history = readModel.loadHistory?.result;
+  if (history?.status !== "available" || !("identity" in history) || !("maturity" in history)) {
+    return { status: "unavailable", verifiedThrough: null, maturity: null };
+  }
+  const currentPlanningDate = readModel.currentBaseline?.currentPlanningDate;
+  return {
+    status:
+      currentPlanningDate && history.identity.endDate === addDaysDateKey(currentPlanningDate, -1)
+        ? "current"
+        : "historical",
+    verifiedThrough: history.identity.endDate,
+    maturity: history.maturity.status,
   };
 }
 
@@ -634,11 +1005,15 @@ function recommendationPoints(response: EffectivePlanLoadDto) {
     date: point.date,
     status: point.state,
     load:
-      point.state === "complete" || point.state === "partial"
+      point.state === "complete"
         ? point.load
-        : point.state === "known_zero"
-          ? 0
-          : null,
+        : point.state === "partial"
+          ? point.aggregate.status === "unavailable"
+            ? null
+            : point.aggregate.load
+          : point.state === "known_zero"
+            ? 0
+            : null,
   }));
 }
 
@@ -654,6 +1029,14 @@ function completedItemLoadStatus(envelope: EffectiveItem["commonLoad"]): PlanTab
   if (envelope.status === "unavailable") return "unavailable";
   if (envelope.status === "partial") return "partial";
   return envelope.load === 0 ? "known_zero" : "complete";
+}
+
+function applyItemSourceCoverage(
+  itemStatus: PlanTabLoadStatus,
+  source: "complete" | "partial" | undefined,
+): PlanTabLoadStatus {
+  if (source === undefined || itemStatus === "unavailable") return "unavailable";
+  return source === "partial" ? "partial" : itemStatus;
 }
 
 export async function readPlanTabProjectionSnapshot(input: {
@@ -680,10 +1063,12 @@ export async function readPlanTabProjectionSnapshot(input: {
     profileId: input.profileId,
     asOf: input.asOf,
   });
-  const goalMarkers = await dependencies.readGoalMarkers({
+  const rawGoalMarkers = await dependencies.readGoalMarkers({
     db: input.db,
     profileId: input.profileId,
   });
+  const goalMarkers = rawGoalMarkers.slice(0, 100);
+  const goalMarkersTruncated = rawGoalMarkers.length > goalMarkers.length;
   const effectiveItems =
     effectiveLoad.status === "available" && effectiveLoad.effective.status === "available"
       ? effectiveLoad.effective.firmItems
@@ -713,6 +1098,10 @@ export async function readPlanTabProjectionSnapshot(input: {
   const scheduledItems: ScheduledTrainingItem[] = effectiveItems.flatMap((item) => {
     if (item.kind !== "scheduled") return [];
     const itemMetadata = metadata.scheduled.get(item.scheduledItemId);
+    const plannedLoadStatus = applyItemSourceCoverage(
+      plannedItemLoadStatus(item.commonLoad),
+      effectiveLoad.sourceCoverage.scheduledItems?.status,
+    );
     return [
       {
         id: item.scheduledItemId,
@@ -720,8 +1109,8 @@ export async function readPlanTabProjectionSnapshot(input: {
         date: item.date,
         title: itemMetadata?.title ?? "Scheduled session",
         activityCategory: itemMetadata?.activityCategory ?? null,
-        plannedLoad: envelopeLoad(item.commonLoad),
-        plannedLoadStatus: plannedItemLoadStatus(item.commonLoad),
+        plannedLoad: plannedLoadStatus === "unavailable" ? null : envelopeLoad(item.commonLoad),
+        plannedLoadStatus,
         status: "planned",
       },
     ];
@@ -729,6 +1118,10 @@ export async function readPlanTabProjectionSnapshot(input: {
   const completedItems: CompletedTrainingItem[] = effectiveItems.flatMap((item) => {
     if (item.kind !== "completed") return [];
     const itemMetadata = metadata.completed.get(item.completedActivityId);
+    const completedLoadStatus = applyItemSourceCoverage(
+      completedItemLoadStatus(item.commonLoad),
+      effectiveLoad.sourceCoverage.activities?.status,
+    );
     return [
       {
         id: item.completedActivityId,
@@ -736,8 +1129,8 @@ export async function readPlanTabProjectionSnapshot(input: {
         date: item.date,
         title: itemMetadata?.title ?? "Completed activity",
         activityCategory: itemMetadata?.activityCategory ?? null,
-        completedLoad: envelopeLoad(item.commonLoad),
-        completedLoadStatus: completedItemLoadStatus(item.commonLoad),
+        completedLoad: completedLoadStatus === "unavailable" ? null : envelopeLoad(item.commonLoad),
+        completedLoadStatus,
       },
     ];
   });
@@ -751,10 +1144,18 @@ export async function readPlanTabProjectionSnapshot(input: {
           if (!load) throw new Error("Plan-tab day load was not assembled");
           const point: TrainingLoadTimelineInputPoint = {
             date,
-            recommended_common_load: load.recommendedLoad,
-            recommended_common_load_status: load.recommendedLoadStatus,
-            scheduled_common_load: load.scheduledLoad,
-            scheduled_common_load_status: load.scheduledLoadStatus,
+            ...(load.recommendedLoadStatus === "partial"
+              ? {}
+              : {
+                  recommended_common_load: load.recommendedLoad,
+                  recommended_common_load_status: load.recommendedLoadStatus,
+                }),
+            ...(load.scheduledLoadStatus === "partial"
+              ? {}
+              : {
+                  scheduled_common_load: load.scheduledLoad,
+                  scheduled_common_load_status: load.scheduledLoadStatus,
+                }),
           };
           return point;
         }),
@@ -777,28 +1178,61 @@ export async function readPlanTabProjectionSnapshot(input: {
     fitness: buildFitness({
       readModel,
       dayLoads,
+      today,
       ...(recommendation === undefined ? {} : { recommendation }),
     }),
+    fitnessHistory: fitnessHistoryMetadata(readModel),
     recommendationPoints: recommendationPoints(effectiveLoad),
     ledgerItems: effectiveItems.map((item) => {
       const envelope = item.commonLoad;
-      const unavailable = envelope.status === "unavailable";
       const isPlanned = item.kind === "scheduled";
       const knownLoad = envelopeLoad(envelope);
       const knownIntensity = envelopeIntensity(envelope);
-      const loadStatus = isPlanned
-        ? plannedItemLoadStatus(envelope)
-        : unavailable
-          ? ("unavailable" as const)
-          : envelope.status === "partial"
-            ? ("partial" as const)
-            : knownLoad === 0
-              ? ("known_zero" as const)
-              : ("complete" as const);
+      const sourceStatus = isPlanned
+        ? effectiveLoad.sourceCoverage.scheduledItems?.status
+        : effectiveLoad.sourceCoverage.activities?.status;
+      const loadStatus = applyItemSourceCoverage(
+        isPlanned ? plannedItemLoadStatus(envelope) : completedItemLoadStatus(envelope),
+        sourceStatus,
+      );
+      const contributingDurationStatus = loadStatus;
       const metadataItem =
         item.kind === "scheduled"
           ? metadata.scheduled.get(item.scheduledItemId)
           : metadata.completed.get(item.completedActivityId);
+      const completedDoses =
+        item.kind === "completed"
+          ? (metadata.completed.get(item.completedActivityId)?.categoryDoses ?? [])
+          : [];
+      const fallbackCategory = canonicalActivityCategorySchema.safeParse(
+        metadataItem?.activityCategory,
+      );
+      const categoryDoses =
+        item.kind === "completed"
+          ? completedDoses
+          : fallbackCategory.success
+            ? [
+                {
+                  activityCategory: fallbackCategory.data,
+                  durationSeconds: {
+                    status: contributingDurationStatus,
+                    value:
+                      contributingDurationStatus === "unavailable"
+                        ? null
+                        : envelope.contributingDurationSeconds,
+                  },
+                  distanceMeters: unavailableCompositionMetric(),
+                  elevationGainMeters: unavailableCompositionMetric(),
+                },
+              ]
+            : [];
+      const categoryDoseStatus =
+        item.kind === "completed"
+          ? (metadata.completed.get(item.completedActivityId)?.categoryDoseStatus ??
+            (completedDoses.length > 0 ? "complete" : "unavailable"))
+          : fallbackCategory.success
+            ? "complete"
+            : "unavailable";
       return {
         id: item.kind === "scheduled" ? item.scheduledItemId : item.completedActivityId,
         date: item.date,
@@ -806,16 +1240,23 @@ export async function readPlanTabProjectionSnapshot(input: {
         title:
           metadataItem?.title ??
           (item.kind === "completed" ? "Completed activity" : "Scheduled session"),
+        activityCategory: metadataItem?.activityCategory ?? null,
+        categoryDoses,
+        categoryDoseStatus,
         loadStatus,
-        load: knownLoad,
+        load: loadStatus === "unavailable" ? null : knownLoad,
         intensityStatus: loadStatus,
-        intensity: knownIntensity,
-        contributingDurationStatus: loadStatus,
-        contributingDurationSeconds: unavailable ? null : envelope.contributingDurationSeconds,
+        intensity: loadStatus === "unavailable" ? null : knownIntensity,
+        contributingDurationStatus,
+        contributingDurationSeconds:
+          contributingDurationStatus === "unavailable"
+            ? null
+            : envelope.contributingDurationSeconds,
       };
     }),
     sourceCoverage: effectiveLoad.sourceCoverage,
     goalMarkers,
+    goalMarkersTruncated,
     publishedRevision: readModel.publishedRevision,
     algorithmVersion: readModel.algorithmVersion,
   });

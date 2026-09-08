@@ -34,6 +34,7 @@ import { EventEmitter } from "expo";
 import { DEFAULT_RECORDING_WEIGHT_KG, MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
 import { DataBuffer } from "./DataBuffer";
 import { createRecordingStreamJournalAdapter } from "./recordingEvidenceJournal";
+import { canonicalRecordingEvidenceUris } from "./recordingEvidencePaths";
 import {
   convertToSimplifiedMetrics,
   getSensorModel,
@@ -148,7 +149,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     if (this.isActive) throw new Error("Cannot rebind recording evidence while active");
     this.recordingSessionId = sessionId;
     this.streamBuffer = new StreamBuffer(
-      undefined,
+      canonicalRecordingEvidenceUris(sessionId).streamDirectoryUri,
       createRecordingStreamJournalAdapter({ sessionId, profileId }),
     );
     this.resetRecordingMetricsAccumulator();

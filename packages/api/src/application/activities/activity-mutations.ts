@@ -1,8 +1,8 @@
 import { type ContentVisibility, getCalendarDateInIanaZone } from "@repo/core";
-import { activities } from "@repo/db";
+import { activities, activitySourceReferences } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
-import type { getRequiredDb } from "../../db";
+import type { DrizzleTransactionClient, getRequiredDb } from "../../db";
 import {
   createDrizzleAthleteDerivedStateRepository,
   createDrizzlePlannedSessionRepository,
@@ -30,6 +30,78 @@ export type UpdateActivityForProfileInput = {
   notes?: string | null;
   content_visibility?: ContentVisibility;
 };
+
+/** Complete database-side canonical deletion with the profile advisory fence already held. */
+export async function deleteCanonicalActivityWithProfileLockHeld(input: {
+  activityId: string;
+  now?: Date;
+  profileId: string;
+  tx: DrizzleTransactionClient;
+}) {
+  const { activityId, profileId, tx } = input;
+  const now = input.now ?? new Date();
+  await tx
+    .update(activitySourceReferences)
+    .set({ activity_id: null, resolution_status: "ignored", updated_at: now })
+    .where(
+      and(
+        eq(activitySourceReferences.activity_id, activityId),
+        eq(activitySourceReferences.profile_id, profileId),
+      ),
+    );
+  await unlinkDeletedActivityCompletionsForActivity({
+    repository: createDrizzlePlannedSessionRepository(tx),
+    profileId,
+    activityId,
+    unlinkedAt: now.toISOString(),
+  });
+  const impacts = await readThresholdImpactForActivity(tx, { activityId, profileId });
+  const athleteRepository = createDrizzleAthleteDerivedStateRepository(tx);
+  await deleteThresholdEvidence({ repository: athleteRepository, profileId, activityId });
+  await deleteThresholdChainsForImpacts(tx, { profileId, impacts });
+  await tx.execute(
+    sql`delete from comments where entity_type = 'activity' and entity_id = ${activityId}::uuid`,
+  );
+  await tx.execute(
+    sql`delete from likes where entity_type = 'activity' and entity_id = ${activityId}::uuid`,
+  );
+  const [deleted] = await tx
+    .delete(activities)
+    .where(and(eq(activities.id, activityId), eq(activities.profile_id, profileId)))
+    .returning({ id: activities.id, finishedAt: activities.finished_at });
+  if (!deleted) throw new Error("Activity deletion lost ownership before commit");
+  for (const impact of impacts) {
+    await rebuildThresholdChainWithProfileLockHeld(tx, {
+      profileId,
+      identity: { activityCategory: impact.activityCategory, metric: impact.metric },
+      asOf: now,
+      now,
+    });
+  }
+  const effectiveAt = new Date(
+    Math.min(
+      deleted.finishedAt.getTime(),
+      ...impacts.map(({ effectiveAt }) => effectiveAt.getTime()),
+    ),
+  );
+  const state = await athleteRepository.lockPublicationState({ profileId });
+  if (!state) throw new Error("Athlete publication state is unavailable after activity deletion");
+  await requestAthleteRecalculation({
+    repository: athleteRepository,
+    profileId,
+    request: buildAthleteRecalculationRequest({
+      profileId,
+      earliestAffectedAt: effectiveAt.toISOString(),
+      earliestAffectedPlanningDate: getCalendarDateInIanaZone(
+        effectiveAt.toISOString(),
+        state.planningTimezone,
+      ),
+      sourceRevision: state.sourceRevision + 1,
+      reasons: ["activity_deleted"],
+      requestedAt: now.toISOString(),
+    }),
+  });
+}
 
 export async function updateActivityForProfile({
   db,
@@ -88,70 +160,10 @@ export async function deleteActivityForProfile({
 
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${profileId}, 0))`);
-    const now = new Date();
-    await unlinkDeletedActivityCompletionsForActivity({
-      repository: createDrizzlePlannedSessionRepository(tx),
-      profileId,
-      activityId,
-      unlinkedAt: now.toISOString(),
-    });
-    const impacts = await readThresholdImpactForActivity(tx, {
+    await deleteCanonicalActivityWithProfileLockHeld({
       activityId,
       profileId,
-    });
-    const athleteRepository = createDrizzleAthleteDerivedStateRepository(tx);
-    await deleteThresholdEvidence({
-      repository: athleteRepository,
-      profileId,
-      activityId,
-    });
-    // The self-referencing threshold chain is removed first; deleting the source
-    // activity then cascades its efforts, normalized links, and evaluations.
-    await deleteThresholdChainsForImpacts(tx, { profileId, impacts });
-    // Engagement tables use polymorphic entity IDs and therefore cannot declare
-    // an activity foreign key. Remove only this activity's engagement in the
-    // same transaction so a hard delete never leaves orphaned actor-owned rows.
-    await tx.execute(
-      sql`delete from comments where entity_type = 'activity' and entity_id = ${activityId}::uuid`,
-    );
-    await tx.execute(
-      sql`delete from likes where entity_type = 'activity' and entity_id = ${activityId}::uuid`,
-    );
-    const [deleted] = await tx
-      .delete(activities)
-      .where(and(eq(activities.id, activityId), eq(activities.profile_id, profileId)))
-      .returning({ id: activities.id, finishedAt: activities.finished_at });
-    if (!deleted) throw new Error("Activity deletion lost ownership before commit");
-    for (const impact of impacts) {
-      await rebuildThresholdChainWithProfileLockHeld(tx, {
-        profileId,
-        identity: { activityCategory: impact.activityCategory, metric: impact.metric },
-        asOf: now,
-        now,
-      });
-    }
-    const effectiveAt = new Date(
-      Math.min(
-        deleted.finishedAt.getTime(),
-        ...impacts.map(({ effectiveAt }) => effectiveAt.getTime()),
-      ),
-    );
-    const state = await athleteRepository.lockPublicationState({ profileId });
-    if (!state) throw new Error("Athlete publication state is unavailable after activity deletion");
-    await requestAthleteRecalculation({
-      repository: athleteRepository,
-      profileId,
-      request: buildAthleteRecalculationRequest({
-        profileId,
-        earliestAffectedAt: effectiveAt.toISOString(),
-        earliestAffectedPlanningDate: getCalendarDateInIanaZone(
-          effectiveAt.toISOString(),
-          state.planningTimezone,
-        ),
-        sourceRevision: state.sourceRevision + 1,
-        reasons: ["activity_deleted"],
-        requestedAt: now.toISOString(),
-      }),
+      tx,
     });
   });
 

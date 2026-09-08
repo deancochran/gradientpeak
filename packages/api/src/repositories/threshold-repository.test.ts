@@ -144,7 +144,11 @@ describe("threshold persistence identities", () => {
   });
 
   it("accepts an identical evaluation replay and fails closed on same-revision divergence", async () => {
-    const selection = selectThresholdCandidate({ activityCategory: "run", observations: [] });
+    const selection = selectThresholdCandidate({
+      activityCategory: "run",
+      metric: "speed",
+      observations: [],
+    });
     const evaluation = selection.attempts[0]?.evaluation;
     if (!evaluation) throw new Error("Expected Core rejection diagnostics");
     const now = new Date("2026-08-10T13:00:00.000Z");
@@ -216,6 +220,7 @@ describe("threshold persistence identities", () => {
   it("keeps a truthful source-local effort link for a measured rejection", async () => {
     const selection = selectThresholdCandidate({
       activityCategory: "run",
+      metric: "speed",
       observations: [
         {
           evidenceId: effortId,
@@ -264,6 +269,84 @@ describe("threshold persistence identities", () => {
 });
 
 describe("threshold as-of resolution", () => {
+  it("resolves independently published bike and run LTHR facts without category leakage", async () => {
+    const bikeEvaluationId = "55555555-5555-4555-8555-555555555555";
+    const runEvaluationId = "66666666-6666-4666-8666-666666666666";
+    const bikeEffortId = "77777777-7777-4777-8777-777777777777";
+    const runEffortId = "88888888-8888-4888-8888-888888888888";
+    const bikeActivityId = "99999999-9999-4999-8999-999999999999";
+    const runActivityId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    const thresholdRows = [
+      {
+        ordinal: 0,
+        id: "10000000-0000-4000-8000-000000000001",
+        activity_category: "bike",
+        metric: "lthr",
+        value: 171,
+        unit: "bpm",
+        confidence: 0.8,
+        method: "lthr_30m_final_20m",
+        effective_at: new Date("2026-01-01T12:00:00.000Z"),
+        policy_version: "threshold-policy-v1",
+        evaluation_id: bikeEvaluationId,
+        state: "provisional",
+      },
+      {
+        ordinal: 0,
+        id: "10000000-0000-4000-8000-000000000002",
+        activity_category: "run",
+        metric: "lthr",
+        value: 179,
+        unit: "bpm",
+        confidence: 0.9,
+        method: "lthr_30m_final_20m",
+        effective_at: new Date("2026-01-02T12:00:00.000Z"),
+        policy_version: "threshold-policy-v1",
+        evaluation_id: runEvaluationId,
+        state: "provisional",
+      },
+    ];
+    const provenanceRows = [
+      {
+        published_evaluation_id: bikeEvaluationId,
+        origin_evaluation_id: bikeEvaluationId,
+        effort_id: bikeEffortId,
+        source_activity_id: bikeActivityId,
+        role: "primary",
+        ordinal: 0,
+      },
+      {
+        published_evaluation_id: runEvaluationId,
+        origin_evaluation_id: runEvaluationId,
+        effort_id: runEffortId,
+        source_activity_id: runActivityId,
+        role: "primary",
+        ordinal: 0,
+      },
+    ];
+    const db = setBasedReadDb(thresholdRows, provenanceRows);
+
+    await expect(
+      readThresholdsAsOf(db as never, {
+        profileId,
+        asOf: new Date("2026-08-10T12:00:00.000Z"),
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        activityCategory: "bike",
+        metric: "lthr",
+        value: 171,
+        sourceEffortIds: [bikeEffortId],
+      }),
+      expect.objectContaining({
+        activityCategory: "run",
+        metric: "lthr",
+        value: 179,
+        sourceEffortIds: [runEffortId],
+      }),
+    ]);
+  });
+
   it("returns an old threshold as usable without projecting repository freshness", async () => {
     const db = repositoryRead();
     const asOf = new Date("2026-08-10T12:00:00.000Z");
@@ -304,6 +387,20 @@ describe("threshold as-of resolution", () => {
         asOf: new Date("2026-08-10T12:00:00.000Z"),
       }),
     ).resolves.toEqual([expect.objectContaining({ value: 4.1 })]);
+  });
+
+  it("keeps LTHR lookups compatible with databases that have not added its enum value", async () => {
+    const db = repositoryRead();
+
+    await readThresholdsAsOf(db as never, {
+      profileId,
+      asOf: new Date("2026-08-10T12:00:00.000Z"),
+    });
+
+    const queryText = JSON.stringify(db.execute.mock.calls[0]?.[0]);
+    expect(queryText).toContain("'lthr'::text");
+    expect(queryText).not.toContain("'lthr'::threshold_metric");
+    expect(queryText).toContain("published.metric::text = identity.metric");
   });
 
   it("keeps compatible historical published rows readable across policy bumps", async () => {

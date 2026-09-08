@@ -23,7 +23,7 @@ test.describe
       await athletePage.getByRole("button", { name: "Connect" }).click();
       const callbackUrl = (await callbackRequest).url();
 
-      await expect(athletePage).toHaveURL(/\/integrations$/);
+      await expect(athletePage).toHaveURL(/\/integrations(?:\?success=(?:true|false))?$/);
       await expect(athletePage.getByText("Integration connected")).toBeVisible();
       await expect(athletePage.getByRole("button", { name: "Disconnect" })).toBeVisible();
       expect(callbackUrl).toContain("code=");
@@ -46,15 +46,17 @@ test.describe
       await expect(athletePage.getByRole("button", { name: "Disconnect" })).toBeVisible();
 
       await athletePage.goto(callbackUrl);
-      await expect(athletePage).toHaveURL(/\/integrations$/);
+      await expect(athletePage).toHaveURL(/\/integrations(?:\?success=(?:true|false))?$/);
       await expect(athletePage.getByText("Integration connection failed")).toBeVisible();
       await expect(athletePage.getByRole("button", { name: "Disconnect" })).toBeVisible();
 
-      const dialogPromise = athletePage.waitForEvent("dialog");
+      let disconnectMessage = "";
+      athletePage.once("dialog", async (dialog) => {
+        disconnectMessage = dialog.message();
+        await dialog.accept();
+      });
       await athletePage.getByRole("button", { name: "Disconnect" }).click();
-      const dialog = await dialogPromise;
-      expect(dialog.message()).toContain("Your GradientPeak data stays. Sync stops.");
-      await dialog.accept();
+      expect(disconnectMessage).toContain("Your GradientPeak data stays. Sync stops.");
       await expect(athletePage.getByRole("button", { name: "Connect" })).toBeVisible();
     });
 
@@ -63,14 +65,13 @@ test.describe
     }) => {
       await athletePage.goto("/integrations");
       await expect(athletePage.getByText("Wahoo", { exact: true })).toBeVisible();
-
+      const refreshStatus = athletePage.getByRole("button", { name: "Refresh status" });
+      await expect(refreshStatus).toBeEnabled();
       await withTrpcFailure(athletePage, "integrations.getSyncOverview", async () => {
-        await athletePage.evaluate(() => {
-          window.dispatchEvent(new Event("offline"));
-          window.dispatchEvent(new Event("online"));
+        await refreshStatus.click();
+        await expect(athletePage.getByRole("alert")).toContainText("Showing the last known", {
+          timeout: 15_000,
         });
-
-        await expect(athletePage.getByRole("alert")).toContainText("Showing the last known");
         await expect(athletePage.getByText("Wahoo", { exact: true })).toBeVisible();
       });
       await athletePage.getByRole("button", { name: "Retry" }).click();

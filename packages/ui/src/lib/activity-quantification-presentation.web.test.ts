@@ -164,10 +164,10 @@ describe("activity quantification presentation", () => {
       }),
     );
 
-    expect(result.commonLoad).toMatchObject({ status: "unavailable", value: "Unavailable" });
+    expect(result.commonLoad).toMatchObject({ status: "unavailable", value: "—" });
     expect(result.normalizedIntensity).toMatchObject({
       status: "unavailable",
-      value: "Unavailable",
+      value: "—",
     });
     expect(result.nativeIntensity).toMatchObject({
       status: "available",
@@ -217,13 +217,30 @@ describe("activity quantification presentation", () => {
     ).toBe("145–155 bpm");
   });
 
+  it("formats cadence points and ranges in rpm", () => {
+    expect(
+      formatActivityNativeIntensity({
+        metric: "cadence",
+        unit: "revolutions_per_minute",
+        magnitude: { kind: "point", value: 90 },
+      }),
+    ).toBe("90 rpm");
+    expect(
+      formatActivityNativeIntensity({
+        metric: "cadence",
+        unit: "revolutions_per_minute",
+        magnitude: { kind: "range", lower: 85, upper: 95 },
+      }),
+    ).toBe("85–95 rpm");
+  });
+
   it("keeps invalid input unavailable rather than zero and emits no retired aliases", () => {
     const result = getActivityQuantificationPresentation({ status: "available", load: 0 });
 
     expect(result).toMatchObject({
       kind: "unavailable",
-      commonLoad: { value: "Unavailable" },
-      normalizedIntensity: { value: "Unavailable" },
+      commonLoad: { value: "—" },
+      normalizedIntensity: { value: "—" },
     });
     expect(JSON.stringify(result)).not.toMatch(/tss|intensityFactor|category_load/i);
   });

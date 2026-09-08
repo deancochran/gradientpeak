@@ -38,7 +38,7 @@ export const AUTH_ARTIFACT_CLEANUP_SQL = {
   verificationRows: `delete from "verifications"
     where "identifier" = any($1::text[])`,
   verificationConsumptionMarkers: `delete from "verifications"
-    where "id" = any($1::text[])`,
+    where "identifier" = any($1::text[])`,
 } as const;
 
 export const AUTH_ACTOR_CLEANUP_ORDER = [

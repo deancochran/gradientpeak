@@ -2,6 +2,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar"
 import { Text } from "@repo/ui/components/text";
 import type { ReactNode } from "react";
 import { Pressable, View } from "react-native";
+import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
@@ -36,7 +37,8 @@ export function EntityOwnerRow({
 }: EntityOwnerRowProps) {
   const user = useAuthStore((state) => state.user);
   const navigateTo = useAppNavigate();
-  const displayName = displayNameOverride?.trim() || owner?.username?.trim() || "Unknown User";
+  const displayName =
+    displayNameOverride?.trim() || owner?.username?.trim() || "GradientPeak athlete";
   const ownerId = typeof owner?.id === "string" && owner.id.length > 0 ? owner.id : null;
   const canOpenProfile = ownerId !== null;
   const canPress = Boolean(onPress) || canOpenProfile;
@@ -53,7 +55,7 @@ export function EntityOwnerRow({
     }
 
     if (ownerId === user?.id) {
-      navigateTo("/profile");
+      navigateTo(ROUTES.ME);
       return;
     }
 

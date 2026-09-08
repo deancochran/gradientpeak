@@ -1,17 +1,11 @@
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@repo/ui/components/dropdown-menu";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { skipToken, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { CheckCircle2, Ellipsis } from "lucide-react-native";
+import { CheckCircle2 } from "lucide-react-native";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, View } from "react-native";
 import {
@@ -26,6 +20,7 @@ import {
 } from "@/components/event/EventEditorCard";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppConfirmModal, AppFormModal } from "@/components/shared/AppFormModal";
+import { DetailOverflowMenu } from "@/components/shared/detail";
 import { RouteCard } from "@/components/shared/RouteCard";
 import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
 import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
@@ -226,6 +221,8 @@ export default function EventDetailScreen() {
     mode,
     date,
     activityPlanId,
+    routeId,
+    routeName,
     scheduleGapLoadDelta,
     planSuggestionType,
     planSuggestionLoadDelta,
@@ -235,6 +232,8 @@ export default function EventDetailScreen() {
     mode?: string;
     date?: string;
     activityPlanId?: string;
+    routeId?: string;
+    routeName?: string;
     scheduleGapLoadDelta?: string;
     planSuggestionType?: string;
     planSuggestionLoadDelta?: string;
@@ -244,6 +243,13 @@ export default function EventDetailScreen() {
   const startsInCreateMode = mode === "create";
   const createDate = typeof date === "string" ? date : undefined;
   const preselectedActivityPlanId = typeof activityPlanId === "string" ? activityPlanId : undefined;
+  const preselectedRoute = useMemo(
+    () =>
+      typeof routeId === "string" && typeof routeName === "string"
+        ? { id: routeId, name: routeName }
+        : null,
+    [routeId, routeName],
+  );
   const scheduleGapLoad = parseSuggestionLoadDelta(scheduleGapLoadDelta);
   const scheduleGapNote =
     scheduleGapLoad !== null && scheduleGapLoad > 0
@@ -260,7 +266,7 @@ export default function EventDetailScreen() {
   );
 
   const { beginRedirect, isRedirecting, redirectOnNotFound } = useDeletedDetailRedirect({
-    onRedirect: () => router.navigate(ROUTES.PLAN.CALENDAR),
+    onRedirect: () => router.dismissTo(ROUTES.PLAN.CALENDAR),
   });
   const [isClosingAfterDelete, setIsClosingAfterDelete] = useState(false);
 
@@ -461,48 +467,36 @@ export default function EventDetailScreen() {
     }
 
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger testID="event-detail-options-trigger">
-          <View className="mr-2 rounded-full p-2">
-            <Icon as={Ellipsis} size={18} className="text-foreground" />
-          </View>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" sideOffset={6}>
-          <DropdownMenuItem
-            onPress={() => router.navigate(ROUTES.PLAN.EVENT_UPDATE(event.id))}
-            testID="event-detail-options-edit"
-          >
-            <Text className="text-foreground">Edit Event</Text>
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onPress={() => setActivityPlanPickerOpen(true)}
-            testID="event-detail-options-activity-plan"
-          >
-            <Text className="text-foreground">
-              {activityPlan ? "Change Activity Plan" : "Attach Activity Plan"}
-            </Text>
-          </DropdownMenuItem>
-          {activityPlan ? (
-            <DropdownMenuItem
-              onPress={handleRemoveActivityPlan}
-              testID="event-detail-options-remove-activity-plan"
-            >
-              <Text className="text-foreground">
-                {updateEventMutation.isPending ? "Removing..." : "Remove Activity Plan"}
-              </Text>
-            </DropdownMenuItem>
-          ) : null}
-          <DropdownMenuItem
-            onPress={handleDeletePress}
-            variant="destructive"
-            testID="event-detail-options-delete"
-          >
-            <Text className="text-foreground">
-              {deleteMutation.isPending ? "Deleting..." : "Delete Event"}
-            </Text>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <DetailOverflowMenu
+        actions={[
+          {
+            label: "Edit Event",
+            onPress: () => router.navigate(ROUTES.PLAN.EVENT_UPDATE(event.id)),
+            testID: "event-detail-options-edit",
+          },
+          {
+            label: activityPlan ? "Change Activity Plan" : "Attach Activity Plan",
+            onPress: () => setActivityPlanPickerOpen(true),
+            testID: "event-detail-options-activity-plan",
+          },
+          ...(activityPlan
+            ? [
+                {
+                  label: updateEventMutation.isPending ? "Removing..." : "Remove Activity Plan",
+                  onPress: handleRemoveActivityPlan,
+                  testID: "event-detail-options-remove-activity-plan",
+                },
+              ]
+            : []),
+          {
+            label: deleteMutation.isPending ? "Deleting..." : "Delete Event",
+            onPress: handleDeletePress,
+            testID: "event-detail-options-delete",
+            variant: "destructive" as const,
+          },
+        ]}
+        testID="event-detail-options-trigger"
+      />
     );
   };
 
@@ -541,7 +535,7 @@ export default function EventDetailScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-background" testID="event-detail-screen">
       <Stack.Screen
         options={{
           headerRight: renderHeaderActions,
@@ -585,7 +579,9 @@ export default function EventDetailScreen() {
                 {statusLabel ? <EventStatusPill label={statusLabel} /> : null}
                 {recurring ? <EventStatusPill label="Recurring" /> : null}
               </View>
-              <Text className="text-3xl font-semibold text-foreground">{displayTitle}</Text>
+              <Text className="text-3xl font-semibold text-foreground" testID="event-detail-title">
+                {displayTitle}
+              </Text>
             </View>
 
             <View className="gap-1">
@@ -670,6 +666,7 @@ export default function EventDetailScreen() {
             onCancel={() => router.back()}
             onCreated={(createdEvent) => router.replace(ROUTES.PLAN.EVENT_DETAIL(createdEvent.id))}
             preselectedActivityPlanId={preselectedActivityPlanId}
+            preselectedRoute={preselectedRoute}
             scheduleGapNote={scheduleGapNote}
             showFooterActions={false}
             testIDPrefix="event-detail"
@@ -680,8 +677,10 @@ export default function EventDetailScreen() {
           <EntityCommentsSection
             addCommentPending={comments.addCommentPending}
             commentCount={comments.commentCount}
+            commentsError={comments.commentsError}
             comments={comments.comments}
             hasMoreComments={comments.hasMoreComments}
+            isLoadingComments={comments.isLoadingComments}
             isLoadingMoreComments={comments.isLoadingMoreComments}
             newComment={comments.newComment}
             onAddComment={comments.handleAddComment}

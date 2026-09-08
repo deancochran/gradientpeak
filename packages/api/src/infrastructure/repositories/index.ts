@@ -8,6 +8,7 @@ export * from "./drizzle-event-write-repository";
 export * from "./drizzle-integrations-repository";
 export * from "./drizzle-planned-session-repository";
 export * from "./drizzle-planning-template-repository";
+export * from "./drizzle-strava-repository";
 export * from "./drizzle-training-plan-repository";
 export * from "./drizzle-trends-dashboard-repository";
 export * from "./drizzle-wahoo-repository";

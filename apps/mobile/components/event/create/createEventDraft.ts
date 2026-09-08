@@ -138,7 +138,6 @@ export function buildUpdatePatch(draft: CreateEventDraft) {
   return {
     activity_plan_id: null,
     all_day: draft.allDay,
-    event_type: draft.eventType,
     notes,
     route_id: draft.routeId,
     scheduled_date: draft.scheduledDate,

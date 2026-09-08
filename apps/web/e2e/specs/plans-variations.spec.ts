@@ -211,8 +211,6 @@ test("[variation:training-plans.library:narrow-template] narrow template tab scr
     await athletePage.setViewportSize({ width: 390, height: 844 });
     await plans.openLibrary();
     await plans.openTemplates();
-    const card = await plans.search(fixture.templateName);
-    await card.scrollIntoViewIfNeeded();
     await plans.openPlan(fixture.templateName, "keyboard");
     await expect(athletePage.getByRole("heading", { name: fixture.templateName })).toBeVisible();
     await expect(athletePage.getByText("System browser-library fixture")).toBeVisible();
@@ -317,9 +315,7 @@ test("[variation:training-plans.schedule:agenda-back] scheduled activity opens i
       name: "Open planned activity Playwright Tempo Builder",
     });
     await planned.click();
-    await expect(
-      athletePage.getByRole("heading", { name: "Playwright Tempo Builder" }),
-    ).toBeVisible();
+    await expect(athletePage.getByRole("heading", { name: "Playwright tempo" })).toBeVisible();
     await athletePage.goBack();
     await expect(planned).toBeVisible();
     await expect(athletePage).toHaveURL(/calendar\/day\/2026-12-21/);

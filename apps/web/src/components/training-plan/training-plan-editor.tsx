@@ -428,9 +428,7 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
                 </div>
                 <div>
                   <dt>Readiness</dt>
-                  <dd>
-                    {authoritativeProjection.goalAssessment?.readiness.toFixed(0) ?? "Unavailable"}
-                  </dd>
+                  <dd>{authoritativeProjection.goalAssessment?.readiness.toFixed(0) ?? "—"}</dd>
                 </div>
               </dl>
             )}

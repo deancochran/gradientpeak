@@ -9,10 +9,23 @@ export const ROUTES = {
   // Plan Tab Routes
   PLAN: {
     INDEX: "/(internal)/(tabs)/plan" as const,
-    CALENDAR: "/(internal)/(tabs)/calendar" as const,
+    OVERVIEW: {
+      pathname: "/(internal)/(tabs)/plan",
+      params: { view: "overview" },
+    } as const,
+    ANALYSIS: (params: {
+      anchorDate: string;
+      goalId: string;
+      metric: "threshold" | "load" | "fitness" | "fatigue" | "form";
+      range: "6w" | "3m" | "6m" | "1y";
+      view: "progress" | "training";
+    }) => ({ pathname: "/plan-analysis", params }) as const,
+    CALENDAR: {
+      pathname: "/(internal)/(tabs)/plan",
+      params: { view: "calendar" },
+    } as const,
     CREATE: "/create-activity-plan" as const,
-    CALENDAR_DAY: (date: string) => ({ pathname: "/calendar-day", params: { date } }) as const,
-    PLANNING_LEDGER: (params: { anchorDate: string; period: "day" | "week" | "month" }) =>
+    PLANNING_LEDGER: (params: { anchorDate: string; period: "day" | "week" }) =>
       ({ pathname: "/planning-ledger", params }) as const,
     AGENDA_CREATE: (date: string) => ({ pathname: "/agenda-create", params: { date } }) as const,
     EVENT_CREATE: (date: string) =>
@@ -48,6 +61,10 @@ export const ROUTES = {
     DETAIL: (activityId: string) => `/activity-detail?id=${activityId}` as const,
   },
 
+  THRESHOLDS: {
+    OVERVIEW: "/thresholds" as const,
+  },
+
   GOALS: {
     LIST: "/goals-list" as const,
     CREATE: "/goal-create" as const,
@@ -64,12 +81,19 @@ export const ROUTES = {
   },
 
   // Other Tab Routes
-  SEARCH: "/search" as const,
-  DISCOVER: "/search" as const,
-  CALENDAR: "/(internal)/(tabs)/calendar" as const,
+  SEARCH: "/(internal)/(tabs)/discover" as const,
+  DISCOVER: "/(internal)/(tabs)/discover" as const,
+  COMMUNITY: "/(internal)/(tabs)/groups" as const,
+  MY_GROUPS: "/my-groups" as const,
+  CALENDAR: {
+    pathname: "/(internal)/(tabs)/plan",
+    params: { view: "calendar" },
+  } as const,
 
   // Profile
-  PROFILE_TAB: "/(internal)/(tabs)/profile" as const,
+  ME: "/me" as const,
+  PROFILE_TAB: "/me" as const,
+  INBOX: "/inbox" as const,
   USER_DETAIL: (userId: string) => `/user/${userId}` as const,
   PROFILE_EDIT: "/profile-edit" as const,
   INTEGRATIONS: "/integrations" as const,

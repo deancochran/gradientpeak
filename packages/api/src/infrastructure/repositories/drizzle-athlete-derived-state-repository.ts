@@ -935,9 +935,11 @@ export function createDrizzleAthleteDerivedStateRepository(
       ) {
         throw new Error("Threshold evidence owner or activity mismatch");
       }
-      const categories = evidence.map((record) => record.evidence.activityCategory);
-      if (new Set(categories).size !== categories.length) {
-        throw new Error("Threshold evidence replacement contains a duplicate category");
+      const identities = evidence.map(
+        (record) => `${record.evidence.activityCategory}/${record.evidence.metric}`,
+      );
+      if (new Set(identities).size !== identities.length) {
+        throw new Error("Threshold evidence replacement contains a duplicate category and metric");
       }
       await inTransaction(db, async (tx) => {
         const [ownedActivity] = await tx

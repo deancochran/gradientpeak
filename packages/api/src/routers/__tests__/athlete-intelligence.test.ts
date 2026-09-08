@@ -1,7 +1,13 @@
 import { createUnavailableAthletePerformanceTargetFacts } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
+import type { getGoalAssessmentBatch } from "../../application/athlete-intelligence/goal-assessment";
 import { goalAssessmentResponseSchema } from "../../application/athlete-intelligence/goal-assessment";
+import {
+  GoalProgressNotFoundError,
+  type readGoalPortfolio,
+  type readGoalProgress,
+} from "../../application/athlete-intelligence/read-goal-progress";
 import type {
   withAuthorizedAthleteReadAcrossOrganizations,
   withResolvedAuthorizedAthleteReadAcrossOrganizations,
@@ -234,6 +240,181 @@ describe("athleteIntelligenceRouter.getGoalAssessment", () => {
     await expect(api.getGoalAssessment({ goalId: GOAL_ID })).rejects.toMatchObject({
       code: "NOT_FOUND",
     });
+  });
+});
+
+describe("athleteIntelligenceRouter.getGoalAssessmentBatch", () => {
+  it("uses the authenticated profile as the sole owner scope and rejects duplicate IDs", async () => {
+    const readBatch = vi.fn(async () => ({
+      entries: [
+        {
+          goalId: GOAL_ID,
+          readiness: null,
+          freshness: "unavailable" as const,
+          confidence: 0,
+          revision: null,
+          computedAt: "2026-07-10T12:00:00.000Z",
+        },
+      ],
+    })) as unknown as typeof getGoalAssessmentBatch;
+    const router = createAthleteIntelligenceRouter(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { getGoalAssessmentBatch: readBatch },
+    );
+    const api = createRouterCaller(router, { db: {}, userId: OWNER_ID });
+
+    await expect(api.getGoalAssessmentBatch({ goalIds: [GOAL_ID, GOAL_ID] })).rejects.toMatchObject(
+      {
+        code: "BAD_REQUEST",
+      } satisfies Partial<TRPCError>,
+    );
+    await expect(api.getGoalAssessmentBatch({ goalIds: [GOAL_ID] })).resolves.toEqual({
+      entries: [expect.objectContaining({ goalId: GOAL_ID, readiness: null })],
+    });
+    expect(readBatch).toHaveBeenCalledOnce();
+    expect(readBatch).toHaveBeenCalledWith({ db: {}, profileId: OWNER_ID, goalIds: [GOAL_ID] });
+  });
+});
+
+describe("athleteIntelligenceRouter.getGoalProgress", () => {
+  function goalProgressCaller(
+    readProgress: typeof readGoalProgress = vi.fn(async () => ({
+      result: {
+        status: "unsupported" as const,
+        reason: "heart_rate_goal" as const,
+        goalId: GOAL_ID,
+      },
+      provenance: null,
+      publication: null,
+    })),
+    authenticated = true,
+  ) {
+    const router = createAthleteIntelligenceRouter(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { readGoalProgress: readProgress },
+    );
+    return {
+      caller: createRouterCaller(router, {
+        db: {},
+        userId: OWNER_ID,
+        ...(authenticated ? {} : { session: null }),
+      }),
+      readProgress,
+    };
+  }
+
+  it("requires authentication and rejects unknown input fields before the goal read", async () => {
+    const unauthenticated = goalProgressCaller(undefined, false);
+    await expect(unauthenticated.caller.getGoalProgress({ goalId: GOAL_ID })).rejects.toMatchObject(
+      { code: "UNAUTHORIZED" } satisfies Partial<TRPCError>,
+    );
+    expect(unauthenticated.readProgress).not.toHaveBeenCalled();
+
+    const authenticated = goalProgressCaller();
+    await expect(
+      authenticated.caller.getGoalProgress({ goalId: GOAL_ID, profileId: OWNER_ID } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
+    expect(authenticated.readProgress).not.toHaveBeenCalled();
+  });
+
+  it("uses the authenticated athlete as the owner scope and returns the strict DTO", async () => {
+    const { caller: api, readProgress } = goalProgressCaller();
+    const result = await api.getGoalProgress({ goalId: GOAL_ID });
+
+    expect(readProgress).toHaveBeenCalledWith({
+      db: {},
+      profileId: OWNER_ID,
+      goalId: GOAL_ID,
+    });
+    expect(result).toEqual({
+      result: { status: "unsupported", reason: "heart_rate_goal", goalId: GOAL_ID },
+      provenance: null,
+      publication: null,
+    });
+  });
+
+  it("maps an owner-scoped miss to a non-enumerating not-found response", async () => {
+    const readProgress = vi.fn(async () => {
+      throw new GoalProgressNotFoundError();
+    }) as unknown as typeof readGoalProgress;
+    const { caller: api } = goalProgressCaller(readProgress);
+
+    await expect(api.getGoalProgress({ goalId: GOAL_ID })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Goal not found",
+    });
+  });
+
+  it("validates application output before returning it to the client", async () => {
+    const readProgress = vi.fn(async () => ({
+      result: { status: "unsupported", reason: "heart_rate_goal", goalId: GOAL_ID },
+      provenance: null,
+      publication: null,
+      forecast: { value: 300 },
+    })) as unknown as typeof readGoalProgress;
+    const { caller: api } = goalProgressCaller(readProgress);
+
+    await expect(api.getGoalProgress({ goalId: GOAL_ID })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+    } satisfies Partial<TRPCError>);
+  });
+});
+
+describe("athleteIntelligenceRouter.getGoalPortfolio", () => {
+  it("returns the compact owner-scoped portfolio without client pagination inputs", async () => {
+    const readPortfolio = vi.fn(async () => ({
+      activeGoalCount: 1,
+      computedAt: "2026-07-10T12:00:00.000Z",
+      freshness: "fresh" as const,
+      planningDate: "2026-07-10",
+      publishedRevision: 4,
+      selectedGoal: {
+        activityCategory: "run",
+        id: GOAL_ID,
+        priority: 5,
+        targetDate: "2026-09-01",
+        title: "Autumn 10K",
+      },
+      totalGoalCount: 2,
+    })) as unknown as typeof readGoalPortfolio;
+    const router = createAthleteIntelligenceRouter(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { readGoalPortfolio: readPortfolio },
+    );
+    const api = createRouterCaller(router, { db: {}, userId: OWNER_ID });
+
+    await expect(api.getGoalPortfolio({})).resolves.toMatchObject({
+      activeGoalCount: 1,
+      selectedGoal: { id: GOAL_ID },
+      totalGoalCount: 2,
+    });
+    await expect(api.getGoalPortfolio({ limit: 100 } as never)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    } satisfies Partial<TRPCError>);
+    expect(readPortfolio).toHaveBeenCalledOnce();
+    expect(readPortfolio).toHaveBeenCalledWith({ db: {}, profileId: OWNER_ID });
+  });
+});
+
+describe("athleteIntelligenceRouter.getThresholdOverview", () => {
+  it("requires authentication before accessing athlete threshold data", async () => {
+    const { caller: unauthenticated } = caller(undefined, false);
+
+    await expect(unauthenticated.getThresholdOverview({})).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    } satisfies Partial<TRPCError>);
   });
 });
 

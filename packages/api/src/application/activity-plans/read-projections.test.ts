@@ -1,6 +1,16 @@
-import { activityPlanStructureSchema } from "@repo/core";
+import {
+  activityPlanStructureSchema,
+  createActivityPlanQuantificationIdentities,
+  createUnavailableAthletePerformanceTargetFacts,
+  ENDURANCE_SWIM,
+  estimateActivityPlanForTrainingContext,
+  OPTION_1_FAVORITE_SWIM,
+  SAMPLE_RECOVERY_WORKOUT,
+} from "@repo/core";
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { describe, expect, it } from "vitest";
 import {
+  createActivityPlanProjectionMetrics,
   toActivityPlanDetail,
   toActivityPlanSummary,
   toScheduledActivityPlanSummary,
@@ -75,6 +85,60 @@ const mixedDurationStructure = activityPlanStructureSchema.parse({
   ],
 });
 
+const derivedDistanceStructure = activityPlanStructureSchema.parse({
+  version: 3,
+  activity_category: "run",
+  segments: [
+    {
+      role: "activity",
+      id: "70000000-0000-4000-8000-000000000021",
+      name: "Timed run",
+      intervals: [
+        {
+          id: "70000000-0000-4000-8000-000000000022",
+          name: "Main",
+          repetitions: 1,
+          steps: [
+            {
+              id: "70000000-0000-4000-8000-000000000023",
+              name: "Steady",
+              duration: { type: "time", seconds: 600 },
+              targets: [{ type: "speed", intensity: 12 }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
+const derivedDurationStructure = activityPlanStructureSchema.parse({
+  version: 3,
+  activity_category: "strength",
+  segments: [
+    {
+      role: "activity",
+      id: "70000000-0000-4000-8000-000000000031",
+      name: "Strength",
+      intervals: [
+        {
+          id: "70000000-0000-4000-8000-000000000032",
+          name: "Main",
+          repetitions: 1,
+          steps: [
+            {
+              id: "70000000-0000-4000-8000-000000000033",
+              name: "Repetitions",
+              duration: { type: "repetitions", count: 6 },
+              targets: [{ type: "RPE", intensity: 8 }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
 function planRow(planStructure: unknown) {
   return {
     id: PLAN_ID,
@@ -113,11 +177,11 @@ describe("toActivityPlanSummary", () => {
 
     expect(result.metrics).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ key: "elapsed_duration", status: "partial", value: 600 }),
-        expect.objectContaining({ key: "distance", status: "partial", value: 1_000 }),
+        expect.objectContaining({ key: "elapsed_duration", status: "unavailable", value: null }),
+        expect.objectContaining({ key: "distance", status: "unavailable", value: null }),
         expect.objectContaining({ key: "common_load", status: "unavailable", value: null }),
         expect.objectContaining({
-          key: "normalized_intensity",
+          key: "objective_intensity",
           status: "unavailable",
           value: null,
         }),
@@ -128,7 +192,77 @@ describe("toActivityPlanSummary", () => {
         expect.objectContaining({ key: "elapsed_duration", status: "available", value: 0 }),
       ]),
     );
+    expect(result.planProjection?.distance).toMatchObject({
+      status: "partial",
+      value: 1_000,
+    });
+    expect(result.prescriptionQuantification?.summary.distance).toMatchObject({
+      status: "partial",
+      value: 1_000,
+    });
     expect(result.structure).toEqual(mixedDurationStructure);
+  });
+
+  it("promotes complete derived distance and duration with estimated provenance", () => {
+    const distance = toActivityPlanSummary(planRow(derivedDistanceStructure), PROFILE_ID);
+    const duration = toActivityPlanSummary(planRow(derivedDurationStructure), PROFILE_ID);
+
+    expect(distance.planProjection?.distance).toMatchObject({
+      status: "complete",
+      provenance: "derived",
+    });
+    expect(distance.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "distance",
+          status: "available",
+          value: expect.closeTo(2_000),
+          provenance: "estimated",
+        }),
+      ]),
+    );
+    expect(duration.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "elapsed_duration",
+          status: "available",
+          value: 60,
+          provenance: "estimated",
+        }),
+      ]),
+    );
+  });
+
+  it("keeps Active Recovery Ride objective intensity independent of fragmentary load", () => {
+    const result = toActivityPlanSummary(
+      {
+        ...planRow(SAMPLE_RECOVERY_WORKOUT.structure),
+        name: SAMPLE_RECOVERY_WORKOUT.name,
+      },
+      PROFILE_ID,
+    );
+
+    expect(result.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "elapsed_duration",
+          status: "available",
+          value: 2_700,
+        }),
+        expect.objectContaining({
+          key: "common_load",
+          status: "unavailable",
+          value: null,
+          reason: "incomplete_members",
+        }),
+        expect.objectContaining({
+          key: "objective_intensity",
+          status: "available",
+          value: expect.closeTo(0.6055555555555555),
+          provenance: "estimated",
+        }),
+      ]),
+    );
   });
 
   it.each([
@@ -168,15 +302,16 @@ describe("toActivityPlanSummary", () => {
         expect.objectContaining({
           key: "common_load",
           status: "available",
-          provenance: "plan_intent",
+          provenance: "estimated",
         }),
         expect.objectContaining({
-          key: "normalized_intensity",
+          key: "objective_intensity",
           status: "available",
           value: 0.75,
-          provenance: "plan_intent",
+          provenance: "estimated",
         }),
       ]);
+      expect(projection).not.toHaveProperty("prescribedIntensity");
       expect(projection.capabilities).toMatchObject({
         canDuplicate: false,
         canRecord: false,
@@ -195,6 +330,78 @@ describe("toActivityPlanSummary", () => {
     expect(Object.hasOwn(detail, "gpsRecordingEnabled")).toBe(false);
   });
 
+  it("projects Option 1 from authored distance work without fragmentary totals or calibration data", () => {
+    const summary = toActivityPlanSummary(
+      {
+        ...planRow(OPTION_1_FAVORITE_SWIM.structure),
+        content_visibility: "public",
+      },
+      "viewer-2",
+    );
+    const metrics = summary.metrics;
+
+    expect(metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "distance", status: "unavailable", value: null }),
+        expect.objectContaining({ key: "elapsed_duration", status: "unavailable", value: null }),
+        expect.objectContaining({ key: "common_load", status: "unavailable", value: null }),
+        expect.objectContaining({
+          key: "objective_intensity",
+          label: "Intensity",
+          status: "unavailable",
+          value: null,
+          reason: "mixed_completion_bases",
+        }),
+      ]),
+    );
+    expect(summary).not.toHaveProperty("prescribedIntensity");
+    expect(JSON.stringify(metrics)).not.toMatch(
+      /thresholdEvidence|calibration|athlete_personalized|private/i,
+    );
+    expect(metrics).not.toEqual(expect.arrayContaining([expect.objectContaining({ value: 180 })]));
+    expect(metrics).not.toEqual(expect.arrayContaining([expect.objectContaining({ value: 1.5 })]));
+    expect(metrics).not.toEqual(expect.arrayContaining([expect.objectContaining({ value: 0.55 })]));
+  });
+
+  it("includes only objective intensity in the canonical projection metric array", () => {
+    const metrics = createActivityPlanProjectionMetrics({
+      id: PLAN_ID,
+      structure,
+      updatedAt: "2026-07-17T08:00:00.000Z",
+    });
+
+    expect(metrics).toHaveLength(4);
+    expect(metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "objective_intensity",
+          status: "available",
+          value: 0.75,
+        }),
+      ]),
+    );
+    expect(metrics.map((metric) => metric.key)).not.toContain("normalized_intensity");
+  });
+
+  it("projects the indoor Endurance Set ratio even when duration and load are unavailable", () => {
+    const summary = toActivityPlanSummary(
+      { ...planRow(ENDURANCE_SWIM.structure), name: ENDURANCE_SWIM.name },
+      PROFILE_ID,
+    );
+    expect(summary.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "elapsed_duration", status: "unavailable", value: null }),
+        expect.objectContaining({ key: "common_load", status: "unavailable", value: null }),
+        expect.objectContaining({
+          key: "objective_intensity",
+          status: "available",
+          value: expect.closeTo(2_439 / 3_500, 12),
+          provenance: "estimated",
+        }),
+      ]),
+    );
+  });
+
   it("retains full authoring and detail fields for the owner", () => {
     const detail = toActivityPlanDetail(
       {
@@ -210,7 +417,154 @@ describe("toActivityPlanSummary", () => {
     expect(detail.structureHash).toMatch(/^v1:sha256:/);
     expect(detail.gpsRecordingEnabled).toBe(true);
     expect(detail.capabilities.canDuplicate).toBe(true);
+    expect(detail.metrics.map((metric) => metric.key)).toContain("objective_intensity");
+    expect(detail).not.toHaveProperty("prescribedIntensity");
     expect(JSON.stringify(detail)).toMatch(/%FTP|"duration"|"targets"/);
+  });
+
+  it("accepts fresh personalized evidence for the owner", () => {
+    const facts = buildPerformanceTargetFactsFixture({
+      asOf: "2026-07-17T08:00:00.000Z",
+      athleteId: PROFILE_ID,
+      bikeThresholdWatts: 250,
+    });
+    const personalizedStructure = structuredClone(structure);
+    const segment = personalizedStructure.segments[0];
+    if (!segment || segment.role !== "activity") throw new Error("Expected activity segment");
+    const step = segment.intervals[0]?.steps[0];
+    if (!step) throw new Error("Expected activity step");
+    step.targets = [{ type: "watts", intensity: 200 }];
+    const planning = estimateActivityPlanForTrainingContext({
+      asOf: facts.asOf,
+      planId: PLAN_ID,
+      performanceTargets: facts,
+      structure: personalizedStructure,
+    });
+
+    const summary = toActivityPlanSummary(
+      {
+        ...planRow(personalizedStructure),
+        prescriptionQuantification: planning.prescriptionQuantification,
+        planProjection: planning.planProjection,
+      },
+      PROFILE_ID,
+    );
+
+    expect(
+      summary.prescriptionQuantification?.members[0]?.commonLoad.thresholdEvidence,
+    ).toMatchObject({ type: "ftp_watts", value: 250 });
+    expect(summary.planProjection?.revisionFingerprint).toBe(
+      planning.planProjection?.revisionFingerprint,
+    );
+    expect(summary.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "objective_intensity",
+          status: "available",
+          value: 0.8,
+          provenance: "estimated",
+        }),
+      ]),
+    );
+  });
+
+  it("rejects stale quantification and projection revisions and recomputes authored evidence", () => {
+    const oldPlanning = estimateActivityPlanForTrainingContext({
+      asOf: "2026-07-17T08:00:00.000Z",
+      planId: PLAN_ID,
+      performanceTargets: createUnavailableAthletePerformanceTargetFacts(
+        "2026-07-17T08:00:00.000Z",
+        PROFILE_ID,
+      ),
+      structure,
+    });
+    const revised = structuredClone(structure);
+    const segment = revised.segments[0];
+    if (!segment || segment.role !== "activity") throw new Error("Expected activity segment");
+    const step = segment.intervals[0]?.steps[0];
+    if (!step) throw new Error("Expected activity step");
+    step.duration = { type: "time", seconds: 2_400 };
+    const currentFingerprint = createActivityPlanQuantificationIdentities({
+      structure: revised,
+      planId: PLAN_ID,
+    }).evidenceIdentity.revisionFingerprint;
+
+    const summary = toActivityPlanSummary(
+      {
+        ...planRow(revised),
+        prescriptionQuantification: oldPlanning.prescriptionQuantification,
+        planProjection: oldPlanning.planProjection,
+      },
+      PROFILE_ID,
+    );
+
+    expect(summary.planProjection?.revisionFingerprint).toBe(currentFingerprint);
+    expect(summary.planProjection?.revisionFingerprint).not.toBe(
+      oldPlanning.planProjection?.revisionFingerprint,
+    );
+    expect(summary.prescriptionQuantification?.members).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          evidenceIdentity: expect.objectContaining({ revisionFingerprint: currentFingerprint }),
+        }),
+      ]),
+    );
+    expect(summary.metrics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: "elapsed_duration", value: 2_400 })]),
+    );
+  });
+
+  it("never exposes fresh personalized evidence to a non-owner or system-template projection", () => {
+    const facts = buildPerformanceTargetFactsFixture({
+      asOf: "2026-07-17T08:00:00.000Z",
+      athleteId: PROFILE_ID,
+      bikeThresholdWatts: 250,
+    });
+    const personalizedStructure = structuredClone(structure);
+    const segment = personalizedStructure.segments[0];
+    if (!segment || segment.role !== "activity") throw new Error("Expected activity segment");
+    const step = segment.intervals[0]?.steps[0];
+    if (!step) throw new Error("Expected activity step");
+    step.targets = [{ type: "watts", intensity: 200 }];
+    const planning = estimateActivityPlanForTrainingContext({
+      asOf: facts.asOf,
+      planId: PLAN_ID,
+      performanceTargets: facts,
+      structure: personalizedStructure,
+    });
+    const row = {
+      ...planRow(personalizedStructure),
+      content_visibility: "public" as const,
+      prescriptionQuantification: planning.prescriptionQuantification,
+      planProjection: planning.planProjection,
+    };
+
+    const nonOwner = toActivityPlanSummary(row, "viewer-2");
+    const publicOwner = toActivityPlanSummary(row, PROFILE_ID);
+    const system = toActivityPlanSummary(
+      { ...row, profile_id: null, is_system_template: true },
+      PROFILE_ID,
+    );
+
+    for (const projection of [nonOwner, publicOwner, system]) {
+      expect(
+        Object.hasOwn(projection, "prescriptionQuantification")
+          ? projection.prescriptionQuantification?.members.every(
+              (member) => member.commonLoad.thresholdEvidence === null,
+            )
+          : true,
+      ).toBe(true);
+      expect(JSON.stringify(projection)).not.toMatch(/ftp_watts|"provenance":"personalized"/i);
+      expect(projection.planProjection?.objectiveIntensity).toMatchObject({
+        status: "unavailable",
+        value: null,
+        reason: "calibration_required",
+      });
+      expect(projection.metrics.map((metric) => metric.key)).toContain("objective_intensity");
+      expect(projection).not.toHaveProperty("prescribedIntensity");
+    }
+    expect(JSON.stringify(nonOwner)).not.toMatch(/thresholdEvidence/i);
+    expect(JSON.stringify(system)).not.toMatch(/thresholdEvidence/i);
   });
 
   it("keeps the full system-template prescription readable and duplicable", () => {
@@ -230,5 +584,7 @@ describe("toActivityPlanSummary", () => {
       canRecord: false,
     });
     expect(summary.structure).toEqual(structure);
+    expect(summary.metrics.map((metric) => metric.key)).toContain("objective_intensity");
+    expect(summary).not.toHaveProperty("prescribedIntensity");
   });
 });

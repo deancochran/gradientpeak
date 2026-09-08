@@ -1,6 +1,6 @@
 import React from "react";
 import { type HostProps, createHost as mockCreateHost } from "../../../test/mock-components";
-import { renderNative, screen } from "../../../test/render-native";
+import { act, fireEvent, renderNative, screen } from "../../../test/render-native";
 import { TrainingPlanDetailHeaderActionsSection } from "../TrainingPlanDetailHeaderActionsSection";
 
 jest.mock("@repo/ui/components/button", () => ({
@@ -32,8 +32,11 @@ describe("TrainingPlanDetailHeaderActionsSection", () => {
     await renderNative(
       <TrainingPlanDetailHeaderActionsSection
         handleToggleLike={jest.fn()}
+        handleShare={jest.fn()}
+        commentCount={0}
         isLiked={false}
         likesCount={0}
+        onCommentsPress={jest.fn()}
         plan={{
           name: "Shared Plan",
           created_at: "2026-01-01T00:00:00.000Z",
@@ -61,12 +64,80 @@ describe("TrainingPlanDetailHeaderActionsSection", () => {
     await renderNative(
       <TrainingPlanDetailHeaderActionsSection
         handleToggleLike={jest.fn()}
+        handleShare={jest.fn()}
+        commentCount={0}
         isLiked={true}
         likesCount={3}
+        onCommentsPress={jest.fn()}
         plan={{ name: "Owned Plan", created_at: "2026-01-01T00:00:00.000Z" }}
       />,
     );
 
     expect(screen.getByText("3")).toBeTruthy();
+  });
+
+  it("disables the like control until an in-flight toggle settles", async () => {
+    let resolveToggle: (() => void) | undefined;
+    const handleToggleLike = jest.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveToggle = resolve;
+        }),
+    );
+    await renderNative(
+      <TrainingPlanDetailHeaderActionsSection
+        handleToggleLike={handleToggleLike}
+        handleShare={jest.fn()}
+        commentCount={0}
+        isLiked={false}
+        likesCount={0}
+        onCommentsPress={jest.fn()}
+        plan={{ name: "Owned Plan", created_at: "2026-01-01T00:00:00.000Z" }}
+      />,
+    );
+
+    await fireEvent.press(screen.getByTestId("training-plan-like-button"));
+    expect(screen.getByTestId("training-plan-like-button").props.disabled).toBe(true);
+    await fireEvent.press(screen.getByTestId("training-plan-like-button"));
+    expect(handleToggleLike).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveToggle?.();
+    });
+  });
+
+  it("keeps Share present but disabled while visibility is updating", async () => {
+    await renderNative(
+      <TrainingPlanDetailHeaderActionsSection
+        handleToggleLike={jest.fn()}
+        handleShare={jest.fn()}
+        shareDisabled
+        commentCount={0}
+        isLiked={false}
+        likesCount={0}
+        onCommentsPress={jest.fn()}
+        plan={{ name: "Owned Plan", created_at: "2026-01-01T00:00:00.000Z" }}
+      />,
+    );
+
+    expect(screen.getByTestId("training-plan-share-button").props.disabled).toBe(true);
+  });
+
+  it("describes a scheduled program without global active-plan language", async () => {
+    await renderNative(
+      <TrainingPlanDetailHeaderActionsSection
+        handleToggleLike={jest.fn()}
+        handleShare={jest.fn()}
+        commentCount={0}
+        isLiked={false}
+        isScheduledPlan
+        likesCount={0}
+        onCommentsPress={jest.fn()}
+        plan={{ name: "Build Base", created_at: "2026-01-01T00:00:00.000Z" }}
+      />,
+    );
+
+    expect(screen.getByText("This program has future sessions on your calendar.")).toBeTruthy();
+    expect(screen.queryByText("Current scheduled plan")).toBeNull();
   });
 });

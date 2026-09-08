@@ -7,7 +7,7 @@ import { RUNNING_NUMERICAL_TRUST_FIXTURES_V1 } from "../../calculations/__tests_
 import { SWIMMING_HEART_RATE_NUMERICAL_TRUST_FIXTURES_V1 } from "../../calculations/__tests__/fixtures/swimming-heart-rate-numerical-trust-v1";
 import { selectRunningNormalizedGradedSpeedMetersPerSecond } from "../../calculations/normalized-graded-pace";
 import { selectCyclingNormalizedPowerWatts } from "../../calculations/normalized-power";
-import { getNormalizedIntensity } from "../../load";
+import { getKnownNormalizedIntensity, getNormalizedIntensity } from "../../load";
 import {
   type AthletePerformanceTargetFacts,
   createUnavailableAthletePerformanceTargetFacts,
@@ -160,7 +160,7 @@ describe("provisional recording metrics accumulator", () => {
       sourceTimeCoverage: 1,
       reason: "duration_partial",
     });
-    expect(getNormalizedIntensity(snapshot.commonLoad)).toBe(1);
+    expect(getKnownNormalizedIntensity(snapshot.commonLoad)).toBe(1);
     expect(JSON.stringify(snapshot)).not.toMatch(
       /trainingStressScore|intensityFactor|powerTrainingStressScore|heartRateTrainingStressScore|"tss"/i,
     );

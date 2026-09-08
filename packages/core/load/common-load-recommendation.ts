@@ -90,8 +90,8 @@ const partialRecommendationPointSchema = z
   .object({
     ...recommendationPointBaseShape,
     state: z.literal("partial"),
-    load: z.number().finite().nonnegative(),
-    intensity: z.number().finite().min(0).max(1.5),
+    load: z.null(),
+    intensity: z.null(),
     aggregate: commonLoadAggregateSchema,
   })
   .strict()
@@ -102,14 +102,6 @@ const partialRecommendationPointSchema = z
         path: ["aggregate"],
         message: "Partial recommendation requires a partial aggregate",
       });
-    }
-    if (point.aggregate.status !== "unavailable") {
-      if (point.load !== point.aggregate.load || point.intensity !== point.aggregate.intensity) {
-        context.addIssue({
-          code: "custom",
-          message: "Recommendation values must match their aggregate",
-        });
-      }
     }
     if (point.sourceScheduledItemIds.length === 0) {
       context.addIssue({
@@ -527,14 +519,23 @@ export function buildCommonLoadRecommendation(
         sourceScheduledItemIds,
       };
     }
-    return {
-      date,
-      state: aggregate.status,
-      load: aggregate.load,
-      intensity: aggregate.intensity,
-      aggregate,
-      sourceScheduledItemIds,
-    };
+    return aggregate.status === "partial"
+      ? {
+          date,
+          state: "partial",
+          load: null,
+          intensity: null,
+          aggregate,
+          sourceScheduledItemIds,
+        }
+      : {
+          date,
+          state: "complete",
+          load: aggregate.load,
+          intensity: aggregate.intensity,
+          aggregate,
+          sourceScheduledItemIds,
+        };
   });
   const status = points.some((point) => point.state === "partial" || point.state === "unavailable")
     ? "partial"

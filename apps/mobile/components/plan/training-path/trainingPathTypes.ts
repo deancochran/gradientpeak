@@ -1,7 +1,3 @@
-import type { ActivityDisplayModel } from "@repo/core";
-import type { ActivityPlan, PlannedActivity } from "@/components/shared/ActivityPlanCard";
-import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
-import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import type {
   CommonLoadIdentity,
   CompletedObservationState,
@@ -10,6 +6,7 @@ import type {
 export type TrainingPathRange = "goal" | "season" | "all";
 
 export type PlanTrainingChartRange = "daily" | "weekly" | "monthly";
+export type PlanTrainingTrendLine = "fitness" | "fatigue" | "form";
 
 export type TrainingPathWeekWindow = {
   start: string;
@@ -81,35 +78,6 @@ export type TrainingPathWeekSummary = {
   freshnessLabel: string | null;
   projectedFitnessAtGoal?: number | null;
   targetFitnessAtGoal?: number | null;
-};
-
-export type TrainingPathSelectedGoal = {
-  id: string;
-  label: string;
-  targetDate: string;
-  activityCategory?: string | null;
-  status?: string | null;
-};
-
-export type TrainingPathScheduledItem = {
-  id: string;
-  title: string;
-  date: string;
-  estimatedLoad?: number | null;
-  activityPlanId?: string | null;
-  activityPlan?: ActivityPlan | null;
-  event?: CalendarEvent | null;
-  groupEvent?: CalendarGroupEvent | null;
-  plannedActivity?: PlannedActivity | null;
-};
-
-export type TrainingPathCompletedActivity = {
-  id: string;
-  title: string;
-  date: string;
-  load?: number | null;
-  loadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
-  activity?: ActivityDisplayModel;
 };
 
 export type TrainingPathGoalMarker = {

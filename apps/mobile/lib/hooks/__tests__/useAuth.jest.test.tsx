@@ -26,6 +26,7 @@ const createProfile = (overrides: Partial<AuthProfile> = {}): AuthProfile => ({
   planning_timezone: null,
   language: null,
   weight_kg: null,
+  default_content_visibility: "private",
   ...overrides,
 });
 

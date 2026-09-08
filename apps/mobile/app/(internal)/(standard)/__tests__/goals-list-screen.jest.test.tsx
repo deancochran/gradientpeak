@@ -10,6 +10,7 @@ describe("goals list route", () => {
 });
 
 const navigateToMock = jest.fn();
+const captureProductAnalytics = jest.fn();
 
 type Goal = {
   id: string;
@@ -18,9 +19,13 @@ type Goal = {
   activity_category: string;
 };
 
-type GoalListItemProps = {
-  goal: Goal;
-  label?: string;
+type GoalCardProps = {
+  goal: {
+    id: string;
+    objectiveSummary?: string;
+    title: string;
+    compactReadiness?: { status: "ready" | "watch" | "not_ready"; value: number } | null;
+  };
   onPress: () => void;
   testID?: string;
 };
@@ -32,7 +37,8 @@ type FlatListProps = {
   [key: string]: unknown;
 };
 
-const goalListItemPropsMock = jest.fn<void, [GoalListItemProps]>();
+const goalCardPropsMock = jest.fn<void, [GoalCardProps]>();
+const assessmentBatchUseQueryMock = jest.fn();
 
 const goals: Goal[] = [
   {
@@ -48,6 +54,7 @@ const goals: Goal[] = [
     activity_category: "run",
   },
 ];
+let renderedGoals = goals;
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -74,10 +81,10 @@ jest.mock("@/components/ErrorBoundary", () => ({
   ScreenErrorFallback: createHost("ScreenErrorFallback"),
 }));
 
-jest.mock("@/components/plan/GoalListItem", () => ({
+jest.mock("@/components/shared/GoalCard", () => ({
   __esModule: true,
-  GoalListItem: (props: GoalListItemProps) => {
-    goalListItemPropsMock(props);
+  GoalCard: (props: GoalCardProps) => {
+    goalCardPropsMock(props);
     return React.createElement(
       "TouchableOpacity",
       { onPress: props.onPress, testID: props.testID },
@@ -110,7 +117,7 @@ jest.mock("@/components/shared/ScreenState", () => ({
 jest.mock("@/lib/hooks/useProfileGoals", () => ({
   __esModule: true,
   useProfileGoals: () => ({
-    goals,
+    goals: renderedGoals,
     isError: false,
     isFetching: false,
     isLoading: false,
@@ -118,34 +125,85 @@ jest.mock("@/lib/hooks/useProfileGoals", () => ({
   }),
 }));
 
+jest.mock("@/lib/api", () => ({
+  __esModule: true,
+  api: {
+    athleteIntelligence: {
+      getGoalAssessmentBatch: { useQuery: assessmentBatchUseQueryMock },
+      getGoalPortfolio: {
+        useQuery: () => ({ data: { activeGoalCount: 1, totalGoalCount: 2 } }),
+      },
+    },
+  },
+}));
+
 jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
   useAppNavigate: () => navigateToMock,
+}));
+jest.mock("@/lib/analytics/productAnalytics", () => ({
+  useProductAnalytics: () => ({ capture: captureProductAnalytics }),
 }));
 
 const GoalsListScreen = require("../goals-list").default;
 
 describe("goals list screen", () => {
   beforeEach(() => {
+    renderedGoals = goals;
     navigateToMock.mockClear();
-    goalListItemPropsMock.mockClear();
+    goalCardPropsMock.mockClear();
+    assessmentBatchUseQueryMock.mockReturnValue({
+      data: {
+        entries: [
+          {
+            goalId: "upcoming-goal",
+            readiness: { status: "watch", value: 72 },
+            freshness: "fresh",
+            confidence: 0.8,
+            revision: 4,
+            computedAt: "2026-07-10T12:00:00.000Z",
+          },
+          {
+            goalId: "past-goal",
+            readiness: null,
+            freshness: "unavailable",
+            confidence: 0,
+            revision: null,
+            computedAt: "2026-07-10T12:00:00.000Z",
+          },
+        ],
+      },
+    });
   });
 
   it("uses lifecycle labels without deprecated goal intelligence props", async () => {
     await renderNative(<GoalsListScreen />);
 
     const propsByGoalId = new Map(
-      goalListItemPropsMock.mock.calls.map(([props]) => [props.goal.id, props]),
+      goalCardPropsMock.mock.calls.map(([props]) => [props.goal.id, props]),
     );
     expect(propsByGoalId.get("upcoming-goal")).toEqual(
-      expect.objectContaining({ label: "Upcoming" }),
+      expect.objectContaining({ goal: expect.objectContaining({ objectiveSummary: "Upcoming" }) }),
     );
-    expect(propsByGoalId.get("past-goal")).toEqual(expect.objectContaining({ label: "Goal" }));
+    expect(propsByGoalId.get("past-goal")).toEqual(
+      expect.objectContaining({ goal: expect.objectContaining({ objectiveSummary: "Goal" }) }),
+    );
     for (const props of propsByGoalId.values()) {
-      expect(props).not.toHaveProperty("readinessPercent");
-      expect(props).not.toHaveProperty("readinessTarget");
-      expect(props).not.toHaveProperty("status");
+      expect(props.goal).not.toHaveProperty("readinessPercent");
+      expect(props.goal).not.toHaveProperty("readinessTarget");
+      expect(props.goal).not.toHaveProperty("status");
     }
+    expect(assessmentBatchUseQueryMock).toHaveBeenCalledTimes(1);
+    expect(assessmentBatchUseQueryMock).toHaveBeenCalledWith(
+      { goalIds: ["upcoming-goal", "past-goal"] },
+      { enabled: true },
+    );
+    expect(propsByGoalId.get("upcoming-goal")?.goal.compactReadiness).toEqual({
+      status: "watch",
+      value: 72,
+    });
+    expect(propsByGoalId.get("past-goal")?.goal.compactReadiness).toBeNull();
+    expect(screen.getByText("1 active of 2 goals")).toBeTruthy();
   });
 
   it("opens canonical goal detail when a goal is tapped", async () => {
@@ -154,5 +212,24 @@ describe("goals list screen", () => {
     await fireEvent.press(screen.getByTestId("goals-list-row-upcoming-goal"));
 
     expect(navigateToMock).toHaveBeenCalledWith("/goal-detail?id=upcoming-goal");
+    expect(captureProductAnalytics).toHaveBeenCalledTimes(1);
+    expect(captureProductAnalytics).toHaveBeenCalledWith("goal.detail_opened", {
+      source: "goals_list",
+    });
+  });
+
+  it("caps the compact readiness request while retaining the paginated list", async () => {
+    renderedGoals = Array.from({ length: 101 }, (_, index) => ({
+      activity_category: "run",
+      id: `goal-${index}`,
+      target_date: "2099-10-01",
+      title: `Goal ${index}`,
+    }));
+    await renderNative(<GoalsListScreen />);
+
+    expect(assessmentBatchUseQueryMock).toHaveBeenCalledWith(
+      { goalIds: renderedGoals.slice(0, 100).map((goal) => goal.id) },
+      { enabled: true },
+    );
   });
 });

@@ -173,6 +173,7 @@ export const apiOperationPolicyOverrides = {
   "onboarding.retryProviderProcessing": { mutationSafety: "idempotency_key" },
   "publicShare.activity": { authorizationAssurance: "resource_boundary" },
   "publicShare.activityPlan": { authorizationAssurance: "resource_boundary" },
+  "publicShare.route": { authorizationAssurance: "resource_boundary" },
   "publicShare.trainingPlan": { authorizationAssurance: "resource_boundary" },
   "routes.upload": { mutationSafety: "non_idempotent" },
   "social.addComment": { mutationSafety: "non_idempotent" },
@@ -330,6 +331,10 @@ export const apiResourceBoundaryEvidence = {
   "publicShare.trainingPlan": {
     path: "packages/api/src/routers/__tests__/public-share-visibility.live-db.test.ts",
     testName: "returns only public training plans and hides private and missing ids",
+  },
+  "publicShare.route": {
+    path: "packages/api/src/routers/__tests__/public-share-visibility.live-db.test.ts",
+    testName: "returns only public routes and hides private and missing ids",
   },
 } as const satisfies Record<string, z.input<typeof resourceBoundaryEvidenceBindingSchema>>;
 

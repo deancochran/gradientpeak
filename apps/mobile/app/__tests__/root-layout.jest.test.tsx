@@ -60,6 +60,16 @@ jest.mock("react-native-gesture-handler", () => ({
   GestureHandlerRootView: createHost("GestureHandlerRootView"),
 }));
 
+jest.mock("@gorhom/bottom-sheet", () => ({
+  __esModule: true,
+  BottomSheetModalProvider: ({ children }: React.PropsWithChildren) =>
+    React.createElement(
+      "BottomSheetModalProvider",
+      { testID: "bottom-sheet-modal-provider" },
+      children,
+    ),
+}));
+
 jest.mock("react-native-css/components/react-native-safe-area-context", () => ({
   __esModule: true,
   SafeAreaProvider: createHost("SafeAreaProvider"),
@@ -82,6 +92,7 @@ jest.mock("expo-router", () => ({
     React.createElement("Text", { testID: "redirect-target" }, JSON.stringify(href)),
   Slot: () => React.createElement("Text", null, "Internal app content"),
   router: { replace: replaceMock },
+  usePathname: () => "/",
   useSegments: () => segmentsValue,
 }));
 
@@ -137,6 +148,7 @@ jest.mock("@/lib/contract-epoch/contractEpoch", () => ({
 
 jest.mock("@/lib/server-config", () => ({
   __esModule: true,
+  getE2ERuntimeSentinel: () => "lane=e2e api=127.0.0.1:3100 supabase=127.0.0.1:55321",
   initializeServerConfig: jest.fn(async () => undefined),
   useServerConfig: () => ({ initialized: true }),
 }));
@@ -277,6 +289,17 @@ describe("root layout auth guard", () => {
     await renderNative(<RootLayout />);
 
     await waitFor(() => expect(screen.getByText("Internal app content")).toBeTruthy());
+    expect(screen.getByTestId("bottom-sheet-modal-provider")).toBeTruthy();
+  });
+
+  it("exposes the nonvisual E2E runtime sentinel before app-specific navigation", async () => {
+    await renderNative(<RootLayout />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("e2e-runtime-sentinel").props.accessibilityLabel).toBe(
+        "lane=e2e api=127.0.0.1:3100 supabase=127.0.0.1:55321",
+      ),
+    );
   });
 
   it("blocks rendering and auth initialization until the contract epoch is ready", async () => {

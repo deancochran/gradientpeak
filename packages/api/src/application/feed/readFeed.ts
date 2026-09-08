@@ -25,7 +25,7 @@ export async function getFeedForViewer({
 }: {
   db: DbClient;
   viewerId: string;
-  input: { cursor?: string | null; limit: number };
+  input: { cursor?: string | null; limit: number; profileId?: string };
 }) {
   const activities = await listFeedActivityRows(db, viewerId, input);
   const activityIds = activities.map((activity) => activity.id);

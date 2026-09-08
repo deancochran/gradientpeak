@@ -1,18 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeaders } from "@tanstack/react-start/server";
 import { z } from "zod";
+import { getConfiguredAppBaseUrl } from "./app-url";
 
-type ShareEntity = "activity" | "activity-plan" | "training-plan";
+type ShareEntity = "activity" | "activity-plan" | "training-plan" | "route";
 
 const shareInputSchema = z.object({ id: z.string().uuid() }).strict();
-
-function getOriginFromHeaders(headers: Headers) {
-  const forwardedHost = headers.get("x-forwarded-host");
-  const host = forwardedHost ?? headers.get("host") ?? "localhost:3000";
-  const forwardedProto = headers.get("x-forwarded-proto");
-  const proto = forwardedProto ?? (host.startsWith("localhost") ? "http" : "https");
-  return `${proto}://${host}`;
-}
 
 export function getPublicSharePath(entity: ShareEntity, id: string) {
   switch (entity) {
@@ -22,6 +15,8 @@ export function getPublicSharePath(entity: ShareEntity, id: string) {
       return `/share/activities/${id}`;
     case "training-plan":
       return `/share/training-plans/${id}`;
+    case "route":
+      return `/share/routes/${id}`;
   }
 }
 
@@ -40,18 +35,22 @@ async function createPublicShareCaller() {
     auth: { session: null },
     db,
   });
-  return { caller: appRouter.createCaller(context), origin: getOriginFromHeaders(headers) };
+  return { caller: appRouter.createCaller(context) };
 }
 
 export const loadPublicActivityPlan = createServerFn({ method: "GET" })
   .validator(shareInputSchema)
   .handler(async ({ data }) => {
-    const { caller, origin } = await createPublicShareCaller();
+    const { caller } = await createPublicShareCaller();
     const activityPlan = await caller.publicShare.activityPlan({ id: data.id });
     return activityPlan
       ? {
           activityPlan,
-          canonicalUrl: getPublicShareUrl(origin, "activity-plan", activityPlan.id),
+          canonicalUrl: getPublicShareUrl(
+            getConfiguredAppBaseUrl(),
+            "activity-plan",
+            activityPlan.id,
+          ),
         }
       : null;
   });
@@ -59,12 +58,12 @@ export const loadPublicActivityPlan = createServerFn({ method: "GET" })
 export const loadPublicActivity = createServerFn({ method: "GET" })
   .validator(shareInputSchema)
   .handler(async ({ data }) => {
-    const { caller, origin } = await createPublicShareCaller();
+    const { caller } = await createPublicShareCaller();
     const activity = await caller.publicShare.activity({ id: data.id });
     return activity
       ? {
           activity,
-          canonicalUrl: getPublicShareUrl(origin, "activity", activity.id),
+          canonicalUrl: getPublicShareUrl(getConfiguredAppBaseUrl(), "activity", activity.id),
         }
       : null;
   });
@@ -72,12 +71,29 @@ export const loadPublicActivity = createServerFn({ method: "GET" })
 export const loadPublicTrainingPlan = createServerFn({ method: "GET" })
   .validator(shareInputSchema)
   .handler(async ({ data }) => {
-    const { caller, origin } = await createPublicShareCaller();
+    const { caller } = await createPublicShareCaller();
     const trainingPlan = await caller.publicShare.trainingPlan({ id: data.id });
     return trainingPlan
       ? {
           trainingPlan,
-          canonicalUrl: getPublicShareUrl(origin, "training-plan", trainingPlan.id),
+          canonicalUrl: getPublicShareUrl(
+            getConfiguredAppBaseUrl(),
+            "training-plan",
+            trainingPlan.id,
+          ),
+        }
+      : null;
+  });
+
+export const loadPublicRoute = createServerFn({ method: "GET" })
+  .validator(shareInputSchema)
+  .handler(async ({ data }) => {
+    const { caller } = await createPublicShareCaller();
+    const route = await caller.publicShare.route({ id: data.id });
+    return route
+      ? {
+          route,
+          canonicalUrl: getPublicShareUrl(getConfiguredAppBaseUrl(), "route", route.id),
         }
       : null;
   });

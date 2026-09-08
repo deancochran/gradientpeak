@@ -1,18 +1,14 @@
-import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Icon } from "@repo/ui/components/icon";
-import { Text } from "@repo/ui/components/text";
 import { Tabs } from "expo-router";
 import type { BottomTabBarButtonProps } from "expo-router/js-tabs";
-import { CalendarDays, Circle, Home, Route } from "lucide-react-native";
-import { type ColorValue, TouchableOpacity, View } from "react-native";
+import { Circle, Home, Route, Search, Users } from "lucide-react-native";
+import { TouchableOpacity, View } from "react-native";
 import { TrainingPreferencesEditor } from "@/components/settings/training-preferences/TrainingPreferencesEditor";
 import { useSessionView } from "@/lib/hooks/useActivityRecorder";
-import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
 import { markNavigationStart } from "@/lib/performance";
 import { useActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
-import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 import {
   activitySelectionStore,
   defaultRecordLaunchPayload,
@@ -42,24 +38,6 @@ function MeasuredTabButton({
     >
       {props.children}
     </TouchableOpacity>
-  );
-}
-
-function ProfileTabIcon({ color }: { color: ColorValue }) {
-  const { profile, user } = useAuth();
-  const avatarUri = profile?.avatar_url ? getReachableSupabaseStorageUrl(profile.avatar_url) : null;
-  const fallback =
-    profile?.username?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || "A";
-
-  return (
-    <Avatar alt={profile?.username || "User profile"} className="h-7 w-7 border border-border">
-      {avatarUri ? <AvatarImage source={{ uri: avatarUri }} key={avatarUri} /> : null}
-      <AvatarFallback>
-        <Text className="text-xs font-semibold" style={{ color }}>
-          {fallback}
-        </Text>
-      </AvatarFallback>
-    </Avatar>
   );
 }
 
@@ -103,8 +81,6 @@ export default function InternalLayout() {
             ),
           }}
         />
-        <Tabs.Screen name="discover" options={{ href: null }} />
-        <Tabs.Screen name="groups" options={{ href: null }} />
         <Tabs.Screen
           name="plan"
           options={{
@@ -145,29 +121,35 @@ export default function InternalLayout() {
           }}
         />
         <Tabs.Screen
-          name="calendar"
+          name="discover"
           options={{
-            title: "Calendar",
-            tabBarIcon: ({ color }) => <Icon as={CalendarDays} size={28} color={color} />,
+            title: "Discover",
+            tabBarIcon: ({ color }) => <Icon as={Search} size={28} color={color} />,
             tabBarButton: (props) => (
               <MeasuredTabButton
                 {...props}
-                routeKey="route-calendar"
-                testID="tab-button-calendar"
+                routeKey="route-discover"
+                testID="tab-button-discover"
               />
             ),
           }}
         />
         <Tabs.Screen
-          name="profile"
+          name="groups"
           options={{
-            title: "Profile",
-            tabBarIcon: ({ color }) => <ProfileTabIcon color={color} />,
+            title: "Community",
+            tabBarIcon: ({ color }) => <Icon as={Users} size={28} color={color} />,
             tabBarButton: (props) => (
-              <MeasuredTabButton {...props} routeKey="route-profile" testID="tab-button-profile" />
+              <MeasuredTabButton
+                {...props}
+                routeKey="route-community"
+                testID="tab-button-community"
+              />
             ),
           }}
         />
+        <Tabs.Screen name="calendar" options={{ href: null }} />
+        <Tabs.Screen name="profile" options={{ href: null }} />
       </Tabs>
       {trainingPreferencesVisible ? (
         <TrainingPreferencesEditor

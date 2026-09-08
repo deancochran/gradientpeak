@@ -9,6 +9,8 @@ import {
   isSupportedActivityEffortCombination,
 } from "@repo/core/athlete-inputs";
 import {
+  ACTIVITY_FILE_LTHR_CALCULATION_VERSION,
+  ACTIVITY_FILE_LTHR_EFFORT_METHOD,
   type AerobicAnalysisInput,
   type AerobicDecouplingResult,
   type BestEffortDurationResult,
@@ -21,6 +23,7 @@ import {
   calculateGradeAdjustedSpeedSeries,
   calculateNormalizedSpeed,
   calculateRunningNormalizedGradedPace,
+  detectLactateThresholdHeartRate,
   type EfficiencyFactorResult,
   extractBestEfforts,
   type RunningNormalizedGradedPaceResult,
@@ -84,6 +87,30 @@ export interface ActivityFileStreamDerivedMetrics {
 
 export interface ActivityFileStreamDerivedCalculations extends ActivityFileStreamDerivedMetrics {
   effortsToInsert: Array<typeof activityEfforts.$inferInsert>;
+  detectedLTHR: GeneratedActivityLthrEvidence | null;
+}
+
+export interface GeneratedActivityLthrEvidence {
+  valueBpm: number;
+  recordedAt: Date;
+  calculationVersion: string;
+  provenance: {
+    activity_id: string;
+    segment_id: string;
+    derived_from: "activity_file_best_effort" | "activity_file_lthr_field_test";
+    source_series: "heart_rate";
+    source_effort_calculation_version: string;
+    source_effort_start_timestamp_seconds?: number;
+    source_effort_end_timestamp_seconds?: number;
+    source_effort_duration_seconds?: number;
+    exact_window_start_timestamp_seconds: number;
+    exact_window_end_timestamp_seconds: number;
+    duration_seconds: number;
+    window_coverage: 1;
+    maximum_gap_seconds?: number;
+    extraction_status: "available" | "partial";
+    extraction_reason: "source_incomplete" | null;
+  };
 }
 
 export function buildActivityFileDerivedSegmentSummary(input: {
@@ -620,12 +647,119 @@ function buildActivityFileBestEffortRows(
     );
 }
 
+function buildActivityFileLthrEvidence(input: {
+  calculationInput: ActivityFileStreamDerivedCalculationsInput;
+  extractions: readonly BestEffortExtractionResult[];
+}): {
+  evidence: GeneratedActivityLthrEvidence;
+  effort: typeof activityEfforts.$inferInsert;
+} | null {
+  const { calculationInput } = input;
+  if (
+    calculationInput.activityCategory !== "bike" &&
+    calculationInput.activityCategory !== "run" &&
+    calculationInput.activityCategory !== "swim"
+  ) {
+    return null;
+  }
+  const extraction = extractionForMetric(input.extractions, "heart_rate");
+  if (extraction === null) return null;
+  const samples = calculationInput.streamMetadata.samples.map((sample, index) => ({
+    timestampSeconds: sample.timestampSeconds,
+    value: sample.heartRateBpm,
+    ...inclusionAt(calculationInput.includedTimeline, index),
+  }));
+  const detected = detectLactateThresholdHeartRate({ extraction, samples });
+  if (detected === null) return null;
+
+  const activityStartedAtSeconds = calculationInput.activityStartedAt.getTime() / 1_000;
+  const startOffsetSeconds =
+    detected.thresholdWindow.startTimestampSeconds - activityStartedAtSeconds;
+  const endOffsetSeconds = detected.thresholdWindow.endTimestampSeconds - activityStartedAtSeconds;
+  if (
+    startOffsetSeconds + TIMESTAMP_COMPARISON_EPSILON_SECONDS <
+      calculationInput.segmentStartOffsetSeconds ||
+    endOffsetSeconds >
+      calculationInput.segmentEndOffsetSeconds + TIMESTAMP_COMPARISON_EPSILON_SECONDS
+  ) {
+    throw new Error("LTHR field-test window must remain within its owning activity segment");
+  }
+  const id = randomUUID();
+  const provenance = {
+    observation_id: id,
+    activity_id: calculationInput.activityId,
+    segment_id: calculationInput.segmentId,
+    derived_from: "activity_file_lthr_field_test" as const,
+    source_series: "heart_rate" as const,
+    interval_convention: extraction.intervalConvention,
+    field_test_protocol: "30_minute_effort_final_20_minute_hr" as const,
+    source_effort_calculation_version: detected.sourceEffortCalculationVersion,
+    source_effort_start_timestamp_seconds: detected.sourceEffort.startTimestampSeconds,
+    source_effort_end_timestamp_seconds: detected.sourceEffort.endTimestampSeconds,
+    source_effort_duration_seconds: detected.sourceEffort.durationSeconds,
+    exact_window_start_timestamp_seconds: detected.thresholdWindow.startTimestampSeconds,
+    exact_window_end_timestamp_seconds: detected.thresholdWindow.endTimestampSeconds,
+    exact_window_start_offset_seconds: startOffsetSeconds,
+    exact_window_end_offset_seconds: endOffsetSeconds,
+    duration_seconds: detected.thresholdWindow.durationSeconds,
+    contributing_duration_seconds: detected.thresholdWindow.contributingDurationSeconds,
+    window_coverage: detected.thresholdWindow.windowCoverage,
+    maximum_gap_seconds: extraction.maxGapSeconds,
+    extraction_status: detected.sourceEffort.status,
+    extraction_reason:
+      detected.sourceEffort.status === "partial" ? detected.sourceEffort.reason : null,
+    persisted_start_offset_quantization: "nearest_millisecond_v1" as const,
+    calculation_version: detected.calculationVersion,
+  };
+  const evidence: GeneratedActivityLthrEvidence = {
+    valueBpm: detected.valueBpm,
+    recordedAt: new Date(detected.thresholdWindow.endTimestampSeconds * 1_000),
+    calculationVersion: detected.calculationVersion,
+    provenance,
+  };
+  return {
+    evidence,
+    effort: {
+      id,
+      created_at: new Date(),
+      activity_id: calculationInput.activityId,
+      segment_id: calculationInput.segmentId,
+      profile_id: calculationInput.profileId,
+      recorded_at: evidence.recordedAt,
+      activity_category: calculationInput.activityCategory,
+      effort_type: "heart_rate",
+      source_series: "heart_rate",
+      duration_seconds: detected.thresholdWindow.durationSeconds,
+      source_artifact_id:
+        calculationInput.sourceArtifactId ?? "00000000-0000-0000-0000-000000000000",
+      source_revision: calculationInput.sourceRevision ?? 1,
+      start_offset_ms: Math.round(startOffsetSeconds * 1_000),
+      end_offset_ms:
+        Math.round(startOffsetSeconds * 1_000) + detected.thresholdWindow.durationSeconds * 1_000,
+      window_coverage: detected.thresholdWindow.windowCoverage,
+      max_gap_seconds: extraction.maxGapSeconds,
+      unit: "bpm",
+      value: detected.valueBpm,
+      source: "imported",
+      method: ACTIVITY_FILE_LTHR_EFFORT_METHOD,
+      calculation_version: ACTIVITY_FILE_LTHR_CALCULATION_VERSION,
+      provenance,
+    },
+  };
+}
+
 export function calculateActivityFileStreamDerivedCalculations(
   input: ActivityFileStreamDerivedCalculationsInput,
 ): ActivityFileStreamDerivedCalculations {
   const metrics = calculateActivityFileStreamDerivedMetrics(input);
+  const bestEfforts = buildActivityFileBestEffortRows(input, metrics.bestEffortExtractions);
+  const lthr = buildActivityFileLthrEvidence({
+    calculationInput: input,
+    extractions: metrics.bestEffortExtractions,
+  });
   return {
     ...metrics,
-    effortsToInsert: buildActivityFileBestEffortRows(input, metrics.bestEffortExtractions),
+    effortsToInsert: [...bestEfforts, ...(lthr === null ? [] : [lthr.effort])],
+    detectedLTHR: lthr?.evidence ?? null,
   };
 }

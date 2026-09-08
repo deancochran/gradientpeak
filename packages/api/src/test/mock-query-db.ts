@@ -198,6 +198,12 @@ function extractSqlText(query: unknown): string {
 
 function inferTableFromSql(query: unknown): string {
   const text = extractSqlText(query);
+  if (
+    text.includes('select schedule_batch_id as "schedulebatchid"') &&
+    text.includes("training_plan_id")
+  ) {
+    return "training_plan_schedule_replays";
+  }
   const tables = [
     "training_plans",
     "profile_training_settings",

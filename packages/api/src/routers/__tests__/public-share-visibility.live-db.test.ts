@@ -3,6 +3,7 @@ import { db, pool } from "@repo/db/client";
 import {
   activities,
   activityPlans,
+  activityRoutes,
   activitySegments,
   profiles,
   trainingPlans,
@@ -48,6 +49,8 @@ type SeedState = {
   privateActivityId: string;
   publicActivityPlanId: string;
   privateActivityPlanId: string;
+  publicRouteId: string;
+  privateRouteId: string;
   publicTrainingPlanId: string;
   privateTrainingPlanId: string;
 };
@@ -147,6 +150,34 @@ async function seedPublicShareEntities(): Promise<SeedState> {
     },
   ]);
 
+  const publicRouteId = randomUUID();
+  const privateRouteId = randomUUID();
+  await db.insert(activityRoutes).values([
+    {
+      id: publicRouteId,
+      profile_id: profileId,
+      name: "Public Route",
+      description: "Public route description",
+      file_path: `${publicRouteId}.gpx`,
+      total_distance: 5000,
+      polyline: "encoded-public-route",
+      is_public: true,
+      created_at: createdAt,
+      updated_at: createdAt,
+    },
+    {
+      id: privateRouteId,
+      profile_id: profileId,
+      name: "Private Route",
+      file_path: `${privateRouteId}.gpx`,
+      total_distance: 5000,
+      polyline: "encoded-private-route",
+      is_public: false,
+      created_at: createdAt,
+      updated_at: createdAt,
+    },
+  ]);
+
   const publicActivityId = randomUUID();
   const privateActivityId = randomUUID();
   await db.transaction(async (tx) => {
@@ -213,6 +244,8 @@ async function seedPublicShareEntities(): Promise<SeedState> {
     privateActivityPlanId,
     publicTrainingPlanId,
     privateTrainingPlanId,
+    publicRouteId,
+    privateRouteId,
   };
 }
 
@@ -272,5 +305,16 @@ describe("public share visibility boundary", () => {
     });
     await expect(caller.trainingPlan({ id: seeded.privateTrainingPlanId })).resolves.toBeNull();
     await expect(caller.trainingPlan({ id: randomUUID() })).resolves.toBeNull();
+  });
+
+  it("returns only public routes and hides private and missing ids", async () => {
+    if (!seeded) throw new Error("public share live-DB seed was not created");
+    const caller = createPublicCaller();
+
+    await expect(caller.route({ id: seeded.publicRouteId })).resolves.toMatchObject({
+      id: seeded.publicRouteId,
+    });
+    await expect(caller.route({ id: seeded.privateRouteId })).resolves.toBeNull();
+    await expect(caller.route({ id: randomUUID() })).resolves.toBeNull();
   });
 });

@@ -98,8 +98,8 @@ describe("activity load presentation", () => {
       }),
     ).toMatchObject({
       status: "partial",
-      load: "32 · Incomplete",
-      intensity: "Tempo · 0.80 · Incomplete",
+      load: "~32",
+      intensity: "~Tempo · 0.80",
     });
     expect(getCommonLoadPresentation({ status: "available", load: 0 })).toBeNull();
   });
@@ -119,6 +119,8 @@ describe("activity load presentation", () => {
     };
     expect(getCommonLoadPresentation({ ...unavailable, reason: "private_data" })).toMatchObject({
       status: "unavailable",
+      load: "—",
+      intensity: "—",
       unavailableText: "Private",
     });
     expect(

@@ -173,7 +173,7 @@ function evaluateExactWindowMeasurement(input: {
  */
 export function selectThresholdCandidate(input: ThresholdSelectionInput): ThresholdSelectionResult {
   const parsed = thresholdSelectionInputSchema.parse(input);
-  const policy = getThresholdActivityCategoryPolicy(parsed.activityCategory);
+  const policy = getThresholdActivityCategoryPolicy(parsed.activityCategory, parsed.metric);
   const configuredMeasurements = [
     { role: "preferred" as const, metric: policy.seriesSelection.preferred },
     ...(policy.seriesSelection.fallback === null
@@ -364,7 +364,7 @@ export function advanceThresholdLifecycle(
 ): ThresholdLifecycleStepResult {
   const parsed = thresholdLifecycleStepInputSchema.parse(input);
   const candidate = parsed.candidate;
-  const policy = getThresholdActivityCategoryPolicy(candidate.activityCategory);
+  const policy = getThresholdActivityCategoryPolicy(candidate.activityCategory, candidate.metric);
   if (!evidenceMatchesPolicy(candidate, policy)) {
     throw new Error("Threshold lifecycle candidate does not match its current policy");
   }
@@ -558,7 +558,7 @@ export function resolveThresholdLifecycle(
   input: ThresholdLifecycleInput,
 ): ThresholdLifecycleResult {
   const parsed = thresholdLifecycleInputSchema.parse(input);
-  const policy = getThresholdActivityCategoryPolicy(parsed.activityCategory);
+  const policy = getThresholdActivityCategoryPolicy(parsed.activityCategory, parsed.metric);
   const asOfMs = Date.parse(parsed.asOf);
   const evidence = parsed.evidence
     .filter(
@@ -596,7 +596,7 @@ export function deriveThresholdFreshness(input: {
 }): ThresholdFreshness {
   const threshold = thresholdSelectionDecisionSchema.parse(input.threshold);
   const asOf = thresholdLifecycleInputSchema.shape.asOf.parse(input.asOf);
-  const policy = getThresholdActivityCategoryPolicy(threshold.activityCategory);
+  const policy = getThresholdActivityCategoryPolicy(threshold.activityCategory, threshold.metric);
   if (policy.method !== threshold.method) {
     throw new Error("Threshold selection method does not match its activity-category policy");
   }

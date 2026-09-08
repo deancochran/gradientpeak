@@ -77,6 +77,57 @@ describe("deriveOnboardingReadiness", () => {
     expect(result.providers[0]).toMatchObject({ state: "complete", next_actions: ["review"] });
   });
 
+  it("treats provider profile work as optional when the adapter declares no profile job", () => {
+    const historyOnlyAdapter = {
+      identifyOnboardingWork: ({ jobs }) => ({
+        historyJobId: jobs.find((job) => job.jobType === "synthetic.import")?.id ?? null,
+        profileJobId: null,
+        requiredJobTypes: ["synthetic.import"],
+        importRunLinked: true,
+      }),
+    } as Pick<ProviderOperationAdapter<"synthetic">, "identifyOnboardingWork">;
+    const result = deriveOnboardingReadiness(
+      {
+        profile: { ...profile, onboarding_status: "review" },
+        athleteState: null,
+        providers: [
+          {
+            active: true,
+            generation: 1,
+            id: "synthetic-integration",
+            provider: "synthetic" as never,
+            scope: "history",
+            jobs: [
+              {
+                id: "history",
+                import_run_id: "run",
+                payload_import_run_id: "run",
+                job_type: "synthetic.import",
+                status: "completed",
+                last_error: null,
+              },
+            ],
+            importRun: {
+              status: "completed",
+              failed_count: 0,
+              imported_count: 1,
+              skipped_count: 0,
+              material_change_count: 0,
+            },
+          },
+        ],
+      },
+      () => historyOnlyAdapter,
+      () => true,
+    );
+
+    expect(result.providers[0]).toMatchObject({
+      state: "complete",
+      progress: { profile: "complete" },
+    });
+    expect(result.ready_to_finalize).toBe(true);
+  });
+
   it("preserves a disabled anchored provider and offers restart without retry", () => {
     const roles = {
       identifyOnboardingWork: () => ({

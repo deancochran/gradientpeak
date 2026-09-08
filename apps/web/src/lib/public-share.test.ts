@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   createApiContext: vi.fn(),
   createCaller: vi.fn(),
   trainingPlan: vi.fn(),
+  route: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-start", () => ({
@@ -20,7 +21,12 @@ vi.mock("@tanstack/react-start", () => ({
 }));
 
 vi.mock("@tanstack/react-start/server", () => ({
-  getRequestHeaders: () => new Headers({ host: "example.test" }),
+  getRequestHeaders: () =>
+    new Headers({
+      host: "request.example.test",
+      "x-forwarded-host": "forwarded.example.test",
+      "x-forwarded-proto": "http",
+    }),
 }));
 
 vi.mock("@repo/api/server", () => ({
@@ -30,7 +36,12 @@ vi.mock("@repo/api/server", () => ({
 
 vi.mock("@repo/db/client", () => ({ db: {} }));
 
-import { loadPublicActivity, loadPublicActivityPlan, loadPublicTrainingPlan } from "./public-share";
+import {
+  loadPublicActivity,
+  loadPublicActivityPlan,
+  loadPublicRoute,
+  loadPublicTrainingPlan,
+} from "./public-share";
 
 const validId = "00000000-0000-4000-8000-000000000001";
 
@@ -43,17 +54,21 @@ describe("public share loaders", () => {
         activity: mocks.activity,
         activityPlan: mocks.activityPlan,
         trainingPlan: mocks.trainingPlan,
+        route: mocks.route,
       },
     });
     mocks.activity.mockResolvedValue(null);
     mocks.activityPlan.mockResolvedValue(null);
     mocks.trainingPlan.mockResolvedValue(null);
+    mocks.route.mockResolvedValue(null);
+    vi.stubEnv("APP_URL", "https://app.example.test");
   });
 
   it.each([
     ["activity", loadPublicActivity],
     ["activity plan", loadPublicActivityPlan],
     ["training plan", loadPublicTrainingPlan],
+    ["route", loadPublicRoute],
   ])("rejects malformed %s input before creating a caller", async (_name, load) => {
     await expect(load({ data: { id: "not-a-uuid" } as never })).rejects.toThrow();
 
@@ -65,10 +80,21 @@ describe("public share loaders", () => {
     await expect(loadPublicActivity({ data: { id: validId } })).resolves.toBeNull();
     await expect(loadPublicActivityPlan({ data: { id: validId } })).resolves.toBeNull();
     await expect(loadPublicTrainingPlan({ data: { id: validId } })).resolves.toBeNull();
+    await expect(loadPublicRoute({ data: { id: validId } })).resolves.toBeNull();
 
     expect(mocks.activity).toHaveBeenCalledWith({ id: validId });
     expect(mocks.activityPlan).toHaveBeenCalledWith({ id: validId });
     expect(mocks.trainingPlan).toHaveBeenCalledWith({ id: validId });
-    expect(mocks.createCaller).toHaveBeenCalledTimes(3);
+    expect(mocks.route).toHaveBeenCalledWith({ id: validId });
+    expect(mocks.createCaller).toHaveBeenCalledTimes(4);
+  });
+
+  it("uses the configured app origin for canonical URLs rather than request forwarding headers", async () => {
+    mocks.activity.mockResolvedValue({ id: validId });
+
+    await expect(loadPublicActivity({ data: { id: validId } })).resolves.toEqual({
+      activity: { id: validId },
+      canonicalUrl: `https://app.example.test/share/activities/${validId}`,
+    });
   });
 });

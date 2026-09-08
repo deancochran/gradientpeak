@@ -1,132 +1,143 @@
 import { Button } from "@repo/ui/components/button";
+import { Tabs, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 import { Text } from "@repo/ui/components/text";
-import { useRouter } from "expo-router";
-import { useCallback, useState } from "react";
-import { View } from "react-native";
-import { CalendarAgendaSheet } from "@/components/calendar/CalendarAgendaSheet";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { RefreshControl, ScrollView, View } from "react-native";
+import { CalendarTabView } from "@/components/calendar";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { PlanningLedgerSheet } from "@/components/plan/ledger/PlanningLedgerSheet";
-import type { TrainingPathLedgerSelection } from "@/components/plan/training-path/TrainingPathLoadChartSection";
-import { TrainingPathSection } from "@/components/plan/training-path/TrainingPathSection";
+import { PlanDashboardContent } from "@/components/plan/training-path/PlanDashboardContent";
 import { usePlanTrainingPathData } from "@/components/plan/training-path/usePlanTrainingPathData";
 import { AppHeader } from "@/components/shared";
-import { buildCalendarItemRoute } from "@/lib/calendar/calendarItemRouting";
 import { ROUTES } from "@/lib/constants/routes";
 import { usePerformanceScreenReady } from "@/lib/performance";
-import { usePlanDisplayPreferences } from "@/lib/stores/planDisplayPreferences";
 
-function PlanDashboardScreen() {
+type PlanView = "overview" | "calendar";
+
+function PlanViewToggle({
+  activeView,
+  onChange,
+}: {
+  activeView: PlanView;
+  onChange: (view: PlanView) => void;
+}) {
+  return (
+    <Tabs onValueChange={(view) => onChange(view as PlanView)} value={activeView}>
+      <TabsList
+        className="mx-4 mt-3 flex-row rounded-2xl border border-border bg-muted/40 p-1"
+        testId="plan-view-toggle"
+      >
+        {(["overview", "calendar"] as const).map((view) => {
+          const selected = activeView === view;
+          return (
+            <TabsTrigger
+              accessibilityState={{ selected }}
+              className={
+                selected
+                  ? "flex-1 rounded-xl bg-background px-3 py-2 shadow-sm"
+                  : "flex-1 rounded-xl px-3 py-2"
+              }
+              key={view}
+              testId={`plan-view-${view}`}
+              value={view}
+            >
+              <Text
+                className={
+                  selected
+                    ? "text-center text-sm font-semibold text-foreground"
+                    : "text-center text-sm font-semibold text-muted-foreground"
+                }
+              >
+                {view === "overview" ? "Overview" : "Calendar"}
+              </Text>
+            </TabsTrigger>
+          );
+        })}
+      </TabsList>
+    </Tabs>
+  );
+}
+
+function PlanOverview() {
   const router = useRouter();
   usePerformanceScreenReady("route-plan");
   const trainingPath = usePlanTrainingPathData();
-  const chartRange = usePlanDisplayPreferences((state) => state.range);
-  const setChartRange = usePlanDisplayPreferences((state) => state.setRange);
-  const [ledgerSelection, setLedgerSelection] = useState<TrainingPathLedgerSelection | null>(null);
   const hasBlockingFailure = trainingPath.queryFailureCount > 0 && !trainingPath.hasUsableData;
 
-  const navigateToCreateGoal = useCallback(
-    () => router.navigate(ROUTES.GOALS.CREATE as never),
-    [router],
+  return (
+    <ScrollView
+      className="flex-1"
+      contentContainerClassName="gap-4 px-4 pb-8 pt-3"
+      refreshControl={
+        <RefreshControl
+          refreshing={trainingPath.refreshing}
+          onRefresh={trainingPath.handleRefresh}
+        />
+      }
+      testID="plan-scroll"
+    >
+      {trainingPath.queryFailureCount > 0 ? (
+        <View
+          accessibilityRole={hasBlockingFailure ? "alert" : undefined}
+          className="gap-2 rounded-2xl border border-destructive/40 bg-card p-4"
+          testID="plan-query-error"
+        >
+          <Text className="font-semibold text-foreground">
+            {trainingPath.hasUsableData
+              ? "Some plan details could not be refreshed"
+              : "Your plan could not be loaded"}
+          </Text>
+          <Text className="text-sm text-muted-foreground">
+            {trainingPath.hasUsableData
+              ? "Available schedule and training data is still shown below."
+              : "Check your connection and retry loading your plan."}
+          </Text>
+          <Button
+            className="self-start"
+            onPress={trainingPath.handleRefresh}
+            size="sm"
+            variant="outline"
+            testID="plan-query-retry"
+          >
+            <Text>Retry</Text>
+          </Button>
+        </View>
+      ) : null}
+      {!hasBlockingFailure ? (
+        <PlanDashboardContent
+          data={trainingPath}
+          onCreateGoal={() => router.navigate(ROUTES.GOALS.CREATE as never)}
+          onOpenGoal={(goalId) => router.navigate(ROUTES.GOALS.DETAIL(goalId) as never)}
+          onOpenGoals={() => router.navigate(ROUTES.GOALS.LIST as never)}
+          onOpenSourceActivity={(activityId) =>
+            router.navigate(ROUTES.ACTIVITIES.DETAIL(activityId) as never)
+          }
+          onViewDetails={(date, period) =>
+            router.navigate(ROUTES.PLAN.PLANNING_LEDGER({ anchorDate: date, period }) as never)
+          }
+        />
+      ) : null}
+    </ScrollView>
   );
-  const openPlanningLedger = useCallback(
-    (selection: TrainingPathLedgerSelection) => setLedgerSelection(selection),
-    [],
-  );
-  const openLedgerEntry = useCallback(
-    (target: { target: "activity" | "event" | "group_event" | "goal"; id: string }) => {
-      setLedgerSelection(null);
-      const route =
-        target.target === "activity"
-          ? { pathname: "/activity-detail", params: { id: target.id } }
-          : target.target === "event"
-            ? { pathname: "/event-detail", params: { id: target.id } }
-            : target.target === "group_event"
-              ? { pathname: "/group-event-detail", params: { groupEventId: target.id } }
-              : { pathname: "/goal-detail", params: { id: target.id } };
-      router.navigate(route as never);
-    },
-    [router],
-  );
-  const openDayItem = useCallback(
-    (item: Parameters<typeof buildCalendarItemRoute>[0]) => {
-      setLedgerSelection(null);
-      const route = buildCalendarItemRoute(item);
-      if (route) router.navigate(route as never);
-    },
-    [router],
-  );
-  const createDayItem = useCallback(() => {
-    if (!ledgerSelection || ledgerSelection.period !== "day") return;
-    const date = ledgerSelection.anchorDate;
-    setLedgerSelection(null);
-    router.navigate(ROUTES.PLAN.AGENDA_CREATE(date) as never);
-  }, [ledgerSelection, router]);
-  const planningLedgerSelection =
-    ledgerSelection && ledgerSelection.period !== "day"
-      ? { anchorDate: ledgerSelection.anchorDate, period: ledgerSelection.period }
-      : null;
+}
+
+function PlanDashboardScreen() {
+  const router = useRouter();
+  const { view } = useLocalSearchParams<{ view?: string }>();
+  const activeView: PlanView = view === "calendar" ? "calendar" : "overview";
+
   return (
     <View className="flex-1 bg-background" testID="plan-screen">
       <AppHeader title="Plan" />
-      <View className="min-h-0 flex-1 gap-3 px-2 pb-2 pt-2">
-        {trainingPath.queryFailureCount > 0 ? (
-          <View
-            accessibilityRole={hasBlockingFailure ? "alert" : undefined}
-            className="mx-2 gap-2 rounded-2xl border border-destructive/40 bg-card p-4"
-            testID="plan-query-error"
-          >
-            <Text className="font-semibold text-foreground">
-              {trainingPath.hasUsableData
-                ? "Some plan details could not be refreshed"
-                : "Your plan could not be loaded"}
-            </Text>
-            <Text className="text-sm text-muted-foreground">
-              {trainingPath.hasUsableData
-                ? "Available schedule and training data is still shown below."
-                : "Check your connection and retry loading your plan."}
-            </Text>
-            <Button
-              className="self-start"
-              onPress={trainingPath.handleRefresh}
-              size="sm"
-              variant="outline"
-              testID="plan-query-retry"
-            >
-              <Text>Retry</Text>
-            </Button>
-          </View>
-        ) : null}
-        {!hasBlockingFailure ? (
-          <TrainingPathSection
-            chartRange={chartRange}
-            dailyPoints={trainingPath.dailyTrainingPathPoints}
-            chartLoading={trainingPath.chartLoading}
-            chartUnavailable={trainingPath.chartUnavailable}
-            model={trainingPath.trainingPath}
-            selectedDate={trainingPath.selectedDate}
-            onCreateGoal={navigateToCreateGoal}
-            onChartRangeChange={setChartRange}
-            onViewDetails={openPlanningLedger}
-            onSelectedDateChange={trainingPath.handleSelectedDateChange}
-            onSelectedWeekChange={trainingPath.handleSelectedWeekChange}
-          />
-        ) : null}
-        {ledgerSelection?.period === "day" ? (
-          <CalendarAgendaSheet
-            dateKey={ledgerSelection.anchorDate}
-            onClose={() => setLedgerSelection(null)}
-            onCreateEvent={createDayItem}
-            onOpenItem={openDayItem}
-            visible
-          />
-        ) : (
-          <PlanningLedgerSheet
-            onClose={() => setLedgerSelection(null)}
-            onOpenEntry={openLedgerEntry}
-            selection={planningLedgerSelection}
-          />
-        )}
-      </View>
+      <PlanViewToggle
+        activeView={activeView}
+        onChange={(nextView) =>
+          router.navigate({
+            pathname: "/(internal)/(tabs)/plan",
+            params: { view: nextView },
+          } as never)
+        }
+      />
+      {activeView === "calendar" ? <CalendarTabView /> : <PlanOverview />}
     </View>
   );
 }

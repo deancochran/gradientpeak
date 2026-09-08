@@ -132,6 +132,7 @@ export default function RouteEditScreen() {
               label="Route Name"
               name="name"
               required
+              selectTextOnFocus={process.env.EXPO_PUBLIC_MAESTRO_E2E === "1"}
               testId="route-edit-name-input"
             />
             <FormTextareaField

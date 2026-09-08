@@ -5,6 +5,7 @@ import {
   activityListDerivedSummarySchema,
   activityObservationQuantificationBundleSchema,
   contentVisibilitySchema,
+  executableIntegrationProviderIdSchema,
   ianaTimezoneSchema,
 } from "@repo/core";
 import { commonLoadAggregateSchema } from "@repo/core/load";
@@ -31,6 +32,13 @@ import {
   getDailyCommonLoadObservations,
 } from "../application/activities/daily-common-load-observations";
 import {
+  getImportedSourcesForOwnedActivity,
+  ImportedSourceNotFoundError,
+  ImportedSourceResolutionError,
+  keepImportedSourceSeparateForProfile,
+  resolveImportedSourceForProfile,
+} from "../application/activities/imported-source-management";
+import {
   getPublicActivityEffortProfile,
   publicActivityEffortProfileResponseSchema,
 } from "../application/activities/public-effort-profile";
@@ -44,6 +52,11 @@ import {
   submitMobileRecording,
 } from "../application/activities/submit-mobile-recording";
 import { MobileRecordingUploadError } from "../application/activity-file-ingestion/mobile-recording-upload";
+import {
+  CompletedActivityProviderNotFoundError,
+  getCompletedActivityProviderEligibility,
+  sendCompletedActivityToProvider,
+} from "../application/integrations";
 import { recordingSummarySubmissionInputSchema } from "../contracts/recording-submission";
 import { getRequiredDb } from "../db";
 import { getActivityArtifactStorageService } from "../storage-service";
@@ -99,6 +112,17 @@ const activityDerivedResponseSchema = z
         segmentLoads: activitySegmentLoadSchema.array(),
       })
       .strict(),
+    importedSources: z
+      .array(
+        z
+          .object({
+            id: z.string().uuid(),
+            provider: z.string().min(1),
+            resolutionStatus: z.enum(["confirmed", "review"]),
+          })
+          .strict(),
+      )
+      .optional(),
   })
   .strict();
 
@@ -177,6 +201,77 @@ const updateInputSchema = z
   .strict();
 
 const deleteInputSchema = z.object({ id: z.string().uuid() }).strict();
+
+const resolveImportedSourceInputSchema = z
+  .object({
+    action: z.enum(["confirm_same", "move", "ignore"]),
+    sourceReferenceId: z.string().uuid(),
+    targetActivityId: z.string().uuid().optional(),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (input.action === "move" && !input.targetActivityId) {
+      context.addIssue({
+        code: "custom",
+        message: "targetActivityId is required when moving an imported source",
+        path: ["targetActivityId"],
+      });
+    }
+    if (input.action !== "move" && input.targetActivityId) {
+      context.addIssue({
+        code: "custom",
+        message: "targetActivityId is only valid when moving an imported source",
+        path: ["targetActivityId"],
+      });
+    }
+  });
+
+const resolveImportedSourceOutputSchema = z
+  .object({
+    activityId: z.string().uuid().nullable(),
+    resolutionStatus: z.enum(["confirmed", "ignored"]),
+  })
+  .strict();
+const keepImportedSourceSeparateOutputSchema = z
+  .object({ jobId: z.string().uuid(), queued: z.boolean() })
+  .strict();
+const sendCompletedActivityOutputSchema = z
+  .object({
+    jobId: z.string().uuid().nullable(),
+    provider: z.string().min(1),
+    status: z.enum([
+      "queued",
+      "completed",
+      "reconnect_required",
+      "unsupported_evidence",
+      "not_connected",
+      "unavailable",
+      "dispatch_uncertain",
+      "failed",
+    ]),
+  })
+  .strict();
+const completedActivityProviderEligibilitySchema = z.array(
+  z
+    .object({
+      jobId: z.string().uuid().nullable(),
+      provider: z.string().min(1),
+      reason: z.string().nullable(),
+      status: z.enum([
+        "ready",
+        "reconnect_required",
+        "unsupported_evidence",
+        "not_connected",
+        "unavailable",
+        "queued",
+        "running",
+        "completed",
+        "dispatch_uncertain",
+        "failed",
+      ]),
+    })
+    .strict(),
+);
 
 const recordSessionRpeInputSchema = z
   .object({
@@ -350,13 +445,25 @@ export const activitiesRouter = createTRPCRouter({
     }),
 
   getById: protectedProcedure.input(getByIdInputSchema).query(async ({ input, ctx }) => {
-    return activityDerivedResponseSchema.parse(
-      await getActivityByIdForViewer({
-        db: getRequiredDb(ctx),
-        activityId: input.id,
-        viewerId: ctx.session.user.id,
-      }),
-    );
+    const db = getRequiredDb(ctx);
+    const response = await getActivityByIdForViewer({
+      db,
+      activityId: input.id,
+      viewerId: ctx.session.user.id,
+    });
+    const isOwner = response.detail.summary.owner.id === ctx.session.user.id;
+    return activityDerivedResponseSchema.parse({
+      ...response,
+      ...(isOwner
+        ? {
+            importedSources: await getImportedSourcesForOwnedActivity({
+              activityId: input.id,
+              db,
+              profileId: ctx.session.user.id,
+            }),
+          }
+        : {}),
+    });
   }),
 
   getEffortProfile: protectedProcedure
@@ -372,6 +479,24 @@ export const activitiesRouter = createTRPCRouter({
         activityId: input.id,
         viewerId: ctx.session.user.id,
       });
+    }),
+
+  getCompletedActivityProviderEligibility: protectedProcedure
+    .input(z.object({ activityId: z.string().uuid() }).strict())
+    .output(completedActivityProviderEligibilitySchema)
+    .query(async ({ ctx, input }) => {
+      try {
+        return await getCompletedActivityProviderEligibility({
+          ...input,
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+        });
+      } catch (error) {
+        if (error instanceof CompletedActivityProviderNotFoundError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: error.message });
+        }
+        throw error;
+      }
     }),
 
   getEfforts: protectedProcedure
@@ -432,6 +557,73 @@ export const activitiesRouter = createTRPCRouter({
         }
         if (error instanceof SessionRpeEvidenceConflictError) {
           throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+        throw error;
+      }
+    }),
+
+  resolveImportedSource: protectedProcedure
+    .input(resolveImportedSourceInputSchema)
+    .output(resolveImportedSourceOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await resolveImportedSourceForProfile({
+          ...input,
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+        });
+      } catch (error) {
+        if (error instanceof ImportedSourceNotFoundError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: error.message });
+        }
+        if (error instanceof ImportedSourceResolutionError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+        }
+        throw error;
+      }
+    }),
+
+  keepImportedSourceSeparate: protectedProcedure
+    .input(z.object({ sourceReferenceId: z.string().uuid() }).strict())
+    .output(keepImportedSourceSeparateOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await keepImportedSourceSeparateForProfile({
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+          sourceReferenceId: input.sourceReferenceId,
+        });
+      } catch (error) {
+        if (error instanceof ImportedSourceNotFoundError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: error.message });
+        }
+        if (error instanceof ImportedSourceResolutionError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+        }
+        throw error;
+      }
+    }),
+
+  sendCompletedActivityToProvider: protectedProcedure
+    .input(
+      z
+        .object({
+          activityId: z.string().uuid(),
+          provider: executableIntegrationProviderIdSchema,
+        })
+        .strict(),
+    )
+    .output(sendCompletedActivityOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await sendCompletedActivityToProvider({
+          ...input,
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+        });
+      } catch (error) {
+        if (error instanceof CompletedActivityProviderNotFoundError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: error.message });
         }
         throw error;
       }

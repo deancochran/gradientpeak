@@ -1,9 +1,9 @@
 import {
   activityPlanDurationSchema,
+  activityPlanMetricListSchema,
   activityPlanStructureSchema,
   activityPlanTargetSchema,
   canonicalActivityCategorySchema,
-  semanticMetricSchema,
   trainingPlanSchema,
 } from "@repo/core";
 import { compileActivityPlan } from "@repo/core/activity-plan";
@@ -99,7 +99,7 @@ export const publicActivityPlanShareSchema = z.strictObject({
   structure_version: z.number().int().positive(),
   structure_summary: z.string(),
   structure: publicActivityPlanDisplayStructureSchema,
-  metrics: z.array(semanticMetricSchema).length(4),
+  metrics: activityPlanMetricListSchema,
   is_system_template: z.boolean(),
   owner: profileSummarySchema,
 });
@@ -112,6 +112,17 @@ export const publicTrainingPlanShareSchema = z.strictObject({
   sessions_per_week_target: z.number().int().nullable(),
   duration_hours: z.number().nullable(),
   is_system_template: z.boolean(),
+  owner: profileSummarySchema,
+});
+
+export const publicRouteShareSchema = z.strictObject({
+  id: z.string().uuid(),
+  name: z.string(),
+  description: z.string().nullable(),
+  totalDistanceMeters: z.number().int().nonnegative(),
+  totalAscentMeters: z.number().int().nonnegative().nullable(),
+  totalDescentMeters: z.number().int().nonnegative().nullable(),
+  isSystemTemplate: z.boolean(),
   owner: profileSummarySchema,
 });
 
@@ -205,6 +216,18 @@ type PublicTrainingPlanRow = {
   structure: unknown;
   sessions_per_week_target: number | null;
   duration_hours: number | string | null;
+  is_system_template: boolean;
+  owner_name: string | null;
+  owner_username: string | null;
+};
+
+type PublicRouteRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  total_distance: number | string;
+  total_ascent: number | string | null;
+  total_descent: number | string | null;
   is_system_template: boolean;
   owner_name: string | null;
   owner_username: string | null;
@@ -341,6 +364,33 @@ export const publicShareRouter = createTRPCRouter({
         sessions_per_week_target: row.sessions_per_week_target ?? null,
         is_system_template: row.is_system_template,
         duration_hours: toNumberOrNull(row.duration_hours ?? null),
+        owner: ownerFromRow(row),
+      });
+    }),
+
+  route: publicProcedure
+    .input(uuidInputSchema)
+    .output(publicRouteShareSchema.nullable())
+    .query(async ({ ctx, input }) => {
+      const result = await getRequiredDb(ctx).execute(sql<PublicRouteRow>`
+        select ar.id, ar.name, ar.description, ar.total_distance, ar.total_ascent,
+          ar.total_descent, ar.is_system_template,
+          p.full_name as owner_name, p.username as owner_username
+        from activity_routes ar
+        left join profiles p on p.id = ar.profile_id
+        where ar.id = ${input.id}::uuid and ar.is_public = true and ar.storage_state = 'ready'
+        limit 1
+      `);
+      const row = getRows<PublicRouteRow>(result)[0];
+      if (!row) return null;
+      return publicRouteShareSchema.parse({
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        totalDistanceMeters: Number(row.total_distance),
+        totalAscentMeters: toNumberOrNull(row.total_ascent),
+        totalDescentMeters: toNumberOrNull(row.total_descent),
+        isSystemTemplate: row.is_system_template,
         owner: ownerFromRow(row),
       });
     }),

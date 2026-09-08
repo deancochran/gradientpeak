@@ -26,7 +26,7 @@ import {
   integrations,
   providerSyncState,
 } from "@repo/db";
-import { and, asc, eq, gte, inArray, lt } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, lt } from "drizzle-orm";
 import { z } from "zod";
 import { type getRequiredDb, withRepeatableReadSnapshot } from "../../db";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
@@ -80,7 +80,13 @@ type ActivityContribution = {
   fingerprint: string;
 };
 
-async function hasCompleteActivitySourceCoverage(
+type VerifiedActivitySourceCoverage = {
+  currentComplete: boolean;
+  startDate: string | null;
+  endDate: string | null;
+};
+
+async function resolveActivitySourceCoverage(
   db: Parameters<Parameters<Db["transaction"]>[0]>[0],
   input: {
     asOf: Date;
@@ -89,7 +95,7 @@ async function hasCompleteActivitySourceCoverage(
     profileId: string;
     startDate: string;
   },
-): Promise<boolean> {
+): Promise<VerifiedActivitySourceCoverage> {
   const integrationRows = await db
     .select({ id: integrations.id, provider: integrations.provider })
     .from(integrations)
@@ -101,7 +107,9 @@ async function hasCompleteActivitySourceCoverage(
   );
   // Neither a never-completed first sync nor a disconnected provider (whose
   // integration/state rows are deleted) proves that this history window is zero.
-  if (relevant.length === 0) return false;
+  if (relevant.length === 0) {
+    return { currentComplete: false, startDate: null, endDate: null };
+  }
   const syncRows = await db
     .select({
       integrationId: providerSyncState.integration_id,
@@ -138,7 +146,14 @@ async function hasCompleteActivitySourceCoverage(
         timeZone: input.planningTimezone,
       }),
     ) - 1;
-  return relevant.every((integration) => {
+  const verifiedRanges: Array<{
+    coverageStart: number;
+    coverageEnd: number;
+    lastSucceededAt: number;
+    highWatermark: number;
+  }> = [];
+  let currentComplete = true;
+  for (const integration of relevant) {
     const sync = byIntegration.get(integration.id);
     const metadata = sync?.metadata;
     const coverage =
@@ -151,27 +166,64 @@ async function hasCompleteActivitySourceCoverage(
     const coverageEndValue = record === null ? null : Reflect.get(record, "end");
     const coverageStart = parseStrictCoverageTimestamp(coverageStartValue);
     const coverageEnd = parseStrictCoverageTimestamp(coverageEndValue);
-    return (
+    const validHistoricalState =
       sync !== undefined &&
       sync.lastSucceededAt !== null &&
       sync.lastSucceededAt.getTime() <= asOfMilliseconds &&
-      // An old successful read cannot remain complete merely because its metadata
-      // claimed a future boundary. Coverage must be refreshed through this window.
-      sync.lastSucceededAt.getTime() >= requiredEnd &&
       sync.highWatermark !== null &&
       sync.highWatermark.getTime() <= asOfMilliseconds &&
-      sync.consecutiveFailures === 0 &&
-      (sync.lastFailedAt === null ||
-        (sync.lastFailedAt.getTime() <= asOfMilliseconds &&
-          sync.lastSucceededAt >= sync.lastFailedAt)) &&
+      (sync.lastFailedAt === null || sync.lastFailedAt.getTime() <= asOfMilliseconds) &&
       Number.isFinite(coverageStart) &&
       Number.isFinite(coverageEnd) &&
       coverageEnd <= asOfMilliseconds &&
+      coverageStart <= coverageEnd;
+    if (!validHistoricalState || !sync?.lastSucceededAt || !sync.highWatermark) {
+      return { currentComplete: false, startDate: null, endDate: null };
+    }
+    const lastSucceededAt = sync.lastSucceededAt.getTime();
+    const highWatermark = sync.highWatermark.getTime();
+    verifiedRanges.push({ coverageStart, coverageEnd, lastSucceededAt, highWatermark });
+    currentComplete &&=
+      // An old successful read cannot remain current merely because its metadata
+      // claimed a future boundary. The canonical window keeps its stricter rule.
+      lastSucceededAt >= requiredEnd &&
+      sync.consecutiveFailures === 0 &&
+      (sync.lastFailedAt === null || sync.lastSucceededAt >= sync.lastFailedAt) &&
       coverageStart <= requiredStart &&
       coverageEnd >= requiredEnd &&
-      sync.highWatermark.getTime() >= requiredEnd
-    );
-  });
+      highWatermark >= requiredEnd;
+  }
+
+  const verifiedStart = Math.max(...verifiedRanges.map((range) => range.coverageStart));
+  const verifiedEnd = Math.min(
+    ...verifiedRanges.map((range) =>
+      Math.min(range.coverageEnd, range.highWatermark, range.lastSucceededAt),
+    ),
+  );
+  let startDate = localDate(new Date(verifiedStart), input.planningTimezone);
+  const startOfCandidate = Date.parse(
+    scheduledDateTimeToIsoInstant({
+      scheduledDate: startDate,
+      time: "00:00",
+      timeZone: input.planningTimezone,
+    }),
+  );
+  if (verifiedStart > startOfCandidate) startDate = addCalendarDays(startDate, 1);
+  let endDate = localDate(new Date(verifiedEnd), input.planningTimezone);
+  const endOfCandidate =
+    Date.parse(
+      scheduledDateTimeToIsoInstant({
+        scheduledDate: addCalendarDays(endDate, 1),
+        time: "00:00",
+        timeZone: input.planningTimezone,
+      }),
+    ) - 1;
+  if (verifiedEnd < endOfCandidate) endDate = addCalendarDays(endDate, -1);
+  return {
+    currentComplete,
+    startDate: startDate <= endDate ? startDate : null,
+    endDate: startDate <= endDate ? endDate : null,
+  };
 }
 
 function addCalendarDays(date: string, days: number): string {
@@ -199,12 +251,14 @@ function fingerprint(parts: readonly string[]): string {
 
 function datesForWindow(
   currentPlanningDate: string,
-  replayDays:
-    | typeof COMMON_LOAD_HISTORY_REQUIRED_DAYS
-    | typeof COMMON_LOAD_HISTORY_MATURE_DAYS = COMMON_LOAD_HISTORY_REQUIRED_DAYS,
+  replayDays: number = COMMON_LOAD_HISTORY_REQUIRED_DAYS,
 ): string[] {
   const startDate = addCalendarDays(currentPlanningDate, -replayDays);
   return Array.from({ length: replayDays }, (_, index) => addCalendarDays(startDate, index));
+}
+
+function inclusiveCalendarDays(startDate: string, endDate: string): number {
+  return Math.floor((Date.parse(endDate) - Date.parse(startDate)) / 86_400_000) + 1;
 }
 
 function unavailableWindow(input: {
@@ -305,7 +359,7 @@ export function buildCommonLoadHistoryObservations(input: {
   currentPlanningDate: string;
   planningTimezone: string;
   coverageStatus?: "complete" | "partial";
-  replayDays?: typeof COMMON_LOAD_HISTORY_REQUIRED_DAYS | typeof COMMON_LOAD_HISTORY_MATURE_DAYS;
+  replayDays?: number;
 }): CommonLoadHistoryDayObservation[] {
   const dates = datesForWindow(input.currentPlanningDate, input.replayDays);
   const startDate = dates[0];
@@ -370,6 +424,21 @@ export function buildCommonLoadHistoryObservations(input: {
     const contributions = activitySegmentResults.flatMap((contribution) =>
       contribution === null ? [] : [contribution],
     );
+    const evidenceFingerprints = contributions
+      .map((contribution) => contribution.fingerprint)
+      .sort();
+    if (contributions.some((contribution) => contribution.coverageStatus === "partial")) {
+      return {
+        state: "unavailable",
+        date,
+        model: COMMON_RELATIVE_LOAD_MODEL,
+        version: COMMON_RELATIVE_LOAD_VERSION,
+        calculatedAsOf: input.calculatedAsOf,
+        coverageStatus: "partial",
+        reason: "common_load_unavailable",
+        evidenceFingerprints,
+      };
+    }
     const quantifiedContributions = contributions.filter(
       (
         contribution,
@@ -379,14 +448,7 @@ export function buildCommonLoadHistoryObservations(input: {
         contribution.coverageStatus === "complete" &&
         contribution.observationQuantification !== null,
     );
-    const dailyCoverageStatus = contributions.some(
-      (contribution) => contribution.coverageStatus === "partial",
-    )
-      ? "partial"
-      : coverageStatus;
-    const evidenceFingerprints = contributions
-      .map((contribution) => contribution.fingerprint)
-      .sort();
+    const dailyCoverageStatus = coverageStatus;
     if (quantifiedContributions.length === 0) {
       return {
         state: "known_zero",
@@ -442,36 +504,59 @@ export async function getCommonLoadHistory(input: {
   currentPlanningDate: string;
   planningTimezone: string;
 }): Promise<CommonLoadHistoryResult> {
-  const calculatedAsOf = input.asOf.toISOString();
-  // Read the full maturity horizon; Core returns only the latest 84 chart points.
-  const dates = datesForWindow(input.currentPlanningDate, COMMON_LOAD_HISTORY_MATURE_DAYS);
-  const startDate = dates[0];
-  const endDate = dates.at(-1);
-  if (!startDate || !endDate) return unavailableWindow(input);
-  const evidenceScopeFingerprint = fingerprint([
-    "completed-activity-history-scope",
-    input.profileId,
-    input.planningTimezone,
-    startDate,
-    endDate,
-    calculatedAsOf,
-  ]);
-
-  const envelopeStart = new Date(`${startDate}T00:00:00.000Z`);
-  envelopeStart.setUTCDate(envelopeStart.getUTCDate() - 1);
-  const envelopeEnd = new Date(`${input.currentPlanningDate}T00:00:00.000Z`);
-  envelopeEnd.setUTCDate(envelopeEnd.getUTCDate() + 2);
-
   try {
     return await withRepeatableReadSnapshot(input.db, async (tx) => {
-      const sourceCoverageComplete = await hasCompleteActivitySourceCoverage(tx, {
+      const currentDates = datesForWindow(
+        input.currentPlanningDate,
+        COMMON_LOAD_HISTORY_MATURE_DAYS,
+      );
+      const currentStartDate = currentDates[0];
+      const currentEndDate = currentDates.at(-1);
+      if (!currentStartDate || !currentEndDate) return unavailableWindow(input);
+      const sourceCoverage = await resolveActivitySourceCoverage(tx, {
         asOf: input.asOf,
-        endDate,
+        endDate: currentEndDate,
         planningTimezone: input.planningTimezone,
         profileId: input.profileId,
-        startDate,
+        startDate: currentStartDate,
       });
-      if (!sourceCoverageComplete) return unavailableWindow(input);
+      let historyAsOf = input.asOf;
+      let historyPlanningDate = input.currentPlanningDate;
+      let replayDays: number = COMMON_LOAD_HISTORY_MATURE_DAYS;
+      if (!sourceCoverage.currentComplete) {
+        if (!sourceCoverage.startDate || !sourceCoverage.endDate) return unavailableWindow(input);
+        const verifiedDays = inclusiveCalendarDays(
+          sourceCoverage.startDate,
+          sourceCoverage.endDate,
+        );
+        if (verifiedDays < COMMON_LOAD_HISTORY_REQUIRED_DAYS) return unavailableWindow(input);
+        replayDays = Math.min(verifiedDays, COMMON_LOAD_HISTORY_MATURE_DAYS);
+        historyPlanningDate = addCalendarDays(sourceCoverage.endDate, 1);
+        historyAsOf = new Date(
+          scheduledDateTimeToIsoInstant({
+            scheduledDate: historyPlanningDate,
+            time: "00:00",
+            timeZone: input.planningTimezone,
+          }),
+        );
+      }
+      const calculatedAsOf = historyAsOf.toISOString();
+      const dates = datesForWindow(historyPlanningDate, replayDays);
+      const startDate = dates[0];
+      const endDate = dates.at(-1);
+      if (!startDate || !endDate) return unavailableWindow(input);
+      const evidenceScopeFingerprint = fingerprint([
+        "completed-activity-history-scope",
+        input.profileId,
+        input.planningTimezone,
+        startDate,
+        endDate,
+        calculatedAsOf,
+      ]);
+      const envelopeStart = new Date(`${startDate}T00:00:00.000Z`);
+      envelopeStart.setUTCDate(envelopeStart.getUTCDate() - 1);
+      const envelopeEnd = new Date(`${historyPlanningDate}T00:00:00.000Z`);
+      envelopeEnd.setUTCDate(envelopeEnd.getUTCDate() + 2);
       const activityRows = await tx
         .select()
         .from(activities)
@@ -480,7 +565,7 @@ export async function getCommonLoadHistory(input: {
             eq(activities.profile_id, input.profileId),
             gte(activities.started_at, envelopeStart),
             lt(activities.started_at, envelopeEnd),
-            lt(activities.started_at, input.asOf),
+            lt(activities.started_at, historyAsOf),
           ),
         )
         .orderBy(asc(activities.started_at), asc(activities.id))
@@ -489,7 +574,7 @@ export async function getCommonLoadHistory(input: {
 
       const windowActivityRows = activityRows.filter((activity) => {
         const date = localDate(activity.started_at, input.planningTimezone);
-        return activity.started_at < input.asOf && date >= startDate && date <= endDate;
+        return activity.started_at < historyAsOf && date >= startDate && date <= endDate;
       });
 
       const activityIds = windowActivityRows.map((activity) => activity.id);
@@ -532,6 +617,7 @@ export async function getCommonLoadHistory(input: {
                 and(
                   eq(activitySourceReferences.profile_id, input.profileId),
                   inArray(activitySourceReferences.activity_id, activityIds),
+                  isNotNull(activitySourceReferences.activity_id),
                 ),
               );
       const sourceEvidenceByActivity = new Map<
@@ -552,6 +638,7 @@ export async function getCommonLoadHistory(input: {
         sourceEvidenceFor(row.activityId).currentArtifactIds.push(row.artifactId);
       }
       for (const row of providerReferenceRows) {
+        if (!row.activityId) continue;
         sourceEvidenceFor(row.activityId).providerReferences.push({
           provider: row.provider,
           externalId: row.externalId,
@@ -571,17 +658,17 @@ export async function getCommonLoadHistory(input: {
         store: createActivityAnalysisStore(tx),
         profileId: input.profileId,
         activities: activitiesWithSegments,
-        computedAsOf: input.asOf,
+        computedAsOf: historyAsOf,
       });
       const observations = buildCommonLoadHistoryObservations({
         activities: sourcedActivityRows,
         calculatedAsOf,
         segmentSummaries,
-        currentPlanningDate: input.currentPlanningDate,
+        currentPlanningDate: historyPlanningDate,
         evidenceScopeFingerprint,
         planningTimezone: input.planningTimezone,
         coverageStatus: "complete",
-        replayDays: COMMON_LOAD_HISTORY_MATURE_DAYS,
+        replayDays,
       });
       return replayCommonLoadHistory({
         basis: COMMON_LOAD_HISTORY_BASIS,
@@ -590,17 +677,9 @@ export async function getCommonLoadHistory(input: {
           version: COMMON_LOAD_HISTORY_CALCULATION_VERSION,
           asOf: calculatedAsOf,
         },
-        currentPlanningDate: input.currentPlanningDate,
+        currentPlanningDate: historyPlanningDate,
         planningTimezone: input.planningTimezone,
-        // Core's current replay output only admits complete days. These partial
-        // markers describe known activities whose accepted numeric contribution
-        // is zero, not incomplete provider/source history; their evidence remains
-        // in the replay identity while quantified contributions stay unchanged.
-        observations: observations.map((observation) =>
-          observation.coverageStatus === "partial"
-            ? { ...observation, coverageStatus: "complete" as const }
-            : observation,
-        ),
+        observations,
       });
     });
   } catch {

@@ -22,6 +22,7 @@ const mockCreateSignedUploadUrl = jest.fn();
 const mockDeleteFile = jest.fn();
 const mockRefreshProfile = jest.fn();
 const mockInvalidateProfiles = jest.fn();
+const mockInvalidateProfileIdentityQueries = jest.fn();
 const mockRequestMediaLibraryPermissions = jest.fn();
 const mockLaunchImageLibrary = jest.fn();
 
@@ -116,6 +117,10 @@ jest.mock("@/lib/api", () => ({
     },
   },
 }));
+jest.mock("@repo/api/profile-identity-cache", () => ({
+  invalidateProfileIdentityQueries: (...args: unknown[]) =>
+    mockInvalidateProfileIdentityQueries(...args),
+}));
 jest.mock("@/lib/hooks/useAuth", () => ({
   useAuth: () => ({ profile: mockProfile, refreshProfile: mockRefreshProfile }),
 }));
@@ -148,6 +153,7 @@ beforeEach(() => {
   mockDeleteFile.mockResolvedValue({ success: true });
   mockRefreshProfile.mockResolvedValue(undefined);
   mockInvalidateProfiles.mockResolvedValue(undefined);
+  mockInvalidateProfileIdentityQueries.mockResolvedValue(undefined);
   global.fetch = jest.fn().mockResolvedValue({
     blob: jest.fn().mockResolvedValue(new Blob(["avatar"])),
     ok: true,
@@ -184,6 +190,7 @@ it("uploads with the returned path and commits it through profile media CAS", as
   );
   expect(mockUpdateProfile).not.toHaveBeenCalled();
   expect(mockDeleteFile).not.toHaveBeenCalled();
+  expect(mockInvalidateProfileIdentityQueries).toHaveBeenCalledTimes(1);
 });
 
 it("deletes the just-uploaded object when media CAS fails", async () => {

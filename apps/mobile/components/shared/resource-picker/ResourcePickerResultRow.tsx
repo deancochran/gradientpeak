@@ -49,6 +49,7 @@ export function ResourcePickerResultRow({
 }: ResourcePickerResultRowProps) {
   const preferredUnitSystem = usePreferredUnitSystem();
   const isActivityPlan = scope === "activityPlans";
+  const selectionTestID = `resource-picker-select-${isActivityPlan ? "activity-plan" : "route"}`;
   const card =
     item.presentation === "canonical" && isActivityPlan && "activityPlan" in item ? (
       <ActivityPlanCard plan={item.activityPlan} variant="compact" />
@@ -70,14 +71,14 @@ export function ResourcePickerResultRow({
         className="relative min-h-11 rounded-xl"
         disabled={disabled}
         onPress={onPress}
-        testID={`resource-picker-result-${item.id}`}
+        testID={selectionTestID}
       >
         {card}
         {isSelected ? (
           <View
             className="absolute right-3 top-3 rounded-full bg-primary p-1"
             pointerEvents="none"
-            testID={`resource-picker-result-selected-${item.id}`}
+            testID={`${selectionTestID}-selected`}
           >
             <Icon as={Check} size={14} className="text-primary-foreground" />
           </View>
@@ -115,7 +116,7 @@ export function ResourcePickerResultRow({
       }`}
       disabled={disabled}
       onPress={onPress}
-      testID={`resource-picker-result-${item.id}`}
+      testID={selectionTestID}
     >
       <View className="flex-row items-start gap-3">
         <View

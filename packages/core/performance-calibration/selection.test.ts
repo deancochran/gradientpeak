@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  selectThresholdCandidate,
+  selectThresholdCandidate as selectThresholdCandidateWithMetric,
   type ThresholdExactWindowObservation,
   type ThresholdSelectionResult,
 } from "./index";
+
+function selectThresholdCandidate(
+  input: Omit<Parameters<typeof selectThresholdCandidateWithMetric>[0], "metric">,
+) {
+  return selectThresholdCandidateWithMetric({
+    ...input,
+    metric: input.activityCategory === "bike" ? "power" : "speed",
+  });
+}
 
 function runObservation(
   metric: "grade_adjusted_speed" | "speed",
@@ -83,6 +92,46 @@ const thresholdBoundaryCases = [
 ] as const;
 
 describe("selectThresholdCandidate", () => {
+  it.each([
+    "bike",
+    "run",
+    "swim",
+  ] as const)("qualifies %s LTHR only under its category-plus-metric policy", (activityCategory) => {
+    expect(
+      selectThresholdCandidateWithMetric({
+        activityCategory,
+        metric: "lthr",
+        observations: [
+          {
+            evidenceId: `${activityCategory}-lthr-evidence`,
+            activityId: `${activityCategory}-activity`,
+            seriesId: `${activityCategory}:heart_rate:lthr`,
+            metric: "heart_rate",
+            sourceAccepted: true,
+            ownershipVerified: true,
+            availability: "available",
+            durationSeconds: 1_200,
+            value: 172,
+            startTimestampSeconds: 600,
+            endTimestampSeconds: 1_800,
+            windowCoverage: 1,
+            maximumGapSeconds: 2,
+          },
+        ],
+      }),
+    ).toMatchObject({
+      status: "qualified",
+      candidate: {
+        activityCategory,
+        metric: "lthr",
+        unit: "bpm",
+        method: "lthr_30m_final_20m",
+        value: 172,
+        sourceSeriesMetric: "heart_rate",
+      },
+    });
+  });
+
   it.each([
     ["missing", [], "series_missing"],
     [

@@ -107,14 +107,17 @@ function summarizeRecommendation(
       incomplete = true;
       continue;
     }
+    if (point.state === "partial") {
+      incomplete = true;
+      continue;
+    }
     hasNumericLoad = true;
     load += point.load;
-    if (point.state === "partial") incomplete = true;
   }
   if (!hasPrescription) return { recommendedLoadStatus: "known_zero", recommendedLoad: 0 };
-  if (!hasNumericLoad) return unavailableRecommendationSummary();
+  if (!hasNumericLoad || incomplete) return unavailableRecommendationSummary();
   return {
-    recommendedLoadStatus: incomplete ? "partial" : "complete",
+    recommendedLoadStatus: "complete",
     recommendedLoad: load,
   };
 }

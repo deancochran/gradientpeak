@@ -14,6 +14,7 @@ import {
 } from "@repo/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { reconcileThresholdsWithProfileLockHeld } from "../performance-model/reconcile-thresholds";
 import { reconcileGeneratedActivityEvidence } from "./reconcile-activity-evidence";
 
 const profileIds: string[] = [];
@@ -186,7 +187,7 @@ afterEach(async () => {
 afterAll(async () => pool.end());
 
 describe("reconcileGeneratedActivityEvidence against PostgreSQL", () => {
-  it("persists one idempotent exact-window threshold evaluation and canonical threshold", async () => {
+  it("persists one idempotent exact-window effort and canonical threshold", async () => {
     const fixture = await seedBikeActivity();
     const firstEffort = exactBikeThresholdEffort(fixture);
     const reconcile = (effort: typeof firstEffort) =>
@@ -216,7 +217,7 @@ describe("reconcileGeneratedActivityEvidence against PostgreSQL", () => {
         .select()
         .from(thresholdEvaluations)
         .where(eq(thresholdEvaluations.source_activity_id, fixture.activityId)),
-    ).resolves.toHaveLength(1);
+    ).resolves.toHaveLength(2);
     await expect(
       db
         .select()
@@ -226,5 +227,86 @@ describe("reconcileGeneratedActivityEvidence against PostgreSQL", () => {
     await expect(
       db.select().from(thresholds).where(eq(thresholds.profile_id, fixture.profileId)),
     ).resolves.toHaveLength(1);
+  });
+
+  it("replays historical calibration from the exact persisted PostgreSQL real value", async () => {
+    const fixture = await seedBikeActivity();
+    const generatedValue = 373.3333333333333;
+    const generatedEffort = { ...exactBikeThresholdEffort(fixture), value: generatedValue };
+
+    await db.transaction((tx) =>
+      reconcileGeneratedActivityEvidence(tx, {
+        activityId: fixture.activityId,
+        profileId: fixture.profileId,
+        efforts: [generatedEffort],
+        detectedLTHR: null,
+        deferPerformanceCalibration: true,
+        now: createdAt,
+      }),
+    );
+    const [persistedEffort] = await db
+      .select()
+      .from(activityEfforts)
+      .where(eq(activityEfforts.activity_id, fixture.activityId));
+    if (!persistedEffort) throw new Error("Expected persisted effort fixture");
+    expect(persistedEffort.value).toBe(373.333);
+
+    await db.transaction((tx) =>
+      reconcileGeneratedActivityEvidence(tx, {
+        activityId: fixture.activityId,
+        profileId: fixture.profileId,
+        efforts: [persistedEffort],
+        detectedLTHR: null,
+        now: createdAt,
+      }),
+    );
+
+    await expect(
+      db.transaction((tx) =>
+        reconcileThresholdsWithProfileLockHeld(tx, {
+          activityId: fixture.activityId,
+          profileId: fixture.profileId,
+          efforts: [
+            {
+              ...generatedEffort,
+              id: persistedEffort.id,
+              provenance: {
+                ...generatedEffort.provenance,
+                observation_id: persistedEffort.id,
+              },
+            },
+          ],
+          now: createdAt,
+        }),
+      ),
+    ).rejects.toThrow("Threshold evaluation replay diverged from immutable source revision");
+
+    const replayId = randomUUID();
+    await expect(
+      db.transaction((tx) =>
+        reconcileGeneratedActivityEvidence(tx, {
+          activityId: fixture.activityId,
+          profileId: fixture.profileId,
+          efforts: [
+            {
+              ...generatedEffort,
+              id: replayId,
+              provenance: { ...generatedEffort.provenance, observation_id: replayId },
+            },
+          ],
+          detectedLTHR: null,
+          now: createdAt,
+        }),
+      ),
+    ).resolves.toMatchObject({ effortInserts: [] });
+    await expect(
+      db.select().from(activityEfforts).where(eq(activityEfforts.activity_id, fixture.activityId)),
+    ).resolves.toHaveLength(1);
+    await expect(
+      db
+        .select()
+        .from(thresholdEvaluations)
+        .where(eq(thresholdEvaluations.source_activity_id, fixture.activityId)),
+    ).resolves.toHaveLength(2);
   });
 });

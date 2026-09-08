@@ -5,6 +5,7 @@ import type { ImperativeRouter } from "expo-router";
 import { Alert, Share } from "react-native";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
+import { getPublicShareUrl } from "@/lib/share/public-share-url";
 
 const VISIBILITY_LABELS: Record<ContentVisibility, string> = {
   private: "Private",
@@ -21,11 +22,6 @@ function resolvePlanVisibility(
   return visibility === "public" || visibility === "followers" || visibility === "private"
     ? visibility
     : "private";
-}
-
-function getPublicShareUrl(path: string) {
-  const origin = (process.env.EXPO_PUBLIC_API_URL ?? "https://gradientpeak.app").replace(/\/$/, "");
-  return `${origin}${path}`;
 }
 
 function isValidUuid(value: string): boolean {
@@ -62,12 +58,17 @@ export function useTrainingPlanHeaderSocialActions({
   const [contentVisibility, setContentVisibility] = React.useState<ContentVisibility>(
     resolvePlanVisibility(plan),
   );
+  const [visibilityPending, setVisibilityPending] = React.useState(false);
+  const visibilityPendingRef = React.useRef(false);
   React.useEffect(() => {
-    setContentVisibility(resolvePlanVisibility(plan));
+    if (!visibilityPendingRef.current) {
+      setContentVisibility(resolvePlanVisibility(plan));
+    }
   }, [plan?.content_visibility]);
 
   const [isLiked, setIsLiked] = React.useState(plan?.has_liked ?? false);
   const [likesCount, setLikesCount] = React.useState(plan?.likes_count ?? 0);
+  const likePendingRef = React.useRef(false);
   React.useEffect(() => {
     setIsLiked(plan?.has_liked ?? false);
     setLikesCount(plan?.likes_count ?? 0);
@@ -83,9 +84,11 @@ export function useTrainingPlanHeaderSocialActions({
   });
 
   const handleChangeVisibility = () => {
-    if (!plan) return;
+    if (!plan || visibilityPendingRef.current) return;
     const commitVisibility = async (visibility: ContentVisibility) => {
-      setContentVisibility(visibility);
+      if (visibilityPendingRef.current) return;
+      visibilityPendingRef.current = true;
+      setVisibilityPending(true);
       try {
         const profile = await utils.profiles.get.fetch();
         const state = await utils.athleteIntelligence.getReadModel.fetch({
@@ -115,12 +118,16 @@ export function useTrainingPlanHeaderSocialActions({
         });
         if (result.status !== "saved") throw new Error("The plan changed. Refresh and retry.");
         await invalidateTrainingPlanQueries(utils);
+        setContentVisibility(visibility);
       } catch (error) {
         setContentVisibility(resolvePlanVisibility(plan));
         Alert.alert(
           "Update Failed",
           error instanceof Error ? error.message : "Failed to update visibility",
         );
+      } finally {
+        visibilityPendingRef.current = false;
+        setVisibilityPending(false);
       }
     };
     Alert.alert(
@@ -144,8 +151,15 @@ export function useTrainingPlanHeaderSocialActions({
     );
   };
 
-  const handleShare = () => {
+  const handleShare = async () => {
     if (!plan?.id) return;
+    if (visibilityPendingRef.current) {
+      Alert.alert(
+        "Updating visibility",
+        "Wait for the visibility update to finish before sharing.",
+      );
+      return;
+    }
     if (contentVisibility !== "public") {
       Alert.alert(
         "Not public",
@@ -154,19 +168,31 @@ export function useTrainingPlanHeaderSocialActions({
       return;
     }
     const url = getPublicShareUrl(`/share/training-plans/${plan.id}`);
-    void Share.share({ message: url, url });
+    try {
+      await Share.share({ message: url, url });
+    } catch {
+      Alert.alert("Share failed", "Could not open the share sheet. Please try again.");
+    }
   };
 
-  const handleToggleLike = () => {
+  const handleToggleLike = async () => {
+    if (likePendingRef.current || toggleLikeMutation.isPending) return;
     if (!plan?.id) return;
     if (!isValidUuid(plan.id)) {
       Alert.alert("Error", "Cannot like this item - invalid ID");
       return;
     }
     const newLikedState = !isLiked;
+    likePendingRef.current = true;
     setIsLiked(newLikedState);
     setLikesCount((prev: number) => (newLikedState ? prev + 1 : prev - 1));
-    toggleLikeMutation.mutate({ entity_id: plan.id, entity_type: "training_plan" });
+    try {
+      await toggleLikeMutation.mutateAsync({ entity_id: plan.id, entity_type: "training_plan" });
+    } catch {
+      // The mutation callback restores the optimistic state with the server projection.
+    } finally {
+      likePendingRef.current = false;
+    }
   };
 
   const handleDuplicate = async () => {
@@ -222,6 +248,6 @@ export function useTrainingPlanHeaderSocialActions({
     handleToggleLike,
     isLiked,
     likesCount,
-    visibilityPending: commitPlanMutation.isPending,
+    visibilityPending,
   };
 }

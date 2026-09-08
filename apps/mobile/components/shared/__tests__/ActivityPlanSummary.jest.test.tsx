@@ -1,118 +1,34 @@
+import type { SemanticMetric } from "@repo/core";
 import { createHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
 import { ActivityPlanSummary } from "../ActivityPlanSummary";
-import { createPrescriptionQuantificationBundleFixture } from "./activityQuantificationFixture";
 
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   View: createHost("View"),
 }));
-
-jest.mock("@repo/ui/components/text", () => ({
-  __esModule: true,
-  Text: createHost("Text"),
-}));
-
+jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
 jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
   useAppNavigate: () => jest.fn(),
 }));
 
-const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
-const structure = {
-  version: 3,
-  activity_category: "run",
-  segments: [
-    {
-      id: id(4),
-      role: "rest",
-      name: "Prepare",
-      duration: { type: "time", seconds: 60 },
-    },
-    {
-      id: id(1),
-      role: "activity",
-      name: "Run",
-      intervals: [
-        {
-          id: id(2),
-          name: "Work",
-          repetitions: 2,
-          steps: [
-            {
-              id: id(3),
-              name: "Tempo",
-              duration: { type: "time", seconds: 450 },
-              targets: [{ type: "RPE", intensity: 6 }],
-            },
-          ],
-        },
-      ],
-    },
-  ],
-};
+function objective(overrides: Record<string, unknown> = {}): SemanticMetric {
+  return {
+    key: "objective_intensity",
+    label: "Intensity",
+    status: "available",
+    value: 2_439 / 3_500,
+    unit: "ratio",
+    reason: null,
+    provenance: "estimated",
+    ...overrides,
+  } as SemanticMetric;
+}
 
 describe("ActivityPlanSummary", () => {
-  it("shows unavailable summary quantities without inventing authored values", async () => {
-    await renderNative(
-      <ActivityPlanSummary showAttribution={false} structure={structure} title="Tempo repeats" />,
-    );
-
-    expect(screen.getByText("Duration")).toBeTruthy();
-    expect(screen.queryByText("Steps")).toBeNull();
-    expect(screen.queryByText(/RPE 6|Prescribed intensity/)).toBeNull();
-    expect(screen.getAllByText("Unavailable")).toHaveLength(4);
-    expect(screen.queryByText(/^0(?:\.00|m)?$/)).toBeNull();
-  });
-
-  it("shows canonical prescribed Common Load and normalized intensity", async () => {
-    await renderNative(
-      <ActivityPlanSummary
-        prescriptionQuantification={createPrescriptionQuantificationBundleFixture()}
-        showAttribution={false}
-        title="Tempo run"
-      />,
-    );
-
-    expect(screen.getByText("Load")).toBeTruthy();
-    expect(screen.getByText("64")).toBeTruthy();
-    expect(screen.getByText("Intensity")).toBeTruthy();
-    expect(screen.getByText("0.80")).toBeTruthy();
-    expect(screen.queryByText(/RPE|Prescribed/)).toBeNull();
-  });
-
-  it("keeps cards summary-only beside a complete planned estimate", async () => {
-    await renderNative(
-      <ActivityPlanSummary
-        prescriptionQuantification={createPrescriptionQuantificationBundleFixture({
-          estimated: false,
-        })}
-        showAttribution={false}
-        title="Calibrated run"
-      />,
-    );
-
-    expect(screen.queryByText(/RPE|Prescribed/)).toBeNull();
-  });
-
-  it("labels partial planned evidence without substituting zero", async () => {
-    await renderNative(
-      <ActivityPlanSummary
-        prescriptionQuantification={createPrescriptionQuantificationBundleFixture({
-          status: "partial",
-        })}
-        showAttribution={false}
-        title="Tempo run"
-      />,
-    );
-
-    expect(screen.getByText(/32 known \(partial\)/)).toBeTruthy();
-    expect(screen.getByText(/0\.80 known \(partial\)/)).toBeTruthy();
-    expect(screen.queryByText(/^0(?:\.00|m)?$/)).toBeNull();
-  });
-
-  it("shows known partial projection values as partial", async () => {
+  it("keeps Option 1 partial duration, load, and normalized intensity unavailable", async () => {
     await renderNative(
       <ActivityPlanSummary
         projectionMetrics={[
@@ -120,56 +36,118 @@ describe("ActivityPlanSummary", () => {
             key: "elapsed_duration",
             label: "Duration",
             status: "partial",
-            value: 900,
+            value: 180,
             unit: "seconds",
-            reason: "estimate_incomplete",
+            reason: "incomplete_members",
           },
           {
             key: "common_load",
-            label: "Common Load",
+            label: "Load",
             status: "partial",
-            value: 88,
+            value: 1.5,
             unit: "score",
-            reason: "estimate_incomplete",
+            reason: "incomplete_members",
           },
           {
             key: "normalized_intensity",
             label: "Normalized intensity",
             status: "partial",
-            value: 0.9,
+            value: 0.55,
             unit: "ratio",
-            reason: "estimate_incomplete",
+            reason: "incomplete_members",
+          },
+          objective({
+            status: "unavailable",
+            value: null,
+            reason: "incomplete_objective_coverage",
+            provenance: null,
+          }),
+        ]}
+        showAttribution={false}
+        title="Option 1"
+      />,
+    );
+
+    expect(screen.getAllByText("—")).toHaveLength(4);
+    expect(screen.queryByText("0.70")).toBeNull();
+    expect(screen.queryByText("3m")).toBeNull();
+    expect(screen.queryByText("1.5")).toBeNull();
+    expect(screen.queryByText("0.55")).toBeNull();
+  });
+
+  it("marks the complete calculated objective intensity ratio", async () => {
+    await renderNative(
+      <ActivityPlanSummary
+        projectionMetrics={[objective()]}
+        showAttribution={false}
+        title="Personalized Core and Stability"
+      />,
+    );
+    expect(screen.getByText("~0.70")).toBeTruthy();
+  });
+
+  it("renders complete authored values without an estimate marker", async () => {
+    await renderNative(
+      <ActivityPlanSummary
+        projectionMetrics={[
+          {
+            key: "elapsed_duration",
+            label: "Duration",
+            status: "available",
+            value: 3_600,
+            unit: "seconds",
+            reason: null,
+            provenance: "authored",
           },
         ]}
         showAttribution={false}
-        title="Incomplete plan"
+        title="Exact plan"
       />,
     );
-
-    expect(screen.getByText(/15m known \(partial\)/)).toBeTruthy();
-    expect(screen.getByText(/88 known \(partial\)/)).toBeTruthy();
-    expect(screen.getByText(/0\.90 known \(partial\)/)).toBeTruthy();
+    expect(screen.getByText("1h")).toBeTruthy();
+    expect(screen.queryByText("~1h")).toBeNull();
   });
 
-  it("omits private calculated quantities and emits no invented zero", async () => {
-    const rendered = await renderNative(
+  it("does not use normalized intensity as the plan-card intensity", async () => {
+    await renderNative(
       <ActivityPlanSummary
-        prescriptionQuantification={createPrescriptionQuantificationBundleFixture({
-          status: "private",
-        })}
+        projectionMetrics={[
+          {
+            key: "normalized_intensity",
+            label: "Normalized intensity",
+            status: "available",
+            value: 0.82,
+            unit: "ratio",
+            reason: null,
+            provenance: "personalized",
+          },
+        ]}
         showAttribution={false}
-        title="Private plan"
+        title="Easy Swim"
       />,
     );
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+    expect(screen.queryByText("0.82")).toBeNull();
+  });
 
-    expect(screen.getByText("Load")).toBeTruthy();
-    expect(screen.getByText("Intensity")).toBeTruthy();
-    expect(screen.getByText("Duration")).toBeTruthy();
-    expect(screen.getByText("1h")).toBeTruthy();
-    expect(screen.getAllByText("Unavailable")).toHaveLength(3);
-    expect(screen.queryByText(/^0(?:\.00|m)?$/)).toBeNull();
-    expect(JSON.stringify(rendered.toJSON())).not.toMatch(
-      /TSS|\bIF\b|intensityFactor|category_load/,
+  it("does not use RPE-labelled metrics as the plan-card intensity", async () => {
+    await renderNative(
+      <ActivityPlanSummary
+        projectionMetrics={[
+          {
+            key: "average_power",
+            label: "RPE",
+            status: "available",
+            value: 7,
+            unit: "rpe_0_10",
+            reason: null,
+          },
+        ]}
+        showAttribution={false}
+        title="Range swim"
+      />,
     );
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+    expect(screen.queryByText("7/10 RPE")).toBeNull();
   });
 });

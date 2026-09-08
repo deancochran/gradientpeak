@@ -3,7 +3,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 
 import { AuthCardShell } from "../../components/auth-card-shell";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
+import { publicAuthPageMiddleware, resolveRouteAuthSession } from "../../lib/auth/route-guards";
 import { sendVerificationEmailAction } from "../../lib/auth/server-actions";
+import { getVerificationEmail } from "../../lib/auth/verification-email";
 import { contractEpochFormInputProps } from "../../lib/contract-epoch";
 
 export const Route = createFileRoute("/auth/verify")({
@@ -16,16 +18,25 @@ export const Route = createFileRoute("/auth/verify")({
         : undefined,
     source: typeof search.source === "string" ? search.source : undefined,
   }),
+  server: {
+    middleware: publicAuthPageMiddleware,
+  },
+  beforeLoad: async ({ serverContext }) => {
+    const session = await resolveRouteAuthSession(serverContext);
+    return { authenticatedEmail: session?.user.email };
+  },
   component: VerifyEmailPage,
 });
 
 function VerifyEmailPage() {
   const navigate = Route.useNavigate();
   const { email, flash, flashType, source } = Route.useSearch();
+  const { authenticatedEmail } = Route.useRouteContext();
+  const verificationEmail = getVerificationEmail(email, authenticatedEmail);
   const description =
     source === "sign-up"
-      ? `Check your inbox for a verification link for ${email ?? "your email"}. If it does not arrive, resend it below.`
-      : `Check your inbox for a verification link sent to ${email ?? "your email"}.`;
+      ? `Check your inbox for a verification link for ${verificationEmail ?? "your email"}. If it does not arrive, resend it below.`
+      : `Check your inbox for a verification link sent to ${verificationEmail ?? "your email"}.`;
 
   return (
     <div className="flex min-h-[70vh] items-center justify-center py-6 md:py-10">
@@ -49,9 +60,9 @@ function VerifyEmailPage() {
             </p>
             <form action={sendVerificationEmailAction.url} method="post" className="space-y-3">
               <input {...contractEpochFormInputProps} />
-              <input type="hidden" name="email" value={email ?? ""} />
+              <input type="hidden" name="email" value={verificationEmail ?? ""} />
               <input type="hidden" name="source" value={source ?? ""} />
-              <Button type="submit" className="w-full" disabled={!email}>
+              <Button type="submit" className="w-full" disabled={!verificationEmail}>
                 Resend Verification Email
               </Button>
             </form>

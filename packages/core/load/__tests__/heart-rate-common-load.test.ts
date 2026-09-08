@@ -25,6 +25,7 @@ function finalHeartRateLoad(input: {
   includeElapsed?: boolean;
   distribution?: HeartRateDurationEvidence;
   lthrBpm?: number | null;
+  lthrActivityCategory?: "bike" | "run" | "swim";
   includeQuality?: boolean;
   stale?: boolean;
   provisional?: boolean;
@@ -36,7 +37,12 @@ function finalHeartRateLoad(input: {
       maxGapSeconds: fixtures.heartRate.maxGapSeconds,
     });
   const performanceTargets = buildPerformanceTargetFactsFixture({
-    lthrBpm: input.lthrBpm === null ? {} : { run: input.lthrBpm ?? fixtures.heartRate.lthrBpm },
+    lthrBpm:
+      input.lthrBpm === null
+        ? {}
+        : {
+            [input.lthrActivityCategory ?? "run"]: input.lthrBpm ?? fixtures.heartRate.lthrBpm,
+          },
   });
   if (input.stale || input.provisional) {
     performanceTargets.heartRate.run.lthr.calibrationState = input.stale ? "stale" : "provisional";
@@ -265,6 +271,13 @@ describe("Phase 5 final HR Common Load contract", () => {
         samples: fixtures.heartRate.thresholdHour.samples,
         durationSeconds: 3_600,
         includeQuality: false,
+      }),
+    ).toMatchObject({ status: "unavailable", reason: "threshold_missing" });
+    expect(
+      finalHeartRateLoad({
+        samples: fixtures.heartRate.thresholdHour.samples,
+        durationSeconds: 3_600,
+        lthrActivityCategory: "bike",
       }),
     ).toMatchObject({ status: "unavailable", reason: "threshold_missing" });
   });

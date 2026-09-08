@@ -13,8 +13,8 @@ import {
   IntegrationLifecycleChangedError,
   type IntegrationsRepositories,
 } from "../../repositories/integrations-repository";
-import type { WahooSyncRepository } from "../../repositories/wahoo-sync-repository";
 import { handleOAuthCallback } from "./oauthCallbackUseCase";
+import { createProviderOperationRegistry } from "./provider-operation-registry";
 
 const STATE_ID = "55555555-5555-4555-8555-555555555555";
 const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
@@ -71,7 +71,7 @@ function createDependencies(
         id: INTEGRATION_ID,
         lifecycle_status: "active",
         profile_id: PROFILE_ID,
-        provider: "wahoo",
+        provider,
       };
     }),
   };
@@ -91,7 +91,7 @@ function createDependencies(
   return {
     db: {} as never,
     repositories: { integrations, oauthStates } as unknown as IntegrationsRepositories,
-    providerSyncRepository: providerSyncRepository as unknown as WahooSyncRepository,
+    enqueueProviderJobInTransaction: providerSyncRepository.enqueueJobInTransaction,
     runInTransaction,
     integrations,
     oauthStates,
@@ -628,7 +628,7 @@ describe("OAuth callback use case", () => {
       code: "provider-code",
       error: null,
       fallbackRedirect: "http://localhost:3000/integrations",
-      provider: "strava",
+      provider: "strava" as const,
       state: STATE_ID,
     });
 
@@ -637,6 +637,71 @@ describe("OAuth callback use case", () => {
     expect(deps.integrations.upsertFromOAuthStateInTransaction).not.toHaveBeenCalled();
     expect(deps.oauthStates.deleteByState).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("executes a second provider entirely through its registered OAuth adapter", async () => {
+    const deps = createDependencies("strava", {
+      callback_uri: "https://example.test/callback/strava",
+      requested_scope: "activity:read",
+      verifier_hash: "strava-verifier-hash",
+    });
+    const adapter = {
+      provider: "strava" as const,
+      isConfigured: vi.fn(() => true),
+      isOAuthConfigured: vi.fn(() => true),
+      validateOAuthStateBinding: vi.fn(
+        ({ binding }) =>
+          binding.callbackUri === "https://example.test/callback/strava" &&
+          binding.requestedScope === "activity:read" &&
+          binding.verifierHash === "strava-verifier-hash",
+      ),
+      exchangeOAuthCode: vi.fn(async () => ({
+        access_token: "strava-access-token",
+        refresh_token: "strava-refresh-token",
+        expires_in: 3600,
+        scope: "activity:read",
+      })),
+      resolveOAuthIdentity: vi.fn(async () => ({
+        externalId: "strava-athlete-1",
+        requiresActivation: false,
+      })),
+      activateOAuthCredential: vi.fn(async () => undefined),
+      classifyOAuthFailure: vi.fn(() => ({
+        kind: "exchange" as const,
+        code: "strava_exchange_failed",
+        message: "Connection failed",
+      })),
+      enqueueConnectedProfileWork: vi.fn(async () => undefined),
+    };
+    const registry = createProviderOperationRegistry<"strava", typeof adapter>([adapter]);
+
+    const result = await handleOAuthCallback({
+      ...deps,
+      code: "strava-code",
+      enqueueProviderJobInTransaction: undefined,
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "strava",
+      resolveProviderAdapter: (provider) => registry.get(provider as "strava"),
+      state: STATE_ID,
+    });
+
+    expect(new URL(result.redirectUrl).searchParams.get("integration")).toBe("connected");
+    expect(adapter.validateOAuthStateBinding).toHaveBeenCalledOnce();
+    expect(adapter.exchangeOAuthCode).toHaveBeenCalledWith({
+      code: "strava-code",
+      state: STATE_ID,
+    });
+    expect(adapter.resolveOAuthIdentity).toHaveBeenCalledOnce();
+    expect(adapter.enqueueConnectedProfileWork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        integration: expect.objectContaining({ provider: "strava" }),
+        profileId: PROFILE_ID,
+        scope: "activity:read",
+      }),
+    );
+    expect(adapter.activateOAuthCredential).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).not.toHaveBeenCalled();
   });
 
   it("persists an identity-bearing Wahoo token before activation", async () => {

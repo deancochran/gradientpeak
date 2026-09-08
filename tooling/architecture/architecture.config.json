@@ -197,11 +197,7 @@
         "test": [
           {
             "script": "test",
-            "patterns": [
-              "tests/parity/**/*.test.ts",
-              "tooling/architecture/**/*.test.mjs",
-              "tooling/testing/**/*.test.mjs"
-            ]
+            "patterns": ["tooling/architecture/**/*.test.mjs", "tooling/testing/**/*.test.mjs"]
           },
           {
             "script": "test:architecture",
@@ -224,14 +220,7 @@
     "root": ["core", "mobile", "web"]
   },
   "coverage": {
-    "lint": [
-      "apps/**/*",
-      "packages/**/*",
-      "tooling/**/*",
-      "tests/**/*",
-      ".github/**/*",
-      "vitest.parity.config.ts"
-    ],
+    "lint": ["apps/**/*", "packages/**/*", "tooling/**/*", "tests/**/*", ".github/**/*"],
     "lintExcludes": [
       "apps/web/src/routeTree.gen.ts",
       "tooling/architecture/architecture-baseline.json",
@@ -244,7 +233,6 @@
       "packages/**/*.ts",
       "packages/**/*.tsx",
       "tooling/**/*.ts",
-      "vitest.parity.config.ts",
       "packages/db/supabase/functions/**/*.js",
       "packages/db/supabase/functions/**/*.jsx"
     ],
@@ -254,8 +242,7 @@
       "tooling/architecture/**/*.test.mjs",
       "tooling/qa/profiles.test.mjs",
       "tooling/testing/**/*.test.mjs",
-      "tooling/typescript/**/*.test.mjs",
-      "tests/parity/**/*.test.ts"
+      "tooling/typescript/**/*.test.mjs"
     ],
     "categories": {
       "source": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs"],

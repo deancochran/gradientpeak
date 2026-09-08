@@ -129,7 +129,7 @@ const scheduleItemSchema = z
     estimatedDuration: z.number().nonnegative().nullable(),
     estimatedDistance: z.number().nullable(),
     load: z.number().nonnegative().nullable(),
-    intensity: z.number().nonnegative().nullable(),
+    objectiveIntensity: z.number().nonnegative().nullable(),
   })
   .strict();
 
@@ -249,14 +249,13 @@ export function projectCommonLoad(input: {
   sourceComplete?: boolean;
   items: Array<{ date: string; commonLoad: { status: string; load?: number | null } }>;
 }) {
+  if (input.sourceComplete === false) return null;
   const plannedByDate = new Map<string, number>();
-  let complete = input.sourceComplete ?? true;
   for (const item of input.items) {
-    if (item.commonLoad.status === "unavailable" || item.commonLoad.load === null) return null;
+    if (item.commonLoad.status !== "complete" || item.commonLoad.load === null) return null;
     if (typeof item.commonLoad.load !== "number" || !Number.isFinite(item.commonLoad.load)) {
       return null;
     }
-    if (item.commonLoad.status !== "complete") complete = false;
     plannedByDate.set(item.date, (plannedByDate.get(item.date) ?? 0) + item.commonLoad.load);
   }
 
@@ -273,7 +272,7 @@ export function projectCommonLoad(input: {
       recentLoad: Math.round(recentLoad * 10) / 10,
       loadBalance: Math.round((longTermLoad - recentLoad) * 10) / 10,
       plannedLoad: Math.round(plannedLoad * 10) / 10,
-      status: complete ? ("complete" as const) : ("partial" as const),
+      status: "complete" as const,
     };
   });
 }
@@ -359,7 +358,6 @@ export const homeRouter = createTRPCRouter({
       const availableCommonLoadHistory =
         commonLoadHistory.status === "available" ? commonLoadHistory : null;
       const latestCommonLoadPoint = availableCommonLoadHistory?.points.at(-1) ?? null;
-      const publishedBaseline = athleteReadModel.currentBaseline?.baseline ?? null;
       const profileTimezone = athleteReadModel.currentBaseline?.planningTimezone.trim();
       const planningTimezone =
         profileTimezone && isValidIanaTimeZone(profileTimezone) ? profileTimezone : "UTC";
@@ -512,10 +510,7 @@ export const homeRouter = createTRPCRouter({
             ? null
             : weeklyActualSummary.distance.value / 1000,
         duration: weeklyActualSummary.duration.active.value,
-        load:
-          weeklyActualLoad.status === "complete" || weeklyActualLoad.status === "partial"
-            ? Math.round(weeklyActualLoad.load)
-            : null,
+        load: weeklyActualLoad.status === "complete" ? Math.round(weeklyActualLoad.load) : null,
         loadComplete: weeklyActualLoad.status === "complete",
         count: weeklyActuals.length,
       };
@@ -618,6 +613,7 @@ export const homeRouter = createTRPCRouter({
         sourceEvidenceFor(row.activityId).currentArtifactIds.push(row.artifactId);
       }
       for (const row of workloadProviderRows) {
+        if (!row.activityId) continue;
         sourceEvidenceFor(row.activityId).providerReferences.push({
           provider: row.provider,
           externalId: row.externalId,
@@ -655,10 +651,11 @@ export const homeRouter = createTRPCRouter({
         })
         .map((plannedActivity) => {
           const prescriptionQuantification = scheduledQuantification(plannedActivity, now);
-          const quantification = prescriptionQuantification.summary;
           const plannedEstimate = getPlannedEstimate(prescriptionQuantification);
           const completeValue = (quantity: { status: string; value: number | null }) =>
             quantity.status === "known" || quantity.status === "estimated" ? quantity.value : null;
+          const objectiveIntensity =
+            plannedActivity.activity_plan?.planProjection?.objectiveIntensity;
           const execution = plannedActivity.activity_plan
             ? { activity_category: plannedActivity.activity_plan.activity_category }
             : null;
@@ -671,9 +668,10 @@ export const homeRouter = createTRPCRouter({
             activityName: plannedActivity.activity_plan?.name || "Activity",
             ...getScheduleExecutionPresentation(execution),
             estimatedDuration: completeValue(plannedEstimate.durationSeconds),
-            estimatedDistance: quantification.distance.value,
+            estimatedDistance: completeValue(plannedEstimate.distanceMeters),
             load: completeValue(plannedEstimate.load),
-            intensity: completeValue(plannedEstimate.normalizedIntensity),
+            objectiveIntensity:
+              objectiveIntensity?.status === "available" ? objectiveIntensity.value : null,
           };
         });
 
@@ -740,16 +738,7 @@ export const homeRouter = createTRPCRouter({
                 maturity: availableCommonLoadHistory.maturity.status,
                 coverageStatus: availableCommonLoadHistory.coverageStatus,
               }
-            : publishedBaseline
-              ? {
-                  longTermLoad: publishedBaseline.longTermLoad,
-                  recentLoad: publishedBaseline.recentLoad,
-                  loadBalance: publishedBaseline.loadBalance,
-                  loadBalanceStatus: getLoadBalanceStatus(publishedBaseline.loadBalance),
-                  maturity: "provisional",
-                  coverageStatus: "partial",
-                }
-              : null,
+            : null,
         trainingLoadState: {
           status: availableCommonLoadHistory ? "available" : "unavailable",
           reason: availableCommonLoadHistory

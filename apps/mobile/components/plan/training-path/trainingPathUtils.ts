@@ -373,7 +373,7 @@ export function buildTrainingPathWeekSummary(input: {
   const body = input.week.completedLoadUnavailable
     ? "Completed Common Load is unavailable for this week."
     : input.week.completedLoadStatus === "partial"
-      ? "Completed Common Load is partial for this week."
+      ? "Completed Common Load is based on available activity evidence for this week."
       : absDelta == null || loadDelta == null
         ? null
         : absDelta < 10

@@ -7,9 +7,16 @@ export const Route = createFileRoute("/_protected/training-plans/create")({
 });
 
 function CreateTrainingPlanPage() {
+  const navigate = Route.useNavigate();
   return (
     <TrainingPlanEditor
-      onSaved={(planId) => window.location.replace(`/training-plans/${planId}`)}
+      onSaved={(planId) =>
+        void navigate({
+          to: "/training-plans/$planId",
+          params: { planId },
+          replace: true,
+        } as never)
+      }
     />
   );
 }

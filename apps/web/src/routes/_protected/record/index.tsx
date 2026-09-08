@@ -80,7 +80,7 @@ function RecordPage() {
   };
 
   const openSession = () => {
-    if (!active) {
+    if (!active && !recording.artifact) {
       const configured = recording.configure({
         activity_category: activityCategory,
         ...(eventId ? { eventId } : {}),
@@ -264,7 +264,9 @@ function RecordPage() {
             onClick={openSession}
           >
             <Play className="h-4 w-4" />
-            {active || recording.hasRecoveredDraft ? "Return to recorder" : "Open recorder"}
+            {active || recording.artifact || recording.hasRecoveredDraft
+              ? "Return to recorder"
+              : "Open recorder"}
           </Button>
         </CardContent>
       </Card>

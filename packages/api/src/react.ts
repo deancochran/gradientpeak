@@ -136,8 +136,10 @@ export async function invalidateGoalQueries(
   if (options.goalId) {
     refreshTasks.push(
       utils.athleteIntelligence.getGoalAssessment.invalidate({ goalId: options.goalId }),
+      utils.athleteIntelligence.getGoalProgress.invalidate({ goalId: options.goalId }),
     );
   }
+  refreshTasks.push(utils.athleteIntelligence.getGoalAssessmentBatch.invalidate());
 
   await Promise.all(refreshTasks);
 }

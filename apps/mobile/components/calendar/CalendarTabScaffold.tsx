@@ -1,15 +1,14 @@
 import type { CalendarProjectionItem } from "@repo/core";
 import { PlanCalendarSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
-import { useState } from "react";
 import { ActivityIndicator, ScrollView, TouchableOpacity, View } from "react-native";
 import { AppHeader } from "@/components/shared";
-import { CalendarAgendaSheet } from "./CalendarAgendaSheet";
 import { CalendarMonthPage } from "./CalendarMonthPage";
 import { CalendarTimelineToolbar } from "./CalendarTimelineToolbar";
 
 type CalendarErrorScreenProps = {
   onRetry: () => void;
+  showHeader?: boolean;
 };
 
 type CalendarReadyScreenProps = {
@@ -22,18 +21,19 @@ type CalendarReadyScreenProps = {
   monthTitle: string;
   onCreateEvent: () => void;
   onMoveMonth: (months: number) => void;
-  onOpenItem: (item: CalendarProjectionItem) => void;
+  onOpenDayBreakdown: (dateKey: string) => void;
   onSelectDate: (dateKey: string) => void;
   onToday: () => void;
   onRetry: () => void;
   selectedDateKey: string;
   todayKey: string;
+  showHeader?: boolean;
 };
 
-export function CalendarLoadingScreen() {
+export function CalendarLoadingScreen({ showHeader = true }: { showHeader?: boolean }) {
   return (
     <View className="flex-1 bg-background">
-      <AppHeader title="Calendar" />
+      {showHeader ? <AppHeader title="Calendar" /> : null}
       <ScrollView className="flex-1 p-6">
         <PlanCalendarSkeleton />
       </ScrollView>
@@ -42,10 +42,10 @@ export function CalendarLoadingScreen() {
   );
 }
 
-export function CalendarErrorScreen({ onRetry }: CalendarErrorScreenProps) {
+export function CalendarErrorScreen({ onRetry, showHeader = true }: CalendarErrorScreenProps) {
   return (
     <View className="flex-1 bg-background">
-      <AppHeader title="Calendar" />
+      {showHeader ? <AppHeader title="Calendar" /> : null}
       <View className="flex-1 items-center justify-center gap-3 px-6">
         <Text className="text-center text-sm text-muted-foreground">
           Unable to load calendar events right now.
@@ -65,21 +65,9 @@ export function CalendarErrorScreen({ onRetry }: CalendarErrorScreenProps) {
 }
 
 export function CalendarReadyScreen(props: CalendarReadyScreenProps) {
-  const [isAgendaVisible, setIsAgendaVisible] = useState(false);
-
-  const handleCreateEvent = () => {
-    setIsAgendaVisible(false);
-    props.onCreateEvent();
-  };
-
-  const handleOpenItem = (item: CalendarProjectionItem) => {
-    setIsAgendaVisible(false);
-    props.onOpenItem(item);
-  };
-
   return (
     <View className="flex-1 bg-background" testID="calendar-screen-ready">
-      <AppHeader title="Calendar" />
+      {props.showHeader !== false ? <AppHeader title="Calendar" /> : null}
       <CalendarTimelineToolbar
         dateKey={props.selectedDateKey}
         isJumpLoading={props.isLoadingAdjacentPage}
@@ -123,20 +111,11 @@ export function CalendarReadyScreen(props: CalendarReadyScreenProps) {
         <CalendarMonthPage
           activeMonthKey={props.activeMonthKey}
           itemsByDate={props.itemsByDate}
-          onOpenSelectedDay={() => setIsAgendaVisible(true)}
-          onSelectDate={props.onSelectDate}
+          onOpenDay={props.onOpenDayBreakdown}
           selectedDateKey={props.selectedDateKey}
           todayKey={props.todayKey}
         />
       </View>
-
-      <CalendarAgendaSheet
-        dateKey={props.selectedDateKey}
-        onClose={() => setIsAgendaVisible(false)}
-        onCreateEvent={handleCreateEvent}
-        onOpenItem={handleOpenItem}
-        visible={isAgendaVisible}
-      />
 
       {props.isLoadingAdjacentPage ? (
         <ActivityIndicator

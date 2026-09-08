@@ -101,24 +101,40 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     plugins: [
       "expo-router",
       "expo-web-browser",
-      "expo-build-properties",
+      ...(environment === "development"
+        ? ["expo-build-properties" as NonNullable<ExpoConfig["plugins"]>[number]]
+        : [
+            [
+              "expo-build-properties",
+              {
+                android: {
+                  usesCleartextTraffic: environment === "preview",
+                },
+              },
+            ] as NonNullable<ExpoConfig["plugins"]>[number],
+          ]),
       "@react-native-community/datetimepicker",
       "expo-font",
       "expo-image",
       "expo-secure-store",
       "expo-sqlite",
       "expo-localization",
+      "expo-sharing",
       "expo-status-bar",
       "posthog-react-native/expo",
-      [
-        "expo-dev-client",
-        {
-          launchMode: environment === "development" ? "launcher" : "most-recent",
-          android: {
-            launchMode: environment === "development" ? "launcher" : "most-recent",
-          },
-        },
-      ],
+      ...(environment === "development"
+        ? [
+            [
+              "expo-dev-client",
+              {
+                launchMode: "launcher",
+                android: {
+                  launchMode: "launcher",
+                },
+              },
+            ] as NonNullable<ExpoConfig["plugins"]>[number],
+          ]
+        : []),
       [
         "expo-splash-screen",
         {

@@ -25,7 +25,10 @@ jest.mock("react-native", () => ({
   Alert: { alert: jest.fn() },
 }));
 jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 0 }) }));
-jest.mock("expo-router", () => ({ useRouter: () => ({ back: jest.fn(), push: jest.fn() }) }));
+jest.mock("expo-router", () => ({
+  useLocalSearchParams: () => ({}),
+  useRouter: () => ({ back: jest.fn(), push: jest.fn() }),
+}));
 jest.mock("@/components/ErrorBoundary", () => ({
   ErrorBoundary: ({ children }: React.PropsWithChildren) => children,
   ScreenErrorFallback: createHost("Fallback"),

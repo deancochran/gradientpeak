@@ -1,8 +1,9 @@
-import BottomSheet, {
+import {
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
   BottomSheetFooter,
   type BottomSheetFooterProps,
+  BottomSheetModal,
   BottomSheetScrollView,
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
@@ -10,7 +11,7 @@ import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { ChevronLeft } from "lucide-react-native";
 import type { ReactNode } from "react";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -43,6 +44,7 @@ type AppBottomSheetProps = {
   showCloseAction?: boolean;
   showTitleHeader?: boolean;
   snapPoints?: string[];
+  stackBehavior?: "push" | "replace" | "switch";
   testID?: string;
   title: string;
   visible: boolean;
@@ -113,11 +115,13 @@ export function AppBottomSheet({
   showCloseAction = false,
   showTitleHeader = true,
   snapPoints: snapPointProp,
+  stackBehavior = "replace",
   testID = "app-bottom-sheet",
   title,
   visible,
 }: AppBottomSheetProps) {
-  const bottomSheetRef = useRef<BottomSheet>(null);
+  const bottomSheetRef = useRef<BottomSheetModal>(null);
+  const wasVisibleRef = useRef(visible);
   const { bottom: bottomSafeAreaInset } = useSafeAreaInsets();
   const defaultSnapPoints = APP_BOTTOM_SHEET_PRESENTATIONS.inspector.snapPoints;
   const snapPoints = snapPointProp ?? defaultSnapPoints;
@@ -150,9 +154,15 @@ export function AppBottomSheet({
     [bottomSafeAreaInset, footer],
   );
 
-  if (!visible) {
-    return null;
-  }
+  useEffect(() => {
+    if (visible) {
+      bottomSheetRef.current?.present();
+    } else if (wasVisibleRef.current) {
+      bottomSheetRef.current?.dismiss();
+    }
+
+    wasVisibleRef.current = visible;
+  }, [visible]);
 
   const hasFooter = Boolean(footer);
   const hasHeaderAction = Boolean(headerAction);
@@ -210,10 +220,11 @@ export function AppBottomSheet({
   ) : null;
 
   return (
-    <BottomSheet
+    <BottomSheetModal
       ref={bottomSheetRef}
       index={resolvedInitialSnapIndex}
       snapPoints={snapPoints}
+      stackBehavior={stackBehavior}
       enableDynamicSizing={false}
       enableContentPanningGesture={contentPanningGestureEnabled}
       enablePanDownToClose
@@ -222,7 +233,7 @@ export function AppBottomSheet({
       android_keyboardInputMode="adjustResize"
       backdropComponent={renderBackdrop}
       footerComponent={hasFooter ? renderFooter : undefined}
-      onClose={onClose}
+      onDismiss={onClose}
       handleIndicatorStyle={{
         width: 40,
         height: 4,
@@ -267,6 +278,6 @@ export function AppBottomSheet({
           </AppBottomSheetContent>
         </BottomSheetView>
       )}
-    </BottomSheet>
+    </BottomSheetModal>
   );
 }

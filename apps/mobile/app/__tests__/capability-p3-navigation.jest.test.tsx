@@ -85,6 +85,8 @@ jest.mock("lucide-react-native", () => ({
   Circle: createHost("Circle"),
   Home: createHost("Home"),
   Route: createHost("Route"),
+  Search: createHost("Search"),
+  Users: createHost("Users"),
 }));
 
 jest.mock("@/lib/hooks/useAuth", () => ({
@@ -173,8 +175,8 @@ describe("navigation capabilities", () => {
       ["index", "tab-button-home"],
       ["plan", "tab-button-plan"],
       ["record-launcher", "tab-button-record"],
-      ["calendar", "tab-button-calendar"],
-      ["profile", "tab-button-profile"],
+      ["discover", "tab-button-discover"],
+      ["groups", "tab-button-community"],
     ] as const) {
       await fireEvent.press(screen.getByTestId(testID));
       if (routeName !== "record-launcher") {

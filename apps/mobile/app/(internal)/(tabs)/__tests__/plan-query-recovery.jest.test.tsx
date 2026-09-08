@@ -18,15 +18,8 @@ jest.mock("@/components/ErrorBoundary", () => ({
   ScreenErrorFallback: createHost("Fallback"),
 }));
 jest.mock("@/components/shared", () => ({ AppHeader: createHost("AppHeader") }));
-jest.mock("@/components/calendar/CalendarAgendaSheet", () => ({
-  CalendarAgendaSheet: createHost("CalendarAgendaSheet"),
-}));
-jest.mock("@/components/plan/ledger/PlanningLedgerSheet", () => ({
-  PlanningLedgerSheet: createHost("PlanningLedgerSheet"),
-}));
-jest.mock("@/components/plan/training-path/TrainingPathSection", () => ({
-  TrainingPathSection: (props: Record<string, unknown>) =>
-    React.createElement("View", { testID: "training-path", ...props }),
+jest.mock("@/components/plan/training-path/PlanDashboardContent", () => ({
+  PlanDashboardContent: () => React.createElement("View", { testID: "plan-command-center" }),
 }));
 jest.mock("@/components/plan/training-path/usePlanTrainingPathData", () => ({
   usePlanTrainingPathData: () => ({
@@ -35,25 +28,17 @@ jest.mock("@/components/plan/training-path/usePlanTrainingPathData", () => ({
     queryFailureCount: 2,
     hasUsableData,
     dailyTrainingPathPoints: [],
+    goalMarkers: [],
     chartLoading: false,
     trainingPath: {},
     selectedDate: "2026-01-01",
-    selectedWeekGoals: [],
-    selectedWeekEvents: [],
-    selectedWeekGroupEvents: [],
-    selectedWeekCompletedActivities: [],
-    selectedWeekLoading: false,
-    handleWeekScrollStart: jest.fn(),
+    selectedWeekStart: "2025-12-29",
+    timelineDaysByDate: {},
     handleSelectedDateChange: jest.fn(),
     handleSelectedWeekChange: jest.fn(),
   }),
 }));
 jest.mock("@/lib/performance", () => ({ usePerformanceScreenReady: jest.fn() }));
-jest.mock("@/lib/stores/planDisplayPreferences", () => ({
-  usePlanDisplayPreferences: (
-    selector: (state: { hydrated: true; range: "daily"; setRange: jest.Mock }) => unknown,
-  ) => selector({ hydrated: true, range: "daily", setRange: jest.fn() }),
-}));
 jest.mock("@/lib/stores/trainingPreferencesSheetStore", () => ({
   useTrainingPreferencesSheetStore: () => jest.fn(),
 }));
@@ -64,7 +49,7 @@ const Plan = require("../plan").default;
 it("retains usable plan data and retries partial failures", async () => {
   await renderNative(<Plan />);
   expect(screen.getByText("Some plan details could not be refreshed")).toBeTruthy();
-  expect(screen.getByTestId("training-path")).toBeTruthy();
+  expect(screen.getByTestId("plan-command-center")).toBeTruthy();
   expect(screen.getAllByTestId("plan-query-error")).toHaveLength(1);
   await fireEvent.press(screen.getByTestId("plan-query-retry"));
   expect(refresh).toHaveBeenCalled();
@@ -74,6 +59,6 @@ it("labels a full load failure accurately", async () => {
   hasUsableData = false;
   await renderNative(<Plan />);
   expect(screen.getByText("Your plan could not be loaded")).toBeTruthy();
-  expect(screen.queryByTestId("training-path")).toBeNull();
+  expect(screen.queryByTestId("plan-command-center")).toBeNull();
   expect(screen.getAllByTestId("plan-query-error")).toHaveLength(1);
 });

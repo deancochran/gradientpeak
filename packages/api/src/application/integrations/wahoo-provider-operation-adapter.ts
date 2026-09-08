@@ -15,15 +15,16 @@ import {
   createOAuthStateBinding,
   getOAuthCallbackUrl,
 } from "../../lib/integrations/oauth-state-binding";
+import {
+  classifyWahooOAuthFailure,
+  exchangeWahooOAuthCode,
+  resolveWahooOAuthIdentity,
+  type WahooOAuthTokenResponse,
+} from "../../lib/integrations/wahoo/oauth";
 import { hasWahooPlannedActivityScopes } from "../../lib/integrations/wahoo/planned-activity-scopes";
 import { enqueueWahooProfileEnrichment } from "../../lib/provider-sync/wahoo-profile-enrichment";
 import type { WahooSyncJobStatus } from "../../repositories/wahoo-sync-repository";
 import { WahooProfileSetupService } from "../wahoo-profile-setup-service";
-import {
-  exchangeWahooOAuthCode,
-  type ProviderOAuthTokenResponse,
-  resolveWahooOAuthIdentity,
-} from "./oauthCallbackUseCase";
 import {
   type NormalizedProviderOAuthTokenResponse,
   type ProviderIntegrationOperationContext,
@@ -196,25 +197,25 @@ async function readOverview(
   };
 }
 
-function integrationCandidate(input: ProviderIntegrationOperationContext<"wahoo">) {
+function integrationCandidate(input: ProviderIntegrationOperationContext<string>) {
   return {
     generation: input.integration.generation,
     id: input.integration.id,
     lifecycle_status: input.integration.lifecycleStatus,
     profile_id: input.profileId,
-    provider: input.integration.provider,
+    provider: "wahoo" as const,
   };
 }
 
 function normalizeProviderIdentity(
-  identity: Exclude<ProviderOAuthTokenResponse["athlete"], undefined>,
+  identity: Exclude<WahooOAuthTokenResponse["athlete"], undefined>,
 ): Exclude<NormalizedProviderOAuthTokenResponse["athlete"], undefined> {
   if (identity === null) return identity;
   return identity.id === undefined ? {} : { id: identity.id };
 }
 
 function normalizeOAuthTokenResponse(
-  tokens: ProviderOAuthTokenResponse,
+  tokens: WahooOAuthTokenResponse,
 ): NormalizedProviderOAuthTokenResponse {
   return {
     access_token: tokens.access_token,
@@ -240,25 +241,23 @@ export const wahooProviderOperationAdapter: ProviderOperationAdapter<"wahoo"> = 
       url: buildAuthorizationUrl(state, callbackUrl, returnUri),
     };
   },
+  validateOAuthStateBinding: ({ binding, state }) => {
+    const config = requireWahooOAuthConfig();
+    const expected = createOAuthStateBinding({ config, provider: "wahoo", state });
+    return (
+      binding.callbackUri === expected.callbackUri &&
+      binding.requestedScope === expected.requestedScope &&
+      binding.verifierHash === expected.verifierHash
+    );
+  },
   exchangeOAuthCode: async ({ code, state }) =>
-    normalizeOAuthTokenResponse(await exchangeWahooOAuthCode("wahoo", code, state)),
-  resolveOAuthIdentity: (tokens) => resolveWahooOAuthIdentity("wahoo", tokens),
+    normalizeOAuthTokenResponse(await exchangeWahooOAuthCode(code, state)),
+  resolveOAuthIdentity: (tokens) => resolveWahooOAuthIdentity(tokens),
   activateOAuthCredential: async (accessToken) => {
     const { activateWahooAccessToken } = await import("../../lib/integrations/wahoo/client");
     await activateWahooAccessToken(accessToken);
   },
-  connectFailureCode: (detail) =>
-    detail === "wahoo_token_limit_exceeded"
-      ? "wahoo_token_limit_exceeded"
-      : "token_exchange_failed",
-  normalizeConnectFailure: (detail) =>
-    detail === "wahoo_token_limit_exceeded"
-      ? {
-          code: "authorization_limit_reached",
-          message:
-            "This account has too many active GradientPeak authorizations. Revoke an older authorization with the provider, then try again.",
-        }
-      : { code: "connection_failed", message: "Integration connection failed" },
+  classifyOAuthFailure: classifyWahooOAuthFailure,
   readSetupEvidence: ({ db, profileId }) =>
     new WahooProfileSetupService({ db }).getSetupData(profileId),
   readOverviewEvidence: readOverview,
@@ -266,7 +265,10 @@ export const wahooProviderOperationAdapter: ProviderOperationAdapter<"wahoo"> = 
   refreshSetupEvidence: ({ db, profileId }) =>
     new WahooProfileSetupService({ db }).refreshSetupData(profileId, "wahoo"),
   disconnect: async ({ db, profileId }) => {
-    await createWahooSyncRepository({ db }).requestWahooDisconnect({ profileId });
+    await createWahooSyncRepository({ db }).requestProviderDisconnect({
+      profileId,
+      provider: "wahoo",
+    });
   },
   enqueueConnectedProfileWork: async (input) => {
     const admission = admitWahooReconciliation({

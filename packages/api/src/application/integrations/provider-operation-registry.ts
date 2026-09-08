@@ -1,3 +1,4 @@
+import type { ProviderIntegrationLifecycleStatus } from "@repo/core";
 import type { DrizzleDbClient } from "@repo/db";
 import type { DrizzleTransactionClient } from "../../db";
 
@@ -29,7 +30,20 @@ export type ProviderSetupEvidence<TProvider extends string> = {
 
 export type ProviderInitialWorkDescriptor = {
   historyJobType: string;
-  profileJobType: string;
+  profileJobType: string | null;
+};
+
+export type ProviderOAuthStateBinding = {
+  callbackUri: string;
+  requestedScope: string;
+  verifierHash: string;
+};
+
+export type ProviderOAuthFailure = {
+  kind: "exchange" | "identity";
+  code: string;
+  message: string;
+  reason?: string;
 };
 
 export type ProviderOnboardingWorkRoles = {
@@ -39,6 +53,44 @@ export type ProviderOnboardingWorkRoles = {
   importRunLinked: boolean;
 };
 
+export type CompletedActivityProviderEligibility = {
+  jobId: string | null;
+  provider: string;
+  reason: string | null;
+  status:
+    | "ready"
+    | "reconnect_required"
+    | "unsupported_evidence"
+    | "not_connected"
+    | "unavailable"
+    | "queued"
+    | "running"
+    | "completed"
+    | "dispatch_uncertain"
+    | "failed";
+};
+
+export type CompletedActivityProviderSendResult = {
+  jobId: string | null;
+  provider: string;
+  status:
+    | "queued"
+    | "completed"
+    | "reconnect_required"
+    | "unsupported_evidence"
+    | "not_connected"
+    | "unavailable"
+    | "dispatch_uncertain"
+    | "failed";
+};
+
+export class CompletedActivityProviderNotFoundError extends Error {
+  constructor() {
+    super("Activity not found");
+    this.name = CompletedActivityProviderNotFoundError.name;
+  }
+}
+
 export type ProviderIntegrationOperationContext<TProvider extends string> = {
   db: DrizzleDbClient;
   profileId: string;
@@ -46,7 +98,7 @@ export type ProviderIntegrationOperationContext<TProvider extends string> = {
     id: string;
     generation: number;
     provider: TProvider;
-    lifecycleStatus: "active" | "disconnect_pending" | "disconnected";
+    lifecycleStatus: ProviderIntegrationLifecycleStatus;
   };
   scope: string | null;
 };
@@ -100,9 +152,13 @@ export type ProviderOperationAdapter<TProvider extends string> = {
   isConfigured: () => boolean;
   isOAuthConfigured: () => boolean;
   createOAuthAuthorization: (input: { returnUri: string; state: string }) => {
-    binding: { callbackUri: string; requestedScope: string; verifierHash: string };
+    binding: ProviderOAuthStateBinding;
     url: string;
   };
+  validateOAuthStateBinding: (input: {
+    binding: ProviderOAuthStateBinding;
+    state: string;
+  }) => boolean;
   exchangeOAuthCode: (input: {
     code: string;
     state: string;
@@ -112,8 +168,9 @@ export type ProviderOperationAdapter<TProvider extends string> = {
     requiresActivation: boolean;
   }>;
   activateOAuthCredential: (accessToken: string) => Promise<void>;
-  connectFailureCode: (detail: string | undefined) => string;
-  normalizeConnectFailure: (detail: string | undefined) => { code: string; message: string };
+  /** Remote protocol only; universal lifecycle persistence remains repository-owned. */
+  deauthorizeAccessToken?: (accessToken: string) => Promise<void>;
+  classifyOAuthFailure: (error: unknown) => ProviderOAuthFailure;
   readSetupEvidence: (input: {
     db: DrizzleDbClient;
     profileId: string;
@@ -124,10 +181,29 @@ export type ProviderOperationAdapter<TProvider extends string> = {
       | { db: DrizzleDbClient; profileId: string; integration: null; scope: null },
   ) => Promise<ProviderOverviewEvidence>;
   syncNow: (input: { db: DrizzleDbClient; profileId: string }) => Promise<unknown>;
+  readCompletedActivityUploadEligibility?: (input: {
+    activityId: string;
+    db: DrizzleDbClient;
+    profileId: string;
+  }) => Promise<CompletedActivityProviderEligibility>;
+  sendCompletedActivity?: (input: {
+    activityId: string;
+    db: DrizzleDbClient;
+    profileId: string;
+  }) => Promise<CompletedActivityProviderSendResult>;
+  /** Queue a durable, provider-owned refetch after an owner explicitly keeps a reviewed source separate. */
+  enqueueReviewedActivityMaterialization?: (input: {
+    db: DrizzleDbClient;
+    integration: { generation: number; id: string };
+    profileId: string;
+    providerExternalId: string;
+    sourceReferenceId: string;
+    transaction: DrizzleTransactionClient;
+  }) => Promise<{ id: string; status: string }>;
   refreshSetupEvidence: (input: { db: DrizzleDbClient; profileId: string }) => Promise<unknown>;
   disconnect: (input: { db: DrizzleDbClient; profileId: string }) => Promise<void>;
   enqueueConnectedProfileWork: (
-    input: ProviderTransactionalOperationContext<TProvider>,
+    input: ProviderTransactionalOperationContext<string>,
   ) => Promise<void>;
   enqueueInitialOnboardingWork: (
     input: ProviderTransactionalOperationContext<TProvider>,
@@ -151,7 +227,7 @@ export type ProviderOperationAdapter<TProvider extends string> = {
 
 export function createProviderOperationRegistry<
   TProvider extends string,
-  TAdapter extends ProviderOperationAdapter<TProvider>,
+  TAdapter extends { provider: TProvider; isConfigured: () => boolean },
 >(adapters: readonly TAdapter[]) {
   const byProvider = new Map<TProvider, TAdapter>(
     adapters.map((adapter) => [adapter.provider, adapter]),

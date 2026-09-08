@@ -1,4 +1,4 @@
-import { planningLedgerRequestSchema } from "@repo/core";
+import { addDaysDateKey, planningLedgerRequestSchema } from "@repo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { ScrollView, View } from "react-native";
 import { PlanningLedgerView } from "@/components/plan/ledger/PlanningLedgerView";
@@ -11,13 +11,32 @@ export default function PlanningLedgerScreen() {
     anchorDate?: string | string[];
     period?: string | string[];
   }>();
-  const request = planningLedgerRequestSchema.safeParse({
+  const parsedRequest = planningLedgerRequestSchema.safeParse({
     anchorDate: typeof params.anchorDate === "string" ? params.anchorDate : "",
     period: typeof params.period === "string" ? params.period : "",
   });
+  const request =
+    parsedRequest.success && parsedRequest.data.period !== "month" ? parsedRequest.data : null;
   const query = api.trainingPlans.getPlanningLedger.useQuery(
-    request.success ? request.data : { anchorDate: "1970-01-01", period: "day" },
-    { enabled: request.success },
+    request ?? { anchorDate: "1970-01-01", period: "day" },
+    { enabled: request !== null },
+  );
+  const calendarQuery = api.calendar.range.useQuery(
+    query.data
+      ? {
+          startDate: query.data.periodStart,
+          endDateExclusive: addDaysDateKey(query.data.periodEnd, 1),
+          limit: 500,
+        }
+      : { startDate: "1970-01-01", endDateExclusive: "1970-01-02", limit: 500 },
+    { enabled: request !== null && query.data !== undefined },
+  );
+  const completedActivities = Array.from(
+    new Map(
+      (calendarQuery.data?.items ?? []).flatMap((item) =>
+        item.activity ? [[item.activity.id, item.activity] as const] : [],
+      ),
+    ).values(),
   );
 
   const openEntry = (target: {
@@ -37,29 +56,34 @@ export default function PlanningLedgerScreen() {
 
   return (
     <View className="flex-1 bg-background" testID="planning-ledger-screen">
-      <Stack.Screen options={{ title: "Planning Ledger" }} />
-      {!request.success ? (
+      <Stack.Screen options={{ title: "Training Breakdown" }} />
+      {!request ? (
         <ErrorState
-          description="Return to Plan and select a valid day, week, or month."
+          description="Return to Plan or Calendar and select a valid day or week."
           title="Planning period is invalid"
         />
       ) : query.isLoading ? (
-        <LoadingState message="Loading planning ledger..." testID="planning-ledger-loading" />
+        <LoadingState message="Loading training breakdown..." testID="planning-ledger-loading" />
       ) : query.isError ? (
         <ErrorState
           description="Check your connection and try again."
           onAction={() => void query.refetch()}
-          title="Planning ledger could not be loaded"
+          title="Training breakdown could not be loaded"
         />
       ) : query.data ? (
         <ScrollView className="flex-1" contentContainerStyle={{ flexGrow: 1 }}>
-          <PlanningLedgerView ledger={query.data} onOpenEntry={openEntry} />
+          <PlanningLedgerView
+            completedActivities={completedActivities}
+            ledger={query.data}
+            onOpenEntry={openEntry}
+            trainingComposition={query.data.trainingComposition}
+          />
         </ScrollView>
       ) : (
         <ErrorState
           description="No factual planning record is available for this period."
           onAction={() => void query.refetch()}
-          title="Planning ledger is unavailable"
+          title="Training breakdown is unavailable"
         />
       )}
     </View>

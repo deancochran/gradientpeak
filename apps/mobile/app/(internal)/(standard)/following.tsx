@@ -1,8 +1,8 @@
-import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams } from "expo-router";
-import { TouchableOpacity, View } from "react-native";
+import { View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { ProfileListRow } from "@/components/profile/ProfileListRow";
 import { ResourceList } from "@/components/shared/ResourceList";
 import { EmptyState, ErrorState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
@@ -46,22 +46,7 @@ function FollowingScreen() {
       avatar_url: string | null;
     };
   }) => {
-    return (
-      <TouchableOpacity
-        onPress={() => handleUserPress(item.id)}
-        className="flex-row items-center p-4 border-b border-border"
-      >
-        <Avatar alt={item.username || "User"} className="w-12 h-12">
-          {item.avatar_url ? <AvatarImage source={{ uri: item.avatar_url }} /> : null}
-          <AvatarFallback>
-            <Text className="text-lg">{item.username?.charAt(0)?.toUpperCase() || "U"}</Text>
-          </AvatarFallback>
-        </Avatar>
-        <View className="ml-3 flex-1">
-          <Text className="font-semibold text-foreground">{item.username || "Unknown user"}</Text>
-        </View>
-      </TouchableOpacity>
-    );
+    return <ProfileListRow onPress={handleUserPress} profile={item} />;
   };
 
   const renderHeader = () => (

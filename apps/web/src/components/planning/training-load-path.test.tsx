@@ -9,7 +9,7 @@ describe("TrainingLoadPath", () => {
     render(
       <TrainingLoadPath
         projection={{
-          contractVersion: "plan-tab-projection-v1",
+          contractVersion: "plan-tab-projection-v2",
           asOf: "2026-07-25T12:00:00.000Z",
           planningTimezone: "UTC",
           today: "2026-07-25",
@@ -113,9 +113,9 @@ describe("TrainingLoadPath", () => {
     expect(chart.getAttribute("aria-label")).toMatch(/latest 42 on 2026-07-25/);
   });
 
-  it("renders partial scheduled work and unavailable completed activity Load without zeroing it", () => {
+  it("withholds partial scheduled work and unavailable completed activity Load without zeroing it", () => {
     const projection = {
-      contractVersion: "plan-tab-projection-v1" as const,
+      contractVersion: "plan-tab-projection-v2" as const,
       asOf: "2026-07-25T12:00:00.000Z",
       planningTimezone: "UTC",
       today: "2026-07-25",
@@ -179,7 +179,8 @@ describe("TrainingLoadPath", () => {
     };
 
     const { container, rerender } = render(<TrainingLoadPath projection={projection} />);
-    expect(screen.getAllByText("Partial Common Load 35")).toHaveLength(2);
+    expect(screen.getAllByText("Common Load ~35").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("Partial Common Load 35")).toBeNull();
     const completedItem = screen.getByText("Ride without Load").parentElement?.parentElement;
     if (!completedItem) throw new Error("Expected the completed activity row");
     expect(within(completedItem).getByText("Common Load unavailable")).toBeTruthy();
@@ -234,7 +235,8 @@ describe("TrainingLoadPath", () => {
         }}
       />,
     );
-    expect(screen.getByText("Partial Common Load 20")).toBeTruthy();
+    expect(screen.getAllByText("Common Load unavailable").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Partial Common Load 20")).toBeNull();
 
     rerender(
       <TrainingLoadPath

@@ -62,7 +62,7 @@ describe("PublicActivityPlanPage", () => {
             provenance: null,
           },
           {
-            key: "normalized_intensity",
+            key: "objective_intensity",
             label: "Intensity",
             status: "unavailable",
             value: null,
@@ -121,7 +121,7 @@ describe("PublicActivityPlanPage", () => {
     expect(screen.getAllByText(/8 RPE/).length).toBeGreaterThan(0);
     expect(screen.getByTestId("activity-plan-estimates")).toBeTruthy();
     expect(screen.getByLabelText("Distance, Unavailable, Unavailable")).toBeTruthy();
-    expect(screen.getByLabelText("Duration, 10m 0s, Authored")).toBeTruthy();
+    expect(screen.getByLabelText("Duration, 10m, Authored")).toBeTruthy();
     expect(screen.getByLabelText("Load, Unavailable, Unavailable")).toBeTruthy();
     expect(screen.getByLabelText("Intensity, Unavailable, Unavailable")).toBeTruthy();
     expect(screen.queryByText("Personalized")).toBeNull();

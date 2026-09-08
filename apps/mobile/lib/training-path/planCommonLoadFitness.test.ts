@@ -42,7 +42,7 @@ describe("buildPlanCommonLoadFitnessSeries", () => {
     ]);
   });
 
-  it("uses finite partial effective Load as the current authoritative Load", () => {
+  it("keeps finite partial effective Load non-authoritative for projections", () => {
     const result = buildPlanCommonLoadFitnessSeries({
       history,
       points: [
@@ -59,11 +59,10 @@ describe("buildPlanCommonLoadFitnessSeries", () => {
       ],
     });
 
-    expect(result.projectionStatus).toBe("complete");
+    expect(result.projectionStatus).toBe("partial");
     expect(result.projectedFitness.map((point) => point.date)).toEqual([
       "2026-07-27",
       "2026-07-28",
-      "2026-07-29",
     ]);
   });
 

@@ -11,19 +11,18 @@ type StorybookModule = {
 };
 
 function getDeveloperRoot(surface?: string) {
-  if (!__DEV__) {
+  const e2eEnabled = process.env.EXPO_PUBLIC_MAESTRO_E2E === "1";
+  if (!__DEV__ && !e2eEnabled) {
     return null;
   }
 
-  const developerSurfaceEnabled =
-    process.env.EXPO_PUBLIC_MAESTRO_E2E === "1" ||
-    process.env.EXPO_PUBLIC_STORYBOOK_ENABLED === "1";
+  const developerSurfaceEnabled = e2eEnabled || process.env.EXPO_PUBLIC_STORYBOOK_ENABLED === "1";
 
   if (surface === "mobile-cards" && developerSurfaceEnabled) {
     return MobileCardPreviewSurface;
   }
 
-  if (process.env.EXPO_PUBLIC_MAESTRO_E2E === "1") {
+  if (e2eEnabled) {
     return UiPreviewSurface;
   }
 
@@ -53,7 +52,7 @@ export default function StorybookScreen() {
     [surface],
   );
 
-  if (!__DEV__) {
+  if (!__DEV__ && process.env.EXPO_PUBLIC_MAESTRO_E2E !== "1") {
     return (
       <UnavailableRoute
         title="Developer route unavailable"

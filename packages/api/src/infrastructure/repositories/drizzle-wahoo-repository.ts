@@ -546,6 +546,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
             eq(schema.activitySourceReferences.profile_id, profileId),
             eq(schema.activitySourceReferences.provider, provider),
             eq(schema.activitySourceReferences.provider_external_id, externalId),
+            eq(schema.activitySourceReferences.resolution_status, "confirmed"),
           ),
         )
         .limit(1);

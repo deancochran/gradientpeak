@@ -1,6 +1,28 @@
 import { extractBestEfforts } from "@repo/core/calculations";
 import { describe, expect, it } from "vitest";
-import { evaluateActivityThreshold, selectActivityThreshold } from "./reconcile-thresholds";
+import {
+  evaluateActivityThreshold as evaluateActivityThresholdWithMetric,
+  selectActivityThreshold as selectActivityThresholdWithMetric,
+} from "./reconcile-thresholds";
+
+function withDirectMetric<T extends { activityCategory: "bike" | "run" | "swim" }>(input: T) {
+  return {
+    ...input,
+    metric: input.activityCategory === "bike" ? ("power" as const) : ("speed" as const),
+  };
+}
+
+function evaluateActivityThreshold(
+  input: Omit<Parameters<typeof evaluateActivityThresholdWithMetric>[0], "metric">,
+) {
+  return evaluateActivityThresholdWithMetric(withDirectMetric(input));
+}
+
+function selectActivityThreshold(
+  input: Omit<Parameters<typeof selectActivityThresholdWithMetric>[0], "metric">,
+) {
+  return selectActivityThresholdWithMetric(withDirectMetric(input));
+}
 
 function extraction(input: {
   metric: "power" | "speed" | "grade_adjusted_speed";

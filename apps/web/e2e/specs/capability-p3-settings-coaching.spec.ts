@@ -2,9 +2,14 @@ import { expect, test } from "../fixtures";
 import { withLocalE2EDatabase } from "../support/database";
 import type { E2EExecutionIdentity } from "../support/identity";
 
-async function seedCoachOrganization(identity: E2EExecutionIdentity, coachId: string) {
+async function seedCoachOrganization(
+  identity: E2EExecutionIdentity,
+  rootOwnerId: string,
+  coachId: string,
+) {
   const organizationId = identity.uuid("coaching-organization");
-  const membershipId = identity.uuid("coaching-membership");
+  const rootMembershipId = identity.uuid("coaching-root-membership");
+  const coachMembershipId = identity.uuid("coaching-membership");
   const organizationName = `Playwright Coaching ${organizationId}`;
 
   await withLocalE2EDatabase(async (database) => {
@@ -14,18 +19,24 @@ async function seedCoachOrganization(identity: E2EExecutionIdentity, coachId: st
         `insert into "organizations"
         ("id", "created_by_profile_id", "root_owner_membership_id", "name", "slug", "timezone")
        values ($1, $2, $3, $4, $5, 'UTC')`,
-        [organizationId, coachId, membershipId, organizationName, `playwright-${organizationId}`],
+        [
+          organizationId,
+          rootOwnerId,
+          rootMembershipId,
+          organizationName,
+          `playwright-${organizationId}`,
+        ],
       );
       await query.query(
         `insert into "organization_memberships" ("id", "organization_id", "profile_id")
-       values ($1, $2, $3)`,
-        [membershipId, organizationId, coachId],
+       values ($1, $2, $3), ($4, $2, $5)`,
+        [rootMembershipId, organizationId, rootOwnerId, coachMembershipId, coachId],
       );
       await query.query(
         `insert into "organization_membership_role_grants"
          ("organization_id", "membership_id", "role_key")
-        values ($1, $2, 'admin'), ($1, $2, 'coach')`,
-        [organizationId, membershipId],
+        values ($1, $2, 'admin'), ($1, $3, 'coach')`,
+        [organizationId, rootMembershipId, coachMembershipId],
       );
     });
   });
@@ -39,8 +50,9 @@ async function seedCoachOrganization(identity: E2EExecutionIdentity, coachId: st
           await query.query(
             `update "organization_membership_role_grants"
              set "revoked_at" = now()
-           where "organization_id" = $1 and "role_key" = 'coach' and "revoked_at" is null`,
-            [organizationId],
+           where "organization_id" = $1 and "membership_id" = $2
+             and "role_key" = 'coach' and "revoked_at" is null`,
+            [organizationId, coachMembershipId],
           );
         }),
       );
@@ -94,7 +106,7 @@ test("[P2] profile and privacy settings persist together and can be restored", a
     await visibility.selectOption(original.visibility === "public" ? "private" : "public");
     await profilePage.getByRole("button", { name: "Update Profile" }).click();
     await expect(
-      profilePage.getByText("Profile updated successfully", { exact: true }),
+      profilePage.getByText("Profile updated successfully", { exact: true }).last(),
     ).toBeVisible();
 
     await profilePage.reload();
@@ -112,19 +124,27 @@ test("[P2] profile and privacy settings persist together and can be restored", a
     await language.fill(original.language);
     if ((await openProfile.isChecked()) !== original.open) await openProfile.click();
     await visibility.selectOption(original.visibility);
-    await profilePage.getByRole("button", { name: "Update Profile" }).click();
-    await expect(
-      profilePage.getByText("Profile updated successfully", { exact: true }),
-    ).toBeVisible();
+    const restoreProfile = profilePage.getByRole("button", { name: "Update Profile" });
+    if (await restoreProfile.isEnabled()) {
+      await restoreProfile.click();
+      await expect(
+        profilePage.getByText("Profile updated successfully", { exact: true }).last(),
+      ).toBeVisible();
+    }
   }
 });
 
 test("coaching.view-dashboard opens an authorized organization dashboard", async ({
+  athleteActor,
   coachActor,
   coachPage,
   e2eIdentity,
 }) => {
-  const organization = await seedCoachOrganization(e2eIdentity, coachActor.profileId);
+  const organization = await seedCoachOrganization(
+    e2eIdentity,
+    athleteActor.profileId,
+    coachActor.profileId,
+  );
 
   try {
     await coachPage.goto("/organizations");
@@ -230,7 +250,7 @@ test("[variation:settings.profile:keyboard-save] keyboard save persists profile 
     await bio.fill("Keyboard persisted profile variation");
     await profilePage.getByRole("button", { name: "Update Profile" }).press("Enter");
     await expect(
-      profilePage.getByText("Profile updated successfully", { exact: true }),
+      profilePage.getByText("Profile updated successfully", { exact: true }).last(),
     ).toBeVisible();
     await profilePage.reload();
     await expect(name).toHaveValue(changed);
@@ -238,19 +258,27 @@ test("[variation:settings.profile:keyboard-save] keyboard save persists profile 
   } finally {
     await name.fill(originalName);
     await bio.fill(originalBio);
-    await profilePage.getByRole("button", { name: "Update Profile" }).click();
-    await expect(
-      profilePage.getByText("Profile updated successfully", { exact: true }),
-    ).toBeVisible();
+    const restoreProfile = profilePage.getByRole("button", { name: "Update Profile" });
+    if (await restoreProfile.isEnabled()) {
+      await restoreProfile.click();
+      await expect(
+        profilePage.getByText("Profile updated successfully", { exact: true }).last(),
+      ).toBeVisible();
+    }
   }
 });
 
 test("[variation:coaching.dashboard:narrow-history] narrow organization card opens coaching readiness and returns through history", async ({
+  athleteActor,
   coachActor,
   coachPage,
   e2eIdentity,
 }) => {
-  const organization = await seedCoachOrganization(e2eIdentity, coachActor.profileId);
+  const organization = await seedCoachOrganization(
+    e2eIdentity,
+    athleteActor.profileId,
+    coachActor.profileId,
+  );
   try {
     await coachPage.setViewportSize({ width: 390, height: 844 });
     await coachPage.goto("/organizations");
@@ -272,11 +300,16 @@ test("[variation:coaching.dashboard:narrow-history] narrow organization card ope
 });
 
 test("[variation:coaching.dashboard:revoked-role] dashboard access fails closed after the fixture coach role is revoked", async ({
+  athleteActor,
   coachActor,
   coachPage,
   e2eIdentity,
 }) => {
-  const organization = await seedCoachOrganization(e2eIdentity, coachActor.profileId);
+  const organization = await seedCoachOrganization(
+    e2eIdentity,
+    athleteActor.profileId,
+    coachActor.profileId,
+  );
   await coachPage.goto(`/organizations/${organization.organizationId}/dashboard`);
   await expect(coachPage.getByRole("heading", { name: "Coaching workspace" })).toBeVisible();
   await organization.cleanup();

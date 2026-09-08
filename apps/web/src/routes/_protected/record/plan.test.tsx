@@ -161,7 +161,7 @@ describe("RecordPlanPage", () => {
     render(<RecordPlanPage />);
     fireEvent.click(screen.getByRole("button", { name: /Tempo run.*Scheduled instance/i }));
 
-    expect(screen.queryByRole("switch", { name: "Personalize targets" })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Calculated targets" })).toBeNull();
     expect(screen.getByText("80% Threshold HR")).toBeTruthy();
     expect(screen.getByText("7 RPE")).toBeTruthy();
     expect(screen.getByText(/Recording uses the plan's authored targets/i)).toBeTruthy();

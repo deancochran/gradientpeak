@@ -6,7 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Activity, CalendarDays, Target } from "lucide-react";
 import { ActivityFeed } from "../../components/feed/activity-feed";
 import { SearchLauncher } from "../../components/protected/search-launcher";
@@ -18,16 +18,16 @@ export const Route = createFileRoute("/_protected/")({
 });
 
 function ScheduleQuantification({
-  intensity,
+  objectiveIntensity,
   load,
 }: {
-  intensity: number | null;
+  objectiveIntensity: number | null;
   load: number | null;
 }) {
   return (
     <p>
-      Common Load {load === null ? "unavailable" : Math.round(load * 10) / 10} · Normalized
-      intensity {intensity === null ? "unavailable" : intensity.toFixed(2)}
+      Common Load {load === null ? "unavailable" : Math.round(load * 10) / 10} · Intensity{" "}
+      {objectiveIntensity === null ? "unavailable" : objectiveIntensity.toFixed(2)}
     </p>
   );
 }
@@ -35,6 +35,7 @@ function ScheduleQuantification({
 function DashboardPage() {
   const { user } = useAuth();
   const dashboardQuery = api.home.getDashboard.useQuery(undefined, { retry: false });
+  const thresholdOverviewQuery = api.athleteIntelligence.getThresholdOverview.useQuery({});
 
   if (dashboardQuery.isError) {
     return (
@@ -72,9 +73,7 @@ function DashboardPage() {
         <MetricCard
           title="Fitness"
           value={
-            dashboard?.currentLoadStatus
-              ? dashboard.currentLoadStatus.longTermLoad.toFixed(1)
-              : "Unavailable"
+            dashboard?.currentLoadStatus ? dashboard.currentLoadStatus.longTermLoad.toFixed(1) : "—"
           }
           description={
             dashboard?.currentLoadStatus
@@ -88,9 +87,7 @@ function DashboardPage() {
         <MetricCard
           title="Fatigue"
           value={
-            dashboard?.currentLoadStatus
-              ? dashboard.currentLoadStatus.recentLoad.toFixed(1)
-              : "Unavailable"
+            dashboard?.currentLoadStatus ? dashboard.currentLoadStatus.recentLoad.toFixed(1) : "—"
           }
           description={
             dashboard?.currentLoadStatus
@@ -102,9 +99,7 @@ function DashboardPage() {
         <MetricCard
           title="Form"
           value={
-            dashboard?.currentLoadStatus
-              ? dashboard.currentLoadStatus.loadBalance.toFixed(1)
-              : "Unavailable"
+            dashboard?.currentLoadStatus ? dashboard.currentLoadStatus.loadBalance.toFixed(1) : "—"
           }
           description={
             dashboard?.currentLoadStatus
@@ -129,6 +124,23 @@ function DashboardPage() {
           description="Create or assign a plan to see progress here"
           icon={<CalendarDays className="h-4 w-4" />}
         />
+        <Card>
+          <CardHeader>
+            <CardTitle>Performance</CardTitle>
+            <CardDescription>
+              {thresholdOverviewQuery.isLoading
+                ? "Loading calculated thresholds"
+                : thresholdOverviewQuery.data?.publication.status === "unavailable"
+                  ? "Calculated thresholds are not available yet"
+                  : "Calculated thresholds are available"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild variant="outline">
+              <Link to="/thresholds">Manage thresholds</Link>
+            </Button>
+          </CardContent>
+        </Card>
       </section>
 
       <ActivityFeed />
@@ -161,7 +173,10 @@ function DashboardPage() {
                           ? "Duration unavailable"
                           : `${Math.round(item.estimatedDuration / 60)} min`}
                       </p>
-                      <ScheduleQuantification intensity={item.intensity} load={item.load} />
+                      <ScheduleQuantification
+                        objectiveIntensity={item.objectiveIntensity}
+                        load={item.load}
+                      />
                     </div>
                   </div>
                 ))}

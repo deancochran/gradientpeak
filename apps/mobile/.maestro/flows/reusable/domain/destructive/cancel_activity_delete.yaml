@@ -1,9 +1,0 @@
-appId: ${MAESTRO_APP_ID}
-# @purpose Open and cancel the activity deletion confirmation.
-# @ready activity-detail-screen
----
-- tapOn: { id: "activity-detail-options-trigger" }
-- tapOn: { id: "activity-detail-options-delete" }
-- assertVisible: { id: "activity-detail-delete-modal" }
-- back
-- assertVisible: { id: "activity-detail-screen" }

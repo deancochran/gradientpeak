@@ -1,15 +1,18 @@
 import { invalidateActivityPlanQueries } from "@repo/api/react";
 import {
+  buildActivityPlanPrintModel,
   deriveActivityPlanPresentation,
+  getActivityPlanPrintFormatLabel,
+  getActivityPlanPrintFormats,
   resolveActivityPlanSessionFlow,
 } from "@repo/core/activity-plan";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { MessageCircle } from "lucide-react-native";
+import { MessageCircle, Share2 } from "lucide-react-native";
 import React from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, Share, View } from "react-native";
 import { ActivityPlanSummary } from "@/components/shared/ActivityPlanSummary";
 import {
   DetailDeleteConfirmModal,
@@ -17,16 +20,22 @@ import {
   type DetailOverflowMenuAction,
 } from "@/components/shared/detail";
 import {
+  ResourceCardActionButton,
   ResourceLikeButton,
   ResourceOwnerActionRow,
 } from "@/components/shared/ResourceCardPrimitives";
-import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
+import { useEntityCommentsSheet } from "@/components/social/EntityCommentsSheetProvider";
+import {
+  printActivityPlanPdf,
+  shareActivityPlanPdf,
+} from "@/lib/activity-plan-export/activity-plan-pdf";
 import { api } from "@/lib/api";
 import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { ROUTES } from "@/lib/constants/routes";
 import { useSessionView } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
+import { useResourceLike } from "@/lib/hooks/useResourceLike";
 import { returnToRecordScreen } from "@/lib/navigation/recordingNavigation";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useOptionalActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
@@ -35,10 +44,10 @@ import {
   type RecordingObjectActionCandidate,
   resolveRecordingObjectAction,
 } from "@/lib/recording/recordingObjectActions";
+import { getPublicShareUrl } from "@/lib/share/public-share-url";
 import { ActivityPlanContentPreview } from "./ActivityPlanContentPreview";
 import { useActivityPlanDetailViewModel } from "./useActivityPlanDetailViewModel";
 import { useActivityPlanSchedulingActions } from "./useActivityPlanSchedulingActions";
-import { useActivityPlanSocialController } from "./useActivityPlanSocialController";
 
 export interface ActivityPlanDetailRouteParams {
   planId?: string;
@@ -67,6 +76,7 @@ export function ActivityPlanDetailScreen({
   const recordingLifecycle = recorderService?.recordingLifecycle ?? (sessionView ? "idle" : "idle");
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
   const [personalizationChoice, setPersonalizationChoice] = React.useState<boolean | null>(null);
+  const entityCommentsSheet = useEntityCommentsSheet();
 
   const utils = api.useUtils();
   const { beginRedirect, isRedirecting, redirectOnNotFound } = useDeletedDetailRedirect({
@@ -114,7 +124,7 @@ export function ActivityPlanDetailScreen({
   const { data: viewerReadModel, isLoading: viewerReadModelLoading } =
     api.athleteIntelligence.getReadModel.useQuery(
       { sections: { publishedState: true } },
-      { enabled: vm.isOwnedByUser, refetchOnWindowFocus: false },
+      { enabled: Boolean(profile), refetchOnWindowFocus: false },
     );
 
   const activityPlan = vm.activityPlan;
@@ -129,8 +139,20 @@ export function ActivityPlanDetailScreen({
     [activityPlan?.structure, performanceTargets],
   );
   const personalizeTargets = Boolean(
-    vm.isOwnedByUser && personalizationEligibility.eligible && (personalizationChoice ?? true),
+    personalizationEligibility.eligible && (personalizationChoice ?? true),
   );
+  const printModel = activityPlan
+    ? buildActivityPlanPrintModel({
+        description: activityPlan.description,
+        format: "full-page",
+        notes:
+          activityPlan.contractVersion === "activity-plan-detail-v1" ? activityPlan.notes : null,
+        ...(performanceTargets ? { performanceTargets } : {}),
+        personalizeTargets,
+        structure: activityPlan.structure,
+        title: activityPlan.name,
+      })
+    : null;
   React.useEffect(() => {
     setPersonalizationChoice(null);
   }, [eventId, planId]);
@@ -249,16 +271,69 @@ export function ActivityPlanDetailScreen({
     deleteMutation.mutate({ id: actualPlanId });
   };
 
-  const socialPlanId = planId ?? activityPlan?.id;
-  const social = useActivityPlanSocialController({
-    ...(activityPlan?.engagement.viewerHasLiked === undefined
-      ? {}
-      : { initialHasLiked: activityPlan.engagement.viewerHasLiked }),
-    ...(activityPlan?.engagement.likes === undefined
-      ? {}
-      : { initialLikesCount: activityPlan.engagement.likes }),
-    ...(socialPlanId === undefined ? {} : { planId: socialPlanId }),
+  const {
+    isLiked,
+    isPending: isLikePending,
+    likeCount,
+    toggleLike,
+  } = useResourceLike({
+    entityId: activityPlan?.id ?? "",
+    entityType: "activity_plan",
+    initialCount: activityPlan?.engagement.likes,
+    initialLiked: activityPlan?.engagement.viewerHasLiked,
   });
+  const handleShare = async () => {
+    if (!activityPlan || activityPlan.visibility !== "public") {
+      Alert.alert(
+        "Not public",
+        "Only public activity plans have a share link. Change visibility to Public first.",
+      );
+      return;
+    }
+
+    const url = getPublicShareUrl(`/share/activity-plans/${activityPlan.id}`);
+    try {
+      await Share.share({ message: url, url });
+    } catch {
+      Alert.alert("Share failed", "Could not open the share sheet. Please try again.");
+    }
+  };
+
+  const handleExportPdf = () => {
+    if (!printModel) return;
+    const chooseAction = (format: typeof printModel.format) => {
+      const selectedModel = { ...printModel, format };
+      Alert.alert(getActivityPlanPrintFormatLabel(format), "Choose what to do with this PDF.", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Share PDF",
+          onPress: () =>
+            void shareActivityPlanPdf(selectedModel).catch(() =>
+              Alert.alert("Share failed", "The workout PDF could not be shared."),
+            ),
+        },
+        {
+          text: "Print",
+          onPress: () =>
+            void printActivityPlanPdf(selectedModel).catch(() =>
+              Alert.alert("Print failed", "The workout PDF could not be printed."),
+            ),
+        },
+      ]);
+    };
+    const formats = getActivityPlanPrintFormats(printModel.activityCategory);
+    if (formats.length === 1) {
+      chooseAction(formats[0] ?? "full-page");
+      return;
+    }
+    Alert.alert("Export workout PDF", "Choose a printable format.", [
+      { text: "Cancel", style: "cancel" },
+      ...formats.map((format) => ({
+        text: getActivityPlanPrintFormatLabel(format),
+        onPress: () => chooseAction(format),
+      })),
+    ]);
+  };
 
   if (loadingPlan || loadingPlannedActivity || isRedirecting) {
     return (
@@ -300,6 +375,14 @@ export function ActivityPlanDetailScreen({
         label: primaryScheduleLabel,
         onPress: scheduling.isScheduled ? scheduling.handleReschedule : scheduling.handleSchedule,
         testID: "activity-plan-options-schedule",
+      });
+    }
+
+    if (printModel) {
+      actions.push({
+        label: "Export Workout PDF",
+        onPress: handleExportPdf,
+        testID: "activity-plan-options-export-pdf",
       });
     }
 
@@ -351,12 +434,13 @@ export function ActivityPlanDetailScreen({
           <View className="rounded-3xl border border-border bg-card p-4">
             <ResourceOwnerActionRow
               actions={
-                <ResourceLikeButton
-                  isLiked={social.isLiked}
-                  likeCount={social.likesCount}
-                  onPress={social.handleToggleLike}
-                  testID="activity-plan-like-button"
-                />
+                <ResourceCardActionButton
+                  accessibilityLabel="Share activity plan"
+                  onPress={() => void handleShare()}
+                  testID="activity-plan-share-button"
+                >
+                  <Icon as={Share2} size={20} className="text-foreground" />
+                </ResourceCardActionButton>
               }
               categoryItems={categoryItems}
               fallbackLabel="GradientPeak"
@@ -381,6 +465,30 @@ export function ActivityPlanDetailScreen({
               variant="standalone"
               showAttribution={false}
             />
+            <View className="mt-4 flex-row items-center gap-2">
+              <ResourceLikeButton
+                disabled={isLikePending}
+                isLiked={isLiked}
+                likeCount={likeCount}
+                onPress={toggleLike}
+                testID="activity-plan-like-button"
+              />
+              <ResourceCardActionButton
+                accessibilityLabel="Comments"
+                onPress={() =>
+                  entityCommentsSheet?.openEntityComments({
+                    entityId: activityPlan.id,
+                    entityType: "activity_plan",
+                  })
+                }
+                testID="activity-plan-comments-button"
+              >
+                <View className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5">
+                  <Icon as={MessageCircle} size={14} className="text-muted-foreground" />
+                  <Text className="ml-1 text-xs font-medium text-muted-foreground">Comments</Text>
+                </View>
+              </ResourceCardActionButton>
+            </View>
             {recordingAction?.primaryAction === "disabled" && recordingAction.disabledReason ? (
               <View
                 className="mt-4 rounded-2xl bg-muted/30 px-4 py-3"
@@ -415,14 +523,6 @@ export function ActivityPlanDetailScreen({
                 </Text>
               </View>
             ) : null}
-            {social.commentCount > 0 ? (
-              <View className="mt-4 flex-row items-center gap-1.5">
-                <Icon as={MessageCircle} size={14} className="text-muted-foreground" />
-                <Text className="text-sm text-muted-foreground">
-                  {social.commentCount} comments
-                </Text>
-              </View>
-            ) : null}
           </View>
           {presentation?.structure ? (
             <ActivityPlanContentPreview
@@ -430,25 +530,13 @@ export function ActivityPlanDetailScreen({
               personalizationFactsLoading={viewerReadModelLoading}
               performanceTargets={performanceTargets ?? null}
               onPersonalizeTargetsChange={setPersonalizationChoice}
-              showPersonalizationControl={vm.isOwnedByUser}
+              showPersonalizationControl={Boolean(profile)}
               size="large"
               plan={activityPlan}
               presentation={presentation}
               testIDPrefix="activity-plan-content-preview"
             />
           ) : null}
-          <EntityCommentsSection
-            addCommentPending={social.addCommentPending}
-            commentCount={social.commentCount}
-            comments={social.comments}
-            hasMoreComments={social.hasMoreComments}
-            isLoadingMoreComments={social.isLoadingMoreComments}
-            newComment={social.newComment}
-            onAddComment={social.handleAddComment}
-            onChangeNewComment={social.setNewComment}
-            onLoadMoreComments={social.loadMoreComments}
-            testIDPrefix="activity-plan"
-          />
         </View>
       </ScrollView>
       {showDeleteConfirm ? (

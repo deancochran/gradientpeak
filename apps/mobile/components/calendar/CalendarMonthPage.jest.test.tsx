@@ -1,6 +1,6 @@
 import { createCalendarProjectionItem } from "../../test/calendar-projection-fixture";
 import { createHost } from "../../test/mock-components";
-import { renderNative, screen } from "../../test/render-native";
+import { fireEvent, renderNative, screen } from "../../test/render-native";
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -14,6 +14,7 @@ const CalendarMonthPage = require("./CalendarMonthPage").CalendarMonthPage;
 
 describe("CalendarMonthPage", () => {
   it("renders the date and exposes the completed-load story to assistive technology", async () => {
+    const onOpenDay = jest.fn();
     const completed = createCalendarProjectionItem({
       id: "completed-1",
       kind: "completed_activity",
@@ -45,8 +46,7 @@ describe("CalendarMonthPage", () => {
       <CalendarMonthPage
         activeMonthKey="2026-08-01"
         itemsByDate={new Map([["2026-08-19", [completed]]])}
-        onOpenSelectedDay={jest.fn()}
-        onSelectDate={jest.fn()}
+        onOpenDay={onOpenDay}
         selectedDateKey="2026-08-19"
         todayKey="2026-08-19"
       />,
@@ -55,7 +55,7 @@ describe("CalendarMonthPage", () => {
     const cell = screen.getByTestId("calendar-day-select-2026-08-19");
     expect(cell.props.accessibilityState).toEqual({ selected: true });
     expect(cell.props.accessibilityLabel).toMatch(
-      /Open agenda for 2026-08-19.*completed without a plan link.*Completed load moderate.*Intensity high.*Adherence unplanned/i,
+      /Open training breakdown for 2026-08-19.*completed without a plan link.*Completed load moderate.*Intensity high.*Adherence unplanned/i,
     );
     expect(
       screen.getByTestId("calendar-day-signal-completed", { includeHiddenElements: true }),
@@ -63,6 +63,8 @@ describe("CalendarMonthPage", () => {
     expect(
       screen.getByTestId("calendar-day-number-19", { includeHiddenElements: true }),
     ).toBeTruthy();
+    await fireEvent.press(cell);
+    expect(onOpenDay).toHaveBeenCalledWith("2026-08-19");
   });
 
   it("uses only planned, completed, combined, and goal marks while leaving rest days bare", async () => {
@@ -105,8 +107,7 @@ describe("CalendarMonthPage", () => {
             ["2026-08-19", [goal, completed]],
           ])
         }
-        onOpenSelectedDay={jest.fn()}
-        onSelectDate={jest.fn()}
+        onOpenDay={jest.fn()}
         selectedDateKey="2026-08-20"
         todayKey="2026-08-20"
       />,

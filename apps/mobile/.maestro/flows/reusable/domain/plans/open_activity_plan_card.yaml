@@ -1,8 +1,0 @@
-appId: ${MAESTRO_APP_ID}
-# @purpose Open one canonical activity-plan card from the Plan screen.
-# @arg ACTIVITY_PLAN_ID uuid required
-# @ready activity-plan-content-preview
----
-- scrollUntilVisible: { element: { id: "plan-activity-plan-card-${ACTIVITY_PLAN_ID}" }, direction: DOWN }
-- tapOn: { id: "plan-activity-plan-card-${ACTIVITY_PLAN_ID}" }
-- assertVisible: { id: "activity-plan-content-preview" }

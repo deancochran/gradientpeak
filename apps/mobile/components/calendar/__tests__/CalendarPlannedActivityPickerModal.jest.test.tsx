@@ -208,6 +208,7 @@ describe("CalendarPlannedActivityPickerModal", () => {
               unit: "seconds",
               status: "available",
               reason: null,
+              provenance: "authored",
             },
           ],
           updatedAt: updated_at,

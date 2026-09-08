@@ -89,12 +89,13 @@ describe("ResourcePickerResultRow", () => {
     const activityPlanCard = screen.getByTestId("resource-picker-activity-plan-card");
     expect(activityPlanCard.props.variant).toBe("compact");
     expect(activityPlanCard.props.plan).toEqual(expect.objectContaining({ id: "plan-1" }));
-    expect(screen.getByTestId("resource-picker-result-selected-plan-1")).toBeTruthy();
-    await fireEvent.press(screen.getByTestId("resource-picker-result-plan-1"));
+    expect(screen.getByTestId("resource-picker-select-activity-plan-selected")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("resource-picker-select-activity-plan"));
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it("renders routes through the list card without map, social, or attribution affordances", async () => {
+  it("renders and selects routes through a stable semantic result action", async () => {
+    const onPress = jest.fn();
     await renderNative(
       <ResourcePickerResultRow
         isSelected={false}
@@ -104,7 +105,7 @@ describe("ResourcePickerResultRow", () => {
           presentation: "canonical",
           routeCardData: { id: "route-1", name: "River Loop", total_distance: 5000 },
         }}
-        onPress={jest.fn()}
+        onPress={onPress}
         scope="routes"
       />,
     );
@@ -113,6 +114,8 @@ describe("ResourcePickerResultRow", () => {
     expect(routeCard.props.variant).toBe("list");
     expect(routeCard.props.showAttribution).toBe(false);
     expect(routeCard.props.showLike).toBe(false);
+    await fireEvent.press(screen.getByTestId("resource-picker-select-route"));
+    expect(onPress).toHaveBeenCalledTimes(1);
   });
 
   it("keeps explicit external items selectable and disabled with accessible minimum hit target parity", async () => {
@@ -126,7 +129,7 @@ describe("ResourcePickerResultRow", () => {
       />,
     );
 
-    const result = screen.getByTestId("resource-picker-result-legacy-route");
+    const result = screen.getByTestId("resource-picker-select-route");
     expect(result.props.disabled).toBe(true);
     expect(result.props.accessibilityLabel).toBe("Select, Imported route, Private or shared");
     expect(result.props.className).toContain("min-h-11");
@@ -152,7 +155,7 @@ describe("ResourcePickerResultRow", () => {
     );
 
     expect(screen.getByText("Private or shared · 3.1 mi · 328.1 ft climb")).toBeTruthy();
-    expect(screen.getByTestId("resource-picker-result-legacy-route").props.accessibilityLabel).toBe(
+    expect(screen.getByTestId("resource-picker-select-route").props.accessibilityLabel).toBe(
       "Select, Imported route, Private or shared, 3.1 mi, 328.1 ft climb",
     );
   });

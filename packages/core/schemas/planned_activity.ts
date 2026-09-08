@@ -87,7 +87,7 @@ export const eventTypeInputSchema = eventTypeSchema;
 export const editableEventTypeSchema = z.enum(["planned", "race_target", "custom"]);
 export const editableEventTypeInputSchema = editableEventTypeSchema;
 
-export const eventMutationScopeSchema = z.enum(["single", "series"]);
+export const eventMutationScopeSchema = z.enum(["single", "future", "series"]);
 
 export const iCalRRuleSchema = z
   .string()
@@ -256,7 +256,7 @@ export const plannedEventPatchSchema = requireNonEmptyPatch(
 export const eventUpdateSchema = z
   .object({
     id: z.string().uuid("Invalid event ID"),
-    scope: z.literal("single").default("single"),
+    scope: eventMutationScopeSchema.default("single"),
     patch: z.union([plannedEventPatchSchema, genericEventPatchSchema]),
   })
   .strict();

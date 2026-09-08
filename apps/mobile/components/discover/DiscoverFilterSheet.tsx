@@ -167,9 +167,9 @@ export function DiscoverFilterSheet({
                   testID: "discover-filter-sort-field-common-load",
                 },
                 {
-                  label: "Common intensity",
-                  value: "common_intensity",
-                  testID: "discover-filter-sort-field-common-intensity",
+                  label: "Intensity",
+                  value: "objective_intensity",
+                  testID: "discover-filter-sort-field-objective-intensity",
                 },
               ]}
               value={activityPlanSort.field}
@@ -255,27 +255,27 @@ export function DiscoverFilterSheet({
             />
           </FilterSection>
 
-          <FilterSection title="Common intensity">
+          <FilterSection title="Intensity">
             <RangeInputRow
-              minValue={activityPlanFilters.minCommonIntensity}
-              maxValue={activityPlanFilters.maxCommonIntensity}
+              minValue={activityPlanFilters.minObjectiveIntensity}
+              maxValue={activityPlanFilters.maxObjectiveIntensity}
               onMinChange={(value) =>
                 onActivityPlanFiltersChange({
                   ...activityPlanFilters,
-                  minCommonIntensity: parseNumericInput(value, { allowDecimal: true }),
+                  minObjectiveIntensity: parseNumericInput(value, { allowDecimal: true }),
                 })
               }
               onMaxChange={(value) =>
                 onActivityPlanFiltersChange({
                   ...activityPlanFilters,
-                  maxCommonIntensity: parseNumericInput(value, { allowDecimal: true }),
+                  maxObjectiveIntensity: parseNumericInput(value, { allowDecimal: true }),
                 })
               }
               minPlaceholder="Min intensity"
               maxPlaceholder="Max intensity"
               decimals={2}
-              unitLabel="common intensity"
-              testIDPrefix="discover-filter-activityPlans-common-intensity"
+              unitLabel="intensity ratio"
+              testIDPrefix="discover-filter-activityPlans-objective-intensity"
             />
           </FilterSection>
         </View>

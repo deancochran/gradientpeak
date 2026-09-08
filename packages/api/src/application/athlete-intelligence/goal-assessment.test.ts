@@ -5,7 +5,7 @@ import {
 import { profileGoals, profiles } from "@repo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readPublishedAthleteStateSnapshotData } from "../../repositories/athlete-state-repository";
-import { getGoalAssessment } from "./goal-assessment";
+import { getGoalAssessment, getGoalAssessmentBatch } from "./goal-assessment";
 
 const getAthleteThresholdTargetFactsAsOf = vi.hoisted(() => vi.fn());
 
@@ -18,6 +18,7 @@ vi.mock("../performance-model/get-athlete-performance-model-as-of", () => ({
 
 const profileId = "11111111-1111-4111-8111-111111111111";
 const goalId = "22222222-2222-4222-8222-222222222222";
+const secondGoalId = "33333333-3333-4333-8333-333333333333";
 
 function dbWithGoal(input: { planningTimezone?: string; targetDate?: string } = {}) {
   const snapshotExecutor = {
@@ -123,6 +124,67 @@ beforeEach(() => {
 });
 
 describe("goal assessment", () => {
+  it("reads published state once, preserves request order, and excludes unowned goals", async () => {
+    mockSnapshot(publishedState());
+    const goals = [
+      {
+        id: goalId,
+        activity_category: "run",
+        target_date: "2026-09-01",
+        target_payload: {
+          type: "event_performance",
+          activity_category: "run",
+          distance_m: 10_000,
+          target_time_s: 3_600,
+        },
+      },
+      {
+        id: secondGoalId,
+        activity_category: "run",
+        target_date: "2026-10-01",
+        target_payload: {
+          type: "event_performance",
+          activity_category: "run",
+          distance_m: 5_000,
+          target_time_s: 1_800,
+        },
+      },
+    ];
+    let table: unknown;
+    const query = {
+      from: (selected: unknown) => {
+        table = selected;
+        return query;
+      },
+      where: () => (table === profileGoals ? Promise.resolve(goals) : query),
+      limit: async () => (table === profiles ? [{ planningTimezone: "UTC" }] : []),
+    };
+    let db: {
+      select: () => typeof query;
+      $client: object;
+      transaction: (read: (executor: unknown) => Promise<unknown>) => Promise<unknown>;
+    };
+    db = {
+      select: () => query,
+      $client: {},
+      transaction: async (read) => read(db),
+    };
+    const result = await getGoalAssessmentBatch({
+      db: db as never,
+      profileId,
+      goalIds: [secondGoalId, "44444444-4444-4444-8444-444444444444", goalId],
+      now: new Date("2026-08-01T12:00:00.000Z"),
+    });
+
+    expect(readPublishedAthleteStateSnapshotData).toHaveBeenCalledOnce();
+    expect(result.entries.map((entry) => entry.goalId)).toEqual([secondGoalId, goalId]);
+    expect(result.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ freshness: "fresh", revision: 4, readiness: expect.any(Object) }),
+      ]),
+    );
+  });
+
   it("simulates future planned sessions without mutating the published baseline", async () => {
     const published = publishedState();
     mockSnapshot(published);

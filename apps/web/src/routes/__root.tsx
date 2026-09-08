@@ -110,7 +110,6 @@ function RootDocument({ children }: { children: ReactNode }) {
           <div
             aria-busy={!hydrated}
             className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-12 pt-8 sm:px-6 lg:px-8 has-[>.gp-protected-shell]:max-w-none has-[>.gp-protected-shell]:px-0 has-[>.gp-protected-shell]:pb-0 has-[>.gp-protected-shell]:pt-0"
-            inert={!hydrated}
           >
             {children}
           </div>

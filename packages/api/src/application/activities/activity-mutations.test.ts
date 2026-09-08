@@ -77,7 +77,14 @@ describe("deleteActivityForProfile", () => {
       .mockResolvedValue([{ id: activityId, finishedAt: new Date("2026-07-01T00:00:00.000Z") }]);
     const where = vi.fn(() => ({ returning }));
     const deleteParent = vi.fn(() => ({ where }));
-    const tx = { delete: deleteParent, execute: vi.fn().mockResolvedValue([]) };
+    const tombstoneWhere = vi.fn().mockResolvedValue([]);
+    const tombstoneSet = vi.fn(() => ({ where: tombstoneWhere }));
+    const tombstoneUpdate = vi.fn(() => ({ set: tombstoneSet }));
+    const tx = {
+      delete: deleteParent,
+      execute: vi.fn().mockResolvedValue([]),
+      update: tombstoneUpdate,
+    };
     const db = {
       query: { activities: { findFirst: vi.fn().mockResolvedValue({ id: activityId }) } },
       transaction: vi.fn((callback) => callback(tx)),
@@ -102,6 +109,13 @@ describe("deleteActivityForProfile", () => {
       activityId,
       profileId,
     });
+    expect(tombstoneUpdate).toHaveBeenCalledOnce();
+    expect(tombstoneSet).toHaveBeenCalledWith(
+      expect.objectContaining({ activity_id: null, resolution_status: "ignored" }),
+    );
+    expect(tombstoneWhere.mock.invocationCallOrder[0]).toBeLessThan(
+      deleteParent.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
     expect(plannedSessions.listOwnedLinkedToActivity).toHaveBeenCalledWith({
       activityId,
       profileId,
@@ -165,7 +179,11 @@ describe("deleteActivityForProfile", () => {
       .fn()
       .mockResolvedValue([{ id: activityId, finishedAt: new Date("2026-07-01T00:00:00.000Z") }]);
     const deleteParent = vi.fn(() => ({ where: vi.fn(() => ({ returning })) }));
-    const tx = { delete: deleteParent, execute: vi.fn().mockResolvedValue([]) };
+    const tx = {
+      delete: deleteParent,
+      execute: vi.fn().mockResolvedValue([]),
+      update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn().mockResolvedValue([]) })) })),
+    };
     const db = {
       query: { activities: { findFirst: vi.fn().mockResolvedValue({ id: activityId }) } },
       transaction: vi.fn((callback) => callback(tx)),
@@ -200,6 +218,7 @@ describe("deleteActivityForProfile", () => {
     const tx = {
       execute: vi.fn().mockResolvedValue([]),
       delete: vi.fn(() => ({ where: vi.fn(() => ({ returning })) })),
+      update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn().mockResolvedValue([]) })) })),
     };
     const db = {
       query: { activities: { findFirst: vi.fn().mockResolvedValue({ id: activityId }) } },

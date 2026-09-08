@@ -15,6 +15,8 @@ import {
   calculateAvailableCommonLoad,
   commonLoadAggregateSchema,
   commonLoadResultSchema,
+  getKnownNormalizedIntensity,
+  getNormalizedIntensity,
 } from "../index";
 
 const computedAsOf = "2026-07-21T12:00:00.000Z";
@@ -275,6 +277,8 @@ describe("common relative Load activity contract and calculation", () => {
 
   it("requires coherent partial numeric state, provenance, coverage, method, and evidence", () => {
     const validPartial = partial({ load: 12.5, intensity: 0.5 });
+    expect(getNormalizedIntensity(validPartial)).toBeNull();
+    expect(getKnownNormalizedIntensity(validPartial)).toBe(0.5);
     expect(commonLoadResultSchema.safeParse({ ...validPartial, intensity: null }).success).toBe(
       false,
     );
@@ -303,6 +307,7 @@ describe("common relative Load activity contract and calculation", () => {
     ).toBe(false);
 
     const unknownPartial = partial({ load: null, intensity: null });
+    expect(getKnownNormalizedIntensity(unknownPartial)).toBeNull();
     expect(
       commonLoadResultSchema.safeParse({
         ...unknownPartial,
@@ -528,6 +533,8 @@ describe("common relative Load aggregation", () => {
       knownDurationCoverage: 0.5,
       unknownDurationActivityCount: 1,
     });
+    expect(getNormalizedIntensity(result)).toBeNull();
+    expect(getKnownNormalizedIntensity(result)).toBeCloseTo(Math.sqrt(112.5 / 150));
     if (result.status !== "partial") throw new Error("Expected partial aggregate");
     if (result.knownDurationSeconds === null)
       throw new Error("Expected known duration denominator");

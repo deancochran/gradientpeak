@@ -168,6 +168,12 @@ export function getServerConfig() {
   return state;
 }
 
+export function getE2ERuntimeSentinel() {
+  if (!useLocalE2EHost) return null;
+
+  return `lane=e2e api=${new URL(state.apiUrl).host} supabase=${new URL(state.supabaseUrl).host}`;
+}
+
 export function getReachableSupabaseStorageUrl(rawUrl: string) {
   try {
     const parsedRawUrl = new URL(rawUrl);

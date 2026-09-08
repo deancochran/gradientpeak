@@ -1,3 +1,4 @@
+import { invalidateProfileIdentityQueries } from "@repo/api/profile-identity-cache";
 import { createQueryClient } from "@repo/api/react";
 import { focusManager, onlineManager, QueryClientProvider } from "@tanstack/react-query";
 import * as Network from "expo-network";
@@ -137,7 +138,25 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <api.Provider client={apiClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <ProfileIdentityForegroundRefresh>{children}</ProfileIdentityForegroundRefresh>
+      </QueryClientProvider>
     </api.Provider>
   );
+}
+
+function ProfileIdentityForegroundRefresh({ children }: { children: React.ReactNode }) {
+  const utils = api.useUtils();
+
+  React.useEffect(() => {
+    const subscription = AppState.addEventListener("change", (status) => {
+      if (status === "active") {
+        void invalidateProfileIdentityQueries(utils);
+      }
+    });
+
+    return () => subscription.remove();
+  }, [utils]);
+
+  return children;
 }

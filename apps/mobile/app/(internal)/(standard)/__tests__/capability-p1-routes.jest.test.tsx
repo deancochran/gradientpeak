@@ -3,6 +3,7 @@ import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const navigateToMock = jest.fn();
+const routerNavigateMock = jest.fn();
 const routesListUseInfiniteQueryMock = jest.fn(() => ({
   data: {
     pages: [
@@ -32,7 +33,7 @@ jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: { Screen: createHost("StackScreen") },
   useLocalSearchParams: () => ({ id: "route-1" }),
-  useRouter: () => ({ back: jest.fn(), navigate: jest.fn() }),
+  useRouter: () => ({ back: jest.fn(), navigate: routerNavigateMock }),
 }));
 
 jest.mock("lucide-react-native", () => ({
@@ -114,17 +115,24 @@ jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
 jest.mock("@/components/shared/detail", () => ({
   __esModule: true,
   DetailDeleteConfirmModal: createHost("DetailDeleteConfirmModal"),
-  DetailScaffold: ({ children }: React.PropsWithChildren) =>
-    React.createElement("View", null, children),
-  DetailOverflowMenu: ({ actions }: { actions: Array<{ label: string; testID: string }> }) =>
+  DetailScaffold: ({
+    children,
+    headerRight,
+  }: React.PropsWithChildren<{ headerRight?: () => React.ReactNode }>) =>
+    React.createElement("View", null, headerRight?.(), children),
+  DetailOverflowMenu: ({
+    actions,
+  }: {
+    actions: Array<{ label: string; onPress: () => void; testID: string }>;
+  }) =>
     React.createElement(
       "View",
       null,
       actions.map((action) =>
         React.createElement(
           "Pressable",
-          { key: action.testID, testID: action.testID },
-          action.label,
+          { key: action.testID, onPress: action.onPress, testID: action.testID },
+          React.createElement("Text", null, action.label),
         ),
       ),
     ),
@@ -224,6 +232,7 @@ const RouteDetailScreen = require("../route-detail").default;
 describe("routes P1 capability boundaries", () => {
   beforeEach(() => {
     navigateToMock.mockReset();
+    routerNavigateMock.mockReset();
     routesListUseInfiniteQueryMock.mockClear();
   });
 
@@ -238,6 +247,15 @@ describe("routes P1 capability boundaries", () => {
   it("routes.attach-to-calendar-event lets an athlete assign a route to an event", async () => {
     await renderNative(<RouteDetailScreen />);
 
-    expect(screen.getByTestId("route-detail-options-attach-calendar-event")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("route-detail-options-attach-calendar-event"));
+
+    expect(routerNavigateMock).toHaveBeenCalledWith({
+      pathname: "/event-detail",
+      params: expect.objectContaining({
+        mode: "create",
+        routeId: "route-1",
+        routeName: "River Loop",
+      }),
+    });
   });
 });

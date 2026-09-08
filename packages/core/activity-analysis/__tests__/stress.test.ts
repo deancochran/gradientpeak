@@ -43,6 +43,7 @@ describe("activity analysis Common Load", () => {
         performanceTargets: (() => {
           const targets = buildPerformanceTargetFactsFixture({
             bikeThresholdWatts: 250,
+            lthrBpm: { bike: 175 },
           });
           return athletePerformanceTargetFactsSchema.parse({
             ...targets,

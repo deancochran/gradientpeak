@@ -19,15 +19,9 @@ const RUNTIME_KINDS = new Set(["live-db", "playwright", "maestro"]);
 const IGNORED_DIRECTORIES = new Set([".git", ".turbo", "coverage", "dist", "node_modules"]);
 const ROOT_VERIFICATION_CAPSULES = {
   "biome.json": ["tooling/architecture", "tooling/testing"],
-  "package.json": [
-    "tooling/architecture",
-    "tooling/current-contract",
-    "tooling/testing",
-    "tests/parity",
-  ],
-  "pnpm-workspace.yaml": ["tooling/architecture", "tooling/testing", "tests/parity"],
+  "package.json": ["tooling/architecture", "tooling/current-contract", "tooling/testing"],
+  "pnpm-workspace.yaml": ["tooling/architecture", "tooling/testing"],
   "turbo.json": ["tooling/architecture", "tooling/testing"],
-  "vitest.parity.config.ts": ["tests/parity"],
 };
 const ROOT_CONFIG_FILES = new Set([...Object.keys(ROOT_VERIFICATION_CAPSULES), "pnpm-lock.yaml"]);
 const OWNERS = {
@@ -521,9 +515,6 @@ function commandIdentity(test) {
   ) {
     return { owner, script: "node:test", runner: "node:test" };
   }
-  if (test.path.startsWith("tests/parity/")) {
-    return { owner, script: "test:parity", runner: "parity" };
-  }
   if (owner.filter === "@repo/db") {
     if (!/^packages\/db\/scripts\/[^/]+\.test\.ts$/.test(test.path)) {
       throw new Error(
@@ -591,9 +582,6 @@ export function commandsForTests(tests, { runtime = false } = {}) {
       if (!group.owner.filter) {
         if (group.runner === "node:test") {
           return { command: "node", args: ["--test", ...testPaths], tests: group.paths };
-        }
-        if (group.runner === "parity") {
-          return { command: "pnpm", args: ["test:parity", ...testPaths], tests: group.paths };
         }
         return {
           command: "pnpm",

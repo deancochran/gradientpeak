@@ -49,7 +49,7 @@ describe("Normalized Power presentation propagation", () => {
       calculationVersion: "cycling-normalized-power-v1",
       sourceTimeCoverage: 30 / 36,
       excludedGapDurationSeconds: 6,
-      label: "Normalized power (partial)",
+      label: "Normalized power",
     });
     expect(getNormalizedPowerPresentation(partial)?.evidence).toContain("6 s excluded as gaps");
     expect(getNormalizedPowerPresentation(unavailable)).toMatchObject({

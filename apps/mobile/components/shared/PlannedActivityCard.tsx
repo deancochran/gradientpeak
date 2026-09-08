@@ -37,7 +37,7 @@ export function PlannedActivityCard({
     return (
       <ActivityPlanCard
         {...(onPress !== undefined ? { onPress } : {})}
-        plan={{ ...plannedActivity.plan, metrics: plannedActivity.metrics }}
+        plan={plannedActivity.plan}
         showScheduleInfo
         testID={testID ?? `planned-activity-card-${plannedActivity.id}`}
         variant={variant}

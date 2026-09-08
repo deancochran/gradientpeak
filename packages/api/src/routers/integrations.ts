@@ -147,6 +147,7 @@ const syncOverviewSchema = z.array(
       connected: z.boolean(),
       integrationId: z.string().uuid().nullable(),
       label: z.string().min(1),
+      unresolvedReviewCount: z.number().int().nonnegative(),
       primaryAction: z.enum(["connect", "disconnect", "reconnect"]).nullable(),
       provider: executableIntegrationProviderIdSchema,
       summary: z

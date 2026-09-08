@@ -1,4 +1,6 @@
+import { Button } from "@repo/ui/components/button";
 import { Form } from "@repo/ui/components/form";
+import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -12,8 +14,9 @@ import {
   useState,
 } from "react";
 import { useWatch } from "react-hook-form";
-import { AccessibilityInfo } from "react-native";
+import { AccessibilityInfo, View } from "react-native";
 import { z } from "zod";
+import { AppFormModal } from "@/components/shared/AppFormModal";
 import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
 import { api } from "@/lib/api";
 import { getDeviceTimeZone, getEventScheduledDate } from "@/lib/calendar/eventSchedule";
@@ -41,6 +44,7 @@ import { isExistingEventActivityPlanEditable } from "./eventEditability";
 import { RepeatStep } from "./RepeatStep";
 
 type CreateEventStep = "main" | "repeat";
+type EventMutationScope = "single" | "future" | "series";
 
 const createEventMainFormSchema = z.object({
   allDay: z.boolean(),
@@ -58,6 +62,13 @@ export type CreateEventDefaults = {
   notes?: string;
   title?: string;
 };
+
+function withPreselectedRoute(
+  draft: CreateEventDraft,
+  route: EventRouteSummary | null | undefined,
+): CreateEventDraft {
+  return route ? { ...draft, routeId: route.id, routeName: route.name } : draft;
+}
 
 export type CreateEventFlowHandle = {
   submit: () => void;
@@ -215,6 +226,7 @@ export const CreateEventFlow = forwardRef<
     onCreated: (event: { id: string }) => void;
     onUpdated?: (event: { id: string }) => void;
     preselectedActivityPlanId?: string;
+    preselectedRoute?: EventRouteSummary | null;
     scheduleGapNote?: string | null;
     showFooterActions?: boolean;
     testIDPrefix?: string;
@@ -228,6 +240,7 @@ export const CreateEventFlow = forwardRef<
     onCreated,
     onUpdated,
     preselectedActivityPlanId,
+    preselectedRoute,
     scheduleGapNote,
     showFooterActions = true,
     testIDPrefix = "event-detail",
@@ -246,20 +259,26 @@ export const CreateEventFlow = forwardRef<
   const [draft, setDraft] = useState<CreateEventDraft>(() =>
     updateEvent
       ? buildDraftFromEvent(updateEvent)
-      : createDefaultEventDraft({
-          createDate,
-          mode: initialMode,
-          notes: initialNotes,
-          title: defaults?.title,
-        }),
+      : withPreselectedRoute(
+          createDefaultEventDraft({
+            createDate,
+            mode: initialMode,
+            notes: initialNotes,
+            title: defaults?.title,
+          }),
+          preselectedRoute,
+        ),
   );
   const [formErrorMessage, setFormErrorMessage] = useState<string | null>(null);
   const [titleErrorMessage, setTitleErrorMessage] = useState<string | null>(null);
   const [recurrenceErrorMessage, setRecurrenceErrorMessage] = useState<string | null>(null);
   const [knownActivityPlans, setKnownActivityPlans] = useState<ActivityPlanListItem[]>([]);
-  const [knownRoutes, setKnownRoutes] = useState<EventRouteSummary[]>([]);
+  const [knownRoutes, setKnownRoutes] = useState<EventRouteSummary[]>(() =>
+    preselectedRoute ? [preselectedRoute] : [],
+  );
   const [activityPlanPickerOpen, setActivityPlanPickerOpen] = useState(false);
   const [routePickerOpen, setRoutePickerOpen] = useState(false);
+  const [pendingUpdateDraft, setPendingUpdateDraft] = useState<CreateEventDraft | null>(null);
   const form = useZodForm<EventFormValues>({
     schema: createEventMainFormSchema,
     defaultValues: toMainFormValues(draft),
@@ -274,9 +293,9 @@ export const CreateEventFlow = forwardRef<
     },
   });
   const updateMutation = api.events.update.useMutation({
-    onSuccess: async (updatedEvent) => {
-      await refreshScheduleViews(queryClient, "eventMutation");
+    onSuccess: (updatedEvent) => {
       onUpdated?.(updatedEvent as { id: string });
+      void refreshScheduleViews(queryClient, "eventMutation");
     },
   });
   const { data: activityPlansData } = api.activityPlans.list.useQuery(
@@ -361,6 +380,15 @@ export const CreateEventFlow = forwardRef<
   }, [draft, knownActivityPlans, preselectedActivityPlanId, handleSelectPlan]);
 
   useEffect(() => {
+    if (!preselectedRoute) return;
+    setKnownRoutes((current) =>
+      current.some((route) => route.id === preselectedRoute.id)
+        ? current
+        : [...current, preselectedRoute],
+    );
+  }, [preselectedRoute]);
+
+  useEffect(() => {
     const updateActivityPlan = updateEvent?.activityPlanSummary;
     if (updateActivityPlan) {
       setKnownActivityPlans((current) =>
@@ -391,18 +419,21 @@ export const CreateEventFlow = forwardRef<
   useEffect(() => {
     if (updateEvent) return;
     setDraft(
-      createDefaultEventDraft({
-        createDate,
-        mode: initialMode,
-        notes: initialNotes,
-        title: defaults?.title,
-      }),
+      withPreselectedRoute(
+        createDefaultEventDraft({
+          createDate,
+          mode: initialMode,
+          notes: initialNotes,
+          title: defaults?.title,
+        }),
+        preselectedRoute,
+      ),
     );
     setStep("main");
     setFormErrorMessage(null);
     setTitleErrorMessage(null);
     setRecurrenceErrorMessage(null);
-  }, [createDate, defaults?.title, initialMode, initialNotes, updateEvent]);
+  }, [createDate, defaults?.title, initialMode, initialNotes, preselectedRoute, updateEvent]);
 
   useEffect(() => {
     const formValues = toMainFormValues(draft);
@@ -520,10 +551,17 @@ export const CreateEventFlow = forwardRef<
       return false;
     }
 
+    const preservesOpenEndedExistingRecurrence =
+      updateEvent &&
+      !parseRecurrenceEndDate(updateEvent) &&
+      parseRecurrenceFrequency(updateEvent) ===
+        (nextDraft.mode === "custom" ? nextDraft.recurrenceFrequency : "none");
+
     if (
       nextDraft.mode === "custom" &&
       nextDraft.recurrenceFrequency !== "none" &&
-      !nextDraft.recurrenceEndDate
+      !nextDraft.recurrenceEndDate &&
+      !preservesOpenEndedExistingRecurrence
     ) {
       setRecurrenceErrorMessage("Choose when this repeating series should end.");
       setStep("repeat");
@@ -536,14 +574,21 @@ export const CreateEventFlow = forwardRef<
     return true;
   };
 
-  const runUpdate = (nextDraft: CreateEventDraft) => {
+  const submitUpdateWithScope = (nextDraft: CreateEventDraft, scope: EventMutationScope) => {
     if (existingEventReadOnly) return;
     if (!updateEvent?.id || !validateDraft(nextDraft)) return;
     try {
+      const fullPatch = buildUpdatePatch(nextDraft);
       updateMutation.mutate({
         id: updateEvent.id,
-        scope: "single",
-        patch: buildUpdatePatch(nextDraft),
+        scope,
+        patch:
+          scope === "single"
+            ? fullPatch
+            : {
+                notes: fullPatch.notes,
+                title: fullPatch.title,
+              },
       });
     } catch (error) {
       setFormErrorMessage(
@@ -552,6 +597,24 @@ export const CreateEventFlow = forwardRef<
           : "This time cannot be scheduled in the event time zone.",
       );
     }
+  };
+
+  const runUpdate = (nextDraft: CreateEventDraft) => {
+    const recurring = Boolean(
+      updateEvent?.series_id || updateEvent?.recurrence_rule || updateEvent?.recurrence?.rule,
+    );
+    if (recurring) {
+      if (validateDraft(nextDraft)) setPendingUpdateDraft(nextDraft);
+      return;
+    }
+    submitUpdateWithScope(nextDraft, "single");
+  };
+
+  const handleSelectUpdateScope = (scope: EventMutationScope) => {
+    if (!pendingUpdateDraft) return;
+    const nextDraft = pendingUpdateDraft;
+    setPendingUpdateDraft(null);
+    submitUpdateWithScope(nextDraft, scope);
   };
 
   const submitCreate = () => {
@@ -662,6 +725,43 @@ export const CreateEventFlow = forwardRef<
           titleErrorMessage={titleErrorMessage}
         />
       </Form>
+      {pendingUpdateDraft ? (
+        <AppFormModal
+          description="Choose how much of this recurring series to update."
+          onClose={() => setPendingUpdateDraft(null)}
+          secondaryAction={
+            <Button onPress={() => setPendingUpdateDraft(null)} variant="outline">
+              <Text className="text-foreground font-medium">Cancel</Text>
+            </Button>
+          }
+          testID={`${testIDPrefix}-scope-modal`}
+          title="Recurring Event"
+        >
+          <View className="gap-3">
+            <Button
+              onPress={() => handleSelectUpdateScope("single")}
+              testID={`${testIDPrefix}-scope-single`}
+              variant="outline"
+            >
+              <Text className="text-foreground font-medium">This event only</Text>
+            </Button>
+            <Button
+              onPress={() => handleSelectUpdateScope("future")}
+              testID={`${testIDPrefix}-scope-future`}
+              variant="outline"
+            >
+              <Text className="text-foreground font-medium">This and future events</Text>
+            </Button>
+            <Button
+              onPress={() => handleSelectUpdateScope("series")}
+              testID={`${testIDPrefix}-scope-series`}
+              variant="outline"
+            >
+              <Text className="text-foreground font-medium">Entire series</Text>
+            </Button>
+          </View>
+        </AppFormModal>
+      ) : null}
       <ResourcePickerModal
         visible={activityPlanPickerOpen && !existingEventReadOnly}
         scope="activityPlans"

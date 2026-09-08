@@ -71,6 +71,9 @@ jest.mock("@/lib/hooks/useProfileGoals", () => ({
   }),
 }));
 jest.mock("@/lib/navigation/useAppNavigate", () => ({ useAppNavigate: () => navigate }));
+jest.mock("@/lib/analytics/productAnalytics", () => ({
+  useProductAnalytics: () => ({ capture: jest.fn() }),
+}));
 jest.mock("@/lib/constants/routes", () => ({ ROUTES: { GOALS: { CREATE: "/goal-create" } } }));
 jest.mock("@repo/core", () => ({
   canonicalActivityCategorySchema: {},
@@ -81,6 +84,11 @@ jest.mock("@repo/core", () => ({
 }));
 jest.mock("@/lib/api", () => ({
   api: {
+    athleteIntelligence: {
+      getGoalAssessmentBatch: {
+        useQuery: () => ({ data: { entries: [] }, isLoading: false }),
+      },
+    },
     goals: {
       getById: { useQuery: () => ({ data: undefined, isLoading: false }) },
       update: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },

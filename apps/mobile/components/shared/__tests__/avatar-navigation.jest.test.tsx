@@ -80,7 +80,7 @@ describe.skip("avatar profile navigation", () => {
 
     await fireEvent.press(screen.getByTestId("app-header-avatar-button"));
 
-    expect(navigateMock).toHaveBeenCalledWith("/profile");
+    expect(navigateMock).toHaveBeenCalledWith("/me");
     expect(pushMock).not.toHaveBeenCalled();
   });
 

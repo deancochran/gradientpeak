@@ -1,9 +1,9 @@
 import type { CanonicalActivityCategory } from "@repo/core";
+import { Text } from "@repo/ui/components/text";
 import { type Href, Stack } from "expo-router";
 import { useMemo, useState } from "react";
 import { FlatList, RefreshControl, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
-import { GoalListItem } from "@/components/plan/GoalListItem";
 import {
   FilterChip,
   FilterSection,
@@ -11,8 +11,11 @@ import {
   IndexResultsSummary,
   IndexSearchBar,
 } from "@/components/shared";
+import { GoalCard } from "@/components/shared/GoalCard";
 import { HeaderTextAction } from "@/components/shared/HeaderAction";
 import { EmptyState, ErrorState, LoadingState } from "@/components/shared/ScreenState";
+import { useProductAnalytics } from "@/lib/analytics/productAnalytics";
+import { api } from "@/lib/api";
 import { toDateKey } from "@/lib/calendar/dateMath";
 import { ROUTES } from "@/lib/constants/routes";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
@@ -20,6 +23,16 @@ import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 function getDateKey(value: Date) {
   return toDateKey(value);
+}
+
+function formatActivityCategory(value: string | null | undefined) {
+  return value
+    ? value
+        .split("_")
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ")
+    : "Activity";
 }
 
 function sortGoalsByNextDate<T extends { target_date?: string | null }>(
@@ -42,6 +55,7 @@ function sortGoalsByNextDate<T extends { target_date?: string | null }>(
 
 function GoalsListScreen() {
   const navigateTo = useAppNavigate();
+  const productAnalytics = useProductAnalytics();
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<CanonicalActivityCategory | null>(null);
   const [draftCategoryFilter, setDraftCategoryFilter] = useState<typeof categoryFilter>(null);
@@ -60,6 +74,18 @@ function GoalsListScreen() {
   const orderedGoals = useMemo(
     () => (sortBy === "target_date" ? sortGoalsByNextDate(goals.goals, todayKey) : goals.goals),
     [goals.goals, sortBy, todayKey],
+  );
+  // The readiness summary is intentionally capped at the transport contract's
+  // maximum. The paginated list remains available beyond this compact summary.
+  const goalIds = useMemo(() => orderedGoals.slice(0, 100).map((goal) => goal.id), [orderedGoals]);
+  const assessmentBatchQuery = api.athleteIntelligence.getGoalAssessmentBatch.useQuery(
+    { goalIds },
+    { enabled: goalIds.length > 0 },
+  );
+  const portfolioQuery = api.athleteIntelligence.getGoalPortfolio.useQuery({});
+  const assessmentsByGoalId = useMemo(
+    () => new Map(assessmentBatchQuery.data?.entries.map((entry) => [entry.goalId, entry])),
+    [assessmentBatchQuery.data],
   );
 
   if (goals.isLoading) {
@@ -123,7 +149,15 @@ function GoalsListScreen() {
           <RefreshControl refreshing={goals.isFetching} onRefresh={() => void goals.refetch()} />
         }
         ListHeaderComponent={
-          <IndexResultsSummary count={orderedGoals.length} singularLabel="goal" />
+          <View className="gap-1">
+            <IndexResultsSummary count={orderedGoals.length} singularLabel="goal" />
+            {portfolioQuery.data ? (
+              <Text className="text-xs text-muted-foreground" testID="goals-list-portfolio-summary">
+                {portfolioQuery.data.activeGoalCount} active of {portfolioQuery.data.totalGoalCount}{" "}
+                goals
+              </Text>
+            ) : null}
+          </View>
         }
         ListEmptyComponent={
           <EmptyState
@@ -132,14 +166,28 @@ function GoalsListScreen() {
             title="No goals yet"
           />
         }
-        renderItem={({ item }) => (
-          <GoalListItem
-            goal={item}
-            label={item.target_date && item.target_date >= todayKey ? "Upcoming" : "Goal"}
-            onPress={() => navigateTo(ROUTES.GOALS.DETAIL(item.id) as Href)}
-            testID={`goals-list-row-${item.id}`}
-          />
-        )}
+        renderItem={({ item }) => {
+          const assessment = assessmentsByGoalId.get(item.id);
+          return (
+            <GoalCard
+              goal={{
+                id: item.id,
+                objectiveSummary:
+                  item.target_date && item.target_date >= todayKey ? "Upcoming" : "Goal",
+                targetDate: item.target_date,
+                title: item.title,
+                typeLabel: formatActivityCategory(item.activity_category),
+                ...(assessment ? { compactReadiness: assessment.readiness } : {}),
+              }}
+              onPress={() => {
+                productAnalytics.capture("goal.detail_opened", { source: "goals_list" });
+                navigateTo(ROUTES.GOALS.DETAIL(item.id) as Href);
+              }}
+              testID={`goals-list-row-${item.id}`}
+              variant="compact"
+            />
+          );
+        }}
       />
       <IndexFilterSheet
         visible={isFilterSheetOpen}

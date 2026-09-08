@@ -40,7 +40,7 @@ export type EventCompletionEventRecord = EventCompletionBase & {
 
 export type EventDeleteCandidateRecord = Pick<EventRow, "activity_plan_id" | "id" | "event_type">;
 
-export type EventDeleteScope = "single" | "series";
+export type EventDeleteScope = "single" | "future" | "series";
 
 export interface EventCompletionRepository {
   getOwnedActivityForCompletion(input: {

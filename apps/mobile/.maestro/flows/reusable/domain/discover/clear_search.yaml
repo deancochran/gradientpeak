@@ -1,6 +1,0 @@
-appId: ${MAESTRO_APP_ID}
-# @purpose Clear a Discover search with the stable clear control.
-# @ready discover-search-input
----
-- tapOn: { id: "discover-search-clear" }
-- assertVisible: { id: "discover-search-input" }

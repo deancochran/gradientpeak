@@ -23,7 +23,7 @@ export function PlannedActivityCard({ item }: { item: PlannedActivityCardData })
       <ActivityPlanCard
         href={item.navigation.href}
         openLabel={`Open planned activity ${item.title}`}
-        plan={{ ...item.plan, metrics: item.metrics }}
+        plan={item.plan}
       />
     );
   }

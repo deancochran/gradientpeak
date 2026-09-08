@@ -13,7 +13,10 @@ import type {
 } from "@repo/core";
 import { useCallback, useEffect, useState } from "react";
 import type { Device } from "react-native-ble-plx";
-import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import type {
+  ActivityRecorderService,
+  RecordingStartReservation,
+} from "@/lib/services/ActivityRecorder";
 import type { PersistedSensor } from "@/lib/services/ActivityRecorder/sensors";
 import type { RecordingSessionView } from "@/lib/services/ActivityRecorder/types";
 
@@ -23,7 +26,10 @@ import type { RecordingSessionView } from "@/lib/services/ActivityRecorder/types
 
 export interface RecordingCommands {
   // Recording controls
-  start: (performanceTargets?: AthletePerformanceTargetFacts) => Promise<void>;
+  start: (
+    performanceTargets?: AthletePerformanceTargetFacts,
+    reservation?: RecordingStartReservation,
+  ) => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
   finish: () => Promise<void>;
@@ -74,9 +80,12 @@ export function useKnownSensors(service: ActivityRecorderService | null): Persis
 export function useRecordingCommands(service: ActivityRecorderService | null): RecordingCommands {
   // Recording controls
   const start = useCallback(
-    async (performanceTargets?: AthletePerformanceTargetFacts) => {
+    async (
+      performanceTargets?: AthletePerformanceTargetFacts,
+      reservation?: RecordingStartReservation,
+    ) => {
       if (!service) return;
-      await service.startRecording(performanceTargets);
+      await service.startRecording(performanceTargets, reservation);
     },
     [service],
   );

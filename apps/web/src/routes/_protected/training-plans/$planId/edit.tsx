@@ -8,9 +8,16 @@ export const Route = createFileRoute("/_protected/training-plans/$planId/edit")(
 
 function EditTrainingPlanPage() {
   const { planId } = Route.useParams();
+  const navigate = Route.useNavigate();
   return (
     <TrainingPlanEditor
-      onSaved={(savedId) => window.location.replace(`/training-plans/${savedId}`)}
+      onSaved={(savedId) =>
+        void navigate({
+          to: "/training-plans/$planId",
+          params: { planId: savedId },
+          replace: true,
+        } as never)
+      }
       planId={planId}
     />
   );

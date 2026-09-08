@@ -79,6 +79,58 @@ function mockCreatePrimitiveModule(moduleName: string) {
   );
 }
 
+function mockCreateTabsPrimitiveModule() {
+  type TabsRootProps = HostProps & {
+    onValueChange?: (value: string) => void;
+    value?: string;
+  };
+  type TabsTriggerProps = HostProps & {
+    onPress?: () => void;
+    value?: string;
+  };
+  const TabsContext = mockReact.createContext<{
+    onValueChange?: (value: string) => void;
+    value?: string;
+  }>({});
+
+  const Root = ({ children, onValueChange, value, ...props }: TabsRootProps) =>
+    mockReact.createElement(
+      "@rn-primitives/tabs.Root",
+      { ...props, onValueChange, value },
+      mockReact.createElement(TabsContext.Provider, { value: { onValueChange, value } }, children),
+    );
+  const List = mockCreateHost("@rn-primitives/tabs.List");
+  const Trigger = ({ children, onPress, value, ...props }: TabsTriggerProps) => {
+    const tabs = mockReact.useContext(TabsContext);
+
+    return mockReact.createElement(
+      "@rn-primitives/tabs.Trigger",
+      {
+        ...props,
+        onPress: () => {
+          if (typeof value === "string") tabs.onValueChange?.(value);
+          onPress?.();
+        },
+        value,
+      },
+      children,
+    );
+  };
+
+  return {
+    __esModule: true,
+    Root,
+    Tabs: Root,
+    List,
+    Trigger,
+    Content: mockCreateHost("@rn-primitives/tabs.Content"),
+    TabsList: List,
+    TabsTrigger: Trigger,
+    TabsContent: mockCreateHost("@rn-primitives/tabs.Content"),
+    useRootContext: () => mockReact.useContext(TabsContext),
+  };
+}
+
 jest.mock("@rn-primitives/accordion", () => mockCreatePrimitiveModule("@rn-primitives/accordion"));
 jest.mock("@rn-primitives/alert-dialog", () =>
   mockCreatePrimitiveModule("@rn-primitives/alert-dialog"),
@@ -111,7 +163,7 @@ jest.mock("@rn-primitives/radio-group", () =>
 jest.mock("@rn-primitives/select", () => mockCreatePrimitiveModule("@rn-primitives/select"));
 jest.mock("@rn-primitives/separator", () => mockCreatePrimitiveModule("@rn-primitives/separator"));
 jest.mock("@rn-primitives/switch", () => mockCreatePrimitiveModule("@rn-primitives/switch"));
-jest.mock("@rn-primitives/tabs", () => mockCreatePrimitiveModule("@rn-primitives/tabs"));
+jest.mock("@rn-primitives/tabs", () => mockCreateTabsPrimitiveModule());
 jest.mock("@rn-primitives/toggle", () => mockCreatePrimitiveModule("@rn-primitives/toggle"));
 jest.mock("@rn-primitives/toggle-group", () =>
   mockCreatePrimitiveModule("@rn-primitives/toggle-group"),

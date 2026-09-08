@@ -1,3 +1,5 @@
+import type { PersistentIntegrationSourceId } from "@repo/core";
+
 type IntegrationEnv = Record<string, string | undefined>;
 
 type ProviderOAuthConfigDefinition = {
@@ -10,7 +12,7 @@ type ProviderOAuthConfigDefinition = {
   tokenUrl: string;
 };
 
-export type ResolvedWahooOAuthConfig = {
+export type ResolvedProviderOAuthConfig = {
   adapter: "remote" | "local-test";
   authUrl: string;
   clientId: string;
@@ -20,6 +22,9 @@ export type ResolvedWahooOAuthConfig = {
   tokenClientAuthentication: "client_secret_basic" | "client_secret_post";
   tokenUrl: string;
 };
+
+/** Compatibility name for Wahoo-specific callers while shared OAuth code uses the neutral type. */
+export type ResolvedWahooOAuthConfig = ResolvedProviderOAuthConfig;
 
 export function isLocalWahooOAuthTestAdapterEnabled(env: IntegrationEnv = process.env): boolean {
   return env.NODE_ENV !== "production" && env.WAHOO_OAUTH_TEST_ADAPTER === "1";
@@ -46,9 +51,16 @@ const wahooOAuthDefinition = {
   tokenUrl: "https://api.wahooligan.com/oauth/token",
 } as const satisfies ProviderOAuthConfigDefinition;
 
-export function isSupportedOAuthProvider(provider: string): provider is "wahoo" {
-  return provider === "wahoo";
-}
+const stravaOAuthDefinition = {
+  authUrl: "https://www.strava.com/oauth/authorize",
+  clientIdEnv: "STRAVA_CLIENT_ID",
+  clientSecretEnv: "STRAVA_CLIENT_SECRET",
+  // Strava's confidential authorization-code flow does not currently document PKCE.
+  pkce: false,
+  scopes: ["activity:read_all", "activity:write"],
+  tokenClientAuthentication: "client_secret_post",
+  tokenUrl: "https://www.strava.com/oauth/token",
+} as const satisfies ProviderOAuthConfigDefinition;
 
 function readEnvValue(env: IntegrationEnv, key: string): string | null {
   const value = env[key];
@@ -97,18 +109,124 @@ export function getWahooOAuthConfig(
   };
 }
 
+function hasExplicitOAuthCallbackBase(env: IntegrationEnv): boolean {
+  const value = readEnvValue(env, "OAUTH_CALLBACK_BASE_URL");
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "https:" || url.protocol === "http:") &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      (url.pathname === "/" || url.pathname === "")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Strava must never appear executable without both credentials and an explicit callback base. */
+export function isStravaIntegrationEnabled(env: IntegrationEnv = process.env): boolean {
+  return Boolean(
+    readEnvValue(env, "STRAVA_CLIENT_ID") &&
+      readEnvValue(env, "STRAVA_CLIENT_SECRET") &&
+      hasExplicitOAuthCallbackBase(env),
+  );
+}
+
+export function getStravaOAuthConfig(
+  env: IntegrationEnv = process.env,
+): ResolvedProviderOAuthConfig | null {
+  if (!isStravaIntegrationEnabled(env)) return null;
+  const clientId = readEnvValue(env, stravaOAuthDefinition.clientIdEnv);
+  const clientSecret = readEnvValue(env, stravaOAuthDefinition.clientSecretEnv);
+  if (!clientId || !clientSecret) return null;
+  return {
+    adapter: "remote",
+    authUrl: stravaOAuthDefinition.authUrl,
+    clientId,
+    clientSecret,
+    pkce: stravaOAuthDefinition.pkce,
+    scopes: stravaOAuthDefinition.scopes,
+    tokenClientAuthentication: stravaOAuthDefinition.tokenClientAuthentication,
+    tokenUrl: stravaOAuthDefinition.tokenUrl,
+  };
+}
+
+export function createProviderOAuthConfigRegistry<TProvider extends string>(
+  resolvers: ReadonlyMap<TProvider, (env: IntegrationEnv) => ResolvedProviderOAuthConfig | null>,
+) {
+  return {
+    get(provider: TProvider, env: IntegrationEnv = process.env) {
+      return resolvers.get(provider)?.(env) ?? null;
+    },
+    require(provider: TProvider, env: IntegrationEnv = process.env) {
+      const config = resolvers.get(provider)?.(env) ?? null;
+      if (!config) throw new Error(`OAuth credentials are not configured for ${provider}`);
+      return config;
+    },
+  };
+}
+
+const providerOAuthConfigRegistry =
+  createProviderOAuthConfigRegistry<PersistentIntegrationSourceId>(
+    new Map([
+      ["wahoo", getWahooOAuthConfig],
+      ["strava", getStravaOAuthConfig],
+    ]),
+  );
+
+/** Provider-neutral configuration seam. Provider definitions remain owned by their adapters. */
+export function getProviderOAuthConfig(
+  provider: PersistentIntegrationSourceId,
+  env: IntegrationEnv = process.env,
+): ResolvedProviderOAuthConfig | null {
+  return providerOAuthConfigRegistry.get(provider, env);
+}
+
+export function requireProviderOAuthConfig(
+  provider: PersistentIntegrationSourceId,
+  env: IntegrationEnv = process.env,
+): ResolvedProviderOAuthConfig {
+  return providerOAuthConfigRegistry.require(provider, env);
+}
+
 export function requireWahooOAuthConfig(
   env: IntegrationEnv = process.env,
 ): ResolvedWahooOAuthConfig {
-  const config = getWahooOAuthConfig(env);
-
-  if (!config) {
-    throw new Error("OAuth credentials are not configured for wahoo");
-  }
-
-  return config;
+  return requireProviderOAuthConfig("wahoo", env);
 }
 
 export function isWahooOAuthConfigured(env: IntegrationEnv = process.env): boolean {
   return getWahooOAuthConfig(env) !== null;
+}
+
+export function requireStravaOAuthConfig(
+  env: IntegrationEnv = process.env,
+): ResolvedProviderOAuthConfig {
+  return requireProviderOAuthConfig("strava", env);
+}
+
+export function isStravaOAuthConfigured(env: IntegrationEnv = process.env): boolean {
+  return getStravaOAuthConfig(env) !== null;
+}
+
+/** Upload identity signing is independently configured from read/import execution. */
+export function getStravaUploadExternalIdSecret(env: IntegrationEnv = process.env): string | null {
+  const secret = readEnvValue(env, "STRAVA_UPLOAD_EXTERNAL_ID_SECRET");
+  return secret && secret.length >= 32 ? secret : null;
+}
+
+export function isStravaCompletedActivityUploadConfigured(
+  env: IntegrationEnv = process.env,
+): boolean {
+  return isStravaIntegrationEnabled(env) && getStravaUploadExternalIdSecret(env) !== null;
+}
+
+export function requireStravaUploadExternalIdSecret(env: IntegrationEnv = process.env): string {
+  const secret = getStravaUploadExternalIdSecret(env);
+  if (!secret) throw new Error("Strava upload external ID secret is not configured");
+  return secret;
 }

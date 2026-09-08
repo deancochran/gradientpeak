@@ -335,6 +335,9 @@ jest.mock("@/lib/api", () => ({
       },
     },
     social: {
+      toggleLike: {
+        useMutation: () => ({ isPending: false, mutate: jest.fn() }),
+      },
       getComments: {
         useInfiniteQuery: () => ({
           data: { pages: [{ comments: [], total: 0, hasMore: false, nextCursor: undefined }] },
@@ -372,6 +375,7 @@ describe("event detail create mode", () => {
   it("prefills the selected date and requires the user to pick a type in the form", async () => {
     const rendered = await renderNative(<EventDetailScreen />);
 
+    expect(screen.getByTestId("event-detail-screen")).toBeTruthy();
     expect(getHostByType(rendered, "StackScreen").props.options.title).toBe("Create Event");
     expect(screen.getByTestId("event-detail-start-date-button").props.children).toBe(
       "Tuesday, Mar 24, 2026",
@@ -565,6 +569,33 @@ describe("event detail create mode", () => {
           title: "Tempo Run",
           notes: expect.stringContaining("Schedule gap:"),
           scheduled_date: "2026-03-24",
+        }),
+      );
+    });
+  });
+
+  it("preselects a route passed from route detail and includes it when creating", async () => {
+    paramsState = {
+      mode: "create",
+      date: "2026-03-24",
+      routeId: "route-1",
+      routeName: "River Loop",
+    };
+
+    await renderNative(<EventDetailScreen />);
+
+    await fireEvent.press(screen.getByTestId("event-detail-type-custom"));
+    await fireEvent(screen.getByTestId("event-detail-title-input"), "changeText", "Route session");
+    await act(async () => {
+      await fireEvent.press(screen.getByTestId("event-detail-save-button"));
+    });
+
+    await waitFor(() => {
+      expect(createEventMutateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event_type: "custom",
+          route_id: "route-1",
+          title: "Route session",
         }),
       );
     });

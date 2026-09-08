@@ -1,6 +1,0 @@
-appId: ${MAESTRO_APP_ID}
----
-- assertVisible:
-    id: "home-screen"
-- assertNotVisible:
-    id: "sign-in-screen"

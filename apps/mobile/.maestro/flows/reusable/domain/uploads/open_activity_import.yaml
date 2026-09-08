@@ -1,6 +1,0 @@
-appId: ${MAESTRO_APP_ID}
-# @purpose Open FIT activity import by canonical app link.
-# @ready activity-import-screen
----
-- openLink: "${MAESTRO_APP_SCHEME}://activity-import"
-- assertVisible: { id: "activity-import-screen" }

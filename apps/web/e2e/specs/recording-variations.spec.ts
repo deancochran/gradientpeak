@@ -2,7 +2,11 @@ import type { Page } from "@playwright/test";
 import { deleteImportedActivity } from "../activities/fixture-files";
 import { expect, test } from "../fixtures";
 import { RecordingPage } from "../pages";
-import { recordingSubmissionJobCount, waitForActiveRecordingDraft } from "../recording/indexed-db";
+import {
+  recordingSubmissionActivityId,
+  recordingSubmissionJobCount,
+  waitForActiveRecordingDraft,
+} from "../recording/indexed-db";
 
 async function startBike(page: Page) {
   const recording = new RecordingPage(page);
@@ -53,7 +57,9 @@ test("[variation:recording.plan:activity-history] saved plan recording opens fro
     await athletePage.goBack();
     await expect(athletePage.getByTestId(`activity-card-${activityId}`)).toBeVisible();
     await athletePage.goForward();
-    await expect(athletePage.getByRole("heading", { name: "Recording execution" })).toBeVisible();
+    await expect(
+      athletePage.getByRole("heading", { name: "Playwright Tempo Builder" }),
+    ).toBeVisible();
   } finally {
     await deleteImportedActivity(athletePage, activityId);
   }
@@ -175,6 +181,9 @@ test("[variation:recording.offline:reload-queue] waiting submission survives rel
     });
   } finally {
     await athletePage.context().setOffline(false);
+    const activityId = await recordingSubmissionActivityId(athletePage);
+    expect(activityId).not.toBeNull();
+    await deleteImportedActivity(athletePage, activityId ?? "");
   }
 });
 
@@ -190,6 +199,7 @@ test("[variation:recording.offline:feature-navigation] queued save remains the s
     await athletePage.context().setOffline(false);
     await athletePage.goto("/activities");
     await new RecordingPage(athletePage).openLauncher();
+    await athletePage.getByRole("button", { name: /^return to recorder$/i }).click();
     await expect(athletePage.getByRole("heading", { name: /review recording/i })).toBeVisible();
     expect(await recordingSubmissionJobCount(athletePage)).toBe(1);
     await athletePage.getByRole("button", { name: /retry now/i }).click();
@@ -198,5 +208,8 @@ test("[variation:recording.offline:feature-navigation] queued save remains the s
     });
   } finally {
     await athletePage.context().setOffline(false);
+    const activityId = await recordingSubmissionActivityId(athletePage);
+    expect(activityId).not.toBeNull();
+    await deleteImportedActivity(athletePage, activityId ?? "");
   }
 });

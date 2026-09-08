@@ -1,4 +1,0 @@
-appId: ${MAESTRO_APP_ID}
----
-# Compatibility wrapper. This resets navigation only; it never clears data.
-- runFlow: ./reset_navigation_to_home.yaml

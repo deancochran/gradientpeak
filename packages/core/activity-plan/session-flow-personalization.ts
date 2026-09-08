@@ -63,17 +63,23 @@ function withTargetPresentations(input: {
   performanceTargets?: AthletePerformanceTargetFacts | null;
   personalized: boolean;
 }): ActivityPlanSessionFlowTargetResolution[] {
-  return input.resolutions.map((resolution) => ({
-    ...resolution,
-    presentation: resolveActivityPlanTargetPresentation({
-      target: resolution.authoredTarget,
-      activityCategory: input.activityCategory,
-      ...(input.personalized && input.performanceTargets
-        ? { performanceTargets: input.performanceTargets }
-        : {}),
-      asOf: input.performanceTargets?.asOf ?? "1970-01-01T00:00:00.000Z",
-    }),
-  }));
+  return input.resolutions.map((resolution) => {
+    const target = input.personalized
+      ? (resolution.physicalTarget ?? resolution.authoredTarget)
+      : resolution.authoredTarget;
+
+    return {
+      ...resolution,
+      presentation: resolveActivityPlanTargetPresentation({
+        target,
+        activityCategory: input.activityCategory,
+        ...(input.personalized && !resolution.physicalTarget && input.performanceTargets
+          ? { performanceTargets: input.performanceTargets }
+          : {}),
+        asOf: input.performanceTargets?.asOf ?? "1970-01-01T00:00:00.000Z",
+      }),
+    };
+  });
 }
 
 function resolvePhysicalTarget(input: {

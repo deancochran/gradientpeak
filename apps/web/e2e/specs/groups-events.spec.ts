@@ -29,6 +29,9 @@ test("owner creates, edits, RSVPs to, cancels an event, and archives its group",
     () => cleanupOwnedGroups([groupName]),
     async () => {
       const groups = new GroupsPage(athletePage);
+      await athletePage.goto("/settings");
+      await athletePage.getByRole("link", { name: "My Groups" }).click();
+      await expect(athletePage).toHaveURL(/\/groups\/?$/);
       await createOpenGroup(athletePage, groupName);
 
       await athletePage.getByRole("button", { name: "Edit group" }).click();
@@ -192,8 +195,9 @@ test("[P1] owner approves a closed-group request and persists member role manage
         ).toHaveCount(0);
 
         await member.page.reload();
-        await expect(member.page.getByRole("button", { name: "Request access" })).toBeVisible();
-        await expect(member.page.getByRole("button", { name: "View members" })).toHaveCount(0);
+        await expect(member.page.getByText("removed", { exact: true })).toBeVisible();
+        await expect(member.page.getByRole("button", { name: "Request access" })).toHaveCount(0);
+        await expect(member.page.getByRole("button", { name: "View members" })).toBeVisible();
       },
     );
   } finally {

@@ -74,7 +74,7 @@ describe("resolveActivityPlanSessionFlow", () => {
     expect(result.targetResolutions[0]).toMatchObject({
       authoredTarget: { type: "%FTP", intensity: 80 },
       physicalTarget: { type: "watts", intensity: 240 },
-      presentation: { label: "240 W (80% FTP)", sourceLabel: "80% FTP" },
+      presentation: { label: "240 W", sourceLabel: "240 W" },
     });
   });
 

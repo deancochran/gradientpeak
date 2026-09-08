@@ -1,44 +1,25 @@
+import { PROVIDER_DISCONNECT_POLICY } from "@repo/core";
 import type { DrizzleDbClient } from "@repo/db";
 import type { DrizzleTransactionClient } from "../db";
+import type {
+  EnqueueProviderSyncJobInput,
+  ProviderDisconnectAttemptResult,
+  ProviderDisconnectLifecycleRepository,
+  ProviderIntegrationGenerationFenceRepository,
+  ProviderSyncJobQueue,
+  ProviderSyncJobStatus,
+} from "./provider-sync-repository";
 
 /**
  * Wahoo disconnect is generation-fenced and retains GradientPeak-owned profile/activity data.
  * Enabled runtimes retain encrypted credentials until remote revocation is confirmed; disabled
  * runtimes perform an explicit local-only disconnect because no provider operation can run.
  */
-export const WAHOO_DISCONNECT_POLICY = {
-  disabledRuntime: "local_disconnect_delete_credentials",
-  enabledRuntime: "fence_then_confirm_remote_revoke",
-  retainedData: ["activities", "profile", "source_references"] as const,
-  terminalFailure: "retain_disconnect_pending_credentials_for_retry",
-} as const;
+export const WAHOO_DISCONNECT_POLICY = PROVIDER_DISCONNECT_POLICY;
 
-export type WahooSyncJobStatus = "queued" | "running" | "completed" | "failed" | "dead_lettered";
+export type WahooSyncJobStatus = ProviderSyncJobStatus;
 
-export type EnqueueWahooSyncJobInput = {
-  dedupeKey?: string;
-  integrationId: string;
-  integrationGeneration?: number;
-  importRunId?: string;
-  internalResourceId?: string;
-  jobType: string;
-  maxAttempts?: number;
-  operation?: string;
-  payload: unknown;
-  payloadHash?: string;
-  priority?: number;
-  profileId: string;
-  provider: "wahoo";
-  resourceKind?:
-    | "event"
-    | "activity_plan"
-    | "activity_route"
-    | "group_event_route_delivery"
-    | "activity";
-  runAt: string;
-  supersedesJobId?: string;
-  syncLaneKey?: string;
-};
+export type EnqueueWahooSyncJobInput = EnqueueProviderSyncJobInput<"wahoo">;
 
 export type WahooSyncJobRecord = {
   attempt: number;
@@ -106,12 +87,12 @@ export type WahooWebhookReceiptRecord = {
   receivedAt?: string | null;
 };
 
-export type WahooDisconnectAttemptResult =
-  | { accessToken: string; disposition: "ready" }
-  | { disposition: "invalid" }
-  | { disposition: "superseded" };
+export type WahooDisconnectAttemptResult = ProviderDisconnectAttemptResult;
 
-export interface WahooSyncRepository {
+export interface WahooSyncRepository
+  extends ProviderSyncJobQueue<"wahoo", WahooSyncJobStatus>,
+    ProviderIntegrationGenerationFenceRepository,
+    ProviderDisconnectLifecycleRepository<"wahoo"> {
   bindJobImportRun(input: {
     expectedIntegrationGeneration: number;
     id: string;

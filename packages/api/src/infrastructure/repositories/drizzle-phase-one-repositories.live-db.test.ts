@@ -249,27 +249,56 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
       },
       lifecycle: { status: "active" as const, invalidatedAt: null },
     });
+    const lthrRecord = (evidenceId: string, value: number) => {
+      const record = thresholdRecord(evidenceId, value);
+      return {
+        ...record,
+        evidence: {
+          ...record.evidence,
+          metric: "lthr" as const,
+          unit: "bpm" as const,
+          method: "lthr_30m_final_20m" as const,
+          sourceSeriesId: "heart-rate-primary",
+          sourceSeriesMetric: "heart_rate" as const,
+          startTimestampSeconds: 600,
+          exactWindowSeconds: 1_200,
+        },
+      };
+    };
     await repository.replaceThresholdEvidenceForActivity({
       profileId,
       activityId,
-      evidence: [thresholdRecord(randomUUID(), 275)],
+      evidence: [thresholdRecord(randomUUID(), 275), lthrRecord(randomUUID(), 170)],
     });
-    const replacementEvidenceId = randomUUID();
+    const replacementPowerEvidenceId = randomUUID();
+    const replacementLthrEvidenceId = randomUUID();
+    const replacementEvidence = [
+      thresholdRecord(replacementPowerEvidenceId, 280),
+      lthrRecord(replacementLthrEvidenceId, 172),
+    ];
     await repository.replaceThresholdEvidenceForActivity({
       profileId,
       activityId,
-      evidence: [thresholdRecord(replacementEvidenceId, 280)],
+      evidence: replacementEvidence,
     });
-    await expect(
-      repository.listActiveThresholdEvidence({
-        profileId,
-        fromObservedAt: "2026-08-01T00:00:00.000Z",
-        limit: 10,
-      }),
-    ).resolves.toMatchObject({
-      hasMore: false,
-      items: [{ evidence: { evidenceId: replacementEvidenceId, activityId, value: 280 } }],
+    await repository.replaceThresholdEvidenceForActivity({
+      profileId,
+      activityId,
+      evidence: replacementEvidence,
     });
+    const replaced = await repository.listActiveThresholdEvidence({
+      profileId,
+      fromObservedAt: "2026-08-01T00:00:00.000Z",
+      limit: 10,
+    });
+    expect(replaced.hasMore).toBe(false);
+    expect(replaced.items).toHaveLength(2);
+    expect(new Set(replaced.items.map(({ evidence }) => evidence.evidenceId))).toEqual(
+      new Set([replacementPowerEvidenceId, replacementLthrEvidenceId]),
+    );
+    expect(new Set(replaced.items.map(({ evidence }) => evidence.metric))).toEqual(
+      new Set(["power", "lthr"]),
+    );
   });
 
   it("replays direct ingestion operations once and enforces lifecycle transitions", async () => {

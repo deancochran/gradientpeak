@@ -24,6 +24,8 @@ export function useProviderConnection(input: {
   const handlers = {
     wahoo: ({ redirectUri }: { redirectUri: string }) =>
       getAuthUrlMutation.mutateAsync({ provider: "wahoo", redirectUri }),
+    strava: ({ redirectUri }: { redirectUri: string }) =>
+      getAuthUrlMutation.mutateAsync({ provider: "strava", redirectUri }),
   } satisfies Record<ExecutableIntegrationProviderId, ConnectionHandler>;
 
   const connect = async (provider: ExecutableIntegrationProviderId) => {

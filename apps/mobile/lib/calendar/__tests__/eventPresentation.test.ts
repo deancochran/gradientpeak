@@ -27,12 +27,7 @@ describe("calendar event presentation", () => {
     };
 
     expect(getEventTimeLabel(event)).not.toBe("Scheduled");
-    expect(getEventPrimaryMeta(event)).toEqual([
-      "Run",
-      "~1h",
-      "Common Load 64",
-      "Normalized intensity 0.80",
-    ]);
+    expect(getEventPrimaryMeta(event)).toEqual(["Run", "1h", "Common Load ~64"]);
     expect(getEventSupportingLine(event)).toBe("Progressive tempo with a strong finish.");
     expect(getEventStatusLabel(event)).toBeNull();
   });
@@ -53,13 +48,57 @@ describe("calendar event presentation", () => {
       },
     };
 
-    expect(getEventPrimaryMeta(event)).toEqual([
-      "Bike",
-      "~1h",
-      "Common Load 64",
-      "Normalized intensity 0.80",
-    ]);
+    expect(getEventPrimaryMeta(event)).toEqual(["Bike", "1h", "Common Load ~64"]);
     expect(getEventStatusLabel(event)).toBe("Completed");
+  });
+
+  it("marks a complete estimated planned duration", () => {
+    const event = {
+      id: "planned-estimated-duration",
+      event_type: "planned",
+      activity_plan: {
+        id: "plan-estimated-duration",
+        activity_category: "run",
+      },
+      projectionMetrics: [
+        {
+          key: "elapsed_duration" as const,
+          label: "Duration",
+          status: "available" as const,
+          value: 3_600,
+          unit: "seconds",
+          reason: null,
+          provenance: "estimated" as const,
+        },
+      ],
+    };
+
+    expect(getEventPrimaryMeta(event)).toEqual(["Run", "~1h"]);
+  });
+
+  it("hides a partial planned Common Load value", () => {
+    const event = {
+      id: "planned-partial-load",
+      event_type: "planned",
+      activity_plan: {
+        id: "plan-partial-load",
+        activity_category: "run",
+      },
+      projectionMetrics: [
+        {
+          key: "common_load" as const,
+          label: "Common Load",
+          status: "partial" as const,
+          value: 32,
+          unit: "score",
+          reason: "incomplete_members",
+          provenance: "estimated" as const,
+        },
+      ],
+    };
+
+    expect(getEventPrimaryMeta(event)).toEqual(["Run", "Common Load —"]);
+    expect(getEventPrimaryMeta(event).join(" ")).not.toContain("32");
   });
 
   it("shows completion labels without a persisted activity link as unverified", () => {
@@ -127,7 +166,7 @@ describe("calendar event presentation", () => {
     expect(getEventStatusLabel(event)).toBeNull();
   });
 
-  it("normalizes missing planned metrics to zero instead of exposing legacy metrics", () => {
+  it("omits missing planned metrics instead of substituting zero", () => {
     const event = {
       id: "planned-external-load",
       event_type: "planned",
@@ -137,12 +176,7 @@ describe("calendar event presentation", () => {
       },
     };
 
-    expect(getEventPrimaryMeta(event)).toEqual([
-      "Run",
-      "0m",
-      "Common Load 0",
-      "Normalized intensity 0.00",
-    ]);
+    expect(getEventPrimaryMeta(event)).toEqual(["Run"]);
     expect(getEventPrimaryMeta(event).join(" ")).not.toMatch(/TSS|\bIF\b/);
   });
 

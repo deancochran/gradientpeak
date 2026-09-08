@@ -12,6 +12,8 @@ export * from "./event-write-repository";
 export * from "./integrations-repository";
 export * from "./planned-session-repository-port";
 export * from "./planning-template-repository";
+export * from "./provider-sync-repository";
+export * from "./strava-repository";
 export * from "./training-plan-repository";
 export * from "./trends-dashboard-repository";
 export * from "./wahoo-repository";

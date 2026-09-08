@@ -29,12 +29,8 @@ function StatusAwareCommonLoadValue({
   if (status === "unavailable" || value === null || value === undefined) {
     return <Badge variant="outline">Common Load unavailable</Badge>;
   }
-  const label = `Common Load ${Math.round(value * 10) / 10}`;
-  return status === "partial" ? (
-    <Badge variant="outline">Partial {label}</Badge>
-  ) : (
-    <Badge>{label}</Badge>
-  );
+  const label = `Common Load ${status === "partial" ? "~" : ""}${Math.round(value * 10) / 10}`;
+  return <Badge>{label}</Badge>;
 }
 
 function sumPlanned(values: Array<number | null | undefined>) {

@@ -12,7 +12,7 @@ export const persistentIntegrationSourceIdValues = [
 export const persistentIntegrationSourceIdSchema = z.enum(persistentIntegrationSourceIdValues);
 export type PersistentIntegrationSourceId = z.infer<typeof persistentIntegrationSourceIdSchema>;
 
-export const executableIntegrationProviderIdValues = ["wahoo"] as const;
+export const executableIntegrationProviderIdValues = ["wahoo", "strava"] as const;
 export const executableIntegrationProviderIdSchema = z.enum(executableIntegrationProviderIdValues);
 export type ExecutableIntegrationProviderId = z.infer<typeof executableIntegrationProviderIdSchema>;
 
@@ -21,6 +21,7 @@ export const providerCapabilityValues = [
   "activity_history_read",
   "activity_file_download",
   "activity_file_format_fit",
+  "completed_activity_export",
   "planned_activity_push",
   "route_push",
   "webhook_activity_updates",
@@ -38,7 +39,7 @@ export type ProviderConfigurableAction = z.infer<typeof providerConfigurableActi
 export const providerSyncModeSchema = z.enum(["automatic", "manual", "unsupported"]);
 export type ProviderSyncMode = z.infer<typeof providerSyncModeSchema>;
 
-export type ProviderPlannedActivityMaturity = "available";
+export type ProviderPlannedActivityMaturity = "available" | "unavailable";
 
 export type ProviderPlannedActivityCapability = {
   maturity: ProviderPlannedActivityMaturity;
@@ -88,6 +89,15 @@ const wahooPlannedActivities = {
   supportsMultipleTargets: false,
 } as const satisfies ProviderPlannedActivityCapability;
 
+const unavailablePlannedActivities = {
+  maturity: "unavailable",
+  supportedDurations: [],
+  supportedActivityCategories: [],
+  supportedTargets: [],
+  supportsBoundaries: false,
+  supportsMultipleTargets: false,
+} as const satisfies ProviderPlannedActivityCapability;
+
 const providerCapabilityMap = {
   wahoo: {
     id: "wahoo",
@@ -116,6 +126,32 @@ const providerCapabilityMap = {
     unavailableReasons: {
       route_push:
         "Wahoo route push is disabled because uncertain create outcomes cannot be reconciled under the documented API.",
+    },
+  },
+  strava: {
+    id: "strava",
+    label: "Strava",
+    onboarding: {
+      summary: "Import up to 90 days of private activity history from your Strava account.",
+      evidence: { activityHistory: true, profileDetails: false },
+    },
+    plannedActivities: unavailablePlannedActivities,
+    capabilities: [
+      "activity_history_read",
+      "completed_activity_export",
+      "webhook_activity_updates",
+    ],
+    syncModes: {
+      activity_history_read: "manual",
+      completed_activity_export: "manual",
+      webhook_activity_updates: "automatic",
+    },
+    unavailableReasons: {
+      profile_enrichment_read: "Strava profile enrichment is not implemented.",
+      activity_file_download: "Strava activities are imported from summaries and streams.",
+      activity_file_format_fit: "Strava does not provide FIT artifacts through this integration.",
+      planned_activity_push: "Strava planned activity delivery is not implemented.",
+      route_push: "Strava route delivery is not implemented.",
     },
   },
 } as const satisfies Record<ExecutableIntegrationProviderId, ProviderCapabilityDefinition>;
@@ -181,9 +217,7 @@ export function getConfigurableProviderActions(
   provider: ExecutableIntegrationProviderId,
 ): ProviderConfigurableAction[] {
   const actions = new Set<ProviderConfigurableAction>(["disconnect"]);
-  const canSyncNow =
-    providerHasCapability(provider, "activity_history_read") &&
-    providerHasCapability(provider, "activity_file_download");
+  const canSyncNow = providerHasCapability(provider, "activity_history_read");
 
   if (canSyncNow) {
     actions.add("sync_now");
@@ -198,8 +232,5 @@ export function getConfigurableProviderActions(
 export function isProviderActivityHistoryReconciliationTarget(
   provider: ExecutableIntegrationProviderId,
 ): boolean {
-  return (
-    providerHasCapability(provider, "activity_history_read") &&
-    providerHasCapability(provider, "activity_file_download")
-  );
+  return providerHasCapability(provider, "activity_history_read");
 }

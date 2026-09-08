@@ -5,7 +5,7 @@ import { Form, FormTextField } from "@repo/ui/components/form";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { AlertCircle } from "lucide-react-native";
 import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
@@ -21,12 +21,15 @@ import { type SignInFormValues, signInSchema } from "@/lib/auth/form-schemas";
 import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
+import { parsePostSignInDestination } from "@/lib/navigation/postSignInDestination";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { isServerUrlOverrideEnabled, useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
 export default function SignInScreen() {
   const router = useRouter();
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string | string[] }>();
+  const postSignInDestination = parsePostSignInDestination(returnTo);
   const navigateTo = useAppNavigate();
   const { loading: authLoading } = useAuth();
   const [isServerConfigExpanded, setIsServerConfigExpanded] = React.useState(false);
@@ -84,7 +87,7 @@ export default function SignInScreen() {
       logMobileAction("auth.signIn", "success", { email: data.email });
       await refreshMobileAuthSession();
       await useAuthStore.getState().refreshSession();
-      router.replace("/");
+      router.replace(postSignInDestination ?? "/(internal)/(tabs)");
     } catch (err) {
       logMobileAction("auth.signIn", "failure", {
         email: data.email,
@@ -141,7 +144,6 @@ export default function SignInScreen() {
                   label="Email"
                   name="email"
                   placeholder="Email address"
-                  selectTextOnFocus={process.env.EXPO_PUBLIC_MAESTRO_E2E === "1"}
                   testId="email-input"
                 />
 
@@ -152,7 +154,6 @@ export default function SignInScreen() {
                   name="password"
                   placeholder="Password"
                   secureTextEntry
-                  selectTextOnFocus={process.env.EXPO_PUBLIC_MAESTRO_E2E === "1"}
                   testId="password-input"
                 />
 

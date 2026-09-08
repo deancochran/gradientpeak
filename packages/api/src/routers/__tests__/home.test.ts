@@ -10,7 +10,10 @@ import {
   createObservationQuantificationBundle,
   createPlanActivityQuantificationSubjectIdentity,
   createPlanOccurrenceActivityQuantificationSubjectIdentity,
+  createUnavailableAthletePerformanceTargetFacts,
   defaultAthletePreferenceProfile,
+  estimateActivityPlanForTrainingContext,
+  OPTION_1_FAVORITE_SWIM,
 } from "@repo/core";
 import { type CommonLoadResult, calculateAvailableCommonLoad } from "@repo/core/load";
 import { schema } from "@repo/db";
@@ -600,6 +603,12 @@ describe("homeRouter", () => {
           prescriptionQuantification: createActivityPlanPrescriptionQuantificationBundle({
             members: [quantification],
           }),
+          planProjection: {
+            objectiveIntensity: {
+              status: "available",
+              value: plan.id === "plan-1" ? 0.75 : 0.6,
+            },
+          },
         };
       }),
     );
@@ -779,14 +788,7 @@ describe("homeRouter", () => {
       id: "plan-1",
       name: "Build Block",
     });
-    expect(result.currentLoadStatus).toEqual({
-      coverageStatus: "partial",
-      loadBalance: -4,
-      loadBalanceStatus: "negative_balance",
-      longTermLoad: 40,
-      maturity: "provisional",
-      recentLoad: 44,
-    });
+    expect(result.currentLoadStatus).toBeNull();
     expect(result).not.toHaveProperty("currentStatus");
     expect(result.consistency).toEqual({ streak: 2, weeklyCount: 2 });
     expect(result.weeklySummary).toMatchObject({
@@ -809,7 +811,7 @@ describe("homeRouter", () => {
         estimatedDuration: 3600,
         estimatedDistance: 20000,
         load: expect.any(Number),
-        intensity: expect.any(Number),
+        objectiveIntensity: 0.75,
       }),
       expect.objectContaining({
         id: "planned-tomorrow",
@@ -821,7 +823,7 @@ describe("homeRouter", () => {
         estimatedDuration: 2400,
         estimatedDistance: 12000,
         load: expect.any(Number),
-        intensity: expect.any(Number),
+        objectiveIntensity: 0.6,
       }),
     ]);
     expect(result.todaysActivity).toEqual(
@@ -835,12 +837,13 @@ describe("homeRouter", () => {
         estimatedDuration: 3600,
         estimatedDistance: 20000,
         load: expect.any(Number),
-        intensity: expect.any(Number),
+        objectiveIntensity: 0.75,
       }),
     );
     expect(result.schedule[0]).not.toHaveProperty("activityCategory");
     expect(result.schedule[0]).not.toHaveProperty("activityCategories");
     expect(result.schedule[0]).not.toHaveProperty("activityKind");
+    expect(result.schedule[0]).not.toHaveProperty("intensity");
     expect(result.projectedLoad).toEqual([]);
     expect(result).not.toHaveProperty("projectedFitness");
     expect(result).not.toHaveProperty("idealFitnessCurve");
@@ -858,6 +861,75 @@ describe("homeRouter", () => {
       training_quality: 0.84,
     });
     expect(homeMocks.estimateActivityPlans).toHaveBeenCalledOnce();
+  });
+
+  it("withholds Option 1 mixed-plan lane distance from the compact schedule", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
+    homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
+    homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
+    homeMocks.estimateActivityPlans.mockImplementation(
+      async (plans: Array<{ id: string; structure: unknown } & Record<string, unknown>>) =>
+        plans.map((plan) => {
+          const planning = estimateActivityPlanForTrainingContext({
+            asOf: "2026-04-03T12:00:00.000Z",
+            planId: plan.id,
+            performanceTargets: createUnavailableAthletePerformanceTargetFacts(
+              "2026-04-03T12:00:00.000Z",
+              "11111111-1111-4111-8111-111111111111",
+            ),
+            structure: plan.structure,
+          });
+          if (!planning.planProjection) throw new Error("Expected an activity-plan projection");
+          return {
+            ...plan,
+            prescriptionQuantification: planning.prescriptionQuantification,
+            planProjection: planning.planProjection,
+          };
+        }),
+    );
+
+    const optionOnePlan = {
+      ...buildActivityPlan("option-1", OPTION_1_FAVORITE_SWIM.name, "bike"),
+      structure: OPTION_1_FAVORITE_SWIM.structure,
+    };
+    const { caller } = createCaller({
+      select: {
+        events: [
+          [],
+          [
+            {
+              id: "scheduled-option-1",
+              activity_plan_id: optionOnePlan.id,
+              starts_at: new Date("2026-04-03T13:00:00.000Z"),
+              linked_activity_id: null,
+              notes: null,
+              scheduled_date: "2026-04-03",
+              status: "scheduled",
+              activity_plan: optionOnePlan,
+            },
+          ],
+        ],
+      },
+    });
+
+    const result = await caller.getDashboard({ days: 1 });
+
+    expect(result.schedule).toEqual([
+      {
+        id: "scheduled-option-1",
+        date: "2026-04-03",
+        isToday: true,
+        isCompleted: false,
+        activityName: OPTION_1_FAVORITE_SWIM.name,
+        activity_category: "swim",
+        estimatedDuration: null,
+        estimatedDistance: null,
+        load: null,
+        objectiveIntensity: null,
+      },
+    ]);
+    expect(result.todaysActivity).toEqual(result.schedule[0]);
   });
 
   it("requests canonical activity analytics through the current instant without a raw activity read", async () => {

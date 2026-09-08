@@ -6,11 +6,13 @@ const replaceMock = jest.fn();
 const navigateToMock = jest.fn();
 const signInMock = jest.fn();
 const refreshSessionMock = jest.fn(async () => undefined);
+let searchParamsValue: { returnTo?: string | string[] } = {};
 
 (globalThis as typeof globalThis & { __DEV__?: boolean }).__DEV__ = false;
 
 jest.mock("expo-router", () => ({
   __esModule: true,
+  useLocalSearchParams: () => searchParamsValue,
   useRouter: () => ({ push: jest.fn(), replace: replaceMock }),
 }));
 
@@ -62,7 +64,10 @@ jest.mock("@/lib/server-config", () => ({
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
   useAuthStore: {
-    getState: () => ({ clearSession: jest.fn(async () => undefined) }),
+    getState: () => ({
+      clearSession: jest.fn(async () => undefined),
+      refreshSession: refreshSessionMock,
+    }),
   },
 }));
 
@@ -150,6 +155,7 @@ const SignInScreen = require("../sign-in").default;
 describe("sign-in screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    searchParamsValue = {};
     signInMock.mockResolvedValue({ error: null });
   });
 
@@ -166,13 +172,57 @@ describe("sign-in screen", () => {
         password: "Password123",
       });
       expect(refreshSessionMock).toHaveBeenCalled();
+      expect(replaceMock).toHaveBeenCalledWith("/(internal)/(tabs)");
     });
+  });
+
+  it.each([
+    "/integrations",
+    "/training-preferences",
+  ])("returns to the allowlisted %s destination after successful sign in", async (returnTo) => {
+    searchParamsValue = { returnTo };
+    await renderNative(<SignInScreen />);
+
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await fireEvent.press(screen.getByTestId("sign-in-button"));
+
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith(returnTo));
+  });
+
+  it.each([
+    ["external callback", "https://attacker.example/callback"],
+    ["nested return URL", "/integrations?returnTo=https://attacker.example"],
+    ["duplicate return target", ["/integrations", "/profile"]],
+  ])("falls back home for a hostile or stale %s", async (_label, returnTo) => {
+    searchParamsValue = { returnTo };
+    await renderNative(<SignInScreen />);
+
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await fireEvent.press(screen.getByTestId("sign-in-button"));
+
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/(internal)/(tabs)"));
   });
 
   it("marks the password field for credential-manager autofill", async () => {
     await renderNative(<SignInScreen />);
 
     expect(screen.getByTestId("password-input").props.autoComplete).toBe("current-password");
+  });
+
+  it("keeps credential fields in normal focus mode during Maestro entry", async () => {
+    const original = process.env.EXPO_PUBLIC_MAESTRO_E2E;
+    process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
+    try {
+      await renderNative(<SignInScreen />);
+
+      expect(screen.getByTestId("email-input").props.selectTextOnFocus).not.toBe(true);
+      expect(screen.getByTestId("password-input").props.selectTextOnFocus).not.toBe(true);
+    } finally {
+      if (original === undefined) delete process.env.EXPO_PUBLIC_MAESTRO_E2E;
+      else process.env.EXPO_PUBLIC_MAESTRO_E2E = original;
+    }
   });
 
   it("navigates to the real forgot-password screen", async () => {

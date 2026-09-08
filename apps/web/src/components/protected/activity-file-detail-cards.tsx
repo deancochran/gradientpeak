@@ -14,13 +14,13 @@ import {
 } from "../../lib/activity-stream-presentation";
 
 function formatNumber(value: number | null, suffix = "") {
-  if (value === null) return "Unavailable";
+  if (value === null) return "—";
   const formatted = Number.isInteger(value) ? String(value) : value.toFixed(1);
   return `${formatted}${suffix}`;
 }
 
 function formatLapDuration(seconds: number | null) {
-  if (seconds === null) return "Unavailable";
+  if (seconds === null) return "—";
   const rounded = Math.max(0, Math.round(seconds));
   const minutes = Math.floor(rounded / 60);
   const remainingSeconds = rounded % 60;
@@ -139,7 +139,7 @@ export function ActivitySwimDetailCards({
               <dt className="text-muted-foreground">Pool length</dt>
               <dd className="font-medium text-foreground">
                 {resolvedPoolLengthMeters === null
-                  ? "Unavailable"
+                  ? "—"
                   : formatNumber(resolvedPoolLengthMeters, " meters")}
               </dd>
             </div>

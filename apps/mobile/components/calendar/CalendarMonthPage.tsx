@@ -10,8 +10,7 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 type CalendarMonthPageProps = {
   activeMonthKey: string;
   itemsByDate: Map<string, CalendarProjectionItem[]>;
-  onOpenSelectedDay: () => void;
-  onSelectDate: (dateKey: string) => void;
+  onOpenDay: (dateKey: string) => void;
   selectedDateKey: string;
   todayKey: string;
 };
@@ -19,8 +18,7 @@ type CalendarMonthPageProps = {
 export function CalendarMonthPage({
   activeMonthKey,
   itemsByDate,
-  onOpenSelectedDay,
-  onSelectDate,
+  onOpenDay,
   selectedDateKey,
   todayKey,
 }: CalendarMonthPageProps) {
@@ -55,11 +53,11 @@ export function CalendarMonthPage({
                 return (
                   <TouchableOpacity
                     key={dateKey}
-                    accessibilityLabel={`${selected ? "Open agenda for" : "Select"} ${dateKey}. ${describeCalendarDayVisualState(visualState)}`}
+                    accessibilityLabel={`Open training breakdown for ${dateKey}. ${describeCalendarDayVisualState(visualState)}`}
                     accessibilityRole="button"
                     accessibilityState={{ selected }}
                     className="flex-1 items-center justify-center"
-                    onPress={() => (selected ? onOpenSelectedDay() : onSelectDate(dateKey))}
+                    onPress={() => onOpenDay(dateKey)}
                     testID={`calendar-day-select-${dateKey}`}
                   >
                     <CalendarDayVisual

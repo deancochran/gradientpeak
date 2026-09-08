@@ -8,15 +8,18 @@ import type { ActivityPrescriptionQuantificationBundle } from "@repo/core/activi
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
-import { Calendar } from "lucide-react-native";
+import { Calendar, MessageCircle, Share2 } from "lucide-react-native";
 import { useMemo } from "react";
-import { View } from "react-native";
+import { Alert, Share, View } from "react-native";
 import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
+import { useEntityCommentsSheet } from "@/components/social/EntityCommentsSheetProvider";
 import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
+import { getPublicShareUrl } from "@/lib/share/public-share-url";
 import { ActivityPlanSummary } from "./ActivityPlanSummary";
 import type { EntityOwner } from "./EntityOwnerRow";
 import {
+  ResourceCardActionButton,
   ResourceCardShell,
   ResourceCategoryItems,
   ResourceLikeButton,
@@ -77,6 +80,7 @@ export type ActivityPlanCardData = {
 interface ActivityPlanCardProps {
   plan: ActivityPlanSummaryProjection | ActivityPlanDetail | ScheduledActivityPlanSummary;
   onPress?: () => void;
+  onCommentPress?: () => void;
   testID?: string;
   variant?: "default" | "compact";
   showScheduleInfo?: boolean; // Show date/time badge
@@ -89,11 +93,13 @@ interface ActivityPlanCardProps {
 export function ActivityPlanCard({
   plan,
   onPress,
+  onCommentPress,
   testID,
   variant = "default",
   showScheduleInfo = false,
 }: ActivityPlanCardProps) {
   const isCompact = variant === "compact";
+  const entityCommentsSheet = useEntityCommentsSheet();
   const presentation = useMemo(
     () => deriveActivityPlanPresentation(plan.structure),
     [plan.structure],
@@ -121,6 +127,31 @@ export function ActivityPlanCard({
     initialCount: plan.engagement.likes,
     initialLiked: plan.engagement.viewerHasLiked,
   });
+  const handleCommentPress =
+    onCommentPress ??
+    (entityCommentsSheet
+      ? () =>
+          entityCommentsSheet.openEntityComments({
+            entityId: plan.id,
+            entityType: "activity_plan",
+          })
+      : undefined);
+  const handleShare = async () => {
+    if (plan.visibility !== "public") {
+      Alert.alert(
+        "Not public",
+        "Only public activity plans have a share link. Change visibility to Public first.",
+      );
+      return;
+    }
+
+    const url = getPublicShareUrl(`/share/activity-plans/${plan.id}`);
+    try {
+      await Share.share({ message: url, url });
+    } catch {
+      Alert.alert("Unable to share", "The activity plan could not be shared. Try again.");
+    }
+  };
 
   return (
     <ResourceCardShell
@@ -129,12 +160,16 @@ export function ActivityPlanCard({
         isCompact ? undefined : (
           <ResourceOwnerActionRow
             actions={
-              <ResourceLikeButton
-                disabled={isLikePending}
-                isLiked={isLiked}
-                likeCount={likeCount}
-                onPress={toggleLike}
-              />
+              <ResourceCardActionButton
+                accessibilityLabel="Share activity plan"
+                onPress={() => void handleShare()}
+                testID={`activity-plan-card-share-button-${plan.id}`}
+              >
+                <View className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5">
+                  <Icon as={Share2} size={14} className="text-muted-foreground" />
+                  <Text className="ml-1 text-xs font-medium text-muted-foreground">Share</Text>
+                </View>
+              </ResourceCardActionButton>
             }
             compact={isCompact}
             categoryItems={categoryItems}
@@ -186,6 +221,29 @@ export function ActivityPlanCard({
         presentation={presentation}
         testIDPrefix={`activity-plan-card-preview-${plan.id}`}
       />
+
+      {!isCompact ? (
+        <View className="flex-row items-center gap-2" testID="activity-plan-card-social-actions">
+          <ResourceLikeButton
+            disabled={isLikePending}
+            isLiked={isLiked}
+            likeCount={likeCount}
+            onPress={toggleLike}
+            testID={`activity-plan-card-like-button-${plan.id}`}
+          />
+          <ResourceCardActionButton
+            accessibilityLabel="Comments"
+            disabled={!handleCommentPress}
+            onPress={handleCommentPress ?? (() => {})}
+            testID={`activity-plan-card-comments-button-${plan.id}`}
+          >
+            <View className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5">
+              <Icon as={MessageCircle} size={14} className="text-muted-foreground" />
+              <Text className="ml-1 text-xs font-medium text-muted-foreground">Comments</Text>
+            </View>
+          </ResourceCardActionButton>
+        </View>
+      ) : null}
 
       {showScheduleInfo &&
       plan.contractVersion === "scheduled-activity-plan-summary-v1" &&

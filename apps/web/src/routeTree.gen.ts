@@ -22,6 +22,7 @@ import { Route as ProtectedPlanRouteImport } from './routes/_protected/plan'
 import { Route as ProtectedRecordRouteImport } from './routes/_protected/record'
 import { Route as ProtectedSearchRouteImport } from './routes/_protected/search'
 import { Route as ProtectedSettingsRouteImport } from './routes/_protected/settings'
+import { Route as ProtectedThresholdsRouteImport } from './routes/_protected/thresholds'
 import { Route as ProtectedTrainingPreferencesRouteImport } from './routes/_protected/training-preferences'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiReadyRouteImport } from './routes/api/ready'
@@ -55,9 +56,11 @@ import { Route as ProtectedTrainingPlansIndexRouteImport } from './routes/_prote
 import { Route as ProtectedTrainingPlansCreateRouteImport } from './routes/_protected/training-plans/create'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api/trpc/$'
+import { Route as ApiWebhooksStravaRouteImport } from './routes/api/webhooks/strava'
 import { Route as ApiWebhooksWahooRouteImport } from './routes/api/webhooks/wahoo'
 import { Route as ShareActivitiesActivityIdRouteImport } from './routes/share/activities/$activityId'
 import { Route as ShareActivityPlansActivityPlanIdRouteImport } from './routes/share/activity-plans/$activityPlanId'
+import { Route as ShareRoutesRouteIdRouteImport } from './routes/share/routes/$routeId'
 import { Route as ShareTrainingPlansTrainingPlanIdRouteImport } from './routes/share/training-plans/$trainingPlanId'
 import { Route as CoachingOrganizationsOrganizationIdIndexRouteImport } from './routes/_coaching/organizations/$organizationId/index'
 import { Route as CoachingOrganizationsOrganizationIdDashboardRouteImport } from './routes/_coaching/organizations/$organizationId/dashboard'
@@ -148,6 +151,11 @@ const ProtectedSearchRoute = ProtectedSearchRouteImport.update({
 const ProtectedSettingsRoute = ProtectedSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedThresholdsRoute = ProtectedThresholdsRouteImport.update({
+  id: '/thresholds',
+  path: '/thresholds',
   getParentRoute: () => ProtectedRoute,
 } as any)
 const ProtectedTrainingPreferencesRoute =
@@ -324,6 +332,11 @@ const ApiTrpcSplatRoute = ApiTrpcSplatRouteImport.update({
   path: '/api/trpc/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWebhooksStravaRoute = ApiWebhooksStravaRouteImport.update({
+  id: '/api/webhooks/strava',
+  path: '/api/webhooks/strava',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiWebhooksWahooRoute = ApiWebhooksWahooRouteImport.update({
   id: '/api/webhooks/wahoo',
   path: '/api/webhooks/wahoo',
@@ -341,6 +354,11 @@ const ShareActivityPlansActivityPlanIdRoute =
     path: '/share/activity-plans/$activityPlanId',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ShareRoutesRouteIdRoute = ShareRoutesRouteIdRouteImport.update({
+  id: '/share/routes/$routeId',
+  path: '/share/routes/$routeId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ShareTrainingPlansTrainingPlanIdRoute =
   ShareTrainingPlansTrainingPlanIdRouteImport.update({
     id: '/share/training-plans/$trainingPlanId',
@@ -522,6 +540,7 @@ export interface FileRoutesByFullPath {
   '/record': typeof ProtectedRecordRouteWithChildren
   '/search': typeof ProtectedSearchRoute
   '/settings': typeof ProtectedSettingsRoute
+  '/thresholds': typeof ProtectedThresholdsRoute
   '/training-preferences': typeof ProtectedTrainingPreferencesRoute
   '/api/health': typeof ApiHealthRoute
   '/api/ready': typeof ApiReadyRoute
@@ -546,9 +565,11 @@ export interface FileRoutesByFullPath {
   '/training-plans/create': typeof ProtectedTrainingPlansCreateRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
+  '/api/webhooks/strava': typeof ApiWebhooksStravaRoute
   '/api/webhooks/wahoo': typeof ApiWebhooksWahooRoute
   '/share/activities/$activityId': typeof ShareActivitiesActivityIdRoute
   '/share/activity-plans/$activityPlanId': typeof ShareActivityPlansActivityPlanIdRoute
+  '/share/routes/$routeId': typeof ShareRoutesRouteIdRoute
   '/share/training-plans/$trainingPlanId': typeof ShareTrainingPlansTrainingPlanIdRoute
   '/organizations/': typeof CoachingOrganizationsIndexRoute
   '/activities/': typeof ProtectedActivitiesIndexRoute
@@ -596,6 +617,7 @@ export interface FileRoutesByTo {
   '/plan': typeof ProtectedPlanRoute
   '/search': typeof ProtectedSearchRoute
   '/settings': typeof ProtectedSettingsRoute
+  '/thresholds': typeof ProtectedThresholdsRoute
   '/training-preferences': typeof ProtectedTrainingPreferencesRoute
   '/api/health': typeof ApiHealthRoute
   '/api/ready': typeof ApiReadyRoute
@@ -619,9 +641,11 @@ export interface FileRoutesByTo {
   '/training-plans/create': typeof ProtectedTrainingPlansCreateRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
+  '/api/webhooks/strava': typeof ApiWebhooksStravaRoute
   '/api/webhooks/wahoo': typeof ApiWebhooksWahooRoute
   '/share/activities/$activityId': typeof ShareActivitiesActivityIdRoute
   '/share/activity-plans/$activityPlanId': typeof ShareActivityPlansActivityPlanIdRoute
+  '/share/routes/$routeId': typeof ShareRoutesRouteIdRoute
   '/share/training-plans/$trainingPlanId': typeof ShareTrainingPlansTrainingPlanIdRoute
   '/organizations': typeof CoachingOrganizationsIndexRoute
   '/activities': typeof ProtectedActivitiesIndexRoute
@@ -674,6 +698,7 @@ export interface FileRoutesById {
   '/_protected/record': typeof ProtectedRecordRouteWithChildren
   '/_protected/search': typeof ProtectedSearchRoute
   '/_protected/settings': typeof ProtectedSettingsRoute
+  '/_protected/thresholds': typeof ProtectedThresholdsRoute
   '/_protected/training-preferences': typeof ProtectedTrainingPreferencesRoute
   '/api/health': typeof ApiHealthRoute
   '/api/ready': typeof ApiReadyRoute
@@ -699,9 +724,11 @@ export interface FileRoutesById {
   '/_protected/training-plans/create': typeof ProtectedTrainingPlansCreateRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
+  '/api/webhooks/strava': typeof ApiWebhooksStravaRoute
   '/api/webhooks/wahoo': typeof ApiWebhooksWahooRoute
   '/share/activities/$activityId': typeof ShareActivitiesActivityIdRoute
   '/share/activity-plans/$activityPlanId': typeof ShareActivityPlansActivityPlanIdRoute
+  '/share/routes/$routeId': typeof ShareRoutesRouteIdRoute
   '/share/training-plans/$trainingPlanId': typeof ShareTrainingPlansTrainingPlanIdRoute
   '/_coaching/organizations/': typeof CoachingOrganizationsIndexRoute
   '/_protected/activities/': typeof ProtectedActivitiesIndexRoute
@@ -754,6 +781,7 @@ export interface FileRouteTypes {
     | '/record'
     | '/search'
     | '/settings'
+    | '/thresholds'
     | '/training-preferences'
     | '/api/health'
     | '/api/ready'
@@ -778,9 +806,11 @@ export interface FileRouteTypes {
     | '/training-plans/create'
     | '/api/auth/$'
     | '/api/trpc/$'
+    | '/api/webhooks/strava'
     | '/api/webhooks/wahoo'
     | '/share/activities/$activityId'
     | '/share/activity-plans/$activityPlanId'
+    | '/share/routes/$routeId'
     | '/share/training-plans/$trainingPlanId'
     | '/organizations/'
     | '/activities/'
@@ -828,6 +858,7 @@ export interface FileRouteTypes {
     | '/plan'
     | '/search'
     | '/settings'
+    | '/thresholds'
     | '/training-preferences'
     | '/api/health'
     | '/api/ready'
@@ -851,9 +882,11 @@ export interface FileRouteTypes {
     | '/training-plans/create'
     | '/api/auth/$'
     | '/api/trpc/$'
+    | '/api/webhooks/strava'
     | '/api/webhooks/wahoo'
     | '/share/activities/$activityId'
     | '/share/activity-plans/$activityPlanId'
+    | '/share/routes/$routeId'
     | '/share/training-plans/$trainingPlanId'
     | '/organizations'
     | '/activities'
@@ -905,6 +938,7 @@ export interface FileRouteTypes {
     | '/_protected/record'
     | '/_protected/search'
     | '/_protected/settings'
+    | '/_protected/thresholds'
     | '/_protected/training-preferences'
     | '/api/health'
     | '/api/ready'
@@ -930,9 +964,11 @@ export interface FileRouteTypes {
     | '/_protected/training-plans/create'
     | '/api/auth/$'
     | '/api/trpc/$'
+    | '/api/webhooks/strava'
     | '/api/webhooks/wahoo'
     | '/share/activities/$activityId'
     | '/share/activity-plans/$activityPlanId'
+    | '/share/routes/$routeId'
     | '/share/training-plans/$trainingPlanId'
     | '/_coaching/organizations/'
     | '/_protected/activities/'
@@ -989,9 +1025,11 @@ export interface RootRouteChildren {
   AuthVerifyRoute: typeof AuthVerifyRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
+  ApiWebhooksStravaRoute: typeof ApiWebhooksStravaRoute
   ApiWebhooksWahooRoute: typeof ApiWebhooksWahooRoute
   ShareActivitiesActivityIdRoute: typeof ShareActivitiesActivityIdRoute
   ShareActivityPlansActivityPlanIdRoute: typeof ShareActivityPlansActivityPlanIdRoute
+  ShareRoutesRouteIdRoute: typeof ShareRoutesRouteIdRoute
   ShareTrainingPlansTrainingPlanIdRoute: typeof ShareTrainingPlansTrainingPlanIdRoute
   ApiIntegrationsCallbackProviderRoute: typeof ApiIntegrationsCallbackProviderRoute
   ApiInternalProviderSyncWahooDrainRoute: typeof ApiInternalProviderSyncWahooDrainRoute
@@ -1090,6 +1128,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof ProtectedSettingsRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/thresholds': {
+      id: '/_protected/thresholds'
+      path: '/thresholds'
+      fullPath: '/thresholds'
+      preLoaderRoute: typeof ProtectedThresholdsRouteImport
       parentRoute: typeof ProtectedRoute
     }
     '/_protected/training-preferences': {
@@ -1323,6 +1368,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTrpcSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/webhooks/strava': {
+      id: '/api/webhooks/strava'
+      path: '/api/webhooks/strava'
+      fullPath: '/api/webhooks/strava'
+      preLoaderRoute: typeof ApiWebhooksStravaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/webhooks/wahoo': {
       id: '/api/webhooks/wahoo'
       path: '/api/webhooks/wahoo'
@@ -1342,6 +1394,13 @@ declare module '@tanstack/react-router' {
       path: '/share/activity-plans/$activityPlanId'
       fullPath: '/share/activity-plans/$activityPlanId'
       preLoaderRoute: typeof ShareActivityPlansActivityPlanIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/share/routes/$routeId': {
+      id: '/share/routes/$routeId'
+      path: '/share/routes/$routeId'
+      fullPath: '/share/routes/$routeId'
+      preLoaderRoute: typeof ShareRoutesRouteIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/share/training-plans/$trainingPlanId': {
@@ -1646,6 +1705,7 @@ interface ProtectedRouteChildren {
   ProtectedRecordRoute: typeof ProtectedRecordRouteWithChildren
   ProtectedSearchRoute: typeof ProtectedSearchRoute
   ProtectedSettingsRoute: typeof ProtectedSettingsRoute
+  ProtectedThresholdsRoute: typeof ProtectedThresholdsRoute
   ProtectedTrainingPreferencesRoute: typeof ProtectedTrainingPreferencesRoute
   ProtectedIndexRoute: typeof ProtectedIndexRoute
   ProtectedActivitiesImportRoute: typeof ProtectedActivitiesImportRoute
@@ -1684,6 +1744,7 @@ const ProtectedRouteChildren: ProtectedRouteChildren = {
   ProtectedRecordRoute: ProtectedRecordRouteWithChildren,
   ProtectedSearchRoute: ProtectedSearchRoute,
   ProtectedSettingsRoute: ProtectedSettingsRoute,
+  ProtectedThresholdsRoute: ProtectedThresholdsRoute,
   ProtectedTrainingPreferencesRoute: ProtectedTrainingPreferencesRoute,
   ProtectedIndexRoute: ProtectedIndexRoute,
   ProtectedActivitiesImportRoute: ProtectedActivitiesImportRoute,
@@ -1738,9 +1799,11 @@ const rootRouteChildren: RootRouteChildren = {
   AuthVerifyRoute: AuthVerifyRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
+  ApiWebhooksStravaRoute: ApiWebhooksStravaRoute,
   ApiWebhooksWahooRoute: ApiWebhooksWahooRoute,
   ShareActivitiesActivityIdRoute: ShareActivitiesActivityIdRoute,
   ShareActivityPlansActivityPlanIdRoute: ShareActivityPlansActivityPlanIdRoute,
+  ShareRoutesRouteIdRoute: ShareRoutesRouteIdRoute,
   ShareTrainingPlansTrainingPlanIdRoute: ShareTrainingPlansTrainingPlanIdRoute,
   ApiIntegrationsCallbackProviderRoute: ApiIntegrationsCallbackProviderRoute,
   ApiInternalProviderSyncWahooDrainRoute:

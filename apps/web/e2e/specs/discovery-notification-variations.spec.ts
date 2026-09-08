@@ -34,7 +34,7 @@ test("[variation:notification-history] opens a message, returns, filters unread,
   await page.goto("/notifications?view=all");
   const notice = page.getByText("New Message", { exact: true }).locator("..");
   await notice.getByRole("button", { name: "Open", exact: true }).click();
-  await expect(page.getByText("Seeded unread hello", { exact: true })).toBeVisible();
+  await expect(page.getByText("Seeded unread hello", { exact: true }).last()).toBeVisible();
   await page.goBack();
   await page.getByRole("link", { name: "Unread", exact: true }).click();
   await expect(page.getByText("New Message", { exact: true })).toHaveCount(0);
@@ -53,7 +53,7 @@ test("[variation:notifications.open:keyboard-destination] keyboard opening marks
   await open.focus();
   await expect(open).toBeFocused();
   await open.press("Enter");
-  await expect(page.getByText("Seeded unread hello", { exact: true })).toBeVisible();
+  await expect(page.getByText("Seeded unread hello", { exact: true }).last()).toBeVisible();
   await page.goBack();
   await page.getByRole("link", { name: "Unread", exact: true }).press("Enter");
   await expect(page.getByText("New Message", { exact: true })).toHaveCount(0);
@@ -80,6 +80,7 @@ test("[variation:notifications.mark-all:history] marked-read history remains ava
   await page.goto("/notifications?view=all");
   await page.getByRole("button", { name: "Mark all as read" }).press("Enter");
   await expect(page.getByText("You have 0 unread notifications.", { exact: true })).toBeVisible();
+  await expect(page).not.toHaveURL(/(?:\?|&)flash=/);
   await page.getByRole("link", { name: "Unread", exact: true }).click();
   await expect(page.getByText("No unread notifications.", { exact: true })).toBeVisible();
   await page.goBack();

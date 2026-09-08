@@ -51,3 +51,27 @@ export async function recordingSubmissionJobCount(page: Page): Promise<number> {
     }
   }, recordingDatabase);
 }
+
+export async function recordingSubmissionActivityId(page: Page): Promise<string | null> {
+  return page.evaluate(async ({ name, version }) => {
+    const request = indexedDB.open(name, version);
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      if (!database.objectStoreNames.contains("submission-jobs")) return null;
+      const transaction = database.transaction("submission-jobs", "readonly");
+      const valuesRequest = transaction.objectStore("submission-jobs").getAll();
+      const values = await new Promise<Array<{ job?: { activityId?: string | null } }>>(
+        (resolve, reject) => {
+          valuesRequest.onsuccess = () => resolve(valuesRequest.result);
+          valuesRequest.onerror = () => reject(valuesRequest.error);
+        },
+      );
+      return values.find((value) => value.job?.activityId)?.job?.activityId ?? null;
+    } finally {
+      database.close();
+    }
+  }, recordingDatabase);
+}

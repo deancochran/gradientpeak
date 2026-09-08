@@ -1,6 +1,11 @@
+import { deleteImportedActivity } from "../activities/fixture-files";
 import { expect, test } from "../fixtures";
 import { RecordingPage } from "../pages";
-import { recordingSubmissionJobCount, waitForActiveRecordingDraft } from "../recording/indexed-db";
+import {
+  recordingSubmissionActivityId,
+  recordingSubmissionJobCount,
+  waitForActiveRecordingDraft,
+} from "../recording/indexed-db";
 
 async function startTimer(page: import("@playwright/test").Page) {
   const recording = new RecordingPage(page);
@@ -40,7 +45,9 @@ test("cross-tab takeover fences the old recorder and recovers in the new tab", a
   await takeover.openLauncher();
   await expect(takeoverPage.getByRole("button", { name: /take over recording/i })).toBeVisible();
   await takeover.takeOver();
-  await expect(takeoverPage.getByText(/paused timer recovered/i)).toBeVisible();
+  await expect(
+    takeoverPage.getByText(/recovered safely in paused state|paused timer recovered/i),
+  ).toBeVisible();
   await takeover.resume();
   await expect(takeoverPage.getByText(/^recording$/i)).toBeVisible();
 
@@ -57,22 +64,29 @@ test("offline saves stay idempotent in IndexedDB and retry through the server ha
   const recording = new RecordingPage(athletePage);
   await startTimer(athletePage);
   await recording.finish();
-  await expect(athletePage.getByRole("heading", { name: /review recording/i })).toBeVisible();
-  await expect(athletePage.getByLabel(/activity name/i)).toHaveCount(0);
+  try {
+    await expect(athletePage.getByRole("heading", { name: /review recording/i })).toBeVisible();
+    await expect(athletePage.getByLabel(/activity name/i)).toHaveCount(0);
 
-  await athletePage.context().setOffline(true);
-  await recording.save();
-  await expect(athletePage.getByText(/submission: waiting to retry/i)).toBeVisible();
-  expect(await recordingSubmissionJobCount(athletePage)).toBe(1);
+    await athletePage.context().setOffline(true);
+    await recording.save();
+    await expect(athletePage.getByText(/submission: waiting to retry/i)).toBeVisible();
+    expect(await recordingSubmissionJobCount(athletePage)).toBe(1);
 
-  await recording.save();
-  await expect(athletePage.getByText(/submission: waiting to retry/i)).toBeVisible();
-  expect(await recordingSubmissionJobCount(athletePage)).toBe(1);
+    await recording.save();
+    await expect(athletePage.getByText(/submission: waiting to retry/i)).toBeVisible();
+    expect(await recordingSubmissionJobCount(athletePage)).toBe(1);
 
-  await athletePage.context().setOffline(false);
-  await athletePage.getByRole("button", { name: /retry now/i }).click();
-  await expect(athletePage.getByText(/submission: saved on server/i)).toBeVisible({
-    timeout: 20_000,
-  });
-  expect(await recordingSubmissionJobCount(athletePage)).toBe(1);
+    await athletePage.context().setOffline(false);
+    await athletePage.getByRole("button", { name: /retry now/i }).click();
+    await expect(athletePage.getByText(/submission: saved on server/i)).toBeVisible({
+      timeout: 20_000,
+    });
+    expect(await recordingSubmissionJobCount(athletePage)).toBe(1);
+  } finally {
+    await athletePage.context().setOffline(false);
+    const activityId = await recordingSubmissionActivityId(athletePage);
+    expect(activityId).not.toBeNull();
+    await deleteImportedActivity(athletePage, activityId ?? "");
+  }
 });

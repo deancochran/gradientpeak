@@ -230,6 +230,7 @@ function GroupEventDetailPage() {
                           <Button asChild type="button" variant="outline">
                             <Link
                               params={{ activityPlanId: plan.data.items[0].id }}
+                              search={{ edit: undefined }}
                               to="/activity-plans/$activityPlanId"
                             >
                               View activity plan

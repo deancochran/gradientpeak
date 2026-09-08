@@ -5,6 +5,8 @@ import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 
 const bottomSafeAreaInset = 34;
+const mockDismiss = jest.fn();
+const mockPresent = jest.fn();
 
 jest.mock("react-native-safe-area-context", () => ({
   __esModule: true,
@@ -25,19 +27,22 @@ jest.mock("@gorhom/bottom-sheet", () => {
   >;
   type MockHostProps = React.PropsWithChildren<Record<string, unknown>>;
 
-  const BottomSheet = React.forwardRef(
-    ({ children, footerComponent, ...props }: MockBottomSheetProps, _ref) =>
-      React.createElement(
-        "BottomSheet",
-        props,
+  const BottomSheetModal = React.forwardRef(
+    ({ children, footerComponent, ...props }: MockBottomSheetProps, ref) => {
+      React.useImperativeHandle(ref, () => ({ dismiss: mockDismiss, present: mockPresent }));
+
+      return React.createElement(
+        "BottomSheetModal",
+        { testID: "bottom-sheet-modal", ...props },
         children,
         footerComponent?.({ animatedFooterPosition: { value: 0 } }),
-      ),
+      );
+    },
   );
 
   return {
     __esModule: true,
-    default: BottomSheet,
+    BottomSheetModal,
     BottomSheetBackdrop: mockCreateHost("BottomSheetBackdrop"),
     BottomSheetFooter: ({ children, ...props }: MockHostProps) =>
       React.createElement(
@@ -87,6 +92,40 @@ const {
 } = require("../AppBottomSheet");
 
 describe("AppBottomSheet safe-area spacing", () => {
+  beforeEach(() => {
+    mockDismiss.mockClear();
+    mockPresent.mockClear();
+  });
+
+  it("uses the global modal layer with replacement stacking", async () => {
+    await renderNative(
+      <AppBottomSheet onClose={jest.fn()} title="Global sheet" visible>
+        <Text>Content</Text>
+      </AppBottomSheet>,
+    );
+
+    expect(screen.getByTestId("bottom-sheet-modal").props.stackBehavior).toBe("replace");
+    expect(mockPresent).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not dismiss an unopened modal before presenting it", async () => {
+    const rendered = await renderNative(
+      <AppBottomSheet onClose={jest.fn()} title="Comments" visible={false}>
+        <Text>Content</Text>
+      </AppBottomSheet>,
+    );
+
+    expect(mockDismiss).not.toHaveBeenCalled();
+
+    await rendered.rerender(
+      <AppBottomSheet onClose={jest.fn()} title="Comments" visible>
+        <Text>Content</Text>
+      </AppBottomSheet>,
+    );
+
+    expect(mockPresent).toHaveBeenCalledTimes(1);
+  });
+
   it("exports stable presentation presets", () => {
     expect(APP_BOTTOM_SHEET_PRESENTATIONS).toEqual({
       filter: { initialSnapIndex: 0, snapPoints: ["78%"] },

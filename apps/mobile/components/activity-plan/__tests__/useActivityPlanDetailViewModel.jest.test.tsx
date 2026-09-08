@@ -35,6 +35,7 @@ describe("useActivityPlanDetailViewModel", () => {
                 unit: "seconds",
                 status: "available",
                 reason: null,
+                provenance: "authored",
               },
             ],
             structure: {
@@ -95,5 +96,32 @@ describe("useActivityPlanDetailViewModel", () => {
 
     expect(result.current.activityPlan).toBeNull();
     expect(result.current.detailBadges).toEqual([]);
+  });
+
+  it("keeps unavailable duration unavailable instead of using an explicit timed fragment", async () => {
+    const { result } = await renderHook(() =>
+      useActivityPlanDetailViewModel({
+        fetchedPlan: createActivityPlanDetail({
+          metrics: [
+            {
+              key: "elapsed_duration",
+              label: "Duration",
+              status: "unavailable",
+              value: null,
+              unit: "seconds",
+              reason: "incomplete_members",
+              provenance: null,
+            },
+          ],
+        }),
+        formatDuration: (seconds) => `${seconds / 60}m`,
+        isScheduled: false,
+        plannedActivity: null,
+        profile: null,
+      }),
+    );
+
+    expect(result.current.durationMinutes).toBeNull();
+    expect(result.current.durationLabel).toBe("—");
   });
 });

@@ -21,6 +21,7 @@ function createDb(decision: string, events: string[]) {
     }),
   };
   const db = {
+    $client: {},
     transaction: vi.fn(async (operation: (value: typeof transaction) => Promise<unknown>) => {
       events.push("begin");
       const result = await operation(transaction);
@@ -69,6 +70,7 @@ describe("authorized athlete read transaction", () => {
       }),
     };
     const db = {
+      $client: {},
       transaction: vi.fn(async (operation: (value: typeof transaction) => Promise<unknown>) => {
         events.push("begin");
         const result = await operation(transaction);
@@ -100,6 +102,7 @@ describe("authorized athlete read transaction", () => {
   it("does not read athlete data when no organization has valid scoped consent", async () => {
     const transaction = { execute: vi.fn(async () => ({ rows: [] })) };
     const db = {
+      $client: {},
       transaction: vi.fn((operation: (value: typeof transaction) => Promise<unknown>) =>
         operation(transaction),
       ),
@@ -127,6 +130,7 @@ describe("authorized athlete read transaction", () => {
       }),
     };
     const db = {
+      $client: {},
       transaction: vi.fn(async (operation: (value: typeof transaction) => Promise<unknown>) => {
         events.push("begin");
         const result = await operation(transaction);
@@ -169,6 +173,7 @@ describe("authorized athlete read transaction", () => {
       }),
     };
     const db = {
+      $client: {},
       transaction: vi.fn(async (operation: (value: typeof transaction) => Promise<unknown>) => {
         events.push("begin");
         const result = await operation(transaction);

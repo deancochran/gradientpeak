@@ -13,6 +13,10 @@ const feedItemSchema = z.object({
   limit: z.number().min(1).max(50).default(20),
 });
 
+const profileFeedItemSchema = feedItemSchema.extend({
+  profileId: z.string().uuid(),
+});
+
 export type { FeedActivity };
 
 export const feedRouter = createTRPCRouter({
@@ -29,6 +33,28 @@ export const feedRouter = createTRPCRouter({
       } catch (error) {
         if (error instanceof TRPCError) throw error;
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to fetch feed" });
+      }
+    }),
+  getProfileActivities: protectedProcedure
+    .input(profileFeedItemSchema)
+    .output(feedResponseSchema)
+    .query(async ({ ctx, input }) => {
+      try {
+        return await getFeedForViewer({
+          db: getRequiredDb(ctx),
+          viewerId: ctx.session.user.id,
+          input: {
+            cursor: input.cursor,
+            limit: input.limit,
+            profileId: input.profileId,
+          },
+        });
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to fetch profile activities",
+        });
       }
     }),
 });

@@ -1,7 +1,8 @@
 import { isValidDateOfBirth, parseDateOfBirth } from "@repo/core/profile";
 import type { WahooReconciliationAdmission } from "../../application/integrations/wahoo-reconciliation-admission";
 import type { DrizzleTransactionClient } from "../../db";
-import type { WahooSyncRepository } from "../../repositories/wahoo-sync-repository";
+import type { ProviderSyncJobQueue } from "../../repositories/provider-sync-repository";
+import type { WahooSyncJobStatus } from "../../repositories/wahoo-sync-repository";
 import type { WahooUser } from "../integrations/wahoo/client";
 
 export const WAHOO_PROFILE_ENRICHMENT_JOB = "wahoo.profile_enrichment";
@@ -62,7 +63,7 @@ export function normalizeWahooProfileEnrichment(user: WahooUser): {
 
 export async function enqueueWahooProfileEnrichment(input: {
   admission: Extract<WahooReconciliationAdmission, { admitted: true }>;
-  providerSyncRepository: WahooSyncRepository;
+  providerSyncRepository: ProviderSyncJobQueue<"wahoo", WahooSyncJobStatus>;
   transaction?: DrizzleTransactionClient;
 }) {
   if (input.admission.target !== "profile_enrichment") {

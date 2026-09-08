@@ -1,8 +1,127 @@
+import {
+  activityObservationQuantificationSchema,
+  createActivityQuantificationCalculationIdentity,
+  createActivityQuantificationEvidenceIdentity,
+  createCompletedActivityQuantificationSubjectIdentity,
+  createObservationQuantificationBundle,
+} from "@repo/core/activity-quantification";
+import {
+  COMMON_RELATIVE_LOAD_MODEL,
+  COMMON_RELATIVE_LOAD_VERSION,
+  commonLoadResultSchema,
+} from "@repo/core/load";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
+import type { ActivityQuantifiedDerivedSummary } from "../lib/activity-analysis/derived";
 import { listFeedActivityRows, mapFeedActivity } from "./feed-read-repository";
 
 const VIEWER_ID = "11111111-1111-4111-8111-111111111111";
+
+function knownPartialDerived(activityId: string): ActivityQuantifiedDerivedSummary {
+  const computedAt = "2026-08-18T09:00:00.000Z";
+  const commonLoad = commonLoadResultSchema.parse({
+    status: "partial",
+    model: COMMON_RELATIVE_LOAD_MODEL,
+    version: COMMON_RELATIVE_LOAD_VERSION,
+    activity_category: "run",
+    method: "run_pace_threshold",
+    quality: {
+      source: "validated_test",
+      observed_at: computedAt,
+      confidence: "high",
+      stale: false,
+      estimate: false,
+      calculation_version: "threshold-v1",
+      evidence_fingerprint: "quality-run",
+    },
+    thresholdEvidence: {
+      type: "threshold_speed_mps",
+      value: 4,
+      unit: "meters_per_second",
+      source: "validated_test",
+      observedAt: computedAt,
+      validAt: computedAt,
+      freshness: "current",
+      calculationVersion: "threshold-v1",
+      sourceFingerprint: "threshold-run",
+    },
+    evidenceFingerprint: "activity-run",
+    computedAsOf: computedAt,
+    load: 12.5,
+    intensity: 0.5,
+    contributingDurationSeconds: 1_800,
+    eligibleDurationSeconds: 3_600,
+    sourceTimeCoverage: 0.5,
+    reason: "activity_data_partial",
+  });
+  const observation = activityObservationQuantificationSchema.parse({
+    kind: "observation",
+    stage: "final",
+    subjectIdentity: createCompletedActivityQuantificationSubjectIdentity({ activityId }),
+    evidenceIdentity: createActivityQuantificationEvidenceIdentity({
+      evidenceType: "segment_facts",
+      sourceIds: [activityId, "segment-1"],
+      revisionFingerprint: "revision-1",
+      details: { kind: "feed-read-repository-test" },
+    }),
+    calculationIdentity: createActivityQuantificationCalculationIdentity({
+      model: commonLoad.model,
+      version: commonLoad.version,
+      computedAt,
+      calibrationEvidenceFingerprint: "activity-run",
+    }),
+    activity_category: "run",
+    duration: {
+      elapsed: { status: "available", evidenceRole: "measured", value: 3_600, unit: "seconds" },
+      active: {
+        status: "partial",
+        evidenceRole: "measured",
+        value: 1_800,
+        unit: "seconds",
+        reason: "source_incomplete",
+      },
+      moving: {
+        status: "partial",
+        evidenceRole: "measured",
+        value: 1_800,
+        unit: "seconds",
+        reason: "source_incomplete",
+      },
+    },
+    distance: {
+      status: "unavailable",
+      evidenceRole: "measured",
+      value: null,
+      reason: "not_observed",
+      unit: "meters",
+    },
+    intensity: {
+      observed: {
+        status: "unavailable",
+        evidenceRole: "measured",
+        values: [],
+        reason: "not_observed",
+      },
+    },
+    completedProvenance: {
+      activityId,
+      segmentId: "segment-1",
+      source: "unknown",
+      artifactIdentity: null,
+      providerIdentity: null,
+      segmentRevision: null,
+      observedAt: computedAt,
+      computedAt,
+      calculationVersion: "feed-read-repository-test-v1",
+    },
+    commonLoad,
+  });
+  return {
+    common_load: commonLoad,
+    computed_as_of: computedAt,
+    observationQuantification: createObservationQuantificationBundle({ members: [observation] }),
+  };
+}
 
 describe("feed activity projections", () => {
   it("includes private activities for their owner without exposing them to followers", async () => {
@@ -16,12 +135,30 @@ describe("feed activity projections", () => {
     expect(normalizedSql).toContain(
       "where ( a.profile_id = $1::uuid or a.content_visibility = 'public' or ( a.content_visibility = 'followers' and exists ( select 1 from follows f where f.follower_id = $2::uuid and f.following_id = a.profile_id and f.status = 'accepted' ) ) ) order by a.started_at desc, a.id desc",
     );
-    expect(normalizedSql).toContain("select s.activity_category from activity_segments s");
+    expect(normalizedSql).toContain(
+      "select jsonb_agg(s.activity_category order by s.ordinal) from activity_segments s",
+    );
+    expect(normalizedSql).toContain("'[]'::jsonb) as category_composition");
     expect(normalizedSql).not.toContain("select s.category from activity_segments s");
     expect(normalizedSql).toContain("(a.polyline is not null) as has_route");
     expect(normalizedSql).not.toContain("activity_file_ingestions");
     expect(normalizedSql).not.toContain("last_error_message");
     expect(query.params).toEqual([VIEWER_ID, VIEWER_ID, 21]);
+  });
+
+  it("scopes a profile activity page without weakening viewer visibility", async () => {
+    const execute = vi.fn().mockResolvedValue({ rows: [] });
+    const profileId = "22222222-2222-4222-8222-222222222222";
+
+    await listFeedActivityRows({ execute } as never, VIEWER_ID, { limit: 10, profileId });
+
+    const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0] as never);
+    const normalizedSql = query.sql.replace(/\s+/g, " ");
+    expect(normalizedSql).toContain(
+      "where ( a.profile_id = $1::uuid or a.content_visibility = 'public' or ( a.content_visibility = 'followers' and exists",
+    );
+    expect(normalizedSql).toContain("and a.profile_id = $3::uuid");
+    expect(query.params).toEqual([VIEWER_ID, VIEWER_ID, profileId, 11]);
   });
 
   it("parses node-postgres bigint and timestamp values from feed rows", async () => {
@@ -156,5 +293,47 @@ describe("feed activity projections", () => {
       username: null,
       avatarUrl: null,
     });
+  });
+
+  it("projects known partial Load and Intensity as partial feed metrics", () => {
+    const activityId = "33333333-3333-4333-8333-333333333333";
+    const result = mapFeedActivity(
+      {
+        id: activityId,
+        profile_id: VIEWER_ID,
+        name: "Partial run",
+        category_composition: ["run"],
+        elapsed_ms: 3_600_000,
+        active_ms: 1_800_000,
+        moving_ms: 1_800_000,
+        timing_coverage: "partial",
+        started_at: new Date("2026-07-17T08:00:00.000Z"),
+        finished_at: new Date("2026-07-17T09:00:00.000Z"),
+        distance_meters: 5_000,
+        avg_heart_rate: null,
+        max_heart_rate: null,
+        avg_power: null,
+        avg_cadence: null,
+        elevation_gain_meters: null,
+        calories: null,
+        has_route: false,
+        content_visibility: "private",
+        profile_username: "athlete",
+        profile_avatar_url: null,
+      },
+      {
+        commentCounts: new Map(),
+        derivedMap: new Map([[activityId, knownPartialDerived(activityId)]]),
+        likeStats: new Map(),
+        viewerId: VIEWER_ID,
+      },
+    );
+
+    expect(result.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: "common_load", status: "partial", value: 12.5 }),
+        expect.objectContaining({ key: "normalized_intensity", status: "partial", value: 0.5 }),
+      ]),
+    );
   });
 });

@@ -91,6 +91,7 @@ jest.mock("react-native", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
+  useLocalSearchParams: () => ({}),
   useRouter: () => ({ back: backMock, push: pushMock }),
 }));
 
@@ -587,10 +588,10 @@ describe("record screen", () => {
     });
 
     const alertButtons = (Alert.alert as jest.Mock).mock.calls[0]?.[2] as AlertButtonFixture[];
-    const goToProfile = alertButtons.find((button) => button.text === "Go to Profile");
-    goToProfile?.onPress?.();
+    const goToMe = alertButtons.find((button) => button.text === "Go to Me");
+    goToMe?.onPress?.();
 
-    expect(pushMock).toHaveBeenCalledWith("/profile");
+    expect(pushMock).toHaveBeenCalledWith("/me");
     expect(startMock).not.toHaveBeenCalled();
   });
 

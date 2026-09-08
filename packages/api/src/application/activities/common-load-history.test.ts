@@ -75,6 +75,25 @@ function completeSourceCoverage() {
   };
 }
 
+function historicalSourceCoverage(input: { start: string; end: string }) {
+  const succeededAt = new Date(input.end);
+  return {
+    integrationRows: [{ id: "integration-1", provider: "wahoo" }],
+    syncRows: [
+      {
+        integrationId: "integration-1",
+        lastSucceededAt: succeededAt,
+        lastFailedAt: null,
+        consecutiveFailures: 0,
+        highWatermark: succeededAt,
+        metadata: {
+          activityHistoryCoverage: input,
+        },
+      },
+    ],
+  };
+}
+
 function availableLoad(
   input: {
     activity_category?: "bike" | "run";
@@ -340,6 +359,56 @@ describe("common Load history", () => {
     expect(repeated).toEqual(result);
   });
 
+  it("returns the latest dense 84-point history when provider coverage is verified but stale", async () => {
+    const { db } = createDb(
+      [],
+      undefined,
+      historicalSourceCoverage({
+        start: "2026-04-15T00:00:00.000Z",
+        end: "2026-07-14T23:59:59.999Z",
+      }),
+    );
+
+    const result = await getCommonLoadHistory({
+      asOf: AS_OF,
+      db: db as never,
+      profileId: PROFILE_ID,
+      currentPlanningDate: CURRENT_DATE,
+      planningTimezone: "UTC",
+    });
+
+    expect(commonLoadHistoryResultSchema.parse(result)).toEqual(result);
+    expect(result.status).toBe("available");
+    if (result.status !== "available") throw new Error("Expected historical fallback");
+    expect(result.maturity).toMatchObject({ status: "establishing_baseline", replayedDays: 91 });
+    expect(result.points).toHaveLength(84);
+    expect(result.points[0]?.date).toBe("2026-04-22");
+    expect(result.points.at(-1)?.date).toBe("2026-07-14");
+    expect(result.identity.endDate).toBe("2026-07-14");
+    expect(result.identity.calculationIdentity.asOf).toBe("2026-07-15T00:00:00.000Z");
+  });
+
+  it("preserves unavailable when the latest verified provider window is shorter than 84 days", async () => {
+    const { db } = createDb(
+      [],
+      undefined,
+      historicalSourceCoverage({
+        start: "2026-05-01T00:00:00.000Z",
+        end: "2026-07-14T23:59:59.999Z",
+      }),
+    );
+
+    await expect(
+      getCommonLoadHistory({
+        asOf: AS_OF,
+        db: db as never,
+        profileId: PROFILE_ID,
+        currentPlanningDate: CURRENT_DATE,
+        planningTimezone: "UTC",
+      }),
+    ).resolves.toMatchObject({ status: "unavailable" });
+  });
+
   it.each([
     ["date-only start", { start: "2026-01-01" }],
     ["normalized-invalid end", { end: "2026-07-32T00:00:00.000Z" }],
@@ -363,7 +432,7 @@ describe("common Load history", () => {
     ).resolves.toMatchObject({ status: "unavailable", reason: "incomplete_observation" });
   });
 
-  it("abstains when stale coverage has a current high-watermark", async () => {
+  it("uses only the fully verified historical boundary when sync success is stale", async () => {
     const { db } = createDb([], undefined, {
       integrationRows: [{ id: "integration-1", provider: "wahoo" }],
       syncRows: [
@@ -383,18 +452,18 @@ describe("common Load history", () => {
       ],
     });
 
-    await expect(
-      getCommonLoadHistory({
-        asOf: AS_OF,
-        db: db as never,
-        profileId: PROFILE_ID,
-        currentPlanningDate: CURRENT_DATE,
-        planningTimezone: "UTC",
-      }),
-    ).resolves.toMatchObject({ status: "unavailable", reason: "incomplete_observation" });
+    const result = await getCommonLoadHistory({
+      asOf: AS_OF,
+      db: db as never,
+      profileId: PROFILE_ID,
+      currentPlanningDate: CURRENT_DATE,
+      planningTimezone: "UTC",
+    });
+
+    expect(result).toMatchObject({ status: "available", identity: { endDate: "2026-06-30" } });
   });
 
-  it("abstains during an unresolved provider outage", async () => {
+  it("preserves the last verified window during an unresolved provider outage", async () => {
     const watermark = new Date("2026-07-21T00:00:00.000Z");
     const { db } = createDb([], undefined, {
       integrationRows: [{ id: "integration-1", provider: "wahoo" }],
@@ -415,15 +484,15 @@ describe("common Load history", () => {
       ],
     });
 
-    await expect(
-      getCommonLoadHistory({
-        asOf: AS_OF,
-        db: db as never,
-        profileId: PROFILE_ID,
-        currentPlanningDate: CURRENT_DATE,
-        planningTimezone: "UTC",
-      }),
-    ).resolves.toMatchObject({ status: "unavailable", reason: "incomplete_observation" });
+    const result = await getCommonLoadHistory({
+      asOf: AS_OF,
+      db: db as never,
+      profileId: PROFILE_ID,
+      currentPlanningDate: CURRENT_DATE,
+      planningTimezone: "UTC",
+    });
+
+    expect(result).toMatchObject({ status: "available", identity: { endDate: "2026-07-20" } });
   });
 
   it("does not let an unsupported integration stand in for history coverage", async () => {
@@ -473,7 +542,7 @@ describe("common Load history", () => {
     expect(result).toMatchObject({ status: "unavailable", reason: "incomplete_observation" });
   });
 
-  it("checks provider coverage against profile-local rather than UTC day boundaries", async () => {
+  it("ends historical fallback on the last fully covered profile-local day", async () => {
     const watermark = new Date("2026-07-21T00:00:00.000Z");
     const { db } = createDb([], undefined, {
       integrationRows: [{ id: "integration-1", provider: "wahoo" }],
@@ -501,7 +570,7 @@ describe("common Load history", () => {
       planningTimezone: "America/Los_Angeles",
     });
 
-    expect(result).toMatchObject({ status: "unavailable", reason: "incomplete_observation" });
+    expect(result).toMatchObject({ status: "available", identity: { endDate: "2026-07-19" } });
   });
 
   it("aggregates cross-category activities on one observed day", () => {
@@ -664,7 +733,7 @@ describe("common Load history", () => {
   it.each([
     ["partial", partialLoad()],
     ["unavailable", unavailableLoad()],
-  ])("replays a known activity with %s common Load as a zero contribution", async (_status, load) => {
+  ])("keeps a known activity with %s common Load unavailable", async (_status, load) => {
     const knownActivity = activity("incomplete", "2026-07-20T08:00:00.000Z");
     const { db } = createDb([knownActivity], undefined, completeSourceCoverage());
     const segmentSummary = summary("incomplete", "incomplete-1", load);
@@ -686,16 +755,15 @@ describe("common Load history", () => {
     });
 
     expect(observations.at(-1)).toMatchObject({
-      state: "known_zero",
+      state: "unavailable",
       coverageStatus: "partial",
+      reason: "common_load_unavailable",
     });
     expect(observations.at(-1)?.evidenceFingerprints).toHaveLength(1);
-    expect(result).toMatchObject({ status: "available" });
-    if (result.status !== "available") throw new Error("Expected available history");
-    expect(result.points.at(-1)).toMatchObject({ date: "2026-07-20", dailyLoad: 0 });
+    expect(result).toMatchObject({ status: "unavailable" });
   });
 
-  it("keeps quantified contributions unchanged when another known activity has no complete Load", () => {
+  it("keeps a day unavailable when another known activity has no complete Load", () => {
     const activities = [
       activity("quantified", "2026-07-20T08:00:00.000Z"),
       activity("known-zero", "2026-07-20T12:00:00.000Z"),
@@ -715,9 +783,9 @@ describe("common Load history", () => {
     const day = build();
 
     expect(day).toMatchObject({
-      state: "observed",
+      state: "unavailable",
       coverageStatus: "partial",
-      aggregate: { status: "complete", load: 64, totalActivityCount: 1 },
+      reason: "common_load_unavailable",
     });
     expect(day?.evidenceFingerprints).toHaveLength(2);
     expect(new Set(day?.evidenceFingerprints).size).toBe(2);
@@ -741,7 +809,7 @@ describe("common Load history", () => {
     });
   });
 
-  it("zero-contributes a trusted known activity whose quantification is missing", () => {
+  it("keeps a trusted known activity unavailable when quantification is missing", () => {
     const observations = buildCommonLoadHistoryObservations({
       activities: [activity("trusted-unquantified", "2026-07-20T08:00:00.000Z")],
       calculatedAsOf: CALCULATED_AS_OF,
@@ -752,8 +820,9 @@ describe("common Load history", () => {
     });
 
     expect(observations.at(-1)).toMatchObject({
-      state: "known_zero",
+      state: "unavailable",
       coverageStatus: "partial",
+      reason: "common_load_unavailable",
     });
     expect(observations.at(-1)?.evidenceFingerprints).toHaveLength(1);
   });

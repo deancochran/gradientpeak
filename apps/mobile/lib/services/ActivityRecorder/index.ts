@@ -131,6 +131,12 @@ export type RecordingState = RecordingSessionLifecycleState;
 export type RecordingLifecycle = "idle" | "setup" | "active";
 export type { RecordingRouteAttachmentSource, RecordingRouteAttachmentView };
 
+export interface RecordingStartReservation {
+  profileId: string;
+  sessionId: string;
+  markStarted: () => Promise<void>;
+}
+
 export interface StepProgress {
   movingTime: number;
   duration: number;
@@ -1552,6 +1558,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private buildSessionSnapshot(
     startedAt: string,
     performanceTargets?: AthletePerformanceTargetFacts,
+    reservedSessionId?: string,
   ): RecordingSessionSnapshot {
     const devices = this.buildConnectedDevicesSnapshot();
     const intent = this.buildRecordingLaunchIntent();
@@ -1564,7 +1571,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     return deepFreeze({
       identity: {
-        sessionId: `${this.profile.id}:${Date.now()}`,
+        sessionId: reservedSessionId ?? `${this.profile.id}:${Date.now()}`,
         revision: 1,
         startedAt,
         appBuild: "mobile-recorder-v1",
@@ -2307,10 +2314,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       replay.fitRecords.filter((record) => !this.isRestEvidenceTimestamp(record.timestamp)),
       rewindJournal,
     );
-    const replacement = new GarminFitEncoder(
-      `rewind-${Date.now()}-${rewindJournal.length}`,
-      this.profile.id,
-    );
+    const replacement = new GarminFitEncoder(sessionId, this.profile.id);
     const replacementStart = retainsCompletedPrefix
       ? this.startTime
       : Date.parse(rewindJournal.at(-1)?.rewoundAt ?? new Date(this.startTime).toISOString());
@@ -2988,7 +2992,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       const recoveredStartedAt = this.recordingMetadata?.startedAt;
       if (!recoveredStartedAt) throw new Error("Recovered recording metadata is unavailable");
 
-      const encoder = new GarminFitEncoder(`${Date.now()}`, this.profile.id);
+      const encoder = new GarminFitEncoder(this.recoveredCheckpoint.sessionId, this.profile.id);
       const recoveredEncoderStart =
         this.completedOccurrences.length === 0 && this.rewindJournal.length > 0
           ? Date.parse(this.rewindJournal.at(-1)?.rewoundAt ?? recoveredStartedAt)
@@ -3056,7 +3060,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       if (!recoveredStartedAt) throw new Error("Recovered recording metadata is unavailable");
 
       if (!this.fitEncoder) {
-        const encoder = new GarminFitEncoder(`${Date.now()}`, this.profile.id);
+        const encoder = new GarminFitEncoder(checkpoint.sessionId, this.profile.id);
         const recoveredEncoderStart =
           this.completedOccurrences.length === 0 && this.rewindJournal.length > 0
             ? Date.parse(this.rewindJournal.at(-1)?.rewoundAt ?? recoveredStartedAt)
@@ -3099,7 +3103,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       reason: "recovered-recording-discarded",
     });
     await clearRecordingCheckpoint(checkpoint.sessionId);
-    StreamBuffer.deleteDurableDirectories(checkpoint.streamArtifactPaths);
+    StreamBuffer.deleteDurableDirectories(checkpoint.streamArtifactPaths, checkpoint.sessionId);
     releaseRecordingCheckpointClaim(checkpoint.sessionId);
     this.recoveredCheckpoint = null;
     this.recoveredReplay = null;
@@ -3114,11 +3118,27 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.publishSessionUpdate();
   }
 
-  async startRecording(performanceTargets?: AthletePerformanceTargetFacts): Promise<void> {
+  async startRecording(
+    performanceTargets?: AthletePerformanceTargetFacts,
+    reservation?: RecordingStartReservation,
+  ): Promise<void> {
     const parsedTargets = performanceTargets
       ? athletePerformanceTargetFactsSchema.parse(performanceTargets)
       : undefined;
-    return this.runLifecycleTransition(() => this.startRecordingTransition(parsedTargets));
+    if (reservation) {
+      if (
+        reservation.profileId !== this.profile.id ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+          reservation.sessionId,
+        ) ||
+        typeof reservation.markStarted !== "function"
+      ) {
+        throw new Error("Recording start reservation does not match this profile");
+      }
+    }
+    return this.runLifecycleTransition(() =>
+      this.startRecordingTransition(parsedTargets, reservation),
+    );
   }
 
   private runLifecycleTransition<T>(transition: () => Promise<T>): Promise<T> {
@@ -3132,6 +3152,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   private async startRecordingTransition(
     performanceTargets?: AthletePerformanceTargetFacts,
+    reservation?: RecordingStartReservation,
   ): Promise<void> {
     console.log("[Service] Starting recording");
 
@@ -3178,7 +3199,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this.occurrenceStartStats = { movingSeconds: 0, distanceMeters: 0 };
       this.timerEvents = [];
 
-      const sessionSnapshot = this.buildSessionSnapshot(startedAt, performanceTargets);
+      const sessionSnapshot = this.buildSessionSnapshot(
+        startedAt,
+        performanceTargets,
+        reservation?.sessionId,
+      );
       this.sessionController.resetForNewSession(sessionSnapshot);
       // Allocate the sole profile-owned SQLite session before any sensor producer.
       await allocateRecordingEvidenceSession({
@@ -3233,7 +3258,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this.notificationsManager = notificationsManager;
       await notificationsManager.startForegroundService();
 
-      attemptEncoder = new GarminFitEncoder(`${Date.now()}`, this.profile.id);
+      attemptEncoder = new GarminFitEncoder(sessionSnapshot.identity.sessionId, this.profile.id);
       await attemptEncoder.initialize(this.sensorsManager.getConnectedSensors());
       this.fitEncoder = attemptEncoder;
       await this.updateFitRecording();
@@ -3243,6 +3268,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         this.emit("stepChanged", this.getStepInfo());
       }
       this.syncAutomaticTrainerControl("step_change").catch(console.error);
+      await reservation?.markStarted();
       this.emit("sensorsChanged", this.sensorsManager.getConnectedSensors());
       this.emit("stateChanged", this.state);
       this.publishSessionUpdate();

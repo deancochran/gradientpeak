@@ -612,7 +612,7 @@ export function replayCommonLoadHistory(
         },
       });
     }
-    if (observation.state === "observed" && observation.aggregate.status === "unavailable") {
+    if (observation.state === "observed" && observation.aggregate.status !== "complete") {
       return unavailableResult({
         status: "unavailable",
         policyVersion: COMMON_LOAD_HISTORY_POLICY_VERSION,
@@ -620,7 +620,10 @@ export function replayCommonLoadHistory(
         context: {
           date: observation.date,
           observationState: "observed",
-          observationReason: "common_load_unavailable",
+          observationReason:
+            observation.aggregate.status === "partial"
+              ? "partial_common_load"
+              : "common_load_unavailable",
         },
       });
     }
@@ -634,10 +637,7 @@ export function replayCommonLoadHistory(
     let dailyLoad: number;
     if (observation.state === "known_zero") {
       dailyLoad = 0;
-    } else if (
-      observation.state === "observed" &&
-      (observation.aggregate.status === "complete" || observation.aggregate.status === "partial")
-    ) {
+    } else if (observation.state === "observed" && observation.aggregate.status === "complete") {
       dailyLoad = observation.aggregate.load;
     } else {
       throw new Error("Complete common Load history observation expected");

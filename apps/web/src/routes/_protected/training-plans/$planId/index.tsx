@@ -8,11 +8,22 @@ export const Route = createFileRoute("/_protected/training-plans/$planId/")({
 
 function TrainingPlanDetailPage() {
   const { planId } = Route.useParams();
+  const navigate = Route.useNavigate();
   return (
     <TrainingPlanDetail
-      onDeleted={() => window.location.replace("/training-plans")}
-      onEdit={() => window.location.assign(`/training-plans/${planId}/edit`)}
-      onOpenDuplicate={(duplicateId) => window.location.replace(`/training-plans/${duplicateId}`)}
+      onDeleted={() =>
+        void navigate({ to: "/training-plans", search: { q: undefined }, replace: true })
+      }
+      onEdit={() =>
+        void navigate({ to: "/training-plans/$planId/edit", params: { planId } } as never)
+      }
+      onOpenDuplicate={(duplicateId) =>
+        void navigate({
+          to: "/training-plans/$planId",
+          params: { planId: duplicateId },
+          replace: true,
+        } as never)
+      }
       planId={planId}
     />
   );

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,6 +9,30 @@ import { Route } from "./index";
 
 const mocks = vi.hoisted(() => ({
   detail: undefined as unknown,
+  importedSources: [] as Array<{
+    id: string;
+    provider: string;
+    resolutionStatus: "confirmed" | "review";
+  }>,
+  resolveImportedSource: vi.fn(),
+  keepImportedSourceSeparate: vi.fn(),
+  sendCompletedActivity: vi.fn(),
+  completedActivityProviders: [] as Array<{
+    jobId?: string | null;
+    provider: string;
+    reason: string | null;
+    status:
+      | "ready"
+      | "reconnect_required"
+      | "unsupported_evidence"
+      | "not_connected"
+      | "unavailable"
+      | "queued"
+      | "running"
+      | "completed"
+      | "dispatch_uncertain"
+      | "failed";
+  }>,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -17,6 +41,7 @@ vi.mock("@tanstack/react-router", () => ({
     useNavigate: () => vi.fn(),
     useParams: () => ({ activityId: "activity-1" }),
   }),
+  Link: ({ children }: { children: ReactNode }) => <a href="/integrations">{children}</a>,
 }));
 
 vi.mock("../../../../components/activity/session-rpe-card", () => ({
@@ -61,13 +86,30 @@ vi.mock("../../../../lib/api/client", () => ({
     activities: {
       getById: {
         useQuery: () => ({
-          data: { detail: mocks.detail, analysis: { derived: undefined, segmentLoads: [] } },
+          data: {
+            detail: mocks.detail,
+            analysis: { derived: undefined, segmentLoads: [] },
+            importedSources: mocks.importedSources,
+          },
           isLoading: false,
         }),
       },
       getEfforts: { useQuery: () => ({ data: [], isLoading: false, isError: false }) },
+      getCompletedActivityProviderEligibility: {
+        useQuery: () => ({ data: mocks.completedActivityProviders }),
+      },
+      listPaginated: { useQuery: () => ({ data: { items: [] } }) },
       update: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
       delete: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
+      resolveImportedSource: {
+        useMutation: () => ({ isPending: false, mutate: mocks.resolveImportedSource }),
+      },
+      keepImportedSourceSeparate: {
+        useMutation: () => ({ isPending: false, mutate: mocks.keepImportedSourceSeparate }),
+      },
+      sendCompletedActivityToProvider: {
+        useMutation: () => ({ isPending: false, mutate: mocks.sendCompletedActivity }),
+      },
     },
     activityFiles: {
       getStreams: { useQuery: () => ({ data: { records: [] }, isLoading: false, isError: false }) },
@@ -82,6 +124,11 @@ vi.mock("../../../../lib/api/client", () => ({
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() } }));
 
 beforeEach(() => {
+  mocks.importedSources = [];
+  mocks.resolveImportedSource.mockReset();
+  mocks.keepImportedSourceSeparate.mockReset();
+  mocks.sendCompletedActivity.mockReset();
+  mocks.completedActivityProviders = [];
   mocks.detail = {
     summary: {
       id: "activity-1",
@@ -172,5 +219,70 @@ describe("ActivityDetailPage plan execution summary", () => {
     expect(cardText).toContain("not target adherence or sensor performance");
     expect(cardText).not.toMatch(/target adherence (met|achieved|confirmed)/i);
     expect(cardText).not.toMatch(/sensor performance (met|achieved|confirmed)/i);
+  });
+});
+
+describe("ActivityDetailPage imported sources", () => {
+  it("shows compact owner controls for a source awaiting review", () => {
+    mocks.importedSources = [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        provider: "strava",
+        resolutionStatus: "review",
+      },
+    ];
+    const ActivityDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<ActivityDetailPage />);
+
+    expect(screen.getByTestId("imported-sources").textContent).toContain("Imported sources");
+    fireEvent.click(screen.getByText("Same activity"));
+    expect(mocks.resolveImportedSource).toHaveBeenCalledWith({
+      action: "confirm_same",
+      sourceReferenceId: "11111111-1111-4111-8111-111111111111",
+    });
+    fireEvent.click(screen.getByText("Keep separate"));
+    expect(mocks.keepImportedSourceSeparate).toHaveBeenCalledWith({
+      sourceReferenceId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(screen.getByText("Ignore")).toBeTruthy();
+  });
+});
+
+describe("ActivityDetailPage completed activity provider action", () => {
+  it("shows the owner upload action only when Strava capability and scope are ready", () => {
+    mocks.completedActivityProviders = [{ provider: "strava", reason: null, status: "ready" }];
+    const ActivityDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<ActivityDetailPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Send to Strava" }));
+    expect(mocks.sendCompletedActivity).toHaveBeenCalledWith({
+      activityId: "activity-1",
+      provider: "strava",
+    });
+  });
+
+  it("replaces the upload action with explicit reconnect guidance when activity:write is absent", () => {
+    mocks.completedActivityProviders = [
+      {
+        provider: "strava",
+        reason: "Reconnect Strava to grant activity upload access.",
+        status: "reconnect_required",
+      },
+    ];
+    const ActivityDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<ActivityDetailPage />);
+    expect(screen.queryByRole("button", { name: "Send to Strava" })).toBeNull();
+    expect(screen.getByText("Reconnect Strava")).toBeTruthy();
+  });
+
+  it("surfaces a queued upload without offering another dispatch", () => {
+    mocks.completedActivityProviders = [
+      { jobId: "job", provider: "strava", reason: "Strava upload is queued.", status: "queued" },
+    ];
+    const ActivityDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<ActivityDetailPage />);
+    expect(screen.queryByRole("button", { name: "Send to Strava" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Strava upload queued" }).hasAttribute("disabled"),
+    ).toBe(true);
   });
 });

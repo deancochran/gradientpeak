@@ -19,6 +19,7 @@ function createIntegration(
     connected: false,
     integrationId: null,
     label: "Wahoo",
+    unresolvedReviewCount: 0,
     onboarding: {
       summary: "Import profile details and activity history from your Wahoo account.",
       evidence: { activityHistory: true, profileDetails: true },

@@ -1,7 +1,0 @@
-appId: ${MAESTRO_APP_ID}
-# @purpose Open one training plan by canonical app link.
-# @arg TRAINING_PLAN_ID uuid required
-# @ready training-plan-schedule
----
-- openLink: "${MAESTRO_APP_SCHEME}://training-plan-detail?id=${TRAINING_PLAN_ID}"
-- assertVisible: { id: "training-plan-schedule" }

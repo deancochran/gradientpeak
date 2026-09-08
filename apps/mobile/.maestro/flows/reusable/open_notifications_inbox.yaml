@@ -1,6 +1,0 @@
-appId: ${MAESTRO_APP_ID}
----
-- tapOn:
-    id: "notifications-header-button"
-    retryTapIfNoChange: true
-- assertVisible: { id: "notifications-screen" }

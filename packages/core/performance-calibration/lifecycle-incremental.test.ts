@@ -2,13 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import {
   advanceThresholdLifecycle,
-  resolveThresholdLifecycle,
+  resolveThresholdLifecycle as resolveThresholdLifecycleWithMetric,
   THRESHOLD_LIFECYCLE_STATE_VERSION,
   type ThresholdCandidate,
   type ThresholdEvidence,
   type ThresholdLifecycleState,
   type ThresholdLifecycleStepResult,
 } from "./index";
+
+function resolveThresholdLifecycle(
+  input: Omit<Parameters<typeof resolveThresholdLifecycleWithMetric>[0], "metric">,
+) {
+  return resolveThresholdLifecycleWithMetric({ ...input, metric: "power" });
+}
 
 const DAY_MS = 86_400_000;
 const BASE_MS = Date.parse("2026-01-01T12:00:00.000Z");

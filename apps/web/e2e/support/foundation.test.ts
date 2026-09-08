@@ -3,10 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import { resolveE2EWebEnvironment } from "../../scripts/start-e2e-web.mjs";
 import { isTrpcProcedure } from "../pages/network";
 import { registerTrainingPlanCleanup } from "../training-plans/cleanup";
-import { isolatedActorIdentity } from "./actors";
+import { isolatedActorIdentity, retainedSuccessContextOptions } from "./actors";
 import { E2ECleanupRegistry, runCleanupFixture } from "./cleanup";
 import type { E2EQuery, LocalE2EDatabase } from "./database";
-import { localE2EDatabaseEnvironment, localE2EDatabaseUrl } from "./database-url";
+import {
+  applyE2EFileEnvironment,
+  localE2EDatabaseEnvironment,
+  localE2EDatabaseUrl,
+} from "./database-url";
 import { addUtcDays, createE2EExecutionIdentity } from "./identity";
 
 const testCoordinates = {
@@ -21,6 +25,22 @@ const testCoordinates = {
 };
 
 describe("local E2E database safety", () => {
+  it("carries local database credentials onto the dedicated E2E port", () => {
+    const environment: Record<string, string | undefined> = {};
+
+    applyE2EFileEnvironment(environment, {
+      DATABASE_URL: "postgresql://tester:***@127.0.0.1:54322/postgres",
+      POSTGRES_URL: "postgresql://tester:***@127.0.0.1:54322/postgres",
+      PUBLIC_SETTING: "kept",
+    });
+
+    expect(environment).toEqual({
+      DATABASE_URL: "postgresql://tester:***@127.0.0.1:55322/postgres",
+      POSTGRES_URL: "postgresql://tester:***@127.0.0.1:55322/postgres",
+      PUBLIC_SETTING: "kept",
+    });
+  });
+
   it("accepts only the dedicated loopback E2E PostgreSQL port and normalizes both variables", () => {
     const databaseUrl = "postgresql://tester:***@localhost:55322/e2e";
     expect(localE2EDatabaseUrl({ DATABASE_URL: databaseUrl })).toBe(databaseUrl);
@@ -84,6 +104,57 @@ describe("local E2E database safety", () => {
     }
   });
 
+  it("reuses only an explicitly supervised E2E web server", async () => {
+    const previousReuse = process.env.E2E_REUSE_EXISTING_SERVER;
+    const previousDatabaseUrl = process.env.DATABASE_URL;
+    const previousPostgresUrl = process.env.POSTGRES_URL;
+    process.env.E2E_REUSE_EXISTING_SERVER = "1";
+    process.env.DATABASE_URL = "postgresql://tester:***@127.0.0.1:55322/e2e";
+    process.env.POSTGRES_URL = "postgresql://tester:***@127.0.0.1:55322/e2e";
+    vi.resetModules();
+    try {
+      const { default: config } = await import("../../playwright.config");
+      expect(config.webServer).toMatchObject({
+        reuseExistingServer: true,
+        url: "http://127.0.0.1:3100",
+      });
+    } finally {
+      if (previousReuse === undefined) delete process.env.E2E_REUSE_EXISTING_SERVER;
+      else process.env.E2E_REUSE_EXISTING_SERVER = previousReuse;
+      if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDatabaseUrl;
+      if (previousPostgresUrl === undefined) delete process.env.POSTGRES_URL;
+      else process.env.POSTGRES_URL = previousPostgresUrl;
+      vi.resetModules();
+    }
+  });
+
+  it("retains explicit final-success browser evidence when requested", async () => {
+    const previousSuccessArtifacts = process.env.E2E_SUCCESS_ARTIFACTS;
+    const previousDatabaseUrl = process.env.DATABASE_URL;
+    const previousPostgresUrl = process.env.POSTGRES_URL;
+    process.env.E2E_SUCCESS_ARTIFACTS = "1";
+    process.env.DATABASE_URL = "postgresql://tester:***@127.0.0.1:55322/e2e";
+    process.env.POSTGRES_URL = "postgresql://tester:***@127.0.0.1:55322/e2e";
+    vi.resetModules();
+    try {
+      const { default: config } = await import("../../playwright.config");
+      expect(config.use).toMatchObject({
+        screenshot: "on",
+        trace: "on",
+        video: "on",
+      });
+    } finally {
+      if (previousSuccessArtifacts === undefined) delete process.env.E2E_SUCCESS_ARTIFACTS;
+      else process.env.E2E_SUCCESS_ARTIFACTS = previousSuccessArtifacts;
+      if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDatabaseUrl;
+      if (previousPostgresUrl === undefined) delete process.env.POSTGRES_URL;
+      else process.env.POSTGRES_URL = previousPostgresUrl;
+      vi.resetModules();
+    }
+  });
+
   it("fails Playwright config loading before a remote database can reach webServer", async () => {
     const previousDatabaseUrl = process.env.DATABASE_URL;
     const previousPostgresUrl = process.env.POSTGRES_URL;
@@ -122,6 +193,7 @@ describe("local E2E database safety", () => {
 
     expect(resolveE2EWebEnvironment({})).toMatchObject({
       APP_URL: "http://127.0.0.1:3100",
+      OAUTH_CALLBACK_BASE_URL: "http://127.0.0.1:3100",
       DATABASE_URL: expect.stringContaining("@127.0.0.1:55322/"),
       NEXT_PRIVATE_SUPABASE_URL: "http://127.0.0.1:55321",
       NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:55321",
@@ -170,6 +242,16 @@ describe("execution identity", () => {
 });
 
 describe("isolated actor identity", () => {
+  it("retains video for actor-owned contexts during explicit success-evidence runs", () => {
+    expect(retainedSuccessContextOptions({ locale: "en-US" }, "/tmp/e2e-video", true)).toEqual({
+      locale: "en-US",
+      recordVideo: { dir: "/tmp/e2e-video" },
+    });
+    expect(retainedSuccessContextOptions({ locale: "en-US" }, "/tmp/e2e-video", false)).toEqual({
+      locale: "en-US",
+    });
+  });
+
   it("is stable inside one project/parallel slot and separates projects and labels", () => {
     const input = {
       identity: createE2EExecutionIdentity(testCoordinates),

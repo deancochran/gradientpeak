@@ -19,7 +19,7 @@ describe("buildTrainingPathLoadMetrics", () => {
         effectiveLoad: null,
         hasCompletedActivityWithoutLoad: true,
       }),
-    ).toContainEqual({ label: "Completed", value: "Unavailable" });
+    ).toContainEqual({ label: "Completed", value: "—" });
     expect(
       buildTrainingPathLoadMetrics({
         effectiveLoadStatus: "partial",
@@ -28,17 +28,17 @@ describe("buildTrainingPathLoadMetrics", () => {
         effectiveCompletedLoad: 35,
         hasCompletedActivityWithoutLoad: true,
       }),
-    ).toContainEqual({ label: "Completed", value: "35 + unavailable" });
+    ).toContainEqual({ label: "Completed", value: "35" });
     expect(
       buildTrainingPathLoadMetrics({
         effectiveLoadStatus: "unavailable",
         effectiveLoad: null,
         completedLoadUnavailable: true,
       }),
-    ).toContainEqual({ label: "Completed", value: "Unavailable" });
+    ).toContainEqual({ label: "Completed", value: "—" });
   });
 
-  it("preserves the unavailable suffix for a week summary", () => {
+  it("shows a finite week subtotal without an incomplete-evidence suffix", () => {
     expect(
       buildTrainingPathLoadMetrics({
         completedLoadUnavailable: true,
@@ -47,7 +47,7 @@ describe("buildTrainingPathLoadMetrics", () => {
         effectiveLoad: 35,
         effectiveLoadStatus: "partial",
       }),
-    ).toContainEqual({ label: "Completed", value: "35 + unavailable" });
+    ).toContainEqual({ label: "Completed", value: "35" });
   });
 
   it("shows known zero only when the effective result says it is known", () => {
@@ -82,7 +82,7 @@ describe("buildTrainingPathLoadMetrics", () => {
     ]);
   });
 
-  it("announces partial and unavailable effective values without converting them to zero", () => {
+  it("shows finite effective values without exposing their internal partial status", () => {
     expect(
       buildTrainingPathLoadMetrics({
         effectiveLoadStatus: "partial",
@@ -91,10 +91,10 @@ describe("buildTrainingPathLoadMetrics", () => {
         hasCompletedActivityWithoutLoad: true,
       }),
     ).toEqual([
-      { label: "Common Load", value: "42 incomplete" },
-      { label: "Normalized intensity", value: "Moderate · 0.70 incomplete" },
-      { label: "Completed", value: "Unavailable" },
-      { label: "Remaining", value: "Unavailable" },
+      { label: "Common Load", value: "42" },
+      { label: "Normalized intensity", value: "Moderate · 0.70" },
+      { label: "Completed", value: "—" },
+      { label: "Remaining", value: "—" },
     ]);
     expect(
       buildTrainingPathLoadMetrics({
@@ -103,9 +103,9 @@ describe("buildTrainingPathLoadMetrics", () => {
         effectiveIntensity: null,
       }),
     ).toEqual([
-      { label: "Common Load", value: "Unavailable" },
-      { label: "Normalized intensity", value: "Unavailable" },
-      { label: "Remaining", value: "Unavailable" },
+      { label: "Common Load", value: "—" },
+      { label: "Normalized intensity", value: "—" },
+      { label: "Remaining", value: "—" },
     ]);
   });
 
@@ -121,8 +121,8 @@ describe("buildTrainingPathLoadMetrics", () => {
       }),
     ).toEqual(
       expect.arrayContaining([
-        { label: "Remaining", value: "Unavailable" },
-        { label: "Target", value: "30 incomplete" },
+        { label: "Remaining", value: "—" },
+        { label: "Target", value: "30" },
       ]),
     );
     expect(
@@ -133,7 +133,7 @@ describe("buildTrainingPathLoadMetrics", () => {
         effectiveRemainingLoad: 20,
         effectiveRemainingLoadStatus: "partial",
       }),
-    ).toContainEqual({ label: "Remaining", value: "20 incomplete" });
+    ).toContainEqual({ label: "Remaining", value: "20" });
     expect(
       buildTrainingPathLoadMetrics({
         effectiveLoadStatus: "complete",
@@ -143,5 +143,17 @@ describe("buildTrainingPathLoadMetrics", () => {
         effectiveRemainingLoadStatus: "known_zero",
       }),
     ).toContainEqual({ label: "Remaining", value: "0" });
+  });
+
+  it("uses a restored planned subtotal when effective remaining Load is null", () => {
+    expect(
+      buildTrainingPathLoadMetrics({
+        effectiveLoadStatus: "partial",
+        effectiveRemainingLoad: null,
+        effectiveRemainingLoadStatus: "unavailable",
+        plannedLoad: 60,
+        plannedLoadStatus: "partial",
+      }),
+    ).toContainEqual({ label: "Remaining", value: "60" });
   });
 });

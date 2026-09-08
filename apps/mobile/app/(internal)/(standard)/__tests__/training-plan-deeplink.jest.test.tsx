@@ -20,12 +20,17 @@ type TrainingPlanFixture = {
   profile_id?: string;
   is_active?: boolean;
   content_visibility?: string;
+  is_system_template?: boolean;
   durationWeeks?: { recommended: number };
   sessions_per_week_target?: number;
   activity_category?: string[];
   experienceLevel?: string[];
 };
-type ActivePlanFixture = { id: string; scheduleBatchId?: string };
+type AppliedScheduleFixture = {
+  training_plan_id: string;
+  schedule_batch_id?: string;
+  starts_at?: string;
+};
 type ApplyTemplateResult = {
   applied_plan_id: string;
   scheduled_sessions_created: number;
@@ -46,7 +51,7 @@ type StackScreenProps = Record<string, unknown> & {
   options?: { headerRight?: () => React.ReactNode };
 };
 
-var mockActivePlanData: ActivePlanFixture | null = null;
+var mockAppliedScheduleData: AppliedScheduleFixture | null = null;
 var mockApplyTemplateResult: ApplyTemplateResult | null = null;
 var mockRouterReplace = jest.fn();
 var mockRouterPush = jest.fn();
@@ -142,6 +147,7 @@ jest.mock("@/lib/api", () => ({
         },
       },
       trainingPlans: {
+        getAppliedSchedule: { invalidate: jest.fn() },
         invalidate: jest.fn(),
       },
       events: {
@@ -161,8 +167,8 @@ jest.mock("@/lib/api", () => ({
       getTemplate: {
         useQuery: () => ({ data: null, isLoading: false }),
       },
-      getPlanTabProjection: {
-        useQuery: () => ({ data: { currentScheduledPlan: mockActivePlanData } }),
+      getAppliedSchedule: {
+        useQuery: () => ({ data: mockAppliedScheduleData }),
       },
       removeAppliedSchedule: {
         useMutation: () => ({
@@ -401,6 +407,27 @@ jest.mock("@repo/ui/components/textarea", () => ({
   __esModule: true,
   Textarea: createHost("Textarea"),
 }));
+jest.mock("@/components/shared/detail", () => ({
+  __esModule: true,
+  DetailOverflowMenu: ({
+    actions,
+    testID,
+  }: {
+    actions: Array<{ label: string; onPress: () => void; testID: string }>;
+    testID: string;
+  }) =>
+    React.createElement(
+      "DetailOverflowMenu",
+      { testID },
+      actions.map((action) =>
+        React.createElement(
+          "DropdownMenuItem",
+          { ...action, key: action.testID },
+          React.createElement("Text", null, action.label),
+        ),
+      ),
+    ),
+}));
 
 jest.mock("lucide-react-native", () => {
   const Icon = createHost("LucideIcon");
@@ -468,18 +495,6 @@ const findTouchableByText = (text: string) => {
   return node;
 };
 
-const findButtonByText = (text: string) => {
-  const node = getAllByTypeOrEmpty("Button").find((candidate) => {
-    if (typeof candidate.props.onPress !== "function") {
-      return false;
-    }
-
-    return getNodeText(candidate.props.children) === text;
-  });
-  if (!node) throw new Error(`Unable to find button with text: ${text}`);
-  return node;
-};
-
 const findButtonByTestId = (testID: string) => {
   const node = getAllByTypeOrEmpty("Button").find((candidate) => candidate.props.testID === testID);
   if (!node) throw new Error(`Unable to find button: ${testID}`);
@@ -506,7 +521,7 @@ const resetTestState = () => {
   mockApplyTemplateMutate.mockReset();
   mockDuplicateMutate.mockReset();
   mockRemoveAppliedScheduleMutate.mockReset();
-  mockActivePlanData = null;
+  mockAppliedScheduleData = null;
   mockApplyTemplateResult = null;
   mockSnapshotState.plan = null;
   mockSnapshotState.isLoadingSharedDependencies = false;
@@ -762,7 +777,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     expect(mockApplyTemplateMutate).not.toHaveBeenCalled();
   });
 
-  it("shows the concurrency warning instead of mutating when another active plan exists", async () => {
+  it("applies alongside other scheduled programs without a replacement prompt", async () => {
     mockSnapshotState.plan = {
       id: "plan-owned-anchor-4",
       name: "Anchor Plan",
@@ -773,7 +788,6 @@ describe("TrainingPlanOverview deep-link routing", () => {
       structure: {},
     };
     mockLocalSearchParams.id = "plan-owned-anchor-4";
-    mockActivePlanData = { id: "active-plan-1" };
 
     await renderPlan();
 
@@ -785,79 +799,14 @@ describe("TrainingPlanOverview deep-link routing", () => {
       findButtonByTestId("training-plan-schedule-confirm").props.onPress();
     });
 
-    expect(findButtonByText("Open Current Plan")).toBeTruthy();
-    expect(findButtonByText("Replace Scheduled Plan")).toBeTruthy();
-    expect(mockApplyTemplateMutate).not.toHaveBeenCalled();
-  });
-
-  it("replaces the scheduled plan when confirmed from the concurrency warning", async () => {
-    mockSnapshotState.plan = {
-      id: "plan-owned-anchor-4b",
-      name: "Anchor Plan",
-      profile_id: "test-profile-id",
-      content_visibility: "private",
-      created_at: "2026-01-01T00:00:00.000Z",
-      structure_hash: "fixture-structure-hash",
-      structure: {},
-    };
-    mockLocalSearchParams.id = "plan-owned-anchor-4b";
-    mockActivePlanData = { id: "active-plan-1" };
-
-    await renderPlan();
-
-    await act(async () => {
-      findNodeByTestId("training-plan-options-schedule").props.onPress();
+    expect(mockApplyTemplateMutate).toHaveBeenCalledWith({
+      application_mode: "full",
+      template_type: "training_plan",
+      template_id: "plan-owned-anchor-4",
+      start_date: undefined,
+      target_date: undefined,
     });
-
-    await act(async () => {
-      findButtonByTestId("training-plan-schedule-confirm").props.onPress();
-    });
-
-    await act(async () => {
-      findButtonByTestId("training-plan-replace-confirm").props.onPress();
-    });
-
-    expect(mockApplyTemplateMutate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        template_type: "training_plan",
-        template_id: "plan-owned-anchor-4b",
-        start_date: undefined,
-        target_date: undefined,
-        replace_existing: true,
-      }),
-    );
-  });
-
-  it("opens the current active plan from the concurrency warning CTA", async () => {
-    mockSnapshotState.plan = {
-      id: "plan-owned-anchor-5",
-      name: "Anchor Plan",
-      profile_id: "test-profile-id",
-      content_visibility: "private",
-      created_at: "2026-01-01T00:00:00.000Z",
-      structure_hash: "fixture-structure-hash",
-      structure: {},
-    };
-    mockLocalSearchParams.id = "plan-owned-anchor-5";
-    mockActivePlanData = { id: "active-plan-1" };
-
-    await renderPlan();
-
-    await act(async () => {
-      findNodeByTestId("training-plan-options-schedule").props.onPress();
-    });
-
-    await act(async () => {
-      findButtonByTestId("training-plan-schedule-confirm").props.onPress();
-    });
-
-    await act(async () => {
-      findButtonByText("Open Current Plan").props.onPress();
-    });
-
-    expect(mockRouterReplace).toHaveBeenCalledWith(
-      ROUTES.PLAN.TRAINING_PLAN.DETAIL("active-plan-1"),
-    );
+    expect(hasTextContaining("Replace Scheduled Plan")).toBe(false);
   });
 
   it("shows scheduling success actions after apply-template succeeds", async () => {
@@ -905,7 +854,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     );
   });
 
-  it("shows a remove scheduled sessions action when viewing the active plan", async () => {
+  it("shows a remove scheduled sessions action for a scheduled program", async () => {
     mockSnapshotState.plan = {
       id: "active-plan-1",
       name: "Active Plan",
@@ -916,15 +865,18 @@ describe("TrainingPlanOverview deep-link routing", () => {
       structure: {},
     };
     mockLocalSearchParams.id = "active-plan-1";
-    mockActivePlanData = { id: "active-plan-1" };
+    mockAppliedScheduleData = {
+      training_plan_id: "active-plan-1",
+      schedule_batch_id: "33333333-3333-4333-8333-333333333333",
+    };
 
     await renderPlan();
 
-    expect(hasTextContaining("currently scheduled plan")).toBe(true);
+    expect(hasTextContaining("future sessions on your calendar")).toBe(true);
     expect(hasTextContaining("Remove Scheduled Sessions")).toBe(true);
   });
 
-  it("removes the active plan's scheduled sessions after confirmation", async () => {
+  it("removes only the viewed program's scheduled sessions after confirmation", async () => {
     mockSnapshotState.plan = {
       id: "active-plan-2",
       name: "Active Plan",
@@ -935,9 +887,9 @@ describe("TrainingPlanOverview deep-link routing", () => {
       structure: {},
     };
     mockLocalSearchParams.id = "active-plan-2";
-    mockActivePlanData = {
-      id: "active-plan-2",
-      scheduleBatchId: "33333333-3333-4333-8333-333333333333",
+    mockAppliedScheduleData = {
+      training_plan_id: "active-plan-2",
+      schedule_batch_id: "33333333-3333-4333-8333-333333333333",
     };
 
     await renderPlan();
@@ -1052,5 +1004,25 @@ describe("TrainingPlanOverview deep-link routing", () => {
     expect(mockRouterReplace).toHaveBeenCalledWith(
       ROUTES.PLAN.TRAINING_PLAN.DETAIL("duplicated-training-plan-1"),
     );
+  });
+
+  it("does not offer scheduling when the API would reject a shared non-system plan", async () => {
+    mockSnapshotState.plan = {
+      id: "plan-shared-accessibility",
+      name: "Shared Plan",
+      profile_id: "someone-else",
+      content_visibility: "public",
+      created_at: "2026-01-01T00:00:00.000Z",
+      structure_hash: "fixture-structure-hash",
+      structure: {},
+    };
+    mockLocalSearchParams.id = "plan-shared-accessibility";
+
+    await renderPlan();
+
+    expect(findNodeByTestId("training-plan-options-duplicate").props).toMatchObject({
+      label: "Duplicate training plan",
+    });
+    expect(() => findNodeByTestId("training-plan-options-schedule")).toThrow();
   });
 });

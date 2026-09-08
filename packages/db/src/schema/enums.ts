@@ -92,7 +92,7 @@ export const activityEffortSourceSeriesEnum = pgEnum("activity_effort_source_ser
   "heart_rate",
 ]);
 
-export const thresholdMetricEnum = pgEnum("threshold_metric", ["power", "speed"]);
+export const thresholdMetricEnum = pgEnum("threshold_metric", ["power", "speed", "lthr"]);
 
 export const thresholdEvaluationOutcomeEnum = pgEnum("threshold_evaluation_outcome", [
   "qualified",

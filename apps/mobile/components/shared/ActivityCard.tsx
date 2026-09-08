@@ -9,6 +9,7 @@ import { formatDistanceMeters } from "@/lib/display/formatters";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { getPublicShareUrl } from "@/lib/share/public-share-url";
 import {
   type ResourceCardAccessory,
   ResourceCardActionButton,
@@ -44,12 +45,8 @@ function formatMetric(
   metric: SemanticMetric,
   preferredUnitSystem: ReturnType<typeof usePreferredUnitSystem>,
 ) {
-  if (metric.status === "unavailable") return "Unavailable";
-  const approximationPrefix =
-    metric.status === "partial" &&
-    (metric.key === "common_load" || metric.key === "normalized_intensity")
-      ? "~"
-      : "";
+  if (metric.status === "unavailable") return "—";
+  const approximationPrefix = metric.status === "partial" ? "~" : "";
   if (metric.unit === "meters") {
     return `${approximationPrefix}${formatDistanceMeters(metric.value, { preferredUnitSystem })}`;
   }
@@ -65,12 +62,7 @@ function formatMetric(
 function ActivityMetricsRow({ activity }: { activity: ActivityDisplayModel }) {
   const preferredUnitSystem = usePreferredUnitSystem();
   const metrics: ResourceMetric[] = activity.metrics.slice(0, 4).map((metric) => ({
-    label:
-      metric.status === "partial" &&
-      metric.key !== "common_load" &&
-      metric.key !== "normalized_intensity"
-        ? `${metric.label} (partial)`
-        : metric.label,
+    label: metric.label,
     value: formatMetric(metric, preferredUnitSystem),
     tone:
       metric.key === "common_load" || metric.key === "normalized_intensity" ? "primary" : undefined,
@@ -152,11 +144,7 @@ export function ActivityCard({
       );
       return;
     }
-    const origin = (process.env.EXPO_PUBLIC_API_URL ?? "https://gradientpeak.app").replace(
-      /\/$/,
-      "",
-    );
-    const url = `${origin}/share/activities/${activity.id}`;
+    const url = getPublicShareUrl(`/share/activities/${activity.id}`);
     try {
       await Share.share({ message: url, url });
     } catch {

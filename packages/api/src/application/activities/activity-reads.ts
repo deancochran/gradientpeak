@@ -21,9 +21,10 @@ import {
   activityPlans,
   activityRoutes,
   activitySourceReferences,
+  profiles,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, desc, eq, gte, ilike, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { type getRequiredDb, withRepeatableReadSnapshot } from "../../db";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
 import {
@@ -69,6 +70,7 @@ export const commonLoadSortMaximumHistory = 10_000;
 
 type ActivityRow = typeof activities.$inferSelect;
 type ActivityReadRow = ActivityRow & {
+  profile: { username: string | null; avatar_url: string | null } | null;
   segments: ActivitySegmentDomainReadRow[];
 };
 
@@ -236,6 +238,32 @@ export function normalizeActivityLaps<T extends typeof activities.$inferSelect>(
   return { ...activity, laps: parseActivityLapRecords(activity.laps) };
 }
 
+async function loadActivityOwnerProfiles(db: Db, profileIds: readonly string[]) {
+  const uniqueProfileIds = [...new Set(profileIds)];
+  if (uniqueProfileIds.length === 0) {
+    return new Map<string, { username: string | null; avatar_url: string | null }>();
+  }
+
+  const rows = await db
+    .select({
+      id: profiles.id,
+      username: profiles.username,
+      full_name: profiles.full_name,
+      avatar_url: profiles.avatar_url,
+    })
+    .from(profiles)
+    .where(inArray(profiles.id, uniqueProfileIds));
+  return new Map(
+    rows.map((profile) => [
+      profile.id,
+      {
+        username: profile.username?.trim() || profile.full_name?.trim() || null,
+        avatar_url: profile.avatar_url,
+      },
+    ]),
+  );
+}
+
 export async function listActivitiesForProfile({
   db,
   profileId,
@@ -327,13 +355,23 @@ export async function listActivitiesForProfile({
         if (batch.length === 0) break;
 
         const normalizedBatch = batch.map(normalizeActivityLaps);
-        const segments = await loadActivitySegmentsByActivityId(
-          snapshotDb,
-          normalizedBatch.map((activity) => activity.id),
-        );
+        const [ownerProfiles, segments] = await Promise.all([
+          loadActivityOwnerProfiles(
+            snapshotDb,
+            normalizedBatch.map((activity) => activity.profile_id),
+          ),
+          loadActivitySegmentsByActivityId(
+            snapshotDb,
+            normalizedBatch.map((activity) => activity.id),
+          ),
+        ]);
         candidates.push(
           ...normalizedBatch.map((activity) => ({
-            activity: { ...activity, segments: segments.get(activity.id) ?? [] },
+            activity: {
+              ...activity,
+              profile: ownerProfiles.get(activity.profile_id) ?? null,
+              segments: segments.get(activity.id) ?? [],
+            },
             derived: null,
             matchedCategorySummary: null,
           })),
@@ -443,12 +481,19 @@ export async function listActivitiesForProfile({
     row && typeof row === "object" && "activity" in row ? row.activity : row,
   ) as Array<typeof activities.$inferSelect>;
   const normalized = activityRows.map(normalizeActivityLaps);
-  const segments = await loadActivitySegmentsByActivityId(
-    db,
-    normalized.map((activity) => activity.id),
-  );
+  const [ownerProfiles, segments] = await Promise.all([
+    loadActivityOwnerProfiles(
+      db,
+      normalized.map((activity) => activity.profile_id),
+    ),
+    loadActivitySegmentsByActivityId(
+      db,
+      normalized.map((activity) => activity.id),
+    ),
+  ]);
   const data: ActivityReadRow[] = normalized.map((activity) => ({
     ...activity,
+    profile: ownerProfiles.get(activity.profile_id) ?? null,
     segments: segments.get(activity.id) ?? [],
   }));
   const analysisStore = createActivityAnalysisStore(db);
@@ -597,9 +642,13 @@ export async function getActivityByIdForViewer({
   const row = record[0];
   if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
   const normalizedActivity = normalizeActivityLaps(row.activity);
-  const segments = await loadActivitySegmentsByActivityId(db, [normalizedActivity.id]);
+  const [ownerProfiles, segments] = await Promise.all([
+    loadActivityOwnerProfiles(db, [normalizedActivity.profile_id]),
+    loadActivitySegmentsByActivityId(db, [normalizedActivity.id]),
+  ]);
   const activity: ActivityReadRow = {
     ...normalizedActivity,
+    profile: ownerProfiles.get(normalizedActivity.profile_id) ?? null,
     segments: segments.get(normalizedActivity.id) ?? [],
   };
   const sharedQuantification = unavailableSharedActivityQuantification(

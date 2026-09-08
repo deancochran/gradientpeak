@@ -54,7 +54,8 @@ export const thresholdActivityCategoryPolicySchema = z
         message: "Threshold plausibility minimum must be below its maximum",
       });
     }
-    const expectedUnit = policy.metric === "power" ? "watts" : "meters_per_second";
+    const expectedUnit =
+      policy.metric === "power" ? "watts" : policy.metric === "speed" ? "meters_per_second" : "bpm";
     if (policy.unit !== expectedUnit) {
       context.addIssue({
         code: "custom",
@@ -66,14 +67,15 @@ export const thresholdActivityCategoryPolicySchema = z
 
 export const thresholdActivityCategoryPoliciesSchema = z
   .array(thresholdActivityCategoryPolicySchema)
-  .length(3)
+  .length(6)
   .superRefine((policies, context) => {
     if (
-      new Set(policies.map(({ activityCategory }) => activityCategory)).size !== policies.length
+      new Set(policies.map(({ activityCategory, metric }) => `${activityCategory}/${metric}`))
+        .size !== policies.length
     ) {
       context.addIssue({
         code: "custom",
-        message: "Threshold activity-category policies must be unique",
+        message: "Threshold activity-category and metric policies must be unique",
       });
     }
   });
@@ -149,17 +151,48 @@ export const thresholdActivityCategoryPolicies: readonly ThresholdActivityCatego
         decreaseWindowDays: 56,
         freshnessDays: 90,
       },
+      ...(["bike", "run", "swim"] as const).map((activityCategory) => ({
+        schemaVersion: THRESHOLD_POLICY_SCHEMA_VERSION,
+        activityCategory,
+        metric: "lthr" as const,
+        unit: "bpm" as const,
+        method: "lthr_30m_final_20m" as const,
+        policyVersion: THRESHOLD_POLICY_VERSION,
+        plausibilityVersion: THRESHOLD_PLAUSIBILITY_VERSION,
+        seriesSelection: { preferred: "heart_rate" as const, fallback: null },
+        exactWindowSeconds: 1_200,
+        conversionFactor: 1,
+        requiredWindowCoverage: 0.95,
+        maximumGapSeconds: 10,
+        plausibleThreshold: { minimum: 80, maximum: 220 },
+        consistencyRelativeTolerance: 0.03,
+        materialChangeRelativeThreshold: 0.03,
+        confirmationEvidenceCount: 2 as const,
+        confirmationWindowDays: 42,
+        decreaseEvidenceCount: 2 as const,
+        decreaseWindowDays: 56,
+        freshnessDays: 90,
+      })),
     ]),
   );
 
 export function getThresholdActivityCategoryPolicy(
   activityCategory: ThresholdActivityCategory,
+  metric: z.infer<typeof thresholdMetricSchema>,
 ): ThresholdActivityCategoryPolicy {
   const policy = thresholdActivityCategoryPolicies.find(
-    (candidate) => candidate.activityCategory === activityCategory,
+    (candidate) => candidate.activityCategory === activityCategory && candidate.metric === metric,
   );
   if (policy === undefined) {
-    throw new Error(`Threshold policy is unavailable for ${activityCategory}`);
+    throw new Error(`Threshold policy is unavailable for ${activityCategory}/${metric}`);
   }
   return policy;
+}
+
+export function getThresholdActivityCategoryPolicies(
+  activityCategory: ThresholdActivityCategory,
+): readonly ThresholdActivityCategoryPolicy[] {
+  return thresholdActivityCategoryPolicies.filter(
+    (candidate) => candidate.activityCategory === activityCategory,
+  );
 }

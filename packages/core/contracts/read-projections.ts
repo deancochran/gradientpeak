@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { activityPlanStructureSchema } from "../activity-plan/structure-schema";
 import { activityPrescriptionQuantificationBundleSchema } from "../activity-quantification/bundle";
+import { activityPlanProjectionSchema } from "../activity-quantification/plan-projection";
 import { completedSegmentSummarySchema } from "../activity-segments/completed-segment-schema";
 import { groupEventRsvpStatusSchema } from "../groups/schemas";
 import { activityLapRecordListSchema } from "../schemas/activity_streams";
@@ -40,6 +41,7 @@ const semanticMetricBaseShape = {
   key: z.enum([
     "common_load",
     "normalized_intensity",
+    "objective_intensity",
     "distance",
     "elapsed_duration",
     "active_duration",
@@ -80,11 +82,43 @@ const semanticMetricUnavailableSchema = z.strictObject({
 });
 
 /** A locale-neutral quantity. Surfaces choose formatting and preferred display units. */
-export const semanticMetricSchema = z.discriminatedUnion("status", [
-  semanticMetricAvailableSchema,
-  semanticMetricPartialSchema,
-  semanticMetricUnavailableSchema,
-]);
+export const semanticMetricSchema = z
+  .discriminatedUnion("status", [
+    semanticMetricAvailableSchema,
+    semanticMetricPartialSchema,
+    semanticMetricUnavailableSchema,
+  ])
+  .superRefine((metric, context) => {
+    if (metric.key !== "objective_intensity") return;
+    if (metric.status === "partial") {
+      context.addIssue({
+        code: "custom",
+        path: ["status"],
+        message: "Objective intensity never exposes a partial numeric value",
+      });
+    }
+    if (metric.unit !== "ratio") {
+      context.addIssue({
+        code: "custom",
+        path: ["unit"],
+        message: "Objective intensity is always a ratio",
+      });
+    }
+    if (metric.status === "unavailable" && metric.provenance !== null) {
+      context.addIssue({
+        code: "custom",
+        path: ["provenance"],
+        message: "Unavailable objective intensity requires explicit null provenance",
+      });
+    }
+    if (metric.status === "available" && metric.provenance !== "estimated") {
+      context.addIssue({
+        code: "custom",
+        path: ["provenance"],
+        message: "Available objective intensity requires estimated provenance",
+      });
+    }
+  });
 export type SemanticMetric = z.infer<typeof semanticMetricSchema>;
 
 function semanticMetricListSchema(maximum: number) {
@@ -313,6 +347,102 @@ const activityPlanCapabilitiesSchema = z.strictObject({
   canRecord: z.boolean(),
 });
 
+const activityPlanMetricKeys = [
+  "distance",
+  "elapsed_duration",
+  "common_load",
+  "objective_intensity",
+] as const;
+
+export const activityPlanMetricKeySchema = z.enum(activityPlanMetricKeys);
+export type ActivityPlanMetricKey = z.infer<typeof activityPlanMetricKeySchema>;
+
+const activityPlanMetricAvailableSchema = semanticMetricAvailableSchema.safeExtend({
+  key: activityPlanMetricKeySchema,
+  provenance: z.enum(["authored", "estimated"]),
+});
+
+const activityPlanMetricUnavailableSchema = semanticMetricUnavailableSchema.safeExtend({
+  key: activityPlanMetricKeySchema,
+  unit: z.string().trim().min(1).max(48),
+  provenance: z.null(),
+});
+
+const activityPlanMetricUnits: Record<ActivityPlanMetricKey, string> = {
+  distance: "meters",
+  elapsed_duration: "seconds",
+  common_load: "score",
+  objective_intensity: "ratio",
+};
+
+/** A promoted headline is either complete with explicit provenance or unavailable with no value. */
+export const activityPlanMetricSchema = z
+  .discriminatedUnion("status", [
+    activityPlanMetricAvailableSchema,
+    activityPlanMetricUnavailableSchema,
+  ])
+  .superRefine((metric, context) => {
+    if (metric.unit !== activityPlanMetricUnits[metric.key]) {
+      context.addIssue({
+        code: "custom",
+        path: ["unit"],
+        message: `Activity plan ${metric.key} must use ${activityPlanMetricUnits[metric.key]}`,
+      });
+    }
+    if (
+      metric.status === "available" &&
+      (metric.key === "common_load" || metric.key === "objective_intensity") &&
+      metric.provenance !== "estimated"
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["provenance"],
+        message: `Calculated activity plan ${metric.key} requires estimated provenance`,
+      });
+    }
+  });
+export type ActivityPlanMetric = z.infer<typeof activityPlanMetricSchema>;
+
+export function createActivityPlanMetric(value: unknown): ActivityPlanMetric {
+  return activityPlanMetricSchema.parse(value);
+}
+
+/** Exactly one canonical value for every metric supported by activity-plan projections. */
+export const activityPlanMetricListSchema = z
+  .array(activityPlanMetricSchema)
+  .length(activityPlanMetricKeys.length)
+  .superRefine((metrics, context) => {
+    for (const key of activityPlanMetricKeys) {
+      const matchingIndexes = metrics.flatMap((metric, index) =>
+        metric.key === key ? [index] : [],
+      );
+      if (matchingIndexes.length === 0) {
+        context.addIssue({
+          code: "custom",
+          message: `Activity plan metrics must include ${key} exactly once`,
+        });
+      }
+      for (const duplicateIndex of matchingIndexes.slice(1)) {
+        context.addIssue({
+          code: "custom",
+          path: [duplicateIndex, "key"],
+          message: `Activity plan metric ${key} must appear exactly once`,
+        });
+      }
+    }
+
+    metrics.forEach((metric, index) => {
+      if (!(activityPlanMetricKeys as readonly string[]).includes(metric.key)) {
+        context.addIssue({
+          code: "custom",
+          path: [index, "key"],
+          message: `Unsupported activity plan metric: ${metric.key}`,
+        });
+      }
+    });
+  });
+export type ActivityPlanMetricList = z.infer<typeof activityPlanMetricListSchema>;
+
 const activityPlanSummaryShape = {
   contractVersion: z.literal("activity-plan-summary-v1"),
   id: identifierSchema,
@@ -328,7 +458,9 @@ const activityPlanSummaryShape = {
   structure: activityPlanStructureSchema,
   /** Owner-only prescription detail. Non-owner projections omit this key entirely. */
   prescriptionQuantification: activityPrescriptionQuantificationBundleSchema.nullable().optional(),
-  metrics: semanticMetricListSchema(8),
+  /** Authored-only quantities retain compiled completion-policy scope. */
+  planProjection: activityPlanProjectionSchema.optional(),
+  metrics: activityPlanMetricListSchema,
   visibility: z.enum(["private", "followers", "public"]),
   isSystemTemplate: z.boolean(),
   engagement: z.strictObject({

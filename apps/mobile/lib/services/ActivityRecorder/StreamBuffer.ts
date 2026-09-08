@@ -21,6 +21,7 @@ import type {
 } from "@repo/core";
 import { Directory, Paths } from "expo-file-system";
 import type { RecordingStreamJournalAdapter } from "./recordingEvidenceJournal";
+import { canonicalRecordingEvidenceUris } from "./recordingEvidencePaths";
 import type { SensorReading } from "./types";
 
 // ================================
@@ -120,8 +121,12 @@ export class StreamBuffer {
     return { streamBuffer, replay };
   }
 
-  static deleteDurableDirectories(paths: readonly string[]): void {
+  static deleteDurableDirectories(paths: readonly string[], sessionId: string): void {
+    const canonicalPath = canonicalRecordingEvidenceUris(sessionId).streamDirectoryUri;
     for (const path of new Set(paths)) {
+      if (path !== canonicalPath) {
+        throw new Error("Recording stream cleanup refuses a non-canonical session path");
+      }
       const directory = new Directory(path);
       if (directory.exists) directory.delete();
     }

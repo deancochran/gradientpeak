@@ -8,6 +8,7 @@ vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
     useNavigate: () => vi.fn(),
+    useSearch: () => ({}),
   }),
 }));
 
@@ -55,16 +56,16 @@ vi.mock("../../../lib/api/client", () => ({
                         value: 72,
                         unit: "score",
                         reason: null,
-                        provenance: "personalized",
+                        provenance: "estimated",
                       },
                       {
-                        key: "normalized_intensity",
-                        label: "Personalized intensity",
+                        key: "objective_intensity",
+                        label: "Intensity",
                         status: "available",
                         value: 0.8,
                         unit: "ratio",
                         reason: null,
-                        provenance: "personalized",
+                        provenance: "estimated",
                       },
                     ],
                     structure: {
@@ -133,7 +134,7 @@ vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 afterEach(cleanup);
 
 describe("ActivityPlansPage cards", () => {
-  it("renders the authored intensity and duration timeline on plan cards", () => {
+  it("renders authored duration and calculated headline metrics on plan cards", () => {
     const ActivityPlansPage = (Route as unknown as { component: React.ComponentType }).component;
     render(<ActivityPlansPage />);
 
@@ -144,15 +145,15 @@ describe("ActivityPlansPage cards", () => {
     expect(screen.getAllByText("Distance").length).toBeGreaterThan(0);
     expect(screen.getByText("10 km")).toBeTruthy();
     expect(screen.getAllByText("Duration").length).toBeGreaterThan(0);
-    expect(screen.getByText("30m 0s")).toBeTruthy();
+    expect(screen.getByText("30m")).toBeTruthy();
     expect(screen.getAllByText("Load").length).toBeGreaterThan(0);
-    expect(screen.getByText("72")).toBeTruthy();
+    expect(screen.getByText("~72")).toBeTruthy();
     expect(screen.getAllByText("Intensity").length).toBeGreaterThan(0);
-    expect(screen.getByText("0.80")).toBeTruthy();
+    expect(screen.getByText("~0.80")).toBeTruthy();
     expect(screen.getByLabelText("Distance, 10 km, Authored")).toBeTruthy();
-    expect(screen.getByLabelText("Duration, 30m 0s, Authored")).toBeTruthy();
-    expect(screen.getByLabelText("Load, 72, Personalized")).toBeTruthy();
-    expect(screen.getByLabelText("Intensity, 0.80, Personalized")).toBeTruthy();
+    expect(screen.getByLabelText("Duration, 30m, Authored")).toBeTruthy();
+    expect(screen.getByLabelText("Load, ~72, Estimated")).toBeTruthy();
+    expect(screen.getByLabelText("Intensity, ~0.80, Estimated")).toBeTruthy();
     expect(screen.queryByText(/~30m|approximately 30m/i)).toBeNull();
     expect(screen.getByText("Activity prescription")).toBeTruthy();
     expect(

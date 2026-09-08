@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { activityPlanStructureSchema } from "@repo/core";
 import { type DrizzleDbClient, schema } from "@repo/db";
-import { and, asc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, or } from "drizzle-orm";
 import type { EventDeleteScope, EventWriteRepository } from "../../repositories";
 
 export class EventPlanReplacementCompletionConflict extends Error {
@@ -101,6 +101,9 @@ function applyWriteScopeFilters(input: {
   return and(
     ...baseConditions,
     or(eq(schema.events.id, seriesId), eq(schema.events.series_id, seriesId)),
+    ...(input.scope === "future"
+      ? [gte(schema.events.starts_at, new Date(input.anchorEvent.starts_at))]
+      : []),
   );
 }
 

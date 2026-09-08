@@ -11,6 +11,14 @@ afterEach(() => {
 });
 
 describe("provider retry enablement", () => {
+  it("exposes provider-neutral lifecycle names alongside Wahoo compatibility methods", () => {
+    const repository = createWahooSyncRepository({ db: {} as never });
+    expect(repository.requestProviderDisconnect).toBeTypeOf("function");
+    expect(repository.beginProviderDisconnectAttempt).toBeTypeOf("function");
+    expect(repository.finalizeProviderDisconnect).toBeTypeOf("function");
+    expect(repository.requestWahooDisconnect).toBeTypeOf("function");
+  });
+
   it("rejects direct Wahoo retry entrypoints before touching persistence when disabled", async () => {
     vi.stubEnv("WAHOO_CLIENT_ID", "");
     vi.stubEnv("WAHOO_CLIENT_SECRET", "");

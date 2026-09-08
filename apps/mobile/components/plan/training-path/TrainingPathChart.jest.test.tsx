@@ -1,134 +1,17 @@
-import React from "react";
-import type { TestInstance as ReactTestInstance } from "test-renderer";
-import type { HostProps } from "../../../test/mock-components";
-import { fireEvent, renderNative, screen } from "../../../test/render-native";
+import { createHost } from "../../../test/mock-components";
+import { renderNative, screen } from "../../../test/render-native";
 import { TrainingPathChart } from "./TrainingPathChart";
-import { TrainingPathLegend } from "./TrainingPathLegend";
-import type { TrainingPathViewModel } from "./trainingPathTypes";
-
-const interactionOrder: string[] = [];
-const originalRequestAnimationFrame = global.requestAnimationFrame;
 
 jest.mock("react-native", () => ({
-  __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  TouchableOpacity: (props: HostProps) =>
-    React.createElement("TouchableOpacity", props, props.children),
-  View: (props: HostProps) => React.createElement("View", props, props.children),
+  View: createHost("View"),
 }));
+jest.mock("@repo/ui/components/text", () => ({ Text: createHost("Text") }));
 
-jest.mock("@repo/ui/components/text", () => ({
-  __esModule: true,
-  Text: (props: HostProps) => React.createElement("Text", props, props.children),
-}));
-
-jest.mock("@shopify/react-native-skia", () => ({
-  __esModule: true,
-  Circle: (props: HostProps) => React.createElement("SkiaCircle", props),
-  DashPathEffect: (props: HostProps) => React.createElement("DashPathEffect", props),
-  interpolateColors: (_value: number, _input: number[], output: string[]) => output[0],
-  Line: (props: HostProps) => React.createElement("SkiaLine", props, props.children),
-  Rect: (props: HostProps) => React.createElement("SkiaRect", props),
-  Text: (props: HostProps) => React.createElement("SkiaText", props),
-  useFont: () => ({ getTextWidth: () => 24 }),
-  vec: (x: number, y: number) => ({ x, y }),
-}));
-
-jest.mock("react-native-reanimated", () => {
-  const React = require("react");
-  const ScrollView = React.forwardRef((props: HostProps, ref: React.ForwardedRef<unknown>) => {
-    React.useImperativeHandle(ref, () => ({
-      scrollTo: () => interactionOrder.push("scrollTo"),
-    }));
-    return React.createElement("AnimatedScrollView", props, props.children);
-  });
-  return {
-    __esModule: true,
-    default: { ScrollView },
-    runOnJS: <T extends (...args: never[]) => unknown>(fn: T) => fn,
-    scrollTo: () => interactionOrder.push("scrollTo"),
-    useAnimatedRef: () => React.useRef(null),
-    useAnimatedReaction: jest.fn(),
-    useAnimatedScrollHandler: <T,>(handler: T) => handler,
-    useDerivedValue: <T,>(factory: () => T) => ({ value: factory() }),
-    useSharedValue: <T,>(value: T) => ({ value }),
-  };
-});
-
-jest.mock("victory-native", () => ({
-  __esModule: true,
-  CartesianChart: ({
-    chartPressConfig,
-    chartPressState,
-    children,
-    data,
-    yAxis,
-    yKeys,
-  }: {
-    chartPressConfig?: unknown;
-    chartPressState?: unknown;
-    children: (context: {
-      points: Record<string, unknown[]>;
-      chartBounds: HostProps;
-    }) => React.ReactNode;
-    data: Record<string, number>[];
-    yAxis?: unknown;
-    yKeys: string[];
-  }) => {
-    const points = Object.fromEntries(
-      yKeys.map((key: string) => [
-        key,
-        data.map((datum: Record<string, number>, index: number) => ({
-          x: index * 38,
-          xValue: index,
-          y: 120 - (datum[key] ?? 0),
-          yValue: datum[key],
-        })),
-      ]),
-    );
-    return React.createElement(
-      "CartesianChart",
-      { chartPressConfig, chartPressState, data, yAxis },
-      children({ points, chartBounds: { left: 0, right: 200, top: 0, bottom: 120 } }),
-    );
-  },
-  Line: (props: HostProps) => React.createElement("Line", props, props.children),
-  useChartPressState: jest.fn(() => ({
-    isActive: false,
-    state: {
-      isActive: { value: false },
-      matchedIndex: { value: -1 },
-      x: { position: { value: 0 }, value: { value: 0 } },
-      y: { targetLoad: { position: { value: 0 }, value: { value: 0 } } },
-      yIndex: { value: 0 },
-    },
-  })),
-}));
-
-jest.mock("@/assets/fonts/SpaceMono-Regular.ttf", () => ({
-  __esModule: true,
-  default: "mock-font",
-}));
-
-function getHostNodes(type: string) {
-  return screen.container.queryAll((node: ReactTestInstance) => String(node.type) === type);
-}
-
-function getHostNode(type: string) {
-  const node = getHostNodes(type)[0];
-  if (!node) throw new Error(`Expected ${type} host node`);
-  return node;
-}
-
-jest.mock("@/lib/stores/theme-store", () => ({
-  __esModule: true,
-  useTheme: () => ({ resolvedTheme: "light" }),
-}));
-
-const model: TrainingPathViewModel = {
-  domains: { fitness: [0, 80], load: [0, 200] },
+const model = {
+  domains: { fitness: [0, 80] as [number, number], load: [0, 200] as [number, number] },
   emptyState: null,
-  goalMarkers: [],
+  goalMarkers: [{ id: "goal-1", label: "Race", targetDate: "2026-04-12", weekStart: "2026-04-06" }],
   selectedWeekSummary: null,
   todayKey: "2026-04-06",
   weeks: [
@@ -138,446 +21,86 @@ const model: TrainingPathViewModel = {
       label: "Apr 6",
       completedLoad: 20,
       plannedLoad: 40,
-      targetLoad: 80,
-      effectiveLoadStatus: "complete",
+      targetLoad: null,
+      effectiveLoadStatus: "complete" as const,
       effectiveLoad: 60,
       effectiveIntensity: 0.8,
       effectiveCompletedLoad: 20,
       effectiveRemainingLoad: 40,
       fitness: 40,
       scheduledFitness: 42,
+      recommendedLoadStatus: "complete" as const,
+      recommendedLoad: 70,
       targetFitness: 45,
-      fatigue: 50,
-      form: -8,
-      riskZone: "moderate",
-      isCurrent: true,
-      isSelected: true,
-    },
-    {
-      weekStart: "2026-04-13",
-      weekEnd: "2026-04-19",
-      label: "Apr 13",
-      completedLoad: 0,
-      plannedLoad: 60,
-      targetLoad: 90,
-      effectiveLoadStatus: "complete",
-      effectiveLoad: 60,
-      effectiveIntensity: 0.7,
-      effectiveCompletedLoad: null,
-      effectiveRemainingLoad: 60,
-      fitness: null,
-      scheduledFitness: 44,
-      targetFitness: 46,
       fatigue: null,
       form: null,
       riskZone: null,
-      isCurrent: false,
-      isSelected: false,
+      isCurrent: true,
+      isSelected: true,
     },
   ],
 };
-const firstModelWeek = model.weeks[0];
-if (!firstModelWeek) throw new Error("Expected the training-path fixture to include a first week");
-const secondModelWeek = model.weeks[1];
-if (!secondModelWeek)
-  throw new Error("Expected the training-path fixture to include a second week");
 
-describe("TrainingPathChart interactions", () => {
-  beforeEach(() => {
-    interactionOrder.length = 0;
-    global.requestAnimationFrame = jest.fn((callback: FrameRequestCallback) => {
-      callback(0);
-      return 0;
-    });
-  });
+it("renders the fixed factual weekly chart with model-owned Today and goal markers", async () => {
+  await renderNative(<TrainingPathChart model={model} onSelectedWeekChange={jest.fn()} />);
+  expect(screen.getByLabelText("Weekly training path chart")).toBeTruthy();
+  expect(
+    screen.container.queryAll((node) => node.props.testID === "training-path-today-boundary"),
+  ).toHaveLength(1);
+  expect(screen.getByLabelText("Left axis: Load, Common Load")).toBeTruthy();
+});
 
-  afterEach(() => {
-    global.requestAnimationFrame = originalRequestAnimationFrame;
-  });
+it("renders finite weekly load without exposing its internal partial status", async () => {
+  await renderNative(
+    <TrainingPathChart
+      model={{
+        ...model,
+        weeks: [
+          {
+            ...model.weeks[0],
+            completedLoadStatus: "partial" as const,
+            effectiveLoadStatus: "partial" as const,
+            effectiveRemainingLoadStatus: "partial" as const,
+          },
+        ],
+      }}
+      onSelectedWeekChange={jest.fn()}
+    />,
+  );
 
-  it("avoids competing Victory press gestures while horizontal scrolling is active", async () => {
-    await renderNative(
-      <TrainingPathChart
-        model={model}
-        range="season"
-        scrollX
-        onDisplayedWeekChange={() => interactionOrder.push("displayed")}
-        onScrollInteractionStart={() => interactionOrder.push("scrollStart")}
-        onSelectedWeekChange={() => interactionOrder.push("selected")}
-      />,
-    );
+  const chart = screen.getByLabelText("Weekly training path chart");
+  expect(chart.props.accessibilityValue.text).toContain("Common Load 60");
+  expect(chart.props.accessibilityValue.text).toContain("Normalized intensity 0.80");
+  expect(chart.props.accessibilityValue.text).toContain("Completed Common Load 20");
+  expect(chart.props.accessibilityValue.text).toContain("Planned Common Load 40");
+  expect(chart.props.accessibilityValue.text).not.toMatch(
+    /~60|~20|~40|partial|incomplete|subtotal/i,
+  );
+});
 
-    const chart = getHostNode("CartesianChart");
-    expect(chart.props.chartPressState).toBeUndefined();
-    expect(chart.props.chartPressConfig).toBeUndefined();
-    expect(screen.queryByTestId("training-path-week-2026-04-13")).toBeNull();
-  });
+it("renders production-model weekly load fields without effective aliases", async () => {
+  await renderNative(
+    <TrainingPathChart
+      model={{
+        ...model,
+        weeks: [
+          {
+            ...model.weeks[0],
+            completedLoad: 20,
+            completedLoadStatus: "partial" as const,
+            effectiveCompletedLoad: undefined,
+            effectiveRemainingLoad: undefined,
+            plannedLoad: 40,
+            plannedLoadStatus: "partial" as const,
+          },
+        ],
+      }}
+      onSelectedWeekChange={jest.fn()}
+    />,
+  );
 
-  it("exposes selected weekly load and fitness through an adjustable control", async () => {
-    const onSelectedWeekChange = jest.fn();
-    await renderNative(
-      <TrainingPathChart
-        model={model}
-        range="season"
-        reviewWeeks
-        scrollX
-        onSelectedWeekChange={onSelectedWeekChange}
-      />,
-    );
-
-    const adjustable = screen.getByLabelText("Weekly training path chart");
-    expect(adjustable.props.accessibilityRole).toBe("adjustable");
-    expect(adjustable.props.accessibilityValue.text).toContain("Common Load 60");
-    expect(adjustable.props.accessibilityValue.text).toContain("Normalized intensity 0.80");
-    expect(adjustable.props.accessibilityValue.text).not.toContain("TSS");
-    expect(adjustable.props.accessibilityValue.text).toContain("Planned Common Load 40");
-    expect(adjustable.props.accessibilityValue.text).not.toContain("Recommended Common Load");
-    expect(adjustable.props.accessibilityValue.text).toContain("Planned projection 42");
-
-    await fireEvent(adjustable, "accessibilityAction", {
-      nativeEvent: { actionName: "increment" },
-    });
-    expect(onSelectedWeekChange).toHaveBeenCalledWith("2026-04-13");
-  });
-
-  it("does not publish React week changes from continuous scroll ticks", async () => {
-    const onDisplayedWeekChange = jest.fn();
-    const onSelectedWeekChange = jest.fn();
-
-    await renderNative(
-      <TrainingPathChart
-        model={model}
-        range="season"
-        scrollX
-        onDisplayedWeekChange={onDisplayedWeekChange}
-        onSelectedWeekChange={onSelectedWeekChange}
-      />,
-    );
-
-    await fireEvent(getHostNode("AnimatedScrollView"), "scroll", {
-      contentOffset: { x: 38 },
-      contentSize: { width: 300 },
-      layoutMeasurement: { width: 100 },
-    });
-
-    expect(onDisplayedWeekChange).not.toHaveBeenCalled();
-    expect(onSelectedWeekChange).not.toHaveBeenCalled();
-  });
-
-  it("can render as a scroll-only preview without week review snapping", async () => {
-    await renderNative(
-      <TrainingPathChart
-        model={model}
-        range="season"
-        reviewWeeks={false}
-        scrollX
-        showCompletedLoad={false}
-        showPlannedLoad={false}
-        showScheduledFitness={false}
-      />,
-    );
-
-    const scrollView = getHostNode("AnimatedScrollView");
-    const renderedLines = getHostNodes("Line");
-    const renderedRects = getHostNodes("SkiaRect");
-
-    expect(screen.queryByTestId("training-path-week-2026-04-13")).toBeNull();
-    expect(scrollView.props.disableIntervalMomentum).toBe(false);
-    expect(scrollView.props.snapToInterval).toBeUndefined();
-    expect(renderedLines).toHaveLength(1);
-    expect(renderedRects).toHaveLength(0);
-  });
-
-  it("renders only the scheduled load layer", async () => {
-    await renderNative(
-      <TrainingPathChart model={model} range="season" onSelectedWeekChange={jest.fn()} />,
-    );
-
-    const dots = getHostNodes("SkiaCircle").filter(
-      (circle: ReactTestInstance) => circle.props.cx !== undefined && circle.props.cy !== undefined,
-    );
-    const strokedBars = getHostNodes("SkiaRect").filter(
-      (rect: ReactTestInstance) => rect.props.style === "stroke",
-    );
-
-    expect(dots).toHaveLength(0);
-    expect(strokedBars).toHaveLength(0);
-  });
-
-  it("renders current and planned fitness solid while keeping goal-backed data out of the legend", async () => {
-    const recommendationModel: TrainingPathViewModel = {
-      ...model,
-      goalMarkers: [
-        { id: "goal-1", label: "Race", targetDate: "2026-04-19", weekStart: "2026-04-13" },
-      ],
-      weeks: model.weeks.map((week) => ({
-        ...week,
-        recommendedLoadStatus: "complete" as const,
-        recommendedLoad: week.targetLoad,
-      })),
-    };
-    await renderNative(
-      <>
-        <TrainingPathChart model={recommendationModel} range="season" />
-        <TrainingPathLegend range="season" showTargetFitness showTargetLoad />
-      </>,
-    );
-
-    const lines = getHostNodes("Line");
-    const plannedCtlLine = lines.find(
-      (line: ReactTestInstance) => line.props.color === "rgba(37, 99, 235, 0.95)",
-    );
-    const idealCtlLine = lines.find(
-      (line: ReactTestInstance) => line.props.color === "rgba(15, 23, 42, 0.42)",
-    );
-    if (!plannedCtlLine || !idealCtlLine)
-      throw new Error("Expected planned and ideal Fitness lines");
-
-    expect(plannedCtlLine.props.children).toBeUndefined();
-    expect(idealCtlLine.props.children.type).toEqual(expect.any(Function));
-    expect(idealCtlLine.props.children.props.intervals).toEqual([4, 4]);
-    expect(screen.getByText("Actual fitness")).toBeTruthy();
-    expect(screen.getByText("Planned fitness projection")).toBeTruthy();
-    expect(screen.queryByText("Recommended projection")).toBeNull();
-    expect(screen.queryByText("Recommended")).toBeNull();
-    expect(
-      screen.container.queryAll(
-        (node) => node.props["testID"] === "training-path-today-boundary",
-      )[0],
-    ).toBeTruthy();
-    expect(screen.getByLabelText("Left axis: Load, Common Load")).toBeTruthy();
-    expect(screen.getByLabelText("Right axis: Fitness")).toBeTruthy();
-  });
-
-  it("renders completed and planned common Load without the legacy target series", async () => {
-    const sparseModel: TrainingPathViewModel = {
-      ...model,
-      weeks: [
-        {
-          ...firstModelWeek,
-          completedLoad: null,
-          plannedLoad: 40,
-          targetLoad: 80,
-          effectiveLoad: 40,
-          isSelected: true,
-        },
-      ],
-    };
-
-    await renderNative(
-      <TrainingPathChart
-        model={sparseModel}
-        range="season"
-        showCompletedLoad={false}
-        showPlannedLoad
-      />,
-    );
-
-    const renderedRects = getHostNodes("SkiaRect");
-    const chart = getHostNode("CartesianChart");
-    expect(renderedRects).toHaveLength(2);
-    expect(chart.props.data[0]).toEqual(
-      expect.objectContaining({
-        completedLoad: 20,
-        plannedLoad: 40,
-        targetLoad: null,
-        targetFitness: null,
-      }),
-    );
-  });
-
-  it("renders the explicit common-Load recommendation instead of the legacy weekly target", async () => {
-    const recommendationModel: TrainingPathViewModel = {
-      ...model,
-      goalMarkers: [
-        { id: "goal-1", label: "Race", targetDate: "2026-04-12", weekStart: "2026-04-06" },
-      ],
-      weeks: [
-        {
-          ...firstModelWeek,
-          targetLoad: 1_000,
-          recommendedLoadStatus: "complete",
-          recommendedLoad: 80,
-        },
-      ],
-    };
-
-    await renderNative(
-      <TrainingPathChart
-        model={recommendationModel}
-        range="season"
-        reviewWeeks
-        scrollX
-        onSelectedWeekChange={jest.fn()}
-      />,
-    );
-
-    expect(getHostNode("CartesianChart").props.data[0]).toEqual(
-      expect.objectContaining({ targetLoad: 80 }),
-    );
-    expect(
-      screen.getByLabelText("Weekly training path chart").props.accessibilityValue.text,
-    ).toContain("Recommended Common Load 80");
-  });
-
-  it("does not use zero for an unavailable weekly planned base", async () => {
-    const unavailablePlannedModel: TrainingPathViewModel = {
-      ...model,
-      weeks: [
-        {
-          ...firstModelWeek,
-          effectiveLoadStatus: "partial",
-          effectiveRemainingLoad: null,
-        },
-      ],
-    };
-
-    await renderNative(
-      <TrainingPathChart
-        model={unavailablePlannedModel}
-        onSelectedWeekChange={jest.fn()}
-        range="season"
-      />,
-    );
-
-    expect(getHostNode("CartesianChart").props.data[0]).toEqual(
-      expect.objectContaining({
-        plannedLoad: null,
-        targetFitness: null,
-      }),
-    );
-    expect(
-      screen.getByLabelText("Weekly training path chart").props.accessibilityValue.text,
-    ).toContain("Planned Common Load unavailable");
-  });
-
-  it("keeps weekly fitness gaps and exposes horizontal exploration", async () => {
-    const sparseFitnessModel: TrainingPathViewModel = {
-      ...model,
-      weeks: [
-        { ...firstModelWeek, fitness: 40 },
-        { ...secondModelWeek, fitness: null },
-        {
-          ...secondModelWeek,
-          weekStart: "2026-04-20",
-          weekEnd: "2026-04-26",
-          label: "Apr 20",
-          fitness: 44,
-        },
-      ],
-    };
-
-    await renderNative(
-      <TrainingPathChart
-        model={sparseFitnessModel}
-        range="season"
-        scrollX
-        onSelectedWeekChange={jest.fn()}
-      />,
-    );
-
-    const fitnessLine = getHostNodes("Line").find(
-      (line: ReactTestInstance) => line.props.color === "rgba(22, 163, 74, 0.95)",
-    );
-    expect(fitnessLine?.props.connectMissingData).toBe(false);
-    expect(
-      fitnessLine?.props.points.map((point: { yValue: number | null }) => point.yValue),
-    ).toEqual([40, null, 44]);
-    const scrollView = getHostNode("AnimatedScrollView");
-    expect(scrollView.props.showsHorizontalScrollIndicator).toBe(true);
-    expect(scrollView.props.persistentScrollbar).toBe(true);
-  });
-
-  it("keeps unavailable-load markers visible for selected and unselected weeks", async () => {
-    const unavailableModel: TrainingPathViewModel = {
-      ...model,
-      weeks: model.weeks.map((week) => ({ ...week, completedLoadUnavailable: true })),
-    };
-
-    await renderNative(
-      <TrainingPathChart
-        model={unavailableModel}
-        range="season"
-        scrollX
-        onSelectedWeekChange={jest.fn()}
-      />,
-    );
-
-    expect(
-      screen.container.queryAll(
-        (node) => node.props["testID"] === "completed-activity-without-load-highlight-2026-04-06",
-      )[0],
-    ).toBeTruthy();
-    expect(
-      screen.container.queryAll(
-        (node) => node.props["testID"] === "completed-activity-without-load-highlight-2026-04-13",
-      )[0],
-    ).toBeTruthy();
-    const bottomMarkers = getHostNodes("SkiaRect").filter(
-      (rect: ReactTestInstance) => rect.props.height === 3 && rect.props.y === 117,
-    );
-    expect(bottomMarkers).toHaveLength(2);
-  });
-
-  it("describes only the layers rendered by the weekly fallback chart", async () => {
-    await renderNative(<TrainingPathLegend mode="weekly" range="season" />);
-
-    expect(screen.getByText("Completed")).toBeTruthy();
-    expect(screen.getByText("Planned")).toBeTruthy();
-    expect(screen.getByText("Current fitness")).toBeTruthy();
-    expect(screen.getByText("Planned fitness projection")).toBeTruthy();
-    expect(screen.queryByText("Actual fatigue")).toBeNull();
-    expect(screen.queryByText("Form (zero centered)")).toBeNull();
-  });
-
-  it("renders sparse two-week common Load bars without completed load anchors", async () => {
-    const sparseModel: TrainingPathViewModel = {
-      ...model,
-      weeks: model.weeks.map((week) => ({
-        ...week,
-        completedLoad: null,
-        plannedLoad: week.plannedLoad ?? 0,
-        targetLoad: week.targetLoad ?? 0,
-      })),
-    };
-
-    await renderNative(
-      <TrainingPathChart
-        model={sparseModel}
-        range="season"
-        scrollX
-        showCompletedLoad={false}
-        showPlannedLoad
-      />,
-    );
-
-    const renderedRects = getHostNodes("SkiaRect");
-    expect(renderedRects.length).toBeGreaterThanOrEqual(2);
-    const loadBarWidths = renderedRects
-      .map((rect: ReactTestInstance) => rect.props.width)
-      .filter((width: unknown): width is number => typeof width === "number" && width > 0);
-    expect(loadBarWidths).toEqual(expect.arrayContaining([28, 28]));
-  });
-
-  it("expands the load domain to fit common Load bars", async () => {
-    const highLoadModel: TrainingPathViewModel = {
-      ...model,
-      domains: { ...model.domains, load: [0, 100] },
-      weeks: [
-        {
-          ...firstModelWeek,
-          completedLoad: 20,
-          plannedLoad: 40,
-          targetLoad: 240,
-          effectiveLoad: 240,
-          effectiveRemainingLoad: 240,
-        },
-      ],
-    };
-
-    await renderNative(<TrainingPathChart model={highLoadModel} range="season" />);
-
-    const chart = getHostNode("CartesianChart");
-    expect(chart.props.yAxis[0].domain[1]).toBeGreaterThan(240);
-  });
+  const chart = screen.getByLabelText("Weekly training path chart");
+  expect(chart.props.accessibilityValue.text).toContain("Completed Common Load 20");
+  expect(chart.props.accessibilityValue.text).toContain("Planned Common Load 40");
+  expect(chart.props.accessibilityValue.text).not.toMatch(/partial|subtotal|~/i);
 });

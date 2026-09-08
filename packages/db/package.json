@@ -42,6 +42,7 @@
     "db:e2e:migrate": "tsx scripts/e2e-db-command.ts migrate",
     "db:e2e:status": "tsx scripts/e2e-db-command.ts status",
     "db:e2e:stop": "tsx scripts/e2e-db-command.ts stop",
+    "db:lthr:local:apply": "tsx scripts/apply-local-lthr-schema.ts --local --apply",
     "db:baseline:check": "tsx scripts/baseline-workflow.ts check",
     "db:baseline:workflow:test": "tsx scripts/baseline-workflow.test.ts",
     "db:fresh:verify": "tsx scripts/verify-fresh-target.ts --disposable --local --diff",
@@ -72,6 +73,7 @@
     "functions:new": "tsx scripts/local-db-command.ts functions new",
     "seed-templates": "tsx scripts/seed-templates.ts",
     "seed-training-plans": "tsx scripts/seed-training-plan-templates.ts",
+    "backfill:activity-titles": "tsx scripts/backfill-activity-titles.ts --local",
     "studio": "pnpm drizzle-kit studio"
   },
   "dependencies": {

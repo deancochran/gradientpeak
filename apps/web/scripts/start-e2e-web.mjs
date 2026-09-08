@@ -1,6 +1,10 @@
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { localE2EDatabaseEnvironment } from "../e2e/support/database-url.ts";
+import { loadEnv } from "vite";
+import {
+  applyE2EFileEnvironment,
+  localE2EDatabaseEnvironment,
+} from "../e2e/support/database-url.ts";
 
 const E2E_WEB_URL = "http://127.0.0.1:3100";
 const E2E_SUPABASE_URL = "http://127.0.0.1:55321";
@@ -24,6 +28,7 @@ export function resolveE2EWebEnvironment(environment = process.env) {
   return {
     ...databaseEnvironment,
     APP_URL: E2E_WEB_URL,
+    OAUTH_CALLBACK_BASE_URL: E2E_WEB_URL,
     NEXT_PRIVATE_SUPABASE_URL: E2E_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_URL: E2E_SUPABASE_URL,
     PORT: "3100",
@@ -43,13 +48,37 @@ function requireDedicatedValue(value, variable, expected) {
 }
 
 function startE2EWeb() {
+  const fileEnvironment = loadEnv("test", process.cwd(), "");
+  applyE2EFileEnvironment(
+    process.env,
+    Object.fromEntries(
+      ["DATABASE_URL", "POSTGRES_URL"].flatMap((key) =>
+        fileEnvironment[key] === undefined ? [] : [[key, fileEnvironment[key]]],
+      ),
+    ),
+  );
+  const environment = {
+    ...resolveE2EWebEnvironment(process.env),
+    NODE_OPTIONS: "--import ./instrument.server.mjs",
+    // The isolated E2E server must never navigate tests into the real provider OAuth flow.
+    WAHOO_OAUTH_TEST_ADAPTER: "1",
+  };
+  const protectedEnvironmentArguments = Object.entries(environment).flatMap(([name, value]) => [
+    "-v",
+    `${name}=${value}`,
+  ]);
+  console.log(
+    `[e2e-web] local OAuth adapter: ${environment.WAHOO_OAUTH_TEST_ADAPTER === "1" ? "enabled" : "disabled"}`,
+  );
   const child = spawn(
     "pnpm",
     [
       "exec",
       "dotenv",
+      "-o",
       "-e",
       ".env.local",
+      ...protectedEnvironmentArguments,
       "--",
       "vite",
       "dev",
@@ -62,8 +91,7 @@ function startE2EWeb() {
     {
       env: {
         ...process.env,
-        ...resolveE2EWebEnvironment(process.env),
-        NODE_OPTIONS: "--import ./instrument.server.mjs",
+        ...environment,
       },
       stdio: "inherit",
     },

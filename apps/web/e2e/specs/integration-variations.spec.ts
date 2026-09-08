@@ -8,6 +8,8 @@ test.describe
       athletePage,
     }) => {
       await athletePage.goto("/integrations");
+      // The isolated provider project is the first route to exercise a fresh Vite dependency cache.
+      await athletePage.reload();
       await disconnectWahooIfConnected(athletePage);
       await athletePage.getByRole("button", { name: "Connect" }).press("Enter");
       await expect(athletePage.getByText("Integration connected")).toBeVisible();
@@ -39,12 +41,15 @@ test.describe
     }) => {
       await athletePage.goto("/integrations");
       await expect(athletePage.getByText("Wahoo", { exact: true })).toBeVisible();
+      const refreshStatus = athletePage.getByRole("button", { name: "Refresh status" });
+      await expect(refreshStatus).toBeEnabled();
       await withTrpcFailure(athletePage, "integrations.getSyncOverview", async () => {
-        await athletePage.evaluate(() => {
-          window.dispatchEvent(new Event("offline"));
-          window.dispatchEvent(new Event("online"));
+        await refreshStatus.focus();
+        await expect(refreshStatus).toBeFocused();
+        await refreshStatus.press("Enter");
+        await expect(athletePage.getByRole("alert")).toContainText("Showing the last known", {
+          timeout: 15_000,
         });
-        await expect(athletePage.getByRole("alert")).toContainText("Showing the last known");
         await expect(athletePage.getByText("Wahoo", { exact: true })).toBeVisible();
       });
       const retry = athletePage.getByRole("button", { name: "Retry" });
@@ -54,13 +59,17 @@ test.describe
       await expect(athletePage.getByText("Wahoo", { exact: true })).toBeVisible();
     });
 
-    test("[variation:integrations.cached-status:reload-recovery] stale status survives reload failure and recovers without losing provider controls", async ({
+    test("[variation:integrations.cached-status:manual-recovery] stale status survives refresh failure and recovers without losing provider controls", async ({
       athletePage,
     }) => {
       await athletePage.goto("/integrations");
+      const refreshStatus = athletePage.getByRole("button", { name: "Refresh status" });
+      await expect(refreshStatus).toBeEnabled();
       await withTrpcFailure(athletePage, "integrations.getSyncOverview", async () => {
-        await athletePage.reload();
-        await expect(athletePage.getByRole("alert")).toContainText("Showing the last known");
+        await refreshStatus.click();
+        await expect(athletePage.getByRole("alert")).toContainText("Showing the last known", {
+          timeout: 15_000,
+        });
         await expect(athletePage.getByText("Wahoo", { exact: true })).toBeVisible();
       });
       await athletePage.getByRole("button", { name: "Retry" }).click();

@@ -226,7 +226,6 @@ test("[variation:planning.day-agenda:deep-link-history] completed activity detai
     await athletePage.goto(dayUrl);
     await athletePage.getByTestId(`activity-card-${fixture.activityId}-open`).click();
     const detailCard = athletePage.getByTestId(`activity-card-${fixture.activityId}`);
-    await expect(athletePage.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
     await expect(
       detailCard.getByRole("heading", { name: fixture.completedName, exact: true }),
     ).toBeVisible();

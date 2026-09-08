@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/ca
 import { Text } from "@repo/ui/components/text";
 import type React from "react";
 import { ScrollView, TouchableOpacity, View } from "react-native";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
 
 type StructureSessionRow = {
@@ -218,16 +219,15 @@ export function TrainingPlanStructureSection({
           <ScrollView>
             <View className="gap-2 py-1">
               {activityPlanItems.map((activityPlan) => (
-                <TouchableOpacity
+                <ActivityPlanCard
                   key={activityPlan.id}
-                  className="rounded-md border border-border px-3 py-2"
-                  activeOpacity={0.8}
-                  disabled={updatePlanStructurePending}
-                  onPress={() => void onSelectActivityForSession(activityPlan)}
-                >
-                  <Text className="text-sm font-medium text-foreground">{activityPlan.name}</Text>
-                  <Text className="text-[11px] text-muted-foreground">{activityPlan.id}</Text>
-                </TouchableOpacity>
+                  {...(!updatePlanStructurePending
+                    ? { onPress: () => void onSelectActivityForSession(activityPlan) }
+                    : {})}
+                  plan={activityPlan}
+                  testID={`training-plan-activity-picker-option-${activityPlan.id}`}
+                  variant="compact"
+                />
               ))}
             </View>
           </ScrollView>

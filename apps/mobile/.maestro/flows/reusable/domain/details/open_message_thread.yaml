@@ -1,7 +1,0 @@
-appId: ${MAESTRO_APP_ID}
-# @purpose Open one existing message thread by canonical app link.
-# @arg CONVERSATION_ID uuid required
-# @ready message-thread-screen
----
-- openLink: "${MAESTRO_APP_SCHEME}://messages/${CONVERSATION_ID}"
-- assertVisible: { id: "message-thread-screen" }

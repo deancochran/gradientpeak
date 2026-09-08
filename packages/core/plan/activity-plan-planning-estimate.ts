@@ -10,6 +10,7 @@ import {
   type ActivityDistance,
   type ActivityNativeIntensityValue,
   type ActivityPlanPrescriptionQuantificationBundle,
+  type ActivityPlanProjection,
   type ActivityPrescriptionStage,
   type ActivityQuantificationEvidenceIdentity,
   type ActivityQuantificationPlanOccurrenceParentSubjectIdentity,
@@ -19,6 +20,7 @@ import {
   activityPlanPrescriptionQuantificationBundleSchema,
   activityPrescriptionQuantificationSchema,
   createActivityPlanPrescriptionQuantificationBundle,
+  createActivityPlanProjection,
   createActivityQuantificationCalculationIdentity,
   createActivityQuantificationEvidenceIdentity,
   createPlanActivityQuantificationSubjectIdentity,
@@ -53,6 +55,7 @@ import {
   type PerformanceThresholdFact,
 } from "../performance-model";
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
+import { resolveObjectiveIntensityTarget } from "../targets";
 import {
   kphToMps,
   mphToMps,
@@ -80,6 +83,8 @@ export type ActivityPlanCategoryPlanningDose = {
 export type ActivityPlanPlanningEstimate = {
   stage: ActivityPrescriptionStage;
   prescriptionQuantification: ActivityPlanPrescriptionQuantificationBundle;
+  /** Authored plan quantities projected before completion-policy lanes are erased by aggregation. */
+  planProjection?: ActivityPlanProjection;
   authoredTargets: ActivityPlanAuthoredTargetEvidence[];
   durationEstimate: ActivityPlanDurationEstimate;
   durationProvenance: "estimated" | "prescribed" | "measured" | "unknown" | null;
@@ -438,7 +443,7 @@ function nativeIntensityForTarget(target: ActivityPlanTarget): ActivityNativeInt
     case "RPE":
       return { metric: "perceived_exertion", unit: "rpe_0_10", magnitude };
     case "cadence":
-      return null;
+      return { metric: "cadence", unit: "revolutions_per_minute", magnitude };
   }
 }
 
@@ -1223,10 +1228,15 @@ export function createUnavailableActivityPlanPlanningEstimate(input: {
   const prescriptionQuantification = createActivityPlanPrescriptionQuantificationBundle({
     members: [quantification],
   });
+  const planProjection = createActivityPlanProjection({
+    revisionFingerprint: evidenceIdentity.revisionFingerprint ?? revisionFingerprint,
+    occurrences: [],
+  });
 
   return {
     stage,
     prescriptionQuantification,
+    planProjection,
     authoredTargets: [],
     durationEstimate: duration,
     durationProvenance: null,
@@ -1384,6 +1394,38 @@ export function estimateActivityPlanForTrainingContext(
   const prescriptionQuantification = createActivityPlanPrescriptionQuantificationBundle({
     members: occurrenceQuantifications,
   });
+  const planProjection = createActivityPlanProjection({
+    revisionFingerprint:
+      identities.evidenceIdentity.revisionFingerprint ??
+      (() => {
+        throw new Error("Compiled plan revision identity requires a revision fingerprint");
+      })(),
+    occurrences: resolutions.map((resolution) => ({
+      occurrenceId: resolution.occurrence.occurrenceId,
+      completionPolicy: resolution.occurrence.completionPolicy,
+      weight:
+        resolution.occurrence.duration.type === "time"
+          ? resolution.occurrence.duration.seconds
+          : resolution.occurrence.duration.type === "distance"
+            ? resolution.occurrence.duration.meters
+            : resolution.occurrence.duration.type === "repetitions"
+              ? resolution.occurrence.duration.count
+              : null,
+      objectiveIntensity: resolveObjectiveIntensityTarget({
+        activityCategory: resolution.occurrence.activity_category,
+        performanceTargets,
+        targets: resolution.occurrence.targets,
+      }),
+      distance:
+        resolution.distance.status === "unavailable" || resolution.distance.value === null
+          ? null
+          : {
+              value: resolution.distance.value,
+              provenance:
+                resolution.distance.evidenceRole === "prescribed" ? "authored" : "derived",
+            },
+    })),
+  });
   const commonLoad = prescriptionQuantification.summary.commonLoad;
   const durationResolution = buildDurationEstimate({
     resolutions,
@@ -1443,6 +1485,7 @@ export function estimateActivityPlanForTrainingContext(
   return {
     stage,
     prescriptionQuantification,
+    planProjection,
     authoredTargets: activities.map((occurrence) => ({
       occurrenceId: occurrence.occurrenceId,
       targets: occurrence.targets.map((target) => ({ ...target })),

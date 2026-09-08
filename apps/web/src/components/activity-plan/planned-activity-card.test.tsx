@@ -52,7 +52,7 @@ describe("PlannedActivityCard", () => {
     expect(screen.getByText(/August 20, 2026/)).toBeTruthy();
     expect(screen.getByText("Load")).toBeTruthy();
     expect(screen.getByText("Intensity")).toBeTruthy();
-    expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByLabelText("Load, Unavailable, Unavailable")).toBeTruthy();
   });
 
@@ -67,7 +67,7 @@ describe("PlannedActivityCard", () => {
         reason: null,
       },
     ];
-    render(<PlannedActivityCard item={planned({ id: "plan-1" } as never, metrics)} />);
+    render(<PlannedActivityCard item={planned({ id: "plan-1", metrics } as never, metrics)} />);
     const card = screen.getByTestId("activity-plan-card-plan-1");
     expect(card.getAttribute("href")).toBe("/calendar/events/planned-1");
     expect(card.getAttribute("data-load")).toBe("55");

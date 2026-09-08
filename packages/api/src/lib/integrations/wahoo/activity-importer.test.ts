@@ -9,6 +9,7 @@ import {
 } from "../../../application/activities/submit-activity";
 import { ActivityAnalysisValidationError } from "../../../application/activity-file-ingestion/analyze-parsed-activity-file";
 import { ImportedActivityAnalysisError } from "../../../application/activity-file-ingestion/submit-imported-activity-artifact";
+import { ActivitySourceInactiveError } from "../../../repositories/activity-source-reference-repository";
 import {
   createActivityImporter,
   WahooActivityCanonicalIdentityMismatchError,
@@ -534,6 +535,25 @@ describe("activity-importer", () => {
       activityId: "activity-1",
     });
     expect(removeOwnedActivityFile).toHaveBeenCalledOnce();
+  });
+
+  it("treats an inactive provider source as a successful suppressed import", async () => {
+    const repository = createRepositoryMock();
+    repository.submitActivity.mockRejectedValueOnce(new ActivitySourceInactiveError("ignored"));
+    const importer = createTestImporter({
+      activityFileStorage: { uploadActivityFile: vi.fn().mockResolvedValue(undefined) },
+      repository,
+      submitActivity: repository.submitActivity,
+    });
+    fetchMock.mockResolvedValueOnce(
+      activityFileResponse(new TextEncoder().encode("fit-binary-data")),
+    );
+
+    await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
+      success: true,
+      skipped: true,
+      reason: "Activity import was suppressed by its source status",
+    });
   });
 
   it("does not download when disconnect wins the pre-download generation fence", async () => {

@@ -94,8 +94,8 @@ describe("PlannedDaySummary", () => {
       />,
     );
 
-    expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByRole("status").textContent).toContain("Partial information");
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole("status").textContent).toContain("Some information is unavailable");
   });
 
   it("keeps loading, error with retry, and empty states distinct", () => {

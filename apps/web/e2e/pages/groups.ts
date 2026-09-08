@@ -51,7 +51,7 @@ export class GroupsPage {
     return this.page.getByRole("region", { name: "Join requests" }).filter({ hasText: username });
   }
 
-  async respondToRequest(username: string, response: "Approve" | "Reject") {
+  async respondToRequest(username: string, response: "Approve" | "Decline") {
     await this.requestFor(username).getByRole("button", { name: response }).click();
   }
 

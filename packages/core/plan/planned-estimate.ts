@@ -8,13 +8,24 @@ export type PlannedQuantity<T> =
   | { status: "partial"; value: T | null; reason: string }
   | { status: "unavailable"; value: null; reason: string };
 
-export type PlannedCalculatedQuantity = PlannedQuantity<number> & {
-  basis: "athlete_personalized" | "mixed" | "plan_intent" | null;
-};
+export type PlannedCalculatedQuantity =
+  | {
+      status: "estimated";
+      value: number;
+      basis: "athlete_personalized" | "mixed" | "plan_intent";
+    }
+  | {
+      status: "partial";
+      value: number;
+      reason: "incomplete_members";
+      basis: "athlete_personalized" | "mixed" | "plan_intent";
+    }
+  | { status: "unavailable"; value: null; reason: string; basis: null };
 
 export type PlannedEstimate = {
   distanceMeters: PlannedQuantity<number>;
   durationSeconds: PlannedQuantity<number>;
+  /** Existing public native-target-array quantity retained for source compatibility. */
   prescribedIntensity: PlannedQuantity<ActivityNativeIntensityValue[]>;
   normalizedIntensity: PlannedCalculatedQuantity;
   load: PlannedCalculatedQuantity;
@@ -23,7 +34,9 @@ export type PlannedEstimate = {
 function calculatedBasis(
   bundle: ActivityPrescriptionQuantificationBundle,
 ): PlannedCalculatedQuantity["basis"] {
-  const contributors = bundle.members.filter((member) => member.commonLoad.status === "available");
+  const contributors = bundle.members.filter(
+    (member) => member.commonLoad.status !== "unavailable",
+  );
   if (contributors.length === 0) return null;
   const personalizedCount = contributors.filter(
     (member) => member.commonLoad.thresholdEvidence !== null,
@@ -58,10 +71,6 @@ export function getPlannedEstimate(
   const durationEstimated = bundle.members.some(
     (member) => member.duration.elapsed.evidenceRole !== "prescribed",
   );
-  const distanceEstimated = bundle.members.some(
-    (member) =>
-      member.distance.status !== "unavailable" && member.distance.evidenceRole !== "prescribed",
-  );
   const prescribedValues = bundle.members.flatMap((member) => member.intensity.prescribed.values);
   const prescribedIncomplete = bundle.members.some(
     (member) => member.intensity.prescribed.status !== "available",
@@ -82,9 +91,14 @@ export function getPlannedEstimate(
       return { status: "unavailable", value: null, reason: "no_load_data", basis: null };
     }
     if (commonLoad.status === "partial") {
+      if (basis === null) {
+        return { status: "unavailable", value: null, reason: "no_load_data", basis: null };
+      }
       return { status: "partial", value, reason: "incomplete_members", basis };
     }
-    return { status: "estimated", value, basis };
+    return basis === null
+      ? { status: "unavailable", value: null, reason: "no_load_data", basis: null }
+      : { status: "estimated", value, basis };
   };
 
   return {
@@ -100,7 +114,10 @@ export function getPlannedEstimate(
     distanceMeters: scalarQuantity({
       status: summary.distance.status,
       value: summary.distance.value,
-      estimated: distanceEstimated,
+      estimated: bundle.members.some(
+        (member) =>
+          member.distance.status !== "unavailable" && member.distance.evidenceRole !== "prescribed",
+      ),
       unavailableReason:
         "reason" in summary.distance ? summary.distance.reason : "no_available_values",
     }),

@@ -44,7 +44,10 @@ vi.mock("expo-file-system", () => {
   return {
     Directory: MockDirectory,
     File: MockFile,
-    Paths: { cache: "cache" },
+    Paths: {
+      cache: { uri: "file:///cache/" },
+      document: { uri: "file:///documents/" },
+    },
   };
 });
 

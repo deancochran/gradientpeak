@@ -42,6 +42,7 @@ import { TouchableOpacity } from "react-native";
  * - goal-edit - Edit a goal
  *
  * GROUPS:
+ * - my-groups - Personal group and event management
  * - group-detail - Group profile and viewer actions
  * - group-create - Create a group
  * - group-edit - Edit group details
@@ -115,6 +116,12 @@ export default function StandardLayout() {
           title: "Activity Details",
         }}
       />
+      <Stack.Screen
+        name="thresholds"
+        options={{
+          title: "Thresholds",
+        }}
+      />
 
       {/* ROUTES */}
       <Stack.Screen
@@ -182,6 +189,12 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
+        name="plan-analysis"
+        options={{
+          title: "Training Analysis",
+        }}
+      />
+      <Stack.Screen
         name="agenda-create"
         options={{
           title: "Create",
@@ -213,6 +226,12 @@ export default function StandardLayout() {
       />
 
       {/* GROUPS */}
+      <Stack.Screen
+        name="my-groups"
+        options={{
+          title: "My Groups",
+        }}
+      />
       <Stack.Screen
         name="group-detail"
         options={{
@@ -308,6 +327,18 @@ export default function StandardLayout() {
       />
 
       {/* SETTINGS */}
+      <Stack.Screen
+        name="me"
+        options={{
+          title: "Me",
+        }}
+      />
+      <Stack.Screen
+        name="inbox"
+        options={{
+          title: "Inbox",
+        }}
+      />
       <Stack.Screen
         name="search"
         options={{

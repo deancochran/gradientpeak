@@ -1,8 +1,0 @@
-appId: ${MAESTRO_APP_ID}
----
-- runFlow: ./refuse_destructive_reset_while_recording.yaml
-- launchApp:
-    appId: ${MAESTRO_APP_ID}
-    clearState: true
-- runFlow: ./handle_transient_system_ui.yaml
-- runFlow: ./require_signed_out.yaml

@@ -26,7 +26,10 @@ export const API_CACHE_TAG_QUERY_KEYS = {
   "home.getDashboard": [["home", "getDashboard"]],
   "plannedSessions.range": [["plannedSessions", "range"]],
   "trainingPlans.get": [["trainingPlans", "get"]],
-  "trainingPlans.getPlanTabProjection": [["trainingPlans", "getPlanTabProjection"]],
+  "trainingPlans.getPlanTabProjection": [
+    ["trainingPlans", "getPlanTabProjection"],
+    ["trainingPlans", "getPlanPeriodReview"],
+  ],
   "trainingPlans.getPlanningLedger": [["trainingPlans", "getPlanningLedger"]],
   "trainingPlans.list": [["trainingPlans", "list"]],
 } as const satisfies Record<ApiCacheTag, readonly (readonly string[])[]>;
@@ -70,6 +73,7 @@ export const SCHEDULING_REFRESH_CONTRACT = {
     ["events", "getById"],
     ["trainingPlans", "list"],
     ["trainingPlans", "getPlanTabProjection"],
+    ["trainingPlans", "getPlanPeriodReview"],
     ["trainingPlans", "getPlanningLedger"],
     ["trainingPlans", "get"],
     ["trainingPlans", "preview"],
@@ -80,6 +84,7 @@ export const SCHEDULING_REFRESH_CONTRACT = {
     ["calendar", "day"],
     ["trainingPlans", "list"],
     ["trainingPlans", "getPlanTabProjection"],
+    ["trainingPlans", "getPlanPeriodReview"],
     ["trainingPlans", "getPlanningLedger"],
     ["trainingPlans", "get"],
     ["trainingPlans", "preview"],
@@ -91,6 +96,7 @@ export const SCHEDULING_REFRESH_CONTRACT = {
     ["events", "getById"],
     ["trainingPlans", "list"],
     ["trainingPlans", "getPlanTabProjection"],
+    ["trainingPlans", "getPlanPeriodReview"],
     ["trainingPlans", "getPlanningLedger"],
     ["trainingPlans", "get"],
     ["trainingPlans", "preview"],
@@ -158,6 +164,7 @@ export async function invalidatePostActivityIngestionQueries(queryClient: QueryC
     // Activity analytics still have no API v1 replacement; preserve that bounded legacy cache.
     ["athleteIntelligence", "getReadModel"],
     ["trainingPlans", "getPlanTabProjection"],
+    ["trainingPlans", "getPlanPeriodReview"],
     ["trainingPlans", "getPlanningLedger"],
   ] as const;
   await Promise.all([

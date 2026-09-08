@@ -1,8 +1,0 @@
-appId: ${MAESTRO_APP_ID}
-# @purpose Open a route name editor and clear its existing value.
-# @ready route-edit-name-input
----
-- tapOn: { id: "route-detail-options-trigger" }
-- tapOn: { id: "route-detail-options-edit" }
-- tapOn: { id: "route-edit-name-input" }
-- eraseText

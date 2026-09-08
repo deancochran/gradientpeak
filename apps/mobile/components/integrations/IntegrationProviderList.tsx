@@ -20,6 +20,7 @@ type IntegrationProviderListProps = {
   onConnect: (provider: IntegrationProvider) => void;
   onDisconnect?: (integration: IntegrationOverviewItem) => void;
   onViewImportedActivities?: (importRunId: string) => void;
+  onReviewImportedActivities?: () => void;
   pendingByProvider?: Partial<
     Record<IntegrationProvider, "connect" | "disconnect" | "sync_now" | "refresh_setup_data">
   >;
@@ -98,6 +99,7 @@ export function IntegrationProviderList({
   onConnect,
   onDisconnect,
   onViewImportedActivities,
+  onReviewImportedActivities,
   pendingByProvider = {},
   onRetry,
   onAction,
@@ -211,6 +213,19 @@ export function IntegrationProviderList({
                     >
                       <Text className="text-xs font-semibold text-primary">
                         View imported activities
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                  {integration.unresolvedReviewCount > 0 && onReviewImportedActivities ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      className="mt-2 self-start py-1"
+                      onPress={onReviewImportedActivities}
+                      testID={`integration-review-imports-${integration.provider}`}
+                    >
+                      <Text className="text-xs font-semibold text-primary">
+                        Review {integration.unresolvedReviewCount} imported{" "}
+                        {integration.unresolvedReviewCount === 1 ? "activity" : "activities"}
                       </Text>
                     </Pressable>
                   ) : null}

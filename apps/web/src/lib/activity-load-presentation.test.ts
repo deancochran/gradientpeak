@@ -60,10 +60,11 @@ describe("activity load presentation", () => {
       load: "64",
       intensity: "0.80",
     });
-    expect(getCommonLoadPresentation(partial).explanation).toContain("Partial Common Load");
-    expect(getCommonLoadPresentation({ status: "unavailable" }).explanation).toContain(
-      "no current result",
-    );
+    expect(getCommonLoadPresentation(partial)).toMatchObject({ load: "~64", intensity: "~0.80" });
+    expect(getCommonLoadPresentation({ status: "unavailable" })).toMatchObject({
+      load: "—",
+      intensity: "—",
+    });
   });
 
   it("describes guarded Critical Power calibration distinctly", () => {

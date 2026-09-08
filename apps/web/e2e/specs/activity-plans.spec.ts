@@ -7,6 +7,23 @@ import {
 } from "../utils/testData";
 
 const duplicatedPlanDefaultName = "Playwright Tempo Builder (Copy)";
+
+test("an owned activity plan card with established thresholds shows load and intensity", async ({
+  athleteActor,
+  athletePage,
+}) => {
+  const plans = new ActivityPlansPage(athletePage);
+  await plans.openLibrary();
+  await plans.search("Playwright Tempo Builder");
+
+  const card = athletePage.getByTestId(`activity-plan-card-${athleteActor.activityPlanId}`);
+  await expect(card).toBeVisible();
+  await expect(card.getByLabel(/Load, (?!Unavailable)/)).toBeVisible();
+  await expect(card.getByLabel(/Intensity, (?!Unavailable)/)).toBeVisible();
+  await expect(card.getByLabel(/Load, Unavailable/)).toHaveCount(0);
+  await expect(card.getByLabel(/Intensity, Unavailable/)).toHaveCount(0);
+});
+
 test("athlete can discover and open the activity plan library", async ({
   athleteActor,
   athletePage,
@@ -31,6 +48,7 @@ test("athlete can discover and open the activity plan library", async ({
   await expect(athletePage.getByRole("button", { name: /playwright library 02/i })).toHaveCount(0);
 
   await athletePage.getByRole("button", { name: /^all$/i }).click();
+  await expect(athletePage).toHaveURL(/\/activity-plans$/);
   await search.fill("Tempo Builder");
   const planCard = plans.card(/playwright tempo builder/i);
   await expect(planCard).toBeVisible();

@@ -62,7 +62,7 @@ export function presentActivityStreamAnalysis(analysis: ActivityStreamAnalysis) 
     heartRateLoad: {
       value:
         analysis.heart_rate_load.value == null
-          ? "Unavailable"
+          ? "—"
           : `${Math.round(analysis.heart_rate_load.value)}`,
       copy:
         analysis.heart_rate_load.value == null

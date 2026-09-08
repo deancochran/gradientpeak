@@ -16,7 +16,7 @@ import {
 } from "../provider-capabilities";
 
 describe("provider capability registry", () => {
-  it("keeps durable provider identities neutral while exposing only Wahoo executable capabilities", () => {
+  it("keeps durable provider identities neutral while exposing configured contract implementations", () => {
     expect(providerCapabilityRegistry.map((provider) => provider.id)).toEqual(
       executableIntegrationProviderIdValues,
     );
@@ -28,7 +28,7 @@ describe("provider capability registry", () => {
       "zwift",
     ]);
     expect(persistentIntegrationSourceIdSchema.safeParse("strava").success).toBe(true);
-    expect(executableIntegrationProviderIdSchema.safeParse("strava").success).toBe(false);
+    expect(executableIntegrationProviderIdSchema.safeParse("strava").success).toBe(true);
   });
 
   it("marks Wahoo as the MVP file-first activity import provider", () => {
@@ -83,5 +83,19 @@ describe("provider capability registry", () => {
   it("derives user-configurable actions instead of exposing raw capabilities", () => {
     expect(getProviderSyncMode("wahoo", "profile_enrichment_read")).toBe("manual");
     expect(getConfigurableProviderActions("wahoo")).toEqual(["disconnect", "sync_now"]);
+  });
+
+  it("declares Strava history reads and manual completed-activity export without download claims", () => {
+    expect(providerHasCapability("strava", "activity_history_read")).toBe(true);
+    expect(providerHasCapability("strava", "activity_file_download")).toBe(false);
+    expect(providerHasCapability("strava", "planned_activity_push")).toBe(false);
+    expect(providerHasCapability("strava", "completed_activity_export")).toBe(true);
+    expect(providerHasCapability("strava", "webhook_activity_updates")).toBe(true);
+    expect(getProviderSyncMode("strava", "activity_history_read")).toBe("manual");
+    expect(getProviderSyncMode("strava", "completed_activity_export")).toBe("manual");
+    expect(getProviderSyncMode("strava", "webhook_activity_updates")).toBe("automatic");
+    expect(getProviderPlannedActivityCapability("strava").maturity).toBe("unavailable");
+    expect(getConfigurableProviderActions("strava")).toEqual(["disconnect", "sync_now"]);
+    expect(isProviderActivityHistoryReconciliationTarget("strava")).toBe(true);
   });
 });

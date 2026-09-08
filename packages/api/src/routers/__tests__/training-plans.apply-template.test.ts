@@ -42,6 +42,7 @@ function createCaller(queryMap: QueryMap) {
       ...(row.profile_id === "template-owner" && !row.is_system_template
         ? { profile_id: null, is_system_template: true }
         : {}),
+      created_at: new Date("2026-03-01T00:00:00.000Z"),
       revision: row.revision ?? 1,
       updated_at: row.updated_at ?? new Date("2026-03-01T00:00:00.000Z"),
     };
@@ -123,62 +124,55 @@ function createCaller(queryMap: QueryMap) {
 }
 
 describe("trainingPlansRouter.applyTemplate", () => {
-  it("fails when another scheduled plan exists and replacement was not confirmed", async () => {
+  it("applies additively without querying for a global active plan", async () => {
     const { caller, callLog } = createCaller({
       events: {
-        data: [
-          {
-            training_plan_id: "22222222-2222-4222-8222-222222222222",
-            schedule_batch_id: "33333333-3333-4333-8333-333333333333",
-            starts_at: "2026-03-12T00:00:00.000Z",
-          },
-        ],
+        data: [{ id: "new-event" }],
         error: null,
       },
       training_plans: {
         data: {
-          id: "22222222-2222-4222-8222-222222222222",
-          name: "Current Plan",
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Template Plan",
           description: null,
-          profile_id: "99999999-9999-4999-8999-999999999999",
-          is_system_template: false,
-          content_visibility: "private",
-          sessions_per_week_target: 4,
-          duration_hours: 9,
-          structure: {},
+          profile_id: null,
+          is_system_template: true,
+          content_visibility: "public",
+          structure: {
+            id: "11111111-1111-4111-8111-111111111111",
+            version: 1,
+            sessions: [
+              {
+                offset_days: 0,
+                activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              },
+            ],
+          },
         },
+        error: null,
+      },
+      activity_plans: {
+        data: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Tempo Builder" }],
         error: null,
       },
     });
 
-    await expect(
-      caller.applyTemplate({
-        template_type: "training_plan",
-        template_id: "11111111-1111-4111-8111-111111111111",
-        start_date: "2026-03-10",
-      }),
-    ).rejects.toThrow(
-      "You already have scheduled sessions from another training plan. Replace them first.",
-    );
+    const result = await caller.applyTemplate({
+      template_type: "training_plan",
+      template_id: "11111111-1111-4111-8111-111111111111",
+      start_date: "2026-03-10",
+    });
 
+    expect(result.scheduled_sessions_created).toBe(1);
+    expect(result.scheduled_sessions_replaced).toBe(0);
     expect(
-      callLog.find((call) => call.table === "events" && call.operation === "insert"),
-    ).toBeUndefined();
+      callLog.filter((call) => call.table === "events" && call.operation === "select"),
+    ).toEqual([]);
   });
 
   it("replaces the active scheduled batch before creating the new schedule", async () => {
     const { caller, callLog } = createCaller({
       events: [
-        {
-          data: [
-            {
-              training_plan_id: "22222222-2222-4222-8222-222222222222",
-              schedule_batch_id: "33333333-3333-4333-8333-333333333333",
-              starts_at: "2026-03-12T00:00:00.000Z",
-            },
-          ],
-          error: null,
-        },
         {
           data: [
             {
@@ -199,20 +193,6 @@ describe("trainingPlansRouter.applyTemplate", () => {
         },
       ],
       training_plans: [
-        {
-          data: {
-            id: "22222222-2222-4222-8222-222222222222",
-            name: "Current Plan",
-            description: null,
-            profile_id: "99999999-9999-4999-8999-999999999999",
-            is_system_template: false,
-            content_visibility: "private",
-            sessions_per_week_target: 4,
-            duration_hours: 9,
-            structure: {},
-          },
-          error: null,
-        },
         {
           data: {
             id: "11111111-1111-4111-8111-111111111111",
@@ -285,10 +265,6 @@ describe("trainingPlansRouter.applyTemplate", () => {
   it("creates planned events and schedule links with a shared schedule batch", async () => {
     const { caller, callLog } = createCaller({
       events: [
-        {
-          data: [],
-          error: null,
-        },
         {
           data: [{ id: "event-1" }, { id: "event-2" }],
           error: null,
@@ -380,7 +356,6 @@ describe("trainingPlansRouter.applyTemplate", () => {
       )?.structure;
     const { caller, callLog } = createCaller({
       events: [
-        { data: [], error: null },
         { data: [{ id: "swim-event" }, { id: "bike-event" }, { id: "run-event" }], error: null },
       ],
       training_plans: {
@@ -457,12 +432,43 @@ describe("trainingPlansRouter.applyTemplate", () => {
     expect(result.scheduled_sessions_removed).toBe(2);
   });
 
+  it("returns the requested plan's earliest future applied schedule", async () => {
+    const { caller } = createCaller({
+      events: {
+        data: {
+          scheduleBatchId: "33333333-3333-4333-8333-333333333333",
+          startsAt: new Date("2026-09-03T06:00:00.000Z"),
+          trainingPlanId: "22222222-2222-4222-8222-222222222222",
+        },
+        error: null,
+      },
+    });
+
+    await expect(
+      caller.getAppliedSchedule({
+        training_plan_id: "22222222-2222-4222-8222-222222222222",
+      }),
+    ).resolves.toEqual({
+      schedule_batch_id: "33333333-3333-4333-8333-333333333333",
+      starts_at: "2026-09-03T06:00:00.000Z",
+      training_plan_id: "22222222-2222-4222-8222-222222222222",
+    });
+  });
+
+  it("rejects unknown getAppliedSchedule input fields", async () => {
+    const { caller } = createCaller({});
+
+    await expect(
+      caller.getAppliedSchedule({
+        training_plan_id: "22222222-2222-4222-8222-222222222222",
+        unexpected: true,
+      } as never),
+    ).rejects.toThrow();
+  });
+
   it("prefers event_title_override over linked activity plan name when scheduling linked sessions", async () => {
     const { caller, callLog } = createCaller({
-      events: [
-        { data: [], error: null },
-        { data: [{ id: "event-1" }], error: null },
-      ],
+      events: [{ data: [{ id: "event-1" }], error: null }],
       training_plans: [
         {
           data: {
@@ -724,10 +730,6 @@ describe("trainingPlansRouter.applyTemplate", () => {
       const { caller, callLog } = createCaller({
         events: [
           {
-            data: [],
-            error: null,
-          },
-          {
             data: [{ id: "event-1" }, { id: "event-2" }],
             error: null,
           },
@@ -791,10 +793,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
 
     try {
       const { caller, callLog } = createCaller({
-        events: [
-          { data: [], error: null },
-          { data: [{ id: "event-1" }], error: null },
-        ],
+        events: [{ data: [{ id: "event-1" }], error: null }],
         training_plans: [
           {
             data: {

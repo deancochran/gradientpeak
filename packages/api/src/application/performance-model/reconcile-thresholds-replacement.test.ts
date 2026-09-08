@@ -105,11 +105,14 @@ describe("final threshold history reconciliation", () => {
       changed: true,
       identities: [
         { activityCategory: "bike", metric: "power" },
+        { activityCategory: "bike", metric: "lthr" },
         { activityCategory: "run", metric: "speed" },
+        { activityCategory: "run", metric: "lthr" },
         { activityCategory: "swim", metric: "speed" },
+        { activityCategory: "swim", metric: "lthr" },
       ],
     });
-    expect(repository.rebuild).toHaveBeenCalledTimes(3);
+    expect(repository.rebuild).toHaveBeenCalledTimes(6);
     expect(repository.rebuild).toHaveBeenNthCalledWith(1, tx, {
       profileId: input.profileId,
       asOf: new Date("9999-12-31T23:59:59.999Z"),

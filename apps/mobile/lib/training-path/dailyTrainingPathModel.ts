@@ -148,7 +148,10 @@ type DailyTrainingAdjustmentPresentation = {
   targetFitnessCtl?: number | null;
   scheduledFitnessCtl?: number | null;
   fatigueAtl?: number | null;
+  actualFatigueAtl?: number | null;
+  scheduledFatigueAtl?: number | null;
   formTsb?: number | null;
+  scheduledFormTsb?: number | null;
   readinessScore?: number | null;
   annotations: DailyTrainingAdjustmentAnnotation[];
 };
@@ -222,7 +225,10 @@ export function normalizeDailyTrainingAdjustmentPoints(input: {
       targetFitnessCtl: raw?.targetFitnessCtl ?? null,
       scheduledFitnessCtl: raw?.scheduledFitnessCtl ?? null,
       fatigueAtl: raw?.fatigueAtl ?? null,
+      actualFatigueAtl: raw?.actualFatigueAtl ?? null,
+      scheduledFatigueAtl: raw?.scheduledFatigueAtl ?? null,
       formTsb: raw?.formTsb ?? null,
+      scheduledFormTsb: raw?.scheduledFormTsb ?? null,
       readinessScore: raw?.readinessScore ?? null,
       annotations: raw?.annotations ?? [],
     };

@@ -56,4 +56,11 @@ export const productionMobileProviderActionRegistry = createMobileProviderAction
     sync_now: (context) => context.syncNow("wahoo"),
     refresh_setup_data: (context) => context.refreshSetupData("wahoo"),
   },
+  {
+    provider: "strava",
+    connect: (context) => context.connectOAuth("strava"),
+    disconnect: (context) => context.disconnectApi("strava"),
+    sync_now: (context) => context.syncNow("strava"),
+    refresh_setup_data: (context) => context.refreshSetupData("strava"),
+  },
 ]);

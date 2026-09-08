@@ -2,54 +2,79 @@ import { describe, expect, it } from "vitest";
 import { extractBestEfforts } from "../best-efforts";
 import {
   ACTIVITY_FILE_LTHR_CALCULATION_VERSION,
+  detectLactateThresholdHeartRate,
   detectLactateThresholdHeartRateFromBestEfforts,
 } from "../threshold-detection";
 
-describe("detectLactateThresholdHeartRateFromBestEfforts", () => {
-  it("propagates the canonical exact 20-minute HR effort", () => {
+describe("detectLactateThresholdHeartRate", () => {
+  it("selects the 30-minute HR effort and uses only its final 20-minute time-weighted window", () => {
+    const samples = Array.from({ length: 1_801 }, (_, timestampSeconds) => ({
+      timestampSeconds,
+      value: timestampSeconds <= 600 ? 120 : 170,
+    }));
     const extraction = extractBestEfforts({
       metric: "heart_rate",
-      samples: Array.from({ length: 1_301 }, (_, timestampSeconds) => ({
-        timestampSeconds,
-        value: timestampSeconds <= 50 ? 140 : 170,
-      })),
-      config: { durationsSeconds: [1_200] },
+      samples,
+      config: { durationsSeconds: [1_800] },
     });
 
-    expect(detectLactateThresholdHeartRateFromBestEfforts(extraction)).toMatchObject({
-      valueBpm: 162,
+    expect(detectLactateThresholdHeartRate({ extraction, samples })).toMatchObject({
+      valueBpm: 170,
       calculationVersion: ACTIVITY_FILE_LTHR_CALCULATION_VERSION,
       sourceEffortCalculationVersion: extraction.calculationVersion,
       sourceEffort: {
         status: "available",
+        durationSeconds: 1_800,
+        startTimestampSeconds: 0,
+        endTimestampSeconds: 1_800,
+      },
+      thresholdWindow: {
+        status: "available",
         durationSeconds: 1_200,
-        startTimestampSeconds: 50,
-        endTimestampSeconds: 1_250,
+        startTimestampSeconds: 600,
+        endTimestampSeconds: 1_800,
         windowCoverage: 1,
       },
     });
   });
 
-  it("does not propagate an incomplete 20-minute window or a non-HR extraction", () => {
-    const incomplete = extractBestEfforts({
+  it("does not substitute the removed 20-minute times 0.95 algorithm", () => {
+    const samples = Array.from({ length: 1_201 }, (_, timestampSeconds) => ({
+      timestampSeconds,
+      value: 170,
+    }));
+    const twentyMinuteOnly = extractBestEfforts({
       metric: "heart_rate",
-      samples: [
-        { timestampSeconds: 0, value: 170 },
-        { timestampSeconds: 600, value: 170 },
-        { timestampSeconds: 1_200, value: 170 },
-      ],
+      samples,
       config: { durationsSeconds: [1_200] },
     });
     const power = extractBestEfforts({
       metric: "power",
       samples: [
         { timestampSeconds: 0, value: 170 },
-        { timestampSeconds: 1_200, value: 170 },
+        { timestampSeconds: 1_800, value: 170 },
       ],
-      config: { durationsSeconds: [1_200], maxGapSeconds: 1_200 },
+      config: { durationsSeconds: [1_800], maxGapSeconds: 1_800 },
     });
 
-    expect(detectLactateThresholdHeartRateFromBestEfforts(incomplete)).toBeNull();
-    expect(detectLactateThresholdHeartRateFromBestEfforts(power)).toBeNull();
+    expect(detectLactateThresholdHeartRate({ extraction: twentyMinuteOnly, samples })).toBeNull();
+    expect(detectLactateThresholdHeartRate({ extraction: power, samples })).toBeNull();
+  });
+
+  it("keeps the prior entrypoint as a compatibility wrapper around the canonical detector", () => {
+    const samples = Array.from({ length: 1_801 }, (_, timestampSeconds) => ({
+      timestampSeconds,
+      value: timestampSeconds <= 600 ? 120 : 170,
+    }));
+    const extraction = extractBestEfforts({
+      metric: "heart_rate",
+      samples,
+      config: { durationsSeconds: [1_800] },
+    });
+
+    expect(detectLactateThresholdHeartRateFromBestEfforts(extraction, samples)).toEqual(
+      detectLactateThresholdHeartRate({ extraction, samples }),
+    );
+    expect(detectLactateThresholdHeartRateFromBestEfforts(extraction)).toBeNull();
   });
 });

@@ -27,7 +27,7 @@ export const goalActionSchema = z.object({
 const deleteEventActionSchema = z.object({
   event_id: z.string().uuid(),
   redirectTo: z.string().optional(),
-  scope: z.enum(["single", "series"]).default("single"),
+  scope: z.enum(["single", "future", "series"]).default("single"),
 });
 
 export const updateEventActionSchema = z
@@ -39,7 +39,7 @@ export const updateEventActionSchema = z
     redirectTo: z.string().optional(),
     time: z.string().optional(),
     title: z.string().trim().min(1),
-    scope: z.literal("single").default("single"),
+    scope: z.enum(["single", "future", "series"]).default("single"),
   })
   .superRefine((value, context) => {
     if (!value.scheduled_date?.trim()) {
@@ -110,16 +110,18 @@ export function buildScopedCalendarEventUpdate(
   return {
     id: data.event_id,
     patch:
-      existingEvent.event_type === "planned"
-        ? { notes: data.notes, scheduled_date: data.scheduled_date, title: data.title }
-        : buildCalendarEventUpdatePatch({
-            allDay: data.all_day === "true",
-            event: existingEvent,
-            notes: data.notes,
-            scheduledDate: data.scheduled_date,
-            time: data.time,
-            title: data.title,
-          }),
+      data.scope !== "single"
+        ? { notes: data.notes, title: data.title }
+        : existingEvent.event_type === "planned"
+          ? { notes: data.notes, scheduled_date: data.scheduled_date, title: data.title }
+          : buildCalendarEventUpdatePatch({
+              allDay: data.all_day === "true",
+              event: existingEvent,
+              notes: data.notes,
+              scheduledDate: data.scheduled_date,
+              time: data.time,
+              title: data.title,
+            }),
     scope: data.scope,
   };
 }

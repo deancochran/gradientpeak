@@ -1,7 +1,0 @@
-appId: ${MAESTRO_APP_ID}
----
-- tapOn:
-    id: "tab-button-groups"
-- extendedWaitUntil:
-    visible: "Groups"
-    timeout: 10000

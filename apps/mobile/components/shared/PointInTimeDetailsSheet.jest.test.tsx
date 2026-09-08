@@ -1,11 +1,6 @@
-import type { ReactNode } from "react";
 import { createHost } from "../../test/mock-components";
 import { renderNative, screen } from "../../test/render-native";
 
-jest.mock("@rn-primitives/portal", () => ({
-  __esModule: true,
-  Portal: ({ children }: { children: ReactNode }) => children,
-}));
 jest.mock("./AppBottomSheet", () => ({
   __esModule: true,
   AppBottomSheet: createHost("AppBottomSheet"),
@@ -18,7 +13,6 @@ describe("PointInTimeDetailsSheet", () => {
     await renderNative(
       <PointInTimeDetailsSheet
         onClose={jest.fn()}
-        portalName="test-sheet"
         testID="point-in-time-sheet"
         title="Day details"
         visible

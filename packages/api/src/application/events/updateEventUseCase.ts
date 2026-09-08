@@ -79,7 +79,7 @@ type UpdateEventUseCaseDependencies<TInput, TMappedEvent extends MappedEvent> = 
 };
 
 export async function updateEventUseCase<
-  TInput extends { id: string; scope?: "single" },
+  TInput extends { id: string; scope?: "single" | "future" | "series" },
   TMappedEvent extends MappedEvent,
 >(input: {
   ctx: ProtectedContext;
@@ -88,7 +88,7 @@ export async function updateEventUseCase<
 }) {
   const { ctx, dependencies } = input;
   const id = input.input.id;
-  const scope = "single" as const;
+  const scope = input.input.scope ?? "single";
   const eventWriteRepository = dependencies.getEventWriteRepository(ctx);
   const completionRepository = dependencies.getEventCompletionRepository(ctx);
   const permissions = dependencies.getContentPermissions(ctx);
@@ -112,6 +112,22 @@ export async function updateEventUseCase<
 
   const { patch, scheduledDate } = dependencies.normalizeEventUpdatePatch(input.input);
   const targetEventType = existingEventType;
+
+  if (
+    scope !== "single" &&
+    (patch.activity_plan_id !== undefined ||
+      patch.route_id !== undefined ||
+      patch.all_day !== undefined ||
+      patch.timezone !== undefined ||
+      patch.starts_at !== undefined ||
+      patch.ends_at !== undefined ||
+      scheduledDate !== undefined)
+  ) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Future and series updates may only change event details",
+    });
+  }
 
   if (
     existingEventType === "planned" &&

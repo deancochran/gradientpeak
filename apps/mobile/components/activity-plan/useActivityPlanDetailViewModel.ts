@@ -79,8 +79,7 @@ export function useActivityPlanDetailViewModel({
   const estimatedDurationMinutes = estimatedDurationSeconds
     ? Math.round(estimatedDurationSeconds / 60)
     : null;
-  const durationMinutes =
-    estimatedDurationMinutes ?? Math.round((compiled?.explicitTimedDurationSeconds ?? 0) / 60);
+  const durationMinutes = estimatedDurationMinutes;
   const isOwnedByUser = Boolean(activityPlan?.capabilities.canEdit && profile?.id);
   const detailBadges = activityPlan
     ? [
@@ -94,7 +93,7 @@ export function useActivityPlanDetailViewModel({
     detailBadges,
     isOwnedByUser,
     steps,
-    durationLabel: formatDuration(durationMinutes * 60),
+    durationLabel: durationMinutes === null ? "—" : formatDuration(durationMinutes * 60),
     durationMinutes,
   };
 }

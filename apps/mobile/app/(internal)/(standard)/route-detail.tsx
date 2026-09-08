@@ -1,15 +1,19 @@
+import { Icon } from "@repo/ui/components/icon";
+import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { Share2 } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
-import { Alert } from "react-native";
+import { Alert, Share } from "react-native";
 import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
 import {
   DetailDeleteConfirmModal,
   DetailOverflowMenu,
   DetailScaffold,
 } from "@/components/shared/detail";
+import { ResourceCardActionButton } from "@/components/shared/ResourceCardPrimitives";
 import { RouteCard } from "@/components/shared/RouteCard";
 import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
-import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
+import { useEntityCommentsSheet } from "@/components/social/EntityCommentsSheetProvider";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useSessionView } from "@/lib/hooks/useActivityRecorder";
@@ -24,6 +28,7 @@ import {
   type RecordingObjectActionCandidate,
   resolveRecordingObjectAction,
 } from "@/lib/recording/recordingObjectActions";
+import { getPublicShareUrl } from "@/lib/share/public-share-url";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
 type RouteCoordinate = { latitude: number; longitude: number; altitude?: number };
@@ -128,16 +133,19 @@ export default function RouteDetailScreen() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const deleteMutation = useReliableMutation(api.routes.delete, {
-    invalidate: [utils.routes],
-    success: "Route deleted successfully",
-    onSuccess: () => router.back(),
+    onSuccess: () => {
+      void utils.routes.get.reset({ id: routeId });
+      router.back();
+      void utils.routes.get.invalidate({ id: routeId });
+    },
     onError: async () => {
       setShowDeleteConfirm(false);
-      await utils.routes.invalidate();
+      await utils.routes.get.invalidate({ id: routeId });
     },
   });
 
   const comments = useEntityCommentsController({ entityId: route?.id, entityType: "route" });
+  const entityCommentsSheet = useEntityCommentsSheet();
   const routeLike = useResourceLike({
     entityId: route?.id ?? "",
     entityType: "route",
@@ -199,6 +207,39 @@ export default function RouteDetailScreen() {
     setShowDeleteConfirm(true);
   };
 
+  const handleAttachToCalendarEvent = () => {
+    if (!route) return;
+    router.navigate({
+      pathname: "/event-detail",
+      params: {
+        date: format(new Date(), "yyyy-MM-dd"),
+        mode: "create",
+        routeId: route.id,
+        routeName: route.name,
+      },
+    });
+  };
+
+  const canShare = route?.storage_state === "ready";
+
+  const handleShare = async () => {
+    if (!route) return;
+    if (!canShare) return;
+    if (!route.is_public) {
+      Alert.alert(
+        "Not public",
+        "Only public routes have a share link. Make this route public first.",
+      );
+      return;
+    }
+    const url = getPublicShareUrl(`/share/routes/${route.id}`);
+    try {
+      await Share.share({ message: url, url });
+    } catch {
+      Alert.alert("Share failed", "Could not open the share sheet. Please try again.");
+    }
+  };
+
   const renderOptionsMenu = () => {
     if (isDeletionPending) {
       return isOwner ? (
@@ -224,6 +265,11 @@ export default function RouteDetailScreen() {
             label: recordingAction?.label ?? "Start Activity",
             onPress: handleRecordingAction,
             testID: "route-detail-options-recording",
+          },
+          {
+            label: "Add to Calendar",
+            onPress: handleAttachToCalendarEvent,
+            testID: "route-detail-options-attach-calendar-event",
           },
           ...(isOwner
             ? [
@@ -283,11 +329,28 @@ export default function RouteDetailScreen() {
       screenTestID="route-detail-screen"
     >
       <RouteCard
+        headerAccessory={
+          canShare ? (
+            <ResourceCardActionButton
+              accessibilityLabel="Share route"
+              onPress={() => void handleShare()}
+              testID="route-detail-share-button"
+            >
+              <Icon as={Share2} size={20} className="text-foreground" />
+            </ResourceCardActionButton>
+          ) : undefined
+        }
         route={route}
         routeFull={isDeletionPending ? undefined : routeFull}
         isLiked={routeLike.isLiked}
         likeCount={routeLike.likeCount}
         likePending={routeLike.isPending}
+        commentCount={comments.commentCount}
+        onCommentPress={() => {
+          if (!isDeletionPending && route?.id) {
+            entityCommentsSheet?.openEntityComments({ entityId: route.id, entityType: "route" });
+          }
+        }}
         onLikePress={handleToggleLike}
         showLike={!isDeletionPending}
         variant={isDeletionPending ? "list" : "detail"}
@@ -317,21 +380,6 @@ export default function RouteDetailScreen() {
           title="No elevation profile"
         />
       )}
-
-      {!isDeletionPending ? (
-        <EntityCommentsSection
-          addCommentPending={comments.addCommentPending}
-          commentCount={comments.commentCount}
-          comments={comments.comments}
-          hasMoreComments={comments.hasMoreComments}
-          isLoadingMoreComments={comments.isLoadingMoreComments}
-          newComment={comments.newComment}
-          onAddComment={comments.handleAddComment}
-          onChangeNewComment={comments.setNewComment}
-          onLoadMoreComments={comments.loadMoreComments}
-          testIDPrefix="route-detail"
-        />
-      ) : null}
     </DetailScaffold>
   );
 }

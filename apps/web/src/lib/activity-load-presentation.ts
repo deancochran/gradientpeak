@@ -66,26 +66,27 @@ export function getCommonLoadPresentation(
       if (aggregate.data.status === "unavailable") {
         return {
           status: aggregate.data.status,
-          load: "Unavailable",
-          intensity: "Unavailable",
+          load: "—",
+          intensity: "—",
           explanation:
             "Common Load and normalized intensity are unavailable for this activity aggregate.",
           diagnostic: getAggregateCommonLoadDiagnostic(context),
         };
       }
-      const coverage = aggregate.data.status === "partial" ? "Partial " : "Complete ";
+      const approximationPrefix = aggregate.data.status === "partial" ? "~" : "";
       return {
         status: aggregate.data.status,
-        load: Math.round(aggregate.data.load).toString(),
-        intensity: aggregate.data.intensity.toFixed(2),
-        explanation: `${coverage}Common Load and normalized intensity aggregated across this activity's segments.`,
+        load: `${approximationPrefix}${Math.round(aggregate.data.load)}`,
+        intensity: `${approximationPrefix}${aggregate.data.intensity.toFixed(2)}`,
+        explanation:
+          "Common Load and normalized intensity aggregated across this activity's segments.",
         diagnostic: null,
       };
     }
     return {
       status: "unavailable",
-      load: "Unavailable",
-      intensity: "Unavailable",
+      load: "—",
+      intensity: "—",
       explanation:
         "Common Load and normalized intensity are unavailable because no current result was provided.",
       diagnostic: null,
@@ -104,19 +105,18 @@ export function getCommonLoadPresentation(
     };
   }
   if (result.status === "partial") {
-    const coverage = Math.round(result.sourceTimeCoverage * 100);
     return {
       status: result.status,
-      load: result.load === null ? "Unavailable" : Math.round(result.load).toString(),
-      intensity: result.intensity === null ? "Unavailable" : result.intensity.toFixed(2),
-      explanation: `Partial Common Load and normalized intensity: ${coverage}% of eligible duration contributed.`,
+      load: result.load === null ? "—" : `~${Math.round(result.load)}`,
+      intensity: result.intensity === null ? "—" : `~${result.intensity.toFixed(2)}`,
+      explanation: "Common Load and normalized intensity are based on available activity evidence.",
       diagnostic: null,
     };
   }
   return {
     status: result.status,
-    load: "Unavailable",
-    intensity: "Unavailable",
+    load: "—",
+    intensity: "—",
     explanation: `Common Load and normalized intensity are unavailable because ${unavailableReasons[result.reason]}.`,
     diagnostic: getCommonLoadDiagnostic(result, context),
   };

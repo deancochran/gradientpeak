@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { type ActivityPlanTarget, activityPlanStructureSchema } from "../activity-plan";
 import {
+  activityPrescriptionQuantificationSchema,
   aggregatePrescriptions,
+  createActivityPlanPrescriptionQuantificationBundle,
   prescribedActivityIntensitySchema,
 } from "../activity-quantification";
 import { getNormalizedIntensity } from "../load";
@@ -10,6 +12,7 @@ import {
   createUnavailableAthletePerformanceTargetFacts,
   materializeAthletePerformanceTargetFacts,
 } from "../performance-model";
+import { ENDURANCE_SWIM } from "../samples";
 import { buildPerformanceTargetFactsFixture } from "../testing/performance-model";
 import {
   type ActivityPlanPlanningEstimate,
@@ -181,6 +184,28 @@ function timedPlan(activity_category: "bike" | "run" | "swim", targets: Activity
 }
 
 describe("estimateActivityPlanForTrainingContext", () => {
+  it("projects the exact indoor Endurance Set objective intensity independently", () => {
+    const estimate = estimateActivityPlanForTrainingContext({
+      structure: ENDURANCE_SWIM.structure,
+      performanceTargets: unavailableTargets,
+      asOf: unavailableTargets.asOf,
+    });
+
+    expect(estimate.planProjection?.objectiveIntensity).toMatchObject({
+      status: "available",
+      value: expect.closeTo(2_439 / 3_500, 12),
+      unit: "ratio",
+      completionPolicy: "distance",
+      weightingBasis: "distance_meters",
+      contributorCoverage: { contributing: 6, total: 6 },
+      provenance: "plan_intent",
+    });
+    expect(estimate.durationEstimate).toMatchObject({ status: "unavailable", valueSeconds: null });
+    expect(estimate.prescriptionQuantification.summary.commonLoad).toMatchObject({
+      status: "unavailable",
+    });
+  });
+
   it("preserves the exact single-segment cycling calculation as a golden", () => {
     const estimate = estimateActivityPlanForTrainingContext({
       structure: singleBike,
@@ -537,6 +562,49 @@ describe("estimateActivityPlanForTrainingContext", () => {
     });
   });
 
+  it.each([
+    "run",
+    "swim",
+  ] as const)("duration-weights a personalized timed %s prescription even when distance is derived", (activityCategory) => {
+    const facts =
+      activityCategory === "run"
+        ? buildPerformanceTargetFactsFixture({
+            lthrBpm: { run: 160 },
+            maxHrBpm: { run: 200 },
+          })
+        : buildPerformanceTargetFactsFixture({
+            lthrBpm: { swim: 150 },
+            maxHrBpm: { swim: 190 },
+          });
+    const estimate = estimateActivityPlanForTrainingContext({
+      structure: timedPlan(activityCategory, [{ type: "%MaxHR", intensity: 80 }]),
+      performanceTargets: facts,
+      asOf: facts.asOf,
+    });
+    const member = onlyPrescription(estimate);
+    expect(member.commonLoad.thresholdEvidence).not.toBeNull();
+    const memberWithDerivedDistance = activityPrescriptionQuantificationSchema.parse({
+      ...member,
+      distance: {
+        status: "available",
+        evidenceRole: "derived",
+        value: activityCategory === "run" ? 10_000 : 3_000,
+        unit: "meters",
+      },
+    });
+    const planned = getPlannedEstimate(
+      createActivityPlanPrescriptionQuantificationBundle({
+        members: [memberWithDerivedDistance],
+      }),
+    );
+
+    expect(planned.prescribedIntensity).toEqual({
+      status: "known",
+      value: member.intensity.prescribed.values,
+    });
+    expect(estimate.planProjection).not.toHaveProperty("prescribedIntensity");
+  });
+
   it("keeps %MaxHR load unavailable unless both MaxHR and LTHR are usable", () => {
     const missingMax = buildPerformanceTargetFactsFixture({ lthrBpm: { run: 160 } });
     const missingLthr = buildPerformanceTargetFactsFixture({ maxHrBpm: { run: 200 } });
@@ -814,8 +882,12 @@ describe("estimateActivityPlanForTrainingContext", () => {
     expect(commonLoad.load).toBeGreaterThan(0);
     expect(getPlannedEstimate(estimate.prescriptionQuantification)).toMatchObject({
       durationSeconds: { status: "known", value: 3600 },
-      normalizedIntensity: { status: "partial", value: 0.8 },
-      load: { status: "partial", value: expect.closeTo(32) },
+      normalizedIntensity: {
+        status: "partial",
+        value: expect.any(Number),
+        reason: "incomplete_members",
+      },
+      load: { status: "partial", value: expect.any(Number), reason: "incomplete_members" },
     });
   });
 

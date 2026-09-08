@@ -12,10 +12,11 @@ const notification = {
   created_at: "2026-01-01T00:00:00.000Z",
   entity_id: "conversation-1",
   id: "notification-1",
-  read_at: null,
+  read_at: null as string | null,
   type: "new_message",
   user_id: "user-1",
 };
+let notificationsData = [notification];
 type FlatListMockProps = Record<string, unknown> & {
   data: unknown[];
   renderItem: (info: { item: unknown }) => React.ReactNode;
@@ -83,11 +84,7 @@ jest.mock("@/lib/api", () => ({
     notifications: {
       getRecent: {
         useQuery: () => ({
-          data: [
-            {
-              ...notification,
-            },
-          ],
+          data: notificationsData,
           isLoading: false,
         }),
       },
@@ -113,6 +110,7 @@ describe("notifications screen", () => {
     navigateMock.mockReset();
     pushMock.mockReset();
     markReadMutateMock.mockReset();
+    notificationsData = [notification];
   });
 
   it("navigates to the messages hub for message notifications", async () => {
@@ -131,5 +129,18 @@ describe("notifications screen", () => {
     await fireEvent.press(screen.getByTestId("notifications-read-all-trigger"));
 
     expect(markReadMutateMock).toHaveBeenCalledWith({ notification_ids: ["notification-1"] });
+  });
+
+  it("filters the inbox to unread notifications", async () => {
+    notificationsData = [
+      notification,
+      { ...notification, id: "notification-2", read_at: "2026-01-01T01:00:00.000Z" },
+    ];
+    await renderNative(<NotificationsScreen />);
+
+    await fireEvent.press(screen.getByTestId("notifications-unread-filter"));
+
+    expect(screen.getByTestId("notification-item-notification-1")).toBeTruthy();
+    expect(screen.queryByTestId("notification-item-notification-2")).toBeNull();
   });
 });

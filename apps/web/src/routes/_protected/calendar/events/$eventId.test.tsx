@@ -47,6 +47,7 @@ vi.mock("../../../../lib/api/client", () => ({
         },
       },
     },
+    routes: { get: { useQuery: () => ({ data: null }) } },
     trainingPlans: {
       get: { useQuery: () => ({ data: null }) },
     },
@@ -106,10 +107,9 @@ describe("EventDetailPage", () => {
     expect(screen.getAllByText("Run").length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("Bike")).toBeNull();
     expect(screen.getByTestId("activity-plan-structure")).toBeTruthy();
-    const personalization = screen.getByRole("switch", { name: "Personalize targets" });
+    const personalization = screen.getByRole("switch", { name: "Calculated targets" });
     expect(personalization.getAttribute("aria-checked")).toBe("false");
     expect(personalization.hasAttribute("disabled")).toBe(true);
-    expect(screen.getByText(/RPE targets cannot be represented as physical values/)).toBeTruthy();
     expect(screen.getAllByText(/5 RPE/).length).toBeGreaterThan(0);
     expect(mocks.eventInputs).toContainEqual({ id: "event-1", personalize: false });
     expect(mocks.readModelOptions).toContainEqual({ enabled: true });
@@ -172,7 +172,7 @@ describe("EventDetailPage", () => {
     ).toBe("RPE 7");
     expect(screen.getByTestId("activity-plan-structure")).toBeTruthy();
     expect(screen.getAllByText(/7 RPE/).length).toBeGreaterThan(0);
-    expect(screen.queryByRole("switch", { name: "Personalize targets" })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Calculated targets" })).toBeNull();
   });
 
   it("keeps a rejected delete dialog form open with its selected scope available for retry", async () => {

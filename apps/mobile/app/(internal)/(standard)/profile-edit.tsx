@@ -1,3 +1,4 @@
+import { invalidateProfileIdentityQueries } from "@repo/api/profile-identity-cache";
 import { THEME } from "@repo/tailwindcss/native";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
@@ -139,7 +140,7 @@ function ProfileEditScreen() {
     onSubmit: async (data) => {
       await updateProfileMutation.mutateAsync(toProfilePatchInput(data));
 
-      await Promise.all([utils.profiles.invalidate(), refreshProfile()]);
+      await Promise.all([invalidateProfileIdentityQueries(utils), refreshProfile()]);
       router.back();
     },
     onError: (error) =>
@@ -160,7 +161,7 @@ function ProfileEditScreen() {
     next: string | null,
   ) => {
     await compareAndSwapMediaMutation.mutateAsync({ field: fieldName, expected, next });
-    await Promise.all([utils.profiles.invalidate(), refreshProfile()]);
+    await Promise.all([invalidateProfileIdentityQueries(utils), refreshProfile()]);
   };
 
   const deleteFileWithoutMaskingError = async (filePath: string) => {

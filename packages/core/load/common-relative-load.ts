@@ -558,6 +558,23 @@ export function getNormalizedIntensity(
 ): number | null {
   if ("activity_category" in commonLoad) {
     const parsed = commonLoadResultSchema.parse(commonLoad);
+    return parsed.status === "available" ? parsed.intensity : null;
+  }
+  const parsed = commonLoadAggregateSchema.parse(commonLoad);
+  return parsed.status === "complete" ? parsed.intensity : null;
+}
+
+/**
+ * Reads a known normalized intensity from the canonical Common Load envelope,
+ * including incomplete observations whose Load and Intensity are both present.
+ * Consumers that require complete workload coverage must use
+ * getNormalizedIntensity instead.
+ */
+export function getKnownNormalizedIntensity(
+  commonLoad: CommonLoadResult | CommonLoadAggregate,
+): number | null {
+  if ("activity_category" in commonLoad) {
+    const parsed = commonLoadResultSchema.parse(commonLoad);
     return parsed.status === "unavailable" ? null : parsed.intensity;
   }
   const parsed = commonLoadAggregateSchema.parse(commonLoad);

@@ -1,6 +1,11 @@
 import { getConfigurableProviderActions, providerCapabilityRegistry } from "@repo/core";
-import { type DrizzleDbClient, publicIntegrationsRowSchema } from "@repo/db";
+import {
+  activitySourceReferences,
+  type DrizzleDbClient,
+  publicIntegrationsRowSchema,
+} from "@repo/db";
 import { TRPCError } from "@trpc/server";
+import { and, count, eq } from "drizzle-orm";
 import { z } from "zod";
 import { createIntegrationsRepositories } from "../../infrastructure/repositories";
 import { unsupportedProviderOverviewEvidence } from "./provider-operation-registry";
@@ -93,6 +98,19 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
     "Integrations repository returned invalid rows",
   );
   const integrationsByProvider = new Map(integrations.map((item) => [item.provider, item]));
+  const reviews = await input.db
+    .select({ provider: activitySourceReferences.provider, total: count() })
+    .from(activitySourceReferences)
+    .where(
+      and(
+        eq(activitySourceReferences.profile_id, input.profileId),
+        eq(activitySourceReferences.resolution_status, "review"),
+      ),
+    )
+    .groupBy(activitySourceReferences.provider);
+  const unresolvedReviewCountByProvider = new Map(
+    reviews.map((review) => [review.provider, Number(review.total)]),
+  );
 
   return Promise.all(
     providerCapabilityRegistry.map(async (definition) => {
@@ -177,6 +195,7 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
                   ? ("reconnect" as const)
                   : ("disconnect" as const),
         provider: definition.id,
+        unresolvedReviewCount: unresolvedReviewCountByProvider.get(definition.id) ?? 0,
         summary: compact,
       };
     }),

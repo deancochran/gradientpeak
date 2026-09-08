@@ -27,16 +27,24 @@ const categoryOptions = [
 ] as const;
 
 export const Route = createFileRoute("/_protected/activity-plans/")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    activity_category: categoryOptions.some(
+      (option) => option.value !== "all" && option.value === search.activity_category,
+    )
+      ? (search.activity_category as (typeof categoryOptions)[number]["value"])
+      : undefined,
+    q: typeof search.q === "string" && search.q ? search.q.slice(0, 100) : undefined,
+  }),
   component: ActivityPlansPage,
 });
 
 function ActivityPlansPage() {
   const navigate = Route.useNavigate();
+  const routeSearch = Route.useSearch();
+  const activity_category = routeSearch.activity_category ?? "all";
+  const search = routeSearch.q ?? "";
   const utils = api.useUtils();
   const [creating, setCreating] = useState(false);
-  const [search, setSearch] = useState("");
-  const [activity_category, setCategory] =
-    useState<(typeof categoryOptions)[number]["value"]>("all");
   const plansQuery = api.activityPlans.list.useInfiniteQuery(
     {
       activityCategories: activity_category === "all" ? undefined : [activity_category],
@@ -102,7 +110,15 @@ function ActivityPlansPage() {
             loadingLabel="Searching activity plans"
             maxLength={100}
             name="activityPlanSearch"
-            onValueChange={setSearch}
+            onValueChange={(q) =>
+              void navigate({
+                search: {
+                  activity_category: activity_category === "all" ? undefined : activity_category,
+                  q: q || undefined,
+                },
+                replace: true,
+              })
+            }
             placeholder="Search activity plans"
             testId="activity-plan-search"
             value={search}
@@ -112,7 +128,15 @@ function ActivityPlansPage() {
             {categoryOptions.map((option) => (
               <Button
                 key={option.value}
-                onClick={() => setCategory(option.value)}
+                onClick={() =>
+                  void navigate({
+                    search: {
+                      activity_category: option.value === "all" ? undefined : option.value,
+                      q: search || undefined,
+                    },
+                    replace: true,
+                  })
+                }
                 size="sm"
                 type="button"
                 variant={activity_category === option.value ? "default" : "outline"}

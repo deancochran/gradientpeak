@@ -1,5 +1,6 @@
 import {
   ATHLETE_PERFORMANCE_MODEL_SNAPSHOT_VERSION,
+  type AthleteHeartRateCalibrationFacts,
   type AthletePerformanceModelSnapshot,
   type AthletePerformanceTargetFacts,
   athletePerformanceModelSnapshotSchema,
@@ -159,26 +160,26 @@ export function buildHeartRateCapabilityFactsFromEvidenceReads(input: {
   athleteId: string;
   asOf: Date;
   reads: AthletePerformanceHeartRateReads;
-}) {
-  return Object.fromEntries(
-    (["bike", "run", "swim"] as const).map((activityCategory) => [
+}): AthleteHeartRateCalibrationFacts {
+  const forCategory = (activityCategory: "bike" | "run" | "swim") => ({
+    lthr: unavailableHeartRateFact({
       activityCategory,
-      {
-        lthr: unavailableHeartRateFact({
-          activityCategory,
-          metric: "lthr",
-          reason: "no_eligible_evidence",
-        }),
-        maxHr: adaptHeartRateFact({
-          athleteId: input.athleteId,
-          activityCategory,
-          metric: "max_hr",
-          ...input.reads[activityCategory].maxHr,
-          asOf: input.asOf,
-        }),
-      },
-    ]),
-  );
+      metric: "lthr",
+      reason: "no_eligible_evidence",
+    }),
+    maxHr: adaptHeartRateFact({
+      athleteId: input.athleteId,
+      activityCategory,
+      metric: "max_hr",
+      ...input.reads[activityCategory].maxHr,
+      asOf: input.asOf,
+    }),
+  });
+  return {
+    bike: forCategory("bike"),
+    run: forCategory("run"),
+    swim: forCategory("swim"),
+  };
 }
 
 /**
@@ -427,11 +428,16 @@ export function createAthletePerformanceTargetFactsBatchReader(
         if (!reads) throw new Error("Canonical heart-rate batch reader omitted a result");
         const facts = thresholdFacts?.[index];
         if (!facts) throw new Error("Canonical threshold batch reader omitted a result");
-        const heartRate = buildHeartRateCapabilityFactsFromEvidenceReads({
+        const maxHeartRate = buildHeartRateCapabilityFactsFromEvidenceReads({
           athleteId: repositoryInput.athleteId,
           asOf: repositoryInput.asOf,
           reads,
         });
+        const heartRate = {
+          bike: { lthr: facts.heartRate.bike.lthr, maxHr: maxHeartRate.bike.maxHr },
+          run: { lthr: facts.heartRate.run.lthr, maxHr: maxHeartRate.run.maxHr },
+          swim: { lthr: facts.heartRate.swim.lthr, maxHr: maxHeartRate.swim.maxHr },
+        };
         return athletePerformanceTargetFactsSchema.parse({ ...facts, heartRate });
       });
     };

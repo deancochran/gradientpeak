@@ -4,6 +4,7 @@ import {
   createProviderOperationRegistry,
   type ProviderOperationAdapter,
 } from "./provider-operation-registry";
+import { getProviderOperationAdapter } from "./provider-operation-runtime";
 
 type FakeProvider = "alpha" | "beta";
 
@@ -20,6 +21,7 @@ function fakeAdapter(provider: FakeProvider): ProviderOperationAdapter<FakeProvi
       },
       url: `https://example.test/oauth/${provider}`,
     })),
+    validateOAuthStateBinding: vi.fn(() => true),
     exchangeOAuthCode: vi.fn(async () => ({
       access_token: "access-token",
       refresh_token: "refresh-token",
@@ -29,9 +31,9 @@ function fakeAdapter(provider: FakeProvider): ProviderOperationAdapter<FakeProvi
       requiresActivation: false,
     })),
     activateOAuthCredential: vi.fn(async () => undefined),
-    connectFailureCode: vi.fn(() => "token_exchange_failed"),
-    normalizeConnectFailure: vi.fn(() => ({
-      code: "connection_failed",
+    classifyOAuthFailure: vi.fn(() => ({
+      kind: "exchange" as const,
+      code: "token_exchange_failed",
       message: "Connection failed",
     })),
     readSetupEvidence: vi.fn(async () => ({
@@ -98,6 +100,10 @@ function fakeAdapter(provider: FakeProvider): ProviderOperationAdapter<FakeProvi
 }
 
 describe("provider operation registry", () => {
+  it("registers Strava through the same provider operation seam", () => {
+    expect(getProviderOperationAdapter("strava")).toMatchObject({ provider: "strava" });
+  });
+
   it("dispatches initial onboarding work through every provider adapter", async () => {
     const alpha = fakeAdapter("alpha");
     const beta = fakeAdapter("beta");

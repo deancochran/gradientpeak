@@ -4,23 +4,17 @@ import {
   canonicalTrainingPlanStructureSchema,
   persistedTrainingPlanStructureSchema,
 } from "@repo/core";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@repo/ui/components/dropdown-menu";
-import { Icon } from "@repo/ui/components/icon";
+import { Tabs, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 import { Text } from "@repo/ui/components/text";
 import { skipToken, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Ellipsis } from "lucide-react-native";
 import React, { useCallback, useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { RefreshControl, ScrollView, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
+import { DetailOverflowMenu, type DetailOverflowMenuAction } from "@/components/shared/detail";
 import { ErrorState, LoadingState } from "@/components/shared/ScreenState";
-import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
+import { useEntityCommentsSheet } from "@/components/social/EntityCommentsSheetProvider";
 import { TrainingPlanDetailFocusBanner } from "@/components/training-plan/TrainingPlanDetailFocusBanner";
 import { TrainingPlanDetailHeaderActionsSection } from "@/components/training-plan/TrainingPlanDetailHeaderActionsSection";
 import { TrainingPlanNoPlanEmptyState } from "@/components/training-plan/TrainingPlanNoPlanEmptyState";
@@ -324,7 +318,8 @@ export default function TrainingPlanOverview() {
     router,
     utils,
   });
-  const isCurrentScheduledPlan = !!plan?.id && scheduling.activePlan?.id === plan.id;
+  const isScheduledPlan = Boolean(scheduling.appliedSchedule);
+  const canSchedulePlan = isOwnedByUser || plan?.is_system_template === true;
   const headerActions = useTrainingPlanHeaderSocialActions({
     plan: plan ?? null,
     router,
@@ -334,6 +329,7 @@ export default function TrainingPlanOverview() {
     ...(plan?.id === undefined ? {} : { entityId: plan.id }),
     entityType: "training_plan",
   });
+  const entityCommentsSheet = useEntityCommentsSheet();
 
   const deletePlanMutation = useReliableMutation(api.trainingPlans.delete, {
     invalidate: [utils.trainingPlans],
@@ -357,6 +353,9 @@ export default function TrainingPlanOverview() {
     onSuccess: async (result) => {
       await Promise.all([
         invalidateTrainingPlanQueries(utils),
+        plan?.id
+          ? utils.trainingPlans.getAppliedSchedule.invalidate({ training_plan_id: plan.id })
+          : Promise.resolve(),
         snapshot.refetchAll(),
         refreshScheduleViews(queryClient, "trainingPlanSchedulingMutation"),
       ]);
@@ -614,6 +613,7 @@ export default function TrainingPlanOverview() {
     () => groupedStructureSessions.find((group) => group.microcycle === activeMicrocycle) ?? null,
     [activeMicrocycle, groupedStructureSessions],
   );
+  const activeMicrocycleValue = activeMicrocycle?.toString() ?? "";
   const selectedMicrocycleSessionCount = useMemo(
     () => selectedMicrocycleGroup?.days.reduce((count, day) => count + day.sessions.length, 0) ?? 0,
     [selectedMicrocycleGroup],
@@ -855,53 +855,54 @@ export default function TrainingPlanOverview() {
     );
   }
 
-  const renderHeaderActions = () => (
-    <DropdownMenu>
-      <DropdownMenuTrigger testID="training-plan-options-trigger">
-        <View className="rounded-full p-2">
-          <Icon as={Ellipsis} size={18} className="text-foreground" />
-        </View>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={6}>
-        {isOwnedByUser ? (
-          <DropdownMenuItem onPress={handleEditStructure} testID="training-plan-options-edit">
-            <Text>Edit Plan</Text>
-          </DropdownMenuItem>
-        ) : null}
-        <DropdownMenuItem
-          onPress={headerActions.handleDuplicate}
-          disabled={headerActions.duplicatePending}
-          testID="training-plan-options-duplicate"
-        >
-          <Text>{headerActions.duplicatePending ? "Duplicating..." : "Duplicate"}</Text>
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onPress={() => scheduling.setShowApplyModal(true)}
-          testID="training-plan-options-schedule"
-        >
-          <Text>Schedule</Text>
-        </DropdownMenuItem>
-        {isCurrentScheduledPlan ? (
-          <DropdownMenuItem
-            onPress={handleRemoveScheduledSessions}
-            variant="destructive"
-            testID="training-plan-options-remove-scheduled"
-          >
-            <Text>Remove Scheduled Sessions</Text>
-          </DropdownMenuItem>
-        ) : null}
-        {isOwnedByUser ? (
-          <DropdownMenuItem
-            onPress={handleDeletePlan}
-            variant="destructive"
-            testID="training-plan-options-delete"
-          >
-            <Text>Delete Plan</Text>
-          </DropdownMenuItem>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+  const renderHeaderActions = () => {
+    const actions: DetailOverflowMenuAction[] = [];
+
+    if (isOwnedByUser) {
+      actions.push({
+        label: "Edit Plan",
+        onPress: handleEditStructure,
+        testID: "training-plan-options-edit",
+      });
+    }
+    actions.push({
+      disabled: headerActions.duplicatePending,
+      label: headerActions.duplicatePending ? "Duplicating..." : "Duplicate training plan",
+      onPress: headerActions.handleDuplicate,
+      testID: "training-plan-options-duplicate",
+    });
+    if (canSchedulePlan && !isScheduledPlan) {
+      actions.push({
+        label: "Schedule training plan",
+        onPress: () => scheduling.setShowApplyModal(true),
+        testID: "training-plan-options-schedule",
+      });
+    }
+    if (isScheduledPlan) {
+      actions.push({
+        label: "Remove Scheduled Sessions",
+        onPress: handleRemoveScheduledSessions,
+        testID: "training-plan-options-remove-scheduled",
+        variant: "destructive",
+      });
+    }
+    if (isOwnedByUser) {
+      actions.push({
+        label: "Delete Plan",
+        onPress: handleDeletePlan,
+        testID: "training-plan-options-delete",
+        variant: "destructive",
+      });
+    }
+
+    return (
+      <DetailOverflowMenu
+        accessibilityLabel="Open training plan actions"
+        actions={actions}
+        testID="training-plan-options-trigger"
+      />
+    );
+  };
 
   return (
     <>
@@ -924,11 +925,21 @@ export default function TrainingPlanOverview() {
             {...(isOwnedByUser
               ? { handleChangeVisibility: headerActions.handleChangeVisibility }
               : {})}
-            handleShare={headerActions.handleShare}
             handleToggleLike={headerActions.handleToggleLike}
-            isCurrentScheduledPlan={isCurrentScheduledPlan}
+            handleShare={headerActions.handleShare}
+            shareDisabled={headerActions.visibilityPending}
+            isScheduledPlan={isScheduledPlan}
             isLiked={headerActions.isLiked}
             likesCount={headerActions.likesCount}
+            commentCount={comments.commentCount}
+            onCommentsPress={() => {
+              if (plan?.id) {
+                entityCommentsSheet?.openEntityComments({
+                  entityId: plan.id,
+                  entityType: "training_plan",
+                });
+              }
+            }}
             {...(totalPlannedLoad === null
               ? {}
               : {
@@ -944,34 +955,40 @@ export default function TrainingPlanOverview() {
           />
 
           <View className="gap-4">
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerClassName="gap-2 pr-2"
-              accessibilityRole="tablist"
+            <Tabs
               accessibilityLabel="Training plan weeks"
+              onValueChange={(value) => setActiveMicrocycle(Number(value))}
+              value={activeMicrocycleValue}
             >
-              {groupedStructureSessions.map((group) => {
-                const isActive = group.microcycle === activeMicrocycle;
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerClassName="pr-2"
+              >
+                <TabsList className="mr-0 h-auto flex-row gap-2 bg-transparent p-0">
+                  {groupedStructureSessions.map((group) => {
+                    const isActive = group.microcycle === activeMicrocycle;
 
-                return (
-                  <Pressable
-                    key={`training-plan-week-tab-${group.microcycle}`}
-                    onPress={() => setActiveMicrocycle(group.microcycle)}
-                    testID={`training-plan-detail-tab-week-${group.microcycle}`}
-                    className={`border-b-2 px-1.5 py-2 ${isActive ? "border-primary" : "border-transparent"}`}
-                    accessibilityRole="tab"
-                    accessibilityState={{ selected: isActive }}
-                  >
-                    <Text
-                      className={`text-sm ${isActive ? "font-semibold text-foreground" : "text-muted-foreground"}`}
-                    >
-                      Week {group.microcycle}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
+                    return (
+                      <TabsTrigger
+                        accessibilityState={{ selected: isActive }}
+                        className={`h-auto border-b-2 px-1.5 py-2 ${isActive ? "border-primary" : "border-transparent"}`}
+                        key={`training-plan-week-tab-${group.microcycle}`}
+                        onPress={() => setActiveMicrocycle(group.microcycle)}
+                        testId={`training-plan-detail-tab-week-${group.microcycle}`}
+                        value={group.microcycle.toString()}
+                      >
+                        <Text
+                          className={`text-sm ${isActive ? "font-semibold text-foreground" : "text-muted-foreground"}`}
+                        >
+                          Week {group.microcycle}
+                        </Text>
+                      </TabsTrigger>
+                    );
+                  })}
+                </TabsList>
+              </ScrollView>
+            </Tabs>
 
             {selectedMicrocycleGroup ? (
               <View className="rounded-3xl border border-border bg-card p-4 gap-4">
@@ -995,8 +1012,8 @@ export default function TrainingPlanOverview() {
                     label="Planned Load"
                     value={
                       selectedMicrocycleLoad === null
-                        ? "Unavailable"
-                        : (markEstimated(`${Math.round(selectedMicrocycleLoad)}`) ?? "Unavailable")
+                        ? "—"
+                        : (markEstimated(`${Math.round(selectedMicrocycleLoad)}`) ?? "—")
                     }
                   />
                   <SummaryMetricCard
@@ -1071,9 +1088,6 @@ export default function TrainingPlanOverview() {
           <TrainingPlanTemplateSchedulingDialog
             applyPending={scheduling.applyTemplateMutation.isPending}
             onApply={scheduling.handleApplyTemplate}
-            onConcurrencyOpenChange={scheduling.setShowConcurrencyWarning}
-            onOpenActivePlan={scheduling.handleOpenActivePlan}
-            onReplaceScheduledPlan={scheduling.handleReplaceScheduledPlan}
             onScheduleModalOpenChange={scheduling.setShowApplyModal}
             onSelectScheduleApplicationMode={scheduling.handleSelectScheduleApplicationMode}
             onSelectScheduleAnchorMode={scheduling.handleSelectScheduleAnchorMode}
@@ -1081,22 +1095,8 @@ export default function TrainingPlanOverview() {
             scheduleAnchorContent={scheduling.scheduleAnchorContent}
             scheduleAnchorMode={scheduling.scheduleAnchorMode}
             setTemplateAnchorDate={scheduling.setTemplateAnchorDate}
-            showConcurrencyWarning={scheduling.showConcurrencyWarning}
             showScheduleModal={scheduling.showApplyModal}
             templateAnchorDate={scheduling.templateAnchorDate}
-          />
-
-          <EntityCommentsSection
-            addCommentPending={comments.addCommentPending}
-            commentCount={comments.commentCount}
-            comments={comments.comments}
-            hasMoreComments={comments.hasMoreComments}
-            isLoadingMoreComments={comments.isLoadingMoreComments}
-            newComment={comments.newComment}
-            onAddComment={comments.handleAddComment}
-            onChangeNewComment={comments.setNewComment}
-            onLoadMoreComments={comments.loadMoreComments}
-            testIDPrefix="training-plan"
           />
         </View>
       </ScrollView>
@@ -1126,17 +1126,17 @@ export default function TrainingPlanOverview() {
 
       {showRemoveScheduledConfirm && plan ? (
         <AppConfirmModal
-          description="This removes the current scheduled set for this plan while keeping completed history."
+          description="This removes this plan's future scheduled set while keeping completed history."
           onClose={() => setShowRemoveScheduledConfirm(false)}
           primaryAction={{
             label: removeScheduledPlanMutation.isPending
               ? "Removing..."
               : "Remove Scheduled Sessions",
             onPress: () => {
-              if (typeof scheduling.activePlan?.scheduleBatchId === "string") {
+              if (typeof scheduling.appliedSchedule?.schedule_batch_id === "string") {
                 removeScheduledPlanMutation.mutate({
                   training_plan_id: plan.id,
-                  schedule_batch_id: scheduling.activePlan.scheduleBatchId,
+                  schedule_batch_id: scheduling.appliedSchedule.schedule_batch_id,
                 });
               }
             },
@@ -1144,7 +1144,7 @@ export default function TrainingPlanOverview() {
             variant: "destructive",
             disabled:
               removeScheduledPlanMutation.isPending ||
-              typeof scheduling.activePlan?.scheduleBatchId !== "string",
+              typeof scheduling.appliedSchedule?.schedule_batch_id !== "string",
           }}
           secondaryAction={{
             label: "Cancel",

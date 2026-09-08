@@ -1,8 +1,4 @@
-import { Text } from "@repo/ui/components/text";
-import { Activity, Bike, Dumbbell, Footprints, Waves } from "lucide-react-native";
-import { View } from "react-native";
-import { ResourceCardHeader, ResourceCardShell } from "@/components/shared/ResourceCardPrimitives";
-import { GoalReadinessRing } from "./GoalReadinessRing";
+import { GoalCard } from "@/components/shared/GoalCard";
 
 type GoalListItemGoal = {
   id: string;
@@ -27,21 +23,12 @@ export function formatActivityCategory(value: string | null | undefined) {
     .join(" ");
 }
 
-export function getActivityCategoryIcon(value: string | null | undefined) {
-  const normalized = value?.toLowerCase() ?? "";
-  if (normalized.includes("run")) return Footprints;
-  if (normalized.includes("bike") || normalized.includes("cycling")) return Bike;
-  if (normalized.includes("swim")) return Waves;
-  if (normalized.includes("strength")) return Dumbbell;
-  return Activity;
-}
-
 export function GoalListItem({
   goal,
   label,
   status,
   readinessPercent,
-  readinessTarget,
+  readinessTarget: _readinessTarget,
   onPress,
   testID,
 }: {
@@ -53,49 +40,23 @@ export function GoalListItem({
   onPress: () => void;
   testID?: string;
 }) {
-  const ActivityIcon = getActivityCategoryIcon(goal.activity_category);
-  const categoryLabel = formatActivityCategory(goal.activity_category);
-  const meta = [formatGoalTargetDate(goal.target_date), status].filter(Boolean).join(" · ");
-
   return (
-    <ResourceCardShell
-      accessibilityLabel={`Open goal ${goal.title || "Untitled goal"}`}
-      compact
+    <GoalCard
+      goal={{
+        id: goal.id,
+        objectiveSummary: label ?? status ?? undefined,
+        targetDate: goal.target_date,
+        title: goal.title,
+        typeLabel: formatActivityCategory(goal.activity_category),
+        ...(typeof readinessPercent !== "number"
+          ? {}
+          : {
+              compactSignals: [{ label: "Readiness", value: `${Math.round(readinessPercent)}%` }],
+            }),
+      }}
       onPress={onPress}
       testID={testID}
-    >
-      <ResourceCardHeader
-        compact
-        accessory={
-          readinessPercent !== undefined ? (
-            <GoalReadinessRing value={readinessPercent} target={readinessTarget} />
-          ) : null
-        }
-        icon={ActivityIcon}
-        iconClassName="text-muted-foreground"
-        iconContainerClassName="bg-muted"
-        meta={
-          <View className="gap-1">
-            <View className="flex-row items-center gap-2">
-              {label ? (
-                <Text className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  {label}
-                </Text>
-              ) : null}
-              <Text className="text-[10px] text-muted-foreground" numberOfLines={1}>
-                {categoryLabel}
-              </Text>
-            </View>
-            <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-              {meta}
-            </Text>
-          </View>
-        }
-        title={goal.title}
-        titleClassName="text-base font-semibold text-foreground"
-        titleFallback="Untitled goal"
-        titleNumberOfLines={1}
-      />
-    </ResourceCardShell>
+      variant="compact"
+    />
   );
 }

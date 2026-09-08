@@ -96,7 +96,7 @@ describe("ActivityListCard", () => {
     expect(screen.getByText("1h 30m")).toBeTruthy();
     expect(screen.getByText("Load")).toBeTruthy();
     expect(screen.getByText("Intensity")).toBeTruthy();
-    expect(screen.getAllByText("Unavailable")).toHaveLength(2);
+    expect(screen.getAllByText("—")).toHaveLength(2);
     expect(screen.getByTestId("activity-card-11111111-1111-4111-8111-111111111111")).toBeTruthy();
     expect(
       screen.getByTestId("activity-card-11111111-1111-4111-8111-111111111111-open"),

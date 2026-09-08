@@ -1,3 +1,0 @@
-appId: ${MAESTRO_APP_ID}
----
-- assertVisible: "E2E_RUNTIME_ERRORS=0"

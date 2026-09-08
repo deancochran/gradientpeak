@@ -1,5 +1,6 @@
 import {
   type ActivityPayload,
+  type AthletePerformanceTargetFacts,
   activityPlanStructureSchema,
   createUnavailableAthletePerformanceTargetFacts,
   type RecordingActivityCategory,
@@ -12,6 +13,7 @@ import { Alert } from "react-native";
 import type { ResourcePickerItem, ResourcePickerScope } from "@/components/shared/resource-picker";
 import { api } from "@/lib/api";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
+import { ROUTES } from "@/lib/constants/routes";
 import { useRecordingCommands } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useRecordingConfig } from "@/lib/hooks/useRecordingConfig";
@@ -256,6 +258,11 @@ export function useRecordScreenController() {
     }
   }, [apiUtils, user?.id]);
 
+  const startRecording = React.useCallback(
+    (startPerformanceTargets: AthletePerformanceTargetFacts) => start(startPerformanceTargets),
+    [start],
+  );
+
   const handleStart = React.useCallback(async () => {
     console.log("[RecordModal] Start clicked");
 
@@ -276,12 +283,12 @@ export function useRecordScreenController() {
 
       Alert.alert(
         "Profile Setup Required",
-        `This activity requires the following metrics:\n\n${metricDetails}\n\nWithout these, automatic trainer control (ERG mode) and accurate targets will not be available.\n\nSet these in Settings > Profile.`,
+        `This activity requires the following metrics:\n\n${metricDetails}\n\nWithout these, automatic trainer control (ERG mode) and accurate targets will not be available.\n\nSet these from Me.`,
         [
           {
-            text: "Go to Profile",
+            text: "Go to Me",
             onPress: () => {
-              navigateTo("/profile");
+              navigateTo(ROUTES.ME);
             },
           },
           {
@@ -290,7 +297,7 @@ export function useRecordScreenController() {
             onPress: async () => {
               console.log("[RecordModal] User chose to continue without required metrics");
               try {
-                await start(startPerformanceTargets);
+                await startRecording(startPerformanceTargets);
                 console.log("[RecordModal] Recording started successfully");
               } catch (error) {
                 console.error("[RecordModal] Error starting recording:", error);
@@ -310,13 +317,13 @@ export function useRecordScreenController() {
 
     console.log("[RecordModal] Starting recording");
     try {
-      await start(startPerformanceTargets);
+      await startRecording(startPerformanceTargets);
       console.log("[RecordModal] Recording started successfully");
     } catch (error) {
       console.error("[RecordModal] Error starting recording:", error);
       Alert.alert("Error", "Failed to start recording. Please try again.");
     }
-  }, [fetchStartPerformanceTargets, navigateTo, start, service]);
+  }, [fetchStartPerformanceTargets, navigateTo, service, startRecording]);
 
   const handleFinish = React.useCallback(async () => {
     if (isFinishing) return;

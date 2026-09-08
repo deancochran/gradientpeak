@@ -65,7 +65,13 @@ test("[variation:profiles.private:message-history] private profile message actio
     await athletePage.getByRole("button", { name: "Message" }).click();
     await expect(athletePage).toHaveURL(/\/messages/);
     await expect(athletePage.getByRole("heading", { name: /messages|new message/i })).toBeVisible();
+    await expect(athletePage).not.toHaveURL(/(?:\?|&)flash=/);
     await athletePage.goBack();
+    if (new URL(athletePage.url()).pathname === "/messages") {
+      // Native POST redirects can retain the redirect target as a transient history entry.
+      await athletePage.goBack();
+    }
+    await expect(athletePage).toHaveURL(`/user/${social.coachId}`);
     await expect(athletePage.getByText("This account is private")).toBeVisible();
     await expect(athletePage.getByRole("heading", { name: "Recent Activities" })).toHaveCount(0);
   } finally {

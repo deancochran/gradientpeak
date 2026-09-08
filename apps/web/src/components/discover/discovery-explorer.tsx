@@ -44,9 +44,15 @@ type QueryState = {
   fetchNextPage: () => Promise<unknown>;
 };
 
-export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string }) {
+export function DiscoveryExplorer({
+  initialQuery = "",
+  initialScope = "activityPlans",
+}: {
+  initialQuery?: string;
+  initialScope?: WebDiscoverScope;
+}) {
   const navigate = useNavigate();
-  const [scope, setScope] = useState<WebDiscoverScope>("activityPlans");
+  const [scope, setScope] = useState<WebDiscoverScope>(initialScope);
   const [draftSearch, setDraftSearch] = useState(initialQuery);
   const [search, setSearch] = useState(initialQuery.trim());
   const [activityPlanCategory, setActivityPlanCategory] = useState("");
@@ -180,6 +186,11 @@ export function DiscoveryExplorer({ initialQuery = "" }: { initialQuery?: string
             onClick={() => {
               setScope(option.id);
               resetScopeFilters();
+              void navigate({
+                to: "/search",
+                search: (previous) => ({ ...previous, scope: option.id }),
+                replace: true,
+              });
             }}
           >
             {option.label}
@@ -458,7 +469,11 @@ function DiscoveryCard({ scope, item }: { scope: WebDiscoverScope; item: Discove
         ) : null}
         {scope === "activityPlans" ? (
           <Button asChild size="sm" variant="outline">
-            <Link to="/activity-plans/$activityPlanId" params={{ activityPlanId: item.id }}>
+            <Link
+              to="/activity-plans/$activityPlanId"
+              params={{ activityPlanId: item.id }}
+              search={{ edit: undefined }}
+            >
               View activity plan
             </Link>
           </Button>

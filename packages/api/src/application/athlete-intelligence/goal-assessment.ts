@@ -8,8 +8,12 @@ import {
   simulateTrainingPlan,
 } from "@repo/core";
 import { profileGoals } from "@repo/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
+import {
+  type GoalAssessmentBatchResponse,
+  goalAssessmentBatchResponseSchema,
+} from "../../contracts/goal-assessment-batch";
 import type { DrizzleQueryExecutor } from "../../db";
 import { readAthleteReadModel } from "./athlete-read-model";
 import {
@@ -29,30 +33,20 @@ export const goalAssessmentResponseSchema = z
 
 export type GoalAssessmentResponse = z.infer<typeof goalAssessmentResponseSchema>;
 
-export async function getGoalAssessment(input: {
-  db: DrizzleQueryExecutor;
-  profileId: string;
-  goalId: string;
-  now?: Date;
+type AssessmentGoal = {
+  id: string;
+  activity_category: string;
+  target_date: string;
+  target_payload: unknown;
+};
+
+function assessGoalFromReadModel(input: {
+  goal: AssessmentGoal;
+  readModel: Awaited<ReturnType<typeof readAthleteReadModel>>;
+  now: Date;
   plannedSessions?: ProjectedTrainingStimulus[];
-}): Promise<GoalAssessmentResponse> {
-  const now = input.now ?? new Date();
-  const [goal] = await input.db
-    .select()
-    .from(profileGoals)
-    .where(and(eq(profileGoals.id, input.goalId), eq(profileGoals.profile_id, input.profileId)))
-    .limit(1);
-  if (!goal) throw new Error("Goal not found");
-  const readModel = await readAthleteReadModel({
-    db: input.db,
-    profileId: input.profileId,
-    sections: {
-      publishedState: true,
-      status: true,
-      currentBaseline: { includePlanningContext: false },
-    },
-    now,
-  });
+}): GoalAssessmentResponse {
+  const { goal, readModel, now } = input;
   const status = readModel.status;
   const currentBaseline = readModel.currentBaseline;
   if (!status || !currentBaseline?.baseline) {
@@ -125,5 +119,85 @@ export async function getGoalAssessment(input: {
     assessmentConfidence: assessment.assessmentConfidence,
     rebuildStatus: status.rebuildStatus,
     assessment,
+  });
+}
+
+export async function getGoalAssessment(input: {
+  db: DrizzleQueryExecutor;
+  profileId: string;
+  goalId: string;
+  now?: Date;
+  plannedSessions?: ProjectedTrainingStimulus[];
+}): Promise<GoalAssessmentResponse> {
+  const now = input.now ?? new Date();
+  const [goal] = await input.db
+    .select()
+    .from(profileGoals)
+    .where(and(eq(profileGoals.id, input.goalId), eq(profileGoals.profile_id, input.profileId)))
+    .limit(1);
+  if (!goal) throw new Error("Goal not found");
+  const readModel = await readAthleteReadModel({
+    db: input.db,
+    profileId: input.profileId,
+    sections: {
+      publishedState: true,
+      status: true,
+      currentBaseline: { includePlanningContext: false },
+    },
+    now,
+  });
+  return assessGoalFromReadModel({ goal, readModel, now, plannedSessions: input.plannedSessions });
+}
+
+export async function getGoalAssessmentBatch(input: {
+  db: DrizzleQueryExecutor;
+  profileId: string;
+  goalIds: readonly string[];
+  now?: Date;
+}): Promise<GoalAssessmentBatchResponse> {
+  const now = input.now ?? new Date();
+  const goals = await input.db
+    .select({
+      id: profileGoals.id,
+      activity_category: profileGoals.activity_category,
+      target_date: profileGoals.target_date,
+      target_payload: profileGoals.target_payload,
+    })
+    .from(profileGoals)
+    .where(
+      and(eq(profileGoals.profile_id, input.profileId), inArray(profileGoals.id, input.goalIds)),
+    );
+  if (goals.length === 0) return goalAssessmentBatchResponseSchema.parse({ entries: [] });
+
+  const readModel = await readAthleteReadModel({
+    db: input.db,
+    profileId: input.profileId,
+    sections: {
+      publishedState: true,
+      status: true,
+      currentBaseline: { includePlanningContext: false },
+    },
+    now,
+  });
+  const results = new Map(
+    goals.map((goal) => [goal.id, assessGoalFromReadModel({ goal, readModel, now })]),
+  );
+  return goalAssessmentBatchResponseSchema.parse({
+    entries: input.goalIds.flatMap((goalId) => {
+      const result = results.get(goalId);
+      if (!result) return [];
+      return [
+        {
+          goalId,
+          readiness: result.assessment
+            ? { status: result.assessment.status, value: result.assessment.readiness }
+            : null,
+          freshness: result.freshness,
+          confidence: result.assessmentConfidence,
+          revision: result.stateRevision,
+          computedAt: result.computedAt,
+        },
+      ];
+    }),
   });
 }

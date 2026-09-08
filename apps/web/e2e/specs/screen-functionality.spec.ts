@@ -5,7 +5,7 @@ import { ActivitiesPage, NotificationsPage, RoutesPage, ShellPage } from "../pag
 
 const topLevelScreens = [
   { path: "/", name: /welcome back/i },
-  { path: "/search", name: /discover training and community/i },
+  { path: "/search", name: /discover training, routes, profiles, and groups/i },
   { path: "/activity-plans", name: /^activity plans$/i },
   { path: "/training-plans", name: /^training plans$/i },
   { path: "/training-preferences", name: /^training preferences$/i },

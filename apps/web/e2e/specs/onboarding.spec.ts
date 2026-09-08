@@ -5,6 +5,7 @@ import {
   test,
 } from "../lane-support/auth/lane-test";
 import { signUp, uniqueAuthActor } from "../lane-support/auth/mailbox";
+import { AuthPage } from "../pages";
 import { createE2EExecutionIdentity } from "../support/identity";
 import { currentContractEpochHeaders } from "../utils/contractEpoch";
 
@@ -57,13 +58,10 @@ for (const viewport of [
     await expect(page.getByLabel("Username")).toBeVisible();
     await expect(page.getByLabel("Goal title")).toHaveCount(0);
     await expect(page.getByLabel("Target date")).toHaveCount(0);
-    await page.getByLabel("Full name").fill(`Web ${viewport.name} Athlete`);
-    await page
-      .getByLabel("Username")
-      .fill(
-        `identity_first_${viewport.name}_${createE2EExecutionIdentity(test.info()).suffix(`onboarding-${viewport.name}`, 12)}`,
-      );
-    await page.getByRole("button", { name: "Finish setup" }).click();
+    await new AuthPage(page).completeProfile({
+      fullName: `Web ${viewport.name} Athlete`,
+      username: `identity_first_${viewport.name}_${createE2EExecutionIdentity(test.info()).suffix(`onboarding-${viewport.name}`, 12)}`,
+    });
     await expect(page).toHaveURL(/\/$/, { timeout: 15_000 });
 
     await page.goto("/onboarding");

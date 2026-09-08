@@ -78,7 +78,10 @@ jest.mock("lucide-react-native", () => ({
   CalendarDays: createHost("CalendarDays"),
   Circle: createHost("Circle"),
   Home: createHost("Home"),
+  Route: createHost("Route"),
+  Search: createHost("Search"),
   Target: createHost("Target"),
+  Users: createHost("Users"),
 }));
 
 jest.mock("@/lib/hooks/useAuth", () => ({
@@ -163,9 +166,10 @@ describe("tabs layout", () => {
     expect(screen.getByText("Home")).toBeTruthy();
     expect(screen.getByText("Plan")).toBeTruthy();
     expect(screen.getByText("Record")).toBeTruthy();
-    expect(screen.getByText("Calendar")).toBeTruthy();
-    expect(screen.getByText("Profile")).toBeTruthy();
-    expect(screen.queryByText("Groups")).toBeNull();
+    expect(screen.getByText("Discover")).toBeTruthy();
+    expect(screen.getByText("Community")).toBeTruthy();
+    expect(screen.queryByText("Calendar")).toBeNull();
+    expect(screen.queryByText("Profile")).toBeNull();
     expect(screen.queryByTestId("tab-config-trends")).toBeNull();
   });
 

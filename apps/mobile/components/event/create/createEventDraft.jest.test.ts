@@ -84,6 +84,14 @@ describe("buildCreateEventInput", () => {
     );
   });
 
+  it("keeps immutable event type out of custom update patches", () => {
+    const draft = createDefaultEventDraft({ mode: "custom" });
+    const patch = buildUpdatePatch({ ...draft, routeId: "route-2", routeName: "Park Loop" });
+
+    expect(patch).toEqual(expect.objectContaining({ route_id: "route-2" }));
+    expect(patch).not.toHaveProperty("event_type");
+  });
+
   it("sends route attachment and explicit route clearing in update patches", () => {
     const routeOnly = {
       activityPlanId: null,

@@ -40,11 +40,14 @@ describe("auth lane artifact registry", () => {
     expect(second.drain().actorEmails).toEqual(["second-1@example.test"]);
   });
 
-  it("uses parameterized exact identities and never wildcard deletion", () => {
-    for (const sql of Object.values(AUTH_ARTIFACT_CLEANUP_SQL)) {
+  it("uses parameterized exact text identities and never wildcard deletion", () => {
+    for (const [name, sql] of Object.entries(AUTH_ARTIFACT_CLEANUP_SQL)) {
       expect(sql).toContain("any($1::text[])");
       expect(sql.toLowerCase()).not.toContain(" like ");
       expect(sql).not.toContain("example.test");
+      if (name === "verificationConsumptionMarkers") {
+        expect(sql).toContain('where "identifier" = any($1::text[])');
+      }
     }
   });
 

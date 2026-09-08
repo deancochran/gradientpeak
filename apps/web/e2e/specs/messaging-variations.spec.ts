@@ -10,12 +10,12 @@ test("[variation:messaging.conversations:keyboard-dm] keyboard recipient selecti
   await sender.send("Keyboard direct hello", "keyboard");
   await new MessagingPage(b.page).openInbox();
   await b.page
-    .getByRole("link", { name: new RegExp(a.username, "i") })
+    .getByRole("link", { name: /Messaging Alpha/i })
     .first()
     .click();
-  await expect(b.page.getByText("Keyboard direct hello", { exact: true })).toBeVisible();
+  await expect(b.page.getByText("Keyboard direct hello", { exact: true }).last()).toBeVisible();
   await b.page.reload();
-  await expect(b.page.getByText("Keyboard direct hello", { exact: true })).toBeVisible();
+  await expect(b.page.getByText("Keyboard direct hello", { exact: true }).last()).toBeVisible();
 });
 
 test("[variation:messaging.conversations:group-history] group unread counts clear independently and browser history restores the conversation", async ({
@@ -31,7 +31,7 @@ test("[variation:messaging.conversations:group-history] group unread counts clea
   await group.click();
   await b.page.goto("/notifications");
   await b.page.goBack();
-  await expect(b.page.getByText("History group hello", { exact: true })).toBeVisible();
+  await expect(b.page.getByText("History group hello", { exact: true }).last()).toBeVisible();
   await new MessagingPage(c.page).openInbox();
   await expect(
     c.page
@@ -50,7 +50,7 @@ test("[variation:messaging.follow-requests:reject-reload] rejected request stays
   const notifications = new NotificationsPage(a.page);
   await messaging.seedFollowRequest("b", "a");
   await notifications.open();
-  const request = notifications.requestFor(/messaging_bravo/i);
+  const request = notifications.followRequest();
   await request.getByRole("button", { name: "Reject" }).press("Enter");
   await expect.poll(() => messaging.readFollowStatus("b", "a")).toBeNull();
   await a.page.reload();
@@ -60,16 +60,16 @@ test("[variation:messaging.follow-requests:reject-reload] rejected request stays
 test("[variation:messaging.follow-requests:accept-profile] accepted request persists and its actor profile remains reachable from notifications", async ({
   messaging,
 }) => {
-  const { a } = messaging.actors;
+  const { a, c } = messaging.actors;
   const notifications = new NotificationsPage(a.page);
   await messaging.seedFollowRequest("c", "a");
   await notifications.open();
-  const request = notifications.requestFor(/messaging_charlie/i);
+  const request = notifications.followRequest();
+  await request.getByRole("button", { name: "Open" }).click();
+  await expect(a.page.getByRole("heading", { level: 1 })).toHaveText(c.username);
+  await a.page.goBack();
   await request.getByRole("button", { name: "Accept" }).click();
   await expect.poll(() => messaging.readFollowStatus("c", "a")).toBe("accepted");
   await a.page.reload();
   await expect(request.getByRole("button", { name: "Accept" })).toHaveCount(0);
-  const profile = a.page.getByRole("link", { name: /messaging_charlie/i }).first();
-  await profile.click();
-  await expect(a.page.getByRole("heading", { level: 1 })).toContainText(/Messaging Charlie/i);
 });

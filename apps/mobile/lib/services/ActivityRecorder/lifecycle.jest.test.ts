@@ -1996,9 +1996,10 @@ describe("ActivityRecorderService lifecycle", () => {
     mutable.recoveredCheckpoint = checkpoint;
     mutable.recoveredReplay = streamBufferMocks.__replay;
     await service.discardRecoveredRecording();
-    expect(streamBufferMocks.StreamBuffer.deleteDurableDirectories).toHaveBeenCalledWith([
-      "/streams",
-    ]);
+    expect(streamBufferMocks.StreamBuffer.deleteDurableDirectories).toHaveBeenCalledWith(
+      ["/streams"],
+      "profile-1:session-1",
+    );
     expect(checkpointStorageMocks.clearRecordingCheckpoint).toHaveBeenCalledWith(
       checkpoint.sessionId,
     );

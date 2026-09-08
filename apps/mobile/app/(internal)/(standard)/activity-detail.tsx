@@ -8,6 +8,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Skeleton } from "@repo/ui/components/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 import { Text } from "@repo/ui/components/text";
 import { getNormalizedPowerPresentation } from "@repo/ui/lib/normalized-power-presentation";
 import { skipToken, useQueryClient } from "@tanstack/react-query";
@@ -26,9 +27,13 @@ import {
 } from "@/components/activity/useActivityDetailStreams";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ActivityCard } from "@/components/shared/ActivityCard";
-import { APP_BOTTOM_SHEET_PRESENTATIONS, AppBottomSheet } from "@/components/shared/AppBottomSheet";
-import { DetailDeleteConfirmModal, DetailOverflowMenu } from "@/components/shared/detail";
-import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
+import {
+  DetailDeleteConfirmModal,
+  DetailOverflowMenu,
+  DetailScaffold,
+} from "@/components/shared/detail";
+import { RouteCard } from "@/components/shared/RouteCard";
+import { useEntityCommentsSheet } from "@/components/social/EntityCommentsSheetProvider";
 import { getCommonLoadPresentation } from "@/lib/activity-load-presentation";
 import {
   getStreamArtifactMessage,
@@ -43,6 +48,7 @@ import {
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
+import { getPublicShareUrl } from "@/lib/share/public-share-url";
 
 function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -69,11 +75,6 @@ const VISIBILITY_LABELS: Record<ContentVisibility, string> = {
 
 const ACTIVITY_DETAIL_TABS = ["overview", "breakdown", "analysis"] as const;
 type ActivityDetailTab = (typeof ACTIVITY_DETAIL_TABS)[number];
-
-function getPublicShareUrl(path: string) {
-  const origin = (process.env.EXPO_PUBLIC_API_URL ?? "https://gradientpeak.app").replace(/\/$/, "");
-  return `${origin}${path}`;
-}
 
 function formatPace(metersPerSecond: number, preferredUnitSystem: PreferredUnitSystem): string {
   if (metersPerSecond === 0) return "0:00";
@@ -138,7 +139,7 @@ function getIngestionMessage(
       ? (ingestion as { status: string }).status
       : null;
 
-  if (!status || status === "ready") {
+  if (!status || status === "ready" || status === "succeeded") {
     return null;
   }
 
@@ -336,13 +337,15 @@ function ActivityDetailScreen() {
   const tanstackQueryClient = useQueryClient();
 
   // Fetch activity data
-  const { data: activityData, isLoading: isLoadingActivity } = api.activities.getById.useQuery(
-    id ? { id } : skipToken,
-    { enabled: !!id },
-  );
+  const {
+    data: activityData,
+    isError: isActivityError,
+    isLoading: isLoadingActivity,
+  } = api.activities.getById.useQuery(id ? { id } : skipToken, { enabled: !!id });
   const effortsQuery = api.activities.getEfforts.useQuery(id ? { id } : skipToken, {
     enabled: !!id,
   });
+  const ownedActivitiesQuery = api.activities.listPaginated.useQuery({ limit: 20 });
 
   const detail = activityData?.detail;
   const activity = detail?.summary;
@@ -370,6 +373,22 @@ function ActivityDetailScreen() {
     : "Compatible activity data is unavailable.";
 
   const isOwner = activity?.capabilities.canEdit ?? false;
+  const completedActivityProvidersQuery =
+    api.activities.getCompletedActivityProviderEligibility.useQuery(
+      id && isOwner ? { activityId: id } : skipToken,
+      {
+        enabled: Boolean(id && isOwner),
+        refetchInterval: (query) =>
+          query.state.data?.some(
+            (provider) => provider.status === "queued" || provider.status === "running",
+          )
+            ? 5_000
+            : false,
+      },
+    );
+  const stravaCompletedActivity = completedActivityProvidersQuery.data?.find(
+    (provider) => provider.provider === "strava",
+  );
 
   // Fetch streams if an activity file exists
   const activityId = activity?.id;
@@ -413,9 +432,12 @@ function ActivityDetailScreen() {
 
   // Delete mutation
   const deleteMutation = api.activities.delete.useMutation({
-    onSuccess: () => {
+    onSuccess: async () => {
+      const deletedActivity = { id: activity?.id ?? id };
+      queryClient.activities.getById.setData(deletedActivity, undefined);
+      await queryClient.activities.getById.reset(deletedActivity);
+      await queryClient.activities.getById.invalidate(deletedActivity);
       queryClient.activities.invalidate();
-      queryClient.home.getDashboard.invalidate();
       queryClient.athleteIntelligence.getReadModel.invalidate();
       void invalidatePostActivityIngestionQueries(tanstackQueryClient);
       router.back();
@@ -449,9 +471,44 @@ function ActivityDetailScreen() {
   };
 
   const comments = useEntityCommentsController({ entityId: activity?.id, entityType: "activity" });
+  const entityCommentsSheet = useEntityCommentsSheet();
   const [activeTab, setActiveTab] = useState<ActivityDetailTab>("overview");
-  const [showComments, setShowComments] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [importedSourcesExpanded, setImportedSourcesExpanded] = useState(false);
+  const resolveImportedSourceMutation = api.activities.resolveImportedSource.useMutation({
+    onSuccess: () => queryClient.activities.getById.invalidate({ id: activity?.id ?? id }),
+    onError: () => Alert.alert("Error", "Imported source could not be updated."),
+  });
+  const keepImportedSourceSeparateMutation = api.activities.keepImportedSourceSeparate.useMutation({
+    onSuccess: () => queryClient.activities.getById.invalidate({ id: activity?.id ?? id }),
+    onError: () => Alert.alert("Error", "Separate activity could not be queued."),
+  });
+  const sendCompletedActivityMutation = api.activities.sendCompletedActivityToProvider.useMutation({
+    retry: false,
+    onSuccess: (result) => {
+      if (result.status === "queued")
+        Alert.alert("Queued", "Your activity will be sent to Strava.");
+      else if (result.status === "completed")
+        Alert.alert("Sent", "This activity is already on Strava.");
+      else if (result.status === "reconnect_required") {
+        Alert.alert(
+          "Reconnect Strava",
+          "Grant activity upload access before sending this activity.",
+        );
+      } else if (result.status === "dispatch_uncertain") {
+        Alert.alert(
+          "Upload outcome uncertain",
+          "GradientPeak will not automatically upload this activity again.",
+        );
+      } else Alert.alert("Unable to send", "This activity could not be sent to Strava.");
+      if (id) {
+        void queryClient.activities.getCompletedActivityProviderEligibility.invalidate({
+          activityId: id,
+        });
+      }
+    },
+    onError: (error) => Alert.alert("Unable to send", error.message),
+  });
 
   const handleDelete = () => {
     if (!activity) return;
@@ -528,6 +585,22 @@ function ActivityDetailScreen() {
   );
 
   // Loading skeleton
+  if (isActivityError) {
+    return (
+      <DetailScaffold
+        isLoading={false}
+        loadingTestID="activity-detail-loading"
+        notFound
+        notFoundDescription="This activity may have been removed."
+        notFoundOnActionPress={() => router.back()}
+        notFoundTestID="activity-detail-not-found"
+        notFoundTitle="Activity not found"
+      >
+        {null}
+      </DetailScaffold>
+    );
+  }
+
   if (isLoadingActivity || !activity) {
     return (
       <ScrollView className="flex-1 bg-background" testID="activity-detail-loading">
@@ -549,6 +622,22 @@ function ActivityDetailScreen() {
         {isOwner ? (
           <DetailOverflowMenu
             actions={[
+              ...(stravaCompletedActivity?.status === "ready"
+                ? [
+                    {
+                      disabled: sendCompletedActivityMutation.isPending,
+                      label: sendCompletedActivityMutation.isPending
+                        ? "Sending to Strava..."
+                        : "Send to Strava",
+                      onPress: () =>
+                        sendCompletedActivityMutation.mutate({
+                          activityId: activity.id,
+                          provider: "strava",
+                        }),
+                      testID: "activity-detail-options-send-strava",
+                    },
+                  ]
+                : []),
               {
                 disabled: updatePrivacyMutation.isPending,
                 label: "Change visibility",
@@ -581,48 +670,79 @@ function ActivityDetailScreen() {
               isLiked={activityLike.isLiked}
               likeCount={activityLike.likeCount}
               likePending={activityLike.isPending}
-              onCommentPress={() => setShowComments(true)}
+              onCommentPress={() => {
+                if (activity?.id) {
+                  entityCommentsSheet?.openEntityComments({
+                    entityId: activity.id,
+                    entityType: "activity",
+                  });
+                }
+              }}
               onLikePress={handleLikeToggle}
               onSharePress={handleShare}
               testID="activity-detail-summary"
             />
+            {isOwner && stravaCompletedActivity?.status === "reconnect_required" ? (
+              <Pressable
+                accessibilityRole="button"
+                className="rounded-xl border border-border bg-muted/30 px-4 py-3"
+                onPress={() => router.navigate(ROUTES.INTEGRATIONS)}
+                testID="activity-detail-strava-reconnect"
+              >
+                <Text className="text-sm text-foreground">
+                  {stravaCompletedActivity.reason} Open integrations to reconnect.
+                </Text>
+              </Pressable>
+            ) : null}
+            {isOwner &&
+            ["queued", "running", "completed", "dispatch_uncertain", "failed"].includes(
+              stravaCompletedActivity?.status ?? "",
+            ) ? (
+              <View
+                className="rounded-xl border border-border bg-muted/30 px-4 py-3"
+                testID="activity-detail-strava-upload-status"
+              >
+                <Text className="text-sm text-foreground">{stravaCompletedActivity?.reason}</Text>
+              </View>
+            ) : null}
           </View>
 
-          <View
+          <Tabs
             accessibilityLabel="Activity detail sections"
-            accessibilityRole="tablist"
-            className="flex-row rounded-2xl border border-border bg-muted/40 p-1"
+            onValueChange={(tab) => setActiveTab(tab as ActivityDetailTab)}
+            value={activeTab}
           >
-            {ACTIVITY_DETAIL_TABS.map((tab) => {
-              const selected = activeTab === tab;
-              const label = tab[0]?.toUpperCase() + tab.slice(1);
+            <TabsList className="flex-row rounded-2xl border border-border bg-muted/40 p-1">
+              {ACTIVITY_DETAIL_TABS.map((tab) => {
+                const selected = activeTab === tab;
+                const label = tab[0]?.toUpperCase() + tab.slice(1);
 
-              return (
-                <Pressable
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected }}
-                  className={
-                    selected
-                      ? "flex-1 rounded-xl bg-background px-3 py-2 shadow-sm"
-                      : "flex-1 rounded-xl px-3 py-2"
-                  }
-                  key={tab}
-                  onPress={() => setActiveTab(tab)}
-                  testID={`activity-detail-tab-${tab}`}
-                >
-                  <Text
+                return (
+                  <TabsTrigger
+                    accessibilityState={{ selected }}
                     className={
                       selected
-                        ? "text-center text-sm font-semibold text-foreground"
-                        : "text-center text-sm font-semibold text-muted-foreground"
+                        ? "flex-1 rounded-xl bg-background px-3 py-2 shadow-sm"
+                        : "flex-1 rounded-xl px-3 py-2"
                     }
+                    key={tab}
+                    testId={`activity-detail-tab-${tab}`}
+                    value={tab}
                   >
-                    {label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
+                    <Text
+                      className={
+                        selected
+                          ? "text-center text-sm font-semibold text-foreground"
+                          : "text-center text-sm font-semibold text-muted-foreground"
+                      }
+                    >
+                      {label}
+                    </Text>
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+          </Tabs>
 
           {activeTab === "overview" ? (
             isOwner ? (
@@ -631,6 +751,17 @@ function ActivityDetailScreen() {
                 effectiveSessionRpe={detail?.effectiveSessionRpe ?? null}
               />
             ) : null
+          ) : null}
+
+          {activeTab === "overview" && detail?.linkedRoute ? (
+            <RouteCard
+              onPress={() => router.navigate(ROUTES.ROUTES.DETAIL(detail.linkedRoute?.id ?? ""))}
+              route={detail.linkedRoute}
+              showAttribution={false}
+              showLike={false}
+              testID={`activity-detail-linked-route-${detail.linkedRoute.id}`}
+              variant="compact"
+            />
           ) : null}
 
           {activeTab === "overview" ? (
@@ -785,7 +916,7 @@ function ActivityDetailScreen() {
                         Intensity
                       </Text>
                       <Text className="text-lg font-bold">
-                        {commonLoadPresentation.intensity ?? "Unavailable"}
+                        {commonLoadPresentation.intensity ?? "—"}
                       </Text>
                     </View>
                   </View>
@@ -866,8 +997,8 @@ function ActivityDetailScreen() {
                 <CardContent>
                   <Text className="text-3xl font-bold">
                     {normalizedPowerPresentation.valueWatts === null
-                      ? "Unavailable"
-                      : `${Math.round(normalizedPowerPresentation.valueWatts)} W`}
+                      ? "—"
+                      : `${normalizedPowerPresentation.status === "partial" ? "~" : ""}${Math.round(normalizedPowerPresentation.valueWatts)} W`}
                   </Text>
                   <Text className="mt-2 text-xs text-muted-foreground">
                     {normalizedPowerPresentation.evidence}
@@ -1049,30 +1180,99 @@ function ActivityDetailScreen() {
               />
             )
           ) : null}
+
+          {isOwner && activityData?.importedSources?.length ? (
+            <Card testID="activity-imported-sources">
+              <CardContent className="gap-3 py-3">
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setImportedSourcesExpanded((expanded) => !expanded)}
+                >
+                  <Text className="font-medium">Imported sources</Text>
+                </Pressable>
+                {importedSourcesExpanded
+                  ? activityData.importedSources.map((source) => (
+                      <View className="gap-2 border-t border-border pt-2" key={source.id}>
+                        <Text className="text-sm capitalize">
+                          {source.provider} ·{" "}
+                          {source.resolutionStatus === "review"
+                            ? "Needs review"
+                            : "Connected source"}
+                        </Text>
+                        {source.resolutionStatus === "review" ? (
+                          <View className="flex-row gap-3">
+                            <Pressable
+                              disabled={resolveImportedSourceMutation.isPending}
+                              onPress={() =>
+                                resolveImportedSourceMutation.mutate({
+                                  action: "confirm_same",
+                                  sourceReferenceId: source.id,
+                                })
+                              }
+                            >
+                              <Text className="text-sm font-medium text-primary">
+                                Same activity
+                              </Text>
+                            </Pressable>
+                            <Pressable
+                              disabled={keepImportedSourceSeparateMutation.isPending}
+                              onPress={() =>
+                                keepImportedSourceSeparateMutation.mutate({
+                                  sourceReferenceId: source.id,
+                                })
+                              }
+                            >
+                              <Text className="text-sm font-medium text-primary">
+                                Keep separate
+                              </Text>
+                            </Pressable>
+                            <Pressable
+                              disabled={resolveImportedSourceMutation.isPending}
+                              onPress={() => {
+                                const candidates = (ownedActivitiesQuery.data?.items ?? [])
+                                  .filter((candidate) => candidate.id !== activity.id)
+                                  .slice(0, 5);
+                                Alert.alert(
+                                  "Move imported source",
+                                  "Attach this source to one of your recent activities.",
+                                  [
+                                    ...candidates.map((candidate) => ({
+                                      text: candidate.title,
+                                      onPress: () =>
+                                        resolveImportedSourceMutation.mutate({
+                                          action: "move",
+                                          sourceReferenceId: source.id,
+                                          targetActivityId: candidate.id,
+                                        }),
+                                    })),
+                                    { text: "Cancel", style: "cancel" as const },
+                                  ],
+                                );
+                              }}
+                            >
+                              <Text className="text-sm text-muted-foreground">Move</Text>
+                            </Pressable>
+                            <Pressable
+                              disabled={resolveImportedSourceMutation.isPending}
+                              onPress={() =>
+                                resolveImportedSourceMutation.mutate({
+                                  action: "ignore",
+                                  sourceReferenceId: source.id,
+                                })
+                              }
+                            >
+                              <Text className="text-sm text-muted-foreground">Ignore</Text>
+                            </Pressable>
+                          </View>
+                        ) : null}
+                      </View>
+                    ))
+                  : null}
+              </CardContent>
+            </Card>
+          ) : null}
         </View>
       </ScrollView>
-      <AppBottomSheet
-        initialSnapIndex={APP_BOTTOM_SHEET_PRESENTATIONS.inspector.initialSnapIndex}
-        onClose={() => setShowComments(false)}
-        showCloseAction
-        snapPoints={APP_BOTTOM_SHEET_PRESENTATIONS.inspector.snapPoints}
-        testID="activity-detail-comments-sheet"
-        title={`Comments (${comments.commentCount})`}
-        visible={showComments}
-      >
-        <EntityCommentsSection
-          addCommentPending={comments.addCommentPending}
-          commentCount={comments.commentCount}
-          comments={comments.comments}
-          hasMoreComments={comments.hasMoreComments}
-          isLoadingMoreComments={comments.isLoadingMoreComments}
-          newComment={comments.newComment}
-          onAddComment={comments.handleAddComment}
-          onChangeNewComment={comments.setNewComment}
-          onLoadMoreComments={comments.loadMoreComments}
-          testIDPrefix="activity-detail"
-        />
-      </AppBottomSheet>
       {showDeleteConfirm ? (
         <DetailDeleteConfirmModal
           description="Are you sure you want to delete this activity? This action cannot be undone."

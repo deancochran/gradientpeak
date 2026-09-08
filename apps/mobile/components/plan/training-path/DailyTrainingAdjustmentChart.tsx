@@ -17,7 +17,11 @@ import {
   useRef,
   useState,
 } from "react";
-import type { AccessibilityActionEvent, LayoutChangeEvent } from "react-native";
+import type {
+  AccessibilityActionEvent,
+  GestureResponderEvent,
+  LayoutChangeEvent,
+} from "react-native";
 import { TouchableOpacity, useWindowDimensions, View } from "react-native";
 import { ScrollView } from "react-native-gesture-handler";
 import { CartesianChart, Line } from "victory-native";
@@ -28,10 +32,15 @@ import type {
 } from "@/lib/training-path/completedCommonLoadObservation";
 import { DailyTrainingAdjustmentTray } from "./DailyTrainingAdjustmentTray";
 import {
+  buildDailyTrainingAdjustmentAxisTickLabels,
   buildDailyTrainingAdjustmentChartLayout,
   buildDailyTrainingAdjustmentRendererGeometry,
   clampChartMarkerLabelX,
+  type DailyTrainingAdjustmentChartDensity,
+  formatDailyTrainingAdjustmentAxisTick,
+  getDailyTrainingAdjustmentMinimumSlotWidth,
   getDailyTrainingAdjustmentNearestIndex,
+  getDailyTrainingAdjustmentNearestIndexForLocation,
   getDailyTrainingAdjustmentRendererPointLimit,
   getDailyTrainingAdjustmentScrollOffset,
 } from "./dailyTrainingAdjustmentChartLayout";
@@ -39,18 +48,22 @@ import {
   buildDailyTrainingAdjustmentAccessibilityValue,
   buildDailyTrainingAdjustmentCartesianContract,
   type DailyTrainingAdjustmentChartDatum,
-  dailyTrainingAdjustmentChartYKeys,
-  dailyTrainingAdjustmentFitnessYKeys,
+  type dailyTrainingAdjustmentChartYKeys,
+  dailyTrainingAdjustmentFatigueTrendYKeys,
+  dailyTrainingAdjustmentFitnessTrendYKeys,
   dailyTrainingAdjustmentFormYKeys,
   dailyTrainingAdjustmentLoadYKeys,
-  hasCompletedActivityWithoutLoad,
+  getPlanChartBucketDate,
   useDailyTrainingAdjustmentChartPresentation,
 } from "./dailyTrainingAdjustmentChartPresentation";
+import { getPlanChartTheme } from "./planChartTheme";
 import { deriveTrainingPathChartWindow } from "./trainingPathChartWindow";
-import type { PlanTrainingChartRange } from "./trainingPathTypes";
+import type { PlanTrainingChartRange, PlanTrainingTrendLine } from "./trainingPathTypes";
 import { useInstantChartSelection } from "./useInstantChartSelection";
 
 export type DailyTrainingAdjustmentPoint = {
+  bucketEndDate?: string;
+  bucketStartDate?: string;
   completedObservationState?: CompletedObservationState;
   completedCommonLoadIdentity?: CommonLoadIdentity | null;
   date: string;
@@ -75,9 +88,13 @@ export type DailyTrainingAdjustmentPoint = {
   fitnessCtl?: number | null;
   targetFitnessCtl?: number | null;
   scheduledFitnessCtl?: number | null;
+  recommendedFitnessCtl?: number | null;
   actualFatigueAtl?: number | null;
   scheduledFatigueAtl?: number | null;
+  recommendedFatigueAtl?: number | null;
   formTsb?: number | null;
+  scheduledFormTsb?: number | null;
+  recommendedFormTsb?: number | null;
   readinessScore?: number | null;
   annotations?: Array<{ code: string; severity?: "info" | "warning" | "risk"; message?: string }>;
 };
@@ -86,19 +103,33 @@ export type DailyTrainingAdjustmentChartProps = {
   points: DailyTrainingAdjustmentPoint[];
   selectedDate?: string | null;
   onSelectedDateChange?: (date: string) => void;
-  density?: "compact" | "standard" | "detail";
+  density?: DailyTrainingAdjustmentChartDensity;
   emptyState?: React.ReactNode;
   fillHeight?: boolean;
+  fitRange?: boolean;
   height?: number;
-  showSelectedPointTray?: boolean;
   testID?: string;
   formatDateLabel?: (dateKey: string, index: number) => string;
+  goalDates?: readonly string[];
+  goalMarkers?: readonly PlanLoadGoalMarker[];
+  primaryGoalId?: string | null;
+  onGoalPress?: (goalId: string) => void;
+  onReachEnd?: () => void;
+  onReachStart?: () => void;
+  loadOnly?: boolean;
+  range?: PlanTrainingChartRange;
+  showSelectedTray?: boolean;
   maxVisiblePoints?: number;
   onPreviewSelectedDateChange?: (date: string) => void;
-  range?: PlanTrainingChartRange;
-  /** Compatibility-only; Plan never renders recommendation layers. */
-  showRecommendedProjection?: boolean;
   todayDate?: string | null;
+  visibleTrends?: readonly PlanTrainingTrendLine[];
+};
+
+export type PlanLoadGoalMarker = {
+  id: string;
+  label: string;
+  priority: number;
+  targetDate: string;
 };
 
 const chartTopPadding = 18;
@@ -111,12 +142,6 @@ const getAxisFontSource = (): Parameters<typeof useFont>[0] => {
     return undefined;
   }
 };
-
-function buildTicks(domain: [number, number], count = 5) {
-  const [min, max] = domain;
-  if (count <= 1) return [max];
-  return Array.from({ length: count }, (_, index) => max - ((max - min) * index) / (count - 1));
-}
 
 function isFiniteChartNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -132,7 +157,8 @@ function FixedYAxisLabels({
   fontScale: number;
 }) {
   const scaledFontSize = 9 * Math.min(Math.max(fontScale, 1), 1.6);
-  const longestTick = Math.max(...buildTicks(domain).map((value) => `${Math.round(value)}`.length));
+  const ticks = buildDailyTrainingAdjustmentAxisTickLabels(domain);
+  const longestTick = Math.max(...ticks.map(({ label }) => label.length));
   const resolvedAxisWidth = Math.ceil(
     Math.max(24, Math.min(40, longestTick * scaledFontSize * 0.58 + 6)),
   );
@@ -149,7 +175,7 @@ function FixedYAxisLabels({
       pointerEvents="none"
     >
       <View className="flex-1 justify-between">
-        {buildTicks(domain).map((value) => (
+        {ticks.map(({ label, value }) => (
           <Text
             key={`${domain[0]}-${domain[1]}-${value}`}
             className={
@@ -161,10 +187,31 @@ function FixedYAxisLabels({
             minimumFontScale={0.75}
             numberOfLines={1}
           >
-            {Math.round(value)}
+            {label}
           </Text>
         ))}
       </View>
+    </View>
+  );
+}
+
+function CompactTrendAxes({
+  axes,
+}: {
+  axes: ReadonlyArray<{ color: string; domain: [number, number]; label: string }>;
+}) {
+  return (
+    <View className="w-20 justify-center gap-2 pl-2">
+      {axes.map((axis) => (
+        <View key={axis.label}>
+          <Text className="text-[9px] font-semibold" style={{ color: axis.color }}>
+            {axis.label}
+          </Text>
+          <Text className="text-[9px] text-muted-foreground">
+            {Math.round(axis.domain[0])}–{Math.round(axis.domain[1])}
+          </Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -176,16 +223,25 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   density = "standard",
   emptyState,
   fillHeight = false,
+  fitRange = false,
   formatDateLabel,
+  goalDates = [],
+  goalMarkers = [],
   height,
+  loadOnly = false,
   // Keep the Skia surface below common mobile GPU texture limits. The complete
   // bounded API result remains in memory while this renderer mounts a local window.
   maxVisiblePoints = 64,
+  onGoalPress,
   onPreviewSelectedDateChange,
+  onReachEnd,
+  onReachStart,
+  primaryGoalId = null,
   range = "daily",
-  showSelectedPointTray = true,
+  showSelectedTray = true,
   testID = "daily-training-adjustment-chart",
   todayDate,
+  visibleTrends,
 }: DailyTrainingAdjustmentChartProps) {
   const [viewportWidth, setViewportWidth] = useState(240);
   const [hasContentMeasurement, setHasContentMeasurement] = useState(false);
@@ -204,7 +260,6 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   const { fontScale, scale = 1 } = useWindowDimensions();
   const cappedFontScale = Math.min(Math.max(fontScale, 1), 1.6);
   const axisFont = useFont(getAxisFontSource(), 9 * cappedFontScale);
-  const isDark = resolvedTheme === "dark";
   const resolvedHeight = height ?? (density === "compact" ? 190 : density === "detail" ? 270 : 230);
   const chartAreaHeight = Math.max(96, resolvedHeight);
   const renderedChartAreaHeight = fillHeight ? (measuredChartAreaHeight ?? 1) : chartAreaHeight;
@@ -215,24 +270,20 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   ) {
     windowAnchorDateRef.current = nextAnchorDate;
   }
-  const sizingLayout = useMemo(
-    () =>
-      buildDailyTrainingAdjustmentChartLayout({
-        bucketCount: 1,
-        density,
-        fontScale,
-        range,
-        viewportWidth,
-      }),
-    [density, fontScale, range, viewportWidth],
-  );
+  const rendererMinimumSlotWidth = getDailyTrainingAdjustmentMinimumSlotWidth({
+    density,
+    fontScale,
+    range,
+  });
   const rendererPointLimit = getDailyTrainingAdjustmentRendererPointLimit({
     maxPhysicalWidth: maxChartCanvasPhysicalWidth,
+    minimumSlotWidth: rendererMinimumSlotWidth,
     pixelRatio: scale,
-    sideInset: sizingLayout.sideInset,
-    slotWidth: sizingLayout.slotWidth,
+    sideInset: 0,
   });
-  const boundedRendererPointLimit = Math.min(maxVisiblePoints, rendererPointLimit);
+  const boundedRendererPointLimit = fitRange
+    ? Math.max(1, points.length)
+    : Math.min(maxVisiblePoints, rendererPointLimit);
   const [visiblePoints, setVisiblePoints] = useState(
     () =>
       deriveTrainingPathChartWindow({
@@ -317,17 +368,32 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
       buildDailyTrainingAdjustmentChartLayout({
         bucketCount: visiblePoints.length,
         density,
+        fitRange,
         fontScale,
+        pixelRatio: scale,
         range,
         viewportWidth,
       }),
-    [density, fontScale, range, viewportWidth, visiblePoints.length],
+    [density, fitRange, fontScale, range, scale, viewportWidth, visiblePoints.length],
   );
   const slotWidth = layout.slotWidth;
   const rendererGeometry = useMemo(
     () => buildDailyTrainingAdjustmentRendererGeometry(layout),
     [layout],
   );
+  const activeTrends = useMemo(
+    () =>
+      new Set<PlanTrainingTrendLine>(
+        visibleTrends ?? (loadOnly ? [] : ["fitness", "fatigue", "form"]),
+      ),
+    [loadOnly, visibleTrends],
+  );
+  const showFitness = activeTrends.has("fitness");
+  const showFatigue = activeTrends.has("fatigue");
+  const showForm = activeTrends.has("form");
+  const hasTrendLines = showFitness || showFatigue || showForm;
+  const showChartChrome = density !== "compact";
+  const legacyAllTrends = visibleTrends === undefined && !loadOnly;
   const visibleSelectedDate = visiblePoints.some((point) => point.date === selectedDate)
     ? selectedDate
     : (chartWindow.anchorDate ?? visiblePoints[0]?.date ?? null);
@@ -338,17 +404,21 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     endDrag,
     endMomentum,
     previewNearestFromScrollEvent,
+    previewIndex,
     scrollRef,
     scrollToDate,
     selectDate,
     selectRelative,
+    settleIndex,
     selectedPoint,
   } = useInstantChartSelection({
-    isScrollReady: hasViewportLayout && hasContentMeasurement,
+    isScrollReady: !fitRange && hasViewportLayout && hasContentMeasurement,
     onInteractionSettled: (date) => {
       interactionActiveRef.current = false;
       windowAnchorDateRef.current = date;
       applyLatestChartWindow(date);
+      if (date === points[0]?.date) onReachStart?.();
+      if (date === points.at(-1)?.date) onReachEnd?.();
     },
     onInteractionStart: () => {
       interactionActiveRef.current = true;
@@ -367,42 +437,98 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   const nextPresentation = useDailyTrainingAdjustmentChartPresentation({
     ...(formatDateLabel !== undefined ? { formatDateLabel } : {}),
     bucketCenters: rendererGeometry.map((geometry) => geometry.datumX),
+    interpolateTrends: visibleTrends !== undefined,
     points: visiblePoints,
     range,
+    tightLoadDomain: fitRange,
     ...(todayDate !== undefined ? { todayDate } : {}),
   });
   const interactionPresentationRef = useRef(nextPresentation);
-  if (!interactionActiveRef.current) {
+  const presentationScope = `${range}:${visiblePoints[0]?.date ?? ""}:${visiblePoints.at(-1)?.date ?? ""}:${visiblePoints.length}`;
+  const presentationScopeRef = useRef(presentationScope);
+  if (presentationScopeRef.current !== presentationScope) {
+    presentationScopeRef.current = presentationScope;
+    interactionActiveRef.current = false;
+    hasPendingPointsUpdateRef.current = false;
+    interactionPresentationRef.current = nextPresentation;
+  } else if (!interactionActiveRef.current) {
     interactionPresentationRef.current = nextPresentation;
   }
   // Victory resets its native interaction state when its data identity changes.
   // Freeze the complete plotted presentation for the whole drag/momentum cycle;
   // fetched data is applied only by the settlement callback above.
-  const { chartData, fitnessDomain, formDomain, labels, loadDomain } = interactionActiveRef.current
-    ? interactionPresentationRef.current
-    : nextPresentation;
+  const { chartData, fatigueDomain, fitnessDomain, formDomain, labels, loadDomain } =
+    interactionActiveRef.current ? interactionPresentationRef.current : nextPresentation;
   const cartesianContract = useMemo(
     () => buildDailyTrainingAdjustmentCartesianContract(chartData),
     [chartData],
   );
-  const todayIndex = todayDate ? visiblePoints.findIndex((point) => point.date === todayDate) : -1;
-  const scrollableChartWidth = layout.chartContentWidth;
-  const colors = useMemo(
-    () => ({
-      axisLabel: isDark ? "rgba(226, 232, 240, 0.82)" : "rgba(15, 23, 42, 0.72)",
-      completed: isDark ? "rgba(34, 197, 94, 0.88)" : "rgba(22, 163, 74, 0.86)",
-      fitness: isDark ? "rgba(74, 222, 128, 0.95)" : "rgba(22, 163, 74, 0.95)",
-      fatigue: isDark ? "rgba(251, 146, 60, 0.95)" : "rgba(234, 88, 12, 0.95)",
-      form: isDark ? "rgba(196, 181, 253, 0.95)" : "rgba(124, 58, 237, 0.95)",
-      frame: isDark ? "rgba(248, 250, 252, 0.24)" : "rgba(15, 23, 42, 0.24)",
-      grid: isDark ? "rgba(248, 250, 252, 0.12)" : "rgba(15, 23, 42, 0.12)",
-      planned: isDark ? "rgba(59, 130, 246, 0.72)" : "rgba(37, 99, 235, 0.68)",
-      projectedFitness: isDark ? "rgba(96, 165, 250, 0.95)" : "rgba(37, 99, 235, 0.95)",
-      projectedFatigue: isDark ? "rgba(251, 191, 36, 0.95)" : "rgba(217, 119, 6, 0.95)",
-      selected: isDark ? "rgba(248, 250, 252, 0.12)" : "rgba(15, 23, 42, 0.08)",
-    }),
-    [isDark],
+  const todayBucketDate = todayDate ? getPlanChartBucketDate(todayDate, range) : null;
+  const todayIndex = todayBucketDate
+    ? visiblePoints.findIndex(
+        (point) => getPlanChartBucketDate(point.date, range) === todayBucketDate,
+      )
+    : -1;
+  const resolvedGoalMarkers = useMemo(
+    () =>
+      goalMarkers.length > 0
+        ? [...goalMarkers]
+        : goalDates.map((targetDate, index) => ({
+            id: `legacy-goal-${index}`,
+            label: "Goal",
+            priority: 0,
+            targetDate,
+          })),
+    [goalDates, goalMarkers],
   );
+  const goalGroups = useMemo(() => {
+    const groups = new Map<string, PlanLoadGoalMarker[]>();
+    for (const marker of resolvedGoalMarkers) {
+      const bucketDate = getPlanChartBucketDate(marker.targetDate, range);
+      const group = groups.get(bucketDate);
+      if (group) group.push(marker);
+      else groups.set(bucketDate, [marker]);
+    }
+    return [...groups.entries()].map(([date, markers]) => ({
+      date,
+      markers: markers.sort(
+        (left, right) =>
+          right.priority - left.priority ||
+          left.targetDate.localeCompare(right.targetDate) ||
+          left.id.localeCompare(right.id),
+      ),
+    }));
+  }, [range, resolvedGoalMarkers]);
+  const goalIndexes = goalGroups.flatMap((group) => {
+    const index = visiblePoints.findIndex(
+      (point) => getPlanChartBucketDate(point.date, range) === group.date,
+    );
+    return index >= 0 ? [{ ...group, index }] : [];
+  });
+  const visibleStart = visiblePoints[0]
+    ? getPlanChartBucketDate(visiblePoints[0].date, range)
+    : undefined;
+  const lastVisiblePoint = visiblePoints.at(-1);
+  const visibleEnd = lastVisiblePoint
+    ? getPlanChartBucketDate(lastVisiblePoint.date, range)
+    : undefined;
+  const goalsBefore = visibleStart
+    ? goalGroups.filter((group) => group.date < visibleStart).flatMap((group) => group.markers)
+    : [];
+  const goalsAfter = visibleEnd
+    ? goalGroups.filter((group) => group.date > visibleEnd).flatMap((group) => group.markers)
+    : [];
+  const renderedYKeys = [
+    ...dailyTrainingAdjustmentLoadYKeys,
+    ...(showFitness ? dailyTrainingAdjustmentFitnessTrendYKeys : []),
+    ...(showFatigue ? dailyTrainingAdjustmentFatigueTrendYKeys : []),
+    ...(showForm ? dailyTrainingAdjustmentFormYKeys : []),
+  ];
+  const chartRenderKey = `${presentationScope}:${renderedYKeys.join(",")}:${chartData
+    .map((point) => `${point.fitness ?? ""},${point.fatigue ?? ""},${point.form ?? ""}`)
+    .join(";")}`;
+  const scrollableChartWidth = layout.chartContentWidth;
+  const colors = useMemo(() => getPlanChartTheme(resolvedTheme), [resolvedTheme]);
 
   useEffect(() => {
     setHasMounted(true);
@@ -477,6 +603,30 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     [selectRelative],
   );
 
+  const fittedIndexFromEvent = useCallback(
+    (event: GestureResponderEvent) =>
+      getDailyTrainingAdjustmentNearestIndexForLocation(layout, event.nativeEvent.locationX),
+    [layout],
+  );
+
+  const handleFittedSelectionStart = useCallback(
+    (event: GestureResponderEvent) => {
+      beginPreview();
+      previewIndex(fittedIndexFromEvent(event));
+    },
+    [beginPreview, fittedIndexFromEvent, previewIndex],
+  );
+
+  const handleFittedSelectionMove = useCallback(
+    (event: GestureResponderEvent) => previewIndex(fittedIndexFromEvent(event)),
+    [fittedIndexFromEvent, previewIndex],
+  );
+
+  const handleFittedSelectionEnd = useCallback(
+    (event: GestureResponderEvent) => settleIndex(fittedIndexFromEvent(event)),
+    [fittedIndexFromEvent, settleIndex],
+  );
+
   const accessibilityValue = buildDailyTrainingAdjustmentAccessibilityValue(selectedPoint);
 
   if (visiblePoints.length === 0) {
@@ -498,16 +648,40 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
             : "gap-2 rounded-2xl bg-card px-2 py-3"
         }
       >
-        <View className="flex-row items-center justify-between px-1">
-          <View accessibilityLabel="Left axis: Load, Common Load">
-            <Text className="text-[10px] font-medium text-muted-foreground">Load</Text>
-            <Text className="text-[8px] text-muted-foreground">Common Load</Text>
+        {showChartChrome ? (
+          <View className="flex-row items-center justify-between px-1">
+            <View accessibilityLabel="Left axis: Load, Common Load">
+              <Text className="text-[10px] font-medium text-muted-foreground">Load</Text>
+            </View>
+            {hasTrendLines ? (
+              <View
+                accessibilityLabel={
+                  legacyAllTrends
+                    ? "Right axis: Fitness / Fatigue"
+                    : `Trend lines: ${[
+                        showFitness ? "Fitness" : null,
+                        showFatigue ? "Fatigue" : null,
+                        showForm ? "Form" : null,
+                      ]
+                        .filter(Boolean)
+                        .join(", ")}`
+                }
+              >
+                <Text className="text-[10px] font-medium text-muted-foreground">
+                  {legacyAllTrends
+                    ? "Fitness / Fatigue"
+                    : [
+                        showFitness ? "Fitness" : null,
+                        showFatigue ? "Fatigue" : null,
+                        showForm ? "Form" : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" / ")}
+                </Text>
+              </View>
+            ) : null}
           </View>
-          <View accessibilityLabel="Right axis: Fitness / Fatigue">
-            <Text className="text-[10px] font-medium text-muted-foreground">Fitness / Fatigue</Text>
-            <Text className="text-[8px] text-muted-foreground">Form line shows recovery</Text>
-          </View>
-        </View>
+        ) : null}
         <View
           onLayout={
             fillHeight
@@ -518,7 +692,9 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
         >
           {hasMounted ? (
             <View className="flex-1 flex-row">
-              <FixedYAxisLabels domain={loadDomain} fontScale={fontScale} />
+              {showChartChrome ? (
+                <FixedYAxisLabels domain={loadDomain} fontScale={fontScale} />
+              ) : null}
               <View className="flex-1" onLayout={onViewportLayout} testID={`${testID}-viewport`}>
                 <View
                   accessible
@@ -528,9 +704,11 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                   ]}
                   accessibilityHint="Adjust to select the next or previous date"
                   accessibilityLabel={
-                    range === "daily"
+                    legacyAllTrends
                       ? "Daily training adjustment chart"
-                      : `${range[0]?.toUpperCase()}${range.slice(1)} training analysis chart`
+                      : hasTrendLines
+                        ? "Plan Load and trend timeline"
+                        : "Plan Load timeline"
                   }
                   accessibilityRole="adjustable"
                   accessibilityValue={{ text: accessibilityValue }}
@@ -552,10 +730,11 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                   onScrollBeginDrag={handleScrollBeginDrag}
                   onScrollEndDrag={endDrag}
                   scrollEventThrottle={16}
-                  persistentScrollbar
-                  showsHorizontalScrollIndicator
+                  persistentScrollbar={!fitRange}
+                  scrollEnabled={!fitRange}
+                  showsHorizontalScrollIndicator={!fitRange}
                   snapToAlignment="start"
-                  snapToInterval={slotWidth}
+                  snapToInterval={fitRange ? undefined : slotWidth}
                   testID={`${testID}-scroll`}
                 >
                   <View style={{ height: renderedChartAreaHeight, width: scrollableChartWidth }}>
@@ -565,7 +744,8 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                       (typeof dailyTrainingAdjustmentChartYKeys)[number]
                     >
                       {...cartesianContract}
-                      yKeys={dailyTrainingAdjustmentChartYKeys}
+                      key={chartRenderKey}
+                      yKeys={renderedYKeys}
                       padding={{
                         left:
                           layout.firstCenter === layout.lastCenter
@@ -604,30 +784,57 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                           labelColor: colors.axisLabel,
                           lineColor: colors.grid,
                           linePathEffect: <DashPathEffect intervals={[4, 4]} />,
-                          formatYLabel: (value: unknown) => `${Math.round(Number(value))}`,
+                          formatYLabel: (value: unknown) =>
+                            formatDailyTrainingAdjustmentAxisTick(Number(value), loadDomain),
                         },
-                        {
-                          yKeys: dailyTrainingAdjustmentFitnessYKeys,
-                          axisSide: "right",
-                          domain: fitnessDomain,
-                          tickCount: 5,
-                          font: null,
-                          labelColor: colors.axisLabel,
-                          lineColor: "transparent",
-                          formatYLabel: (value: unknown) => `${Math.round(Number(value))}`,
-                        },
-                        {
-                          // Form uses a signed range but intentionally has no numeric axis.
-                          // Its precise value remains in the selected-day summary.
-                          yKeys: dailyTrainingAdjustmentFormYKeys,
-                          axisSide: "right",
-                          domain: formDomain,
-                          tickCount: 5,
-                          font: null,
-                          labelColor: "transparent",
-                          lineColor: "transparent",
-                          formatYLabel: () => "",
-                        },
+                        ...(showFitness
+                          ? [
+                              {
+                                yKeys: dailyTrainingAdjustmentFitnessTrendYKeys,
+                                axisSide: "right" as const,
+                                domain: fitnessDomain,
+                                tickCount: 5,
+                                font: null,
+                                labelColor: colors.axisLabel,
+                                lineColor: "transparent",
+                                formatYLabel: (value: unknown) =>
+                                  formatDailyTrainingAdjustmentAxisTick(
+                                    Number(value),
+                                    fitnessDomain,
+                                  ),
+                              },
+                            ]
+                          : []),
+                        ...(showFatigue
+                          ? [
+                              {
+                                yKeys: dailyTrainingAdjustmentFatigueTrendYKeys,
+                                axisSide: "right" as const,
+                                domain: fatigueDomain,
+                                tickCount: 5,
+                                font: null,
+                                labelColor: "transparent",
+                                lineColor: "transparent",
+                                formatYLabel: () => "",
+                              },
+                            ]
+                          : []),
+                        ...(showForm
+                          ? [
+                              {
+                                // Form uses a signed range but intentionally has no numeric axis.
+                                // Its precise value remains in the selected-day summary.
+                                yKeys: dailyTrainingAdjustmentFormYKeys,
+                                axisSide: "right" as const,
+                                domain: formDomain,
+                                tickCount: 5,
+                                font: null,
+                                labelColor: "transparent",
+                                lineColor: "transparent",
+                                formatYLabel: () => "",
+                              },
+                            ]
+                          : []),
                       ]}
                       frame={{
                         lineColor: colors.frame,
@@ -636,25 +843,26 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                     >
                       {({ points: plottedPoints, chartBounds }) => (
                         <>
-                          <SkiaLine
-                            p1={vec(chartBounds.left, (chartBounds.top + chartBounds.bottom) / 2)}
-                            p2={vec(chartBounds.right, (chartBounds.top + chartBounds.bottom) / 2)}
-                            color={colors.form}
-                            opacity={0.3}
-                            strokeWidth={1}
-                          >
-                            <DashPathEffect intervals={[3, 4]} />
-                          </SkiaLine>
+                          {showForm ? (
+                            <SkiaLine
+                              p1={vec(chartBounds.left, (chartBounds.top + chartBounds.bottom) / 2)}
+                              p2={vec(
+                                chartBounds.right,
+                                (chartBounds.top + chartBounds.bottom) / 2,
+                              )}
+                              color={colors.form}
+                              opacity={0.3}
+                              strokeWidth={1}
+                            >
+                              <DashPathEffect intervals={[3, 4]} />
+                            </SkiaLine>
+                          ) : null}
                           {visiblePoints.map((point, index) => {
                             const plannedPoint = plottedPoints.plannedLoad[index];
                             const completedPoint = plottedPoints.completedLoad[index];
                             const geometry = rendererGeometry[index];
                             if (!geometry) return null;
                             const isSelected = point.date === selectedPoint?.date;
-                            const showMissingLoadHighlight = hasCompletedActivityWithoutLoad(point);
-                            const showKnownZeroCompletedLoad =
-                              point.effectiveCompletedLoadStatus === "known_zero" &&
-                              completedPoint?.yValue === 0;
                             return (
                               <Fragment key={`day-${point.date}`}>
                                 {isSelected ? (
@@ -667,81 +875,93 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                                   />
                                 ) : null}
                                 {isFiniteChartNumber(plannedPoint?.yValue) &&
+                                plannedPoint.yValue > 0 &&
                                 isFiniteChartNumber(plannedPoint.y) ? (
                                   <SkiaRect
                                     x={geometry.plannedBar.left}
                                     y={plannedPoint.y}
                                     width={geometry.plannedBar.width}
                                     height={chartBounds.bottom - plannedPoint.y}
-                                    color={colors.planned}
+                                    color={colors.plannedLoad}
                                   />
                                 ) : null}
                                 {isFiniteChartNumber(completedPoint?.yValue) &&
+                                completedPoint.yValue > 0 &&
                                 isFiniteChartNumber(completedPoint.y) ? (
                                   <SkiaRect
                                     x={geometry.completedBar.left}
                                     y={completedPoint.y}
                                     width={geometry.completedBar.width}
                                     height={chartBounds.bottom - completedPoint.y}
-                                    color={colors.completed}
-                                  />
-                                ) : null}
-                                {showKnownZeroCompletedLoad ? (
-                                  <SkiaRect
-                                    x={geometry.completedBar.left}
-                                    y={chartBounds.bottom - 3}
-                                    width={geometry.completedBar.width}
-                                    height={3}
-                                    color={colors.completed}
-                                  />
-                                ) : null}
-                                {showMissingLoadHighlight ? (
-                                  <SkiaRect
-                                    x={geometry.touchTarget.left}
-                                    y={chartBounds.bottom - 3}
-                                    width={geometry.touchTarget.width}
-                                    height={3}
-                                    color={colors.completed}
+                                    color={colors.completedLoad}
+                                    opacity={1}
                                   />
                                 ) : null}
                               </Fragment>
                             );
                           })}
-                          <Line
-                            connectMissingData={false}
-                            points={plottedPoints.projectedFatigue ?? []}
-                            color={colors.projectedFatigue}
-                            strokeWidth={2.5}
-                            curveType="natural"
-                          />
-                          <Line
-                            connectMissingData={false}
-                            points={plottedPoints.actualFatigue ?? []}
-                            color={colors.fatigue}
-                            strokeWidth={2.5}
-                            curveType="natural"
-                          />
-                          <Line
-                            connectMissingData={false}
-                            points={plottedPoints.projectedFitness}
-                            color={colors.projectedFitness}
-                            strokeWidth={2.5}
-                            curveType="natural"
-                          />
-                          <Line
-                            connectMissingData={false}
-                            points={plottedPoints.actualFitness}
-                            color={colors.fitness}
-                            strokeWidth={2.5}
-                            curveType="natural"
-                          />
-                          <Line
-                            connectMissingData={false}
-                            points={plottedPoints.form}
-                            color={colors.form}
-                            strokeWidth={2.5}
-                            curveType="natural"
-                          />
+                          {hasTrendLines ? (
+                            <>
+                              {showFatigue ? (
+                                <Line
+                                  connectMissingData
+                                  points={plottedPoints.fatigue}
+                                  color={colors.fatigue}
+                                  strokeWidth={2.5}
+                                  curveType="natural"
+                                />
+                              ) : null}
+                              {showFitness ? (
+                                <Line
+                                  connectMissingData
+                                  points={plottedPoints.fitness}
+                                  color={colors.fitness}
+                                  strokeWidth={2.5}
+                                  curveType="natural"
+                                />
+                              ) : null}
+                              {showForm ? (
+                                <Line
+                                  connectMissingData
+                                  points={plottedPoints.form}
+                                  color={colors.form}
+                                  strokeWidth={2.5}
+                                  curveType="natural"
+                                />
+                              ) : null}
+                            </>
+                          ) : null}
+                          {goalIndexes.map(({ date, index, markers }) => {
+                            const markerCenter = rendererGeometry[index]?.todayMarkerCenter;
+                            if (markerCenter === undefined) return null;
+                            const primary = markers.some((marker) => marker.id === primaryGoalId);
+                            return (
+                              <Fragment key={`goal-${date}`}>
+                                <SkiaLine
+                                  p1={vec(markerCenter, chartBounds.top + 12)}
+                                  p2={vec(markerCenter, chartBounds.bottom)}
+                                  color={primary ? colors.target : colors.axisLabel}
+                                  strokeWidth={primary ? 2.5 : 1.5}
+                                >
+                                  <DashPathEffect intervals={[4, 4]} />
+                                </SkiaLine>
+                                {axisFont ? (
+                                  <SkiaText
+                                    x={clampChartMarkerLabelX({
+                                      center: markerCenter,
+                                      chartLeft: chartBounds.left,
+                                      chartRight: chartBounds.right,
+                                      labelWidth: layout.markerLabelWidth,
+                                    })}
+                                    y={chartBounds.top + 10}
+                                    text={markers.length > 1 ? `GOAL ×${markers.length}` : "GOAL"}
+                                    font={axisFont}
+                                    color={primary ? colors.target : colors.axisLabel}
+                                  />
+                                ) : null}
+                              </Fragment>
+                            );
+                          })}
                           {todayIndex >= 0
                             ? (() => {
                                 const markerCenter =
@@ -778,26 +998,6 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                         </>
                       )}
                     </CartesianChart>
-                    {visiblePoints.filter(hasCompletedActivityWithoutLoad).map((point) => (
-                      <View
-                        accessible={false}
-                        importantForAccessibility="no-hide-descendants"
-                        key={`completed-activity-without-load-highlight-${point.date}`}
-                        style={{ height: 0, width: 0 }}
-                        testID={`completed-activity-without-load-highlight-${point.date}`}
-                      />
-                    ))}
-                    {visiblePoints
-                      .filter((point) => point.effectiveCompletedLoadStatus === "known_zero")
-                      .map((point) => (
-                        <View
-                          accessible={false}
-                          importantForAccessibility="no-hide-descendants"
-                          key={`known-zero-completed-load-marker-${point.date}`}
-                          style={{ height: 0, width: 0 }}
-                          testID={`known-zero-completed-load-marker-${point.date}`}
-                        />
-                      ))}
                     {todayIndex >= 0 ? (
                       <View
                         accessible={false}
@@ -806,26 +1006,51 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                         testID={`${testID}-today-boundary`}
                       />
                     ) : null}
-                    {visiblePoints.map((point, index) => (
-                      <TouchableOpacity
-                        accessible={false}
-                        activeOpacity={1}
-                        importantForAccessibility="no-hide-descendants"
-                        key={`bucket-target-${point.date}`}
-                        onPress={() => {
-                          scrollToDate(point.date);
-                          selectDate(point.date);
-                        }}
-                        style={{
-                          bottom: layout.labelBandHeight,
-                          left: rendererGeometry[index]?.touchTarget.left ?? 0,
-                          position: "absolute",
-                          top: chartTopPadding,
-                          width: rendererGeometry[index]?.touchTarget.width ?? 44,
-                        }}
-                        testID={`${testID}-bucket-${point.date}`}
-                      />
-                    ))}
+                    {fitRange
+                      ? null
+                      : visiblePoints.map((point, index) => (
+                          <TouchableOpacity
+                            accessible={false}
+                            activeOpacity={1}
+                            importantForAccessibility="no-hide-descendants"
+                            key={`bucket-target-${point.date}`}
+                            onPress={() => {
+                              scrollToDate(point.date);
+                              selectDate(point.date);
+                            }}
+                            style={{
+                              bottom: layout.labelBandHeight,
+                              left: rendererGeometry[index]?.touchTarget.left ?? 0,
+                              position: "absolute",
+                              top: chartTopPadding,
+                              width: rendererGeometry[index]?.touchTarget.width ?? 44,
+                            }}
+                            testID={`${testID}-bucket-${point.date}`}
+                          />
+                        ))}
+                    {fitRange
+                      ? null
+                      : goalIndexes.map(({ date, index, markers }) => {
+                          const markerCenter = rendererGeometry[index]?.todayMarkerCenter;
+                          const first = markers[0];
+                          if (markerCenter === undefined || !first) return null;
+                          return (
+                            <TouchableOpacity
+                              accessibilityLabel={
+                                markers.length > 1
+                                  ? `${markers.length} goals on ${date}. Open ${first.label}`
+                                  : `Open goal ${first.label}`
+                              }
+                              accessibilityRole={onGoalPress ? "button" : undefined}
+                              className="absolute top-0 min-h-11 min-w-11"
+                              disabled={!onGoalPress}
+                              key={`goal-target-${date}`}
+                              onPress={() => onGoalPress?.(first.id)}
+                              style={{ left: markerCenter - 22, width: 44 }}
+                              testID={`${testID}-goal-marker-${date}`}
+                            />
+                          );
+                        })}
                     <View
                       className="absolute bottom-0"
                       accessible={false}
@@ -842,7 +1067,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                         const isKeyDate =
                           index % layout.labelEvery === 0 ||
                           point?.date === selectedPoint?.date ||
-                          point?.date === todayDate;
+                          point?.date === todayBucketDate;
                         if (!isKeyDate) return null;
                         return (
                           <View
@@ -873,8 +1098,66 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                     </View>
                   </View>
                 </ScrollView>
+                {fitRange ? (
+                  <View
+                    accessible={false}
+                    className="absolute inset-0"
+                    importantForAccessibility="no"
+                    onMoveShouldSetResponder={() => true}
+                    onResponderGrant={handleFittedSelectionStart}
+                    onResponderMove={handleFittedSelectionMove}
+                    onResponderRelease={handleFittedSelectionEnd}
+                    onResponderTerminate={handleFittedSelectionEnd}
+                    onStartShouldSetResponder={() => true}
+                    testID={`${testID}-fitted-interaction`}
+                  />
+                ) : null}
+                {goalsBefore.length > 0 ? (
+                  <TouchableOpacity
+                    accessibilityLabel={`${goalsBefore.length} goals before this view`}
+                    accessibilityRole={onGoalPress ? "button" : undefined}
+                    className="absolute left-1 top-1 min-h-11 min-w-11 items-center justify-center rounded-full bg-card/90"
+                    disabled={!onGoalPress}
+                    onPress={() => {
+                      const first = goalsBefore[0];
+                      if (first) onGoalPress?.(first.id);
+                    }}
+                    testID={`${testID}-goals-before`}
+                  >
+                    <Text className="font-semibold text-foreground">‹{goalsBefore.length}</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {goalsAfter.length > 0 ? (
+                  <TouchableOpacity
+                    accessibilityLabel={`${goalsAfter.length} goals after this view`}
+                    accessibilityRole={onGoalPress ? "button" : undefined}
+                    className="absolute right-1 top-1 min-h-11 min-w-11 items-center justify-center rounded-full bg-card/90"
+                    disabled={!onGoalPress}
+                    onPress={() => {
+                      const first = goalsAfter[0];
+                      if (first) onGoalPress?.(first.id);
+                    }}
+                    testID={`${testID}-goals-after`}
+                  >
+                    <Text className="font-semibold text-foreground">{goalsAfter.length}›</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
-              <FixedYAxisLabels align="left" domain={fitnessDomain} fontScale={fontScale} />
+              {hasTrendLines && showChartChrome ? (
+                <CompactTrendAxes
+                  axes={[
+                    ...(showFitness
+                      ? [{ color: colors.fitness, domain: fitnessDomain, label: "Fit" }]
+                      : []),
+                    ...(showFatigue
+                      ? [{ color: colors.fatigue, domain: fatigueDomain, label: "Fat" }]
+                      : []),
+                    ...(showForm
+                      ? [{ color: colors.form, domain: formDomain, label: "Form" }]
+                      : []),
+                  ]}
+                />
+              ) : null}
             </View>
           ) : (
             <View className="flex-1 items-center justify-center rounded-2xl bg-muted/20">
@@ -883,7 +1166,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
           )}
         </View>
       </View>
-      {showSelectedPointTray && selectedPoint ? (
+      {showSelectedTray && selectedPoint ? (
         <DailyTrainingAdjustmentTray point={selectedPoint} />
       ) : null}
     </View>

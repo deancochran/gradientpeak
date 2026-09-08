@@ -84,6 +84,23 @@ describe("estimateActivityPlans", () => {
       unit: "seconds",
     });
     expect(estimated?.prescriptionQuantification.members).toHaveLength(1);
+    expect(estimated?.planProjection).toMatchObject({
+      contractVersion: "activity-plan-projection-v1",
+      occurrences: [
+        expect.objectContaining({
+          completionPolicy: "time",
+          weightingBasis: "duration_seconds",
+          weight: 1_800,
+        }),
+      ],
+      objectiveIntensity: {
+        status: "available",
+        value: 0.75,
+        completionPolicy: "time",
+        weightingBasis: "duration_seconds",
+        provenance: "plan_intent",
+      },
+    });
   });
 
   it("keeps unanchored relative plan intent when athlete facts are unavailable", async () => {
@@ -197,6 +214,11 @@ describe("estimateActivityPlans", () => {
     expect(
       estimated?.prescriptionQuantification.members[0]?.commonLoad.thresholdEvidence,
     ).toMatchObject({ value: 300 });
+    expect(estimated?.planProjection.objectiveIntensity).toMatchObject({
+      status: "available",
+      value: 0.5,
+      provenance: "personalized",
+    });
   });
 
   it("keeps viewer-derived absolute-target metrics unavailable and skips fact I/O by default", async () => {
@@ -218,6 +240,10 @@ describe("estimateActivityPlans", () => {
     expect(estimated?.prescriptionQuantification.summary.commonLoad).toMatchObject({
       status: "unavailable",
       reason: "no_load_data",
+    });
+    expect(estimated?.planProjection.objectiveIntensity).toMatchObject({
+      status: "unavailable",
+      reason: "calibration_required",
     });
   });
 });

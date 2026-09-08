@@ -10,6 +10,10 @@ export type DailyTrainingAdjustmentChartDatum = Record<string, unknown> & {
   projectedFitness: number | null;
   actualFatigue: number | null;
   projectedFatigue: number | null;
+  actualForm: number | null;
+  projectedForm: number | null;
+  fitness: number | null;
+  fatigue: number | null;
   form: number | null;
 };
 
@@ -20,6 +24,10 @@ export type DailyTrainingAdjustmentChartYKey =
   | "projectedFitness"
   | "actualFatigue"
   | "projectedFatigue"
+  | "actualForm"
+  | "projectedForm"
+  | "fitness"
+  | "fatigue"
   | "form";
 
 export const dailyTrainingAdjustmentChartYKeys: DailyTrainingAdjustmentChartYKey[] = [
@@ -29,6 +37,10 @@ export const dailyTrainingAdjustmentChartYKeys: DailyTrainingAdjustmentChartYKey
   "projectedFitness",
   "actualFatigue",
   "projectedFatigue",
+  "actualForm",
+  "projectedForm",
+  "fitness",
+  "fatigue",
   "form",
 ];
 
@@ -42,6 +54,14 @@ export const dailyTrainingAdjustmentFitnessYKeys: DailyTrainingAdjustmentChartYK
   "projectedFitness",
   "actualFatigue",
   "projectedFatigue",
+];
+
+export const dailyTrainingAdjustmentFitnessTrendYKeys: DailyTrainingAdjustmentChartYKey[] = [
+  "fitness",
+];
+
+export const dailyTrainingAdjustmentFatigueTrendYKeys: DailyTrainingAdjustmentChartYKey[] = [
+  "fatigue",
 ];
 
 export const dailyTrainingAdjustmentFormYKeys: DailyTrainingAdjustmentChartYKey[] = ["form"];
@@ -280,7 +300,9 @@ export function aggregateDailyTrainingAdjustmentPoints(
       );
 
     return {
-      date,
+      date: bucket[0]?.date ?? date,
+      bucketEndDate: bucket.at(-1)?.date ?? date,
+      bucketStartDate: bucket[0]?.date ?? date,
       effectiveLoadStatus: allLoadComplete
         ? ("complete" as const)
         : hasLoad
@@ -303,6 +325,7 @@ export function aggregateDailyTrainingAdjustmentPoints(
       actualFatigueAtl: lastAvailable(bucket, (point) => point.actualFatigueAtl),
       scheduledFatigueAtl: lastAvailable(bucket, (point) => point.scheduledFatigueAtl),
       formTsb: lastAvailable(bucket, (point) => point.formTsb),
+      scheduledFormTsb: lastAvailable(bucket, (point) => point.scheduledFormTsb),
     } satisfies DailyTrainingAdjustmentPoint;
   });
 }
@@ -338,9 +361,16 @@ export function hasRenderableDailyTrainingAdjustmentData(
   );
 }
 
-function formatMetric(label: string, value: number | null | undefined, unit = "") {
+function formatMetric(
+  label: string,
+  value: number | null | undefined,
+  unit = "",
+  approximate = false,
+) {
   const finiteValue = valueOrNull(value);
-  return finiteValue === null ? null : `${label} ${Math.round(finiteValue)}${unit}`;
+  return finiteValue === null
+    ? null
+    : `${label} ${approximate ? "~" : ""}${Math.round(finiteValue)}${unit}`;
 }
 
 export function buildDailyTrainingAdjustmentAccessibilityValue(
@@ -349,24 +379,21 @@ export function buildDailyTrainingAdjustmentAccessibilityValue(
   if (!point) return "No date selected";
   const completedLoadValue = formatMetric("Completed Common Load", point.effectiveCompletedLoad);
   const completedLoad =
-    point.effectiveCompletedLoadStatus === "unavailable"
+    point.effectiveCompletedLoadStatus === "unavailable" && point.effectiveCompletedLoad == null
       ? "Completed Common Load unavailable"
-      : point.effectiveCompletedLoadStatus === "partial" && completedLoadValue
-        ? `${completedLoadValue} incomplete`
-        : completedLoadValue;
+      : completedLoadValue;
   const plannedLoadStatus = getDailyTrainingAdjustmentPlannedLoadStatus(point);
   const plannedLoad =
     plannedLoadStatus === "known_zero"
       ? "Planned Common Load 0, no planned load"
-      : plannedLoadStatus === "unavailable"
+      : plannedLoadStatus === "unavailable" && getDailyTrainingAdjustmentPlannedLoad(point) == null
         ? "Planned Common Load unavailable"
         : (() => {
             const value = formatMetric(
               "Planned Common Load",
               getDailyTrainingAdjustmentPlannedLoad(point),
             );
-            if (!value) return "Planned Common Load unavailable";
-            return plannedLoadStatus === "partial" ? `${value} incomplete` : value;
+            return value ?? "Planned Common Load unavailable";
           })();
   const actualFitness = formatMetric("Actual fitness", point.fitnessCtl);
   const projectedFitness = formatMetric("Planned fitness projection", point.scheduledFitnessCtl);
@@ -374,7 +401,7 @@ export function buildDailyTrainingAdjustmentAccessibilityValue(
   const projectedFatigue = formatMetric("Planned fatigue projection", point.scheduledFatigueAtl);
   const form = formatMetric("Form", point.formTsb);
   const completedState =
-    hasCompletedActivityWithoutLoad(point) && point.effectiveCompletedLoadStatus !== "unavailable"
+    hasCompletedActivityWithoutLoad(point) && point.effectiveCompletedLoad == null
       ? "Completed activity, Common Load unavailable"
       : null;
 
@@ -428,40 +455,104 @@ function expandFocusedDomain(
 
 export function buildDailyTrainingAdjustmentChartData(
   points: DailyTrainingAdjustmentPoint[],
-  options: { todayDate?: string | null; bucketCenters?: readonly number[] } = {},
+  options: {
+    todayDate?: string | null;
+    bucketCenters?: readonly number[];
+    interpolateTrends?: boolean;
+  } = {},
 ) {
-  const { todayDate = null, bucketCenters } = options;
-  return points.map((point, index) => {
+  const { todayDate = null, bucketCenters, interpolateTrends = false } = options;
+  const chartData = points.map((point, index) => {
     const planned = getDailyTrainingAdjustmentPlannedLoad(point);
+    const actualBoundary = point.bucketStartDate ?? point.date;
+    const projectedBoundary = point.bucketEndDate ?? point.date;
+    const actualFitness = valueOrNull(point.fitnessCtl);
+    const projectedFitness = valueOrNull(point.scheduledFitnessCtl);
+    const actualFatigue = valueOrNull(point.actualFatigueAtl);
+    const projectedFatigue = valueOrNull(point.scheduledFatigueAtl);
+    const actualForm = valueOrNull(point.formTsb);
+    const projectedForm = valueOrNull(point.scheduledFormTsb) ?? actualForm;
+    const useProjectedState = Boolean(todayDate && projectedBoundary > todayDate);
     return {
       x: bucketCenters?.[index] ?? index,
+      // Partial loads are processing state, not chart measurements. Keeping them out
+      // of plotted values also prevents them from affecting the visible domain.
       completedLoad: valueOrNull(point.effectiveCompletedLoad),
       plannedLoad: planned,
-      actualFitness: !todayDate || point.date <= todayDate ? valueOrNull(point.fitnessCtl) : null,
-      projectedFitness:
-        !todayDate || point.date >= todayDate ? valueOrNull(point.scheduledFitnessCtl) : null,
-      actualFatigue:
-        !todayDate || point.date <= todayDate ? valueOrNull(point.actualFatigueAtl) : null,
-      projectedFatigue:
-        !todayDate || point.date >= todayDate ? valueOrNull(point.scheduledFatigueAtl) : null,
-      form: valueOrNull(point.formTsb),
+      actualFitness: !todayDate || actualBoundary <= todayDate ? actualFitness : null,
+      projectedFitness: !todayDate || projectedBoundary >= todayDate ? projectedFitness : null,
+      actualFatigue: !todayDate || actualBoundary <= todayDate ? actualFatigue : null,
+      projectedFatigue: !todayDate || projectedBoundary >= todayDate ? projectedFatigue : null,
+      actualForm: !todayDate || actualBoundary <= todayDate ? actualForm : null,
+      projectedForm: !todayDate || projectedBoundary >= todayDate ? projectedForm : null,
+      fitness: useProjectedState
+        ? (projectedFitness ?? actualFitness)
+        : (actualFitness ?? projectedFitness),
+      fatigue: useProjectedState
+        ? (projectedFatigue ?? actualFatigue)
+        : (actualFatigue ?? projectedFatigue),
+      form: useProjectedState ? (projectedForm ?? actualForm) : (actualForm ?? projectedForm),
     } satisfies DailyTrainingAdjustmentChartDatum;
   });
+  if (!interpolateTrends) return chartData;
+
+  const interpolate = (
+    key: DailyTrainingAdjustmentChartYKey,
+    eligible: (point: DailyTrainingAdjustmentPoint) => boolean,
+  ) => {
+    const anchors = chartData.flatMap((point, index) =>
+      eligible(points[index] as DailyTrainingAdjustmentPoint) &&
+      typeof point[key] === "number" &&
+      Number.isFinite(point[key])
+        ? [{ index, value: point[key] as number }]
+        : [],
+    );
+    if (anchors.length === 0) return;
+    for (const [index, point] of chartData.entries()) {
+      const sourcePoint = points[index];
+      if (!sourcePoint || !eligible(sourcePoint) || point[key] !== null) continue;
+      const previous = anchors.findLast((anchor) => anchor.index < index);
+      const next = anchors.find((anchor) => anchor.index > index);
+      const value =
+        previous && next
+          ? previous.value +
+            ((next.value - previous.value) * (index - previous.index)) /
+              (next.index - previous.index)
+          : (previous?.value ?? next?.value);
+      if (value !== undefined) point[key] = value;
+    }
+  };
+
+  const actualEligible = (point: DailyTrainingAdjustmentPoint) =>
+    !todayDate || (point.bucketStartDate ?? point.date) <= todayDate;
+  const projectedEligible = (point: DailyTrainingAdjustmentPoint) =>
+    !todayDate || (point.bucketEndDate ?? point.date) >= todayDate;
+  interpolate("actualFitness", actualEligible);
+  interpolate("actualFatigue", actualEligible);
+  interpolate("projectedFitness", projectedEligible);
+  interpolate("projectedFatigue", projectedEligible);
+  interpolate("actualForm", actualEligible);
+  interpolate("projectedForm", projectedEligible);
+  interpolate("fitness", () => true);
+  interpolate("fatigue", () => true);
+  interpolate("form", () => true);
+  return chartData;
 }
 
 export function buildDailyTrainingAdjustmentChartDomains(
   chartData: readonly DailyTrainingAdjustmentChartDatum[],
+  options: {
+    tightLoadDomain?: boolean;
+  } = {},
 ) {
   const loadValues = chartData
     .flatMap((point) => [point.completedLoad, point.plannedLoad])
     .filter((value): value is number => value !== null && Number.isFinite(value));
   const fitnessValues = chartData
-    .flatMap((point) => [
-      point.actualFitness,
-      point.projectedFitness,
-      point.actualFatigue,
-      point.projectedFatigue,
-    ])
+    .map((point) => point.fitness)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  const fatigueValues = chartData
+    .map((point) => point.fatigue)
     .filter((value): value is number => value !== null && Number.isFinite(value));
   const formValues = chartData
     .map((point) => point.form)
@@ -470,22 +561,46 @@ export function buildDailyTrainingAdjustmentChartDomains(
   const paddedFormExtent = Math.ceil(formExtent * 1.1);
 
   return {
-    loadDomain: expandDomain(loadValues, [0, 100], 0.1),
+    loadDomain: options.tightLoadDomain
+      ? buildDailyTrainingAdjustmentLoadDomain(loadValues)
+      : expandDomain(loadValues, [0, 100], 0.1),
     fitnessDomain: expandFocusedDomain(fitnessValues, [0, 100]),
+    fatigueDomain: expandFocusedDomain(fatigueValues, [0, 100]),
     formDomain: [-paddedFormExtent, paddedFormExtent] as [number, number],
   };
 }
 
+export function buildDailyTrainingAdjustmentLoadDomain(
+  values: readonly number[],
+): [number, number] {
+  const finiteValues = values.filter((value) => Number.isFinite(value) && value >= 0);
+  if (finiteValues.length === 0) return [0, 1];
+  const maximum = Math.max(...finiteValues);
+  if (maximum <= 0) return [0, 1];
+
+  const paddedMaximum = maximum * 1.08;
+  const magnitude = 10 ** Math.floor(Math.log10(paddedMaximum));
+  const normalized = paddedMaximum / magnitude;
+  const step = [1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find(
+    (candidate) => candidate >= normalized,
+  );
+  return [0, (step ?? 10) * magnitude];
+}
+
 export function useDailyTrainingAdjustmentChartPresentation({
   formatDateLabel,
+  interpolateTrends = false,
   points,
   range = "daily",
+  tightLoadDomain = false,
   todayDate,
   bucketCenters,
 }: {
   formatDateLabel?: (dateKey: string, index: number) => string;
+  interpolateTrends?: boolean;
   points: DailyTrainingAdjustmentPoint[];
   range?: PlanTrainingChartRange;
+  tightLoadDomain?: boolean;
   todayDate?: string | null;
   bucketCenters?: readonly number[];
 }) {
@@ -493,14 +608,15 @@ export function useDailyTrainingAdjustmentChartPresentation({
     () =>
       buildDailyTrainingAdjustmentChartData(points, {
         ...(bucketCenters !== undefined ? { bucketCenters } : {}),
+        interpolateTrends,
         todayDate: todayDate ?? null,
       }),
-    [bucketCenters, points, todayDate],
+    [bucketCenters, interpolateTrends, points, todayDate],
   );
 
-  const { fitnessDomain, formDomain, loadDomain } = useMemo(
-    () => buildDailyTrainingAdjustmentChartDomains(chartData),
-    [chartData],
+  const { fatigueDomain, fitnessDomain, formDomain, loadDomain } = useMemo(
+    () => buildDailyTrainingAdjustmentChartDomains(chartData, { tightLoadDomain }),
+    [chartData, tightLoadDomain],
   );
   const labels = useMemo(
     () =>
@@ -513,6 +629,7 @@ export function useDailyTrainingAdjustmentChartPresentation({
 
   return {
     chartData,
+    fatigueDomain,
     fitnessDomain,
     formDomain,
     labels,

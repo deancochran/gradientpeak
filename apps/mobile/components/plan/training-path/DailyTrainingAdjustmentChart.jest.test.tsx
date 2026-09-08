@@ -3,6 +3,7 @@ import type React from "react";
 import type { TestInstance as ReactTestInstance } from "test-renderer";
 import { DailyTrainingAdjustmentChart } from "./DailyTrainingAdjustmentChart";
 import { hasCompletedActivityWithoutLoad } from "./dailyTrainingAdjustmentChartPresentation";
+import { getPlanChartTheme } from "./planChartTheme";
 import { deriveTrainingPathChartWindow } from "./trainingPathChartWindow";
 
 const mockScrollTo = jest.fn();
@@ -61,7 +62,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     ).toBe(false);
   });
 
-  it("marks a known-zero completed load at the chart baseline", async () => {
+  it("does not render a baseline marker for a known-zero completed load", async () => {
     await render(
       <DailyTrainingAdjustmentChart
         points={[
@@ -76,17 +77,121 @@ describe("DailyTrainingAdjustmentChart", () => {
 
     expect(
       screen.container.queryAll(
-        (node) => node.props.testID === "known-zero-completed-load-marker-2026-06-01",
-      )[0],
-    ).toBeTruthy();
+        (node: ReactTestInstance) => String(node.type) === "Rect" && node.props.height === 3,
+      ),
+    ).toHaveLength(0);
     expect(
       screen.container.queryAll(
         (node: ReactTestInstance) =>
           String(node.type) === "Rect" &&
-          node.props.height === 3 &&
-          node.props.color === "rgba(22, 163, 74, 0.86)",
+          node.props.color === getPlanChartTheme("light").completedLoad,
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("renders positive load bars in neutral colors", async () => {
+    await render(
+      <DailyTrainingAdjustmentChart
+        points={[
+          {
+            date: "2026-06-01",
+            effectiveCompletedLoad: 24,
+            effectiveCompletedLoadStatus: "complete",
+            plannedLoad: 30,
+            plannedLoadStatus: "complete",
+          },
+        ]}
+      />,
+    );
+
+    const colors = screen.container
+      .queryAll((node: ReactTestInstance) => String(node.type) === "Rect")
+      .map((node) => node.props.color);
+    const theme = getPlanChartTheme("light");
+    expect(colors).toContain(theme.completedLoad);
+    expect(colors).toContain(theme.plannedLoad);
+    expect(theme.completedLoad).not.toBe(theme.fitness);
+    expect(theme.plannedLoad).not.toBe(theme.projectedFitness);
+  });
+
+  it("removes nonessential axis chrome in compact mode", async () => {
+    await render(
+      <DailyTrainingAdjustmentChart
+        density="compact"
+        points={[{ date: "2026-06-01", effectiveCompletedLoad: 24, fitnessCtl: 40 }]}
+        visibleTrends={["fitness"]}
+      />,
+    );
+
+    expect(screen.queryByLabelText("Left axis: Load, Common Load")).toBeNull();
+    expect(screen.queryByText("Fit")).toBeNull();
+    expect(screen.getByLabelText("Plan Load and trend timeline")).toBeTruthy();
+  });
+
+  it("does not visually distinguish a load value based on incomplete evidence", async () => {
+    await render(
+      <DailyTrainingAdjustmentChart
+        points={[
+          {
+            date: "2026-06-01",
+            effectiveCompletedLoad: 24,
+            effectiveCompletedLoadStatus: "partial",
+          },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.container.queryAll(
+        (node) => node.props.testID === "incomplete-completed-load-marker-2026-06-01",
+      ),
+    ).toHaveLength(0);
+    expect(
+      screen.container.queryAll(
+        (node: ReactTestInstance) => String(node.type) === "Rect" && node.props.opacity === 0.35,
+      ),
+    ).toHaveLength(0);
+    expect(
+      screen.container.queryAll(
+        (node: ReactTestInstance) =>
+          String(node.type) === "SkiaLine" && node.props.strokeWidth === 2,
+      ),
+    ).toHaveLength(0);
+    expect(
+      screen.container.queryAll(
+        (node: ReactTestInstance) =>
+          String(node.type) === "Rect" &&
+          node.props.color === getPlanChartTheme("light").completedLoad,
       ),
     ).toHaveLength(1);
+  });
+
+  it("stacks same-date goals, prioritizes their tap target, and exposes offscreen goals", async () => {
+    const onGoalPress = jest.fn();
+    await render(
+      <DailyTrainingAdjustmentChart
+        goalMarkers={[
+          { id: "goal-low", label: "Local 5K", priority: 3, targetDate: "2026-06-01" },
+          { id: "goal-high", label: "A race", priority: 9, targetDate: "2026-06-01" },
+          { id: "goal-later", label: "Autumn race", priority: 8, targetDate: "2026-07-01" },
+        ]}
+        loadOnly
+        onGoalPress={onGoalPress}
+        points={[
+          { date: "2026-06-01", effectiveCompletedLoad: 24 },
+          { date: "2026-06-02", plannedLoad: 30 },
+        ]}
+        primaryGoalId="goal-high"
+        showSelectedTray={false}
+        testID="plan-load"
+      />,
+    );
+
+    const marker = screen.getByTestId("plan-load-goal-marker-2026-06-01");
+    expect(marker.props.accessibilityLabel).toBe("2 goals on 2026-06-01. Open A race");
+    await fireEvent.press(marker);
+    expect(onGoalPress).toHaveBeenCalledWith("goal-high");
+    expect(screen.getByTestId("plan-load-goals-after")).toBeTruthy();
   });
 
   it("keeps an unavailable marker alongside a known completed aggregate load", () => {
@@ -107,7 +212,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     ).toBe(false);
   });
 
-  it("highlights every completed activity without a calculated load", async () => {
+  it("does not render bottom markers for incomplete load collection", async () => {
     await render(
       <DailyTrainingAdjustmentChart
         selectedDate="2026-06-02"
@@ -137,28 +242,14 @@ describe("DailyTrainingAdjustmentChart", () => {
       />,
     );
 
-    expect(
-      screen.container.queryAll(
-        (node) => node.props.testID === "completed-activity-without-load-highlight-2026-06-01",
-      )[0],
-    ).toBeTruthy();
-    expect(
-      screen.queryByLabelText("Completed activity without estimated load on 2026-06-01"),
-    ).toBeNull();
-    expect(
-      screen.container.queryAll(
-        (node) => node.props.testID === "completed-activity-without-load-highlight-2026-06-02",
-      )[0],
-    ).toBeTruthy();
-    expect(
-      screen.queryByLabelText("Completed activity without estimated load on 2026-06-02"),
-    ).toBeNull();
+    expect(screen.queryByTestId("completed-activity-without-load-highlight-2026-06-01")).toBeNull();
+    expect(screen.queryByTestId("completed-activity-without-load-highlight-2026-06-02")).toBeNull();
     expect(screen.queryByTestId("completed-activity-without-load-highlight-2026-06-03")).toBeNull();
     const bottomMarkers = screen.container.queryAll(
       (node: ReactTestInstance) =>
         String(node.type) === "Rect" && node.props.height === 3 && node.props.y === 97,
     );
-    expect(bottomMarkers).toHaveLength(2);
+    expect(bottomMarkers).toHaveLength(0);
   });
 
   it("derives a stable bounded chart window around the anchor date", () => {
@@ -643,7 +734,7 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(chart.props.data.map((datum: { x: number }) => datum.x)).toEqual([60, 180]);
   });
 
-  it("announces available selected load, fitness, and unavailable completed-load state", async () => {
+  it("renders finite root-partial load without exposing its internal status", async () => {
     await render(
       <DailyTrainingAdjustmentChart
         points={[
@@ -664,7 +755,6 @@ describe("DailyTrainingAdjustmentChart", () => {
           },
         ]}
         selectedDate="2026-06-02"
-        showRecommendedProjection
       />,
     );
 
@@ -674,7 +764,6 @@ describe("DailyTrainingAdjustmentChart", () => {
       text: [
         "Selected date 2026-06-02",
         "Completed Common Load 15",
-        "Completed activity, Common Load unavailable",
         "Planned Common Load 25",
         "Actual fitness 31",
         "Planned fitness projection 33",
@@ -691,6 +780,7 @@ describe("DailyTrainingAdjustmentChart", () => {
             date: "2026-05-31",
             effectiveCompletedLoad: 15,
             fitnessCtl: 39,
+            actualFatigueAtl: 44,
             formTsb: -5,
           },
           {
@@ -698,6 +788,8 @@ describe("DailyTrainingAdjustmentChart", () => {
             effectiveCompletedLoad: 20,
             fitnessCtl: 40,
             scheduledFitnessCtl: 40,
+            actualFatigueAtl: 45,
+            scheduledFatigueAtl: 45,
             targetFitnessCtl: 40,
             recommendedLoadStatus: "complete",
             recommendedLoad: 30,
@@ -707,6 +799,8 @@ describe("DailyTrainingAdjustmentChart", () => {
             date: "2026-06-02",
             effectiveRemainingLoad: 25,
             scheduledFitnessCtl: 42,
+            scheduledFatigueAtl: 47,
+            scheduledFormTsb: 8,
             targetFitnessCtl: 43,
             recommendedLoadStatus: "complete",
             recommendedLoad: 35,
@@ -714,14 +808,13 @@ describe("DailyTrainingAdjustmentChart", () => {
           },
         ]}
         selectedDate="2026-06-01"
-        showRecommendedProjection
         todayDate="2026-06-01"
       />,
     );
 
     expect(screen.getByLabelText("Left axis: Load, Common Load")).toBeTruthy();
     expect(screen.getByLabelText("Right axis: Fitness / Fatigue")).toBeTruthy();
-    expect(screen.getByText("Form line shows recovery")).toBeTruthy();
+    expect(screen.queryByText("Form line shows recovery")).toBeNull();
     expect(
       screen.container.queryAll(
         (node) => node.props.testID === "daily-training-adjustment-chart-today-boundary",
@@ -732,33 +825,45 @@ describe("DailyTrainingAdjustmentChart", () => {
     const lines = screen.container.queryAll(
       (node: ReactTestInstance) => String(node.type) === "Line",
     );
-    const currentFitness = lines.find(
-      (line: ReactTestInstance) => line.props.color === "rgba(22, 163, 74, 0.95)",
+    const fitness = lines.find(
+      (line: ReactTestInstance) =>
+        JSON.stringify(
+          line.props.points?.map((point: { yValue: number | null }) => point.yValue),
+        ) === JSON.stringify([39, 40, 42]),
     );
-    const plannedProjection = lines.find(
-      (line: ReactTestInstance) => line.props.color === "rgba(37, 99, 235, 0.95)",
+    const fatigue = lines.find(
+      (line: ReactTestInstance) =>
+        JSON.stringify(
+          line.props.points?.map((point: { yValue: number | null }) => point.yValue),
+        ) === JSON.stringify([44, 45, 47]),
     );
     const form = lines.find(
-      (line: ReactTestInstance) => line.props.color === "rgba(124, 58, 237, 0.95)",
+      (line: ReactTestInstance) =>
+        JSON.stringify(
+          line.props.points?.map((point: { yValue: number | null }) => point.yValue),
+        ) === JSON.stringify([-5, 0, 8]),
     );
-    expect(currentFitness?.props.points).toHaveLength(3);
-    expect(plannedProjection?.props.points).toHaveLength(3);
+    expect(fitness?.props.points).toHaveLength(3);
+    expect(fatigue?.props.points).toHaveLength(3);
     expect(form?.props.points).toHaveLength(3);
-    expect(
-      currentFitness?.props.points.map((point: { yValue: number | null }) => point.yValue),
-    ).toEqual([39, 40, null]);
-    expect(
-      plannedProjection?.props.points.map((point: { yValue: number | null }) => point.yValue),
-    ).toEqual([null, 40, 42]);
-    expect(form?.props.points.map((point: { yValue: number }) => point.yValue)).toEqual([-5, 0, 8]);
-    expect(currentFitness?.props.connectMissingData).toBe(false);
-    expect(plannedProjection?.props.connectMissingData).toBe(false);
-    expect(form?.props.connectMissingData).toBe(false);
-    expect(currentFitness?.props.children).toBeUndefined();
-    expect(plannedProjection?.props.children).toBeUndefined();
-    expect(
-      lines.find((line: ReactTestInstance) => line.props.color === "rgba(15, 23, 42, 0.44)"),
-    ).toBeUndefined();
+    expect(fitness?.props.points.map((point: { yValue: number | null }) => point.yValue)).toEqual([
+      39, 40, 42,
+    ]);
+    expect(fatigue?.props.points.map((point: { yValue: number | null }) => point.yValue)).toEqual([
+      44, 45, 47,
+    ]);
+    expect(form?.props.points.map((point: { yValue: number | null }) => point.yValue)).toEqual([
+      -5, 0, 8,
+    ]);
+    expect(lines.every((line) => line.props.connectMissingData === true)).toBe(true);
+    expect(lines.every((line) => line.props.curveType === "natural")).toBe(true);
+    expect(screen.getByText("Fit")).toBeTruthy();
+    expect(screen.getByText("Fat")).toBeTruthy();
+    expect(screen.getAllByText("Form").length).toBeGreaterThan(0);
+    const trendAxes = getCartesianChart().props.yAxis.slice(1);
+    expect(trendAxes).toHaveLength(3);
+    expect(trendAxes[0].domain).not.toEqual(trendAxes[1].domain);
+    expect(trendAxes[1].domain).not.toEqual(trendAxes[2].domain);
     expect(
       screen.container.queryAll(
         (node: ReactTestInstance) =>
@@ -767,7 +872,55 @@ describe("DailyTrainingAdjustmentChart", () => {
     ).toHaveLength(1);
   });
 
-  it("keeps a visible line gap for a missing training-state value", async () => {
+  it("keeps Today visible inside a partial explicit calendar bin", async () => {
+    await render(
+      <DailyTrainingAdjustmentChart
+        goalMarkers={[{ id: "goal", label: "Week goal", priority: 1, targetDate: "2026-06-01" }]}
+        loadOnly
+        onGoalPress={jest.fn()}
+        points={[{ date: "2026-06-03", effectiveCompletedLoad: 20 }]}
+        range="weekly"
+        todayDate="2026-06-05"
+      />,
+    );
+
+    expect(
+      screen.container.queryAll(
+        (node) => node.props.testID === "daily-training-adjustment-chart-today-boundary",
+      )[0],
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId("daily-training-adjustment-chart-goal-marker-2026-06-01"),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("daily-training-adjustment-chart-goals-before")).toBeNull();
+  });
+
+  it("renders only the requested optional trend lines alongside Load", async () => {
+    await render(
+      <DailyTrainingAdjustmentChart
+        loadOnly
+        points={[
+          {
+            actualFatigueAtl: 45,
+            date: "2026-06-03",
+            fitnessCtl: 40,
+            formTsb: -5,
+            scheduledFatigueAtl: 47,
+            scheduledFitnessCtl: 42,
+          },
+        ]}
+        visibleTrends={["fitness"]}
+      />,
+    );
+
+    const lines = screen.container.queryAll((node) => String(node.type) === "Line");
+    expect(lines).toHaveLength(1);
+    expect(lines.every((line) => line.props.connectMissingData === true)).toBe(true);
+    expect(screen.getByLabelText("Trend lines: Fitness")).toBeTruthy();
+    expect(screen.queryByText("Form shows recovery")).toBeNull();
+  });
+
+  it("smooths across a missing training-state value", async () => {
     await render(
       <DailyTrainingAdjustmentChart
         points={[
@@ -780,8 +933,13 @@ describe("DailyTrainingAdjustmentChart", () => {
 
     const fitnessLine = screen.container
       .queryAll((node: ReactTestInstance) => String(node.type) === "Line")
-      .find((line: ReactTestInstance) => line.props.color === "rgba(22, 163, 74, 0.95)");
-    expect(fitnessLine?.props.connectMissingData).toBe(false);
+      .find(
+        (line: ReactTestInstance) =>
+          JSON.stringify(
+            line.props.points?.map((point: { yValue: number | null }) => point.yValue),
+          ) === JSON.stringify([40, null, 44]),
+      );
+    expect(fitnessLine?.props.connectMissingData).toBe(true);
     expect(
       fitnessLine?.props.points.map((point: { yValue: number | null }) => point.yValue),
     ).toEqual([40, null, 44]);
@@ -800,6 +958,71 @@ describe("DailyTrainingAdjustmentChart", () => {
     const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
     expect(scrollView.props.showsHorizontalScrollIndicator).toBe(true);
     expect(scrollView.props.persistentScrollbar).toBe(true);
+  });
+
+  it("renders and scrubs every day in a fitted leap-year range", async () => {
+    const onSelectedDateChange = jest.fn();
+    const start = new Date(Date.UTC(2024, 0, 1));
+    const points = Array.from({ length: 366 }, (_, index) => {
+      const date = new Date(start);
+      date.setUTCDate(date.getUTCDate() + index);
+      return {
+        date: date.toISOString().slice(0, 10),
+        effectiveCompletedLoad: index + 1,
+      };
+    });
+    await render(
+      <DailyTrainingAdjustmentChart
+        fitRange
+        goalMarkers={[{ id: "goal", label: "Leap goal", priority: 9, targetDate: "2024-02-29" }]}
+        loadOnly
+        onSelectedDateChange={onSelectedDateChange}
+        points={points}
+        selectedDate="2024-01-01"
+        showSelectedTray={false}
+        testID="fitted-load"
+      />,
+    );
+
+    expect(getCartesianChart().props.data).toHaveLength(366);
+    expect(screen.queryByTestId("fitted-load-bucket-2024-02-29")).toBeNull();
+    expect(screen.queryByTestId("fitted-load-goal-marker-2024-02-29")).toBeNull();
+    expect(screen.getByTestId("fitted-load-scroll").props.scrollEnabled).toBe(false);
+
+    const interaction = screen.getByTestId("fitted-load-fitted-interaction");
+    await fireEvent(interaction, "responderGrant", { nativeEvent: { locationX: 239.9 } });
+    await fireEvent(interaction, "responderRelease", { nativeEvent: { locationX: 239.9 } });
+    expect(onSelectedDateChange).toHaveBeenCalledWith("2024-12-31");
+  });
+
+  it("replaces the fitted daily viewport when the selected range data changes", async () => {
+    const buildPoints = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({
+        date: new Date(Date.UTC(2024, 0, index + 1)).toISOString().slice(0, 10),
+        effectiveCompletedLoad: index + 1,
+      }));
+    const { rerender } = await render(
+      <DailyTrainingAdjustmentChart
+        fitRange
+        loadOnly
+        points={buildPoints(42)}
+        selectedDate="2024-01-01"
+        showSelectedTray={false}
+      />,
+    );
+    expect(getCartesianChart().props.data).toHaveLength(42);
+
+    await rerender(
+      <DailyTrainingAdjustmentChart
+        fitRange
+        loadOnly
+        points={buildPoints(366)}
+        selectedDate="2024-01-01"
+        showSelectedTray={false}
+      />,
+    );
+
+    expect(getCartesianChart().props.data).toHaveLength(366);
   });
 
   it("keeps today's plotted values unchanged after windowing backward and forward", async () => {
@@ -851,9 +1074,10 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(todayAfter).toMatchObject({
       actualFitness: todayBefore.actualFitness,
       completedLoad: todayBefore.completedLoad,
-      form: todayBefore.form,
+      actualForm: todayBefore.actualForm,
       plannedLoad: todayBefore.plannedLoad,
       projectedFitness: todayBefore.projectedFitness,
+      projectedForm: todayBefore.projectedForm,
     });
     expect(screen.getByText("06/15", { includeHiddenElements: true })).toBeTruthy();
   });
@@ -926,5 +1150,44 @@ describe("DailyTrainingAdjustmentChart", () => {
       )[0],
     ).toBeTruthy();
     expect(mockScrollTo).not.toHaveBeenCalled();
+  });
+
+  it("refreshes trend paths immediately when grouping changes during an interaction", async () => {
+    const { rerender } = await render(
+      <DailyTrainingAdjustmentChart
+        fitRange
+        points={[
+          { date: "2026-06-01", fitnessCtl: 30 },
+          { date: "2026-06-02", fitnessCtl: 31 },
+        ]}
+        range="daily"
+        selectedDate="2026-06-01"
+        visibleTrends={["fitness"]}
+      />,
+    );
+    await fireEvent(
+      screen.getByTestId("daily-training-adjustment-chart-scroll"),
+      "scrollBeginDrag",
+    );
+
+    await rerender(
+      <DailyTrainingAdjustmentChart
+        fitRange
+        points={[
+          {
+            bucketEndDate: "2026-06-07",
+            bucketStartDate: "2026-06-01",
+            date: "2026-06-01",
+            fitnessCtl: 90,
+          },
+        ]}
+        range="weekly"
+        selectedDate="2026-06-01"
+        visibleTrends={["fitness"]}
+      />,
+    );
+
+    expect(getCartesianChart().props.data).toHaveLength(1);
+    expect(getCartesianChart().props.data[0]).toMatchObject({ fitness: 90 });
   });
 });

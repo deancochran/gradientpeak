@@ -1,0 +1,7 @@
+appId: com.deancochran.gradientpeak.dev
+name: App launch smoke
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: sign-in-screen

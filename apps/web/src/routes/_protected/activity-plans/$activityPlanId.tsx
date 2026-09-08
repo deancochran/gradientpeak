@@ -1,5 +1,6 @@
 import {
   activityPlanStructureSchema,
+  buildActivityPlanPrintModel,
   resolveActivityPlanSessionFlow,
 } from "@repo/core/activity-plan";
 import {
@@ -23,13 +24,14 @@ import {
 } from "@repo/ui/components/card";
 import { DateInput } from "@repo/ui/components/date-input";
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowLeft, CalendarDays, Copy, Loader2, Pencil, Printer, Trash2 } from "lucide-react";
+import { ArrowLeft, CalendarDays, Copy, Loader2, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { ActivityPlanComments } from "../../../components/activity-plan/activity-plan-comments";
 import { ActivityPlanComposer } from "../../../components/activity-plan/activity-plan-composer";
 import { ActivityPlanEstimateRow } from "../../../components/activity-plan/activity-plan-estimates";
+import { ActivityPlanPdfActions } from "../../../components/activity-plan/activity-plan-pdf-actions";
 import { ActivityPlanSessionFlow } from "../../../components/activity-plan/activity-plan-session-flow";
 import { ActivityPlanStructure } from "../../../components/activity-plan/activity-plan-structure";
 import {
@@ -42,6 +44,9 @@ import { api } from "../../../lib/api/client";
 import { getTodayDateKey, shiftDateKey } from "../../../lib/planning";
 
 export const Route = createFileRoute("/_protected/activity-plans/$activityPlanId")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    edit: search.edit === true || search.edit === "true" ? true : undefined,
+  }),
   component: ActivityPlanDetailPage,
 });
 
@@ -49,6 +54,8 @@ function ActivityPlanDetailPage() {
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
   const { activityPlanId } = Route.useParams();
+  const { edit: editMode } = Route.useSearch();
+  const editing = editMode === true;
   const [personalizationChoice, setPersonalizationChoice] = useState<boolean | null>(null);
   const planQuery = api.activityPlans.getById.useQuery(
     { id: activityPlanId, personalize: false },
@@ -57,7 +64,7 @@ function ActivityPlanDetailPage() {
   const performanceTargetsQuery = api.athleteIntelligence.getReadModel.useQuery(
     { sections: { publishedState: true } },
     {
-      enabled: Boolean(planQuery.data?.detail?.capabilities.canEdit),
+      enabled: Boolean(planQuery.data?.detail),
     },
   );
   const today = getTodayDateKey();
@@ -68,7 +75,6 @@ function ActivityPlanDetailPage() {
     includeAdhoc: true,
     limit: 100,
   });
-  const [editing, setEditing] = useState(false);
   const [liked, setLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(0);
   const [scheduleDate, setScheduleDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -101,8 +107,19 @@ function ActivityPlanDetailPage() {
     personalize: false,
   }).eligibility;
   const personalizeTargets = Boolean(
-    isOwner && personalizationEligibility.eligible && (personalizationChoice ?? true),
+    personalizationEligibility.eligible && (personalizationChoice ?? true),
   );
+  const printModel = detail
+    ? buildActivityPlanPrintModel({
+        description: detail.description,
+        format: "full-page",
+        notes: detail.notes,
+        ...(performanceTargets ? { performanceTargets } : {}),
+        personalizeTargets,
+        structure: displayStructure,
+        title: detail.name,
+      })
+    : null;
 
   useEffect(() => {
     setPersonalizationChoice(null);
@@ -140,7 +157,7 @@ function ActivityPlanDetailPage() {
   const updatePlan = api.activityPlans.update.useMutation({
     onSuccess: async () => {
       await utils.activityPlans.invalidate();
-      setEditing(false);
+      void navigate({ search: { edit: undefined }, replace: true });
       toast.success("Activity plan updated");
     },
     onError: async (error) => {
@@ -241,7 +258,7 @@ function ActivityPlanDetailPage() {
             content_visibility: edit.contentVisibility,
           }}
           mode="edit"
-          onCancel={() => setEditing(false)}
+          onCancel={() => void navigate({ search: { edit: undefined }, replace: true })}
           onSave={(values) =>
             updatePlan
               .mutateAsync({
@@ -270,9 +287,7 @@ function ActivityPlanDetailPage() {
       <DetailPageIntro
         actions={
           <div className="flex flex-wrap gap-2 print:hidden">
-            <Button onClick={() => window.print()} type="button" variant="outline">
-              <Printer className="mr-2 h-4 w-4" /> Print / Save as PDF
-            </Button>
+            {printModel ? <ActivityPlanPdfActions key={detail.id} model={printModel} /> : null}
             <LikeToggleButton
               count={likesCount}
               liked={liked}
@@ -298,7 +313,11 @@ function ActivityPlanDetailPage() {
               </Button>
             ) : null}
             {isOwner ? (
-              <Button onClick={() => setEditing(true)} type="button" variant="outline">
+              <Button
+                onClick={() => void navigate({ search: { edit: true } })}
+                type="button"
+                variant="outline"
+              >
                 <Pencil className="mr-2 h-4 w-4" /> Edit
               </Button>
             ) : null}
@@ -413,7 +432,7 @@ function ActivityPlanDetailPage() {
             {...(performanceTargets ? { performanceTargets } : {})}
             personalizeTargets={personalizeTargets}
             onPersonalizeTargetsChange={setPersonalizationChoice}
-            showPersonalizationControl={isOwner}
+            showPersonalizationControl
             showStepNames={false}
             personalizationFactsLoading={performanceTargetsQuery.isLoading}
           />

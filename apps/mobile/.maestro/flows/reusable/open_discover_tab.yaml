@@ -1,9 +1,0 @@
-appId: ${MAESTRO_APP_ID}
----
-- runFlow:
-    file: ./reset_navigation_to_home.yaml
-- tapOn:
-    id: "search-header-button"
-    retryTapIfNoChange: true
-- assertVisible: { id: "discover-screen" }
-- assertVisible: { id: "discover-search-input" }

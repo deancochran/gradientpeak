@@ -29,6 +29,22 @@ async function navigateThroughClientRedirect(page: Parameters<typeof login>[0], 
   }
 }
 
+function authContextForClientSlot(
+  laneServer: Parameters<typeof authLaneContextOptions>[0],
+  slot: number,
+) {
+  const octets = laneServer.clientIp.split(".").map(Number);
+  const lastOctet = octets.at(-1);
+  if (octets.length !== 4 || lastOctet === undefined || !Number.isInteger(lastOctet)) {
+    throw new Error(`Auth lane client IP is not IPv4: ${laneServer.clientIp}`);
+  }
+  octets[3] = ((lastOctet - 1 + slot) % 254) + 1;
+  return authLaneContextOptions(
+    { ...laneServer, clientIp: octets.join(".") },
+    { viewport: { width: 1280, height: 720 } },
+  );
+}
+
 test("protected routes preserve a local return path and reject hostile login redirects", async ({
   page,
 }) => {
@@ -86,11 +102,8 @@ test("real password reset changes the credential and revokes a second session", 
   });
   expect(verificationResponse.status()).toBe(200);
 
-  const contextOptions = authLaneContextOptions(laneServer, {
-    viewport: { width: 1280, height: 720 },
-  });
-  const secondContext = await browser.newContext(contextOptions);
-  const recoveryContext = await browser.newContext(contextOptions);
+  const secondContext = await browser.newContext(authContextForClientSlot(laneServer, 1));
+  const recoveryContext = await browser.newContext(authContextForClientSlot(laneServer, 2));
   let renewedContext: Awaited<ReturnType<typeof browser.newContext>> | undefined;
   const secondSession = await secondContext.newPage();
   const recoveryPage = await recoveryContext.newPage();
@@ -130,7 +143,7 @@ test("real password reset changes the credential and revokes a second session", 
     // The login form journey is covered above. Exercise the actual Better Auth
     // endpoint in a fresh browser context here so this assertion isolates the
     // changed credential from the form's navigation behavior.
-    renewedContext = await browser.newContext(contextOptions);
+    renewedContext = await browser.newContext(authContextForClientSlot(laneServer, 3));
     const renewedSession = await renewedContext.newPage();
     const renewedLogin = await renewedSession.request.post("/api/auth/sign-in/email", {
       data: { email: actor.email, password: nextPassword },

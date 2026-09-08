@@ -1,8 +1,0 @@
-appId: ${MAESTRO_APP_ID}
----
-- runFlow:
-    file: ./reset_navigation_to_home.yaml
-- tapOn:
-    id: "tab-button-record"
-    retryTapIfNoChange: true
-- assertVisible: { id: "record-screen-ready" }

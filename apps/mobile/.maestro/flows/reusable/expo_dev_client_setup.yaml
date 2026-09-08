@@ -1,5 +1,0 @@
-appId: ${MAESTRO_APP_ID}
----
-# Compatibility wrapper for callers that only need Dev Client chrome handling.
-# It intentionally does not launch the app or assert app-owned readiness.
-- runFlow: ./handle_transient_system_ui.yaml

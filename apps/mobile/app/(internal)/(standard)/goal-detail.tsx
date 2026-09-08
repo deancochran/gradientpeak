@@ -1,28 +1,34 @@
 import { invalidateGoalQueries } from "@repo/api/react";
 import {
+  buildCenteredPlanAnalysisWindow,
   formatGoalTypeLabel,
   getGoalObjectiveSummary,
-  getProfileGoalLifecycleStatus,
   parseProfileGoalRecord,
 } from "@repo/core";
 import { Card, CardContent } from "@repo/ui/components/card";
-import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Activity, Bike, CalendarDays, Dumbbell, Footprints, Waves } from "lucide-react-native";
 import type React from "react";
 import { useMemo, useState } from "react";
-import { View } from "react-native";
+import { RefreshControl, View } from "react-native";
 import { GoalIntelligenceCard } from "@/components/goals/GoalIntelligenceCard";
+import { PlanProgressInsight } from "@/components/plan/insights/PlanProgressInsight";
+import {
+  buildComparableThresholdTrend,
+  buildGoalTrajectoryAnswer,
+  mergeGoalProgressThresholdEvidence,
+} from "@/components/plan/training-path/planDashboardPresentation";
+import { getTrainingPathTodayKey } from "@/components/plan/training-path/trainingPathPlanningTime";
 import {
   DetailDeleteConfirmModal,
   DetailOverflowMenu,
   DetailScaffold,
 } from "@/components/shared/detail";
+import { GoalCard } from "@/components/shared/GoalCard";
 import { ErrorState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
-import { toDateKey } from "@/lib/calendar/dateMath";
 import { ROUTES } from "@/lib/constants/routes";
+import { useAuth } from "@/lib/hooks/useAuth";
 
 function SectionCard({ children, testID }: { children: React.ReactNode; testID?: string }) {
   return (
@@ -32,68 +38,14 @@ function SectionCard({ children, testID }: { children: React.ReactNode; testID?:
   );
 }
 
-function formatActivityCategory(value: string | null | undefined) {
-  if (!value) return "Activity";
-  return value
-    .split("_")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function getActivityCategoryIcon(value: string | null | undefined) {
-  const normalized = value?.toLowerCase() ?? "";
-  if (normalized.includes("run")) return Footprints;
-  if (normalized.includes("bike") || normalized.includes("cycling")) return Bike;
-  if (normalized.includes("swim")) return Waves;
-  if (normalized.includes("strength")) return Dumbbell;
-  return Activity;
-}
-
-function todayDateKey() {
-  return toDateKey(new Date());
-}
-
-function formatDateShort(value: string | null) {
-  if (!value) {
-    return null;
-  }
-
-  const date = new Date(`${value}T12:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
-
-function formatDaysUntilGoal(targetDate: string | null, today: string) {
-  if (!targetDate) {
-    return "No target date";
-  }
-
-  const target = new Date(`${targetDate}T12:00:00.000Z`);
-  const reference = new Date(`${today}T12:00:00.000Z`);
-  if (Number.isNaN(target.getTime()) || Number.isNaN(reference.getTime())) {
-    return "Target date set";
-  }
-
-  const dayCount = Math.ceil((target.getTime() - reference.getTime()) / 86_400_000);
-  if (dayCount < 0) {
-    return "Past target date";
-  }
-  if (dayCount === 0) {
-    return "Today";
-  }
-  return `${dayCount} day${dayCount === 1 ? "" : "s"} out`;
-}
-
 export default function GoalDetailScreen() {
   const router = useRouter();
   const utils = api.useUtils();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const goalId = typeof id === "string" ? id : "";
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const { profile } = useAuth();
 
   const goalQuery = api.goals.getById.useQuery({ id: goalId }, { enabled: !!goalId });
   const { data: goal, isLoading } = goalQuery;
@@ -101,7 +53,18 @@ export default function GoalDetailScreen() {
     { goalId },
     { enabled: !!goalId },
   );
-  const todayKey = useMemo(() => todayDateKey(), []);
+  const progressQuery = api.athleteIntelligence.getGoalProgress.useQuery(
+    { goalId },
+    { enabled: !!goalId },
+  );
+  const thresholdQuery = api.athleteIntelligence.getThresholdOverview.useQuery(
+    { historyLimit: 100 },
+    { enabled: !!goalId },
+  );
+  const todayKey = useMemo(
+    () => getTrainingPathTodayKey(new Date(), profile?.planning_timezone ?? "UTC") ?? "",
+    [profile?.planning_timezone],
+  );
   const goalRecord = useMemo(() => {
     if (!goal) {
       return null;
@@ -122,12 +85,57 @@ export default function GoalDetailScreen() {
   });
 
   const objectiveSummary = goalRecord ? getGoalObjectiveSummary(goalRecord) : null;
-  const lifecycleStatus = goalRecord ? getProfileGoalLifecycleStatus({ goal: goalRecord }) : null;
   const targetDate = goalRecord?.target_date ?? null;
-  const formattedTargetDate = formatDateShort(targetDate);
-  const daysUntilGoal = formatDaysUntilGoal(targetDate, todayKey);
-  const ActivityIcon = getActivityCategoryIcon(goalRecord?.activity_category);
-  const activityCategoryLabel = formatActivityCategory(goalRecord?.activity_category);
+  const analysisWindow = useMemo(
+    () => buildCenteredPlanAnalysisWindow({ anchorDate: todayKey, period: "6m" }),
+    [todayKey],
+  );
+  const goalProgress = progressQuery.data?.result;
+  const progressIdentity =
+    goalProgress && goalProgress.status !== "unsupported" ? goalProgress.target : null;
+  const thresholdTrend = buildComparableThresholdTrend(
+    mergeGoalProgressThresholdEvidence(
+      thresholdQuery.data?.history.items ?? [],
+      progressQuery.data?.provenance,
+    ),
+    progressIdentity?.activityCategory ?? null,
+    progressIdentity ? { metric: progressIdentity.metric, unit: progressIdentity.unit } : null,
+  );
+  const trajectoryAnswer = buildGoalTrajectoryAnswer(goalProgress);
+  const intelligenceRevisions = [
+    assessmentQuery.data?.stateRevision,
+    progressQuery.data?.publication?.publishedRevision,
+    thresholdQuery.data?.publication.publishedRevision,
+  ];
+  const intelligenceAvailable =
+    intelligenceRevisions.every((value): value is number => typeof value === "number") &&
+    assessmentQuery.data?.freshness === "fresh" &&
+    progressQuery.data?.publication?.status === "available" &&
+    thresholdQuery.data?.publication.status === "available";
+  const intelligenceAligned =
+    intelligenceAvailable &&
+    intelligenceRevisions.every((revision) => revision === intelligenceRevisions[0]);
+  const intelligenceComputedAt = [
+    assessmentQuery.data?.computedAt,
+    progressQuery.data?.publication?.computedAt,
+    thresholdQuery.data?.publication.computedAt,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1);
+  const refreshGoal = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.allSettled([
+        goalQuery.refetch(),
+        assessmentQuery.refetch(),
+        progressQuery.refetch(),
+        thresholdQuery.refetch(),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
   const handleDeleteGoal = () => {
     if (!goalRecord) {
       return;
@@ -190,6 +198,9 @@ export default function GoalDetailScreen() {
   return (
     <DetailScaffold
       headerRight={renderHeaderActions}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={() => void refreshGoal()} />
+      }
       modals={
         showDeleteConfirm && goalRecord ? (
           <DetailDeleteConfirmModal
@@ -204,38 +215,16 @@ export default function GoalDetailScreen() {
         ) : null
       }
     >
-      <SectionCard>
-        <View className="flex-row items-center gap-3">
-          <View className="h-12 w-12 items-center justify-center rounded-2xl bg-muted">
-            <Icon as={ActivityIcon} size={20} className="text-muted-foreground" />
-          </View>
-          <View className="min-w-0 flex-1 gap-1">
-            <Text className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {activityCategoryLabel} · {formatGoalTypeLabel(goalRecord)}
-            </Text>
-            <Text className="text-xl font-semibold text-foreground" numberOfLines={2}>
-              {goalRecord.title}
-            </Text>
-            <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-              {formattedTargetDate || "Target date not set"} · {lifecycleStatus?.label ?? "Goal"}
-            </Text>
-          </View>
-        </View>
-
-        {objectiveSummary ? (
-          <Text className="text-sm leading-5 text-muted-foreground">{objectiveSummary}</Text>
-        ) : null}
-
-        <View className="flex-row items-center justify-between gap-3 rounded-2xl border border-border px-3 py-2.5">
-          <View className="flex-row items-center gap-2">
-            <Icon as={CalendarDays} size={15} className="text-muted-foreground" />
-            <Text className="text-sm font-medium text-foreground">{daysUntilGoal}</Text>
-          </View>
-          <Text className="text-xs font-medium text-muted-foreground">
-            Priority {goalRecord.priority}/10
-          </Text>
-        </View>
-      </SectionCard>
+      <GoalCard
+        goal={{
+          id: goalRecord.id,
+          objectiveSummary,
+          targetDate,
+          title: goalRecord.title,
+          typeLabel: formatGoalTypeLabel(goalRecord),
+        }}
+        testID="goal-detail-card"
+      />
 
       <GoalIntelligenceCard
         assessment={assessmentQuery.data}
@@ -243,6 +232,72 @@ export default function GoalDetailScreen() {
         isLoading={assessmentQuery.isLoading}
         onRetry={() => void assessmentQuery.refetch()}
       />
+      <SectionCard testID="goal-detail-progress">
+        <View className="flex-row items-center justify-between gap-3">
+          <Text accessibilityRole="header" className="text-lg font-semibold text-foreground">
+            Trajectory and threshold progress
+          </Text>
+          <Text className="text-xs text-muted-foreground">6 months</Text>
+        </View>
+        <View className="gap-1" testID="goal-detail-trajectory-answer">
+          <Text className="font-semibold text-foreground">{trajectoryAnswer.headline}</Text>
+          <Text className="text-sm leading-5 text-muted-foreground">{trajectoryAnswer.body}</Text>
+        </View>
+        <Text className="text-xs text-muted-foreground" testID="goal-detail-evidence-freshness">
+          {assessmentQuery.isLoading || progressQuery.isLoading || thresholdQuery.isLoading
+            ? "Updating signals"
+            : assessmentQuery.isError || progressQuery.isError || thresholdQuery.isError
+              ? "Some signals are unavailable"
+              : intelligenceAligned
+                ? `Signals aligned at revision ${intelligenceRevisions[0]}`
+                : intelligenceAvailable
+                  ? "Signals updated separately"
+                  : "Some signals are stale or unavailable"}
+          {intelligenceComputedAt
+            ? ` · calculated ${new Date(intelligenceComputedAt).toLocaleString()}`
+            : " · calculation time unavailable"}
+        </Text>
+        {progressQuery.isLoading || thresholdQuery.isLoading ? (
+          <Text className="text-sm text-muted-foreground">Loading threshold evidence…</Text>
+        ) : progressQuery.isError || thresholdQuery.isError ? (
+          <Text className="text-sm text-muted-foreground">
+            Threshold progress is unavailable. Retry from the goal when data is available.
+          </Text>
+        ) : (
+          <PlanProgressInsight
+            deadlineDate={
+              goalProgress && goalProgress.status !== "unsupported"
+                ? goalProgress.deadlineAt.slice(0, 10)
+                : targetDate
+            }
+            onOpenSourceActivity={(activityId) =>
+              router.navigate(ROUTES.ACTIVITIES.DETAIL(activityId) as never)
+            }
+            progress={goalProgress}
+            todayKey={todayKey}
+            trend={thresholdTrend}
+            window={{ end: analysisWindow.endDate, start: analysisWindow.startDate }}
+          />
+        )}
+        <Text
+          accessibilityRole="button"
+          className="self-start text-sm font-semibold text-primary"
+          onPress={() =>
+            router.navigate(
+              ROUTES.PLAN.ANALYSIS({
+                anchorDate: todayKey,
+                goalId: goalRecord.id,
+                metric: "threshold",
+                range: "6m",
+                view: "progress",
+              }) as never,
+            )
+          }
+          testID="goal-detail-analyze"
+        >
+          Analyze
+        </Text>
+      </SectionCard>
     </DetailScaffold>
   );
 }

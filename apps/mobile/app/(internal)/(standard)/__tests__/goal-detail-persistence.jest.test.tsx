@@ -125,6 +125,10 @@ jest.mock("@repo/core", () => ({
     label: "Building toward target",
   })),
   formatGoalTypeLabel: jest.fn(() => "Race"),
+  buildCenteredPlanAnalysisWindow: jest.fn(() => ({
+    endDate: "2026-08-15",
+    startDate: "2026-02-15",
+  })),
   getGoalDistanceBadge: jest.fn(() => null),
   getGoalMetricSummary: jest.fn(() => null),
   getGoalObjectiveSummary: jest.fn(() => "5K target"),
@@ -172,10 +176,29 @@ jest.mock("@/components/charts/PlanReadinessComparisonChart", () => ({
   PlanReadinessComparisonChart: (props: HostProps) =>
     React.createElement("PlanReadinessComparisonChart", props, props.children),
 }));
+jest.mock("@/components/plan/insights/PlanProgressInsight", () => ({
+  __esModule: true,
+  PlanProgressInsight: mockCreateHost("PlanProgressInsight"),
+}));
+jest.mock("@/components/plan/training-path/planDashboardPresentation", () => ({
+  __esModule: true,
+  buildComparableThresholdTrend: jest.fn(() => null),
+  buildGoalTrajectoryAnswer: jest.fn(() => ({
+    body: "Evidence is unavailable.",
+    headline: "Trajectory unavailable",
+  })),
+  mergeGoalProgressThresholdEvidence: jest.fn(() => []),
+}));
+jest.mock("@/components/plan/training-path/trainingPathPlanningTime", () => ({
+  getTrainingPathTodayKey: () => "2026-04-15",
+}));
 
 jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
   useAppNavigate: () => jest.fn(),
+}));
+jest.mock("@/lib/hooks/useAuth", () => ({
+  useAuth: () => ({ profile: { planning_timezone: "America/Los_Angeles" } }),
 }));
 
 jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
@@ -245,6 +268,10 @@ jest.mock("@/lib/api", () => ({
     },
     athleteIntelligence: {
       getGoalAssessment: { useQuery: assessmentUseQueryMock },
+      getGoalProgress: { useQuery: () => ({ data: undefined, isError: false, isLoading: false }) },
+      getThresholdOverview: {
+        useQuery: () => ({ data: undefined, isError: false, isLoading: false }),
+      },
     },
   },
 }));
@@ -277,6 +304,7 @@ describe("goal detail persistence", () => {
   it("routes editing through the dedicated goal edit screen", async () => {
     await renderNative(<GoalDetailScreen />);
 
+    await fireEvent.press(screen.getByTestId("goal-detail-options-trigger"));
     await fireEvent.press(screen.getByTestId("goal-detail-options-edit"));
 
     expect(navigateMock).toHaveBeenCalledWith("/goal-edit?id=goal-1");
@@ -289,6 +317,23 @@ describe("goal detail persistence", () => {
       { goalId: "goal-1" },
       { enabled: true },
     );
+  });
+
+  it("hands the athlete planning day to Advanced analysis", async () => {
+    await renderNative(<GoalDetailScreen />);
+
+    await fireEvent.press(screen.getByTestId("goal-detail-analyze"));
+
+    expect(navigateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ params: expect.objectContaining({ anchorDate: "2026-04-15" }) }),
+    );
+  });
+
+  it("does not claim aligned revisions when evidence publications are unavailable", async () => {
+    await renderNative(<GoalDetailScreen />);
+
+    expect(screen.queryByText(/Signals aligned at revision/)).toBeNull();
+    expect(screen.getByText(/Some signals are stale or unavailable/)).toBeTruthy();
   });
 
   it("does not render legacy readiness or outcome forecast claims", async () => {

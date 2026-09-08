@@ -18,15 +18,21 @@ const ledgerKey = [
   ["trainingPlans", "getPlanningLedger"],
   { input: { anchorDate: "2026-08-13", period: "day" }, type: "query" },
 ] as const;
+const periodReviewKey = [
+  ["trainingPlans", "getPlanPeriodReview"],
+  { input: { anchorDate: "2026-08-13", period: "week" }, type: "query" },
+] as const;
 
 describe("Plan scheduling cache contract", () => {
   it("includes the planning ledger in every scheduling mutation scope", () => {
     for (const paths of Object.values(SCHEDULING_REFRESH_CONTRACT)) {
       expect(paths).toContainEqual(["trainingPlans", "getPlanningLedger"]);
+      expect(paths).toContainEqual(["trainingPlans", "getPlanPeriodReview"]);
       expect(paths).toContainEqual(["calendar", "range"]);
       expect(paths).toContainEqual(["calendar", "page"]);
     }
     expect(isSchedulingSensitiveQueryKey(ledgerKey)).toBe(true);
+    expect(isSchedulingSensitiveQueryKey(periodReviewKey)).toBe(true);
   });
 
   it("invalidates matching ledger queries for scheduling and activity ingestion", async () => {
@@ -40,7 +46,9 @@ describe("Plan scheduling cache contract", () => {
     await invalidateSchedulingQueries(queryClient, "eventMutation");
     await invalidatePostActivityIngestionQueries(queryClient);
     const ledgerQuery = { queryKey: ledgerKey } as unknown as Query;
+    const periodReviewQuery = { queryKey: periodReviewKey } as unknown as Query;
     expect(predicates.filter((predicate) => predicate(ledgerQuery))).toHaveLength(2);
+    expect(predicates.filter((predicate) => predicate(periodReviewQuery))).toHaveLength(2);
   });
 
   it("applies the short stale window and always-on mount/reconnect policy to ledgers", () => {
@@ -87,16 +95,21 @@ describe("Server cache-tag client contract", () => {
       "home.getDashboard": [["home", "getDashboard"]],
       "plannedSessions.range": [["plannedSessions", "range"]],
       "trainingPlans.get": [["trainingPlans", "get"]],
-      "trainingPlans.getPlanTabProjection": [["trainingPlans", "getPlanTabProjection"]],
+      "trainingPlans.getPlanTabProjection": [
+        ["trainingPlans", "getPlanTabProjection"],
+        ["trainingPlans", "getPlanPeriodReview"],
+      ],
       "trainingPlans.getPlanningLedger": [["trainingPlans", "getPlanningLedger"]],
       "trainingPlans.list": [["trainingPlans", "list"]],
     });
     expect(Object.keys(API_CACHE_TAG_QUERY_KEYS).sort()).toEqual(
       [...apiCacheTagSchema.options].sort(),
     );
-    for (const queryKey of Object.values(API_CACHE_TAG_QUERY_KEYS)) {
-      const procedureName = queryKey[0].join(".");
-      expect(Object.hasOwn(appRouter._def.procedures, procedureName), procedureName).toBe(true);
+    for (const queryKeys of Object.values(API_CACHE_TAG_QUERY_KEYS)) {
+      for (const queryKey of queryKeys) {
+        const procedureName = queryKey.join(".");
+        expect(Object.hasOwn(appRouter._def.procedures, procedureName), procedureName).toBe(true);
+      }
     }
   });
 

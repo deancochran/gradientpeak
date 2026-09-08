@@ -1,7 +1,0 @@
-appId: ${MAESTRO_APP_ID}
-# @purpose Open one selected calendar day by canonical app link.
-# @arg CALENDAR_DATE date required
-# @ready calendar-screen-ready
----
-- openLink: "${MAESTRO_APP_SCHEME}://calendar-day?date=${CALENDAR_DATE}"
-- assertVisible: { id: "calendar-screen-ready" }

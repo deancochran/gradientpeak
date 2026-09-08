@@ -71,6 +71,7 @@ const profileBaseSelect = {
   preferred_units: profiles.preferred_units,
   planning_timezone: profiles.planning_timezone,
   language: profiles.language,
+  default_content_visibility: profiles.default_content_visibility,
 } as const;
 
 type DbClient = ReturnType<typeof getRequiredDb>;
@@ -98,6 +99,7 @@ type ProfileBaseRow = Pick<
   | "preferred_units"
   | "planning_timezone"
   | "language"
+  | "default_content_visibility"
 >;
 
 export type ProfileListFilters = {

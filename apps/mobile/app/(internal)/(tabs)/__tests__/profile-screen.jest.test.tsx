@@ -9,6 +9,8 @@ const updateEmailMock = jest.fn(async () => undefined);
 const updatePasswordMock = jest.fn(async () => undefined);
 const deleteAccountMock = jest.fn(async () => undefined);
 const setThemeMock = jest.fn();
+const setProductAnalyticsConsentMock = jest.fn();
+let productAnalyticsConsent: "denied" | "granted" = "denied";
 
 const defaultPublicProfile = { followers_count: 4, following_count: 9 };
 const defaultAuthState = {
@@ -147,7 +149,7 @@ jest.mock("@repo/ui/components/settings-group", () => ({
   }: SettingItemMockProps) =>
     React.createElement(
       "Pressable",
-      { onPress: onPress ?? (() => onValueChange?.(!value)), ...props },
+      { onPress: onPress ?? (() => onValueChange?.(!value)), value, ...props },
       [
         React.createElement("Text", { key: "label" }, label),
         React.createElement("Text", { key: "description" }, description),
@@ -258,8 +260,15 @@ jest.mock("@/lib/stores/theme-store", () => ({
   __esModule: true,
   useTheme: () => ({ resolvedTheme: "light", setTheme: setThemeMock }),
 }));
+jest.mock("@/lib/stores/productAnalyticsConsentStore", () => ({
+  useProductAnalyticsConsent: () => ({
+    consent: productAnalyticsConsent,
+    hasHydrated: true,
+    setConsent: setProductAnalyticsConsentMock,
+  }),
+}));
 
-const ProfileTabScreen = require("../profile").default;
+const ProfileTabScreen = require("@/components/profile/MeScreen").default;
 
 describe("ProfileTabScreen", () => {
   beforeEach(() => {
@@ -268,6 +277,7 @@ describe("ProfileTabScreen", () => {
     publicProfileIsError = false;
     publicProfileIsLoading = false;
     authState = defaultAuthState;
+    productAnalyticsConsent = "denied";
   });
 
   it("routes content library entry points from the profile hub", async () => {
@@ -289,12 +299,20 @@ describe("ProfileTabScreen", () => {
     expect(navigateToMock).toHaveBeenCalledWith("/routes-list");
   });
 
+  it("opens My Groups in its management view from settings", async () => {
+    await renderNative(<ProfileTabScreen />);
+
+    await fireEvent.press(screen.getByTestId("profile-tab-my-groups"));
+
+    expect(navigateToMock).toHaveBeenCalledWith("/my-groups");
+  });
+
   it("keeps the active user's identity summary on profile settings", async () => {
     await renderNative(<ProfileTabScreen />);
 
     await fireEvent.press(screen.getByTestId("profile-tab-summary-identity"));
 
-    expect(navigateToMock).toHaveBeenCalledWith("/(internal)/(tabs)/profile");
+    expect(navigateToMock).toHaveBeenCalledWith("/me");
   });
 
   it("shows groups the active profile belongs to", async () => {
@@ -463,6 +481,15 @@ describe("ProfileTabScreen", () => {
     await fireEvent.press(screen.getByTestId("profile-tab-dark-mode"));
 
     expect(setThemeMock).toHaveBeenCalledWith("dark");
+  });
+
+  it("keeps product analytics opted out by default and offers explicit opt-in", async () => {
+    await renderNative(<ProfileTabScreen />);
+
+    expect(screen.getByText("Product analytics")).toBeTruthy();
+    expect(screen.getByTestId("profile-tab-product-analytics").props.value).toBe(false);
+    await fireEvent.press(screen.getByTestId("profile-tab-product-analytics"));
+    expect(setProductAnalyticsConsentMock).toHaveBeenCalledWith(true);
   });
 
   it("signs out after the confirmation action is selected", async () => {

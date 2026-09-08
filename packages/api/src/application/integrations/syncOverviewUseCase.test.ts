@@ -26,8 +26,8 @@ vi.mock("../../infrastructure/repositories", () => ({
 }));
 
 vi.mock("./provider-operation-runtime", () => ({
-  getProviderOperationAdapter: vi.fn(() => ({
-    isConfigured: () => true,
+  getProviderOperationAdapter: vi.fn((provider: string) => ({
+    isConfigured: () => provider === "wahoo",
     allowsAction: ({ action, grantedScope }: { action: string; grantedScope?: string | null }) => {
       const scopes = new Set((grantedScope ?? "").split(/\s+/));
       return (
@@ -36,7 +36,32 @@ vi.mock("./provider-operation-runtime", () => ({
         (action === "refresh_setup_data" && scopes.has("user_read"))
       );
     },
-    readOverviewEvidence: mocks.readOverviewEvidence,
+    readOverviewEvidence:
+      provider === "wahoo"
+        ? mocks.readOverviewEvidence
+        : vi.fn(async () => ({
+            activityHistory: {
+              lastError: null,
+              lastFailedAt: null,
+              lastSucceededAt: null,
+              queuedJobId: null,
+              status: "idle",
+              importRun: null,
+            },
+            plannedActivities: {
+              lastError: null,
+              lastFailedAt: null,
+              lastSucceededAt: null,
+              queuedJobId: null,
+              status: "unsupported",
+            },
+            setupData: {
+              lastError: null,
+              lastFailedAt: null,
+              lastSucceededAt: null,
+              status: "unsupported",
+            },
+          })),
   })),
 }));
 
@@ -123,7 +148,7 @@ describe("getProviderSyncOverview planned Wahoo delivery", () => {
     const overview = await getProviderSyncOverview({ db: overviewDb(), profileId: PROFILE_ID });
     const wahoo = overview.find((provider) => provider.provider === "wahoo");
 
-    expect(overview.map(({ provider }) => provider)).toEqual(["wahoo"]);
+    expect(overview.map(({ provider }) => provider)).toEqual(["wahoo", "strava"]);
     expect(wahoo?.plannedActivities).toEqual({
       lastError: null,
       lastFailedAt: null,

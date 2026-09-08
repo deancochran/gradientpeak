@@ -1,7 +1,0 @@
-appId: ${MAESTRO_APP_ID}
-# @purpose Open one goal by canonical app link.
-# @arg GOAL_ID uuid required
-# @ready goal-detail-screen
----
-- openLink: "${MAESTRO_APP_SCHEME}://goal-detail?id=${GOAL_ID}"
-- assertVisible: { id: "goal-detail-screen" }

@@ -117,6 +117,7 @@ function FormTextField<TFieldValues extends FieldValues, TName extends FieldPath
   parseValue,
   required,
   rules,
+  selectTextOnFocus: _selectTextOnFocus,
   testId,
   ...inputProps
 }: FormTextFieldProps<TFieldValues, TName>) {

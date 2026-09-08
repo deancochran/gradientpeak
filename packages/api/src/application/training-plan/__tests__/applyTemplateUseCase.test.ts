@@ -54,6 +54,7 @@ describe("applyTrainingPlanTemplateUseCase", () => {
   };
 
   beforeEach(() => {
+    enqueueWahooPlannedActivitySyncAfterCalendarMutation.mockClear();
     plannedSessionRepository.activityPlanExistsForProfile.mockClear();
     plannedSessionRepository.trainingPlanExistsForProfile.mockClear();
     plannedSessionRepository.getOwned.mockClear();
@@ -120,6 +121,113 @@ describe("applyTrainingPlanTemplateUseCase", () => {
     replace_existing: true,
     application_mode: "full" as const,
   };
+
+  it("keeps a different training plan additive without performing an active-plan lookup", async () => {
+    const repository = createRepository();
+    const transaction = vi.fn(async (callback: (tx: TransactionClient) => Promise<unknown>) =>
+      callback({
+        execute: async () => ({ rows: [] }),
+        insert: () => ({
+          values: () => ({ returning: async () => [{ id: "new-event" }] }),
+        }),
+      } as unknown as TransactionClient),
+    );
+    const { replace_existing: _replaceExisting, ...additiveValues } = applicationValues;
+
+    const result = await applyTrainingPlanTemplateUseCase({
+      db: createApplicationDb(transaction) as unknown as DrizzleDbClient,
+      permissions: { grantEventContentAccess: vi.fn(), revokeEventGrants: vi.fn() },
+      profileId: "44444444-4444-4444-8444-444444444444",
+      repository: repository as unknown as TrainingPlanRepository,
+      repositoryFactory: () => repository as unknown as TrainingPlanRepository,
+      plannedSessionRepositoryFactory: () => plannedSessionRepository as never,
+      values: additiveValues,
+    });
+
+    expect(repository.getActivePlanFromFutureEvents).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      scheduled_sessions_created: 1,
+      scheduled_sessions_replaced: 0,
+    });
+    expect(plannedSessionRepository.createOwned).toHaveBeenCalledOnce();
+  });
+
+  it("replays the same future training-plan schedule without duplicate writes", async () => {
+    const existingScheduleBatchId = "55555555-5555-4555-8555-555555555555";
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ scheduleBatchId: existingScheduleBatchId }] });
+    const insert = vi.fn();
+    const transaction = vi.fn(async (callback: (tx: TransactionClient) => Promise<unknown>) =>
+      callback({ execute, insert } as unknown as TransactionClient),
+    );
+
+    const result = await applyTrainingPlanTemplateUseCase({
+      db: createApplicationDb(transaction) as unknown as DrizzleDbClient,
+      permissions: { grantEventContentAccess: vi.fn(), revokeEventGrants: vi.fn() },
+      profileId: "44444444-4444-4444-8444-444444444444",
+      repository: createRepository() as unknown as TrainingPlanRepository,
+      plannedSessionRepositoryFactory: () => plannedSessionRepository as never,
+      values: { ...applicationValues, replace_existing: false },
+    });
+
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(execute.mock.invocationCallOrder[0]).toBeLessThan(
+      execute.mock.invocationCallOrder[1] ?? 0,
+    );
+    expect(insert).not.toHaveBeenCalled();
+    expect(plannedSessionRepository.createOwned).not.toHaveBeenCalled();
+    expect(enqueueWahooPlannedActivitySyncAfterCalendarMutation).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      schedule_batch_id: existingScheduleBatchId,
+      scheduled_sessions_created: 0,
+      scheduled_sessions_replaced: 0,
+      planned_sessions_created: 0,
+      planned_sessions_replayed: 0,
+    });
+  });
+
+  it("reapplies a removed plan by recovering its cancelled durable session before recreating its event", async () => {
+    let cancelledSessionStatus: "cancelled" | "scheduled" = "cancelled";
+    const createOwned = vi.fn(async ({ session }) => {
+      expect(cancelledSessionStatus).toBe("cancelled");
+      cancelledSessionStatus = "scheduled";
+      return { status: "unchanged" as const, session };
+    });
+    const execute = vi.fn().mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
+    const insertedEvents: Array<Record<string, unknown>> = [];
+    const transaction = vi.fn(async (callback: (tx: TransactionClient) => Promise<unknown>) =>
+      callback({
+        execute,
+        insert: () => ({
+          values: (rows: Array<Record<string, unknown>>) => {
+            insertedEvents.push(...rows);
+            return { returning: async () => [{ id: "recreated-event" }] };
+          },
+        }),
+      } as unknown as TransactionClient),
+    );
+
+    const result = await applyTrainingPlanTemplateUseCase({
+      db: createApplicationDb(transaction) as unknown as DrizzleDbClient,
+      permissions: { grantEventContentAccess: vi.fn(), revokeEventGrants: vi.fn() },
+      profileId: "44444444-4444-4444-8444-444444444444",
+      repository: createRepository() as unknown as TrainingPlanRepository,
+      plannedSessionRepositoryFactory: () =>
+        ({ ...plannedSessionRepository, createOwned }) as never,
+      values: { ...applicationValues, replace_existing: false },
+    });
+
+    expect(createOwned).toHaveBeenCalledOnce();
+    expect(cancelledSessionStatus).toBe("scheduled");
+    expect(insertedEvents).toHaveLength(1);
+    expect(result).toMatchObject({
+      scheduled_sessions_created: 1,
+      planned_sessions_created: 0,
+      planned_sessions_replayed: 1,
+    });
+  });
 
   it("rejects application when the published athlete revision changed", async () => {
     readPublishedAthleteStateSnapshotData.mockResolvedValueOnce({

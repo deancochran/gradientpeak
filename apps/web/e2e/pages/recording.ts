@@ -64,9 +64,11 @@ export class RecordingPage {
       const usePlan = this.page.getByRole("button", { name: "Use this plan" });
       if (input === "keyboard") await usePlan.press("Enter");
       else await usePlan.click();
-      const selectedPlanName = this.page.getByText(name, { exact: true });
-      await expect(selectedPlanName).toHaveCount(2);
-      await expect(selectedPlanName.last()).toBeVisible();
+      const selectedPlanName = this.page
+        .getByRole("link", { name: "Change plan" })
+        .locator("..")
+        .getByText(name, { exact: true });
+      await expect(selectedPlanName).toBeVisible();
     });
   }
 

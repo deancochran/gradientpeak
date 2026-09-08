@@ -22,4 +22,18 @@ describe("IntegerStepper native", () => {
     expect(onChange).toHaveBeenNthCalledWith(1, 2);
     expect(onChange).toHaveBeenNthCalledWith(2, 1);
   });
+
+  it("forwards its stable test ID to the editable value", async () => {
+    const { getByTestId } = await renderNative(
+      <IntegerStepper
+        id="sessions"
+        label="Sessions"
+        value={2}
+        onChange={jest.fn()}
+        testId="preferences-min-sessions"
+      />,
+    );
+
+    expect(getByTestId("preferences-min-sessions")).toBeTruthy();
+  });
 });

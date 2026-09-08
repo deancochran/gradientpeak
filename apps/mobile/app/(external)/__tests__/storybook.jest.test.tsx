@@ -90,9 +90,21 @@ describe("Storybook developer route", () => {
     expect(screen.queryByTestId("ui-preview-surface")).toBeNull();
   });
 
-  it("does not expose either developer surface in production", async () => {
+  it("exposes only the deterministic E2E surface in a release certification build", async () => {
     runtimeGlobal.__DEV__ = false;
     process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
+    process.env.EXPO_PUBLIC_STORYBOOK_ENABLED = "1";
+    mockSearchParams = { surface: "mobile-cards" };
+
+    await renderNative(<StorybookScreen />);
+
+    expect(screen.getByTestId("mobile-card-matrix")).toBeTruthy();
+    expect(screen.queryByTestId("ui-preview-surface")).toBeNull();
+    expect(screen.queryByTestId("storybook-root")).toBeNull();
+  });
+
+  it("keeps developer surfaces unavailable in release builds without the explicit E2E flag", async () => {
+    runtimeGlobal.__DEV__ = false;
     process.env.EXPO_PUBLIC_STORYBOOK_ENABLED = "1";
 
     await renderNative(<StorybookScreen />);

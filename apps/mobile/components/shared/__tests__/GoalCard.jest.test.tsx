@@ -65,4 +65,16 @@ describe("GoalCard", () => {
     await fireEvent.press(card);
     expect(onPress).toHaveBeenCalledTimes(1);
   });
+
+  it("renders an explicitly unavailable compact readiness slot", async () => {
+    await renderNative(
+      <GoalCard
+        goal={{ id: "goal-1", title: "Autumn marathon", compactReadiness: null }}
+        variant="compact"
+      />,
+    );
+
+    expect(screen.getByText("Readiness")).toBeTruthy();
+    expect(screen.getByText("Unavailable")).toBeTruthy();
+  });
 });

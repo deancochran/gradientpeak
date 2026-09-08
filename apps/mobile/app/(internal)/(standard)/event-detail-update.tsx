@@ -1,12 +1,7 @@
-import { Button } from "@repo/ui/components/button";
-import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useRef } from "react";
-import { View } from "react-native";
-import {
-  CreateEventFlow,
-  type CreateEventFlowHandle,
-} from "@/components/event/create/CreateEventFlow";
+import { useEffect } from "react";
+import { ScrollView, View } from "react-native";
+import { CreateEventFlow } from "@/components/event/create/CreateEventFlow";
 import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
@@ -15,12 +10,11 @@ import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
 
 export default function EventDetailUpdateScreen() {
   const router = useRouter();
-  const formRef = useRef<CreateEventFlowHandle>(null);
   const { id } = useLocalSearchParams<{ id?: string }>();
   const eventId = typeof id === "string" ? id : "";
 
   const { isRedirecting, redirectOnNotFound } = useDeletedDetailRedirect({
-    onRedirect: () => router.navigate(ROUTES.PLAN.CALENDAR),
+    onRedirect: () => router.dismissTo(ROUTES.PLAN.CALENDAR),
   });
 
   const {
@@ -65,29 +59,22 @@ export default function EventDetailUpdateScreen() {
       <Stack.Screen
         options={{
           title: "Update Event",
-          headerRight: () => (
-            <Button
-              size="sm"
-              variant="ghost"
-              onPress={() => formRef.current?.submit()}
-              testID="event-detail-update-save-button"
-            >
-              <Text className="text-sm font-semibold text-primary">Save</Text>
-            </Button>
-          ),
         }}
       />
-      <View className="flex-1 p-4">
+      <ScrollView
+        className="flex-1"
+        contentContainerClassName="p-4 pb-8"
+        keyboardShouldPersistTaps="handled"
+        testID="event-detail-update-scroll"
+      >
         <CreateEventFlow
-          ref={formRef}
           onCancel={() => router.back()}
           onCreated={() => undefined}
           onUpdated={(updatedEvent) => router.replace(ROUTES.PLAN.EVENT_DETAIL(updatedEvent.id))}
-          showFooterActions={false}
           testIDPrefix="event-detail-update"
           updateEvent={event}
         />
-      </View>
+      </ScrollView>
     </View>
   );
 }

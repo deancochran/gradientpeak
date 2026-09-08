@@ -14,6 +14,7 @@ const authState = {
   refreshProfile: jest.fn(async () => undefined),
 };
 let segmentsValue = ["(internal)", "(standard)", "onboarding"];
+let pathnameValue = "/onboarding";
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -24,6 +25,7 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => ({
   Redirect: ({ href }: { href: unknown }) =>
     React.createElement("Text", { testID: "redirect-target" }, JSON.stringify(href)),
+  usePathname: () => pathnameValue,
   useSegments: () => segmentsValue,
 }));
 jest.mock("@repo/ui/components/button", () => ({ Button: createHost("Button") }));
@@ -37,8 +39,26 @@ jest.mock("@/lib/stores/auth-store", () => ({
 
 describe("AppBootstrapGate onboarding status", () => {
   beforeEach(() => {
+    authState.authState = "authenticated-verified";
     authState.onboardingStatus = "completed";
+    pathnameValue = "/onboarding";
     segmentsValue = ["(internal)", "(standard)", "onboarding"];
+  });
+
+  it("preserves an internal protected destination when redirecting an anonymous user to sign in", async () => {
+    authState.authState = "anonymous";
+    pathnameValue = "/integrations";
+    segmentsValue = ["(internal)", "(standard)", "integrations"];
+
+    await renderNative(
+      <AppBootstrapGate>{React.createElement("Text", null, "content")}</AppBootstrapGate>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("redirect-target").props.children).toContain(
+        '"returnTo":"/integrations"',
+      ),
+    );
   });
 
   it("redirects completed users away from onboarding", async () => {
@@ -46,6 +66,19 @@ describe("AppBootstrapGate onboarding status", () => {
       <AppBootstrapGate>{React.createElement("Text", null, "content")}</AppBootstrapGate>,
     );
     await waitFor(() => expect(screen.getByTestId("redirect-target")).toBeTruthy());
+  });
+
+  it("redirects an authenticated external route to the explicit internal home", async () => {
+    pathnameValue = "/sign-in";
+    segmentsValue = ["(external)", "sign-in"];
+
+    await renderNative(
+      <AppBootstrapGate>{React.createElement("Text", null, "content")}</AppBootstrapGate>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("redirect-target").props.children).toBe('"/(internal)/(tabs)"'),
+    );
   });
 
   it.each([

@@ -1,5 +1,5 @@
 import { z } from "zod";
-
+import { normalizedIntensityDistributionSchema } from "../load/normalized-intensity-distribution";
 import { dateOnlySchema } from "../schemas/date-only";
 
 export const planningLedgerPeriodSchema = z.enum(["day", "week", "month"]);
@@ -33,6 +33,22 @@ const ledgerTrainingStateValueSchema = z
     value: z.number().finite().nullable(),
     observedOn: dateOnlySchema.nullable(),
     source: z.enum(["actual", "scheduled_projection"]).nullable(),
+  })
+  .strict();
+
+const ledgerTrainingStateSeriesValuesSchema = z
+  .object({
+    fitness: z.number().finite(),
+    fatigue: z.number().finite(),
+    form: z.number().finite(),
+  })
+  .strict();
+
+const ledgerTrainingStatePointSchema = z
+  .object({
+    date: dateOnlySchema,
+    actual: ledgerTrainingStateSeriesValuesSchema.nullable(),
+    planned: ledgerTrainingStateSeriesValuesSchema.nullable(),
   })
   .strict();
 
@@ -104,6 +120,11 @@ export const planningLedgerSchema = z
       })
       .strict(),
     intensity: planningLedgerMetricValueSchema,
+    intensityDistribution: normalizedIntensityDistributionSchema.default({
+      status: "unavailable",
+      contributingDurationSeconds: null,
+      bands: [],
+    }),
     contributingDurationSeconds: planningLedgerMetricValueSchema,
     trainingState: z
       .object({
@@ -119,6 +140,7 @@ export const planningLedgerSchema = z
             fatigue: ledgerTrainingStateValueSchema,
           })
           .strict(),
+        series: z.array(ledgerTrainingStatePointSchema).max(31).default([]),
       })
       .strict(),
     dailyBreakdown: z.array(ledgerDailyBreakdownSchema).max(31),

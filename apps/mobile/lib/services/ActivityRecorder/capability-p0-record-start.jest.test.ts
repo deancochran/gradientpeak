@@ -57,6 +57,7 @@ jest.mock("./trainerControl", () => ({
 }));
 
 import { ActivityRecorderService } from "./index";
+import { allocateRecordingEvidenceSession } from "./recordingEvidenceJournal";
 
 function createService() {
   const service = Object.create(ActivityRecorderService.prototype) as ActivityRecorderService;
@@ -114,6 +115,9 @@ function createService() {
         disabledSources: {},
       })),
     },
+    routeController: {
+      detachRoute: jest.fn(),
+    },
     liveMetricsManager: {
       setActivityCategory: jest.fn(),
       updatePerformanceTargets: jest.fn(),
@@ -131,7 +135,15 @@ function createService() {
       disconnectAll: jest.fn(async () => undefined),
       getConnectedSensors: jest.fn(() => []),
     },
-    buildSessionSnapshot: jest.fn(() => snapshot),
+    buildSessionSnapshot: jest.fn(
+      (_startedAt: string, _performanceTargets?: unknown, reservedSessionId?: string) => ({
+        ...snapshot,
+        identity: {
+          ...snapshot.identity,
+          sessionId: reservedSessionId ?? snapshot.identity.sessionId,
+        },
+      }),
+    ),
     getSessionSnapshot: jest.fn(() => snapshot),
     getSessionOverrides: jest.fn(() => []),
     getRuntimeSourceState: jest.fn(() => ({ selectedSources: [] })),
@@ -157,6 +169,7 @@ describe("record start capability", () => {
     service.selectActivityFromPayload({ activity_category: "bike", gpsRecordingEnabled: false });
     await service.startRecording();
 
+    expect(allocateRecordingEvidenceSession).toHaveBeenCalledTimes(1);
     expect(mutable.liveMetricsManager.startRecording).toHaveBeenCalledTimes(1);
     expect(service.state).toBe("recording");
     expect(mutable.recordingMetadata).toMatchObject({
@@ -164,6 +177,28 @@ describe("record start capability", () => {
       gpsRecordingEnabled: false,
       profileId: "profile-1",
     });
+  });
+
+  it("allocates and acknowledges one exact profile-bound reserved session", async () => {
+    const { service, mutable } = createService();
+    const markStarted = jest.fn(async () => undefined);
+    const sessionId = "25ecaafc-4933-5c89-95c3-627fe44ed3ba";
+
+    service.selectActivityFromPayload({ activity_category: "bike", gpsRecordingEnabled: false });
+    await service.startRecording(undefined, {
+      profileId: "profile-1",
+      sessionId,
+      markStarted,
+    });
+
+    expect(allocateRecordingEvidenceSession).toHaveBeenCalledWith({
+      profileId: "profile-1",
+      sessionId,
+    });
+    expect(markStarted).toHaveBeenCalledTimes(1);
+    expect(mutable.liveMetricsManager.startRecording.mock.invocationCallOrder[0]).toBeLessThan(
+      markStarted.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it("loads an activity plan through the payload boundary before starting", async () => {
@@ -208,6 +243,7 @@ describe("record start capability", () => {
       plan,
     });
 
+    expect(allocateRecordingEvidenceSession).not.toHaveBeenCalled();
     expect(mutable.planExecution.loadPlan).toHaveBeenCalledWith(
       expect.objectContaining({ name: "Intervals" }),
     );
@@ -216,5 +252,19 @@ describe("record start capability", () => {
       "payloadProcessed",
       expect.objectContaining({ plan }),
     );
+
+    service.clearPlan();
+    expect(allocateRecordingEvidenceSession).not.toHaveBeenCalled();
+  });
+
+  it("detaches route setup before Start without allocating recording evidence", () => {
+    const { service, mutable } = createService();
+
+    service.detachRoute();
+
+    expect(mutable.routeController.detachRoute).toHaveBeenCalledTimes(1);
+    expect(mutable.publishSessionUpdate).toHaveBeenCalledTimes(1);
+    expect(mutable.hasConfiguredSetup).toBe(true);
+    expect(allocateRecordingEvidenceSession).not.toHaveBeenCalled();
   });
 });

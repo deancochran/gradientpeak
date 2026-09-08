@@ -33,6 +33,7 @@ vi.mock("../../../lib/api/client", () => ({
       recordSessionRpe: { useMutation: () => ({ mutateAsync: vi.fn() }) },
     },
     profiles: { get: { useQuery: () => ({ data: { id: "profile-1" } }) } },
+    routes: { get: { useQuery: () => ({ data: null }) } },
   },
 }));
 

@@ -5,7 +5,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CONTRACT_EPOCH_RECORDING_RECOVERY_KEY } from "../../../lib/contract-epoch";
 import { Route } from "./index";
 
-const mocks = vi.hoisted(() => ({ configure: vi.fn(() => true), navigate: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  configure: vi.fn(() => true),
+  navigate: vi.fn(),
+  recording: {
+    artifact: null as null | {
+      recordingSessionId: string;
+      snapshot: { activity: { routeId?: string } };
+    },
+    error: null,
+    hydrationStatus: "ready" as const,
+    hasRecoveredDraft: false,
+    canTakeOver: false,
+    state: { reducer: { lifecycle: "pending", snapshot: null } },
+  },
+}));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
@@ -22,6 +36,7 @@ vi.mock("../../../lib/api/client", () => ({
     activityPlans: {
       getById: { useQuery: () => ({ data: undefined, isLoading: false, isError: false }) },
     },
+    routes: { get: { useQuery: () => ({ data: undefined }) } },
     athleteIntelligence: {
       getReadModel: { useQuery: () => ({ data: undefined, isLoading: false }) },
     },
@@ -29,20 +44,14 @@ vi.mock("../../../lib/api/client", () => ({
 }));
 
 vi.mock("../../../lib/recording/provider", () => ({
-  useTimerOnlyRecording: () => ({
-    configure: mocks.configure,
-    error: null,
-    hydrationStatus: "ready",
-    hasRecoveredDraft: false,
-    canTakeOver: false,
-    state: { reducer: { lifecycle: "pending", snapshot: null } },
-  }),
+  useTimerOnlyRecording: () => ({ ...mocks.recording, configure: mocks.configure }),
 }));
 
 afterEach(() => {
   cleanup();
   localStorage.clear();
   vi.clearAllMocks();
+  mocks.recording.artifact = null;
 });
 
 describe("RecordPage", () => {
@@ -55,6 +64,20 @@ describe("RecordPage", () => {
     expect(screen.getByText(/not GPS or sensor data/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Open recorder" }));
     expect(mocks.configure).toHaveBeenCalledWith({ activity_category: "bike" });
+    expect(mocks.navigate).toHaveBeenCalledWith({ to: "/record/session" });
+  });
+
+  it("returns to a finalized recording review without replacing it with a new session", () => {
+    mocks.recording.artifact = {
+      recordingSessionId: "recording-1",
+      snapshot: { activity: {} },
+    };
+    const Page = (Route as unknown as { component: React.ComponentType }).component;
+    render(<Page />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Return to recorder" }));
+
+    expect(mocks.configure).not.toHaveBeenCalled();
     expect(mocks.navigate).toHaveBeenCalledWith({ to: "/record/session" });
   });
 

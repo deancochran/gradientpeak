@@ -1,17 +1,17 @@
 import { defineConfig, devices } from "@playwright/test";
 import { loadEnv } from "vite";
-import { localE2EDatabaseEnvironment } from "./e2e/support/database-url";
+import { applyE2EFileEnvironment, localE2EDatabaseEnvironment } from "./e2e/support/database-url";
 
 const env = loadEnv("test", process.cwd(), "");
-for (const [key, value] of Object.entries(env)) {
-  process.env[key] ??= value;
-}
+applyE2EFileEnvironment(process.env, env);
 
 const PORT = Number(process.env.E2E_WEB_PORT ?? 3100);
 if (PORT !== 3100) {
   throw new Error("Playwright E2E requires E2E_WEB_PORT=3100.");
 }
 const baseURL = `http://127.0.0.1:${PORT}`;
+const reuseExistingServer = process.env.E2E_REUSE_EXISTING_SERVER === "1";
+const retainSuccessArtifacts = process.env.E2E_SUCCESS_ARTIFACTS === "1";
 // This runs while Playwright loads its config, before it can start or reuse a web server.
 const databaseEnvironment = localE2EDatabaseEnvironment(process.env);
 const canonicalProviderSpecs = /(?:integration-variations|integrations)\.spec\.ts/;
@@ -36,14 +36,26 @@ export default defineConfig({
       VITE_CACHE_DIR: `/tmp/gradientpeak-web-vite-${process.pid}`,
     },
     url: baseURL,
-    reuseExistingServer: false,
+    reuseExistingServer,
     timeout: 120 * 1000,
   },
   use: {
     baseURL,
-    trace: process.env.E2E_ARTIFACTS === "1" ? "on-first-retry" : "off",
-    screenshot: process.env.E2E_ARTIFACTS === "1" ? "only-on-failure" : "off",
-    video: process.env.E2E_ARTIFACTS === "1" ? "retain-on-failure" : "off",
+    trace: retainSuccessArtifacts
+      ? "on"
+      : process.env.E2E_ARTIFACTS === "1"
+        ? "on-first-retry"
+        : "off",
+    screenshot: retainSuccessArtifacts
+      ? "on"
+      : process.env.E2E_ARTIFACTS === "1"
+        ? "only-on-failure"
+        : "off",
+    video: retainSuccessArtifacts
+      ? "on"
+      : process.env.E2E_ARTIFACTS === "1"
+        ? "retain-on-failure"
+        : "off",
   },
   projects: [
     {
@@ -65,9 +77,11 @@ export default defineConfig({
       },
     },
     {
-      name: "Mobile Chrome",
+      // Representative iPhone-sized responsive viewport while retaining the
+      // Chromium engine, mobile context, and touch input from the Pixel profile.
+      name: "Mobile Chrome 390x844",
       testIgnore: [/auth\.setup\.ts/, canonicalProviderSpecs],
-      use: { ...devices["Pixel 7"] },
+      use: { ...devices["Pixel 7"], viewport: { width: 390, height: 844 } },
     },
     {
       // Provider tests intentionally exercise canonical seeded provider data. Keep this

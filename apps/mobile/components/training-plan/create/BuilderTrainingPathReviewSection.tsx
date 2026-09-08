@@ -22,21 +22,18 @@ type BuilderTrainingPathReviewSectionProps = {
   chartHeight?: number;
   chartReview: TrainingPlanBuilderController["chartReview"];
   renderBelowChart?: (context: TrainingPathChartSectionContext) => ReactNode;
-  title?: string;
 };
 
 export function BuilderTrainingPathReviewSection({
   chartHeight = 280,
   chartReview,
   renderBelowChart,
-  title = "Weekly Training Path",
 }: BuilderTrainingPathReviewSectionProps) {
   const startDateKey = chartReview.chart.dailyPoints[0]?.date;
 
   return (
     <TrainingPathLoadChartSection
       dailyPoints={chartReview.chart.dailyPoints}
-      dailyDensity="detail"
       chartHeight={chartHeight}
       dailyDateLabelFormatter={(dateKey, index) =>
         formatRelativeWeekDay(dateKey, index, startDateKey)
@@ -45,12 +42,8 @@ export function BuilderTrainingPathReviewSection({
       onDisplayedWeekChange={chartReview.selectWeekStart}
       renderBelowChart={renderBelowChart}
       selectedDate={chartReview.selectedDate}
-      selectionMode="day"
       onSelectedDateChange={chartReview.selectDate}
       onSelectedWeekChange={chartReview.selectWeekStart}
-      showHeader={false}
-      showSelectedPointTray={false}
-      title={title === "Weekly Training Path" ? "Daily Training Path" : title}
     />
   );
 }

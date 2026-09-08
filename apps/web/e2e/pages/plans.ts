@@ -18,7 +18,9 @@ export class TrainingPlansPage {
 
   async search(name: string) {
     await this.searchInput().fill(name);
-    return this.card(name);
+    const card = this.card(name);
+    await expect(card).toBeVisible();
+    return card;
   }
 
   async openPlan(name: string, input: "click" | "keyboard" = "click") {

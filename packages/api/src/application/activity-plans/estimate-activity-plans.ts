@@ -25,6 +25,7 @@ export type SupportedActivityPlan = EstimatableActivityPlan &
 
 export type ActivityPlanWithEstimate<TPlan extends EstimatableActivityPlan> = TPlan & {
   prescriptionQuantification: ActivityPlanPlanningEstimate["prescriptionQuantification"];
+  planProjection: NonNullable<ActivityPlanPlanningEstimate["planProjection"]>;
 };
 
 export type CurrentActivityPlanEstimateOptions = {
@@ -38,9 +39,13 @@ function buildEstimatedPlan<TPlan extends EstimatableActivityPlan>(
   plan: TPlan,
   planning: ActivityPlanPlanningEstimate,
 ): ActivityPlanWithEstimate<TPlan> {
+  if (!planning.planProjection) {
+    throw new Error("Activity-plan estimator did not produce a plan projection");
+  }
   return {
     ...plan,
     prescriptionQuantification: planning.prescriptionQuantification,
+    planProjection: planning.planProjection,
   };
 }
 
@@ -75,9 +80,13 @@ function unavailablePlan<TPlan extends EstimatableActivityPlan>(
     activityCategory,
     reason,
   });
+  if (!planning.planProjection) {
+    throw new Error("Unavailable activity-plan estimator did not produce a plan projection");
+  }
   return {
     ...plan,
     prescriptionQuantification: planning.prescriptionQuantification,
+    planProjection: planning.planProjection,
   };
 }
 

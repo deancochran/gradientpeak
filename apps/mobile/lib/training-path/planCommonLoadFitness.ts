@@ -32,10 +32,7 @@ function toProjectionDay(point: PlanCommonLoadProjectionPoint): CommonLoadTrendP
   if (point.effectiveLoadStatus === "known_zero") {
     return { date: point.date, state: "known_zero" };
   }
-  if (
-    (point.effectiveLoadStatus === "complete" || point.effectiveLoadStatus === "partial") &&
-    finiteNonnegative(point.effectiveLoad)
-  ) {
+  if (point.effectiveLoadStatus === "complete" && finiteNonnegative(point.effectiveLoad)) {
     return { date: point.date, state: "available", load: point.effectiveLoad };
   }
   return {
@@ -49,7 +46,7 @@ function toRecommendationProjectionDay(
   point: Exclude<CommonLoadRecommendation, { status: "unavailable" }>["points"][number],
 ): CommonLoadTrendProjectionDay {
   if (point.state === "known_zero") return { date: point.date, state: "known_zero" };
-  if (point.state === "complete" || point.state === "partial") {
+  if (point.state === "complete") {
     return { date: point.date, state: "available", load: point.load };
   }
   return {

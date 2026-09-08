@@ -245,6 +245,13 @@ export const activityNativeIntensityValueSchema = z
       .strict(),
     z
       .object({
+        metric: z.literal("cadence"),
+        unit: z.literal("revolutions_per_minute"),
+        magnitude: activityIntensityMagnitudeSchema,
+      })
+      .strict(),
+    z
+      .object({
         metric: z.literal("zone"),
         scale: z.enum(["power", "heart_rate", "pace", "provider"]),
         value: z.number().int().positive(),

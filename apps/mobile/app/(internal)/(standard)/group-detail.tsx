@@ -1,4 +1,5 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
+import { Tabs, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
@@ -18,6 +19,7 @@ import {
   type DetailOverflowMenuAction,
   DetailScaffold,
 } from "@/components/shared/detail";
+import { ROUTES } from "@/lib/constants/routes";
 import {
   type GroupMember,
   useGroupActions,
@@ -56,30 +58,31 @@ function GroupEventTabs({
   ];
 
   return (
-    <View
-      className="flex-row self-start rounded-full bg-muted p-1"
-      testID="group-detail-event-tabs"
-    >
-      {tabs.map((tab) => {
-        const isActive = value === tab.value;
-        return (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ selected: isActive }}
-            className={`rounded-full px-4 py-2 ${isActive ? "bg-background" : ""}`}
-            key={tab.value}
-            onPress={() => onChange(tab.value)}
-            testID={`group-detail-event-tab-${tab.value}`}
-          >
-            <Text
-              className={`text-center text-sm font-semibold ${isActive ? "text-foreground" : "text-muted-foreground"}`}
+    <Tabs onValueChange={(tab) => onChange(tab as GroupEventTab)} value={value}>
+      <TabsList
+        className="mr-0 flex-row self-start rounded-full bg-muted p-1"
+        testId="group-detail-event-tabs"
+      >
+        {tabs.map((tab) => {
+          const isActive = value === tab.value;
+          return (
+            <TabsTrigger
+              accessibilityState={{ selected: isActive }}
+              className={`rounded-full px-4 py-2 ${isActive ? "bg-background" : ""}`}
+              key={tab.value}
+              testId={`group-detail-event-tab-${tab.value}`}
+              value={tab.value}
             >
-              {tab.label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
+              <Text
+                className={`text-center text-sm font-semibold ${isActive ? "text-foreground" : "text-muted-foreground"}`}
+              >
+                {tab.label}
+              </Text>
+            </TabsTrigger>
+          );
+        })}
+      </TabsList>
+    </Tabs>
   );
 }
 
@@ -138,8 +141,10 @@ function MemberAvatarStack({
 
 export default function GroupDetailScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ groupId?: string; slug?: string }>();
+  const params = useLocalSearchParams<{ groupId?: string; returnTo?: string; slug?: string }>();
   const groupId = singleParam(params.groupId);
+  const deleteReturnTo =
+    singleParam(params.returnTo) === "community" ? ROUTES.COMMUNITY : ROUTES.MY_GROUPS;
   const slug = singleParam(params.slug);
   const detailVm = useGroupDetailViewModel(groupId ? { groupId } : { slug: slug ?? null });
   const groupActions = useGroupActions();
@@ -279,7 +284,7 @@ export default function GroupDetailScreen() {
             onPress: async () => {
               try {
                 await groupActions.deleteGroup(group.id);
-                router.replace("/(internal)/(tabs)/groups");
+                router.replace(deleteReturnTo);
               } catch (error) {
                 Alert.alert(
                   "Unable to delete group",

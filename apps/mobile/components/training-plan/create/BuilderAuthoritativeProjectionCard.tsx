@@ -89,7 +89,7 @@ function Metric({ label, value }: { label: string; value: number | null }) {
     >
       <Text className="text-xs text-muted-foreground">{label}</Text>
       <Text className="text-base font-semibold text-foreground">
-        {value === null ? "Unavailable" : value.toFixed(1)}
+        {value === null ? "—" : value.toFixed(1)}
       </Text>
     </View>
   );

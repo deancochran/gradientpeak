@@ -1,9 +1,12 @@
+import { Alert as TestAlert } from "@repo/ui/test/react-native";
 import { fireEvent } from "@testing-library/react-native";
 import { createHost } from "../../../test/mock-components";
-import { renderNative, screen } from "../../../test/render-native";
+import { renderNative, screen, waitFor } from "../../../test/render-native";
 import { TrainingPlanCard } from "../TrainingPlanCard";
 
 const toggleLikeMutateMock = jest.fn();
+const mockAlert = jest.mocked(TestAlert.alert);
+const getPublicShareUrlMock = jest.fn((path: string) => `https://share.gradientpeak.test${path}`);
 const canonicalStructure = {
   version: 1,
   activity_category: ["run"],
@@ -38,6 +41,13 @@ jest.mock("lucide-react-native", () => ({
   Heart: createHost("Heart"),
   Target: createHost("Target"),
   TrendingUp: createHost("TrendingUp"),
+  MessageCircle: createHost("MessageCircle"),
+  Share2: createHost("Share2"),
+}));
+
+jest.mock("@/lib/share/public-share-url", () => ({
+  __esModule: true,
+  getPublicShareUrl: (path: string) => getPublicShareUrlMock(path),
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -59,6 +69,8 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
 describe("TrainingPlanCard", () => {
   beforeEach(() => {
     toggleLikeMutateMock.mockReset();
+    mockAlert.mockReset();
+    getPublicShareUrlMock.mockClear();
   });
 
   it("renders title, an authored-average metric, and a truthful compact schedule distribution", async () => {
@@ -218,5 +230,61 @@ describe("TrainingPlanCard", () => {
     expect(screen.queryByText("--")).toBeNull();
     expect(screen.queryByText("Mixed")).toBeNull();
     expect(screen.queryByText("All levels")).toBeNull();
+  });
+
+  it("renders sharing above the default social row and opens comments through the card", async () => {
+    const onPress = jest.fn();
+
+    await renderNative(
+      <TrainingPlanCard
+        commentCount={4}
+        onPress={onPress}
+        plan={{
+          id: "training-plan-social",
+          name: "Public Build",
+          likes_count: 3,
+          visibility: "public",
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("training-plan-card-share-button-training-plan-social")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-card-social-actions")).toBeTruthy();
+    expect(screen.getByTestId("training-plan-card-like-button-training-plan-social")).toBeTruthy();
+    expect(screen.getByLabelText("Comments, 4")).toBeTruthy();
+
+    await fireEvent.press(
+      screen.getByTestId("training-plan-card-share-button-training-plan-social"),
+    );
+    expect(getPublicShareUrlMock).toHaveBeenCalledWith(
+      "/share/training-plans/training-plan-social",
+    );
+    await waitFor(() =>
+      expect(mockAlert).toHaveBeenCalledWith(
+        "Unable to share",
+        "The training plan could not be shared. Try again.",
+      ),
+    );
+
+    await fireEvent.press(
+      screen.getByTestId("training-plan-card-comments-button-training-plan-social"),
+    );
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Share available and explains missing public visibility", async () => {
+    await renderNative(
+      <TrainingPlanCard plan={{ id: "training-plan-private", name: "Private" }} />,
+    );
+
+    await fireEvent.press(
+      screen.getByTestId("training-plan-card-share-button-training-plan-private"),
+    );
+    await waitFor(() =>
+      expect(mockAlert).toHaveBeenCalledWith(
+        "Not public",
+        "Only public training plans have a share link. Change visibility to Public first.",
+      ),
+    );
   });
 });

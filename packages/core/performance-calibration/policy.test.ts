@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   deriveThresholdFreshness,
-  resolveThresholdLifecycle,
-  selectThresholdCandidate,
+  resolveThresholdLifecycle as resolveThresholdLifecycleWithMetric,
+  selectThresholdCandidate as selectThresholdCandidateWithMetric,
   THRESHOLD_PLAUSIBILITY_VERSION,
   THRESHOLD_POLICY_SCHEMA_VERSION,
   THRESHOLD_POLICY_VERSION,
@@ -12,6 +12,18 @@ import {
   thresholdActivityCategoryPolicies,
   thresholdActivityCategoryPolicySchema,
 } from "./index";
+
+function selectThresholdCandidate(
+  input: Omit<Parameters<typeof selectThresholdCandidateWithMetric>[0], "metric">,
+) {
+  return selectThresholdCandidateWithMetric({ ...input, metric: "power" });
+}
+
+function resolveThresholdLifecycle(
+  input: Omit<Parameters<typeof resolveThresholdLifecycleWithMetric>[0], "metric">,
+) {
+  return resolveThresholdLifecycleWithMetric({ ...input, metric: "power" });
+}
 
 function evidence(
   candidate: ThresholdCandidate,
@@ -55,35 +67,49 @@ function qualifiedBike(): ThresholdCandidate {
 
 describe("threshold activity-category policy and exact-window qualification", () => {
   it("publishes the exact versioned activity-category configuration", () => {
-    expect(thresholdActivityCategoryPolicies).toEqual([
-      expect.objectContaining({
-        activityCategory: "bike",
-        method: "bike_power_30m",
-        seriesSelection: { preferred: "power", fallback: null },
-        exactWindowSeconds: 1_800,
-        conversionFactor: 0.95,
-        requiredWindowCoverage: 0.95,
-        maximumGapSeconds: 10,
-      }),
-      expect.objectContaining({
-        activityCategory: "run",
-        method: "run_speed_30m",
-        seriesSelection: { preferred: "grade_adjusted_speed", fallback: "speed" },
-        exactWindowSeconds: 1_800,
-        conversionFactor: 1,
-        requiredWindowCoverage: 0.95,
-        maximumGapSeconds: 10,
-      }),
-      expect.objectContaining({
-        activityCategory: "swim",
-        method: "swim_speed_15m",
-        seriesSelection: { preferred: "speed", fallback: null },
-        exactWindowSeconds: 900,
-        conversionFactor: 1,
-        requiredWindowCoverage: 0.95,
-        maximumGapSeconds: 10,
-      }),
-    ]);
+    expect(thresholdActivityCategoryPolicies).toHaveLength(6);
+    expect(thresholdActivityCategoryPolicies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          activityCategory: "bike",
+          method: "bike_power_30m",
+          seriesSelection: { preferred: "power", fallback: null },
+          exactWindowSeconds: 1_800,
+          conversionFactor: 0.95,
+          requiredWindowCoverage: 0.95,
+          maximumGapSeconds: 10,
+        }),
+        expect.objectContaining({
+          activityCategory: "run",
+          method: "run_speed_30m",
+          seriesSelection: { preferred: "grade_adjusted_speed", fallback: "speed" },
+          exactWindowSeconds: 1_800,
+          conversionFactor: 1,
+          requiredWindowCoverage: 0.95,
+          maximumGapSeconds: 10,
+        }),
+        expect.objectContaining({
+          activityCategory: "swim",
+          method: "swim_speed_15m",
+          seriesSelection: { preferred: "speed", fallback: null },
+          exactWindowSeconds: 900,
+          conversionFactor: 1,
+          requiredWindowCoverage: 0.95,
+          maximumGapSeconds: 10,
+        }),
+        ...(["bike", "run", "swim"] as const).map((activityCategory) =>
+          expect.objectContaining({
+            activityCategory,
+            metric: "lthr",
+            unit: "bpm",
+            method: "lthr_30m_final_20m",
+            seriesSelection: { preferred: "heart_rate", fallback: null },
+            exactWindowSeconds: 1_200,
+            conversionFactor: 1,
+          }),
+        ),
+      ]),
+    );
     expect(
       thresholdActivityCategoryPolicies.every(
         ({ schemaVersion, policyVersion, plausibilityVersion }) =>

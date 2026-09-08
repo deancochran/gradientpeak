@@ -42,7 +42,7 @@ export type ActivityPlanSortField =
   | "created_at"
   | "estimated_duration"
   | "common_load"
-  | "common_intensity";
+  | "objective_intensity";
 export type RouteSortField = "created_at" | "distance" | "ascent";
 export type TrainingPlanSortField = "created_at" | "duration_weeks" | "sessions_per_week";
 export type GroupSortField = "created_at";
@@ -54,8 +54,8 @@ export type ActivityPlanFilters = {
   maxCommonLoad: number | null;
   minDurationMinutes: number | null;
   maxDurationMinutes: number | null;
-  minCommonIntensity: number | null;
-  maxCommonIntensity: number | null;
+  minObjectiveIntensity: number | null;
+  maxObjectiveIntensity: number | null;
 };
 
 export type TrainingPlanFilters = {
@@ -141,8 +141,8 @@ export const DEFAULT_ACTIVITY_PLAN_FILTERS: ActivityPlanFilters = {
   maxCommonLoad: null,
   minDurationMinutes: null,
   maxDurationMinutes: null,
-  minCommonIntensity: null,
-  maxCommonIntensity: null,
+  minObjectiveIntensity: null,
+  maxObjectiveIntensity: null,
 };
 
 export const DEFAULT_TRAINING_PLAN_FILTERS: TrainingPlanFilters = {
@@ -193,8 +193,8 @@ export function hasActivityPlanFilters(filters: ActivityPlanFilters) {
       filters.maxCommonLoad !== null ||
       filters.minDurationMinutes !== null ||
       filters.maxDurationMinutes !== null ||
-      filters.minCommonIntensity !== null ||
-      filters.maxCommonIntensity !== null,
+      filters.minObjectiveIntensity !== null ||
+      filters.maxObjectiveIntensity !== null,
   );
 }
 
@@ -407,9 +407,9 @@ export function getActivityPlanFilterErrors(filters: ActivityPlanFilters) {
     getRangeValidationMessage("Duration", filters.minDurationMinutes, filters.maxDurationMinutes),
     getRangeValidationMessage("Common Load", filters.minCommonLoad, filters.maxCommonLoad),
     getRangeValidationMessage(
-      "Common intensity",
-      filters.minCommonIntensity,
-      filters.maxCommonIntensity,
+      "Intensity",
+      filters.minObjectiveIntensity,
+      filters.maxObjectiveIntensity,
     ),
   ].filter((value): value is string => Boolean(value));
 }
@@ -436,7 +436,7 @@ export function matchesActivityPlanDerivedFilters(
   const durationMinutes =
     typeof quantities.durationSeconds === "number" ? quantities.durationSeconds / 60 : null;
   const commonLoad = quantities.commonLoad;
-  const commonIntensity = quantities.commonIntensity;
+  const objectiveIntensity = quantities.objectiveIntensity;
 
   if (filters.categoryIds.length > 0 && !filters.categoryIds.includes(item.activityCategory)) {
     return false;
@@ -471,15 +471,15 @@ export function matchesActivityPlanDerivedFilters(
   }
 
   if (
-    filters.minCommonIntensity !== null &&
-    (commonIntensity === null || commonIntensity < filters.minCommonIntensity)
+    filters.minObjectiveIntensity !== null &&
+    (objectiveIntensity === null || objectiveIntensity < filters.minObjectiveIntensity)
   ) {
     return false;
   }
 
   if (
-    filters.maxCommonIntensity !== null &&
-    (commonIntensity === null || commonIntensity > filters.maxCommonIntensity)
+    filters.maxObjectiveIntensity !== null &&
+    (objectiveIntensity === null || objectiveIntensity > filters.maxObjectiveIntensity)
   ) {
     return false;
   }
@@ -640,8 +640,8 @@ export function buildDiscoverFeedItems({
       const rightQuantities = getActivityPlanQuantitySummary(right.item);
       const leftCommonLoad = leftQuantities.commonLoad;
       const rightCommonLoad = rightQuantities.commonLoad;
-      const leftCommonIntensity = leftQuantities.commonIntensity;
-      const rightCommonIntensity = rightQuantities.commonIntensity;
+      const leftObjectiveIntensity = leftQuantities.objectiveIntensity;
+      const rightObjectiveIntensity = rightQuantities.objectiveIntensity;
       const metricDelta =
         currentSort.field === "estimated_duration"
           ? currentSort.direction === "desc"
@@ -653,11 +653,11 @@ export function buildDiscoverFeedItems({
               ? (rightCommonLoad ?? -1) - (leftCommonLoad ?? -1)
               : (leftCommonLoad ?? Number.MAX_SAFE_INTEGER) -
                 (rightCommonLoad ?? Number.MAX_SAFE_INTEGER)
-            : currentSort.field === "common_intensity"
+            : currentSort.field === "objective_intensity"
               ? currentSort.direction === "desc"
-                ? (rightCommonIntensity ?? -1) - (leftCommonIntensity ?? -1)
-                : (leftCommonIntensity ?? Number.MAX_SAFE_INTEGER) -
-                  (rightCommonIntensity ?? Number.MAX_SAFE_INTEGER)
+                ? (rightObjectiveIntensity ?? -1) - (leftObjectiveIntensity ?? -1)
+                : (leftObjectiveIntensity ?? Number.MAX_SAFE_INTEGER) -
+                  (rightObjectiveIntensity ?? Number.MAX_SAFE_INTEGER)
               : 0;
 
       if (metricDelta !== 0) {

@@ -201,7 +201,10 @@ function mapWahooSyncJobRow(row: WahooSyncJobSqlRow): WahooSyncJobRecord {
 export function createWahooSyncRepository({
   db,
 }: CreateWahooSyncRepositoryOptions): WahooSyncRepository {
-  return {
+  const repository: Omit<
+    WahooSyncRepository,
+    "beginProviderDisconnectAttempt" | "finalizeProviderDisconnect" | "requestProviderDisconnect"
+  > = {
     async bindJobImportRun({ expectedIntegrationGeneration, id, importRunId, payload, workerId }) {
       const [updated] = await db
         .update(schema.providerSyncJobs)
@@ -1663,5 +1666,13 @@ export function createWahooSyncRepository({
           },
         });
     },
+  };
+  return {
+    ...repository,
+    requestProviderDisconnect: ({ profileId }) => repository.requestWahooDisconnect({ profileId }),
+    beginProviderDisconnectAttempt: ({ generation, integrationId, jobId, workerId }) =>
+      repository.beginWahooDisconnectAttempt({ generation, integrationId, jobId, workerId }),
+    finalizeProviderDisconnect: ({ generation, integrationId, jobId, outcome, workerId }) =>
+      repository.finalizeWahooDisconnect({ generation, integrationId, jobId, outcome, workerId }),
   };
 }

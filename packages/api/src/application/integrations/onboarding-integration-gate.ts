@@ -1,3 +1,4 @@
+import type { ExecutableIntegrationProviderId } from "@repo/core";
 import { integrations, oauthStates, profiles } from "@repo/db";
 import { and, eq, gt } from "drizzle-orm";
 import type { DrizzleQueryExecutor, DrizzleTransactionClient } from "../../db";
@@ -59,7 +60,7 @@ export async function withOpenIntegrationManagementTransaction<T>(input: {
 export async function createPendingOAuthStateWithFence(input: {
   db: { transaction<R>(operation: (tx: DrizzleTransactionClient) => Promise<R>): Promise<R> };
   profileId: string;
-  provider: "wahoo";
+  provider: ExecutableIntegrationProviderId;
   state: string;
   callbackUri: string;
   requestedScope: string;
@@ -116,7 +117,7 @@ export async function createPendingOAuthStateWithFence(input: {
 export async function cancelPendingOAuthWithFence(input: {
   db: { transaction<R>(operation: (tx: DrizzleTransactionClient) => Promise<R>): Promise<R> };
   profileId: string;
-  provider: "wahoo";
+  provider: ExecutableIntegrationProviderId;
   now?: Date;
 }) {
   return input.db.transaction(async (tx) => {

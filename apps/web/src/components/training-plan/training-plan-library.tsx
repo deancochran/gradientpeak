@@ -13,6 +13,8 @@ import { TrainingPlanPlannedPreview } from "./training-plan-planned-preview";
 type TrainingPlanLibraryProps = {
   onCreate: () => void;
   onOpen: (id: string) => void;
+  onSearchChange?: (value: string) => void;
+  searchValue?: string;
 };
 
 function QueryState({
@@ -101,8 +103,14 @@ function PlanGrid({ plans, onOpen }: { plans: LibraryPlan[]; onOpen: (id: string
   );
 }
 
-export function TrainingPlanLibrary({ onCreate, onOpen }: TrainingPlanLibraryProps) {
-  const [search, setSearch] = useState("");
+export function TrainingPlanLibrary({
+  onCreate,
+  onOpen,
+  onSearchChange,
+  searchValue,
+}: TrainingPlanLibraryProps) {
+  const [localSearch, setLocalSearch] = useState("");
+  const search = searchValue ?? localSearch;
   const owned = api.trainingPlans.list.useInfiniteQuery(
     {
       ownerScope: "own",
@@ -133,7 +141,11 @@ export function TrainingPlanLibrary({ onCreate, onOpen }: TrainingPlanLibraryPro
         <span className="text-sm font-medium">Search plans</span>
         <Input
           id="training-plan-search"
-          onChange={(event) => setSearch(event.target.value)}
+          onChange={(event) => {
+            const value = event.target.value;
+            if (onSearchChange) onSearchChange(value);
+            else setLocalSearch(value);
+          }}
           value={search}
         />
       </label>

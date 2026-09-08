@@ -442,8 +442,8 @@ export const persistedThresholdEvidenceSchema = z
 
 /**
  * A persisted-evidence set has one record for each athlete, activity category,
- * and activity. Reprocessing replaces that record rather than retaining a
- * second candidate for the same activity.
+ * metric, and activity. Different metrics from one activity remain independent;
+ * reprocessing replaces only the matching metric candidate.
  */
 export const persistedThresholdEvidenceCollectionSchema = z
   .array(persistedThresholdEvidenceSchema)
@@ -454,6 +454,7 @@ export const persistedThresholdEvidenceCollectionSchema = z
       const identity = [
         record.profileId,
         record.evidence.activityCategory,
+        record.evidence.metric,
         record.evidence.activityId,
       ].join(":");
       if (identities.has(identity)) {
@@ -461,14 +462,14 @@ export const persistedThresholdEvidenceCollectionSchema = z
           code: "custom",
           path: [index, "evidence", "activityId"],
           message:
-            "Persisted threshold evidence must be unique by profile, activity category, and activity",
+            "Persisted threshold evidence must be unique by profile, activity category, metric, and activity",
         });
       }
       identities.add(identity);
     }
   });
 
-/** Replaces a persisted candidate at its athlete/activity/category identity. */
+/** Replaces a persisted candidate at its athlete/activity/category/metric identity. */
 export const persistedThresholdEvidenceReplacementInputSchema = z
   .object({
     existingEvidence: persistedThresholdEvidenceCollectionSchema,
@@ -493,6 +494,7 @@ export const persistedThresholdEvidenceReplacementInputSchema = z
     if (
       replaced.profileId !== replacement.profileId ||
       replaced.evidence.activityCategory !== replacement.evidence.activityCategory ||
+      replaced.evidence.metric !== replacement.evidence.metric ||
       replaced.evidence.activityId !== replacement.evidence.activityId
     ) {
       context.addIssue({

@@ -1,9 +1,9 @@
 import { LoadingButton } from "@repo/ui/components/loading";
-import { useServerFn } from "@tanstack/react-start";
+import { useNavigate } from "@tanstack/react-router";
 import { MessageSquare } from "lucide-react";
-import { useState } from "react";
 import { toast } from "sonner";
 
+import { api } from "../../lib/api/client";
 import { contractEpochFormInputProps } from "../../lib/contract-epoch";
 import { startDirectMessageAction } from "../../lib/social/server-actions";
 
@@ -14,19 +14,30 @@ export function MessageActionForm({
   redirectTo: string;
   targetUserId: string;
 }) {
-  const startDirectMessage = useServerFn(startDirectMessageAction);
-  const [isPending, setIsPending] = useState(false);
+  const navigate = useNavigate();
+  const startDirectMessage = api.messaging.getOrCreateDM.useMutation();
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    setIsPending(true);
+    event.preventDefault();
 
     try {
-      event.preventDefault();
-      await startDirectMessage({ data: { redirectTo, target_user_id: targetUserId } });
+      const conversation = await startDirectMessage.mutateAsync({
+        target_user_id: targetUserId,
+      });
+      await navigate({
+        to: "/messages",
+        search: {
+          compose: false,
+          composeGroup: undefined,
+          composeQuery: undefined,
+          composeRecipients: [],
+          conversationId: conversation.id,
+          flash: "Conversation ready",
+          flashType: "success",
+        },
+      });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to start conversation");
-    } finally {
-      setIsPending(false);
     }
   };
 
@@ -38,8 +49,8 @@ export function MessageActionForm({
       <LoadingButton
         variant="outline"
         type="submit"
-        disabled={isPending}
-        loading={isPending}
+        disabled={startDirectMessage.isPending}
+        loading={startDirectMessage.isPending}
         loadingLabel="Opening..."
         className="w-32"
       >

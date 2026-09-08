@@ -67,6 +67,10 @@ jest.mock("@/components/profile/ProfileGroupsSection", () => ({
   __esModule: true,
   ProfileGroupsSection: createHost("ProfileGroupsSection"),
 }));
+jest.mock("@/components/profile/ProfileActivitiesSection", () => ({
+  __esModule: true,
+  ProfileActivitiesSection: createHost("ProfileActivitiesSection"),
+}));
 jest.mock("@/components/profile/ProfileSummaryCard", () => ({
   __esModule: true,
   ProfileSummaryCard: ({ actions }: { actions?: React.ReactNode }) => actions ?? null,

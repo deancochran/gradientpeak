@@ -1,6 +1,7 @@
 import { act } from "@testing-library/react-native";
 import { isValidElement, type ReactNode } from "react";
 import type { TestInstance as ReactTestInstance } from "test-renderer";
+import { createActivityPlanSummary } from "../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
 import { TrainingPlanStructureSection } from "../TrainingPlanStructureSection";
@@ -24,6 +25,9 @@ jest.mock("@repo/ui/components/dialog", () => ({
   DialogTitle: createHost("DialogTitle"),
 }));
 jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
+jest.mock("@/components/shared/ActivityPlanCard", () => ({
+  ActivityPlanCard: createHost("ActivityPlanCard"),
+}));
 
 const getAllByTypeOrEmpty = (type: string) =>
   screen.container.queryAll((node: ReactTestInstance) => node.type === type);
@@ -104,6 +108,39 @@ describe("TrainingPlanStructureSection", () => {
     });
 
     expect(onActivityPickerOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("renders activity-plan choices with the canonical card and preserves selection", async () => {
+    const activityPlan = createActivityPlanSummary({
+      id: "activity-plan-1",
+      name: "Tempo Builder",
+    });
+    const onSelectActivityForSession = jest.fn();
+
+    await renderNative(
+      <TrainingPlanStructureSection
+        activityPlanItems={[activityPlan]}
+        activityPlanNameById={new Map()}
+        formatCompactDayLabel={() => "Mon · Day 1"}
+        groupedStructureSessions={[]}
+        isLoadingActivityPlans={false}
+        isOwnedByUser={true}
+        onActivityPickerOpenChange={jest.fn()}
+        onOpenActivityPickerForSession={jest.fn()}
+        onRefreshActivityPlans={jest.fn()}
+        onRemoveActivityFromSession={jest.fn()}
+        onSelectActivityForSession={onSelectActivityForSession}
+        selectedSessionRow={null}
+        showActivityPicker={true}
+        updatePlanStructurePending={false}
+      />,
+    );
+
+    const card = screen.getByTestId("training-plan-activity-picker-option-activity-plan-1");
+    expect(card.props.plan).toBe(activityPlan);
+    expect(card.props.variant).toBe("compact");
+    await act(() => card.props.onPress());
+    expect(onSelectActivityForSession).toHaveBeenCalledWith(activityPlan);
   });
 
   it("opens the activity picker for an owned session", async () => {

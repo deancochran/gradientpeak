@@ -9,7 +9,8 @@ import {
   enqueueWahooPlannedActivitySyncAfterCalendarMutation,
   type WahooPlannedActivityQueueResult,
 } from "../../lib/provider-sync/planned-activities";
-import type { WahooSyncRepository } from "../../repositories/wahoo-sync-repository";
+import type { ProviderSyncJobQueue } from "../../repositories/provider-sync-repository";
+import type { WahooSyncJobStatus } from "../../repositories/wahoo-sync-repository";
 import { WahooProfileSetupService } from "../wahoo-profile-setup-service";
 import { withOpenIntegrationManagementTransaction } from "./onboarding-integration-gate";
 import {
@@ -21,7 +22,7 @@ const wahooActivityHistoryJobType = "wahoo.activity_history_reconcile";
 
 export async function enqueueWahooActivityHistoryReconcile(input: {
   admission: Extract<WahooReconciliationAdmission, { admitted: true }>;
-  providerSyncRepository: WahooSyncRepository;
+  providerSyncRepository: ProviderSyncJobQueue<"wahoo", WahooSyncJobStatus>;
   transaction?: DrizzleTransactionClient;
 }) {
   if (input.admission.target !== "activity_history") {

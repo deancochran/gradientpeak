@@ -2,7 +2,6 @@ import type { ActivitySegmentAnalysis } from "@repo/core";
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import React from "react";
 import { createObservationQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
-import { APP_BOTTOM_SHEET_PRESENTATIONS } from "@/components/shared/AppBottomSheet";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { createActivityDisplay } from "../../../../test/activity-display-fixture";
 import { createActivityPlanDetail } from "../../../../test/activity-plan-projection-fixture";
@@ -83,6 +82,7 @@ const activityData = {
       name: "Threshold Builder",
       structure: { intervals: [] },
     },
+    activity_routes: null as null | { id: string; name: string },
     ingestion: null as null | { status: string; last_error_message?: string | null },
     polyline: "encoded",
   },
@@ -133,9 +133,30 @@ const activityData = {
 };
 const toggleLikeMutateMock = jest.fn();
 const deleteMutateMock = jest.fn();
+const activityGetByIdSetDataMock = jest.fn();
+const activityGetByIdInvalidateMock = jest.fn();
+const activityGetByIdResetMock = jest.fn();
 const updatePrivacyMutateMock = jest.fn();
+const resolveImportedSourceMutateMock = jest.fn();
+const sendCompletedActivityMutateMock = jest.fn();
 const invalidatePostActivityIngestionQueriesMock = jest.fn();
-let deleteMutationOptions: { onSuccess?: () => void } = {};
+let deleteMutationOptions: { onSuccess?: () => void | Promise<void> } = {};
+let completedActivityProviders: Array<{
+  jobId?: string | null;
+  provider: string;
+  reason: string | null;
+  status:
+    | "ready"
+    | "reconnect_required"
+    | "unsupported_evidence"
+    | "not_connected"
+    | "unavailable"
+    | "queued"
+    | "running"
+    | "completed"
+    | "dispatch_uncertain"
+    | "failed";
+}> = [];
 
 jest.mock("@repo/api/client", () => ({
   invalidatePostActivityIngestionQueries: invalidatePostActivityIngestionQueriesMock,
@@ -146,6 +167,8 @@ jest.mock("@tanstack/react-query", () => ({
 }));
 const getStreamsUseQueryMock = jest.fn();
 const shareMock = jest.fn();
+const routerNavigateMock = jest.fn();
+const openEntityCommentsMock = jest.fn();
 const authState = { user: { id: "profile-1" } };
 
 function toActivityProjection(data: typeof activityData) {
@@ -255,6 +278,9 @@ function toActivityProjection(data: typeof activityData) {
       linkedPlan: data.activity.activity_plans
         ? { id: data.activity.activity_plans.id, name: data.activity.activity_plans.name }
         : null,
+      linkedRoute: data.activity.activity_routes
+        ? { id: data.activity.activity_routes.id, name: data.activity.activity_routes.name }
+        : null,
       currentArtifact: data.activity.current_artifact,
       ingestion: data.activity.ingestion
         ? {
@@ -278,6 +304,7 @@ function toActivityProjection(data: typeof activityData) {
           }
         ).segment_loads ?? [],
     },
+    importedSources,
   };
 }
 const unavailableAggregate = {
@@ -308,10 +335,19 @@ const unavailableHeartRateSegment = {
   contributingDurationSeconds: null,
   reason: "threshold_missing",
 } as const;
-let activityQueryState: { data: typeof activityData | undefined; isLoading: boolean } = {
+let activityQueryState: {
+  data: typeof activityData | undefined;
+  isError?: boolean;
+  isLoading: boolean;
+} = {
   data: activityData,
   isLoading: false,
 };
+let importedSources: Array<{
+  id: string;
+  provider: string;
+  resolutionStatus: "confirmed" | "review";
+}> = [];
 let effortsQueryState: {
   data: Array<{
     id: string;
@@ -435,7 +471,7 @@ jest.mock("expo-router", () => ({
       ),
   },
   useLocalSearchParams: () => ({ id: activityData.activity.id }),
-  useRouter: () => ({ back: jest.fn() }),
+  useRouter: () => ({ back: jest.fn(), navigate: routerNavigateMock }),
 }));
 
 jest.mock("react-native", () => ({
@@ -446,32 +482,31 @@ jest.mock("react-native", () => ({
   Pressable: createHost("Pressable"),
 }));
 
-jest.mock("@/components/shared/AppBottomSheet", () => ({
+jest.mock("@/components/social/EntityCommentsSheetProvider", () => ({
   __esModule: true,
-  APP_BOTTOM_SHEET_PRESENTATIONS: {
-    inspector: { initialSnapIndex: 0, snapPoints: ["82%", "96%"] },
-  },
-  AppBottomSheet: ({
-    children,
-    visible,
-    ...props
-  }: {
-    children: React.ReactNode;
-    visible: boolean;
-  }) => (visible ? React.createElement("AppBottomSheet", props, children) : null),
-}));
-
-jest.mock("@/components/social/EntityCommentsSection", () => ({
-  __esModule: true,
-  EntityCommentsSection: (props: { testIDPrefix: string }) =>
-    React.createElement("EntityCommentsSection", {
-      ...props,
-      testID: "activity-detail-comments-section",
-    }),
+  useEntityCommentsSheet: () => ({ openEntityComments: openEntityCommentsMock }),
 }));
 
 jest.mock("@/components/shared/detail", () => ({
   __esModule: true,
+  DetailScaffold: ({
+    isLoading,
+    loadingTestID,
+    notFound,
+    notFoundTestID,
+    notFoundTitle,
+  }: {
+    isLoading: boolean;
+    loadingTestID: string;
+    notFound: boolean;
+    notFoundTestID: string;
+    notFoundTitle: string;
+  }) =>
+    React.createElement(
+      "View",
+      { testID: isLoading ? loadingTestID : notFound ? notFoundTestID : "detail-scaffold" },
+      notFound ? React.createElement("Text", null, notFoundTitle) : null,
+    ),
   DetailOverflowMenu: ({
     actions,
     testID,
@@ -576,6 +611,10 @@ jest.mock("@/components/activity/maps/ActivityRouteMap", () => ({
   __esModule: true,
   ActivityRouteMap: createHost("ActivityRouteMap"),
 }));
+jest.mock("@/components/shared/RouteCard", () => ({
+  __esModule: true,
+  RouteCard: createHost("RouteCard"),
+}));
 
 jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
@@ -593,8 +632,14 @@ jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
     useUtils: () => ({
-      activities: { invalidate: jest.fn() },
-      home: { getDashboard: { invalidate: jest.fn() } },
+      activities: {
+        getById: {
+          invalidate: activityGetByIdInvalidateMock,
+          reset: activityGetByIdResetMock,
+          setData: activityGetByIdSetDataMock,
+        },
+        invalidate: jest.fn(),
+      },
       trends: { invalidate: jest.fn() },
       feed: { getFeed: { invalidate: jest.fn() } },
       athleteIntelligence: { getReadModel: { invalidate: jest.fn() } },
@@ -609,6 +654,12 @@ jest.mock("@/lib/api", () => ({
       getEfforts: {
         useQuery: () => effortsQueryState,
       },
+      getCompletedActivityProviderEligibility: {
+        useQuery: () => ({ data: completedActivityProviders }),
+      },
+      listPaginated: {
+        useQuery: () => ({ data: { items: [] } }),
+      },
       delete: {
         useMutation: (options: typeof deleteMutationOptions) => {
           deleteMutationOptions = options;
@@ -617,6 +668,15 @@ jest.mock("@/lib/api", () => ({
       },
       update: {
         useMutation: () => ({ mutate: updatePrivacyMutateMock, isPending: false }),
+      },
+      resolveImportedSource: {
+        useMutation: () => ({ mutate: resolveImportedSourceMutateMock, isPending: false }),
+      },
+      keepImportedSourceSeparate: {
+        useMutation: () => ({ mutate: jest.fn(), isPending: false }),
+      },
+      sendCompletedActivityToProvider: {
+        useMutation: () => ({ mutate: sendCompletedActivityMutateMock, isPending: false }),
       },
     },
     activityPlans: {
@@ -628,12 +688,40 @@ jest.mock("@/lib/api", () => ({
               name: "Threshold Builder",
               metrics: [
                 {
+                  key: "distance",
+                  label: "Distance",
+                  status: "unavailable",
+                  value: null,
+                  unit: "meters",
+                  reason: "not_prescribed",
+                  provenance: null,
+                },
+                {
+                  key: "elapsed_duration",
+                  label: "Duration",
+                  status: "unavailable",
+                  value: null,
+                  unit: "seconds",
+                  reason: "not_prescribed",
+                  provenance: null,
+                },
+                {
                   key: "common_load",
                   label: "Load",
                   status: "available",
                   value: activityData.derived.stress.common_load.load,
                   unit: "score",
                   reason: null,
+                  provenance: "estimated",
+                },
+                {
+                  key: "objective_intensity",
+                  label: "Intensity",
+                  status: "unavailable",
+                  value: null,
+                  unit: "ratio",
+                  reason: "no_objective_targets",
+                  provenance: null,
                 },
               ],
             }),
@@ -726,20 +814,31 @@ const ActivityDetailScreen = require("../activity-detail").default;
 describe("activity detail screen", () => {
   beforeEach(() => {
     deleteMutateMock.mockReset();
+    activityGetByIdSetDataMock.mockReset();
+    activityGetByIdInvalidateMock.mockReset();
+    activityGetByIdInvalidateMock.mockResolvedValue(undefined);
+    activityGetByIdResetMock.mockReset();
+    activityGetByIdResetMock.mockResolvedValue(undefined);
     getStreamsUseQueryMock.mockReset();
     toggleLikeMutateMock.mockReset();
     updatePrivacyMutateMock.mockReset();
+    resolveImportedSourceMutateMock.mockReset();
+    sendCompletedActivityMutateMock.mockReset();
     shareMock.mockReset();
+    routerNavigateMock.mockReset();
     (ReactNative.Alert.alert as jest.Mock).mockClear();
     authState.user.id = "profile-1";
     activitySegments.splice(0, activitySegments.length, activitySegment());
     activityData.activity.ingestion = null;
+    activityData.activity.activity_routes = null;
     delete (activityData.activity as { content_visibility?: string }).content_visibility;
     activityData.activity.current_artifact = {
       id: "33333333-3333-4333-8333-333333333333",
       availability: "accepted",
     };
     activityQueryState = { data: activityData, isLoading: false };
+    importedSources = [];
+    completedActivityProviders = [];
     effortsQueryState = { data: [], isError: false, isLoading: false };
     streamsData.laps = [];
     mockUsePreferredUnitSystem.mockReturnValue("metric");
@@ -759,6 +858,15 @@ describe("activity detail screen", () => {
     await renderNative(<ActivityDetailScreen />);
 
     expect(screen.getByTestId("activity-detail-loading")).toBeTruthy();
+  });
+
+  it("renders a stable not-found state when the activity query fails", async () => {
+    activityQueryState = { data: undefined, isError: true, isLoading: false };
+
+    await renderNative(<ActivityDetailScreen />);
+
+    expect(screen.getByTestId("activity-detail-not-found")).toBeTruthy();
+    expect(screen.getByText("Activity not found")).toBeTruthy();
   });
 
   it("uses the canonical card actions in the activity header and keeps the route in Overview", async () => {
@@ -878,6 +986,70 @@ describe("activity detail screen", () => {
     );
   });
 
+  it("shows the owner Strava action only when upload capability and scope are ready", async () => {
+    completedActivityProviders = [{ provider: "strava", reason: null, status: "ready" }];
+    await renderNative(<ActivityDetailScreen />);
+    fireEvent.press(screen.getByTestId("activity-detail-options-send-strava"));
+    expect(sendCompletedActivityMutateMock).toHaveBeenCalledWith({
+      activityId: "11111111-1111-4111-8111-111111111111",
+      provider: "strava",
+    });
+  });
+
+  it("shows reconnect guidance instead of upload when activity:write is absent", async () => {
+    completedActivityProviders = [
+      {
+        provider: "strava",
+        reason: "Reconnect Strava to grant activity upload access.",
+        status: "reconnect_required",
+      },
+    ];
+    await renderNative(<ActivityDetailScreen />);
+    expect(screen.queryByTestId("activity-detail-options-send-strava")).toBeNull();
+    fireEvent.press(screen.getByTestId("activity-detail-strava-reconnect"));
+    expect(routerNavigateMock).toHaveBeenCalledWith("/integrations");
+  });
+
+  it("surfaces queued Strava delivery without offering another dispatch", async () => {
+    completedActivityProviders = [
+      {
+        jobId: "22222222-2222-4222-8222-222222222222",
+        provider: "strava",
+        reason: "Strava upload is queued.",
+        status: "queued",
+      },
+    ];
+    await renderNative(<ActivityDetailScreen />);
+    expect(screen.queryByTestId("activity-detail-options-send-strava")).toBeNull();
+    expect(screen.getByTestId("activity-detail-strava-upload-status")).toBeTruthy();
+    expect(screen.getByText("Strava upload is queued.")).toBeTruthy();
+  });
+
+  it("renders the linked route with the canonical card and opens route detail", async () => {
+    activityData.activity.activity_routes = {
+      id: "55555555-5555-4555-8555-555555555555",
+      name: "River Loop",
+    };
+
+    const rendered = await renderNative(<ActivityDetailScreen />);
+
+    const linkedRouteCard = rendered.container.queryAll((node) => node.type === "RouteCard")[0];
+    expect(linkedRouteCard).toBeTruthy();
+    expect(linkedRouteCard?.props).toMatchObject({
+      route: {
+        id: "55555555-5555-4555-8555-555555555555",
+        name: "River Loop",
+      },
+      testID: "activity-detail-linked-route-55555555-5555-4555-8555-555555555555",
+    });
+
+    linkedRouteCard?.props.onPress();
+
+    expect(routerNavigateMock).toHaveBeenCalledWith(
+      "/route-detail?id=55555555-5555-4555-8555-555555555555",
+    );
+  });
+
   it("renders immutable derived effort evidence on the activity detail", async () => {
     effortsQueryState = {
       data: [
@@ -993,21 +1165,16 @@ describe("activity detail screen", () => {
     expect(screen.queryByTestId("activity-stream-hr-load-card")).toBeNull();
   });
 
-  it("opens comments in a sheet rather than rendering them inline", async () => {
+  it("opens comments through the root-owned sheet", async () => {
     await renderNative(<ActivityDetailScreen />);
 
-    expect(screen.queryByTestId("activity-detail-comments-section")).toBeNull();
     await fireEvent.press(
       screen.getByTestId("activity-card-comment-button-11111111-1111-4111-8111-111111111111"),
     );
 
-    expect(screen.getByTestId("activity-detail-comments-sheet")).toBeTruthy();
-    expect(screen.getByTestId("activity-detail-comments-sheet").props).toMatchObject({
-      initialSnapIndex: APP_BOTTOM_SHEET_PRESENTATIONS.inspector.initialSnapIndex,
-      snapPoints: APP_BOTTOM_SHEET_PRESENTATIONS.inspector.snapPoints,
-    });
-    expect(screen.getByTestId("activity-detail-comments-section").props).toMatchObject({
-      testIDPrefix: "activity-detail",
+    expect(openEntityCommentsMock).toHaveBeenCalledWith({
+      entityId: "11111111-1111-4111-8111-111111111111",
+      entityType: "activity",
     });
   });
 
@@ -1026,6 +1193,8 @@ describe("activity detail screen", () => {
   });
 
   it("shares the public activity from the top-right action", async () => {
+    process.env.EXPO_PUBLIC_API_URL = "https://api.gradientpeak.test";
+    process.env.EXPO_PUBLIC_WEB_URL = "https://share.gradientpeak.test";
     (
       activityData.activity as typeof activityData.activity & { content_visibility: string }
     ).content_visibility = "public";
@@ -1036,9 +1205,12 @@ describe("activity detail screen", () => {
     );
 
     expect(shareMock).toHaveBeenCalledWith({
-      message: expect.stringContaining("/share/activities/11111111-1111-4111-8111-111111111111"),
-      url: expect.stringContaining("/share/activities/11111111-1111-4111-8111-111111111111"),
+      message:
+        "https://share.gradientpeak.test/share/activities/11111111-1111-4111-8111-111111111111",
+      url: "https://share.gradientpeak.test/share/activities/11111111-1111-4111-8111-111111111111",
     });
+    delete process.env.EXPO_PUBLIC_API_URL;
+    delete process.env.EXPO_PUBLIC_WEB_URL;
   });
 
   it("changes completed activity visibility through the confirmation action", async () => {
@@ -1118,7 +1290,17 @@ describe("activity detail screen", () => {
 
   it("invalidates both Plan read models after activity deletion succeeds", async () => {
     await renderNative(<ActivityDetailScreen />);
-    deleteMutationOptions.onSuccess?.();
+    await deleteMutationOptions.onSuccess?.();
+    expect(activityGetByIdSetDataMock).toHaveBeenCalledWith(
+      { id: "11111111-1111-4111-8111-111111111111" },
+      undefined,
+    );
+    expect(activityGetByIdInvalidateMock).toHaveBeenCalledWith({
+      id: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(activityGetByIdResetMock).toHaveBeenCalledWith({
+      id: "11111111-1111-4111-8111-111111111111",
+    });
     expect(invalidatePostActivityIngestionQueriesMock).toHaveBeenCalledTimes(1);
   });
 
@@ -1129,6 +1311,16 @@ describe("activity detail screen", () => {
     await fireEvent.press(screen.getByTestId("activity-detail-tab-analysis"));
 
     expect(screen.getByText("Activity file is still processing.")).toBeTruthy();
+  });
+
+  it("renders stream charts after ingestion succeeds", async () => {
+    activityData.activity.ingestion = { status: "succeeded" };
+
+    const rendered = await renderNative(<ActivityDetailScreen />);
+    await fireEvent.press(screen.getByTestId("activity-detail-tab-analysis"));
+
+    expect(rendered.container.queryAll((node) => node.type === "StreamChart")).toHaveLength(1);
+    expect(screen.queryByText("Activity file is still processing.")).toBeNull();
   });
 
   it("renders an explicit processing state instead of reading a missing segment summary", async () => {
@@ -1150,5 +1342,25 @@ describe("activity detail screen", () => {
     expect(screen.getByTestId("activity-segment-analysis-failed")).toBeTruthy();
     expect(screen.getByText("Segment analysis failed: analysis_failed")).toBeTruthy();
     expect(screen.queryByTestId("activity-normalized-power-card")).toBeNull();
+  });
+
+  it("shows compact duplicate controls only after imported sources are expanded", async () => {
+    importedSources = [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        provider: "strava",
+        resolutionStatus: "review",
+      },
+    ];
+
+    await renderNative(<ActivityDetailScreen />);
+    expect(screen.queryByText("Same activity")).toBeNull();
+    await fireEvent.press(screen.getByText("Imported sources"));
+    await fireEvent.press(screen.getByText("Same activity"));
+    expect(resolveImportedSourceMutateMock).toHaveBeenCalledWith({
+      action: "confirm_same",
+      sourceReferenceId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(screen.getByText("Ignore")).toBeTruthy();
   });
 });

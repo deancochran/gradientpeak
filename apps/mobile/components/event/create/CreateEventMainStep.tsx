@@ -298,6 +298,7 @@ export function CreateEventMainStep({
               label="Title"
               name="title"
               placeholder="Activity title"
+              selectTextOnFocus={process.env.EXPO_PUBLIC_MAESTRO_E2E === "1"}
               testId={`${testIDPrefix}-title-input`}
             />
           </>
@@ -314,6 +315,7 @@ export function CreateEventMainStep({
               label="Title"
               name="title"
               placeholder="Event title"
+              selectTextOnFocus={process.env.EXPO_PUBLIC_MAESTRO_E2E === "1"}
               testId={`${testIDPrefix}-title-input`}
             />
             <FormDateInputField

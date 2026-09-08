@@ -15,6 +15,7 @@ function IntegerStepper({
   min = 0,
   onChange,
   step = 1,
+  testId,
   value,
 }: IntegerStepperProps) {
   const labelText = label || "value";
@@ -54,6 +55,7 @@ function IntegerStepper({
           id={`${id}-field`}
           onBlur={() => commitDraft(draftValue)}
           onChange={(event) => setDraftValue(event.currentTarget.value)}
+          testId={testId}
           type="text"
           value={draftValue}
         />

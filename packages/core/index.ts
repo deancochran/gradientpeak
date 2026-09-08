@@ -75,7 +75,6 @@ export * from "./load"; // Canonical load-domain helpers
 export * from "./messaging"; // Shared messaging adapters
 export * from "./notifications"; // Shared notification normalization helpers
 export * from "./organizations"; // Organization authorization contracts
-export * from "./parity"; // Product parity registry and contracts
 export * from "./performance-calibration"; // Activity-derived calibration registry and policies
 export * from "./performance-model"; // Canonical as-of category models and narrow target facts
 export * from "./plan"; // Training plan normalization/expansion helpers
@@ -100,6 +99,7 @@ export * from "./route-files"; // Route upload formats, limits, schemas, and fil
 export * from "./samples"; // Sample data for testing and development
 export * from "./schemas"; // Shared Zod schemas and domain types
 export * from "./social"; // Social engagement entity taxonomy
+export * from "./targets"; // Authored target roles and objective-intensity normalization
 export * from "./training-timeline"; // Canonical training timeline read model
 export type {
   ActivityLap,

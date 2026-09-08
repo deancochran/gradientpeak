@@ -69,7 +69,7 @@ export const trainingLoadTimelineInputPointSchema = z
     ) => {
       if (status === undefined) return;
       const valid =
-        status === "unavailable"
+        status === "unavailable" || status === "partial"
           ? value === null || value === undefined
           : status === "known_zero"
             ? value === 0
@@ -122,6 +122,7 @@ function normalizePlannedLoad(
   status: TrainingLoadValueStatus | undefined,
 ): { load: number | null; status: TrainingLoadValueStatus } {
   const load = roundLoad(value);
+  if (status === "partial") return { load: null, status };
   if (status !== undefined) return { load, status };
   if (load === null) return { load: null, status: "unavailable" };
   return { load, status: load === 0 ? "known_zero" : "complete" };
@@ -130,17 +131,17 @@ function normalizePlannedLoad(
 function aggregatePlannedLoads(
   values: readonly { load: number | null; status: TrainingLoadValueStatus }[],
 ): { load: number | null; status: TrainingLoadValueStatus } {
+  if (values.some((value) => value.status === "partial")) {
+    return { load: null, status: "partial" };
+  }
   const known = values.filter(
     (value): value is { load: number; status: TrainingLoadValueStatus } => value.load !== null,
   );
   if (known.length === 0) return { load: null, status: "unavailable" };
   const load = roundLoad(known.reduce((sum, value) => sum + value.load, 0));
   if (load === null) return { load: null, status: "unavailable" };
-  if (
-    known.length !== values.length ||
-    values.some((value) => value.status === "partial" || value.status === "unavailable")
-  ) {
-    return { load, status: "partial" };
+  if (known.length !== values.length || values.some((value) => value.status === "unavailable")) {
+    return { load: null, status: "partial" };
   }
   if (values.every((value) => value.status === "known_zero")) {
     return { load: 0, status: "known_zero" };

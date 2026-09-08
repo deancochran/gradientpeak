@@ -1,23 +1,29 @@
 import {
   canonicalActivityCategorySchema,
   planningLedgerRequestSchema,
-  planningLedgerSchema,
+  planPeriodReviewRequestSchema,
   templateApplyInputSchema,
 } from "@repo/core";
 import { z } from "zod";
 import {
   applyTrainingPlanTemplateUseCase,
   deleteTrainingPlanUseCase,
+  getAppliedScheduleUseCase,
   getTrainingPlanTemplateUseCase,
   getTrainingPlanUseCase,
   listTrainingPlansUseCase,
   listTrainingPlanTemplatesUseCase,
+  planPeriodReviewResponseSchema,
   planTabProjectionInputSchema,
   planTabProjectionSchema,
+  readPlanPeriodReview,
   readPlanTabProjection,
   removeAppliedScheduleUseCase,
 } from "../../../application/training-plan";
-import { readPlanningLedger } from "../../../application/training-plan/planningLedgerService";
+import {
+  planningLedgerResponseSchema,
+  readPlanningLedger,
+} from "../../../application/training-plan/planningLedgerService";
 import {
   commitTrainingPlan,
   previewTrainingPlan,
@@ -37,6 +43,20 @@ const trainingPlanContentVisibilitySchema = z.enum(["private", "followers", "pub
 const applicationScopedScheduleInputSchema = z
   .object({
     schedule_batch_id: z.string().uuid(),
+    training_plan_id: z.string().uuid(),
+  })
+  .strict();
+
+const planScopedScheduleInputSchema = z
+  .object({
+    training_plan_id: z.string().uuid(),
+  })
+  .strict();
+
+const appliedScheduleSchema = z
+  .object({
+    schedule_batch_id: z.string().uuid(),
+    starts_at: z.iso.datetime(),
     training_plan_id: z.string().uuid(),
   })
   .strict();
@@ -72,7 +92,7 @@ const revisionFencedApplicationInputSchema = z
 export const trainingPlansProcedures = {
   getPlanningLedger: protectedProcedure
     .input(planningLedgerRequestSchema)
-    .output(planningLedgerSchema)
+    .output(planningLedgerResponseSchema)
     .query(({ ctx, input }) =>
       readPlanningLedger({
         db: getRequiredDb(ctx),
@@ -86,6 +106,17 @@ export const trainingPlansProcedures = {
     .output(planTabProjectionSchema)
     .query(({ ctx, input }) =>
       readPlanTabProjection({
+        db: getRequiredDb(ctx),
+        profileId: ctx.session.user.id,
+        request: input,
+      }),
+    ),
+
+  getPlanPeriodReview: protectedProcedure
+    .input(planPeriodReviewRequestSchema)
+    .output(planPeriodReviewResponseSchema)
+    .query(({ ctx, input }) =>
+      readPlanPeriodReview({
         db: getRequiredDb(ctx),
         profileId: ctx.session.user.id,
         request: input,
@@ -241,6 +272,17 @@ export const trainingPlansProcedures = {
         values,
       });
     }),
+
+  getAppliedSchedule: protectedProcedure
+    .input(planScopedScheduleInputSchema)
+    .output(appliedScheduleSchema.nullable())
+    .query(({ ctx, input }) =>
+      getAppliedScheduleUseCase({
+        db: getRequiredDb(ctx),
+        profileId: ctx.session.user.id,
+        trainingPlanId: input.training_plan_id,
+      }),
+    ),
 
   removeAppliedSchedule: protectedProcedure
     .input(applicationScopedScheduleInputSchema)

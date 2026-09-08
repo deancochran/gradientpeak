@@ -1,12 +1,16 @@
 import {
+  type ActivityPlanMetric,
   type ActivityPlanPlanningEstimate,
   type ActivityPlanSummary,
+  createActivityPlanMetric,
   getPlannedEstimate,
+  type PlannedCalculatedQuantity,
   type PlannedQuantity,
 } from "@repo/core";
 import { Form, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
+import { formatActivityPlanHeadlineMetric } from "@repo/ui/lib/activity-plan-metric-presentation";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import { useCallback, useEffect } from "react";
 import { useWatch } from "react-hook-form";
@@ -69,62 +73,138 @@ function getBuilderPlannedEstimate(
   return quantification ? getPlannedEstimate(quantification) : null;
 }
 
-function completeQuantityValue(quantity: PlannedQuantity<number> | undefined): number | null {
-  return quantity?.status === "known" || quantity?.status === "estimated" ? quantity.value : null;
+type BuilderHeadlineMetrics = {
+  duration: ActivityPlanMetric;
+  load: ActivityPlanMetric;
+  objectiveIntensity: ActivityPlanMetric;
+};
+
+function unavailableMetric(
+  key: ActivityPlanMetric["key"],
+  label: string,
+  unit: string,
+  reason = "not_available",
+): ActivityPlanMetric {
+  return createActivityPlanMetric({
+    key,
+    label,
+    status: "unavailable",
+    value: null,
+    unit,
+    reason,
+    provenance: null,
+  });
 }
 
-function formatQuantity(
-  quantity: PlannedQuantity<number> | undefined,
-  format: (value: number) => string,
-): string {
-  if (!quantity || quantity.status === "unavailable") return "Unavailable";
-  if (quantity.status === "partial") return "Partial";
-  return format(quantity.value);
+function durationMetric(quantity: PlannedQuantity<number> | undefined): ActivityPlanMetric {
+  if (quantity?.status === "known" || quantity?.status === "estimated") {
+    return createActivityPlanMetric({
+      key: "elapsed_duration",
+      label: "Duration",
+      status: "available",
+      value: quantity.value,
+      unit: "seconds",
+      reason: null,
+      provenance: quantity.status === "known" ? "authored" : "estimated",
+    });
+  }
+  return unavailableMetric(
+    "elapsed_duration",
+    "Duration",
+    "seconds",
+    quantity?.status === "partial"
+      ? "incomplete_members"
+      : quantity?.status === "unavailable"
+        ? quantity.reason
+        : "not_available",
+  );
 }
 
-function getEventMeta(
+function loadMetric(quantity: PlannedCalculatedQuantity | undefined): ActivityPlanMetric {
+  if (quantity?.status === "estimated") {
+    return createActivityPlanMetric({
+      key: "common_load",
+      label: "Common Load",
+      status: "available",
+      value: quantity.value,
+      unit: "score",
+      reason: null,
+      provenance: "estimated",
+    });
+  }
+  return unavailableMetric(
+    "common_load",
+    "Common Load",
+    "score",
+    quantity?.status === "partial" ? "incomplete_members" : (quantity?.reason ?? "not_available"),
+  );
+}
+
+function objectiveIntensityMetric(
+  projection: ActivityPlanPlanningEstimate["planProjection"],
+): ActivityPlanMetric {
+  const objectiveIntensity = projection?.objectiveIntensity;
+  if (objectiveIntensity?.status === "available") {
+    return createActivityPlanMetric({
+      key: "objective_intensity",
+      label: "Intensity",
+      status: "available",
+      value: objectiveIntensity.value,
+      unit: "ratio",
+      reason: null,
+      provenance: "estimated",
+    });
+  }
+  return unavailableMetric(
+    "objective_intensity",
+    "Intensity",
+    "ratio",
+    objectiveIntensity?.reason ?? "not_available",
+  );
+}
+
+function getBuilderHeadlineMetrics(
   event: TrainingPlanBuilderSession,
   estimate?: ActivityPlanPlanningEstimate | null,
-) {
+): BuilderHeadlineMetrics | null {
+  if (!event.activityPlan) return null;
   const plannedEstimate = getBuilderPlannedEstimate(event, estimate);
-  const durationSeconds = completeQuantityValue(plannedEstimate?.durationSeconds);
-  const load = completeQuantityValue(plannedEstimate?.load);
+  return {
+    duration: durationMetric(plannedEstimate?.durationSeconds),
+    load: loadMetric(plannedEstimate?.load),
+    objectiveIntensity: objectiveIntensityMetric(estimate?.planProjection),
+  };
+}
+
+function getEventMeta(event: TrainingPlanBuilderSession, metrics: BuilderHeadlineMetrics | null) {
+  const duration = metrics
+    ? formatActivityPlanHeadlineMetric(metrics.duration, "elapsed_duration")
+    : null;
+  const load = metrics ? formatActivityPlanHeadlineMetric(metrics.load, "common_load") : null;
   return [
     event.eventOverrides?.start_time || null,
-    durationSeconds === null ? null : `${Math.round(durationSeconds / 60)} min`,
-    event.activityPlan && load !== null ? `Common Load ${Math.round(load * 10) / 10}` : null,
+    duration === "—" ? null : duration,
+    load === null || load === "—" ? null : `Common Load ${load}`,
   ]
     .filter((part): part is string => Boolean(part))
     .join(" · ");
 }
 
-function formatDurationMetric(durationSeconds: number) {
-  const minutes = Math.round(durationSeconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  const remainder = minutes % 60;
-  return remainder > 0 ? `${hours}h ${remainder}m` : `${hours}h`;
-}
-
-function getActivityMetrics(
-  event: TrainingPlanBuilderSession,
-  estimate?: ActivityPlanPlanningEstimate | null,
-): ResourceMetric[] {
-  if (!event.activityPlan) return [];
-  const plannedEstimate = getBuilderPlannedEstimate(event, estimate);
+function getActivityMetrics(metrics: BuilderHeadlineMetrics | null): ResourceMetric[] {
+  if (!metrics) return [];
   return [
     {
       label: "Duration",
-      value: formatQuantity(plannedEstimate?.durationSeconds, formatDurationMetric),
+      value: formatActivityPlanHeadlineMetric(metrics.duration, "elapsed_duration"),
     },
     {
       label: "Common Load",
-      value: formatQuantity(plannedEstimate?.load, (value) => String(Math.round(value * 10) / 10)),
+      value: formatActivityPlanHeadlineMetric(metrics.load, "common_load"),
       tone: "primary",
     },
     {
-      label: "Normalized intensity",
-      value: formatQuantity(plannedEstimate?.normalizedIntensity, (value) => value.toFixed(2)),
+      label: "Intensity",
+      value: formatActivityPlanHeadlineMetric(metrics.objectiveIntensity, "objective_intensity"),
       tone: "primary",
     },
   ];
@@ -198,8 +278,9 @@ export function TrainingPlanBuilderEventCard({
   onMoveByDays,
   onRemove,
 }: TrainingPlanBuilderEventCardProps) {
-  const meta = getEventMeta(event, estimate);
-  const metrics = getActivityMetrics(event, estimate);
+  const headlineMetrics = getBuilderHeadlineMetrics(event, estimate);
+  const meta = getEventMeta(event, headlineMetrics);
+  const metrics = getActivityMetrics(headlineMetrics);
   const scheduleLabel = formatBuilderWeekdayWithWeek(event.offsetDays);
   const { fontScale, width } = useWindowDimensions();
   const useVerticalLayout = shouldUseAccessibleBuilderLayout({ fontScale, width });

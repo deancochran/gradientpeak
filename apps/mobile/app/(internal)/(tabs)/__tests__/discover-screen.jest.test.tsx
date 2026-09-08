@@ -8,6 +8,7 @@ import {
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
+let localSearchParams: { q?: string; scope?: string } = {};
 type ResourceCardProps = {
   onPress?: () => void;
   variant?: string;
@@ -184,7 +185,7 @@ jest.mock("react-native-safe-area-context", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
-  useLocalSearchParams: () => ({}),
+  useLocalSearchParams: () => localSearchParams,
   useRouter: () => ({ push: pushMock }),
 }));
 
@@ -364,10 +365,12 @@ jest.mock("@/lib/api", () => ({
 }));
 
 const DiscoverScreen = require("../discover").default;
+const CommunityScreen = require("../groups").default;
 
 describe("discover screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    localSearchParams = {};
   });
 
   afterEach(async () => {
@@ -379,7 +382,8 @@ describe("discover screen", () => {
   it("defaults to activity plans with one selected record type", async () => {
     await renderNative(<DiscoverScreen />);
 
-    expect(screen.queryByText(/^Header:/)).toBeNull();
+    expect(screen.getByText("Header:Discover")).toBeTruthy();
+    expect(screen.getByText("Find your next adventure")).toBeTruthy();
     expect(screen.getByPlaceholderText("Search activity plans")).toBeTruthy();
     expect(screen.getByTestId("discover-scope-row")).toBeTruthy();
     expect(screen.getByTestId("discover-scope-activityPlans")).toBeTruthy();
@@ -387,6 +391,17 @@ describe("discover screen", () => {
     expect(screen.queryByTestId("discover-feed-item-users-user-1")).toBeNull();
     expect(screen.queryByTestId("discover-feed-item-trainingPlans-tp-1")).toBeNull();
     expect(screen.queryByTestId("discover-feed-item-routes-route-1")).toBeNull();
+  });
+
+  it("keeps Community on its own groups-and-athletes search surface", async () => {
+    await renderNative(<CommunityScreen />);
+
+    expect(screen.getByText("Header:Community")).toBeTruthy();
+    expect(screen.getByText("Find your training circle")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Search groups")).toBeTruthy();
+    expect(screen.getByTestId("discover-scope-groups")).toBeTruthy();
+    expect(screen.getByTestId("discover-scope-users")).toBeTruthy();
+    expect(screen.queryByTestId("discover-scope-activityPlans")).toBeNull();
   });
 
   it("uses visually rich cards for activity plans, training plans, and routes", async () => {
@@ -613,16 +628,26 @@ describe("discover screen", () => {
     });
   });
 
-  it("shows only profile results when the profiles scope is selected", async () => {
+  it("rejects a Community-only scope from the Discover route", async () => {
+    localSearchParams = { scope: "users" };
     await renderNative(<DiscoverScreen />);
 
-    await fireEvent.press(screen.getByTestId("discover-scope-users"));
+    await waitFor(() => {
+      expect(screen.getByTestId("discover-feed-item-activityPlans-ap-1")).toBeTruthy();
+      expect(screen.queryByTestId("discover-feed-item-users-user-1")).toBeNull();
+      expect(screen.getByText("Header:Discover")).toBeTruthy();
+      expect(screen.getByText("Find your next adventure")).toBeTruthy();
+    });
+  });
+
+  it("rejects a Discover-only scope from the Community route", async () => {
+    localSearchParams = { scope: "routes" };
+    await renderNative(<CommunityScreen />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("discover-feed-item-users-user-1")).toBeTruthy();
+      expect(screen.getByTestId("discover-feed-item-groups-group-1")).toBeTruthy();
       expect(screen.queryByTestId("discover-feed-item-routes-route-1")).toBeNull();
-      expect(screen.queryByTestId("discover-feed-item-trainingPlans-tp-1")).toBeNull();
-      expect(screen.queryByTestId("discover-feed-item-activityPlans-ap-1")).toBeNull();
+      expect(screen.getByText("Header:Community")).toBeTruthy();
     });
   });
 });

@@ -118,14 +118,12 @@ test("repository-root config files do not expand into the entire repository", as
     "tooling/current-contract/scanner.self-test.mjs",
     "tooling/testing/planner.test.mjs",
     "tooling/architecture/fixtures/example/missing.test.ts",
-    "tests/parity/web-mobile-parity.test.ts",
   ]);
   const plan = await createPlan({ root, selector: { path: "package.json" } });
 
   assert.deepEqual(
     plan.tests.map((entry) => entry.path),
     [
-      "tests/parity/web-mobile-parity.test.ts",
       "tooling/architecture/check-architecture.test.mjs",
       "tooling/current-contract/scanner.self-test.mjs",
       "tooling/testing/planner.test.mjs",
@@ -146,17 +144,14 @@ test("each recognized root config maps to a finite verification capsule", async 
     "biome.json",
     "pnpm-workspace.yaml",
     "turbo.json",
-    "vitest.parity.config.ts",
     "apps/web/src/unrelated.test.ts",
     "tooling/architecture/check-architecture.test.mjs",
     "tooling/testing/planner.test.mjs",
-    "tests/parity/web-mobile-parity.test.ts",
   ]);
   const toolingTests = [
     "tooling/architecture/check-architecture.test.mjs",
     "tooling/testing/planner.test.mjs",
   ];
-  const toolingAndParity = ["tests/parity/web-mobile-parity.test.ts", ...toolingTests];
 
   for (const config of ["biome.json", "turbo.json"]) {
     const plan = await createPlan({ root, selector: { path: config } });
@@ -169,14 +164,9 @@ test("each recognized root config maps to a finite verification capsule", async 
     const plan = await createPlan({ root, selector: { path: config } });
     assert.deepEqual(
       plan.tests.map((entry) => entry.path),
-      toolingAndParity,
+      toolingTests,
     );
   }
-  const parityPlan = await createPlan({ root, selector: { path: "vitest.parity.config.ts" } });
-  assert.deepEqual(
-    parityPlan.tests.map((entry) => entry.path),
-    ["tests/parity/web-mobile-parity.test.ts"],
-  );
 });
 
 test("arbitrary repository-root files remain an explicit empty plan", async () => {
@@ -524,40 +514,19 @@ test("architecture, QA, and testing mjs tests use node:test while tooling fixtur
   ]);
 });
 
-test("all selection walks root tests and maps parity files through the parity runner", async () => {
-  const root = await fixture([
-    "packages/core/src/a.test.ts",
-    "tests/parity/web-mobile-parity.test.ts",
-  ]);
+test("all selection walks package tests", async () => {
+  const root = await fixture(["packages/core/src/a.test.ts"]);
   const plan = await createPlan({ root, selector: { all: true } });
 
-  assert.equal(
-    plan.tests.some((entry) => entry.path === "tests/parity/web-mobile-parity.test.ts"),
-    true,
-  );
   assert.deepEqual(
-    plan.commands.find((command) =>
-      command.tests.includes("tests/parity/web-mobile-parity.test.ts"),
-    ),
-    {
-      command: "pnpm",
-      args: ["test:parity", "tests/parity/web-mobile-parity.test.ts"],
-      tests: ["tests/parity/web-mobile-parity.test.ts"],
-    },
+    plan.tests.map((entry) => entry.path),
+    ["packages/core/src/a.test.ts"],
   );
 });
 
-test("only supported top-level Maestro scenarios are runnable", () => {
-  assert.equal(classifyTest("apps/mobile/.maestro/features/profile.yaml"), "maestro");
+test("only smoke Maestro scenarios are runnable", () => {
   assert.equal(classifyTest("apps/mobile/.maestro/flows/smoke/auth/login.yaml"), "maestro");
-  assert.equal(
-    classifyTest("apps/mobile/.maestro/flows/performance/tab_navigation_budgets.yaml"),
-    "maestro",
-  );
   assert.equal(classifyTest("apps/mobile/.maestro/flows/reusable/login.yaml"), null);
-  assert.equal(classifyTest("apps/mobile/.maestro/flows/journeys/auth/login.yaml"), null);
-  assert.equal(classifyTest("apps/mobile/.maestro/flows/main/auth_navigation.yaml"), null);
-  assert.equal(classifyTest("apps/mobile/.maestro/features/profile.yml"), null);
 });
 
 test("direct symlinks are rejected and symlink directories are not traversed", async () => {

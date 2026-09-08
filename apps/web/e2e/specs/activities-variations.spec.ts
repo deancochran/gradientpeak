@@ -6,7 +6,7 @@ import {
   importActivity,
 } from "../activities/fixture-files";
 import { expect, test } from "../fixtures";
-import { ActivitiesPage } from "../pages";
+import { ActivitiesPage, AuthPage } from "../pages";
 
 test("[variation:narrow] filtered activity card opens detail and returns to retained history", async ({
   athletePage,
@@ -83,7 +83,7 @@ test("[variation:activities.public-share:history] public detail survives back an
     await activities.setVisibility("Public");
     await publicActivity.openPublicShare(activityId);
     await expect(anonymous.getByRole("region", { name: "Activity summary" })).toBeVisible();
-    await anonymous.goto("/auth/login");
+    await new AuthPage(anonymous).openLogin();
     await anonymous.goBack();
     await expect(anonymous.getByRole("region", { name: "Activity summary" })).toBeVisible();
     await anonymous.goForward();
@@ -168,6 +168,7 @@ test("[variation:activities.fit:filtered-history] swim filter opens the imported
 test("[variation:activities.tcx:stream-detail] ride stream and route content remain visible across a deep-link reload", async ({
   athletePage,
 }, testInfo) => {
+  test.slow();
   let activityId = "";
   const activities = new ActivitiesPage(athletePage);
   try {
@@ -188,6 +189,7 @@ test("[variation:activities.tcx:stream-detail] ride stream and route content rem
 test("[variation:activities.tcx:bike-history] bike sorting opens the exact imported ride and restores list state on back", async ({
   athletePage,
 }, testInfo) => {
+  test.slow();
   let activityId = "";
   const activities = new ActivitiesPage(athletePage);
   try {

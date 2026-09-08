@@ -4,16 +4,21 @@ import {
   type PersistedThresholdEvidence,
 } from "@repo/core/athlete-derived-state";
 import {
+  ACTIVITY_FILE_LTHR_CALCULATION_VERSION,
+  ACTIVITY_FILE_LTHR_EFFORT_METHOD,
+  BEST_EFFORT_CALCULATION_VERSION,
   type BestEffortExtractionResult,
   bestEffortExtractionResultSchema,
   selectExactBestEffortWindow,
 } from "@repo/core/calculations";
 import {
+  getThresholdActivityCategoryPolicies,
   getThresholdActivityCategoryPolicy,
   selectThresholdCandidate,
   type ThresholdActivityCategory,
   type ThresholdEvaluation,
   type ThresholdExactWindowObservation,
+  type ThresholdMetric,
   type ThresholdSelectionResult,
 } from "@repo/core/performance-calibration";
 import { activities, activityEfforts, thresholds } from "@repo/db";
@@ -268,9 +273,10 @@ function extractionObservations(input: {
 
 function activityThresholdSelection(input: {
   activityCategory: ThresholdActivityCategory;
+  metric: ThresholdMetric;
   series: ThresholdSeries[];
 }): { selection: ThresholdSelectionResult; measuredEvidenceIds: Set<string> } {
-  const policy = getThresholdActivityCategoryPolicy(input.activityCategory);
+  const policy = getThresholdActivityCategoryPolicy(input.activityCategory, input.metric);
   const observations = input.series.flatMap(({ seriesId, ownershipVerified, extraction }) =>
     extractionObservations({
       activityId: "activity",
@@ -294,13 +300,18 @@ function activityThresholdSelection(input: {
     }),
   );
   return {
-    selection: selectThresholdCandidate({ activityCategory: input.activityCategory, observations }),
+    selection: selectThresholdCandidate({
+      activityCategory: input.activityCategory,
+      metric: input.metric,
+      observations,
+    }),
     measuredEvidenceIds,
   };
 }
 
 export function selectActivityThreshold(input: {
   activityCategory: ThresholdActivityCategory;
+  metric: ThresholdMetric;
   series: ThresholdSeries[];
 }): ThresholdSelectionResult {
   return activityThresholdSelection(input).selection;
@@ -309,6 +320,7 @@ export function selectActivityThreshold(input: {
 /** The only threshold qualifier: API adapts source evidence, Core decides qualification. */
 export function evaluateActivityThreshold(input: {
   activityCategory: ThresholdActivityCategory;
+  metric: ThresholdMetric;
   series: ThresholdSeries[];
 }): ThresholdEvaluation {
   const { selection, measuredEvidenceIds } = activityThresholdSelection(input);
@@ -327,13 +339,14 @@ function observationsForEfforts(input: {
   profileId: string;
   activityId: string;
   activityCategory: ThresholdActivityCategory;
+  metric: ThresholdMetric;
   efforts: readonly EffortInsert[];
   sources: Array<{
     segmentId: string;
     sourceRevision: number;
   }>;
 }): ThresholdExactWindowObservation[] {
-  const policy = getThresholdActivityCategoryPolicy(input.activityCategory);
+  const policy = getThresholdActivityCategoryPolicy(input.activityCategory, input.metric);
   const sources = new Map(input.sources.map((source) => [source.segmentId, source.sourceRevision]));
   return input.efforts.flatMap((effort) => {
     const provenance = effortProvenance(effort);
@@ -346,7 +359,15 @@ function observationsForEfforts(input: {
           ? "grade_adjusted_speed"
           : sourceSeries === "raw_speed" || sourceSeries === "swim_speed"
             ? "speed"
-            : null;
+            : sourceSeries === "heart_rate"
+              ? "heart_rate"
+              : null;
+    const hasCanonicalMethod =
+      input.metric === "lthr"
+        ? effort.method === ACTIVITY_FILE_LTHR_EFFORT_METHOD &&
+          effort.calculation_version === ACTIVITY_FILE_LTHR_CALCULATION_VERSION
+        : effort.method === "activity_file_best_effort" &&
+          effort.calculation_version === BEST_EFFORT_CALCULATION_VERSION;
     if (
       typeof effort.id !== "string" ||
       effort.profile_id !== input.profileId ||
@@ -355,6 +376,7 @@ function observationsForEfforts(input: {
       sourceRevision === undefined ||
       effort.source_revision !== sourceRevision ||
       effort.duration_seconds !== policy.exactWindowSeconds ||
+      !hasCanonicalMethod ||
       metric === null ||
       provenance?.source_series !== sourceSeries ||
       typeof effort.value !== "number" ||
@@ -392,12 +414,18 @@ function effortLinkForEvidenceId(
   if (evidenceId === null) return null;
   const effort = efforts.find(({ id }) => id === evidenceId);
   if (!effort || typeof effort.id !== "string") return null;
-  if (effort.effort_type !== "power" && effort.effort_type !== "speed") return null;
+  if (
+    effort.effort_type !== "power" &&
+    effort.effort_type !== "speed" &&
+    effort.effort_type !== "heart_rate"
+  )
+    return null;
   if (
     effort.source_series !== "power" &&
     effort.source_series !== "grade_adjusted_speed" &&
     effort.source_series !== "raw_speed" &&
-    effort.source_series !== "swim_speed"
+    effort.source_series !== "swim_speed" &&
+    effort.source_series !== "heart_rate"
   ) {
     return null;
   }
@@ -462,100 +490,109 @@ export async function reconcileThresholdsWithProfileLockHeld(
     if (!firstSource || categorySources.some(({ sourceArtifactId }) => sourceArtifactId === null)) {
       continue;
     }
-    const policy = getThresholdActivityCategoryPolicy(activityCategory);
-    const identity: ThresholdIdentity = { activityCategory, metric: policy.metric };
-    const measuredObservations = observationsForEfforts({
-      profileId: input.profileId,
-      activityId: input.activityId,
-      activityCategory,
-      efforts: input.efforts,
-      sources: categorySources.map((source) => ({
-        segmentId: source.segmentId,
-        sourceRevision: source.sourceRevision,
-      })),
-    });
-    const measuredSeries = new Set(
-      measuredObservations.map(({ seriesId, metric }) => `${seriesId}\u0000${metric}`),
-    );
-    const extractionAttempts = categorySources.flatMap((source) =>
-      extractionsFromSummary(source.summary).flatMap((extraction) => {
-        if (extraction.metric === "heart_rate") return [];
-        const metric = extraction.metric;
-        const seriesId = `${source.segmentId}:${metric}`;
-        if (measuredSeries.has(`${seriesId}\u0000${metric}`)) return [];
-        return extractionObservations({
-          activityId: input.activityId,
-          seriesId,
-          ownershipVerified: true,
-          extraction,
-          exactWindowSeconds: policy.exactWindowSeconds,
-        });
-      }),
-    );
-    const observations = [...measuredObservations, ...extractionAttempts];
-    const selection = selectThresholdCandidate({ activityCategory, observations });
-    const measuredEvidenceIds = new Set(measuredObservations.map(({ evidenceId }) => evidenceId));
-    const selectedAttempt = attemptFromSelection(selection, measuredEvidenceIds);
-    const evaluation = selectedAttempt.evaluation;
-    const id = thresholdEvaluationId({
-      profileId: input.profileId,
-      sourceActivityId: input.activityId,
-      sourceRevision: firstSource.sourceRevision,
-      identity,
-      method: policy.method,
-      policyVersion: policy.policyVersion,
-    });
-    const selectedMeasuredEvidenceId =
-      selection.status === "qualified"
-        ? selection.selectedEvidenceId
-        : selectedAttempt.evidenceIds.length === 1 &&
-            selectedAttempt.evaluation.diagnostics.selectedSeriesId !== null &&
-            measuredEvidenceIds.has(selectedAttempt.evidenceIds[0] ?? "")
-          ? (selectedAttempt.evidenceIds[0] ?? null)
-          : null;
-    const ownEffort = effortLinkForEvidenceId(selectedMeasuredEvidenceId, input.efforts);
-    if (evaluation.status === "qualified" && ownEffort === null) {
-      throw new Error("Qualified threshold evaluation must link its exact-window effort");
-    }
-    const persistence = await planThresholdEvaluationPersistence(tx, {
-      id,
-      profileId: input.profileId,
-      identity,
-      evaluation,
-      selection,
-      sourceActivityId: input.activityId,
-      observedAt: firstSource.finishedAt,
-      primaryEffort: ownEffort,
-    });
-    await insertThresholdEvaluation(tx, {
-      id,
-      profileId: input.profileId,
-      identity,
-      evaluation,
-      selection,
-      persistedValue: persistence.persistedValue,
-      sourceActivityId: input.activityId,
-      sourceRevision: firstSource.sourceRevision,
-      observedAt: firstSource.finishedAt,
-      effortLinks: persistence.effortLinks,
-      now: input.now,
-    });
-    if (selection.status === "qualified") {
-      persistedEvidence.push({
-        contractVersion: ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,
+    for (const policy of getThresholdActivityCategoryPolicies(activityCategory)) {
+      const identity: ThresholdIdentity = { activityCategory, metric: policy.metric };
+      const measuredObservations = observationsForEfforts({
         profileId: input.profileId,
-        calculationVersion: "threshold-v1",
-        confidence: 1,
-        evidence: {
-          ...selection.candidate,
-          evidenceId: selection.selectedEvidenceId,
-          activityId: input.activityId,
-          observedAt: firstSource.finishedAt.toISOString(),
-        },
-        lifecycle: { status: "active", invalidatedAt: null },
+        activityId: input.activityId,
+        activityCategory,
+        metric: policy.metric,
+        efforts: input.efforts,
+        sources: categorySources.map((source) => ({
+          segmentId: source.segmentId,
+          sourceRevision: source.sourceRevision,
+        })),
       });
+      const measuredSeries = new Set(
+        measuredObservations.map(({ seriesId, metric }) => `${seriesId}\u0000${metric}`),
+      );
+      const extractionAttempts =
+        policy.metric === "lthr"
+          ? []
+          : categorySources.flatMap((source) =>
+              extractionsFromSummary(source.summary).flatMap((extraction) => {
+                if (extraction.metric === "heart_rate") return [];
+                const metric = extraction.metric;
+                const seriesId = `${source.segmentId}:${metric}`;
+                if (measuredSeries.has(`${seriesId}\u0000${metric}`)) return [];
+                return extractionObservations({
+                  activityId: input.activityId,
+                  seriesId,
+                  ownershipVerified: true,
+                  extraction,
+                  exactWindowSeconds: policy.exactWindowSeconds,
+                });
+              }),
+            );
+      const observations = [...measuredObservations, ...extractionAttempts];
+      const selection = selectThresholdCandidate({
+        activityCategory,
+        metric: policy.metric,
+        observations,
+      });
+      const measuredEvidenceIds = new Set(measuredObservations.map(({ evidenceId }) => evidenceId));
+      const selectedAttempt = attemptFromSelection(selection, measuredEvidenceIds);
+      const evaluation = selectedAttempt.evaluation;
+      const id = thresholdEvaluationId({
+        profileId: input.profileId,
+        sourceActivityId: input.activityId,
+        sourceRevision: firstSource.sourceRevision,
+        identity,
+        method: policy.method,
+        policyVersion: policy.policyVersion,
+      });
+      const selectedMeasuredEvidenceId =
+        selection.status === "qualified"
+          ? selection.selectedEvidenceId
+          : selectedAttempt.evidenceIds.length === 1 &&
+              selectedAttempt.evaluation.diagnostics.selectedSeriesId !== null &&
+              measuredEvidenceIds.has(selectedAttempt.evidenceIds[0] ?? "")
+            ? (selectedAttempt.evidenceIds[0] ?? null)
+            : null;
+      const ownEffort = effortLinkForEvidenceId(selectedMeasuredEvidenceId, input.efforts);
+      if (evaluation.status === "qualified" && ownEffort === null) {
+        throw new Error("Qualified threshold evaluation must link its exact-window effort");
+      }
+      const persistence = await planThresholdEvaluationPersistence(tx, {
+        id,
+        profileId: input.profileId,
+        identity,
+        evaluation,
+        selection,
+        sourceActivityId: input.activityId,
+        observedAt: firstSource.finishedAt,
+        primaryEffort: ownEffort,
+      });
+      await insertThresholdEvaluation(tx, {
+        id,
+        profileId: input.profileId,
+        identity,
+        evaluation,
+        selection,
+        persistedValue: persistence.persistedValue,
+        sourceActivityId: input.activityId,
+        sourceRevision: firstSource.sourceRevision,
+        observedAt: firstSource.finishedAt,
+        effortLinks: persistence.effortLinks,
+        now: input.now,
+      });
+      if (selection.status === "qualified") {
+        persistedEvidence.push({
+          contractVersion: ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,
+          profileId: input.profileId,
+          calculationVersion: "threshold-v1",
+          confidence: 1,
+          evidence: {
+            ...selection.candidate,
+            evidenceId: selection.selectedEvidenceId,
+            activityId: input.activityId,
+            observedAt: firstSource.finishedAt.toISOString(),
+          },
+          lifecycle: { status: "active", invalidatedAt: null },
+        });
+      }
+      evaluated.set(`${identity.activityCategory}/${identity.metric}`, identity);
     }
-    evaluated.set(`${identity.activityCategory}/${identity.metric}`, identity);
   }
 
   await replaceThresholdEvidence({
@@ -677,10 +714,11 @@ export async function finalizeThresholdsAfterHistoryImport(
     cursor = last;
   }
 
-  const identities = (["bike", "run", "swim"] as const).map((activityCategory) => {
-    const policy = getThresholdActivityCategoryPolicy(activityCategory);
-    return { activityCategory, metric: policy.metric } satisfies ThresholdIdentity;
-  });
+  const identities = (["bike", "run", "swim"] as const).flatMap((activityCategory) =>
+    getThresholdActivityCategoryPolicies(activityCategory).map(
+      ({ metric }) => ({ activityCategory, metric }) satisfies ThresholdIdentity,
+    ),
+  );
   for (const identity of identities) {
     const rebuilt = await rebuildThresholdHistoryAndScheduleRefresh(tx, {
       profileId: input.profileId,

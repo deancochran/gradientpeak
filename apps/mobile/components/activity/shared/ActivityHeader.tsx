@@ -10,6 +10,7 @@ import { useEffect, useRef } from "react";
 import { useWatch } from "react-hook-form";
 import { Pressable, View } from "react-native";
 import { z } from "zod";
+import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
@@ -103,7 +104,7 @@ export function ActivityHeader({
   const handleUserPress = () => {
     if (!user.id) return;
     if (user.id === signedInUser?.id) {
-      navigateTo("/profile");
+      navigateTo(ROUTES.ME);
       return;
     }
 

@@ -1,8 +1,0 @@
-appId: ${MAESTRO_APP_ID}
-# @purpose Open an event title editor and clear its existing value.
-# @ready event-detail-update-title-input
----
-- tapOn: { id: "event-detail-options-trigger" }
-- tapOn: { id: "event-detail-options-edit" }
-- tapOn: { id: "event-detail-update-title-input" }
-- eraseText

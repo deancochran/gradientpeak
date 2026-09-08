@@ -42,7 +42,7 @@ describe("ActivityPlanStructure", () => {
 
     expect(screen.getByText(/80% FTP/)).toBeTruthy();
     expect(screen.queryByText(/240 W/)).toBeNull();
-    expect(screen.queryByRole("switch", { name: "Personalize targets" })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Calculated targets" })).toBeNull();
   });
 
   it("shows every authored instruction annotation in the full prescription", () => {

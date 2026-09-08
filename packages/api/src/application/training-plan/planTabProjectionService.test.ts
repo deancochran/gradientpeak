@@ -1,6 +1,9 @@
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations/normalized-power";
 import { commonLoadResultSchema } from "@repo/core/load";
+import { buildCenteredPlanAnalysisWindow, PLAN_ANALYSIS_WINDOW_PERIODS } from "@repo/core/plan";
 import { describe, expect, it, vi } from "vitest";
 import {
+  completedCategoryDoses,
   type PlanTabProjectionDependencies,
   planTabProjectionInputSchema,
   readPlanTabProjection,
@@ -24,6 +27,48 @@ const aggregate = {
   activityCountCoverage: 1,
   knownDurationCoverage: 1,
 };
+
+it("aggregates normalized segment evidence by discipline without inventing missing metrics", () => {
+  const unavailableNormalizedPower = calculateCyclingNormalizedPower({ samples: [] });
+  expect(
+    completedCategoryDoses([
+      {
+        activityCategory: null,
+        segmentCategory: "run",
+        summary: {
+          version: 1,
+          timing: { timingCoverage: "complete", activeMs: 1_800_000, movingMs: 1_700_000 },
+          distanceMeters: 5_000,
+          ascentMeters: 80,
+          normalizedPowerResult: unavailableNormalizedPower,
+        },
+      },
+      {
+        activityCategory: null,
+        segmentCategory: "run",
+        summary: {
+          version: 1,
+          timing: { timingCoverage: "partial", activeMs: 600_000 },
+          distanceMeters: 2_000,
+          normalizedPowerResult: unavailableNormalizedPower,
+        },
+      },
+    ]),
+  ).toEqual([
+    {
+      activityCategory: "run",
+      durationSeconds: { status: "partial", value: 2_400 },
+      distanceMeters: { status: "complete", value: 7_000 },
+      elevationGainMeters: { status: "partial", value: 80 },
+    },
+  ]);
+});
+
+function addDate(date: string, days: number) {
+  const instant = new Date(`${date}T00:00:00.000Z`);
+  instant.setUTCDate(instant.getUTCDate() + days);
+  return instant.toISOString().slice(0, 10);
+}
 
 function dependencies(): PlanTabProjectionDependencies {
   return {
@@ -122,12 +167,17 @@ function dependencies(): PlanTabProjectionDependencies {
       id: "33333333-3333-4333-8333-333333333333",
       name: "Spring plan",
       scheduleBatchId: null,
+      nextEventId: "22222222-2222-4222-8222-222222222222",
+      nextEventTitle: "Tempo ride",
+      nextEventDate: "2026-04-07",
       nextEventAt: "2026-04-07T15:00:00.000Z",
+      nextActivityPlanId: "55555555-5555-4555-8555-555555555555",
     })),
     readGoalMarkers: vi.fn(async () => [
       {
         id: "44444444-4444-4444-8444-444444444444",
         label: "A race",
+        priority: 8,
         targetDate: "2026-06-01",
         activityCategory: "bike",
       },
@@ -163,8 +213,12 @@ describe("readPlanTabProjection", () => {
       expect(dependency).toHaveBeenCalledWith(expect.objectContaining({ db: tx, profileId }));
     }
     expect(result).toMatchObject({
-      contractVersion: "plan-tab-projection-v1",
-      currentScheduledPlan: { name: "Spring plan" },
+      contractVersion: "plan-tab-projection-v2",
+      currentScheduledPlan: {
+        name: "Spring plan",
+        nextEventTitle: "Tempo ride",
+        nextEventDate: "2026-04-07",
+      },
       dayLoads: {
         "2026-04-06": {
           status: "complete",
@@ -184,7 +238,7 @@ describe("readPlanTabProjection", () => {
       scheduledItems: [{ title: "Tempo ride", plannedLoad: 60 }],
       load: { scheduledLoad: 60, recommendedLoad: 70 },
     });
-    expect(result.fitness.actual).toHaveLength(2);
+    expect(result.fitness.actual).toHaveLength(1);
     expect(result.fitness.actual.at(-1)).toMatchObject({
       date: "2026-04-06",
       longTermLoad: 40,
@@ -198,11 +252,40 @@ describe("readPlanTabProjection", () => {
         load: 60,
       }),
     ]);
+    expect(result.goalMarkers).toEqual([expect.objectContaining({ label: "A race", priority: 8 })]);
+    expect(result.goalMarkersTruncated).toBe(false);
     expect(deps.readItemMetadata).toHaveBeenCalledWith(
       expect.objectContaining({
         scheduledIds: ["22222222-2222-4222-8222-222222222222"],
       }),
     );
+  });
+
+  it("makes the bounded goal-marker limit explicit", async () => {
+    const deps = dependencies();
+    vi.mocked(deps.readGoalMarkers).mockResolvedValue(
+      Array.from({ length: 101 }, (_, index) => ({
+        activityCategory: "run",
+        id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        label: `Goal ${index}`,
+        priority: 10 - (index % 11),
+        targetDate: "2026-06-01",
+      })),
+    );
+
+    const result = await readPlanTabProjection({
+      db: {
+        $client: {},
+        transaction: async (operation: (tx: unknown) => unknown) => operation({}),
+      } as never,
+      profileId,
+      request: { startDate: "2026-04-06", endDate: "2026-04-06" },
+      asOf,
+      dependencies: deps,
+    });
+
+    expect(result.goalMarkers).toHaveLength(100);
+    expect(result.goalMarkersTruncated).toBe(true);
   });
 
   it("returns every date in one contiguous 84-day display range", async () => {
@@ -229,6 +312,31 @@ describe("readPlanTabProjection", () => {
         request: { startDate: "2026-02-23", endDate: "2026-05-17" },
       }),
     );
+  });
+
+  it("accepts every shared centered analysis window for bounded on-demand projections", async () => {
+    const db = {
+      $client: {},
+      transaction: async (operation: (tx: unknown) => unknown) => operation({}),
+    } as never;
+
+    for (const period of PLAN_ANALYSIS_WINDOW_PERIODS) {
+      const window = buildCenteredPlanAnalysisWindow({ anchorDate: "2024-02-29", period });
+      const request = { startDate: window.startDate, endDate: window.endDate };
+      expect(planTabProjectionInputSchema.parse(request)).toEqual(request);
+
+      const deps = dependencies();
+      const result = await readPlanTabProjection({
+        db,
+        profileId,
+        request,
+        asOf,
+        dependencies: deps,
+      });
+
+      expect(Object.keys(result.dayLoads)).toHaveLength(window.inclusiveDayCount);
+      expect(deps.readEffectiveLoad).toHaveBeenCalledWith(expect.objectContaining({ request }));
+    }
   });
 
   it("reports remaining Load as scheduled work less completed work", async () => {
@@ -286,7 +394,7 @@ describe("readPlanTabProjection", () => {
     });
   });
 
-  it("publishes finite partial activity Load as the current completed Load", async () => {
+  it("preserves a labeled partial subtotal without treating it as complete Load", async () => {
     const deps = dependencies();
     const partialAggregate = {
       ...aggregate,
@@ -341,7 +449,18 @@ describe("readPlanTabProjection", () => {
       completed: new Map([
         [
           "66666666-6666-4666-8666-666666666666",
-          { title: "Partial evidence ride", activityCategory: "bike" },
+          {
+            title: "Partial evidence ride",
+            activityCategory: "bike",
+            categoryDoses: [
+              {
+                activityCategory: "bike" as const,
+                durationSeconds: { status: "complete" as const, value: 3600 },
+                distanceMeters: { status: "complete" as const, value: 30_000 },
+                elevationGainMeters: { status: "complete" as const, value: 450 },
+              },
+            ],
+          },
         ],
       ]),
     }));
@@ -358,18 +477,32 @@ describe("readPlanTabProjection", () => {
     });
 
     expect(result.dayLoads["2026-04-06"]).toMatchObject({
-      status: "complete",
+      status: "partial",
       commonLoad: 24,
       completedLoadStatus: "partial",
       completedLoad: 24,
-      hasUnavailableCompletedLoad: false,
+      knownCompletedLoadSubtotal: 24,
+      hasUnavailableCompletedLoad: true,
     });
     expect(result.timeline?.days[0]).toMatchObject({
       load: { completedLoad: 24, completedLoadStatus: "partial" },
       completedItems: [
-        { title: "Partial evidence ride", completedLoad: 24, completedLoadStatus: "partial" },
+        {
+          title: "Partial evidence ride",
+          completedLoad: 24,
+          completedLoadStatus: "partial",
+        },
       ],
     });
+    expect(result.ledgerItems[0]).toMatchObject({ loadStatus: "partial", load: 24 });
+    expect(result.ledgerItems[0]?.categoryDoses).toEqual([
+      {
+        activityCategory: "bike",
+        durationSeconds: { status: "complete", value: 3600 },
+        distanceMeters: { status: "complete", value: 30_000 },
+        elevationGainMeters: { status: "complete", value: 450 },
+      },
+    ]);
   });
 
   it("keeps an unavailable completed activity unavailable through the Plan-tab timeline", async () => {
@@ -504,20 +637,28 @@ describe("readPlanTabProjection", () => {
       remainingLoadStatus: "known_zero",
       remainingLoad: 0,
     });
-    expect(result.fitness.actual).toHaveLength(2);
-    expect(result.fitness.actual.map((point) => point.date)).toEqual(["2026-04-05", "2026-04-06"]);
+    expect(result.fitness.actual).toHaveLength(1);
+    expect(result.fitness.actual.map((point) => point.date)).toEqual(["2026-04-06"]);
     expect(result.fitness.actual.at(-1)).toMatchObject({
       date: "2026-04-06",
       longTermLoad: 40,
       recentLoad: 35,
       loadBalance: 5,
     });
-    expect(result.fitness.actual[0]?.longTermLoad).toBe(40);
+    expect(Math.max(...result.fitness.actual.map((point) => point.longTermLoad))).toBeLessThan(100);
+    expect(Math.max(...result.fitness.actual.map((point) => point.recentLoad))).toBeLessThan(100);
+    expect(result.fitness.actual.at(-1)?.longTermLoad).toBe(40);
     expect(result.fitness.scheduled).toEqual([
       expect.objectContaining({ date: "2026-04-06", longTermLoad: 40 }),
       expect.objectContaining({ date: "2026-04-07" }),
     ]);
     expect(result.fitness.scheduled[1]?.longTermLoad).toBeLessThan(40);
+    expect(result.fitness.scheduled[1]?.recentLoad).toBeLessThan(35);
+    expect(result.fitness.scheduled[1]?.loadBalance).toBeCloseTo(
+      (result.fitness.scheduled[1]?.longTermLoad ?? 0) -
+        (result.fitness.scheduled[1]?.recentLoad ?? 0),
+      10,
+    );
   });
 
   it("keeps empty completed Load unavailable when activity source coverage is partial", async () => {
@@ -559,6 +700,38 @@ describe("readPlanTabProjection", () => {
     });
   });
 
+  it("returns a zero-seeded trend value for every requested day without a published baseline", async () => {
+    const deps = dependencies();
+    const readModel = deps.readModel;
+    deps.readModel = vi.fn(async (input) => {
+      const model = await readModel(input);
+      return { ...model, currentBaseline: null, loadHistory: null } as never;
+    });
+
+    const result = await readPlanTabProjection({
+      db: {
+        $client: {},
+        transaction: async (operation: (tx: unknown) => unknown) => operation({}),
+      } as never,
+      profileId,
+      request: { startDate: "2026-04-06", endDate: "2026-04-08" },
+      asOf,
+      dependencies: deps,
+    });
+
+    expect(result.fitness.actual.map((point) => point.date)).toEqual(["2026-04-06"]);
+    expect(result.fitness.scheduled.map((point) => point.date)).toEqual([
+      "2026-04-06",
+      "2026-04-07",
+      "2026-04-08",
+    ]);
+    expect(result.fitness.scheduled).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ longTermLoad: 0, recentLoad: 0, loadBalance: 0 }),
+      ]),
+    );
+  });
+
   it("returns recorded fitness history before the planned forecast begins", async () => {
     const deps = dependencies();
     const readModel = deps.readModel;
@@ -572,6 +745,8 @@ describe("readPlanTabProjection", () => {
           algorithmVersion: "athlete-state-projection-v1",
           result: {
             status: "available",
+            identity: { endDate: "2026-04-05" },
+            maturity: { status: "mature" },
             points: [{ date: "2026-04-05", longTermLoad: 40, recentLoad: 35, loadBalance: 5 }],
           },
         },
@@ -618,9 +793,86 @@ describe("readPlanTabProjection", () => {
     ]);
     expect(result.fitness.scheduled[0]).toEqual(result.fitness.actual.at(-1));
     expect(result.fitness.scheduled[1]?.longTermLoad).toBeLessThan(40);
+    expect(result.fitnessHistory).toMatchObject({
+      status: "current",
+      verifiedThrough: "2026-04-05",
+    });
   });
 
-  it("reconstructs fitness with the same finite partial completed Load shown by the chart", async () => {
+  it("labels historical evidence while extending the trajectory through assumed zero-Load days", async () => {
+    const deps = dependencies();
+    const readModel = deps.readModel;
+    const verifiedThrough = "2026-03-31";
+    const points = Array.from({ length: 84 }, (_, index) => ({
+      date: addDate("2026-01-07", index),
+      coverageStatus: "complete" as const,
+      dailyLoad: 20,
+      longTermLoad: 30 + index / 10,
+      recentLoad: 25 + index / 10,
+      loadBalance: 5,
+    }));
+    deps.readModel = vi.fn(async (input) => {
+      const model = await readModel(input);
+      return {
+        ...model,
+        loadHistory: {
+          publishedRevision: 7,
+          algorithmVersion: "athlete-state-projection-v1",
+          result: {
+            status: "available",
+            policyVersion: "common_load_history_v1",
+            coverageStatus: "complete",
+            maturity: {
+              status: "establishing_baseline",
+              replayedDays: 90,
+              requiredMatureDays: 168,
+              coverage: { completeDays: 90, partialDays: 0, ratio: 1 },
+            },
+            identity: {
+              policyVersion: "common_load_history_v1",
+              basis: "completed_activity_history",
+              calculationIdentity: {
+                model: "gradientpeak_common_load_history",
+                version: "1",
+                asOf: "2026-04-01T00:00:00.000Z",
+              },
+              planningTimezone: "America/Los_Angeles",
+              startDate: "2026-01-01",
+              endDate: verifiedThrough,
+              commonLoad: { model: "gradientpeak_relative_load", version: "1" },
+              evidenceFingerprints: [],
+            },
+            points,
+          },
+        },
+      } as never;
+    });
+
+    const result = await readPlanTabProjection({
+      db: {
+        $client: {},
+        transaction: async (operation: (tx: unknown) => unknown) => operation({}),
+      } as never,
+      profileId,
+      request: { startDate: "2026-04-05", endDate: "2026-04-07" },
+      asOf,
+      dependencies: deps,
+    });
+
+    expect(result.fitnessHistory).toEqual({
+      status: "historical",
+      verifiedThrough,
+      maturity: "establishing_baseline",
+    });
+    expect(result.fitness.actual).toHaveLength(86);
+    expect(result.fitness.actual.at(-1)?.date).toBe("2026-04-06");
+    expect(result.fitness.actual.find((point) => point.date === verifiedThrough)).toMatchObject({
+      longTermLoad: points.at(-1)?.longTermLoad,
+      recentLoad: points.at(-1)?.recentLoad,
+    });
+  });
+
+  it("keeps a complete trajectory across partial completed Load without changing Load truth", async () => {
     const deps = dependencies();
     const readEffectiveLoad = deps.readEffectiveLoad;
     deps.readEffectiveLoad = vi.fn(async (input) => {
@@ -677,20 +929,16 @@ describe("readPlanTabProjection", () => {
       dependencies: deps,
     });
 
-    const retention = Math.exp(-1 / 42);
-    const partialLoadPriorState = (40 / retention - (1 - retention) * 100) / retention;
+    expect(result.dayLoads["2026-04-05"]).toMatchObject({
+      completedLoadStatus: "partial",
+      completedLoad: 100,
+    });
     expect(result.fitness.actual.map((point) => point.date)).toEqual([
       "2026-04-03",
       "2026-04-04",
       "2026-04-05",
       "2026-04-06",
     ]);
-    expect(result.dayLoads["2026-04-05"]?.completedLoad).toBe(100);
-    expect(result.fitness.actual[2]?.longTermLoad).toBeCloseTo(40 / retention, 10);
-    expect(result.fitness.actual[1]?.longTermLoad).toBeCloseTo(partialLoadPriorState, 10);
-    expect(result.fitness.actual[1]?.longTermLoad).toBeLessThan(
-      result.fitness.actual[2]?.longTermLoad ?? 0,
-    );
     expect(result.fitness.actual.at(-1)).toMatchObject({
       date: "2026-04-06",
       longTermLoad: 40,
@@ -702,7 +950,7 @@ describe("readPlanTabProjection", () => {
     expect(result.fitness.scheduled.at(-1)?.longTermLoad).toBeGreaterThan(40);
   });
 
-  it("keeps fallback bounded and stops a future forecast at unresolved source coverage", async () => {
+  it("keeps a bounded trajectory for past and future ranges without recorded Load", async () => {
     const db = {
       $client: {},
       transaction: async (operation: (tx: unknown) => unknown) => operation({}),
@@ -722,10 +970,57 @@ describe("readPlanTabProjection", () => {
       dependencies: dependencies(),
     });
 
-    expect(past.fitness.actual.map((point) => point.date)).toEqual(["2026-04-06"]);
+    expect(past.fitness.actual.map((point) => point.date)).toEqual(["2026-04-04", "2026-04-05"]);
+    expect(past.fitness.actual.every((point) => point.longTermLoad === 0)).toBe(true);
+    expect(past.fitness.actual.every((point) => point.recentLoad === 0)).toBe(true);
     expect(past.fitness.scheduled).toEqual([]);
     expect(future.fitness.actual.map((point) => point.date)).toEqual(["2026-04-06"]);
-    expect(future.fitness.scheduled).toEqual([]);
+    expect(future.fitness.scheduled.map((point) => point.date)).toEqual([
+      "2026-04-07",
+      "2026-04-08",
+    ]);
+    expect(future.fitness.scheduled.at(-1)?.recentLoad).toBeLessThan(35);
+  });
+
+  it("zero-seeds a complete requested trajectory beyond the bounded baseline horizon", async () => {
+    const result = await readPlanTabProjection({
+      db: {
+        $client: {},
+        transaction: async (operation: (tx: unknown) => unknown) => operation({}),
+      } as never,
+      profileId,
+      request: { startDate: "2028-04-06", endDate: "2028-04-08" },
+      asOf,
+      dependencies: dependencies(),
+    });
+
+    expect(result.fitness.scheduled.map((point) => point.date)).toEqual([
+      "2028-04-06",
+      "2028-04-07",
+      "2028-04-08",
+    ]);
+    expect(result.fitness.scheduled).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ longTermLoad: 0, recentLoad: 0, loadBalance: 0 }),
+      ]),
+    );
+  });
+
+  it("retains the authoritative baseline through the exact 366-day projection horizon", async () => {
+    const result = await readPlanTabProjection({
+      db: {
+        $client: {},
+        transaction: async (operation: (tx: unknown) => unknown) => operation({}),
+      } as never,
+      profileId,
+      request: { startDate: "2027-04-07", endDate: "2027-04-07" },
+      asOf,
+      dependencies: dependencies(),
+    });
+
+    expect(result.fitness.scheduled).toEqual([expect.objectContaining({ date: "2027-04-07" })]);
+    expect(result.fitness.scheduled[0]?.longTermLoad).toBeGreaterThan(0);
+    expect(result.fitness.scheduled[0]?.recentLoad).toBeGreaterThan(0);
   });
 
   it("anchors history and forecast to the profile planning date across a UTC date boundary", async () => {
@@ -769,7 +1064,7 @@ describe("readPlanTabProjection", () => {
     expect(result.fitness.scheduled.at(-1)?.date).toBe("2026-04-06");
   });
 
-  it("preserves a partial scheduled Load without forecasting it as zero", async () => {
+  it("preserves partial scheduled Load truth while using its known subtotal for trajectory", async () => {
     const deps = dependencies();
     const partialAggregate = {
       ...aggregate,
@@ -834,6 +1129,7 @@ describe("readPlanTabProjection", () => {
       commonLoad: 60,
       scheduledLoadStatus: "partial",
       scheduledLoad: 60,
+      knownScheduledLoadSubtotal: 60,
       remainingLoadStatus: "partial",
       remainingLoad: 60,
     });
@@ -844,10 +1140,11 @@ describe("readPlanTabProjection", () => {
     expect(result.ledgerItems).toEqual([
       expect.objectContaining({ kind: "planned", loadStatus: "partial", load: 60 }),
     ]);
-    expect(result.fitness.scheduled).toEqual([]);
+    expect(result.fitness.scheduled.map((point) => point.date)).toEqual(["2026-04-07"]);
+    expect(result.fitness.scheduled.at(-1)?.longTermLoad).toBeGreaterThan(40);
   });
 
-  it("preserves an unavailable scheduled Load without creating a rest-day zero", async () => {
+  it("preserves unavailable scheduled Load truth while forecasting a zero-Load trajectory", async () => {
     const deps = dependencies();
     const readEffectiveLoad = deps.readEffectiveLoad;
     const unavailableLoad = commonLoadResultSchema.parse({
@@ -920,20 +1217,32 @@ describe("readPlanTabProjection", () => {
     expect(result.ledgerItems).toEqual([
       expect.objectContaining({ kind: "planned", loadStatus: "unavailable", load: null }),
     ]);
-    expect(result.fitness.scheduled).toEqual([]);
+    expect(result.fitness.scheduled.map((point) => point.date)).toEqual(["2026-04-07"]);
+    expect(result.fitness.scheduled.at(-1)?.loadBalance).toBeCloseTo(
+      (result.fitness.scheduled.at(-1)?.longTermLoad ?? 0) -
+        (result.fitness.scheduled.at(-1)?.recentLoad ?? 0),
+      10,
+    );
   });
 
-  it("rejects an unbounded request before opening a transaction", async () => {
+  it("accepts 366 inclusive days and rejects a longer request before opening a transaction", async () => {
     const transaction = vi.fn();
+
+    expect(
+      planTabProjectionInputSchema.safeParse({
+        startDate: "2024-01-01",
+        endDate: "2024-12-31",
+      }).success,
+    ).toBe(true);
 
     await expect(
       readPlanTabProjection({
         db: { transaction } as never,
         profileId,
-        request: { startDate: "2026-01-01", endDate: "2026-04-01" },
+        request: { startDate: "2024-01-01", endDate: "2025-01-01" },
         dependencies: dependencies(),
       }),
-    ).rejects.toThrow("Plan-tab ranges cannot exceed 90 days");
+    ).rejects.toThrow("Plan-tab ranges cannot exceed 366 days");
     expect(transaction).not.toHaveBeenCalled();
     expect(
       planTabProjectionInputSchema.safeParse({

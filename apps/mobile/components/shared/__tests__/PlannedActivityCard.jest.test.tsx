@@ -85,7 +85,7 @@ describe("PlannedActivityCard", () => {
 
   it("reuses ActivityPlanCard when the scheduled plan preview is available", async () => {
     const onPress = jest.fn();
-    const plan = { id: "plan-1" };
+    const plan = { id: "plan-1", metrics };
     await renderNative(
       <PlannedActivityCard
         onPress={onPress}
@@ -102,7 +102,7 @@ describe("PlannedActivityCard", () => {
     );
 
     const card = screen.getByTestId("planned-activity-card-planned-1");
-    expect(card.props.plan).toEqual({ id: "plan-1", metrics });
+    expect(card.props.plan).toBe(plan);
     await fireEvent.press(card);
     expect(onPress).toHaveBeenCalledTimes(1);
   });

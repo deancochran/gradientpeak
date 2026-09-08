@@ -17,6 +17,7 @@ function IntegerStepper({
   min = 0,
   onChange,
   step = 1,
+  testId,
   value,
 }: IntegerStepperProps) {
   const labelText = label || "value";
@@ -61,6 +62,7 @@ function IntegerStepper({
           onBlur={() => commitDraft(draftValue)}
           onChangeText={setDraftValue}
           keyboardType="numeric"
+          testId={testId}
         />
         <Button
           accessibilityLabel={`Increase ${labelText}`}

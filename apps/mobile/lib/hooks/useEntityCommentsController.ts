@@ -63,7 +63,13 @@ export function useEntityCommentsController({
     comments: commentsQuery.data?.pages.flatMap((page) => page.comments) ?? [],
     handleAddComment,
     hasMoreComments: commentsQuery.hasNextPage ?? false,
+    isLoadingComments: commentsQuery.isLoading,
     isLoadingMoreComments: commentsQuery.isFetchingNextPage,
+    commentsError: commentsQuery.isError
+      ? commentsQuery.error instanceof Error
+        ? commentsQuery.error.message
+        : "Comments could not be loaded."
+      : null,
     loadMoreComments: () => {
       if (commentsQuery.hasNextPage && !commentsQuery.isFetchingNextPage) {
         void commentsQuery.fetchNextPage();

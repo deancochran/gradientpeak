@@ -58,6 +58,9 @@ describe("server-config", () => {
       supabaseUrl: "http://127.0.0.1:55321",
       overrideUrl: null,
     });
+    expect(module.getE2ERuntimeSentinel()).toBe(
+      "lane=e2e api=127.0.0.1:3100 supabase=127.0.0.1:55321",
+    );
   });
 
   it("ignores a persisted server override in Maestro E2E mode", async () => {
@@ -145,6 +148,7 @@ describe("server-config", () => {
       supabaseUrl: "https://db.gradientpeak.app",
       overrideUrl: null,
     });
+    expect(module.getE2ERuntimeSentinel()).toBeNull();
     await expect(module.setServerUrlOverride("http://127.0.0.1:3000")).rejects.toThrow(
       "disabled in production",
     );

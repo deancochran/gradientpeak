@@ -1,6 +1,7 @@
 import { type RecordingSessionArtifact, recordingSessionArtifactSchema } from "@repo/core";
 import type { ActivitySubmissionQueueJob } from "../activitySubmissionQueue/types";
 import { activitySubmissionQueueJobSchema } from "../activitySubmissionQueue/types";
+import { canonicalRecordingEvidenceUris } from "./recordingEvidencePaths";
 
 const DATABASE_NAME = "gradientpeak-recording-evidence.db";
 const CURRENT_SCHEMA_VERSION = 6;
@@ -453,7 +454,7 @@ export async function quarantineRecordingEvidenceSession(input: {
     if (quarantined) {
       await quarantineEvidence(
         tx,
-        null,
+        input.sessionId,
         `checkpoint:${reason}`,
         JSON.stringify({ sessionId: input.sessionId }),
       );
@@ -714,6 +715,413 @@ export async function rollbackRecordingEvidenceSession(
       sessionId,
     );
   });
+}
+
+type ExactRecordingEvidenceSessionRow = {
+  session_id: string;
+  profile_id: string;
+  state: string;
+  finalized_path: string | null;
+  finalized_sha256: string | null;
+  finalized_artifact_json: string | null;
+  checkpoint_json: string | null;
+};
+
+type ExactRecordingQueueRow = {
+  id: string;
+  operation_id: string;
+  profile_id: string;
+  session_id: string;
+  artifact_id: string;
+  status: string;
+  lease_owner: string | null;
+  lease_token: string | null;
+  job_json: string;
+};
+
+type ExactRecordingQuarantineRow = {
+  id: number;
+  session_id: string | null;
+  reason: string;
+  payload: string | null;
+};
+
+type ExactRecordingCleanupSnapshot = {
+  sessions: ExactRecordingEvidenceSessionRow[];
+  streams: Record<string, unknown>[];
+  quarantines: ExactRecordingQuarantineRow[];
+  queueJobs: ExactRecordingQueueRow[];
+  queueQuarantines: Record<string, unknown>[];
+  acceptanceTombstones: Record<string, unknown>[];
+};
+
+export type ExactRecordingEvidenceCleanupPlan = {
+  schemaVersion: 1;
+  sessionId: string;
+  profileId: string;
+  priorState: "absent" | "finalized" | "quarantined";
+  evidenceFingerprint: string;
+  finalizedArtifactSha256: string | null;
+  activityFilePath: string | null;
+  streamArtifactPaths: string[];
+  sqliteReferences: {
+    session: number;
+    streams: number;
+    quarantines: number;
+    queueJobs: number;
+    queueQuarantines: number;
+    acceptanceTombstones: number;
+  };
+  ownedRowIds: {
+    quarantineIds: number[];
+    queueJobIds: string[];
+    queueQuarantineIds: number[];
+    operationIds: string[];
+  };
+};
+
+async function rowsForIds<T>(
+  tx: RecordingEvidenceSqlExecutor,
+  table: string,
+  column: string,
+  ids: readonly (number | string)[],
+): Promise<T[]> {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => "?").join(", ");
+  return tx.getAllAsync<T>(
+    `SELECT * FROM ${table} WHERE ${column} IN (${placeholders}) ORDER BY ${column}`,
+    ...ids,
+  );
+}
+
+async function readExactRecordingCleanupSnapshot(
+  tx: RecordingEvidenceSqlExecutor,
+  sessionId: string,
+): Promise<ExactRecordingCleanupSnapshot> {
+  const sessions = await tx.getAllAsync<ExactRecordingEvidenceSessionRow>(
+    "SELECT * FROM recording_evidence_sessions WHERE session_id = ?",
+    sessionId,
+  );
+  const streams = await tx.getAllAsync<Record<string, unknown>>(
+    "SELECT * FROM recording_stream_envelopes WHERE session_id = ? ORDER BY stream_order",
+    sessionId,
+  );
+  const quarantines = await tx.getAllAsync<ExactRecordingQuarantineRow>(
+    `SELECT * FROM recording_evidence_quarantine
+       WHERE session_id = ? OR payload LIKE ?
+       ORDER BY id`,
+    sessionId,
+    `%"sessionId":"${sessionId}"%`,
+  );
+  const queueJobs = await tx.getAllAsync<ExactRecordingQueueRow>(
+    `SELECT * FROM activity_submission_queue_jobs
+       WHERE id = ? OR session_id = ? OR artifact_id = ? OR operation_id = ? OR job_json LIKE ?
+       ORDER BY id`,
+    sessionId,
+    sessionId,
+    sessionId,
+    sessionId,
+    `%${sessionId}%`,
+  );
+  const queueJobIds = queueJobs.map((row) => row.id);
+  const operationIds = queueJobs.map((row) => row.operation_id);
+  return {
+    sessions,
+    streams,
+    quarantines,
+    queueJobs,
+    queueQuarantines: await rowsForIds<Record<string, unknown>>(
+      tx,
+      "activity_submission_queue_quarantine",
+      "job_id",
+      [...new Set([sessionId, ...queueJobIds])],
+    ),
+    acceptanceTombstones: await rowsForIds<Record<string, unknown>>(
+      tx,
+      "recording_evidence_acceptance_tombstones",
+      "operation_id",
+      [...new Set([sessionId, ...operationIds])],
+    ),
+  };
+}
+
+function requireExactRecordingFilePath(path: unknown, expected: string, label: string): string {
+  if (typeof path !== "string" || !path.startsWith("file://")) {
+    throw new Error(`Exact recording cleanup ${label} is invalid`);
+  }
+  if (path !== expected) {
+    throw new Error(`Exact recording cleanup ${label} is outside its canonical session path`);
+  }
+  return path;
+}
+
+function exactRecordingCleanupPaths(
+  snapshot: ExactRecordingCleanupSnapshot,
+  sessionId: string,
+  profileId: string,
+): { activityFilePath: string | null; streamArtifactPaths: string[] } {
+  const session = snapshot.sessions[0];
+  const canonical = canonicalRecordingEvidenceUris(sessionId);
+  let activityFilePath = session?.finalized_path ?? null;
+  const streamArtifactPaths = new Set<string>();
+  if (activityFilePath) {
+    activityFilePath = requireExactRecordingFilePath(
+      activityFilePath,
+      canonical.activityFileUri,
+      "activity file path",
+    );
+  }
+  if (session?.finalized_artifact_json) {
+    const artifact = recordingSessionArtifactSchema.parse(
+      JSON.parse(session.finalized_artifact_json),
+    );
+    if (
+      artifact.sessionId !== sessionId ||
+      artifact.profileId !== profileId ||
+      artifact.activityFilePath !== activityFilePath
+    ) {
+      throw new Error("Exact recording cleanup finalized artifact ownership is invalid");
+    }
+    for (const path of artifact.streamArtifactPaths) {
+      streamArtifactPaths.add(
+        requireExactRecordingFilePath(path, canonical.streamDirectoryUri, "stream path"),
+      );
+    }
+  }
+  if (session?.checkpoint_json) {
+    const checkpoint = JSON.parse(session.checkpoint_json) as Record<string, unknown>;
+    if (checkpoint.sessionId !== sessionId || checkpoint.profileId !== profileId) {
+      throw new Error("Exact recording cleanup checkpoint ownership is invalid");
+    }
+    if (!Array.isArray(checkpoint.streamArtifactPaths)) {
+      throw new Error("Exact recording cleanup checkpoint paths are invalid");
+    }
+    for (const path of checkpoint.streamArtifactPaths) {
+      streamArtifactPaths.add(
+        requireExactRecordingFilePath(path, canonical.streamDirectoryUri, "checkpoint stream path"),
+      );
+    }
+  }
+  for (const row of snapshot.quarantines) {
+    if (row.session_id && row.session_id !== sessionId) {
+      throw new Error("Exact recording cleanup found a foreign quarantine reference");
+    }
+    if (row.reason !== "user-discarded-finalized-recording" || !row.payload) continue;
+    const payload = JSON.parse(row.payload) as Record<string, unknown>;
+    if (payload.sessionId !== sessionId || payload.profileId !== profileId) {
+      throw new Error("Exact recording cleanup discard ownership is invalid");
+    }
+    const discardedActivityPath = requireExactRecordingFilePath(
+      payload.activityFilePath,
+      canonical.activityFileUri,
+      "discard activity path",
+    );
+    if (activityFilePath && activityFilePath !== discardedActivityPath) {
+      throw new Error("Exact recording cleanup found conflicting activity paths");
+    }
+    activityFilePath = discardedActivityPath;
+    if (!Array.isArray(payload.streamArtifactPaths)) {
+      throw new Error("Exact recording cleanup discard paths are invalid");
+    }
+    for (const path of payload.streamArtifactPaths) {
+      streamArtifactPaths.add(
+        requireExactRecordingFilePath(path, canonical.streamDirectoryUri, "discard stream path"),
+      );
+    }
+  }
+  if (streamArtifactPaths.size > 1) {
+    throw new Error("Exact recording cleanup found multiple stream paths");
+  }
+  return { activityFilePath, streamArtifactPaths: [...streamArtifactPaths].sort() };
+}
+
+function validateExactRecordingCleanupSnapshot(
+  snapshot: ExactRecordingCleanupSnapshot,
+  sessionId: string,
+  profileId: string,
+): "absent" | "finalized" | "quarantined" {
+  if (snapshot.sessions.length > 1) {
+    throw new Error("Exact recording cleanup found duplicate session ownership");
+  }
+  const session = snapshot.sessions[0];
+  const referenceCount =
+    snapshot.streams.length +
+    snapshot.quarantines.length +
+    snapshot.queueJobs.length +
+    snapshot.queueQuarantines.length +
+    snapshot.acceptanceTombstones.length;
+  if (!session) {
+    if (referenceCount !== 0) {
+      throw new Error("Exact recording cleanup found orphaned session references");
+    }
+    return "absent";
+  }
+  if (session.session_id !== sessionId) {
+    throw new Error("Exact recording cleanup session ownership does not match");
+  }
+  if (session.profile_id !== profileId) {
+    throw new Error("Exact recording cleanup profile ownership does not match");
+  }
+  if (session.state !== "finalized" && session.state !== "quarantined") {
+    throw new Error("Exact recording cleanup requires a terminal local session");
+  }
+  if (snapshot.acceptanceTombstones.length > 0) {
+    throw new Error("Exact recording cleanup refuses accepted activity evidence");
+  }
+  for (const job of snapshot.queueJobs) {
+    const parsedJob = activitySubmissionQueueJobSchema.parse(JSON.parse(job.job_json));
+    const canonical = canonicalRecordingEvidenceUris(sessionId);
+    if (
+      job.id !== sessionId ||
+      job.operation_id !== sessionId ||
+      job.session_id !== sessionId ||
+      job.artifact_id !== sessionId ||
+      job.profile_id !== profileId ||
+      job.status === "complete" ||
+      job.lease_owner !== null ||
+      job.lease_token !== null ||
+      parsedJob.id !== sessionId ||
+      parsedJob.artifactId !== sessionId ||
+      parsedJob.sessionId !== sessionId ||
+      parsedJob.draft.recordingSessionId !== sessionId ||
+      parsedJob.draft.profileId !== profileId ||
+      parsedJob.localActivityFilePath !== canonical.activityFileUri ||
+      parsedJob.streamArtifactPaths.some((path) => path !== canonical.streamDirectoryUri)
+    ) {
+      throw new Error("Exact recording cleanup found a foreign or active queue reference");
+    }
+  }
+  if (snapshot.queueQuarantines.some((row) => (row as { job_id?: unknown }).job_id !== sessionId)) {
+    throw new Error("Exact recording cleanup found a foreign queue quarantine reference");
+  }
+  return session.state;
+}
+
+export async function prepareExactRecordingEvidenceCleanup(input: {
+  sessionId: string;
+  profileId: string;
+}): Promise<ExactRecordingEvidenceCleanupPlan> {
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+      input.sessionId,
+    ) ||
+    !input.profileId
+  ) {
+    throw new Error("Exact recording cleanup owner is invalid");
+  }
+  const db = await getRecordingEvidenceDatabase();
+  const holder: { snapshot?: ExactRecordingCleanupSnapshot } = {};
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    holder.snapshot = await readExactRecordingCleanupSnapshot(tx, input.sessionId);
+  });
+  const snapshot = holder.snapshot;
+  if (!snapshot) throw new Error("Exact recording cleanup snapshot is unavailable");
+  const priorState = validateExactRecordingCleanupSnapshot(
+    snapshot,
+    input.sessionId,
+    input.profileId,
+  );
+  const paths = exactRecordingCleanupPaths(snapshot, input.sessionId, input.profileId);
+  return {
+    schemaVersion: 1,
+    sessionId: input.sessionId,
+    profileId: input.profileId,
+    priorState,
+    evidenceFingerprint: await sha256(canonicalJson(snapshot)),
+    finalizedArtifactSha256: snapshot.sessions[0]?.finalized_sha256 ?? null,
+    ...paths,
+    sqliteReferences: {
+      session: snapshot.sessions.length,
+      streams: snapshot.streams.length,
+      quarantines: snapshot.quarantines.length,
+      queueJobs: snapshot.queueJobs.length,
+      queueQuarantines: snapshot.queueQuarantines.length,
+      acceptanceTombstones: snapshot.acceptanceTombstones.length,
+    },
+    ownedRowIds: {
+      quarantineIds: snapshot.quarantines.map((row) => row.id),
+      queueJobIds: snapshot.queueJobs.map((row) => row.id),
+      queueQuarantineIds: snapshot.queueQuarantines.map((row) => Number(row.id)),
+      operationIds: snapshot.queueJobs.map((row) => row.operation_id),
+    },
+  };
+}
+
+async function deleteRowsForIds(
+  tx: RecordingEvidenceSqlExecutor,
+  table: string,
+  column: string,
+  ids: readonly (number | string)[],
+): Promise<number> {
+  if (ids.length === 0) return 0;
+  const placeholders = ids.map(() => "?").join(", ");
+  const result = await tx.runAsync(
+    `DELETE FROM ${table} WHERE ${column} IN (${placeholders})`,
+    ...ids,
+  );
+  if ((result.changes ?? 0) !== ids.length) {
+    throw new Error(`Exact recording cleanup ${table} ownership changed`);
+  }
+  return result.changes ?? 0;
+}
+
+export async function completeExactRecordingEvidenceCleanup(
+  plan: ExactRecordingEvidenceCleanupPlan,
+): Promise<number> {
+  if (plan.schemaVersion !== 1) throw new Error("Exact recording cleanup plan is invalid");
+  const db = await getRecordingEvidenceDatabase();
+  let deletedSqliteRowCount = 0;
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    const current = await readExactRecordingCleanupSnapshot(tx, plan.sessionId);
+    validateExactRecordingCleanupSnapshot(current, plan.sessionId, plan.profileId);
+    if ((await sha256(canonicalJson(current))) !== plan.evidenceFingerprint) {
+      throw new Error("Exact recording cleanup evidence changed after file deletion");
+    }
+    if (plan.priorState === "absent") return;
+    deletedSqliteRowCount += await deleteRowsForIds(
+      tx,
+      "activity_submission_queue_quarantine",
+      "id",
+      plan.ownedRowIds.queueQuarantineIds,
+    );
+    deletedSqliteRowCount += await deleteRowsForIds(
+      tx,
+      "activity_submission_queue_jobs",
+      "id",
+      plan.ownedRowIds.queueJobIds,
+    );
+    deletedSqliteRowCount += await deleteRowsForIds(
+      tx,
+      "recording_evidence_quarantine",
+      "id",
+      plan.ownedRowIds.quarantineIds,
+    );
+    const streams = await tx.runAsync(
+      "DELETE FROM recording_stream_envelopes WHERE session_id = ?",
+      plan.sessionId,
+    );
+    if ((streams.changes ?? 0) !== plan.sqliteReferences.streams) {
+      throw new Error("Exact recording cleanup stream ownership changed");
+    }
+    deletedSqliteRowCount += streams.changes ?? 0;
+    const session = await tx.runAsync(
+      "DELETE FROM recording_evidence_sessions WHERE session_id = ? AND profile_id = ?",
+      plan.sessionId,
+      plan.profileId,
+    );
+    if ((session.changes ?? 0) !== 1) {
+      throw new Error("Exact recording cleanup session ownership changed");
+    }
+    deletedSqliteRowCount += session.changes ?? 0;
+
+    const remaining = await readExactRecordingCleanupSnapshot(tx, plan.sessionId);
+    const remainingCount = Object.values(remaining).reduce((total, rows) => total + rows.length, 0);
+    if (remainingCount !== 0) {
+      throw new Error("Exact recording cleanup left SQLite references");
+    }
+  });
+  if (claimedCheckpointSessionId === plan.sessionId) claimedCheckpointSessionId = null;
+  return deletedSqliteRowCount;
 }
 
 export type RecordingEvidenceRecovery =

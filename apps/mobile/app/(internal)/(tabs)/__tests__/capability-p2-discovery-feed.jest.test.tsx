@@ -180,6 +180,9 @@ jest.mock("@/components/shared/ActivityCard", () => ({
         )
       : null,
 }));
+jest.mock("@/components/shared", () => ({
+  AppHeader: createHost("AppHeader"),
+}));
 jest.mock("@/components/feed/FeedEmptyState", () => ({
   FeedEmptyState: () => React.createElement("Text", null, "No activity"),
 }));
@@ -207,6 +210,7 @@ jest.mock("@/components/shared/ResourceList", () => ({
 }));
 
 const DiscoverScreen = require("../discover").default;
+const CommunityScreen = require("../groups").default;
 const { FeedList } = require("../../../../components/feed/FeedList");
 
 describe("P2 discovery and feed capabilities", () => {
@@ -239,7 +243,7 @@ describe("P2 discovery and feed capabilities", () => {
         fetchNextPage,
       }),
     );
-    await renderNative(<DiscoverScreen />);
+    await renderNative(<CommunityScreen />);
     await fireEvent.press(screen.getByTestId("discover-scope-users"));
 
     await fireEvent.press(screen.getByTestId("discover-user-user-1"));

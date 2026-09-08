@@ -9,12 +9,10 @@ import {
   activityCardEffortSampleSchema,
   activityDetailDisplaySchema,
   activityDisplayModelSchema,
-  activityObservationQuantificationBundleSchema,
-  createSemanticMetric,
-  getNormalizedIntensity,
   type SemanticMetric,
 } from "@repo/core";
 import { z } from "zod";
+import { projectCompletedActivityCommonLoadMetrics } from "../../lib/completed-activity-common-load-metrics";
 
 type ActivityDetailSegmentSource = {
   id: string;
@@ -200,79 +198,7 @@ function availableMetric(
 }
 
 function quantificationMetrics(value: unknown): SemanticMetric[] {
-  const parsed = activityObservationQuantificationBundleSchema.safeParse(value);
-  if (!parsed.success) {
-    return [
-      {
-        key: "common_load",
-        label: "Load",
-        status: "unavailable",
-        value: null,
-        unit: "score",
-        reason: "quantification_unavailable",
-      },
-      {
-        key: "normalized_intensity",
-        label: "Intensity",
-        status: "unavailable",
-        value: null,
-        unit: "ratio",
-        reason: "quantification_unavailable",
-      },
-    ];
-  }
-  const commonLoad = parsed.data.summary.commonLoad;
-  if (commonLoad.status === "unavailable" || commonLoad.load === null) {
-    const reason = "reason" in commonLoad ? commonLoad.reason : "quantification_unavailable";
-    return [
-      {
-        key: "common_load",
-        label: "Load",
-        status: "unavailable",
-        value: null,
-        unit: "score",
-        reason,
-      },
-      {
-        key: "normalized_intensity",
-        label: "Intensity",
-        status: "unavailable",
-        value: null,
-        unit: "ratio",
-        reason,
-      },
-    ];
-  }
-  const status = commonLoad.status === "partial" ? "partial" : "available";
-  const reason = status === "partial" ? "quantification_partial" : null;
-  const normalizedIntensity = getNormalizedIntensity(commonLoad);
-  return [
-    createSemanticMetric({
-      key: "common_load",
-      label: "Load",
-      status,
-      value: commonLoad.load,
-      unit: "score",
-      reason,
-    }),
-    normalizedIntensity === null
-      ? createSemanticMetric({
-          key: "normalized_intensity",
-          label: "Intensity",
-          status: "unavailable",
-          value: null,
-          unit: "ratio",
-          reason: reason ?? "quantification_unavailable",
-        })
-      : createSemanticMetric({
-          key: "normalized_intensity",
-          label: "Intensity",
-          status,
-          value: normalizedIntensity,
-          unit: "ratio",
-          reason,
-        }),
-  ];
+  return projectCompletedActivityCommonLoadMetrics(value);
 }
 
 export function toActivityDisplayModel(input: {

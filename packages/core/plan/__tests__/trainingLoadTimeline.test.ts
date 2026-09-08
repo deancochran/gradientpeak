@@ -64,7 +64,7 @@ describe("training load timeline", () => {
       {
         week_start: "2026-07-06",
         week_end: "2026-07-12",
-        recommended_common_load: 0,
+        recommended_common_load: null,
         recommended_common_load_status: "partial",
         scheduled_common_load: 10,
         scheduled_common_load_status: "complete",
@@ -108,5 +108,19 @@ describe("training load timeline", () => {
         completed_common_load_status: "known_zero",
       }).success,
     ).toBe(false);
+    expect(
+      trainingLoadTimelineInputPointSchema.safeParse({
+        date: "2026-07-08",
+        scheduled_common_load: 25,
+        scheduled_common_load_status: "partial",
+      }).success,
+    ).toBe(false);
+    expect(
+      trainingLoadTimelineInputPointSchema.safeParse({
+        date: "2026-07-08",
+        scheduled_common_load: null,
+        scheduled_common_load_status: "partial",
+      }).success,
+    ).toBe(true);
   });
 });

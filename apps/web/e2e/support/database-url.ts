@@ -8,6 +8,39 @@ export type E2EDatabaseEnvironment = {
   POSTGRES_URL?: string;
 };
 
+const E2E_DATABASE_VARIABLES = new Set(["DATABASE_URL", "POSTGRES_URL"]);
+
+export function applyE2EFileEnvironment(
+  environment: Record<string, string | undefined>,
+  fileEnvironment: Record<string, string>,
+) {
+  for (const [key, value] of Object.entries(fileEnvironment)) {
+    environment[key] ??= E2E_DATABASE_VARIABLES.has(key)
+      ? e2eDatabaseUrlFromFile(key as keyof E2EDatabaseEnvironment, value)
+      : value;
+  }
+}
+
+function e2eDatabaseUrlFromFile(variable: keyof E2EDatabaseEnvironment, value: string) {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`Web E2E ${variable} from env files must be a valid PostgreSQL URL.`);
+  }
+  if (
+    (url.protocol !== "postgres:" && url.protocol !== "postgresql:") ||
+    !LOCAL_DATABASE_HOSTS.has(url.hostname) ||
+    !["54322", "55322"].includes(url.port)
+  ) {
+    throw new Error(
+      `Web E2E ${variable} from env files must use the repository local PostgreSQL endpoint.`,
+    );
+  }
+  url.port = "55322";
+  return url.toString();
+}
+
 export function localE2EDatabaseEnvironment(environment: E2EDatabaseEnvironment = process.env) {
   const databaseUrl =
     environment.DATABASE_URL !== undefined

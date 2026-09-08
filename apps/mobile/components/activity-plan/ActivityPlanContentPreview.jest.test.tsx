@@ -115,9 +115,9 @@ describe("ActivityPlanContentPreview", () => {
       />,
     );
 
-    expect(screen.getAllByText("Swim")).toHaveLength(1);
+    expect(screen.queryByText("Swim")).toBeNull();
     expect(screen.queryByText("swim")).toBeNull();
-    expect(screen.getByText("5 RPE · 20min")).toBeTruthy();
+    expect(screen.getByText("20min at 5 RPE")).toBeTruthy();
   });
 
   it("keeps distinct hierarchy labels and formats longer target summaries", async () => {
@@ -158,10 +158,10 @@ describe("ActivityPlanContentPreview", () => {
       />,
     );
 
-    expect(screen.getByText("Run")).toBeTruthy();
-    expect(screen.getByText("क · 2x")).toBeTruthy();
+    expect(screen.queryByText("Run")).toBeNull();
+    expect(screen.getByText("क · Repeat 2×")).toBeTruthy();
     expect(screen.getByText("कि")).toBeTruthy();
-    expect(screen.getByText("30 km/h · 90 rpm · 10min")).toBeTruthy();
+    expect(screen.getByText("10min at 30 km/h · 90 rpm")).toBeTruthy();
   });
 
   it("shows authored fallback by default and viewer-personalized output only when enabled", async () => {
@@ -198,7 +198,7 @@ describe("ActivityPlanContentPreview", () => {
         size="large"
       />,
     );
-    expect(screen.getByText(/240 W \(80% FTP\)/)).toBeTruthy();
+    expect(screen.getByText(/240 W/)).toBeTruthy();
   });
 
   it("shows every authored instruction annotation on the full detail preview", async () => {

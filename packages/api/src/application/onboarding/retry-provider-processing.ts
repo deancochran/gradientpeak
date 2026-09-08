@@ -75,7 +75,7 @@ export async function retryOnboardingProviderProcessing(input: {
     });
     const historyJob = provider.jobs.find((job) => job.id === roles.historyJobId);
     const profileJob = provider.jobs.find((job) => job.id === roles.profileJobId);
-    if (!provider.active || !historyJob || !profileJob) {
+    if (!provider.active || !historyJob || (roles.profileJobId !== null && !profileJob)) {
       throw new OnboardingProviderRecoveryConflictError(
         "Anchored provider work cannot be replaced during recovery",
       );

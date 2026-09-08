@@ -53,7 +53,6 @@ Cover at least:
 5. Supported coordinate-bearing historical FIT, GPX, and TCX import on web and mobile.
 6. Existing and provider-ingested GPS activity display.
 7. Timer, plan, lap, review, submission, sensor, and trainer behavior without a location prerequisite.
-8. Atomic parity classification and exact runtime-evidence identities.
 
 ## Runtime proof still required
 

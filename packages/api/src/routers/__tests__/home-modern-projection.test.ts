@@ -61,7 +61,7 @@ describe("home plan card projection", () => {
     ).toBeNull();
   });
 
-  it("retains known partial planned Load with a partial projection status", () => {
+  it("withholds projected Load when planned evidence coverage is partial", () => {
     expect(
       projectCommonLoad({
         current: { longTermLoad: 40, recentLoad: 50 },
@@ -69,7 +69,7 @@ describe("home plan card projection", () => {
         days: 1,
         items: [{ date: "2026-04-04", commonLoad: { status: "partial", load: 70 } }],
       }),
-    ).toEqual([expect.objectContaining({ plannedLoad: 70, status: "partial" })]);
+    ).toBeNull();
   });
 
   it("rejects mixed-category composition from V3 segments", () => {

@@ -148,13 +148,15 @@ export function deriveOnboardingReadiness(
         skipped_count: provider.importRun?.skipped_count ?? 0,
         failed_count: provider.importRun?.failed_count ?? 0,
         profile:
-          profileJob?.status === "completed"
+          roles?.profileJobId === null
             ? ("complete" as const)
-            : profileJob?.status === "running"
-              ? ("running" as const)
-              : profileJob?.status === "queued" || profileJob?.status === "failed"
-                ? ("queued" as const)
-                : ("recovery_required" as const),
+            : profileJob?.status === "completed"
+              ? ("complete" as const)
+              : profileJob?.status === "running"
+                ? ("running" as const)
+                : profileJob?.status === "queued" || profileJob?.status === "failed"
+                  ? ("queued" as const)
+                  : ("recovery_required" as const),
       },
       next_actions: [
         ...(state === "recovery_required"

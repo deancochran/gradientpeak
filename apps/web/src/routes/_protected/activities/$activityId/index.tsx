@@ -28,7 +28,7 @@ import {
 import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 import { getNormalizedPowerPresentation } from "@repo/ui/lib/normalized-power-presentation";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Loader2, Lock, Share2, Trash2 } from "lucide-react";
+import { Loader2, Lock, Share2, Trash2, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { SessionRpeCard } from "../../../../components/activity/session-rpe-card";
@@ -97,6 +97,7 @@ function ActivityDetailPage() {
   const [deleteFailed, setDeleteFailed] = useState(false);
   const [visibilityDialogOpen, setVisibilityDialogOpen] = useState(false);
   const activityQuery = api.activities.getById.useQuery({ id: activityId });
+  const ownedActivitiesQuery = api.activities.listPaginated.useQuery({ limit: 20 });
   const effortsQuery = api.activities.getEfforts.useQuery({ id: activityId });
   const detail = activityQuery.data?.detail;
   const activity = detail?.summary;
@@ -149,6 +150,22 @@ function ActivityDetailPage() {
     activity?.time.startedAt,
   );
   const isOwner = activity?.capabilities.canEdit ?? false;
+  const completedActivityProvidersQuery =
+    api.activities.getCompletedActivityProviderEligibility.useQuery(
+      { activityId },
+      {
+        enabled: isOwner,
+        refetchInterval: (query) =>
+          query.state.data?.some(
+            (provider) => provider.status === "queued" || provider.status === "running",
+          )
+            ? 5_000
+            : false,
+      },
+    );
+  const stravaCompletedActivity = completedActivityProvidersQuery.data?.find(
+    (provider) => provider.provider === "strava",
+  );
   const ingestion = detail?.ingestion;
   const ingestionStatus = ingestion?.status ?? null;
   const hasFailedIngestion = ingestionStatus?.startsWith("failed") ?? false;
@@ -218,6 +235,32 @@ function ActivityDetailPage() {
       toast.success("Activity deleted");
       void navigate({ to: "/activities" });
     },
+  });
+  const resolveImportedSourceMutation = api.activities.resolveImportedSource.useMutation({
+    onSuccess: async () => {
+      await utils.activities.getById.invalidate({ id: activityId });
+    },
+    onError: () => toast.error("Imported source could not be updated"),
+  });
+  const keepImportedSourceSeparateMutation = api.activities.keepImportedSourceSeparate.useMutation({
+    onSuccess: () => toast.success("Separate activity import queued"),
+    onError: () => toast.error("Separate activity could not be queued"),
+  });
+  const sendCompletedActivityMutation = api.activities.sendCompletedActivityToProvider.useMutation({
+    retry: false,
+    onSuccess: (result) => {
+      if (result.status === "queued") toast.success("Strava upload queued");
+      else if (result.status === "completed") toast.success("Activity already sent to Strava");
+      else if (result.status === "reconnect_required") {
+        toast.error("Reconnect Strava to grant activity upload access");
+      } else if (result.status === "unsupported_evidence") {
+        toast.error("A current accepted FIT, TCX, or GPX file is required");
+      } else if (result.status === "dispatch_uncertain") {
+        toast.error("Upload outcome is uncertain and will not be retried automatically");
+      } else toast.error("Activity could not be sent to Strava");
+      void utils.activities.getCompletedActivityProviderEligibility.invalidate({ activityId });
+    },
+    onError: () => toast.error("Activity could not be sent to Strava"),
   });
 
   useEffect(() => {
@@ -362,6 +405,43 @@ function ActivityDetailPage() {
                 </DialogContent>
               </Dialog>
             ) : null}
+            {isOwner && stravaCompletedActivity?.status === "ready" ? (
+              <Button
+                disabled={sendCompletedActivityMutation.isPending}
+                onClick={() =>
+                  sendCompletedActivityMutation.mutate({
+                    activityId: activity.id,
+                    provider: "strava",
+                  })
+                }
+                type="button"
+                variant="outline"
+              >
+                {sendCompletedActivityMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <UploadCloud className="mr-2 h-4 w-4" />
+                )}
+                Send to Strava
+              </Button>
+            ) : null}
+            {isOwner &&
+            (stravaCompletedActivity?.status === "queued" ||
+              stravaCompletedActivity?.status === "running" ||
+              stravaCompletedActivity?.status === "completed") ? (
+              <Button disabled type="button" variant="outline">
+                {stravaCompletedActivity.status !== "completed" ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <UploadCloud className="mr-2 h-4 w-4" />
+                )}
+                {stravaCompletedActivity.status === "completed"
+                  ? "Sent to Strava"
+                  : stravaCompletedActivity.status === "running"
+                    ? "Sending to Strava"
+                    : "Strava upload queued"}
+              </Button>
+            ) : null}
             <Button onClick={handleShare} type="button" variant="outline">
               <Share2 className="mr-2 h-4 w-4" />
               Share
@@ -410,6 +490,26 @@ function ActivityDetailPage() {
         </div>
       ) : null}
 
+      {isOwner && stravaCompletedActivity?.status === "reconnect_required" ? (
+        <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm">
+          <span>{stravaCompletedActivity.reason}</span>{" "}
+          <Link className="font-medium text-primary underline" to="/integrations">
+            Reconnect Strava
+          </Link>
+        </div>
+      ) : null}
+
+      {isOwner &&
+      (stravaCompletedActivity?.status === "dispatch_uncertain" ||
+        stravaCompletedActivity?.status === "failed") ? (
+        <div
+          className="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+          role="alert"
+        >
+          {stravaCompletedActivity.reason}
+        </div>
+      ) : null}
+
       <DetailMetricGrid
         items={[
           { label: loadPresentation.commonLoad.label, value: loadPresentation.commonLoad.value },
@@ -434,12 +534,12 @@ function ActivityDetailPage() {
             value: formatDuration(detail.performance.elapsedSeconds),
           },
           {
-            label: detail.performance.timingCoverage === "partial" ? "Active (partial)" : "Active",
-            value: formatDuration(detail.performance.activeSeconds),
+            label: "Active",
+            value: `${detail.performance.timingCoverage === "partial" && detail.performance.activeSeconds !== null ? "~" : ""}${formatDuration(detail.performance.activeSeconds)}`,
           },
           {
-            label: detail.performance.timingCoverage === "partial" ? "Moving (partial)" : "Moving",
-            value: formatDuration(detail.performance.movingSeconds),
+            label: "Moving",
+            value: `${detail.performance.timingCoverage === "partial" && detail.performance.movingSeconds !== null ? "~" : ""}${formatDuration(detail.performance.movingSeconds)}`,
           },
           { label: "Avg power", value: formatPower(detail.performance.averagePower) },
           {
@@ -461,8 +561,8 @@ function ActivityDetailPage() {
                 : normalizedPowerAnalysisStatus === "failed"
                   ? "Analysis failed"
                   : normalizedPowerPresentation?.status === "unavailable"
-                    ? "Unavailable"
-                    : formatPower(normalizedPowerPresentation?.valueWatts),
+                    ? "—"
+                    : `${normalizedPowerPresentation?.status === "partial" ? "~" : ""}${formatPower(normalizedPowerPresentation?.valueWatts)}`,
           },
           { label: "Started", value: formatDateTime(activity.time.startedAt) },
         ]}
@@ -723,6 +823,96 @@ function ActivityDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {isOwner && activityQuery.data?.importedSources?.length ? (
+        <details
+          className="rounded-xl border border-border px-4 py-3"
+          data-testid="imported-sources"
+        >
+          <summary className="cursor-pointer text-sm font-medium">Imported sources</summary>
+          <div className="mt-3 space-y-2">
+            {activityQuery.data.importedSources.map((source) => (
+              <div className="flex items-center justify-between gap-3 text-sm" key={source.id}>
+                <span>
+                  <span className="font-medium capitalize">{source.provider}</span>
+                  <span className="ml-2 text-muted-foreground">
+                    {source.resolutionStatus === "review" ? "Needs review" : "Connected source"}
+                  </span>
+                </span>
+                {source.resolutionStatus === "review" ? (
+                  <span className="flex flex-wrap gap-2">
+                    <Button
+                      disabled={resolveImportedSourceMutation.isPending}
+                      onClick={() =>
+                        resolveImportedSourceMutation.mutate({
+                          action: "confirm_same",
+                          sourceReferenceId: source.id,
+                        })
+                      }
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      Same activity
+                    </Button>
+                    <Button
+                      disabled={keepImportedSourceSeparateMutation.isPending}
+                      onClick={() =>
+                        keepImportedSourceSeparateMutation.mutate({ sourceReferenceId: source.id })
+                      }
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      Keep separate
+                    </Button>
+                    <label className="sr-only" htmlFor={`move-source-${source.id}`}>
+                      Move to an activity
+                    </label>
+                    <select
+                      defaultValue=""
+                      disabled={resolveImportedSourceMutation.isPending}
+                      id={`move-source-${source.id}`}
+                      onChange={(event) => {
+                        if (event.target.value) {
+                          resolveImportedSourceMutation.mutate({
+                            action: "move",
+                            sourceReferenceId: source.id,
+                            targetActivityId: event.target.value,
+                          });
+                        }
+                      }}
+                    >
+                      <option value="">Move to activity…</option>
+                      {(ownedActivitiesQuery.data?.items ?? [])
+                        .filter((candidate) => candidate.id !== activityId)
+                        .map((candidate) => (
+                          <option key={candidate.id} value={candidate.id}>
+                            {candidate.title}
+                          </option>
+                        ))}
+                    </select>
+                    <Button
+                      disabled={resolveImportedSourceMutation.isPending}
+                      onClick={() =>
+                        resolveImportedSourceMutation.mutate({
+                          action: "ignore",
+                          sourceReferenceId: source.id,
+                        })
+                      }
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      Ignore
+                    </Button>
+                  </span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
 
       <EntityCommentsCard
         entityId={activity.id}

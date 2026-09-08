@@ -39,6 +39,7 @@ import {
   activityRoutes,
   activitySegments,
   activitySessionRpeEvidence,
+  activitySourceReferences,
   activityTrainingEffects,
   athleteRecalculationQueue,
   comments,
@@ -159,6 +160,16 @@ export const publicActivityArtifactLinksUpdateSchema = createUpdateSchema(activi
 export const publicActivitySegmentsRowSchema = createSelectSchema(activitySegments);
 export const publicActivitySegmentsInsertSchema = createInsertSchema(activitySegments);
 export const publicActivitySegmentsUpdateSchema = createUpdateSchema(activitySegments);
+
+export const publicActivitySourceReferencesRowSchema = createSelectSchema(
+  activitySourceReferences,
+).extend({ relationship_kind: z.enum(["imported", "exported", "both"]) });
+export const publicActivitySourceReferencesInsertSchema = createInsertSchema(
+  activitySourceReferences,
+).extend({ relationship_kind: z.enum(["imported", "exported", "both"]).optional() });
+export const publicActivitySourceReferencesUpdateSchema = createUpdateSchema(
+  activitySourceReferences,
+).extend({ relationship_kind: z.enum(["imported", "exported", "both"]).optional() });
 
 export const publicActivityEffortsRowSchema = createSelectSchema(activityEfforts).extend({
   distance_meters: z.number().int().nullable().optional(),

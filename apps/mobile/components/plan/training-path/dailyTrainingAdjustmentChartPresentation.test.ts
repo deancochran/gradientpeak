@@ -5,6 +5,7 @@ import {
   buildDailyTrainingAdjustmentCartesianContract,
   buildDailyTrainingAdjustmentChartData,
   buildDailyTrainingAdjustmentChartDomains,
+  buildDailyTrainingAdjustmentLoadDomain,
   formatPlanChartDateLabel,
   getPlanChartBucketDate,
   hasRenderableDailyTrainingAdjustmentData,
@@ -32,6 +33,10 @@ describe("daily training adjustment chart presentation", () => {
         projectedFitness: null,
         actualFatigue: null,
         projectedFatigue: null,
+        actualForm: null,
+        projectedForm: null,
+        fitness: null,
+        fatigue: null,
         form: null,
       },
     ]);
@@ -104,6 +109,7 @@ describe("daily training adjustment chart presentation", () => {
     ]);
     expect(chartData[0]).toMatchObject({ plannedLoad: null });
     expect(buildDailyTrainingAdjustmentChartDomains(chartData)).toEqual({
+      fatigueDomain: [0, 100],
       fitnessDomain: [0, 100],
       formDomain: [-11, 11],
       loadDomain: [0, 100],
@@ -116,6 +122,28 @@ describe("daily training adjustment chart presentation", () => {
     ]);
 
     expect(chartData[0]).toMatchObject({ plannedLoad: 0 });
+  });
+
+  it("scales fitted daily Load to the selected range maximum", () => {
+    expect(buildDailyTrainingAdjustmentLoadDomain([0, 18, 40])).toEqual([0, 50]);
+    expect(buildDailyTrainingAdjustmentLoadDomain([120, 500])).toEqual([0, 600]);
+    expect(buildDailyTrainingAdjustmentLoadDomain([])).toEqual([0, 1]);
+  });
+
+  it("renders finite partial-status Load normally without exposing its internal status", () => {
+    const chartData = buildDailyTrainingAdjustmentChartData([
+      {
+        date: "2026-07-28",
+        effectiveCompletedLoad: 35,
+        effectiveCompletedLoadStatus: "partial",
+      },
+      { date: "2026-07-29", plannedLoad: 80 },
+    ]);
+
+    expect(chartData[0]).toMatchObject({ completedLoad: 35 });
+    expect(
+      buildDailyTrainingAdjustmentChartDomains(chartData, { tightLoadDomain: true }).loadDomain,
+    ).toEqual([0, 100]);
   });
 
   it("keeps unavailable-only completed Load as a gap and labels it unavailable", () => {
@@ -139,9 +167,10 @@ describe("daily training adjustment chart presentation", () => {
       { date: "2026-07-29", fitnessCtl: 114, actualFatigueAtl: 120 },
     ]);
 
-    expect(buildDailyTrainingAdjustmentChartDomains(chartData).fitnessDomain).toEqual([
-      108.8, 121.2,
-    ]);
+    expect(buildDailyTrainingAdjustmentChartDomains(chartData)).toMatchObject({
+      fitnessDomain: [108.8, 115.2],
+      fatigueDomain: [114.8, 121.2],
+    });
   });
 
   it("keeps the focused Fitness / Fatigue scale ordered for unexpected negative values", () => {
@@ -185,6 +214,8 @@ describe("daily training adjustment chart presentation", () => {
 
     expect(aggregateDailyTrainingAdjustmentPoints(points, "weekly")).toEqual([
       expect.objectContaining({
+        bucketEndDate: "2026-07-01",
+        bucketStartDate: "2026-06-29",
         date: "2026-06-29",
         effectiveCompletedLoad: 15,
         effectiveCompletedLoadStatus: "partial",
@@ -195,6 +226,87 @@ describe("daily training adjustment chart presentation", () => {
       }),
     ]);
     expect(aggregateDailyTrainingAdjustmentPoints(points, "monthly")).toHaveLength(2);
+  });
+
+  it("keeps actual and projected trend endpoints in a bin that crosses today", () => {
+    const aggregated = aggregateDailyTrainingAdjustmentPoints(
+      [
+        { date: "2026-06-03", fitnessCtl: 40, actualFatigueAtl: 45, formTsb: -5 },
+        {
+          date: "2026-06-05",
+          scheduledFitnessCtl: 42,
+          scheduledFatigueAtl: 47,
+          scheduledFormTsb: -4,
+        },
+      ],
+      "weekly",
+    );
+
+    expect(
+      buildDailyTrainingAdjustmentChartData(aggregated, { todayDate: "2026-06-04" })[0],
+    ).toMatchObject({
+      actualFatigue: 45,
+      actualFitness: 40,
+      projectedFatigue: 47,
+      projectedFitness: 42,
+      actualForm: -5,
+      projectedForm: -4,
+      fitness: 42,
+      fatigue: 47,
+      form: -4,
+    });
+    expect(aggregated[0]).toMatchObject({ formTsb: -5, scheduledFormTsb: -4 });
+  });
+
+  it("interpolates sparse chart trends without extending actual or projected state across Today", () => {
+    const chartData = buildDailyTrainingAdjustmentChartData(
+      [
+        { date: "2026-06-03" },
+        {
+          date: "2026-06-04",
+          fitnessCtl: 40,
+          actualFatigueAtl: 45,
+          formTsb: -5,
+          scheduledFitnessCtl: 42,
+          scheduledFatigueAtl: 47,
+          scheduledFormTsb: -4,
+        },
+        { date: "2026-06-05", scheduledFormTsb: -3 },
+      ],
+      { interpolateTrends: true, todayDate: "2026-06-04" },
+    );
+
+    expect(chartData).toEqual([
+      expect.objectContaining({
+        actualFitness: 40,
+        actualFatigue: 45,
+        projectedFitness: null,
+        fitness: 40,
+        fatigue: 45,
+        form: -5,
+      }),
+      expect.objectContaining({
+        actualFitness: 40,
+        actualFatigue: 45,
+        actualForm: -5,
+        projectedForm: -4,
+        projectedFitness: 42,
+        projectedFatigue: 47,
+        fitness: 40,
+        fatigue: 45,
+        form: -5,
+      }),
+      expect.objectContaining({
+        actualFitness: null,
+        actualForm: null,
+        projectedForm: -3,
+        projectedFitness: 42,
+        projectedFatigue: 47,
+        fitness: 40,
+        fatigue: 45,
+        form: -3,
+      }),
+    ]);
   });
 
   it("marks only a complete seven-day weekly bucket as complete", () => {
@@ -230,7 +342,7 @@ describe("daily training adjustment chart presentation", () => {
     });
   });
 
-  it("keeps finite partial planned and remaining totals visible as incomplete", () => {
+  it("announces a finite planned subtotal without exposing incomplete evidence", () => {
     const result = aggregateDailyTrainingAdjustmentPoints(
       [
         {
@@ -257,9 +369,9 @@ describe("daily training adjustment chart presentation", () => {
       effectiveRemainingLoad: 25,
       effectiveRemainingLoadStatus: "partial",
     });
-    expect(buildDailyTrainingAdjustmentAccessibilityValue(result ?? null)).toContain(
-      "Planned Common Load 40 incomplete",
-    );
+    const accessibilityValue = buildDailyTrainingAdjustmentAccessibilityValue(result ?? null);
+    expect(accessibilityValue).toContain("Planned Common Load 40");
+    expect(accessibilityValue).not.toMatch(/~40|partial|subtotal/i);
   });
 
   it("keeps known-zero planned Load distinct from unavailable in accessibility copy", () => {
@@ -279,7 +391,7 @@ describe("daily training adjustment chart presentation", () => {
     ).toContain("Planned Common Load unavailable");
   });
 
-  it("aggregates known plus unavailable completed Load as a partial known subtotal", () => {
+  it("renders a known subtotal without exposing its internal partial status", () => {
     const result = aggregateDailyTrainingAdjustmentPoints(
       [
         {
@@ -303,9 +415,9 @@ describe("daily training adjustment chart presentation", () => {
       effectiveCompletedLoadStatus: "partial",
       effectiveLoadStatus: "partial",
     });
-    expect(buildDailyTrainingAdjustmentAccessibilityValue(result ?? null)).toContain(
-      "Completed Common Load 18 incomplete",
-    );
+    const accessibilityValue = buildDailyTrainingAdjustmentAccessibilityValue(result ?? null);
+    expect(accessibilityValue).toContain("Completed Common Load 18");
+    expect(accessibilityValue).not.toMatch(/~18|partial|subtotal/i);
   });
 
   it("splits actual and planned fitness and fatigue at Today", () => {
@@ -344,6 +456,10 @@ describe("daily training adjustment chart presentation", () => {
         projectedFitness: null,
         actualFatigue: 44,
         projectedFatigue: null,
+        actualForm: -5,
+        projectedForm: null,
+        fitness: 39,
+        fatigue: 44,
         form: -5,
       }),
       expect.objectContaining({
@@ -351,6 +467,10 @@ describe("daily training adjustment chart presentation", () => {
         projectedFitness: 41,
         actualFatigue: 45,
         projectedFatigue: 46,
+        actualForm: 0,
+        projectedForm: 0,
+        fitness: 40,
+        fatigue: 45,
         form: 0,
       }),
       expect.objectContaining({
@@ -358,6 +478,10 @@ describe("daily training adjustment chart presentation", () => {
         projectedFitness: 43,
         actualFatigue: null,
         projectedFatigue: 48,
+        actualForm: null,
+        projectedForm: 12,
+        fitness: 43,
+        fatigue: 48,
         form: 12,
       }),
     ]);

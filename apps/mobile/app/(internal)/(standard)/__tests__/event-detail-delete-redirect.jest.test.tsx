@@ -5,6 +5,7 @@ import { renderNative, screen } from "../../../../test/render-native";
 import EventDetailScreen from "../event-detail";
 
 var mockRouterNavigate = jest.fn();
+var mockRouterDismissTo = jest.fn();
 var mockQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
   data: null,
   error: { data: { code: "NOT_FOUND" } },
@@ -45,6 +46,7 @@ jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ id: "event-1" }),
   useRouter: () => ({
     back: jest.fn(),
+    dismissTo: mockRouterDismissTo,
     push: jest.fn(),
     navigate: mockRouterNavigate,
     replace: jest.fn(),
@@ -231,6 +233,7 @@ jest.mock("@/lib/api", () => ({
 describe("event detail deleted record redirect", () => {
   beforeEach(() => {
     mockRouterNavigate.mockReset();
+    mockRouterDismissTo.mockReset();
     mockQuery.mockClear();
   });
 
@@ -245,13 +248,17 @@ describe("event detail deleted record redirect", () => {
     );
   });
 
-  it("redirects away instead of showing a transient not-found state", async () => {
+  it("dismisses a deleted event route back to the calendar stack", async () => {
     await renderNative(<EventDetailScreen />);
 
     await waitFor(() => {
-      expect(mockRouterNavigate).toHaveBeenCalledWith("/(internal)/(tabs)/calendar");
+      expect(mockRouterDismissTo).toHaveBeenCalledWith({
+        pathname: "/(internal)/(tabs)/plan",
+        params: { view: "calendar" },
+      });
     });
 
+    expect(mockRouterNavigate).not.toHaveBeenCalled();
     expect(screen.getByText("Closing event...")).toBeTruthy();
     expect(screen.queryByText("Event not found")).toBeNull();
   });

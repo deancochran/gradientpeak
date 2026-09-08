@@ -1,13 +1,11 @@
 import {
   type ActivityPlanPresentationModel,
   type ActivityPlanStructure,
-  type ActivityPrescriptionQuantificationBundle,
   deriveActivityPlanPresentation,
-  getPlannedEstimate,
-  type PlannedEstimate,
   type SemanticMetric,
 } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
+import { formatActivityPlanHeadlineMetric } from "@repo/ui/lib/activity-plan-metric-presentation";
 import type { ReactNode } from "react";
 import { View } from "react-native";
 import { ActivityPlanAttributionRow } from "./ActivityPlanAttributionRow";
@@ -20,7 +18,6 @@ type ActivityPlanSummaryProps = {
   owner?: EntityOwner | null;
   presentation?: ActivityPlanPresentationModel | null;
   projectionMetrics?: readonly SemanticMetric[];
-  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
   structure?: ActivityPlanStructure | unknown;
   subtitle?: string | null;
   testID?: string;
@@ -45,135 +42,31 @@ export function countActivityPlanSteps(structure: ActivityPlanStructure | unknow
   return deriveActivityPlanPresentation(structure)?.stepCount ?? 0;
 }
 
-function formatMetricValue(metric: SemanticMetric): string | null {
-  if (metric.status === "unavailable") return null;
-  const formatted =
-    metric.unit === "seconds"
-      ? formatDurationSeconds(metric.value)
-      : metric.unit === "meters"
-        ? metric.value >= 1_000
-          ? `${Math.round((metric.value / 1_000) * 10) / 10} km`
-          : `${Math.round(metric.value)} m`
-        : metric.unit === "ratio"
-          ? metric.value.toFixed(2)
-          : String(Math.round(metric.value * 10) / 10);
-  if (formatted === null) return null;
-  return metric.status === "partial" ? `${formatted} known (partial)` : formatted;
-}
-
-function formatDurationSeconds(seconds: number): string {
-  const roundedSeconds = Math.max(0, Math.round(seconds));
-  const hours = Math.floor(roundedSeconds / 3_600);
-  const minutes = Math.floor((roundedSeconds % 3_600) / 60);
-  const remainder = roundedSeconds % 60;
-  if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-  if (minutes > 0) return remainder > 0 ? `${minutes}m ${remainder}s` : `${minutes}m`;
-  return `${remainder}s`;
-}
-
-function metricsFromEstimate(estimate: PlannedEstimate): SemanticMetric[] {
-  const metric = (
-    key: SemanticMetric["key"],
-    label: string,
-    unit: string,
-    quantity: PlannedEstimate["durationSeconds"] | PlannedEstimate["load"],
-    provenance: SemanticMetric["provenance"],
-  ): SemanticMetric => {
-    if (quantity.status === "unavailable" || quantity.value === null) {
-      return {
-        key,
-        label,
-        status: "unavailable",
-        value: null,
-        unit,
-        reason: quantity.reason,
-        provenance: null,
-      };
-    }
-    return quantity.status === "partial"
-      ? {
-          key,
-          label,
-          status: "partial",
-          value: quantity.value,
-          unit,
-          reason: quantity.reason,
-          provenance,
-        }
-      : { key, label, status: "available", value: quantity.value, unit, reason: null, provenance };
-  };
-  const authoredProvenance = (
-    quantity: PlannedEstimate["distanceMeters"] | PlannedEstimate["durationSeconds"],
-  ): SemanticMetric["provenance"] =>
-    quantity.status === "unavailable"
-      ? null
-      : quantity.status === "estimated"
-        ? "estimated"
-        : "authored";
-  const calculatedProvenance = (quantity: PlannedEstimate["load"]): SemanticMetric["provenance"] =>
-    quantity.status === "unavailable" || quantity.basis === null
-      ? null
-      : quantity.basis === "plan_intent"
-        ? "plan_intent"
-        : "personalized";
-  return [
-    metric(
-      "distance",
-      "Distance",
-      "meters",
-      estimate.distanceMeters,
-      authoredProvenance(estimate.distanceMeters),
-    ),
-    metric(
-      "elapsed_duration",
-      "Duration",
-      "seconds",
-      estimate.durationSeconds,
-      authoredProvenance(estimate.durationSeconds),
-    ),
-    metric("common_load", "Load", "score", estimate.load, calculatedProvenance(estimate.load)),
-    metric(
-      "normalized_intensity",
-      "Intensity",
-      "ratio",
-      estimate.normalizedIntensity,
-      calculatedProvenance(estimate.normalizedIntensity),
-    ),
-  ];
-}
-
-const estimateOrder = [
-  "distance",
-  "elapsed_duration",
-  "common_load",
-  "normalized_intensity",
-] as const;
+const estimateOrder = ["distance", "elapsed_duration", "common_load"] as const;
 const estimateLabels: Record<(typeof estimateOrder)[number], string> = {
   distance: "Distance",
   elapsed_duration: "Duration",
   common_load: "Load",
-  normalized_intensity: "Intensity",
 };
 
 export function ActivityPlanMetricsRow({
   projectionMetrics,
-  prescriptionQuantification,
-}: Pick<ActivityPlanSummaryProps, "projectionMetrics" | "prescriptionQuantification">) {
-  const availableMetrics =
-    projectionMetrics ??
-    (prescriptionQuantification
-      ? metricsFromEstimate(getPlannedEstimate(prescriptionQuantification))
-      : []);
+}: Pick<ActivityPlanSummaryProps, "projectionMetrics">) {
+  const availableMetrics = projectionMetrics ?? [];
   const byKey = new Map(availableMetrics.map((metric) => [metric.key, metric]));
   const metrics = estimateOrder.map((key) => {
     const metric = byKey.get(key);
     return {
       label: estimateLabels[key],
-      value: metric ? (formatMetricValue(metric) ?? "Unavailable") : "Unavailable",
-      ...(key === "common_load" || key === "normalized_intensity"
-        ? { tone: "primary" as const }
-        : {}),
+      value: formatActivityPlanHeadlineMetric(metric, key),
+      ...(key === "common_load" ? { tone: "primary" as const } : {}),
     };
+  });
+  const objectiveIntensity = byKey.get("objective_intensity");
+  metrics.push({
+    label: "Intensity",
+    value: formatActivityPlanHeadlineMetric(objectiveIntensity, "objective_intensity"),
+    tone: "primary",
   });
 
   return <ResourceMetricsRow maxItems={4} metrics={metrics} testID="activity-plan-estimates" />;
@@ -184,7 +77,6 @@ export function ActivityPlanSummary({
   headerAccessory,
   owner,
   projectionMetrics,
-  prescriptionQuantification,
   subtitle,
   testID,
   title,
@@ -218,10 +110,7 @@ export function ActivityPlanSummary({
         {headerAccessory}
       </View>
 
-      <ActivityPlanMetricsRow
-        {...(projectionMetrics !== undefined ? { projectionMetrics } : {})}
-        {...(prescriptionQuantification !== undefined ? { prescriptionQuantification } : {})}
-      />
+      <ActivityPlanMetricsRow {...(projectionMetrics !== undefined ? { projectionMetrics } : {})} />
 
       {showAttribution ? (
         <ActivityPlanAttributionRow

@@ -65,8 +65,8 @@ export function getNormalizedPowerPresentation(
       calculationVersion: result.calculationVersion,
       sourceTimeCoverage,
       excludedGapDurationSeconds,
-      label: "Normalized power (partial)",
-      evidence: `Partial source evidence; ${coveragePercent}% source-time coverage${gapEvidence}${versionEvidence}`,
+      label: "Normalized power",
+      evidence: `${coveragePercent}% source-time coverage${gapEvidence}${versionEvidence}`,
     };
   }
   return {

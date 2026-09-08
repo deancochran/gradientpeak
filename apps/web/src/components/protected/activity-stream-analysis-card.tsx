@@ -117,7 +117,7 @@ export function ActivityStreamAnalysisCard({
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Stream HR Load</p>
           <p className="mt-1 text-2xl font-semibold text-foreground">
             {analysis.heart_rate_load.value == null
-              ? "Unavailable"
+              ? "—"
               : Math.round(analysis.heart_rate_load.value)}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">

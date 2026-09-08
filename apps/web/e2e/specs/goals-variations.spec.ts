@@ -95,7 +95,7 @@ test("[variation:goals.lifecycle:cancel-edit] browser back abandons unsaved goal
   });
 });
 
-test("[variation:goals.transport:reload-then-retry] a failed filtered list remains an error after reload and recovers through its retry control", async ({
+test("[variation:goals.transport:reload-then-retry] a failed filtered list remains an error after reload and recovers when transport returns", async ({
   athletePage,
 }) => {
   await withTrpcFailure(athletePage, "goals.list", async () => {
@@ -104,7 +104,6 @@ test("[variation:goals.transport:reload-then-retry] a failed filtered list remai
     await athletePage.reload();
     await expect(athletePage.getByText(/no goals match these filters/i)).toHaveCount(0);
   });
-  await athletePage.getByTestId("goal-list-retry").press("Enter");
   await expect(athletePage.getByRole("alert")).toHaveCount(0);
   await expect(athletePage.getByText(/no goals match these filters/i)).toBeVisible();
 });

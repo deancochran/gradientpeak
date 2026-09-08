@@ -2,39 +2,20 @@ import { activityEfforts, activitySegments } from "@repo/db";
 import { and, eq, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import { type ThresholdImpact, thresholdEffortId } from "../../repositories/threshold-repository";
+import type { GeneratedActivityLthrEvidence } from "../activity-file-ingestion/stream-derived-calculations";
 import { reconcileThresholdsWithProfileLockHeld } from "../performance-model/reconcile-thresholds";
+
+export type { GeneratedActivityLthrEvidence } from "../activity-file-ingestion/stream-derived-calculations";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 type TransactionClient = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
 type EffortInsert = typeof activityEfforts.$inferInsert;
 type EffortRow = typeof activityEfforts.$inferSelect;
 
-const GENERATED_EFFORT_METHOD = "activity_file_best_effort";
-
-export interface GeneratedActivityLthrEvidence {
-  valueBpm: number;
-  recordedAt: Date;
-  calculationVersion: string;
-  provenance: {
-    activity_id: string;
-    segment_id: string;
-    derived_from: "activity_file_best_effort";
-    source_series: "heart_rate";
-    source_effort_calculation_version: string;
-    exact_window_start_timestamp_seconds: number;
-    exact_window_end_timestamp_seconds: number;
-    duration_seconds: number;
-    window_coverage: 1;
-    hr_coverage?: number;
-    supporting_output_coverage?: number;
-    maximum_gap_seconds?: number;
-    output_coefficient_of_variation?: number;
-    supporting_output_value?: number;
-    grade_coverage?: number;
-    extraction_status: "available" | "partial";
-    extraction_reason: "source_incomplete" | null;
-  };
-}
+const GENERATED_EFFORT_METHODS = new Set([
+  "activity_file_best_effort",
+  "activity_file_lthr_detection",
+]);
 
 export interface GeneratedActivityEvidenceInput {
   activityId: string;
@@ -68,6 +49,7 @@ function effortIdentity(
     | "end_offset_ms"
     | "unit"
     | "method"
+    | "calculation_version"
   >,
 ) {
   return JSON.stringify([
@@ -83,6 +65,7 @@ function effortIdentity(
     effort.end_offset_ms,
     effort.unit,
     effort.method ?? null,
+    effort.calculation_version,
   ]);
 }
 
@@ -115,8 +98,14 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function postgresRealReplayValue(value: number): number {
+  // PostgreSQL `real` guarantees six significant decimal digits. Canonicalize
+  // to that portable read representation before immutable downstream use.
+  return Number.parseFloat(Math.fround(value).toPrecision(6));
+}
+
 function hasSamePostgresRealValue(left: number, right: number): boolean {
-  return Math.abs(left - right) <= Math.max(0.000001, Math.abs(right) * 0.000005);
+  return postgresRealReplayValue(left) === postgresRealReplayValue(right);
 }
 
 function hasSameEffortEvidence(left: EffortRow, right: EffortInsert): boolean {
@@ -151,7 +140,7 @@ export function planGeneratedActivityEvidenceReconciliation(input: {
   generated: GeneratedActivityEvidenceInput;
 }) {
   const generatedEfforts = input.existingEfforts
-    .filter((effort) => effort.method === GENERATED_EFFORT_METHOD && effort.source === "imported")
+    .filter((effort) => GENERATED_EFFORT_METHODS.has(effort.method) && effort.source === "imported")
     .sort(
       (left, right) =>
         effortIdentity(left).localeCompare(effortIdentity(right)) ||
@@ -176,7 +165,7 @@ export function planGeneratedActivityEvidenceReconciliation(input: {
           activity_id: input.generated.activityId,
           profile_id: input.generated.profileId,
           source: "imported" as const,
-          method: GENERATED_EFFORT_METHOD,
+          method: desired.method,
         }
       : null;
     if (
@@ -184,7 +173,9 @@ export function planGeneratedActivityEvidenceReconciliation(input: {
       normalizedRetainedValues &&
       hasSameEffortEvidence(existing, normalizedRetainedValues)
     ) {
-      reconciledEfforts.push(normalizedRetainedValues);
+      // Downstream immutable evaluations must replay from the exact persisted
+      // representation (notably PostgreSQL `real`), not the pre-write JS value.
+      reconciledEfforts.push(existing);
       continue;
     }
 
@@ -194,7 +185,10 @@ export function planGeneratedActivityEvidenceReconciliation(input: {
       activity_id: input.generated.activityId,
       profile_id: input.generated.profileId,
       source: "imported" as const,
-      method: GENERATED_EFFORT_METHOD,
+      method: desired.method,
+      // PostgreSQL stores effort values as `real`. Canonicalize before both the
+      // insert and same-transaction calibration so later replays are byte-stable.
+      value: postgresRealReplayValue(desired.value),
       created_at: desired.created_at ?? input.generated.now,
     };
     if (existing) {

@@ -1,18 +1,13 @@
-import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
+import {
+  type ActivityPlanMetric,
+  type ActivityPlanMetricKey,
+  createActivityPlanMetric,
+  getPlannedEstimate,
+} from "@repo/core";
+import { formatActivityPlanHeadlineMetric } from "@repo/ui/lib/activity-plan-metric-presentation";
 import { format } from "date-fns";
-import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
-import { formatEstimatedDurationSeconds } from "@/lib/estimatedMetrics";
 import { formatEventTime } from "./eventSchedule";
 import type { CalendarEvent } from "./normalizeEvents";
-
-function readMetric(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim().length > 0) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return null;
-}
 
 function formatCategoryLabel(value: string | null | undefined): string | null {
   if (!value) {
@@ -66,22 +61,95 @@ export function getPlannedRecordingState(event: CalendarEvent): PlannedRecording
     : "planned";
 }
 
-export function getEventCommonLoadMeta(event: CalendarEvent): string[] {
+function unavailablePlanMetric(
+  key: ActivityPlanMetricKey,
+  label: string,
+  unit: string,
+  reason: string,
+): ActivityPlanMetric {
+  return createActivityPlanMetric({
+    key,
+    label,
+    status: "unavailable",
+    value: null,
+    unit,
+    reason,
+    provenance: null,
+  });
+}
+
+function plannedQuantityUnavailableReason(
+  quantity: ReturnType<typeof getPlannedEstimate>["durationSeconds"],
+): string {
+  if (quantity.status === "partial") return "incomplete_members";
+  return quantity.status === "unavailable" ? quantity.reason : "not_available";
+}
+
+function getEventPlanMetric(event: CalendarEvent, key: ActivityPlanMetricKey): unknown {
+  const projected = event.projectionMetrics?.find((metric) => metric.key === key);
+  if (projected) return projected;
+
   const quantification =
     event.activity_plan?.prescriptionQuantification ?? event.prescriptionQuantification;
-  if (quantification === undefined) return ["Common Load 0", "Normalized intensity 0.00"];
-  const presentation = getActivityQuantificationPresentation(quantification);
-  if (
-    presentation.kind === "unavailable" ||
-    presentation.commonLoad.status !== "complete" ||
-    presentation.normalizedIntensity.status !== "complete"
-  ) {
-    return ["Common Load 0", "Normalized intensity 0.00"];
+  if (!quantification) return undefined;
+  const estimate = getPlannedEstimate(quantification);
+
+  if (key === "elapsed_duration") {
+    const duration = estimate.durationSeconds;
+    if (duration.status === "known" || duration.status === "estimated") {
+      return createActivityPlanMetric({
+        key,
+        label: "Duration",
+        status: "available",
+        value: duration.value,
+        unit: "seconds",
+        reason: null,
+        provenance: duration.status === "known" ? "authored" : "estimated",
+      });
+    }
+    return unavailablePlanMetric(
+      key,
+      "Duration",
+      "seconds",
+      plannedQuantityUnavailableReason(duration),
+    );
   }
+
+  if (key === "common_load") {
+    const load = estimate.load;
+    if (load.status === "estimated") {
+      return createActivityPlanMetric({
+        key,
+        label: "Common Load",
+        status: "available",
+        value: load.value,
+        unit: "score",
+        reason: null,
+        provenance: "estimated",
+      });
+    }
+    return unavailablePlanMetric(
+      key,
+      "Common Load",
+      "score",
+      load.status === "partial" ? "incomplete_members" : load.reason,
+    );
+  }
+
+  return undefined;
+}
+
+export function getEventCommonLoadMeta(event: CalendarEvent): string[] {
+  const load = getEventPlanMetric(event, "common_load");
+  const objectiveIntensity = getEventPlanMetric(event, "objective_intensity");
   return [
-    `${presentation.commonLoad.label} ${presentation.commonLoad.value}`,
-    `${presentation.normalizedIntensity.label} ${presentation.normalizedIntensity.value}`,
-  ];
+    load === undefined
+      ? null
+      : `Common Load ${formatActivityPlanHeadlineMetric(load, "common_load")}`,
+    objectiveIntensity === undefined
+      ? null
+      : `Intensity ${formatActivityPlanHeadlineMetric(objectiveIntensity, "objective_intensity")}`,
+  ].filter((value): value is string => value !== null);
 }
 
 export function isRecurringEvent(event: CalendarEvent): boolean {
@@ -114,9 +182,11 @@ export function getEventTimeLabel(event: CalendarEvent): string {
 
 export function getEventPrimaryMeta(event: CalendarEvent): string[] {
   if (event.event_type === "planned" && hasActivityPlan(event)) {
-    const quantitySummary = getActivityPlanQuantitySummary(event.activity_plan);
+    const durationMetric = getEventPlanMetric(event, "elapsed_duration");
     const duration =
-      formatEstimatedDurationSeconds(readMetric(quantitySummary.durationSeconds)) ?? "0m";
+      durationMetric === undefined
+        ? null
+        : formatActivityPlanHeadlineMetric(durationMetric, "elapsed_duration");
     return [
       formatCategoryLabel(event.activity_plan?.activity_category),
       duration,

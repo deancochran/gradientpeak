@@ -111,13 +111,15 @@ function getDistinctLabel(
   return duplicatesParent ? null : value?.trim() || null;
 }
 
-function labelContainsSemantic(value: string, semantic: string): boolean {
-  const labelWords = normalizeLabel(value).split(" ");
-  return labelWords.includes(normalizeLabel(semantic));
+function getIntervalLabel(value: string | null | undefined, segmentTitle: string): string | null {
+  const label = getDistinctLabel(value, [segmentTitle]);
+  return label && !/^interval\s+\d+$/iu.test(label) ? label : null;
 }
 
-function formatSemanticLabel(value: string): string {
-  return value.charAt(0).toLocaleUpperCase() + value.slice(1);
+function isRedundantActivitySegmentLabel(value: string, activityCategory: string): boolean {
+  const normalized = normalizeLabel(value);
+  const category = normalizeLabel(activityCategory);
+  return normalized === category || normalized === `${category} activity`;
 }
 
 export function ActivityPlanContentPreview({
@@ -142,25 +144,22 @@ export function ActivityPlanContentPreview({
       }),
     [performanceTargets, personalizeTargets, plan?.structure],
   );
-  const presentationModel = useMemo(
+  const timelinePresentation = useMemo(
     () =>
-      sessionFlowResolution.structure
-        ? deriveActivityPlanPresentation(sessionFlowResolution.structure)
+      sessionFlowResolution.authoredStructure
+        ? deriveActivityPlanPresentation(sessionFlowResolution.authoredStructure)
         : (presentation ?? deriveActivityPlanPresentation(plan?.structure)),
-    [plan?.structure, presentation, sessionFlowResolution.structure],
+    [plan?.structure, presentation, sessionFlowResolution.authoredStructure],
   );
-  const structure = presentationModel?.structure ?? null;
+  const structure = sessionFlowResolution.structure ?? presentation?.structure ?? null;
   const steps = useMemo(() => flattenSteps(structure), [structure]);
-  const hasTimeline = Boolean(presentationModel?.occurrences.length);
+  const hasTimeline = Boolean(timelinePresentation?.occurrences.length);
   const maxVisibleSteps = resolvedSize === "small" ? 2 : resolvedSize === "medium" ? 3 : 4;
   const visibleSteps = steps.slice(0, maxVisibleSteps);
   const hasSessionFlow = visibleSteps.length > 0 && resolvedSize === "large";
   const asOf = performanceTargets?.asOf ?? new Date().toISOString();
   const factsPending = personalizationFactsLoading && !sessionFlowResolution.eligibility.eligible;
   const personalizationDisabled = factsPending || !sessionFlowResolution.eligibility.eligible;
-  const personalizationReason = factsPending
-    ? "Checking whether every target can use your current physical values."
-    : sessionFlowResolution.eligibility.reason;
 
   if (!plan || (!hasTimeline && !hasSessionFlow)) {
     return null;
@@ -175,7 +174,7 @@ export function ActivityPlanContentPreview({
         >
           {structure ? (
             <TimelineChart
-              presentation={presentationModel}
+              presentation={timelinePresentation}
               height={resolvedSize === "small" ? 72 : resolvedSize === "medium" ? 92 : 104}
               compact={resolvedSize !== "large"}
             />
@@ -186,24 +185,16 @@ export function ActivityPlanContentPreview({
       {hasSessionFlow ? (
         <View className="rounded-2xl bg-muted/30 px-3 py-3">
           <View className="flex-row items-start justify-between gap-3">
-            <View className="min-w-0 flex-1 gap-1">
+            <View className="min-w-0 flex-1">
               <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 Session Flow
               </Text>
-              {showPersonalizationControl && onPersonalizeTargetsChange ? (
-                <Text className="text-xs leading-4 text-muted-foreground">
-                  {personalizationReason ??
-                    "All targets have physical values. Turn this off to see the authored targets."}
-                </Text>
-              ) : null}
             </View>
             {showPersonalizationControl && onPersonalizeTargetsChange ? (
-              <View className="items-end gap-1">
-                <Text className="text-xs font-medium text-foreground">
-                  {personalizeTargets && !personalizationDisabled ? "On" : "Off"}
-                </Text>
+              <View className="flex-row items-center gap-2">
+                <Text className="text-xs font-medium text-foreground">Calculated targets</Text>
                 <Switch
-                  accessibilityLabel="Personalize targets"
+                  accessibilityLabel="Calculated targets"
                   checked={personalizeTargets && !personalizationDisabled}
                   disabled={personalizationDisabled}
                   onCheckedChange={onPersonalizeTargetsChange}
@@ -215,48 +206,57 @@ export function ActivityPlanContentPreview({
           <View className="mt-2">
             {structure?.segments.map((segment, index) => {
               const segmentTitle = segment.name?.trim() || `Segment ${index + 1}`;
-              const semantic =
-                segment.role === "activity" ? structure.activity_category : segment.role;
-              const showSemantic = !labelContainsSemantic(segmentTitle, semantic);
-
+              const showSegmentTitle =
+                segment.role !== "activity" ||
+                !isRedundantActivitySegmentLabel(segmentTitle, structure.activity_category);
               return (
                 <View
                   key={segment.id}
                   className={index === 0 ? "py-2" : "border-t border-border/60 py-3"}
                 >
-                  <View className="flex-row items-start justify-between gap-3">
-                    <View className="flex-1 gap-1">
-                      <Text className="text-sm font-semibold text-foreground">{segmentTitle}</Text>
-                      {showSemantic ? (
-                        <Text className="text-xs text-muted-foreground">
-                          {formatSemanticLabel(semantic)}
-                        </Text>
-                      ) : null}
-                      {segment.notes ? (
-                        <Text className="text-xs leading-4 text-muted-foreground">
-                          {segment.notes}
+                  {showSegmentTitle || segment.notes || segment.role !== "activity" ? (
+                    <View className="flex-row items-start justify-between gap-3">
+                      <View className="flex-1 gap-1">
+                        {showSegmentTitle ? (
+                          <Text className="text-base font-semibold leading-5 text-foreground">
+                            {segmentTitle}
+                          </Text>
+                        ) : null}
+                        {segment.notes ? (
+                          <Text className="text-sm leading-5 text-muted-foreground">
+                            {segment.notes}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {segment.role !== "activity" ? (
+                        <Text className="text-sm font-medium text-foreground">
+                          {formatStepDuration(segment.duration)}
                         </Text>
                       ) : null}
                     </View>
-                    {segment.role !== "activity" ? (
-                      <Text className="text-xs font-medium text-foreground/80">
-                        {formatStepDuration(segment.duration)}
-                      </Text>
-                    ) : null}
-                  </View>
+                  ) : null}
                   {segment.role === "activity"
                     ? segment.intervals.map((interval) => {
-                        const intervalLabel = getDistinctLabel(interval.name, [segmentTitle]);
+                        const intervalLabel = getIntervalLabel(interval.name, segmentTitle);
                         const showIntervalHeader = Boolean(
                           intervalLabel || interval.repetitions > 1,
                         );
 
                         return (
-                          <View key={interval.id} className="mt-2 gap-2.5">
+                          <View
+                            key={interval.id}
+                            className={`mt-4 gap-2 ${interval.repetitions > 1 ? "border-l-2 border-primary/30 pl-3" : ""}`}
+                          >
                             {showIntervalHeader ? (
-                              <Text className="text-xs font-semibold text-muted-foreground">
-                                {intervalLabel}
-                                {interval.repetitions > 1 ? ` · ${interval.repetitions}x` : ""}
+                              <Text className="text-base leading-5 text-foreground">
+                                {[
+                                  intervalLabel,
+                                  interval.repetitions > 1
+                                    ? `Repeat ${interval.repetitions}×`
+                                    : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
                               </Text>
                             ) : null}
                             {interval.notes ? (
@@ -269,15 +269,13 @@ export function ActivityPlanContentPreview({
                                 segmentTitle,
                                 interval.name,
                               ]);
-                              const detailSummary = [
-                                ...(getActivityPlanSessionFlowTargetPresentations(
-                                  sessionFlowResolution,
-                                  step.id,
-                                ).length > 0
-                                  ? getActivityPlanSessionFlowTargetPresentations(
-                                      sessionFlowResolution,
-                                      step.id,
-                                    ).map((target) => target.label)
+                              const targetLabels = getActivityPlanSessionFlowTargetPresentations(
+                                sessionFlowResolution,
+                                step.id,
+                              );
+                              const targets =
+                                targetLabels.length > 0
+                                  ? targetLabels.map((target) => target.label)
                                   : orderActivityPlanTargetsForPresentation(step.targets ?? []).map(
                                       (target) =>
                                         formatTarget({
@@ -289,34 +287,37 @@ export function ActivityPlanContentPreview({
                                             : {}),
                                           asOf,
                                         }),
-                                    )),
-                                formatStepDuration(step.duration),
+                                    );
+                              const duration = formatStepDuration(step.duration);
+                              const detailSummary = [
+                                duration,
+                                targets.length > 0 ? `at ${targets.join(" · ")}` : null,
                               ]
                                 .filter((value): value is string => Boolean(value))
-                                .join(" · ");
+                                .join(" ");
 
                               return (
                                 <View
                                   key={step.id || `${interval.id}-${stepIndex}`}
-                                  className="gap-1.5"
+                                  className={`gap-1.5 ${stepIndex > 0 ? "mt-3" : ""}`}
                                 >
                                   {stepLabel ? (
-                                    <Text className="text-sm font-medium text-foreground">
+                                    <Text className="text-base font-semibold leading-5 text-foreground">
                                       {stepLabel}
                                     </Text>
                                   ) : null}
                                   {detailSummary ? (
-                                    <Text className="text-xs font-medium text-foreground/80">
+                                    <Text className="text-sm leading-5 text-foreground">
                                       {detailSummary}
                                     </Text>
                                   ) : null}
                                   {step.description ? (
-                                    <Text className="text-xs leading-4 text-muted-foreground">
+                                    <Text className="mt-1 text-sm leading-5 text-muted-foreground">
                                       {step.description}
                                     </Text>
                                   ) : null}
                                   {step.notes ? (
-                                    <Text className="text-xs leading-4 text-muted-foreground">
+                                    <Text className="text-sm leading-5 text-muted-foreground">
                                       {step.notes}
                                     </Text>
                                   ) : null}

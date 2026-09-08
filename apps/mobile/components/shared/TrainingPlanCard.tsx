@@ -1,11 +1,16 @@
 import type { TrainingPlanPlannedSchedulePreview } from "@repo/core";
-import { CalendarRange } from "lucide-react-native";
+import { Icon } from "@repo/ui/components/icon";
+import { Text } from "@repo/ui/components/text";
+import { CalendarRange, MessageCircle, Share2 } from "lucide-react-native";
 import { useMemo } from "react";
+import { Alert, Share, View } from "react-native";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
+import { getPublicShareUrl } from "@/lib/share/public-share-url";
 import { deriveTrainingPlanSummaryMetrics } from "@/lib/trainingPlanVisual";
 import type { EntityOwner } from "./EntityOwnerRow";
 import {
   type ResourceCardAccessory,
+  ResourceCardActionButton,
   ResourceCardHeader,
   ResourceCardShell,
   ResourceLikeButton,
@@ -33,11 +38,14 @@ export interface TrainingPlanCardPlan {
   owner?: EntityOwner | null;
   structure?: unknown;
   plannedSchedulePreview?: TrainingPlanPlannedSchedulePreview | null;
+  visibility?: string | null;
 }
 
 type TrainingPlanCardProps = {
   plan: TrainingPlanCardPlan;
   onPress?: () => void;
+  onCommentPress?: () => void;
+  commentCount?: number | null;
   headerAccessory?: ResourceCardAccessory;
   showAttribution?: boolean;
   testID?: string;
@@ -47,6 +55,8 @@ type TrainingPlanCardProps = {
 export function TrainingPlanCard({
   plan,
   onPress,
+  onCommentPress,
+  commentCount,
   headerAccessory,
   showAttribution = true,
   testID,
@@ -66,6 +76,23 @@ export function TrainingPlanCard({
     ...(plan.likes_count !== undefined ? { initialCount: plan.likes_count } : {}),
     ...(plan.has_liked !== undefined ? { initialLiked: plan.has_liked } : {}),
   });
+  const handleCommentPress = onCommentPress ?? onPress;
+  const handleShare = async () => {
+    if (plan.visibility !== "public") {
+      Alert.alert(
+        "Not public",
+        "Only public training plans have a share link. Change visibility to Public first.",
+      );
+      return;
+    }
+
+    const url = getPublicShareUrl(`/share/training-plans/${plan.id}`);
+    try {
+      await Share.share({ message: url, url });
+    } catch {
+      Alert.alert("Unable to share", "The training plan could not be shared. Try again.");
+    }
+  };
 
   return (
     <ResourceCardShell
@@ -75,16 +102,23 @@ export function TrainingPlanCard({
             actionRegion: (
               <ResourceOwnerActionRow
                 actions={
-                  <>
-                    {headerAccessory}
-                    <ResourceLikeButton
-                      disabled={isLikePending}
-                      isLiked={isLiked}
-                      likeCount={likeCount}
-                      onPress={toggleLike}
-                      testID={`training-plan-card-like-button-${plan.id}`}
-                    />
-                  </>
+                  isCompact ? undefined : (
+                    <>
+                      {headerAccessory}
+                      <ResourceCardActionButton
+                        accessibilityLabel="Share training plan"
+                        onPress={() => void handleShare()}
+                        testID={`training-plan-card-share-button-${plan.id}`}
+                      >
+                        <View className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5">
+                          <Icon as={Share2} size={14} className="text-muted-foreground" />
+                          <Text className="ml-1 text-xs font-medium text-muted-foreground">
+                            Share
+                          </Text>
+                        </View>
+                      </ResourceCardActionButton>
+                    </>
+                  )
                 }
                 categoryIcon={CalendarRange}
                 categoryIconClassName="text-primary"
@@ -150,6 +184,36 @@ export function TrainingPlanCard({
               : {})}
             structure={plan.structure}
           />
+
+          {!isCompact ? (
+            <View
+              className="flex-row items-center gap-2"
+              testID="training-plan-card-social-actions"
+            >
+              <ResourceLikeButton
+                disabled={isLikePending}
+                isLiked={isLiked}
+                likeCount={likeCount}
+                onPress={toggleLike}
+                testID={`training-plan-card-like-button-${plan.id}`}
+              />
+              <ResourceCardActionButton
+                accessibilityLabel={
+                  commentCount && commentCount > 0 ? `Comments, ${commentCount}` : "Comments"
+                }
+                disabled={!handleCommentPress}
+                onPress={handleCommentPress ?? (() => {})}
+                testID={`training-plan-card-comments-button-${plan.id}`}
+              >
+                <View className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5">
+                  <Icon as={MessageCircle} size={14} className="text-muted-foreground" />
+                  <Text className="ml-1 text-xs font-medium text-muted-foreground">
+                    {commentCount && commentCount > 0 ? `Comments ${commentCount}` : "Comments"}
+                  </Text>
+                </View>
+              </ResourceCardActionButton>
+            </View>
+          ) : null}
         </>
       )}
     </ResourceCardShell>

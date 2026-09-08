@@ -155,7 +155,7 @@ test("[variation:groups.requests:reject-retry] owner rejection removes pending s
         await memberGroups.requestAccess();
         await athletePage.goto(groupUrl);
         await ownerGroups.openRequests();
-        await ownerGroups.respondToRequest("playwright_coach", "Reject");
+        await ownerGroups.respondToRequest("playwright_coach", "Decline");
         await expect(athletePage.getByText("No pending requests.", { exact: true })).toBeVisible();
         await member.page.reload();
         await expect(member.page.getByRole("button", { name: "Request access" })).toBeVisible();

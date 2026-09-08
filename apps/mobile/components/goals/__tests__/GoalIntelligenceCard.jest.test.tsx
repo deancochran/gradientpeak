@@ -42,13 +42,13 @@ function intelligence() {
 }
 
 describe("GoalIntelligenceCard", () => {
-  it("renders readiness and reasons without internal assessment detail", async () => {
+  it("renders readiness reasons with freshness and confidence on the detail surface", async () => {
     await renderNative(<GoalIntelligenceCard assessment={intelligence()} />);
 
     expect(screen.getByText("Goal readiness")).toBeTruthy();
     expect(screen.getByText("watch · readiness 48")).toBeTruthy();
     expect(screen.getByText("fitness below goal demand")).toBeTruthy();
-    expect(screen.queryByText("stale state · 42% confidence")).toBeNull();
+    expect(screen.getByText(/stale state · 42% confidence · calculated/)).toBeTruthy();
     expect(screen.queryByText("Fitness 56 · specificity 45")).toBeNull();
   });
 

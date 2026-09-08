@@ -4,7 +4,10 @@ vi.mock("expo-file-system", () => {
   return {
     Directory: class {},
     File: class {},
-    Paths: { cache: "file:///cache", document: "file:///document" },
+    Paths: {
+      cache: { uri: "file:///cache/" },
+      document: { uri: "file:///documents/" },
+    },
   };
 });
 
@@ -72,5 +75,12 @@ describe("StreamBuffer SQLite recovery", () => {
     evidence.fenced = true;
     buffer.add({ metric: "cadence", dataType: "float", value: 90, timestamp: 1000 });
     await expect(buffer.flushToFiles()).rejects.toThrow("not writable");
+  });
+
+  it("refuses a DB-supplied stream directory outside the exact session root", () => {
+    const sessionId = "f71f49ac-4fe8-5f62-b98d-3957c6b89879";
+    expect(() =>
+      StreamBuffer.deleteDurableDirectories(["file:///documents/another-session/"], sessionId),
+    ).toThrow(/non-canonical/);
   });
 });

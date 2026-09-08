@@ -255,7 +255,7 @@ describe("publicShareRouter", () => {
       }),
       expect.objectContaining({ key: "common_load", status: "unavailable", provenance: null }),
       expect.objectContaining({
-        key: "normalized_intensity",
+        key: "objective_intensity",
         status: "unavailable",
         provenance: null,
       }),
@@ -276,6 +276,36 @@ describe("publicShareRouter", () => {
     expect(JSON.stringify(activityPlan?.structure)).not.toMatch(
       /00000000-0000-4000-8000-00000000001[1234]/,
     );
+  });
+
+  it("returns only the public route fields rendered by the public route page", async () => {
+    const id = "00000000-0000-4000-8000-000000000030";
+    const { caller } = createCaller([
+      {
+        id,
+        name: "Public loop",
+        description: "A scenic route.",
+        total_distance: "5020",
+        total_ascent: "120",
+        total_descent: "120",
+        polyline: "encoded-public-geometry",
+        is_system_template: false,
+        owner_name: "Alex Athlete",
+        owner_username: "alex",
+        file_path: "must-not-leak.gpx",
+      },
+    ]);
+
+    await expect(caller.route({ id })).resolves.toEqual({
+      id,
+      name: "Public loop",
+      description: "A scenic route.",
+      totalDistanceMeters: 5020,
+      totalAscentMeters: 120,
+      totalDescentMeters: 120,
+      isSystemTemplate: false,
+      owner: { name: "Alex Athlete", username: "alex" },
+    });
   });
 
   it("redacts builder snapshots, arbitrary goal objectives, and internal IDs at direct public tRPC", async () => {

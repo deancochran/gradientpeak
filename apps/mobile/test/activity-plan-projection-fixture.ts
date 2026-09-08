@@ -84,6 +84,53 @@ export function createActivityPlanSummary(
     canRecord: hasAuthoringAccess,
     ...capabilityOverrides,
   };
+  const defaultMetrics: ActivityPlanSummary["metrics"] = [
+    {
+      key: "distance",
+      label: "Distance",
+      status: "unavailable",
+      value: null,
+      unit: "meters",
+      reason: "not_prescribed",
+      provenance: null,
+    },
+    {
+      key: "elapsed_duration",
+      label: "Duration",
+      status: "unavailable",
+      value: null,
+      unit: "seconds",
+      reason: "not_prescribed",
+      provenance: null,
+    },
+    {
+      key: "common_load",
+      label: "Load",
+      status: "unavailable",
+      value: null,
+      unit: "score",
+      reason: "no_load_data",
+      provenance: null,
+    },
+    {
+      key: "objective_intensity",
+      label: "Intensity",
+      status: "unavailable",
+      value: null,
+      unit: "ratio",
+      reason: "no_objective_targets",
+      provenance: null,
+    },
+  ];
+  const metricOverridesByKey = new Map(
+    metricOverrides?.map((metric) => [metric.key, metric] as const) ?? [],
+  );
+  const metrics = [
+    ...defaultMetrics.map((metric) => metricOverridesByKey.get(metric.key) ?? metric),
+    ...(metricOverrides?.filter(
+      (metric) => !defaultMetrics.some((defaultMetric) => defaultMetric.key === metric.key),
+    ) ?? []),
+  ];
   return activityPlanSummarySchema.parse({
     contractVersion: "activity-plan-summary-v1",
     id: "plan-1",
@@ -101,7 +148,7 @@ export function createActivityPlanSummary(
           prescriptionQuantification: prescriptionQuantification ?? null,
         }
       : {}),
-    metrics: hasAuthoringAccess ? (metricOverrides ?? []) : [],
+    metrics,
     visibility: "private",
     isSystemTemplate: false,
     engagement: { likes: 0, viewerHasLiked: false },

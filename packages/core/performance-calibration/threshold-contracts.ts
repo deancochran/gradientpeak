@@ -8,9 +8,14 @@ export const THRESHOLD_PLAUSIBILITY_VERSION = "threshold-plausibility-v1" as con
 export const THRESHOLD_LIFECYCLE_STATE_VERSION = "threshold-lifecycle-state-v1" as const;
 
 export const thresholdActivityCategorySchema = z.enum(["bike", "run", "swim"]);
-export const thresholdMetricSchema = z.enum(["power", "speed"]);
-export const thresholdUnitSchema = z.enum(["watts", "meters_per_second"]);
-export const thresholdMethodSchema = z.enum(["bike_power_30m", "run_speed_30m", "swim_speed_15m"]);
+export const thresholdMetricSchema = z.enum(["power", "speed", "lthr"]);
+export const thresholdUnitSchema = z.enum(["watts", "meters_per_second", "bpm"]);
+export const thresholdMethodSchema = z.enum([
+  "bike_power_30m",
+  "run_speed_30m",
+  "swim_speed_15m",
+  "lthr_30m_final_20m",
+]);
 export const thresholdPolicySchemaVersionSchema = z.literal(THRESHOLD_POLICY_SCHEMA_VERSION);
 export const thresholdPolicyVersionSchema = z.literal(THRESHOLD_POLICY_VERSION);
 export const thresholdPlausibilityVersionSchema = z.literal(THRESHOLD_PLAUSIBILITY_VERSION);
@@ -61,7 +66,12 @@ export const thresholdCandidateSchema = z
   })
   .strict()
   .superRefine((candidate, context) => {
-    const expectedUnit = candidate.metric === "power" ? "watts" : "meters_per_second";
+    const expectedUnit =
+      candidate.metric === "power"
+        ? "watts"
+        : candidate.metric === "speed"
+          ? "meters_per_second"
+          : "bpm";
     if (candidate.unit !== expectedUnit) {
       context.addIssue({
         code: "custom",
@@ -98,7 +108,12 @@ export const thresholdEvaluationSchema = z.discriminatedUnion("status", [
     .strict(),
 ]);
 
-export const thresholdObservationMetricSchema = z.enum(["power", "speed", "grade_adjusted_speed"]);
+export const thresholdObservationMetricSchema = z.enum([
+  "power",
+  "speed",
+  "grade_adjusted_speed",
+  "heart_rate",
+]);
 
 export const thresholdExactWindowObservationSchema = z
   .object({
@@ -121,6 +136,7 @@ export const thresholdExactWindowObservationSchema = z
 export const thresholdSelectionInputSchema = z
   .object({
     activityCategory: thresholdActivityCategorySchema,
+    metric: thresholdMetricSchema,
     observations: z.array(thresholdExactWindowObservationSchema).max(8),
   })
   .strict()
@@ -232,6 +248,7 @@ export const thresholdSelectionDecisionSchema = z
 export const thresholdLifecycleInputSchema = z
   .object({
     activityCategory: thresholdActivityCategorySchema,
+    metric: thresholdMetricSchema,
     asOf: z.string().datetime({ offset: true }),
     evidence: z.array(thresholdEvidenceSchema),
   })

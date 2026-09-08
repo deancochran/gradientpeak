@@ -218,12 +218,8 @@ export function LikeToggleButton({
 }
 
 function formatDisplayMetric(metric: SemanticMetric, unitSystem: "metric" | "imperial") {
-  if (metric.status === "unavailable") return "Unavailable";
-  const approximationPrefix =
-    metric.status === "partial" &&
-    (metric.key === "common_load" || metric.key === "normalized_intensity")
-      ? "~"
-      : "";
+  if (metric.status === "unavailable") return "—";
+  const approximationPrefix = metric.status === "partial" ? "~" : "";
   if (metric.unit === "meters")
     return `${approximationPrefix}${formatDistance(metric.value, unitSystem)}`;
   if (metric.unit === "seconds") return `${approximationPrefix}${formatDuration(metric.value)}`;
@@ -346,12 +342,7 @@ export function ActivityListCard({
         <CanonicalMetricsRow
           items={activity.metrics.map((metric) => ({
             key: metric.key,
-            label:
-              metric.status === "partial" &&
-              metric.key !== "common_load" &&
-              metric.key !== "normalized_intensity"
-                ? `${metric.label} (partial)`
-                : metric.label,
+            label: metric.label,
             ...(metric.key === "common_load" || metric.key === "normalized_intensity"
               ? { tone: "primary" as const }
               : {}),

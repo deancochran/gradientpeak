@@ -1,10 +1,8 @@
 import {
   type ActivityDisplayModel,
   activityDisplayModelSchema,
-  activityObservationQuantificationBundleSchema,
   canonicalActivityCategorySchema,
   createSemanticMetric,
-  getNormalizedIntensity,
   type SemanticMetric,
 } from "@repo/core";
 import { sql } from "drizzle-orm";
@@ -12,6 +10,7 @@ import { z } from "zod";
 import { decodeFeedCursor } from "../application/feed/feedPage";
 import type { getRequiredDb } from "../db";
 import type { ActivityQuantifiedDerivedSummary } from "../lib/activity-analysis/derived";
+import { projectCompletedActivityCommonLoadMetrics } from "../lib/completed-activity-common-load-metrics";
 import { buildUuidInList, parseCountValue } from "../utils/sql";
 import { getLikeStats, type LikeStats } from "./like-stats";
 
@@ -79,56 +78,9 @@ function feedDisplayMetrics(input: {
   movingSeconds: number | null;
   timingCoverage: FeedActivityRow["timing_coverage"];
 }): SemanticMetric[] {
-  const metrics: SemanticMetric[] = [];
-  const quantification = activityObservationQuantificationBundleSchema.safeParse(
+  const metrics = projectCompletedActivityCommonLoadMetrics(
     input.derived?.observationQuantification,
   );
-  const commonLoad = quantification.success ? quantification.data.summary.commonLoad : null;
-  if (commonLoad && commonLoad.status !== "unavailable") {
-    const partial = commonLoad.status === "partial";
-    metrics.push(
-      createSemanticMetric({
-        key: "common_load",
-        label: "Load",
-        status: partial ? "partial" : "available",
-        value: commonLoad.load,
-        unit: "score",
-        reason: partial ? "quantification_partial" : null,
-      }),
-    );
-    const intensity = getNormalizedIntensity(commonLoad);
-    if (intensity !== null) {
-      metrics.push(
-        createSemanticMetric({
-          key: "normalized_intensity",
-          label: "Intensity",
-          status: partial ? "partial" : "available",
-          value: intensity,
-          unit: "ratio",
-          reason: partial ? "quantification_partial" : null,
-        }),
-      );
-    }
-  } else {
-    metrics.push(
-      {
-        key: "common_load",
-        label: "Load",
-        status: "unavailable",
-        value: null,
-        unit: "score",
-        reason: "quantification_unavailable",
-      },
-      {
-        key: "normalized_intensity",
-        label: "Intensity",
-        status: "unavailable",
-        value: null,
-        unit: "ratio",
-        reason: "quantification_unavailable",
-      },
-    );
-  }
   metrics.push(
     {
       key: "distance",
@@ -251,7 +203,7 @@ export function mapFeedActivity(
 export async function listFeedActivityRows(
   db: DbClient,
   viewerId: string,
-  input: { cursor?: string | null; limit: number },
+  input: { cursor?: string | null; limit: number; profileId?: string },
 ) {
   const decodedCursor = decodeFeedCursor(input.cursor);
   const cursorFilter = decodedCursor
@@ -259,14 +211,14 @@ export async function listFeedActivityRows(
       ? sql`and (a.started_at < ${decodedCursor.startedAt} or (a.started_at = ${decodedCursor.startedAt} and a.id < ${decodedCursor.id}::uuid))`
       : sql`and a.started_at < ${decodedCursor.startedAt}`
     : sql``;
+  const profileFilter = input.profileId ? sql`and a.profile_id = ${input.profileId}::uuid` : sql``;
   const result = await db.execute(sql<FeedActivityRow>`
     select
       a.id, a.profile_id, a.name, a.started_at, a.finished_at,
-      coalesce(array(
-        select s.activity_category from activity_segments s
+      coalesce((
+        select jsonb_agg(s.activity_category order by s.ordinal) from activity_segments s
         where s.activity_id = a.id and s.role = 'activity'
-        order by s.ordinal
-      ), array[]::text[]) as category_composition,
+      ), '[]'::jsonb) as category_composition,
       a.distance_meters, a.elapsed_ms, a.active_ms, a.moving_ms, a.timing_coverage,
       a.avg_heart_rate,
       a.max_heart_rate, a.avg_power, a.max_power, a.avg_cadence, a.avg_speed_mps,
@@ -288,6 +240,7 @@ export async function listFeedActivityRows(
         )
       )
     )
+      ${profileFilter}
       ${cursorFilter}
     order by a.started_at desc, a.id desc
     limit ${input.limit + 1}

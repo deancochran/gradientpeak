@@ -1,16 +1,15 @@
 import {
   type ActivityObservationQuantificationBundle,
   type ActivityPlanDetail,
-  calculateActivityPlanStats,
   deriveActivityPlanPresentation,
 } from "@repo/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
+import { formatActivityPlanHeadlineMetric } from "@repo/ui/lib/activity-plan-metric-presentation";
 import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-quantification-presentation";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
 import { TimelineChart } from "@/components/activity-plan/activity/TimelineChart";
-import { markEstimated } from "@/lib/estimatedMetrics";
 
 type ActivityPlanData = Pick<ActivityPlanDetail, "id" | "metrics" | "name" | "structure">;
 
@@ -36,15 +35,6 @@ function formatDuration(seconds: number): string {
   return `${minutes}m`;
 }
 
-// Helper function to calculate estimated duration from structure
-function getPlanComparison(presentation: ReturnType<typeof deriveActivityPlanPresentation>) {
-  if (!presentation) return { duration: 0 };
-  const stats = calculateActivityPlanStats(presentation.compiled);
-  return {
-    duration: stats.duration.exactElapsedSeconds ?? 0,
-  };
-}
-
 export function ActivityPlanComparison({
   activityPlan,
   actualMetrics,
@@ -56,19 +46,21 @@ export function ActivityPlanComparison({
     () => deriveActivityPlanPresentation(activityPlan.structure),
     [activityPlan.structure],
   );
-  const planComparison = getPlanComparison(presentation);
-  const estimatedDuration = planComparison.duration;
-
   const actualDuration = actualMetrics.duration;
   const actualLoad = getActivityQuantificationPresentation(actualMetrics.observationQuantification);
+  const plannedDuration = activityPlan.metrics.find((metric) => metric.key === "elapsed_duration");
   const plannedCommonLoad = activityPlan.metrics.find((metric) => metric.key === "common_load");
   const plannedIntensity = activityPlan.metrics.find(
-    (metric) => metric.key === "normalized_intensity",
+    (metric) => metric.key === "objective_intensity",
   );
 
   // Calculate variances
+  const plannedDurationSeconds =
+    plannedDuration?.status === "available" ? plannedDuration.value : null;
   const durationVariance =
-    estimatedDuration > 0 ? ((actualDuration - estimatedDuration) / estimatedDuration) * 100 : 0;
+    plannedDurationSeconds !== null && plannedDurationSeconds > 0
+      ? ((actualDuration - plannedDurationSeconds) / plannedDurationSeconds) * 100
+      : 0;
 
   const content = (
     <Card>
@@ -84,7 +76,7 @@ export function ActivityPlanComparison({
             <Text className="text-xs text-muted-foreground uppercase mb-1">Duration</Text>
             <View className="flex-row items-baseline gap-1">
               <Text className="text-lg font-bold">{formatDuration(actualDuration)}</Text>
-              {estimatedDuration > 0 && (
+              {plannedDurationSeconds !== null && plannedDurationSeconds > 0 && (
                 <Text
                   className={`text-xs ${durationVariance > 10 ? "text-yellow-600" : durationVariance < -10 ? "text-blue-600" : "text-green-600"}`}
                 >
@@ -93,11 +85,9 @@ export function ActivityPlanComparison({
                 </Text>
               )}
             </View>
-            {estimatedDuration > 0 && (
-              <Text className="text-xs text-muted-foreground mt-1">
-                Plan: {markEstimated(formatDuration(estimatedDuration))}
-              </Text>
-            )}
+            <Text className="text-xs text-muted-foreground mt-1">
+              Plan: {formatActivityPlanHeadlineMetric(plannedDuration, "elapsed_duration")}
+            </Text>
           </View>
 
           <View className="flex-1 p-3 bg-muted rounded-lg">
@@ -105,23 +95,20 @@ export function ActivityPlanComparison({
               {actualLoad.commonLoad.label}
             </Text>
             <Text className="text-lg font-bold">{actualLoad.commonLoad.value}</Text>
-            {plannedCommonLoad && plannedCommonLoad.status !== "unavailable" ? (
-              <Text className="text-xs text-muted-foreground mt-1">
-                Plan: {markEstimated(String(Math.round(plannedCommonLoad.value)))}
-              </Text>
-            ) : null}
+            <Text className="text-xs text-muted-foreground mt-1">
+              Plan: {formatActivityPlanHeadlineMetric(plannedCommonLoad, "common_load")}
+            </Text>
           </View>
 
           <View className="flex-1 p-3 bg-muted rounded-lg">
             <Text className="text-xs text-muted-foreground uppercase mb-1">
-              {actualLoad.normalizedIntensity.label}
+              Actual normalized intensity
             </Text>
             <Text className="text-lg font-bold">{actualLoad.normalizedIntensity.value}</Text>
-            {plannedIntensity && plannedIntensity.status !== "unavailable" ? (
-              <Text className="text-xs text-muted-foreground mt-1">
-                Plan: {markEstimated(plannedIntensity.value.toFixed(2))}
-              </Text>
-            ) : null}
+            <Text className="text-xs text-muted-foreground mt-1">
+              Plan objective intensity:{" "}
+              {formatActivityPlanHeadlineMetric(plannedIntensity, "objective_intensity")}
+            </Text>
           </View>
         </View>
 

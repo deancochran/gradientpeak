@@ -25,7 +25,16 @@ import {
 import { Label } from "@repo/ui/components/label";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { createFileRoute } from "@tanstack/react-router";
-import { Calendar, Camera, ImageIcon, Loader2, Mail, Shield, UserRound } from "lucide-react";
+import {
+  Calendar,
+  Camera,
+  ImageIcon,
+  Loader2,
+  Mail,
+  Shield,
+  UserRound,
+  UsersRound,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type UseFormReturn, useForm } from "react-hook-form";
 import { useAuth } from "../../components/providers/auth-provider";
@@ -185,6 +194,7 @@ function SettingsPage() {
           onCoverFilesChange={setCoverFiles}
           onProfileSubmit={handleProfileSubmit}
         />
+        <MyGroupsCard />
         <AccountInformationCard
           createdAt={createdAt}
           email={user?.email}
@@ -197,6 +207,27 @@ function SettingsPage() {
         />
       </div>
     </div>
+  );
+}
+
+function MyGroupsCard() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <UsersRound className="h-5 w-5" />
+          My Groups
+        </CardTitle>
+        <CardDescription>
+          Manage the groups you create or join, their members, and events.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button asChild>
+          <a href="/groups">My Groups</a>
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 

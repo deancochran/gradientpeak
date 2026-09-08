@@ -105,15 +105,6 @@ export async function applyTrainingPlanTemplateUseCase(input: {
     time: "00:00",
     timeZone: planningTimezone,
   });
-  const preliminaryActivePlanLookup = await repository.getActivePlanFromFutureEvents(profileId);
-  if (preliminaryActivePlanLookup && !input.values.replace_existing) {
-    throw new TRPCError({
-      code: "CONFLICT",
-      message:
-        "You already have scheduled sessions from another training plan. Replace them first.",
-    });
-  }
-
   const templatePlan = await repository.getAccessibleTrainingPlan({
     id: input.values.template_id,
     profileId,
@@ -319,7 +310,8 @@ export async function applyTrainingPlanTemplateUseCase(input: {
     });
   });
 
-  const schedule_batch_id = crypto.randomUUID();
+  const newScheduleBatchId = crypto.randomUUID();
+  let effectiveScheduleBatchId: string = newScheduleBatchId;
   if (eventRows.length === 0) {
     const plannedSessionCount = materializedSessions.filter(
       (session) => session.event_type === "planned",
@@ -366,6 +358,40 @@ export async function applyTrainingPlanTemplateUseCase(input: {
             });
           }
         }
+        if (!input.values.replace_existing) {
+          const existingScheduleRows = await tx.execute(sql<{
+            scheduleBatchId: string | null;
+          }>`
+            select schedule_batch_id as "scheduleBatchId"
+            from events
+            where profile_id = ${profileId}::uuid
+              and event_type = ${plannedEventType}
+              and training_plan_id = ${appliedPlanId}::uuid
+              and scheduled_date >= ${todayDate}::date
+              and status = 'scheduled'
+            order by scheduled_date asc, id asc
+            limit 1
+          `);
+          const [existingSchedule] = getSqlRows<{ scheduleBatchId: string | null }>(
+            existingScheduleRows,
+          );
+          if (existingSchedule) {
+            if (!existingSchedule.scheduleBatchId) {
+              throw new TRPCError({
+                code: "CONFLICT",
+                message:
+                  "The existing program schedule is missing its generation ID and cannot be safely replayed. Remove or repair that schedule before applying the program again.",
+              });
+            }
+            effectiveScheduleBatchId = existingSchedule.scheduleBatchId;
+            return {
+              insertedEvents: [],
+              removedEvents: [],
+              createdPlannedSessions: 0,
+              replayedPlannedSessions: 0,
+            };
+          }
+        }
         // The transaction exposes Drizzle's query/write surface but omits the root
         // client's handle. Supplying that handle keeps downstream repository
         // factories on the transaction while satisfying the shared client type.
@@ -374,8 +400,9 @@ export async function applyTrainingPlanTemplateUseCase(input: {
         const plannedSessionRepository = input.plannedSessionRepositoryFactory
           ? input.plannedSessionRepositoryFactory(transactionDb)
           : createDrizzlePlannedSessionRepository(transactionDb);
-        const activePlanLookup =
-          await transactionRepository.getActivePlanFromFutureEvents(profileId);
+        const activePlanLookup = input.values.replace_existing
+          ? await transactionRepository.getActivePlanFromFutureEvents(profileId)
+          : null;
         const activeSchedule = (() => {
           if (!activePlanLookup) return null;
           const scheduleBatchId = activePlanLookup.scheduleBatchId;
@@ -383,19 +410,11 @@ export async function applyTrainingPlanTemplateUseCase(input: {
             throw new TRPCError({
               code: "CONFLICT",
               message:
-                "The active training plan schedule is missing its generation ID and cannot be safely replaced. Remove or repair that schedule before applying a new plan.",
+                "The existing program schedule is missing its generation ID and cannot be safely replaced. Remove or repair that schedule before applying a new program.",
             });
           }
           return { scheduleBatchId, trainingPlanId: activePlanLookup.trainingPlanId };
         })();
-        if (activePlanLookup && !input.values.replace_existing) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message:
-              "You already have scheduled sessions from another training plan. Replace them first.",
-          });
-        }
-
         const candidates = activeSchedule
           ? await ((): Promise<Array<{ id: string }>> => {
               const candidateQuery = tx
@@ -494,7 +513,7 @@ export async function applyTrainingPlanTemplateUseCase(input: {
         const eventInsertRows: EventInsert[] = eventRows.map((eventRow) => ({
           ...eventRow,
           id: crypto.randomUUID(),
-          schedule_batch_id,
+          schedule_batch_id: newScheduleBatchId,
         }));
         const insertedEvents = await tx
           .insert(schema.events)
@@ -565,7 +584,7 @@ export async function applyTrainingPlanTemplateUseCase(input: {
     applied_plan_id: appliedPlanId,
     training_plan_id: templatePlan.id,
     application_mode: materializedApplication.applicationMode,
-    schedule_batch_id,
+    schedule_batch_id: effectiveScheduleBatchId,
     scheduled_sessions_created: insertedEvents.length,
     scheduled_sessions_skipped: materializedApplication.skippedSessions,
     scheduled_sessions_replaced: removedEvents.length,

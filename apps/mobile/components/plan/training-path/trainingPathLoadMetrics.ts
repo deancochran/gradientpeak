@@ -37,16 +37,16 @@ function finiteLoad(value: number | null | undefined) {
 }
 
 function getRemainingLoad(point: TrainingPathLoadMetricPoint) {
-  return point.effectiveRemainingLoad === undefined
-    ? finiteLoad(point.plannedLoad)
-    : finiteLoad(point.effectiveRemainingLoad);
+  return finiteLoad(point.effectiveRemainingLoad) ?? finiteLoad(point.plannedLoad);
 }
 
 function formatRecommendedLoad(point: TrainingPathLoadMetricPoint) {
   if (point.recommendedLoadStatus === "known_zero") return "0";
   const value = finiteLoad(point.recommendedLoad);
-  if (point.recommendedLoadStatus === "unavailable" || value === null) return "Unavailable";
-  return `${formatLoad(value)}${point.recommendedLoadStatus === "partial" ? " incomplete" : ""}`;
+  if (point.recommendedLoadStatus === "unavailable" || value === null) {
+    return "—";
+  }
+  return formatLoad(value);
 }
 
 export function buildTrainingPathLoadMetrics(
@@ -55,13 +55,12 @@ export function buildTrainingPathLoadMetrics(
 ): TrainingPathLoadMetric[] {
   const metrics: TrainingPathLoadMetric[] = [];
   if (point?.effectiveLoadStatus) {
-    const incomplete = point.effectiveLoadStatus === "partial";
     metrics.push({
       label: "Common Load",
       value:
         point.effectiveLoadStatus === "unavailable" || point.effectiveLoad == null
-          ? "Unavailable"
-          : `${formatLoad(point.effectiveLoad)}${incomplete ? " incomplete" : ""}`,
+          ? "—"
+          : formatLoad(point.effectiveLoad),
     });
     metrics.push({
       label: "Normalized intensity",
@@ -69,8 +68,8 @@ export function buildTrainingPathLoadMetrics(
         point.effectiveLoadStatus === "known_zero"
           ? "—"
           : point.effectiveIntensity == null
-            ? "Unavailable"
-            : `${formatIntensity(point.effectiveIntensity)}${incomplete ? " incomplete" : ""}`,
+            ? "—"
+            : formatIntensity(point.effectiveIntensity),
     });
   }
   if (point?.effectiveLoadStatus) {
@@ -85,23 +84,24 @@ export function buildTrainingPathLoadMetrics(
         value:
           point.effectiveCompletedLoadStatus === "unavailable" ||
           point.effectiveCompletedLoad == null
-            ? "Unavailable"
-            : `${formatLoad(point.effectiveCompletedLoad)}${point.effectiveCompletedLoadStatus === "partial" ? " incomplete" : point.hasCompletedActivityWithoutLoad || point.completedLoadUnavailable ? " + unavailable" : ""}`,
+            ? "—"
+            : formatLoad(point.effectiveCompletedLoad),
       });
     }
     const remainingLoad = getRemainingLoad(point);
+    const hasEffectiveRemainingLoad = finiteLoad(point.effectiveRemainingLoad) !== null;
     const remainingLoadStatus =
-      point.effectiveRemainingLoad === undefined
-        ? (point.plannedLoadStatus ?? point.effectiveLoadStatus)
-        : (point.effectiveRemainingLoadStatus ?? point.effectiveLoadStatus);
+      hasEffectiveRemainingLoad || point.effectiveRemainingLoadStatus === "known_zero"
+        ? (point.effectiveRemainingLoadStatus ?? point.effectiveLoadStatus)
+        : (point.plannedLoadStatus ?? point.effectiveLoadStatus);
     metrics.push({
       label: "Remaining",
       value:
         remainingLoadStatus === "known_zero"
           ? "0"
           : remainingLoadStatus === "unavailable" || remainingLoad === null
-            ? "Unavailable"
-            : `${formatLoad(remainingLoad)}${remainingLoadStatus === "partial" ? " incomplete" : ""}`,
+            ? "—"
+            : formatLoad(remainingLoad),
     });
     if (point.recommendedLoadStatus) {
       metrics.push({

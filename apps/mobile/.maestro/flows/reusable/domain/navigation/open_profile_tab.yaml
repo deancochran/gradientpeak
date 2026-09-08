@@ -1,6 +1,0 @@
-appId: ${MAESTRO_APP_ID}
-# @purpose Open the authenticated profile tab.
-# @ready profile-tab-screen
----
-- tapOn: { id: "tab-button-profile", retryTapIfNoChange: true }
-- assertVisible: { id: "profile-tab-screen" }

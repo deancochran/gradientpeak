@@ -5,9 +5,14 @@ import {
   type PlanningLedgerRequest,
   planningLedgerRequestSchema,
   planningLedgerSchema,
+  resolvePlanPeriodReviewRanges,
 } from "@repo/core";
 import { getCalendarDateInIanaZone } from "@repo/core/calendar";
-import { COMMON_RELATIVE_LOAD_MODEL, COMMON_RELATIVE_LOAD_VERSION } from "@repo/core/load";
+import {
+  buildNormalizedIntensityDistribution,
+  COMMON_RELATIVE_LOAD_MODEL,
+  COMMON_RELATIVE_LOAD_VERSION,
+} from "@repo/core/load";
 import {
   type PlanningRange,
   planningRangeRequestSchema,
@@ -16,6 +21,7 @@ import {
 import { type DrizzleQueryExecutor, withRepeatableReadSnapshot } from "../../db";
 import { createEventReadRepository } from "../../infrastructure/repositories";
 import { readSelectedGroupEventsForCalendar } from "../groups/groupEventViews";
+import { buildPeriodTrainingComposition, trainingCompositionSchema } from "./periodReviewService";
 import {
   type PlanTabProjection,
   type PlanTabProjectionDependencies,
@@ -31,6 +37,10 @@ type ProjectionDb = DrizzleQueryExecutor & {
 
 const MAX_LEDGER_CALENDAR_ENTRIES = 500;
 const MAX_LEDGER_ENTRIES = 500;
+
+export const planningLedgerResponseSchema = planningLedgerSchema
+  .extend({ trainingComposition: trainingCompositionSchema })
+  .strict();
 
 type CalendarLedgerEntry = {
   id: string;
@@ -156,20 +166,40 @@ type LoadStatus = PlanningLedger["load"]["completed"]["status"];
 
 function aggregate(values: Array<{ status: LoadStatus; value: number | null }>) {
   if (values.length === 0) return { status: "unavailable" as const, value: null };
-  if (values.some((item) => item.status === "unavailable")) {
-    return { status: "unavailable" as const, value: null };
-  }
   const known = values.filter(
     (item): item is { status: LoadStatus; value: number } => item.value !== null,
   );
-  if (known.length !== values.length) return { status: "unavailable" as const, value: null };
+  if (known.length === 0) return { status: "unavailable" as const, value: null };
   const value = Math.round(known.reduce((sum, item) => sum + item.value, 0) * 10) / 10;
-  const status = values.some((item) => item.status === "partial")
-    ? "partial"
-    : values.every((item) => item.status === "known_zero")
-      ? "known_zero"
-      : "complete";
+  if (
+    known.length !== values.length ||
+    values.some((item) => item.status === "partial" || item.status === "unavailable")
+  ) {
+    return { status: "partial" as const, value };
+  }
+  const status = values.every((item) => item.status === "known_zero") ? "known_zero" : "complete";
   return { status, value };
+}
+
+function aggregateCoverage(values: Array<{ status: LoadStatus; value: number | null }>) {
+  if (values.length === 0) return { status: "unavailable" as const, value: null };
+  const known = values.filter(
+    (item): item is { status: LoadStatus; value: number } => item.value !== null,
+  );
+  if (known.length === 0) return { status: "unavailable" as const, value: null };
+  const amount = Math.round(known.reduce((sum, item) => sum + item.value, 0) * 10) / 10;
+  if (
+    known.length !== values.length ||
+    values.some((item) => item.status === "partial" || item.status === "unavailable")
+  ) {
+    return { status: "partial" as const, value: amount };
+  }
+  return {
+    status: values.every((item) => item.status === "known_zero")
+      ? ("known_zero" as const)
+      : ("complete" as const),
+    value: amount,
+  };
 }
 
 function value(status: LoadStatus, amount: number | null) {
@@ -177,6 +207,15 @@ function value(status: LoadStatus, amount: number | null) {
     return { status: "unavailable" as const, value: null };
   }
   if (status === "partial") return { status, value: amount };
+  if (status === "known_zero") return { status: "known_zero" as const, value: 0 };
+  return { status: "complete" as const, value: amount };
+}
+
+function coverageValue(status: LoadStatus, amount: number | null) {
+  if (status === "unavailable" || amount === null || !Number.isFinite(amount)) {
+    return { status: "unavailable" as const, value: null };
+  }
+  if (status === "partial") return { status: "partial" as const, value: amount };
   if (status === "known_zero") return { status: "known_zero" as const, value: 0 };
   return { status: "complete" as const, value: amount };
 }
@@ -192,15 +231,9 @@ function plannedValue(status: LoadStatus, amount: number | null) {
 
 function aggregateIntensity(input: {
   load: ReturnType<typeof aggregate>;
-  duration: ReturnType<typeof aggregate>;
+  duration: ReturnType<typeof aggregateCoverage>;
 }) {
-  if (
-    input.load.value === null ||
-    input.duration.value === null ||
-    input.duration.value <= 0 ||
-    input.load.status === "unavailable" ||
-    input.duration.status === "unavailable"
-  ) {
+  if (input.load.value === null || input.duration.value === null || input.duration.value <= 0) {
     return input.load.status === "known_zero" && input.duration.status === "known_zero"
       ? { status: "known_zero" as const, value: 0 }
       : { status: "unavailable" as const, value: null };
@@ -211,6 +244,92 @@ function aggregateIntensity(input: {
         ? ("partial" as const)
         : ("complete" as const),
     value: Math.sqrt((input.load.value * 3600) / (100 * input.duration.value)),
+  };
+}
+
+function trainingStateSeriesRange(
+  request: PlanningLedgerRequest,
+  periodStart: string,
+  periodEnd: string,
+) {
+  return request.period === "day"
+    ? { startDate: addDaysDateKey(request.anchorDate, -6), endDate: request.anchorDate }
+    : { startDate: periodStart, endDate: periodEnd };
+}
+
+function trainingStateSeries(projection: PlanTabProjection, startDate: string, endDate: string) {
+  const actualByDate = new Map(
+    projection.fitness.actual
+      .filter((point) => point.date >= startDate && point.date <= endDate)
+      .map((point) => [point.date, point]),
+  );
+  const plannedByDate = new Map(
+    projection.fitness.scheduled
+      .filter((point) => point.date >= startDate && point.date <= endDate)
+      .map((point) => [point.date, point]),
+  );
+  return [...new Set([...actualByDate.keys(), ...plannedByDate.keys()])]
+    .sort((left, right) => left.localeCompare(right))
+    .slice(0, 31)
+    .map((date) => {
+      const actual = actualByDate.get(date);
+      const planned = plannedByDate.get(date);
+      const values = (point: NonNullable<typeof actual>) => ({
+        fitness: point.longTermLoad,
+        fatigue: point.recentLoad,
+        form: point.loadBalance,
+      });
+      return {
+        date,
+        actual: actual ? values(actual) : null,
+        planned: planned ? values(planned) : null,
+      };
+    });
+}
+
+function intensityDistributionSource(
+  projection: PlanTabProjection,
+  items: PlanTabProjection["ledgerItems"],
+) {
+  const sourceStatuses = [
+    ...(items.some((item) => item.kind === "completed")
+      ? [projection.sourceCoverage.activities?.status]
+      : []),
+    ...(items.some((item) => item.kind === "planned")
+      ? [projection.sourceCoverage.scheduledItems?.status]
+      : []),
+  ];
+  if (sourceStatuses.length === 0) {
+    sourceStatuses.push(
+      projection.sourceCoverage.activities?.status,
+      projection.sourceCoverage.scheduledItems?.status,
+    );
+  }
+  if (sourceStatuses.some((status) => status === undefined)) return "unavailable" as const;
+  return sourceStatuses.some((status) => status === "partial")
+    ? ("partial" as const)
+    : ("complete" as const);
+}
+
+function intensityDistributionObservation(item: PlanTabProjection["ledgerItems"][number]) {
+  if (
+    item.intensityStatus === "unavailable" ||
+    item.contributingDurationStatus === "unavailable" ||
+    item.intensity === null ||
+    item.contributingDurationSeconds === null
+  ) {
+    return { status: "unavailable" as const, intensity: null, durationSeconds: null };
+  }
+  if (item.contributingDurationSeconds === 0) {
+    return { status: "known_zero" as const, intensity: null, durationSeconds: 0 };
+  }
+  return {
+    status:
+      item.intensityStatus === "partial" || item.contributingDurationStatus === "partial"
+        ? ("partial" as const)
+        : ("complete" as const),
+    intensity: item.intensity,
+    durationSeconds: item.contributingDurationSeconds,
   };
 }
 
@@ -262,7 +381,7 @@ export function buildPlanningLedger(input: {
       effective: summary ? value(summary.status, summary.commonLoad) : unavailable,
       intensity: summary ? value(summary.status, summary.intensity) : unavailable,
       contributingDurationSeconds: summary
-        ? value(summary.status, summary.contributingDurationSeconds)
+        ? coverageValue(summary.status, summary.contributingDurationSeconds)
         : unavailable,
     };
   });
@@ -272,7 +391,12 @@ export function buildPlanningLedger(input: {
     breakdown.length === 0
       ? plannedValue("unavailable", null)
       : aggregate(breakdown.map((day) => day[field]));
-  const entries: PlanningLedger["entries"] = input.projection.ledgerItems.map((item) => ({
+  const aggregateCoverageField = (field: "contributingDurationSeconds") =>
+    aggregateCoverage(breakdown.map((day) => day[field]));
+  const periodLedgerItems = input.projection.ledgerItems.filter(
+    (item) => item.date >= periodStart && item.date <= periodEnd,
+  );
+  const entries: PlanningLedger["entries"] = periodLedgerItems.map((item) => ({
     id: item.id,
     date: item.date,
     startsAt: null,
@@ -287,10 +411,10 @@ export function buildPlanningLedger(input: {
       item.kind === "planned"
         ? plannedValue(item.intensityStatus, item.intensity)
         : value(item.intensityStatus, item.intensity),
-    contributingDurationSeconds:
-      item.kind === "planned"
-        ? plannedValue(item.contributingDurationStatus, item.contributingDurationSeconds)
-        : value(item.contributingDurationStatus, item.contributingDurationSeconds),
+    contributingDurationSeconds: coverageValue(
+      item.contributingDurationStatus,
+      item.contributingDurationSeconds,
+    ),
     navigation: {
       target: item.kind === "completed" ? ("activity" as const) : ("event" as const),
       id: item.id,
@@ -305,7 +429,7 @@ export function buildPlanningLedger(input: {
   );
   entries.push(
     ...(input.calendarFacts?.entries ?? [])
-      .filter((entry) => !input.projection.ledgerItems.some((item) => item.id === entry.id))
+      .filter((entry) => !periodLedgerItems.some((item) => item.id === entry.id))
       .map((entry) => ({
         ...entry,
         load:
@@ -357,7 +481,10 @@ export function buildPlanningLedger(input: {
   const entriesTruncated = entries.length > MAX_LEDGER_ENTRIES;
   const boundedEntries = entries.slice(0, MAX_LEDGER_ENTRIES);
   const effectiveLoad = aggregateField("effective");
-  const contributingDurationSeconds = aggregateField("contributingDurationSeconds");
+  const contributingDurationSeconds = aggregateCoverageField("contributingDurationSeconds");
+  const stateSeriesRange = trainingStateSeriesRange(request, periodStart, periodEnd);
+  const distributionItems = periodLedgerItems.slice(0, MAX_LEDGER_ENTRIES);
+  const distributionSource = intensityDistributionSource(input.projection, distributionItems);
 
   return planningLedgerSchema.parse({
     contractVersion: "planning-ledger-v3",
@@ -374,6 +501,15 @@ export function buildPlanningLedger(input: {
       effective: effectiveLoad,
     },
     intensity: aggregateIntensity({ load: effectiveLoad, duration: contributingDurationSeconds }),
+    intensityDistribution: buildNormalizedIntensityDistribution({
+      sourceStatus:
+        distributionSource === "unavailable"
+          ? distributionSource
+          : periodLedgerItems.length > distributionItems.length
+            ? "partial"
+            : distributionSource,
+      observations: distributionItems.map(intensityDistributionObservation),
+    }),
     contributingDurationSeconds,
     trainingState: {
       actual: {
@@ -396,6 +532,11 @@ export function buildPlanningLedger(input: {
           "scheduled_projection",
         ),
       },
+      series: trainingStateSeries(
+        input.projection,
+        stateSeriesRange.startDate,
+        stateSeriesRange.endDate,
+      ),
     },
     dailyBreakdown: request.period === "day" ? [] : breakdown,
     entries: boundedEntries,
@@ -425,13 +566,24 @@ export async function readPlanningLedger(input: {
 }) {
   const request = planningLedgerRequestSchema.parse(input.request);
   const { periodStart, periodEnd } = resolvePlanningLedgerPeriod(request);
+  const reviewRanges = resolvePlanPeriodReviewRanges(request);
+  const stateRange = trainingStateSeriesRange(request, periodStart, periodEnd);
   const dependencies = input.dependencies ?? defaultDependencies;
   const asOf = input.asOf ?? new Date();
   return withRepeatableReadSnapshot(input.db, async (tx) => {
     const projection = await dependencies.readProjection({
       db: tx,
       profileId: input.profileId,
-      request: { startDate: periodStart, endDate: periodEnd },
+      request: {
+        startDate:
+          stateRange.startDate < reviewRanges.readRange.startDate
+            ? stateRange.startDate
+            : reviewRanges.readRange.startDate,
+        endDate:
+          stateRange.endDate > reviewRanges.readRange.endDate
+            ? stateRange.endDate
+            : reviewRanges.readRange.endDate,
+      },
       asOf,
       ...(input.projectionDependencies !== undefined
         ? { dependencies: input.projectionDependencies }
@@ -444,7 +596,23 @@ export async function readPlanningLedger(input: {
       periodEndExclusive: addDaysDateKey(periodEnd, 1),
       planningTimezone: projection.planningTimezone,
     });
-    return buildPlanningLedger({ projection, request, calendarFacts });
+    const ledger = buildPlanningLedger({ projection, request, calendarFacts });
+    const selectedPeriodState =
+      projection.today === null
+        ? ("unavailable" as const)
+        : periodStart > projection.today
+          ? ("future" as const)
+          : periodEnd < projection.today
+            ? ("historical" as const)
+            : ("current" as const);
+    return planningLedgerResponseSchema.parse({
+      ...ledger,
+      trainingComposition: buildPeriodTrainingComposition({
+        projection,
+        ranges: reviewRanges,
+        selectedPeriodState,
+      }),
+    });
   });
 }
 

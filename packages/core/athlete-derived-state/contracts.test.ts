@@ -433,16 +433,33 @@ describe("planned athlete-derived-state persistence contracts", () => {
     ).toBe(false);
   });
 
-  it("keeps one persisted threshold candidate per athlete activity identity", () => {
+  it("keeps one persisted threshold candidate per athlete activity category and metric", () => {
     const first = persistedEvidence();
     const duplicateIdentity = persistedEvidence({
       evidence: { ...first.evidence, evidenceId: "66666666-6666-4666-8666-666666666666" },
       lifecycle: { status: "superseded", invalidatedAt: "2026-08-10T09:00:00.000Z" },
     });
+    const independentLthr = persistedEvidence({
+      evidence: {
+        ...first.evidence,
+        evidenceId: "77777777-7777-4777-8777-777777777777",
+        metric: "lthr",
+        unit: "bpm",
+        method: "lthr_30m_final_20m",
+        value: 172,
+        sourceSeriesId: "heart-rate",
+        sourceSeriesMetric: "heart_rate",
+        startTimestampSeconds: 600,
+        exactWindowSeconds: 1_200,
+      },
+    });
 
     expect(
       persistedThresholdEvidenceCollectionSchema.safeParse([first, duplicateIdentity]).success,
     ).toBe(false);
+    expect(
+      persistedThresholdEvidenceCollectionSchema.safeParse([first, independentLthr]).success,
+    ).toBe(true);
   });
 
   it("replaces persisted evidence only at its stable athlete activity identity", () => {
@@ -467,6 +484,20 @@ describe("planned athlete-derived-state persistence contracts", () => {
         ...input,
         replacementEvidence: persistedEvidence({
           evidence: { ...replacement.evidence, activityId: "77777777-7777-4777-8777-777777777777" },
+        }),
+      }).success,
+    ).toBe(false);
+    expect(
+      persistedThresholdEvidenceReplacementInputSchema.safeParse({
+        ...input,
+        replacementEvidence: persistedEvidence({
+          evidence: {
+            ...replacement.evidence,
+            metric: "lthr",
+            unit: "bpm",
+            method: "lthr_30m_final_20m",
+            sourceSeriesMetric: "heart_rate",
+          },
         }),
       }).success,
     ).toBe(false);

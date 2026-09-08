@@ -110,17 +110,17 @@ export function getCommonLoadPresentation(
     if (aggregate.data.status === "unavailable") {
       return {
         status: aggregate.data.status,
-        load: null,
-        intensity: null,
+        load: "—",
+        intensity: "—",
         unavailableText: "Unavailable",
         diagnostic: getAggregateCommonLoadDiagnostic(context),
       };
     }
-    const incomplete = aggregate.data.status === "partial" ? " · Incomplete" : "";
+    const approximationPrefix = aggregate.data.status === "partial" ? "~" : "";
     return {
       status: aggregate.data.status,
-      load: `${formatCommonLoad(aggregate.data.load)}${incomplete}`,
-      intensity: `${formatCommonIntensity(aggregate.data.intensity)}${incomplete}`,
+      load: `${approximationPrefix}${formatCommonLoad(aggregate.data.load)}`,
+      intensity: `${approximationPrefix}${formatCommonIntensity(aggregate.data.intensity)}`,
       unavailableText: null,
       diagnostic: null,
     };
@@ -140,20 +140,17 @@ export function getCommonLoadPresentation(
   if (result.status === "partial") {
     return {
       status: result.status,
-      load: result.load === null ? null : `${formatCommonLoad(result.load)} · Incomplete`,
-      intensity:
-        result.intensity === null
-          ? null
-          : `${formatCommonIntensity(result.intensity)} · Incomplete`,
-      unavailableText: result.load === null ? "Incomplete" : null,
+      load: result.load === null ? "—" : `~${formatCommonLoad(result.load)}`,
+      intensity: result.intensity === null ? "—" : `~${formatCommonIntensity(result.intensity)}`,
+      unavailableText: result.load === null ? "Unavailable" : null,
       diagnostic: null,
     };
   }
 
   return {
     status: result.status,
-    load: null,
-    intensity: null,
+    load: "—",
+    intensity: "—",
     unavailableText:
       result.reason === "unsupported_modality"
         ? null

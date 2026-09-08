@@ -62,12 +62,11 @@ export class NotificationsPage {
     await this.page.goto(`/notifications${view ? `?view=${view}` : ""}`);
   }
 
-  requestFor(username: string | RegExp) {
-    return this.page.getByText(username).locator("..");
+  followRequest() {
+    return this.page.getByText("Follow Request", { exact: true }).locator("..");
   }
 
-  async respondToFollowRequest(response: "Accept" | "Reject", username?: string | RegExp) {
-    const scope = username ? this.requestFor(username) : this.page;
-    await scope.getByRole("button", { name: response }).click();
+  async respondToFollowRequest(response: "Accept" | "Reject") {
+    await this.followRequest().getByRole("button", { name: response }).click();
   }
 }

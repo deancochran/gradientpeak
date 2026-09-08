@@ -3,7 +3,6 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
 import {
-  createRunner,
   formatQaError,
   listenerPidsFromSs,
   parseArguments,
@@ -32,35 +31,22 @@ function child({ exitCode = null, pid = 42 } = {}) {
   };
 }
 
-test("changed paths select static, web, mobile, backend, or full verification", () => {
+test("changed paths select static, web, backend, or full verification", () => {
   assert.equal(profileForPaths([]), "static");
   assert.equal(profileForPaths(["docs/notes.md"]), "static");
   assert.equal(profileForPaths(["apps/web/src/routes/index.tsx"]), "web");
-  assert.equal(profileForPaths(["apps/mobile/app/index.tsx"]), "mobile");
+  assert.equal(profileForPaths(["apps/mobile/app/index.tsx"]), "static");
   assert.equal(profileForPaths(["packages/api/src/routers/activities.ts"]), "db");
   assert.equal(profileForPaths(["packages/db/schema.ts"]), "db");
-  assert.equal(profileForPaths(["packages/core/parity/index.ts"]), "full");
-  assert.equal(profileForPaths(["tests/parity/web-mobile-parity.test.ts"]), "full");
   assert.equal(profileForPaths(["tooling/qa/profiles.mjs"]), "full");
-  for (const path of [
-    "tooling/testing/capability-runner.mjs",
-    "tooling/testing/capability-runner.test.mjs",
-    "tooling/testing/capability-cli.mjs",
-    "tooling/testing/completion-cli.mjs",
-    "tooling/testing/base-registry.mjs",
-    "tooling/testing/base-registry.test.mjs",
-    "tooling/testing/parity.test.mjs",
-  ]) {
-    assert.equal(profileForPaths([path]), "full");
-  }
   assert.equal(profileForPaths([".github/workflows/ci.yml"]), "full");
   assert.equal(
     profileForPaths(["apps/web/src/routes/index.tsx", "apps/mobile/app/index.tsx"]),
-    "full",
+    "web",
   );
 });
 
-test("runtime profiles point directly to maintained browser and Maestro smoke tests", () => {
+test("runtime profiles point directly to the maintained browser smoke test", () => {
   const web = createProfilePlan({ profile: "web", includeStatic: false });
   assert.deepEqual(web.commands, [
     {
@@ -75,21 +61,9 @@ test("runtime profiles point directly to maintained browser and Maestro smoke te
       phase: "run",
     },
   ]);
-  const mobile = createProfilePlan({ profile: "mobile", includeStatic: false });
-  assert.deepEqual(mobile.commands.at(-1), {
-    command: "pnpm",
-    args: ["--filter", "mobile", "test:e2e:flow", ".maestro/flows/smoke/auth_navigation.yaml"],
-    phase: "run",
-  });
   const fullCommands = createProfilePlan({ profile: "full", includeStatic: false }).commands;
   assert.equal(
     fullCommands.some((entry) => entry.args.includes("e2e/specs/smoke.spec.ts")),
-    true,
-  );
-  assert.equal(
-    fullCommands.some((entry) =>
-      entry.args.some((argument) => argument.endsWith("auth_navigation.yaml")),
-    ),
     true,
   );
 });
@@ -108,7 +82,7 @@ test("CLI accepts only named profile and changed-path options", () => {
   assert.throws(() => parseArguments(["--changed-paths"]), /at least one path/);
 });
 
-test("normal quality, pre-push, and CI include parity validation", async () => {
+test("normal quality, pre-push, and CI use focused owner checks", async () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const [manifestSource, lefthook, workflow] = await Promise.all([
     readFile(path.join(root, "package.json"), "utf8"),
@@ -116,13 +90,7 @@ test("normal quality, pre-push, and CI include parity validation", async () => {
     readFile(path.join(root, ".github/workflows/ci.yml"), "utf8"),
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.match(manifest.scripts.test, /test:parity/);
-  assert.match(manifest.scripts["test:parity"], /parity:report/);
-  assert.equal(manifest.scripts["parity:strict"], "node tooling/testing/parity-cli.mjs --strict");
-  assert.equal(
-    manifest.scripts["parity:proof-strict"],
-    "node tooling/testing/parity-cli.mjs --proof-strict",
-  );
+  assert.doesNotMatch(manifest.scripts.test, /parity|capability/);
   assert.match(lefthook, /pre-push:[\s\S]*pnpm quality:push \{push_files\}/);
   assert.match(workflow, /run: pnpm test/);
   assert.deepEqual(validateCiRuntimeDelegation(workflow), []);
@@ -184,33 +152,4 @@ test("health, stabilization, and listener ownership fail closed", async () => {
     /not exclusively owned/,
   );
   assert.throws(() => listenerPidsFromSs("LISTEN 0 511 127.0.0.1:3000"), /identify/);
-});
-
-test("service startup failures clean up owned hosts without touching unknown processes", async () => {
-  const events = [];
-  const web = child({ pid: 101 });
-  const runner = createRunner({
-    portAvailable: async (port) => port !== 8082,
-    spawnProcess(_, args) {
-      events.push(args);
-      return args.includes("dev:e2e:web") ? web : child({ exitCode: 0, pid: 102 });
-    },
-    waitForHealth: async () => {},
-    verifyOwnership: async () => {},
-    stabilize: async () => {},
-    killProcess(_, signal) {
-      events.push([signal]);
-      web.emit("exit", 0);
-    },
-    shutdownTimeout: 1,
-  });
-  await assert.rejects(
-    runner.execute(createProfilePlan({ profile: "mobile" }), "/tmp"),
-    AggregateError,
-  );
-  assert.equal(events.at(-1).at(-1), "test:e2e:clean");
-  assert.equal(
-    events.some((entry) => entry[0] === "SIGTERM"),
-    true,
-  );
 });

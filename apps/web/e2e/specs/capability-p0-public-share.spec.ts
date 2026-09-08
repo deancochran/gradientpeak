@@ -72,7 +72,7 @@ test("[variation:public-share:activity-plan-narrow] anonymous narrow reader scro
     ).toBeVisible();
     await page.reload();
     await expect(page.getByRole("heading", { name: "Playwright Tempo Builder" })).toBeVisible();
-    await expect(sessionFlow.getByText("Main set", { exact: true })).toBeVisible();
+    await expect(sessionFlow.getByText(/^Main set ·/)).toBeVisible();
   });
 });
 

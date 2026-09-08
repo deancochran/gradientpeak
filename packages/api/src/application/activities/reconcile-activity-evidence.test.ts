@@ -87,14 +87,134 @@ describe("planGeneratedActivityEvidenceReconciliation", () => {
   });
 
   it("treats PostgreSQL real output precision as identical evidence", () => {
+    const persistedValue = 373.333;
     const plan = planGeneratedActivityEvidenceReconciliation({
-      existingEfforts: [effort({ value: 373.333 })],
+      existingEfforts: [
+        effort({ distance_meters: null, quality_score: null, value: persistedValue }),
+      ],
       generated: generated([effort({ id: "redelivery-random-id", value: 373.3333333333333 })]),
     });
 
     expect(plan.effortInserts).toEqual([]);
     expect(plan.effortDeleteIds).toEqual([]);
+    expect(plan.reconciledEfforts).toEqual([
+      expect.objectContaining({
+        distance_meters: null,
+        quality_score: null,
+        value: persistedValue,
+      }),
+    ]);
     expect(plan.effortMaterialRecordedAt).toBeNull();
+  });
+
+  it("canonicalizes a new effort to PostgreSQL real precision before calibration and replay", () => {
+    const desired = effort({ id: "first-delivery", value: 373.3333333333333 });
+    const first = planGeneratedActivityEvidenceReconciliation({
+      existingEfforts: [],
+      generated: generated([desired]),
+    });
+
+    expect(first.effortInserts[0]?.value).toBe(373.333);
+    expect(first.reconciledEfforts[0]?.value).toBe(373.333);
+
+    const second = planGeneratedActivityEvidenceReconciliation({
+      existingEfforts: first.effortInserts as never[],
+      generated: generated([effort({ id: "redelivery-random-id", value: 373.3333333333333 })]),
+    });
+    expect(second.effortInserts).toEqual([]);
+    expect(second.reconciledEfforts[0]?.value).toBe(373.333);
+  });
+
+  it("retains generic v1 evidence while inserting and then retaining canonical LTHR", () => {
+    const genericOverrides = {
+      effort_type: "heart_rate",
+      source_series: "heart_rate",
+      duration_seconds: 1_200,
+      end_offset_ms: 1_200_000,
+      unit: "bpm",
+      value: 171,
+    };
+    const generic = effort({
+      ...genericOverrides,
+      id: "generic-heart-rate",
+      provenance: { observation_id: "generic-heart-rate", source_series: "heart_rate" },
+    });
+    const canonicalLthrOverrides = {
+      ...genericOverrides,
+      method: "activity_file_lthr_detection",
+      calculation_version: "activity-file-lthr-30m-final-20m-v1",
+    };
+    const canonicalLthr = effort({
+      ...canonicalLthrOverrides,
+      id: "canonical-lthr",
+      provenance: { observation_id: "canonical-lthr", source_series: "heart_rate" },
+    });
+    const first = planGeneratedActivityEvidenceReconciliation({
+      existingEfforts: [generic],
+      generated: generated([
+        effort({
+          ...genericOverrides,
+          id: "generic-redelivery",
+          provenance: { observation_id: "generic-redelivery", source_series: "heart_rate" },
+        }),
+        canonicalLthr,
+      ]),
+    });
+
+    expect(first.effortDeleteIds).toEqual([]);
+    expect(first.effortInserts).toEqual([
+      expect.objectContaining({
+        id: "canonical-lthr",
+        method: "activity_file_lthr_detection",
+        calculation_version: "activity-file-lthr-30m-final-20m-v1",
+      }),
+    ]);
+    expect(first.reconciledEfforts.map(({ id }) => id)).toEqual([
+      "generic-heart-rate",
+      "canonical-lthr",
+    ]);
+
+    const second = planGeneratedActivityEvidenceReconciliation({
+      existingEfforts: [generic, ...(first.effortInserts as never[])],
+      generated: generated([
+        effort({
+          ...genericOverrides,
+          id: "generic-second-redelivery",
+          provenance: {
+            observation_id: "generic-second-redelivery",
+            source_series: "heart_rate",
+          },
+        }),
+        effort({
+          ...canonicalLthrOverrides,
+          id: "canonical-lthr-redelivery",
+          provenance: {
+            observation_id: "canonical-lthr-redelivery",
+            source_series: "heart_rate",
+          },
+        }),
+      ]),
+    });
+    expect(second.effortInserts).toEqual([]);
+    expect(second.effortDeleteIds).toEqual([]);
+  });
+
+  it("allows a new calculation version to coexist without replacing immutable v1 evidence", () => {
+    const plan = planGeneratedActivityEvidenceReconciliation({
+      existingEfforts: [effort({})],
+      generated: generated([
+        effort({ id: "v1-redelivery" }),
+        effort({ id: "v2-observation", calculation_version: "best-effort-extraction-v2" }),
+      ]),
+    });
+
+    expect(plan.effortDeleteIds).toEqual([]);
+    expect(plan.effortInserts).toEqual([
+      expect.objectContaining({
+        id: "v2-observation",
+        calculation_version: "best-effort-extraction-v2",
+      }),
+    ]);
   });
 
   it("fails closed when the same immutable source window is replayed with divergent evidence", () => {

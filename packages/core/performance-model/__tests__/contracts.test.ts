@@ -79,6 +79,44 @@ describe("AthletePerformanceTargetFacts", () => {
     expect(getAvailablePerformanceTargetValue(facts.thresholds.run)).toBe(4);
   });
 
+  it.each([
+    "bike",
+    "run",
+    "swim",
+  ] as const)("materializes persisted %s LTHR only into that category's heart-rate target", (activityCategory) => {
+    const facts = materializeAthletePerformanceTargetFacts({
+      athleteId: "athlete-1",
+      asOf,
+      thresholds: [
+        source({
+          id: `${activityCategory}-lthr-threshold`,
+          activityCategory,
+          metric: "lthr",
+          unit: "bpm",
+          method: "lthr_30m_final_20m",
+          value: 171,
+          sourceEvaluationIds: [`${activityCategory}-lthr-evaluation`],
+          sourceEffortIds: [`${activityCategory}-lthr-effort`],
+          sourceActivityIds: [`${activityCategory}-activity`],
+        }),
+      ],
+    });
+
+    expect(facts.heartRate[activityCategory].lthr).toMatchObject({
+      status: "available",
+      valueBpm: 171,
+      calibrationId: `${activityCategory}-lthr-threshold`,
+      sourceEvidenceId: `${activityCategory}-lthr-effort`,
+      method: "activity_file_lthr_detection",
+      calculationVersion: "activity-file-lthr-30m-final-20m-v1",
+    });
+    for (const otherCategory of (["bike", "run", "swim"] as const).filter(
+      (candidate) => candidate !== activityCategory,
+    )) {
+      expect(facts.heartRate[otherCategory].lthr.status).toBe("unavailable");
+    }
+  });
+
   it("creates a complete fail-closed target contract", () => {
     const facts = createUnavailableAthletePerformanceTargetFacts(asOf, "athlete-1");
     expect(facts.thresholds).toEqual({

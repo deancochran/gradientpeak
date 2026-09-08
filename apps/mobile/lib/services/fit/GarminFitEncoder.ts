@@ -27,6 +27,7 @@ import { safeDecodeFitFile } from "@repo/core/activity-files/fit-parser";
 import { Buffer } from "buffer";
 import { Directory, File, Paths } from "expo-file-system";
 import { Platform } from "react-native";
+import { canonicalRecordingEvidenceUris } from "../ActivityRecorder/recordingEvidencePaths";
 import type { ConnectedSensor } from "../ActivityRecorder/sensors";
 import { fitTimerSeconds } from "./fit-time";
 
@@ -284,9 +285,9 @@ export class GarminFitEncoder {
   constructor(recordingId: string, userId: string, _config?: Partial<EncoderConfig>) {
     this.recordingId = recordingId;
     this.userId = userId;
-    const baseDir = Paths.document.uri || Paths.cache.uri || "";
-    this.storageUri = `${baseDir}fit_encoding_${recordingId}/`;
-    this.outputFilePath = `${this.storageUri}activity.fit`;
+    const paths = canonicalRecordingEvidenceUris(recordingId);
+    this.storageUri = paths.fitDirectoryUri;
+    this.outputFilePath = paths.activityFileUri;
     this.encoder = new Encoder();
   }
 

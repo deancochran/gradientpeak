@@ -1,6 +1,0 @@
-appId: ${MAESTRO_APP_ID}
-# @purpose Open protected training preferences by canonical app link.
-# @ready training-preferences-screen
----
-- openLink: "${MAESTRO_APP_SCHEME}://training-preferences"
-- assertVisible: { id: "training-preferences-screen" }

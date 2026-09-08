@@ -1,9 +1,10 @@
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { Redirect, useSegments } from "expo-router";
+import { Redirect, usePathname, useSegments } from "expo-router";
 import * as React from "react";
 import { ActivityIndicator, View } from "react-native";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { parsePostSignInDestination } from "@/lib/navigation/postSignInDestination";
 import { useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
@@ -18,6 +19,7 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
     profileError,
     refreshProfile,
   } = useAuth();
+  const pathname = usePathname();
   const segments = useSegments();
   const rootSegment = segments[0];
   const childSegment = segments.at(1);
@@ -39,9 +41,12 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
     }
 
     if (authState === "anonymous") {
-      return inExternalGroup
-        ? { type: "allow" as const }
-        : { type: "redirect" as const, to: "/(external)/sign-in" as const };
+      if (inExternalGroup) return { type: "allow" as const };
+      return {
+        type: "redirect" as const,
+        to: "/(external)/sign-in" as const,
+        returnTo: parsePostSignInDestination(pathname),
+      };
     }
 
     if (authState === "authenticated-unverified") {
@@ -95,6 +100,7 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
     isOnboardingScreen,
     isVerificationScreen,
     onboardingStatus,
+    pathname,
     profileError,
     profileLoading,
     user,
@@ -128,6 +134,14 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
   if (guardDecision.type === "redirect") {
     if (guardDecision.to === "/(external)/verify") {
       return <Redirect href={{ pathname: guardDecision.to, params: guardDecision.params }} />;
+    }
+
+    if (guardDecision.to === "/(external)/sign-in" && guardDecision.returnTo) {
+      return (
+        <Redirect
+          href={{ pathname: guardDecision.to, params: { returnTo: guardDecision.returnTo } }}
+        />
+      );
     }
 
     return <Redirect href={guardDecision.to} />;

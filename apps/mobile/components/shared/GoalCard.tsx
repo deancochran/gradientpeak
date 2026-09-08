@@ -8,6 +8,8 @@ import {
 } from "./ResourceCardPrimitives";
 
 export type GoalCardData = {
+  compactReadiness?: { status: "ready" | "watch" | "not_ready"; value: number } | null;
+  compactSignals?: ReadonlyArray<{ label: string; value: string }>;
   id: string;
   objectiveSummary?: string | null;
   targetDate?: string | null;
@@ -38,6 +40,16 @@ function formatTargetDate(dateKey: string) {
 export function GoalCard({ goal, onPress, testID, variant = "default" }: GoalCardProps) {
   const compact = variant === "compact";
   const metrics = [
+    ...(compact && goal.compactReadiness !== undefined
+      ? [
+          {
+            label: "Readiness",
+            value:
+              goal.compactReadiness === null ? "—" : `${Math.round(goal.compactReadiness.value)}%`,
+          },
+        ]
+      : []),
+    ...(compact ? (goal.compactSignals ?? []) : []),
     goal.typeLabel ? { label: "Goal type", value: goal.typeLabel } : null,
     goal.targetDate ? { label: "Target date", value: formatTargetDate(goal.targetDate) } : null,
   ].filter((metric): metric is { label: string; value: string } => metric !== null);
@@ -63,7 +75,7 @@ export function GoalCard({ goal, onPress, testID, variant = "default" }: GoalCar
       {metrics.length > 0 ? (
         <ResourceMetricsRow
           compact={compact}
-          maxItems={2}
+          maxItems={compact ? 4 : 2}
           metrics={metrics}
           testID="goal-card-metrics"
         />

@@ -40,7 +40,9 @@ test("athlete searches every API-backed discovery scope and can page results", a
   await athletePage.goto("/search");
   await expect((await initialResponse).ok()).toBeTruthy();
   await expect(
-    athletePage.getByRole("heading", { name: "Discover training and community" }),
+    athletePage.getByRole("heading", {
+      name: "Discover training, routes, profiles, and groups",
+    }),
   ).toBeVisible();
 
   for (const [index, scope] of DISCOVERY_SCOPES.entries()) {

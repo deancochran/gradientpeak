@@ -39,14 +39,15 @@ export type ThresholdEffortSourceSeries =
   | "power"
   | "grade_adjusted_speed"
   | "raw_speed"
-  | "swim_speed";
-export type ActivityEffortSourceSeries = ThresholdEffortSourceSeries | "heart_rate";
+  | "swim_speed"
+  | "heart_rate";
+export type ActivityEffortSourceSeries = ThresholdEffortSourceSeries;
 
 export type ThresholdEffortLink = {
   effortId: string;
   activityId: string;
   sourceRevision: number;
-  effortType: "power" | "speed";
+  effortType: "power" | "speed" | "heart_rate";
   sourceSeries: ThresholdEffortSourceSeries;
   role: "primary" | "supporting";
   ordinal: number;
@@ -64,8 +65,8 @@ export type ThresholdAsOfFact = {
   status: "available";
   activityCategory: ThresholdActivityCategory;
   metric: ThresholdMetric;
-  unit: "watts" | "meters_per_second";
-  method: "bike_power_30m" | "run_speed_30m" | "swim_speed_15m";
+  unit: "watts" | "meters_per_second" | "bpm";
+  method: "bike_power_30m" | "run_speed_30m" | "swim_speed_15m" | "lthr_30m_final_20m";
   value: number;
   effectiveAt: string;
   policyVersion: string;
@@ -83,11 +84,11 @@ const directThresholdRowSchema = z.object({
   ordinal: z.coerce.number().int().nonnegative(),
   id: z.string().uuid(),
   activity_category: z.enum(["bike", "run", "swim"]),
-  metric: z.enum(["power", "speed"]),
+  metric: z.enum(["power", "speed", "lthr"]),
   value: z.coerce.number().positive(),
-  unit: z.enum(["watts", "meters_per_second"]),
+  unit: z.enum(["watts", "meters_per_second", "bpm"]),
   confidence: z.coerce.number().min(0).max(1),
-  method: z.enum(["bike_power_30m", "run_speed_30m", "swim_speed_15m"]),
+  method: z.enum(["bike_power_30m", "run_speed_30m", "swim_speed_15m", "lthr_30m_final_20m"]),
   effective_at: z.coerce.date(),
   policy_version: z.string().min(1),
   evaluation_id: z.string().uuid(),
@@ -107,8 +108,8 @@ const currentThresholdLifecycleRowSchema = z.object({
   id: z.string().uuid(),
   evaluation_id: z.string().uuid(),
   value: z.coerce.number().positive(),
-  unit: z.enum(["watts", "meters_per_second"]),
-  method: z.enum(["bike_power_30m", "run_speed_30m", "swim_speed_15m"]),
+  unit: z.enum(["watts", "meters_per_second", "bpm"]),
+  method: z.enum(["bike_power_30m", "run_speed_30m", "swim_speed_15m", "lthr_30m_final_20m"]),
   effective_at: z.coerce.date(),
   policy_version: z.string().min(1),
   supersedes_id: z.string().uuid().nullable(),
@@ -317,7 +318,10 @@ async function readQualifiedThresholdEvidencePage(
     earliestObservedAt?: Date;
   },
 ): Promise<ThresholdEvidence[]> {
-  const policy = getThresholdActivityCategoryPolicy(input.identity.activityCategory);
+  const policy = getThresholdActivityCategoryPolicy(
+    input.identity.activityCategory,
+    input.identity.metric,
+  );
   const rows = await db
     .select({
       id: thresholdEvaluations.id,
@@ -401,11 +405,14 @@ export async function readPrimaryThresholdEffortsByEvaluation(
   }
   return new Map(
     rows.flatMap((row) =>
-      (row.effortType === "power" || row.effortType === "speed") &&
+      (row.effortType === "power" ||
+        row.effortType === "speed" ||
+        row.effortType === "heart_rate") &&
       (row.sourceSeries === "power" ||
         row.sourceSeries === "grade_adjusted_speed" ||
         row.sourceSeries === "raw_speed" ||
-        row.sourceSeries === "swim_speed")
+        row.sourceSeries === "swim_speed" ||
+        row.sourceSeries === "heart_rate")
         ? [
             [
               row.evaluationId,
@@ -538,11 +545,14 @@ async function readThresholdEffortLinksByEvaluation(
       );
     for (const row of rows) {
       const links = [row].flatMap((candidate) =>
-        (candidate.effortType === "power" || candidate.effortType === "speed") &&
+        (candidate.effortType === "power" ||
+          candidate.effortType === "speed" ||
+          candidate.effortType === "heart_rate") &&
         (candidate.sourceSeries === "power" ||
           candidate.sourceSeries === "grade_adjusted_speed" ||
           candidate.sourceSeries === "raw_speed" ||
-          candidate.sourceSeries === "swim_speed") &&
+          candidate.sourceSeries === "swim_speed" ||
+          candidate.sourceSeries === "heart_rate") &&
         (candidate.role === "primary" || candidate.role === "supporting")
           ? [
               {
@@ -574,7 +584,10 @@ async function readCurrentThresholdLifecycleState(
     evaluationId: string;
   },
 ): Promise<ThresholdLifecycleState | null> {
-  const policy = getThresholdActivityCategoryPolicy(input.identity.activityCategory);
+  const policy = getThresholdActivityCategoryPolicy(
+    input.identity.activityCategory,
+    input.identity.metric,
+  );
   const result = await db.execute(sql`
     select published.id,
       published.evaluation_id,
@@ -700,7 +713,10 @@ export async function planThresholdEvaluationPersistence(
     activityId: input.sourceActivityId,
     observedAt: input.observedAt.toISOString(),
   };
-  const policy = getThresholdActivityCategoryPolicy(input.identity.activityCategory);
+  const policy = getThresholdActivityCategoryPolicy(
+    input.identity.activityCategory,
+    input.identity.metric,
+  );
   let state = await readCurrentThresholdLifecycleState(db, {
     profileId: input.profileId,
     identity: input.identity,
@@ -785,7 +801,10 @@ export async function insertThresholdEvaluation(
     now: Date;
   },
 ) {
-  const policy = getThresholdActivityCategoryPolicy(input.identity.activityCategory);
+  const policy = getThresholdActivityCategoryPolicy(
+    input.identity.activityCategory,
+    input.identity.metric,
+  );
   validateEffortLinks(input.effortLinks);
   if (input.evaluation.status === "qualified" && input.effortLinks[0]?.role !== "primary") {
     throw new Error("Qualified threshold evaluation requires its primary effort first");
@@ -889,7 +908,10 @@ export function planThresholdChain(input: {
   now: Date;
   initialSupersedesId?: string | null;
 }) {
-  const policy = getThresholdActivityCategoryPolicy(input.identity.activityCategory);
+  const policy = getThresholdActivityCategoryPolicy(
+    input.identity.activityCategory,
+    input.identity.metric,
+  );
   const desired: Array<typeof thresholds.$inferInsert> = [];
   const lifecycleByEvaluation = new Map<
     string,
@@ -947,7 +969,10 @@ export async function rebuildThresholdChainWithProfileLockHeld(
   tx: DrizzleTransactionClient,
   input: { profileId: string; identity: ThresholdIdentity; asOf: Date; now: Date },
 ) {
-  const policy = getThresholdActivityCategoryPolicy(input.identity.activityCategory);
+  const policy = getThresholdActivityCategoryPolicy(
+    input.identity.activityCategory,
+    input.identity.metric,
+  );
   const allExisting = await tx
     .select()
     .from(thresholds)
@@ -1081,7 +1106,7 @@ export async function deleteThresholdChainsForImpacts(
   input: { profileId: string; impacts: readonly ThresholdImpact[] },
 ) {
   for (const impact of input.impacts) {
-    const policy = getThresholdActivityCategoryPolicy(impact.activityCategory);
+    const policy = getThresholdActivityCategoryPolicy(impact.activityCategory, impact.metric);
     const rows = await tx
       .select({ id: thresholds.id })
       .from(thresholds)
@@ -1152,9 +1177,12 @@ async function readThresholdsForRequestsInSnapshot(
         excluded_activity_id uuid
       )
     ), identities(activity_category, metric) as (
-      values ('bike'::text, 'power'::threshold_metric),
-        ('run'::text, 'speed'::threshold_metric),
-        ('swim'::text, 'speed'::threshold_metric)
+      values ('bike'::text, 'power'::text),
+        ('bike'::text, 'lthr'::text),
+        ('run'::text, 'speed'::text),
+        ('run'::text, 'lthr'::text),
+        ('swim'::text, 'speed'::text),
+        ('swim'::text, 'lthr'::text)
     )
     select request.ordinal,
       candidate.id,
@@ -1186,8 +1214,11 @@ async function readThresholdsForRequestsInSnapshot(
       select published.*
       from thresholds published
       where published.profile_id = request.profile_id
-        and published.activity_category = identity.activity_category
-        and published.metric = identity.metric
+        and published.activity_category::text = identity.activity_category
+        -- Keep this read compatible while the optional LTHR enum migration is
+        -- pending: an older database has no LTHR enum literal, but simply
+        -- returns no LTHR threshold rows.
+        and published.metric::text = identity.metric
         and published.effective_at <= request.as_of
         and (
           request.excluded_activity_id is null

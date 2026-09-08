@@ -49,6 +49,7 @@ jest.mock("@/lib/hooks/useAuth", () => ({
 
 describe("route edit screen", () => {
   beforeEach(() => {
+    process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
     backMock.mockReset();
     invalidateRoutesMock.mockReset().mockResolvedValue(undefined);
     updateRouteMock.mockReset().mockResolvedValue({ id: "route-1" });
@@ -64,6 +65,7 @@ describe("route edit screen", () => {
     await renderScreen();
 
     expect(screen.getByTestId("route-edit-name-input").props.value).toBe("Ridge loop");
+    expect(screen.getByTestId("route-edit-name-input").props.selectTextOnFocus).toBe(true);
     await fireEvent.changeText(
       screen.getByTestId("route-edit-name-input"),
       "  Updated ridge loop  ",

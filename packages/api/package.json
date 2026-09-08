@@ -29,6 +29,10 @@
       "types": "./src/query-client.ts",
       "default": "./src/query-client.ts"
     },
+    "./profile-identity-cache": {
+      "types": "./src/profile-identity-cache.ts",
+      "default": "./src/profile-identity-cache.ts"
+    },
     "./recording-submission": {
       "types": "./src/contracts/recording-submission.ts",
       "default": "./src/contracts/recording-submission.ts"
@@ -40,6 +44,10 @@
     "./server": {
       "types": "./src/server.ts",
       "default": "./src/server.ts"
+    },
+    "./strava-webhook": {
+      "types": "./src/lib/provider-sync/strava-webhook-contract.ts",
+      "default": "./src/lib/provider-sync/strava-webhook-contract.ts"
     },
     "./telemetry": {
       "types": "./src/telemetry.ts",
@@ -64,6 +72,7 @@
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
     "seed-system-routes": "tsx scripts/seed-system-routes.ts",
+    "reanalyze-profile-activity-artifacts": "tsx scripts/reanalyze-profile-activity-artifacts.ts",
     "reprocess-profile-activity-analysis": "tsx scripts/reprocess-profile-activity-analysis.ts",
     "test": "vitest run",
     "test:live-db": "vitest run --config vitest.live-db.config.ts",

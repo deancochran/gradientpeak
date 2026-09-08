@@ -11,6 +11,7 @@ import { ActivityCard as ProjectionActivityCard } from "../ActivityCard";
 
 const toggleLikeMutateMock = jest.fn();
 const shareMock = jest.fn();
+const getPublicShareUrlMock = jest.fn((path: string) => `https://share.gradientpeak.test${path}`);
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -19,6 +20,11 @@ jest.mock("react-native", () => ({
   Share: { share: shareMock },
   TouchableOpacity: mockCreateHost("TouchableOpacity"),
   View: mockCreateHost("View"),
+}));
+
+jest.mock("@/lib/share/public-share-url", () => ({
+  __esModule: true,
+  getPublicShareUrl: (path: string) => getPublicShareUrlMock(path),
 }));
 
 jest.mock("@repo/ui/components/avatar", () => ({
@@ -148,6 +154,7 @@ function ActivityCard({
 describe("ActivityCard", () => {
   beforeEach(() => {
     shareMock.mockReset();
+    getPublicShareUrlMock.mockClear();
     toggleLikeMutateMock.mockReset();
     mockUsePreferredUnitSystem.mockReturnValue("metric");
   });
@@ -243,7 +250,7 @@ describe("ActivityCard", () => {
     expect(screen.queryByText("ActivityCategory-specific load")).toBeNull();
     expect(screen.getByText("Load")).toBeTruthy();
     expect(screen.getByText("Intensity")).toBeTruthy();
-    expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
   });
 
   it("shows the canonical activity summary metrics", async () => {
@@ -457,7 +464,7 @@ describe("ActivityCard", () => {
 
     expect(screen.getByText("Load")).toBeTruthy();
     expect(screen.getByText("Intensity")).toBeTruthy();
-    expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("0")).toBeNull();
   });
 
@@ -475,7 +482,7 @@ describe("ActivityCard", () => {
 
     expect(screen.getByText("Load")).toBeTruthy();
     expect(screen.getByText("Intensity")).toBeTruthy();
-    expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
 
     await rerender(
       <ActivityCard
@@ -488,7 +495,7 @@ describe("ActivityCard", () => {
       />,
     );
 
-    expect(screen.getAllByText("Unavailable").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
     expect(
       screen.queryByText(
         "This activity category is not supported for canonical Load. Canonical Load is not available for this activity category.",
@@ -649,6 +656,24 @@ describe("ActivityCard", () => {
         "The activity could not be shared. Try again.",
       ),
     );
+  });
+
+  it("shares public activities from the configured public web origin", async () => {
+    process.env.EXPO_PUBLIC_API_URL = "https://api.gradientpeak.test";
+    process.env.EXPO_PUBLIC_WEB_URL = "https://share.gradientpeak.test";
+    await renderNative(
+      <ActivityCard
+        activity={{ id: "activity-public-share", title: "Public Run", visibility: "public" }}
+      />,
+    );
+
+    await fireEvent.press(screen.getByTestId("activity-card-share-button-activity-public-share"));
+
+    await waitFor(() =>
+      expect(getPublicShareUrlMock).toHaveBeenCalledWith("/share/activities/activity-public-share"),
+    );
+    delete process.env.EXPO_PUBLIC_API_URL;
+    delete process.env.EXPO_PUBLIC_WEB_URL;
   });
 
   it("keeps top-right actions in the owner region and below-metrics actions after metrics", async () => {

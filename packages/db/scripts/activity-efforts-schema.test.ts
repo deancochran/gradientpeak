@@ -5,6 +5,7 @@ import { activityEffortSourceSeriesEnum, effortTypeEnum } from "../src/schema/en
 import { activityEfforts, activitySegments } from "../src/schema/tables";
 import {
   publicActivityEffortSourceSeriesSchema,
+  publicActivityEffortsInsertSchema,
   publicActivityEffortsUpdateSchema,
 } from "../src/validation";
 
@@ -18,6 +19,34 @@ assert.deepEqual(activityEffortSourceSeriesEnum.enumValues, [
 ]);
 assert.equal(publicActivityEffortSourceSeriesSchema.safeParse("raw_speed").success, true);
 assert.equal(publicActivityEffortSourceSeriesSchema.safeParse("speed").success, false);
+assert.equal(
+  publicActivityEffortsInsertSchema.safeParse({
+    id: "00000000-0000-4000-8000-000000000001",
+    created_at: new Date("2026-09-04T00:00:00.000Z"),
+    profile_id: "00000000-0000-4000-8000-000000000002",
+    activity_id: "00000000-0000-4000-8000-000000000003",
+    segment_id: "00000000-0000-4000-8000-000000000004",
+    recorded_at: new Date("2026-09-04T00:30:00.000Z"),
+    activity_category: "run",
+    effort_type: "heart_rate",
+    source_series: "heart_rate",
+    duration_seconds: 1_200,
+    source_artifact_id: "00000000-0000-4000-8000-000000000005",
+    source_revision: 1,
+    start_offset_ms: 600_000,
+    end_offset_ms: 1_800_000,
+    window_coverage: 1,
+    max_gap_seconds: 2,
+    unit: "bpm",
+    value: 172,
+    source: "imported",
+    method: "activity_file_lthr_detection",
+    calculation_version: "activity-file-lthr-30m-final-20m-v1",
+    provenance: { field_test_protocol: "30_minute_effort_final_20_minute_hr" },
+  }).success,
+  true,
+  "Canonical LTHR effort method and bpm unit must remain representable",
+);
 
 const config = getTableConfig(activityEfforts);
 const distanceMeters = config.columns.find((column) => column.name === "distance_meters");

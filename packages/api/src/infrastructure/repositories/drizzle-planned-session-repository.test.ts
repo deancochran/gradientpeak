@@ -1,7 +1,8 @@
 import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import { plannedSessionIdempotencyKey } from "@repo/core/calendar";
 import type { PlannedSessionRow } from "@repo/db";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createDrizzlePlannedSessionRepository,
   immutableSessionMatches,
@@ -218,5 +219,120 @@ describe("planned-session Drizzle mapper", () => {
     expect(query.params).toEqual(
       expect.arrayContaining([row.profile_id, "active", "88888888-8888-4888-8888-888888888888"]),
     );
+  });
+
+  it("reactivates an exact cancelled training-plan replay without resurrecting completed sessions", async () => {
+    const cancelledTrainingPlanRow = {
+      ...row,
+      session_revision: 2,
+      planning_date: "2026-08-01",
+      source_kind: "training_plan" as const,
+      direct_operation_id: null,
+      training_plan_id: "99999999-9999-4999-8999-999999999999",
+      training_plan_revision: 1,
+      source_session_key: "2026-08-01:sessions.0",
+      idempotency_key: plannedSessionIdempotencyKey({
+        kind: "training_plan",
+        trainingPlanId: "99999999-9999-4999-8999-999999999999",
+        trainingPlanRevision: 1,
+        sourceSessionKey: "2026-08-01:sessions.0",
+      }),
+      status: "cancelled" as const,
+      cancellation_reason: "user_requested" as const,
+      cancelled_at: linkedAt,
+      completed_activity_id: null,
+      completion_state: null,
+      linked_at: null,
+      completion_unlinked_at: null,
+    } satisfies PlannedSessionRow;
+    const cancelled = mapPlannedSessionRow(cancelledTrainingPlanRow);
+    const replay = {
+      ...cancelled,
+      id: "77777777-7777-4777-8777-777777777777",
+      sessionRevision: 1,
+      lifecycle: { status: "scheduled" as const },
+    };
+    const reactivatedRow = {
+      ...cancelledTrainingPlanRow,
+      session_revision: 3,
+      status: "scheduled" as const,
+      cancellation_reason: null,
+      cancelled_at: null,
+    } satisfies PlannedSessionRow;
+    const updateSet = vi.fn(() => ({
+      where: () => ({ returning: async () => [reactivatedRow] }),
+    }));
+    const select = vi
+      .fn()
+      .mockReturnValueOnce({
+        from: () => ({ where: () => ({ limit: async () => [{ id: "plan" }] }) }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({ where: () => ({ limit: async () => [{ id: "plan" }] }) }),
+      })
+      .mockReturnValueOnce({
+        from: () => ({ where: () => ({ limit: async () => [cancelledTrainingPlanRow] }) }),
+      });
+    const repository = createDrizzlePlannedSessionRepository({
+      select,
+      insert: () => ({
+        values: () => ({ onConflictDoNothing: () => ({ returning: async () => [] }) }),
+      }),
+      update: () => ({ set: updateSet }),
+    } as never);
+
+    await expect(
+      repository.createOwned({ profileId: replay.profileId, session: replay }),
+    ).resolves.toMatchObject({
+      status: "unchanged",
+      session: { lifecycle: { status: "scheduled" }, sessionRevision: 3 },
+    });
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "scheduled",
+        cancellation_reason: null,
+        cancelled_at: null,
+      }),
+    );
+
+    const completedRepository = createDrizzlePlannedSessionRepository({
+      select: vi
+        .fn()
+        .mockReturnValueOnce({
+          from: () => ({ where: () => ({ limit: async () => [{ id: "plan" }] }) }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({ where: () => ({ limit: async () => [{ id: "plan" }] }) }),
+        })
+        .mockReturnValueOnce({
+          from: () => ({
+            where: () => ({
+              limit: async () => [
+                {
+                  ...cancelledTrainingPlanRow,
+                  status: "completed" as const,
+                  cancellation_reason: null,
+                  cancelled_at: null,
+                  completion_state: "activity_deleted" as const,
+                  linked_at: linkedAt,
+                  completion_unlinked_at: unlinkedAt,
+                },
+              ],
+            }),
+          }),
+        }),
+      insert: () => ({
+        values: () => ({ onConflictDoNothing: () => ({ returning: async () => [] }) }),
+      }),
+      update: () => ({ set: updateSet }),
+    } as never);
+
+    await expect(
+      completedRepository.createOwned({ profileId: replay.profileId, session: replay }),
+    ).resolves.toMatchObject({
+      status: "unchanged",
+      session: { lifecycle: { status: "completed" } },
+    });
+    expect(updateSet).toHaveBeenCalledTimes(1);
   });
 });

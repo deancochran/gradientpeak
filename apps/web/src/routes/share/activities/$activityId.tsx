@@ -86,11 +86,11 @@ function PublicActivityPage() {
         />
         <MetricCard
           icon={<Activity className="h-5 w-5" />}
-          label={performance.timingCoverage === "partial" ? "Moving (partial)" : "Moving time"}
+          label="Moving time"
           value={
             performance.movingSeconds === null
               ? "Not available"
-              : formatDuration(performance.movingSeconds)
+              : `${performance.timingCoverage === "partial" ? "~" : ""}${formatDuration(performance.movingSeconds)}`
           }
         />
         <MetricCard

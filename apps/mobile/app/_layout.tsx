@@ -6,6 +6,7 @@ import { Spinner } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { ThemeProvider } from "expo-router/react-navigation";
 import "@/global.css";
+import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { PortalHost } from "@rn-primitives/portal";
 import { router, Slot } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -18,12 +19,17 @@ import {
 } from "react-native-css/components/react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AppBootstrapGate } from "@/components/auth/AppBootstrapGate";
+import { EntityCommentsSheetProvider } from "@/components/social/EntityCommentsSheetProvider";
 import { initializeContractEpoch } from "@/lib/contract-epoch/contractEpoch";
 import { useStartupActivitySubmissionRecovery } from "@/lib/hooks/useStartupActivitySubmissionRecovery";
 import { PerformanceBeacon } from "@/lib/performance";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { TelemetryProvider } from "@/lib/providers/TelemetryProvider";
-import { initializeServerConfig, useServerConfig } from "@/lib/server-config";
+import {
+  getE2ERuntimeSentinel,
+  initializeServerConfig,
+  useServerConfig,
+} from "@/lib/server-config";
 import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
 import { incompleteQueueJobReferencesLocalFiles } from "@/lib/services/activitySubmissionQueue";
 import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
@@ -87,6 +93,7 @@ function AppShell() {
     () => vars(NATIVE_THEME_VARIABLES[resolvedTheme]),
     [resolvedTheme],
   );
+  const e2eRuntimeSentinel = getE2ERuntimeSentinel();
 
   if (!isThemeLoaded) {
     return (
@@ -108,17 +115,38 @@ function AppShell() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <SafeAreaProvider>
           <ThemeProvider value={navigationTheme}>
-            <View className="flex-1 bg-background">
-              <StatusBar style={isDark ? "light" : "dark"} />
-              <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
-                <View className="flex-1 bg-background">
-                  <Slot />
-                  <PortalHost />
-                  <E2ERuntimeErrorStatus />
-                  <PerformanceBeacon />
-                </View>
-              </SafeAreaView>
-            </View>
+            <BottomSheetModalProvider>
+              <View className="flex-1 bg-background">
+                <StatusBar style={isDark ? "light" : "dark"} />
+                <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
+                  <View className="flex-1 bg-background">
+                    <EntityCommentsSheetProvider>
+                      <Slot />
+                    </EntityCommentsSheetProvider>
+                    <PortalHost />
+                    {e2eRuntimeSentinel ? (
+                      <View
+                        pointerEvents="none"
+                        style={{
+                          position: "absolute",
+                          left: 0,
+                          bottom: 0,
+                          opacity: 0.01,
+                          maxWidth: 2,
+                          maxHeight: 2,
+                        }}
+                      >
+                        <Text accessibilityLabel={e2eRuntimeSentinel} testID="e2e-runtime-sentinel">
+                          {e2eRuntimeSentinel}
+                        </Text>
+                      </View>
+                    ) : null}
+                    <E2ERuntimeErrorStatus />
+                    <PerformanceBeacon />
+                  </View>
+                </SafeAreaView>
+              </View>
+            </BottomSheetModalProvider>
           </ThemeProvider>
         </SafeAreaProvider>
       </GestureHandlerRootView>

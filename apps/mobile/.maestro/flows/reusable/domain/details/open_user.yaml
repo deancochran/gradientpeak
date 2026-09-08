@@ -1,7 +1,0 @@
-appId: ${MAESTRO_APP_ID}
-# @purpose Open one user by canonical app link.
-# @arg USER_ID uuid required
-# @ready user-detail-summary
----
-- openLink: "${MAESTRO_APP_SCHEME}://user/${USER_ID}"
-- assertVisible: { id: "user-detail-summary" }

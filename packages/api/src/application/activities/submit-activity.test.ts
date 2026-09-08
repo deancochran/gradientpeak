@@ -499,6 +499,7 @@ describe("submitActivity", () => {
     const insertedActivity = insertedValues.find(({ table }) => table === activities)?.values as
       | Record<string, unknown>
       | undefined;
+    expect(insertedActivity?.name).toBe("morning bike");
     expect(insertedActivity?.performance_target_snapshot).toMatchObject({
       contractVersion: "completed-activity-performance-target-snapshot-v2",
       publishedRevision: null,

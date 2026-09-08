@@ -425,7 +425,6 @@ Purpose-built public DTOs expose only the safe subset needed for freshness and p
 - `tooling/architecture/`
 - `packages/ui/` ownership and contract tests
 - API live-database and router contract tests
-- `tests/parity/`
 
 **Acceptance criteria**
 

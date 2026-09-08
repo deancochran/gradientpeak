@@ -356,13 +356,13 @@ describe("activityPlansRouter", () => {
         expect.objectContaining({
           key: "common_load",
           status: "available",
-          provenance: "plan_intent",
+          provenance: "estimated",
         }),
         expect.objectContaining({
-          key: "normalized_intensity",
+          key: "objective_intensity",
           status: "available",
           value: 0.75,
-          provenance: "plan_intent",
+          provenance: "estimated",
         }),
       ]),
     );
@@ -417,7 +417,7 @@ describe("activityPlansRouter", () => {
           value: 1_800,
           provenance: "authored",
         }),
-        expect.objectContaining({ key: "common_load", provenance: "plan_intent" }),
+        expect.objectContaining({ key: "common_load", provenance: "estimated" }),
       ]),
     );
     expect(result.items[0]?.structure).toEqual(publicPlan.structure);
@@ -687,13 +687,13 @@ describe("activityPlansRouter", () => {
       expect.objectContaining({
         key: "common_load",
         status: "available",
-        provenance: "plan_intent",
+        provenance: "estimated",
       }),
       expect.objectContaining({
-        key: "normalized_intensity",
+        key: "objective_intensity",
         status: "available",
         value: 0.75,
-        provenance: "plan_intent",
+        provenance: "estimated",
       }),
     ]);
     for (const key of [
@@ -807,7 +807,7 @@ describe("activityPlansRouter", () => {
           value: 1_800,
           provenance: "authored",
         }),
-        expect.objectContaining({ key: "common_load", provenance: "plan_intent" }),
+        expect.objectContaining({ key: "common_load", provenance: "estimated" }),
       ]),
     );
     expect(JSON.stringify(result.items[1])).toMatch(/%FTP|targets|duration/i);

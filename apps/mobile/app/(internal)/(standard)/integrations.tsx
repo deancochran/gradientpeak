@@ -240,6 +240,7 @@ export default function IntegrationsScreen() {
           onViewImportedActivities={(importRunId) =>
             router.push({ pathname: "/activities-list", params: { importRunId } })
           }
+          onReviewImportedActivities={() => router.push("/activities-list")}
           pendingByProvider={pendingByProvider}
           onRetry={refetchSyncOverview}
         />

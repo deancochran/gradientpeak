@@ -27,5 +27,5 @@ it("offers accessible record and athlete discovery actions", async () => {
   await fireEvent.press(record);
   await fireEvent.press(discover);
   expect(navigateTo).toHaveBeenNthCalledWith(1, "/record");
-  expect(navigateTo).toHaveBeenNthCalledWith(2, "/search");
+  expect(navigateTo).toHaveBeenNthCalledWith(2, "/(internal)/(tabs)/discover");
 });

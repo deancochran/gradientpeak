@@ -412,9 +412,39 @@ export function createDrizzlePlannedSessionRepository(
           .limit(1);
         if (!existingRow) throw new Error("Conflicting planned session could not be loaded");
         const existing = mapPlannedSessionRow(existingRow);
-        return immutableSessionMatches(existing, session)
-          ? { status: "unchanged", session: existing }
-          : { status: "identity_conflict" };
+        if (!immutableSessionMatches(existing, session)) return { status: "identity_conflict" };
+
+        // Applying a removed training plan is an explicit request to schedule its
+        // future sessions again. Reuse its durable identity, but only recover a
+        // cancelled training-plan session; completed records remain terminal.
+        if (
+          existing.lifecycle.status === "cancelled" &&
+          existing.source.kind === "training_plan" &&
+          session.source.kind === "training_plan"
+        ) {
+          const [reactivated] = await executor
+            .update(plannedSessions)
+            .set({
+              status: "scheduled",
+              cancellation_reason: null,
+              cancelled_at: null,
+              session_revision: sql`${plannedSessions.session_revision} + 1`,
+              updated_at: new Date(),
+            })
+            .where(
+              and(
+                eq(plannedSessions.id, existing.id),
+                eq(plannedSessions.profile_id, input.profileId),
+                eq(plannedSessions.status, "cancelled"),
+                eq(plannedSessions.source_kind, "training_plan"),
+              ),
+            )
+            .returning();
+          if (reactivated)
+            return { status: "unchanged", session: mapPlannedSessionRow(reactivated) };
+        }
+
+        return { status: "unchanged", session: existing };
       };
 
       const groupEventId = session.groupEventId;

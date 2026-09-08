@@ -13,6 +13,7 @@ import { Clock, Ellipsis, MessageCircle, UserMinus, UserPlus } from "lucide-reac
 import { useEffect, useMemo } from "react";
 import { Alert, ScrollView, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { ProfileActivitiesSection } from "@/components/profile/ProfileActivitiesSection";
 import { ProfileGroupsSection } from "@/components/profile/ProfileGroupsSection";
 import { ProfileSummaryCard } from "@/components/profile/ProfileSummaryCard";
 import { api } from "@/lib/api";
@@ -149,7 +150,7 @@ function UserDetailScreen() {
   }
 
   const supportingText = isOwnProfile
-    ? "This is how your public profile appears to other athletes. Account tools live in the Profile tab."
+    ? "This is how your public profile appears to other athletes. Account tools live in Me."
     : renderedProfile.is_public
       ? "Open profile details, then follow or message if this looks like the right connection."
       : "This profile stays private until your follow request is accepted.";
@@ -237,6 +238,10 @@ function UserDetailScreen() {
         supportingText={supportingText}
         testID="user-detail-summary"
       />
+
+      {canViewSocialGraph ? (
+        <ProfileActivitiesSection profileId={targetUserId} testID="user-detail-activities" />
+      ) : null}
 
       <ProfileGroupsSection profileId={targetUserId} testID="user-detail-groups" />
 

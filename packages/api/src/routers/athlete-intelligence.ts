@@ -7,10 +7,17 @@ import {
 } from "../application/athlete-intelligence/athlete-read-model";
 import {
   getGoalAssessment,
+  getGoalAssessmentBatch,
   goalAssessmentResponseSchema,
 } from "../application/athlete-intelligence/goal-assessment";
 import { readPublishedAthleteStateSnapshot } from "../application/athlete-intelligence/published-athlete-state";
+import {
+  GoalProgressNotFoundError,
+  readGoalPortfolio,
+  readGoalProgress,
+} from "../application/athlete-intelligence/read-goal-progress";
 import { PublishedAthleteLoadUnavailableError } from "../application/athlete-intelligence/read-published-athlete-load";
+import { readThresholdOverview } from "../application/athlete-intelligence/read-threshold-overview";
 import {
   readUserVisibleThresholdEvidence,
   readUserVisibleTrainingEffects,
@@ -30,9 +37,23 @@ import {
 } from "../contracts/athlete-load-range";
 import { ATHLETE_STATE_CACHE_TAGS } from "../contracts/cache-receipts";
 import {
+  goalAssessmentBatchRequestSchema,
+  goalAssessmentBatchResponseSchema,
+} from "../contracts/goal-assessment-batch";
+import {
+  goalPortfolioRequestSchema,
+  goalPortfolioResponseSchema,
+  goalProgressRequestSchema,
+  goalProgressResponseSchema,
+} from "../contracts/goal-progress";
+import {
   thresholdEvidencePageDtoSchema,
   thresholdEvidenceRequestSchema,
 } from "../contracts/threshold-evidence";
+import {
+  thresholdOverviewRequestSchema,
+  thresholdOverviewResponseSchema,
+} from "../contracts/threshold-overview";
 import {
   trainingEffectsPageDtoSchema,
   trainingEffectsRequestSchema,
@@ -68,6 +89,9 @@ export async function resolveGoalProfile(input: {
 }
 
 type AthleteStateTransportDependencies = {
+  getGoalAssessmentBatch: typeof getGoalAssessmentBatch;
+  readGoalPortfolio: typeof readGoalPortfolio;
+  readGoalProgress: typeof readGoalProgress;
   readCurrentState: typeof readPublishedAthleteStateSnapshot;
   readTrainingEffects: typeof readUserVisibleTrainingEffects;
   readThresholdEvidence: typeof readUserVisibleThresholdEvidence;
@@ -103,6 +127,9 @@ export function createAthleteIntelligenceRouter(
   transportDependencies: Partial<AthleteStateTransportDependencies> = {},
 ) {
   const stateServices: AthleteStateTransportDependencies = {
+    getGoalAssessmentBatch: transportDependencies.getGoalAssessmentBatch ?? getGoalAssessmentBatch,
+    readGoalPortfolio: transportDependencies.readGoalPortfolio ?? readGoalPortfolio,
+    readGoalProgress: transportDependencies.readGoalProgress ?? readGoalProgress,
     readCurrentState: transportDependencies.readCurrentState ?? readPublishedAthleteStateSnapshot,
     readTrainingEffects:
       transportDependencies.readTrainingEffects ?? readUserVisibleTrainingEffects,
@@ -111,6 +138,42 @@ export function createAthleteIntelligenceRouter(
     requestRepair: transportDependencies.requestRepair ?? requestExplicitAthleteRecalculationRepair,
   };
   return createTRPCRouter({
+    getGoalAssessmentBatch: protectedProcedure
+      .input(goalAssessmentBatchRequestSchema)
+      .output(goalAssessmentBatchResponseSchema)
+      .query(({ ctx, input }) =>
+        stateServices.getGoalAssessmentBatch({
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+          goalIds: input.goalIds,
+        }),
+      ),
+    getGoalPortfolio: protectedProcedure
+      .input(goalPortfolioRequestSchema)
+      .output(goalPortfolioResponseSchema)
+      .query(({ ctx }) =>
+        stateServices.readGoalPortfolio({
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+        }),
+      ),
+    getGoalProgress: protectedProcedure
+      .input(goalProgressRequestSchema)
+      .output(goalProgressResponseSchema)
+      .query(async ({ ctx, input }) => {
+        try {
+          return await stateServices.readGoalProgress({
+            db: getRequiredDb(ctx),
+            profileId: ctx.session.user.id,
+            goalId: input.goalId,
+          });
+        } catch (error) {
+          if (error instanceof GoalProgressNotFoundError) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Goal not found", cause: error });
+          }
+          throw error;
+        }
+      }),
     getGoalAssessment: protectedProcedure
       .input(goalAssessmentInputSchema)
       .output(goalAssessmentResponseSchema)
@@ -206,6 +269,25 @@ export function createAthleteIntelligenceRouter(
           repository: createDrizzleAthleteDerivedStateRepository(getRequiredDb(ctx)),
           ...request,
           ...(after === undefined ? {} : { after }),
+        });
+      }),
+    getThresholdOverview: protectedProcedure
+      .input(thresholdOverviewRequestSchema)
+      .output(thresholdOverviewResponseSchema)
+      .query(async ({ ctx, input }) => {
+        return readThresholdOverview({
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+          historyLimit: input.historyLimit,
+          ...(input.historyCursor
+            ? {
+                historyCursor: {
+                  effectiveAt: new Date(input.historyCursor.effectiveAt),
+                  createdAt: new Date(input.historyCursor.createdAt),
+                  thresholdId: input.historyCursor.thresholdId,
+                },
+              }
+            : {}),
         });
       }),
     requestRecalculationRepair: protectedProcedure

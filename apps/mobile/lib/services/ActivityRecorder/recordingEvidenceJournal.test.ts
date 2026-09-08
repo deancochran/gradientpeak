@@ -4,6 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("expo-sqlite", () => ({ openDatabaseAsync: vi.fn() }));
 const files = new Map<string, { size: number; bytes: Uint8Array; deleted?: boolean }>();
 vi.mock("expo-file-system", () => ({
+  Paths: {
+    document: { uri: "file:///documents/" },
+    cache: { uri: "file:///cache/" },
+  },
   File: class {
     private readonly value: { size: number; bytes: Uint8Array; deleted?: boolean } | undefined;
     constructor(path: string) {

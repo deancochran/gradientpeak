@@ -803,7 +803,8 @@ describe("provider sync PostgreSQL claims", () => {
       error: null,
       fallbackRedirect: "http://localhost:3000/integrations",
       provider: "wahoo",
-      providerSyncRepository: failingWahooSyncRepository,
+      enqueueProviderJobInTransaction: (transaction, job) =>
+        failingWahooSyncRepository.enqueueJobInTransaction(transaction, job as never),
       repositories: createIntegrationsRepositories(db),
       runInTransaction: (operation) => db.transaction(operation),
       state,
@@ -864,7 +865,8 @@ describe("provider sync PostgreSQL claims", () => {
       error: null,
       fallbackRedirect: "http://localhost:3000/integrations",
       provider: "wahoo",
-      providerSyncRepository: createWahooSyncRepository({ db }),
+      enqueueProviderJobInTransaction: (transaction, job) =>
+        createWahooSyncRepository({ db }).enqueueJobInTransaction(transaction, job as never),
       repositories: createIntegrationsRepositories(db),
       runInTransaction: (operation) => db.transaction(operation),
       state,

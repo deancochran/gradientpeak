@@ -21,6 +21,7 @@ vi.mock("@tanstack/react-router", () => ({
     ...options,
     useNavigate: () => vi.fn(),
     useParams: () => ({ activityPlanId: mocks.activityPlanId }),
+    useSearch: () => ({ edit: undefined }),
   }),
 }));
 vi.mock("../../../components/activity-plan/activity-plan-comments", () => ({
@@ -194,16 +195,16 @@ describe("ActivityPlanDetailPage print", () => {
             value: 72,
             unit: "score",
             reason: null,
-            provenance: "personalized",
+            provenance: "estimated",
           },
           {
-            key: "normalized_intensity",
-            label: "Personalized intensity",
+            key: "objective_intensity",
+            label: "Intensity",
             status: "available",
             value: 0.8,
             unit: "ratio",
             reason: null,
-            provenance: "personalized",
+            provenance: "estimated",
           },
         ],
         structure: {
@@ -235,7 +236,6 @@ describe("ActivityPlanDetailPage print", () => {
       },
       edit: null,
     };
-    const print = vi.spyOn(window, "print").mockImplementation(() => undefined);
     const ActivityPlanDetailPage = (Route as unknown as { component: React.ComponentType })
       .component;
     const view = render(<ActivityPlanDetailPage />);
@@ -247,41 +247,54 @@ describe("ActivityPlanDetailPage print", () => {
     expect(
       screen.getByTestId("activity-plan-session-flow-timeline-bar-0").getAttribute("data-kind"),
     ).toBe("work");
-    expect(screen.getByText("Work · 1×")).toBeTruthy();
-    expect(screen.getByText(/Tempo · 1m/)).toBeTruthy();
-    expect(screen.getByText(/240 W \(80% FTP\)/)).toBeTruthy();
+    expect(screen.getByText("Work")).toBeTruthy();
+    expect(screen.getByText(/1m at 240 W/)).toBeTruthy();
+    expect(screen.getByText(/240 W/)).toBeTruthy();
+    const authoredTimelineIntensity = screen
+      .getByTestId("activity-plan-session-flow-timeline-bar-0")
+      .getAttribute("data-intensity");
     expect(
-      screen.getByRole("switch", { name: "Personalize targets" }).getAttribute("aria-checked"),
+      screen.getByRole("switch", { name: "Calculated targets" }).getAttribute("aria-checked"),
     ).toBe("true");
     expect(screen.getByText("Distance")).toBeTruthy();
     expect(screen.getByText("Duration")).toBeTruthy();
     expect(screen.getByText("Load")).toBeTruthy();
     expect(screen.getByText("Intensity")).toBeTruthy();
     expect(screen.getByLabelText("Distance, 10 km, Authored")).toBeTruthy();
-    expect(screen.getByLabelText("Duration, 1h 0m, Authored")).toBeTruthy();
-    expect(screen.getByLabelText("Load, 72, Personalized")).toBeTruthy();
-    expect(screen.getByLabelText("Intensity, 0.80, Personalized")).toBeTruthy();
+    expect(screen.getByLabelText("Duration, 1h, Authored")).toBeTruthy();
+    expect(screen.getByLabelText("Load, ~72, Estimated")).toBeTruthy();
+    expect(screen.getByLabelText("Intensity, ~0.80, Estimated")).toBeTruthy();
     expect(screen.queryByText(/~1h|approximately 1h/i)).toBeNull();
     expect(screen.queryByText(/recorded signal pattern|effort profile/i)).toBeNull();
-    fireEvent.click(screen.getByRole("switch", { name: "Personalize targets" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Calculated targets" }));
     expect(
-      screen.getByRole("switch", { name: "Personalize targets" }).getAttribute("aria-checked"),
+      screen.getByRole("switch", { name: "Calculated targets" }).getAttribute("aria-checked"),
     ).toBe("false");
-    expect(screen.queryByText(/240 W \(80% FTP\)/)).toBeNull();
+    expect(screen.queryByText(/240 W/)).toBeNull();
     expect(screen.getByText(/80% FTP/)).toBeTruthy();
+    expect(
+      screen
+        .getByTestId("activity-plan-session-flow-timeline-bar-0")
+        .getAttribute("data-intensity"),
+    ).toBe(authoredTimelineIntensity);
     expect(mocks.planInputs).not.toContainEqual({ id: "invalid-plan", personalize: true });
 
-    fireEvent.click(screen.getByRole("switch", { name: "Personalize targets" }));
-    expect(screen.getByText(/240 W \(80% FTP\)/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("switch", { name: "Calculated targets" }));
+    expect(screen.getByText(/240 W/)).toBeTruthy();
 
     mocks.activityPlanId = "another-plan";
     view.rerender(<ActivityPlanDetailPage />);
     expect(
-      screen.getByRole("switch", { name: "Personalize targets" }).getAttribute("aria-checked"),
+      screen.getByRole("switch", { name: "Calculated targets" }).getAttribute("aria-checked"),
     ).toBe("true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Print / Save as PDF" }));
-    expect(print).toHaveBeenCalledOnce();
+    expect((screen.getByRole("combobox", { name: "PDF format" }) as HTMLSelectElement).value).toBe(
+      "full-page",
+    );
+    expect(screen.getByRole("option", { name: "Bike cue strip" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Download PDF" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open / Print" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Share PDF" })).toBeTruthy();
     expect(screen.getByText("Read-only structure")).toBeTruthy();
     expect(screen.getByText("Read-only structure").parentElement?.className).toContain(
       "print:hidden",
@@ -331,16 +344,16 @@ describe("ActivityPlanDetailPage print", () => {
             value: 40.5,
             unit: "score",
             reason: null,
-            provenance: "plan_intent",
+            provenance: "estimated",
           },
           {
-            key: "normalized_intensity",
+            key: "objective_intensity",
             label: "Intensity",
             status: "available",
             value: 0.9,
             unit: "ratio",
             reason: null,
-            provenance: "plan_intent",
+            provenance: "estimated",
           },
         ],
         structure: {
@@ -387,7 +400,7 @@ describe("ActivityPlanDetailPage print", () => {
     });
   });
 
-  it("renders the full authored timeline and read-only structure for a non-owner plan", () => {
+  it("personalizes an eligible non-owner session flow using the viewer's performance targets", () => {
     mocks.plan = {
       detail: {
         id: "invalid-plan",
@@ -428,7 +441,7 @@ describe("ActivityPlanDetailPage print", () => {
             provenance: null,
           },
           {
-            key: "normalized_intensity",
+            key: "objective_intensity",
             label: "Intensity",
             status: "unavailable",
             value: null,
@@ -472,23 +485,21 @@ describe("ActivityPlanDetailPage print", () => {
 
     expect(screen.getByText("Session Flow")).toBeTruthy();
     expect(screen.getByTestId("activity-plan-session-flow")).toBeTruthy();
-    expect(
-      screen
-        .getByTestId("activity-plan-session-flow-timeline-bar-0")
-        .getAttribute("data-intensity"),
-    ).toBe("%FTP 90");
+    expect(screen.getByText(/270 W/)).toBeTruthy();
     expect(screen.getByText("Read-only structure")).toBeTruthy();
-    expect(screen.queryByRole("switch", { name: "Personalize targets" })).toBeNull();
+    expect(
+      screen.getByRole("switch", { name: "Calculated targets" }).getAttribute("aria-checked"),
+    ).toBe("true");
     expect(screen.queryByRole("button", { name: "Duplicate" })).toBeNull();
     expect(screen.queryByText(/Duplicate .* editable copy/)).toBeNull();
     expect(screen.getByTestId("activity-plan-schedule")).toBeTruthy();
     expect(screen.getByTestId("activity-plan-estimates")).toBeTruthy();
     expect(screen.getByLabelText("Distance, Unavailable, Unavailable")).toBeTruthy();
-    expect(screen.getByLabelText("Duration, 5m 0s, Authored")).toBeTruthy();
+    expect(screen.getByLabelText("Duration, 5m, Authored")).toBeTruthy();
     expect(screen.getAllByLabelText("Load, Unavailable, Unavailable")).toHaveLength(1);
     expect(screen.getAllByLabelText("Intensity, Unavailable, Unavailable")).toHaveLength(1);
     expect(screen.queryByText("Plan intent")).toBeNull();
     expect(screen.queryByText("Personalized")).toBeNull();
-    expect(mocks.readModelOptions).toContainEqual({ enabled: false });
+    expect(mocks.readModelOptions).toContainEqual({ enabled: true });
   });
 });

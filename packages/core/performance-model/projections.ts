@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { ACTIVITY_FILE_LTHR_CALCULATION_VERSION } from "../calculations";
 import {
   getThresholdActivityCategoryPolicy,
   thresholdActivityCategorySchema,
@@ -19,6 +20,10 @@ export const ATHLETE_PERFORMANCE_TARGET_FACTS_VERSION =
 
 const opaqueIdSchema = z.string().trim().min(1).max(256);
 const dateTimeSchema = z.string().datetime({ offset: true });
+
+function directThresholdMetric(activityCategory: "bike" | "run" | "swim") {
+  return activityCategory === "bike" ? ("power" as const) : ("speed" as const);
+}
 
 export const performanceThresholdSourceFactSchema = z
   .object({
@@ -147,7 +152,10 @@ export const athletePerformanceTargetFactsSchema = z
     const asOfMs = Date.parse(facts.asOf);
     for (const activityCategory of thresholdActivityCategorySchema.options) {
       const fact = facts.thresholds[activityCategory];
-      const policy = getThresholdActivityCategoryPolicy(activityCategory);
+      const policy = getThresholdActivityCategoryPolicy(
+        activityCategory,
+        directThresholdMetric(activityCategory),
+      );
       if (
         fact.activityCategory !== activityCategory ||
         fact.metric !== policy.metric ||
@@ -211,7 +219,10 @@ export function getAvailablePerformanceTargetValue(fact: {
 }
 
 function unavailableThresholdFact(activityCategory: "bike" | "run" | "swim") {
-  const policy = getThresholdActivityCategoryPolicy(activityCategory);
+  const policy = getThresholdActivityCategoryPolicy(
+    activityCategory,
+    directThresholdMetric(activityCategory),
+  );
   return {
     status: "unavailable" as const,
     activityCategory,
@@ -309,16 +320,13 @@ export function materializeAthletePerformanceTargetFacts(input: {
     result.heartRate = athleteHeartRateCalibrationFactsSchema.parse(input.heartRate);
   for (const unknownThreshold of input.thresholds) {
     const threshold = performanceThresholdSourceFactSchema.parse(unknownThreshold);
-    const policy = getThresholdActivityCategoryPolicy(threshold.activityCategory);
+    const policy = getThresholdActivityCategoryPolicy(threshold.activityCategory, threshold.metric);
     if (
       threshold.metric !== policy.metric ||
       threshold.unit !== policy.unit ||
       threshold.method !== policy.method
     ) {
       throw new Error("Threshold fact does not match its canonical activity-category policy");
-    }
-    if (result.thresholds[threshold.activityCategory].status === "available") {
-      throw new Error(`Threshold fact is duplicated for ${threshold.activityCategory}`);
     }
     const effectiveAtMs = Date.parse(threshold.effectiveAt);
     if (!Number.isFinite(effectiveAtMs) || effectiveAtMs > asOfMs) {
@@ -328,6 +336,50 @@ export function materializeAthletePerformanceTargetFacts(input: {
     if (!evaluationId) throw new Error("Threshold fact has no selected evaluation");
     const ageSeconds = Math.floor((asOfMs - effectiveAtMs) / 1_000);
     const freshForSeconds = policy.freshnessDays * 86_400;
+    if (threshold.metric === "lthr") {
+      if (result.heartRate[threshold.activityCategory].lthr.status === "available") {
+        throw new Error(`LTHR fact is duplicated for ${threshold.activityCategory}`);
+      }
+      const sourceEvidenceId = threshold.sourceEffortIds.at(-1);
+      const sourceActivityId = threshold.sourceActivityIds.at(-1);
+      if (!sourceEvidenceId || !sourceActivityId) {
+        throw new Error("LTHR fact has no selected effort and activity provenance");
+      }
+      const freshness = ageSeconds < freshForSeconds ? ("fresh" as const) : ("stale" as const);
+      result.heartRate[threshold.activityCategory].lthr = heartRateCalibrationFactSchema.parse({
+        status: "available",
+        calibrationState: freshness === "stale" ? "stale" : threshold.state,
+        calibrationId: threshold.id,
+        activityCategory: threshold.activityCategory,
+        metric: "lthr",
+        unit: "beats_per_minute",
+        policyVersion: threshold.policyVersion,
+        evidenceCount: threshold.sourceEvaluationIds.length,
+        trend:
+          freshness === "stale"
+            ? "expired"
+            : threshold.state === "provisional"
+              ? "initial"
+              : "stable",
+        ageSeconds,
+        freshness,
+        sourceSemantics: "derived",
+        evaluationSemantics: "validated_threshold",
+        valueBpm: threshold.value,
+        observedAt: threshold.effectiveAt,
+        expiresAt: new Date(effectiveAtMs + freshForSeconds * 1_000).toISOString(),
+        sourceEvidenceId,
+        sourceActivityId,
+        source: "activity_file",
+        method: "activity_file_lthr_detection",
+        calculationVersion: ACTIVITY_FILE_LTHR_CALCULATION_VERSION,
+        reason: null,
+      });
+      continue;
+    }
+    if (result.thresholds[threshold.activityCategory].status === "available") {
+      throw new Error(`Threshold fact is duplicated for ${threshold.activityCategory}`);
+    }
     result.thresholds[threshold.activityCategory] = performanceThresholdFactSchema.parse({
       status: "available",
       activityCategory: threshold.activityCategory,

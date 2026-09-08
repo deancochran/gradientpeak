@@ -1,4 +1,0 @@
-appId: ${MAESTRO_APP_ID}
----
-# Compatibility wrapper. New flows should name the lifecycle they require.
-- runFlow: ./clean_app_launch_signed_out.yaml

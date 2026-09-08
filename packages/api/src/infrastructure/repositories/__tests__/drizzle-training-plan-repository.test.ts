@@ -77,6 +77,29 @@ function createMissingReturningDb(method: "insert" | "update") {
 }
 
 describe("drizzle-training-plan-repository", () => {
+  it("normalizes timestamp strings returned by raw SQL reads", async () => {
+    const validatedAt = "2026-04-02T03:04:05.000Z";
+    const row = createTrainingPlanRow({
+      validated_at: validatedAt as unknown as Date,
+      created_at: "2026-04-01T00:00:00.000Z" as unknown as Date,
+      updated_at: "2026-04-01T01:00:00.000Z" as unknown as Date,
+    });
+    const { db } = createQueryMapDbMock({
+      training_plans: { data: [row], error: null },
+    });
+
+    const result = await createTrainingPlanRepository(db).getAccessibleTrainingPlan({
+      id: "11111111-1111-4111-8111-111111111111",
+      profileId: "22222222-2222-4222-8222-222222222222",
+    });
+
+    expect(result).toMatchObject({
+      validated_at: new Date(validatedAt),
+      created_at: new Date("2026-04-01T00:00:00.000Z"),
+      updated_at: new Date("2026-04-01T01:00:00.000Z"),
+    });
+  });
+
   it("creates a training plan and returns the inserted row", async () => {
     const planId = "11111111-1111-4111-8111-111111111111";
     const createdPlan = createTrainingPlanRow({

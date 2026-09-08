@@ -18,6 +18,11 @@ type DrizzleLike = {
 };
 
 type TrainingPlanCountRow = { value: number | string };
+type RawTrainingPlanRow = Omit<TrainingPlanRow, "created_at" | "updated_at" | "validated_at"> & {
+  created_at: Date | string;
+  updated_at: Date | string;
+  validated_at?: Date | string | null;
+};
 type UpcomingTrainingPlanEvent = {
   schedule_batch_id: string | null;
   starts_at: Date;
@@ -26,6 +31,23 @@ type UpcomingTrainingPlanEvent = {
 
 function getSqlRows<T>(result: unknown) {
   return ((result as { rows?: T[] }).rows ?? []) as T[];
+}
+
+function parseRawTimestamp(value: Date | string): Date {
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new TypeError("Training plan row contains an invalid timestamp");
+  }
+  return parsed;
+}
+
+function normalizeRawTrainingPlanRow(row: RawTrainingPlanRow): TrainingPlanRow {
+  return {
+    ...row,
+    created_at: parseRawTimestamp(row.created_at),
+    updated_at: parseRawTimestamp(row.updated_at),
+    validated_at: row.validated_at == null ? null : parseRawTimestamp(row.validated_at),
+  };
 }
 
 function todayStartIsoUtc(): string {
@@ -164,7 +186,8 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
       limit 1
     `);
 
-    return getSqlRows<TrainingPlanRow>(result)[0] ?? null;
+    const row = getSqlRows<RawTrainingPlanRow>(result)[0];
+    return row ? normalizeRawTrainingPlanRow(row) : null;
   };
 
   const listPublicTemplateTrainingPlans = async (
@@ -240,7 +263,7 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
       order by ${sortClause}
     `);
 
-    return getSqlRows<TrainingPlanRow>(result);
+    return getSqlRows<RawTrainingPlanRow>(result).map(normalizeRawTrainingPlanRow);
   };
 
   return {
@@ -437,7 +460,7 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
         order by created_at desc
       `);
 
-      return getSqlRows<TrainingPlanRow>(result);
+      return getSqlRows<RawTrainingPlanRow>(result).map(normalizeRawTrainingPlanRow);
     },
 
     async updateTrainingPlan(input: UpdateTrainingPlanRecordInput): Promise<TrainingPlanRow> {

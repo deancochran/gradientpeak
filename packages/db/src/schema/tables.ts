@@ -2532,9 +2532,9 @@ export const thresholdEvidence = pgTable(
       .default("athlete-derived-state-persistence-v1"),
     activity_category: activityCategoryEnum("activity_category").notNull(),
     metric: thresholdMetricEnum("metric").notNull(),
-    unit: text("unit", { enum: ["watts", "meters_per_second"] }).notNull(),
+    unit: text("unit", { enum: ["watts", "meters_per_second", "bpm"] }).notNull(),
     method: text("method", {
-      enum: ["bike_power_30m", "run_speed_30m", "swim_speed_15m"],
+      enum: ["bike_power_30m", "run_speed_30m", "swim_speed_15m", "lthr_30m_final_20m"],
     }).notNull(),
     value: numeric("value", { mode: "number" }).notNull(),
     source_series_id: text("source_series_id").notNull(),
@@ -2565,6 +2565,7 @@ export const thresholdEvidence = pgTable(
     unique("threshold_evidence_profile_category_activity_unique").on(
       table.profile_id,
       table.activity_category,
+      table.metric,
       table.activity_id,
     ),
     foreignKey({
@@ -3074,7 +3075,9 @@ export const activitySourceReferences = pgTable(
     profile_id: uuid("profile_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
-    activity_id: uuid("activity_id").notNull(),
+    activity_id: uuid("activity_id"),
+    resolution_status: text("resolution_status").notNull().default("confirmed"),
+    relationship_kind: text("relationship_kind").notNull().default("imported"),
     integration_id: uuid("integration_id").notNull(),
     provider: text("provider").notNull(),
     provider_external_id: text("provider_external_id").notNull(),
@@ -3138,6 +3141,18 @@ export const activitySourceReferences = pgTable(
     check(
       "activity_source_references_provider_check",
       sql`btrim(${table.provider}) <> '' and btrim(${table.provider_external_id}) <> ''`,
+    ),
+    check(
+      "activity_source_references_resolution_status_check",
+      sql`${table.resolution_status} in ('confirmed', 'review', 'ignored', 'provider_deleted')`,
+    ),
+    check(
+      "activity_source_references_relationship_kind_check",
+      sql`${table.relationship_kind} in ('imported', 'exported', 'both')`,
+    ),
+    check(
+      "activity_source_references_resolution_activity_check",
+      sql`(${table.resolution_status} = 'confirmed' and ${table.activity_id} is not null) or ${table.resolution_status} = 'review' or (${table.resolution_status} in ('ignored', 'provider_deleted') and ${table.activity_id} is null)`,
     ),
     check(
       "activity_source_references_origin_check",

@@ -1,8 +1,12 @@
+import { Alert as TestAlert } from "@repo/ui/test/react-native";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { createHost as mockCreateHost } from "../../../test/mock-components";
-import { fireEvent, renderNative, screen } from "../../../test/render-native";
+import { fireEvent, renderNative, screen, waitFor } from "../../../test/render-native";
 import { ResourceCardActionButton } from "../ResourceCardPrimitives";
 import { RouteCard } from "../RouteCard";
+
+const mockAlert = jest.mocked(TestAlert.alert);
+const getPublicShareUrlMock = jest.fn((path: string) => `https://share.gradientpeak.test${path}`);
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -41,6 +45,13 @@ jest.mock("lucide-react-native", () => ({
   Footprints: mockCreateHost("Footprints"),
   Heart: mockCreateHost("Heart"),
   Waves: mockCreateHost("Waves"),
+  MessageCircle: mockCreateHost("MessageCircle"),
+  Share2: mockCreateHost("Share2"),
+}));
+
+jest.mock("@/lib/share/public-share-url", () => ({
+  __esModule: true,
+  getPublicShareUrl: (path: string) => getPublicShareUrlMock(path),
 }));
 
 jest.mock("@/components/shared/StaticRouteMapPreview", () => ({
@@ -74,6 +85,8 @@ const mockUsePreferredUnitSystem = jest.mocked(usePreferredUnitSystem);
 describe("RouteCard", () => {
   beforeEach(() => {
     mockUsePreferredUnitSystem.mockReturnValue("metric");
+    mockAlert.mockReset();
+    getPublicShareUrlMock.mockClear();
   });
 
   it("shows owner and last updated metadata in the footer", async () => {
@@ -248,5 +261,61 @@ describe("RouteCard", () => {
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(onLikePress).toHaveBeenCalledTimes(1);
     expect(onAccessoryPress).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the default card social row and public share URL", async () => {
+    const onPress = jest.fn();
+
+    await renderNative(
+      <RouteCard
+        commentCount={2}
+        onPress={onPress}
+        route={{
+          id: "route-social",
+          name: "Public Loop",
+          activity_category: "outdoor_run",
+          is_public: true,
+          likes_count: 3,
+          total_distance: 5000,
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("route-card-share-button-route-social")).toBeTruthy();
+    expect(screen.getByTestId("route-card-social-actions")).toBeTruthy();
+    expect(screen.getByTestId("route-card-like-button-route-social")).toBeTruthy();
+    expect(screen.getByLabelText("Comments, 2")).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId("route-card-share-button-route-social"));
+    expect(getPublicShareUrlMock).toHaveBeenCalledWith("/share/routes/route-social");
+    await waitFor(() =>
+      expect(mockAlert).toHaveBeenCalledWith(
+        "Unable to share",
+        "The route could not be shared. Try again.",
+      ),
+    );
+
+    await fireEvent.press(screen.getByTestId("route-card-comments-button-route-social"));
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it("explains why routes without public visibility cannot be shared", async () => {
+    await renderNative(
+      <RouteCard
+        route={{
+          id: "route-private",
+          name: "Private Loop",
+          activity_category: "outdoor_run",
+        }}
+      />,
+    );
+
+    await fireEvent.press(screen.getByTestId("route-card-share-button-route-private"));
+    await waitFor(() =>
+      expect(mockAlert).toHaveBeenCalledWith(
+        "Not public",
+        "Only public routes have a share link. Change visibility to Public first.",
+      ),
+    );
   });
 });

@@ -17,7 +17,7 @@ test("planning.training-path and calendar.navigation expose the server-composed 
     await openPlanningRoute(athletePage, "/plan", /^plan$/i);
     const planTab = await readPlanTabResponse(await planTabResponse);
     expect(planTab).toMatchObject({
-      contractVersion: "plan-tab-projection-v1",
+      contractVersion: "plan-tab-projection-v2",
       planningTimezone: "UTC",
       timeline: { startDate: fixture.startDate, endDate: fixture.endDate },
       sourceCoverage: {
@@ -107,7 +107,7 @@ test("planning.training-path and calendar.navigation expose the server-composed 
 });
 
 type PlanTabResponse = {
-  contractVersion: "plan-tab-projection-v1";
+  contractVersion: "plan-tab-projection-v2";
   planningTimezone: string | null;
   sourceCoverage: {
     activities: { status: string };
@@ -138,7 +138,7 @@ async function readPlanTabResponse(response: import("@playwright/test").Response
 function findPlanTabDto(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
-  if (record.contractVersion === "plan-tab-projection-v1" && "timeline" in record) {
+  if (record.contractVersion === "plan-tab-projection-v2" && "timeline" in record) {
     return record;
   }
   for (const child of Object.values(record)) {

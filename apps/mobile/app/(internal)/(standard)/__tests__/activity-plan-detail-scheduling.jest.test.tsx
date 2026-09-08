@@ -355,6 +355,9 @@ describe("activity plan detail scheduling", () => {
     await renderNative(<ActivityPlanDetail />);
 
     await act(() => {
+      screen.getByTestId("activity-plan-options-trigger").props.onPress();
+    });
+    await act(() => {
       screen.getByTestId("activity-plan-options-schedule").props.onPress();
     });
 
@@ -368,7 +371,7 @@ describe("activity plan detail scheduling", () => {
     });
   });
 
-  it("keeps shared-plan scheduling available while rendering the authored prescription", async () => {
+  it("keeps shared-plan scheduling available and exposes an unavailable conversion toggle", async () => {
     localSearchParamsMock.template = JSON.stringify(
       createActivityPlanSummary({
         id: "11111111-1111-1111-1111-111111111111",
@@ -386,12 +389,17 @@ describe("activity plan detail scheduling", () => {
 
     await renderNative(<ActivityPlanDetail />);
 
+    await act(() => {
+      screen.getByTestId("activity-plan-options-trigger").props.onPress();
+    });
     expect(screen.getByTestId("activity-plan-options-schedule")).toBeTruthy();
+    expect(screen.getByTestId("activity-plan-options-export-pdf")).toBeTruthy();
     expect(screen.queryByTestId("activity-plan-options-duplicate")).toBeNull();
     expect(screen.queryByTestId("activity-plan-options-start")).toBeNull();
-    expect(screen.queryByTestId("activity-plan-personalize-targets")).toBeNull();
+    expect(screen.getByTestId("activity-plan-personalize-targets").props.checked).toBe(false);
+    expect(screen.getByTestId("activity-plan-personalize-targets").props.disabled).toBe(true);
     expect(screen.getByTestId("activity-plan-content-preview")).toBeTruthy();
-    expect(screen.getByText("5 RPE · 5min")).toBeTruthy();
+    expect(screen.getByText("5min at 5 RPE")).toBeTruthy();
 
     await act(() => {
       screen.getByTestId("activity-plan-options-schedule").props.onPress();
@@ -426,6 +434,9 @@ describe("activity plan detail scheduling", () => {
 
     await renderNative(<ActivityPlanDetail />);
 
+    await act(async () => {
+      screen.getByTestId("activity-plan-options-trigger").props.onPress();
+    });
     await act(async () => {
       screen.getByTestId("activity-plan-options-duplicate").props.onPress();
       await Promise.resolve();
@@ -505,6 +516,9 @@ describe("activity plan detail scheduling", () => {
     await renderNative(<ActivityPlanDetail />);
 
     await act(() => {
+      screen.getByTestId("activity-plan-options-trigger").props.onPress();
+    });
+    await act(() => {
       screen.getByTestId("activity-plan-options-schedule").props.onPress();
     });
 
@@ -532,7 +546,7 @@ describe("activity plan detail scheduling", () => {
     expect(screen.queryByTestId("activity-plan-options-remove-schedule")).toBeNull();
   });
 
-  it("shows the new summary-first detail context and hides placeholder share UI", async () => {
+  it("shows the new summary-first detail context and attribution-row share action", async () => {
     localSearchParamsMock.template = JSON.stringify(
       createActivityPlanDetail({
         id: "11111111-1111-1111-1111-111111111111",
@@ -546,8 +560,8 @@ describe("activity plan detail scheduling", () => {
 
     expect(screen.getByText("Controlled tempo intervals.")).toBeTruthy();
     expect(screen.getByText("Keep the recoveries honest.")).toBeTruthy();
-    expect(screen.getByText("Comments (0)")).toBeTruthy();
-    expect(screen.queryByText("Share")).toBeNull();
+    expect(screen.getByTestId("activity-plan-comments-button")).toBeTruthy();
+    expect(screen.getByTestId("activity-plan-share-button")).toBeTruthy();
   });
 
   it("defaults an eligible owner session flow on without changing the authored API projection", async () => {
@@ -570,7 +584,7 @@ describe("activity plan detail scheduling", () => {
 
     const toggle = screen.getByTestId("activity-plan-personalize-targets");
     expect(toggle.props.checked).toBe(true);
-    expect(screen.getByText(/240 W \(80% FTP\)/)).toBeTruthy();
+    expect(screen.getByText(/240 W/)).toBeTruthy();
     expect(activityPlanQueryInputs).toContainEqual(expect.objectContaining({ personalize: false }));
     expect(eventQueryInputs).toContainEqual(expect.objectContaining({ personalize: false }));
     expect(readModelQueryOptions).toContainEqual(
@@ -607,7 +621,6 @@ describe("activity plan detail scheduling", () => {
     const toggle = screen.getByTestId("activity-plan-personalize-targets");
     expect(toggle.props.checked).toBe(false);
     expect(toggle.props.disabled).toBe(true);
-    expect(screen.getByText(/RPE targets cannot be represented as physical values/)).toBeTruthy();
     expect(screen.getByText(/5 RPE/)).toBeTruthy();
   });
 });

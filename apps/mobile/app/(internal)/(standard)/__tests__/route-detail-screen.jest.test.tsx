@@ -13,17 +13,28 @@ const routeData = {
   polyline: "encoded",
   has_liked: false,
   likes_count: 4,
+  is_public: true,
 };
 
 const backMock = jest.fn();
 const navigateMock = jest.fn();
 const deleteMutateMock = jest.fn();
 const toggleLikeMutateMock = jest.fn();
-const routeInvalidateMock = jest.fn();
+const routeGetInvalidateMock = jest.fn();
+const routeGetResetMock = jest.fn();
 const loadFullUseQueryMock = jest.fn();
+const shareMock = jest.fn();
+const alertMock = jest.fn();
 const authState = { user: { id: "profile-1" } };
 const routeLifecycleState = { storageState: "ready" };
-let reliableMutationOptions: { onError?: () => Promise<void>; onSuccess?: () => void } | undefined;
+let reliableMutationOptions:
+  | {
+      invalidate?: Array<() => Promise<unknown> | unknown>;
+      onError?: () => Promise<void>;
+      onSuccess?: () => void;
+      success?: string;
+    }
+  | undefined;
 
 type StackScreenProps = Record<string, unknown> & {
   options?: { headerRight?: () => React.ReactNode };
@@ -46,7 +57,8 @@ jest.mock("expo-router", () => ({
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  Alert: { alert: jest.fn() },
+  Alert: { alert: alertMock },
+  Share: { share: shareMock },
 }));
 
 jest.mock("react-native-maps", () => ({
@@ -110,7 +122,12 @@ jest.mock("@/lib/hooks/useReliableMutation", () => ({
   __esModule: true,
   useReliableMutation: (
     _mutation: unknown,
-    options: { onError?: () => Promise<void>; onSuccess?: () => void },
+    options: {
+      invalidate?: Array<() => Promise<unknown> | unknown>;
+      onError?: () => Promise<void>;
+      onSuccess?: () => void;
+      success?: string;
+    },
   ) => {
     reliableMutationOptions = options;
     return {
@@ -123,7 +140,9 @@ jest.mock("@/lib/hooks/useReliableMutation", () => ({
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
-    useUtils: () => ({ routes: { invalidate: routeInvalidateMock } }),
+    useUtils: () => ({
+      routes: { get: { invalidate: routeGetInvalidateMock, reset: routeGetResetMock } },
+    }),
     routes: {
       get: {
         useQuery: () => ({
@@ -187,6 +206,8 @@ jest.mock("lucide-react-native", () => ({
 }));
 
 const RouteDetailScreen = require("../route-detail").default;
+const ReactNative = require("react-native") as typeof import("react-native");
+Object.defineProperty(ReactNative, "Share", { configurable: true, value: { share: shareMock } });
 
 describe("route detail screen", () => {
   beforeEach(() => {
@@ -194,8 +215,10 @@ describe("route detail screen", () => {
     navigateMock.mockReset();
     deleteMutateMock.mockReset();
     toggleLikeMutateMock.mockReset();
-    routeInvalidateMock.mockReset().mockResolvedValue(undefined);
+    routeGetInvalidateMock.mockReset().mockResolvedValue(undefined);
     loadFullUseQueryMock.mockReset();
+    shareMock.mockReset().mockResolvedValue(undefined);
+    alertMock.mockReset();
     authState.user.id = "profile-1";
     routeLifecycleState.storageState = "ready";
     reliableMutationOptions = undefined;
@@ -215,10 +238,41 @@ describe("route detail screen", () => {
     expect(screen.getByText("4")).toBeTruthy();
   });
 
+  it("keeps sharing available for ready routes and reports share-sheet failures", async () => {
+    shareMock.mockRejectedValueOnce(new Error("unavailable"));
+    await renderNative(<RouteDetailScreen />);
+
+    expect(screen.getByTestId("route-detail-share-button")).toBeTruthy();
+    await act(async () => {
+      await fireEvent.press(screen.getByTestId("route-detail-share-button"));
+      await Promise.resolve();
+    });
+
+    expect(ReactNative.Alert.alert as jest.Mock).toHaveBeenCalledWith(
+      "Share failed",
+      "Could not open the share sheet. Please try again.",
+    );
+  });
+
+  it("uses the configured public web origin for route shares", async () => {
+    process.env.EXPO_PUBLIC_API_URL = "https://api.gradientpeak.test";
+    process.env.EXPO_PUBLIC_WEB_URL = "https://share.gradientpeak.test";
+    await renderNative(<RouteDetailScreen />);
+
+    await fireEvent.press(screen.getByTestId("route-detail-share-button"));
+
+    expect(shareMock).toHaveBeenCalledWith({
+      message: "https://share.gradientpeak.test/share/routes/11111111-1111-4111-8111-111111111111",
+      url: "https://share.gradientpeak.test/share/routes/11111111-1111-4111-8111-111111111111",
+    });
+    delete process.env.EXPO_PUBLIC_API_URL;
+    delete process.env.EXPO_PUBLIC_WEB_URL;
+  });
+
   it("moves owner management into the header overflow menu", async () => {
     await renderNative(<RouteDetailScreen />);
 
-    expect(screen.getByTestId("route-detail-options-trigger")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("route-detail-options-trigger"));
     expect(screen.getByTestId("route-detail-options-edit")).toBeTruthy();
     expect(screen.getByTestId("route-detail-options-delete")).toBeTruthy();
 
@@ -233,7 +287,7 @@ describe("route detail screen", () => {
 
     await renderNative(<RouteDetailScreen />);
 
-    expect(screen.getByTestId("route-detail-options-trigger")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("route-detail-options-trigger"));
     expect(screen.queryByTestId("route-detail-options-edit")).toBeNull();
     expect(screen.queryByTestId("route-detail-options-delete")).toBeNull();
   });
@@ -241,6 +295,10 @@ describe("route detail screen", () => {
   it("uses a confirm modal before deleting a route", async () => {
     await renderNative(<RouteDetailScreen />);
 
+    expect(reliableMutationOptions?.invalidate).toBeUndefined();
+    expect(reliableMutationOptions?.success).toBeUndefined();
+
+    await fireEvent.press(screen.getByTestId("route-detail-options-trigger"));
     await fireEvent.press(screen.getByTestId("route-detail-options-delete"));
 
     expect(screen.getByTestId("route-detail-delete-modal")).toBeTruthy();
@@ -249,6 +307,15 @@ describe("route detail screen", () => {
     await fireEvent.press(screen.getByTestId("route-detail-delete-confirm"));
 
     expect(deleteMutateMock).toHaveBeenCalledWith({ id: "11111111-1111-4111-8111-111111111111" });
+
+    reliableMutationOptions?.onSuccess?.();
+
+    expect(routeGetResetMock).toHaveBeenCalledWith({ id: routeData.id });
+    expect(routeGetResetMock.mock.invocationCallOrder[0]).toBeLessThan(
+      backMock.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+    expect(backMock).toHaveBeenCalledTimes(1);
+    expect(routeGetInvalidateMock).toHaveBeenCalledWith({ id: routeData.id });
   });
 
   it("renders deletion-pending routes as a retry-only owner state", async () => {
@@ -256,7 +323,9 @@ describe("route detail screen", () => {
     await renderNative(<RouteDetailScreen />);
 
     expect(screen.getByTestId("route-detail-deletion-pending")).toBeTruthy();
+    expect(screen.queryByTestId("route-detail-share-button")).toBeNull();
     expect(screen.getByText("Route deletion pending")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("route-detail-options-trigger"));
     expect(screen.queryByTestId("route-detail-options-recording")).toBeNull();
     expect(screen.queryByTestId("route-detail-options-edit")).toBeNull();
     expect(screen.getByTestId("route-detail-options-delete")).toBeTruthy();
@@ -271,7 +340,16 @@ describe("route detail screen", () => {
     await act(async () => {
       await reliableMutationOptions?.onError?.();
     });
-    expect(routeInvalidateMock).toHaveBeenCalledTimes(1);
+    expect(routeGetInvalidateMock).toHaveBeenCalledWith({ id: routeData.id });
     expect(screen.queryByTestId("route-detail-delete-modal")).toBeNull();
+  });
+
+  it("refreshes the deleted route without masking the mutation error", async () => {
+    await renderNative(<RouteDetailScreen />);
+
+    await act(async () => {
+      await expect(reliableMutationOptions?.onError?.()).resolves.toBeUndefined();
+    });
+    expect(routeGetInvalidateMock).toHaveBeenCalledWith({ id: routeData.id });
   });
 });

@@ -10,6 +10,12 @@ const sqliteMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("expo-sqlite", () => sqliteMocks);
+vi.mock("expo-file-system", () => ({
+  Paths: {
+    document: { uri: "file:///documents/" },
+    cache: { uri: "file:///cache/" },
+  },
+}));
 vi.mock("expo-crypto", () => ({
   CryptoDigestAlgorithm: { SHA256: "SHA-256" },
   digestStringAsync: vi.fn(async (_algorithm: string, value: string) =>
@@ -32,6 +38,7 @@ import {
   clearRecordingEvidenceCheckpoint,
   completeAcceptedRecordingEvidenceCleanup,
   completeDiscardedRecordingEvidenceCleanup,
+  completeExactRecordingEvidenceCleanup,
   createFinalizedArtifactQueueHandoff,
   createRecordingStreamJournalAdapter,
   discardFinalizedRecordingEvidence,
@@ -46,6 +53,7 @@ import {
   MAX_QUARANTINE_ROWS_PER_PROFILE,
   MAX_QUARANTINE_ROWS_PER_SESSION,
   persistRecordingEvidenceCheckpoint,
+  prepareExactRecordingEvidenceCleanup,
   QUARANTINED_EVIDENCE_RETENTION_MS,
   quarantineOrphanedActiveRecordingEvidenceSessions,
   quarantineRecordingEvidenceSession,
@@ -58,6 +66,7 @@ import {
   rollbackRecordingEvidenceSession,
   setRecordingEvidenceDatabaseForTests,
 } from "./recordingEvidenceJournal";
+import { canonicalRecordingEvidenceUris } from "./recordingEvidencePaths";
 
 function unplannedCheckpoint(sessionId: string, profileId: string): UnplannedRecordingCheckpoint {
   return {
@@ -629,6 +638,133 @@ describe("recording evidence native SQLite schema", () => {
         "discarded-session",
       ),
     ).toEqual([{ reason: "user-discarded-finalized-recording" }]);
+  });
+
+  it("fingerprints and deletes only one terminal lease-owned recording evidence graph", async () => {
+    const native = await nativeExecutor();
+    close = native.close;
+    await initializeRecordingEvidenceDatabase(native.executor);
+    setRecordingEvidenceDatabaseForTests(native.executor);
+    const sessionId = "25ecaafc-4933-5c89-95c3-627fe44ed3ba";
+    const profileId = "profile";
+    const canonical = canonicalRecordingEvidenceUris(sessionId);
+    await allocateRecordingEvidenceSession({ sessionId, profileId });
+    const stream = createRecordingStreamJournalAdapter({ sessionId, profileId });
+    await stream.append([{ streamKind: "power", timestamp: 1, payload: '{"watts":200}' }]);
+    await native.executor.runAsync(
+      "UPDATE recording_evidence_sessions SET state = 'finalized', finalized_path = ?, finalized_sha256 = ? WHERE session_id = ?",
+      canonical.activityFileUri,
+      "a".repeat(64),
+      sessionId,
+    );
+    await discardFinalizedRecordingEvidence({
+      sessionId,
+      profileId,
+      activityFilePath: canonical.activityFileUri,
+      streamArtifactPaths: [canonical.streamDirectoryUri],
+    });
+
+    const plan = await prepareExactRecordingEvidenceCleanup({ sessionId, profileId });
+    expect(plan).toMatchObject({
+      schemaVersion: 1,
+      sessionId,
+      profileId,
+      priorState: "quarantined",
+      activityFilePath: canonical.activityFileUri,
+      streamArtifactPaths: [canonical.streamDirectoryUri],
+      finalizedArtifactSha256: "a".repeat(64),
+      sqliteReferences: { session: 1, streams: 1, quarantines: 1 },
+    });
+    expect(plan.evidenceFingerprint).toMatch(/^[0-9a-f]{64}$/);
+    await expect(completeExactRecordingEvidenceCleanup(plan)).resolves.toBe(3);
+    await expect(
+      prepareExactRecordingEvidenceCleanup({ sessionId, profileId }),
+    ).resolves.toMatchObject({ priorState: "absent" });
+  });
+
+  it("refuses active ownership and fingerprint drift without deleting evidence", async () => {
+    const native = await nativeExecutor();
+    close = native.close;
+    await initializeRecordingEvidenceDatabase(native.executor);
+    setRecordingEvidenceDatabaseForTests(native.executor);
+    const sessionId = "f71f49ac-4fe8-5f62-b98d-3957c6b89879";
+    const profileId = "profile";
+    const canonical = canonicalRecordingEvidenceUris(sessionId);
+    await allocateRecordingEvidenceSession({ sessionId, profileId });
+    await expect(prepareExactRecordingEvidenceCleanup({ sessionId, profileId })).rejects.toThrow(
+      /terminal local session/,
+    );
+    await native.executor.runAsync(
+      "UPDATE recording_evidence_sessions SET state = 'finalized', finalized_path = ?, finalized_sha256 = ? WHERE session_id = ?",
+      canonical.activityFileUri,
+      "b".repeat(64),
+      sessionId,
+    );
+    await discardFinalizedRecordingEvidence({
+      sessionId,
+      profileId,
+      activityFilePath: canonical.activityFileUri,
+      streamArtifactPaths: [],
+    });
+    const plan = await prepareExactRecordingEvidenceCleanup({ sessionId, profileId });
+    await native.executor.runAsync(
+      "INSERT INTO recording_evidence_quarantine (session_id, reason, payload, quarantined_at) VALUES (?, 'foreign-drift', NULL, ?)",
+      sessionId,
+      Date.now(),
+    );
+    await expect(completeExactRecordingEvidenceCleanup(plan)).rejects.toThrow(/evidence changed/);
+    expect(
+      await native.executor.getAllAsync<{ session_id: string }>(
+        "SELECT session_id FROM recording_evidence_sessions WHERE session_id = ?",
+        sessionId,
+      ),
+    ).toEqual([{ session_id: sessionId }]);
+  });
+
+  it("rejects DB-controlled and cross-session file paths before exact cleanup", async () => {
+    const native = await nativeExecutor();
+    close = native.close;
+    await initializeRecordingEvidenceDatabase(native.executor);
+    setRecordingEvidenceDatabaseForTests(native.executor);
+    const sessionId = "64df749b-f21e-53c8-a894-577cfb2c2c91";
+    const profileId = "profile";
+    await allocateRecordingEvidenceSession({ sessionId, profileId });
+    await native.executor.runAsync(
+      "UPDATE recording_evidence_sessions SET state = 'finalized', finalized_path = ?, finalized_sha256 = ? WHERE session_id = ?",
+      "file:///data/user/0/com.deancochran.gradientpeak.preview/files/unrelated.fit",
+      "a".repeat(64),
+      sessionId,
+    );
+
+    await expect(prepareExactRecordingEvidenceCleanup({ sessionId, profileId })).rejects.toThrow(
+      /canonical session path/,
+    );
+    expect(
+      await native.executor.getAllAsync<{ session_id: string }>(
+        "SELECT session_id FROM recording_evidence_sessions WHERE session_id = ?",
+        sessionId,
+      ),
+    ).toEqual([{ session_id: sessionId }]);
+
+    const secondSessionId = "85516566-9222-5764-bdaf-fd85fab242ec";
+    const secondCanonical = canonicalRecordingEvidenceUris(secondSessionId);
+    const foreignCanonical = canonicalRecordingEvidenceUris("0de75c2b-e351-5541-a61f-115b477d4396");
+    await allocateRecordingEvidenceSession({ sessionId: secondSessionId, profileId });
+    await native.executor.runAsync(
+      "UPDATE recording_evidence_sessions SET state = 'finalized', finalized_path = ?, finalized_sha256 = ? WHERE session_id = ?",
+      secondCanonical.activityFileUri,
+      "b".repeat(64),
+      secondSessionId,
+    );
+    await discardFinalizedRecordingEvidence({
+      sessionId: secondSessionId,
+      profileId,
+      activityFilePath: secondCanonical.activityFileUri,
+      streamArtifactPaths: [foreignCanonical.streamDirectoryUri],
+    });
+    await expect(
+      prepareExactRecordingEvidenceCleanup({ sessionId: secondSessionId, profileId }),
+    ).rejects.toThrow(/canonical session path/);
   });
 
   it("atomically fences stale handoff and eventually collects discarded queue evidence", async () => {

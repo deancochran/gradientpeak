@@ -1,9 +1,0 @@
-flows:
-  - flows/smoke/*
-includeTags:
-  - smoke-expected-pass
-excludeTags:
-  - intentional-red
-  - manual
-  - hardware
-testOutputDir: artifacts/test-output/smoke-expected-pass

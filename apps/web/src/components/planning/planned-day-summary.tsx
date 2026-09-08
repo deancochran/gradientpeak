@@ -99,7 +99,7 @@ export function PlannedDaySummary({
 function PlannedDaySummaryDetails({ data }: { data: WebPlannedDaySummaryData }) {
   const { source, summary } = data;
   const quantification = getActivityQuantificationPresentation(summary.prescriptionQuantification);
-  const hasPartialInformation =
+  const hasUnavailableInformation =
     source.unavailableEstimateCount > 0 ||
     source.unavailablePlanCount > 0 ||
     source.unlinkedPlanCount > 0;
@@ -127,7 +127,7 @@ function PlannedDaySummaryDetails({ data }: { data: WebPlannedDaySummaryData }) 
           <dt className="text-muted-foreground">Planned duration</dt>
           <dd className="font-medium">
             {summary.totalDurationSeconds === null
-              ? "Unavailable"
+              ? "—"
               : formatDuration(summary.totalDurationSeconds)}
           </dd>
         </div>
@@ -140,9 +140,9 @@ function PlannedDaySummaryDetails({ data }: { data: WebPlannedDaySummaryData }) 
           <dd className="font-medium">{quantification.normalizedIntensity.value}</dd>
         </div>
       </dl>
-      {hasPartialInformation ? (
+      {hasUnavailableInformation ? (
         <p className="rounded-lg border p-3 text-sm" role="status">
-          Partial information:{" "}
+          Some information is unavailable:{" "}
           {source.unavailableEstimateCount > 0
             ? `${pluralize(source.unavailableEstimateCount, "Event")} has unavailable planned estimates. `
             : ""}

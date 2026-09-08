@@ -1,3 +1,4 @@
+import type { ProviderIntegrationLifecycleStatus } from "@repo/core";
 import type { DrizzleQueryExecutor } from "../db";
 
 export type WahooIntegrationRecord = {
@@ -9,7 +10,7 @@ export type WahooIntegrationRecord = {
   /** Lifecycle fence; changes on reconnect/disconnect only. */
   integrationGeneration: number;
   id: string;
-  lifecycleStatus: "active" | "disconnect_pending" | "disconnected";
+  lifecycleStatus: ProviderIntegrationLifecycleStatus;
   profileId: string;
   reconnectRequiredAt: string | null;
   refreshToken: string | null;

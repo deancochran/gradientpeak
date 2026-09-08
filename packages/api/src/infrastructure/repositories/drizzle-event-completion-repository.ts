@@ -18,6 +18,9 @@ function applyDeleteScopeFilters(input: {
   return and(
     ...baseConditions,
     or(eq(schema.events.id, seriesId), eq(schema.events.series_id, seriesId)),
+    ...(input.scope === "future"
+      ? [gte(schema.events.starts_at, new Date(input.anchorEvent.starts_at))]
+      : []),
   );
 }
 

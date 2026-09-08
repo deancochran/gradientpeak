@@ -16,13 +16,13 @@ const activityPlanId = "550e8400-e29b-41d4-a716-446655440000";
 const routeId = "550e8400-e29b-41d4-a716-446655440001";
 
 describe("personal and generic event mutation contracts", () => {
-  it("rejects removed legacy event types and mutation scopes", () => {
+  it("rejects removed legacy event types and accepts current mutation scopes", () => {
     for (const value of ["planned_activity", "race", "rest_day", "imported"]) {
       expect(eventTypeInputSchema.safeParse(value).success).toBe(false);
     }
     expect(eventMutationScopeSchema.safeParse("single").success).toBe(true);
+    expect(eventMutationScopeSchema.safeParse("future").success).toBe(true);
     expect(eventMutationScopeSchema.safeParse("series").success).toBe(true);
-    expect(eventMutationScopeSchema.safeParse("future").success).toBe(false);
   });
 
   it("retains recurrence only for generic event creation", () => {

@@ -156,6 +156,7 @@ test.describe("completed activities and imports", () => {
     test(`imports a real ${format} file through signed storage and processing`, async ({
       athletePage,
     }, testInfo) => {
+      if (format === "TCX") test.slow();
       const name = activityFixtureIdentity(testInfo, format);
       let activityId = "";
       try {

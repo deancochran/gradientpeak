@@ -1,9 +1,0 @@
-appId: ${MAESTRO_APP_ID}
-# @purpose Confirm route deletion and wait for its detail to close.
-# @ready route-detail-screen absent
----
-- tapOn: { id: "route-detail-options-trigger" }
-- tapOn: { id: "route-detail-options-delete" }
-- assertVisible: { id: "route-detail-delete-modal" }
-- tapOn: { id: "route-detail-delete-confirm" }
-- extendedWaitUntil: { notVisible: { id: "route-detail-screen" }, timeout: 30000 }

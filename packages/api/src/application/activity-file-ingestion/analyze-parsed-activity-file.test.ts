@@ -67,6 +67,23 @@ function explicitBikeSegment(startedAt: Date, seconds: number) {
   ];
 }
 
+function explicitAerobicSegment(
+  startedAt: Date,
+  seconds: number,
+  activityCategory: "run" | "swim",
+) {
+  return [
+    {
+      sessionMessageIndex: 0,
+      role: "activity" as const,
+      activity_category: activityCategory,
+      rawSport: activityCategory === "run" ? "running" : "swimming",
+      startTime: startedAt,
+      endTime: new Date(startedAt.getTime() + seconds * 1000),
+    },
+  ];
+}
+
 function cyclingPerformanceTargets(asOf: string, thresholdPowerWatts: number) {
   return buildPerformanceTargetFactsFixture({
     asOf,
@@ -76,7 +93,7 @@ function cyclingPerformanceTargets(asOf: string, thresholdPowerWatts: number) {
 }
 
 describe("analyzeParsedActivityFile", () => {
-  it("extracts the final 20-minute HR mean only from a complete stable 30-minute output window", async () => {
+  it("persists final-20 LTHR independently alongside the qualifying 30-minute power effort", async () => {
     const startedAt = new Date("2026-07-31T10:00:00.000Z");
     const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
       activityId: "stable-threshold-window",
@@ -103,15 +120,71 @@ describe("analyzeParsedActivityFile", () => {
     expect(result.detectedLTHR).toMatchObject({
       valueBpm: 170,
       recordedAt: new Date(startedAt.getTime() + 1_800_000),
+      calculationVersion: "activity-file-lthr-30m-final-20m-v1",
       provenance: {
-        duration_seconds: 1_800,
-        hr_coverage: 1,
-        supporting_output_coverage: 1,
-        maximum_gap_seconds: 1,
-        output_coefficient_of_variation: 0,
-        supporting_output_value: 250,
+        derived_from: "activity_file_lthr_field_test",
+        source_effort_duration_seconds: 1_800,
+        duration_seconds: 1_200,
+        maximum_gap_seconds: 2,
       },
     });
+    expect(result.effortsToInsert).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          effort_type: "power",
+          source_series: "power",
+          duration_seconds: 1_800,
+          method: "activity_file_best_effort",
+        }),
+        expect.objectContaining({
+          effort_type: "heart_rate",
+          source_series: "heart_rate",
+          duration_seconds: 1_200,
+          unit: "bpm",
+          value: 170,
+          method: "activity_file_lthr_detection",
+          calculation_version: "activity-file-lthr-30m-final-20m-v1",
+        }),
+      ]),
+    );
+  });
+
+  it.each([
+    "run",
+    "swim",
+  ] as const)("derives canonical %s LTHR without requiring power or speed", async (activityCategory) => {
+    const startedAt = new Date("2026-07-31T10:00:00.000Z");
+    const result = await analyzeParsedActivityFile(dbWithoutProfileMetrics(), {
+      activityId: `${activityCategory}-lthr-window`,
+      profileId: `${activityCategory}-lthr-profile`,
+      refreshWeather: false,
+      parsedData: {
+        metadata: {
+          startTime: startedAt,
+          type: activityCategory === "run" ? "running" : "swimming",
+        },
+        summary: { totalTime: 1_800, totalDistance: 0, avgHeartRate: 168 },
+        records: Array.from({ length: 1_801 }, (_, second) => ({
+          sessionMessageIndex: 0,
+          timestamp: new Date(startedAt.getTime() + second * 1_000),
+          heartRate: second < 600 ? 150 : 168,
+        })),
+        segments: explicitAerobicSegment(startedAt, 1_800, activityCategory),
+      },
+    });
+
+    expect(result.detectedLTHR?.valueBpm).toBe(168);
+    expect(result.effortsToInsert).toContainEqual(
+      expect.objectContaining({
+        activity_category: activityCategory,
+        effort_type: "heart_rate",
+        source_series: "heart_rate",
+        duration_seconds: 1_200,
+        value: 168,
+        unit: "bpm",
+        method: "activity_file_lthr_detection",
+      }),
+    );
   });
 
   it("keeps missing output variability out of detected threshold provenance", async () => {

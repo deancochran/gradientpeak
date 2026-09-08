@@ -1,7 +1,0 @@
-appId: ${MAESTRO_APP_ID}
-# @purpose Select one supported Discover result scope.
-# @arg DISCOVER_SCOPE enum(users|routes|activityPlans|trainingPlans) required
-# @ready discover-search-input
----
-- tapOn: { id: "discover-scope-${DISCOVER_SCOPE}", retryTapIfNoChange: true }
-- assertVisible: { id: "discover-search-input" }

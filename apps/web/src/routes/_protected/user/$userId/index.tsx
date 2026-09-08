@@ -195,7 +195,7 @@ function UserProfilePage() {
             <Card>
               <CardHeader>
                 <h2 className="text-xl font-semibold">Groups</h2>
-                <CardDescription>Active community memberships</CardDescription>
+                <CardDescription>Active group memberships</CardDescription>
               </CardHeader>
               <CardContent>
                 {groupsQuery.isLoading ? (

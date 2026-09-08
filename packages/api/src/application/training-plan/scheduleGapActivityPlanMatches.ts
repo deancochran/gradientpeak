@@ -140,7 +140,7 @@ export function buildScheduleGapActivityPlanMatches(input: {
       const activity_category = readCanonicalPlanActivityCategory(plan);
       if (!activity_category) return null;
       const commonLoad = plan.prescriptionQuantification?.summary.commonLoad;
-      if (commonLoad?.status !== "complete" && commonLoad?.status !== "partial") return null;
+      if (commonLoad?.status !== "complete") return null;
       const load = readFinitePlanNumber(commonLoad.load);
       if (load === null) return null;
       hasAvailableCommonLoad = true;

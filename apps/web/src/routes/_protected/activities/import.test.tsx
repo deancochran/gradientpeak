@@ -262,7 +262,13 @@ describe("ActivityImportPage", () => {
     const { unmount } = render(<ActivityImportPage />);
     mocks.formProps?.onCancel();
     expect(mocks.navigate).toHaveBeenCalledWith({
-      search: { activity_category: "run", eventId, gps: "off" },
+      search: {
+        activity_category: "run",
+        activityPlanId: undefined,
+        eventId,
+        gps: "off",
+        routeId,
+      },
       to: "/record",
     });
 
@@ -302,10 +308,11 @@ describe("activity import search and deduplication", () => {
       }),
     ).toEqual({
       activity_category: "bike",
+      activityPlanId: undefined,
       eventId,
       from: "record",
       gps: "off",
-      routeId: undefined,
+      routeId,
     });
   });
 

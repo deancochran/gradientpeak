@@ -14,10 +14,11 @@ import {
   profilePerformanceEstimates,
   thresholdEvaluationEfforts,
   thresholdEvaluations,
+  thresholdEvidence,
   thresholds,
 } from "../src/schema/tables";
 
-assert.deepEqual(thresholdMetricEnum.enumValues, ["power", "speed"]);
+assert.deepEqual(thresholdMetricEnum.enumValues, ["power", "speed", "lthr"]);
 assert.deepEqual(thresholdEvaluationOutcomeEnum.enumValues, ["qualified", "rejected"]);
 assert.deepEqual(thresholdEvaluationEffortRoleEnum.enumValues, ["primary", "supporting"]);
 assert.deepEqual(thresholdEvaluationRejectionReasonEnum.enumValues, [
@@ -35,6 +36,7 @@ assert.deepEqual(thresholdEvaluationRejectionReasonEnum.enumValues, [
 ]);
 
 const evaluationColumns = getTableColumns(thresholdEvaluations);
+assert.deepEqual(evaluationColumns.metric.enumValues, ["power", "speed", "lthr"]);
 for (const name of [
   "profile_id",
   "activity_category",
@@ -104,6 +106,7 @@ for (const foreignKeyName of [
 }
 
 const thresholdColumns = getTableColumns(thresholds);
+assert.deepEqual(thresholdColumns.metric.enumValues, ["power", "speed", "lthr"]);
 for (const name of [
   "evaluation_id",
   "effective_at",
@@ -120,6 +123,14 @@ for (const forbidden of ["freshness", "stale_at", "expires_at"] as const) {
   assert.ok(!(forbidden in thresholdColumns), `Thresholds must not persist ${forbidden}`);
 }
 assert.ok(!("threshold_id" in getTableColumns(profilePerformanceEstimates)));
+const evidenceColumns = getTableColumns(thresholdEvidence);
+assert.deepEqual(evidenceColumns.unit.enumValues, ["watts", "meters_per_second", "bpm"]);
+assert.deepEqual(evidenceColumns.method.enumValues, [
+  "bike_power_30m",
+  "run_speed_30m",
+  "swim_speed_15m",
+  "lthr_30m_final_20m",
+]);
 const thresholdConfig = getTableConfig(thresholds);
 assert.ok(
   thresholdConfig.foreignKeys.some(

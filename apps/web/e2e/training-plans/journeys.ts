@@ -48,7 +48,7 @@ async function createPlan(page: Page, testInfo: TestInfo, suffix: string) {
   const activitySelectors = page.getByRole("combobox", { name: "Activity plan" });
   await expect(activitySelectors).toHaveCount(2);
   await activitySelectors.nth(0).selectOption({ label: "Playwright Tempo Builder" });
-  await activitySelectors.nth(1).selectOption({ label: "Playwright Library 01" });
+  await activitySelectors.nth(1).selectOption({ label: "Playwright Tempo Builder" });
   await page.getByRole("spinbutton", { name: "Day offset" }).nth(1).fill("1");
   await page.getByRole("button", { name: "Create plan" }).click();
   await expect(page).toHaveURL(/\/training-plans\/[0-9a-f-]+$/i);

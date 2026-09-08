@@ -1,7 +1,12 @@
+import { buildCenteredPlanAnalysisWindow, shiftPlanAnalysisWindow } from "@repo/core";
 import { act, renderHook } from "@testing-library/react-native";
 
 const mockProjectionRefetch = jest.fn(async () => undefined);
 const mockRefreshProfile = jest.fn(async () => undefined);
+const mockCalendarDayInvalidate = jest.fn(async () => undefined);
+const mockGoalAssessmentInvalidate = jest.fn(async () => undefined);
+const mockGoalProgressInvalidate = jest.fn(async () => undefined);
+const mockThresholdOverviewInvalidate = jest.fn(async () => undefined);
 const mockProjectionUseQuery = jest.fn();
 let mockPlanningTimezone: string | null = "America/Los_Angeles";
 let mockProfileLoading = false;
@@ -21,7 +26,7 @@ const load = {
 };
 
 const projection = {
-  contractVersion: "plan-tab-projection-v1" as const,
+  contractVersion: "plan-tab-projection-v2" as const,
   asOf: "2026-04-06T12:00:00.000Z",
   planningTimezone: "America/Los_Angeles",
   today: "2026-04-06",
@@ -29,7 +34,11 @@ const projection = {
     id: "11111111-1111-4111-8111-111111111111",
     name: "Spring plan",
     scheduleBatchId: "22222222-2222-4222-8222-222222222222",
+    nextEventId: "33333333-3333-4333-8333-333333333333",
+    nextEventTitle: "Tempo ride",
+    nextEventDate: "2026-04-07",
     nextEventAt: "2026-04-07T15:00:00.000Z",
+    nextActivityPlanId: null,
   },
   timeline: {
     startDate: "2026-03-30",
@@ -94,7 +103,7 @@ const projection = {
   },
   fitness: {
     actual: [{ date: "2026-04-06", longTermLoad: 40, recentLoad: 50, loadBalance: -10 }],
-    scheduled: [{ date: "2026-04-06", longTermLoad: 40, recentLoad: 50, loadBalance: -10 }],
+    scheduled: [{ date: "2026-04-06", longTermLoad: 40, recentLoad: 50, loadBalance: -12 }],
     recommended: [{ date: "2026-04-06", longTermLoad: 42, recentLoad: 53, loadBalance: -11 }],
   },
   recommendationPoints: [{ date: "2026-04-06", status: "complete", load: 70 }],
@@ -107,10 +116,12 @@ const projection = {
     {
       id: "55555555-5555-4555-8555-555555555555",
       label: "A race",
+      priority: 8,
       targetDate: "2026-04-06",
       activityCategory: "bike",
     },
   ],
+  goalMarkersTruncated: false,
   publishedRevision: 9,
   algorithmVersion: "athlete-state-projection-v1",
 };
@@ -131,6 +142,14 @@ let mockProjectionData = projection;
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
+    useUtils: () => ({
+      athleteIntelligence: {
+        getGoalAssessment: { invalidate: mockGoalAssessmentInvalidate },
+        getGoalProgress: { invalidate: mockGoalProgressInvalidate },
+        getThresholdOverview: { invalidate: mockThresholdOverviewInvalidate },
+      },
+      calendar: { day: { invalidate: mockCalendarDayInvalidate } },
+    }),
     trainingPlans: {
       getPlanTabProjection: {
         useQuery: (input: unknown, options: unknown) => mockProjectionUseQuery(input, options),
@@ -171,7 +190,7 @@ describe("usePlanTrainingPathData", () => {
     mockProjectionUseQuery.mockImplementation(() => queryResult({ data: mockProjectionData }));
   });
 
-  it("converts a projection into the existing chart and selected-week presentation", () => {
+  it("converts a projection into the chart presentation", () => {
     const result = buildPlanTabProjectionPresentation({
       projection: projection as unknown as PlanTabProjection,
       selectedWeekStart: "2026-04-06",
@@ -186,15 +205,41 @@ describe("usePlanTrainingPathData", () => {
           completedLoad: 35,
           effectiveLoad: 60,
           fitnessCtl: 40,
+          formTsb: -10,
         }),
       ]),
     );
-    expect(result.selectedWeekGoals).toEqual([
-      expect.objectContaining({ label: "A race", status: "Goal due" }),
-    ]);
-    expect(result.selectedWeekEvents).toEqual([
-      expect.objectContaining({ title: "Tempo ride", estimatedLoad: 60 }),
-    ]);
+    expect(result.goalMarkers).toEqual(
+      expect.arrayContaining([expect.objectContaining({ label: "A race" })]),
+    );
+    expect(result.timelineDaysByDate["2026-04-06"]?.scheduledItems).toEqual(
+      expect.arrayContaining([expect.objectContaining({ title: "Tempo ride" })]),
+    );
+  });
+
+  it("presents a clear verified-through notice for historical fitness", () => {
+    const result = buildPlanTabProjectionPresentation({
+      projection: {
+        ...projection,
+        fitness: {
+          ...projection.fitness,
+          actual: [{ date: "2026-04-05", longTermLoad: 39, recentLoad: 46, loadBalance: -7 }],
+        },
+        fitnessHistory: {
+          status: "historical",
+          verifiedThrough: "2026-04-05",
+          maturity: "establishing_baseline",
+        },
+      } as unknown as PlanTabProjection,
+      selectedWeekStart: "2026-04-06",
+      weekWindow: { start: "2026-03-30", end: "2026-04-12" },
+      todayKey: "2026-04-06",
+    });
+
+    expect(result.trainingPath.fitnessHistoryNotice).toBe(
+      "Fitness, fatigue, and form are based on verified history through Apr 5, 2026, then assume zero on days where no Load can be established. The baseline is still establishing.",
+    );
+    expect(result.trainingPath.weeks.some((week) => week.fitness === 39)).toBe(true);
   });
 
   it("derives unavailable and partial completed presentation from completed Load status", () => {
@@ -250,6 +295,27 @@ describe("usePlanTrainingPathData", () => {
     ).toMatchObject({
       completedLoad: null,
       completedLoadStatus: "unavailable",
+    });
+
+    const incompleteSubtotalProjection = buildVariant("unavailable", null);
+    incompleteSubtotalProjection.dayLoads["2026-04-06"] = {
+      ...incompleteSubtotalProjection.dayLoads["2026-04-06"],
+      knownCompletedLoadSubtotal: 20,
+    };
+    const incompleteSubtotal = present(incompleteSubtotalProjection);
+    expect(
+      incompleteSubtotal.dailyTrainingPathPoints.find((point) => point.date === "2026-04-06"),
+    ).toMatchObject({
+      completedLoad: 20,
+      completedObservationState: "observed",
+      effectiveCompletedLoad: 20,
+      effectiveCompletedLoadStatus: "partial",
+    });
+    expect(
+      incompleteSubtotal.trainingPath.weeks.find((week) => week.weekStart === "2026-04-06"),
+    ).toMatchObject({
+      completedLoad: 20,
+      completedLoadStatus: "partial",
     });
 
     const partial = present(buildVariant("partial", 20));
@@ -318,11 +384,55 @@ describe("usePlanTrainingPathData", () => {
     });
   });
 
+  it("restores a finite scheduled subtotal without exposing partial status as chart chrome", () => {
+    const day = projection.timeline.days[0];
+    if (!day) throw new Error("Expected projection day fixture");
+    const subtotalProjection = {
+      ...projection,
+      timeline: {
+        ...projection.timeline,
+        days: [
+          {
+            ...day,
+            load: {
+              ...day.load,
+              scheduledLoad: null,
+              scheduledLoadStatus: "unavailable",
+            },
+          },
+        ],
+      },
+      dayLoads: {
+        ...projection.dayLoads,
+        "2026-04-06": {
+          ...projection.dayLoads["2026-04-06"],
+          knownScheduledLoadSubtotal: 60,
+          scheduledLoad: null,
+          scheduledLoadStatus: "unavailable",
+        },
+      },
+    } as unknown as PlanTabProjection;
+
+    const result = buildPlanTabProjectionPresentation({
+      projection: subtotalProjection,
+      selectedWeekStart: "2026-04-06",
+      weekWindow: { start: "2026-03-30", end: "2026-04-12" },
+      todayKey: "2026-04-06",
+    });
+
+    expect(
+      result.dailyTrainingPathPoints.find((point) => point.date === "2026-04-06"),
+    ).toMatchObject({ plannedLoad: 60, plannedLoadStatus: "partial" });
+    expect(result.trainingPath.weeks.find((week) => week.weekStart === "2026-04-06")).toMatchObject(
+      { plannedLoad: 60, plannedLoadStatus: "partial" },
+    );
+  });
+
   it("loads the entire Plan tab through one bounded server projection", async () => {
     const { result } = await renderHook(() => usePlanTrainingPathData());
 
     expect(mockProjectionUseQuery).toHaveBeenLastCalledWith(
-      { startDate: "2026-02-23", endDate: "2026-05-17" },
+      { startDate: "2026-03-17", endDate: "2026-04-27" },
       expect.objectContaining({
         enabled: true,
         retry: false,
@@ -332,29 +442,80 @@ describe("usePlanTrainingPathData", () => {
     expect(result.current.hasUsableData).toBe(true);
   });
 
-  it("maps server-owned load, goals, scheduled items, and completions without source queries", async () => {
+  it("adopts the server-authoritative planning day", async () => {
+    mockProjectionData = {
+      ...projection,
+      today: "2026-04-07",
+    } as unknown as typeof projection;
+    const { result } = await renderHook(() => usePlanTrainingPathData());
+
+    expect(result.current.selectedDate).toBe("2026-04-07");
+    expect(result.current.trainingPath.todayKey).toBe("2026-04-07");
+  });
+
+  it("maps server-owned load and fitness without source queries", async () => {
     const { result } = await renderHook(() => usePlanTrainingPathData());
 
     expect(result.current.dailyTrainingPathPoints).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           date: "2026-04-06",
+          actualFatigueAtl: 50,
           completedLoad: 35,
           effectiveLoad: 60,
           fitnessCtl: 40,
+          recommendedFatigueAtl: 53,
+          recommendedFitnessCtl: 42,
+          recommendedFormTsb: -11,
+          recommendedLoad: 70,
+          recommendedLoadStatus: "complete",
+          scheduledFatigueAtl: 50,
           scheduledFitnessCtl: 40,
+          scheduledFormTsb: -12,
         }),
       ]),
     );
-    expect(result.current.selectedWeekGoals).toEqual([
-      expect.objectContaining({ label: "A race", targetDate: "2026-04-06" }),
-    ]);
-    expect(result.current.selectedWeekEvents).toEqual([
-      expect.objectContaining({ title: "Tempo ride", estimatedLoad: 60 }),
-    ]);
-    expect(result.current.selectedWeekCompletedActivities).toEqual([
-      expect.objectContaining({ title: "Morning ride", load: 35 }),
-    ]);
+    expect(result.current.timelineDaysByDate["2026-04-06"]).toMatchObject({
+      completedItems: [expect.objectContaining({ title: "Morning ride" })],
+      scheduledItems: [expect.objectContaining({ title: "Tempo ride" })],
+    });
+  });
+
+  it("opens analysis for the selected week rather than an unrelated historical day", async () => {
+    mockProjectionData = {
+      ...projection,
+      fitnessHistory: {
+        status: "historical",
+        verifiedThrough: "2026-04-05",
+        maturity: "establishing_baseline",
+      },
+    } as unknown as typeof projection;
+    const { result } = await renderHook(() => usePlanTrainingPathData());
+
+    expect(result.current.selectedDate).toBe("2026-04-06");
+    expect(result.current.analysisSelectedDate).toBe("2026-04-06");
+
+    await act(() => result.current.handleSelectedDateChange("2026-04-06"));
+    expect(result.current.analysisSelectedDate).toBe("2026-04-06");
+  });
+
+  it("uses an analysis route anchor as its initial selected date", async () => {
+    const { result } = await renderHook(() => usePlanTrainingPathData("2026-04-08"));
+
+    expect(result.current.selectedDate).toBe("2026-04-08");
+    expect(result.current.analysisSelectedDate).toBe("2026-04-08");
+  });
+
+  it("uses one selected date and lets analysis select a week by its start", async () => {
+    const { result } = await renderHook(() => usePlanTrainingPathData());
+
+    await act(() => result.current.handleSelectedDateChange("2026-04-08"));
+    expect(result.current.selectedDate).toBe("2026-04-08");
+    expect(result.current.selectedWeekStart).toBe("2026-04-06");
+
+    await act(() => result.current.handleSelectedWeekChange("2026-03-30"));
+    expect(result.current.selectedDate).toBe("2026-03-30");
+    expect(result.current.selectedWeekStart).toBe("2026-03-30");
   });
 
   it("keeps one stable projection window while the selected day changes", async () => {
@@ -363,9 +524,65 @@ describe("usePlanTrainingPathData", () => {
     await act(() => result.current.handleSelectedDateChange("2026-08-01"));
 
     expect(mockProjectionUseQuery).toHaveBeenLastCalledWith(
-      { startDate: "2026-02-23", endDate: "2026-05-17" },
+      { startDate: "2026-03-17", endDate: "2026-04-27" },
       expect.objectContaining({ enabled: true }),
     );
+  });
+
+  it("changes and shifts bounded ranges without recentering the selected day", async () => {
+    const { result } = await renderHook(() => usePlanTrainingPathData());
+    await act(() => result.current.handleSelectedDateChange("2026-04-08"));
+
+    await act(() => result.current.handleAnalysisRangeChange("6m"));
+
+    const sixMonths = buildCenteredPlanAnalysisWindow({ anchorDate: "2026-04-06", period: "6m" });
+    expect(result.current.analysisPeriod).toBe("6m");
+    expect(result.current.selectedDate).toBe("2026-04-08");
+    expect(mockProjectionUseQuery).toHaveBeenLastCalledWith(
+      { startDate: sixMonths.startDate, endDate: sixMonths.endDate },
+      expect.objectContaining({ enabled: true, placeholderData: expect.any(Function) }),
+    );
+
+    await act(() => result.current.handleAnalysisPeriodShift(-1));
+    const previous = shiftPlanAnalysisWindow({
+      anchorDate: "2026-04-06",
+      direction: -1,
+      period: "6m",
+    });
+    expect(result.current.analysisAnchor).toBe(previous.anchorDate);
+    expect(mockProjectionUseQuery).toHaveBeenLastCalledWith(
+      { startDate: previous.startDate, endDate: previous.endDate },
+      expect.objectContaining({ enabled: true }),
+    );
+  });
+
+  it("selects the adjacent end of a newly loaded previous window", async () => {
+    const { result, rerender } = await renderHook(() => usePlanTrainingPathData());
+    const previous = shiftPlanAnalysisWindow({
+      anchorDate: "2026-04-06",
+      direction: -1,
+      period: "6w",
+    });
+
+    await act(() => result.current.handleAnalysisPeriodShift(-1));
+    expect(result.current.selectedDate).toBe("2026-04-06");
+
+    const sourceDay = projection.timeline.days[0];
+    if (!sourceDay) throw new Error("Expected projection day fixture");
+    mockProjectionData = {
+      ...projection,
+      dayLoads: { [previous.endDate]: projection.dayLoads["2026-04-06"] },
+      timeline: {
+        ...projection.timeline,
+        days: [{ ...sourceDay, date: previous.endDate }],
+        endDate: previous.endDate,
+        startDate: previous.startDate,
+        weeks: [],
+      },
+    } as unknown as typeof projection;
+    await rerender({});
+
+    expect(result.current.selectedDate).toBe(previous.endDate);
   });
 
   it("reconciles selection when the authoritative range shifts", async () => {
@@ -405,7 +622,7 @@ describe("usePlanTrainingPathData", () => {
     expect(result.current.trainingPath.selectedWeekSummary?.weekStart).toBe("2026-05-04");
   });
 
-  it("uses one normal query and exposes no gesture-driven fetch actions", async () => {
+  it("exposes bounded navigation rather than unbounded window extension", async () => {
     const { result } = await renderHook(() => usePlanTrainingPathData());
 
     expect(
@@ -413,6 +630,7 @@ describe("usePlanTrainingPathData", () => {
     ).toBe(1);
     expect(result.current).not.toHaveProperty("extendTrainingPathWindowStart");
     expect(result.current).not.toHaveProperty("extendTrainingPathWindowEnd");
+    expect(result.current.handleAnalysisPeriodShift).toEqual(expect.any(Function));
   });
 
   it("uses UTC as a safe request anchor when a legacy profile has no planning timezone", async () => {
@@ -421,7 +639,7 @@ describe("usePlanTrainingPathData", () => {
     const { result } = await renderHook(() => usePlanTrainingPathData());
 
     expect(mockProjectionUseQuery).toHaveBeenCalledWith(
-      { startDate: "2026-02-23", endDate: "2026-05-17" },
+      { startDate: "2026-03-17", endDate: "2026-04-27" },
       expect.objectContaining({ enabled: true }),
     );
     expect(result.current).toMatchObject({
@@ -432,12 +650,29 @@ describe("usePlanTrainingPathData", () => {
     });
   });
 
-  it("refreshes only the projection and profile readiness source", async () => {
+  it("refreshes every resource visible in the coordinated Plan workflow", async () => {
     const { result } = await renderHook(() => usePlanTrainingPathData());
 
     await act(async () => result.current.handleRefresh());
 
     expect(mockProjectionRefetch).toHaveBeenCalledTimes(1);
     expect(mockRefreshProfile).toHaveBeenCalledTimes(1);
+    expect(mockCalendarDayInvalidate).toHaveBeenCalledTimes(1);
+    expect(mockGoalAssessmentInvalidate).toHaveBeenCalledTimes(1);
+    expect(mockGoalProgressInvalidate).toHaveBeenCalledTimes(1);
+    expect(mockThresholdOverviewInvalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it("settles the coordinated refresh when one resource fails", async () => {
+    mockCalendarDayInvalidate.mockRejectedValueOnce(new Error("calendar unavailable"));
+    const { result } = await renderHook(() => usePlanTrainingPathData());
+
+    await expect(act(async () => result.current.handleRefresh())).resolves.toBeUndefined();
+
+    expect(mockProjectionRefetch).toHaveBeenCalledTimes(1);
+    expect(mockRefreshProfile).toHaveBeenCalledTimes(1);
+    expect(mockGoalAssessmentInvalidate).toHaveBeenCalledTimes(1);
+    expect(mockGoalProgressInvalidate).toHaveBeenCalledTimes(1);
+    expect(mockThresholdOverviewInvalidate).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,6 +1,7 @@
 import { PostHogProvider } from "@posthog/react";
+import { invalidateProfileIdentityQueries } from "@repo/api/profile-identity-cache";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { api, createApiClient, getQueryClient } from "../../lib/api/client";
 import { posthogOptions, posthogProjectToken } from "../../lib/telemetry";
@@ -17,12 +18,29 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <api.Provider client={apiClient} queryClient={queryClient}>
           <ThemeProvider>
-            <AuthProvider>{children}</AuthProvider>
+            <ProfileIdentityFocusRefresh>
+              <AuthProvider>{children}</AuthProvider>
+            </ProfileIdentityFocusRefresh>
           </ThemeProvider>
         </api.Provider>
       </QueryClientProvider>
     </MaybePostHogProvider>
   );
+}
+
+function ProfileIdentityFocusRefresh({ children }: { children: React.ReactNode }) {
+  const utils = api.useUtils();
+
+  useEffect(() => {
+    const refreshProfileIdentity = () => {
+      void invalidateProfileIdentityQueries(utils);
+    };
+
+    window.addEventListener("focus", refreshProfileIdentity);
+    return () => window.removeEventListener("focus", refreshProfileIdentity);
+  }, [utils]);
+
+  return children;
 }
 
 function MaybePostHogProvider({ children }: { children: React.ReactNode }) {

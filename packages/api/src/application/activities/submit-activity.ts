@@ -4,6 +4,7 @@ import {
   COMPLETED_ACTIVITY_PERFORMANCE_TARGET_SNAPSHOT_VERSION,
   type ContentVisibility,
   completedActivityPerformanceTargetSnapshotSchema,
+  completedActivityTitle,
 } from "@repo/core";
 import {
   type CompletedActivitySegmentSet,
@@ -18,12 +19,14 @@ import {
   activitySegments,
   activitySourceReferences,
   integrations,
+  profiles,
 } from "@repo/db";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { type getRequiredDb, withProfileFencedRepeatableReadSnapshot } from "../../db";
 import {
   attachActivitySourceReferenceWithProfileLockHeld as attachActivitySourceReference,
   resolveCanonicalActivityReference,
+  stageActivitySourceReferenceForReview,
 } from "../../repositories/activity-source-reference-repository";
 import {
   deleteThresholdEvidenceForActivity,
@@ -33,6 +36,10 @@ import {
 import { acceptActivityIngestion } from "../activity-file-ingestion/direct-activity-ingestion";
 import { materializeActivityAthleteStateEvidence } from "../athlete-intelligence/athlete-state-evidence";
 import { readPublishedAthletePerformanceTargets } from "../athlete-intelligence/published-athlete-state";
+import {
+  decideProviderActivityMatch,
+  PROVIDER_PROBABLE_START_TOLERANCE_MS,
+} from "./provider-activity-matching";
 import {
   type GeneratedActivityLthrEvidence,
   reconcileGeneratedActivityEvidenceWithProfileLockHeld,
@@ -387,6 +394,7 @@ export interface ActivitySubmission {
     originProvider?: string | null;
     originExternalId?: string | null;
     originTrust?: "trusted_provider_origin";
+    relationshipKind?: "imported" | "exported" | "both";
     evidenceTier?: CanonicalActivityEvidenceTier;
   };
   segmentSet?: CompletedActivitySegmentSet;
@@ -422,6 +430,14 @@ export interface ExistingActivityEnrichmentSubmission {
   finishedAt?: Date;
   ingestion?: ReadyIngestionSubmission;
 }
+
+export type SubmitActivityResult = {
+  id: string;
+  compositionResult: unknown;
+  noOp: boolean;
+  resolutionStatus: "confirmed" | "review";
+  reviewCandidateActivityId: string | null;
+};
 
 function stringOrNull(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null;
@@ -691,13 +707,21 @@ export async function submitActivity(
     importRunId?: string;
     deferAthleteStateRefresh?: boolean;
     deferPerformanceCalibration?: boolean;
+    /** The caller has a durable owner decision to create a distinct canonical activity. */
+    confirmReviewedSourceId?: string;
+    stageProbableProviderDuplicates?: boolean;
   } = {},
-) {
+): Promise<SubmitActivityResult> {
   let activityId =
     input.kind === "enrich" ? input.activityId : (input.requestedActivityId ?? randomUUID());
   let compositionResult: unknown;
   let noOp = false;
+  let resolutionStatus: "confirmed" | "review" = "confirmed";
+  let reviewCandidateActivityId: string | null = null;
   const evidence = input.kind === "enrich" ? input : input.analysis;
+  if (!input.segmentSet)
+    throw new Error("Activity submission requires an ordered segment manifest");
+  const segmentSet = parseActivitySegments(input.segmentSet);
   await withProfileFencedRepeatableReadSnapshot(
     db,
     input.profileId,
@@ -720,8 +744,31 @@ export async function submitActivity(
             ...(provenance.originTrust === undefined
               ? {}
               : { originTrust: provenance.originTrust }),
+            ...(provenance.relationshipKind === undefined
+              ? {}
+              : { relationshipKind: provenance.relationshipKind }),
           }
         : {};
+      if (options.confirmReviewedSourceId) {
+        if (!provenance || input.kind === "enrich") {
+          throw new Error("Reviewed source confirmation requires provider activity provenance");
+        }
+        const [confirmed] = await tx
+          .update(activitySourceReferences)
+          .set({ activity_id: activityId, resolution_status: "confirmed", updated_at: now })
+          .where(
+            and(
+              eq(activitySourceReferences.id, options.confirmReviewedSourceId),
+              eq(activitySourceReferences.profile_id, input.profileId),
+              eq(activitySourceReferences.integration_id, provenance.integrationId),
+              eq(activitySourceReferences.provider, provenance.provider),
+              eq(activitySourceReferences.provider_external_id, provenance.externalId),
+              eq(activitySourceReferences.resolution_status, "review"),
+            ),
+          )
+          .returning({ id: activitySourceReferences.id });
+        if (!confirmed) throw new Error("Reviewed source is no longer available");
+      }
       if (provenance) {
         const resolved = await resolveCanonicalActivityReference(tx, {
           profileId: input.profileId,
@@ -739,7 +786,7 @@ export async function submitActivity(
       }
       // Lock and verify the lifecycle fence in this same transaction as every
       // activity/artifact/link/ingestion write.
-      if (provenance?.provider === "wahoo" && provenance.integrationGeneration !== undefined) {
+      if (provenance && provenance.integrationGeneration !== undefined) {
         const [activeIntegration] = await tx
           .select({ id: integrations.id })
           .from(integrations)
@@ -747,7 +794,7 @@ export async function submitActivity(
             and(
               eq(integrations.id, provenance.integrationId),
               eq(integrations.profile_id, input.profileId),
-              eq(integrations.provider, "wahoo"),
+              eq(integrations.provider, provenance.provider),
               eq(integrations.lifecycle_status, "active"),
               eq(integrations.generation, provenance.integrationGeneration),
             ),
@@ -762,6 +809,84 @@ export async function submitActivity(
         .where(and(eq(activities.id, activityId), eq(activities.profile_id, input.profileId)))
         .limit(1);
       if (input.kind === "enrich" && !existing) throw new Error("Activity not found for profile");
+      if (
+        provenance &&
+        input.kind !== "enrich" &&
+        !existing &&
+        options.stageProbableProviderDuplicates
+      ) {
+        const activityCategory =
+          segmentSet.segments.find((segment) => segment.role === "activity")?.activity_category ??
+          "other";
+        const startLower = new Date(
+          input.startedAt.getTime() - PROVIDER_PROBABLE_START_TOLERANCE_MS,
+        );
+        const startUpper = new Date(
+          input.startedAt.getTime() + PROVIDER_PROBABLE_START_TOLERANCE_MS,
+        );
+        const candidateRows = await tx
+          .select({
+            activityCategory: activitySegments.activity_category,
+            activityId: activities.id,
+            elapsedMs: activities.elapsed_ms,
+            startedAt: activities.started_at,
+          })
+          .from(activities)
+          .innerJoin(
+            activitySegments,
+            and(
+              eq(activitySegments.activity_id, activities.id),
+              eq(activitySegments.role, "activity"),
+            ),
+          )
+          .where(
+            and(
+              eq(activities.profile_id, input.profileId),
+              gte(activities.started_at, startLower),
+              lte(activities.started_at, startUpper),
+            ),
+          )
+          .orderBy(asc(activities.started_at), asc(activities.id))
+          .limit(20);
+        const candidates = candidateRows.flatMap((candidate) =>
+          candidate.activityCategory
+            ? [
+                {
+                  activityCategory: candidate.activityCategory,
+                  activityId: candidate.activityId,
+                  elapsedMs: candidate.elapsedMs,
+                  startedAt: candidate.startedAt,
+                },
+              ]
+            : [],
+        );
+        const decision = decideProviderActivityMatch({
+          exactActivityId: null,
+          incoming: {
+            activityCategory,
+            elapsedMs: input.elapsedMs,
+            startedAt: input.startedAt,
+          },
+          candidates,
+        });
+        if (decision.kind === "review") {
+          await stageActivitySourceReferenceForReview(tx, {
+            profileId: input.profileId,
+            integrationId: provenance.integrationId,
+            provider: provenance.provider,
+            providerExternalId: provenance.externalId,
+            providerRevision: provenance.providerUpdatedAt,
+            ...sourceOrigin,
+            ...(options.importRunId === undefined ? {} : { importRunId: options.importRunId }),
+            candidateActivityId: decision.candidateActivityId,
+            now,
+          });
+          noOp = true;
+          resolutionStatus = "review";
+          reviewCandidateActivityId = decision.candidateActivityId;
+          return;
+        }
+      }
       let existingArtifactDigest: string | null = null;
       if (existing && ingestion?.artifact) {
         const [currentArtifact] = await tx
@@ -904,9 +1029,6 @@ export async function submitActivity(
         input.kind === "enrich"
           ? (input.summaryValues.moving_ms ?? existing?.moving_ms ?? null)
           : (input.movingMs ?? null);
-      if (!input.segmentSet)
-        throw new Error("Activity submission requires an ordered segment manifest");
-      const segmentSet = parseActivitySegments(input.segmentSet);
       const existingSegments = existing
         ? await tx
             .select()
@@ -940,15 +1062,28 @@ export async function submitActivity(
       const targetSnapshot = existing
         ? null
         : await captureCompletedActivityPerformanceTargets(tx, { profileId: input.profileId, now });
+      const startedAt = input.startedAt ?? existing?.started_at ?? now;
+      const primaryActivityCategory =
+        segmentSet.segments.find((segment) => segment.role === "activity")?.activity_category ??
+        "other";
+      const [profile] = await tx
+        .select({ planningTimezone: profiles.planning_timezone })
+        .from(profiles)
+        .where(eq(profiles.id, input.profileId))
+        .limit(1);
       const baseValues = {
         activity_plan_id:
           input.activityPlanId === undefined
             ? (existing?.activity_plan_id ?? null)
             : input.activityPlanId,
-        name: input.name ?? existing?.name ?? "Activity",
+        name: completedActivityTitle({
+          activityCategory: primaryActivityCategory,
+          startedAt,
+          timezone: profile?.planningTimezone,
+        }),
         notes: input.notes === undefined ? (existing?.notes ?? null) : input.notes,
         content_visibility: visibility,
-        started_at: input.startedAt ?? existing?.started_at ?? now,
+        started_at: startedAt,
         finished_at: input.finishedAt ?? existing?.finished_at ?? now,
         elapsed_ms: elapsedMs,
         active_ms:
@@ -1219,5 +1354,5 @@ export async function submitActivity(
       }
     },
   );
-  return { id: activityId, compositionResult, noOp };
+  return { id: activityId, compositionResult, noOp, resolutionStatus, reviewCandidateActivityId };
 }

@@ -87,6 +87,7 @@ function projectedEventData() {
 }
 
 const routerNavigateMock = jest.fn();
+const routerDismissToMock = jest.fn();
 const navigateToMock = jest.fn();
 const deleteEventMutateMock = jest.fn();
 var getActivityColorMock = jest.fn((_activityCategory: string) => ({ name: "Outdoor Run" }));
@@ -124,6 +125,7 @@ jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ id: "event-1" }),
   useRouter: () => ({
     back: jest.fn(),
+    dismissTo: routerDismissToMock,
     navigate: routerNavigateMock,
     push: jest.fn(),
     replace: jest.fn(),
@@ -152,6 +154,29 @@ jest.mock("@/components/shared/RouteCard", () => ({
 jest.mock("@/components/shared/resource-picker", () => ({
   __esModule: true,
   ResourcePickerModal: createHost("ResourcePickerModal"),
+}));
+jest.mock("@/components/shared/detail", () => ({
+  __esModule: true,
+  DetailOverflowMenu: ({
+    actions,
+    testID,
+  }: {
+    actions: Array<{
+      disabled?: boolean;
+      label: string;
+      onPress: () => void;
+      testID: string;
+      variant?: "default" | "destructive";
+    }>;
+    testID: string;
+  }) =>
+    React.createElement(
+      "DetailOverflowMenu",
+      { actions, testID },
+      actions.map((action) =>
+        React.createElement("DetailOverflowMenuAction", { ...action, key: action.testID }),
+      ),
+    ),
 }));
 
 jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
@@ -331,6 +356,7 @@ describe("event detail fallback screen", () => {
     );
     expect(getHostByType(rendered, "ActivityPlanCard").props.onPress).toEqual(expect.any(Function));
     expect(screen.getByText("Monday, March 23, 2026")).toBeTruthy();
+    expect(screen.getByTestId("event-detail-title").props.children).toBe("Tempo Builder");
     expect(screen.getByText(format(new Date(eventDetailData.starts_at), "h:mm a"))).toBeTruthy();
     expect(screen.queryByText("Event details")).toBeNull();
     expect(screen.queryByText("Linked activity plan")).toBeNull();
@@ -397,6 +423,29 @@ describe("event detail fallback screen", () => {
     expect(routerNavigateMock).toHaveBeenCalledWith(ROUTES.PLAN.EVENT_UPDATE("event-1"));
   });
 
+  it("provides the existing event actions through the shared overflow contract", async () => {
+    const rendered = await renderNative(<EventDetailScreen />);
+
+    const menu = getHostByType(rendered, "DetailOverflowMenu");
+    expect(menu.props.testID).toBe("event-detail-options-trigger");
+    expect(menu.props.actions).toEqual([
+      expect.objectContaining({ label: "Edit Event", testID: "event-detail-options-edit" }),
+      expect.objectContaining({
+        label: "Change Activity Plan",
+        testID: "event-detail-options-activity-plan",
+      }),
+      expect.objectContaining({
+        label: "Remove Activity Plan",
+        testID: "event-detail-options-remove-activity-plan",
+      }),
+      expect.objectContaining({
+        label: "Delete Event",
+        testID: "event-detail-options-delete",
+        variant: "destructive",
+      }),
+    ]);
+  });
+
   it("goes straight to delete confirmation for recurring planned events", async () => {
     eventDetailData.recurrence_rule = "FREQ=WEEKLY;UNTIL=20260530T235959Z";
 
@@ -459,7 +508,7 @@ describe("event detail fallback screen", () => {
     expect(screen.queryByTestId("event-detail-options-trigger")).toBeNull();
 
     await waitFor(() => {
-      expect(routerNavigateMock).toHaveBeenCalledWith(ROUTES.PLAN.CALENDAR);
+      expect(routerDismissToMock).toHaveBeenCalledWith(ROUTES.PLAN.CALENDAR);
     });
   });
 });

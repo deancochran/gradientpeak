@@ -130,11 +130,20 @@ function IntegrationsPage() {
   return (
     <div className="container mx-auto max-w-4xl py-4">
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Integrations</h1>
-          <p className="text-muted-foreground">
-            Review provider status, queue supported manual syncs, and disconnect linked accounts.
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Integrations</h1>
+            <p className="text-muted-foreground">
+              Review provider status, queue supported manual syncs, and disconnect linked accounts.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            disabled={overviewQuery.isFetching}
+            onClick={() => void overviewQuery.refetch()}
+          >
+            Refresh status
+          </Button>
         </div>
 
         {overviewQuery.error ? (
@@ -238,6 +247,15 @@ function IntegrationsPage() {
                         {integration.providerHealth.lastError}
                       </p>
                     ) : null}
+                    {integration.unresolvedReviewCount > 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        {integration.unresolvedReviewCount} imported{" "}
+                        {integration.unresolvedReviewCount === 1
+                          ? "activity needs"
+                          : "activities need"}{" "}
+                        review. Open the matching activity to resolve it.
+                      </p>
+                    ) : null}
 
                     <div className="flex flex-wrap gap-2">
                       {integration.providerHealth.status === "disconnecting" ? (
@@ -303,6 +321,15 @@ function IntegrationsPage() {
                           variant="ghost"
                         >
                           View imported activities
+                        </Button>
+                      ) : null}
+                      {integration.unresolvedReviewCount > 0 ? (
+                        <Button
+                          onClick={() => void navigate({ to: "/activities" })}
+                          type="button"
+                          variant="ghost"
+                        >
+                          Review imported activities
                         </Button>
                       ) : null}
                     </div>

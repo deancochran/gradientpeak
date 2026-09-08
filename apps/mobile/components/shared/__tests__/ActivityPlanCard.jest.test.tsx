@@ -1,10 +1,15 @@
+import { Alert as TestAlert } from "@repo/ui/test/react-native";
 import type { ComponentProps } from "react";
 import { createActivityPlanSummary } from "../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../test/mock-components";
-import { fireEvent, renderNative, screen } from "../../../test/render-native";
+import { fireEvent, renderNative, screen, waitFor } from "../../../test/render-native";
 import { ActivityPlanCard as ProjectionActivityPlanCard } from "../ActivityPlanCard";
 
 const toggleLikeMutateMock = jest.fn();
+const openEntityCommentsMock = jest.fn();
+let commentsSheetAvailable = true;
+const mockAlert = jest.mocked(TestAlert.alert);
+const getPublicShareUrlMock = jest.fn((path: string) => `https://share.gradientpeak.test${path}`);
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 const activityPlanStructure = {
   version: 3,
@@ -78,6 +83,19 @@ jest.mock("lucide-react-native", () => ({
   Footprints: createHost("Footprints"),
   Heart: createHost("Heart"),
   Waves: createHost("Waves"),
+  MessageCircle: createHost("MessageCircle"),
+  Share2: createHost("Share2"),
+}));
+
+jest.mock("@/lib/share/public-share-url", () => ({
+  __esModule: true,
+  getPublicShareUrl: (path: string) => getPublicShareUrlMock(path),
+}));
+
+jest.mock("@/components/social/EntityCommentsSheetProvider", () => ({
+  __esModule: true,
+  useEntityCommentsSheet: () =>
+    commentsSheetAvailable ? { openEntityComments: openEntityCommentsMock } : null,
 }));
 
 jest.mock("@/lib/navigation/useAppNavigate", () => ({
@@ -142,22 +160,26 @@ const availableMetrics = [
     unit: "score",
     status: "available" as const,
     reason: null,
-    provenance: "plan_intent" as const,
+    provenance: "estimated" as const,
   },
   {
-    key: "normalized_intensity" as const,
+    key: "objective_intensity" as const,
     label: "Intensity",
     value: 0.8,
     unit: "ratio",
     status: "available" as const,
     reason: null,
-    provenance: "plan_intent" as const,
+    provenance: "estimated" as const,
   },
 ];
 
 describe("ActivityPlanCard", () => {
   beforeEach(() => {
     toggleLikeMutateMock.mockReset();
+    openEntityCommentsMock.mockReset();
+    commentsSheetAvailable = true;
+    mockAlert.mockReset();
+    getPublicShareUrlMock.mockClear();
   });
 
   it("shows the owner and category footer on one justified row", async () => {
@@ -231,6 +253,24 @@ describe("ActivityPlanCard", () => {
           structure: { ...activityPlanStructure, activity_category: "strength" },
           metrics: [
             {
+              key: "distance",
+              label: "Distance",
+              value: null,
+              unit: "meters",
+              status: "unavailable",
+              reason: "not_prescribed",
+              provenance: null,
+            },
+            {
+              key: "elapsed_duration",
+              label: "Duration",
+              value: null,
+              unit: "seconds",
+              status: "unavailable",
+              reason: "not_prescribed",
+              provenance: null,
+            },
+            {
               key: "common_load",
               label: "Load",
               value: null,
@@ -240,7 +280,7 @@ describe("ActivityPlanCard", () => {
               provenance: null,
             },
             {
-              key: "normalized_intensity",
+              key: "objective_intensity",
               label: "Intensity",
               value: null,
               unit: "ratio",
@@ -255,7 +295,7 @@ describe("ActivityPlanCard", () => {
 
     expect(screen.getByText("Load")).toBeTruthy();
     expect(screen.getByText("Intensity")).toBeTruthy();
-    expect(screen.getAllByText("Unavailable")).toHaveLength(4);
+    expect(screen.getAllByText("—")).toHaveLength(4);
     expect(screen.queryByText(/^0(?:\.00|m)?$/)).toBeNull();
     expect(JSON.stringify(rendered.toJSON())).not.toMatch(
       /TSS|\bIF\b|category_load|intensityFactor/,
@@ -276,10 +316,36 @@ describe("ActivityPlanCard", () => {
     );
 
     expect(screen.getAllByText("Load")).toHaveLength(1);
-    expect(screen.getAllByText("64")).toHaveLength(1);
+    expect(screen.getAllByText("~64")).toHaveLength(1);
     expect(screen.getAllByText("Intensity")).toHaveLength(1);
-    expect(screen.getAllByText("0.80")).toHaveLength(1);
+    expect(screen.getAllByText("~0.80")).toHaveLength(1);
     expect(screen.queryByText(/RPE|Prescribed intensity/)).toBeNull();
+  });
+
+  it("renders an unavailable objective intensity as an em dash", async () => {
+    await renderNative(
+      <ActivityPlanCard
+        activityPlan={{
+          id: "plan-range-intensity",
+          name: "Easy Swim",
+          activityCategory: "swim",
+          metrics: [
+            ...availableMetrics.filter((metric) => metric.key !== "objective_intensity"),
+            {
+              key: "objective_intensity" as const,
+              label: "Intensity",
+              value: null,
+              unit: "ratio",
+              status: "unavailable" as const,
+              reason: "incomplete_objective_coverage",
+              provenance: null,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 
   it("keeps compact cards visual, focused, and tappable", async () => {
@@ -315,11 +381,11 @@ describe("ActivityPlanCard", () => {
     expect(screen.getByText("5m")).toBeTruthy();
     expect(screen.queryByText(/~5m|~5 min/)).toBeNull();
     expect(screen.getByText("Distance")).toBeTruthy();
-    expect(screen.getByText("5 km")).toBeTruthy();
+    expect(screen.getByText("~5 km")).toBeTruthy();
     expect(screen.getByText("Load")).toBeTruthy();
-    expect(screen.getByText("64")).toBeTruthy();
+    expect(screen.getByText("~64")).toBeTruthy();
     expect(screen.getByText("Intensity")).toBeTruthy();
-    expect(screen.getByText("0.80")).toBeTruthy();
+    expect(screen.getByText("~0.80")).toBeTruthy();
     expect(screen.queryByText(/RPE|Tempo · 5 min|Steps/)).toBeNull();
     expect(screen.queryByTestId("resource-owner-action-row")).toBeNull();
     expect(screen.queryByText("Coach Kim")).toBeNull();
@@ -378,5 +444,74 @@ describe("ActivityPlanCard", () => {
       entity_type: "activity_plan",
     });
     expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the app-level comments sheet without navigating from a Discover activity-plan card", async () => {
+    const onPress = jest.fn();
+
+    await renderNative(
+      <ActivityPlanCard
+        activityPlan={{
+          id: "plan-social",
+          name: "Social Tempo",
+          activityCategory: "run",
+          engagement: { likes: 3, viewerHasLiked: false },
+          visibility: "public",
+        }}
+        onPress={onPress}
+      />,
+    );
+
+    expect(screen.getByTestId("activity-plan-card-share-button-plan-social")).toBeTruthy();
+    expect(screen.getByTestId("activity-plan-card-social-actions")).toBeTruthy();
+    expect(screen.getByTestId("activity-plan-card-like-button-plan-social")).toBeTruthy();
+    expect(screen.getByTestId("activity-plan-card-comments-button-plan-social")).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId("activity-plan-card-share-button-plan-social"));
+    expect(getPublicShareUrlMock).toHaveBeenCalledWith("/share/activity-plans/plan-social");
+    await waitFor(() =>
+      expect(mockAlert).toHaveBeenCalledWith(
+        "Unable to share",
+        "The activity plan could not be shared. Try again.",
+      ),
+    );
+
+    await fireEvent.press(screen.getByTestId("activity-plan-card-comments-button-plan-social"));
+    expect(openEntityCommentsMock).toHaveBeenCalledWith({
+      entityId: "plan-social",
+      entityType: "activity_plan",
+    });
+    expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it("keeps comments safely unavailable when rendered outside the app provider", async () => {
+    commentsSheetAvailable = false;
+    const onPress = jest.fn();
+    await renderNative(
+      <ActivityPlanCard
+        activityPlan={{ id: "plan-preview", name: "Preview", activityCategory: "run" }}
+        onPress={onPress}
+      />,
+    );
+
+    expect(
+      screen.getByTestId("activity-plan-card-comments-button-plan-preview").props.disabled,
+    ).toBe(true);
+  });
+
+  it("explains why private activity plans cannot be shared", async () => {
+    await renderNative(
+      <ActivityPlanCard
+        activityPlan={{ id: "plan-private", name: "Private Plan", activityCategory: "run" }}
+      />,
+    );
+
+    await fireEvent.press(screen.getByTestId("activity-plan-card-share-button-plan-private"));
+    await waitFor(() =>
+      expect(mockAlert).toHaveBeenCalledWith(
+        "Not public",
+        "Only public activity plans have a share link. Change visibility to Public first.",
+      ),
+    );
   });
 });
