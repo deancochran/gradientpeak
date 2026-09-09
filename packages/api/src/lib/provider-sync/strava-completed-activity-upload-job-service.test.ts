@@ -58,7 +58,7 @@ function createDeps(payload: StravaCompletedActivityUploadPayload) {
     isIntegrationGenerationActive: vi.fn(async () => true),
     markJobSucceeded: vi.fn(async () => true),
     markReconnectRequired: vi.fn(async () => true),
-    markUploadDispatchStarted: vi.fn(async () => true),
+    runCompletedActivityUploadDispatch: vi.fn(async ({ dispatch }) => dispatch()),
     readCompletedActivityUploadTarget: vi.fn(async () => ({
       artifact,
       integrationGeneration: 2,
@@ -112,7 +112,7 @@ describe("Strava completed activity upload worker", () => {
       rateLimit: null,
     });
     await deps.service.processDueJobs({ workerId: "test" });
-    expect(deps.repository.markUploadDispatchStarted).toHaveBeenCalledWith(
+    expect(deps.repository.runCompletedActivityUploadDispatch).toHaveBeenCalledWith(
       expect.objectContaining({ payload: expect.objectContaining({ phase: "dispatching" }) }),
     );
     expect(deps.repository.rescheduleActivityUpload).toHaveBeenCalledWith(
@@ -138,6 +138,73 @@ describe("Strava completed activity upload worker", () => {
     expect(recovered.repository.failJob).toHaveBeenCalledWith(
       expect.objectContaining({ lastError: "dispatch_uncertain", status: "dead_lettered" }),
     );
+  });
+
+  it("does not upload when disconnect advances the generation before dispatch is fenced", async () => {
+    const deps = createDeps(preDispatch);
+    deps.repository.runCompletedActivityUploadDispatch.mockResolvedValue(null);
+
+    await deps.service.processDueJobs({ workerId: "test" });
+
+    expect(deps.client.uploadActivity).not.toHaveBeenCalled();
+    expect(deps.repository.failJob).not.toHaveBeenCalled();
+  });
+
+  it("keeps disconnect generation advancement after the serialized POST completes", async () => {
+    const deps = createDeps(preDispatch);
+    const sequence: string[] = [];
+    deps.client.uploadActivity.mockImplementation(async () => {
+      sequence.push("upload-completed");
+      return {
+        data: { id: 88, activity_id: null, error: null, status: "processing" },
+        rateLimit: null,
+      };
+    });
+    deps.repository.runCompletedActivityUploadDispatch.mockImplementation(async ({ dispatch }) => {
+      const result = await dispatch();
+      sequence.push("disconnect-may-advance");
+      return result;
+    });
+
+    await deps.service.processDueJobs({ workerId: "test" });
+
+    expect(sequence).toEqual(["upload-completed", "disconnect-may-advance"]);
+  });
+
+  it("returns a 429 to retryable pre-dispatch state without creating another dedupe identity", async () => {
+    const deps = createDeps(preDispatch);
+    deps.client.uploadActivity.mockRejectedValue(
+      new StravaClientError("rate_limited", { retryAfterSeconds: 12, status: 429 }),
+    );
+
+    await deps.service.processDueJobs({ workerId: "test" });
+
+    expect(deps.repository.rescheduleActivityUpload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        lastError: "strava_upload_dispatch_retry",
+        nextRunAt: "2026-09-08T12:00:12.000Z",
+        payload: preDispatch,
+      }),
+    );
+    expect(deps.repository.failJob).not.toHaveBeenCalled();
+  });
+
+  it("allows a segments-only revision change when the accepted artifact identity and digest match", async () => {
+    const deps = createDeps(preDispatch);
+    deps.repository.readCompletedActivityUploadTarget.mockResolvedValue({
+      artifact: { ...artifact, segmentsRevision: artifact.segmentsRevision + 1 },
+      integrationGeneration: 2,
+      integrationId: "integration",
+      status: "ready",
+    });
+    deps.client.uploadActivity.mockResolvedValue({
+      data: { id: 88, activity_id: null, error: null, status: "processing" },
+      rateLimit: null,
+    });
+
+    await deps.service.processDueJobs({ workerId: "test" });
+
+    expect(deps.client.uploadActivity).toHaveBeenCalledTimes(1);
   });
 
   it("retries known-ID polling without issuing another upload", async () => {

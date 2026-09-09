@@ -85,7 +85,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         : {
             url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
           },
-    runtimeVersion: RUNTIME_VERSION_POLICY,
+    runtimeVersion: environment === "development" ? "development" : RUNTIME_VERSION_POLICY,
     extra: {
       eas: {
         projectId: EAS_PROJECT_ID,

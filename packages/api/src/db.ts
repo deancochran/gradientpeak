@@ -9,6 +9,7 @@ export type DrizzleTransactionClient = Parameters<Parameters<DrizzleDbClient["tr
 export type DrizzleQueryExecutor = DrizzleDbClient | DrizzleTransactionClient;
 
 type RepeatableReadAccessMode = "read only" | "read write";
+const PROFILE_ADVISORY_LOCK_NAMESPACE = 0;
 const repeatableReadTransactions = new WeakMap<object, RepeatableReadAccessMode>();
 
 function isRootDb(db: DrizzleQueryExecutor): db is DrizzleDbClient {
@@ -104,6 +105,53 @@ export async function withProfileFencedRepeatableReadSnapshot<T>(
           profileId,
           lockNamespace,
         ]);
+      } catch {
+        destroyConnection = true;
+      }
+    }
+    client.release(destroyConnection);
+  }
+}
+
+/**
+ * Reserves one pool connection and holds the profile advisory lock for the
+ * complete operation. Transactions opened by the callback commit independently
+ * while the session lock remains held, allowing durable evidence to precede an
+ * irreversible external effect without opening a disconnect handoff gap.
+ */
+export async function withProfileAdvisorySessionFence<T>(
+  db: DrizzleDbClient,
+  profileId: string,
+  operation: (connectionDb: Pick<DrizzleDbClient, "transaction">) => Promise<T>,
+): Promise<T> {
+  const client = await db.$client.connect();
+  const connectionDb = drizzle({
+    client,
+    schema: relationalSchema,
+    casing: "snake_case",
+  });
+  let destroyConnection = false;
+  let sessionLockHeld = false;
+  try {
+    try {
+      await client.query("select pg_advisory_lock(hashtextextended($1, $2))", [
+        profileId,
+        PROFILE_ADVISORY_LOCK_NAMESPACE,
+      ]);
+      sessionLockHeld = true;
+    } catch (error) {
+      destroyConnection = true;
+      throw error;
+    }
+    return await operation(connectionDb);
+  } finally {
+    if (sessionLockHeld) {
+      try {
+        const unlocked = await client.query<{ released: boolean }>(
+          "select pg_advisory_unlock(hashtextextended($1, $2)) as released",
+          [profileId, PROFILE_ADVISORY_LOCK_NAMESPACE],
+        );
+        if (unlocked.rows[0]?.released !== true) destroyConnection = true;
       } catch {
         destroyConnection = true;
       }

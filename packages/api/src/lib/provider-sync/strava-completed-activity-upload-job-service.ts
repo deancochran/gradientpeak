@@ -182,8 +182,7 @@ export class StravaCompletedActivityUploadJobService {
         target.integrationId !== job.integrationId ||
         target.integrationGeneration !== job.integrationGeneration ||
         target.artifact.artifactId !== payload.artifact.artifactId ||
-        target.artifact.digest !== payload.artifact.digest ||
-        target.artifact.segmentsRevision !== payload.artifact.segmentsRevision
+        target.artifact.digest !== payload.artifact.digest
       ) {
         return this.deps.repository.failJob({
           expectedIntegrationGeneration: job.integrationGeneration,
@@ -221,25 +220,48 @@ export class StravaCompletedActivityUploadJobService {
         workerId,
       });
       if (!renewed) return false;
-      const dispatching = { ...payload, phase: "dispatching" as const };
-      const marked = await this.deps.repository.markUploadDispatchStarted({
-        expectedIntegrationGeneration: job.integrationGeneration,
-        jobId: job.id,
-        payload: dispatching,
-        workerId,
-      });
-      if (!marked) return false;
       const client = (
         this.deps.clientFactory ?? ((token) => new StravaClient({ accessToken: token }))
       )(accessToken);
-      let response: Awaited<ReturnType<UploadClient["uploadActivity"]>>;
-      try {
-        response = await client.uploadActivity({
-          bytes: stored.data,
-          externalId: payload.externalId,
-          format: payload.artifact.format,
-        });
-      } catch (error) {
+      const outcome = await this.deps.repository.runCompletedActivityUploadDispatch({
+        dispatch: async () => {
+          try {
+            return {
+              response: await client.uploadActivity({
+                bytes: stored.data,
+                externalId: payload.externalId,
+                format: payload.artifact.format,
+              }),
+            };
+          } catch (error) {
+            return { error };
+          }
+        },
+        expectedIntegrationGeneration: job.integrationGeneration,
+        integrationId: job.integrationId,
+        jobId: job.id,
+        payload: { ...payload, phase: "dispatching" },
+        profileId: job.profileId,
+        workerId,
+      });
+      if (!outcome) return false;
+      if ("error" in outcome) {
+        const error = outcome.error;
+        const rateLimited = error instanceof StravaClientError && error.kind === "rate_limited";
+        if (rateLimited && job.attempt < job.maxAttempts) {
+          return this.deps.repository.rescheduleActivityUpload({
+            expectedIntegrationGeneration: job.integrationGeneration,
+            jobId: job.id,
+            lastError: "strava_upload_dispatch_retry",
+            nextRunAt: nextAttemptAt(
+              now,
+              job.attempt,
+              (error.details.retryAfterSeconds ?? 60) * 1_000,
+            ),
+            payload,
+            workerId,
+          });
+        }
         const knownRejection =
           error instanceof StravaClientError &&
           error.details.status !== undefined &&
@@ -253,6 +275,7 @@ export class StravaCompletedActivityUploadJobService {
           workerId,
         });
       }
+      const response = outcome.response;
       const knownUploadId = uploadId(response.data.id);
       if (response.data.error) {
         return this.deps.repository.failJob({

@@ -1,6 +1,10 @@
 import { type DrizzleDbClient, schema } from "@repo/db";
 import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
-import type { DrizzleQueryExecutor, DrizzleTransactionClient } from "../../db";
+import {
+  type DrizzleQueryExecutor,
+  type DrizzleTransactionClient,
+  withProfileAdvisorySessionFence,
+} from "../../db";
 import { isStravaIntegrationEnabled } from "../../lib/integrations/oauth-config";
 import {
   decryptNullableProviderToken,
@@ -51,17 +55,12 @@ function hasScope(scope: string | null | undefined, required: string): boolean {
   return new Set((scope ?? "").split(/[\s,]+/).filter(Boolean)).has(required);
 }
 
-function isCompletedActivityEchoCandidate(input: {
-  lastError: string | null;
-  payload: unknown;
-  status: string;
-}): boolean {
-  if (input.status !== "dead_lettered") return true;
+function isCompletedActivityEchoCandidate(input: { payload: unknown }): boolean {
   const phase =
     input.payload && typeof input.payload === "object" && "phase" in input.payload
       ? input.payload.phase
       : null;
-  return phase === "dispatching" || input.lastError === "dispatch_uncertain";
+  return phase === "dispatching" || phase === "polling";
 }
 
 async function readCompletedActivityUploadTarget(
@@ -474,8 +473,7 @@ export function createStravaRepository({ db }: { db: DrizzleDbClient }): StravaR
           target.integrationId !== input.integrationId ||
           target.integrationGeneration !== input.integrationGeneration ||
           target.artifact.artifactId !== input.artifact.artifactId ||
-          target.artifact.digest !== input.artifact.digest ||
-          target.artifact.segmentsRevision !== input.artifact.segmentsRevision
+          target.artifact.digest !== input.artifact.digest
         ) {
           throw new Error("strava_completed_activity_upload_target_changed");
         }
@@ -707,25 +705,51 @@ export function createStravaRepository({ db }: { db: DrizzleDbClient }): StravaR
       return Boolean(updated);
     },
 
-    async markUploadDispatchStarted(input) {
-      const now = new Date();
-      const [updated] = await db
-        .update(schema.providerSyncJobs)
-        .set({ last_error: "dispatch_uncertain", payload: input.payload, updated_at: now })
-        .where(
-          and(
-            eq(schema.providerSyncJobs.id, input.jobId),
-            eq(schema.providerSyncJobs.provider, "strava"),
-            eq(schema.providerSyncJobs.job_type, STRAVA_COMPLETED_ACTIVITY_UPLOAD_JOB),
-            eq(schema.providerSyncJobs.integration_generation, input.expectedIntegrationGeneration),
-            eq(schema.providerSyncJobs.status, "running"),
-            eq(schema.providerSyncJobs.locked_by, input.workerId),
-            gt(schema.providerSyncJobs.lock_expires_at, now),
-            sql`${schema.providerSyncJobs.payload}->>'phase' = 'pre_dispatch'`,
-          ),
-        )
-        .returning({ id: schema.providerSyncJobs.id });
-      return Boolean(updated);
+    async runCompletedActivityUploadDispatch(input) {
+      return withProfileAdvisorySessionFence(db, input.profileId, async (connectionDb) => {
+        const dispatchMarked = await connectionDb.transaction(async (tx) => {
+          const [integration] = await tx
+            .select({ id: schema.integrations.id })
+            .from(schema.integrations)
+            .where(
+              and(
+                eq(schema.integrations.id, input.integrationId),
+                eq(schema.integrations.profile_id, input.profileId),
+                eq(schema.integrations.provider, "strava"),
+                eq(schema.integrations.lifecycle_status, "active"),
+                eq(schema.integrations.generation, input.expectedIntegrationGeneration),
+              ),
+            )
+            .limit(1)
+            .for("update");
+          if (!integration) return false;
+          const now = new Date();
+          const [started] = await tx
+            .update(schema.providerSyncJobs)
+            .set({ last_error: "dispatch_uncertain", payload: input.payload, updated_at: now })
+            .where(
+              and(
+                eq(schema.providerSyncJobs.id, input.jobId),
+                eq(schema.providerSyncJobs.integration_id, input.integrationId),
+                eq(schema.providerSyncJobs.provider, "strava"),
+                eq(schema.providerSyncJobs.job_type, STRAVA_COMPLETED_ACTIVITY_UPLOAD_JOB),
+                eq(
+                  schema.providerSyncJobs.integration_generation,
+                  input.expectedIntegrationGeneration,
+                ),
+                eq(schema.providerSyncJobs.status, "running"),
+                eq(schema.providerSyncJobs.locked_by, input.workerId),
+                gt(schema.providerSyncJobs.lock_expires_at, now),
+                sql`${schema.providerSyncJobs.payload}->>'phase' = 'pre_dispatch'`,
+              ),
+            )
+            .returning({ id: schema.providerSyncJobs.id });
+          return Boolean(started);
+        });
+        // The marker transaction has committed, while the same session-level
+        // profile fence still excludes disconnect and provider deauthorization.
+        return dispatchMarked ? input.dispatch() : null;
+      });
     },
 
     async rescheduleActivityUpload(input) {

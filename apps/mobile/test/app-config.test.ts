@@ -5,10 +5,27 @@ import { describe, expect, it } from "vitest";
 import getAppConfig, { getDevelopmentTransportSecurity } from "../app.config";
 
 describe("app config", () => {
-  it("derives OTA compatibility from the native project fingerprint", () => {
+  it("uses a stable runtime for development builds where updates are disabled", () => {
     const config = getAppConfig({ config: {} } as ConfigContext);
 
-    expect(config.runtimeVersion).toEqual({ policy: "fingerprint" });
+    expect(config.runtimeVersion).toBe("development");
+    expect(config.updates).toEqual({ enabled: false });
+  });
+
+  it.each([
+    "preview",
+    "production",
+  ] as const)("derives %s OTA compatibility from the native project fingerprint", (environment) => {
+    const previousEnvironment = process.env.APP_ENV;
+    process.env.APP_ENV = environment;
+
+    try {
+      const config = getAppConfig({ config: {} } as ConfigContext);
+      expect(config.runtimeVersion).toEqual({ policy: "fingerprint" });
+    } finally {
+      if (previousEnvironment === undefined) delete process.env.APP_ENV;
+      else process.env.APP_ENV = previousEnvironment;
+    }
   });
 
   it("omits arbitrary HTTP loads in production", () => {

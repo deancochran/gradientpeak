@@ -201,12 +201,15 @@ export interface StravaRepository
     expectedIntegrationGeneration: number;
     id: string;
   }): Promise<boolean>;
-  markUploadDispatchStarted(input: {
+  runCompletedActivityUploadDispatch<T>(input: {
     expectedIntegrationGeneration: number;
+    integrationId: string;
     jobId: string;
     payload: StravaCompletedActivityUploadPayload;
     workerId: string;
-  }): Promise<boolean>;
+    profileId: string;
+    dispatch: () => Promise<T>;
+  }): Promise<T | null>;
   markJobSucceeded(input: {
     expectedIntegrationGeneration?: number;
     id: string;

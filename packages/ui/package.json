@@ -177,7 +177,7 @@
     "radix-ui": "^1.6.7",
     "react": "19.2.3",
     "react-hook-form": "^7.86.0",
-    "react-native": "0.86.2",
+    "react-native": "0.86.3",
     "react-native-css": "^3.0.7",
     "react-native-reanimated": "~4.5.1",
     "react-native-screens": "~4.26.2",
