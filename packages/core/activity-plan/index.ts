@@ -1,4 +1,6 @@
 export * from "./compile";
+export * from "./document";
+export * from "./document-schema";
 export * from "./occurrence";
 export * from "./presentation";
 export * from "./print";
