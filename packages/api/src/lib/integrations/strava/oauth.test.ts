@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { stravaProviderOperationAdapter } from "../../../application/integrations/strava-provider-operation-adapter";
+import { stravaProviderRuntime } from "../../../application/integrations/strava-provider-runtime";
 import {
   deauthorizeStravaAccessToken,
   exchangeStravaOAuthCode,
@@ -18,7 +18,7 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe("Strava OAuth contract", () => {
   it("requests read and explicit activity upload scope and binds the full grant", () => {
-    const authorization = stravaProviderOperationAdapter.createOAuthAuthorization({
+    const authorization = stravaProviderRuntime.connection.createOAuthAuthorization({
       returnUri: "gradientpeak://integrations",
       state: "one-time-state",
     });
@@ -34,13 +34,13 @@ describe("Strava OAuth contract", () => {
       requestedScope: "activity:read_all activity:write",
     });
     expect(
-      stravaProviderOperationAdapter.validateOAuthStateBinding({
+      stravaProviderRuntime.connection.validateOAuthStateBinding({
         binding: authorization.binding,
         state: "one-time-state",
       }),
     ).toBe(true);
     expect(
-      stravaProviderOperationAdapter.validateOAuthStateBinding({
+      stravaProviderRuntime.connection.validateOAuthStateBinding({
         binding: { ...authorization.binding, requestedScope: "read" },
         state: "one-time-state",
       }),

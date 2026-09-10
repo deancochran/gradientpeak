@@ -9,6 +9,8 @@ export const posthogOptions = {
   capture_pageview: "history_change",
   debug: import.meta.env.DEV && import.meta.env.VITE_POSTHOG_DEBUG === "1",
   defaults: "2026-05-30",
+  opt_out_capturing_by_default: true,
+  opt_out_persistence_by_default: true,
   loaded: (client) => {
     client.capture("web_telemetry_initialized", {
       app_surface: "web",

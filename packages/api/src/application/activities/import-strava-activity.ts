@@ -1,4 +1,4 @@
-import { mapStravaActivityToCanonical } from "@repo/core";
+import { createDirectProviderSourceProvenance, mapStravaActivityToCanonical } from "@repo/core";
 import type { getRequiredDb } from "../../db";
 import { createStravaRepository } from "../../infrastructure/repositories";
 import type { StravaDetailedActivity, StravaStreams } from "../../lib/integrations/strava/client";
@@ -87,6 +87,10 @@ export async function importStravaActivity(
     segmentId: canonicalId,
     streams: toCanonicalStreams(input.streams),
   });
+  const directProvenance = createDirectProviderSourceProvenance({
+    connectorId: "strava",
+    externalId,
+  });
 
   const submitted = await (dependencies.submitCanonicalActivity ?? submitActivity)(
     input.db,
@@ -121,16 +125,16 @@ export async function importStravaActivity(
       mapBounds: mapped.mapBounds,
       polyline: mapped.polyline,
       providerProvenance: {
-        provider: "strava",
-        externalId,
+        ...directProvenance,
         integrationId: input.integrationId,
         integrationGeneration: input.integrationGeneration,
         providerUpdatedAt: input.providerUpdatedAt,
         ...(outboundIdentity
           ? {
-              originProvider: "gradientpeak",
-              originExternalId: `strava:${outboundIdentity.activityId}`,
-              originTrust: "trusted_provider_origin" as const,
+              source: {
+                sourceId: "gradientpeak",
+                externalId: `strava:${outboundIdentity.activityId}`,
+              },
             }
           : {}),
         relationshipKind: outboundIdentity ? ("exported" as const) : ("imported" as const),

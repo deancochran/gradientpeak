@@ -1,4 +1,4 @@
-import { providerHasCapability } from "@repo/core";
+import { providerCapabilityIsAuthorized, providerHasCapability } from "@repo/core";
 
 export const wahooPlannedActivityRequiredScopes = [
   "plans_read",
@@ -8,8 +8,11 @@ export const wahooPlannedActivityRequiredScopes = [
 ] as const;
 
 export function hasWahooPlannedActivityScopes(scope: string | null | undefined): boolean {
-  const granted = new Set((scope ?? "").split(/[\s,]+/).filter(Boolean));
-  return wahooPlannedActivityRequiredScopes.every((required) => granted.has(required));
+  return providerCapabilityIsAuthorized({
+    provider: "wahoo",
+    capability: "planned_activity_push",
+    grantedScope: scope,
+  });
 }
 
 export const wahooRouteMirrorRequiredScopes = [

@@ -210,4 +210,24 @@ describe("server-config", () => {
       "http://127.0.0.1:54321/storage/v1/object/upload/sign/profile-avatars/test.png?token=abc",
     );
   });
+
+  it("upgrades legacy profile media paths to reachable public URLs", async () => {
+    const { module } = await loadServerConfigModule();
+
+    await module.initializeServerConfig();
+
+    expect(module.getReachableSupabaseStorageUrl("user-1/avatar image.jpg")).toBe(
+      "https://db.gradientpeak.app/storage/v1/object/public/profile-avatars/user-1/avatar%20image.jpg",
+    );
+  });
+
+  it("does not upgrade encoded profile media traversal paths", async () => {
+    const { module } = await loadServerConfigModule();
+
+    await module.initializeServerConfig();
+
+    expect(module.getReachableSupabaseStorageUrl("user-1/%2e%2e/avatar.jpg")).toBe(
+      "user-1/%2e%2e/avatar.jpg",
+    );
+  });
 });

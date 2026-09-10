@@ -6,7 +6,7 @@ import {
   type OnboardingReadinessSnapshot,
   readOnboardingReadinessSnapshot,
 } from "../../repositories/onboarding-lifecycle-repository";
-import { getProviderOperationAdapter } from "../integrations/provider-operation-runtime";
+import { getProviderOnboardingRuntime } from "../integrations/provider-runtime-registry";
 import {
   deriveOnboardingReadiness,
   type OnboardingProviderState,
@@ -68,8 +68,8 @@ function providerMilestone(state: OnboardingProviderState, importedCount: number
 }
 
 export function deriveRecoveryMilestone(provider: OnboardingProviderWorkSnapshot): Milestone {
-  const adapter = getProviderOperationAdapter(provider.provider);
-  const work = adapter?.identifyOnboardingWork({
+  const runtime = getProviderOnboardingRuntime(provider.provider);
+  const work = runtime?.identifyOnboardingWork({
     jobs: provider.jobs.map((job) => ({
       id: job.id,
       importRunId: job.import_run_id,

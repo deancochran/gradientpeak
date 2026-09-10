@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ProviderOperationAdapter } from "../integrations/provider-operation-registry";
+import type { ProviderOnboardingRuntime } from "../integrations/provider-runtime";
 import { deriveOnboardingReadiness } from "./readiness";
 
 const profile = {
@@ -16,7 +16,6 @@ const provider = {
 
 describe("deriveOnboardingReadiness", () => {
   it("reaches terminal readiness with synthetic adapter-defined persisted job roles", () => {
-    type SyntheticProvider = "synthetic";
     const syntheticAdapter = {
       identifyOnboardingWork: ({ jobs }) => ({
         historyJobId: jobs.find((job) => job.jobType === "synthetic.import")?.id ?? null,
@@ -29,7 +28,7 @@ describe("deriveOnboardingReadiness", () => {
             job.importRunId === job.payloadImportRunId,
         ),
       }),
-    } as Pick<ProviderOperationAdapter<SyntheticProvider>, "identifyOnboardingWork">;
+    } satisfies Pick<ProviderOnboardingRuntime, "identifyOnboardingWork">;
     const result = deriveOnboardingReadiness(
       {
         profile: { ...profile, onboarding_status: "review" },
@@ -85,7 +84,7 @@ describe("deriveOnboardingReadiness", () => {
         requiredJobTypes: ["synthetic.import"],
         importRunLinked: true,
       }),
-    } as Pick<ProviderOperationAdapter<"synthetic">, "identifyOnboardingWork">;
+    } satisfies Pick<ProviderOnboardingRuntime, "identifyOnboardingWork">;
     const result = deriveOnboardingReadiness(
       {
         profile: { ...profile, onboarding_status: "review" },

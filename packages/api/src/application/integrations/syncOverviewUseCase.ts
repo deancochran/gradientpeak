@@ -1,4 +1,4 @@
-import { getConfigurableProviderActions, providerCapabilityRegistry } from "@repo/core";
+import { getConfigurableProviderActions, providerManifestRegistry } from "@repo/core";
 import {
   activitySourceReferences,
   type DrizzleDbClient,
@@ -8,8 +8,8 @@ import { TRPCError } from "@trpc/server";
 import { and, count, eq } from "drizzle-orm";
 import { z } from "zod";
 import { createIntegrationsRepositories } from "../../infrastructure/repositories";
-import { unsupportedProviderOverviewEvidence } from "./provider-operation-registry";
-import { getProviderOperationAdapter } from "./provider-operation-runtime";
+import { unsupportedProviderOverviewEvidence } from "./provider-runtime";
+import { getProviderOverviewRuntime } from "./provider-runtime-registry";
 
 function parseBoundaryValue<T>(schema: z.ZodType<T>, value: unknown, message: string): T {
   const parsed = schema.safeParse(value);
@@ -113,20 +113,20 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
   );
 
   return Promise.all(
-    providerCapabilityRegistry.map(async (definition) => {
-      const adapter = getProviderOperationAdapter(definition.id);
-      const configured = adapter?.isConfigured() ?? false;
-      const lifecycle = integrationsByProvider.get(definition.id);
+    providerManifestRegistry.map(async (definition) => {
+      const runtime = getProviderOverviewRuntime(definition.connectorId);
+      const configured = runtime?.availability.isConfigured() ?? false;
+      const lifecycle = integrationsByProvider.get(definition.connectorId);
       const disconnecting = lifecycle?.lifecycle_status === "disconnect_pending";
       const integration = lifecycle?.lifecycle_status === "active" ? lifecycle : undefined;
       const grant = integration
         ? await repositories.integrations.findGrantByProfileIdAndProvider({
             profileId: input.profileId,
-            provider: definition.id,
+            provider: definition.connectorId,
           })
         : null;
-      const evidence = adapter
-        ? await adapter.readOverviewEvidence(
+      const evidence = runtime
+        ? await runtime.overview.readOverviewEvidence(
             integration
               ? {
                   db: input.db,
@@ -134,7 +134,6 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
                   integration: {
                     id: integration.id,
                     generation: integration.generation,
-                    provider: definition.id,
                     lifecycleStatus: "active",
                   },
                   scope: grant?.scope ?? null,
@@ -151,9 +150,9 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
             ? ("needs_reconnect" as const)
             : ("connected" as const);
       const actions =
-        adapter && configured && connected && providerHealthStatus === "connected"
-          ? getConfigurableProviderActions(definition.id).filter((action) =>
-              adapter.allowsAction({ action, grantedScope: grant?.scope }),
+        runtime && configured && connected && providerHealthStatus === "connected"
+          ? getConfigurableProviderActions(definition.connectorId).filter((action) =>
+              runtime.actionAuthorization.allowsAction({ action, grantedScope: grant?.scope }),
             )
           : connected
             ? (["disconnect"] as const)
@@ -194,8 +193,8 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
                 : providerHealthStatus === "needs_reconnect"
                   ? ("reconnect" as const)
                   : ("disconnect" as const),
-        provider: definition.id,
-        unresolvedReviewCount: unresolvedReviewCountByProvider.get(definition.id) ?? 0,
+        provider: definition.connectorId,
+        unresolvedReviewCount: unresolvedReviewCountByProvider.get(definition.connectorId) ?? 0,
         summary: compact,
       };
     }),

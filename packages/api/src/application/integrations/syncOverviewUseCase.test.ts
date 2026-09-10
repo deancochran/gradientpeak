@@ -25,43 +25,53 @@ vi.mock("../../infrastructure/repositories", () => ({
   })),
 }));
 
-vi.mock("./provider-operation-runtime", () => ({
-  getProviderOperationAdapter: vi.fn((provider: string) => ({
-    isConfigured: () => provider === "wahoo",
-    allowsAction: ({ action, grantedScope }: { action: string; grantedScope?: string | null }) => {
-      const scopes = new Set((grantedScope ?? "").split(/\s+/));
-      return (
-        action === "disconnect" ||
-        (action === "sync_now" && scopes.has("workouts_read") && scopes.has("offline_data")) ||
-        (action === "refresh_setup_data" && scopes.has("user_read"))
-      );
+vi.mock("./provider-runtime-registry", () => ({
+  getProviderOverviewRuntime: vi.fn((provider: string) => ({
+    availability: { isConfigured: () => provider === "wahoo" },
+    actionAuthorization: {
+      allowsAction: ({
+        action,
+        grantedScope,
+      }: {
+        action: string;
+        grantedScope?: string | null;
+      }) => {
+        const scopes = new Set((grantedScope ?? "").split(/\s+/));
+        return (
+          action === "disconnect" ||
+          (action === "sync_now" && scopes.has("workouts_read") && scopes.has("offline_data")) ||
+          (action === "refresh_setup_data" && scopes.has("user_read"))
+        );
+      },
     },
-    readOverviewEvidence:
-      provider === "wahoo"
-        ? mocks.readOverviewEvidence
-        : vi.fn(async () => ({
-            activityHistory: {
-              lastError: null,
-              lastFailedAt: null,
-              lastSucceededAt: null,
-              queuedJobId: null,
-              status: "idle",
-              importRun: null,
-            },
-            plannedActivities: {
-              lastError: null,
-              lastFailedAt: null,
-              lastSucceededAt: null,
-              queuedJobId: null,
-              status: "unsupported",
-            },
-            setupData: {
-              lastError: null,
-              lastFailedAt: null,
-              lastSucceededAt: null,
-              status: "unsupported",
-            },
-          })),
+    overview: {
+      readOverviewEvidence:
+        provider === "wahoo"
+          ? mocks.readOverviewEvidence
+          : vi.fn(async () => ({
+              activityHistory: {
+                lastError: null,
+                lastFailedAt: null,
+                lastSucceededAt: null,
+                queuedJobId: null,
+                status: "idle",
+                importRun: null,
+              },
+              plannedActivities: {
+                lastError: null,
+                lastFailedAt: null,
+                lastSucceededAt: null,
+                queuedJobId: null,
+                status: "unsupported",
+              },
+              setupData: {
+                lastError: null,
+                lastFailedAt: null,
+                lastSucceededAt: null,
+                status: "unsupported",
+              },
+            })),
+    },
   })),
 }));
 
@@ -79,6 +89,7 @@ function overviewDb(
           return builder;
         }),
         where: vi.fn(() => builder),
+        groupBy: vi.fn(async () => []),
         orderBy: vi.fn(() => builder),
         limit: vi.fn(async () =>
           selectedTable === activityImportRuns

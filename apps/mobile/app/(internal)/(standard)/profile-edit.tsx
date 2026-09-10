@@ -60,11 +60,24 @@ function isAbsoluteUrl(value: string) {
 }
 
 function getOwnedProfileMediaPath(value: string | null, userId: string | undefined) {
-  if (!value || !userId || isAbsoluteUrl(value)) {
+  if (!value || !userId) {
     return null;
   }
 
-  const segments = value.split("/");
+  let path = value;
+  if (isAbsoluteUrl(value)) {
+    try {
+      const url = new URL(value);
+      const bucketMarker = "/storage/v1/object/public/profile-avatars/";
+      const markerIndex = url.pathname.indexOf(bucketMarker);
+      if (markerIndex < 0 || url.search || url.hash) return null;
+      path = decodeURIComponent(url.pathname.slice(markerIndex + bucketMarker.length));
+    } catch {
+      return null;
+    }
+  }
+
+  const segments = path.split("/");
   if (
     segments[0] !== userId ||
     segments.length < 2 ||
@@ -73,7 +86,7 @@ function getOwnedProfileMediaPath(value: string | null, userId: string | undefin
     return null;
   }
 
-  return value;
+  return path;
 }
 
 function ProfileEditScreen() {
@@ -200,7 +213,7 @@ function ProfileEditScreen() {
       const fileType: AvatarMimeType =
         AVATAR_MIME_TYPES[ext as keyof typeof AVATAR_MIME_TYPES] ?? "image/jpeg";
 
-      const { signedUrl, path } = await createAvatarUploadUrlMutation.mutateAsync({
+      const { signedUrl, path, publicUrl } = await createAvatarUploadUrlMutation.mutateAsync({
         fileName,
         fileType,
       });
@@ -214,14 +227,14 @@ function ProfileEditScreen() {
       }
 
       const fileResponse = await fetch(file.uri);
-      const blob = await fileResponse.blob();
+      const bytes = await fileResponse.arrayBuffer();
 
       const uploadResponse = await fetch(reachableSignedUrl, {
         method: "PUT",
         headers: {
           "Content-Type": fileType,
         },
-        body: blob,
+        body: bytes,
       });
 
       if (!uploadResponse.ok) {
@@ -229,7 +242,7 @@ function ProfileEditScreen() {
       }
 
       try {
-        await syncProfileImage(fieldName, expected, path);
+        await syncProfileImage(fieldName, expected, publicUrl);
       } catch (error) {
         await deleteFileWithoutMaskingError(path);
         throw error;

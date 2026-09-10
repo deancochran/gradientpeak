@@ -189,6 +189,18 @@ function createCaller(
 }
 
 describe("profilesRouter", () => {
+  it("rejects new relative profile media values", async () => {
+    const { caller } = createCaller();
+
+    await expect(
+      caller.compareAndSwapMedia({
+        field: "avatar_url",
+        expected: null,
+        next: `${SESSION_USER_ID}/avatar.jpg`,
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   it("get returns identity fields without exposing legacy manual thresholds", async () => {
     const { caller } = createCaller({
       select: {

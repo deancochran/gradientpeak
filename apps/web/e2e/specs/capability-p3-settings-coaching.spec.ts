@@ -43,17 +43,29 @@ async function seedCoachOrganization(
   return {
     organizationId,
     organizationName,
+    revokeCoach: async () => {
+      await withLocalE2EDatabase((database) =>
+        database.query(
+          `update "organization_membership_role_grants"
+           set "revoked_at" = now()
+         where "organization_id" = $1 and "membership_id" = $2
+           and "role_key" = 'coach' and "revoked_at" is null`,
+          [organizationId, coachMembershipId],
+        ),
+      );
+    },
     cleanup: async () => {
       await withLocalE2EDatabase((database) =>
         database.transaction(async (query) => {
           await query.query("set constraints all deferred");
           await query.query(
-            `update "organization_membership_role_grants"
-             set "revoked_at" = now()
-           where "organization_id" = $1 and "membership_id" = $2
-             and "role_key" = 'coach' and "revoked_at" is null`,
-            [organizationId, coachMembershipId],
+            'delete from "organization_membership_role_grants" where "organization_id" = $1',
+            [organizationId],
           );
+          await query.query('delete from "organizations" where "id" = $1', [organizationId]);
+          await query.query('delete from "organization_memberships" where "organization_id" = $1', [
+            organizationId,
+          ]);
         }),
       );
     },
@@ -77,31 +89,61 @@ test("settings.select-theme persists a chosen theme across reloads", async ({ at
   ).toHaveAttribute("aria-pressed", "true");
 });
 
+test("settings.product-analytics consent persists across reloads", async ({ athletePage }) => {
+  await athletePage.goto("/settings");
+  const consent = athletePage.getByRole("switch", { name: "Product analytics" });
+  await consent.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  if (await consent.isChecked()) {
+    await consent.click();
+  }
+  await expect(consent).not.toBeChecked();
+  await athletePage.reload({ waitUntil: "domcontentloaded" });
+  await expect(athletePage.getByRole("switch", { name: "Product analytics" })).not.toBeChecked();
+
+  const reloadedConsent = athletePage.getByRole("switch", { name: "Product analytics" });
+  await reloadedConsent.evaluate((element) => element.scrollIntoView({ block: "center" }));
+  await reloadedConsent.click();
+  await expect(athletePage.getByRole("switch", { name: "Product analytics" })).toBeChecked();
+  await athletePage.reload({ waitUntil: "domcontentloaded" });
+  await expect(athletePage.getByRole("switch", { name: "Product analytics" })).toBeChecked();
+});
+
 test("[P2] profile and privacy settings persist together and can be restored", async ({
   profilePage,
 }, testInfo) => {
   await profilePage.goto("/settings");
   const fullName = profilePage.getByLabel("Full name");
   const bio = profilePage.getByLabel("Bio");
+  const dateOfBirth = profilePage.getByLabel("Date of Birth");
   const units = profilePage.getByLabel("Preferred units");
   const language = profilePage.getByLabel("Language");
   const openProfile = profilePage.getByRole("switch", { name: "Open profile" });
+  const planningTimezone = profilePage.getByLabel("Planning Timezone");
   const visibility = profilePage.getByLabel("Default activity visibility");
   const original = {
     bio: await bio.inputValue(),
+    dateOfBirth: await dateOfBirth.inputValue(),
     fullName: await fullName.inputValue(),
     language: await language.inputValue(),
     open: await openProfile.isChecked(),
+    planningTimezone: await planningTimezone.inputValue(),
     units: await units.inputValue(),
     visibility: await visibility.inputValue(),
   };
   const suffix = testInfo.titlePath.join("-").length.toString(36);
+  const nextDateOfBirth = original.dateOfBirth === "1990-01-02" ? "1991-02-03" : "1990-01-02";
+  const nextPlanningTimezone =
+    original.planningTimezone === "America/Los_Angeles"
+      ? "America/New_York"
+      : "America/Los_Angeles";
 
   try {
     await fullName.fill(`Persisted Profile ${suffix}`);
     await bio.fill(`Persisted browser biography ${suffix}`);
+    await dateOfBirth.fill(nextDateOfBirth);
     await units.selectOption(original.units === "metric" ? "imperial" : "metric");
     await language.fill("fr");
+    await planningTimezone.fill(nextPlanningTimezone);
     if ((await openProfile.isChecked()) === original.open) await openProfile.click();
     await visibility.selectOption(original.visibility === "public" ? "private" : "public");
     await profilePage.getByRole("button", { name: "Update Profile" }).click();
@@ -112,16 +154,20 @@ test("[P2] profile and privacy settings persist together and can be restored", a
     await profilePage.reload();
     await expect(fullName).toHaveValue(`Persisted Profile ${suffix}`);
     await expect(bio).toHaveValue(`Persisted browser biography ${suffix}`);
+    await expect(dateOfBirth).toHaveValue(nextDateOfBirth);
     await expect(units).toHaveValue(original.units === "metric" ? "imperial" : "metric");
     await expect(language).toHaveValue("fr");
+    await expect(planningTimezone).toHaveValue(nextPlanningTimezone);
     await expect(openProfile).toBeChecked({ checked: !original.open });
     await expect(visibility).toHaveValue(original.visibility === "public" ? "private" : "public");
   } finally {
     await profilePage.goto("/settings");
     await fullName.fill(original.fullName);
     await bio.fill(original.bio);
+    await dateOfBirth.fill(original.dateOfBirth);
     await units.selectOption(original.units);
     await language.fill(original.language);
+    await planningTimezone.fill(original.planningTimezone);
     if ((await openProfile.isChecked()) !== original.open) await openProfile.click();
     await visibility.selectOption(original.visibility);
     const restoreProfile = profilePage.getByRole("button", { name: "Update Profile" });
@@ -310,12 +356,18 @@ test("[variation:coaching.dashboard:revoked-role] dashboard access fails closed 
     athleteActor.profileId,
     coachActor.profileId,
   );
-  await coachPage.goto(`/organizations/${organization.organizationId}/dashboard`);
-  await expect(coachPage.getByRole("heading", { name: "Coaching workspace" })).toBeVisible();
-  await organization.cleanup();
-  await coachPage.reload();
-  await expect(coachPage.getByRole("heading", { name: /coaching access required/i })).toBeVisible();
-  await expect(coachPage.getByRole("region", { name: "Coaching dashboard readiness" })).toHaveCount(
-    0,
-  );
+  try {
+    await coachPage.goto(`/organizations/${organization.organizationId}/dashboard`);
+    await expect(coachPage.getByRole("heading", { name: "Coaching workspace" })).toBeVisible();
+    await organization.revokeCoach();
+    await coachPage.reload();
+    await expect(
+      coachPage.getByRole("heading", { name: /coaching access required/i }),
+    ).toBeVisible();
+    await expect(
+      coachPage.getByRole("region", { name: "Coaching dashboard readiness" }),
+    ).toHaveCount(0);
+  } finally {
+    await organization.cleanup();
+  }
 });

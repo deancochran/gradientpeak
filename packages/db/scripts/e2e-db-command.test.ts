@@ -12,7 +12,7 @@ import {
   runGuardedE2EStart,
 } from "./e2e-db-command";
 
-test("plans only the four bounded E2E lifecycle commands", () => {
+test("plans only the bounded E2E lifecycle commands", () => {
   assert.deepEqual(planE2EDatabaseCommand("start", true), {
     action: "start",
     dryRun: true,
@@ -23,7 +23,15 @@ test("plans only the four bounded E2E lifecycle commands", () => {
     dryRun: false,
     projectId: "gradientpeak_e2e",
   });
-  assert.throws(() => planE2EDatabaseCommand("reset", true), /start, migrate, status, stop/);
+  assert.deepEqual(planE2EDatabaseCommand("recreate", false), {
+    action: "recreate",
+    dryRun: false,
+    projectId: "gradientpeak_e2e",
+  });
+  assert.throws(
+    () => planE2EDatabaseCommand("reset", true),
+    /start, migrate, recreate, status, stop/,
+  );
 });
 
 test("redacts credentials and tokens from subprocess failures", () => {

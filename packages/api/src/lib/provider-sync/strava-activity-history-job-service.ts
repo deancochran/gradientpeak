@@ -1,9 +1,8 @@
+import { providerCapabilityIsAuthorized } from "@repo/core";
 import { importStravaActivity } from "../../application/activities/import-strava-activity";
 import { submitActivity } from "../../application/activities/submit-activity";
-import {
-  STRAVA_ACTIVITY_HISTORY_JOB,
-  stravaProviderOperationAdapter,
-} from "../../application/integrations/strava-provider-operation-adapter";
+import { getProviderCredentialRevocationRuntime } from "../../application/integrations/provider-runtime-registry";
+import { STRAVA_ACTIVITY_HISTORY_JOB } from "../../application/integrations/strava-provider-runtime";
 import { reconcileOnboardingStatus } from "../../application/onboarding/readiness";
 import type { getRequiredDb } from "../../db";
 import type { createActivityImportRepository } from "../../repositories/activity-import-repository";
@@ -168,8 +167,9 @@ export class StravaActivityHistoryJobService {
     }
     try {
       const deauthorize =
-        this.deps.deauthorize ?? stravaProviderOperationAdapter.deauthorizeAccessToken;
-      if (!deauthorize) throw new Error("Strava deauthorization adapter is unavailable");
+        this.deps.deauthorize ??
+        getProviderCredentialRevocationRuntime("strava")?.deauthorizeAccessToken;
+      if (!deauthorize) throw new Error("Strava deauthorization runtime is unavailable");
       await deauthorize(attempt.accessToken);
       return this.deps.repository.finalizeProviderDisconnect({
         generation: job.integrationGeneration,
@@ -221,7 +221,11 @@ export class StravaActivityHistoryJobService {
         !integration ||
         integration.id !== job.integrationId ||
         integration.integrationGeneration !== job.integrationGeneration ||
-        !new Set((integration.scope ?? "").split(/[\s,]+/).filter(Boolean)).has("activity:read_all")
+        !providerCapabilityIsAuthorized({
+          provider: "strava",
+          capability: "activity_history_read",
+          grantedScope: integration.scope,
+        })
       ) {
         throw new StravaAuthorizationRequiredError();
       }

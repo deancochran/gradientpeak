@@ -18,6 +18,7 @@ import {
   scheduledActivityPlanSummarySchema,
 } from "@repo/core";
 import { z } from "zod";
+import { resolveProfileMediaUrl } from "../storage/profile-media-url";
 
 const planProjectionSourceSchema = z.looseObject({
   id: z.string(),
@@ -254,11 +255,10 @@ export function createActivityPlanProjectionMetrics(input: {
 
 function projectionOwner(plan: PlanProjectionSource) {
   if (!plan.profile_id) return null;
-  const avatarUrl = z.string().url().safeParse(plan.owner?.avatar_url);
   return {
     id: plan.profile_id,
     username: plan.owner?.username?.trim() || null,
-    avatarUrl: avatarUrl.success ? avatarUrl.data : null,
+    avatarUrl: resolveProfileMediaUrl(plan.owner?.avatar_url ?? null, plan.profile_id),
   };
 }
 

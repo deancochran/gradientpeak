@@ -8,6 +8,7 @@ import {
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { decodeFeedCursor } from "../application/feed/feedPage";
+import { resolveProfileMediaUrl } from "../application/storage/profile-media-url";
 import type { getRequiredDb } from "../db";
 import type { ActivityQuantifiedDerivedSummary } from "../lib/activity-analysis/derived";
 import { projectCompletedActivityCommonLoadMetrics } from "../lib/completed-activity-common-load-metrics";
@@ -131,11 +132,10 @@ function toIsoString(value: Date | string): string {
 }
 
 function toDisplayOwner(input: { id: string; username: string | null; avatarUrl: string | null }) {
-  const avatarUrl = z.string().url().safeParse(input.avatarUrl);
   return {
     id: input.id,
     username: input.username?.trim() || null,
-    avatarUrl: avatarUrl.success ? avatarUrl.data : null,
+    avatarUrl: resolveProfileMediaUrl(input.avatarUrl, input.id),
   };
 }
 

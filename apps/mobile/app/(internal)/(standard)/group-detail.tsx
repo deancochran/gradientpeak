@@ -113,15 +113,16 @@ function MemberAvatarStack({
         ) : null}
         {visibleMembers.map((member) => {
           const displayName = member.profile.username?.trim() || "Athlete";
+          const avatarUri = member.profile.avatar_url
+            ? getReachableSupabaseStorageUrl(member.profile.avatar_url)
+            : null;
           return (
             <Avatar
               alt={displayName}
               className="-ml-2 h-8 w-8 border-2 border-card"
               key={member.profile.id}
             >
-              {member.profile.avatar_url ? (
-                <AvatarImage source={{ uri: member.profile.avatar_url }} />
-              ) : null}
+              {avatarUri ? <AvatarImage key={avatarUri} source={{ uri: avatarUri }} /> : null}
               <AvatarFallback>
                 <Text className="text-[10px] font-semibold text-muted-foreground">
                   {displayName.charAt(0).toUpperCase() || "A"}

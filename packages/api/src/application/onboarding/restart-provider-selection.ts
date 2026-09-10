@@ -9,9 +9,9 @@ import {
 } from "../../repositories/onboarding-lifecycle-repository";
 import { lockProfileAdvisoryFence } from "../../repositories/profile-advisory-fence";
 import {
-  getExecutableProviderOperationAdapter,
-  getProviderOperationAdapter,
-} from "../integrations/provider-operation-runtime";
+  getExecutableProviderOnboardingRuntime,
+  getProviderOnboardingRuntime,
+} from "../integrations/provider-runtime-registry";
 import { deriveOnboardingProviderState } from "./readiness";
 
 type Db = ReturnType<typeof getRequiredDb>;
@@ -44,11 +44,11 @@ export async function restartOnboardingProviderSelection(input: { db: Db; profil
     if (
       !snapshot.providers.some(
         (provider) =>
-          !getExecutableProviderOperationAdapter(provider.provider) ||
+          !getExecutableProviderOnboardingRuntime(provider.provider) ||
           deriveOnboardingProviderState(
             provider,
             snapshot.athleteState,
-            getProviderOperationAdapter,
+            getProviderOnboardingRuntime,
           ) === "recovery_required",
       )
     ) {
@@ -98,7 +98,7 @@ export async function restartOnboardingProviderSelection(input: { db: Db; profil
             ),
           );
       }
-      const roles = getProviderOperationAdapter(provider.provider)?.identifyOnboardingWork({
+      const roles = getProviderOnboardingRuntime(provider.provider)?.identifyOnboardingWork({
         jobs: provider.jobs.map((job) => ({
           id: job.id,
           importRunId: job.import_run_id,

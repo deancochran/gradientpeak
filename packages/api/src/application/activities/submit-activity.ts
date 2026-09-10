@@ -5,6 +5,8 @@ import {
   type ContentVisibility,
   completedActivityPerformanceTargetSnapshotSchema,
   completedActivityTitle,
+  type ProviderSourceProvenance,
+  providerSourceProvenanceSchema,
 } from "@repo/core";
 import {
   type CompletedActivitySegmentSet,
@@ -385,15 +387,10 @@ export interface ActivitySubmission {
   laps: unknown[] | null;
   mapBounds: { minLat: number; maxLat: number; minLng: number; maxLng: number } | null;
   polyline: string | null;
-  providerProvenance?: {
-    provider: "garmin" | "strava" | "trainingpeaks" | "wahoo" | "zwift";
-    externalId: string;
+  providerProvenance?: ProviderSourceProvenance & {
     integrationId: string;
     integrationGeneration?: number;
     providerUpdatedAt: string | null;
-    originProvider?: string | null;
-    originExternalId?: string | null;
-    originTrust?: "trusted_provider_origin";
     relationshipKind?: "imported" | "exported" | "both";
     evidenceTier?: CanonicalActivityEvidenceTier;
   };
@@ -722,6 +719,16 @@ export async function submitActivity(
   if (!input.segmentSet)
     throw new Error("Activity submission requires an ordered segment manifest");
   const segmentSet = parseActivitySegments(input.segmentSet);
+  const providerProvenanceInput = input.kind === "enrich" ? undefined : input.providerProvenance;
+  const providerProvenance = providerProvenanceInput
+    ? {
+        ...providerProvenanceInput,
+        ...providerSourceProvenanceSchema.parse({
+          connector: providerProvenanceInput.connector,
+          source: providerProvenanceInput.source,
+        }),
+      }
+    : undefined;
   await withProfileFencedRepeatableReadSnapshot(
     db,
     input.profileId,
@@ -731,19 +738,13 @@ export async function submitActivity(
       const now = new Date();
       let effortMaterialRecordedAt: Date | null = null;
       let preInvalidatedCalibrationIdentities: ThresholdImpact[] = [];
-      const provenance = input.kind === "enrich" ? undefined : input.providerProvenance;
+      const provenance = providerProvenance;
       const ingestion = input.kind === "enrich" ? input.ingestion : input.analysis?.ingestion;
       const sourceOrigin = provenance
         ? {
-            ...(provenance.originProvider === undefined
-              ? {}
-              : { originProvider: provenance.originProvider }),
-            ...(provenance.originExternalId === undefined
-              ? {}
-              : { originExternalId: provenance.originExternalId }),
-            ...(provenance.originTrust === undefined
-              ? {}
-              : { originTrust: provenance.originTrust }),
+            originProvider: provenance.source.sourceId,
+            originExternalId: provenance.source.externalId,
+            originTrust: "trusted_provider_origin" as const,
             ...(provenance.relationshipKind === undefined
               ? {}
               : { relationshipKind: provenance.relationshipKind }),
@@ -761,8 +762,8 @@ export async function submitActivity(
               eq(activitySourceReferences.id, options.confirmReviewedSourceId),
               eq(activitySourceReferences.profile_id, input.profileId),
               eq(activitySourceReferences.integration_id, provenance.integrationId),
-              eq(activitySourceReferences.provider, provenance.provider),
-              eq(activitySourceReferences.provider_external_id, provenance.externalId),
+              eq(activitySourceReferences.provider, provenance.connector.connectorId),
+              eq(activitySourceReferences.provider_external_id, provenance.connector.externalId),
               eq(activitySourceReferences.resolution_status, "review"),
             ),
           )
@@ -773,8 +774,8 @@ export async function submitActivity(
         const resolved = await resolveCanonicalActivityReference(tx, {
           profileId: input.profileId,
           integrationId: provenance.integrationId,
-          provider: provenance.provider,
-          providerExternalId: provenance.externalId,
+          provider: provenance.connector.connectorId,
+          providerExternalId: provenance.connector.externalId,
           providerRevision: provenance.providerUpdatedAt,
           ...sourceOrigin,
           ...(ingestion?.artifact?.sha256 === undefined
@@ -786,7 +787,7 @@ export async function submitActivity(
       }
       // Lock and verify the lifecycle fence in this same transaction as every
       // activity/artifact/link/ingestion write.
-      if (provenance && provenance.integrationGeneration !== undefined) {
+      if (provenance) {
         const [activeIntegration] = await tx
           .select({ id: integrations.id })
           .from(integrations)
@@ -794,14 +795,24 @@ export async function submitActivity(
             and(
               eq(integrations.id, provenance.integrationId),
               eq(integrations.profile_id, input.profileId),
-              eq(integrations.provider, provenance.provider),
-              eq(integrations.lifecycle_status, "active"),
-              eq(integrations.generation, provenance.integrationGeneration),
+              eq(integrations.provider, provenance.connector.connectorId),
+              ...(provenance.integrationGeneration === undefined
+                ? []
+                : [
+                    eq(integrations.lifecycle_status, "active"),
+                    eq(integrations.generation, provenance.integrationGeneration),
+                  ]),
             ),
           )
           .limit(1)
           .for(evidence ? "update" : "share");
-        if (!activeIntegration) throw new Error("integration_generation_inactive");
+        if (!activeIntegration) {
+          throw new Error(
+            provenance.integrationGeneration === undefined
+              ? "integration_connector_mismatch"
+              : "integration_generation_inactive",
+          );
+        }
       }
       const [existing] = await tx
         .select()
@@ -873,8 +884,8 @@ export async function submitActivity(
           await stageActivitySourceReferenceForReview(tx, {
             profileId: input.profileId,
             integrationId: provenance.integrationId,
-            provider: provenance.provider,
-            providerExternalId: provenance.externalId,
+            provider: provenance.connector.connectorId,
+            providerExternalId: provenance.connector.externalId,
             providerRevision: provenance.providerUpdatedAt,
             ...sourceOrigin,
             ...(options.importRunId === undefined ? {} : { importRunId: options.importRunId }),
@@ -924,8 +935,8 @@ export async function submitActivity(
           profileId: input.profileId,
           activityId,
           integrationId: provenance.integrationId,
-          provider: provenance.provider,
-          providerExternalId: provenance.externalId,
+          provider: provenance.connector.connectorId,
+          providerExternalId: provenance.connector.externalId,
           providerRevision: provenance.providerUpdatedAt,
           ...sourceOrigin,
           ...(ingestion?.artifact?.sha256 === undefined
@@ -945,8 +956,8 @@ export async function submitActivity(
           .where(
             and(
               eq(activitySourceReferences.profile_id, input.profileId),
-              eq(activitySourceReferences.provider, provenance.provider),
-              eq(activitySourceReferences.provider_external_id, provenance.externalId),
+              eq(activitySourceReferences.provider, provenance.connector.connectorId),
+              eq(activitySourceReferences.provider_external_id, provenance.connector.externalId),
             ),
           )
           .limit(1);
@@ -970,8 +981,8 @@ export async function submitActivity(
               profileId: input.profileId,
               activityId,
               integrationId: provenance.integrationId,
-              provider: provenance.provider,
-              providerExternalId: provenance.externalId,
+              provider: provenance.connector.connectorId,
+              providerExternalId: provenance.connector.externalId,
               providerRevision: sourceReference?.providerRevision ?? provenance.providerUpdatedAt,
               ...sourceOrigin,
               artifactSha256: ingestion.artifact.sha256,
@@ -1003,8 +1014,8 @@ export async function submitActivity(
               profileId: input.profileId,
               activityId,
               integrationId: provenance.integrationId,
-              provider: provenance.provider,
-              providerExternalId: provenance.externalId,
+              provider: provenance.connector.connectorId,
+              providerExternalId: provenance.connector.externalId,
               providerRevision: provenance.providerUpdatedAt,
               ...sourceOrigin,
               artifactSha256: ingestion.artifact.sha256,
@@ -1238,8 +1249,8 @@ export async function submitActivity(
             profileId: input.profileId,
             activityId,
             integrationId: provenance.integrationId,
-            provider: provenance.provider,
-            providerExternalId: provenance.externalId,
+            provider: provenance.connector.connectorId,
+            providerExternalId: provenance.connector.externalId,
             providerRevision: provenance.providerUpdatedAt,
             ...sourceOrigin,
             ...(ingestion?.artifact?.sha256 === undefined
@@ -1340,8 +1351,8 @@ export async function submitActivity(
             .where(
               and(
                 eq(activitySourceReferences.profile_id, input.profileId),
-                eq(activitySourceReferences.provider, provenance.provider),
-                eq(activitySourceReferences.provider_external_id, provenance.externalId),
+                eq(activitySourceReferences.provider, provenance.connector.connectorId),
+                eq(activitySourceReferences.provider_external_id, provenance.connector.externalId),
                 eq(activitySourceReferences.activity_id, activityId),
               ),
             )

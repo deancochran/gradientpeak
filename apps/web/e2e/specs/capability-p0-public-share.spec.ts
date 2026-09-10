@@ -1,4 +1,5 @@
 import { expect, test } from "../fixtures";
+import { withLocalE2EDatabase } from "../support/database";
 import type { DomainFixtureBuilders } from "../support/domain";
 
 async function withPublicShareFixture(
@@ -55,6 +56,72 @@ test("public activity-plan and training-plan links render anonymous readers", as
   }
 });
 
+test("private activity-plan and training-plan links fail closed for anonymous readers", async ({
+  anonymousPage: page,
+  athleteActor,
+  e2eData,
+}) => {
+  const activityPlan = await e2eData.activityPlans.create({
+    actorEmail: athleteActor.email,
+    label: "private-share-activity-plan",
+    name: "Playwright Private Session",
+    visibility: "private",
+  });
+  const trainingPlan = await e2eData.trainingPlans.create({
+    activityPlanId: activityPlan.id,
+    actorEmail: athleteActor.email,
+    label: "private-share-training-plan",
+    visibility: "private",
+  });
+
+  await page.goto(`/share/activity-plans/${activityPlan.id}`);
+  await expect(page.getByRole("heading", { name: "Page not found", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: activityPlan.name, exact: true })).toHaveCount(0);
+
+  await page.goto(`/share/training-plans/${trainingPlan.id}`);
+  await expect(page.getByRole("heading", { name: "Page not found", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: trainingPlan.name, exact: true })).toHaveCount(0);
+});
+
+test("public route links render anonymous readers and private routes fail closed", async ({
+  anonymousPage: page,
+  athleteActor,
+  e2eData,
+}) => {
+  const publicRoute = await e2eData.routes.create({
+    actorEmail: athleteActor.email,
+    isPublic: true,
+    label: "public-share-route",
+    name: "Playwright Public Ridge Loop",
+  });
+  const privateRoute = await e2eData.routes.create({
+    actorEmail: athleteActor.email,
+    label: "private-share-route",
+    name: "Playwright Private Ridge Loop",
+  });
+
+  await page.goto(`/share/routes/${publicRoute.id}`);
+  await expect(
+    page.getByRole("heading", { name: "Playwright Public Ridge Loop", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("region", { name: "Route summary" })).toBeVisible();
+  await expect(page.getByText("10.0 km", { exact: true })).toBeVisible();
+
+  await withLocalE2EDatabase((database) =>
+    database.query('update "activity_routes" set "is_public" = false where "id" = $1', [
+      publicRoute.id,
+    ]),
+  );
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Page not found", exact: true })).toBeVisible();
+
+  await page.goto(`/share/routes/${privateRoute.id}`);
+  await expect(page.getByRole("heading", { name: "Page not found", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Playwright Private Ridge Loop", exact: true }),
+  ).toHaveCount(0);
+});
+
 test("[variation:public-share:activity-plan-narrow] anonymous narrow reader scrolls through exact activity structure after reload", async ({
   anonymousPage: page,
   athleteActor,
@@ -72,7 +139,8 @@ test("[variation:public-share:activity-plan-narrow] anonymous narrow reader scro
     ).toBeVisible();
     await page.reload();
     await expect(page.getByRole("heading", { name: "Playwright Tempo Builder" })).toBeVisible();
-    await expect(sessionFlow.getByText(/^Main set ·/)).toBeVisible();
+    await expect(sessionFlow.getByText("Main set", { exact: true })).toBeVisible();
+    await expect(sessionFlow.getByText("Tempo", { exact: true })).toBeVisible();
   });
 });
 

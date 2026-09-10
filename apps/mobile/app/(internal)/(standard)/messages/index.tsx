@@ -13,6 +13,7 @@ import { HeaderTextAction } from "@/components/shared/HeaderAction";
 import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 import { formatRelativeTime } from "@/lib/utils";
 
 // Type for conversation with message data (returned from getConversations query)
@@ -49,6 +50,9 @@ function ConversationItem({
   const name = getConversationDisplayName(conversation);
   const unreadCount = conversation.unread_count || 0;
   const isUnread = unreadCount > 0;
+  const avatarUri = conversation.peer_profile?.avatar_url
+    ? getReachableSupabaseStorageUrl(conversation.peer_profile.avatar_url)
+    : null;
   const subtitle = conversation.is_group
     ? conversation.group_name
       ? "Group conversation"
@@ -65,9 +69,7 @@ function ConversationItem({
     >
       <View className="flex-row items-center gap-3">
         <Avatar alt={name} className="h-11 w-11">
-          {conversation.peer_profile?.avatar_url ? (
-            <AvatarImage source={{ uri: conversation.peer_profile.avatar_url }} />
-          ) : null}
+          {avatarUri ? <AvatarImage key={avatarUri} source={{ uri: avatarUri }} /> : null}
           <AvatarFallback>
             <Text>{getConversationInitials(conversation)}</Text>
           </AvatarFallback>

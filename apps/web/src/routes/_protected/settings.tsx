@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { usePostHog } from "@posthog/react";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
@@ -13,6 +14,7 @@ import { FileInput } from "@repo/ui/components/file-input";
 import {
   Form,
   FormControl,
+  FormDateInputField,
   FormDescription,
   FormField,
   FormItem,
@@ -24,6 +26,7 @@ import {
 } from "@repo/ui/components/form";
 import { Label } from "@repo/ui/components/label";
 import { LoadingButton } from "@repo/ui/components/loading";
+import { Switch } from "@repo/ui/components/switch";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   Calendar,
@@ -200,6 +203,7 @@ function SettingsPage() {
           email={user?.email}
           emailVerified={user?.emailVerified}
         />
+        <ProductAnalyticsCard />
         <AppearanceCard />
         <SecurityCard
           {...(user?.email !== undefined ? { email: user.email } : {})}
@@ -207,6 +211,55 @@ function SettingsPage() {
         />
       </div>
     </div>
+  );
+}
+
+const productAnalyticsConsentStorageKey = "gradientpeak-product-analytics-consent";
+
+function ProductAnalyticsCard() {
+  const posthog = usePostHog();
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    const storedConsent = window.localStorage.getItem(productAnalyticsConsentStorageKey);
+    setEnabled(
+      storedConsent === "granted" ||
+        (storedConsent === null && posthog?.has_opted_out_capturing?.() === false),
+    );
+  }, [posthog]);
+
+  const updateConsent = (nextEnabled: boolean) => {
+    window.localStorage.setItem(
+      productAnalyticsConsentStorageKey,
+      nextEnabled ? "granted" : "denied",
+    );
+    if (nextEnabled) {
+      posthog?.opt_in_capturing?.({ captureEventName: false });
+    } else {
+      posthog?.opt_out_capturing?.();
+    }
+    setEnabled(nextEnabled);
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Product analytics</CardTitle>
+        <CardDescription>
+          Opt in to anonymous product usage and page navigation analytics.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-between gap-4">
+          <Label htmlFor="product-analytics-consent">Product analytics</Label>
+          <Switch
+            checked={enabled}
+            id="product-analytics-consent"
+            onCheckedChange={updateConsent}
+          />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -390,6 +443,14 @@ function ProfileInformationCard({
               name="bio"
               placeholder="Add a short profile bio"
             />
+            <FormDateInputField
+              clearable
+              control={form.control}
+              description="Used for age-based training guidance."
+              label="Date of Birth"
+              maximumDate={new Date()}
+              name="dob"
+            />
             <div className="grid gap-4 sm:grid-cols-2">
               <FormField
                 control={form.control}
@@ -420,6 +481,14 @@ function ProfileInformationCard({
                 placeholder="en"
               />
             </div>
+            <FormTextField
+              control={form.control}
+              description="Used to interpret calendar days and scheduled training."
+              label="Planning Timezone"
+              name="planning_timezone"
+              parseValue={(value) => value.trim() || null}
+              placeholder="America/Los_Angeles"
+            />
             <FormSwitchField
               className="rounded-lg border p-4"
               control={form.control}

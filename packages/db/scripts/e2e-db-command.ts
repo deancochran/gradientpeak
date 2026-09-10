@@ -17,7 +17,7 @@ import { pathToFileURL } from "node:url";
 import { dbPackageRoot, defaultLocalDatabaseUrl, supabaseCliRoot } from "./_local-database-config";
 import { buildE2ESupabaseConfig, requireSafeE2EEnvironment } from "./e2e-db-environment";
 
-type E2EAction = "migrate" | "start" | "status" | "stop";
+type E2EAction = "migrate" | "recreate" | "start" | "status" | "stop";
 
 const runtimeRoot = resolve(process.env.TMPDIR ?? "/tmp", "gradientpeak-supabase-e2e");
 const runtimeSupabaseRoot = resolve(runtimeRoot, "supabase");
@@ -48,8 +48,8 @@ type NetworkInspection = {
 };
 
 export function planE2EDatabaseCommand(action: string, dryRun: boolean) {
-  if (!(["start", "migrate", "status", "stop"] as string[]).includes(action)) {
-    throw new Error("E2E database command must be one of: start, migrate, status, stop.");
+  if (!(["start", "migrate", "recreate", "status", "stop"] as string[]).includes(action)) {
+    throw new Error("E2E database command must be one of: start, migrate, recreate, status, stop.");
   }
   const environment = requireSafeE2EEnvironment();
   return { action: action as E2EAction, dryRun, projectId: environment.projectId } as const;
@@ -393,7 +393,12 @@ function execute(action: E2EAction, dryRun: boolean) {
     );
     return;
   }
-  if (action === "start") {
+  if (action === "recreate") {
+    const containers = runningProjectContainers();
+    if (containers.length > 0) requireE2EContainerIdentity(inspectContainers(containers));
+    runSupabase(["stop", "--no-backup"]);
+  }
+  if (action === "start" || action === "recreate") {
     prepareE2ELoopbackNetwork();
     runGuardedE2EStart(
       () => runSupabase(e2eSupabaseStartArguments()),

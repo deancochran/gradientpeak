@@ -114,6 +114,20 @@ describe("goal progress contracts", () => {
     ).toBe(false);
   });
 
+  it("permits an unavailable athlete-state portfolio without a computation timestamp", () => {
+    expect(
+      goalPortfolioResponseSchema.parse({
+        activeGoalCount: 0,
+        computedAt: null,
+        freshness: "unavailable",
+        planningDate: "2026-02-20",
+        publishedRevision: null,
+        selectedGoal: null,
+        totalGoalCount: 0,
+      }),
+    ).toMatchObject({ computedAt: null, freshness: "unavailable" });
+  });
+
   it("accepts only a strict goal identifier request", () => {
     expect(goalProgressRequestSchema.parse({ goalId: GOAL_ID })).toEqual({ goalId: GOAL_ID });
     expect(

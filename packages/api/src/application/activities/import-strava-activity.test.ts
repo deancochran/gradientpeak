@@ -67,7 +67,11 @@ describe("importStravaActivity outbound echo convergence", () => {
       expect.objectContaining({
         profileId,
         providerProvenance: expect.objectContaining({
-          externalId: "987",
+          connector: { connectorId: "strava", externalId: "987" },
+          source: {
+            sourceId: "gradientpeak",
+            externalId: `strava:${activityId}`,
+          },
           relationshipKind: "exported",
         }),
         requestedActivityId: activityId,

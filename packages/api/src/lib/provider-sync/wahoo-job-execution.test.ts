@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import type { WahooSyncJobRecord } from "../../repositories";
+
+const mockLogger = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn() }));
+
+vi.mock("../logger", () => ({ logger: mockLogger }));
+
 import {
   createWahooSyncWorkerId,
   executeWahooSyncJobs,
   WahooSyncConcurrencyLimiter,
+  wahooSyncTelemetry,
 } from "./wahoo-job-execution";
 
 function job(id: string, lane: string, queueSequence: number): WahooSyncJobRecord {
@@ -32,6 +38,47 @@ function job(id: string, lane: string, queueSequence: number): WahooSyncJobRecor
 }
 
 describe("executeWahooSyncJobs", () => {
+  it("does not log a completed drain when no jobs were processed", () => {
+    wahooSyncTelemetry.recordExecution({
+      attempts: 0,
+      completed: 0,
+      deadLettered: 0,
+      durationMs: 0,
+      endingDeadLetterDepth: 0,
+      endingMaxQueueAgeMs: 0,
+      endingQueueDepth: 0,
+      failed: 0,
+      jobFamily: "sync",
+      processed: 0,
+      provider: "wahoo",
+      staleLocksRecovered: 0,
+    });
+
+    expect(mockLogger.info).not.toHaveBeenCalled();
+    expect(mockLogger.warn).not.toHaveBeenCalled();
+  });
+
+  it("logs a completed drain when jobs were processed", () => {
+    const telemetry = {
+      attempts: 1,
+      completed: 1,
+      deadLettered: 0,
+      durationMs: 0,
+      endingDeadLetterDepth: 0,
+      endingMaxQueueAgeMs: 0,
+      endingQueueDepth: 0,
+      failed: 0,
+      jobFamily: "sync",
+      processed: 1,
+      provider: "wahoo",
+      staleLocksRecovered: 0,
+    };
+
+    wahooSyncTelemetry.recordExecution(telemetry);
+
+    expect(mockLogger.info).toHaveBeenCalledWith("Provider sync drain completed", telemetry);
+  });
+
   it("runs different lanes concurrently and each lane in queue order", async () => {
     const activeLanes = new Set<string>();
     let maxActiveLanes = 0;

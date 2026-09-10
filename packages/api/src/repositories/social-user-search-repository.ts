@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { resolveProfileMediaUrl } from "../application/storage/profile-media-url";
 import type { getRequiredDb } from "../db";
 import { buildIndexPageInfo, parseIndexCursor } from "../utils/index-cursor";
 import { getSqlCount } from "../utils/sql";
@@ -114,7 +115,10 @@ export async function searchSocialUsers({
   );
 
   return {
-    users,
+    users: users.map((user) => ({
+      ...user,
+      avatar_url: resolveProfileMediaUrl(user.avatar_url, user.id),
+    })),
     total,
     ...buildIndexPageInfo({ offset, limit: input.limit, total }),
   };

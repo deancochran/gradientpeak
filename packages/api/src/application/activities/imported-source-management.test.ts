@@ -1,6 +1,23 @@
 import { describe, expect, it, vi } from "vitest";
+
+const runtimeMocks = vi.hoisted(() => ({
+  enqueueReviewedActivityMaterialization: vi.fn(),
+}));
+
+vi.mock("../integrations/provider-runtime-registry", () => ({
+  getProviderReviewedSourceMaterializationRuntime: vi.fn((provider: string) =>
+    provider === "strava"
+      ? {
+          enqueueReviewedActivityMaterialization:
+            runtimeMocks.enqueueReviewedActivityMaterialization,
+        }
+      : null,
+  ),
+}));
+
 import {
   ImportedSourceNotFoundError,
+  keepImportedSourceSeparateForProfile,
   resolveImportedSourceForProfile,
 } from "./imported-source-management";
 
@@ -88,5 +105,53 @@ describe("resolveImportedSourceForProfile", () => {
         sourceReferenceId,
       }),
     ).rejects.toBeInstanceOf(ImportedSourceNotFoundError);
+  });
+});
+
+describe("keepImportedSourceSeparateForProfile", () => {
+  it("dispatches materialization through the source provider runtime", async () => {
+    const tx = {
+      execute: vi.fn(async () => []),
+      select: vi.fn(() => {
+        const builder = {
+          from: vi.fn(() => builder),
+          innerJoin: vi.fn(() => builder),
+          where: vi.fn(() => builder),
+          limit: vi.fn(() => builder),
+          for: vi.fn(async () => [
+            {
+              integrationGeneration: 4,
+              integrationId: "integration-id",
+              provider: "strava",
+              providerExternalId: "external-id",
+            },
+          ]),
+        };
+        return builder;
+      }),
+    };
+    const db = {
+      transaction: vi.fn((operation: (transaction: typeof tx) => unknown) => operation(tx)),
+    };
+    runtimeMocks.enqueueReviewedActivityMaterialization.mockResolvedValue({
+      id: "job-id",
+      status: "queued",
+    });
+
+    await expect(
+      keepImportedSourceSeparateForProfile({
+        db: db as never,
+        profileId,
+        sourceReferenceId,
+      }),
+    ).resolves.toEqual({ jobId: "job-id", queued: true });
+    expect(runtimeMocks.enqueueReviewedActivityMaterialization).toHaveBeenCalledWith({
+      db,
+      integration: { generation: 4, id: "integration-id" },
+      profileId,
+      providerExternalId: "external-id",
+      sourceReferenceId,
+      transaction: tx,
+    });
   });
 });

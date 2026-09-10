@@ -147,7 +147,8 @@ beforeEach(() => {
   mockCreateSignedUploadUrl.mockResolvedValue({
     signedUrl: "https://example.com/signed-upload",
     path: "user-1/new-avatar.jpg",
-    publicUrl: "https://example.com/public-avatar",
+    publicUrl:
+      "https://storage.example.com/storage/v1/object/public/profile-avatars/user-1/new-avatar.jpg",
   });
   mockCompareAndSwapMedia.mockResolvedValue({ success: true });
   mockDeleteFile.mockResolvedValue({ success: true });
@@ -155,7 +156,7 @@ beforeEach(() => {
   mockInvalidateProfiles.mockResolvedValue(undefined);
   mockInvalidateProfileIdentityQueries.mockResolvedValue(undefined);
   global.fetch = jest.fn().mockResolvedValue({
-    blob: jest.fn().mockResolvedValue(new Blob(["avatar"])),
+    arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(6)),
     ok: true,
     statusText: "OK",
   });
@@ -185,12 +186,17 @@ it("uploads with the returned path and commits it through profile media CAS", as
     expect(mockCompareAndSwapMedia).toHaveBeenCalledWith({
       field: "avatar_url",
       expected: null,
-      next: "user-1/new-avatar.jpg",
+      next: "https://storage.example.com/storage/v1/object/public/profile-avatars/user-1/new-avatar.jpg",
     }),
   );
   expect(mockUpdateProfile).not.toHaveBeenCalled();
   expect(mockDeleteFile).not.toHaveBeenCalled();
   expect(mockInvalidateProfileIdentityQueries).toHaveBeenCalledTimes(1);
+  expect(global.fetch).toHaveBeenLastCalledWith("https://example.com/signed-upload", {
+    method: "PUT",
+    headers: { "Content-Type": "image/jpeg" },
+    body: expect.any(ArrayBuffer),
+  });
 });
 
 it("deletes the just-uploaded object when media CAS fails", async () => {
@@ -227,6 +233,24 @@ it("clears with the stored value as expected and deletes only the prior owned pa
   );
   expect(mockDeleteFile).toHaveBeenCalledWith({ filePath: "user-1/old-avatar.jpg" });
   expect(mockUpdateProfile).not.toHaveBeenCalled();
+});
+
+it("deletes a prior owned public avatar after clearing it", async () => {
+  const publicAvatarUrl =
+    "https://storage.example.com/storage/v1/object/public/profile-avatars/user-1/old-avatar.jpg";
+  mockProfile = { ...mockProfile, avatar_url: publicAvatarUrl };
+  await renderNative(<ProfileEdit />);
+
+  await fireEvent.press(screen.getByLabelText("Remove profile picture"));
+
+  await waitFor(() =>
+    expect(mockCompareAndSwapMedia).toHaveBeenCalledWith({
+      field: "avatar_url",
+      expected: publicAvatarUrl,
+      next: null,
+    }),
+  );
+  expect(mockDeleteFile).toHaveBeenCalledWith({ filePath: "user-1/old-avatar.jpg" });
 });
 
 it.each([

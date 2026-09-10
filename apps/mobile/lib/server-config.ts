@@ -197,7 +197,23 @@ export function getReachableSupabaseStorageUrl(rawUrl: string) {
 
     return parsedRawUrl.toString();
   } catch {
-    return rawUrl;
+    const segments = rawUrl.split("/");
+    if (
+      segments.length < 2 ||
+      segments.some(
+        (segment) =>
+          segment.length === 0 ||
+          segment === "." ||
+          segment === ".." ||
+          segment.includes("\\") ||
+          segment.includes("%"),
+      )
+    ) {
+      return rawUrl;
+    }
+
+    const encodedPath = segments.map(encodeURIComponent).join("/");
+    return `${state.supabaseUrl}/storage/v1/object/public/profile-avatars/${encodedPath}`;
   }
 }
 

@@ -156,8 +156,8 @@ function guardedImportedSubmission(owner: {
   return {
     ...importedSubmission(owner.profileId),
     providerProvenance: {
-      provider: "wahoo",
-      externalId,
+      connector: { connectorId: "wahoo", externalId },
+      source: { sourceId: "wahoo", externalId },
       integrationId: owner.integrationId,
       integrationGeneration: 1,
       providerUpdatedAt: "2026-01-01T11:00:00.000Z",

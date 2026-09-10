@@ -13,6 +13,7 @@ import {
 } from "@repo/core";
 import { z } from "zod";
 import { projectCompletedActivityCommonLoadMetrics } from "../../lib/completed-activity-common-load-metrics";
+import { resolveProfileMediaUrl } from "../storage/profile-media-url";
 
 type ActivityDetailSegmentSource = {
   id: string;
@@ -218,7 +219,10 @@ export function toActivityDisplayModel(input: {
     activity.moving_seconds ??
     (typeof activity.moving_ms === "number" ? activity.moving_ms / 1_000 : null);
   const categories = activity.activity_categories ?? (activity.type ? [activity.type] : []);
-  const avatarUrl = z.string().url().safeParse(activity.profile?.avatar_url);
+  const avatarUrl = resolveProfileMediaUrl(
+    activity.profile?.avatar_url ?? null,
+    activity.profile_id,
+  );
   const effortProfile = toActivityCardEffortProfile(activity.effort_profile);
   const metrics = [
     ...quantificationMetrics(activity.derived?.observationQuantification),
@@ -239,7 +243,7 @@ export function toActivityDisplayModel(input: {
     owner: {
       id: activity.profile_id,
       username: activity.profile?.username ?? null,
-      avatarUrl: avatarUrl.success ? avatarUrl.data : null,
+      avatarUrl,
     },
     time: { startedAt: toIso(activity.started_at), finishedAt: toIso(activity.finished_at) },
     activityComposition: {

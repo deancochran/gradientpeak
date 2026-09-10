@@ -1,3 +1,4 @@
+import { providerCapabilityIsAuthorized } from "@repo/core";
 import { type DrizzleDbClient, schema } from "@repo/db";
 import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import {
@@ -51,10 +52,6 @@ function boundedError(value: string): string {
   return /^[a-z][a-z0-9_]{0,95}$/.test(value) ? value : "strava_provider_operation_failed";
 }
 
-function hasScope(scope: string | null | undefined, required: string): boolean {
-  return new Set((scope ?? "").split(/[\s,]+/).filter(Boolean)).has(required);
-}
-
 function isCompletedActivityEchoCandidate(input: { payload: unknown }): boolean {
   const phase =
     input.payload && typeof input.payload === "object" && "phase" in input.payload
@@ -100,7 +97,14 @@ async function readCompletedActivityUploadTarget(
     )
     .limit(1);
   if (!integration) return { status: "not_connected" };
-  if (integration.reconnectRequiredAt || !hasScope(integration.scope, "activity:write")) {
+  if (
+    integration.reconnectRequiredAt ||
+    !providerCapabilityIsAuthorized({
+      provider: "strava",
+      capability: "completed_activity_export",
+      grantedScope: integration.scope,
+    })
+  ) {
     return { status: "reconnect_required" };
   }
 

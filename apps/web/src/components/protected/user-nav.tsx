@@ -1,3 +1,4 @@
+import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import {
   DropdownMenu,
@@ -11,7 +12,6 @@ import {
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  Activity,
   Bell,
   Building2,
   CalendarDays,
@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
+import { api } from "../../lib/api/client";
 import { signOutAction } from "../../lib/auth/server-actions";
 import { contractEpochFormInputProps } from "../../lib/contract-epoch";
 import { useAuth } from "../providers/auth-provider";
@@ -39,6 +40,9 @@ function getInitials(email: string | null | undefined) {
 
 export function UserNav() {
   const { user } = useAuth();
+  const { data: profile } = api.profiles.get.useQuery(undefined, {
+    enabled: Boolean(user?.id),
+  });
   const signOut = useServerFn(signOutAction);
   const [isPending, setIsPending] = useState(false);
   const displayName = user?.email ?? "User";
@@ -94,9 +98,12 @@ export function UserNav() {
           aria-label="Open user menu"
           title="Open user menu"
         >
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-semibold">
-            {getInitials(user?.email)}
-          </div>
+          <Avatar className="h-8 w-8">
+            {profile?.avatar_url ? (
+              <AvatarImage alt="Your profile" src={profile.avatar_url} />
+            ) : null}
+            <AvatarFallback>{getInitials(profile?.username ?? user?.email)}</AvatarFallback>
+          </Avatar>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-56" align="end" forceMount>

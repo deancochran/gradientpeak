@@ -8,12 +8,15 @@ import {
   assertIntegrationManagementOpen,
   cancelPendingOAuthWithFence,
   createPendingOAuthStateWithFence,
-  getProviderOperationAdapter,
+  getProviderSetupRuntime,
   getProviderSyncOverview,
   IntegrationDisconnectPendingError,
   IntegrationOnboardingClosedError,
-  ProviderOperationUnavailableError,
-  requireProviderOperationAdapter,
+  ProviderRuntimeUnavailableError,
+  requireProviderDisconnectionRuntime,
+  requireProviderOAuthAuthorizationRuntime,
+  requireProviderSetupRuntime,
+  requireProviderSynchronizationRuntime,
 } from "../application/integrations";
 import { getRequiredDb } from "../db";
 import { isLocalWahooOAuthTestAdapterEnabled } from "../lib/integrations/oauth-config";
@@ -194,7 +197,7 @@ function throwIntegrationGateError(error: unknown): never {
   ) {
     throw new TRPCError({ code: "CONFLICT", message: error.message });
   }
-  if (error instanceof ProviderOperationUnavailableError) {
+  if (error instanceof ProviderRuntimeUnavailableError) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Integration not found" });
   }
   throw error;
@@ -243,11 +246,11 @@ export const integrationsRouter = createTRPCRouter({
     const setupEvidence = new Map(
       await Promise.all(
         overview.map(async (item) => {
-          const adapter = getProviderOperationAdapter(item.provider);
+          const setup = getProviderSetupRuntime(item.provider);
           return [
             item.provider,
-            adapter && item.onboarding.evidence.profileDetails
-              ? await adapter.readSetupEvidence({ db, profileId })
+            setup && item.onboarding.evidence.profileDetails
+              ? await setup.readSetupEvidence({ db, profileId })
               : null,
           ] as const;
         }),
@@ -261,7 +264,7 @@ export const integrationsRouter = createTRPCRouter({
   }),
 
   syncNow: protectedProcedure.input(providerActionInputSchema).mutation(async ({ ctx, input }) =>
-    requireProviderOperationAdapter(input.provider)
+    requireProviderSynchronizationRuntime(input.provider)
       .syncNow({ db: getRequiredDb(ctx), profileId: ctx.session.user.id })
       .then((result) =>
         parseBoundaryValue(syncNowResultSchema, result, "Sync now result was invalid"),
@@ -276,7 +279,7 @@ export const integrationsRouter = createTRPCRouter({
         await assertIntegrationManagementOpen(getRequiredDb(ctx), ctx.session.user.id);
         return parseBoundaryValue(
           refreshSetupDataResultSchema,
-          await requireProviderOperationAdapter(input.provider).refreshSetupEvidence({
+          await requireProviderSetupRuntime(input.provider).refreshSetupEvidence({
             db: getRequiredDb(ctx),
             profileId: ctx.session.user.id,
           }),
@@ -298,16 +301,21 @@ export const integrationsRouter = createTRPCRouter({
 
   getAuthUrl: protectedProcedure.input(getAuthUrlInputSchema).mutation(async ({ ctx, input }) => {
     const now = new Date();
-    const adapter = requireProviderOperationAdapter(input.provider);
-    if (!adapter.isOAuthConfigured()) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: "Integration is not configured on this server",
-      });
+    let runtime: ReturnType<typeof requireProviderOAuthAuthorizationRuntime>;
+    try {
+      runtime = requireProviderOAuthAuthorizationRuntime(input.provider);
+    } catch (error) {
+      if (error instanceof ProviderRuntimeUnavailableError) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Integration is not configured on this server",
+        });
+      }
+      throw error;
     }
     const state = crypto.randomUUID();
     const returnUri = requireAllowedOAuthReturn(input.redirectUri);
-    const authorization = adapter.createOAuthAuthorization({ returnUri, state });
+    const authorization = runtime.createOAuthAuthorization({ returnUri, state });
     try {
       await createPendingOAuthStateWithFence({
         db: getRequiredDb(ctx),
@@ -352,7 +360,7 @@ export const integrationsRouter = createTRPCRouter({
       } catch (error) {
         throwIntegrationGateError(error);
       }
-      await requireProviderOperationAdapter(input.provider).disconnect({
+      await requireProviderDisconnectionRuntime(input.provider).disconnect({
         db: getRequiredDb(ctx),
         profileId: ctx.session.user.id,
       });

@@ -1,3 +1,8 @@
+import {
+  providerActionIsAuthorized,
+  providerCapabilityIsAuthorized,
+  stravaProviderManifest,
+} from "@repo/core";
 import { type DrizzleDbClient, profiles, schema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
@@ -25,15 +30,15 @@ import type { EnqueueStravaSyncJobInput } from "../../repositories";
 import { withOpenIntegrationManagementTransaction } from "./onboarding-integration-gate";
 import type {
   NormalizedProviderOAuthTokenResponse,
-  ProviderIntegrationOperationContext,
-  ProviderOperationAdapter,
+  OAuthServerProviderRuntime,
+  ProviderIntegrationRuntimeContext,
   ProviderOverviewEvidence,
-  ProviderTransactionalOperationContext,
-} from "./provider-operation-registry";
+  ProviderTransactionalRuntimeContext,
+} from "./provider-runtime";
 import {
   CompletedActivityProviderNotFoundError,
-  ProviderOperationUnavailableError,
-} from "./provider-operation-registry";
+  ProviderRuntimeUnavailableError,
+} from "./provider-runtime";
 
 export const STRAVA_ACTIVITY_HISTORY_JOB = "strava.activity_history_reconcile";
 const onboardingWork = {
@@ -42,7 +47,11 @@ const onboardingWork = {
 } as const;
 
 function hasHistoryScope(scope: string | null | undefined): boolean {
-  return new Set((scope ?? "").split(/[\s,]+/).filter(Boolean)).has("activity:read_all");
+  return providerCapabilityIsAuthorized({
+    provider: "strava",
+    capability: "activity_history_read",
+    grantedScope: scope,
+  });
 }
 
 function uploadEligibilityReason(status: string): string | null {
@@ -193,11 +202,11 @@ function historyJobInput(input: {
 }
 
 async function enqueueHistory(
-  input: ProviderTransactionalOperationContext<"strava">,
+  input: ProviderTransactionalRuntimeContext,
   trigger: "connect" | "manual" | "onboarding",
 ) {
   if (input.integration.lifecycleStatus !== "active" || !hasHistoryScope(input.scope)) {
-    throw new ProviderOperationUnavailableError("strava");
+    throw new ProviderRuntimeUnavailableError("strava");
   }
   const jobInput = historyJobInput({
     generation: input.integration.generation,
@@ -272,7 +281,7 @@ function normalizeTokens(tokens: StravaOAuthTokenResponse): NormalizedProviderOA
 
 async function readOverview(
   input:
-    | ProviderIntegrationOperationContext<"strava">
+    | ProviderIntegrationRuntimeContext
     | { db: DrizzleDbClient; profileId: string; integration: null; scope: null },
 ): Promise<ProviderOverviewEvidence> {
   if (!input.integration) {
@@ -340,127 +349,128 @@ async function readOverview(
   };
 }
 
-export const stravaProviderOperationAdapter: ProviderOperationAdapter<"strava"> = {
+export const stravaProviderRuntime: OAuthServerProviderRuntime<typeof stravaProviderManifest> = {
   provider: "strava",
-  isConfigured: isStravaIntegrationEnabled,
-  isOAuthConfigured: isStravaOAuthConfigured,
-  createOAuthAuthorization: ({ state }) => {
-    const config = requireStravaOAuthConfig();
-    const callbackUrl = getOAuthCallbackUrl("strava");
-    const params = new URLSearchParams({
-      approval_prompt: "auto",
-      client_id: config.clientId,
-      redirect_uri: callbackUrl,
-      response_type: "code",
-      scope: config.scopes.join(","),
-      state,
-    });
-    return {
-      binding: createOAuthStateBinding({ config, provider: "strava", state }),
-      url: `${config.authUrl}?${params.toString()}`,
-    };
-  },
-  validateOAuthStateBinding: ({ binding, state }) => {
-    const expected = createOAuthStateBinding({
-      config: requireStravaOAuthConfig(),
-      provider: "strava",
-      state,
-    });
-    return (
-      binding.callbackUri === expected.callbackUri &&
-      binding.requestedScope === expected.requestedScope &&
-      binding.verifierHash === expected.verifierHash
-    );
-  },
-  exchangeOAuthCode: async ({ code }) => normalizeTokens(await exchangeStravaOAuthCode(code)),
-  resolveOAuthIdentity: async (tokens) =>
-    resolveStravaOAuthIdentity({
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token ?? "",
-      token_type: "Bearer",
-      expires_at: Math.floor(Date.now() / 1_000) + (tokens.expires_in ?? 1),
-      expires_in: tokens.expires_in ?? 1,
-      ...(tokens.scope == null ? {} : { scope: tokens.scope }),
-      ...(tokens.athlete?.id == null ? {} : { athlete: { id: tokens.athlete.id } }),
-    }),
-  activateOAuthCredential: async () => undefined,
-  deauthorizeAccessToken: deauthorizeStravaAccessToken,
-  classifyOAuthFailure: classifyStravaOAuthFailure,
-  readSetupEvidence: async ({ db, profileId }) => {
-    const [profile] = await db
-      .select({
-        dob: profiles.dob,
-        gender: profiles.gender,
-        onboardingStatus: profiles.onboarding_status,
-      })
-      .from(profiles)
-      .where(eq(profiles.id, profileId))
-      .limit(1);
-    return {
-      profile: {
-        dob: profile?.dob?.toISOString().slice(0, 10) ?? null,
-        gender: profile?.gender ?? null,
-        onboarding_status: profile?.onboardingStatus ?? "provider_selection",
-      },
-      values: {},
-      sources: {},
-    };
-  },
-  readOverviewEvidence: readOverview,
-  syncNow,
-  readCompletedActivityUploadEligibility,
-  sendCompletedActivity,
-  enqueueReviewedActivityMaterialization: async (input) =>
-    createStravaRepository({ db: input.db }).enqueueJobInTransaction(
-      input.transaction,
-      historyJobInput({
-        activityExternalId: input.providerExternalId,
-        generation: input.integration.generation,
-        integrationId: input.integration.id,
-        profileId: input.profileId,
-        reviewSourceReferenceId: input.sourceReferenceId,
-        trigger: "manual",
+  manifest: stravaProviderManifest,
+  connection: {
+    kind: "oauth2",
+    provider: "strava",
+    isOAuthConfigured: isStravaOAuthConfigured,
+    createOAuthAuthorization: ({ state }) => {
+      const config = requireStravaOAuthConfig();
+      const callbackUrl = getOAuthCallbackUrl("strava");
+      const params = new URLSearchParams({
+        approval_prompt: "auto",
+        client_id: config.clientId,
+        redirect_uri: callbackUrl,
+        response_type: "code",
+        scope: config.scopes.join(","),
+        state,
+      });
+      return {
+        binding: createOAuthStateBinding({ config, provider: "strava", state }),
+        url: `${config.authUrl}?${params.toString()}`,
+      };
+    },
+    validateOAuthStateBinding: ({ binding, state }) => {
+      const expected = createOAuthStateBinding({
+        config: requireStravaOAuthConfig(),
+        provider: "strava",
+        state,
+      });
+      return (
+        binding.callbackUri === expected.callbackUri &&
+        binding.requestedScope === expected.requestedScope &&
+        binding.verifierHash === expected.verifierHash
+      );
+    },
+    exchangeOAuthCode: async ({ code }) => normalizeTokens(await exchangeStravaOAuthCode(code)),
+    resolveOAuthIdentity: async (tokens) =>
+      resolveStravaOAuthIdentity({
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token ?? "",
+        token_type: "Bearer",
+        expires_at: Math.floor(Date.now() / 1_000) + (tokens.expires_in ?? 1),
+        expires_in: tokens.expires_in ?? 1,
+        ...(tokens.scope == null ? {} : { scope: tokens.scope }),
+        ...(tokens.athlete?.id == null ? {} : { athlete: { id: tokens.athlete.id } }),
       }),
-    ),
-  refreshSetupEvidence: async () => ({ status: "unsupported" as const }),
-  disconnect: async ({ db, profileId }) => {
-    await createStravaRepository({ db }).requestProviderDisconnect({
-      profileId,
-      provider: "strava",
-    });
+    activateOAuthCredential: async () => undefined,
+    classifyOAuthFailure: classifyStravaOAuthFailure,
   },
-  enqueueConnectedProfileWork: async (input) => {
-    const [profile] = await input.transaction
-      .select({ onboardingStatus: profiles.onboarding_status })
-      .from(profiles)
-      .where(eq(profiles.id, input.profileId))
-      .limit(1);
-    // Initial onboarding owns its history job after provider selection commits. Avoid racing a
-    // generic connect import against that durable onboarding work-set anchor.
-    if (profile?.onboardingStatus === "provider_selection") return;
-    await enqueueHistory(input as ProviderTransactionalOperationContext<"strava">, "connect");
+  execution: {
+    kind: "server",
+    server: {
+      availability: { isConfigured: isStravaIntegrationEnabled },
+      actionAuthorization: {
+        allowsAction: ({ action, grantedScope }) =>
+          providerActionIsAuthorized({ provider: "strava", action, grantedScope }),
+      },
+      overview: { readOverviewEvidence: readOverview },
+      synchronization: { syncNow },
+      completedActivityExport: {
+        readCompletedActivityUploadEligibility,
+        sendCompletedActivity,
+      },
+      reviewedSourceMaterialization: {
+        enqueueReviewedActivityMaterialization: async (input) =>
+          createStravaRepository({ db: input.db }).enqueueJobInTransaction(
+            input.transaction,
+            historyJobInput({
+              activityExternalId: input.providerExternalId,
+              generation: input.integration.generation,
+              integrationId: input.integration.id,
+              profileId: input.profileId,
+              reviewSourceReferenceId: input.sourceReferenceId,
+              trigger: "manual",
+            }),
+          ),
+      },
+      credentialRevocation: { deauthorizeAccessToken: deauthorizeStravaAccessToken },
+      disconnection: {
+        disconnect: async ({ db, profileId }) => {
+          await createStravaRepository({ db }).requestProviderDisconnect({
+            profileId,
+            provider: "strava",
+          });
+        },
+      },
+      connectedProfile: {
+        enqueueConnectedProfileWork: async (input) => {
+          const [profile] = await input.transaction
+            .select({ onboardingStatus: profiles.onboarding_status })
+            .from(profiles)
+            .where(eq(profiles.id, input.profileId))
+            .limit(1);
+          // Initial onboarding owns its history job after provider selection commits. Avoid racing
+          // a generic connect import against that durable onboarding work-set anchor.
+          if (profile?.onboardingStatus === "provider_selection") return;
+          await enqueueHistory(input, "connect");
+        },
+      },
+      onboarding: {
+        enqueueInitialOnboardingWork: async (input) => {
+          const job = await enqueueHistory(input, "onboarding");
+          return { historyJobId: job.id, profileJobId: null };
+        },
+        admitOnboardingRetry: ({ work }) => {
+          if (!work.active || !hasHistoryScope(work.scope)) {
+            throw new ProviderRuntimeUnavailableError("strava");
+          }
+          return onboardingWork;
+        },
+        onboardingWork,
+        identifyOnboardingWork: ({ jobs }) => {
+          const history = jobs.find((job) => job.jobType === STRAVA_ACTIVITY_HISTORY_JOB);
+          return {
+            historyJobId: history?.id ?? null,
+            profileJobId: null,
+            requiredJobTypes: [STRAVA_ACTIVITY_HISTORY_JOB],
+            importRunLinked:
+              history?.importRunId !== null && history?.importRunId === history?.payloadImportRunId,
+          };
+        },
+      },
+    },
   },
-  enqueueInitialOnboardingWork: async (input) => {
-    const job = await enqueueHistory(input, "onboarding");
-    return { historyJobId: job.id, profileJobId: null };
-  },
-  admitOnboardingRetry: ({ work }) => {
-    if (!work.active || !hasHistoryScope(work.scope)) {
-      throw new ProviderOperationUnavailableError("strava");
-    }
-    return onboardingWork;
-  },
-  onboardingWork,
-  identifyOnboardingWork: ({ jobs }) => {
-    const history = jobs.find((job) => job.jobType === STRAVA_ACTIVITY_HISTORY_JOB);
-    return {
-      historyJobId: history?.id ?? null,
-      profileJobId: null,
-      requiredJobTypes: [STRAVA_ACTIVITY_HISTORY_JOB],
-      importRunLinked:
-        history?.importRunId !== null && history?.importRunId === history?.payloadImportRunId,
-    };
-  },
-  allowsAction: ({ action, grantedScope }) =>
-    action === "disconnect" || (action === "sync_now" && hasHistoryScope(grantedScope)),
 };

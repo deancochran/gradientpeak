@@ -36,7 +36,10 @@ vi.mock("../../../lib/api/client", () => ({
     activityPlans: {
       getById: { useQuery: () => ({ data: undefined, isLoading: false, isError: false }) },
     },
-    routes: { get: { useQuery: () => ({ data: undefined }) } },
+    routes: {
+      get: { useQuery: () => ({ data: undefined }) },
+      list: { useQuery: () => ({ data: { items: [] }, isLoading: false, isError: false }) },
+    },
     athleteIntelligence: {
       getReadModel: { useQuery: () => ({ data: undefined, isLoading: false }) },
     },
@@ -61,7 +64,7 @@ describe("RecordPage", () => {
 
     expect(screen.getByText("Indoor recording")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Choose plan" })).toBeTruthy();
-    expect(screen.getByText(/not GPS or sensor data/i)).toBeTruthy();
+    expect(screen.getByText(/not GPS/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Open recorder" }));
     expect(mocks.configure).toHaveBeenCalledWith({ activity_category: "bike" });
     expect(mocks.navigate).toHaveBeenCalledWith({ to: "/record/session" });

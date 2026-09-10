@@ -1,16 +1,16 @@
 import {
   type ExecutableIntegrationProviderId,
-  providerCapabilityRegistry,
   providerHasCapability,
+  providerManifestRegistry,
 } from "@repo/core";
 import type { DrizzleDbClient } from "@repo/db";
 import {
   type CompletedActivityProviderEligibility,
   CompletedActivityProviderNotFoundError,
   type CompletedActivityProviderSendResult,
-  type ProviderOperationAdapter,
-} from "./provider-operation-registry";
-import { getProviderOperationAdapter } from "./provider-operation-runtime";
+  type ProviderCompletedActivityExportRuntime,
+} from "./provider-runtime";
+import { getProviderCompletedActivityExportRuntime } from "./provider-runtime-registry";
 
 export { CompletedActivityProviderNotFoundError };
 
@@ -28,16 +28,16 @@ export async function getCompletedActivityProviderEligibility(input: {
   db: DrizzleDbClient;
   profileId: string;
 }): Promise<CompletedActivityProviderEligibility[]> {
-  const eligibleProviders = providerCapabilityRegistry.filter((definition) =>
-    providerHasCapability(definition.id, "completed_activity_export"),
+  const eligibleProviders = providerManifestRegistry.filter((definition) =>
+    providerHasCapability(definition.connectorId, "completed_activity_export"),
   );
   return Promise.all(
     eligibleProviders.map(async (definition) => {
-      const adapter = getProviderOperationAdapter(definition.id);
-      if (!adapter?.isConfigured() || !adapter.readCompletedActivityUploadEligibility) {
-        return unavailable(definition.id);
+      const runtime = getProviderCompletedActivityExportRuntime(definition.connectorId);
+      if (!runtime?.availability.isConfigured()) {
+        return unavailable(definition.connectorId);
       }
-      return adapter.readCompletedActivityUploadEligibility(input);
+      return runtime.completedActivityExport.readCompletedActivityUploadEligibility(input);
     }),
   );
 }
@@ -50,17 +50,20 @@ export async function sendCompletedActivityToProvider(
     provider: ExecutableIntegrationProviderId;
   },
   dependencies: {
-    resolveAdapter?: (
-      provider: ExecutableIntegrationProviderId,
-    ) => ProviderOperationAdapter<ExecutableIntegrationProviderId> | null;
+    resolveRuntime?: (provider: ExecutableIntegrationProviderId) => {
+      availability: { isConfigured: () => boolean };
+      completedActivityExport: ProviderCompletedActivityExportRuntime;
+    } | null;
   } = {},
 ): Promise<CompletedActivityProviderSendResult> {
   if (!providerHasCapability(input.provider, "completed_activity_export")) {
     return { jobId: null, provider: input.provider, status: "unavailable" };
   }
-  const adapter = (dependencies.resolveAdapter ?? getProviderOperationAdapter)(input.provider);
-  if (!adapter?.isConfigured() || !adapter.sendCompletedActivity) {
+  const runtime = (dependencies.resolveRuntime ?? getProviderCompletedActivityExportRuntime)(
+    input.provider,
+  );
+  if (!runtime?.availability.isConfigured()) {
     return { jobId: null, provider: input.provider, status: "unavailable" };
   }
-  return adapter.sendCompletedActivity(input);
+  return runtime.completedActivityExport.sendCompletedActivity(input);
 }

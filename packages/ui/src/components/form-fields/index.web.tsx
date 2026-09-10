@@ -644,6 +644,7 @@ function FormDateInputField<
           helperText={description}
           id={String(name)}
           label={label}
+          name={field.name}
           onChange={(value) => field.onChange(value ?? null)}
           required={required}
           testId={testId}

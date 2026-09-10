@@ -86,6 +86,7 @@ import { Route as ProtectedCalendarEventsEventIdEditRouteImport } from './routes
 import { Route as ProtectedGroupsGroupIdEventsNewRouteImport } from './routes/_protected/groups/$groupId/events/new'
 import { Route as ProtectedGroupsEventsGroupEventIdIndexRouteImport } from './routes/_protected/groups/events/$groupEventId/index'
 import { Route as ProtectedGroupsEventsGroupEventIdEditRouteImport } from './routes/_protected/groups/events/$groupEventId/edit'
+import { Route as ApiInternalProviderSyncStravaDrainRouteImport } from './routes/api/internal/provider-sync/strava/drain'
 import { Route as ApiInternalProviderSyncWahooDrainRouteImport } from './routes/api/internal/provider-sync/wahoo/drain'
 import { Route as ApiInternalProviderSyncWahooRetryRouteImport } from './routes/api/internal/provider-sync/wahoo/retry'
 import { Route as ApiInternalProviderSyncWahooStatusRouteImport } from './routes/api/internal/provider-sync/wahoo/status'
@@ -509,6 +510,12 @@ const ProtectedGroupsEventsGroupEventIdEditRoute =
     path: '/groups/events/$groupEventId/edit',
     getParentRoute: () => ProtectedRoute,
   } as any)
+const ApiInternalProviderSyncStravaDrainRoute =
+  ApiInternalProviderSyncStravaDrainRouteImport.update({
+    id: '/api/internal/provider-sync/strava/drain',
+    path: '/api/internal/provider-sync/strava/drain',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiInternalProviderSyncWahooDrainRoute =
   ApiInternalProviderSyncWahooDrainRouteImport.update({
     id: '/api/internal/provider-sync/wahoo/drain',
@@ -602,6 +609,7 @@ export interface FileRoutesByFullPath {
   '/calendar/events/$eventId/edit': typeof ProtectedCalendarEventsEventIdEditRoute
   '/groups/$groupId/events/new': typeof ProtectedGroupsGroupIdEventsNewRoute
   '/groups/events/$groupEventId/edit': typeof ProtectedGroupsEventsGroupEventIdEditRoute
+  '/api/internal/provider-sync/strava/drain': typeof ApiInternalProviderSyncStravaDrainRoute
   '/api/internal/provider-sync/wahoo/drain': typeof ApiInternalProviderSyncWahooDrainRoute
   '/api/internal/provider-sync/wahoo/retry': typeof ApiInternalProviderSyncWahooRetryRoute
   '/api/internal/provider-sync/wahoo/status': typeof ApiInternalProviderSyncWahooStatusRoute
@@ -678,6 +686,7 @@ export interface FileRoutesByTo {
   '/calendar/events/$eventId/edit': typeof ProtectedCalendarEventsEventIdEditRoute
   '/groups/$groupId/events/new': typeof ProtectedGroupsGroupIdEventsNewRoute
   '/groups/events/$groupEventId/edit': typeof ProtectedGroupsEventsGroupEventIdEditRoute
+  '/api/internal/provider-sync/strava/drain': typeof ApiInternalProviderSyncStravaDrainRoute
   '/api/internal/provider-sync/wahoo/drain': typeof ApiInternalProviderSyncWahooDrainRoute
   '/api/internal/provider-sync/wahoo/retry': typeof ApiInternalProviderSyncWahooRetryRoute
   '/api/internal/provider-sync/wahoo/status': typeof ApiInternalProviderSyncWahooStatusRoute
@@ -761,6 +770,7 @@ export interface FileRoutesById {
   '/_protected/calendar/events/$eventId/edit': typeof ProtectedCalendarEventsEventIdEditRoute
   '/_protected/groups/$groupId/events/new': typeof ProtectedGroupsGroupIdEventsNewRoute
   '/_protected/groups/events/$groupEventId/edit': typeof ProtectedGroupsEventsGroupEventIdEditRoute
+  '/api/internal/provider-sync/strava/drain': typeof ApiInternalProviderSyncStravaDrainRoute
   '/api/internal/provider-sync/wahoo/drain': typeof ApiInternalProviderSyncWahooDrainRoute
   '/api/internal/provider-sync/wahoo/retry': typeof ApiInternalProviderSyncWahooRetryRoute
   '/api/internal/provider-sync/wahoo/status': typeof ApiInternalProviderSyncWahooStatusRoute
@@ -843,6 +853,7 @@ export interface FileRouteTypes {
     | '/calendar/events/$eventId/edit'
     | '/groups/$groupId/events/new'
     | '/groups/events/$groupEventId/edit'
+    | '/api/internal/provider-sync/strava/drain'
     | '/api/internal/provider-sync/wahoo/drain'
     | '/api/internal/provider-sync/wahoo/retry'
     | '/api/internal/provider-sync/wahoo/status'
@@ -919,6 +930,7 @@ export interface FileRouteTypes {
     | '/calendar/events/$eventId/edit'
     | '/groups/$groupId/events/new'
     | '/groups/events/$groupEventId/edit'
+    | '/api/internal/provider-sync/strava/drain'
     | '/api/internal/provider-sync/wahoo/drain'
     | '/api/internal/provider-sync/wahoo/retry'
     | '/api/internal/provider-sync/wahoo/status'
@@ -1001,6 +1013,7 @@ export interface FileRouteTypes {
     | '/_protected/calendar/events/$eventId/edit'
     | '/_protected/groups/$groupId/events/new'
     | '/_protected/groups/events/$groupEventId/edit'
+    | '/api/internal/provider-sync/strava/drain'
     | '/api/internal/provider-sync/wahoo/drain'
     | '/api/internal/provider-sync/wahoo/retry'
     | '/api/internal/provider-sync/wahoo/status'
@@ -1032,6 +1045,7 @@ export interface RootRouteChildren {
   ShareRoutesRouteIdRoute: typeof ShareRoutesRouteIdRoute
   ShareTrainingPlansTrainingPlanIdRoute: typeof ShareTrainingPlansTrainingPlanIdRoute
   ApiIntegrationsCallbackProviderRoute: typeof ApiIntegrationsCallbackProviderRoute
+  ApiInternalProviderSyncStravaDrainRoute: typeof ApiInternalProviderSyncStravaDrainRoute
   ApiInternalProviderSyncWahooDrainRoute: typeof ApiInternalProviderSyncWahooDrainRoute
   ApiInternalProviderSyncWahooRetryRoute: typeof ApiInternalProviderSyncWahooRetryRoute
   ApiInternalProviderSyncWahooStatusRoute: typeof ApiInternalProviderSyncWahooStatusRoute
@@ -1578,6 +1592,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedGroupsEventsGroupEventIdEditRouteImport
       parentRoute: typeof ProtectedRoute
     }
+    '/api/internal/provider-sync/strava/drain': {
+      id: '/api/internal/provider-sync/strava/drain'
+      path: '/api/internal/provider-sync/strava/drain'
+      fullPath: '/api/internal/provider-sync/strava/drain'
+      preLoaderRoute: typeof ApiInternalProviderSyncStravaDrainRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/internal/provider-sync/wahoo/drain': {
       id: '/api/internal/provider-sync/wahoo/drain'
       path: '/api/internal/provider-sync/wahoo/drain'
@@ -1806,6 +1827,8 @@ const rootRouteChildren: RootRouteChildren = {
   ShareRoutesRouteIdRoute: ShareRoutesRouteIdRoute,
   ShareTrainingPlansTrainingPlanIdRoute: ShareTrainingPlansTrainingPlanIdRoute,
   ApiIntegrationsCallbackProviderRoute: ApiIntegrationsCallbackProviderRoute,
+  ApiInternalProviderSyncStravaDrainRoute:
+    ApiInternalProviderSyncStravaDrainRoute,
   ApiInternalProviderSyncWahooDrainRoute:
     ApiInternalProviderSyncWahooDrainRoute,
   ApiInternalProviderSyncWahooRetryRoute:

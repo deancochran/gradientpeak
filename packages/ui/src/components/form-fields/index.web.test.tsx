@@ -369,6 +369,7 @@ describe("Form fields web", () => {
     const select = screen.getByRole("combobox", { name: "Activity" });
 
     expect(date).toBeRequired();
+    expect(date).toHaveAttribute("name", "dob");
     expect(date).toHaveAccessibleDescription("Used to calculate age");
     expect(select).toHaveAttribute("data-slot", "form-control");
     expect(select).toHaveAttribute("data-testid", "activity-trigger");

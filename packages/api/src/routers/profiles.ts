@@ -23,7 +23,7 @@ const profileMediaCompareAndSwapInputSchema = z
   .object({
     field: z.enum(["avatar_url", "cover_url"]),
     expected: z.string().nullable(),
-    next: z.string().nullable(),
+    next: z.string().url().nullable(),
   })
   .strict();
 const profileMediaCompareAndSwapResultSchema = z.object({ success: z.literal(true) }).strict();

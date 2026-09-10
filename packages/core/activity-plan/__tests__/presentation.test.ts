@@ -138,7 +138,7 @@ describe("deriveActivityPlanPresentation", () => {
     });
   });
 
-  it("does not let conflicting same-priority target order change presentation", () => {
+  it("returns null for a step with conflicting objective targets", () => {
     const structure = (targets: Array<{ intensity: number; type: "speed" }>) => ({
       version: 3,
       activity_category: "run",
@@ -165,25 +165,14 @@ describe("deriveActivityPlanPresentation", () => {
         },
       ],
     });
-    const first = deriveActivityPlanPresentation(
-      structure([
-        { type: "speed", intensity: 18 },
-        { type: "speed", intensity: 14.4 },
-      ]),
-    );
-    const second = deriveActivityPlanPresentation(
-      structure([
-        { type: "speed", intensity: 14.4 },
-        { type: "speed", intensity: 18 },
-      ]),
-    );
-
-    expect(first?.occurrences).toEqual(second?.occurrences);
-    expect(first?.occurrences[0]).toMatchObject({
-      intensityBasis: "unavailable",
-      intensityLabel: null,
-      visualIntensity: null,
-    });
+    expect(
+      deriveActivityPlanPresentation(
+        structure([
+          { type: "speed", intensity: 18 },
+          { type: "speed", intensity: 14.4 },
+        ]),
+      ),
+    ).toBeNull();
   });
 
   it("returns null for invalid structures", () => {

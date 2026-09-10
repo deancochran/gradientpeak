@@ -8,10 +8,11 @@ import {
   setOnboardingStatus,
 } from "../../repositories/onboarding-lifecycle-repository";
 import { lockProfileAdvisoryFence } from "../../repositories/profile-advisory-fence";
+import type { ProviderOnboardingRuntime } from "../integrations/provider-runtime";
 import {
-  getExecutableProviderOperationAdapter,
-  getProviderOperationAdapter,
-} from "../integrations/provider-operation-runtime";
+  getExecutableProviderOnboardingRuntime,
+  getProviderOnboardingRuntime,
+} from "../integrations/provider-runtime-registry";
 
 type Db = ReturnType<typeof getRequiredDb>;
 
@@ -46,22 +47,19 @@ export type OnboardingReadiness = {
   >;
 };
 
-type OnboardingWorkRoleResolver = Pick<
-  NonNullable<ReturnType<typeof getProviderOperationAdapter>>,
-  "identifyOnboardingWork"
->;
+type OnboardingWorkRoleResolver = Pick<ProviderOnboardingRuntime, "identifyOnboardingWork">;
 
 export function deriveOnboardingProviderState(
   provider: OnboardingReadinessSnapshot["providers"][number],
   athleteState: OnboardingReadinessSnapshot["athleteState"],
-  getAdapter: (
+  getRuntime: (
     provider: ExecutableIntegrationProviderId,
-  ) => OnboardingWorkRoleResolver | null = getProviderOperationAdapter,
+  ) => OnboardingWorkRoleResolver | null = getProviderOnboardingRuntime,
 ): OnboardingProviderState {
   const jobs = provider.jobs;
-  const adapter = getAdapter(provider.provider);
-  if (!adapter) return "recovery_required";
-  const work = adapter.identifyOnboardingWork({
+  const runtime = getRuntime(provider.provider);
+  if (!runtime) return "recovery_required";
+  const work = runtime.identifyOnboardingWork({
     jobs: jobs.map((job) => ({
       id: job.id,
       importRunId: job.import_run_id,
@@ -116,19 +114,19 @@ export function deriveOnboardingProviderState(
 
 export function deriveOnboardingReadiness(
   snapshot: OnboardingReadinessSnapshot,
-  getAdapter: (
+  getRuntime: (
     provider: ExecutableIntegrationProviderId,
-  ) => OnboardingWorkRoleResolver | null = getProviderOperationAdapter,
+  ) => OnboardingWorkRoleResolver | null = getProviderOnboardingRuntime,
   isExecutable: (provider: ExecutableIntegrationProviderId) => boolean = (provider) =>
-    Boolean(getExecutableProviderOperationAdapter(provider)),
+    Boolean(getExecutableProviderOnboardingRuntime(provider)),
 ): OnboardingReadiness {
   const providers = snapshot.providers.map((provider) => {
     const executable = isExecutable(provider.provider);
     const state = executable
-      ? deriveOnboardingProviderState(provider, snapshot.athleteState, getAdapter)
+      ? deriveOnboardingProviderState(provider, snapshot.athleteState, getRuntime)
       : "recovery_required";
-    const adapter = getAdapter(provider.provider);
-    const roles = adapter?.identifyOnboardingWork({
+    const runtime = getRuntime(provider.provider);
+    const roles = runtime?.identifyOnboardingWork({
       jobs: provider.jobs.map((job) => ({
         id: job.id,
         importRunId: job.import_run_id,

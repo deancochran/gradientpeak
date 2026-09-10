@@ -9,6 +9,12 @@ const requestTimeoutMs = getWahooSyncRequestTimeoutMs();
 const once = process.argv.includes("--once");
 const secret = process.env.INTERNAL_PROVIDER_SYNC_SECRET;
 
+function hasProcessedJobs(payload) {
+  return Object.values(payload ?? {}).some(
+    (value) => typeof value === "object" && value !== null && value.processed > 0,
+  );
+}
+
 if (!secret) {
   console.error("INTERNAL_PROVIDER_SYNC_SECRET is required to drain Wahoo provider sync jobs.");
   process.exit(1);
@@ -31,7 +37,9 @@ async function drain() {
   }
 
   const payload = text ? JSON.parse(text) : null;
-  console.log(JSON.stringify({ drainedAt: new Date().toISOString(), payload }));
+  if (hasProcessedJobs(payload)) {
+    console.log(JSON.stringify({ drainedAt: new Date().toISOString(), payload }));
+  }
 }
 
 async function run() {

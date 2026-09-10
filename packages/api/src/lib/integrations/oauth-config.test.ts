@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  certifyProviderOAuthScopeCoverage,
   createProviderOAuthConfigRegistry,
   getProviderOAuthConfig,
   getStravaOAuthConfig,
@@ -9,6 +10,24 @@ import {
 } from "./oauth-config";
 
 describe("Wahoo server enablement", () => {
+  it("certifies OAuth definitions cover every manifest-required capability scope", () => {
+    expect(() => certifyProviderOAuthScopeCoverage()).not.toThrow();
+    expect(() =>
+      certifyProviderOAuthScopeCoverage({
+        wahoo: {
+          scopes: [
+            "user_read",
+            "workouts_read",
+            "offline_data",
+            "plans_read",
+            "plans_write",
+            "workouts_write",
+          ],
+        },
+        strava: { scopes: ["activity:read_all"] },
+      }),
+    ).toThrow(/strava\/activity:write/i);
+  });
   it.each([
     [{}, false],
     [{ WAHOO_CLIENT_ID: "client" }, false],

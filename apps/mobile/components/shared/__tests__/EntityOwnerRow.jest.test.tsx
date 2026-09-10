@@ -1,4 +1,5 @@
-import { fireEvent, renderNative } from "../../../test/render-native";
+import { createHost } from "../../../test/mock-components";
+import { fireEvent, renderNative, screen } from "../../../test/render-native";
 import { EntityOwnerRow } from "../EntityOwnerRow";
 
 const navigateMock = jest.fn();
@@ -9,6 +10,17 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
 
 jest.mock("@/lib/stores/auth-store", () => ({
   useAuthStore: (selector: (state: { user: null }) => unknown) => selector({ user: null }),
+}));
+
+jest.mock("@/lib/server-config", () => ({
+  getReachableSupabaseStorageUrl: (value: string) =>
+    value.startsWith("http") ? value : `https://storage.example.test/profile-avatars/${value}`,
+}));
+
+jest.mock("@repo/ui/components/avatar", () => ({
+  Avatar: createHost("Avatar"),
+  AvatarFallback: createHost("AvatarFallback"),
+  AvatarImage: createHost("AvatarImage"),
 }));
 
 describe("EntityOwnerRow", () => {
@@ -64,6 +76,19 @@ describe("EntityOwnerRow", () => {
     expect(navigateMock).toHaveBeenCalledWith({
       pathname: "/user/[userId]",
       params: { userId: "owner-2" },
+    });
+  });
+
+  it("renders a legacy owner avatar path as a reachable image URL for canonical cards", async () => {
+    await renderNative(
+      <EntityOwnerRow
+        owner={{ id: "owner-2", username: "Coach Lee", avatar_url: "owner-2/avatar.jpg" }}
+      />,
+    );
+
+    const image = screen.container.queryAll((node) => node.type === "AvatarImage")[0];
+    expect(image?.props.source).toEqual({
+      uri: "https://storage.example.test/profile-avatars/owner-2/avatar.jpg",
     });
   });
 });

@@ -61,6 +61,17 @@ describe("storageRouter", () => {
     expect(result.publicUrl).toBe(`https://public.test/${result.path}`);
   });
 
+  it("uses collision-resistant paths for concurrent profile uploads", async () => {
+    const caller = createCaller();
+
+    const [first, second] = await Promise.all([
+      caller.createSignedUploadUrl({ fileName: "avatar.png", fileType: "image/png" }),
+      caller.createSignedUploadUrl({ fileName: "avatar.png", fileType: "image/png" }),
+    ]);
+
+    expect(first.path).not.toBe(second.path);
+  });
+
   it("creates the avatar bucket before issuing upload URLs", async () => {
     const caller = createCaller("22222222-2222-4222-8222-222222222222");
 

@@ -14,7 +14,6 @@ import {
   type IntegrationsRepositories,
 } from "../../repositories/integrations-repository";
 import { handleOAuthCallback } from "./oauthCallbackUseCase";
-import { createProviderOperationRegistry } from "./provider-operation-registry";
 
 const STATE_ID = "55555555-5555-4555-8555-555555555555";
 const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
@@ -103,7 +102,7 @@ function createDependencies(
 
 function createLocalCode() {
   const config = getWahooOAuthConfig();
-  if (!config) throw new Error("local adapter was not configured");
+  if (!config) throw new Error("local OAuth runtime was not configured");
   return issueLocalOAuthAuthorizationCode({
     challenge: createOAuthCodeChallenge(
       deriveOAuthCodeVerifier({
@@ -615,7 +614,7 @@ describe("OAuth callback use case", () => {
     expect(deps.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
   });
 
-  it("rejects a callback for a provider without an enabled server adapter", async () => {
+  it("rejects a callback for a provider without an enabled server runtime", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(
@@ -639,13 +638,29 @@ describe("OAuth callback use case", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("executes a second provider entirely through its registered OAuth adapter", async () => {
+  it("rejects an unavailable OAuth callback runtime before reading callback state", async () => {
+    const deps = createDependencies("strava");
+    const result = await handleOAuthCallback({
+      ...deps,
+      code: "provider-code",
+      error: null,
+      fallbackRedirect: "http://localhost:3000/integrations",
+      provider: "strava",
+      resolveProviderRuntime: () => null,
+      state: STATE_ID,
+    });
+
+    expect(new URL(result.redirectUrl).searchParams.get("error")).toBe("invalid_provider");
+    expect(deps.oauthStates.findValidByState).not.toHaveBeenCalled();
+  });
+
+  it("executes a second provider entirely through its composed OAuth runtime", async () => {
     const deps = createDependencies("strava", {
       callback_uri: "https://example.test/callback/strava",
       requested_scope: "activity:read",
       verifier_hash: "strava-verifier-hash",
     });
-    const adapter = {
+    const runtime = {
       provider: "strava" as const,
       isConfigured: vi.fn(() => true),
       isOAuthConfigured: vi.fn(() => true),
@@ -673,8 +688,6 @@ describe("OAuth callback use case", () => {
       })),
       enqueueConnectedProfileWork: vi.fn(async () => undefined),
     };
-    const registry = createProviderOperationRegistry<"strava", typeof adapter>([adapter]);
-
     const result = await handleOAuthCallback({
       ...deps,
       code: "strava-code",
@@ -682,25 +695,46 @@ describe("OAuth callback use case", () => {
       error: null,
       fallbackRedirect: "http://localhost:3000/integrations",
       provider: "strava",
-      resolveProviderAdapter: (provider) => registry.get(provider as "strava"),
+      resolveProviderRuntime: () => ({
+        provider: "strava",
+        connection: {
+          kind: "oauth2",
+          provider: "strava",
+          activateOAuthCredential: runtime.activateOAuthCredential,
+          classifyOAuthFailure: runtime.classifyOAuthFailure,
+          createOAuthAuthorization: vi.fn(() => ({
+            binding: {
+              callbackUri: "https://example.test/callback/strava",
+              requestedScope: "activity:read",
+              verifierHash: "strava-verifier-hash",
+            },
+            url: "https://example.test/oauth/strava",
+          })),
+          exchangeOAuthCode: runtime.exchangeOAuthCode,
+          isOAuthConfigured: runtime.isOAuthConfigured,
+          resolveOAuthIdentity: runtime.resolveOAuthIdentity,
+          validateOAuthStateBinding: runtime.validateOAuthStateBinding,
+        },
+        connectedProfile: { enqueueConnectedProfileWork: runtime.enqueueConnectedProfileWork },
+      }),
       state: STATE_ID,
     });
 
     expect(new URL(result.redirectUrl).searchParams.get("integration")).toBe("connected");
-    expect(adapter.validateOAuthStateBinding).toHaveBeenCalledOnce();
-    expect(adapter.exchangeOAuthCode).toHaveBeenCalledWith({
+    expect(runtime.validateOAuthStateBinding).toHaveBeenCalledOnce();
+    expect(runtime.exchangeOAuthCode).toHaveBeenCalledWith({
       code: "strava-code",
       state: STATE_ID,
     });
-    expect(adapter.resolveOAuthIdentity).toHaveBeenCalledOnce();
-    expect(adapter.enqueueConnectedProfileWork).toHaveBeenCalledWith(
+    expect(runtime.resolveOAuthIdentity).toHaveBeenCalledOnce();
+    expect(runtime.enqueueConnectedProfileWork).toHaveBeenCalledWith(
       expect.objectContaining({
-        integration: expect.objectContaining({ provider: "strava" }),
+        integration: expect.objectContaining({ id: INTEGRATION_ID }),
         profileId: PROFILE_ID,
         scope: "activity:read",
       }),
     );
-    expect(adapter.activateOAuthCredential).not.toHaveBeenCalled();
+    expect(runtime.activateOAuthCredential).not.toHaveBeenCalled();
     expect(deps.providerSyncRepositoryMock.enqueueJobInTransaction).not.toHaveBeenCalled();
   });
 

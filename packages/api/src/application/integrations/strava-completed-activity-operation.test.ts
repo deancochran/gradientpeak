@@ -11,7 +11,9 @@ vi.mock("../../infrastructure/repositories", () => ({
 }));
 
 import { createStravaCompletedActivityUploadDedupeKey } from "../../repositories/strava-repository";
-import { stravaProviderOperationAdapter } from "./strava-provider-operation-adapter";
+import { stravaProviderRuntime } from "./strava-provider-runtime";
+
+const completedActivityExport = stravaProviderRuntime.execution.server.completedActivityExport;
 
 const artifact = {
   artifactId: "33333333-3333-4333-8333-333333333333",
@@ -46,7 +48,7 @@ describe("Strava completed activity provider operation", () => {
   ] as const)("surfaces the durable %s upload state", async (status) => {
     repository.readCompletedActivityUploadState.mockResolvedValue({ jobId: "job", status });
     await expect(
-      stravaProviderOperationAdapter.readCompletedActivityUploadEligibility?.({
+      completedActivityExport.readCompletedActivityUploadEligibility({
         activityId: "activity",
         db: {} as never,
         profileId: "profile",
@@ -61,7 +63,7 @@ describe("Strava completed activity provider operation", () => {
   ] as const)("returns %s without enqueueing", async (targetStatus, expectedStatus) => {
     repository.readCompletedActivityUploadTarget.mockResolvedValue({ status: targetStatus });
     await expect(
-      stravaProviderOperationAdapter.sendCompletedActivity?.({
+      completedActivityExport.sendCompletedActivity({
         activityId: "activity",
         db: {} as never,
         profileId: "profile",
@@ -75,7 +77,7 @@ describe("Strava completed activity provider operation", () => {
       status: "activity_not_found",
     });
     await expect(
-      stravaProviderOperationAdapter.sendCompletedActivity?.({
+      completedActivityExport.sendCompletedActivity({
         activityId: "activity",
         db: {} as never,
         profileId: "other-profile",
@@ -98,7 +100,7 @@ describe("Strava completed activity provider operation", () => {
       status: "completed",
     });
     await expect(
-      stravaProviderOperationAdapter.sendCompletedActivity?.({
+      completedActivityExport.sendCompletedActivity({
         activityId,
         db: {} as never,
         profileId: "profile",

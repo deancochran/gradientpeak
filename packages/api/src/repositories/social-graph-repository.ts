@@ -1,6 +1,7 @@
 import { profiles } from "@repo/db";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { resolveProfileMediaUrl } from "../application/storage/profile-media-url";
 import type { getRequiredDb } from "../db";
 import { buildUuidInList, getSqlCount } from "../utils/sql";
 import { socialProfileListItemSchema } from "./social-user-search-repository";
@@ -87,7 +88,11 @@ export async function loadSocialGraph(
     }
   }
   return {
-    users: users.map((user) => ({ ...user, follow_status: statusMap.get(user.id) ?? null })),
+    users: users.map((user) => ({
+      ...user,
+      avatar_url: resolveProfileMediaUrl(user.avatar_url, user.id),
+      follow_status: statusMap.get(user.id) ?? null,
+    })),
     total,
   };
 }

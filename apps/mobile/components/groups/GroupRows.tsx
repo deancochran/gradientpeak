@@ -11,6 +11,7 @@ import type {
   MyGroupInvitation,
 } from "@/lib/groups";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 import { GroupMembershipRoleBadge } from "./GroupBadges";
 
 type ProfileLike = {
@@ -40,10 +41,11 @@ type GroupJoinRequestRowProps = {
 
 function ProfileAvatar({ profile }: { profile: ProfileLike }) {
   const displayName = profile.username?.trim() || "Athlete";
+  const avatarUri = profile.avatar_url ? getReachableSupabaseStorageUrl(profile.avatar_url) : null;
 
   return (
     <Avatar alt={displayName} className="h-10 w-10">
-      {profile.avatar_url ? <AvatarImage source={{ uri: profile.avatar_url }} /> : null}
+      {avatarUri ? <AvatarImage key={avatarUri} source={{ uri: avatarUri }} /> : null}
       <AvatarFallback>
         <Text className="text-sm font-semibold text-muted-foreground">
           {displayName.charAt(0).toUpperCase() || "A"}

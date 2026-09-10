@@ -255,8 +255,9 @@ describe("Strava bounded activity history worker", () => {
       expect.objectContaining({
         contentVisibility: "private",
         providerProvenance: expect.objectContaining({
-          provider: "strava",
+          connector: { connectorId: "strava", externalId: "123" },
           evidenceTier: "raw_samples",
+          source: { sourceId: "strava", externalId: "123" },
         }),
       }),
       expect.objectContaining({ stageProbableProviderDuplicates: true }),

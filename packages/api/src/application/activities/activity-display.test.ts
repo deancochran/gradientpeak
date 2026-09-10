@@ -11,7 +11,21 @@ import {
   COMMON_RELATIVE_LOAD_VERSION,
   commonLoadResultSchema,
 } from "@repo/core/load";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../../storage-service", () => ({
+  getApiStorageService: () => ({
+    storage: {
+      from: () => ({
+        getPublicUrl: (path: string) => ({
+          data: {
+            publicUrl: `https://storage.example.test/storage/v1/object/public/profile-avatars/${path}`,
+          },
+        }),
+      }),
+    },
+  }),
+}));
 
 import { toActivityCardEffortProfile, toActivityDisplayModel } from "./activity-display";
 
@@ -266,6 +280,20 @@ describe("activity display effort profile", () => {
       username: "alex-runner",
       avatarUrl: "https://cdn.example.com/profiles/alex.png",
     });
+  });
+
+  it("upgrades a legacy owner avatar path for historical activity cards", () => {
+    const display = toActivityDisplayModel({
+      activity: {
+        ...activitySource,
+        profile: { username: "alex-runner", avatar_url: "owner-1/123.jpg" },
+      },
+      viewerId: "owner-1",
+    });
+
+    expect(display.owner.avatarUrl).toBe(
+      "https://storage.example.test/storage/v1/object/public/profile-avatars/owner-1/123.jpg",
+    );
   });
 
   it("projects an explicit ordinal series and does not derive one from summary metrics", () => {

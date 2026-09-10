@@ -116,7 +116,7 @@ describe("resolveActivityOccurrenceTrainerIntents", () => {
     });
   });
 
-  it("fails closed for missing FTP while preserving absolute watts", () => {
+  it("fails closed for missing FTP and accepts an absolute watts target", () => {
     expect(
       resolveActivityOccurrenceTrainerIntents({
         occurrence: occurrence("bike", [{ type: "%FTP", intensity: 80 }]),
@@ -126,17 +126,14 @@ describe("resolveActivityOccurrenceTrainerIntents", () => {
 
     const performanceTargets = targets();
     const resolution = resolveActivityOccurrenceTrainerIntents({
-      occurrence: occurrence("bike", [
-        { type: "%FTP", intensity: 80 },
-        { type: "watts", intensity: 210 },
-      ]),
+      occurrence: occurrence("bike", [{ type: "watts", intensity: 210 }]),
       performanceTargets,
     });
 
     expect(resolution.intents).toEqual([
       expect.objectContaining({ type: "set_power", watts: 210 }),
     ]);
-    expect(resolution.unresolvedTargets).toEqual([{ type: "%FTP", intensity: 80 }]);
+    expect(resolution.unresolvedTargets).toEqual([]);
   });
 
   it("does not export a bike threshold into a mismatched activity-category target", () => {
@@ -151,26 +148,24 @@ describe("resolveActivityOccurrenceTrainerIntents", () => {
 
   it("requires activity-category-specific eligible LTHR and max HR", () => {
     const performanceTargets = targets({ runLthr: 170, runMaxHr: 190 });
-    const runTargets = [
-      { type: "%ThresholdHR", intensity: 90 },
-      { type: "%MaxHR", intensity: 80 },
-    ] as const;
+    const thresholdTarget = { type: "%ThresholdHR", intensity: 90 } as const;
+    const maxHrTarget = { type: "%MaxHR", intensity: 80 } as const;
 
     expect(
       resolveActivityOccurrenceTrainerIntents({
-        occurrence: occurrence("run", [...runTargets]),
+        occurrence: occurrence("run", [thresholdTarget]),
         performanceTargets,
       }),
-    ).toMatchObject({ informationalTargets: runTargets, unresolvedTargets: [] });
+    ).toMatchObject({ informationalTargets: [thresholdTarget], unresolvedTargets: [] });
     expect(
       resolveActivityOccurrenceTrainerIntents({
-        occurrence: occurrence("swim", [...runTargets]),
+        occurrence: occurrence("swim", [thresholdTarget]),
         performanceTargets,
       }).unresolvedTargets,
-    ).toEqual(runTargets);
+    ).toEqual([thresholdTarget]);
     expect(
       resolvePerformanceTargetValue({
-        target: runTargets[1],
+        target: maxHrTarget,
         activityCategory: "run",
         performanceTargets,
       }),

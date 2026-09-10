@@ -1,6 +1,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Text } from "@repo/ui/components/text";
 import { TouchableOpacity, View } from "react-native";
+import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 
 export type ProfileListRowProfile = {
   avatar_url: string | null;
@@ -16,6 +17,7 @@ export function ProfileListRow({
   profile: ProfileListRowProfile;
 }) {
   const displayName = profile.username || "Unknown user";
+  const avatarUri = profile.avatar_url ? getReachableSupabaseStorageUrl(profile.avatar_url) : null;
 
   return (
     <TouchableOpacity
@@ -23,7 +25,7 @@ export function ProfileListRow({
       onPress={() => onPress(profile.id)}
     >
       <Avatar alt={profile.username || "User"} className="h-12 w-12">
-        {profile.avatar_url ? <AvatarImage source={{ uri: profile.avatar_url }} /> : null}
+        {avatarUri ? <AvatarImage key={avatarUri} source={{ uri: avatarUri }} /> : null}
         <AvatarFallback>
           <Text className="text-lg">{profile.username?.charAt(0)?.toUpperCase() || "U"}</Text>
         </AvatarFallback>

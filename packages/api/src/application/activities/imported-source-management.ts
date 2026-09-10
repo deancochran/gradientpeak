@@ -1,4 +1,4 @@
-import type { PersistentIntegrationSourceId } from "@repo/core";
+import { persistentIntegrationSourceIdSchema } from "@repo/core";
 import { activities, activitySourceReferences, integrations } from "@repo/db";
 import { and, eq } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
@@ -7,7 +7,7 @@ import {
   listActivitySourceReferencesForActivity,
   lockActivitySourceResolution,
 } from "../../repositories/activity-source-reference-repository";
-import { getProviderOperationAdapter } from "../integrations/provider-operation-runtime";
+import { getProviderReviewedSourceMaterializationRuntime } from "../integrations/provider-runtime-registry";
 import { deleteCanonicalActivityWithProfileLockHeld } from "./activity-mutations";
 
 type Db = ReturnType<typeof getRequiredDb>;
@@ -162,13 +162,16 @@ export async function keepImportedSourceSeparateForProfile(input: {
       .limit(1)
       .for("update");
     if (!source) throw new ImportedSourceNotFoundError("Imported source is unavailable");
-    const adapter = getProviderOperationAdapter(source.provider as PersistentIntegrationSourceId);
-    if (!adapter?.enqueueReviewedActivityMaterialization) {
+    const parsedProvider = persistentIntegrationSourceIdSchema.safeParse(source.provider);
+    const runtime = parsedProvider.success
+      ? getProviderReviewedSourceMaterializationRuntime(parsedProvider.data)
+      : null;
+    if (!runtime) {
       throw new ImportedSourceResolutionError(
         "Keeping this provider activity separate is unavailable",
       );
     }
-    const job = await adapter.enqueueReviewedActivityMaterialization({
+    const job = await runtime.enqueueReviewedActivityMaterialization({
       db: input.db,
       integration: { generation: source.integrationGeneration, id: source.integrationId },
       profileId: input.profileId,

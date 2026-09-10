@@ -8,7 +8,7 @@ import {
   readOnboardingReadinessSnapshot,
 } from "../../repositories/onboarding-lifecycle-repository";
 import { lockProfileAdvisoryFence } from "../../repositories/profile-advisory-fence";
-import { getExecutableProviderOperationAdapter } from "../integrations/provider-operation-runtime";
+import { getExecutableProviderOnboardingRuntime } from "../integrations/provider-runtime-registry";
 import { deriveOnboardingProviderState } from "./readiness";
 
 type Db = ReturnType<typeof getRequiredDb>;
@@ -38,19 +38,19 @@ export async function retryOnboardingProviderProcessing(input: {
       throw new OnboardingProviderRecoveryConflictError("Anchored onboarding provider not found");
     }
 
-    const adapter = getExecutableProviderOperationAdapter(provider.provider);
-    if (!adapter) {
+    const runtime = getExecutableProviderOnboardingRuntime(provider.provider);
+    if (!runtime) {
       throw new OnboardingProviderRecoveryConflictError(
         "Provider processing is unavailable; return to account selection",
       );
     }
-    const state = deriveOnboardingProviderState(provider, snapshot.athleteState, () => adapter);
+    const state = deriveOnboardingProviderState(provider, snapshot.athleteState, () => runtime);
     if (["queued", "importing", "deriving"].includes(state)) {
       return { provider: input.provider, status: "processing" as const, queued: false };
     }
     if (state !== "recovery_required") throw new OnboardingProviderRecoveryConflictError();
 
-    adapter.admitOnboardingRetry({
+    runtime.admitOnboardingRetry({
       profileId: input.profileId,
       work: {
         active: provider.active,
@@ -64,7 +64,7 @@ export async function retryOnboardingProviderProcessing(input: {
         })),
       },
     });
-    const roles = adapter.identifyOnboardingWork({
+    const roles = runtime.identifyOnboardingWork({
       jobs: provider.jobs.map((job) => ({
         id: job.id,
         importRunId: job.import_run_id,

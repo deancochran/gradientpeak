@@ -1,6 +1,6 @@
 import {
-  isProviderActivityHistoryReconciliationTarget,
   type ProviderCapability,
+  providerCapabilityIsAuthorized,
   providerHasCapability,
 } from "@repo/core";
 import { isWahooIntegrationEnabled } from "../../lib/integrations/oauth-config";
@@ -19,15 +19,13 @@ type WahooIntegrationCandidate = {
 const targetPolicy = {
   activity_history: {
     capabilities: ["activity_history_read", "activity_file_download"],
-    scopes: ["workouts_read", "offline_data"],
   },
   profile_enrichment: {
     capabilities: ["profile_enrichment_read"],
-    scopes: ["user_read"],
   },
 } as const satisfies Record<
   WahooReconciliationTarget,
-  { capabilities: readonly ProviderCapability[]; scopes: readonly string[] }
+  { capabilities: readonly ProviderCapability[] }
 >;
 
 export type WahooReconciliationAdmission =
@@ -51,10 +49,6 @@ export type WahooReconciliationAdmission =
       target: WahooReconciliationTarget;
       trigger: WahooReconciliationTrigger;
     };
-
-function grantedScopes(scope: string | null | undefined): Set<string> {
-  return new Set((scope ?? "").split(/[\s,]+/).filter(Boolean));
-}
 
 /**
  * Sole admission decision for Wahoo history/profile reconciliation. Core owns the
@@ -83,15 +77,21 @@ export function admitWahooReconciliation(input: {
   }
 
   const policy = targetPolicy[input.target];
-  const staticallySupported =
-    input.target === "activity_history"
-      ? isProviderActivityHistoryReconciliationTarget("wahoo")
-      : policy.capabilities.every((capability) => providerHasCapability("wahoo", capability));
+  const staticallySupported = policy.capabilities.every((capability) =>
+    providerHasCapability("wahoo", capability),
+  );
   if (!staticallySupported) {
     return { ...base, admitted: false, reason: "static_target_unsupported" };
   }
-  const scopes = grantedScopes(input.scope);
-  if (!policy.scopes.every((scope) => scopes.has(scope))) {
+  if (
+    !policy.capabilities.every((capability) =>
+      providerCapabilityIsAuthorized({
+        provider: "wahoo",
+        capability,
+        grantedScope: input.scope,
+      }),
+    )
+  ) {
     return { ...base, admitted: false, reason: "missing_scope" };
   }
 

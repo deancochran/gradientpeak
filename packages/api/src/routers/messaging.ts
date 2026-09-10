@@ -16,6 +16,7 @@ import {
   getConversationMessagesForViewer,
   requireConversationParticipant,
 } from "../application/messaging/getConversationMessages";
+import { resolveProfileMediaUrl } from "../application/storage/profile-media-url";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
@@ -333,7 +334,10 @@ export const messagingRouter = createTRPCRouter({
                 id: row.peer_profile_id,
                 username: row.peer_profile_username,
                 full_name: row.peer_profile_full_name,
-                avatar_url: row.peer_profile_avatar_url,
+                avatar_url: resolveProfileMediaUrl(
+                  row.peer_profile_avatar_url,
+                  row.peer_profile_id,
+                ),
               }
             : null,
         })),

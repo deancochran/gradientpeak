@@ -159,6 +159,10 @@ export function getActivityPlanProviderProjection(input: {
 }): ActivityPlanProviderProjection {
   const findings: ProviderProjectionFinding[] = [];
   const anchors = input.anchors ?? {};
+  const providerLabel =
+    input.provider === "native"
+      ? "GradientPeak"
+      : getProviderCapabilityDefinition(input.provider).label;
 
   if (input.provider !== "native") {
     const definition = getProviderCapabilityDefinition(input.provider);
@@ -189,7 +193,7 @@ export function getActivityPlanProviderProjection(input: {
         disposition: supported ? "compatible" : "unsupported",
         message: supported
           ? `${occurrence.role} occurrence is preserved.`
-          : `${getProviderCapabilityDefinition("wahoo").label} cannot preserve ${occurrence.role} boundaries.`,
+          : `${providerLabel} cannot preserve ${occurrence.role} boundaries.`,
         path: [...basePath, "role"],
         reasonCode: supported ? "boundary_preserved" : "unsupported_boundary",
         semantic: "occurrence_role",
@@ -269,7 +273,7 @@ export function getActivityPlanProviderProjection(input: {
         message: !targetSupported
           ? `${target.type} targets are not supported for ${occurrence.activity_category} on ${input.provider}.`
           : isDroppedTarget
-            ? `${target.type} remains in GradientPeak but Wahoo displays only the selected preferred target.`
+            ? `${target.type} remains in GradientPeak but ${providerLabel} displays only the selected preferred target.`
             : missingRequiredAnchor
               ? getMissingAnchorMessage(target.type)
               : usesNativeDefault

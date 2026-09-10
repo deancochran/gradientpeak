@@ -304,7 +304,7 @@ export const SYSTEM_SWEET_SPOT_WORKOUT: RecordingServiceActivityPlan = {
         {
           name: "Sweet Spot",
           duration: Duration.minutes(10),
-          targets: [Target.ftp(90), Target.bpm(155)],
+          targets: [Target.ftp(90)],
           notes: "Steady effort in sweet spot zone",
         },
         {
@@ -341,7 +341,7 @@ export const SYSTEM_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
         {
           name: "Hard",
           duration: Duration.minutes(3),
-          targets: [Target.ftp(120), Target.bpm(180)],
+          targets: [Target.ftp(120)],
           notes: "Maximum sustainable effort",
         },
         {
@@ -376,7 +376,7 @@ export const SYSTEM_FTP_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
         {
           name: "Threshold",
           duration: Duration.minutes(8),
-          targets: [Target.ftp(95), Target.thresholdHR(100)],
+          targets: [Target.ftp(95)],
           notes: "At threshold - max sustainable for 1 hour",
         },
         {

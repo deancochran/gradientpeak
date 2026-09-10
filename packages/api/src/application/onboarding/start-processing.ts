@@ -9,7 +9,7 @@ import {
   setOnboardingStatus,
 } from "../../repositories/onboarding-lifecycle-repository";
 import { lockProfileAdvisoryFence } from "../../repositories/profile-advisory-fence";
-import { requireProviderOperationAdapter } from "../integrations/provider-operation-runtime";
+import { requireProviderOnboardingRuntime } from "../integrations/provider-runtime-registry";
 import { dispatchInitialOnboardingWork } from "./provider-dispatch";
 
 type Db = ReturnType<typeof getRequiredDb>;
@@ -35,10 +35,10 @@ export async function startOnboardingProcessing(input: { db: Db; profileId: stri
     const providers = await listExecutableOnboardingProviders(tx, input.profileId);
     try {
       await dispatchInitialOnboardingWork({
-        adapters: new Map(
+        runtimes: new Map(
           providers.map((provider) => [
             provider.provider,
-            requireProviderOperationAdapter(provider.provider),
+            requireProviderOnboardingRuntime(provider.provider),
           ]),
         ),
         db: input.db,
@@ -68,6 +68,6 @@ function isProviderWorkOwnershipConflict(error: unknown) {
 export class OnboardingWorkOwnershipConflictError extends Error {
   constructor() {
     super("Existing provider work must finish before onboarding processing can start");
-    this.name = "OnboardingWorkOwnershipConflictError";
+    this.name = OnboardingWorkOwnershipConflictError.name;
   }
 }

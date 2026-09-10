@@ -1,6 +1,7 @@
 import type { z } from "zod";
 
 import { isTargetTypePermittedForActivity } from "../targets/capabilities";
+import { getActivityTargetRole } from "../targets/objective-intensity";
 import type { ActivityPlanSegment } from "./structure-schema";
 
 type ActivityPlanStructureShape = {
@@ -29,7 +30,9 @@ export const activityPlanIssueCodes = {
   missingActivity: "ACTIVITY_PLAN_MISSING_ACTIVITY",
   payloadTooLarge: "ACTIVITY_PLAN_PAYLOAD_TOO_LARGE",
   consecutiveRests: "ACTIVITY_PLAN_CONSECUTIVE_RESTS",
+  duplicateTarget: "ACTIVITY_PLAN_DUPLICATE_TARGET",
   incompatibleTarget: "ACTIVITY_PLAN_INCOMPATIBLE_TARGET",
+  multipleObjectiveTargets: "ACTIVITY_PLAN_MULTIPLE_OBJECTIVE_TARGETS",
 } as const;
 
 export type ActivityPlanIssueCode =
@@ -111,7 +114,35 @@ export function getActivityPlanDocumentIssues(
         if (step.duration.type === "time") {
           explicitTimedSeconds += step.duration.seconds * interval.repetitions;
         }
+        const targetTypes = new Set<string>();
+        let objectiveTargetIndex: number | null = null;
         step.targets.forEach((target, targetIndex) => {
+          const targetPath = [...intervalPath, "steps", stepIndex, "targets", targetIndex, "type"];
+          if (targetTypes.has(target.type)) {
+            issues.push(
+              issue(
+                activityPlanIssueCodes.duplicateTarget,
+                targetPath,
+                `A step cannot contain more than one ${target.type} target.`,
+              ),
+            );
+          }
+          targetTypes.add(target.type);
+
+          if (getActivityTargetRole(target) === "objective") {
+            if (objectiveTargetIndex !== null) {
+              issues.push(
+                issue(
+                  activityPlanIssueCodes.multipleObjectiveTargets,
+                  targetPath,
+                  "A step can have only one objective target; cadence and RPE may be added as supporting targets.",
+                ),
+              );
+            } else {
+              objectiveTargetIndex = targetIndex;
+            }
+          }
+
           if (
             !isTargetTypePermittedForActivity({
               activityCategory: structure.activity_category,
@@ -121,7 +152,7 @@ export function getActivityPlanDocumentIssues(
             issues.push(
               issue(
                 activityPlanIssueCodes.incompatibleTarget,
-                [...intervalPath, "steps", stepIndex, "targets", targetIndex, "type"],
+                targetPath,
                 `Target type ${target.type} is not permitted for ${structure.activity_category}.`,
               ),
             );

@@ -12,6 +12,19 @@ import {
 } from "@repo/core/load";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../storage-service", () => ({
+  getApiStorageService: () => ({
+    storage: {
+      from: () => ({
+        getPublicUrl: (path: string) => ({
+          data: { publicUrl: `https://storage.example.test/profile-avatars/${path}` },
+        }),
+      }),
+    },
+  }),
+}));
+
 import type { ActivityQuantifiedDerivedSummary } from "../lib/activity-analysis/derived";
 import { listFeedActivityRows, mapFeedActivity } from "./feed-read-repository";
 
@@ -278,7 +291,7 @@ describe("feed activity projections", () => {
         has_route: false,
         content_visibility: "public",
         profile_username: "   ",
-        profile_avatar_url: "/legacy-avatar.png",
+        profile_avatar_url: `${VIEWER_ID}/legacy-avatar.png`,
       },
       {
         commentCounts: new Map(),
@@ -291,7 +304,7 @@ describe("feed activity projections", () => {
     expect(result.owner).toEqual({
       id: VIEWER_ID,
       username: null,
-      avatarUrl: null,
+      avatarUrl: `https://storage.example.test/profile-avatars/${VIEWER_ID}/legacy-avatar.png`,
     });
   });
 

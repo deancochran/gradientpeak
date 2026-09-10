@@ -25,6 +25,7 @@ import {
   getActiveGroupOwnerCount,
   setGroupMembershipActive,
 } from "../../application/groups/membershipMutations";
+import { resolveProfileMediaUrl } from "../../application/storage/profile-media-url";
 import { getRequiredDb } from "../../db";
 import { createTRPCRouter, protectedProcedure } from "../../trpc";
 import {
@@ -1243,7 +1244,7 @@ export const groupsRouter = createTRPCRouter({
         profile: {
           id: row.profile_id,
           username: row.profile_username,
-          avatar_url: row.profile_avatar_url,
+          avatar_url: resolveProfileMediaUrl(row.profile_avatar_url, row.profile_id),
         },
       })),
       input.limit,
@@ -1293,7 +1294,7 @@ export const groupsRouter = createTRPCRouter({
           invited_profile: {
             id: row.invited_profile_id,
             username: row.profile_username,
-            avatar_url: row.profile_avatar_url,
+            avatar_url: resolveProfileMediaUrl(row.profile_avatar_url, row.invited_profile_id),
           },
         })),
         input.limit,
@@ -1404,7 +1405,7 @@ export const groupsRouter = createTRPCRouter({
           profile: {
             id: row.profile_id,
             username: row.profile_username,
-            avatar_url: row.profile_avatar_url,
+            avatar_url: resolveProfileMediaUrl(row.profile_avatar_url, row.profile_id),
           },
         })),
         input.limit,

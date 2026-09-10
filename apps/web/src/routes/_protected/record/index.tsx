@@ -55,6 +55,10 @@ function RecordPage() {
     { enabled: Boolean(routeId), retry: false },
   );
   const selectedRoute = selectedRouteQuery.data;
+  const routeChoicesQuery = api.routes.list.useQuery(
+    { limit: 12, ownerScope: "own", sort_by: "newest" },
+    { enabled: !snapshot },
+  );
   const activityCategory =
     snapshot?.activity.activity_category ??
     selectedPlan?.activityCategory ??
@@ -133,7 +137,8 @@ function RecordPage() {
             Start an indoor activity
           </CardTitle>
           <CardDescription>
-            Keep this tab open. The recorder tracks time and plan progress, not GPS or sensor data.
+            Keep this tab open. The recorder tracks time and plan progress, not GPS. Supported
+            Bluetooth sensors can provide foreground-only live metrics.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -237,6 +242,72 @@ function RecordPage() {
               >
                 Remove activity plan
               </Button>
+            ) : null}
+          </div>
+
+          <div className="space-y-3 rounded-lg border p-4 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="font-medium">Route context</p>
+                <p className="text-muted-foreground">
+                  Attach a saved route for activity context. The browser recorder does not record
+                  GPS.
+                </p>
+              </div>
+              {routeId && !snapshot ? (
+                <Button
+                  className="px-0 text-destructive"
+                  variant="ghost"
+                  onClick={() =>
+                    void navigate({
+                      to: "/record",
+                      search: {
+                        activity_category: launcher.activity_category,
+                        gps: "off",
+                        ...(activityPlanId ? { activityPlanId } : {}),
+                        ...(eventId ? { eventId } : {}),
+                      },
+                      replace: true,
+                    })
+                  }
+                >
+                  Remove route
+                </Button>
+              ) : null}
+            </div>
+            {!snapshot && routeChoicesQuery.isLoading ? <p>Loading saved routes…</p> : null}
+            {!snapshot && routeChoicesQuery.isError ? (
+              <p role="alert" className="text-destructive">
+                Saved routes could not be loaded.
+              </p>
+            ) : null}
+            {!snapshot && routeChoicesQuery.data?.items.length ? (
+              <div className="flex flex-wrap gap-2">
+                {routeChoicesQuery.data.items.map((route) => (
+                  <Button
+                    key={route.id}
+                    variant={route.id === routeId ? "default" : "outline"}
+                    onClick={() =>
+                      void navigate({
+                        to: "/record",
+                        search: {
+                          activity_category: launcher.activity_category,
+                          gps: "off",
+                          ...(activityPlanId ? { activityPlanId } : {}),
+                          ...(eventId ? { eventId } : {}),
+                          routeId: route.id,
+                        },
+                        replace: true,
+                      })
+                    }
+                  >
+                    {route.name}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
+            {snapshot ? (
+              <p className="text-muted-foreground">Route locked after recording starts.</p>
             ) : null}
           </div>
 

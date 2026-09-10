@@ -153,7 +153,7 @@ export class RouteFixtureBuilder {
     private readonly identity: E2EExecutionIdentity,
   ) {}
 
-  async create(input: OwnedInput): Promise<FixtureRecord> {
+  async create(input: OwnedInput & { isPublic?: boolean }): Promise<FixtureRecord> {
     const label = input.label ?? "route";
     const id = this.identity.uuid(label);
     const name = input.name ?? this.identity.name(`Playwright ${label}`);
@@ -162,8 +162,15 @@ export class RouteFixtureBuilder {
       `insert into "activity_routes" (
          "id", "profile_id", "name", "description", "file_path", "storage_state",
          "total_distance", "total_ascent", "total_descent", "polyline", "is_public"
-       ) values ($1, $2, $3, 'Exact-ID browser fixture.', $4, 'ready', 10000, 120, 110, $5, false)`,
-      [id, actor.profileId, name, `e2e/${id}.gpx`, "_p~iF~ps|U_ulLnnqC_mqNvxq`@"],
+        ) values ($1, $2, $3, 'Exact-ID browser fixture.', $4, 'ready', 10000, 120, 110, $5, $6)`,
+      [
+        id,
+        actor.profileId,
+        name,
+        `e2e/${id}.gpx`,
+        "_p~iF~ps|U_ulLnnqC_mqNvxq`@",
+        input.isPublic ?? false,
+      ],
     );
     this.register(id, actor.profileId);
     return { id, name, url: `/routes/${id}` };

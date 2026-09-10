@@ -296,7 +296,10 @@ describe("submitImportedActivityArtifact", () => {
       expect.objectContaining({
         profileId: "11111111-1111-4111-8111-111111111111",
         requestedActivityId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-        providerProvenance: expect.objectContaining({ externalId: "123", provider: "wahoo" }),
+        providerProvenance: expect.objectContaining({
+          connector: { connectorId: "wahoo", externalId: "123" },
+          source: { sourceId: "wahoo", externalId: "123" },
+        }),
         elapsedMs: 3_600_000,
         activeMs: 3_550_000,
         movingMs: 3_500_000,

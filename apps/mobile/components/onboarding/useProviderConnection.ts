@@ -5,13 +5,12 @@ import * as WebBrowser from "expo-web-browser";
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { parseIntegrationOAuthCallback } from "@/lib/integration-oauth-callback";
+import { connectProductionMobileProvider } from "@/lib/integration-provider-actions";
 import type { OnboardingStatusModal } from "./types";
 
 function getMobileRedirectUri(): string {
   return Constants.expoConfig?.extra?.redirectUri ?? Linking.createURL("integrations");
 }
-
-type ConnectionHandler = (input: { redirectUri: string }) => Promise<{ url: string }>;
 
 export function useProviderConnection(input: {
   onConnected: () => unknown;
@@ -21,18 +20,17 @@ export function useProviderConnection(input: {
     null,
   );
   const getAuthUrlMutation = api.integrations.getAuthUrl.useMutation();
-  const handlers = {
-    wahoo: ({ redirectUri }: { redirectUri: string }) =>
-      getAuthUrlMutation.mutateAsync({ provider: "wahoo", redirectUri }),
-    strava: ({ redirectUri }: { redirectUri: string }) =>
-      getAuthUrlMutation.mutateAsync({ provider: "strava", redirectUri }),
-  } satisfies Record<ExecutableIntegrationProviderId, ConnectionHandler>;
 
   const connect = async (provider: ExecutableIntegrationProviderId) => {
     setPendingProvider(provider);
     const redirectUri = getMobileRedirectUri();
     try {
-      const { url } = await handlers[provider]({ redirectUri });
+      let url = "";
+      await connectProductionMobileProvider(provider, {
+        connectOAuth: async (connectorId) => {
+          ({ url } = await getAuthUrlMutation.mutateAsync({ provider: connectorId, redirectUri }));
+        },
+      });
       const result = await WebBrowser.openAuthSessionAsync(url, redirectUri);
       if (result.type === "success") {
         const outcome = parseIntegrationOAuthCallback(result.url);

@@ -103,6 +103,49 @@ describe("activity plan structure", () => {
     }
   });
 
+  it("permits one objective target with supporting targets, but rejects conflicting objectives and duplicates", () => {
+    const validStructure = {
+      version: 3 as const,
+      activity_category: "bike" as const,
+      segments: [activitySegment({ id: 1, activity_category: "bike", intervalId: 2, stepId: 3 })],
+    };
+    const step = validStructure.segments[0]?.intervals[0]?.steps[0];
+    if (!step) throw new Error("Fixture requires a step.");
+
+    step.targets = [
+      { type: "%FTP", intensity: 80 },
+      { type: "cadence", intensity: 90 },
+      { type: "RPE", intensity: 6 },
+    ];
+    expect(activityPlanStructureSchema.safeParse(validStructure).success).toBe(true);
+
+    const conflictingObjectives = structuredClone(validStructure);
+    conflictingObjectives.segments[0]!.intervals[0]!.steps[0]!.targets = [
+      { type: "%FTP", intensity: 80 },
+      { type: "%ThresholdHR", intensity: 90 },
+    ];
+    const conflictingResult = activityPlanStructureSchema.safeParse(conflictingObjectives);
+    expect(conflictingResult.success).toBe(false);
+    if (!conflictingResult.success) {
+      expect(conflictingResult.error.issues.map((issue) => issue.message).join(" ")).toContain(
+        "ACTIVITY_PLAN_MULTIPLE_OBJECTIVE_TARGETS",
+      );
+    }
+
+    const duplicateTarget = structuredClone(validStructure);
+    duplicateTarget.segments[0]!.intervals[0]!.steps[0]!.targets = [
+      { type: "%FTP", intensity: 80 },
+      { type: "%FTP", intensity: 85 },
+    ];
+    const duplicateResult = activityPlanStructureSchema.safeParse(duplicateTarget);
+    expect(duplicateResult.success).toBe(false);
+    if (!duplicateResult.success) {
+      expect(duplicateResult.error.issues.map((issue) => issue.message).join(" ")).toContain(
+        "ACTIVITY_PLAN_DUPLICATE_TARGET",
+      );
+    }
+  });
+
   it("rejects top-level transitions, segment categories, consecutive rests, and missing activity", () => {
     const result = activityPlanStructureSchema.safeParse({
       version: 3,

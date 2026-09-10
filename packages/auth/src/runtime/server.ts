@@ -340,7 +340,7 @@ export function getGradientPeakAuth() {
     const developmentTrustedOrigins = resolveDevelopmentAuthTrustedOrigins(
       process.env["NODE_ENV"],
       process.env["AUTH_TRUSTED_ORIGINS"],
-      ["http://100.119.109.24:3000"],
+      ["http://100.119.109.24:3000", "https://tokyo.goose-noodlefish.ts.net"],
     );
     authSingleton = createGradientPeakAuth({
       appUrl: bootstrapEnv.appUrl,

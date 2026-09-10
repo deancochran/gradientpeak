@@ -11,20 +11,10 @@ import {
   type IntegrationsRepositories,
   type OAuthIntegrationExpectation,
 } from "../../repositories/integrations-repository";
-import type { ProviderOperationAdapter } from "./provider-operation-registry";
-import { getProviderOperationAdapter } from "./provider-operation-runtime";
-
-type OAuthCallbackAdapter = Pick<
-  ProviderOperationAdapter<string>,
-  | "activateOAuthCredential"
-  | "classifyOAuthFailure"
-  | "enqueueConnectedProfileWork"
-  | "exchangeOAuthCode"
-  | "isOAuthConfigured"
-  | "provider"
-  | "resolveOAuthIdentity"
-  | "validateOAuthStateBinding"
->;
+import {
+  getProviderOAuthCallbackRuntime,
+  type ProviderOAuthCallbackRuntime,
+} from "./provider-runtime-registry";
 
 export type HandleOAuthCallbackInput = {
   db?: DrizzleDbClient;
@@ -37,7 +27,9 @@ export type HandleOAuthCallbackInput = {
     transaction: DrizzleTransactionClient,
     input: unknown,
   ) => Promise<{ id: string; status: string }>;
-  resolveProviderAdapter?: (provider: PersistentIntegrationSourceId) => OAuthCallbackAdapter | null;
+  resolveProviderRuntime?: (
+    provider: PersistentIntegrationSourceId,
+  ) => ProviderOAuthCallbackRuntime | null;
   runInTransaction: <T>(
     operation: (transaction: DrizzleTransactionClient) => Promise<T>,
   ) => Promise<T>;
@@ -62,7 +54,7 @@ export async function handleOAuthCallback({
   provider: rawProvider,
   repositories,
   enqueueProviderJobInTransaction,
-  resolveProviderAdapter = getProviderOperationAdapter,
+  resolveProviderRuntime = getProviderOAuthCallbackRuntime,
   runInTransaction,
   state,
 }: HandleOAuthCallbackInput): Promise<HandleOAuthCallbackResult> {
@@ -74,17 +66,19 @@ export async function handleOAuthCallback({
     };
   }
   const provider = parsedProvider.data;
-  const providerAdapter = resolveProviderAdapter(provider);
+  const providerRuntime = resolveProviderRuntime(provider);
   if (
-    !providerAdapter ||
-    providerAdapter.provider !== provider ||
-    !providerAdapter.isOAuthConfigured()
+    !providerRuntime ||
+    providerRuntime.provider !== provider ||
+    !providerRuntime.connection.isOAuthConfigured()
   ) {
     return {
       redirectUrl: buildRedirectUrl(fallbackRedirect, { error: "invalid_provider" }),
       status: 302,
     };
   }
+  const providerConnection = providerRuntime.connection;
+  const connectedProfile = providerRuntime.connectedProfile;
   if (!state) {
     return {
       redirectUrl: buildRedirectUrl(fallbackRedirect, { error: "missing_state" }),
@@ -112,7 +106,7 @@ export async function handleOAuthCallback({
   let bindingValid = false;
   if (storedState.callback_uri && storedState.requested_scope && storedState.verifier_hash) {
     try {
-      bindingValid = providerAdapter.validateOAuthStateBinding({
+      bindingValid = providerConnection.validateOAuthStateBinding({
         binding: {
           callbackUri: storedState.callback_uri,
           requestedScope: storedState.requested_scope,
@@ -193,14 +187,14 @@ export async function handleOAuthCallback({
     };
   }
 
-  let tokens: Awaited<ReturnType<OAuthCallbackAdapter["exchangeOAuthCode"]>>;
+  let tokens: Awaited<ReturnType<typeof providerConnection.exchangeOAuthCode>>;
   let externalId: string;
   let requiresActivation: boolean;
   try {
-    tokens = await providerAdapter.exchangeOAuthCode({ code, state });
-    ({ externalId, requiresActivation } = await providerAdapter.resolveOAuthIdentity(tokens));
+    tokens = await providerConnection.exchangeOAuthCode({ code, state });
+    ({ externalId, requiresActivation } = await providerConnection.resolveOAuthIdentity(tokens));
   } catch (caughtError) {
-    const failure = providerAdapter.classifyOAuthFailure(caughtError);
+    const failure = providerConnection.classifyOAuthFailure(caughtError);
     logger.warn(
       failure.kind === "identity"
         ? "OAuth callback provider identity validation failed"
@@ -248,12 +242,11 @@ export async function handleOAuthCallback({
         if (storedIntegration.lifecycle_status !== "active") {
           throw new IntegrationLifecycleChangedError();
         }
-        await providerAdapter.enqueueConnectedProfileWork({
+        await connectedProfile.enqueueConnectedProfileWork({
           db: db ?? ({} as DrizzleDbClient),
           integration: {
             id: storedIntegration.id,
             generation: storedIntegration.generation,
-            provider,
             lifecycleStatus: "active",
           },
           profileId: storedState.profile_id,
@@ -296,7 +289,7 @@ export async function handleOAuthCallback({
   }
   if (requiresActivation) {
     try {
-      await providerAdapter.activateOAuthCredential(tokens.access_token);
+      await providerConnection.activateOAuthCredential(tokens.access_token);
     } catch (caughtError) {
       logger.warn("Provider OAuth credential activation deferred", {
         provider,

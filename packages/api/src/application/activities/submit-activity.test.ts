@@ -11,6 +11,7 @@ import {
   activityEfforts,
   activitySegments,
   activitySourceReferences,
+  integrations,
 } from "@repo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { getRequiredDb } from "../../db";
@@ -315,6 +316,7 @@ function createDb(
     athlete_state_input_version: null,
     athlete_state_computed_at: null,
   },
+  integrationExists = true,
 ) {
   const committed: unknown[] = [];
   const databaseStatements: string[] = [];
@@ -367,11 +369,15 @@ function createDb(
                           "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                         sourceRevision: (segment as { segment_revision: number }).segment_revision,
                       }))
-                    : table === activities && activityRow
-                      ? [activityRow]
-                      : table === activitySegments
-                        ? segmentRows
-                        : [],
+                    : table === integrations
+                      ? integrationExists
+                        ? [{ id: "integration-1" }]
+                        : []
+                      : table === activities && activityRow
+                        ? [activityRow]
+                        : table === activitySegments
+                          ? segmentRows
+                          : [],
               ),
             ),
           };
@@ -481,8 +487,8 @@ function createInput(): ActivitySubmission {
     mapBounds: null,
     polyline: "encoded",
     providerProvenance: {
-      provider: "wahoo",
-      externalId: "external-1",
+      connector: { connectorId: "wahoo", externalId: "external-1" },
+      source: { sourceId: "wahoo", externalId: "external-1" },
       integrationId: "integration-1",
       providerUpdatedAt: null,
     },
@@ -490,7 +496,84 @@ function createInput(): ActivitySubmission {
   };
 }
 
+function compileTimeLegacyProvenanceIsRejected() {
+  const input: ActivitySubmission = {
+    ...createInput(),
+    providerProvenance: {
+      // @ts-expect-error Connector and source identities replace the ambiguous legacy provider key.
+      provider: "wahoo",
+      externalId: "external-1",
+      integrationId: "integration-1",
+      providerUpdatedAt: null,
+    },
+  };
+  return input;
+}
+
 describe("submitActivity", () => {
+  it("maps direct connector and source identities to legacy persistence columns", async () => {
+    const { db, insertedValues } = createDb(undefined, null);
+    await submitActivity(db, createInput());
+
+    const sourceReference = insertedValues.find(
+      ({ table }) => table === activitySourceReferences,
+    )?.values;
+    expect(sourceReference).toMatchObject({
+      provider: "wahoo",
+      provider_external_id: "external-1",
+      origin_provider: "wahoo",
+      origin_external_id: "external-1",
+    });
+    expect(compileTimeLegacyProvenanceIsRejected).toBeTypeOf("function");
+  });
+
+  it("maps aggregated origin separately from its connector identity", async () => {
+    const { db, insertedValues } = createDb(undefined, null);
+    await submitActivity(db, {
+      ...createInput(),
+      providerProvenance: {
+        connector: { connectorId: "strava", externalId: "connector-activity-7" },
+        source: { sourceId: "aggregator:partner", externalId: "origin-activity-9" },
+        integrationId: "integration-2",
+        providerUpdatedAt: null,
+      },
+    });
+
+    const sourceReference = insertedValues.find(
+      ({ table }) => table === activitySourceReferences,
+    )?.values;
+    expect(sourceReference).toMatchObject({
+      provider: "strava",
+      provider_external_id: "connector-activity-7",
+      origin_provider: "aggregator:partner",
+      origin_external_id: "origin-activity-9",
+    });
+  });
+
+  it("rejects malformed provider provenance at the persistence boundary", async () => {
+    const { db, committed } = createDb(undefined, null);
+    const providerProvenance = createInput().providerProvenance;
+    if (!providerProvenance) throw new Error("Expected provider provenance fixture");
+    await expect(
+      submitActivity(db, {
+        ...createInput(),
+        providerProvenance: {
+          ...providerProvenance,
+          source: { sourceId: "", externalId: "origin-activity-9" },
+        },
+      }),
+    ).rejects.toThrow();
+    expect(committed).toEqual([]);
+  });
+
+  it("rejects provenance whose connector does not match the referenced integration", async () => {
+    const { db, committed } = createDb(undefined, null, false);
+    await expect(submitActivity(db, createInput())).rejects.toThrow(
+      "integration_connector_mismatch",
+    );
+    expect(committed).toEqual([]);
+  });
+
   it("captures the published target authority on a newly completed activity", async () => {
     const { db, insertedValues, transaction } = createDb(undefined, null);
 
@@ -652,8 +735,8 @@ describe("submitActivity", () => {
       requestedActivityId: "activity-1",
       name: "Lower quality provider summary",
       providerProvenance: {
-        provider: "strava",
-        externalId: "strava-summary-1",
+        connector: { connectorId: "strava", externalId: "strava-summary-1" },
+        source: { sourceId: "strava", externalId: "strava-summary-1" },
         integrationId: "integration-2",
         providerUpdatedAt: "2026-01-02T00:00:00.000Z",
         evidenceTier: "provider_summary",

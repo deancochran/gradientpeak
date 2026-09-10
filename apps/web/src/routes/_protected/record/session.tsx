@@ -21,6 +21,7 @@ import { Input } from "@repo/ui/components/input";
 import { Textarea } from "@repo/ui/components/textarea";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
+  Bluetooth,
   Flag,
   Pause,
   Play,
@@ -59,6 +60,7 @@ export function RecordSessionPage() {
   const [perceivedEffort, setPerceivedEffort] = useState("");
   const [distanceMeters, setDistanceMeters] = useState("");
   const [calories, setCalories] = useState("");
+  const [targetPower, setTargetPower] = useState("150");
   const [ingestionId, setIngestionId] = useState<string | null>(null);
   const profileQuery = api.profiles.get.useQuery();
   const ingestionStatusQuery = api.activityFiles.getIngestionStatus.useQuery(
@@ -267,6 +269,119 @@ export function RecordSessionPage() {
               <TimeStat label="Current step" seconds={planStatus?.currentStepElapsedSeconds ?? 0} />
             ) : null}
           </div>
+
+          <section
+            className="space-y-3 rounded-xl border p-4 text-left"
+            aria-labelledby="sensor-heading"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 id="sensor-heading" className="flex items-center gap-2 font-semibold">
+                  <Bluetooth className="h-4 w-4" /> Bluetooth sensors
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  {sensorStatusLabel(recording.sensors.state)} Foreground use only; this tab
+                  disconnects sensors when hidden.
+                </p>
+              </div>
+              {recording.sensors.state.supported ? (
+                recording.sensors.state.status === "connected" ? (
+                  <Button variant="outline" onClick={recording.sensors.disconnect}>
+                    Disconnect
+                  </Button>
+                ) : (
+                  <Button
+                    disabled={
+                      recording.sensors.state.status === "connecting" || lifecycle === "finished"
+                    }
+                    onClick={() => void recording.sensors.connect()}
+                  >
+                    {recording.sensors.state.status === "connecting"
+                      ? "Connecting…"
+                      : "Choose compatible device"}
+                  </Button>
+                )
+              ) : null}
+            </div>
+            {recording.sensors.state.status === "connected" ? (
+              <>
+                <fieldset className="m-0 grid grid-cols-2 gap-2 border-0 p-0 text-sm sm:grid-cols-3">
+                  <legend className="sr-only">Live sensor metrics</legend>
+                  <Metric
+                    label="Heart rate"
+                    value={recording.sensors.state.metrics.heartRateBpm}
+                    unit="bpm"
+                  />
+                  <Metric
+                    label="Cadence"
+                    value={recording.sensors.state.metrics.cadenceRpm}
+                    unit="rpm"
+                  />
+                  <Metric
+                    label="Power"
+                    value={recording.sensors.state.metrics.powerWatts}
+                    unit="W"
+                  />
+                  <Metric
+                    label="Speed"
+                    value={recording.sensors.state.metrics.speedKph}
+                    unit="km/h"
+                  />
+                  <Metric
+                    label="Distance"
+                    value={recording.sensors.state.metrics.distanceMeters}
+                    unit="m"
+                  />
+                  <Metric
+                    label="Calories"
+                    value={recording.sensors.state.metrics.calories}
+                    unit="kcal"
+                  />
+                </fieldset>
+                {recording.sensors.state.controlEligible ? (
+                  <div className="flex flex-wrap items-end gap-3 rounded-lg bg-muted/30 p-3">
+                    <p className="basis-full text-sm font-medium">Trainer control</p>
+                    {!recording.sensors.state.controlGranted ? (
+                      <Button
+                        variant="outline"
+                        onClick={() => void recording.sensors.requestControl()}
+                      >
+                        Enable trainer control
+                      </Button>
+                    ) : recording.sensors.state.targetPowerSupported ? (
+                      <>
+                        <label className="grid gap-1 text-sm" htmlFor="trainer-target-power">
+                          <span>Target power (W)</span>
+                          <Input
+                            id="trainer-target-power"
+                            min={0}
+                            type="number"
+                            value={targetPower}
+                            onChange={(event) => setTargetPower(event.target.value)}
+                          />
+                        </label>
+                        <Button
+                          disabled={!targetPower}
+                          onClick={() => void recording.sensors.setTargetPower(Number(targetPower))}
+                        >
+                          Set power
+                        </Button>
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        This trainer does not advertise FTMS target-power support.
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+            {recording.sensors.state.error ? (
+              <p className="text-sm text-destructive" role="alert">
+                {recording.sensors.state.error}
+              </p>
+            ) : null}
+          </section>
 
           {planSnapshot && planStatus ? (
             <section className="space-y-4 rounded-xl border p-4 text-left">
@@ -714,6 +829,25 @@ function TimeStat({ label, seconds }: { label: string; seconds: number }) {
       <p className="font-mono text-3xl font-semibold tabular-nums">{formatTimer(seconds)}</p>
     </div>
   );
+}
+
+function Metric({ label, value, unit }: { label: string; value: number | null; unit: string }) {
+  return (
+    <p className="rounded border p-2">
+      <span className="text-muted-foreground">{label}: </span>
+      <span className="font-medium">{value === null ? "—" : `${Math.round(value)} ${unit}`}</span>
+    </p>
+  );
+}
+
+function sensorStatusLabel(
+  state: ReturnType<typeof useTimerOnlyRecording>["sensors"]["state"],
+): string {
+  if (!state.supported) return "Web Bluetooth is unavailable in this browser.";
+  if (state.status === "connected") return `Connected to ${state.deviceName ?? "sensor"}.`;
+  if (state.status === "connecting") return "Choose a nearby compatible device.";
+  if (state.status === "error") return "Sensor connection failed.";
+  return "Choose an FTMS trainer, heart-rate monitor, or cycling-power sensor.";
 }
 
 function compileOccurrenceCount(structure: unknown): number {

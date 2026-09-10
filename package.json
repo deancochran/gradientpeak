@@ -5,6 +5,7 @@
     "kill-port": "^2.0.1",
     "knip": "^6.32.2",
     "lefthook": "^2.1.10",
+    "tsx": "^4.23.12",
     "turbo": "^2.10.11",
     "typescript": "6.0.3",
     "vitest": "^4.1.11"
@@ -16,6 +17,8 @@
   "private": true,
   "scripts": {
     "build": "turbo run build",
+    "catalog:export": "pnpm --filter web catalog:export",
+    "catalog:measure": "pnpm --filter web catalog:measure",
     "audit:forms": "node tooling/forms/audit-forms.mjs",
     "check": "biome check apps packages tooling tests docs .github README.md CONTRIBUTING.md package.json pnpm-workspace.yaml turbo.json biome.json && pnpm check:architecture && pnpm check:guidance && pnpm check:test-structure && pnpm check:current-contracts",
     "check:ci": "biome ci apps packages tooling tests docs .github README.md CONTRIBUTING.md package.json pnpm-workspace.yaml turbo.json biome.json && pnpm check:architecture && pnpm check:guidance && pnpm check:test-structure && pnpm check:current-contracts",

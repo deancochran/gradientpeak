@@ -56,6 +56,7 @@ export function createWahooSyncWorkerId(prefix: string): string {
 
 export const wahooSyncTelemetry: WahooSyncTelemetry = {
   recordExecution(telemetry) {
+    if (telemetry.processed === 0) return;
     const write = telemetry.deadLettered > 0 ? logger.warn : logger.info;
     write("Provider sync drain completed", telemetry);
   },

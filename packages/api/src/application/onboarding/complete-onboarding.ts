@@ -7,7 +7,7 @@ import {
   OnboardingStatusConflictError,
 } from "../../repositories/onboarding-lifecycle-repository";
 import { batchInsertProfileMetrics, prepareProfileMetrics } from "../../utils/onboarding-helpers";
-import { readConfiguredProviderSetupEvidence } from "../integrations/provider-operation-runtime";
+import { readConfiguredProviderSetupEvidence } from "../integrations/provider-runtime-registry";
 import {
   OnboardingProfileNotFoundError,
   persistOnboardingProfile,

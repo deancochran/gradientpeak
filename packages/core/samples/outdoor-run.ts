@@ -207,7 +207,7 @@ export const SYSTEM_TEMPO_RUN: RecordingServiceActivityPlan = {
     .step({
       name: "Tempo",
       duration: Duration.minutes(20),
-      targets: [Target.thresholdHR(85), Target.bpm(165)],
+      targets: [Target.thresholdHR(85)],
       notes: "Comfortably hard tempo pace",
     })
     .cooldown({
@@ -266,7 +266,7 @@ export const SYSTEM_LONG_EASY_RUN: RecordingServiceActivityPlan = {
     .step({
       name: "Easy Long Run",
       duration: Duration.km(15),
-      targets: [Target.thresholdHR(70), Target.bpm(145)],
+      targets: [Target.thresholdHR(70)],
       notes: "Maintain steady aerobic pace",
       intervalName: "Main Set",
     })
@@ -291,13 +291,13 @@ export const SYSTEM_MARATHON_PACE_LONG_RUN: RecordingServiceActivityPlan = {
     .step({
       name: "Aerobic Settling",
       duration: Duration.minutes(40),
-      targets: [Target.thresholdHR(70), Target.bpm(148)],
+      targets: [Target.thresholdHR(70)],
       notes: "Stay smooth and controlled before race-pace work begins.",
     })
     .step({
       name: "Marathon Pace",
       duration: Duration.minutes(20),
-      targets: [Target.thresholdHR(82), Target.bpm(158)],
+      targets: [Target.thresholdHR(82)],
       notes: "Controlled race pace with strong form and even effort.",
     })
     .cooldown({

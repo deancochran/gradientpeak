@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { providerCapabilityIsAuthorized } from "@repo/core";
 import { MAX_ACTIVITY_FILE_SIZE_BYTES } from "@repo/core/activity-files";
 import type { ActivityArtifactStorage } from "../../application/activity-file-ingestion/artifact-storage";
 import type { getRequiredDb } from "../../db";
@@ -58,10 +59,6 @@ function parsePayload(value: unknown): StravaCompletedActivityUploadPayload | nu
       : null;
   }
   return "uploadId" in payload ? null : (payload as StravaCompletedActivityUploadPayload);
-}
-
-function hasWriteScope(scope: string | null | undefined): boolean {
-  return new Set((scope ?? "").split(/[\s,]+/).filter(Boolean)).has("activity:write");
 }
 
 function nextAttemptAt(now: Date, attempt: number, minimumMs = 5_000): string {
@@ -147,7 +144,11 @@ export class StravaCompletedActivityUploadJobService {
       !integration ||
       integration.id !== job.integrationId ||
       integration.integrationGeneration !== job.integrationGeneration ||
-      !hasWriteScope(integration.scope)
+      !providerCapabilityIsAuthorized({
+        provider: "strava",
+        capability: "completed_activity_export",
+        grantedScope: integration.scope,
+      })
     ) {
       return this.deps.repository.failJob({
         expectedIntegrationGeneration: job.integrationGeneration,

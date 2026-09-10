@@ -1,3 +1,4 @@
+import { providerActionIsAuthorized, wahooProviderManifest } from "@repo/core";
 import { activityImportRuns, type DrizzleDbClient } from "@repo/db";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { createWahooSyncRepository } from "../../infrastructure/repositories";
@@ -27,11 +28,11 @@ import type { WahooSyncJobStatus } from "../../repositories/wahoo-sync-repositor
 import { WahooProfileSetupService } from "../wahoo-profile-setup-service";
 import {
   type NormalizedProviderOAuthTokenResponse,
-  type ProviderIntegrationOperationContext,
-  type ProviderOperationAdapter,
-  ProviderOperationUnavailableError,
+  type OAuthServerProviderRuntime,
+  type ProviderIntegrationRuntimeContext,
   type ProviderOverviewEvidence,
-} from "./provider-operation-registry";
+  ProviderRuntimeUnavailableError,
+} from "./provider-runtime";
 import { enqueueWahooActivityHistoryReconcile, syncIntegrationNow } from "./syncNowUseCase";
 import { admitWahooReconciliation } from "./wahoo-reconciliation-admission";
 
@@ -92,7 +93,7 @@ function isWahooSyncJobResult(value: {
 
 async function readOverview(
   input:
-    | ProviderIntegrationOperationContext<"wahoo">
+    | ProviderIntegrationRuntimeContext
     | { db: DrizzleDbClient; profileId: string; integration: null; scope: null },
 ): Promise<ProviderOverviewEvidence> {
   if (!input.integration) {
@@ -197,7 +198,7 @@ async function readOverview(
   };
 }
 
-function integrationCandidate(input: ProviderIntegrationOperationContext<string>) {
+function integrationCandidate(input: ProviderIntegrationRuntimeContext) {
   return {
     generation: input.integration.generation,
     id: input.integration.id,
@@ -229,150 +230,161 @@ function normalizeOAuthTokenResponse(
   };
 }
 
-export const wahooProviderOperationAdapter: ProviderOperationAdapter<"wahoo"> = {
+export const wahooProviderRuntime: OAuthServerProviderRuntime<typeof wahooProviderManifest> = {
   provider: "wahoo",
-  isConfigured: isWahooIntegrationEnabled,
-  isOAuthConfigured: isWahooOAuthConfigured,
-  createOAuthAuthorization: ({ returnUri, state }) => {
-    const config = requireWahooOAuthConfig();
-    const callbackUrl = getOAuthCallbackUrl("wahoo");
-    return {
-      binding: createOAuthStateBinding({ config, provider: "wahoo", state }),
-      url: buildAuthorizationUrl(state, callbackUrl, returnUri),
-    };
-  },
-  validateOAuthStateBinding: ({ binding, state }) => {
-    const config = requireWahooOAuthConfig();
-    const expected = createOAuthStateBinding({ config, provider: "wahoo", state });
-    return (
-      binding.callbackUri === expected.callbackUri &&
-      binding.requestedScope === expected.requestedScope &&
-      binding.verifierHash === expected.verifierHash
-    );
-  },
-  exchangeOAuthCode: async ({ code, state }) =>
-    normalizeOAuthTokenResponse(await exchangeWahooOAuthCode(code, state)),
-  resolveOAuthIdentity: (tokens) => resolveWahooOAuthIdentity(tokens),
-  activateOAuthCredential: async (accessToken) => {
-    const { activateWahooAccessToken } = await import("../../lib/integrations/wahoo/client");
-    await activateWahooAccessToken(accessToken);
-  },
-  classifyOAuthFailure: classifyWahooOAuthFailure,
-  readSetupEvidence: ({ db, profileId }) =>
-    new WahooProfileSetupService({ db }).getSetupData(profileId),
-  readOverviewEvidence: readOverview,
-  syncNow: ({ db, profileId }) => syncIntegrationNow({ db, profileId, provider: "wahoo" }),
-  refreshSetupEvidence: ({ db, profileId }) =>
-    new WahooProfileSetupService({ db }).refreshSetupData(profileId, "wahoo"),
-  disconnect: async ({ db, profileId }) => {
-    await createWahooSyncRepository({ db }).requestProviderDisconnect({
-      profileId,
-      provider: "wahoo",
-    });
-  },
-  enqueueConnectedProfileWork: async (input) => {
-    const admission = admitWahooReconciliation({
-      integration: integrationCandidate(input),
-      scope: input.scope,
-      target: "profile_enrichment",
-      trigger: "connect",
-    });
-    if (!admission.admitted) throw new ProviderOperationUnavailableError("wahoo");
-    const repository = createWahooSyncRepository({ db: input.db });
-    const enqueueJob = input.enqueueJob;
-    if (enqueueJob) {
-      repository.enqueueJobInTransaction = async (_transaction, job) => {
-        const queuedJob = await enqueueJob(job);
-        if (!isWahooSyncJobResult(queuedJob)) {
-          throw new ProviderOperationUnavailableError("wahoo");
-        }
-        return queuedJob;
+  manifest: wahooProviderManifest,
+  connection: {
+    kind: "oauth2",
+    provider: "wahoo",
+    isOAuthConfigured: isWahooOAuthConfigured,
+    createOAuthAuthorization: ({ returnUri, state }) => {
+      const config = requireWahooOAuthConfig();
+      const callbackUrl = getOAuthCallbackUrl("wahoo");
+      return {
+        binding: createOAuthStateBinding({ config, provider: "wahoo", state }),
+        url: buildAuthorizationUrl(state, callbackUrl, returnUri),
       };
-    }
-    await enqueueWahooProfileEnrichment({
-      admission,
-      providerSyncRepository: repository,
-      transaction: input.transaction,
-    });
+    },
+    validateOAuthStateBinding: ({ binding, state }) => {
+      const config = requireWahooOAuthConfig();
+      const expected = createOAuthStateBinding({ config, provider: "wahoo", state });
+      return (
+        binding.callbackUri === expected.callbackUri &&
+        binding.requestedScope === expected.requestedScope &&
+        binding.verifierHash === expected.verifierHash
+      );
+    },
+    exchangeOAuthCode: async ({ code, state }) =>
+      normalizeOAuthTokenResponse(await exchangeWahooOAuthCode(code, state)),
+    resolveOAuthIdentity: (tokens) => resolveWahooOAuthIdentity(tokens),
+    activateOAuthCredential: async (accessToken) => {
+      const { activateWahooAccessToken } = await import("../../lib/integrations/wahoo/client");
+      await activateWahooAccessToken(accessToken);
+    },
+    classifyOAuthFailure: classifyWahooOAuthFailure,
   },
-  enqueueInitialOnboardingWork: async (input) => {
-    const candidate = integrationCandidate(input);
-    const history = admitWahooReconciliation({
-      integration: candidate,
-      scope: input.scope,
-      target: "activity_history",
-      trigger: "onboarding",
-    });
-    const profile = admitWahooReconciliation({
-      integration: candidate,
-      scope: input.scope,
-      target: "profile_enrichment",
-      trigger: "onboarding",
-    });
-    if (!history.admitted || !profile.admitted)
-      throw new ProviderOperationUnavailableError("wahoo");
-    const repository = createWahooSyncRepository({ db: input.db });
-    const historyResult = await enqueueWahooActivityHistoryReconcile({
-      admission: history,
-      providerSyncRepository: repository,
-      transaction: input.transaction,
-    });
-    const profileResult = await enqueueWahooProfileEnrichment({
-      admission: profile,
-      providerSyncRepository: repository,
-      transaction: input.transaction,
-    });
-    if (!historyResult.jobId || !["queued", "running"].includes(profileResult.status))
-      throw new ProviderOperationUnavailableError("wahoo");
-    return { historyJobId: historyResult.jobId, profileJobId: profileResult.id ?? null };
-  },
-  admitOnboardingRetry: ({ profileId, work: anchored }) => {
-    const input: ProviderIntegrationOperationContext<"wahoo"> = {
-      db: {} as DrizzleDbClient,
-      profileId,
-      integration: {
-        id: anchored.integrationId,
-        generation: anchored.generation,
-        provider: "wahoo",
-        lifecycleStatus: anchored.active ? "active" : "disconnected",
+  execution: {
+    kind: "server",
+    server: {
+      availability: { isConfigured: isWahooIntegrationEnabled },
+      actionAuthorization: {
+        allowsAction: ({ action, grantedScope }) =>
+          providerActionIsAuthorized({ provider: "wahoo", action, grantedScope }),
       },
-      scope: anchored.scope,
-    };
-    const candidate = integrationCandidate(input);
-    const history = admitWahooReconciliation({
-      integration: candidate,
-      scope: anchored.scope,
-      target: "activity_history",
-      trigger: "onboarding",
-    });
-    const profile = admitWahooReconciliation({
-      integration: candidate,
-      scope: anchored.scope,
-      target: "profile_enrichment",
-      trigger: "onboarding",
-    });
-    if (!history.admitted || !profile.admitted)
-      throw new ProviderOperationUnavailableError("wahoo");
-    return work;
-  },
-  onboardingWork: work,
-  identifyOnboardingWork: ({ jobs }) => {
-    const history = jobs.find((job) => job.jobType === work.historyJobType);
-    const profile = jobs.find((job) => job.jobType === work.profileJobType);
-    return {
-      historyJobId: history?.id ?? null,
-      profileJobId: profile?.id ?? null,
-      requiredJobTypes: [work.historyJobType, work.profileJobType],
-      importRunLinked:
-        history?.importRunId !== null && history?.importRunId === history?.payloadImportRunId,
-    };
-  },
-  allowsAction: ({ action, grantedScope }) => {
-    const scopes = new Set((grantedScope ?? "").split(/[\s,]+/).filter(Boolean));
-    return (
-      action === "disconnect" ||
-      (action === "sync_now" && scopes.has("workouts_read") && scopes.has("offline_data")) ||
-      (action === "refresh_setup_data" && scopes.has("user_read"))
-    );
+      setup: {
+        readSetupEvidence: ({ db, profileId }) =>
+          new WahooProfileSetupService({ db }).getSetupData(profileId),
+        refreshSetupEvidence: ({ db, profileId }) =>
+          new WahooProfileSetupService({ db }).refreshSetupData(profileId, "wahoo"),
+      },
+      overview: { readOverviewEvidence: readOverview },
+      synchronization: {
+        syncNow: ({ db, profileId }) => syncIntegrationNow({ db, profileId, provider: "wahoo" }),
+      },
+      disconnection: {
+        disconnect: async ({ db, profileId }) => {
+          await createWahooSyncRepository({ db }).requestProviderDisconnect({
+            profileId,
+            provider: "wahoo",
+          });
+        },
+      },
+      connectedProfile: {
+        enqueueConnectedProfileWork: async (input) => {
+          const admission = admitWahooReconciliation({
+            integration: integrationCandidate(input),
+            scope: input.scope,
+            target: "profile_enrichment",
+            trigger: "connect",
+          });
+          if (!admission.admitted) throw new ProviderRuntimeUnavailableError("wahoo");
+          const repository = createWahooSyncRepository({ db: input.db });
+          const enqueueJob = input.enqueueJob;
+          if (enqueueJob) {
+            repository.enqueueJobInTransaction = async (_transaction, job) => {
+              const queuedJob = await enqueueJob(job);
+              if (!isWahooSyncJobResult(queuedJob)) {
+                throw new ProviderRuntimeUnavailableError("wahoo");
+              }
+              return queuedJob;
+            };
+          }
+          await enqueueWahooProfileEnrichment({
+            admission,
+            providerSyncRepository: repository,
+            transaction: input.transaction,
+          });
+        },
+      },
+      onboarding: {
+        enqueueInitialOnboardingWork: async (input) => {
+          const candidate = integrationCandidate(input);
+          const history = admitWahooReconciliation({
+            integration: candidate,
+            scope: input.scope,
+            target: "activity_history",
+            trigger: "onboarding",
+          });
+          const profile = admitWahooReconciliation({
+            integration: candidate,
+            scope: input.scope,
+            target: "profile_enrichment",
+            trigger: "onboarding",
+          });
+          if (!history.admitted || !profile.admitted)
+            throw new ProviderRuntimeUnavailableError("wahoo");
+          const repository = createWahooSyncRepository({ db: input.db });
+          const historyResult = await enqueueWahooActivityHistoryReconcile({
+            admission: history,
+            providerSyncRepository: repository,
+            transaction: input.transaction,
+          });
+          const profileResult = await enqueueWahooProfileEnrichment({
+            admission: profile,
+            providerSyncRepository: repository,
+            transaction: input.transaction,
+          });
+          if (!historyResult.jobId || !["queued", "running"].includes(profileResult.status))
+            throw new ProviderRuntimeUnavailableError("wahoo");
+          return { historyJobId: historyResult.jobId, profileJobId: profileResult.id ?? null };
+        },
+        admitOnboardingRetry: ({ profileId, work: anchored }) => {
+          const candidate = {
+            generation: anchored.generation,
+            id: anchored.integrationId,
+            lifecycle_status: anchored.active ? ("active" as const) : ("disconnected" as const),
+            profile_id: profileId,
+            provider: "wahoo" as const,
+          };
+          const history = admitWahooReconciliation({
+            integration: candidate,
+            scope: anchored.scope,
+            target: "activity_history",
+            trigger: "onboarding",
+          });
+          const profile = admitWahooReconciliation({
+            integration: candidate,
+            scope: anchored.scope,
+            target: "profile_enrichment",
+            trigger: "onboarding",
+          });
+          if (!history.admitted || !profile.admitted)
+            throw new ProviderRuntimeUnavailableError("wahoo");
+          return work;
+        },
+        onboardingWork: work,
+        identifyOnboardingWork: ({ jobs }) => {
+          const history = jobs.find((job) => job.jobType === work.historyJobType);
+          const profile = jobs.find((job) => job.jobType === work.profileJobType);
+          return {
+            historyJobId: history?.id ?? null,
+            profileJobId: profile?.id ?? null,
+            requiredJobTypes: [work.historyJobType, work.profileJobType],
+            importRunLinked:
+              history?.importRunId !== null && history?.importRunId === history?.payloadImportRunId,
+          };
+        },
+      },
+    },
   },
 };

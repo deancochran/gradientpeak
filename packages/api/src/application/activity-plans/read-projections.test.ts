@@ -8,7 +8,20 @@ import {
   SAMPLE_RECOVERY_WORKOUT,
 } from "@repo/core";
 import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../../storage-service", () => ({
+  getApiStorageService: () => ({
+    storage: {
+      from: () => ({
+        getPublicUrl: (path: string) => ({
+          data: { publicUrl: `https://storage.example.test/profile-avatars/${path}` },
+        }),
+      }),
+    },
+  }),
+}));
+
 import {
   createActivityPlanProjectionMetrics,
   toActivityPlanDetail,
@@ -152,7 +165,7 @@ function planRow(planStructure: unknown) {
     is_system_template: false,
     created_at: "2026-07-17T08:00:00.000Z",
     updated_at: "2026-07-17T08:00:00.000Z",
-    owner: { username: " ", avatar_url: "/legacy-avatar.png" },
+    owner: { username: " ", avatar_url: `${PROFILE_ID}/legacy-avatar.png` },
     prescriptionQuantification: null,
   };
 }
@@ -167,7 +180,11 @@ describe("toActivityPlanSummary", () => {
   it("normalizes malformed owner presentation fields", () => {
     const result = toActivityPlanSummary(planRow(structure), PROFILE_ID);
 
-    expect(result.owner).toEqual({ id: PROFILE_ID, username: null, avatarUrl: null });
+    expect(result.owner).toEqual({
+      id: PROFILE_ID,
+      username: null,
+      avatarUrl: `https://storage.example.test/profile-avatars/${PROFILE_ID}/legacy-avatar.png`,
+    });
     expect(result.structure).toEqual(structure);
     expect(Object.hasOwn(result, "prescriptionQuantification")).toBe(true);
   });

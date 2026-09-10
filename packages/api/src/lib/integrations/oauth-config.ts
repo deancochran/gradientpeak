@@ -1,4 +1,9 @@
-import type { PersistentIntegrationSourceId } from "@repo/core";
+import {
+  type ExecutableIntegrationProviderId,
+  getProviderRequiredAuthorizationScopes,
+  type PersistentIntegrationSourceId,
+  providerManifestRegistry,
+} from "@repo/core";
 
 type IntegrationEnv = Record<string, string | undefined>;
 
@@ -170,12 +175,49 @@ export function createProviderOAuthConfigRegistry<TProvider extends string>(
   };
 }
 
+const oauthConfigResolvers = {
+  wahoo: getWahooOAuthConfig,
+  strava: getStravaOAuthConfig,
+} satisfies Record<
+  ExecutableIntegrationProviderId,
+  (env: IntegrationEnv) => ResolvedProviderOAuthConfig | null
+>;
+
+const providerOAuthDefinitions = {
+  wahoo: wahooOAuthDefinition,
+  strava: stravaOAuthDefinition,
+} as const satisfies Record<ExecutableIntegrationProviderId, ProviderOAuthConfigDefinition>;
+
+export function certifyProviderOAuthScopeCoverage(
+  definitions: Readonly<
+    Record<ExecutableIntegrationProviderId, Pick<ProviderOAuthConfigDefinition, "scopes">>
+  > = providerOAuthDefinitions,
+): void {
+  for (const manifest of providerManifestRegistry) {
+    if (manifest.connection.kind !== "oauth2") continue;
+    const requested = new Set(definitions[manifest.connectorId].scopes);
+    for (const scope of getProviderRequiredAuthorizationScopes(manifest.connectorId)) {
+      if (!requested.has(scope)) {
+        throw new Error(`Provider OAuth scope is missing: ${manifest.connectorId}/${scope}`);
+      }
+    }
+  }
+}
+
+certifyProviderOAuthScopeCoverage();
+
+/** Core's manifest owns the executable connector/source list; this module owns only credential resolution. */
 const providerOAuthConfigRegistry =
   createProviderOAuthConfigRegistry<PersistentIntegrationSourceId>(
-    new Map([
-      ["wahoo", getWahooOAuthConfig],
-      ["strava", getStravaOAuthConfig],
-    ]),
+    new Map<
+      PersistentIntegrationSourceId,
+      (env: IntegrationEnv) => ResolvedProviderOAuthConfig | null
+    >(
+      providerManifestRegistry.map((manifest) => [
+        manifest.connectorId,
+        oauthConfigResolvers[manifest.connectorId],
+      ]),
+    ),
   );
 
 /** Provider-neutral configuration seam. Provider definitions remain owned by their adapters. */

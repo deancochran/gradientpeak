@@ -673,57 +673,13 @@ describe("estimateActivityPlanForTrainingContext", () => {
     });
   });
 
-  it("keeps duration, derived distance, and load stable across conflicting speed permutations", () => {
-    const first = estimateActivityPlanForTrainingContext({
-      structure: timedPlan("run", [
-        { type: "speed", intensity: 18 },
-        { type: "speed", intensity: 14.4 },
-      ]),
-      performanceTargets: runPerformanceTargets,
-      asOf: runPerformanceTargets.asOf,
-    });
-    const second = estimateActivityPlanForTrainingContext({
-      structure: timedPlan("run", [
+  it("rejects conflicting speed targets before estimating a plan", () => {
+    expect(() =>
+      timedPlan("run", [
         { type: "speed", intensity: 14.4 },
         { type: "speed", intensity: 18 },
       ]),
-      performanceTargets: runPerformanceTargets,
-      asOf: runPerformanceTargets.asOf,
-    });
-
-    expect(first.durationEstimate).toEqual(second.durationEstimate);
-    expect(onlyPrescription(first).distance).toEqual(onlyPrescription(second).distance);
-    expect(onlyPrescription(first).distance).toMatchObject({
-      status: "unavailable",
-      reason: "ambiguous_target",
-    });
-    expect(onlyPrescription(first).commonLoad).toEqual(onlyPrescription(second).commonLoad);
-    expect(onlyPrescription(first).commonLoad).toMatchObject({
-      status: "unavailable",
-      reason: "ambiguous_target",
-    });
-
-    const distanceStructure = (targets: ActivityPlanTarget[]) => {
-      const plan = structuredClone(timedPlan("run", targets));
-      const segment = plan.segments[0];
-      if (!segment || segment.role !== "activity") throw new Error("Expected activity segment");
-      const step = segment.intervals[0]?.steps[0];
-      if (!step) throw new Error("Expected activity step");
-      step.duration = { type: "distance", meters: 5_000 };
-      return plan;
-    };
-    const distanceEstimate = estimateActivityPlanForTrainingContext({
-      structure: distanceStructure([
-        { type: "speed", intensity: 18 },
-        { type: "speed", intensity: 14.4 },
-      ]),
-      performanceTargets: runPerformanceTargets,
-      asOf: runPerformanceTargets.asOf,
-    });
-    expect(onlyPrescription(distanceEstimate).duration.active).toMatchObject({
-      status: "unavailable",
-      reason: "ambiguous_target",
-    });
+    ).toThrow("ACTIVITY_PLAN_MULTIPLE_OBJECTIVE_TARGETS");
   });
 
   it("keeps authored speed visible when Common Load calibration is unavailable", () => {
@@ -910,11 +866,11 @@ describe("estimateActivityPlanForTrainingContext", () => {
     });
   });
 
-  it("resolves mixed targets by explicit priority and is invariant to target ordering", () => {
+  it("uses the sole objective target regardless of supporting target order", () => {
     const targets = [
       { type: "%FTP" as const, intensity: 80 },
-      { type: "watts" as const, intensity: 125 },
       { type: "cadence" as const, intensity: 90 },
+      { type: "RPE" as const, intensity: 6 },
     ] as const;
     const results = [targets, [...targets].reverse(), [targets[1], targets[2], targets[0]]].map(
       (orderedTargets) =>
@@ -935,26 +891,13 @@ describe("estimateActivityPlanForTrainingContext", () => {
     }
   });
 
-  it("marks competing targets in one priority and domain ambiguous", () => {
-    const structure = singleBikeWithTargets([
-      { type: "%FTP", intensity: 80 },
-      { type: "%FTP", intensity: 90 },
-      { type: "RPE", intensity: 6 },
-    ]);
-    const estimate = estimateActivityPlanForTrainingContext({
-      structure,
-      performanceTargets,
-      asOf: performanceTargets.asOf,
-    });
-
-    expect(onlyPrescription(estimate).intensity.prescribed.values).toHaveLength(3);
-    expect(onlyPrescription(estimate).commonLoad).toMatchObject({
-      status: "unavailable",
-      reason: "ambiguous_target",
-    });
-    expect(getPlannedEstimate(estimate.prescriptionQuantification).load).toMatchObject({
-      status: "unavailable",
-      value: null,
-    });
+  it("rejects duplicate objective targets before estimating a plan", () => {
+    expect(() =>
+      singleBikeWithTargets([
+        { type: "%FTP", intensity: 80 },
+        { type: "%FTP", intensity: 90 },
+        { type: "RPE", intensity: 6 },
+      ]),
+    ).toThrow("ACTIVITY_PLAN_DUPLICATE_TARGET");
   });
 });

@@ -7,6 +7,7 @@ import {
 import { activities, events, follows, likes } from "@repo/db";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { resolveProfileMediaUrl } from "../application/storage/profile-media-url";
 import type { getRequiredDb } from "../db";
 import { createContentAccessPermissions } from "../permissions/content-access";
 import { getSqlCount } from "../utils/sql";
@@ -186,7 +187,7 @@ export async function loadContentComments(
         ? {
             id: comment.profile_id,
             username: comment.profile_username,
-            avatar_url: comment.profile_avatar_url,
+            avatar_url: resolveProfileMediaUrl(comment.profile_avatar_url, comment.profile_id),
           }
         : null,
     })),

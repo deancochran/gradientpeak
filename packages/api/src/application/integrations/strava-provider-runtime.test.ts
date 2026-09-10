@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { stravaProviderOperationAdapter } from "./strava-provider-operation-adapter";
+import { stravaProviderRuntime } from "./strava-provider-runtime";
 
 function transactionWithOnboardingStatus(onboardingStatus: string) {
   const builder = {
@@ -10,17 +10,16 @@ function transactionWithOnboardingStatus(onboardingStatus: string) {
   return { select: vi.fn(() => builder) };
 }
 
-describe("Strava provider operation adapter", () => {
+describe("Strava provider runtime", () => {
   it("leaves initial history ownership to onboarding after provider selection", async () => {
     const enqueueJob = vi.fn();
-    await stravaProviderOperationAdapter.enqueueConnectedProfileWork({
+    await stravaProviderRuntime.execution.server.connectedProfile.enqueueConnectedProfileWork({
       db: {} as never,
       enqueueJob,
       integration: {
         generation: 1,
         id: "integration",
         lifecycleStatus: "active",
-        provider: "strava",
       },
       profileId: "profile",
       scope: "activity:read_all",
@@ -31,14 +30,13 @@ describe("Strava provider operation adapter", () => {
 
   it("queues bounded history after a post-onboarding reconnect", async () => {
     const enqueueJob = vi.fn(async () => ({ id: "job", status: "queued" }));
-    await stravaProviderOperationAdapter.enqueueConnectedProfileWork({
+    await stravaProviderRuntime.execution.server.connectedProfile.enqueueConnectedProfileWork({
       db: {} as never,
       enqueueJob,
       integration: {
         generation: 2,
         id: "integration",
         lifecycleStatus: "active",
-        provider: "strava",
       },
       profileId: "profile",
       scope: "activity:read_all",

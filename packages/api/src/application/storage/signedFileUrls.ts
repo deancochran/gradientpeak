@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { getApiStorageService } from "../../storage-service";
@@ -82,7 +83,7 @@ export async function createSignedAvatarUploadUrl({
   try {
     await ensureAvatarBucketExists();
 
-    const filePath = `${userId}/${Date.now()}.${fileExtension}`;
+    const filePath = `${userId}/${randomUUID()}.${fileExtension}`;
     const { data, error } = await storageService.storage
       .from(BUCKET_NAME)
       .createSignedUploadUrl(filePath);

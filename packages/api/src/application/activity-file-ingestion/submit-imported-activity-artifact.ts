@@ -1,6 +1,7 @@
 import {
   activityLapRecordListSchema,
   type ContentVisibility,
+  createDirectProviderSourceProvenance,
   type StandardActivity,
 } from "@repo/core";
 import { activityArtifactContentPath } from "@repo/core/activity-artifacts";
@@ -358,8 +359,10 @@ export async function submitImportedActivityArtifact(
         mapBounds: analysis.geometry.mapBounds,
         polyline: analysis.geometry.polyline,
         providerProvenance: {
-          provider: input.activity.provider,
-          externalId: input.activity.externalId,
+          ...createDirectProviderSourceProvenance({
+            connectorId: input.activity.provider,
+            externalId: input.activity.externalId,
+          }),
           integrationId: input.activity.integrationId,
           integrationGeneration: input.activity.integrationGeneration,
           providerUpdatedAt: input.activity.providerUpdatedAt,

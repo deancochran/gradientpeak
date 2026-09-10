@@ -211,8 +211,8 @@ function lthrSubmission(input: {
     mapBounds: null,
     polyline: null,
     providerProvenance: {
-      provider: "wahoo",
-      externalId,
+      connector: { connectorId: "wahoo", externalId },
+      source: { sourceId: "wahoo", externalId },
       integrationId: input.owner.integrationId,
       integrationGeneration: 1,
       providerUpdatedAt: input.completedAt.toISOString(),

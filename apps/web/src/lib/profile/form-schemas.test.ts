@@ -36,8 +36,10 @@ describe("settings profile form", () => {
     formData.set("bio", "  ");
     formData.set("full_name", " Riley Chen ");
     formData.set("default_content_visibility", "followers");
+    formData.set("dob", "1990-01-02");
     formData.set("is_public", "false");
     formData.set("language", " en ");
+    formData.set("planning_timezone", " America/Los_Angeles ");
     formData.set("preferred_units", "imperial");
     formData.set("username", " athlete ");
 
@@ -47,10 +49,35 @@ describe("settings profile form", () => {
       bio: null,
       full_name: "Riley Chen",
       default_content_visibility: "followers",
+      dob: "1990-01-02",
       is_public: false,
       language: "en",
+      planning_timezone: "America/Los_Angeles",
       preferred_units: "imperial",
       username: "athlete",
+    });
+  });
+
+  it("uses canonical patch validation and maps blank optional DOB and timezone fields to null", () => {
+    expect(
+      settingsProfileFormSchema.safeParse({
+        dob: "not-a-date",
+        full_name: "Athlete",
+        planning_timezone: "Not/AZone",
+        username: "",
+      }).success,
+    ).toBe(false);
+
+    const values = settingsProfileFormSchema.parse({
+      dob: "",
+      full_name: "Athlete",
+      planning_timezone: "   ",
+      username: "",
+    });
+
+    expect(toProfilePatchInput(values)).toMatchObject({
+      dob: null,
+      planning_timezone: null,
     });
   });
 });

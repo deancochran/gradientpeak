@@ -1,6 +1,7 @@
 import { profiles } from "@repo/db";
 import { inArray } from "drizzle-orm";
 import { z } from "zod";
+import { resolveProfileMediaUrl } from "../application/storage/profile-media-url";
 
 export const profileIdentitySchema = z
   .object({
@@ -32,5 +33,10 @@ export async function loadProfileIdentityMap(
     .where(inArray(profiles.id, ids));
 
   const parsedRows = z.array(profileIdentitySchema).parse(rows);
-  return new Map(parsedRows.map((row) => [row.id, row]));
+  return new Map(
+    parsedRows.map((row) => [
+      row.id,
+      { ...row, avatar_url: resolveProfileMediaUrl(row.avatar_url, row.id) },
+    ]),
+  );
 }

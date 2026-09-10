@@ -45,7 +45,7 @@ function facts() {
 }
 
 describe("resolveActivityPlanSessionFlow", () => {
-  it("defaults an all-convertible flow to a complete physical structure when requested", () => {
+  it("rejects a flow with competing power and heart-rate objectives", () => {
     const result = resolveActivityPlanSessionFlow({
       structure: structure([
         { type: "%FTP", intensity: 80 },
@@ -55,26 +55,12 @@ describe("resolveActivityPlanSessionFlow", () => {
       personalize: true,
     });
 
-    expect(result.eligibility).toEqual({ eligible: true, blocker: null, reason: null });
-    expect(result.mode).toBe("personalized");
-    expect(result.structure?.segments[0]).toMatchObject({
-      intervals: [
-        {
-          steps: [
-            {
-              targets: [
-                { type: "watts", intensity: 240 },
-                { type: "bpm", intensity: 162 },
-              ],
-            },
-          ],
-        },
-      ],
-    });
-    expect(result.targetResolutions[0]).toMatchObject({
-      authoredTarget: { type: "%FTP", intensity: 80 },
-      physicalTarget: { type: "watts", intensity: 240 },
-      presentation: { label: "240 W", sourceLabel: "240 W" },
+    expect(result).toMatchObject({
+      authoredStructure: null,
+      eligibility: { eligible: false, blocker: "invalid_structure" },
+      mode: "authored",
+      structure: null,
+      targetResolutions: [],
     });
   });
 

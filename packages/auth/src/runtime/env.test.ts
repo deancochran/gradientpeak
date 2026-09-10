@@ -98,8 +98,13 @@ describe("resolveDevelopmentAuthTrustedOrigins", () => {
     expect(
       resolveDevelopmentAuthTrustedOrigins("development", "https://dev.gradientpeak.com", [
         "http://100.119.109.24:3000",
+        "https://tokyo.goose-noodlefish.ts.net",
       ]),
-    ).toEqual(["https://dev.gradientpeak.com", "http://100.119.109.24:3000"]);
+    ).toEqual([
+      "https://dev.gradientpeak.com",
+      "http://100.119.109.24:3000",
+      "https://tokyo.goose-noodlefish.ts.net",
+    ]);
     expect(
       resolveDevelopmentAuthTrustedOrigins("production", "https://dev.gradientpeak.com", [
         "http://100.119.109.24:3000",

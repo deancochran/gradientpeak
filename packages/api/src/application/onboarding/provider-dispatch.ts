@@ -1,14 +1,14 @@
 import type { DrizzleDbClient } from "@repo/db";
 import type { DrizzleTransactionClient } from "../../db";
 import type { OnboardingProviderWorkSnapshot } from "../../repositories/onboarding-lifecycle-repository";
-import type { ProviderTransactionalOperationContext } from "../integrations/provider-operation-registry";
+import type { ProviderTransactionalRuntimeContext } from "../integrations/provider-runtime";
 
 export async function dispatchInitialOnboardingWork<TProvider extends string>(input: {
-  adapters: ReadonlyMap<
+  runtimes: ReadonlyMap<
     TProvider,
     {
       enqueueInitialOnboardingWork: (
-        operation: ProviderTransactionalOperationContext<TProvider>,
+        operation: ProviderTransactionalRuntimeContext,
       ) => Promise<{ historyJobId: string; profileJobId: string | null }>;
     }
   >;
@@ -18,15 +18,14 @@ export async function dispatchInitialOnboardingWork<TProvider extends string>(in
   transaction: DrizzleTransactionClient;
 }) {
   for (const provider of input.providers) {
-    const adapter = input.adapters.get(provider.provider);
-    if (!adapter) throw new Error("Connected provider has no executable operation adapter");
-    await adapter.enqueueInitialOnboardingWork({
+    const runtime = input.runtimes.get(provider.provider);
+    if (!runtime) throw new Error("Connected provider has no executable onboarding runtime");
+    await runtime.enqueueInitialOnboardingWork({
       db: input.db,
       profileId: input.profileId,
       integration: {
         id: provider.id,
         generation: provider.generation,
-        provider: provider.provider,
         lifecycleStatus: provider.active ? "active" : "disconnected",
       },
       scope: provider.scope,

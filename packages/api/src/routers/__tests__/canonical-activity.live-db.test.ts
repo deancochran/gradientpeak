@@ -590,8 +590,8 @@ describe("canonical activity persistence against PostgreSQL", () => {
     if (!integration) throw new Error("Failed to seed integration");
     const externalId = randomUUID();
     const provider = {
-      provider: "wahoo" as const,
-      externalId,
+      connector: { connectorId: "wahoo" as const, externalId },
+      source: { sourceId: "wahoo", externalId },
       integrationId: integration.id,
       providerUpdatedAt: "2026-01-01T12:00:00.000Z",
     };

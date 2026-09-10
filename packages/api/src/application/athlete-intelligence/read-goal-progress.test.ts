@@ -269,4 +269,27 @@ describe("readGoalPortfolio", () => {
       totalGoalCount: 2,
     });
   });
+
+  it("returns an unavailable portfolio when no athlete state has been computed", async () => {
+    const readSnapshot = vi.fn(async () => ({
+      ...(await dependencies().readSnapshot({ db: {} as never, profileId: PROFILE_ID })),
+      computedAt: null,
+      freshness: "unavailable" as const,
+      rebuildStatus: "unavailable" as const,
+      revisions: { source: 0, published: null },
+    }));
+    const readPortfolio = vi.fn(async () => ({
+      activeGoalCount: 0,
+      totalGoalCount: 0,
+      selectedGoal: null,
+    }));
+
+    await expect(
+      readGoalPortfolio({
+        db: {} as never,
+        dependencies: { readPortfolio, readSnapshot },
+        profileId: PROFILE_ID,
+      }),
+    ).resolves.toMatchObject({ computedAt: null, freshness: "unavailable" });
+  });
 });

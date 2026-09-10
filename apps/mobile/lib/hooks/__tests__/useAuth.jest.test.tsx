@@ -222,6 +222,23 @@ describe("useAuth optimistic onboarding precedence", () => {
     expect(invalidateProfileMock).toHaveBeenCalledTimes(1);
   });
 
+  it("syncs a refreshed avatar to the auth profile store immediately", async () => {
+    const refreshedProfile = createProfile({
+      avatar_url: "https://cdn.example.test/profiles/profile-1/avatar.webp",
+    });
+    refetchProfileMock.mockResolvedValue({ data: refreshedProfile });
+    const { result } = await renderHook(() => useAuth());
+    setProfileMock.mockClear();
+    setOnboardingStatusMock.mockClear();
+
+    await act(async () => {
+      await result.current.refreshProfile();
+    });
+
+    expect(setProfileMock).toHaveBeenCalledWith(refreshedProfile);
+    expect(setOnboardingStatusMock).toHaveBeenCalledWith("completed");
+  });
+
   it("refreshes a null local profile from the query without creating a partial profile", async () => {
     authStoreState.onboardingStatus = null;
     authStoreState.profile = null;

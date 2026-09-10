@@ -96,7 +96,6 @@ export const useAuth = () => {
     profileQuery.data,
     profileQuery.isError,
     isAuthenticated,
-    store.onboardingStatus,
     store.setOnboardingStatus,
     store.setProfile,
   ]); // Don't include store methods
@@ -145,6 +144,15 @@ export const useAuth = () => {
     }
   }, [profileQuery, utils.profiles.get]);
 
+  const refreshProfile = useCallback(async () => {
+    const result = await profileQuery.refetch();
+    if (result.data) {
+      useAuthStore.getState().setProfile(result.data);
+      useAuthStore.getState().setOnboardingStatus(result.data.onboarding_status);
+    }
+    return result;
+  }, [profileQuery]);
+
   return {
     // Auth state from Zustand (single source of truth)
     user,
@@ -171,7 +179,7 @@ export const useAuth = () => {
     // Profile query status (for loading/error states)
     profileLoading: profileQuery.isLoading,
     profileError: profileQuery.error,
-    refreshProfile: profileQuery.refetch,
+    refreshProfile,
     authUserLoading: false,
     authUserError: null,
 

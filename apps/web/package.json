@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "catalog:export": "tsx scripts/export-activity-plan-catalog.tsx",
+    "catalog:measure": "tsx scripts/measure-activity-plan-portfolio.ts",
     "dev": "pnpm run dev:tunnel",
     "dev:local": "concurrently --names app,wahoo-worker --kill-others-on-fail \"pnpm run dev:app\" \"pnpm run dev:wahoo-drain\"",
     "dev:tunnel": "concurrently --names app,wahoo-worker,cloudflared --kill-others-on-fail \"pnpm run dev:app:tunnel\" \"pnpm run dev:wahoo-drain:tunnel\" \"pnpm run dev:webhooks\"",

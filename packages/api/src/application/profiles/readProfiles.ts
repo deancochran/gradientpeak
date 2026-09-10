@@ -9,6 +9,7 @@ import {
   redactPrivateProfileDetailFields,
   redactProfileListFields,
 } from "../../utils/profile-privacy";
+import { resolveProfileMediaUrl } from "../storage/profile-media-url";
 
 const uuidSchema = z.string().uuid();
 const nullableAvatarUrlSchema = z.string().nullable();
@@ -116,6 +117,8 @@ function serializeProfile(
 ) {
   return {
     ...profile,
+    avatar_url: resolveProfileMediaUrl(profile.avatar_url, profile.id),
+    cover_url: resolveProfileMediaUrl(profile.cover_url, profile.id),
     created_at: profile.created_at.toISOString(),
     updated_at: profile.updated_at.toISOString(),
     dob: profile.dob ? formatDateOfBirth(profile.dob) : null,
@@ -269,8 +272,8 @@ export async function getPublicProfileById(
     id: profile.id,
     full_name: profile.full_name,
     username: profile.username,
-    avatar_url: profile.avatar_url,
-    cover_url: profile.cover_url,
+    avatar_url: resolveProfileMediaUrl(profile.avatar_url, profile.id),
+    cover_url: resolveProfileMediaUrl(profile.cover_url, profile.id),
     bio: profile.bio,
     gender: profile.gender,
     preferred_units: profile.preferred_units,

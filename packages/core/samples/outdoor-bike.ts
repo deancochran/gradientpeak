@@ -39,7 +39,7 @@ export const EASY_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
  */
 export const SWEET_SPOT_OUTDOOR_RIDE: RecordingServiceActivityPlan = {
   id: "9d2e3f4a-5b6c-4d8e-9f0a-1b2c3d4e5f6a",
-  name: "Sweet Spot Intervals",
+  name: "Outdoor Sweet Spot Intervals",
   description: "Outdoor ride with sweet spot power intervals",
   gps_recording_enabled: true,
   structure: createPlan()
@@ -230,7 +230,7 @@ export const SYSTEM_LONG_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
     .step({
       name: "Zone 2 Endurance",
       duration: Duration.hours(2),
-      targets: [Target.ftp(70), Target.bpm(140)],
+      targets: [Target.ftp(70)],
       notes: "Keep it conversational",
       intervalName: "Main Set",
     })
@@ -255,7 +255,7 @@ export const SYSTEM_PROGRESSIVE_LONG_ENDURANCE_RIDE: RecordingServiceActivityPla
     .step({
       name: "Settled Endurance",
       duration: Duration.minutes(55),
-      targets: [Target.ftp(68), Target.bpm(138)],
+      targets: [Target.ftp(68)],
       notes: "Lock into conversational endurance riding.",
     })
     .interval({
@@ -265,7 +265,7 @@ export const SYSTEM_PROGRESSIVE_LONG_ENDURANCE_RIDE: RecordingServiceActivityPla
         {
           name: "Tempo Lift",
           duration: Duration.minutes(10),
-          targets: [Target.ftp(76), Target.bpm(148)],
+          targets: [Target.ftp(76)],
           notes: "Raise pressure without drifting above controlled tempo.",
         },
         {

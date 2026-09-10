@@ -1,19 +1,66 @@
 import { describe, expect, it } from "vitest";
 import {
+  certifyProviderManifestRegistry,
+  createDirectProviderSourceProvenance,
   executableIntegrationProviderIdSchema,
   executableIntegrationProviderIdValues,
   getConfigurableProviderActions,
+  getProviderActionAuthorization,
   getProviderCapabilityUnavailableReason,
   getProviderPlannedActivityCapability,
+  getProviderRequiredOperationTokens,
   getProviderSyncMode,
   getProvidersWithCapability,
+  getProviderWorkerRequirements,
   isProviderActivityHistoryReconciliationTarget,
+  type ProviderManifest,
   persistentIntegrationSourceIdSchema,
   persistentIntegrationSourceIdValues,
   providerCapabilityRegistry,
+  providerCapabilitySchema,
+  providerConnectionDescriptorSchema,
+  providerConnectionModelSchema,
+  providerExecutionSchema,
   providerHasCapability,
   providerOnboardingPresentationSchema,
+  providerSourceProvenanceSchema,
+  stravaProviderManifest,
 } from "../provider-capabilities";
+
+const compileOnlyCapabilities = {
+  profile_enrichment_read: { status: "unsupported", reason: "Compile-only fixture." },
+  activity_history_read: { status: "unsupported", reason: "Compile-only fixture." },
+  activity_file_download: { status: "unsupported", reason: "Compile-only fixture." },
+  activity_file_format_fit: { status: "unsupported", reason: "Compile-only fixture." },
+  completed_activity_export: { status: "unsupported", reason: "Compile-only fixture." },
+  planned_activity_push: { status: "unsupported", reason: "Compile-only fixture." },
+  route_push: { status: "unsupported", reason: "Compile-only fixture." },
+  webhook_activity_updates: { status: "unsupported", reason: "Compile-only fixture." },
+} as const satisfies ProviderManifest["capabilities"];
+
+const syntheticDeviceManifest = {
+  ...stravaProviderManifest,
+  id: "health-device",
+  connectorId: "health-device",
+  defaultSourceId: "health-device",
+  connection: { kind: "device_permissions" },
+  execution: "mobile",
+  capabilities: compileOnlyCapabilities,
+  runtimeOperations: [],
+  actions: [],
+  workerRequirements: [],
+} as const satisfies ProviderManifest<
+  "health-device",
+  "health-device",
+  { kind: "device_permissions" },
+  "mobile"
+>;
+
+function compileOnlySyntheticManifestIsNotExecutable() {
+  // @ts-expect-error Compile-only connector IDs do not become persistent/executable registry IDs.
+  const executable: (typeof providerCapabilityRegistry)[number] = syntheticDeviceManifest;
+  return executable;
+}
 
 describe("provider capability registry", () => {
   it("keeps durable provider identities neutral while exposing configured contract implementations", () => {
@@ -29,6 +76,135 @@ describe("provider capability registry", () => {
     ]);
     expect(persistentIntegrationSourceIdSchema.safeParse("strava").success).toBe(true);
     expect(executableIntegrationProviderIdSchema.safeParse("strava").success).toBe(true);
+  });
+
+  it("certifies every executable connector manifest is complete and internally consistent", () => {
+    expect(providerCapabilityRegistry).toHaveLength(executableIntegrationProviderIdValues.length);
+    expect(new Set(providerCapabilityRegistry.map((manifest) => manifest.connectorId)).size).toBe(
+      executableIntegrationProviderIdValues.length,
+    );
+
+    for (const manifest of providerCapabilityRegistry) {
+      expect(manifest.id).toBe(manifest.connectorId);
+      expect(executableIntegrationProviderIdSchema.safeParse(manifest.connectorId).success).toBe(
+        true,
+      );
+      expect(persistentIntegrationSourceIdSchema.safeParse(manifest.defaultSourceId).success).toBe(
+        true,
+      );
+      expect(providerConnectionModelSchema.safeParse(manifest.connection).success).toBe(true);
+      expect(providerExecutionSchema.safeParse(manifest.execution).success).toBe(true);
+
+      for (const capability of providerCapabilitySchema.options) {
+        const declaration = manifest.capabilities[capability];
+        expect(declaration).toBeDefined();
+        if (declaration.status === "supported") {
+          expect(declaration.operations.length).toBeGreaterThan(0);
+          expect(getProviderRequiredOperationTokens(manifest.connectorId)).toEqual(
+            expect.arrayContaining([...declaration.operations]),
+          );
+        } else {
+          expect(declaration.reason.trim().length).toBeGreaterThan(0);
+          expect("operations" in declaration).toBe(false);
+        }
+      }
+
+      for (const action of manifest.actions) {
+        expect(getProviderActionAuthorization(manifest.connectorId, action.action)).toEqual(action);
+      }
+      for (const worker of getProviderWorkerRequirements(manifest.connectorId)) {
+        expect(worker.worker.trim().length).toBeGreaterThan(0);
+        expect(getProviderRequiredOperationTokens(manifest.connectorId)).toContain(
+          worker.operation,
+        );
+      }
+    }
+  });
+
+  it("represents synthetic connector and execution kinds without registering them", () => {
+    expect(compileOnlySyntheticManifestIsNotExecutable).toBeTypeOf("function");
+    expect(providerConnectionDescriptorSchema.parse(syntheticDeviceManifest.connection)).toEqual({
+      kind: "device_permissions",
+    });
+    expect(
+      new Set<string>(providerCapabilityRegistry.map(({ connectorId }) => connectorId)).has(
+        "health-device",
+      ),
+    ).toBe(false);
+    for (const kind of [
+      "oauth2",
+      "device_permissions",
+      "api_key",
+      "file_import",
+      "none",
+    ] as const) {
+      expect(providerConnectionDescriptorSchema.safeParse({ kind }).success).toBe(true);
+    }
+  });
+
+  it("rejects incomplete, duplicate, and unsupported-operation manifests", () => {
+    const [wahoo, strava] = providerCapabilityRegistry;
+    if (!wahoo || !strava) throw new Error("Expected Wahoo and Strava manifests");
+    expect(() => certifyProviderManifestRegistry([wahoo, wahoo] as never)).toThrow(
+      /duplicate|missing/i,
+    );
+    const invalidUnsupported = {
+      ...strava,
+      capabilities: {
+        ...strava.capabilities,
+        route_push: {
+          status: "unsupported",
+          reason: "No route delivery.",
+          operations: ["disconnect"],
+        },
+      },
+    };
+    expect(() => certifyProviderManifestRegistry([wahoo, invalidUnsupported] as never)).toThrow(
+      /unsupported.*operations/i,
+    );
+    expect(() =>
+      certifyProviderManifestRegistry([wahoo, { ...strava, id: "wahoo" }] as never),
+    ).toThrow(/id.*connector/i);
+    expect(() =>
+      certifyProviderManifestRegistry([wahoo, { ...strava, connection: "oauth2" }] as never),
+    ).toThrow(/connection descriptor/i);
+    expect(() =>
+      certifyProviderManifestRegistry([
+        wahoo,
+        {
+          ...strava,
+          actions: [
+            ...strava.actions,
+            {
+              action: "refresh_setup_data",
+              capability: "profile_enrichment_read",
+              userFacing: false,
+            },
+          ],
+        },
+      ] as never),
+    ).toThrow(/action capability is unsupported/i);
+  });
+
+  it("keeps aggregator provenance independent of connector source identity", () => {
+    expect(
+      providerSourceProvenanceSchema.parse({
+        connector: { connectorId: "strava", externalId: "strava-activity-1" },
+        source: {
+          sourceId: "aggregated-feed:partner-42",
+          externalId: "external-activity-1",
+        },
+      }),
+    ).toMatchObject({
+      connector: { connectorId: "strava", externalId: "strava-activity-1" },
+      source: { sourceId: "aggregated-feed:partner-42", externalId: "external-activity-1" },
+    });
+    expect(
+      createDirectProviderSourceProvenance({ connectorId: "wahoo", externalId: "123" }),
+    ).toEqual({
+      connector: { connectorId: "wahoo", externalId: "123" },
+      source: { sourceId: "wahoo", externalId: "123" },
+    });
   });
 
   it("marks Wahoo as the MVP file-first activity import provider", () => {

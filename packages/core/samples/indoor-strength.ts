@@ -208,7 +208,7 @@ export const CORE_STABILITY: RecordingServiceActivityPlan = {
 export const FUNCTIONAL_MOVEMENT: RecordingServiceActivityPlan = {
   id: "aaaa3333-4444-4555-a666-777777777777",
   name: "Functional Movement",
-  description: "Movement patterns for daily life and activity_category performance",
+  description: "Movement patterns for daily life and activity performance",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({

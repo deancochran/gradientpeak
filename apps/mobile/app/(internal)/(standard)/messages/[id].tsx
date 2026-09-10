@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 
 function getInitials(name: string) {
   return name
@@ -76,6 +77,9 @@ export default function ChatScreen() {
   );
   const { data: conversations = [] } = api.messaging.getConversations.useQuery();
   const conversation = conversations.find((entry) => entry.id === id);
+  const avatarUri = conversation?.peer_profile?.avatar_url
+    ? getReachableSupabaseStorageUrl(conversation.peer_profile.avatar_url)
+    : null;
   const conversationTitle = conversation ? getConversationDisplayName(conversation) : "Chat";
   const conversationSubtitle = conversation
     ? conversation.is_group
@@ -121,9 +125,7 @@ export default function ChatScreen() {
           headerTitle: () => (
             <View className="flex-row items-center gap-3">
               <Avatar alt={conversationTitle} className="h-9 w-9">
-                {conversation?.peer_profile?.avatar_url ? (
-                  <AvatarImage source={{ uri: conversation.peer_profile.avatar_url }} />
-                ) : null}
+                {avatarUri ? <AvatarImage key={avatarUri} source={{ uri: avatarUri }} /> : null}
                 <AvatarFallback>
                   <Text className="text-xs font-medium">{getInitials(conversationTitle)}</Text>
                 </AvatarFallback>

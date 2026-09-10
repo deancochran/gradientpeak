@@ -153,6 +153,29 @@ function baseRecording() {
     drainSubmissionQueue: vi.fn(),
     reset: vi.fn(),
     takeOver: vi.fn(),
+    sensors: {
+      state: {
+        supported: true,
+        status: "connected",
+        deviceName: "Trainer",
+        controlEligible: true,
+        controlGranted: false,
+        targetPowerSupported: true,
+        error: null,
+        metrics: {
+          heartRateBpm: 148,
+          cadenceRpm: 90,
+          powerWatts: 250,
+          speedKph: 25,
+          distanceMeters: 1200,
+          calories: 80,
+        },
+      },
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+      requestControl: vi.fn(),
+      setTargetPower: vi.fn(),
+    },
   };
 }
 
@@ -170,10 +193,40 @@ describe("recording session UI", () => {
     expect(screen.getByText("Step 1 of 2")).toBeTruthy();
     expect(screen.getByText("5 RPE")).toBeTruthy();
     expect(screen.getByText("Remaining: 00:00:40")).toBeTruthy();
-    expect(screen.queryByText(/heart rate|power|cadence|speed|distance/i)).toBeNull();
+    expect(screen.getByLabelText("Live sensor metrics").textContent).toContain("Heart rate");
     expect(document.querySelector("[aria-live]")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Complete / Next" }));
     expect(mocks.completeStep).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows connected sensor metrics and gates trainer commands behind control", () => {
+    mocks.recording = baseRecording();
+    render(<RecordSessionPage />);
+    expect(screen.getByText(/Connected to Trainer/)).toBeTruthy();
+    expect(screen.getByLabelText("Live sensor metrics").textContent).toContain("148 bpm");
+    fireEvent.click(screen.getByRole("button", { name: "Enable trainer control" }));
+    expect(
+      (mocks.recording as { sensors: { requestControl: ReturnType<typeof vi.fn> } }).sensors
+        .requestControl,
+    ).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not render target-power controls when the connected trainer lacks that FTMS capability", () => {
+    const recording = baseRecording();
+    mocks.recording = {
+      ...recording,
+      sensors: {
+        ...recording.sensors,
+        state: {
+          ...recording.sensors.state,
+          controlGranted: true,
+          targetPowerSupported: false,
+        },
+      },
+    };
+    render(<RecordSessionPage />);
+    expect(screen.getByText(/does not advertise FTMS target-power support/)).toBeTruthy();
+    expect(screen.queryByLabelText("Target power (W)")).toBeNull();
   });
 
   it("reviews completed, skipped, and remaining work and marks manual fields honestly", () => {

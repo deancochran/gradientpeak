@@ -50,6 +50,8 @@ import {
   type TimerOnlyRecordingState,
   type TimerOnlyRecordingTransition,
 } from "./timer-runtime";
+import { useWebBluetoothRecorder } from "./use-web-bluetooth-recorder";
+import type { WebBluetoothState } from "./web-bluetooth";
 
 type TimerOnlyRecordingContextValue = {
   state: TimerOnlyRecordingState;
@@ -86,6 +88,13 @@ type TimerOnlyRecordingContextValue = {
   history: PortableWebRecordingArtifact[];
   busy: boolean;
   canTakeOver: boolean;
+  sensors: {
+    state: WebBluetoothState;
+    connect: () => Promise<void>;
+    disconnect: () => void;
+    requestControl: () => Promise<boolean>;
+    setTargetPower: (watts: number) => Promise<boolean>;
+  };
 };
 
 type ProviderState = {
@@ -117,6 +126,7 @@ export function TimerOnlyRecordingProvider({
   storage,
   enabled = true,
 }: TimerOnlyRecordingProviderProps) {
+  const bluetooth = useWebBluetoothRecorder();
   const [draftStorage, setDraftStorage] = useState<WebRecordingStorage | null>(
     () =>
       storage ??
@@ -492,14 +502,13 @@ export function TimerOnlyRecordingProvider({
     },
     [applyTransition, hasActiveSession],
   );
-  const start = useCallback(
-    () =>
-      applyDurableTransition(
-        (state, commandNowMs) => startTimerOnlyRecording(state, commandNowMs, createSessionId()),
-        "Recording started and saved locally.",
-      ),
-    [applyDurableTransition],
-  );
+  const start = useCallback(() => {
+    bluetooth.recorder.beginSessionMetrics();
+    return applyDurableTransition(
+      (state, commandNowMs) => startTimerOnlyRecording(state, commandNowMs, createSessionId()),
+      "Recording started and saved locally.",
+    );
+  }, [applyDurableTransition, bluetooth.recorder]);
   const pause = useCallback(
     () => applyDurableTransition(pauseTimerOnlyRecording, "Recording paused."),
     [applyDurableTransition],
@@ -531,13 +540,10 @@ export function TimerOnlyRecordingProvider({
 
   useEffect(() => {
     const pauseWhenHidden = () => {
-      if (
-        document.visibilityState !== "hidden" ||
-        lifecycle !== "recording" ||
-        recordingRef.current.reducer.lifecycle !== "recording"
-      ) {
+      if (document.visibilityState !== "hidden") return;
+      bluetooth.recorder.disconnect();
+      if (lifecycle !== "recording" || recordingRef.current.reducer.lifecycle !== "recording")
         return;
-      }
       void applyDurableTransition(
         pauseTimerOnlyRecording,
         "Recording paused because this tab moved to the background. Return and Resume explicitly.",
@@ -547,7 +553,7 @@ export function TimerOnlyRecordingProvider({
     document.addEventListener("visibilitychange", pauseWhenHidden);
     pauseWhenHidden();
     return () => document.removeEventListener("visibilitychange", pauseWhenHidden);
-  }, [applyDurableTransition, lifecycle]);
+  }, [applyDurableTransition, bluetooth.recorder, lifecycle]);
 
   const finish = useCallback(async () => {
     if (!enabledRef.current || !draftStorage) return;
@@ -563,6 +569,7 @@ export function TimerOnlyRecordingProvider({
     setProviderState((current) => ({ ...current, busy: true, error: null }));
     try {
       const now = Date.now();
+      const sensorDeltas = bluetooth.recorder.getSessionMetricDeltas();
       const finished = finishTimerOnlyRecording(recordingRef.current, now);
       if (finished.rejectedReason) throw new Error(finished.rejectedReason);
       const activityCategory =
@@ -577,8 +584,9 @@ export function TimerOnlyRecordingProvider({
             `${activityCategory[0]?.toUpperCase() ?? ""}${activityCategory.slice(1)} recording`,
           notes: null,
           perceivedEffort: null,
-          distanceMeters: 0,
-          calories: null,
+          distanceMeters: Math.max(0, Math.round(sensorDeltas.distanceMeters ?? 0)),
+          calories:
+            sensorDeltas.calories === null ? null : Math.max(0, Math.round(sensorDeltas.calories)),
           distanceEnteredManually: false,
           caloriesEnteredManually: false,
         },
@@ -586,6 +594,7 @@ export function TimerOnlyRecordingProvider({
       });
       await storageQueue.current;
       await draftStorage.finalize(artifact);
+      bluetooth.recorder.endSessionMetrics();
       const history = await draftStorage.listArtifacts();
       setProviderState((current) => ({
         ...current,
@@ -614,7 +623,7 @@ export function TimerOnlyRecordingProvider({
     } finally {
       commandInFlight.current = false;
     }
-  }, [draftStorage, ownerId]);
+  }, [bluetooth.recorder, draftStorage, ownerId]);
 
   const save = useCallback(
     async (review: PortableWebRecordingReview) => {
@@ -670,6 +679,7 @@ export function TimerOnlyRecordingProvider({
   const reset = useCallback(() => {
     if (!enabledRef.current || !draftStorage) return;
     const result = resetTimerOnlyRecording();
+    bluetooth.recorder.endSessionMetrics();
     recordingRef.current = result.state;
     lastConfirmedRecordingRef.current = result.state;
     durabilityFenced.current = false;
@@ -686,7 +696,7 @@ export function TimerOnlyRecordingProvider({
       savingCommand: false,
     }));
     void enqueueStorage(() => draftStorage.remove());
-  }, [draftStorage, enqueueStorage]);
+  }, [bluetooth.recorder, draftStorage, enqueueStorage]);
   const cancel = useCallback(async () => {
     if (!enabledRef.current || !draftStorage) return;
     if (!window.confirm("Cancel this recording? Its saved timer will be deleted.")) return;
@@ -698,6 +708,7 @@ export function TimerOnlyRecordingProvider({
       const cleanup = storageQueue.current.catch(() => undefined).then(() => draftStorage.remove());
       storageQueue.current = cleanup.catch(() => undefined);
       await cleanup;
+      bluetooth.recorder.endSessionMetrics();
       const initial = createInitialTimerOnlyRecordingState();
       recordingRef.current = initial;
       lastConfirmedRecordingRef.current = initial;
@@ -724,7 +735,7 @@ export function TimerOnlyRecordingProvider({
     } finally {
       commandInFlight.current = false;
     }
-  }, [draftStorage]);
+  }, [bluetooth.recorder, draftStorage]);
   const discardFinalizedArtifact = useCallback(async () => {
     if (!enabledRef.current || !draftStorage) return;
     const artifact = providerState.artifact;
@@ -897,6 +908,13 @@ export function TimerOnlyRecordingProvider({
         history: providerState.history,
         busy: providerState.busy,
         canTakeOver: providerState.canTakeOver,
+        sensors: {
+          state: bluetooth.state,
+          connect: () => bluetooth.recorder.connect(),
+          disconnect: () => bluetooth.recorder.disconnect(),
+          requestControl: () => bluetooth.recorder.requestControl(),
+          setTargetPower: (watts) => bluetooth.recorder.setTargetPower(watts),
+        },
       }}
     >
       {children}

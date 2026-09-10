@@ -3,6 +3,12 @@ import {
   createVersionedSystemContentDefinition,
   type VersionedSystemContentDefinition,
 } from "./content-identity";
+import { EXPANDED_ENDURANCE_BIKE_ACTIVITIES } from "./endurance-expansion-bike";
+import { EXPANDED_ENDURANCE_OTHER_ACTIVITIES } from "./endurance-expansion-other";
+import { EXPANDED_ENDURANCE_RUN_ACTIVITIES } from "./endurance-expansion-run";
+import { EXPANDED_ENDURANCE_STRENGTH_ACTIVITIES } from "./endurance-expansion-strength";
+import { EXPANDED_ENDURANCE_SWIM_ACTIVITIES } from "./endurance-expansion-swim";
+import { ICONIC_ENDURANCE_ACTIVITIES } from "./iconic-endurance";
 import { SAMPLE_INDOOR_TRAINER_ACTIVITIES } from "./indoor-bike-activity";
 import { SAMPLE_INDOOR_STRENGTH_ACTIVITIES } from "./indoor-strength";
 import { SAMPLE_INDOOR_SWIM_ACTIVITIES } from "./indoor-swim";
@@ -18,7 +24,14 @@ import {
   type SystemActivityPlanTemplate,
 } from "./types";
 
+export * from "./activity-plan-portfolio";
 export * from "./content-identity";
+export * from "./endurance-expansion-bike";
+export * from "./endurance-expansion-other";
+export * from "./endurance-expansion-run";
+export * from "./endurance-expansion-strength";
+export * from "./endurance-expansion-swim";
+export * from "./iconic-endurance";
 // Export individual activity category modules
 export * from "./indoor-bike-activity";
 export * from "./indoor-strength";
@@ -138,6 +151,13 @@ const swimTemplates = SAMPLE_INDOOR_SWIM_ACTIVITIES.map(mapToTemplate);
 
 const otherTemplates = SAMPLE_OTHER_ACTIVITIES.map(mapToTemplate);
 const multisportComponentTemplates = SAMPLE_MULTISPORT_COMPONENT_ACTIVITIES.map(mapToTemplate);
+const expandedEnduranceBikeTemplates = EXPANDED_ENDURANCE_BIKE_ACTIVITIES.map(mapToTemplate);
+const expandedEnduranceRunTemplates = EXPANDED_ENDURANCE_RUN_ACTIVITIES.map(mapToTemplate);
+const expandedEnduranceSwimTemplates = EXPANDED_ENDURANCE_SWIM_ACTIVITIES.map(mapToTemplate);
+const expandedEnduranceOtherTemplates = EXPANDED_ENDURANCE_OTHER_ACTIVITIES.map(mapToTemplate);
+const expandedEnduranceStrengthTemplates =
+  EXPANDED_ENDURANCE_STRENGTH_ACTIVITIES.map(mapToTemplate);
+const iconicEnduranceTemplates = ICONIC_ENDURANCE_ACTIVITIES.map(mapToTemplate);
 
 /**
  * All system templates that should be uploaded to the database.
@@ -148,6 +168,12 @@ export const SYSTEM_TEMPLATES: SystemTemplate[] = [
   ...treadmillTemplates,
   ...outdoorRunTemplates,
   ...outdoorBikeTemplates,
+  ...expandedEnduranceBikeTemplates,
+  ...expandedEnduranceRunTemplates,
+  ...expandedEnduranceSwimTemplates,
+  ...expandedEnduranceStrengthTemplates,
+  ...expandedEnduranceOtherTemplates,
+  ...iconicEnduranceTemplates,
   ...strengthTemplates,
   ...swimTemplates,
   ...otherTemplates,

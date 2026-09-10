@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { createRouterCaller } from "../../test/router";
 
 const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 const STATE_ID = "55555555-5555-4555-8555-555555555555";
@@ -13,7 +14,8 @@ const mocks = vi.hoisted(() => ({
   syncIntegrationNow: vi.fn(),
   refreshSetupData: vi.fn(),
   getSetupData: vi.fn(),
-  providerAdapter: {
+  requireProviderOAuthAuthorizationRuntime: vi.fn(),
+  providerRuntimeComponents: {
     createOAuthAuthorization: vi.fn(),
     disconnect: vi.fn(),
     isOAuthConfigured: vi.fn(),
@@ -35,9 +37,12 @@ vi.mock("../../application/integrations", () => ({
   IntegrationDisconnectPendingError: mocks.IntegrationDisconnectPendingError,
   IntegrationOnboardingClosedError: class IntegrationOnboardingClosedError extends Error {},
   getProviderSyncOverview: mocks.getProviderSyncOverview,
-  getProviderOperationAdapter: vi.fn(() => mocks.providerAdapter),
-  requireProviderOperationAdapter: vi.fn(() => mocks.providerAdapter),
-  ProviderOperationUnavailableError: class ProviderOperationUnavailableError extends Error {},
+  getProviderSetupRuntime: vi.fn(() => mocks.providerRuntimeComponents),
+  requireProviderDisconnectionRuntime: vi.fn(() => mocks.providerRuntimeComponents),
+  requireProviderOAuthAuthorizationRuntime: mocks.requireProviderOAuthAuthorizationRuntime,
+  requireProviderSetupRuntime: vi.fn(() => mocks.providerRuntimeComponents),
+  requireProviderSynchronizationRuntime: vi.fn(() => mocks.providerRuntimeComponents),
+  ProviderRuntimeUnavailableError: class ProviderRuntimeUnavailableError extends Error {},
 }));
 vi.mock("../../application/wahoo-profile-setup-service", () => ({
   WahooProfileSetupService: class {
@@ -68,13 +73,7 @@ vi.mock("@repo/db", () => ({
 import { attachProviderSetupEvidence, integrationsRouter } from "../integrations";
 
 function createCaller() {
-  return integrationsRouter.createCaller({
-    db: {},
-    session: { user: { id: PROFILE_ID } },
-    headers: new Headers(),
-    clientType: "test",
-    trpcSource: "vitest",
-  } as any);
+  return createRouterCaller(integrationsRouter, { db: {}, userId: PROFILE_ID });
 }
 
 const originalEnv = { ...process.env };
@@ -97,8 +96,13 @@ describe("integrationsRouter", () => {
       sources: {},
       values: {},
     });
-    mocks.providerAdapter.isOAuthConfigured.mockReturnValue(true);
-    mocks.providerAdapter.createOAuthAuthorization.mockImplementation(({ state }) => ({
+    mocks.providerRuntimeComponents.isOAuthConfigured.mockReturnValue(true);
+    mocks.requireProviderOAuthAuthorizationRuntime.mockReturnValue({
+      kind: "oauth2",
+      provider: "wahoo",
+      ...mocks.providerRuntimeComponents,
+    });
+    mocks.providerRuntimeComponents.createOAuthAuthorization.mockImplementation(({ state }) => ({
       binding: {
         callbackUri: "https://app.example.com/api/integrations/callback/wahoo",
         requestedScope: "user_read workouts_read offline_data",
@@ -106,10 +110,14 @@ describe("integrationsRouter", () => {
       },
       url: `https://api.wahooligan.com/oauth/authorize?state=${state}&redirect_uri=${encodeURIComponent("https://app.example.com/api/integrations/callback/wahoo")}`,
     }));
-    mocks.providerAdapter.readSetupEvidence.mockImplementation(() => mocks.getSetupData());
-    mocks.providerAdapter.refreshSetupEvidence.mockImplementation(() => mocks.refreshSetupData());
-    mocks.providerAdapter.syncNow.mockImplementation(() => mocks.syncIntegrationNow());
-    mocks.providerAdapter.disconnect.mockImplementation(() =>
+    mocks.providerRuntimeComponents.readSetupEvidence.mockImplementation(() =>
+      mocks.getSetupData(),
+    );
+    mocks.providerRuntimeComponents.refreshSetupEvidence.mockImplementation(() =>
+      mocks.refreshSetupData(),
+    );
+    mocks.providerRuntimeComponents.syncNow.mockImplementation(() => mocks.syncIntegrationNow());
+    mocks.providerRuntimeComponents.disconnect.mockImplementation(() =>
       mocks.providerSyncRepository.requestWahooDisconnect(),
     );
   });
@@ -208,6 +216,19 @@ describe("integrationsRouter", () => {
     ).rejects.toMatchObject({ code: "CONFLICT" });
   });
 
+  it("rejects OAuth initiation when no OAuth-only runtime is available", async () => {
+    const application = await import("../../application/integrations");
+    mocks.requireProviderOAuthAuthorizationRuntime.mockImplementationOnce(() => {
+      throw new application.ProviderRuntimeUnavailableError("wahoo");
+    });
+
+    await expect(createCaller().getAuthUrl({ provider: "wahoo" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Integration is not configured on this server",
+    });
+    expect(mocks.createPendingOAuthStateWithFence).not.toHaveBeenCalled();
+  });
+
   it("rejects an unqueued sync result at the public boundary", async () => {
     mocks.syncIntegrationNow.mockResolvedValue({ jobId: null, queued: false, setupRefresh: null });
 
@@ -220,7 +241,7 @@ describe("integrationsRouter", () => {
   it("rejects setup refresh for a disabled adapter before invoking the service", async () => {
     const unavailable = new Error("not executable");
     const application = await import("../../application/integrations");
-    vi.mocked(application.requireProviderOperationAdapter).mockImplementationOnce(() => {
+    vi.mocked(application.requireProviderSetupRuntime).mockImplementationOnce(() => {
       throw unavailable;
     });
 

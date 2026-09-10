@@ -18,6 +18,7 @@ import { api } from "@/lib/api";
 import { useGroupDetailViewModel, useGroupInviteActions } from "@/lib/groups";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 
 function singleParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -93,6 +94,7 @@ function ProfileInviteRow({
 }) {
   const navigateTo = useAppNavigate();
   const displayName = profile.username?.trim() || "Athlete";
+  const avatarUri = profile.avatar_url ? getReachableSupabaseStorageUrl(profile.avatar_url) : null;
   return (
     <Pressable
       accessibilityRole="button"
@@ -115,7 +117,7 @@ function ProfileInviteRow({
           testID={`group-invite-profile-link-${profile.id}`}
         >
           <Avatar alt={displayName} className="h-10 w-10">
-            {profile.avatar_url ? <AvatarImage source={{ uri: profile.avatar_url }} /> : null}
+            {avatarUri ? <AvatarImage key={avatarUri} source={{ uri: avatarUri }} /> : null}
             <AvatarFallback>
               <Text className="text-sm font-semibold text-muted-foreground">
                 {displayName.charAt(0).toUpperCase()}

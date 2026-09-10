@@ -24,7 +24,7 @@ const compactPortfolioGoalSchema = z
 export const goalPortfolioResponseSchema = z
   .object({
     activeGoalCount: z.number().int().nonnegative(),
-    computedAt: z.string().datetime({ offset: true }),
+    computedAt: z.string().datetime({ offset: true }).nullable(),
     freshness: z.enum(["fresh", "stale", "unavailable"]),
     planningDate: z.iso.date(),
     publishedRevision: z.number().int().nonnegative().nullable(),
