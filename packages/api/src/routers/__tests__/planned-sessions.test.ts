@@ -1,4 +1,8 @@
-import { plannedSessionIdempotencyKey, plannedSessionSchema } from "@repo/core/calendar";
+import {
+  PLANNED_SESSION_CONTRACT_VERSION,
+  plannedSessionIdempotencyKey,
+  plannedSessionSchema,
+} from "@repo/core/calendar";
 import type { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 import { PlannedSessionStaleRevisionError } from "../../application/calendar/planned-session-errors";
@@ -14,7 +18,7 @@ const GROUP_EVENT_ID = "88888888-8888-4888-8888-888888888888";
 function session() {
   const source = { kind: "direct" as const, operationId: "a".repeat(32) };
   return plannedSessionSchema.parse({
-    contractVersion: "planned-session-v1",
+    contractVersion: PLANNED_SESSION_CONTRACT_VERSION,
     id: SESSION_ID,
     profileId: PROFILE_ID,
     sessionRevision: 1,
@@ -26,6 +30,9 @@ function session() {
     prescription: {
       activityPlanId: "44444444-4444-4444-8444-444444444444",
       activityPlanRevision: 1,
+      variantId: "44444444-4444-4444-8444-444444444444",
+      variantName: "Base",
+      structureHash: `v1:sha256:${"0".repeat(64)}`,
       structure: {
         version: 3,
         activity_category: "run",
@@ -117,7 +124,7 @@ describe("plannedSessionsRouter", () => {
     ).rejects.toMatchObject({ code: "CONFLICT" } satisfies Partial<TRPCError>);
   });
 
-  it("passes only plan identity to server-owned snapshot creation", async () => {
+  it("passes plan and optional variant identity to server-owned snapshot creation", async () => {
     const { router: planned, dependencies } = router();
     const caller = createRouterCaller(planned, { userId: PROFILE_ID, db: {} });
     await caller.create({
@@ -126,6 +133,7 @@ describe("plannedSessionsRouter", () => {
         planningDate: "2026-08-10",
         source: { kind: "direct", operationId: "a".repeat(32) },
         activityPlanId: "44444444-4444-4444-8444-444444444444",
+        variantId: "99999999-9999-4999-8999-999999999999",
       },
     });
 
@@ -133,6 +141,7 @@ describe("plannedSessionsRouter", () => {
       expect.objectContaining({
         profileId: PROFILE_ID,
         activityPlanId: "44444444-4444-4444-8444-444444444444",
+        variantId: "99999999-9999-4999-8999-999999999999",
         capturedAt: new Date("2026-08-01T08:00:00.000Z"),
       }),
     );

@@ -1,4 +1,9 @@
-import type { RecordingSessionArtifact } from "@repo/core";
+import { createHash } from "node:crypto";
+import {
+  activityPlanStructureSchema,
+  getCanonicalActivityPlanStructureHashInput,
+  type RecordingSessionArtifact,
+} from "@repo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -13,6 +18,14 @@ vi.mock("../ActivityRecorder/recordingEvidenceJournal", () => ({
 vi.mock("../ActivityRecorder/checkpointStorage", () => ({
   clearRecordingCheckpoint: mocks.clearCheckpoint,
 }));
+vi.mock("expo-crypto", async () => {
+  const { createHash } = await import("node:crypto");
+  return {
+    CryptoDigestAlgorithm: { SHA256: "SHA-256" },
+    digestStringAsync: async (_algorithm: string, value: string) =>
+      createHash("sha256").update(value).digest("hex"),
+  };
+});
 
 import { ensureFinalizedArtifactQueueHandoff } from "./finalizedArtifactHandoff";
 
@@ -55,6 +68,63 @@ const artifact = {
     normalizedIntensity: { status: "partial", value: 0.8 },
   },
 } as unknown as RecordingSessionArtifact;
+
+const plannedStructure = activityPlanStructureSchema.parse({
+  version: 3 as const,
+  activity_category: "run" as const,
+  segments: [
+    {
+      id: "10000000-0000-4000-8000-000000000001",
+      role: "activity" as const,
+      name: "Run",
+      intervals: [
+        {
+          id: "10000000-0000-4000-8000-000000000002",
+          name: "Work",
+          repetitions: 1,
+          steps: [
+            {
+              id: "10000000-0000-4000-8000-000000000003",
+              name: "Steady",
+              duration: { type: "time" as const, seconds: 60 },
+              targets: [{ type: "RPE" as const, intensity: 7 }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+const plannedStructureHash = `v1:sha256:${createHash("sha256")
+  .update(getCanonicalActivityPlanStructureHashInput(plannedStructure))
+  .digest("hex")}`;
+const plannedExecution = {
+  manifestVersion: 1 as const,
+  compilerVersion: 1 as const,
+  activityPlanId: "10000000-0000-4000-8000-000000000004",
+  scheduledEventId: "10000000-0000-4000-8000-000000000005",
+  name: "Hard",
+  description: null,
+  activityPlanRevision: 3,
+  structureHash: plannedStructureHash,
+  structure: plannedStructure,
+  plannedSession: {
+    id: "10000000-0000-4000-8000-000000000006",
+    sessionRevision: 5,
+    prescription: {
+      activityPlanId: "10000000-0000-4000-8000-000000000004",
+      activityPlanRevision: 3,
+      variantId: "10000000-0000-4000-8000-000000000007",
+      variantName: "Hard",
+      structure: plannedStructure,
+      structureHash: plannedStructureHash,
+      prescriptionQuantification: null,
+      capturedAt: "2026-01-01T09:00:00.000Z",
+    },
+  },
+  personalizationEnabled: false,
+  targetPresentations: [],
+};
 
 describe("finalized artifact queue handoff", () => {
   beforeEach(() => {
@@ -118,6 +188,63 @@ describe("finalized artifact queue handoff", () => {
     expect(handoff.draft).not.toHaveProperty("commonLoad");
     expect(handoff.draft).not.toHaveProperty("normalizedIntensity");
     expect(JSON.stringify(handoff)).not.toMatch(/trainingStressScore|intensityFactor|"tss"/i);
+  });
+
+  it("retains immutable planned-session provenance in the durable queue handoff", async () => {
+    const plannedArtifact = {
+      ...artifact,
+      snapshot: {
+        ...artifact.snapshot,
+        activity: {
+          ...artifact.snapshot.activity,
+          activityPlanId: plannedExecution.activityPlanId,
+          eventId: plannedExecution.scheduledEventId,
+        },
+        planExecution: plannedExecution,
+      },
+    } as unknown as RecordingSessionArtifact;
+
+    const handoff = await ensureFinalizedArtifactQueueHandoff(plannedArtifact);
+
+    expect(handoff).toMatchObject({
+      planExecution: plannedExecution,
+      draft: { activityPlanId: plannedExecution.activityPlanId },
+    });
+  });
+
+  it("rejects corrupted planned-session provenance before durable queue handoff", async () => {
+    const plannedArtifact = {
+      ...artifact,
+      sessionId: "profile-1:corrupt-planned-session",
+      snapshot: {
+        ...artifact.snapshot,
+        identity: {
+          ...artifact.snapshot.identity,
+          sessionId: "profile-1:corrupt-planned-session",
+        },
+        activity: {
+          ...artifact.snapshot.activity,
+          activityPlanId: plannedExecution.activityPlanId,
+        },
+        planExecution: {
+          ...plannedExecution,
+          structureHash: `v1:sha256:${"f".repeat(64)}`,
+          plannedSession: {
+            ...plannedExecution.plannedSession,
+            prescription: {
+              ...plannedExecution.plannedSession.prescription,
+              structureHash: `v1:sha256:${"f".repeat(64)}`,
+            },
+          },
+        },
+      },
+    } as unknown as RecordingSessionArtifact;
+
+    await expect(ensureFinalizedArtifactQueueHandoff(plannedArtifact)).rejects.toThrow(
+      "Invalid recording prescription structure hash",
+    );
+    expect(mocks.handoff).not.toHaveBeenCalled();
+    expect(mocks.clearCheckpoint).not.toHaveBeenCalled();
   });
 
   it.each([

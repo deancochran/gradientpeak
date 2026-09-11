@@ -1,4 +1,11 @@
 import { canonicalActivityCategorySchema } from "@repo/core";
+import {
+  activityPlanDocumentSchema,
+  activityPlanStructureSchema,
+  activityPlanVariantIdSchema,
+  activityPlanVariantNameSchema,
+} from "@repo/core/activity-plan";
+import { PLANNED_SESSION_CONTRACT_VERSION } from "@repo/core/calendar";
 import { canonicalEffortUnitSchema } from "@repo/core/units";
 import { createInsertSchema, createSelectSchema, createUpdateSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -127,9 +134,15 @@ export const publicActivityRoutesRowSchema = createSelectSchema(activityRoutes).
 export const publicActivityRoutesInsertSchema = createInsertSchema(activityRoutes);
 export const publicActivityRoutesUpdateSchema = createUpdateSchema(activityRoutes);
 
-export const publicActivityPlansRowSchema = createSelectSchema(activityPlans);
-export const publicActivityPlansInsertSchema = createInsertSchema(activityPlans);
-export const publicActivityPlansUpdateSchema = createUpdateSchema(activityPlans);
+export const publicActivityPlansRowSchema = createSelectSchema(activityPlans, {
+  structure: activityPlanDocumentSchema,
+});
+export const publicActivityPlansInsertSchema = createInsertSchema(activityPlans, {
+  structure: activityPlanDocumentSchema,
+});
+export const publicActivityPlansUpdateSchema = createUpdateSchema(activityPlans, {
+  structure: activityPlanDocumentSchema.optional(),
+});
 
 export const publicTrainingPlansRowSchema = createSelectSchema(trainingPlans);
 export const publicTrainingPlansInsertSchema = createInsertSchema(trainingPlans);
@@ -224,9 +237,30 @@ export const publicProfileAthleteStateUpdateSchema = createUpdateSchema(profileA
 export const publicThresholdEvidenceRowSchema = createSelectSchema(thresholdEvidence);
 export const publicThresholdEvidenceInsertSchema = createInsertSchema(thresholdEvidence);
 export const publicThresholdEvidenceUpdateSchema = createUpdateSchema(thresholdEvidence);
-export const publicPlannedSessionsRowSchema = createSelectSchema(plannedSessions);
-export const publicPlannedSessionsInsertSchema = createInsertSchema(plannedSessions);
-export const publicPlannedSessionsUpdateSchema = createUpdateSchema(plannedSessions);
+export const publicPlannedSessionsRowSchema = createSelectSchema(plannedSessions, {
+  activity_plan_variant_id: activityPlanVariantIdSchema,
+  activity_plan_variant_name: activityPlanVariantNameSchema,
+  contract_version: z.literal(PLANNED_SESSION_CONTRACT_VERSION),
+  prescription_structure: activityPlanStructureSchema,
+  prescription_structure_hash: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
+});
+export const publicPlannedSessionsInsertSchema = createInsertSchema(plannedSessions, {
+  activity_plan_variant_id: activityPlanVariantIdSchema,
+  activity_plan_variant_name: activityPlanVariantNameSchema,
+  contract_version: z.literal(PLANNED_SESSION_CONTRACT_VERSION).optional(),
+  prescription_structure: activityPlanStructureSchema,
+  prescription_structure_hash: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
+});
+export const publicPlannedSessionsUpdateSchema = createUpdateSchema(plannedSessions, {
+  activity_plan_variant_id: activityPlanVariantIdSchema.optional(),
+  activity_plan_variant_name: activityPlanVariantNameSchema.optional(),
+  contract_version: z.literal(PLANNED_SESSION_CONTRACT_VERSION).optional(),
+  prescription_structure: activityPlanStructureSchema.optional(),
+  prescription_structure_hash: z
+    .string()
+    .regex(/^v1:sha256:[0-9a-f]{64}$/)
+    .optional(),
+});
 
 export const publicIntegrationsRowSchema = createSelectSchema(integrations);
 export const publicIntegrationsInsertSchema = createInsertSchema(integrations);

@@ -66,6 +66,13 @@ function planWithRelativeTarget(type: "%FTP" | "%ThresholdHR", activityCategory:
   return structure;
 }
 
+function planDocument(structure: unknown) {
+  return core.initializeActivityPlanDocument({
+    activityPlanId: "11111111-1111-4111-8111-111111111111",
+    structure,
+  });
+}
+
 function remoteWorkout(overrides: Record<string, unknown> = {}) {
   return {
     created_at: "2026-07-28T12:00:00.000Z",
@@ -152,7 +159,12 @@ function syncFixture(
         description: "Bike session",
         id: "plan-1",
         name: "Tempo Intervals",
-        structure: input.planStructure ?? core.SYSTEM_TEMPLATES[0]?.structure,
+        structure:
+          input.planStructure ??
+          core.initializeActivityPlanDocument({
+            activityPlanId: "11111111-1111-4111-8111-111111111111",
+            structure: core.SYSTEM_TEMPLATES[0]?.structure,
+          }),
         updatedAt: "2026-07-28T10:00:00.000Z",
       },
       id: "event-1",
@@ -539,7 +551,7 @@ describe("WahooSyncService planned-activity reconciliation", () => {
     });
     const { execution, service, wahooClient } = syncFixture({
       performanceTargets: latestTargets,
-      planStructure,
+      planStructure: planDocument(planStructure),
     });
     const updateDesiredProjection = vi.fn().mockResolvedValue(true);
 
@@ -573,7 +585,7 @@ describe("WahooSyncService planned-activity reconciliation", () => {
         integration.profileId,
       ),
       existingLink: { externalId: "99", id: "link-1" },
-      planStructure: planWithRelativeTarget("%FTP", "bike"),
+      planStructure: planDocument(planWithRelativeTarget("%FTP", "bike")),
     });
 
     await expect(service.syncEvent("event-1", "profile-1", execution)).resolves.toMatchObject({
@@ -601,7 +613,7 @@ describe("WahooSyncService planned-activity reconciliation", () => {
         integration.profileId,
       ),
       existingLink: { externalId: "99", id: "link-1" },
-      planStructure,
+      planStructure: planDocument(planStructure),
     });
 
     await expect(service.syncEvent("event-1", "profile-1", execution)).resolves.toMatchObject({

@@ -16,6 +16,7 @@ export const ACCEPTANCE_TOMBSTONE_RETENTION_MS = 180 * 24 * 60 * 60 * 1_000;
 export const MAX_QUARANTINE_ROWS_PER_SESSION = 20;
 export const MAX_QUARANTINE_ROWS_PER_PROFILE = 200;
 export const EVIDENCE_GC_BATCH_SIZE = 100;
+export const CONTRACT_EPOCH_QUARANTINE_ERROR_CATEGORY = "contract-epoch-quarantined";
 
 /** A producer attempted to append after the irreversible finalization fence. */
 export class RecordingEvidenceClosedError extends Error {
@@ -50,10 +51,6 @@ export type RecordingEvidenceSqlExecutor = {
   ): Promise<void>;
 };
 
-type RecordingEvidenceDatabaseHandle = RecordingEvidenceSqlExecutor & {
-  closeAsync?: () => Promise<void>;
-};
-
 /**
  * Checkpoint shape and recovery invariants belong to the recorder, not this
  * SQLite adapter. Callers inject that strict validation so this module never
@@ -65,7 +62,7 @@ export type RecordingEvidenceCheckpointValidator = (input: {
   profileId: string;
 }) => Promise<boolean>;
 
-let databasePromise: Promise<RecordingEvidenceDatabaseHandle> | undefined;
+let databasePromise: Promise<RecordingEvidenceSqlExecutor> | undefined;
 let claimedCheckpointSessionId: string | null = null;
 
 async function sha256(value: string): Promise<string> {
@@ -384,24 +381,181 @@ export function resetRecordingEvidenceJournalForTests(): void {
   claimedCheckpointSessionId = null;
 }
 
+export type ContractEpochRecordingEvidenceMigrationSummary = {
+  quarantinedRecordingIntents: number;
+  quarantinedQueueJobs: number;
+};
+
 /**
- * Removes all recorder evidence authority for a contract-epoch reset. The
- * cached handle is closed before deletion and is forgotten even when close or
- * deletion fails, allowing the next startup attempt to retry safely.
+ * Migrates the pre-cut recorder graph without moving or deleting any evidence.
+ * Compatible checkpoints and finalized handoffs remain live. Incompatible
+ * checkpoints, handoffs, and queue rows are fenced together in one SQLite
+ * transaction while their original payloads and file references stay intact.
  */
-export async function resetRecordingEvidenceJournal(): Promise<void> {
-  const pendingDatabase = databasePromise;
-  databasePromise = undefined;
-  claimedCheckpointSessionId = null;
-  // A fresh install has no cached handle and may not have a database file yet.
-  // Open it first so deletion remains idempotent on that same startup path.
-  const database = (await (pendingDatabase ??
-    getRecordingEvidenceDatabase())) as RecordingEvidenceDatabaseHandle;
-  if (database?.closeAsync) await database.closeAsync();
-  databasePromise = undefined;
-  const SQLite = await import("expo-sqlite");
-  await SQLite.deleteDatabaseAsync(DATABASE_NAME);
-  await getRecordingEvidenceDatabase();
+export async function migrateRecordingEvidenceForContractEpoch(input: {
+  sourceEpoch: string | null;
+  targetEpoch: number;
+  isCheckpointCompatible: (checkpointJson: string) => boolean;
+  now?: number;
+}): Promise<ContractEpochRecordingEvidenceMigrationSummary> {
+  const now = input.now ?? Date.now();
+  if (!Number.isFinite(now) || !Number.isInteger(input.targetEpoch) || input.targetEpoch < 1) {
+    throw new Error("Contract epoch recording migration metadata is invalid");
+  }
+  const sourceEpoch = input.sourceEpoch ?? "none";
+  const recordingReason = `contract-epoch:${sourceEpoch}-to-${input.targetEpoch}:recording-intent`;
+  const queueReason = `contract-epoch:${sourceEpoch}-to-${input.targetEpoch}:queue-intent`;
+  const manifestReason = `contract-epoch:${sourceEpoch}-to-${input.targetEpoch}:migration-manifest`;
+  const db = await getRecordingEvidenceDatabase();
+  let summary: ContractEpochRecordingEvidenceMigrationSummary = {
+    quarantinedRecordingIntents: 0,
+    quarantinedQueueJobs: 0,
+  };
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    if (input.sourceEpoch !== null) {
+      const existingManifest = await tx.getAllAsync<{ present: number }>(
+        "SELECT 1 AS present FROM recording_evidence_quarantine WHERE session_id IS NULL AND reason = ? LIMIT 1",
+        manifestReason,
+      );
+      if (existingManifest.length === 0) {
+        await tx.runAsync(
+          "INSERT INTO recording_evidence_quarantine (session_id, reason, payload, quarantined_at) VALUES (NULL, ?, ?, ?)",
+          manifestReason,
+          JSON.stringify({
+            version: 1,
+            sourceEpoch: input.sourceEpoch,
+            targetEpoch: input.targetEpoch,
+            preCutUnindexedArtifactsPreserved: true,
+            allowedResolution: ["recovery", "export", "explicit-discard"],
+          }),
+          now,
+        );
+      }
+    }
+    const sessions = await tx.getAllAsync<{
+      session_id: string;
+      state: string;
+      checkpoint_json: string | null;
+      finalized_path: string | null;
+      finalized_artifact_json: string | null;
+    }>(
+      "SELECT session_id, state, checkpoint_json, finalized_path, finalized_artifact_json FROM recording_evidence_sessions WHERE state IN ('active', 'fenced', 'finalized')",
+    );
+    const quarantinedSessionIds = new Set<string>();
+    for (const session of sessions) {
+      let compatible = false;
+      if (session.state === "active" || session.state === "fenced") {
+        try {
+          compatible = Boolean(
+            session.checkpoint_json && input.isCheckpointCompatible(session.checkpoint_json),
+          );
+        } catch {
+          compatible = false;
+        }
+      } else if (session.finalized_artifact_json) {
+        try {
+          compatible = recordingSessionArtifactSchema.safeParse(
+            JSON.parse(session.finalized_artifact_json),
+          ).success;
+        } catch {
+          compatible = false;
+        }
+      }
+      if (compatible) continue;
+      const result = await tx.runAsync(
+        "UPDATE recording_evidence_sessions SET state = 'quarantined' WHERE session_id = ? AND state = ?",
+        session.session_id,
+        session.state,
+      );
+      if ((result.changes ?? 0) !== 1) {
+        throw new Error("Contract epoch recording quarantine lost its state fence");
+      }
+      quarantinedSessionIds.add(session.session_id);
+      await tx.runAsync(
+        "INSERT INTO recording_evidence_quarantine (session_id, reason, payload, quarantined_at) VALUES (?, ?, ?, ?)",
+        session.session_id,
+        recordingReason,
+        JSON.stringify({
+          version: 1,
+          sourceEpoch: input.sourceEpoch,
+          targetEpoch: input.targetEpoch,
+          priorState: session.state,
+          checkpointRetained: session.checkpoint_json !== null,
+          finalizedArtifactRetained: session.finalized_artifact_json !== null,
+          finalizedPathRetained: session.finalized_path !== null,
+        }),
+        now,
+      );
+    }
+
+    const queueRows = await tx.getAllAsync<{
+      id: string;
+      operation_id: string;
+      session_id: string;
+      artifact_id: string;
+      status: string;
+      job_json: string;
+    }>(
+      "SELECT id, operation_id, session_id, artifact_id, status, job_json FROM activity_submission_queue_jobs WHERE COALESCE(error_category, '') NOT IN ('discarded', ?)",
+      CONTRACT_EPOCH_QUARANTINE_ERROR_CATEGORY,
+    );
+    for (const row of queueRows) {
+      let queuePayloadCompatible = false;
+      try {
+        queuePayloadCompatible = activitySubmissionQueueJobSchema.safeParse(
+          JSON.parse(row.job_json),
+        ).success;
+      } catch {
+        queuePayloadCompatible = false;
+      }
+      if (queuePayloadCompatible && !quarantinedSessionIds.has(row.session_id)) continue;
+      const result = await tx.runAsync(
+        "UPDATE activity_submission_queue_jobs SET status = 'failed', retry_class = 'permanent', next_attempt_at = NULL, error_category = ?, lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL, updated_at = ? WHERE id = ? AND COALESCE(error_category, '') != ?",
+        CONTRACT_EPOCH_QUARANTINE_ERROR_CATEGORY,
+        now,
+        row.id,
+        CONTRACT_EPOCH_QUARANTINE_ERROR_CATEGORY,
+      );
+      if ((result.changes ?? 0) !== 1) {
+        throw new Error("Contract epoch queue quarantine lost its state fence");
+      }
+      await tx.runAsync(
+        "UPDATE recording_evidence_sessions SET state = 'quarantined' WHERE session_id = ? AND state = 'finalized'",
+        row.session_id,
+      );
+      await tx.runAsync(
+        "INSERT INTO recording_evidence_quarantine (session_id, reason, payload, quarantined_at) VALUES (?, ?, ?, ?)",
+        row.session_id,
+        queueReason,
+        JSON.stringify({
+          version: 1,
+          sourceEpoch: input.sourceEpoch,
+          targetEpoch: input.targetEpoch,
+          queueJobId: row.id,
+          operationId: row.operation_id,
+          artifactId: row.artifact_id,
+          priorStatus: row.status,
+          queueRowRetained: true,
+          queuePayloadRetained: true,
+        }),
+        now,
+      );
+    }
+
+    const recordingCount = await tx.getAllAsync<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM recording_evidence_quarantine WHERE reason = ?",
+      recordingReason,
+    );
+    const queueCount = await tx.getAllAsync<{ count: number }>(
+      "SELECT COUNT(*) AS count FROM recording_evidence_quarantine WHERE reason = ?",
+      queueReason,
+    );
+    summary = {
+      quarantinedRecordingIntents: recordingCount[0]?.count ?? 0,
+      quarantinedQueueJobs: queueCount[0]?.count ?? 0,
+    };
+  });
+  return summary;
 }
 
 /** Test-only adapter seam; production always opens the Expo SQLite authority. */
@@ -1840,8 +1994,9 @@ export async function garbageCollectExpiredRecordingEvidence(
     const terminal = await tx.getAllAsync<{ session_id: string }>(
       `SELECT s.session_id FROM recording_evidence_sessions s
        WHERE s.state = 'quarantined' AND s.created_at <= ?
-         AND NOT EXISTS (SELECT 1 FROM activity_submission_queue_jobs q WHERE q.status != 'complete' AND COALESCE(q.error_category, '') != 'discarded' AND (q.session_id = s.session_id OR q.artifact_id = s.session_id))
-        AND NOT EXISTS (SELECT 1 FROM recording_evidence_quarantine dq WHERE dq.session_id = s.session_id AND dq.reason = 'user-discarded-finalized-recording' AND dq.payload LIKE '%"cleanupPending":true%')
+          AND NOT EXISTS (SELECT 1 FROM activity_submission_queue_jobs q WHERE q.status != 'complete' AND COALESCE(q.error_category, '') != 'discarded' AND (q.session_id = s.session_id OR q.artifact_id = s.session_id))
+         AND NOT EXISTS (SELECT 1 FROM recording_evidence_quarantine eq WHERE eq.session_id = s.session_id AND eq.reason LIKE 'contract-epoch:%')
+         AND NOT EXISTS (SELECT 1 FROM recording_evidence_quarantine dq WHERE dq.session_id = s.session_id AND dq.reason = 'user-discarded-finalized-recording' AND dq.payload LIKE '%"cleanupPending":true%')
         ORDER BY s.created_at LIMIT ?`,
       now - RAW_TERMINAL_EVIDENCE_RETENTION_MS,
       limit,
@@ -1870,13 +2025,13 @@ export async function garbageCollectExpiredRecordingEvidence(
     // predicates preserve the newest evidence for each session/profile.
     await tx.runAsync(
       `DELETE FROM recording_evidence_quarantine WHERE id IN (
-      SELECT id FROM recording_evidence_quarantine WHERE quarantined_at <= ? AND NOT (reason = 'user-discarded-finalized-recording' AND payload LIKE '%"cleanupPending":true%') ORDER BY quarantined_at LIMIT ?
+      SELECT id FROM recording_evidence_quarantine WHERE quarantined_at <= ? AND reason NOT LIKE 'contract-epoch:%' AND NOT (reason = 'user-discarded-finalized-recording' AND payload LIKE '%"cleanupPending":true%') ORDER BY quarantined_at LIMIT ?
     )`,
       now - QUARANTINED_EVIDENCE_RETENTION_MS,
       limit,
     );
     await tx.runAsync(
-      `DELETE FROM recording_evidence_quarantine AS old WHERE old.session_id IS NOT NULL AND NOT (old.reason = 'user-discarded-finalized-recording' AND old.payload LIKE '%"cleanupPending":true%') AND (
+      `DELETE FROM recording_evidence_quarantine AS old WHERE old.session_id IS NOT NULL AND old.reason NOT LIKE 'contract-epoch:%' AND NOT (old.reason = 'user-discarded-finalized-recording' AND old.payload LIKE '%"cleanupPending":true%') AND (
       SELECT COUNT(*) FROM recording_evidence_quarantine AS newer WHERE newer.session_id = old.session_id AND newer.id > old.id
     ) >= ?`,
       MAX_QUARANTINE_ROWS_PER_SESSION,
@@ -1886,7 +2041,7 @@ export async function garbageCollectExpiredRecordingEvidence(
       SELECT s.session_id FROM recording_evidence_sessions s WHERE s.profile_id = (
         SELECT profile_id FROM recording_evidence_sessions WHERE session_id = old.session_id
       )
-    ) AND NOT (old.reason = 'user-discarded-finalized-recording' AND old.payload LIKE '%"cleanupPending":true%') AND (
+    ) AND old.reason NOT LIKE 'contract-epoch:%' AND NOT (old.reason = 'user-discarded-finalized-recording' AND old.payload LIKE '%"cleanupPending":true%') AND (
       SELECT COUNT(*) FROM recording_evidence_quarantine AS newer JOIN recording_evidence_sessions s ON s.session_id = newer.session_id
       WHERE s.profile_id = (SELECT profile_id FROM recording_evidence_sessions WHERE session_id = old.session_id) AND newer.id > old.id
     ) >= ?`,

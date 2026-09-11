@@ -22,6 +22,10 @@ const periodReviewKey = [
   ["trainingPlans", "getPlanPeriodReview"],
   { input: { anchorDate: "2026-08-13", period: "week" }, type: "query" },
 ] as const;
+const plannedSessionsRangeKey = [
+  ["plannedSessions", "range"],
+  { input: { startDate: "2026-08-13", endDate: "2026-08-20" }, type: "query" },
+] as const;
 
 describe("Plan scheduling cache contract", () => {
   it("includes the planning ledger in every scheduling mutation scope", () => {
@@ -30,9 +34,11 @@ describe("Plan scheduling cache contract", () => {
       expect(paths).toContainEqual(["trainingPlans", "getPlanPeriodReview"]);
       expect(paths).toContainEqual(["calendar", "range"]);
       expect(paths).toContainEqual(["calendar", "page"]);
+      expect(paths).toContainEqual(["plannedSessions", "range"]);
     }
     expect(isSchedulingSensitiveQueryKey(ledgerKey)).toBe(true);
     expect(isSchedulingSensitiveQueryKey(periodReviewKey)).toBe(true);
+    expect(isSchedulingSensitiveQueryKey(plannedSessionsRangeKey)).toBe(true);
   });
 
   it("invalidates matching ledger queries for scheduling and activity ingestion", async () => {
@@ -47,8 +53,10 @@ describe("Plan scheduling cache contract", () => {
     await invalidatePostActivityIngestionQueries(queryClient);
     const ledgerQuery = { queryKey: ledgerKey } as unknown as Query;
     const periodReviewQuery = { queryKey: periodReviewKey } as unknown as Query;
+    const plannedSessionsQuery = { queryKey: plannedSessionsRangeKey } as unknown as Query;
     expect(predicates.filter((predicate) => predicate(ledgerQuery))).toHaveLength(2);
     expect(predicates.filter((predicate) => predicate(periodReviewQuery))).toHaveLength(2);
+    expect(predicates.filter((predicate) => predicate(plannedSessionsQuery))).toHaveLength(2);
   });
 
   it("applies the short stale window and always-on mount/reconnect policy to ledgers", () => {

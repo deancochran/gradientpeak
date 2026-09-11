@@ -77,6 +77,7 @@ const editableTrainingPlan = {
       {
         offset_days: 0,
         activity_plan_id: activityPlan.id,
+        activity_plan_variant_id: activityPlan.id,
         event_overrides: { title: "Existing aerobic day" },
       },
     ],

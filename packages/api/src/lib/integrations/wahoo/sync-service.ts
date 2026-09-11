@@ -5,11 +5,13 @@
 
 import { createHash } from "node:crypto";
 import {
+  type ActivityPlanDocument,
   type ActivityPlanStructure,
   type AthletePerformanceTargetFacts,
-  activityPlanStructureSchema,
+  activityPlanDocumentSchema,
   compileActivityPlan,
   getAvailablePerformanceTargetValue,
+  resolveActivityPlanVariant,
 } from "@repo/core";
 import { canonicalUtcInstant, formatIsoInstantInIanaZone } from "@repo/core/calendar";
 import { encodeRouteCourseFit } from "@repo/core/server";
@@ -169,7 +171,7 @@ interface WahooRepository {
       description: string | null;
       id: string;
       name: string;
-      structure: unknown;
+      structure: ActivityPlanDocument;
       updatedAt: string;
     } | null;
     id: string;
@@ -305,7 +307,7 @@ type WahooActivityPlan = {
   description: string | null;
   id: string;
   name: string;
-  structure: unknown;
+  structure: ActivityPlanDocument;
   updated_at: string;
 };
 
@@ -313,7 +315,7 @@ type WahooRepositoryActivityPlan = {
   description: string | null;
   id: string;
   name: string;
-  structure: unknown;
+  structure: ActivityPlanDocument;
   updatedAt: string;
 };
 
@@ -1735,8 +1737,8 @@ export class WahooSyncService {
         );
       }
 
-      const parsedStructure = activityPlanStructureSchema.safeParse(activityPlan.structure);
-      if (!parsedStructure.success) {
+      const document = activityPlanDocumentSchema.safeParse(activityPlan.structure);
+      if (!document.success) {
         return rejectOrUnsync(
           createSyncFailure({
             category: "eligibility",
@@ -1746,7 +1748,7 @@ export class WahooSyncService {
           }),
         );
       }
-      const structure = parsedStructure.data;
+      const structure = resolveActivityPlanVariant(document.data).structure;
       const compiled = compileActivityPlan(structure);
       const normalizedPlanned: WahooPlannedEvent = {
         id: planned.id,

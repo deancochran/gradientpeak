@@ -43,13 +43,33 @@ function RecordPage() {
   const activityPlanId =
     snapshot?.activity.activityPlanId ??
     launcher.activityPlanId ??
+    selectedEvent.data?.planned_session?.prescription.activityPlanId ??
     selectedEvent.data?.activityPlanSummary?.id;
+  const scheduledPrescription = selectedEvent.data?.planned_session?.prescription ?? null;
   const routeId = snapshot?.activity.routeId ?? launcher.routeId;
   const selectedPlanQuery = api.activityPlans.getById.useQuery(
-    { id: activityPlanId ?? "", personalize: false },
-    { enabled: Boolean(activityPlanId), retry: false },
+    {
+      id: activityPlanId ?? "",
+      personalize: false,
+      ...(launcher.variantId === undefined ? {} : { variantId: launcher.variantId }),
+    },
+    { enabled: Boolean(activityPlanId) && !scheduledPrescription, retry: false },
   );
-  const selectedPlan = selectedPlanQuery.data?.detail;
+  const selectedPlan = scheduledPrescription
+    ? {
+        id: scheduledPrescription.activityPlanId,
+        name:
+          selectedEvent.data?.title?.trim() ||
+          selectedEvent.data?.activityPlanSummary?.name ||
+          scheduledPrescription.variantName,
+        description: selectedEvent.data?.description ?? null,
+        activityCategory: scheduledPrescription.structure.activity_category,
+        activityPlanRevision: scheduledPrescription.activityPlanRevision,
+        structureHash: scheduledPrescription.structureHash,
+        structure: scheduledPrescription.structure,
+        capabilities: { canRecord: true },
+      }
+    : selectedPlanQuery.data?.detail;
   const selectedRouteQuery = api.routes.get.useQuery(
     { id: routeId ?? "" },
     { enabled: Boolean(routeId), retry: false },
@@ -68,8 +88,9 @@ function RecordPage() {
     recording.state.reducer.lifecycle === "paused";
   const planUnavailable = Boolean(
     activityPlanId &&
+      !selectedEvent.isLoading &&
       !selectedPlanQuery.isLoading &&
-      (selectedPlanQuery.isError ||
+      ((!scheduledPrescription && selectedPlanQuery.isError) ||
         !selectedPlan?.capabilities.canRecord ||
         !selectedPlan.structure),
   );
@@ -265,6 +286,7 @@ function RecordPage() {
                         activity_category: launcher.activity_category,
                         gps: "off",
                         ...(activityPlanId ? { activityPlanId } : {}),
+                        ...(launcher.variantId ? { variantId: launcher.variantId } : {}),
                         ...(eventId ? { eventId } : {}),
                       },
                       replace: true,
@@ -294,6 +316,7 @@ function RecordPage() {
                           activity_category: launcher.activity_category,
                           gps: "off",
                           ...(activityPlanId ? { activityPlanId } : {}),
+                          ...(launcher.variantId ? { variantId: launcher.variantId } : {}),
                           ...(eventId ? { eventId } : {}),
                           routeId: route.id,
                         },
@@ -330,7 +353,7 @@ function RecordPage() {
             disabled={
               recording.hydrationStatus !== "ready" ||
               planUnavailable ||
-              Boolean(activityPlanId && selectedPlanQuery.isLoading)
+              Boolean(activityPlanId && (selectedEvent.isLoading || selectedPlanQuery.isLoading))
             }
             onClick={openSession}
           >

@@ -15,6 +15,7 @@ interface UseActivityPlanSchedulingActionsParams {
   planId?: string;
   canDuplicatePlan?: boolean;
   canSchedulePlan?: boolean;
+  onSchedule: () => void;
   queryClient: ReturnType<typeof import("@tanstack/react-query").useQueryClient>;
   router: Pick<ImperativeRouter, "back" | "navigate" | "replace">;
   utils: ReturnType<typeof api.useUtils>;
@@ -29,6 +30,7 @@ export function useActivityPlanSchedulingActions({
   planId,
   canDuplicatePlan = false,
   canSchedulePlan = false,
+  onSchedule,
   queryClient,
   router,
   utils,
@@ -86,13 +88,7 @@ export function useActivityPlanSchedulingActions({
       );
       return;
     }
-    router.navigate({
-      pathname: "/event-detail",
-      params: {
-        activityPlanId: activityPlan.id,
-        mode: "create",
-      },
-    });
+    onSchedule();
   };
 
   const handleReschedule = () => {
@@ -146,14 +142,8 @@ export function useActivityPlanSchedulingActions({
       router.navigate(ROUTES.PLAN.EVENT_UPDATE(plannedActivity.id));
       return;
     }
-    router.navigate({
-      pathname: "/event-detail",
-      params: {
-        activityPlanId: activityPlan.id,
-        mode: "create",
-      },
-    });
-  }, [action, activityPlan?.id, eventId, plannedActivity?.id, canSchedulePlan, router]);
+    onSchedule();
+  }, [action, activityPlan?.id, eventId, plannedActivity?.id, canSchedulePlan, onSchedule, router]);
 
   return {
     duplicatePending: duplicatePlanMutation.isPending,

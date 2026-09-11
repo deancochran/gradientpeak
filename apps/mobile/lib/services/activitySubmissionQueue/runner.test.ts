@@ -1,3 +1,8 @@
+import { createHash } from "node:crypto";
+import {
+  activityPlanStructureSchema,
+  getCanonicalActivityPlanStructureHashInput,
+} from "@repo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runActivitySubmissionQueueJob } from "./runner";
@@ -13,6 +18,71 @@ const executionManifest = {
   planHash: "0".repeat(64),
   occurrences: [],
 };
+const prescribedStructure = activityPlanStructureSchema.parse({
+  version: 3 as const,
+  activity_category: "bike" as const,
+  segments: [
+    {
+      id: "10000000-0000-4000-8000-000000000001",
+      role: "activity" as const,
+      name: "Bike",
+      intervals: [
+        {
+          id: "10000000-0000-4000-8000-000000000002",
+          name: "Work",
+          repetitions: 1,
+          steps: [
+            {
+              id: "10000000-0000-4000-8000-000000000003",
+              name: "Steady",
+              duration: { type: "time" as const, seconds: 600 },
+              targets: [{ type: "RPE" as const, intensity: 7 }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+const prescribedStructureHash = `v1:sha256:${createHash("sha256")
+  .update(getCanonicalActivityPlanStructureHashInput(prescribedStructure))
+  .digest("hex")}`;
+const plannedExecution = {
+  manifestVersion: 1 as const,
+  compilerVersion: 1 as const,
+  activityPlanId: "10000000-0000-4000-8000-000000000004",
+  scheduledEventId: "10000000-0000-4000-8000-000000000005",
+  name: "Hard",
+  description: null,
+  activityPlanRevision: 3,
+  structureHash: prescribedStructureHash,
+  structure: prescribedStructure,
+  plannedSession: {
+    id: "10000000-0000-4000-8000-000000000006",
+    sessionRevision: 5,
+    prescription: {
+      activityPlanId: "10000000-0000-4000-8000-000000000004",
+      activityPlanRevision: 3,
+      variantId: "10000000-0000-4000-8000-000000000007",
+      variantName: "Hard",
+      structure: prescribedStructure,
+      structureHash: prescribedStructureHash,
+      prescriptionQuantification: null,
+      capturedAt: "2026-01-01T09:00:00.000Z",
+    },
+  },
+  personalizationEnabled: false,
+  targetPresentations: [],
+};
+
+vi.mock("expo-crypto", async () => {
+  const { createHash } = await import("node:crypto");
+  return {
+    CryptoDigestAlgorithm: { SHA256: "SHA-256" },
+    digestStringAsync: async (_algorithm: string, value: string) =>
+      createHash("sha256").update(value).digest("hex"),
+  };
+});
 
 vi.mock("./storage", () => ({
   claimDueActivitySubmissionQueueJob: vi.fn(
@@ -150,6 +220,55 @@ describe("activity submission queue runner", () => {
       { status: "complete" },
     ]);
     expect(createFromRecordingSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it("submits immutable planned-session provenance with a finalized recording", async () => {
+    const job: ActivitySubmissionQueueJob = {
+      ...baseJob,
+      id: "job-planned",
+      planExecution: plannedExecution,
+      draft: { ...baseJob.draft, activityPlanId: plannedExecution.activityPlanId },
+    };
+    leases.set(job.id, job);
+    const deps = createDeps();
+
+    await runActivitySubmissionQueueJob(job, deps);
+
+    expect(deps.createFromRecordingSummary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activityPlanId: plannedExecution.activityPlanId,
+        planExecution: plannedExecution,
+      }),
+    );
+  });
+
+  it("fails corrupted scheduled provenance without invoking upload or submission effects", async () => {
+    const job: ActivitySubmissionQueueJob = {
+      ...baseJob,
+      id: "job-corrupt-planned",
+      planExecution: {
+        ...plannedExecution,
+        structureHash: `v1:sha256:${"f".repeat(64)}`,
+        plannedSession: {
+          ...plannedExecution.plannedSession,
+          prescription: {
+            ...plannedExecution.plannedSession.prescription,
+            structureHash: `v1:sha256:${"f".repeat(64)}`,
+          },
+        },
+      },
+      draft: { ...baseJob.draft, activityPlanId: plannedExecution.activityPlanId },
+    };
+    leases.set(job.id, job);
+    const deps = createDeps();
+
+    await expect(runActivitySubmissionQueueJob(job, deps)).resolves.toMatchObject({
+      status: "failed",
+      retryClass: "validation",
+    });
+    expect(deps.beginMobileRecordingUpload).not.toHaveBeenCalled();
+    expect(deps.uploadToSignedUrl).not.toHaveBeenCalled();
+    expect(deps.createFromRecordingSummary).not.toHaveBeenCalled();
   });
 
   it("keeps a long-running effect fenced with repeated heartbeats and prevents a second runner effect", async () => {

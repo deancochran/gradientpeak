@@ -1,4 +1,4 @@
-import { activityPlanStructureSchema } from "@repo/core";
+import { activityPlanDocumentSchema } from "@repo/core";
 import { getCalendarDateInIanaZone } from "@repo/core/calendar";
 import { TRPCError } from "@trpc/server";
 import type { Context } from "../../context";
@@ -184,7 +184,7 @@ export async function updateEventUseCase<
         message: "Activity plan not found or not accessible",
       });
     }
-    if (!activityPlanStructureSchema.safeParse(activityPlan.structure).success) {
+    if (!activityPlanDocumentSchema.safeParse(activityPlan.structure).success) {
       throw new TRPCError({
         code: "BAD_REQUEST",
         message: "Only executable single-category activity plans can be scheduled",

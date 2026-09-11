@@ -5,8 +5,11 @@ import { createHost, type HostProps } from "../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../test/render-native";
 
 const alertMock = jest.fn();
-const createMutateMock = jest.fn();
+const plannedSessionCreateMock = jest.fn(async () => undefined);
 const updateMutateMock = jest.fn();
+const profileId = "11111111-1111-4111-8111-111111111111";
+const activityPlanId = "22222222-2222-4222-8222-222222222222";
+const variantId = "33333333-3333-4333-8333-333333333333";
 
 type ExistingActivityData = {
   id: string;
@@ -26,6 +29,30 @@ let existingActivityData: ExistingActivityData | null = null;
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
   useQueryClient: () => ({ invalidateQueries: jest.fn() }),
+}));
+
+jest.mock("expo-crypto", () => ({
+  __esModule: true,
+  randomUUID: () => "44444444-4444-4444-8444-444444444444",
+}));
+
+jest.mock("@repo/api/client", () => ({
+  __esModule: true,
+  buildDirectPlannedSessionCreateInput: (input: Record<string, string>) => ({
+    profileId: input.profileId,
+    session: {
+      planningDate: input.planningDate,
+      source: { kind: "direct", operationId: input.operationId },
+      activityPlanId: input.activityPlanId,
+    },
+  }),
+}));
+
+jest.mock("@repo/api/react", () => ({
+  __esModule: true,
+  usePlannedSessionMutations: () => ({
+    create: { isPending: false, mutateAsync: plannedSessionCreateMock },
+  }),
 }));
 
 jest.mock("react-native", () => ({
@@ -148,12 +175,16 @@ jest.mock("@/lib/scheduling/refreshScheduleViews", () => ({
   refreshScheduleViews: jest.fn(async () => undefined),
 }));
 
+jest.mock("@/lib/stores/auth-store", () => ({
+  __esModule: true,
+  useAuthStore: (selector: (state: unknown) => unknown) => selector({ profile: { id: profileId } }),
+}));
+
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
     events: {
       getById: { useQuery: () => ({ data: existingActivityData, isLoading: false }) },
-      create: { useMutation: () => ({ isPending: false, error: null, mutate: createMutateMock }) },
       update: { useMutation: () => ({ isPending: false, error: null, mutate: updateMutateMock }) },
     },
     activityPlans: {
@@ -161,7 +192,7 @@ jest.mock("@/lib/api", () => ({
         useQuery: () => ({
           data: {
             detail: createActivityPlanDetail({
-              id: "plan-1",
+              id: activityPlanId,
               name: "Tempo Builder",
               description: "Progressive tempo session with structured intervals.",
             }),
@@ -189,7 +220,7 @@ describe("ScheduleActivityModal", () => {
 
   it("shows the selected activity preview", async () => {
     const rendered = await renderNative(
-      <ScheduleActivityModal visible onClose={jest.fn()} activityPlanId="plan-1" />,
+      <ScheduleActivityModal visible onClose={jest.fn()} activityPlanId={activityPlanId} />,
     );
 
     expect(screen.getByTestId("schedule-preview-details")).toBeTruthy();
@@ -200,23 +231,30 @@ describe("ScheduleActivityModal", () => {
     ).toBe("compact");
   });
 
-  it("submits a date-key-only planned activity", async () => {
+  it("submits the selected variant through the typed planned-session API", async () => {
     await renderNative(
       <ScheduleActivityModal
         visible
         onClose={jest.fn()}
-        activityPlanId="plan-1"
+        activityPlanId={activityPlanId}
         preselectedDate="2026-06-02"
+        variantId={variantId}
       />,
     );
 
     await fireEvent.press(screen.getByTestId("schedule-submit-button"));
 
-    expect(createMutateMock).toHaveBeenCalledWith({
-      activity_plan_id: "plan-1",
-      event_type: "planned",
-      scheduled_date: "2026-06-02",
-      title: "Tempo Builder",
+    expect(plannedSessionCreateMock).toHaveBeenCalledWith({
+      profileId,
+      session: {
+        planningDate: "2026-06-02",
+        source: {
+          kind: "direct",
+          operationId: "44444444-4444-4444-8444-444444444444",
+        },
+        activityPlanId,
+        variantId,
+      },
     });
   });
 

@@ -3,7 +3,10 @@ import {
   ACTIVITY_FILE_INGESTION_CONTRACT_VERSION,
   activityFileIngestionOperationSchema,
 } from "@repo/core/activity-files";
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import {
+  activityPlanStructureSchema,
+  initializeActivityPlanDocument,
+} from "@repo/core/activity-plan";
 import {
   ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,
   athleteRecalculationIdempotencyKey,
@@ -431,11 +434,12 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
         },
       ],
     });
+    const document = initializeActivityPlanDocument({ activityPlanId, structure });
     await db.insert(activityPlans).values({
       id: activityPlanId,
       profile_id: profileId,
       name: "Phase 1 activity plan",
-      structure,
+      structure: document,
       structure_hash: `v1:sha256:${"0".repeat(64)}`,
     });
     await db.insert(trainingPlans).values({
@@ -460,6 +464,8 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
         prescription: {
           activityPlanId,
           activityPlanRevision: 1,
+          variantId: document.defaultVariantId,
+          variantName: "Base",
           structure,
           prescriptionQuantification: null,
           capturedAt: "2026-08-01T12:00:00.000Z",

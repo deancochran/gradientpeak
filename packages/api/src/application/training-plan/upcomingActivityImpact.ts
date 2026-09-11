@@ -1,4 +1,4 @@
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import { activityPlanDocumentSchema, resolveActivityPlanVariant } from "@repo/core/activity-plan";
 import type { CommonLoadAggregate, CommonLoadResult } from "@repo/core/load";
 import type { CanonicalActivityCategory } from "@repo/core/schemas/activity-category";
 
@@ -27,9 +27,9 @@ type PlannedActivityImpactInput = {
 
 function readCanonicalPlanActivityCategory(plan: unknown): CanonicalActivityCategory | null {
   if (!plan || typeof plan !== "object") return null;
-  const parsed = activityPlanStructureSchema.safeParse((plan as { structure?: unknown }).structure);
+  const parsed = activityPlanDocumentSchema.safeParse((plan as { structure?: unknown }).structure);
   if (!parsed.success) return null;
-  return parsed.data.activity_category;
+  return resolveActivityPlanVariant(parsed.data).structure.activity_category;
 }
 
 export function buildUpcomingActivityImpact(input: {

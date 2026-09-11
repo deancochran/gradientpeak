@@ -25,7 +25,7 @@ function createHttpCaller(headerValue?: string, duplicate = false) {
 
 describe("contract epoch", () => {
   it("pins the current hard-cut epoch", () => {
-    expect(CURRENT_CONTRACT_EPOCH).toBe(2);
+    expect(CURRENT_CONTRACT_EPOCH).toBe(3);
   });
 
   it("accepts the exact current epoch for public and protected procedures", async () => {
@@ -41,6 +41,7 @@ describe("contract epoch", () => {
     "01",
     "1.0",
     "1",
+    "2",
     "client-build-999",
   ])("rejects an unsupported epoch value %#", async (headerValue) => {
     await expect(createHttpCaller(headerValue).publicEndpoint()).rejects.toMatchObject({

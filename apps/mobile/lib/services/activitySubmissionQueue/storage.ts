@@ -1,4 +1,5 @@
 import {
+  CONTRACT_EPOCH_QUARANTINE_ERROR_CATEGORY,
   type RecordingEvidenceSqlExecutor,
   resetRecordingEvidenceJournalForTests,
   setRecordingEvidenceDatabaseForTests,
@@ -41,6 +42,7 @@ type QueueRow = {
   lease_owner: string | null;
   lease_token: string | null;
   lease_expires_at: number | null;
+  error_category: string | null;
 };
 
 function timestamp(value: string | null | undefined): number | null {
@@ -96,7 +98,7 @@ export async function loadActivitySubmissionQueueJobs(
     );
   const rows = await withRecordingEvidenceTransaction((tx) =>
     tx.getAllAsync<QueueRow>(
-      `SELECT id, profile_id, status, job_json, retry_class, next_attempt_at, lease_owner, lease_token, lease_expires_at FROM activity_submission_queue_jobs WHERE COALESCE(error_category, '') != 'discarded'${profileId ? " AND profile_id = ?" : ""} ORDER BY created_at`,
+      `SELECT id, profile_id, status, job_json, retry_class, next_attempt_at, lease_owner, lease_token, lease_expires_at, error_category FROM activity_submission_queue_jobs WHERE COALESCE(error_category, '') NOT IN ('discarded', '${CONTRACT_EPOCH_QUARANTINE_ERROR_CATEGORY}')${profileId ? " AND profile_id = ?" : ""} ORDER BY created_at`,
       ...(profileId ? [profileId] : []),
     ),
   );
@@ -144,7 +146,8 @@ export async function upsertActivitySubmissionQueueJob(
     await tx.runAsync(
       `INSERT INTO activity_submission_queue_jobs (id, operation_id, profile_id, session_id, artifact_id, status, attempts, retry_class, next_attempt_at, error_category, lease_owner, lease_token, lease_expires_at, created_at, updated_at, job_json, schema_version)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET status=excluded.status, attempts=excluded.attempts, retry_class=excluded.retry_class, next_attempt_at=excluded.next_attempt_at, error_category=excluded.error_category, lease_owner=excluded.lease_owner, lease_token=excluded.lease_token, lease_expires_at=excluded.lease_expires_at, updated_at=excluded.updated_at, job_json=excluded.job_json, schema_version=excluded.schema_version`,
+       ON CONFLICT(id) DO UPDATE SET status=excluded.status, attempts=excluded.attempts, retry_class=excluded.retry_class, next_attempt_at=excluded.next_attempt_at, error_category=excluded.error_category, lease_owner=excluded.lease_owner, lease_token=excluded.lease_token, lease_expires_at=excluded.lease_expires_at, updated_at=excluded.updated_at, job_json=excluded.job_json, schema_version=excluded.schema_version
+       WHERE COALESCE(activity_submission_queue_jobs.error_category, '') != '${CONTRACT_EPOCH_QUARANTINE_ERROR_CATEGORY}'`,
       job.id,
       meta.operationId,
       job.draft.profileId,
@@ -190,11 +193,12 @@ export async function claimDueActivitySubmissionQueueJob(
   let claimed: ActivitySubmissionQueueJob | null = null;
   await withRecordingEvidenceTransaction(async (tx) => {
     const rows = await tx.getAllAsync<QueueRow>(
-      "SELECT id, profile_id, status, job_json, retry_class, next_attempt_at, lease_owner, lease_token, lease_expires_at FROM activity_submission_queue_jobs WHERE id = ?",
+      "SELECT id, profile_id, status, job_json, retry_class, next_attempt_at, lease_owner, lease_token, lease_expires_at, error_category FROM activity_submission_queue_jobs WHERE id = ?",
       id,
     );
     const row = rows[0];
     if (!row) return;
+    if (row.error_category === CONTRACT_EPOCH_QUARANTINE_ERROR_CATEGORY) return;
     let job: ActivitySubmissionQueueJob;
     try {
       job = asJob(row);
@@ -218,7 +222,7 @@ export async function claimDueActivitySubmissionQueueJob(
       updatedAt: new Date(now).toISOString(),
     });
     const result = await tx.runAsync(
-      "UPDATE activity_submission_queue_jobs SET lease_owner = ?, lease_token = ?, lease_expires_at = ?, updated_at = ?, job_json = ? WHERE id = ? AND (lease_expires_at IS NULL OR lease_expires_at <= ?)",
+      `UPDATE activity_submission_queue_jobs SET lease_owner = ?, lease_token = ?, lease_expires_at = ?, updated_at = ?, job_json = ? WHERE id = ? AND (lease_expires_at IS NULL OR lease_expires_at <= ?) AND COALESCE(error_category, '') != '${CONTRACT_EPOCH_QUARANTINE_ERROR_CATEGORY}'`,
       owner,
       token,
       now + leaseMs,
@@ -264,11 +268,12 @@ export async function renewClaimedActivitySubmissionQueueJob(
   let renewed: ActivitySubmissionQueueJob | null = null;
   await withRecordingEvidenceTransaction(async (tx) => {
     const rows = await tx.getAllAsync<QueueRow>(
-      "SELECT id, profile_id, status, job_json, retry_class, next_attempt_at, lease_owner, lease_token, lease_expires_at FROM activity_submission_queue_jobs WHERE id = ?",
+      "SELECT id, profile_id, status, job_json, retry_class, next_attempt_at, lease_owner, lease_token, lease_expires_at, error_category FROM activity_submission_queue_jobs WHERE id = ?",
       id,
     );
     const row = rows[0];
     if (!row) return;
+    if (row.error_category === CONTRACT_EPOCH_QUARANTINE_ERROR_CATEGORY) return;
     let current: ActivitySubmissionQueueJob;
     try {
       current = asJob(row);
@@ -294,7 +299,7 @@ export async function renewClaimedActivitySubmissionQueueJob(
       updatedAt: new Date(now).toISOString(),
     });
     const result = await tx.runAsync(
-      "UPDATE activity_submission_queue_jobs SET lease_expires_at=?, updated_at=?, job_json=? WHERE id=? AND lease_owner=? AND lease_token=? AND lease_expires_at > ?",
+      `UPDATE activity_submission_queue_jobs SET lease_expires_at=?, updated_at=?, job_json=? WHERE id=? AND lease_owner=? AND lease_token=? AND lease_expires_at > ? AND COALESCE(error_category, '') != '${CONTRACT_EPOCH_QUARANTINE_ERROR_CATEGORY}'`,
       now + leaseMs,
       now,
       JSON.stringify(next),
@@ -340,7 +345,7 @@ export async function transitionClaimedActivitySubmissionQueueJob(
   let changed = false;
   await withRecordingEvidenceTransaction(async (tx) => {
     const result = await tx.runAsync(
-      "UPDATE activity_submission_queue_jobs SET status=?, attempts=?, retry_class=?, next_attempt_at=?, error_category=?, lease_owner=?, lease_token=?, lease_expires_at=?, updated_at=?, job_json=? WHERE id=? AND lease_owner=? AND lease_token=? AND lease_expires_at > ?",
+      `UPDATE activity_submission_queue_jobs SET status=?, attempts=?, retry_class=?, next_attempt_at=?, error_category=?, lease_owner=?, lease_token=?, lease_expires_at=?, updated_at=?, job_json=? WHERE id=? AND lease_owner=? AND lease_token=? AND lease_expires_at > ? AND COALESCE(error_category, '') != '${CONTRACT_EPOCH_QUARANTINE_ERROR_CATEGORY}'`,
       parsed.status,
       parsed.attempts,
       meta.retryClass,

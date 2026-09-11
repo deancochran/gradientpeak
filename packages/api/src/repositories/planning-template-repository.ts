@@ -21,6 +21,7 @@ export interface PlanningTemplateRepository {
     missingIds: string[];
   }>;
   withLockedPublishedTemplates<T>(
+    profileId: string,
     templateIds: string[],
     operation: (input: {
       db: TrainingPlanTransactionClient;

@@ -125,7 +125,9 @@ async function main() {
     "coaching_foundation",
     async (db, targetUrl) => {
       await bootstrapSupabaseSchemas(db);
-      await applySqlFile(db, requireFreshBaseline().sourcePath);
+      for (const migrationPath of requireFreshBaseline().migrationPaths) {
+        await applySqlFile(db, migrationPath);
+      }
       await assertMigratedCheckConstraintValues(db, {
         table: "organization_membership_role_grants",
         constraint: "organization_membership_role_grants_role_key_check",

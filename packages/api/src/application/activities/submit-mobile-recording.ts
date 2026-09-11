@@ -1,8 +1,12 @@
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import {
+  activityPlanDocumentSchema,
+  getCanonicalActivityPlanStructureHashInput,
+} from "@repo/core/activity-plan";
 import {
   type CompletedActivitySegmentSet,
   completedActivitySegmentSetSchema,
 } from "@repo/core/activity-segments";
+import { stringifyCanonicalJson } from "@repo/core/athlete-intelligence";
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { parseActivityFile } from "@repo/core/server/activity-files";
 import { safeDecodeFitFile } from "@repo/core/server/fit-sdk-parser";
@@ -10,8 +14,12 @@ import { activities, activityPlans, activityRoutes, profiles } from "@repo/db";
 import { and, eq } from "drizzle-orm";
 import type { MobileRecordingSubmissionInput } from "../../contracts/recording-submission";
 import type { getRequiredDb } from "../../db";
-import { createDrizzleActivityIngestionRepository } from "../../infrastructure/repositories";
+import {
+  createDrizzleActivityIngestionRepository,
+  createDrizzlePlannedSessionRepository,
+} from "../../infrastructure/repositories";
 import { createContentAccessPermissions } from "../../permissions/content-access";
+import type { PlannedSessionRepositoryPort } from "../../repositories/planned-session-repository-port";
 import type { ActivityArtifactStorage } from "../activity-file-ingestion/artifact-storage";
 import {
   completeActivityIngestionCleanup,
@@ -26,6 +34,7 @@ import {
   prepareMobileRecordingArtifact,
   retryMobileRecordingStagingCleanup,
 } from "../activity-file-ingestion/mobile-recording-upload";
+import { activityPlanV3StructureHash } from "../activity-plans/structure-hash";
 import { recordingSessionActivityId, submitActivity } from "./submit-activity";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
@@ -202,7 +211,7 @@ async function resolveRecordingActivityPlanId(
     );
   }
 
-  if (!activityPlanStructureSchema.safeParse(plan.structure).success) {
+  if (!activityPlanDocumentSchema.safeParse(plan.structure).success) {
     throw new MobileRecordingSubmissionError(
       "forbidden",
       "Activity plan is not available for mobile recording",
@@ -270,6 +279,138 @@ async function loadAcceptedSubmission(
 
 function submissionReplayIdentity(submission: MobileRecordingSubmissionInput) {
   return submission.recordingSessionId;
+}
+
+function assertDeclaredPrescriptionHashes(submission: MobileRecordingSubmissionInput): void {
+  const execution = submission.planExecution;
+  if (!execution) return;
+  if (activityPlanV3StructureHash(execution.structure) !== execution.structureHash) {
+    throw new MobileRecordingSubmissionError(
+      "manifest_invalid",
+      "Recording prescription structure hash does not match its V3 structure",
+    );
+  }
+  const prescription = execution.plannedSession?.prescription;
+  if (
+    prescription &&
+    activityPlanV3StructureHash(prescription.structure) !== prescription.structureHash
+  ) {
+    throw new MobileRecordingSubmissionError(
+      "manifest_invalid",
+      "Planned-session prescription structure hash does not match its V3 structure",
+    );
+  }
+}
+
+function sameCanonicalStructure(left: unknown, right: unknown): boolean {
+  return (
+    getCanonicalActivityPlanStructureHashInput(left) ===
+    getCanonicalActivityPlanStructureHashInput(right)
+  );
+}
+
+async function verifyScheduledRecordingProvenance(input: {
+  repository: PlannedSessionRepositoryPort;
+  submission: MobileRecordingSubmissionInput;
+  activityId: string;
+  linkedAt: Date;
+  allowLink: boolean;
+}): Promise<void> {
+  const execution = input.submission.planExecution;
+  const submittedSession = execution?.plannedSession;
+  if (!execution || !submittedSession) return;
+  const authoritative = await input.repository.getOwned({
+    profileId: input.submission.profileId,
+    sessionId: submittedSession.id,
+  });
+  if (!authoritative) {
+    throw new MobileRecordingSubmissionError(
+      "forbidden",
+      "Planned-session recording provenance is unavailable",
+    );
+  }
+
+  const submitted = submittedSession.prescription;
+  const expected = authoritative.prescription;
+  const fieldsMatch =
+    execution.activityPlanId === expected.activityPlanId &&
+    input.submission.activityPlanId === expected.activityPlanId &&
+    execution.activityPlanRevision === expected.activityPlanRevision &&
+    execution.structureHash === expected.structureHash &&
+    submitted.activityPlanId === expected.activityPlanId &&
+    submitted.activityPlanRevision === expected.activityPlanRevision &&
+    submitted.variantId === expected.variantId &&
+    submitted.variantName === expected.variantName &&
+    submitted.structureHash === expected.structureHash &&
+    submitted.capturedAt === expected.capturedAt &&
+    stringifyCanonicalJson(submitted.prescriptionQuantification) ===
+      stringifyCanonicalJson(expected.prescriptionQuantification) &&
+    sameCanonicalStructure(execution.structure, expected.structure) &&
+    sameCanonicalStructure(submitted.structure, expected.structure) &&
+    activityPlanV3StructureHash(expected.structure) === expected.structureHash;
+  if (!fieldsMatch) {
+    throw new MobileRecordingSubmissionError(
+      "conflict",
+      "Recording provenance does not match the authoritative planned-session prescription",
+    );
+  }
+
+  if (authoritative.lifecycle.status === "completed") {
+    const exactReplay =
+      authoritative.lifecycle.completion.state === "linked" &&
+      authoritative.lifecycle.completion.activityId === input.activityId &&
+      authoritative.sessionRevision >= submittedSession.sessionRevision + 1;
+    if (exactReplay) return;
+    throw new MobileRecordingSubmissionError(
+      "conflict",
+      "Planned session is already completed by another activity",
+    );
+  }
+  if (
+    authoritative.lifecycle.status !== "scheduled" ||
+    authoritative.sessionRevision !== submittedSession.sessionRevision ||
+    !input.allowLink
+  ) {
+    throw new MobileRecordingSubmissionError(
+      "conflict",
+      "Planned session changed after recording launch",
+    );
+  }
+
+  const linked = await input.repository.mutateOwned({
+    action: "link_completion",
+    profileId: input.submission.profileId,
+    sessionId: submittedSession.id,
+    expectedRevision: submittedSession.sessionRevision,
+    activityId: input.activityId,
+    linkedAt: input.linkedAt.toISOString(),
+  });
+  if (
+    linked.status !== "updated" ||
+    linked.session.lifecycle.status !== "completed" ||
+    linked.session.lifecycle.completion.state !== "linked" ||
+    linked.session.lifecycle.completion.activityId !== input.activityId
+  ) {
+    throw new MobileRecordingSubmissionError(
+      "conflict",
+      "Planned-session completion could not be linked atomically",
+    );
+  }
+}
+
+async function verifyAcceptedScheduledRecording(
+  db: DbClient,
+  submission: MobileRecordingSubmissionInput,
+  activityId: string,
+): Promise<void> {
+  if (!submission.planExecution?.plannedSession) return;
+  await verifyScheduledRecordingProvenance({
+    repository: createDrizzlePlannedSessionRepository(db),
+    submission,
+    activityId,
+    linkedAt: new Date(),
+    allowLink: false,
+  });
 }
 
 const fitPositionFieldNames = new Set([
@@ -363,12 +504,14 @@ export async function submitMobileRecording(
       "Cannot create activities for other profiles",
     );
   }
+  assertDeclaredPrescriptionHashes(submission);
 
   const replayIdentity = submissionReplayIdentity(submission);
   const replayInput = { profileId: submission.profileId, replayIdentity };
   const replay = await loadAcceptedSubmission(db, replayInput);
   if (replay) {
     assertReplayMatches(submission, replay);
+    await verifyAcceptedScheduledRecording(db, submission, replay.activity.id);
     await retryMobileRecordingStagingCleanup(db, storage, {
       profileId: submission.profileId,
       ingestion: replay.ingestion,
@@ -415,6 +558,7 @@ export async function submitMobileRecording(
       );
     }
     assertReplayMatches(submission, accepted);
+    await verifyAcceptedScheduledRecording(db, submission, accepted.activity.id);
     await retryMobileRecordingStagingCleanup(db, storage, {
       profileId: submission.profileId,
       ingestion: accepted.ingestion,
@@ -510,6 +654,20 @@ export async function submitMobileRecording(
           laps: submission.laps ?? [],
           mapBounds: null,
           polyline: null,
+          ...(submission.planExecution?.plannedSession
+            ? {
+                composition: {
+                  persist: (tx, { activityId: acceptedActivityId, now }) =>
+                    verifyScheduledRecordingProvenance({
+                      repository: createDrizzlePlannedSessionRepository(tx),
+                      submission,
+                      activityId: acceptedActivityId,
+                      linkedAt: now,
+                      allowLink: true,
+                    }),
+                },
+              }
+            : {}),
           analysis: {
             efforts: [],
             detectedLTHR: null,
@@ -536,6 +694,7 @@ export async function submitMobileRecording(
     const accepted = await loadAcceptedSubmission(db, replayInput);
     if (accepted) {
       assertReplayMatches(submission, accepted);
+      await verifyAcceptedScheduledRecording(db, submission, accepted.activity.id);
       return accepted;
     }
     if (
@@ -558,6 +717,7 @@ export async function submitMobileRecording(
       "Committed recording activity could not be loaded",
     );
   }
+  await verifyAcceptedScheduledRecording(db, submission, accepted.activity.id);
   await retryMobileRecordingStagingCleanup(db, storage, {
     profileId: submission.profileId,
     ingestion: accepted.ingestion,

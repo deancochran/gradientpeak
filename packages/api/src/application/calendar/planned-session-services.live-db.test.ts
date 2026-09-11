@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import {
+  activityPlanStructureSchema,
+  initializeActivityPlanDocument,
+} from "@repo/core/activity-plan";
 import { ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION } from "@repo/core/athlete-derived-state";
 import {
   PLANNED_SESSION_CONTRACT_VERSION,
@@ -84,6 +87,8 @@ const structure = activityPlanStructureSchema.parse({
     },
   ],
 });
+const activityPlanDocument = (activityPlanId: string) =>
+  initializeActivityPlanDocument({ activityPlanId, structure });
 
 async function seedProfile(label: string) {
   const id = randomUUID();
@@ -124,6 +129,9 @@ function directSession(input: {
     prescription: {
       activityPlanId: input.activityPlanId,
       activityPlanRevision: 1,
+      variantId: input.activityPlanId,
+      variantName: "Base",
+      structureHash: `v1:sha256:${"0".repeat(64)}`,
       structure,
       prescriptionQuantification: null,
       capturedAt: "2026-08-01T00:00:00.000Z",
@@ -201,21 +209,21 @@ describeDisposable("planned-session services against a disposable database", () 
           id: ownActivityPlanId,
           profile_id: profileId,
           name: "Owned activity plan",
-          structure,
+          structure: activityPlanDocument(ownActivityPlanId),
           structure_hash: `v1:sha256:${"1".repeat(64)}`,
         },
         {
           id: otherActivityPlanId,
           profile_id: otherProfileId,
           name: "Other activity plan",
-          structure,
+          structure: activityPlanDocument(otherActivityPlanId),
           structure_hash: `v1:sha256:${"2".repeat(64)}`,
         },
         {
           id: systemActivityPlanId,
           profile_id: null,
           name: "System activity plan",
-          structure,
+          structure: activityPlanDocument(systemActivityPlanId),
           structure_hash: `v1:sha256:${"3".repeat(64)}`,
           content_visibility: "public",
           is_system_template: true,
@@ -666,7 +674,7 @@ describeDisposable("planned-session services against a disposable database", () 
         id: activityPlanId,
         profile_id: profileId,
         name: "Concurrent association plan",
-        structure,
+        structure: activityPlanDocument(activityPlanId),
         structure_hash: `v1:sha256:${"9".repeat(64)}`,
       });
       await db.insert(groups).values({

@@ -1,4 +1,13 @@
-import { schema } from "@repo/db";
+import {
+  activityPlanDocumentSchema,
+  initializeActivityPlanDocument,
+  resolveActivityPlanVariant,
+} from "@repo/core/activity-plan";
+import {
+  PLANNED_SESSION_CONTRACT_VERSION,
+  plannedSessionIdempotencyKey,
+} from "@repo/core/calendar";
+import { type PlannedSessionRow, schema } from "@repo/db";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import { activityPlanStructureHash } from "../../../application/activity-plans/structure-hash";
@@ -17,6 +26,8 @@ function createEventRow(overrides: Record<string, unknown> = {}) {
     all_day: false,
     timezone: "UTC",
     activity_plan_id: "activity-plan-1",
+    planned_session_id: null,
+    route_id: null,
     training_plan_id: "training-plan-1",
     recurrence_rule: null,
     recurrence_timezone: null,
@@ -35,8 +46,71 @@ function createEventRow(overrides: Record<string, unknown> = {}) {
   } as const;
 }
 
+function createPlannedSessionRow(overrides: Partial<PlannedSessionRow> = {}): PlannedSessionRow {
+  const prescriptionDocument = activityPlanDocumentSchema.parse(createActivityPlanRow().structure);
+  const prescription = structuredClone(resolveActivityPlanVariant(prescriptionDocument).structure);
+  const activitySegment = prescription.segments.find((segment) => segment.role === "activity");
+  const prescribedStep = activitySegment?.intervals[0]?.steps[0];
+  if (!prescribedStep) throw new Error("Expected prescribed step fixture");
+  prescribedStep.duration = { type: "time", seconds: 2_700 };
+  const row: PlannedSessionRow = {
+    id: "22222222-2222-4222-8222-222222222222",
+    profile_id: "11111111-1111-4111-8111-111111111111",
+    contract_version: PLANNED_SESSION_CONTRACT_VERSION,
+    session_revision: 1,
+    planning_date: "2026-04-15",
+    original_target_date: "2026-04-15",
+    source_kind: "training_plan",
+    idempotency_key: "training-plan:test",
+    direct_operation_id: null,
+    training_plan_id: "33333333-3333-4333-8333-333333333333",
+    training_plan_revision: 4,
+    source_session_key: "week-1-session-2",
+    series_id: null,
+    occurrence_key: null,
+    group_event_id: null,
+    activity_plan_id: "11111111-1111-4111-8111-111111111111",
+    activity_plan_revision: 7,
+    activity_plan_variant_id: "99999999-9999-4999-8999-999999999999",
+    activity_plan_variant_name: "Long",
+    prescription_structure_hash: `v1:sha256:${"a".repeat(64)}`,
+    prescription_structure: prescription,
+    prescription_quantification: null,
+    prescription_captured_at: new Date("2026-04-01T10:00:00.000Z"),
+    status: "scheduled",
+    cancellation_reason: null,
+    cancelled_at: null,
+    completed_activity_id: null,
+    completion_state: null,
+    linked_at: null,
+    completion_unlinked_at: null,
+    created_at: new Date("2026-04-01T10:00:00.000Z"),
+    updated_at: new Date("2026-04-01T10:00:00.000Z"),
+    ...overrides,
+  };
+  if (overrides.idempotency_key === undefined) {
+    row.idempotency_key = plannedSessionIdempotencyKey(
+      row.source_kind === "training_plan"
+        ? {
+            kind: "training_plan",
+            trainingPlanId: row.training_plan_id as string,
+            trainingPlanRevision: row.training_plan_revision as number,
+            sourceSessionKey: row.source_session_key as string,
+          }
+        : row.source_kind === "recurrence"
+          ? {
+              kind: "recurrence",
+              seriesId: row.series_id as string,
+              occurrenceKey: row.occurrence_key as string,
+            }
+          : { kind: "direct", operationId: row.direct_operation_id as string },
+    );
+  }
+  return row;
+}
+
 function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
-  const structure = {
+  const prescription = {
     version: 3,
     activity_category: "bike",
     segments: [
@@ -62,6 +136,10 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
       },
     ],
   };
+  const structure = initializeActivityPlanDocument({
+    activityPlanId: "11111111-1111-4111-8111-111111111111",
+    structure: prescription,
+  });
   return {
     id: "activity-plan-1",
     created_at: new Date("2026-04-01T00:00:00.000Z"),
@@ -647,6 +725,7 @@ describe("drizzle-event-read-repository", () => {
         original_starts_at: null,
         updated_at: "2026-04-02T11:00:00.000Z",
         activity_plan: null,
+        planned_session: null,
         route: null,
         occurrence_key: "",
       },
@@ -722,6 +801,7 @@ describe("drizzle-event-read-repository", () => {
           created_at: "2026-04-01T00:00:00.000Z",
           updated_at: "2026-04-01T00:00:00.000Z",
         },
+        planned_session: null,
         route,
       },
     ]);
@@ -744,33 +824,88 @@ describe("drizzle-event-read-repository", () => {
         created_at: "2026-04-01T00:00:00.000Z",
         updated_at: "2026-04-01T00:00:00.000Z",
       },
+      planned_session: null,
       route,
     });
   });
 
+  it("projects a non-default training-plan event from its immutable planned-session prescription", async () => {
+    const planId = "11111111-1111-4111-8111-111111111111";
+    const plannedSession = createPlannedSessionRow();
+    const mutablePlan = createActivityPlanRow({
+      id: planId,
+      revision: 99,
+      name: "Changed mutable default",
+    });
+    const event = createEventRow({
+      activity_plan_id: planId,
+      planned_session_id: plannedSession.id,
+      activity_plan: mutablePlan,
+      activity_route: null,
+      planned_session: plannedSession,
+    });
+    const repository = createEventReadRepository(
+      createQueryMapDbMock({ events: { data: [event], error: null } }).db,
+    );
+
+    const result = await repository.getOwnedEventById({
+      eventId: event.id,
+      profileId: "profile-1",
+    });
+    const projectedDocument = activityPlanDocumentSchema.parse(result?.activity_plan?.structure);
+
+    expect(result?.planned_session).toMatchObject({
+      id: plannedSession.id,
+      sessionRevision: plannedSession.session_revision,
+      source: { kind: "training_plan", trainingPlanRevision: 4 },
+      prescription: {
+        activityPlanId: planId,
+        activityPlanRevision: 7,
+        variantId: plannedSession.activity_plan_variant_id,
+        variantName: "Long",
+        structureHash: plannedSession.prescription_structure_hash,
+        structure: plannedSession.prescription_structure,
+      },
+    });
+    expect(resolveActivityPlanVariant(projectedDocument)).toMatchObject({
+      variantId: plannedSession.activity_plan_variant_id,
+      variantName: "Long",
+      structure: plannedSession.prescription_structure,
+    });
+    expect(result?.activity_plan).toMatchObject({
+      revision: 7,
+      structure_hash: plannedSession.prescription_structure_hash,
+    });
+  });
+
   it("keeps repeated same-category plans and rejects mixed plans in repository-backed events", async () => {
-    const baseStructure = createActivityPlanRow().structure;
-    const baseSegment = baseStructure.segments[0]!;
+    const baseDocument = activityPlanDocumentSchema.parse(createActivityPlanRow().structure);
+    const baseStructure = resolveActivityPlanVariant(baseDocument).structure;
+    const baseSegment = baseStructure.segments.find((segment) => segment.role === "activity");
+    if (!baseSegment) throw new Error("Expected an activity segment fixture");
     const repeatedBike = createActivityPlanRow({
       id: "repeated-bike",
-      structure: {
-        ...baseStructure,
-        segments: [
-          ...baseStructure.segments,
-          {
-            ...baseSegment,
-            id: "55555555-5555-4555-8555-555555555555",
-            intervals: baseSegment.intervals.map((interval) => ({
-              ...interval,
-              id: "77777777-7777-4777-8777-777777777777",
-              steps: interval.steps.map((step) => ({
-                ...step,
-                id: "88888888-8888-4888-8888-888888888888",
+      structure: initializeActivityPlanDocument({
+        activityPlanId: "22222222-2222-4222-8222-222222222222",
+        structure: {
+          ...baseStructure,
+          segments: [
+            ...baseStructure.segments,
+            {
+              ...baseSegment,
+              id: "55555555-5555-4555-8555-555555555555",
+              intervals: baseSegment.intervals.map((interval) => ({
+                ...interval,
+                id: "77777777-7777-4777-8777-777777777777",
+                steps: interval.steps.map((step) => ({
+                  ...step,
+                  id: "88888888-8888-4888-8888-888888888888",
+                })),
               })),
-            })),
-          },
-        ],
-      },
+            },
+          ],
+        },
+      }),
     });
     const mixedPlan = createActivityPlanRow({
       id: "mixed-plan",
@@ -915,7 +1050,7 @@ describe("drizzle-event-read-repository", () => {
 
     expect(selects).toHaveLength(1);
     expect(selects[0]?.table).toBe("events");
-    expect(selects[0]?.leftJoinArgs).toHaveLength(2);
+    expect(selects[0]?.leftJoinArgs).toHaveLength(3);
     expect(selects[0]?.limitArg).toBe(25);
     expect(selects[0]?.orderByArgs.map(toSql)).toEqual([
       '"events"."starts_at" asc',

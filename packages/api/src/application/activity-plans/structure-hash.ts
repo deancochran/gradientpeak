@@ -1,23 +1,26 @@
 import { createHash } from "node:crypto";
+import {
+  activityPlanDocumentSchema,
+  getCanonicalActivityPlanDocumentHashInput,
+  getCanonicalActivityPlanStructureHashInput,
+} from "@repo/core/activity-plan";
+import { stringifyCanonicalJson } from "@repo/core/athlete-intelligence";
 
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value === "boolean" || typeof value === "string")
-    return JSON.stringify(value);
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new Error("Activity plan contains a non-finite number");
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value)
-      .filter(([, nested]) => nested !== undefined)
-      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-      .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalJson(nested)}`)
-      .join(",")}}`;
-  }
-  throw new Error(`Activity plan contains unsupported ${typeof value}`);
+export function activityPlanDocumentHash(document: unknown) {
+  const parsed = activityPlanDocumentSchema.parse(document);
+  return `v1:sha256:${createHash("sha256")
+    .update(getCanonicalActivityPlanDocumentHashInput(parsed))
+    .digest("hex")}`;
 }
 
+/** Generic compatibility hash retained for excluded training-plan persistence callers. */
 export function activityPlanStructureHash(structure: unknown) {
-  return `v1:sha256:${createHash("sha256").update(canonicalJson(structure)).digest("hex")}`;
+  return `v1:sha256:${createHash("sha256").update(stringifyCanonicalJson(structure)).digest("hex")}`;
+}
+
+/** Strict executable V3 hash used at prescription trust boundaries. */
+export function activityPlanV3StructureHash(structure: unknown) {
+  return `v1:sha256:${createHash("sha256")
+    .update(getCanonicalActivityPlanStructureHashInput(structure))
+    .digest("hex")}`;
 }

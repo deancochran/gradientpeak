@@ -19,7 +19,10 @@ export function PersonalPlannedSessionCreate({ planningDate }: { planningDate: s
   const plansQuery = api.activityPlans.list.useQuery({ ownerScope: "own", limit: 100 });
   const mutations = usePlannedSessionMutations({
     onConflict: async () => {
-      await utils.calendar.page.invalidate();
+      await Promise.all([
+        utils.calendar.page.invalidate(),
+        utils.plannedSessions.range.invalidate(),
+      ]);
     },
     onReceipt: () => router.replace(ROUTES.PLAN.CALENDAR),
   });

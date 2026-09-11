@@ -1682,18 +1682,28 @@ async function assertPrelaunchSchemaHardening(target: VerificationTarget) {
       },
     ],
   };
+  const activityPlanDocument = {
+    contractVersion: 1,
+    defaultVariantId: activityPlanId,
+    variants: [{ id: activityPlanId, name: "Base", structure: prescription }],
+  };
+  const revisionActivityPlanDocument = {
+    contractVersion: 1,
+    defaultVariantId: revisionActivityPlanId,
+    variants: [{ id: revisionActivityPlanId, name: "Base", structure: prescription }],
+  };
 
   await target.query(
     `insert into public.activity_plans (id, profile_id, name, structure, structure_hash)
      values ($1::uuid, $2::uuid, 'planned-session hardening', $3::jsonb,
        'v1:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')`,
-    [activityPlanId, profileId, JSON.stringify(prescription)],
+    [activityPlanId, profileId, JSON.stringify(activityPlanDocument)],
   );
   await target.query(
     `insert into public.activity_plans (id, profile_id, name, structure, structure_hash)
      values ($1::uuid, $2::uuid, 'revision contract', $3::jsonb,
        'v1:sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')`,
-    [revisionActivityPlanId, profileId, JSON.stringify(prescription)],
+    [revisionActivityPlanId, profileId, JSON.stringify(revisionActivityPlanDocument)],
   );
   await target.query(
     `update public.activity_plans set name = 'metadata only', revision = 99 where id = $1::uuid`,
@@ -1708,7 +1718,11 @@ async function assertPrelaunchSchemaHardening(target: VerificationTarget) {
   }
   await target.query(
     `update public.activity_plans
-     set structure = jsonb_set(structure, '{segments,0,name}', '"Changed run"'::jsonb),
+     set structure = jsonb_set(
+           structure,
+           '{variants,0,structure,segments,0,name}',
+           '"Changed run"'::jsonb
+         ),
          revision = 99
      where id = $1::uuid`,
     [revisionActivityPlanId],
@@ -1765,12 +1779,15 @@ async function assertPrelaunchSchemaHardening(target: VerificationTarget) {
     `insert into public.planned_sessions (
        id, profile_id, planning_date, original_target_date, source_kind, idempotency_key,
        direct_operation_id, group_event_id, activity_plan_id, activity_plan_revision,
-       prescription_structure, prescription_captured_at, status, completed_activity_id,
+       activity_plan_variant_id, activity_plan_variant_name, prescription_structure,
+       prescription_structure_hash, prescription_captured_at, status, completed_activity_id,
        completion_state, linked_at
      ) values (
        $1::uuid, $2::uuid, current_date, current_date, 'direct',
        'direct:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-       $3::uuid, $4::uuid, 1, $5::jsonb, now(), 'completed', $6::uuid, 'linked', now()
+         $3::uuid, $4::uuid, 1, $4::uuid, 'Base', $5::jsonb,
+         'v1:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+         now(), 'completed', $6::uuid, 'linked', now()
      )`,
     [
       plannedSessionId,
@@ -1786,12 +1803,15 @@ async function assertPrelaunchSchemaHardening(target: VerificationTarget) {
     `insert into public.planned_sessions (
        id, profile_id, planning_date, original_target_date, source_kind, idempotency_key,
        direct_operation_id, group_event_id, activity_plan_id, activity_plan_revision,
-       prescription_structure, prescription_captured_at
+       activity_plan_variant_id, activity_plan_variant_name, prescription_structure,
+       prescription_structure_hash, prescription_captured_at
      ) values (
        '80000000-0000-4000-8000-000000000015', '${profileId}', current_date, current_date,
        'direct', 'direct:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-       'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', '${groupEventId}', '${activityPlanId}', 1,
-       '${JSON.stringify(prescription)}'::jsonb, now()
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', '${groupEventId}', '${activityPlanId}', 1,
+         '${activityPlanId}', 'Base',
+       '${JSON.stringify(prescription)}'::jsonb,
+       'v1:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', now()
      )`,
     { code: "23505", constraint: "planned_sessions_profile_group_event_unique" },
   );
@@ -1974,7 +1994,9 @@ async function main() {
   await withDisposableDatabase(args, "fresh_verify", async (target, targetUrl) => {
     await bootstrapSupabaseSchemas(target);
     const baseline = requireFreshBaseline();
-    await applySqlFile(target, baseline.sourcePath);
+    for (const migrationPath of baseline.migrationPaths) {
+      await applySqlFile(target, migrationPath);
+    }
     await assertCanonicalActivityCategories(target);
     await assertActivityAnalysisRevisionContract(target);
     await assertActivitySourceIdentityContract(target);

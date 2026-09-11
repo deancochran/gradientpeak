@@ -1,4 +1,4 @@
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import { activityPlanDocumentSchema } from "@repo/core/activity-plan";
 import { type PlannedSession, plannedSessionSchema } from "@repo/core/calendar";
 import {
   activities,
@@ -92,7 +92,10 @@ export function mapPlannedSessionRow(row: PlannedSessionRow): PlannedSession {
     prescription: {
       activityPlanId: row.activity_plan_id,
       activityPlanRevision: row.activity_plan_revision,
+      variantId: row.activity_plan_variant_id,
+      variantName: row.activity_plan_variant_name,
       structure: row.prescription_structure,
+      structureHash: row.prescription_structure_hash,
       prescriptionQuantification: row.prescription_quantification,
       capturedAt: toInstant(row.prescription_captured_at, "prescription_captured_at"),
     },
@@ -182,7 +185,10 @@ function sessionValues(session: PlannedSession) {
     group_event_id: session.groupEventId ?? null,
     activity_plan_id: session.prescription.activityPlanId,
     activity_plan_revision: session.prescription.activityPlanRevision,
+    activity_plan_variant_id: session.prescription.variantId,
+    activity_plan_variant_name: session.prescription.variantName,
     prescription_structure: session.prescription.structure,
+    prescription_structure_hash: session.prescription.structureHash,
     prescription_quantification: session.prescription.prescriptionQuantification,
     prescription_captured_at: new Date(session.prescription.capturedAt),
     ...sourceValues,
@@ -202,7 +208,10 @@ export function immutableSessionMatches(existing: PlannedSession, replay: Planne
   // Direct request retries repeat client semantics while the server-derived
   // capture time and quantification can differ from the first accepted write.
   if (existing.source.kind === "direct" && replay.source.kind === "direct") {
-    return existing.prescription.activityPlanId === replay.prescription.activityPlanId;
+    return (
+      existing.prescription.activityPlanId === replay.prescription.activityPlanId &&
+      existing.prescription.variantId === replay.prescription.variantId
+    );
   }
   return JSON.stringify(existing.prescription) === JSON.stringify(replay.prescription);
 }
@@ -662,7 +671,7 @@ export function createDrizzlePlannedSessionRepository(
       if (!row) return null;
       return {
         ...row,
-        structure: activityPlanStructureSchema.parse(row.structure),
+        structure: activityPlanDocumentSchema.parse(row.structure),
         updatedAt: toInstant(row.updatedAt, "activity_plan.updated_at"),
       };
     },

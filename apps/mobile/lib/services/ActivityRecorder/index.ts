@@ -16,6 +16,7 @@
 import type { FTMSFeatures, FtmsMachineType } from "@deancochran/ftms";
 import {
   ACTIVITY_PLAN_COMPILER_VERSION,
+  ActivityPayloadSchema,
   type AthletePerformanceTargetFacts,
   activityPlanStructureSchema,
   athletePerformanceTargetFactsSchema,
@@ -34,6 +35,7 @@ import {
   type RecordingExecutionManifest,
   type RecordingLaunchIntent,
   type RecordingOccurrenceResult,
+  type RecordingPlannedSessionLaunch,
   type RecordingSessionContract,
   type RecordingSessionLifecycleState,
   type RecordingTrainerIntentSource,
@@ -52,6 +54,7 @@ import {
 import { shouldApplyAutoFollowAuthority } from "./autoFollowRuntime";
 import {
   type ActivityRecorderCheckpoint,
+  assertRecordingPlanExecutionStructureHashes,
   clearRecordingCheckpoint,
   hashRecordingPlan,
   MOBILE_RECORDING_CHECKPOINT_SCHEMA_VERSION,
@@ -505,6 +508,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // === Plan State (minimal tracking) ===
   private _plan: RecordingActivityPlanInput | undefined;
   private _eventId?: string;
+  private _plannedSession?: RecordingPlannedSessionLaunch;
 
   private readonly routeController = new RouteController();
 
@@ -1569,6 +1573,24 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       gpsAvailable: false,
     });
 
+    const planExecution =
+      this._plan && this._plannedSession
+        ? {
+            manifestVersion: 1 as const,
+            compilerVersion: ACTIVITY_PLAN_COMPILER_VERSION,
+            activityPlanId: this._plannedSession.prescription.activityPlanId,
+            scheduledEventId: this._eventId ?? null,
+            name: this._plan.name,
+            description: this._plan.description ?? null,
+            activityPlanRevision: this._plannedSession.prescription.activityPlanRevision,
+            structureHash: this._plannedSession.prescription.structureHash,
+            structure: this._plannedSession.prescription.structure,
+            plannedSession: this._plannedSession,
+            personalizationEnabled: false,
+            targetPresentations: [],
+          }
+        : undefined;
+
     return deepFreeze({
       identity: {
         sessionId: reservedSessionId ?? `${this.profile.id}:${Date.now()}`,
@@ -1589,6 +1611,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         performanceTargets ??
         this.performanceTargets ??
         createUnavailableAthletePerformanceTargetFacts(startedAt, this.profile.id),
+      ...(planExecution ? { planExecution } : {}),
       devices,
       capabilities: configuration.capabilities,
       policies: {
@@ -1819,13 +1842,26 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // Plan Actions
   // ================================
 
-  selectPlan(plan: RecordingActivityPlanInput, eventId?: string): void {
+  selectPlan(
+    plan: RecordingActivityPlanInput,
+    eventId?: string,
+    plannedSession?: RecordingPlannedSessionLaunch,
+  ): void {
     if (this.recoveredCheckpoint !== null) {
       throw new Error("Resume or discard the recovered recording before selecting a new plan.");
     }
     const support = getMobileRecordingPlanSupport(plan);
     if (!support.supported) {
       throw new Error(support.message);
+    }
+    if (plannedSession) {
+      ActivityPayloadSchema.parse({
+        activity_category: support.activity_category,
+        gpsRecordingEnabled: false,
+        ...(eventId === undefined ? {} : { eventId }),
+        plan,
+        plannedSession,
+      });
     }
 
     console.log("[Service] Selected plan:", plan.name);
@@ -1834,6 +1870,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.hasConfiguredSetup = true;
     this._plan = plan;
     this._eventId = eventId;
+    this._plannedSession = plannedSession;
     try {
       this.planExecution.loadPlan(plan);
 
@@ -1869,6 +1906,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.hasConfiguredSetup = true;
     this._plan = undefined;
     this._eventId = undefined;
+    this._plannedSession = undefined;
     this.freeRecordingExecutionPlan = undefined;
     this.freeRecordingCompiledPlan = null;
     this.planExecution.clear();
@@ -2145,6 +2183,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         trainerMode: this.getSessionOverrideState().trainerMode,
       },
       performanceTargets: snapshot.performanceTargets,
+      ...(snapshot.planExecution ? { planExecution: snapshot.planExecution } : {}),
       streamArtifactPaths: [this.liveMetricsManager.streamBuffer.getBufferStatus().storageDir],
       revision: this.checkpointRevision,
     });
@@ -2780,6 +2819,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         finalizationCutoffMs,
       );
       this._plan = undefined;
+      this._eventId = undefined;
+      this._plannedSession = undefined;
       this.planExecution.clear();
       this.freeRecordingExecutionPlan = freeRecordingExecutionPlan;
       this.freeRecordingCompiledPlan = freeRecordingCompiledPlan;
@@ -2850,6 +2891,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     if ((await hashRecordingPlan(checkpoint.planSnapshot)) !== checkpoint.planHash) {
       throw new Error("Checkpoint plan hash mismatch");
     }
+    await assertRecordingPlanExecutionStructureHashes(checkpoint.planExecution);
     const parsedPlanSnapshot = activityPlanStructureSchema.safeParse(checkpoint.planSnapshot);
     if (!parsedPlanSnapshot.success) {
       throw new Error("Checkpoint plan structure is invalid");
@@ -2877,12 +2919,29 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       assertGpsFreeReplay(streamReplay),
       finalizationCutoffMs,
     );
+    const lockedExecution = checkpoint.planExecution;
     const plan: RecordingActivityPlanInput = {
-      name: "Recovered activity plan",
+      ...(lockedExecution ? { id: lockedExecution.activityPlanId } : {}),
+      name: lockedExecution?.name ?? "Recovered activity plan",
+      description: lockedExecution?.description ?? null,
+      ...(lockedExecution
+        ? {
+            revision: lockedExecution.activityPlanRevision,
+            structure_hash: lockedExecution.structureHash,
+            ...(lockedExecution.plannedSession?.prescription.variantId
+              ? { variant_id: lockedExecution.plannedSession.prescription.variantId }
+              : {}),
+            ...(lockedExecution.plannedSession?.prescription.variantName
+              ? { variant_name: lockedExecution.plannedSession.prescription.variantName }
+              : {}),
+          }
+        : {}),
       gps_recording_enabled: false,
       structure: parsedPlanSnapshot.data,
     };
     this._plan = plan;
+    this._eventId = lockedExecution?.scheduledEventId ?? undefined;
+    this._plannedSession = lockedExecution?.plannedSession ?? undefined;
     this.planExecution.loadPlan(plan);
     this.planExecution.restoreOccurrence(
       checkpoint.currentOccurrenceId,
@@ -2958,6 +3017,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       profileId: this.profile.id,
       profile: this.profile,
       activityPlan: plan,
+      eventId: snapshot.activity.eventId ?? undefined,
     };
     this.recoveredCheckpoint = checkpoint;
     this.recoveredReplay = replay;
@@ -3110,6 +3170,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.recordingMetadata = undefined;
     this.planExecution.clear();
     this._plan = undefined;
+    this._eventId = undefined;
+    this._plannedSession = undefined;
     this.state = "pending";
     this.sessionController.resetAll();
     this.hasConfiguredSetup = false;
@@ -3194,6 +3256,22 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         : null;
       const executionPlan = this._plan ?? this.freeRecordingExecutionPlan;
       if (!executionPlan) throw new Error("Free recording execution structure is unavailable");
+      if (this._plannedSession) {
+        await assertRecordingPlanExecutionStructureHashes({
+          manifestVersion: 1,
+          compilerVersion: ACTIVITY_PLAN_COMPILER_VERSION,
+          activityPlanId: this._plannedSession.prescription.activityPlanId,
+          scheduledEventId: this._eventId ?? null,
+          name: this._plan?.name ?? this._plannedSession.prescription.variantName,
+          description: this._plan?.description ?? null,
+          activityPlanRevision: this._plannedSession.prescription.activityPlanRevision,
+          structureHash: this._plannedSession.prescription.structureHash,
+          structure: activityPlanStructureSchema.parse(executionPlan.structure),
+          plannedSession: this._plannedSession,
+          personalizationEnabled: false,
+          targetPresentations: [],
+        });
+      }
       this.planHash = await hashRecordingPlan(executionPlan.structure);
       this.occurrenceStartedAt = Date.now();
       this.occurrenceStartStats = { movingSeconds: 0, distanceMeters: 0 };
@@ -3630,12 +3708,19 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       if (this.recoveredCheckpoint !== null) {
         throw new Error("Resume or discard the recovered recording before selecting a new plan.");
       }
-      const plan: RecordingActivityPlanInput | null = payload.plan
+      const parsedPayload = ActivityPayloadSchema.parse({
+        activity_category: payload.activity_category,
+        gpsRecordingEnabled: payload.gpsRecordingEnabled,
+        ...(payload.eventId === undefined ? {} : { eventId: payload.eventId }),
+        ...(payload.plan === undefined ? {} : { plan: payload.plan }),
+        ...(payload.plannedSession === undefined ? {} : { plannedSession: payload.plannedSession }),
+      });
+      const plan: RecordingActivityPlanInput | null = parsedPayload.plan
         ? {
-            name: payload.plan.name,
-            description: payload.plan.description || "",
-            structure: payload.plan.structure,
-            ...(payload.plan.id === undefined ? {} : { id: payload.plan.id }),
+            name: parsedPayload.plan.name,
+            description: parsedPayload.plan.description || "",
+            structure: parsedPayload.plan.structure,
+            ...(parsedPayload.plan.id === undefined ? {} : { id: parsedPayload.plan.id }),
           }
         : null;
       if (plan) {
@@ -3657,7 +3742,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       if (plan) {
         // Template or planned activity with structure
         console.log("[Service] Selecting plan from payload:", plan.name);
-        this.selectPlan(plan, payload.eventId);
+        this.selectPlan(plan, parsedPayload.eventId, parsedPayload.plannedSession);
       } else {
         // Quick start activity - only clear plan if this is truly initial setup
         // Check if there's an existing plan to determine if this is initial setup
@@ -3666,20 +3751,26 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           // True initial setup: no plan exists, state is pending
           console.log(
             "[Service] Selecting unplanned activity from payload (initial):",
-            payload.activity_category,
-            payload.gpsRecordingEnabled,
+            parsedPayload.activity_category,
+            parsedPayload.gpsRecordingEnabled,
           );
-          this.selectUnplannedActivity(payload.activity_category, payload.gpsRecordingEnabled);
+          this.selectUnplannedActivity(
+            parsedPayload.activity_category,
+            parsedPayload.gpsRecordingEnabled,
+          );
         } else {
           // Plan exists OR recording has started: preserve plan and just update config
           console.log(
             "[Service] Updating activity configuration from payload:",
-            payload.activity_category,
-            payload.gpsRecordingEnabled,
+            parsedPayload.activity_category,
+            parsedPayload.gpsRecordingEnabled,
             "hasPlan:",
             this.hasPlan,
           );
-          this.updateActivityConfiguration(payload.activity_category, payload.gpsRecordingEnabled);
+          this.updateActivityConfiguration(
+            parsedPayload.activity_category,
+            parsedPayload.gpsRecordingEnabled,
+          );
         }
       }
 
@@ -4051,6 +4142,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.selectedActivityCategory = "run";
     this._plan = undefined;
     this._eventId = undefined;
+    this._plannedSession = undefined;
     this.freeRecordingExecutionPlan = undefined;
     this.freeRecordingCompiledPlan = null;
     this.planExecution.clear();

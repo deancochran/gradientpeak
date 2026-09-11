@@ -1,9 +1,11 @@
 import { invalidateActivityPlanQueries } from "@repo/api/react";
 import {
+  activityPlanDocumentSchema,
   activityPlanStructureSchema,
   calculateActivityPlanStats,
   compileActivityPlan,
 } from "@repo/core";
+import type { ActivityPlanDocumentInput } from "@repo/core/activity-plan";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo } from "react";
 import { Alert } from "react-native";
@@ -88,17 +90,16 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
 
   useEffect(() => {
     if (!editPlan || !isEditMode) return;
-    const parsed = activityPlanStructureSchema.safeParse(editPlan.structure);
+    const parsed = activityPlanDocumentSchema.safeParse(editPlan.structure);
     if (!parsed.success) {
-      Alert.alert("Unsupported plan", "This plan is not a valid version 3 activity plan.");
+      Alert.alert("Unsupported plan", "This plan is not a valid activity plan document.");
       return;
     }
     store.reset();
     store.setName(editPlan.name);
     store.setDescription(editPlan.description || "");
     store.setNotes(editPlan.notes || "");
-    store.setActivityCategory(parsed.data.activity_category);
-    store.setStructure(parsed.data);
+    store.setDocument(parsed.data);
   }, [
     editPlan,
     isEditMode,
@@ -106,8 +107,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     store.setName,
     store.setDescription,
     store.setNotes,
-    store.setActivityCategory,
-    store.setStructure,
+    store.setDocument,
   ]);
 
   const metrics = useMemo(() => {
@@ -133,9 +133,31 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
           errors[key] ??= issue.message;
         }
       }
+      if (isEditMode && store.document) {
+        const documentResult = activityPlanDocumentSchema.safeParse(store.document);
+        if (!documentResult.success) {
+          for (const issue of documentResult.error.issues) {
+            const [root, variantIndex, structureKey, ...structurePath] = issue.path;
+            if (
+              root === "variants" &&
+              typeof variantIndex === "number" &&
+              structureKey === "structure"
+            ) {
+              const variant: ActivityPlanDocumentInput["variants"][number] | undefined =
+                store.document.variants[variantIndex];
+              const key = variant
+                ? mapActivityPlanIssueToUiKey({ ...issue, path: structurePath }, variant.structure)
+                : "document";
+              errors[key] ??= issue.message;
+            } else {
+              errors.document ??= issue.message;
+            }
+          }
+        }
+      }
       return { isValid: Object.keys(errors).length === 0, errors };
     },
-    [store.name, store.structure],
+    [isEditMode, store.document, store.name, store.structure],
   );
   const validation = useMemo(() => validate(), [validate]);
 
@@ -153,23 +175,24 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       );
       return null;
     }
-    const payload = {
+    const commonPayload = {
       name: store.name,
       description: store.description.trim() || null,
-      structure: parsed.data,
       notes: store.notes.trim() || null,
     };
     try {
       if (isEditMode) {
         if (!options.planId) throw new Error("Edit mode requires a plan id");
         if (!editPlan?.structureHash) throw new Error("Refresh this plan before saving changes.");
+        const document = activityPlanDocumentSchema.parse(store.document);
         return await updateMutation.mutateAsync({
           id: options.planId,
           expectedStructureHash: editPlan.structureHash,
-          ...payload,
+          ...commonPayload,
+          structure: document,
         });
       }
-      return await createMutation.mutateAsync(payload);
+      return await createMutation.mutateAsync({ ...commonPayload, structure: parsed.data });
     } catch (error) {
       console.error("Submit error:", error);
       return null;
@@ -204,12 +227,15 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       description: store.description,
       activityCategory: store.activityCategory,
       structure: store.structure,
+      document: store.document,
+      selectedVariantId: store.selectedVariantId,
       notes: store.notes,
     },
     setName: store.setName,
     setDescription: store.setDescription,
     setActivityCategory: store.setActivityCategory,
     setNotes: store.setNotes,
+    selectVariant: store.selectVariant,
     metrics: {
       stepCount: metrics.stepCount,
       duration: metrics.durationMinutes,

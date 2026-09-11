@@ -1,5 +1,10 @@
 import { deriveSystemActivityTemplateActivityCategory, SYSTEM_TEMPLATES } from "@repo/core";
+import {
+  activityPlanDocumentSchema,
+  initializeActivityPlanDocument,
+} from "@repo/core/activity-plan";
 import { describe, expect, it, vi } from "vitest";
+import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import { createQueryMapDbMock, type QueryMap, type QueryResult } from "../../test/mock-query-db";
 import { trainingPlansRouter } from "../planning/training-plans";
 
@@ -46,8 +51,26 @@ function createCaller(queryMap: QueryMap) {
       revision: row.revision ?? 1,
       updated_at: row.updated_at ?? new Date("2026-03-01T00:00:00.000Z"),
     };
-    if (!sessions || row.structure?.version === 1) {
+    if (!sessions) {
       return { ...result, data: normalizedRow };
+    }
+    if (row.structure?.version === 1) {
+      return {
+        ...result,
+        data: {
+          ...normalizedRow,
+          structure: {
+            ...row.structure,
+            sessions: sessions.map((session) => {
+              const value = session as Record<string, unknown>;
+              return {
+                ...value,
+                activity_plan_variant_id: value.activity_plan_variant_id ?? value.activity_plan_id,
+              };
+            }),
+          },
+        },
+      };
     }
     return {
       ...result,
@@ -61,6 +84,9 @@ function createCaller(queryMap: QueryMap) {
             return {
               offset_days: value.offset_days,
               ...(value.activity_plan_id ? { activity_plan_id: value.activity_plan_id } : {}),
+              ...(value.activity_plan_id
+                ? { activity_plan_variant_id: value.activity_plan_id }
+                : {}),
               ...(typeof value.title === "string"
                 ? { event_overrides: { title: value.title } }
                 : {}),
@@ -81,20 +107,42 @@ function createCaller(queryMap: QueryMap) {
           ).map((result) => ({
             ...result,
             data: Array.isArray(result.data)
-              ? result.data.map((row) => ({
-                  ...(row as Record<string, unknown>),
-                  structure:
-                    (row as { structure?: unknown }).structure ?? SYSTEM_TEMPLATES[0]?.structure,
-                  updatedAt:
-                    (row as { updatedAt?: unknown }).updatedAt ??
-                    new Date("2026-03-01T00:00:00.000Z"),
-                }))
+              ? result.data.map((row) => {
+                  const value = row as Record<string, unknown>;
+                  const id = String(value.id);
+                  const sourceStructure = value.structure ?? SYSTEM_TEMPLATES[0]?.structure;
+                  const parsedDocument = activityPlanDocumentSchema.safeParse(sourceStructure);
+                  const structure = parsedDocument.success
+                    ? parsedDocument.data
+                    : initializeActivityPlanDocument({
+                        activityPlanId: id,
+                        structure: sourceStructure,
+                      });
+                  return {
+                    ...value,
+                    ownerProfileId: value.ownerProfileId ?? null,
+                    isPublic: value.isPublic ?? true,
+                    isSystem: value.isSystem ?? true,
+                    revision: value.revision ?? 1,
+                    structure,
+                    structureHash: activityPlanStructureHash(structure),
+                    updatedAt: value.updatedAt ?? new Date("2026-03-01T00:00:00.000Z"),
+                  };
+                })
               : result.data
                 ? {
                     ...(result.data as Record<string, unknown>),
-                    structure:
-                      (result.data as { structure?: unknown }).structure ??
-                      SYSTEM_TEMPLATES[0]?.structure,
+                    structure: (() => {
+                      const value = result.data as Record<string, unknown>;
+                      const sourceStructure = value.structure ?? SYSTEM_TEMPLATES[0]?.structure;
+                      const parsedDocument = activityPlanDocumentSchema.safeParse(sourceStructure);
+                      return parsedDocument.success
+                        ? parsedDocument.data
+                        : initializeActivityPlanDocument({
+                            activityPlanId: String(value.id),
+                            structure: sourceStructure,
+                          });
+                    })(),
                     updatedAt:
                       (result.data as { updatedAt?: unknown }).updatedAt ??
                       new Date("2026-03-01T00:00:00.000Z"),

@@ -1,14 +1,14 @@
-import { activityPlanStructureSchema } from "@repo/core";
+import { activityPlanDocumentSchema } from "@repo/core";
 import { type DrizzleDbClient, schema } from "@repo/db";
 import { and, eq, inArray } from "drizzle-orm";
 import { readPublishedAthletePerformanceTargets } from "../../../application/athlete-intelligence/published-athlete-state";
 import type { DrizzleTransactionClient } from "../../../db";
 import {
   createIntegrationsRepositories,
-  createWahooRepository,
-  createWahooSyncRepository,
   listIntegrationsByProfileId,
-} from "../../../infrastructure/repositories";
+} from "../../../infrastructure/repositories/drizzle-integrations-repository";
+import { createWahooRepository } from "../../../infrastructure/repositories/drizzle-wahoo-repository";
+import { createWahooSyncRepository } from "../../../infrastructure/repositories/drizzle-wahoo-sync-repository";
 import type { WahooSyncJobRecord } from "../../../repositories";
 import { WahooPlannedActivitySyncService } from "./wahoo-planned-activity-sync-service";
 import { WahooPlannedActivityProvider } from "./wahoo-planned-workout-provider";
@@ -157,7 +157,7 @@ export async function enqueueWahooPlannedActivitySyncAfterCalendarMutation(
       );
     if (
       eventPlans.length !== eventIds.length ||
-      eventPlans.some((event) => !activityPlanStructureSchema.safeParse(event.structure).success)
+      eventPlans.some((event) => !activityPlanDocumentSchema.safeParse(event.structure).success)
     ) {
       throw new Error(
         "Only executable single-activity-category activity plans can be published to Wahoo",

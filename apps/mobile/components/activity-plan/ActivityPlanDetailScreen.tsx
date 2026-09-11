@@ -13,6 +13,7 @@ import { format } from "date-fns";
 import { MessageCircle, Share2 } from "lucide-react-native";
 import React from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, Share, View } from "react-native";
+import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
 import { ActivityPlanSummary } from "@/components/shared/ActivityPlanSummary";
 import {
   DetailDeleteConfirmModal,
@@ -46,6 +47,7 @@ import {
 } from "@/lib/recording/recordingObjectActions";
 import { getPublicShareUrl } from "@/lib/share/public-share-url";
 import { ActivityPlanContentPreview } from "./ActivityPlanContentPreview";
+import { ActivityPlanVariantSelector } from "./ActivityPlanVariantSelector";
 import { useActivityPlanDetailViewModel } from "./useActivityPlanDetailViewModel";
 import { useActivityPlanSchedulingActions } from "./useActivityPlanSchedulingActions";
 
@@ -74,8 +76,21 @@ export function ActivityPlanDetailScreen({
   const recorderService = useOptionalActivityRecorderService();
   const sessionView = useSessionView(recorderService);
   const recordingLifecycle = recorderService?.recordingLifecycle ?? (sessionView ? "idle" : "idle");
+  const detailSelectionScope = `${planId ?? "none"}:${eventId ?? "none"}`;
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
-  const [personalizationChoice, setPersonalizationChoice] = React.useState<boolean | null>(null);
+  const [showScheduleModal, setShowScheduleModal] = React.useState(false);
+  const [variantSelection, setVariantSelection] = React.useState<{
+    scope: string;
+    variantId: string | undefined;
+  }>({ scope: detailSelectionScope, variantId: undefined });
+  const [personalizationSelection, setPersonalizationSelection] = React.useState<{
+    scope: string;
+    value: boolean | null;
+  }>({ scope: detailSelectionScope, value: null });
+  const selectedVariantId =
+    variantSelection.scope === detailSelectionScope ? variantSelection.variantId : undefined;
+  const personalizationChoice =
+    personalizationSelection.scope === detailSelectionScope ? personalizationSelection.value : null;
   const entityCommentsSheet = useEntityCommentsSheet();
 
   const utils = api.useUtils();
@@ -84,8 +99,12 @@ export function ActivityPlanDetailScreen({
   });
 
   const { data: fetchedPlan, isLoading: loadingPlan } = api.activityPlans.getById.useQuery(
-    { id: planId ?? "", personalize: false },
-    { enabled: !!planId },
+    {
+      id: planId ?? "",
+      personalize: false,
+      ...(selectedVariantId === undefined ? {} : { variantId: selectedVariantId }),
+    },
+    { enabled: !!planId && !eventId },
   );
 
   const {
@@ -153,9 +172,9 @@ export function ActivityPlanDetailScreen({
         title: activityPlan.name,
       })
     : null;
-  React.useEffect(() => {
-    setPersonalizationChoice(null);
-  }, [eventId, planId]);
+  const variantMetadata = eventId ? undefined : fetchedPlan?.detail;
+  const resolvedVariant = variantMetadata?.resolvedVariant;
+  const variantOptions = variantMetadata?.variants ?? [];
 
   const presentation = React.useMemo(
     () => deriveActivityPlanPresentation(activityPlan?.structure),
@@ -171,22 +190,33 @@ export function ActivityPlanDetailScreen({
   }));
 
   const recordingCandidate = React.useMemo<RecordingObjectActionCandidate | null>(() => {
-    if (!activityPlan || !presentation?.structure || !activityPlan.capabilities.canRecord) {
+    const plannedSession = vm.plannedSession;
+    const recordingStructure = plannedSession?.prescription.structure ?? presentation?.structure;
+    if (!activityPlan || !recordingStructure || !activityPlan.capabilities.canRecord) {
       return null;
     }
     return {
       objectKind: "activity_plan",
       objectId: activityPlan.id,
       label: activityPlan.name,
-      activity_category: planCategory,
+      activity_category: recordingStructure.activity_category,
+      ...(eventId === undefined ? {} : { eventId }),
+      ...(plannedSession
+        ? {
+            plannedSession: {
+              id: plannedSession.id,
+              sessionRevision: plannedSession.sessionRevision,
+              prescription: plannedSession.prescription,
+            },
+          }
+        : {}),
       plan: {
-        id: activityPlan.id,
+        id: plannedSession?.prescription.activityPlanId ?? activityPlan.id,
         name: activityPlan.name,
-        activity_category: activityPlan.activityCategory,
-        structure: presentation.structure,
+        structure: recordingStructure,
       },
     };
-  }, [activityPlan, planCategory, presentation]);
+  }, [activityPlan, eventId, presentation, vm.plannedSession]);
 
   const recordingAction = recordingCandidate
     ? resolveRecordingObjectAction({
@@ -205,6 +235,7 @@ export function ActivityPlanDetailScreen({
       service: recorderService,
     });
   };
+  const openScheduleModal = React.useCallback(() => setShowScheduleModal(true), []);
   const scheduling = useActivityPlanSchedulingActions({
     action,
     activityPlan,
@@ -217,6 +248,7 @@ export function ActivityPlanDetailScreen({
     utils,
     canDuplicatePlan: Boolean(activityPlan?.capabilities.canDuplicate),
     canSchedulePlan: Boolean(activityPlan?.capabilities.canSchedule),
+    onSchedule: openScheduleModal,
   });
 
   const handleEdit = () => {
@@ -465,6 +497,19 @@ export function ActivityPlanDetailScreen({
               variant="standalone"
               showAttribution={false}
             />
+            {!isEventContext && resolvedVariant && variantOptions.length > 1 ? (
+              <View className="mt-4 border-t border-border pt-4">
+                <ActivityPlanVariantSelector
+                  defaultVariantId={variantMetadata.defaultVariantId}
+                  onSelect={(variantId) =>
+                    setVariantSelection({ scope: detailSelectionScope, variantId })
+                  }
+                  selectedVariantId={resolvedVariant.id}
+                  selection={resolvedVariant.selection}
+                  variants={variantOptions}
+                />
+              </View>
+            ) : null}
             <View className="mt-4 flex-row items-center gap-2">
               <ResourceLikeButton
                 disabled={isLikePending}
@@ -529,7 +574,9 @@ export function ActivityPlanDetailScreen({
               personalizeTargets={personalizeTargets}
               personalizationFactsLoading={viewerReadModelLoading}
               performanceTargets={performanceTargets ?? null}
-              onPersonalizeTargetsChange={setPersonalizationChoice}
+              onPersonalizeTargetsChange={(value) =>
+                setPersonalizationSelection({ scope: detailSelectionScope, value })
+              }
               showPersonalizationControl={Boolean(profile)}
               size="large"
               plan={activityPlan}
@@ -547,6 +594,16 @@ export function ActivityPlanDetailScreen({
           onConfirm={handleConfirmDelete}
           pending={deleteMutation.isPending}
           testIDPrefix="activity-plan"
+        />
+      ) : null}
+      {showScheduleModal ? (
+        <ScheduleActivityModal
+          activityPlan={activityPlan}
+          activityPlanId={activityPlan.id}
+          onClose={() => setShowScheduleModal(false)}
+          onSuccess={() => router.navigate(ROUTES.PLAN.CALENDAR)}
+          variantId={resolvedVariant?.id}
+          visible
         />
       ) : null}
     </View>

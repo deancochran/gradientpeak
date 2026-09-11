@@ -27,7 +27,9 @@ async function expectDatabaseError(
 
 await withDisposableDatabase(process.argv.slice(2), "activity_file_ingestions", async (db) => {
   await bootstrapSupabaseSchemas(db);
-  await applySqlFile(db, requireFreshBaseline().sourcePath);
+  for (const migrationPath of requireFreshBaseline().migrationPaths) {
+    await applySqlFile(db, migrationPath);
+  }
   await db.query(
     "insert into auth.users (id, email, raw_user_meta_data) values ($1, 'direct-ingestion@example.test', '{}'::jsonb)",
     [profileId],

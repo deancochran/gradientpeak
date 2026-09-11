@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  activityPlanDocumentSchema,
   DRAFT_PLAN_PROJECTION_ALGORITHM_VERSION,
   deriveDraftPlanProjection,
   derivePlanGoalReadinessContext,
@@ -22,10 +23,13 @@ import {
   withProfileFencedRepeatableReadSnapshot,
 } from "../../db";
 import { createContentAccessPermissions } from "../../permissions/content-access";
-import { estimateActivityPlans } from "../activity-plans/estimate-activity-plans";
-import { activityPlanStructureHash } from "../activity-plans/structure-hash";
+import { estimateActivityPlan } from "../activity-plans/estimate-activity-plans";
+import {
+  activityPlanDocumentHash,
+  activityPlanStructureHash,
+} from "../activity-plans/structure-hash";
 import { readAthleteReadModel } from "../athlete-intelligence/athlete-read-model";
-import { requirePublishedLinkedActivityPlans } from "./mutationUseCases";
+import { materializeTrainingPlanActivityPlanVariants } from "./mutationUseCases";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
@@ -141,7 +145,7 @@ type ResolvedDraft = {
   name: string;
   description: string | null;
   contentVisibility?: "private" | "followers" | "public";
-  structure: z.infer<typeof trainingPlanSchema>;
+  structure: z.infer<typeof trainingPlanCreateSchema> & { id: string };
   previewStartDate: string;
   currentPlanRevision: number | null;
   currentPlanStructureHash: string | null;
@@ -169,6 +173,7 @@ type PersistedPlanStimuliDerivation =
       planningTimezone: string;
       activityPlans: Array<{
         activityPlanId: string;
+        activityPlanVariantId: string;
         activityCategory: "bike" | "other" | "run" | "strength" | "swim";
         commonLoad: number;
       }>;
@@ -216,21 +221,44 @@ export async function derivePersistedPlanStimuli(input: {
     .where(inArray(activityPlans.id, activityPlanIds));
   if (rows.length !== activityPlanIds.length)
     return { status: "unavailable", reason: "missing_activity_plan" };
-  if (rows.some((row) => activityPlanStructureHash(row.structure) !== row.structure_hash))
+  if (
+    rows.some((row) => {
+      const document = activityPlanDocumentSchema.safeParse(row.structure);
+      return !document.success || activityPlanDocumentHash(document.data) !== row.structure_hash;
+    })
+  )
     return { status: "unavailable", reason: "activity_plan_structure" };
-  const estimated = await estimateActivityPlans(rows, input.db, input.profileId, {
-    asOf: input.now,
-  });
-  const facts = estimated.map((plan) => {
-    const load = plan.prescriptionQuantification.summary.commonLoad;
-    if (load.status !== "complete") return null;
-    return {
-      activityPlanId: plan.id,
-      activityCategory:
-        plan.prescriptionQuantification.members[0]?.activity_category ?? ("other" as const),
-      commonLoad: load.load,
-    };
-  });
+  const rowById = new Map(rows.map((row) => [row.id, row]));
+  const references = [
+    ...new Map(
+      input.structure.sessions.map((session) => [
+        `${session.activity_plan_id}:${session.activity_plan_variant_id}`,
+        {
+          activityPlanId: session.activity_plan_id,
+          activityPlanVariantId: session.activity_plan_variant_id,
+        },
+      ]),
+    ).values(),
+  ];
+  const facts = await Promise.all(
+    references.map(async (reference) => {
+      const row = rowById.get(reference.activityPlanId);
+      if (!row) return null;
+      const plan = await estimateActivityPlan(row, input.db, input.profileId, {
+        asOf: input.now,
+        variantId: reference.activityPlanVariantId,
+      });
+      const load = plan.prescriptionQuantification.summary.commonLoad;
+      if (load.status !== "complete") return null;
+      return {
+        activityPlanId: plan.id,
+        activityPlanVariantId: reference.activityPlanVariantId,
+        activityCategory:
+          plan.prescriptionQuantification.members[0]?.activity_category ?? ("other" as const),
+        commonLoad: load.load,
+      };
+    }),
+  );
   if (facts.some((fact) => fact === null))
     return { status: "unavailable", reason: "load_unavailable" };
   const activityPlanFacts = facts.filter((fact): fact is NonNullable<typeof fact> => fact !== null);
@@ -320,7 +348,7 @@ async function resolveDraft(input: {
     ...(input.values.draft.contentVisibility === undefined
       ? {}
       : { contentVisibility: input.values.draft.contentVisibility }),
-    structure: trainingPlanSchema.parse({ ...input.values.draft.structure, id: planId }),
+    structure: { ...trainingPlanCreateSchema.parse(input.values.draft.structure), id: planId },
     previewStartDate: input.values.draft.previewStartDate,
     currentPlanRevision:
       input.values.kind === "update" ? input.values.draft.expectedRevision : null,
@@ -332,10 +360,11 @@ async function resolveDraft(input: {
 async function lockReferencedActivityPlans(input: {
   tx: DrizzleTransactionClient;
   profileId: string;
-  structure: z.infer<typeof trainingPlanSchema>;
-}) {
+  structure: z.infer<typeof trainingPlanCreateSchema> & { id: string };
+  lock: boolean;
+}): Promise<z.infer<typeof trainingPlanSchema>> {
   const ids = [...new Set(input.structure.sessions.map((session) => session.activity_plan_id))];
-  const rows = await input.tx
+  const rows = input.tx
     .select({
       gpsRecordingEnabled: activityPlans.gps_recording_enabled,
       id: activityPlans.id,
@@ -351,15 +380,30 @@ async function lockReferencedActivityPlans(input: {
           eq(activityPlans.profile_id, input.profileId),
           eq(activityPlans.content_visibility, "public"),
           eq(activityPlans.is_system_template, true),
+          sql`(${activityPlans.content_visibility} = 'followers' and exists (
+            select 1 from follows f
+            where f.follower_id = ${input.profileId}::uuid
+              and f.following_id = ${activityPlans.profile_id}
+              and f.status = 'accepted'
+          ))`,
+          sql`exists (
+            select 1 from content_access_grants cag
+            where cag.content_type = 'activity_plan'
+              and cag.content_id = ${activityPlans.id}
+              and cag.grantee_profile_id = ${input.profileId}::uuid
+              and cag.access_level = 'read'
+              and cag.revoked_at is null
+              and (cag.expires_at is null or cag.expires_at > now())
+          )`,
         ),
       ),
     )
-    .orderBy(activityPlans.id)
-    .for("share");
-  requirePublishedLinkedActivityPlans({
-    rows: rows.map((row) => ({ ...row, activityCategory: "other" })),
+    .orderBy(activityPlans.id);
+  const lockedRows = input.lock ? await rows.for("share") : await rows;
+  return materializeTrainingPlanActivityPlanVariants({
+    rows: lockedRows.map((row) => ({ ...row, activityCategory: "other" })),
     structure: input.structure,
-  });
+  }) as z.infer<typeof trainingPlanSchema>;
 }
 
 async function deriveProjection(input: {
@@ -403,27 +447,27 @@ async function deriveProjection(input: {
       currentPlanRevision: input.draft.currentPlanRevision,
       currentPlanStructureHash: input.draft.currentPlanStructureHash,
     });
-  if (input.lockAuthority) {
-    try {
-      await lockReferencedActivityPlans({
-        tx: input.db as DrizzleTransactionClient,
-        profileId: input.profileId,
-        structure: input.draft.structure,
-      });
-    } catch {
-      return staleResult({
-        reason: "linked_plan_unavailable",
-        currentPublishedRevision: readModel.publishedRevision,
-        currentPlanRevision: input.draft.currentPlanRevision,
-        currentPlanStructureHash: input.draft.currentPlanStructureHash,
-      });
-    }
+  let materializedStructure: z.infer<typeof trainingPlanSchema>;
+  try {
+    materializedStructure = await lockReferencedActivityPlans({
+      tx: input.db as DrizzleTransactionClient,
+      profileId: input.profileId,
+      structure: input.draft.structure,
+      lock: input.lockAuthority,
+    });
+  } catch {
+    return staleResult({
+      reason: "linked_plan_unavailable",
+      currentPublishedRevision: readModel.publishedRevision,
+      currentPlanRevision: input.draft.currentPlanRevision,
+      currentPlanStructureHash: input.draft.currentPlanStructureHash,
+    });
   }
   const derivation = await derivePersistedPlanStimuli({
     db: input.db,
     profileId: input.profileId,
     planId: input.draft.planId,
-    structure: input.draft.structure,
+    structure: materializedStructure,
     startDate: input.draft.previewStartDate,
     baselineAsOf: baseline.asOf,
     now: input.now,
@@ -443,7 +487,7 @@ async function deriveProjection(input: {
   const projection = deriveDraftPlanProjection({
     baseline,
     planId: input.draft.planId,
-    structure: input.draft.structure,
+    structure: materializedStructure,
     activityPlans: derivation.activityPlans,
     planningTimezone: derivation.planningTimezone,
     startDate: input.draft.previewStartDate,
@@ -452,7 +496,7 @@ async function deriveProjection(input: {
       plannedSessions: derivation.sessions,
       goal: derivePlanGoalReadinessContext({
         planId: input.draft.planId,
-        structure: input.draft.structure,
+        structure: materializedStructure,
         planningTimezone: derivation.planningTimezone,
         startDate: input.draft.previewStartDate,
       }),
@@ -463,6 +507,7 @@ async function deriveProjection(input: {
         status: "available" as const,
         publishedRevision: readModel.publishedRevision,
         simulation: projection.simulation,
+        structure: materializedStructure,
       } as const)
     : staleResult({
         reason: "plan_structure",
@@ -565,7 +610,7 @@ export async function commitTrainingPlan(input: {
         lockAuthority: true,
       });
       if (projection.status !== "available") return projection;
-      const structureHash = activityPlanStructureHash(draft.structure);
+      const structureHash = activityPlanStructureHash(projection.structure);
       let savedRevision: number;
       if (values.kind === "update") {
         const [saved] = await tx
@@ -576,7 +621,7 @@ export async function commitTrainingPlan(input: {
             ...(draft.contentVisibility === undefined
               ? {}
               : { content_visibility: draft.contentVisibility }),
-            structure: draft.structure,
+            structure: projection.structure,
             structure_hash: structureHash,
             revision: sql`${trainingPlans.revision} + 1`,
             validated_state_revision: projection.publishedRevision,
@@ -620,7 +665,7 @@ export async function commitTrainingPlan(input: {
             name: draft.name,
             description: draft.description,
             content_visibility: visibility,
-            structure: draft.structure,
+            structure: projection.structure,
             structure_hash: structureHash,
             validated_state_revision: projection.publishedRevision,
             validated_at: now,

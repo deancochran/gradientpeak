@@ -3,7 +3,7 @@ import type {
   SystemActivityTemplateDefinition,
   VersionedSystemContentDefinition,
 } from "@repo/core";
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import { initializeActivityPlanDocument } from "@repo/core/activity-plan";
 import { canonicalTrainingPlanStructureSchema } from "@repo/core/schemas";
 import { structureHash } from "./canonical-json";
 
@@ -13,7 +13,13 @@ export type SystemTrainingPlanDefinition = VersionedSystemContentDefinition<
 
 export function persistedTrainingPlanStructure(template: (typeof ALL_SAMPLE_PLANS)[number]) {
   const { id: _id, ...structure } = template.structure;
-  return canonicalTrainingPlanStructureSchema.parse(structure);
+  return canonicalTrainingPlanStructureSchema.parse({
+    ...structure,
+    sessions: structure.sessions.map((session) => ({
+      ...session,
+      activity_plan_variant_id: session.activity_plan_id,
+    })),
+  });
 }
 
 export function materializeSystemActivityTemplateSeedValues(
@@ -21,7 +27,10 @@ export function materializeSystemActivityTemplateSeedValues(
 ) {
   const template = definition.content;
   if (!template.id) throw new Error(`System activity template ${definition.key} is missing an ID`);
-  const structure = activityPlanStructureSchema.parse(template.structure);
+  const structure = initializeActivityPlanDocument({
+    activityPlanId: template.id,
+    structure: template.structure,
+  });
   return {
     id: template.id,
     profile_id: null,

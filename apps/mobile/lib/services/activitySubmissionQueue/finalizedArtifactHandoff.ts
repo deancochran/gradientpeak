@@ -1,4 +1,5 @@
 import type { RecordingSessionArtifact } from "@repo/core";
+import { assertRecordingPlanExecutionStructureHashes } from "@/lib/recording/structureHash";
 import { clearRecordingCheckpoint } from "../ActivityRecorder/checkpointStorage";
 import { createFinalizedArtifactQueueHandoff } from "../ActivityRecorder/recordingEvidenceJournal";
 import { type ActivitySubmissionQueueJob, activitySubmissionQueueJobSchema } from "./types";
@@ -16,6 +17,7 @@ async function handoffOnce(
   if (!artifact.activityFilePath || !artifact.executionManifest) {
     throw new Error("Finalized recording is missing its FIT path or execution manifest");
   }
+  await assertRecordingPlanExecutionStructureHashes(artifact.snapshot.planExecution);
   const firstActivity = artifact.executionManifest.occurrences.find(
     (occurrence) => occurrence.role === "activity" && occurrence.activity_category,
   );
@@ -30,6 +32,7 @@ async function handoffOnce(
     localActivityFilePath: artifact.activityFilePath,
     streamArtifactPaths: artifact.streamArtifactPaths,
     executionManifest: artifact.executionManifest,
+    planExecution: artifact.snapshot.planExecution ?? null,
     draft: {
       recordingSessionId: artifact.sessionId,
       profileId,

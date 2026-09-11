@@ -2,6 +2,7 @@ import { fireEvent, renderNative, screen, waitFor } from "../../../test/render-n
 
 const createMock = jest.fn(async () => undefined);
 const invalidateCalendarPageMock = jest.fn(async () => undefined);
+const invalidatePlannedSessionRangeMock = jest.fn(async () => undefined);
 const replaceMock = jest.fn();
 let plannedSessionMutationOptions: { onConflict: () => Promise<unknown> } | null = null;
 
@@ -21,7 +22,10 @@ jest.mock("@/lib/stores/auth-store", () => ({
 }));
 jest.mock("@/lib/api", () => ({
   api: {
-    useUtils: () => ({ calendar: { page: { invalidate: invalidateCalendarPageMock } } }),
+    useUtils: () => ({
+      calendar: { page: { invalidate: invalidateCalendarPageMock } },
+      plannedSessions: { range: { invalidate: invalidatePlannedSessionRangeMock } },
+    }),
     activityPlans: {
       list: {
         useQuery: () => ({
@@ -77,6 +81,7 @@ describe("PersonalPlannedSessionCreate", () => {
   beforeEach(() => {
     createMock.mockClear();
     invalidateCalendarPageMock.mockClear();
+    invalidatePlannedSessionRangeMock.mockClear();
     plannedSessionMutationOptions = null;
   });
 
@@ -96,11 +101,12 @@ describe("PersonalPlannedSessionCreate", () => {
     expect((createMock as jest.Mock).mock.calls[0]?.[0].session).not.toHaveProperty("prescription");
   });
 
-  it("refreshes calendar pages after a scheduling conflict without reading a per-day session range", async () => {
+  it("refreshes both calendar sources after a scheduling conflict", async () => {
     await renderNative(<PersonalPlannedSessionCreate planningDate="2026-08-16" />);
 
     await plannedSessionMutationOptions?.onConflict();
 
     expect(invalidateCalendarPageMock).toHaveBeenCalledTimes(1);
+    expect(invalidatePlannedSessionRangeMock).toHaveBeenCalledTimes(1);
   });
 });

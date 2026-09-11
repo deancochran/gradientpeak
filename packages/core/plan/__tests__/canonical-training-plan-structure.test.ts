@@ -18,6 +18,7 @@ const canonicalStructure = {
     {
       offset_days: 0,
       activity_plan_id: activityPlanId,
+      activity_plan_variant_id: activityPlanId,
       event_overrides: {
         title: "Opening aerobic ride",
         description: "Keep this one controlled.",
@@ -27,6 +28,7 @@ const canonicalStructure = {
     {
       offset_days: 2,
       activity_plan_id: "22222222-2222-4222-8222-222222222222",
+      activity_plan_variant_id: "22222222-2222-4222-8222-222222222222",
     },
   ],
 };
@@ -54,6 +56,22 @@ describe("canonical training plan structure", () => {
     });
 
     expect(parsed.structure).toEqual(canonicalStructure);
+  });
+
+  it("allows variant omission only in pre-materialization input", () => {
+    const inputStructure = {
+      version: 1 as const,
+      sessions: [{ offset_days: 0, activity_plan_id: activityPlanId }],
+    };
+
+    expect(trainingPlanCreateSchema.parse(inputStructure)).toEqual(inputStructure);
+    expect(canonicalTrainingPlanStructureSchema.safeParse(inputStructure).success).toBe(false);
+    expect(
+      persistedTrainingPlanStructureSchema.safeParse({
+        id: "33333333-3333-4333-8333-333333333333",
+        ...inputStructure,
+      }).success,
+    ).toBe(false);
   });
 
   it("accepts date-agnostic goal blueprints with target offsets", () => {
@@ -159,6 +177,7 @@ describe("canonical training plan structure", () => {
     const result = canonicalTrainingPlanStructureSessionSchema.safeParse({
       offset_days: 0,
       activity_plan_id: activityPlanId,
+      activity_plan_variant_id: activityPlanId,
       scheduled_date: "2026-06-01",
       session_type: "planned_activity",
       provider_metadata: { provider: "wahoo" },

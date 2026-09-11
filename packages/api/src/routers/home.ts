@@ -1,6 +1,6 @@
 import {
   activityObservationQuantificationBundleSchema,
-  activityPlanStructureSchema,
+  activityPlanDocumentSchema,
   bindPrescriptionQuantificationToScheduledEvent,
   calculateRollingTrainingQuality,
   canonicalActivityCategorySchema,
@@ -12,6 +12,7 @@ import {
   getPlannedEstimate,
   loadCoverageSchema,
   loadSeriesIdentitySchema,
+  resolveActivityPlanVariant,
 } from "@repo/core";
 import {
   addDaysDateOnlyUtc,
@@ -72,8 +73,10 @@ function scheduledQuantification(item: PlannedActivityWithEstimation, asOf: Date
 }
 
 export function getPlanCategoryComposition(structure: unknown) {
-  const parsed = activityPlanStructureSchema.safeParse(structure);
-  return parsed.success ? [parsed.data.activity_category] : [];
+  const parsed = activityPlanDocumentSchema.safeParse(structure);
+  return parsed.success
+    ? [resolveActivityPlanVariant(parsed.data).structure.activity_category]
+    : [];
 }
 
 export function getScheduleExecutionPresentation(plan: { activity_category: string } | null) {

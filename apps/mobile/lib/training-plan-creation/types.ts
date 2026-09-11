@@ -23,6 +23,8 @@ export type TrainingPlanBuilderSession = {
   offsetDays: number;
   intent?: TrainingPlanBuilderSessionIntent;
   activityPlan: TrainingPlanActivityPlanFacts | null;
+  /** Omission intentionally asks the server to pin the activity plan's current default. */
+  activityPlanVariantId?: string;
   eventOverrides?: TrainingPlanBuilderEventOverrides;
 };
 export type TrainingPlanBuilderScheduling = PlanningSchedule;
@@ -70,6 +72,7 @@ export type TrainingPlanBuilderAction =
       sessionId: string;
       activityPlan: TrainingPlanActivityPlanFacts | null;
     }
+  | { type: "session.selectActivityPlanVariant"; sessionId: string; variantId?: string }
   | { type: "scheduling.startDateUpdate"; startDate: string }
   | {
       type: "session.updateEventOverrides";

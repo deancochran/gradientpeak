@@ -305,6 +305,7 @@ export function projectCanonicalTrainingPlan(input: {
     sessions: resolutionManifest.map((entry) => ({
       offset_days: entry.offset_days,
       activity_plan_id: entry.selected_activity_plan_id,
+      activity_plan_variant_id: entry.selected_activity_plan_id,
       ...(pointByDate.get(entry.date)?.event_overrides
         ? { event_overrides: pointByDate.get(entry.date)?.event_overrides }
         : {}),

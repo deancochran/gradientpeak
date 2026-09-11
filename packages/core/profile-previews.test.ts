@@ -15,9 +15,9 @@ describe("public profile previews", () => {
       version: 1,
       durationWeeks: { recommended: 3 },
       sessions: [
-        { offset_days: 0, activity_plan_id: id(20) },
-        { offset_days: 2, activity_plan_id: id(21) },
-        { offset_days: 8, activity_plan_id: id(20) },
+        { offset_days: 0, activity_plan_id: id(20), activity_plan_variant_id: id(20) },
+        { offset_days: 2, activity_plan_id: id(21), activity_plan_variant_id: id(21) },
+        { offset_days: 8, activity_plan_id: id(20), activity_plan_variant_id: id(20) },
       ],
     });
 
@@ -51,7 +51,13 @@ describe("public profile previews", () => {
     expect(
       deriveTrainingPlanPlannedSchedulePreview({
         version: 1,
-        sessions: [{ offset_days: 104 * 7, activity_plan_id: id(30) }],
+        sessions: [
+          {
+            offset_days: 104 * 7,
+            activity_plan_id: id(30),
+            activity_plan_variant_id: id(30),
+          },
+        ],
       }),
     ).toBeNull();
     const points = projectProfileChartPoints(

@@ -1557,4 +1557,20 @@ describe("submitActivity", () => {
     expect(committed).toEqual(expect.arrayContaining([activities, ingestionTable]));
     expect(result.compositionResult).toEqual({ id: "ingestion-1", status: "pending_upload" });
   });
+
+  it("rolls back the canonical activity when scheduled completion composition fails", async () => {
+    const { db, committed } = createDb();
+    await expect(
+      submitActivity(db, {
+        ...createInput(),
+        providerProvenance: undefined,
+        composition: {
+          persist: async () => {
+            throw new Error("planned-session-link-rejected");
+          },
+        },
+      }),
+    ).rejects.toThrow("planned-session-link-rejected");
+    expect(committed).toEqual([]);
+  });
 });

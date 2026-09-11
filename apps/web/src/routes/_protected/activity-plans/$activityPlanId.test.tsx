@@ -7,21 +7,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Route } from "./$activityPlanId";
 
 const mocks = vi.hoisted(() => ({
-  createEvent: vi.fn(),
+  createSession: vi.fn(),
+  navigate: vi.fn(),
   eventListInput: undefined as unknown,
   performanceTargets: undefined as AthletePerformanceTargetFacts | undefined,
   plan: undefined as unknown,
   planInputs: [] as unknown[],
   readModelOptions: [] as unknown[],
   activityPlanId: "invalid-plan",
+  variantId: undefined as string | undefined,
 }));
+const PROFILE_ID = "99999999-9999-4999-8999-999999999999";
+const BASE_VARIANT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const BUILD_VARIANT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
-    useNavigate: () => vi.fn(),
+    useNavigate: () => mocks.navigate,
     useParams: () => ({ activityPlanId: mocks.activityPlanId }),
-    useSearch: () => ({ edit: undefined }),
+    useSearch: () => ({ edit: undefined, variantId: mocks.variantId }),
   }),
 }));
 vi.mock("../../../components/activity-plan/activity-plan-comments", () => ({
@@ -97,10 +102,19 @@ vi.mock("../../../lib/api/client", () => ({
         },
       },
     },
+    profiles: {
+      get: { useQuery: () => ({ data: { id: PROFILE_ID } }) },
+    },
+    plannedSessions: {
+      range: {
+        useQuery: () => ({ data: { items: [], truncated: false }, refetch: vi.fn() }),
+      },
+      create: { useMutation: () => ({ isPending: false, mutate: mocks.createSession }) },
+      move: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
+      cancel: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
+    },
     events: {
-      create: { useMutation: () => ({ isPending: false, mutate: mocks.createEvent }) },
       delete: { useMutation: () => ({ isPending: false, mutate: vi.fn(), mutateAsync: vi.fn() }) },
-      update: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
     },
     social: { toggleLike: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) } },
     useUtils: () => ({ activityPlans: { invalidate: vi.fn() }, events: { invalidate: vi.fn() } }),
@@ -109,11 +123,13 @@ vi.mock("../../../lib/api/client", () => ({
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 beforeEach(() => {
-  mocks.createEvent.mockReset();
+  mocks.createSession.mockReset();
+  mocks.navigate.mockReset();
   mocks.eventListInput = undefined;
   mocks.planInputs = [];
   mocks.readModelOptions = [];
   mocks.activityPlanId = "invalid-plan";
+  mocks.variantId = undefined;
   mocks.performanceTargets = buildPerformanceTargetFactsFixture({
     asOf: "2026-07-01T00:00:00.000Z",
     bikeThresholdWatts: 300,
@@ -151,6 +167,23 @@ describe("ActivityPlanDetailPage invalid plan", () => {
       includeAdhoc: true,
       limit: 100,
     });
+  });
+
+  it("passes an unknown well-formed variant identity to the API without local fallback", () => {
+    const unknownVariantId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    mocks.variantId = unknownVariantId;
+    mocks.plan = undefined;
+    const ActivityPlanDetailPage = (Route as unknown as { component: React.ComponentType })
+      .component;
+
+    render(<ActivityPlanDetailPage />);
+
+    expect(mocks.planInputs).toContainEqual({
+      id: "invalid-plan",
+      personalize: false,
+      variantId: unknownVariantId,
+    });
+    expect(screen.getByText("Activity plan unavailable")).toBeTruthy();
   });
 });
 
@@ -207,6 +240,14 @@ describe("ActivityPlanDetailPage print", () => {
             provenance: "estimated",
           },
         ],
+        defaultVariantId: BASE_VARIANT_ID,
+        defaultVariantName: "Base",
+        variantCount: 2,
+        variants: [
+          { id: BASE_VARIANT_ID, name: "Base" },
+          { id: BUILD_VARIANT_ID, name: "Build" },
+        ],
+        resolvedVariant: { id: BASE_VARIANT_ID, name: "Base", selection: "default" },
         structure: {
           version: 3,
           activity_category: "bike",
@@ -302,9 +343,16 @@ describe("ActivityPlanDetailPage print", () => {
     expect(screen.getByTestId("activity-plan-session-flow").className).not.toContain(
       "print:hidden",
     );
+    fireEvent.change(screen.getByLabelText("Activity plan variant"), {
+      target: { value: BUILD_VARIANT_ID },
+    });
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      search: { edit: undefined, variantId: BUILD_VARIANT_ID },
+    });
   });
 
   it("creates a linked planned event when scheduling an unscheduled plan", () => {
+    mocks.variantId = BUILD_VARIANT_ID;
     mocks.plan = {
       detail: {
         id: "invalid-plan",
@@ -356,6 +404,18 @@ describe("ActivityPlanDetailPage print", () => {
             provenance: "estimated",
           },
         ],
+        defaultVariantId: BASE_VARIANT_ID,
+        defaultVariantName: "Base",
+        variantCount: 2,
+        variants: [
+          { id: BASE_VARIANT_ID, name: "Base" },
+          { id: BUILD_VARIANT_ID, name: "Build" },
+        ],
+        resolvedVariant: {
+          id: BUILD_VARIANT_ID,
+          name: "Build",
+          selection: "explicit",
+        },
         structure: {
           version: 3,
           activity_category: "bike",
@@ -389,14 +449,23 @@ describe("ActivityPlanDetailPage print", () => {
       .component;
     render(<ActivityPlanDetailPage />);
 
+    expect(mocks.planInputs).toContainEqual({
+      id: "invalid-plan",
+      personalize: false,
+      variantId: BUILD_VARIANT_ID,
+    });
+
     fireEvent.change(screen.getByLabelText("Schedule date"), { target: { value: "2026-10-26" } });
     fireEvent.click(screen.getByRole("button", { name: "Schedule" }));
 
-    expect(mocks.createEvent).toHaveBeenCalledWith({
-      activity_plan_id: "invalid-plan",
-      event_type: "planned",
-      scheduled_date: "2026-10-26",
-      title: "Tempo bike",
+    expect(mocks.createSession).toHaveBeenCalledWith({
+      profileId: PROFILE_ID,
+      session: {
+        activityPlanId: "invalid-plan",
+        planningDate: "2026-10-26",
+        source: { kind: "direct", operationId: expect.stringMatching(/^[a-z0-9_-]{32,128}$/i) },
+        variantId: BUILD_VARIANT_ID,
+      },
     });
   });
 
@@ -450,6 +519,11 @@ describe("ActivityPlanDetailPage print", () => {
             provenance: null,
           },
         ],
+        defaultVariantId: BASE_VARIANT_ID,
+        defaultVariantName: "Base",
+        variantCount: 1,
+        variants: [{ id: BASE_VARIANT_ID, name: "Base" }],
+        resolvedVariant: { id: BASE_VARIANT_ID, name: "Base", selection: "default" },
         structure: {
           version: 3,
           activity_category: "bike",

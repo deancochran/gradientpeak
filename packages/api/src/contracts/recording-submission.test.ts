@@ -42,6 +42,59 @@ const baseSubmission = {
   },
   summary: { distanceMeters: 10_000 },
 };
+const prescribedStructure = {
+  version: 3 as const,
+  activity_category: "run" as const,
+  segments: [
+    {
+      id: "44444444-4444-4444-8444-444444444444",
+      role: "activity" as const,
+      name: "Run",
+      intervals: [
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          name: "Work",
+          repetitions: 1,
+          steps: [
+            {
+              id: "66666666-6666-4666-8666-666666666666",
+              name: "Steady",
+              duration: { type: "time" as const, seconds: 600 },
+              targets: [{ type: "RPE" as const, intensity: 7 }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+const planExecution = {
+  manifestVersion: 1 as const,
+  compilerVersion: 1 as const,
+  activityPlanId: "77777777-7777-4777-8777-777777777777",
+  scheduledEventId: "88888888-8888-4888-8888-888888888888",
+  name: "Hard",
+  description: null,
+  activityPlanRevision: 3,
+  structureHash: `v1:sha256:${"b".repeat(64)}`,
+  structure: prescribedStructure,
+  plannedSession: {
+    id: "99999999-9999-4999-8999-999999999999",
+    sessionRevision: 5,
+    prescription: {
+      activityPlanId: "77777777-7777-4777-8777-777777777777",
+      activityPlanRevision: 3,
+      variantId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      variantName: "Hard",
+      structure: prescribedStructure,
+      structureHash: `v1:sha256:${"b".repeat(64)}`,
+      prescriptionQuantification: null,
+      capturedAt: "2026-07-23T08:00:00.000Z",
+    },
+  },
+  personalizationEnabled: false,
+  targetPresentations: [],
+};
 
 describe("recording submission contract", () => {
   it("requires an explicit, session-bound uploaded artifact claim", () => {
@@ -65,6 +118,24 @@ describe("recording submission contract", () => {
       uploadedArtifact: { ingestionId: "33333333-3333-4333-8333-333333333333" },
     });
     expect(parsed).not.toHaveProperty("stagingPath");
+  });
+
+  it("accepts exact scheduled execution provenance and binds it to the submitted plan", () => {
+    const parsed = recordingSummarySubmissionInputSchema.parse({
+      ...baseSubmission,
+      activityPlanId: planExecution.activityPlanId,
+      planExecution,
+      uploadedArtifact: { ingestionId: "33333333-3333-4333-8333-333333333333" },
+    });
+    expect(parsed.planExecution?.plannedSession).toEqual(planExecution.plannedSession);
+    expect(
+      recordingSummarySubmissionInputSchema.safeParse({
+        ...baseSubmission,
+        activityPlanId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        planExecution,
+        uploadedArtifact: { ingestionId: "33333333-3333-4333-8333-333333333333" },
+      }).success,
+    ).toBe(false);
   });
 
   it("accepts bounded manual laps only with honest partial timer timing", () => {

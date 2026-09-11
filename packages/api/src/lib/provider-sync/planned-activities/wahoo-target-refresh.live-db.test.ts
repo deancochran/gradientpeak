@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { activityPlanStructureSchema } from "@repo/core";
+import { activityPlanStructureSchema, initializeActivityPlanDocument } from "@repo/core";
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { db, pool } from "@repo/db/client";
 import {
@@ -24,7 +24,7 @@ import {
   activityArtifactId,
   submitActivity,
 } from "../../../application/activities/submit-activity";
-import { activityPlanStructureHash } from "../../../application/activity-plans/structure-hash";
+import { activityPlanDocumentHash } from "../../../application/activity-plans/structure-hash";
 import { AthleteStateWorkerService } from "../../../application/athlete-intelligence/athlete-state-worker";
 import { wahooProjectionSnapshotSchema } from "../../integrations/wahoo/plan-converter";
 import { wahooPlannedActivityRequiredScopes } from "../../integrations/wahoo/planned-activity-scopes";
@@ -338,13 +338,14 @@ async function seedPlannedActivity(input: {
   const planId = randomUUID();
   const eventId = randomUUID();
   const structure = plannedActivityStructure(input.target);
+  const document = initializeActivityPlanDocument({ activityPlanId: planId, structure });
   await db.insert(activityPlans).values({
     id: planId,
     profile_id: input.owner.profileId,
     name: `Target refresh ${eventId}`,
     description: "Provider target refresh fixture",
-    structure,
-    structure_hash: activityPlanStructureHash(structure),
+    structure: document,
+    structure_hash: activityPlanDocumentHash(document),
   });
   await db.insert(events).values({
     id: eventId,

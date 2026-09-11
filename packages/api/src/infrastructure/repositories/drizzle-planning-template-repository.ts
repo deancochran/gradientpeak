@@ -1,14 +1,15 @@
 import {
+  activityPlanDocumentSchema,
   activityPlanStructureSchema,
-  buildSystemActivityTemplateCatalog,
   compileActivityPlan,
   deriveSystemActivityTemplateActivityCategory,
   normalizeActivityTemplateStructureForAudit,
+  resolveActivityPlanVariant,
   SYSTEM_TEMPLATES,
 } from "@repo/core";
 import type { DrizzleDbClient } from "@repo/db/client";
 import { sql } from "drizzle-orm";
-import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
+import { activityPlanDocumentHash } from "../../application/activity-plans/structure-hash";
 import type { LockedPlanningTemplateRow, PlanningTemplateRepository } from "../../repositories";
 
 function rows(result: unknown): Array<{
@@ -34,13 +35,12 @@ function rows(result: unknown): Array<{
 }
 
 const catalogSignatures = new Map(
-  buildSystemActivityTemplateCatalog().flatMap((candidate) => {
-    const source = SYSTEM_TEMPLATES.find((template) => template.id === candidate.template_id);
-    const parsed = activityPlanStructureSchema.safeParse(source?.structure);
+  SYSTEM_TEMPLATES.flatMap((source) => {
+    const parsed = activityPlanStructureSchema.safeParse(source.structure);
     return parsed.success
       ? [
           [
-            candidate.template_id,
+            source.id,
             JSON.stringify(normalizeActivityTemplateStructureForAudit(parsed.data)),
           ] as const,
         ]
@@ -72,14 +72,20 @@ function isMatchingSystemTemplate(row: {
   ) {
     return false;
   }
-  const parsed = activityPlanStructureSchema.safeParse(row.structure);
+  const parsed = activityPlanDocumentSchema.safeParse(row.structure);
   if (!parsed.success) return false;
-  if (activityPlanStructureHash(parsed.data) !== row.structure_hash) return false;
-  if (compileActivityPlan(parsed.data).activity_category !== expectedMetadata.activityCategory) {
+  if (activityPlanDocumentHash(parsed.data) !== row.structure_hash) return false;
+  const resolved = resolveActivityPlanVariant(parsed.data);
+  if (
+    compileActivityPlan(resolved.structure).activity_category !== expectedMetadata.activityCategory
+  ) {
     return false;
   }
   return (
-    JSON.stringify(normalizeActivityTemplateStructureForAudit(parsed.data)) === expectedSignature
+    resolved.variantId === row.id &&
+    resolved.variantName === "Base" &&
+    JSON.stringify(normalizeActivityTemplateStructureForAudit(resolved.structure)) ===
+      expectedSignature
   );
 }
 
@@ -114,7 +120,7 @@ export function createPlanningTemplateRepository(db: DrizzleDbClient): PlanningT
         missingIds: requested.filter((id) => !available.has(id)),
       };
     },
-    async withLockedPublishedTemplates(templateIds, operation) {
+    async withLockedPublishedTemplates(profileId, templateIds, operation) {
       const requested = [...new Set(templateIds)].sort((left, right) => left.localeCompare(right));
       return db.transaction(async (tx) => {
         const result = await tx.execute(sql<{
@@ -130,16 +136,39 @@ export function createPlanningTemplateRepository(db: DrizzleDbClient): PlanningT
             requested.map((id) => sql`${id}::uuid`),
             sql`, `,
           )})
-            and (content_visibility = 'public' or is_system_template = true)
+            and (
+              profile_id = ${profileId}::uuid
+              or is_system_template = true
+              or content_visibility = 'public'
+              or (
+                content_visibility = 'followers'
+                and exists (
+                  select 1 from follows f
+                  where f.follower_id = ${profileId}::uuid
+                    and f.following_id = activity_plans.profile_id
+                    and f.status = 'accepted'
+                )
+              )
+              or exists (
+                select 1 from content_access_grants cag
+                where cag.content_type = 'activity_plan'
+                  and cag.content_id = activity_plans.id
+                  and cag.grantee_profile_id = ${profileId}::uuid
+                  and cag.access_level = 'read'
+                  and cag.revoked_at is null
+                  and (cag.expires_at is null or cag.expires_at > now())
+              )
+            )
           order by id asc
           for update
         `);
         const sourceRows = rows(result);
         const lockedRows: LockedPlanningTemplateRow[] = sourceRows.map((row) => {
-          const parsed = activityPlanStructureSchema.safeParse(row.structure);
+          const parsed = activityPlanDocumentSchema.safeParse(row.structure);
           const activityCategory =
-            parsed.success && activityPlanStructureHash(parsed.data) === row.structure_hash
-              ? compileActivityPlan(parsed.data).activity_category
+            parsed.success && activityPlanDocumentHash(parsed.data) === row.structure_hash
+              ? compileActivityPlan(resolveActivityPlanVariant(parsed.data).structure)
+                  .activity_category
               : "other";
           return {
             activityCategory,
@@ -153,11 +182,11 @@ export function createPlanningTemplateRepository(db: DrizzleDbClient): PlanningT
         const availableIds = new Set(
           sourceRows
             .filter((row) => {
-              const parsed = activityPlanStructureSchema.safeParse(row.structure);
+              const parsed = activityPlanDocumentSchema.safeParse(row.structure);
               if (
                 typeof row.gps_recording_enabled !== "boolean" ||
                 !parsed.success ||
-                activityPlanStructureHash(parsed.data) !== row.structure_hash
+                activityPlanDocumentHash(parsed.data) !== row.structure_hash
               ) {
                 return false;
               }

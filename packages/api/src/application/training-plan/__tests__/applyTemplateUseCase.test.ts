@@ -1,8 +1,14 @@
 import { SYSTEM_TEMPLATES } from "@repo/core";
+import {
+  activityPlanDocumentSchema,
+  initializeActivityPlanDocument,
+} from "@repo/core/activity-plan";
 import type { DrizzleDbClient } from "@repo/db/client";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PLANNED_SESSION_CACHE_TAGS } from "../../../contracts/cache-receipts";
 import type { TrainingPlanRepository } from "../../../repositories";
+import { activityPlanStructureHash } from "../../activity-plans/structure-hash";
 import { applyTrainingPlanTemplateUseCase } from "../applyTemplateUseCase";
 
 const { enqueueWahooPlannedActivitySyncAfterCalendarMutation } = vi.hoisted(() => ({
@@ -19,7 +25,7 @@ vi.mock("../../../repositories/athlete-state-repository", () => ({
 }));
 
 type TransactionClient = {
-  execute: () => Promise<unknown>;
+  execute: (query?: unknown) => Promise<unknown>;
   select: () => {
     from: () => {
       where: () => { orderBy: () => Promise<Array<{ id: string }>> };
@@ -37,6 +43,12 @@ type TransactionClient = {
 
 describe("applyTrainingPlanTemplateUseCase", () => {
   const linkedPlanId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const linkedPlanStructure = SYSTEM_TEMPLATES[0]?.structure;
+  if (!linkedPlanStructure) throw new Error("Expected activity plan fixture");
+  const linkedPlanDocument = initializeActivityPlanDocument({
+    activityPlanId: linkedPlanId,
+    structure: linkedPlanStructure,
+  });
   const activePlan = {
     nextEventAt: "2026-08-01T00:00:00.000Z",
     scheduleBatchId: "33333333-3333-4333-8333-333333333333",
@@ -66,6 +78,7 @@ describe("applyTrainingPlanTemplateUseCase", () => {
 
   function createApplicationDb(
     transaction: (callback: (tx: TransactionClient) => Promise<unknown>) => Promise<unknown>,
+    activityDocument = linkedPlanDocument,
   ) {
     return {
       select: vi.fn(() => ({
@@ -73,21 +86,36 @@ describe("applyTrainingPlanTemplateUseCase", () => {
           where: () => ({ limit: async () => [{ planningTimezone: "America/New_York" }] }),
         }),
       })),
-      execute: vi.fn(async () => ({
-        rows: [
-          {
-            id: linkedPlanId,
-            name: "Tempo",
-            ownerProfileId: null,
-            isPublic: true,
-            isSystem: true,
-            routeId: null,
-            structure: SYSTEM_TEMPLATES[0]?.structure,
-            updatedAt: new Date("2026-07-01T00:00:00.000Z"),
-          },
-        ],
-      })),
-      transaction,
+      execute: vi.fn(async () => ({ rows: [] })),
+      transaction: (callback: (tx: TransactionClient) => Promise<unknown>) =>
+        transaction((tx) => {
+          const execute = tx.execute;
+          const wrapped = {
+            ...tx,
+            execute: async (query: unknown) => {
+              const compiled = new PgDialect().sqlToQuery(query as never);
+              if (compiled.sql.includes("from activity_plans")) {
+                return {
+                  rows: [
+                    {
+                      id: linkedPlanId,
+                      name: "Tempo",
+                      ownerProfileId: null,
+                      isPublic: true,
+                      isSystem: true,
+                      revision: 3,
+                      structure: activityDocument,
+                      structureHash: activityPlanStructureHash(activityDocument),
+                      updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+                    },
+                  ],
+                };
+              }
+              return execute(query as never);
+            },
+          };
+          return callback(wrapped);
+        }),
     };
   }
 
@@ -108,7 +136,13 @@ describe("applyTrainingPlanTemplateUseCase", () => {
         structure: {
           id: "11111111-1111-4111-8111-111111111111",
           version: 1,
-          sessions: [{ offset_days: 0, activity_plan_id: linkedPlanId }],
+          sessions: [
+            {
+              offset_days: 0,
+              activity_plan_id: linkedPlanId,
+              activity_plan_variant_id: linkedPlanId,
+            },
+          ],
         },
       })),
     };
@@ -341,10 +375,24 @@ describe("applyTrainingPlanTemplateUseCase", () => {
     });
   });
 
-  it("does not replace an Event from another TrainingPlan that reuses the active batch ID", async () => {
+  it("does not replace another plan's Event and snapshots the pinned variant after the default changes", async () => {
     const candidateIds = ["event-from-active-plan-1", "event-from-active-plan-2"];
     const reusedBatchOtherPlanEventId = "event-from-other-plan-with-reused-batch";
+    const currentDefaultVariantId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const activityDocumentWithChangedDefault = activityPlanDocumentSchema.parse({
+      ...linkedPlanDocument,
+      defaultVariantId: currentDefaultVariantId,
+      variants: [
+        ...linkedPlanDocument.variants,
+        {
+          id: currentDefaultVariantId,
+          name: "Build",
+          structure: linkedPlanStructure,
+        },
+      ],
+    });
     const deletedIds: string[][] = [];
+    const insertedEvents: Array<Record<string, unknown>> = [];
     const transaction = vi.fn(async (callback: (tx: TransactionClient) => Promise<unknown>) =>
       callback({
         execute: async () => ({ rows: [] }),
@@ -362,7 +410,10 @@ describe("applyTrainingPlanTemplateUseCase", () => {
           }),
         }),
         insert: () => ({
-          values: () => ({ returning: async () => [{ id: "new-event" }] }),
+          values: (rows: Array<Record<string, unknown>>) => {
+            insertedEvents.push(...rows);
+            return { returning: async () => [{ id: "new-event" }] };
+          },
         }),
       } as TransactionClient),
     );
@@ -372,7 +423,10 @@ describe("applyTrainingPlanTemplateUseCase", () => {
     };
 
     const result = await applyTrainingPlanTemplateUseCase({
-      db: createApplicationDb(transaction) as unknown as DrizzleDbClient,
+      db: createApplicationDb(
+        transaction,
+        activityDocumentWithChangedDefault,
+      ) as unknown as DrizzleDbClient,
       permissions,
       profileId: "44444444-4444-4444-8444-444444444444",
       repository: createRepository() as unknown as TrainingPlanRepository,
@@ -405,10 +459,19 @@ describe("applyTrainingPlanTemplateUseCase", () => {
         prescription: expect.objectContaining({
           activityPlanId: linkedPlanId,
           capturedAt: "2026-07-01T00:00:00.000Z",
-          structure: SYSTEM_TEMPLATES[0]?.structure,
+          variantId: linkedPlanId,
+          variantName: "Base",
+          activityPlanRevision: 3,
+          structure: linkedPlanStructure,
         }),
       }),
     });
+    const persistedSession = plannedSessionRepository.createOwned.mock.calls.at(-1)?.[0]?.session;
+    expect(persistedSession?.prescription.structureHash).toBe(
+      activityPlanStructureHash(linkedPlanStructure),
+    );
+    expect(insertedEvents).toHaveLength(1);
+    expect(insertedEvents[0]?.planned_session_id).toBe(persistedSession?.id);
     expect(result).toMatchObject({
       planned_sessions_created: 1,
       planned_sessions_replayed: 0,
@@ -431,7 +494,13 @@ describe("applyTrainingPlanTemplateUseCase", () => {
       structure: {
         id: "11111111-1111-4111-8111-111111111111",
         version: 1,
-        sessions: [{ offset_days: 0, activity_plan_id: linkedPlanId }],
+        sessions: [
+          {
+            offset_days: 0,
+            activity_plan_id: linkedPlanId,
+            activity_plan_variant_id: linkedPlanId,
+          },
+        ],
       },
     } as never);
 
@@ -446,6 +515,51 @@ describe("applyTrainingPlanTemplateUseCase", () => {
       }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown pinned variant inside the scheduling transaction without fallback", async () => {
+    const unknownVariantId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const repository = createRepository();
+    repository.getAccessibleTrainingPlan.mockResolvedValueOnce({
+      id: "11111111-1111-4111-8111-111111111111",
+      profile_id: null,
+      content_visibility: "public",
+      is_system_template: true,
+      revision: 1,
+      updated_at: new Date("2026-07-01T00:00:00.000Z"),
+      structure: {
+        id: "11111111-1111-4111-8111-111111111111",
+        version: 1,
+        sessions: [
+          {
+            offset_days: 0,
+            activity_plan_id: linkedPlanId,
+            activity_plan_variant_id: unknownVariantId,
+          },
+        ],
+      },
+    } as never);
+    const insert = vi.fn();
+    const transaction = vi.fn(async (callback: (tx: TransactionClient) => Promise<unknown>) =>
+      callback({ execute: async () => ({ rows: [] }), insert } as unknown as TransactionClient),
+    );
+
+    await expect(
+      applyTrainingPlanTemplateUseCase({
+        db: createApplicationDb(transaction) as unknown as DrizzleDbClient,
+        permissions: { grantEventContentAccess: vi.fn(), revokeEventGrants: vi.fn() },
+        profileId: "44444444-4444-4444-8444-444444444444",
+        repository: repository as unknown as TrainingPlanRepository,
+        plannedSessionRepositoryFactory: () => plannedSessionRepository as never,
+        values: applicationValues,
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining(unknownVariantId),
+    });
+    expect(transaction).toHaveBeenCalledOnce();
+    expect(insert).not.toHaveBeenCalled();
+    expect(plannedSessionRepository.createOwned).not.toHaveBeenCalled();
   });
 
   it("rejects template application when the profile has no planning timezone", async () => {

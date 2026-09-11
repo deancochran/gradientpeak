@@ -99,12 +99,15 @@ function validStructure() {
 describe("useActivityPlanForm", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    getByIdMock.mockReturnValue({ data: undefined, isLoading: false });
     useActivityPlanCreationStore.setState({
       name: "Morning brick",
       description: "",
       activityCategory: "bike",
       notes: "",
       structure: { version: 3, activity_category: "bike", segments: [] },
+      document: null,
+      selectedVariantId: null,
     });
   });
 
@@ -159,8 +162,25 @@ describe("useActivityPlanForm", () => {
     expect(createMock.mock.calls[0]?.[0]).not.toHaveProperty("routeId");
   });
 
-  it("keeps an existing canonical plan editable and submittable", async () => {
+  it("edits one variant while saving the complete activity-plan document", async () => {
     const structure = validStructure();
+    const secondVariantId = "00000000-0000-4000-8000-000000000020";
+    const document = {
+      contractVersion: 1 as const,
+      defaultVariantId: "00000000-0000-4000-8000-000000000010",
+      variants: [
+        {
+          id: "00000000-0000-4000-8000-000000000010",
+          name: "Base",
+          structure,
+        },
+        {
+          id: secondVariantId,
+          name: "Long",
+          structure: structuredClone(structure),
+        },
+      ],
+    };
     getByIdMock.mockReturnValue({
       data: {
         detail: null,
@@ -169,7 +189,7 @@ describe("useActivityPlanForm", () => {
           name: "Existing plan",
           description: null,
           notes: null,
-          structure,
+          structure: document,
           structureHash: "a".repeat(64),
           gpsRecordingEnabled: true,
           contentVisibility: "private",
@@ -182,11 +202,41 @@ describe("useActivityPlanForm", () => {
 
     expect(result.current.editStatus).toBe("editable");
     expect(result.current.canSubmit).toBe(true);
+    await act(() => {
+      result.current.selectVariant(secondVariantId);
+      const interval = validStructure().segments[0]?.intervals[0];
+      if (!interval) throw new Error("Expected interval");
+      useActivityPlanCreationStore.getState().updateInterval(interval.id, {
+        ...interval,
+        name: "Edited long interval",
+      });
+    });
     await act(async () => {
       await expect(result.current.submit()).resolves.toEqual({ id: "updated-1" });
     });
     expect(updateMock).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "plan-1", structure, expectedStructureHash: "a".repeat(64) }),
+      expect.objectContaining({
+        id: "plan-1",
+        expectedStructureHash: "a".repeat(64),
+        structure: expect.objectContaining({
+          defaultVariantId: document.defaultVariantId,
+          variants: [
+            expect.objectContaining({ id: document.defaultVariantId, structure }),
+            expect.objectContaining({
+              id: secondVariantId,
+              structure: expect.objectContaining({
+                segments: expect.arrayContaining([
+                  expect.objectContaining({
+                    intervals: expect.arrayContaining([
+                      expect.objectContaining({ name: "Edited long interval" }),
+                    ]),
+                  }),
+                ]),
+              }),
+            }),
+          ],
+        }),
+      }),
     );
   });
 });

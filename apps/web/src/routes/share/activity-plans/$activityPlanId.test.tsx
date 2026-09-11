@@ -6,6 +6,7 @@ import { Route } from "./$activityPlanId";
 
 const mocks = vi.hoisted(() => ({
   loaderData: undefined as unknown,
+  loadPublicActivityPlan: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -17,12 +18,32 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("../../../lib/public-share", () => ({
-  loadPublicActivityPlan: vi.fn(),
+  loadPublicActivityPlan: mocks.loadPublicActivityPlan,
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 describe("PublicActivityPlanPage", () => {
+  it("loads only the public default without accepting a variant selection", async () => {
+    const publicResult = { activityPlan: { id: "public-plan" } };
+    mocks.loadPublicActivityPlan.mockResolvedValue(publicResult);
+    const loader = (
+      Route as unknown as {
+        loader: (input: { params: { activityPlanId: string } }) => Promise<unknown>;
+      }
+    ).loader;
+
+    await expect(
+      loader({ params: { activityPlanId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" } }),
+    ).resolves.toBe(publicResult);
+    expect(mocks.loadPublicActivityPlan).toHaveBeenCalledWith({
+      data: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" },
+    });
+  });
+
   it("uses the compiled canonical activity category as its badge and overview value", () => {
     mocks.loaderData = {
       activityPlan: {

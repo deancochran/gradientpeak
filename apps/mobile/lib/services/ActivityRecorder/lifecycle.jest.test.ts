@@ -52,6 +52,7 @@ jest.mock("../activitySubmissionQueue/localArtifact", () => ({
 
 jest.mock("./checkpointStorage", () => ({
   MOBILE_RECORDING_CHECKPOINT_SCHEMA_VERSION: 5,
+  assertRecordingPlanExecutionStructureHashes: jest.fn(async () => undefined),
   clearRecordingCheckpoint: jest.fn(async () => undefined),
   hashRecordingPlan: jest.fn(async () => "0".repeat(64)),
   persistRecordingCheckpoint: jest.fn(async (checkpoint: { sessionId: string }) => {
@@ -657,7 +658,7 @@ describe("ActivityRecorderService lifecycle", () => {
     });
   });
 
-  it("rejects a mixed-activity_category launch payload before runtime configuration effects", () => {
+  it("rejects an invalid mixed-activity_category launch payload before runtime effects", () => {
     const { service, mutable } = createService();
     mutable.hasConfiguredSetup = false;
     mutable._plan = undefined;
@@ -673,7 +674,7 @@ describe("ActivityRecorderService lifecycle", () => {
         gpsRecordingEnabled: true,
         plan: { id: "plan-1", name: "Mixed plan", structure: createMixedCategoryPlanStructure() },
       } as never),
-    ).toThrow("This plan can't be recorded on mobile");
+    ).toThrow("Failed to process activity payload");
     expect(mutable.currentLaunchSource).toBe("manual");
     expect(mutable._gpsRecordingEnabled).toBe(false);
     expect(mutable.hasConfiguredSetup).toBe(false);
@@ -985,6 +986,92 @@ describe("ActivityRecorderService lifecycle", () => {
     await recovered.service.stageRecoveredCheckpoint(persisted);
     expect(recovered.service.stepIndex).toBe(0);
     expect(recovered.service.currentStep?.occurrenceId).toBe(persisted.currentOccurrenceId);
+  });
+
+  it("persists and restores immutable planned-session provenance across recovery", async () => {
+    const { service, mutable } = createService();
+    configureDistancePlan(mutable);
+    const activityPlanId = "50000000-0000-4000-8000-000000000001";
+    const eventId = "50000000-0000-4000-8000-000000000002";
+    const plannedSession = {
+      id: "50000000-0000-4000-8000-000000000003",
+      sessionRevision: 5,
+      prescription: {
+        activityPlanId,
+        activityPlanRevision: 4,
+        variantId: "50000000-0000-4000-8000-000000000004",
+        variantName: "Hard",
+        structure: mutable._plan.structure,
+        structureHash: `v1:sha256:${"1".repeat(64)}`,
+        prescriptionQuantification: null,
+        capturedAt: "2026-01-01T09:00:00.000Z",
+      },
+    };
+    mutable._plan = {
+      ...mutable._plan,
+      id: activityPlanId,
+      revision: 4,
+      structure_hash: plannedSession.prescription.structureHash,
+      variant_id: plannedSession.prescription.variantId,
+      variant_name: plannedSession.prescription.variantName,
+    };
+    mutable._eventId = eventId;
+    mutable._plannedSession = plannedSession;
+    const planExecution = {
+      manifestVersion: 1 as const,
+      compilerVersion: 1 as const,
+      activityPlanId,
+      scheduledEventId: eventId,
+      name: mutable._plan.name,
+      description: null,
+      activityPlanRevision: 4,
+      structureHash: plannedSession.prescription.structureHash,
+      structure: mutable._plan.structure,
+      plannedSession,
+      personalizationEnabled: false,
+      targetPresentations: [],
+    };
+    mutable.getSessionSnapshot.mockReturnValue({
+      identity: { sessionId: "session-1", startedAt: new Date(1_000).toISOString() },
+      activity: {
+        activity_category: "run",
+        gpsMode: "off",
+        eventId,
+        activityPlanId,
+      },
+      performanceTargets: createUnavailableAthletePerformanceTargetFacts(
+        new Date(1_000).toISOString(),
+      ),
+      planExecution,
+    });
+    mutable.getMovingTime = jest.fn(() => 1_000);
+    mutable.getSessionStats = jest.fn(() => ({ movingTime: 1, distance: 10 }));
+    mutable.getRuntimeSourceState = jest.fn(() => ({ selectedSources: [] }));
+    mutable.getSessionOverrideState = jest.fn(() => ({ trainerMode: "auto" }));
+    mutable.syncGpsTrackingForCurrentState = jest.fn(async () => undefined);
+
+    service.skipStep();
+    await mutable.planBoundaryTransition;
+
+    const checkpoint = checkpointStorageMocks.persistRecordingCheckpoint.mock.calls.at(-1)?.[0];
+    expect(checkpoint.planExecution).toMatchObject({
+      activityPlanId,
+      scheduledEventId: eventId,
+      activityPlanRevision: 4,
+      plannedSession,
+    });
+
+    const recovered = createService();
+    recovered.mutable.planExecution = new PlanExecution();
+    await recovered.service.stageRecoveredCheckpoint(checkpoint);
+    expect(recovered.mutable._plannedSession).toEqual(plannedSession);
+    expect(recovered.mutable._plan).toMatchObject({
+      id: activityPlanId,
+      revision: 4,
+      structure_hash: plannedSession.prescription.structureHash,
+      variant_id: plannedSession.prescription.variantId,
+      variant_name: plannedSession.prescription.variantName,
+    });
   });
 
   it("records a rewind attempt across activity/rest and excludes superseded evidence after recovery", async () => {

@@ -1,9 +1,11 @@
 import {
-  activityPlanStructureSchema,
+  ActivityPlanVariantResolutionError,
+  activityPlanDocumentSchema,
   addDaysDateOnlyUtc,
   formatDateOnlyInTimeZone,
   ianaTimezoneSchema,
   persistedTrainingPlanStructureSchema,
+  resolveActivityPlanVariant,
   scheduledDateTimeToIsoInstant,
   type templateApplyInputSchema,
 } from "@repo/core";
@@ -23,6 +25,10 @@ import { enqueueWahooPlannedActivitySyncAfterCalendarMutation } from "../../lib/
 import { needsContentGrantForRow } from "../../permissions/content-access";
 import type { PlannedSessionRepositoryPort, TrainingPlanRepository } from "../../repositories";
 import { readPublishedAthleteStateSnapshotData } from "../../repositories/athlete-state-repository";
+import {
+  activityPlanDocumentHash,
+  activityPlanStructureHash,
+} from "../activity-plans/structure-hash";
 import { cancelPlannedSession } from "../calendar/cancel-planned-session";
 import { createPlannedSession } from "../calendar/create-planned-session";
 import { materializeAppliedTrainingPlan } from "./schedulingUtils";
@@ -72,6 +78,130 @@ function getRequiredPlanningTimezone(value: string | null | undefined): string {
     code: "BAD_REQUEST",
     message: "A valid planning timezone is required before applying a training plan.",
   });
+}
+
+async function resolveAppliedActivityPlans(input: {
+  db: DrizzleDbClient;
+  profileId: string;
+  sessions: ReturnType<typeof materializeAppliedTrainingPlan>["materializedSessions"];
+}) {
+  const activityPlanIds = [...new Set(input.sessions.map((session) => session.activity_plan_id))];
+  if (activityPlanIds.length === 0) return new Map();
+  const result = await input.db.execute(sql<{
+    id: string;
+    name: string;
+    ownerProfileId: string | null;
+    isPublic: boolean;
+    isSystem: boolean;
+    revision: number;
+    structure: unknown;
+    structureHash: string;
+    updatedAt: Date | string;
+  }>`
+    select
+      id,
+      name,
+      profile_id as "ownerProfileId",
+      content_visibility = 'public' as "isPublic",
+      is_system_template as "isSystem",
+      revision,
+      structure,
+      structure_hash as "structureHash",
+      updated_at as "updatedAt"
+    from activity_plans
+    where id in (${sql.join(
+      activityPlanIds.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    )})
+      and (
+        profile_id = ${input.profileId}::uuid
+        or is_system_template = true
+        or content_visibility = 'public'
+        or (
+          content_visibility = 'followers'
+          and exists (
+            select 1 from follows f
+            where f.follower_id = ${input.profileId}::uuid
+              and f.following_id = activity_plans.profile_id
+              and f.status = 'accepted'
+          )
+        )
+        or exists (
+          select 1 from content_access_grants cag
+          where cag.content_type = 'activity_plan'
+            and cag.content_id = activity_plans.id
+            and cag.grantee_profile_id = ${input.profileId}::uuid
+            and cag.access_level = 'read'
+            and cag.revoked_at is null
+            and (cag.expires_at is null or cag.expires_at > now())
+        )
+      )
+    order by id asc
+    for share
+  `);
+  const rows = getSqlRows<{
+    id: string;
+    name: string;
+    ownerProfileId: string | null;
+    isPublic: boolean;
+    isSystem: boolean;
+    revision: number;
+    structure: unknown;
+    structureHash: string;
+    updatedAt: Date | string;
+  }>(result);
+  const rowById = new Map(rows.map((row) => [row.id, row]));
+  const unavailablePlanIds = activityPlanIds.filter((activityPlanId) => {
+    const row = rowById.get(activityPlanId);
+    const document = row ? activityPlanDocumentSchema.safeParse(row.structure) : null;
+    return (
+      !row || !document?.success || activityPlanDocumentHash(document.data) !== row.structureHash
+    );
+  });
+  if (unavailablePlanIds.length > 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `This training plan cannot be scheduled because ${
+        unavailablePlanIds.length === 1
+          ? "a linked activity template is"
+          : "linked activity templates are"
+      } unavailable: ${unavailablePlanIds.join(", ")}`,
+    });
+  }
+  const resolved = new Map<
+    string,
+    (typeof rows)[number] & {
+      variantId: string;
+      variantName: string;
+      variantStructure: ReturnType<typeof resolveActivityPlanVariant>["structure"];
+    }
+  >();
+
+  for (const session of input.sessions) {
+    const row = rowById.get(session.activity_plan_id);
+    if (!row) throw new Error("Validated activity-plan row is missing");
+    const document = activityPlanDocumentSchema.parse(row.structure);
+    try {
+      const variant = resolveActivityPlanVariant(document, {
+        variantId: session.activity_plan_variant_id,
+      });
+      resolved.set(`${row.id}:${variant.variantId}`, {
+        ...row,
+        variantId: variant.variantId,
+        variantName: variant.variantName,
+        variantStructure: variant.structure,
+      });
+    } catch (error) {
+      if (!(error instanceof ActivityPlanVariantResolutionError)) throw error;
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `This training plan cannot be scheduled because a pinned activity-plan variant is unavailable: ${error.variantId}`,
+        cause: error,
+      });
+    }
+  }
+
+  return resolved;
 }
 
 export async function applyTrainingPlanTemplateUseCase(input: {
@@ -156,163 +286,9 @@ export async function applyTrainingPlanTemplateUseCase(input: {
       } no valid linked activity plan.`,
     });
   }
-  const candidatePlanIds = Array.from(
-    new Set(
-      materializedSessions
-        .map((session) => session.activity_plan_id)
-        .filter((id): id is string => Boolean(id)),
-    ),
-  );
-
-  let allowedPlanIds = new Set<string>();
-  const allowedPlanNameById = new Map<string, string>();
-  const allowedPlanSnapshotById = new Map<
-    string,
-    { structure: unknown; updatedAt: Date | string }
-  >();
-  const allowedPlanAccessById = new Map<
-    string,
-    {
-      ownerProfileId?: string | null;
-      isPublic?: boolean | null;
-      isSystem?: boolean | null;
-    }
-  >();
-
-  if (candidatePlanIds.length > 0) {
-    const accessiblePlans = await db.execute(sql<{
-      id: string;
-      name: string;
-      ownerProfileId: string | null;
-      isPublic: boolean | null;
-      isSystem: boolean | null;
-      structure: unknown;
-      updatedAt: Date | string;
-    }>`
-      select
-        id,
-        name,
-        profile_id as "ownerProfileId",
-        content_visibility = 'public' as "isPublic",
-        is_system_template as "isSystem",
-        structure,
-        updated_at as "updatedAt"
-      from activity_plans
-      where id in (${sql.join(
-        candidatePlanIds.map((id) => sql`${id}::uuid`),
-        sql`, `,
-      )})
-        and (
-          profile_id = ${profileId}::uuid
-          or is_system_template = true
-        )
-    `);
-
-    const accessiblePlanRows = getSqlRows<{
-      id: string;
-      name: string;
-      ownerProfileId?: string | null;
-      isPublic?: boolean | null;
-      isSystem?: boolean | null;
-      structure: unknown;
-      updatedAt: Date | string;
-    }>(accessiblePlans);
-    allowedPlanIds = new Set(
-      accessiblePlanRows
-        .filter((row) => activityPlanStructureSchema.safeParse(row.structure).success)
-        .map((row) => row.id),
-    );
-    accessiblePlanRows.forEach((row) => {
-      allowedPlanNameById.set(row.id, row.name);
-      allowedPlanSnapshotById.set(row.id, {
-        structure: activityPlanStructureSchema.parse(row.structure),
-        updatedAt: row.updatedAt,
-      });
-      allowedPlanAccessById.set(row.id, {
-        ownerProfileId: row.ownerProfileId,
-        isPublic: row.isPublic,
-        isSystem: row.isSystem,
-      });
-    });
-  }
-
-  const unresolvedPlanIds = candidatePlanIds.filter((planId) => !allowedPlanIds.has(planId));
-  if (unresolvedPlanIds.length > 0) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: `This training plan cannot be scheduled because ${
-        unresolvedPlanIds.length === 1
-          ? "a linked activity template is"
-          : "linked activity templates are"
-      } unavailable: ${unresolvedPlanIds.join(", ")}`,
-    });
-  }
-
-  const eventRows: PlannedEventInsertRow[] = materializedSessions
-    .filter((session) => session.event_type === "planned")
-    .map((session) => {
-      const startsAt = new Date(session.starts_at);
-      return {
-        profile_id: profileId,
-        event_type: plannedEventType,
-        title:
-          session.event_title_override ??
-          (session.activity_plan_id
-            ? allowedPlanNameById.get(session.activity_plan_id)
-            : undefined) ??
-          session.title,
-        description: session.description,
-        all_day: session.all_day,
-        timezone: session.timezone,
-        starts_at: startsAt,
-        original_starts_at: startsAt,
-        ends_at: session.ends_at ? new Date(session.ends_at) : null,
-        scheduled_date: session.scheduled_date,
-        status: "scheduled" as const,
-        activity_plan_id: session.activity_plan_id,
-        training_plan_id: appliedPlanId,
-      };
-    });
-
-  const plannedSessionInputs = materializedSessions.map((session) => {
-    const activityPlanId = session.activity_plan_id;
-    const snapshot = activityPlanId ? allowedPlanSnapshotById.get(activityPlanId) : undefined;
-    if (!activityPlanId || !snapshot) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: "A training-plan session has no owned prescription snapshot.",
-      });
-    }
-    const source = {
-      kind: "training_plan" as const,
-      trainingPlanId: appliedPlanId,
-      trainingPlanRevision: templatePlan.revision,
-      sourceSessionKey: `${materializedApplication.appliedPlanStartDate}:${session.source_path}`,
-    };
-    return plannedSessionSchema.parse({
-      contractVersion: PLANNED_SESSION_CONTRACT_VERSION,
-      id: crypto.randomUUID(),
-      profileId,
-      sessionRevision: 1,
-      planningDate: session.scheduled_date,
-      originalTargetDate: session.scheduled_date,
-      source,
-      idempotencyKey: plannedSessionIdempotencyKey(source),
-      groupEventId: null,
-      prescription: {
-        activityPlanId,
-        activityPlanRevision: 1,
-        structure: snapshot.structure,
-        prescriptionQuantification: null,
-        capturedAt: new Date(snapshot.updatedAt).toISOString(),
-      },
-      lifecycle: { status: "scheduled" },
-    });
-  });
-
   const newScheduleBatchId = crypto.randomUUID();
   let effectiveScheduleBatchId: string = newScheduleBatchId;
-  if (eventRows.length === 0) {
+  if (materializedSessions.length === 0) {
     const plannedSessionCount = materializedSessions.filter(
       (session) => session.event_type === "planned",
     ).length;
@@ -358,6 +334,68 @@ export async function applyTrainingPlanTemplateUseCase(input: {
             });
           }
         }
+        const transactionDb: DrizzleDbClient = Object.assign(tx, { $client: db.$client });
+        const resolvedActivityPlans = await resolveAppliedActivityPlans({
+          db: transactionDb,
+          profileId,
+          sessions: materializedSessions,
+        });
+        const eventRows: PlannedEventInsertRow[] = materializedSessions.map((session) => {
+          const resolved = resolvedActivityPlans.get(
+            `${session.activity_plan_id}:${session.activity_plan_variant_id}`,
+          );
+          if (!resolved) throw new Error("Resolved activity-plan variant is missing");
+          const startsAt = new Date(session.starts_at);
+          return {
+            profile_id: profileId,
+            event_type: plannedEventType,
+            title: session.event_title_override ?? resolved.name ?? session.title,
+            description: session.description,
+            all_day: session.all_day,
+            timezone: session.timezone,
+            starts_at: startsAt,
+            original_starts_at: startsAt,
+            ends_at: session.ends_at ? new Date(session.ends_at) : null,
+            scheduled_date: session.scheduled_date,
+            status: "scheduled" as const,
+            activity_plan_id: session.activity_plan_id,
+            training_plan_id: appliedPlanId,
+          };
+        });
+        const plannedSessionInputs = materializedSessions.map((session) => {
+          const resolved = resolvedActivityPlans.get(
+            `${session.activity_plan_id}:${session.activity_plan_variant_id}`,
+          );
+          if (!resolved) throw new Error("Resolved activity-plan variant is missing");
+          const source = {
+            kind: "training_plan" as const,
+            trainingPlanId: appliedPlanId,
+            trainingPlanRevision: templatePlan.revision,
+            sourceSessionKey: `${materializedApplication.appliedPlanStartDate}:${session.source_path}`,
+          };
+          return plannedSessionSchema.parse({
+            contractVersion: PLANNED_SESSION_CONTRACT_VERSION,
+            id: crypto.randomUUID(),
+            profileId,
+            sessionRevision: 1,
+            planningDate: session.scheduled_date,
+            originalTargetDate: session.scheduled_date,
+            source,
+            idempotencyKey: plannedSessionIdempotencyKey(source),
+            groupEventId: null,
+            prescription: {
+              activityPlanId: resolved.id,
+              activityPlanRevision: resolved.revision,
+              variantId: resolved.variantId,
+              variantName: resolved.variantName,
+              structure: resolved.variantStructure,
+              structureHash: activityPlanStructureHash(resolved.variantStructure),
+              prescriptionQuantification: null,
+              capturedAt: new Date(resolved.updatedAt).toISOString(),
+            },
+            lifecycle: { status: "scheduled" },
+          });
+        });
         if (!input.values.replace_existing) {
           const existingScheduleRows = await tx.execute(sql<{
             scheduleBatchId: string | null;
@@ -395,7 +433,6 @@ export async function applyTrainingPlanTemplateUseCase(input: {
         // The transaction exposes Drizzle's query/write surface but omits the root
         // client's handle. Supplying that handle keeps downstream repository
         // factories on the transaction while satisfying the shared client type.
-        const transactionDb: DrizzleDbClient = Object.assign(tx, { $client: db.$client });
         const transactionRepository = input.repositoryFactory?.(transactionDb) ?? repository;
         const plannedSessionRepository = input.plannedSessionRepositoryFactory
           ? input.plannedSessionRepositoryFactory(transactionDb)
@@ -500,6 +537,7 @@ export async function applyTrainingPlanTemplateUseCase(input: {
 
         let createdPlannedSessions = 0;
         let replayedPlannedSessions = 0;
+        const persistedPlannedSessions: Array<(typeof plannedSessionInputs)[number]> = [];
         for (const session of plannedSessionInputs) {
           const result = await createPlannedSession({
             repository: plannedSessionRepository,
@@ -508,13 +546,21 @@ export async function applyTrainingPlanTemplateUseCase(input: {
           });
           if (result.status === "created") createdPlannedSessions += 1;
           else replayedPlannedSessions += 1;
+          persistedPlannedSessions.push(result.session);
         }
 
-        const eventInsertRows: EventInsert[] = eventRows.map((eventRow) => ({
-          ...eventRow,
-          id: crypto.randomUUID(),
-          schedule_batch_id: newScheduleBatchId,
-        }));
+        const eventInsertRows: EventInsert[] = eventRows.map((eventRow, index) => {
+          const plannedSession = persistedPlannedSessions[index];
+          if (!plannedSession) {
+            throw new Error("Persisted planned-session snapshot is missing for scheduled event");
+          }
+          return {
+            ...eventRow,
+            id: crypto.randomUUID(),
+            planned_session_id: plannedSession.id,
+            schedule_batch_id: newScheduleBatchId,
+          };
+        });
         const insertedEvents = await tx
           .insert(schema.events)
           .values(eventInsertRows)
@@ -531,8 +577,11 @@ export async function applyTrainingPlanTemplateUseCase(input: {
           const eventRow = eventRows[index];
           if (!eventRow) continue;
 
-          const linkedPlanAccess = eventRow.activity_plan_id
-            ? allowedPlanAccessById.get(eventRow.activity_plan_id)
+          const session = materializedSessions[index];
+          const linkedPlanAccess = session
+            ? resolvedActivityPlans.get(
+                `${session.activity_plan_id}:${session.activity_plan_variant_id}`,
+              )
             : null;
           const shouldGrantLinkedPlan = linkedPlanAccess
             ? needsContentGrantForRow(linkedPlanAccess, profileId)

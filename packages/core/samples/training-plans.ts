@@ -45,7 +45,13 @@ function buildModernCompatibleTemplateStructure(input: {
     activity_category: [...input.activity_categories],
     experienceLevel: [...input.experienceLevel],
     durationWeeks: { recommended: input.durationWeeks },
-    sessions: input.sessions,
+    sessions: input.sessions.map((session) => {
+      if (!session || typeof session !== "object" || Array.isArray(session)) return session;
+      const activityPlanId = (session as { activity_plan_id?: unknown }).activity_plan_id;
+      return typeof activityPlanId === "string"
+        ? { ...session, activity_plan_variant_id: activityPlanId }
+        : session;
+    }),
   };
 }
 

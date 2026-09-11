@@ -1,6 +1,11 @@
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import {
+  activityPlanDocumentSchema,
+  activityPlanStructureSchema,
+  initializeActivityPlanDocument,
+} from "@repo/core/activity-plan";
 import {
   activityPlans,
+  comments,
   contentAccessGrants,
   events,
   follows,
@@ -14,16 +19,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { estimationState, plannedActivitySyncState } = vi.hoisted(() => ({
   estimationState: {
-    estimateActivityPlan: vi.fn(async (plan: any) => ({
-      ...plan,
-      prescriptionQuantification: null,
-    })),
-    estimateActivityPlans: vi.fn(async (plans: any[]) =>
-      plans.map((plan) => ({
-        ...plan,
-        prescriptionQuantification: null,
-      })),
-    ),
+    estimateActivityPlan: vi.fn(),
+    estimateActivityPlans: vi.fn(),
   },
   plannedActivitySyncState: {
     enqueueWahooPlannedActivityJobs: vi.fn(),
@@ -48,10 +45,11 @@ vi.mock("../../application/activity-plans/estimate-activity-plans", async (impor
 });
 
 import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
-import { activityPlansRouter } from "../activity-plans";
+import { activityPlansRouter, duplicateActivityPlanDocument } from "../activity-plans";
 
 type MockTableName =
   | "activity_plans"
+  | "comments"
   | "content_access_grants"
   | "events"
   | "follows"
@@ -124,16 +122,25 @@ function createCompositionStructure(activity_category: "bike" | "run", segmentCo
 }
 
 function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
+  const id =
+    typeof overrides.id === "string" ? overrides.id : "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const requestedStructure = overrides.structure ?? sampleStructure;
+  const parsedDocument = activityPlanDocumentSchema.safeParse(requestedStructure);
+  const document = parsedDocument.success
+    ? parsedDocument.data
+    : activityPlanStructureSchema.safeParse(requestedStructure).success
+      ? initializeActivityPlanDocument({ activityPlanId: id, structure: requestedStructure })
+      : requestedStructure;
+  const documentHash = activityPlanDocumentSchema.safeParse(document).success
+    ? activityPlanStructureHash(document)
+    : `v1:sha256:${"0".repeat(64)}`;
   return {
-    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     created_at: new Date("2026-03-01T10:00:00.000Z"),
     updated_at: new Date("2026-03-01T10:00:00.000Z"),
     profile_id: USER_ID,
     name: "Tempo Builder",
     description: "Structured activity",
     notes: "Bring bottles",
-    structure: sampleStructure,
-    structure_hash: activityPlanStructureHash(sampleStructure),
     revision: 1,
     gps_recording_enabled: true,
     content_visibility: "private",
@@ -142,12 +149,20 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
     system_content_version: null,
     system_content_hash: null,
     ...overrides,
+    id,
+    structure: document,
+    structure_hash:
+      typeof overrides.structure_hash === "string" ? overrides.structure_hash : documentHash,
   };
 }
 
 function resolveTableName(table: unknown): MockTableName {
   if (table === activityPlans) {
     return "activity_plans";
+  }
+
+  if (table === comments) {
+    return "comments";
   }
 
   if (table === likes) {
@@ -308,6 +323,19 @@ function createProfileRow(overrides: Record<string, unknown> = {}) {
 describe("activityPlansRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    estimationState.estimateActivityPlan.mockImplementation(
+      async (plan: Record<string, unknown>) => ({
+        ...plan,
+        prescriptionQuantification: null,
+      }),
+    );
+    estimationState.estimateActivityPlans.mockImplementation(
+      async (plans: Array<Record<string, unknown>>) =>
+        plans.map((plan) => ({
+          ...plan,
+          prescriptionQuantification: null,
+        })),
+    );
     plannedActivitySyncState.enqueueWahooPlannedActivityJobs.mockResolvedValue(null);
   });
 
@@ -420,7 +448,7 @@ describe("activityPlansRouter", () => {
         expect.objectContaining({ key: "common_load", provenance: "estimated" }),
       ]),
     );
-    expect(result.items[0]?.structure).toEqual(publicPlan.structure);
+    expect(result.items[0]?.structure).toEqual(publicPlan.structure.variants[0].structure);
     expect(result.items[0]).not.toHaveProperty("prescriptionQuantification");
     expect(JSON.stringify(result.items[0])).toMatch(/%FTP|targets|duration/i);
   });
@@ -490,7 +518,6 @@ describe("activityPlansRouter", () => {
     const runPlan = createActivityPlanRow({
       id: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       structure: runStructure,
-      structure_hash: activityPlanStructureHash(runStructure),
     });
     const { caller } = createCaller({
       state: {
@@ -548,7 +575,7 @@ describe("activityPlansRouter", () => {
         activity_category: index === 0 ? "run" : "bike",
       })),
     };
-    const structureHash = activityPlanStructureHash(structure);
+    const structureHash = `v1:sha256:${"1".repeat(64)}`;
     const legacyPlan = createActivityPlanRow({ structure, structure_hash: structureHash });
     const { caller, callLog } = createCaller({
       state: {
@@ -622,7 +649,9 @@ describe("activityPlansRouter", () => {
 
     const query = getActivityPlanListQuery(callLog);
     expect(query.sql).toContain("@>");
-    expect(query.params).toContain(JSON.stringify({ activity_category: "run" }));
+    expect(query.params).toContain(
+      JSON.stringify({ variants: [{ structure: { activity_category: "run" } }] }),
+    );
   });
 
   it("getById rejects a private plan owned by another user", async () => {
@@ -675,7 +704,7 @@ describe("activityPlansRouter", () => {
     const result = await caller.getById({ id: publicPlan.id, personalize: true });
 
     expect(result.edit).toBeNull();
-    expect(result.detail.structure).toEqual(publicPlan.structure);
+    expect(result.detail.structure).toEqual(publicPlan.structure.variants[0].structure);
     expect(result.detail.metrics).toEqual([
       expect.objectContaining({ key: "distance", status: "unavailable", provenance: null }),
       expect.objectContaining({
@@ -743,6 +772,96 @@ describe("activityPlansRouter", () => {
     );
   });
 
+  it("resolves the omitted default and an explicit nondefault variant for detail", async () => {
+    const defaultId = "77777777-7777-4777-8777-777777777777";
+    const explicitId = "88888888-8888-4888-8888-888888888888";
+    const explicitStructure = structuredClone(sampleStructure);
+    explicitStructure.segments[0].intervals[0].steps[0].duration.seconds = 2_400;
+    const plan = createActivityPlanRow({
+      structure: {
+        contractVersion: 1,
+        defaultVariantId: defaultId,
+        variants: [
+          { id: defaultId, name: "Default", structure: sampleStructure },
+          { id: explicitId, name: "Build", structure: explicitStructure },
+        ],
+      },
+    });
+    estimationState.estimateActivityPlan.mockImplementation(
+      async (
+        candidate: { structure: typeof plan.structure },
+        _db: unknown,
+        _user: unknown,
+        options: { variantId?: string } = {},
+      ) => {
+        const variant = candidate.structure.variants.find(
+          (entry: { id: string }) =>
+            entry.id === (options.variantId ?? candidate.structure.defaultVariantId),
+        );
+        if (!variant) throw new Error("Expected selected variant");
+        return {
+          ...candidate,
+          prescriptionQuantification: null,
+          planProjection: null,
+          resolvedActivityPlanVariant: {
+            selection: options.variantId === undefined ? "default" : "explicit",
+            variantId: variant.id,
+            variantName: variant.name,
+            structure: variant.structure,
+          },
+        };
+      },
+    );
+    const state: MockDbState = {
+      "select:activity_plans": [[plan]],
+      "select:likes": [[], []],
+      "select:profiles": [[createProfileRow()], [createProfileRow()]],
+    };
+
+    const { caller: defaultCaller } = createCaller({ state });
+    const defaultResult = await defaultCaller.getById({ id: plan.id });
+    const { caller: explicitCaller } = createCaller({ state });
+    const explicitResult = await explicitCaller.getById({ id: plan.id, variantId: explicitId });
+
+    expect(defaultResult.detail).toMatchObject({
+      resolvedVariant: { id: defaultId, name: "Default", selection: "default" },
+      structure: sampleStructure,
+    });
+    expect(explicitResult.detail).toMatchObject({
+      resolvedVariant: { id: explicitId, name: "Build", selection: "explicit" },
+      structure: explicitStructure,
+      variants: [
+        { id: defaultId, name: "Default" },
+        { id: explicitId, name: "Build" },
+      ],
+    });
+    expect(explicitResult.edit?.structure).toEqual(plan.structure);
+  });
+
+  it("rejects an explicit unknown detail variant without default fallback", async () => {
+    const plan = createActivityPlanRow();
+    const { caller } = createCaller({
+      state: { "select:activity_plans": [[plan]] },
+    });
+    const { ActivityPlanVariantResolutionError } = await import("@repo/core/activity-plan");
+    estimationState.estimateActivityPlan.mockRejectedValueOnce(
+      new ActivityPlanVariantResolutionError(
+        "ACTIVITY_PLAN_UNKNOWN_EXPLICIT_VARIANT",
+        "99999999-9999-4999-8999-999999999999",
+      ),
+    );
+
+    await expect(
+      caller.getById({ id: plan.id, variantId: "99999999-9999-4999-8999-999999999999" }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "Unknown activity plan variant" });
+    expect(estimationState.estimateActivityPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ id: plan.id }),
+      expect.anything(),
+      USER_ID,
+      { personalize: false, variantId: "99999999-9999-4999-8999-999999999999" },
+    );
+  });
+
   it("getById rejects unexpected input fields", async () => {
     const { caller } = createCaller();
 
@@ -769,7 +888,6 @@ describe("activityPlansRouter", () => {
       id: "22222222-2222-4222-8222-222222222222",
       profile_id: OTHER_USER_ID,
       gps_recording_enabled: true,
-      structure_hash: activityPlanStructureHash(sampleStructure),
       content_visibility: "public",
     });
     const { caller } = createCaller({
@@ -798,7 +916,7 @@ describe("activityPlansRouter", () => {
     expect(result.items[1]?.owner?.id).toBe(OTHER_USER_ID);
     expect(result.items[0]).toHaveProperty("structure");
     expect(result.items[0]).toHaveProperty("prescriptionQuantification");
-    expect(result.items[1]?.structure).toEqual(publicPlan.structure);
+    expect(result.items[1]?.structure).toEqual(publicPlan.structure.variants[0].structure);
     expect(result.items[1]).not.toHaveProperty("prescriptionQuantification");
     expect(result.items[1]?.metrics).toEqual(
       expect.arrayContaining([
@@ -925,7 +1043,6 @@ describe("activityPlansRouter", () => {
       id: "55555555-5555-4555-8555-555555555555",
       name: "Created Plan",
       content_visibility: "public",
-      structure_hash: activityPlanStructureHash(sampleStructure),
     });
     const { caller, callLog } = createCaller({
       state: {
@@ -946,7 +1063,17 @@ describe("activityPlansRouter", () => {
       description: null,
       profile_id: USER_ID,
       content_visibility: "public",
+      structure: {
+        contractVersion: 1,
+        variants: [{ name: "Base", structure: sampleStructure }],
+      },
     });
+    const inserted = insertCall?.payload as {
+      id: string;
+      structure: { defaultVariantId: string; variants: Array<{ id: string }> };
+    };
+    expect(inserted.structure.defaultVariantId).toBe(inserted.id);
+    expect(inserted.structure.variants[0]?.id).toBe(inserted.id);
     expect(result).toMatchObject({
       id: createdRow.id,
       content_type: "activity_plan",
@@ -1004,7 +1131,7 @@ describe("activityPlansRouter", () => {
       expectedStructureHash: existingRow.structure_hash,
       name: "After Update",
       content_visibility: "public",
-      structure: sampleStructure,
+      structure: existingRow.structure,
     });
 
     const updateCall = callLog.find((call) => call.operation === "update");
@@ -1023,7 +1150,6 @@ describe("activityPlansRouter", () => {
     const changedRow = createActivityPlanRow({
       revision: 5,
       structure: changedStructure,
-      structure_hash: activityPlanStructureHash(changedStructure),
     });
     const metadataRow = createActivityPlanRow({ revision: 4, notes: "Updated notes" });
     const { caller, callLog } = createCaller({
@@ -1036,7 +1162,7 @@ describe("activityPlansRouter", () => {
     const changed = await caller.update({
       id: existingRow.id,
       expectedStructureHash: existingRow.structure_hash,
-      structure: changedStructure,
+      structure: changedRow.structure,
     });
     await caller.update({
       id: existingRow.id,
@@ -1165,7 +1291,7 @@ describe("activityPlansRouter", () => {
     await expect(
       caller.update({
         id: "66666666-6666-4666-8666-666666666666",
-        expectedStructureHash: activityPlanStructureHash(sampleStructure),
+        expectedStructureHash: createActivityPlanRow().structure_hash,
       }),
     ).rejects.toThrow("At least one activity plan update field is required");
 
@@ -1314,7 +1440,9 @@ describe("activityPlansRouter", () => {
       "Activity plan changed during deletion",
     );
 
-    expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(1);
+    expect(
+      callLog.filter((call) => call.operation === "delete" && call.table === "activity_plans"),
+    ).toHaveLength(1);
   });
 
   it("delete rejects unexpected input fields", async () => {
@@ -1363,7 +1491,7 @@ describe("activityPlansRouter", () => {
       name: "Private Activity Copy",
       description: "Owner-only description",
       notes: "Owner-only notes and targets",
-      structure: sampleStructure,
+      structure: expect.objectContaining({ contractVersion: 1 }),
       profile_id: USER_ID,
       content_visibility: "private",
       is_system_template: false,
@@ -1374,7 +1502,7 @@ describe("activityPlansRouter", () => {
       updated_at: "2026-08-19T12:00:01.000Z",
       description: "Owner-only description",
       notes: "Owner-only notes and targets",
-      structure: sampleStructure,
+      structure: expect.objectContaining({ contractVersion: 1 }),
       profile_id: USER_ID,
       content_visibility: "private",
       visibility: "private",
@@ -1539,7 +1667,7 @@ describe("activityPlansRouter", () => {
 
     expect(callLog.find((call) => call.operation === "insert")?.payload).toMatchObject({
       notes: "Curated system instructions",
-      structure: sampleStructure,
+      structure: expect.objectContaining({ contractVersion: 1 }),
       profile_id: USER_ID,
       content_visibility: "private",
       is_system_template: false,
@@ -1547,7 +1675,7 @@ describe("activityPlansRouter", () => {
     expect(result).toMatchObject({
       id: duplicatedRow.id,
       notes: "Curated system instructions",
-      structure: sampleStructure,
+      structure: expect.objectContaining({ contractVersion: 1 }),
       profile_id: USER_ID,
       visibility: "private",
     });
@@ -1562,5 +1690,37 @@ describe("activityPlansRouter", () => {
         extra: true,
       } as any),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+  });
+
+  it("duplicate remaps every variant identity and preserves the default relationship", () => {
+    const source = activityPlanDocumentSchema.parse({
+      contractVersion: 1,
+      defaultVariantId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      variants: [
+        {
+          id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          name: "Short",
+          structure: sampleStructure,
+        },
+        {
+          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          name: "Base",
+          structure: sampleStructure,
+        },
+      ],
+    });
+    const ids = ["cccccccc-cccc-4ccc-8ccc-cccccccccccc", "dddddddd-dddd-4ddd-8ddd-dddddddddddd"];
+
+    const duplicate = duplicateActivityPlanDocument(source, () => {
+      const id = ids.shift();
+      if (!id) throw new Error("Missing test ID");
+      return id;
+    });
+
+    expect(duplicate.variants.map(({ id, name }) => ({ id, name }))).toEqual([
+      { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", name: "Short" },
+      { id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", name: "Base" },
+    ]);
+    expect(duplicate.defaultVariantId).toBe("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
   });
 });

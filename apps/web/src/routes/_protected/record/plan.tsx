@@ -27,7 +27,7 @@ export const Route = createFileRoute("/_protected/record/plan")({
   component: RecordPlanPage,
 });
 
-type SelectedPlan = { planId: string; eventId: string | null };
+type SelectedPlan = { planId: string; eventId: string | null; variantId?: string };
 
 export function RecordPlanPage() {
   const navigate = Route.useNavigate();
@@ -37,7 +37,11 @@ export function RecordPlanPage() {
   const [searchText, setSearchText] = useState("");
   const [selected, setSelected] = useState<SelectedPlan | null>(
     launcher.activityPlanId
-      ? { planId: launcher.activityPlanId, eventId: launcher.eventId ?? null }
+      ? {
+          planId: launcher.activityPlanId,
+          eventId: launcher.eventId ?? null,
+          ...(launcher.variantId ? { variantId: launcher.variantId } : {}),
+        }
       : null,
   );
   const todayQuery = api.calendar.day.useQuery({ date: getTodayDateKey() });
@@ -46,7 +50,11 @@ export function RecordPlanPage() {
     { getNextPageParam: (lastPage) => lastPage.nextCursor },
   );
   const detailQuery = api.activityPlans.getById.useQuery(
-    { id: selected?.planId ?? "", personalize: false },
+    {
+      id: selected?.planId ?? "",
+      personalize: false,
+      ...(selected?.variantId === undefined ? {} : { variantId: selected.variantId }),
+    },
     { enabled: Boolean(selected?.planId), retry: false },
   );
 
@@ -68,6 +76,7 @@ export function RecordPlanPage() {
         activity_category: detail.activityCategory,
         gps: "off",
         activityPlanId: detail.id,
+        variantId: detail.resolvedVariant.id,
         ...(selected.eventId ? { eventId: selected.eventId } : {}),
         ...(launcher.routeId ? { routeId: launcher.routeId } : {}),
       },
@@ -225,6 +234,28 @@ export function RecordPlanPage() {
                       </Badge>
                     ))}
                 </div>
+                {detail.variants.length > 1 ? (
+                  <label className="block max-w-sm space-y-2" htmlFor="record-plan-variant">
+                    <span className="text-sm font-medium">Activity plan variant</span>
+                    <select
+                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      id="record-plan-variant"
+                      onChange={(event) =>
+                        setSelected((current) =>
+                          current ? { ...current, variantId: event.currentTarget.value } : current,
+                        )
+                      }
+                      value={detail.resolvedVariant.id}
+                    >
+                      {detail.variants.map((variant) => (
+                        <option key={variant.id} value={variant.id}>
+                          {variant.name}
+                          {variant.id === detail.defaultVariantId ? " (default)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
                 <p className="rounded-lg border p-3 text-sm text-muted-foreground">
                   Recording uses the plan&apos;s authored targets. Session Flow personalization is
                   display-only until it explicitly hands a selected target representation to the

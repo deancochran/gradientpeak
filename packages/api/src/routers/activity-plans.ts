@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { ContentVisibility } from "@repo/core";
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import {
+  type ActivityPlanDocument,
+  ActivityPlanVariantResolutionError,
+  activityPlanDocumentSchema,
+  activityPlanStructureSchema,
+  initializeActivityPlanDocument,
+  resolveActivityPlanVariant,
+} from "@repo/core/activity-plan";
 import { activityPlanCreateSchema, activityPlanUpdateSchema } from "@repo/core/schemas";
 import {
   type ActivityPlanInsert,
@@ -30,10 +37,10 @@ import {
   toActivityPlanDetail,
   toActivityPlanSummary,
 } from "../application/activity-plans/read-projections";
-import { activityPlanStructureHash } from "../application/activity-plans/structure-hash";
+import { activityPlanDocumentHash } from "../application/activity-plans/structure-hash";
 import { enqueueWahooPlannedActivityJobs } from "../application/events";
 import { getRequiredDb } from "../db";
-import { createActivityPlanWriteRepository } from "../infrastructure/repositories";
+import { createActivityPlanWriteRepository } from "../infrastructure/repositories/drizzle-activity-plan-write-repository";
 import { createContentAccessPermissions } from "../permissions/content-access";
 import { getLikeStats, loadLikeStats } from "../repositories/like-stats";
 import { captureApiError } from "../telemetry";
@@ -88,7 +95,11 @@ const getManyActivityPlansByIdsSchema = z
 
 const activityPlanIdInputSchema = z.object({ id: uuidSchema }).strict();
 const activityPlanDetailInputSchema = z
-  .object({ id: uuidSchema, personalize: z.boolean().default(false) })
+  .object({
+    id: uuidSchema,
+    personalize: z.boolean().default(false),
+    variantId: uuidSchema.optional(),
+  })
   .strict();
 
 const duplicateActivityPlanInputSchema = z
@@ -101,7 +112,7 @@ const duplicateActivityPlanInputSchema = z
 const activityPlanRowSchema = publicActivityPlansRowSchema
   .extend({
     created_at: z.date(),
-    structure: activityPlanStructureSchema,
+    structure: activityPlanDocumentSchema,
     updated_at: z.date(),
     content_visibility: contentVisibilitySchema.default("private"),
   })
@@ -113,8 +124,8 @@ const serializedActivityPlanSchema = activityPlanRowSchema.transform((row) => ({
   updated_at: row.updated_at.toISOString(),
 }));
 
-function validateStructure(structure: unknown) {
-  return activityPlanStructureSchema.parse(structure);
+function validateDocument(document: unknown) {
+  return activityPlanDocumentSchema.parse(document);
 }
 
 const createActivityPlanInput = activityPlanCreateSchema.safeExtend({
@@ -123,9 +134,9 @@ const createActivityPlanInput = activityPlanCreateSchema.safeExtend({
   content_visibility: contentVisibilitySchema.optional(),
 });
 
-const updateActivityPlanInput = activityPlanUpdateSchema.safeExtend({
+const updateActivityPlanInput = activityPlanUpdateSchema.omit({ structure: true }).safeExtend({
   gps_recording_enabled: z.boolean().optional(),
-  structure: activityPlanStructureSchema.optional(),
+  structure: activityPlanDocumentSchema.optional(),
   content_visibility: contentVisibilitySchema.optional(),
 });
 
@@ -152,16 +163,32 @@ function serializeActivityPlanRow(row: ActivityPlanRow | unknown) {
 }
 
 function toPublicActivityPlan<T extends { structure: unknown; revision: number }>(plan: T) {
-  const parsed = activityPlanStructureSchema.safeParse(plan.structure);
+  const parsed = activityPlanDocumentSchema.safeParse(plan.structure);
   if (!parsed.success)
     throw new TRPCError({
       code: "INTERNAL_SERVER_ERROR",
       message: "Stored activity plan is not valid",
     });
+  const resolved =
+    "resolvedActivityPlanVariant" in plan && plan.resolvedActivityPlanVariant
+      ? z
+          .object({
+            variantId: z.string().uuid(),
+            variantName: z.string(),
+            structure: activityPlanStructureSchema,
+          })
+          .parse(plan.resolvedActivityPlanVariant)
+      : resolveActivityPlanVariant(parsed.data);
   return {
     ...plan,
-    activity_category: parsed.data.activity_category,
+    activity_category: resolved.structure.activity_category,
     activityPlanRevision: plan.revision,
+    defaultVariantId: parsed.data.defaultVariantId,
+    defaultVariantName:
+      parsed.data.variants.find((variant) => variant.id === parsed.data.defaultVariantId)?.name ??
+      resolved.variantName,
+    variantCount: parsed.data.variants.length,
+    variants: parsed.data.variants.map(({ id, name }) => ({ id, name })),
   };
 }
 
@@ -303,20 +330,44 @@ function buildCreateValues(
 ): ActivityPlanInsert {
   const now = new Date();
   const contentVisibility = input.content_visibility ?? defaultContentVisibility;
+  const id = randomUUID();
+  const document = initializeActivityPlanDocument({
+    activityPlanId: id,
+    structure: input.structure,
+  });
   return {
-    id: randomUUID(),
+    id,
     created_at: now,
     updated_at: now,
     profile_id: profileId,
     name: input.name,
     description: input.description?.trim() ? input.description.trim() : null,
     notes: input.notes ?? null,
-    structure: input.structure,
-    structure_hash: activityPlanStructureHash(input.structure),
+    structure: document,
+    structure_hash: activityPlanDocumentHash(document),
     gps_recording_enabled: input.gps_recording_enabled,
     content_visibility: contentVisibility,
     is_system_template: false,
   };
+}
+
+export function duplicateActivityPlanDocument(
+  source: unknown,
+  createId: () => string = randomUUID,
+): ActivityPlanDocument {
+  const document = activityPlanDocumentSchema.parse(source);
+  const remappedIds = new Map(document.variants.map((variant) => [variant.id, createId()]));
+  const defaultVariantId = remappedIds.get(document.defaultVariantId);
+  if (!defaultVariantId) throw new Error("Activity-plan document default variant is missing");
+  return activityPlanDocumentSchema.parse({
+    contractVersion: document.contractVersion,
+    defaultVariantId,
+    variants: document.variants.map((variant) => ({
+      id: remappedIds.get(variant.id),
+      name: variant.name,
+      structure: variant.structure,
+    })),
+  });
 }
 
 export const activityPlansRouter = createTRPCRouter({
@@ -351,7 +402,7 @@ export const activityPlansRouter = createTRPCRouter({
         or(
           ...[...requestedCategories].map(
             (activity_category) =>
-              sql`${activityPlans.structure} @> ${JSON.stringify({ activity_category })}::jsonb`,
+              sql`${activityPlans.structure} @> ${JSON.stringify({ variants: [{ structure: { activity_category } }] })}::jsonb`,
           ),
         ),
       );
@@ -525,16 +576,22 @@ export const activityPlansRouter = createTRPCRouter({
     await requireActivityPlanReadForRow({ db, plan: planRow, userId });
 
     const plan = serializeActivityPlanRow(planRow);
-    if (!activityPlanStructureSchema.safeParse(plan.structure).success) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Stored activity plan is not valid",
+    let planWithEstimation: EstimatedActivityPlan;
+    try {
+      planWithEstimation = await estimateActivityPlan(plan, db, userId, {
+        personalize: input.personalize && plan.profile_id === userId,
+        ...(input.variantId === undefined ? {} : { variantId: input.variantId }),
       });
+    } catch (error) {
+      if (error instanceof ActivityPlanVariantResolutionError) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Unknown activity plan variant",
+          cause: error,
+        });
+      }
+      throw error;
     }
-
-    const planWithEstimation = await estimateActivityPlan(plan, db, userId, {
-      personalize: input.personalize && plan.profile_id === userId,
-    });
 
     const [likeStats, profileIdentityMap] = await Promise.all([
       loadLikeStats(db, {
@@ -631,11 +688,11 @@ export const activityPlansRouter = createTRPCRouter({
   create: protectedProcedure.input(createActivityPlanInput).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
     try {
-      validateStructure(input.structure);
+      activityPlanStructureSchema.parse(input.structure);
     } catch (validationError) {
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: "Invalid activity plan structure",
+        message: "Invalid initial activity plan structure",
         cause: validationError,
       });
     }
@@ -705,11 +762,11 @@ export const activityPlansRouter = createTRPCRouter({
 
       if (updates.structure) {
         try {
-          validateStructure(updates.structure);
+          validateDocument(updates.structure);
         } catch (validationError) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Invalid activity plan structure",
+            message: "Invalid activity plan document",
             cause: validationError,
           });
         }
@@ -728,9 +785,7 @@ export const activityPlansRouter = createTRPCRouter({
               : null,
         notes: updates.notes,
         structure: updates.structure,
-        structure_hash: updates.structure
-          ? activityPlanStructureHash(updates.structure)
-          : undefined,
+        structure_hash: updates.structure ? activityPlanDocumentHash(updates.structure) : undefined,
         gps_recording_enabled: updates.gps_recording_enabled,
         content_visibility: updates.content_visibility,
       };
@@ -869,7 +924,7 @@ export const activityPlansRouter = createTRPCRouter({
 
       const originalPlan = serializeActivityPlanRow(originalRow);
 
-      if (!activityPlanStructureSchema.safeParse(originalPlan.structure).success) {
+      if (!activityPlanDocumentSchema.safeParse(originalPlan.structure).success) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "Original plan is not executable",
@@ -877,6 +932,7 @@ export const activityPlansRouter = createTRPCRouter({
       }
 
       const now = new Date();
+      const duplicatedDocument = duplicateActivityPlanDocument(originalPlan.structure);
       const [duplicatedRow] = await db
         .insert(activityPlans)
         .values({
@@ -886,8 +942,8 @@ export const activityPlansRouter = createTRPCRouter({
           name: input.newName?.trim() || `${originalPlan.name} (Copy)`,
           description: originalPlan.description,
           notes: originalRow.notes ?? null,
-          structure: originalPlan.structure,
-          structure_hash: activityPlanStructureHash(originalPlan.structure),
+          structure: duplicatedDocument,
+          structure_hash: activityPlanDocumentHash(duplicatedDocument),
           gps_recording_enabled: originalPlan.gps_recording_enabled,
           profile_id: ctx.session.user.id,
           content_visibility: "private",

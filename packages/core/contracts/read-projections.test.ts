@@ -589,6 +589,7 @@ describe("read projections", () => {
       estimated: false,
       partial: false,
       plan: null,
+      plannedSession: null,
       activity: null,
       event: allDay ? null : { type: "custom" as const, trainingPlanId: null },
       groupEvent: null,

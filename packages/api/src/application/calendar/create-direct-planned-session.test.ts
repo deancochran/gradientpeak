@@ -1,4 +1,4 @@
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import { activityPlanDocumentSchema, activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { describe, expect, it, vi } from "vitest";
 import type { PlannedSessionRepositoryPort } from "../../repositories/planned-session-repository-port";
 import { createDirectPlannedSession } from "./create-direct-planned-session";
@@ -6,6 +6,7 @@ import { PlannedSessionAccessError } from "./planned-session-errors";
 
 const profileId = "11111111-1111-4111-8111-111111111111";
 const activityPlanId = "22222222-2222-4222-8222-222222222222";
+const buildVariantId = "88888888-8888-4888-8888-888888888888";
 const groupEventId = "77777777-7777-4777-8777-777777777777";
 const structure = activityPlanStructureSchema.parse({
   version: 3,
@@ -33,6 +34,22 @@ const structure = activityPlanStructureSchema.parse({
     },
   ],
 });
+const buildDocument = () => {
+  const buildStructure = structuredClone(structure);
+  const segment = buildStructure.segments[0];
+  if (!segment || segment.role !== "activity") throw new Error("Expected activity segment");
+  const step = segment.intervals[0]?.steps[0];
+  if (!step || step.duration.type !== "time") throw new Error("Expected timed step");
+  step.duration.seconds = 2_400;
+  return activityPlanDocumentSchema.parse({
+    contractVersion: 1,
+    defaultVariantId: activityPlanId,
+    variants: [
+      { id: activityPlanId, name: "Base", structure },
+      { id: buildVariantId, name: "Build", structure: buildStructure },
+    ],
+  });
+};
 
 function repositoryWithPlan() {
   const createOwned = vi.fn<PlannedSessionRepositoryPort["createOwned"]>(
@@ -48,7 +65,7 @@ function repositoryWithPlan() {
       name: "Steady run",
       description: null,
       revision: 9,
-      structure,
+      structure: buildDocument(),
       structureHash: `v1:sha256:${"a".repeat(64)}`,
       gpsRecordingEnabled: true,
       updatedAt: "2026-08-01T08:00:00.000Z",
@@ -81,6 +98,8 @@ describe("createDirectPlannedSession", () => {
     expect(created?.prescription).toMatchObject({
       activityPlanId,
       activityPlanRevision: 9,
+      variantId: activityPlanId,
+      variantName: "Base",
       structure,
       capturedAt: capturedAt.toISOString(),
     });
@@ -104,6 +123,51 @@ describe("createDirectPlannedSession", () => {
         capturedAt: new Date("2026-08-17T12:34:56.000Z"),
       }),
     ).rejects.toBeInstanceOf(PlannedSessionAccessError);
+    expect(createOwned).not.toHaveBeenCalled();
+  });
+
+  it("resolves an explicit variant once and snapshots its identity, name, and concrete V3", async () => {
+    const { createOwned, repository } = repositoryWithPlan();
+
+    await createDirectPlannedSession({
+      db: {} as never,
+      repository,
+      profileId,
+      sessionId: "66666666-6666-4666-8666-666666666666",
+      planningDate: "2026-08-20",
+      source: { kind: "direct", operationId: "b".repeat(32) },
+      activityPlanId,
+      variantId: buildVariantId,
+      groupEventId: null,
+      capturedAt: new Date("2026-08-17T12:34:56.000Z"),
+    });
+
+    const prescription = createOwned.mock.calls[0]?.[0].session.prescription;
+    expect(prescription).toMatchObject({
+      variantId: buildVariantId,
+      variantName: "Build",
+      structure: { version: 3 },
+    });
+    expect(prescription?.structure).not.toHaveProperty("variants");
+  });
+
+  it("fails an unknown explicit variant without falling back to Base", async () => {
+    const { createOwned, repository } = repositoryWithPlan();
+
+    await expect(
+      createDirectPlannedSession({
+        db: {} as never,
+        repository,
+        profileId,
+        sessionId: "66666666-6666-4666-8666-666666666666",
+        planningDate: "2026-08-20",
+        source: { kind: "direct", operationId: "c".repeat(32) },
+        activityPlanId,
+        variantId: "99999999-9999-4999-8999-999999999999",
+        groupEventId: null,
+        capturedAt: new Date("2026-08-17T12:34:56.000Z"),
+      }),
+    ).rejects.toMatchObject({ code: "ACTIVITY_PLAN_UNKNOWN_EXPLICIT_VARIANT" });
     expect(createOwned).not.toHaveBeenCalled();
   });
 

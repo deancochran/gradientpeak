@@ -1,4 +1,4 @@
-import { activityPlanStructureSchema } from "@repo/core";
+import { activityPlanDocumentSchema, resolveActivityPlanVariant } from "@repo/core";
 import type { PublishedAthletePerformanceTargetsRead } from "../../../application/athlete-intelligence/published-athlete-state";
 import type { WahooRepository, WahooSyncRepository } from "../../../repositories";
 import { hasWahooPlannedActivityScopes } from "../../integrations/wahoo/planned-activity-scopes";
@@ -92,10 +92,11 @@ export class WahooPlannedActivityProvider implements WahooPlannedActivityAdapter
       if (!existing) return { jobId: null, queued: false, skipped: true };
       return rejectOrUnsync("Wahoo route-linked planned activities are not supported");
     }
-    const parsed = activityPlanStructureSchema.safeParse(planned.activityPlan.structure);
+    const parsed = activityPlanDocumentSchema.safeParse(planned.activityPlan.structure);
     if (!parsed.success) {
-      return rejectOrUnsync("Wahoo sync requires a valid activity-plan structure");
+      return rejectOrUnsync("Wahoo sync requires a valid activity-plan document");
     }
+    const resolved = resolveActivityPlanVariant(parsed.data);
     const publishedTargets = await this.deps.getPerformanceTargets({ profileId: input.profileId });
     if (publishedTargets.status === "unavailable") {
       throw new Error(
@@ -108,7 +109,7 @@ export class WahooPlannedActivityProvider implements WahooPlannedActivityAdapter
       );
     }
     const projection = projectWahooPlannedActivity({
-      activityPlan: { ...planned.activityPlan, structure: parsed.data },
+      activityPlan: { ...planned.activityPlan, structure: resolved.structure },
       eventId: input.eventId,
       performanceTargets: publishedTargets.targets,
       startsAt: planned.startsAt,

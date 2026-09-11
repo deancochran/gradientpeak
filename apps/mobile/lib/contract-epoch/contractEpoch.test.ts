@@ -1,138 +1,137 @@
 import { CURRENT_CONTRACT_EPOCH } from "@repo/api/contract-epoch";
 import { describe, expect, it, vi } from "vitest";
 import {
-  CONTRACT_EPOCH_RESET_STORAGE_KEYS,
+  CONTRACT_EPOCH_MIGRATION_STORAGE_KEY,
+  CONTRACT_EPOCH_STORAGE_KEY,
   createContractEpochInitializer,
-} from "./contractEpochReset";
+} from "./contractEpochMigration";
 
-const SECURE_AUTH_KEYS = [
-  "gradientpeak.auth.cookie-header",
-  "gradientpeak_cookie",
-  "gradientpeak_session_data",
-  "better-auth_cookie",
-  "better-auth_session_data",
-] as const;
+type FailurePoint =
+  | "prepare-journal"
+  | "recording-migration"
+  | "migration-journal"
+  | "complete-journal"
+  | "epoch-marker";
 
-function dependencies(marker: string | null) {
+function fixture(marker: string | null, failurePoint?: FailurePoint) {
+  const values = new Map<string, string>();
   const calls: string[] = [];
-  const values = new Map<string, string | null>([
-    ...SECURE_AUTH_KEYS.map((key) => [key, "old-auth"] as const),
-    ["server-url-override", "preserved"],
-  ]);
-  return {
-    calls,
-    values,
-    dependencies: {
-      getMarker: vi.fn(async () => marker),
-      setMarker: vi.fn(async (value: string) => {
-        calls.push(`marker:${value}`);
-      }),
-      clearOnboardingRecovery: vi.fn(async () => {
-        calls.push("onboarding");
-      }),
-      clearSecureAuthState: vi.fn(async () => {
-        calls.push("auth");
-        for (const key of SECURE_AUTH_KEYS) values.set(key, null);
-      }),
-      clearAppStorage: vi.fn(async (keys: readonly string[]) => {
-        calls.push(`storage:${keys.join(",")}`);
-      }),
-      resetRecordingEvidence: vi.fn(async () => {
-        calls.push("sqlite");
-      }),
-      cleanupStreamFiles: vi.fn(async () => {
-        calls.push("streams");
-      }),
-      cleanupFitFiles: vi.fn(async () => {
-        calls.push("fit");
-      }),
-    },
+  let pendingFailure = failurePoint;
+  if (marker !== null) values.set(CONTRACT_EPOCH_STORAGE_KEY, marker);
+  const failOnce = (point: FailurePoint) => {
+    if (pendingFailure !== point) return;
+    pendingFailure = undefined;
+    throw new Error(`interrupted:${point}`);
   };
+  const migrateRecordingEvidence = vi.fn(async () => {
+    calls.push("recording-migration");
+    failOnce("recording-migration");
+    return { quarantinedRecordingIntents: 2, quarantinedQueueJobs: 1 };
+  });
+  const dependencies = {
+    getMarker: vi.fn(async () => values.get(CONTRACT_EPOCH_STORAGE_KEY) ?? null),
+    setMarker: vi.fn(async (value: string) => {
+      calls.push(`epoch-marker:${value}`);
+      failOnce("epoch-marker");
+      values.set(CONTRACT_EPOCH_STORAGE_KEY, value);
+    }),
+    getMigrationJournal: vi.fn(
+      async () => values.get(CONTRACT_EPOCH_MIGRATION_STORAGE_KEY) ?? null,
+    ),
+    setMigrationJournal: vi.fn(async (value: string) => {
+      const phase = (JSON.parse(value) as { phase: string }).phase;
+      calls.push(`journal:${phase}`);
+      if (phase === "prepared") failOnce("prepare-journal");
+      if (phase === "recording-evidence-migrated") failOnce("migration-journal");
+      if (phase === "complete") failOnce("complete-journal");
+      values.set(CONTRACT_EPOCH_MIGRATION_STORAGE_KEY, value);
+    }),
+    migrateRecordingEvidence,
+    now: () => "2026-09-10T12:00:00.000Z",
+  };
+  return { calls, dependencies, migrateRecordingEvidence, values };
 }
 
 describe("contract epoch initialization", () => {
-  it("hard-resets app state in order and writes the marker last", async () => {
-    const fixture = dependencies(null);
+  it("durably journals a non-destructive migration and writes the epoch marker last", async () => {
+    const state = fixture("2");
 
-    await expect(createContractEpochInitializer(fixture.dependencies)()).resolves.toBe("reset");
+    await expect(createContractEpochInitializer(state.dependencies)()).resolves.toBe("migrated");
 
-    expect(fixture.calls).toEqual([
-      "onboarding",
-      "auth",
-      "sqlite",
-      `storage:${CONTRACT_EPOCH_RESET_STORAGE_KEYS.join(",")}`,
-      "streams",
-      "fit",
-      `marker:${CURRENT_CONTRACT_EPOCH}`,
+    expect(state.calls).toEqual([
+      "journal:prepared",
+      "recording-migration",
+      "journal:recording-evidence-migrated",
+      "journal:complete",
+      `epoch-marker:${CURRENT_CONTRACT_EPOCH}`,
     ]);
-    for (const key of SECURE_AUTH_KEYS) {
-      expect(fixture.values.get(key)).toBeNull();
-    }
-    expect(fixture.values.get("server-url-override")).toBe("preserved");
-    expect(CONTRACT_EPOCH_RESET_STORAGE_KEYS).not.toContain("server-url-override");
-    expect(CONTRACT_EPOCH_RESET_STORAGE_KEYS).toContain("gradientpeak-plan-display-preferences");
+    expect(state.values.get(CONTRACT_EPOCH_STORAGE_KEY)).toBe(String(CURRENT_CONTRACT_EPOCH));
+    expect(JSON.parse(state.values.get(CONTRACT_EPOCH_MIGRATION_STORAGE_KEY) ?? "null")).toEqual({
+      version: 1,
+      sourceEpoch: "2",
+      targetEpoch: CURRENT_CONTRACT_EPOCH,
+      phase: "complete",
+      startedAt: "2026-09-10T12:00:00.000Z",
+      completedAt: "2026-09-10T12:00:00.000Z",
+      summary: { quarantinedRecordingIntents: 2, quarantinedQueueJobs: 1 },
+    });
   });
 
   it("is a no-op when the persisted marker exactly matches", async () => {
-    const fixture = dependencies(String(CURRENT_CONTRACT_EPOCH));
+    const state = fixture(String(CURRENT_CONTRACT_EPOCH));
 
-    await expect(createContractEpochInitializer(fixture.dependencies)()).resolves.toBe("current");
+    await expect(createContractEpochInitializer(state.dependencies)()).resolves.toBe("current");
 
-    expect(fixture.calls).toEqual([]);
-    expect(fixture.dependencies.clearSecureAuthState).not.toHaveBeenCalled();
-    expect(fixture.dependencies.clearOnboardingRecovery).not.toHaveBeenCalled();
+    expect(state.calls).toEqual([]);
+    expect(state.dependencies.getMigrationJournal).not.toHaveBeenCalled();
+    expect(state.migrateRecordingEvidence).not.toHaveBeenCalled();
   });
 
-  it("leaves the marker absent on failure so the next attempt retries the full reset", async () => {
-    const fixture = dependencies(null);
-    fixture.dependencies.cleanupFitFiles.mockRejectedValueOnce(new Error("disk busy"));
-    const initialize = createContractEpochInitializer(fixture.dependencies);
+  it.each<FailurePoint>([
+    "prepare-journal",
+    "recording-migration",
+    "migration-journal",
+    "complete-journal",
+    "epoch-marker",
+  ])("resumes safely after interruption at %s", async (failurePoint) => {
+    const state = fixture("2", failurePoint);
+    const initialize = createContractEpochInitializer(state.dependencies);
 
-    await expect(initialize()).rejects.toThrow("disk busy");
-    await expect(initialize()).resolves.toBe("reset");
+    await expect(initialize()).rejects.toThrow(`interrupted:${failurePoint}`);
+    expect(state.values.get(CONTRACT_EPOCH_STORAGE_KEY)).toBe("2");
+    await expect(initialize()).resolves.toBe("migrated");
 
-    expect(fixture.dependencies.resetRecordingEvidence).toHaveBeenCalledTimes(2);
-    expect(fixture.dependencies.setMarker).toHaveBeenCalledTimes(1);
+    expect(state.values.get(CONTRACT_EPOCH_STORAGE_KEY)).toBe(String(CURRENT_CONTRACT_EPOCH));
+    expect(JSON.parse(state.values.get(CONTRACT_EPOCH_MIGRATION_STORAGE_KEY) ?? "null").phase).toBe(
+      "complete",
+    );
+    expect(state.migrateRecordingEvidence).toHaveBeenCalledTimes(
+      failurePoint === "recording-migration" || failurePoint === "migration-journal" ? 2 : 1,
+    );
   });
 
-  it("does not write the marker when secure auth deletion fails and retries it", async () => {
-    const fixture = dependencies(null);
-    fixture.dependencies.clearSecureAuthState.mockRejectedValueOnce(
-      new Error("secure storage locked"),
+  it("fails closed for a malformed journal without touching recorder state or the marker", async () => {
+    const state = fixture("2");
+    state.values.set(CONTRACT_EPOCH_MIGRATION_STORAGE_KEY, "{not-json");
+
+    await expect(createContractEpochInitializer(state.dependencies)()).rejects.toThrow(
+      "Contract epoch migration journal is invalid",
     );
-    const initialize = createContractEpochInitializer(fixture.dependencies);
 
-    await expect(initialize()).rejects.toThrow("secure storage locked");
-    expect(fixture.dependencies.setMarker).not.toHaveBeenCalled();
-    await expect(initialize()).resolves.toBe("reset");
-
-    expect(fixture.dependencies.clearSecureAuthState).toHaveBeenCalledTimes(2);
-    expect(fixture.dependencies.setMarker).toHaveBeenCalledTimes(1);
+    expect(state.migrateRecordingEvidence).not.toHaveBeenCalled();
+    expect(state.dependencies.setMarker).not.toHaveBeenCalled();
   });
 
-  it("does not write the epoch marker when a malformed auth chunk marker fails closed", async () => {
-    const fixture = dependencies(null);
-    fixture.dependencies.clearSecureAuthState.mockRejectedValueOnce(
-      new Error("Invalid Better Auth chunk marker"),
-    );
+  it.each([
+    "invalid",
+    String(CURRENT_CONTRACT_EPOCH + 1),
+  ])("refuses an unsafe stored epoch marker %s", async (marker) => {
+    const state = fixture(marker);
 
-    await expect(createContractEpochInitializer(fixture.dependencies)()).rejects.toThrow(
-      "Invalid Better Auth chunk marker",
+    await expect(createContractEpochInitializer(state.dependencies)()).rejects.toThrow(
+      /Stored contract epoch/,
     );
-    expect(fixture.dependencies.setMarker).not.toHaveBeenCalled();
-  });
-
-  it("does not write the marker when onboarding recovery deletion fails and retries it", async () => {
-    const fixture = dependencies(null);
-    fixture.dependencies.clearOnboardingRecovery.mockRejectedValueOnce(
-      new Error("secure storage locked"),
-    );
-    const initialize = createContractEpochInitializer(fixture.dependencies);
-
-    await expect(initialize()).rejects.toThrow("secure storage locked");
-    expect(fixture.dependencies.clearSecureAuthState).not.toHaveBeenCalled();
-    expect(fixture.dependencies.setMarker).not.toHaveBeenCalled();
-    await expect(initialize()).resolves.toBe("reset");
-    expect(fixture.dependencies.clearOnboardingRecovery).toHaveBeenCalledTimes(2);
+    expect(state.migrateRecordingEvidence).not.toHaveBeenCalled();
+    expect(state.dependencies.setMarker).not.toHaveBeenCalled();
   });
 });

@@ -10,6 +10,7 @@ export type RecordingLauncherSearch = {
   gps: RecordingGpsMode;
   eventId?: string;
   activityPlanId?: string;
+  variantId?: string;
   /** Selected route to retain through the recording launcher. */
   routeId?: string;
 };
@@ -62,6 +63,10 @@ export function validateRecordingSearch(search: Record<string, unknown>): Record
     activityPlanId:
       typeof search.activityPlanId === "string" && uuidPattern.test(search.activityPlanId)
         ? search.activityPlanId
+        : undefined,
+    variantId:
+      typeof search.variantId === "string" && uuidPattern.test(search.variantId)
+        ? search.variantId
         : undefined,
     routeId:
       typeof search.routeId === "string" && uuidPattern.test(search.routeId)

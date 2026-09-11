@@ -72,6 +72,8 @@ export function createTrainingPlanBuilderActions(input: {
     },
     assignActivityPlan: (sessionId: string, activityPlan: TrainingPlanActivityPlanFacts | null) =>
       dispatch({ type: "session.assignActivityPlan", sessionId, activityPlan }),
+    selectActivityPlanVariant: (sessionId: string, variantId?: string) =>
+      dispatch({ type: "session.selectActivityPlanVariant", sessionId, variantId }),
     updateSession: (session: TrainingPlanBuilderSession) =>
       dispatch({ type: "session.update", session }),
     removeSession: (sessionId: string) => dispatch({ type: "session.remove", sessionId }),

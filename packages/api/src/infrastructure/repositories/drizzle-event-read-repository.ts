@@ -1,3 +1,4 @@
+import { activityPlanDocumentSchema } from "@repo/core/activity-plan";
 import { getCalendarDateInIanaZone, scheduledDateTimeToIsoInstant } from "@repo/core/calendar";
 import { isGroupEventGoing } from "@repo/core/groups";
 import { type DrizzleDbClient, schema } from "@repo/db";
@@ -24,6 +25,7 @@ import {
 } from "../../application/training-plan/current-planning-week";
 import { toActivityPlanExecutionDto } from "../../dto/activity-plan";
 import type { EventReadRepository } from "../../repositories";
+import { mapPlannedSessionRow } from "./drizzle-planned-session-repository";
 
 type EventReadDb = {
   execute: unknown;
@@ -101,9 +103,11 @@ function requireCurrentEventField<T>(value: T | null, field: string): T {
 
 function serializeEventRow(row: {
   activity_plan_id: string | null;
+  planned_session_id: string | null;
   route_id: string | null;
   activity_plan: typeof schema.activityPlans.$inferSelect | null;
   activity_route: typeof schema.activityRoutes.$inferSelect | null;
+  planned_session: typeof schema.plannedSessions.$inferSelect | null;
   all_day: boolean | null;
   created_at: Date;
   description: string | null;
@@ -126,7 +130,40 @@ function serializeEventRow(row: {
   training_plan_id: string | null;
   updated_at: Date;
 }) {
-  const { activity_route: _activityRoute, ...event } = row;
+  const { activity_route: _activityRoute, planned_session: plannedSessionRow, ...event } = row;
+  const plannedSessionRecord = plannedSessionRow ? mapPlannedSessionRow(plannedSessionRow) : null;
+  const plannedSession = plannedSessionRecord
+    ? {
+        id: plannedSessionRecord.id,
+        sessionRevision: plannedSessionRecord.sessionRevision,
+        planningDate: plannedSessionRecord.planningDate,
+        source: plannedSessionRecord.source,
+        prescription: plannedSessionRecord.prescription,
+        lifecycle: plannedSessionRecord.lifecycle,
+      }
+    : null;
+  const activityPlan =
+    row.activity_plan && plannedSession
+      ? {
+          ...row.activity_plan,
+          name: row.title ?? row.activity_plan.name,
+          description: row.description ?? row.activity_plan.description,
+          revision: plannedSession.prescription.activityPlanRevision,
+          structure: activityPlanDocumentSchema.parse({
+            contractVersion: 1,
+            defaultVariantId: plannedSession.prescription.variantId,
+            variants: [
+              {
+                id: plannedSession.prescription.variantId,
+                name: plannedSession.prescription.variantName,
+                structure: plannedSession.prescription.structure,
+              },
+            ],
+          }),
+          structure_hash: plannedSession.prescription.structureHash,
+          updated_at: new Date(plannedSession.prescription.capturedAt),
+        }
+      : row.activity_plan;
   return {
     ...event,
     all_day: requireCurrentEventField(row.all_day, "all_day"),
@@ -145,7 +182,8 @@ function serializeEventRow(row: {
     ends_at: row.ends_at?.toISOString() ?? null,
     original_starts_at: row.original_starts_at?.toISOString() ?? null,
     updated_at: row.updated_at.toISOString(),
-    activity_plan: serializeActivityPlanRow(row.activity_plan),
+    activity_plan: serializeActivityPlanRow(activityPlan),
+    planned_session: plannedSession,
     route: serializeActivityRouteRow(row.activity_route),
   };
 }
@@ -181,6 +219,7 @@ function serializeGroupEventAsEffectivePlanEvent(
     activity_plan_id: accessibleActivityPlanId,
     route_id: null,
     training_plan_id: null,
+    planned_session_id: null,
     recurrence_rule: null,
     recurrence_timezone: null,
     series_id: row.series_id,
@@ -195,6 +234,8 @@ function serializeGroupEventAsEffectivePlanEvent(
     original_starts_at: null,
     scheduled_date: getCalendarDateInIanaZone(row.starts_at.toISOString(), planningTimezone),
     activity_plan: serializeActivityPlanRow(row.activity_plan),
+    planned_session: null,
+    route: null,
   };
 }
 
@@ -209,6 +250,7 @@ const eventColumns = {
   activity_plan_id: schema.events.activity_plan_id,
   route_id: schema.events.route_id,
   training_plan_id: schema.events.training_plan_id,
+  planned_session_id: schema.events.planned_session_id,
   recurrence_rule: schema.events.recurrence_rule,
   recurrence_timezone: schema.events.recurrence_timezone,
   series_id: schema.events.series_id,
@@ -320,6 +362,7 @@ export function createEventReadRepository(
               ...eventColumns,
               activity_plan: schema.activityPlans,
               activity_route: schema.activityRoutes,
+              planned_session: schema.plannedSessions,
             })
             .from(schema.events)
             .leftJoin(
@@ -327,6 +370,10 @@ export function createEventReadRepository(
               eq(schema.events.activity_plan_id, schema.activityPlans.id),
             )
             .leftJoin(schema.activityRoutes, eq(schema.events.route_id, schema.activityRoutes.id))
+            .leftJoin(
+              schema.plannedSessions,
+              eq(schema.events.planned_session_id, schema.plannedSessions.id),
+            )
             .where(
               and(
                 eq(schema.events.profile_id, profileId),
@@ -352,6 +399,7 @@ export function createEventReadRepository(
             ...eventColumns,
             activity_plan: schema.activityPlans,
             activity_route: schema.activityRoutes,
+            planned_session: schema.plannedSessions,
           })
           .from(schema.events)
           .leftJoin(
@@ -359,6 +407,10 @@ export function createEventReadRepository(
             eq(schema.events.activity_plan_id, schema.activityPlans.id),
           )
           .leftJoin(schema.activityRoutes, eq(schema.events.route_id, schema.activityRoutes.id))
+          .leftJoin(
+            schema.plannedSessions,
+            eq(schema.events.planned_session_id, schema.plannedSessions.id),
+          )
           .where(
             and(
               eq(schema.events.profile_id, profileId),
@@ -516,10 +568,15 @@ export function createEventReadRepository(
           ...eventColumns,
           activity_plan: schema.activityPlans,
           activity_route: schema.activityRoutes,
+          planned_session: schema.plannedSessions,
         })
         .from(schema.events)
         .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
         .leftJoin(schema.activityRoutes, eq(schema.events.route_id, schema.activityRoutes.id))
+        .leftJoin(
+          schema.plannedSessions,
+          eq(schema.events.planned_session_id, schema.plannedSessions.id),
+        )
         .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
         .limit(1);
 
@@ -1044,7 +1101,7 @@ export function createEventReadRepository(
       if (input.activityCategory) {
         conditions.push(
           sql`${schema.activityPlans.structure} @> ${JSON.stringify({
-            segments: [{ activity_category: input.activityCategory }],
+            variants: [{ structure: { activity_category: input.activityCategory } }],
           })}::jsonb`,
         );
       }
@@ -1054,11 +1111,16 @@ export function createEventReadRepository(
           ...eventColumns,
           activity_plan: schema.activityPlans,
           activity_route: schema.activityRoutes,
+          planned_session: schema.plannedSessions,
         })
         .from(schema.events)
 
         .leftJoin(schema.activityPlans, eq(activityPlanId, schema.activityPlans.id))
         .leftJoin(schema.activityRoutes, eq(schema.events.route_id, schema.activityRoutes.id))
+        .leftJoin(
+          schema.plannedSessions,
+          eq(schema.events.planned_session_id, schema.plannedSessions.id),
+        )
 
         .where(and(...conditions))
         .orderBy(asc(schema.events.starts_at), asc(schema.events.id))

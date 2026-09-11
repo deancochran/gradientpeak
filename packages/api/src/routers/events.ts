@@ -1,5 +1,5 @@
 import {
-  activityPlanStructureSchema,
+  activityPlanDocumentSchema,
   type EventRecurrence,
   eventCreateSchema,
   eventMutationScopeSchema,
@@ -15,6 +15,8 @@ import {
 import {
   addDaysDateOnlyUtc,
   getCalendarDateInIanaZone,
+  type PlannedSession,
+  type PlannedSessionProjection,
   parseDateOnlyUtc,
   scheduledDateTimeToIsoInstant,
 } from "@repo/core/calendar";
@@ -150,6 +152,7 @@ type PlannedEventRecord = Omit<
     | "activity_plan_id"
     | "route_id"
     | "training_plan_id"
+    | "planned_session_id"
     | "recurrence_rule"
     | "recurrence_timezone"
     | "series_id"
@@ -172,6 +175,7 @@ type PlannedEventRecord = Omit<
   ends_at: string | null;
   original_starts_at: string | null;
   activity_plan: PublicActivityPlansRow | null;
+  planned_session: (PlannedSessionProjection & Pick<PlannedSession, "sessionRevision">) | null;
   route: {
     id: string;
     name: string;
@@ -677,7 +681,7 @@ function isEventPlanWritableForCompletion(
   return (
     activityPlanId === null ||
     (activityPlanStructure !== null &&
-      activityPlanStructureSchema.safeParse(activityPlanStructure).success)
+      activityPlanDocumentSchema.safeParse(activityPlanStructure).success)
   );
 }
 
@@ -955,17 +959,22 @@ export const eventsRouter = createTRPCRouter({
           ...event,
           activity_plan: planWithEstimation,
         };
-        const { activity_plan, ...eventFields } = projectedEvent;
+        const { activity_plan, planned_session, ...eventFields } = projectedEvent;
         return {
           ...eventFields,
           activityPlanSummary: activity_plan
             ? toActivityPlanSummary(activity_plan, ctx.session.user.id)
             : null,
+          plannedSession: planned_session,
         };
       }
 
-      const { activity_plan: _activityPlan, ...eventFields } = event;
-      return { ...eventFields, activityPlanSummary: null };
+      const {
+        activity_plan: _activityPlan,
+        planned_session: plannedSession,
+        ...eventFields
+      } = event;
+      return { ...eventFields, activityPlanSummary: null, plannedSession };
     }),
 
   getProviderSyncStatus: protectedProcedure

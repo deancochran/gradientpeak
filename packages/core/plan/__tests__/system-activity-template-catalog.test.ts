@@ -281,11 +281,13 @@ describe("system activity-template catalog", () => {
           {
             offset_days: 0,
             activity_plan_id: validTemplateId,
+            activity_plan_variant_id: validTemplateId,
             event_overrides: { title: "Resolved" },
           },
           {
             offset_days: 2,
             activity_plan_id: "00000000-0000-4000-8000-000000000099",
+            activity_plan_variant_id: "00000000-0000-4000-8000-000000000099",
             event_overrides: { title: "Missing" },
           },
         ],
@@ -302,11 +304,13 @@ describe("system activity-template catalog", () => {
           {
             offset_days: 0,
             activity_plan_id: "00000000-0000-4000-8000-000000000100",
+            activity_plan_variant_id: "00000000-0000-4000-8000-000000000100",
             event_overrides: { title: "Missing A" },
           },
           {
             offset_days: 2,
             activity_plan_id: "00000000-0000-4000-8000-000000000101",
+            activity_plan_variant_id: "00000000-0000-4000-8000-000000000101",
             event_overrides: { title: "Missing B" },
           },
         ],

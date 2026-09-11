@@ -1,7 +1,9 @@
 import {
-  activityPlanStructureSchema,
-  buildSystemActivityTemplateCatalog,
+  ActivityPlanVariantResolutionError,
+  activityPlanDocumentSchema,
+  canonicalTrainingPlanStructureSchema,
   normalizeActivityTemplateStructureForAudit,
+  resolveActivityPlanVariant,
   SYSTEM_TEMPLATES,
   type trainingPlanCreateInputSchema,
   trainingPlanCreateSchema,
@@ -13,14 +15,16 @@ import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import type { z } from "zod";
-import { logger } from "../../lib/logger";
 import type {
   LockedPlanningTemplateRow,
   PlanningTemplateRepository,
   TrainingPlanRepository,
   TrainingPlanTransactionClient,
 } from "../../repositories";
-import { activityPlanStructureHash } from "../activity-plans/structure-hash";
+import {
+  activityPlanDocumentHash,
+  activityPlanStructureHash,
+} from "../activity-plans/structure-hash";
 import { mapTrainingPlanContentIdentity } from "./trainingPlanMapping";
 
 type TrainingPlanCreateInput = z.infer<typeof trainingPlanCreateInputSchema>;
@@ -64,43 +68,41 @@ function parseTrainingPlanCreateStructureOrThrow(input: {
   });
 }
 
-export function requirePublishedLinkedActivityPlans(input: {
+export function materializeTrainingPlanActivityPlanVariants(input: {
   rows: LockedPlanningTemplateRow[];
-  structure: z.infer<typeof trainingPlanSchema>;
-}) {
+  structure: z.infer<typeof trainingPlanCreateSchema> & { id?: string };
+}): z.infer<typeof trainingPlanSchema> | z.infer<typeof canonicalTrainingPlanStructureSchema> {
   const activityPlanIds = Array.from(
     new Set(input.structure.sessions.map((session) => session.activity_plan_id)),
   );
   const catalogSignatures = new Map(
-    buildSystemActivityTemplateCatalog().flatMap((candidate) => {
-      const source = SYSTEM_TEMPLATES.find((template) => template.id === candidate.template_id);
-      const parsed = activityPlanStructureSchema.safeParse(source?.structure);
-      return parsed.success
-        ? [
-            [
-              candidate.template_id,
-              JSON.stringify(normalizeActivityTemplateStructureForAudit(parsed.data)),
-            ] as const,
-          ]
-        : [];
-    }),
+    SYSTEM_TEMPLATES.map(
+      (source) =>
+        [
+          source.id,
+          JSON.stringify(normalizeActivityTemplateStructureForAudit(source.structure)),
+        ] as const,
+    ),
   );
   const publishedIds = new Set(
     input.rows
       .filter((row) => {
-        const parsed = activityPlanStructureSchema.safeParse(row.structure);
+        const parsed = activityPlanDocumentSchema.safeParse(row.structure);
         if (
           !parsed.success ||
           typeof row.gpsRecordingEnabled !== "boolean" ||
-          activityPlanStructureHash(parsed.data) !== row.structureHash
+          activityPlanDocumentHash(parsed.data) !== row.structureHash
         ) {
           return false;
         }
         if (!row.isSystemTemplate) return true;
         const expectedSignature = catalogSignatures.get(row.id);
+        const resolved = resolveActivityPlanVariant(parsed.data);
         return (
           expectedSignature !== undefined &&
-          JSON.stringify(normalizeActivityTemplateStructureForAudit(parsed.data)) ===
+          resolved.variantId === row.id &&
+          resolved.variantName === "Base" &&
+          JSON.stringify(normalizeActivityTemplateStructureForAudit(resolved.structure)) ===
             expectedSignature
         );
       })
@@ -114,6 +116,38 @@ export function requirePublishedLinkedActivityPlans(input: {
       message: `Training plan contains missing, inaccessible, or unpublished activity plans: ${rejectedIds.join(", ")}`,
     });
   }
+
+  const rowById = new Map(input.rows.map((row) => [row.id, row]));
+  const sessions = input.structure.sessions.map((session) => {
+    const row = rowById.get(session.activity_plan_id);
+    if (!row) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Training plan contains an unavailable activity plan: ${session.activity_plan_id}`,
+      });
+    }
+    const document = activityPlanDocumentSchema.parse(row.structure);
+    try {
+      const resolved = resolveActivityPlanVariant(
+        document,
+        session.activity_plan_variant_id === undefined
+          ? undefined
+          : { variantId: session.activity_plan_variant_id },
+      );
+      return { ...session, activity_plan_variant_id: resolved.variantId };
+    } catch (error) {
+      if (!(error instanceof ActivityPlanVariantResolutionError)) throw error;
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Training plan contains an unknown activity-plan variant: ${error.variantId}`,
+        cause: error,
+      });
+    }
+  });
+  const materialized = { ...input.structure, sessions };
+  return "id" in materialized && materialized.id !== undefined
+    ? trainingPlanSchema.parse(materialized)
+    : canonicalTrainingPlanStructureSchema.parse(materialized);
 }
 
 async function insertTrainingPlan(input: {
@@ -215,51 +249,8 @@ export async function createTrainingPlanUseCase(input: {
   values: TrainingPlanCreateInput;
 }) {
   const planId = crypto.randomUUID();
-  const structureWithId = {
-    ...input.values.structure,
-    id: planId,
-  };
-
-  try {
-    trainingPlanSchema.parse(structureWithId);
-  } catch (validationError) {
-    logger.error("Training plan validation error", {
-      error:
-        validationError instanceof Error ? validationError.message : "Unknown validation error",
-    });
-
-    let errorMessage = "Invalid training plan structure";
-    const errorDetails: string[] = [];
-
-    if (validationError && typeof validationError === "object") {
-      const zodError = validationError as {
-        errors?: Array<{ path?: string[]; message?: string }>;
-        message?: string;
-      };
-      if (Array.isArray(zodError.errors)) {
-        for (const err of zodError.errors) {
-          const path = err.path ? err.path.join(".") : "unknown";
-          const message = err.message || "validation failed";
-          errorDetails.push(`${path}: ${message}`);
-        }
-
-        if (errorDetails.length > 0) {
-          errorMessage = `Training plan validation failed:\n${errorDetails.join("\n")}`;
-        }
-      } else if (zodError.message) {
-        errorMessage = zodError.message;
-      }
-    }
-
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: errorMessage,
-      cause: validationError,
-    });
-  }
-
-  const parsedStructure = parseTrainingPlanStructureOrThrow({
-    value: structureWithId,
+  const parsedStructure = parseTrainingPlanCreateStructureOrThrow({
+    value: input.values.structure,
     message: "Invalid training plan structure",
   });
   const defaultContentVisibility = await getProfileDefaultContentVisibility(
@@ -268,15 +259,19 @@ export async function createTrainingPlanUseCase(input: {
   );
   const templateIds = parsedStructure.sessions.map((session) => session.activity_plan_id);
   return input.planningTemplateRepository.withLockedPublishedTemplates(
+    input.profileId,
     templateIds,
     async ({ db, rows }) => {
-      requirePublishedLinkedActivityPlans({ rows, structure: parsedStructure });
+      const materializedStructure = materializeTrainingPlanActivityPlanVariants({
+        rows,
+        structure: { ...parsedStructure, id: planId },
+      });
       return insertTrainingPlan({
         db,
         values: {
           name: input.values.name,
           description: input.values.description ?? null,
-          structure: structureWithId,
+          structure: materializedStructure,
           profileId: input.profileId,
           contentVisibility: input.values.content_visibility ?? defaultContentVisibility,
         },
@@ -321,9 +316,7 @@ export async function updateTrainingPlanUseCase(input: {
     });
   }
 
-  const structure = submittedStructure
-    ? trainingPlanSchema.parse({ ...submittedStructure, id })
-    : undefined;
+  const structure = submittedStructure ? { ...submittedStructure, id } : undefined;
   const effectiveStructure =
     structure ??
     parseTrainingPlanStructureOrThrow({
@@ -332,9 +325,13 @@ export async function updateTrainingPlanUseCase(input: {
     });
   const templateIds = effectiveStructure.sessions.map((session) => session.activity_plan_id);
   const data = await input.planningTemplateRepository.withLockedPublishedTemplates(
+    input.profileId,
     templateIds,
     async ({ db, rows }) => {
-      requirePublishedLinkedActivityPlans({ rows, structure: effectiveStructure });
+      const materializedStructure = materializeTrainingPlanActivityPlanVariants({
+        rows,
+        structure: effectiveStructure,
+      });
       return updateOwnedTrainingPlanRow({
         db,
         id,
@@ -342,7 +339,7 @@ export async function updateTrainingPlanUseCase(input: {
         name: updates.name,
         description: updates.description,
         expectedStructureHash,
-        structure,
+        structure: structure === undefined ? undefined : materializedStructure,
         contentVisibility: content_visibility,
       });
     },
@@ -419,15 +416,19 @@ export async function duplicateTrainingPlanUseCase(input: {
   });
 
   const data = await input.planningTemplateRepository.withLockedPublishedTemplates(
+    input.profileId,
     duplicatedStructure.sessions.map((session) => session.activity_plan_id),
     async ({ db, rows }) => {
-      requirePublishedLinkedActivityPlans({ rows, structure: duplicatedStructure });
+      const materializedStructure = materializeTrainingPlanActivityPlanVariants({
+        rows,
+        structure: duplicatedStructure,
+      });
       return insertTrainingPlan({
         db,
         values: {
           name: input.newName?.trim() || `${sourcePlan.name} (Copy)`,
           description: sourcePlan.description ?? null,
-          structure: duplicatedStructure,
+          structure: materializedStructure,
           profileId: input.profileId,
           contentVisibility: "private",
         },

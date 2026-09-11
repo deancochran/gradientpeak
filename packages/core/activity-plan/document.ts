@@ -4,7 +4,7 @@ import {
   activityPlanDocumentSchema,
   activityPlanVariantIdSchema,
 } from "./document-schema";
-import type { ActivityPlanStructure } from "./structure-schema";
+import { type ActivityPlanStructure, activityPlanStructureSchema } from "./structure-schema";
 
 export const INITIAL_ACTIVITY_PLAN_VARIANT_NAME = "Base" as const;
 
@@ -101,4 +101,9 @@ export function resolveActivityPlanVariant(
  */
 export function getCanonicalActivityPlanDocumentHashInput(document: ActivityPlanDocument): string {
   return stringifyCanonicalJson(document);
+}
+
+/** Returns the portable canonical bytes-to-hash input for one executable V3 structure. */
+export function getCanonicalActivityPlanStructureHashInput(structure: unknown): string {
+  return stringifyCanonicalJson(activityPlanStructureSchema.parse(structure));
 }

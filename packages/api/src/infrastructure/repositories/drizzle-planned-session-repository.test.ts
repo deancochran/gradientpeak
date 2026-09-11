@@ -1,5 +1,8 @@
 import { activityPlanStructureSchema } from "@repo/core/activity-plan";
-import { plannedSessionIdempotencyKey } from "@repo/core/calendar";
+import {
+  PLANNED_SESSION_CONTRACT_VERSION,
+  plannedSessionIdempotencyKey,
+} from "@repo/core/calendar";
 import type { PlannedSessionRow } from "@repo/db";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
@@ -41,7 +44,7 @@ const prescriptionStructure = activityPlanStructureSchema.parse({
 const row = {
   id: "11111111-1111-4111-8111-111111111111",
   profile_id: "22222222-2222-4222-8222-222222222222",
-  contract_version: "planned-session-v1",
+  contract_version: PLANNED_SESSION_CONTRACT_VERSION,
   session_revision: 3,
   planning_date: "2026-08-03",
   original_target_date: "2026-08-01",
@@ -56,6 +59,9 @@ const row = {
   group_event_id: null,
   activity_plan_id: "33333333-3333-4333-8333-333333333333",
   activity_plan_revision: 1,
+  activity_plan_variant_id: "33333333-3333-4333-8333-333333333333",
+  activity_plan_variant_name: "Base",
+  prescription_structure_hash: `v1:sha256:${"0".repeat(64)}`,
   prescription_structure: prescriptionStructure,
   prescription_quantification: null,
   prescription_captured_at: linkedAt,
@@ -79,6 +85,10 @@ describe("planned-session Drizzle mapper", () => {
       planningDate: "2026-08-03",
       originalTargetDate: "2026-08-01",
       source: { kind: "direct", operationId: row.direct_operation_id },
+      prescription: {
+        variantId: row.activity_plan_variant_id,
+        variantName: row.activity_plan_variant_name,
+      },
       lifecycle: {
         status: "completed",
         completion: {
@@ -122,6 +132,20 @@ describe("planned-session Drizzle mapper", () => {
         },
       }),
     ).toBe(true);
+  });
+
+  it("rejects a direct-operation replay selecting a different variant", () => {
+    const existing = mapPlannedSessionRow(row);
+    expect(
+      immutableSessionMatches(existing, {
+        ...existing,
+        prescription: {
+          ...existing.prescription,
+          variantId: "77777777-7777-4777-8777-777777777777",
+          variantName: "Build",
+        },
+      }),
+    ).toBe(false);
   });
 
   it("converges only current no-ops and exact one-revision group-event retries", () => {

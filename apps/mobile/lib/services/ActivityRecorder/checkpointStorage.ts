@@ -1,12 +1,16 @@
 import {
   ACTIVITY_PLAN_COMPILER_VERSION,
-  activityPlanStructureSchema,
   athletePerformanceTargetFactsSchema,
   canonicalActivityCategorySchema,
   compileActivityPlan,
   recordingCheckpointSchema,
+  recordingPlanExecutionSnapshotSchema,
 } from "@repo/core";
 import { z } from "zod";
+import {
+  assertRecordingPlanExecutionStructureHashes,
+  hashRecordingPlan,
+} from "@/lib/recording/structureHash";
 import {
   claimRecordingEvidenceCheckpoint,
   clearRecordingEvidenceCheckpoint,
@@ -75,6 +79,7 @@ const plannedRecordingCheckpointSchema = z
     ...recordingCheckpointSchema.shape,
     schemaVersion: z.literal(MOBILE_RECORDING_CHECKPOINT_SCHEMA_VERSION),
     variant: z.literal("planned"),
+    planExecution: recordingPlanExecutionSnapshotSchema.optional(),
   })
   .strict()
   .superRefine((checkpoint, context) => {
@@ -83,6 +88,16 @@ const plannedRecordingCheckpointSchema = z
         code: z.ZodIssueCode.custom,
         message: "Checkpoint performance targets cannot be observed after session start",
         path: ["performanceTargets", "asOf"],
+      });
+    }
+    if (
+      checkpoint.planExecution &&
+      JSON.stringify(checkpoint.planExecution.structure) !== JSON.stringify(checkpoint.planSnapshot)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Checkpoint execution provenance must match its recoverable plan snapshot",
+        path: ["planExecution", "structure"],
       });
     }
   });
@@ -94,22 +109,7 @@ export type ActivityRecorderCheckpoint = z.infer<typeof activityRecorderCheckpoi
 export type PlannedRecordingCheckpoint = z.infer<typeof plannedRecordingCheckpointSchema>;
 export type UnplannedRecordingCheckpoint = z.infer<typeof unplannedRecordingCheckpointSchema>;
 
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalJson(nested)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
-export async function hashRecordingPlan(planSnapshot: unknown): Promise<string> {
-  const parsed = activityPlanStructureSchema.parse(planSnapshot);
-  const { CryptoDigestAlgorithm, digestStringAsync } = await import("expo-crypto");
-  return digestStringAsync(CryptoDigestAlgorithm.SHA256, canonicalJson(parsed));
-}
+export { assertRecordingPlanExecutionStructureHashes, hashRecordingPlan };
 
 async function quarantineRecoveredEvidence(
   sessionId: string,
@@ -221,6 +221,7 @@ async function parseAndValidateCheckpoint(
   if ((await hashRecordingPlan(checkpoint.planSnapshot)) !== checkpoint.planHash) {
     throw new Error("Checkpoint plan hash does not match its snapshot");
   }
+  await assertRecordingPlanExecutionStructureHashes(checkpoint.planExecution);
   assertRecoveryJournal(checkpoint);
   return checkpoint;
 }
@@ -243,6 +244,9 @@ export async function persistRecordingCheckpoint(
   checkpoint: ActivityRecorderCheckpoint,
 ): Promise<void> {
   const parsed = activityRecorderCheckpointSchema.parse(checkpoint);
+  if (parsed.variant === "planned") {
+    await assertRecordingPlanExecutionStructureHashes(parsed.planExecution);
+  }
   const existing = await readRecordingEvidenceCheckpoint(parsed.profileId);
   if (existing?.sessionId === parsed.sessionId) {
     try {

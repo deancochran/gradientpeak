@@ -1,4 +1,4 @@
-import { activityPlanStructureSchema } from "@repo/core";
+import { activityPlanStructureSchema, initializeActivityPlanDocument } from "@repo/core";
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { describe, expect, it } from "vitest";
 
@@ -168,7 +168,7 @@ describe("publicShareRouter", () => {
         name: "Public brick",
         description: null,
         notes: "Private instruction: hold RPE 8 for 20 minutes",
-        structure,
+        structure: initializeActivityPlanDocument({ activityPlanId: id, structure }),
         structure_hash: `v1:sha256:${"a".repeat(64)}`,
         gps_recording_enabled: true,
         content_visibility: "public",
@@ -227,6 +227,8 @@ describe("publicShareRouter", () => {
     });
     expect(Object.keys(activityPlan ?? {}).sort()).toEqual([
       "activity_category",
+      "defaultVariantId",
+      "defaultVariantName",
       "description",
       "id",
       "is_system_template",
@@ -236,6 +238,8 @@ describe("publicShareRouter", () => {
       "structure",
       "structure_summary",
       "structure_version",
+      "variantCount",
+      "variants",
     ]);
     expect(activityPlan).not.toHaveProperty("structure_hash");
     expect(activityPlan).not.toHaveProperty("gps_recording_enabled");
@@ -315,7 +319,13 @@ describe("publicShareRouter", () => {
     const structure = {
       id,
       version: 1 as const,
-      sessions: [{ activity_plan_id: secretActivityPlanId, offset_days: 0 }],
+      sessions: [
+        {
+          activity_plan_id: secretActivityPlanId,
+          activity_plan_variant_id: secretActivityPlanId,
+          offset_days: 0,
+        },
+      ],
       goal_blueprints: [
         {
           title: "Private race objective",

@@ -1,4 +1,4 @@
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import { activityPlanDocumentSchema, resolveActivityPlanVariant } from "@repo/core/activity-plan";
 import type { ActivityPlanPrescriptionQuantificationBundle } from "@repo/core/activity-quantification";
 import type { CommonLoadAggregate, CommonLoadResult } from "@repo/core/load";
 import {
@@ -95,9 +95,9 @@ function clampDateOnOrAfter(value: string, minimum: string) {
 function readCanonicalPlanActivityCategory(
   plan: ActivityPlanLike,
 ): CanonicalActivityCategory | null {
-  const parsed = activityPlanStructureSchema.safeParse(plan.structure);
+  const parsed = activityPlanDocumentSchema.safeParse(plan.structure);
   if (!parsed.success) return null;
-  return parsed.data.activity_category;
+  return resolveActivityPlanVariant(parsed.data).structure.activity_category;
 }
 
 export function buildScheduleGapActivityPlanMatches(input: {

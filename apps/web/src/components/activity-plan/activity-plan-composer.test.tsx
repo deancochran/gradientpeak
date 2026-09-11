@@ -75,28 +75,38 @@ describe("ActivityPlanComposer", () => {
         initial={{
           name: "Route activity",
           structure: {
-            version: 3,
-            segments: [
+            contractVersion: 1,
+            defaultVariantId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            variants: [
               {
-                id: "11111111-1111-4111-8111-111111111111",
-                role: "activity",
-                activity_category: "run",
-                name: "Run",
-                intervals: [
-                  {
-                    id: "22222222-2222-4222-8222-222222222222",
-                    name: "Main set",
-                    repetitions: 1,
-                    steps: [
-                      {
-                        id: "33333333-3333-4333-8333-333333333333",
-                        name: "Steady",
-                        duration: { type: "time", seconds: 600 },
-                        targets: [{ type: "RPE", intensity: 5 }],
-                      },
-                    ],
-                  },
-                ],
+                id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                name: "Base",
+                structure: {
+                  version: 3,
+                  activity_category: "run",
+                  segments: [
+                    {
+                      id: "11111111-1111-4111-8111-111111111111",
+                      role: "activity",
+                      name: "Run",
+                      intervals: [
+                        {
+                          id: "22222222-2222-4222-8222-222222222222",
+                          name: "Main set",
+                          repetitions: 1,
+                          steps: [
+                            {
+                              id: "33333333-3333-4333-8333-333333333333",
+                              name: "Steady",
+                              duration: { type: "time", seconds: 600 },
+                              targets: [{ type: "RPE", intensity: 5 }],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
               },
             ],
           },
@@ -108,6 +118,107 @@ describe("ActivityPlanComposer", () => {
     );
 
     expect(screen.queryByLabelText("Route")).toBeNull();
+  });
+
+  it("edits and saves the complete variant document without dropping unselected variants", async () => {
+    const onSave = vi.fn();
+    const baseStructure = {
+      version: 3 as const,
+      activity_category: "run" as const,
+      segments: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          role: "activity" as const,
+          name: "Run",
+          intervals: [
+            {
+              id: "22222222-2222-4222-8222-222222222222",
+              name: "Main set",
+              repetitions: 1,
+              steps: [
+                {
+                  id: "33333333-3333-4333-8333-333333333333",
+                  name: "Steady",
+                  duration: { type: "time" as const, seconds: 600 },
+                  targets: [{ type: "RPE" as const, intensity: 5 }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const baseSegment = baseStructure.segments[0];
+    const baseInterval = baseSegment?.intervals[0];
+    const baseStep = baseInterval?.steps[0];
+    if (!baseSegment || !baseInterval || !baseStep) throw new Error("Missing Base structure");
+    render(
+      <ActivityPlanComposer
+        initial={{
+          name: "Progression run",
+          structure: {
+            contractVersion: 1,
+            defaultVariantId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            variants: [
+              {
+                id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                name: "Base",
+                structure: baseStructure,
+              },
+              {
+                id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                name: "Build",
+                structure: {
+                  ...baseStructure,
+                  segments: [
+                    {
+                      ...baseSegment,
+                      id: "44444444-4444-4444-8444-444444444444",
+                      intervals: [
+                        {
+                          ...baseInterval,
+                          id: "55555555-5555-4555-8555-555555555555",
+                          steps: [
+                            {
+                              ...baseStep,
+                              id: "66666666-6666-4666-8666-666666666666",
+                              name: "Long tempo",
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        }}
+        initialVariantId="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        mode="edit"
+        onCancel={vi.fn()}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Variant name"), { target: { value: "Advanced" } });
+    fireEvent.change(screen.getByLabelText("Step 1"), { target: { value: "Threshold" } });
+    fireEvent.click(screen.getByRole("button", { name: "Set as default" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0]?.[0].structure).toMatchObject({
+      contractVersion: 1,
+      defaultVariantId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      variants: [
+        { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Base" },
+        {
+          id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          name: "Advanced",
+          structure: { segments: [{ intervals: [{ steps: [{ name: "Threshold" }] }] }] },
+        },
+      ],
+    });
   });
 
   it("prevents submission after removing the required structure", () => {

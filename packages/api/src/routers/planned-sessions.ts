@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { ActivityPlanVariantResolutionError } from "@repo/core/activity-plan";
 import { TRPCError } from "@trpc/server";
 import { cancelPlannedSession } from "../application/calendar/cancel-planned-session";
 import { createDirectPlannedSession } from "../application/calendar/create-direct-planned-session";
@@ -29,7 +30,7 @@ import {
   toPlannedSessionDto,
 } from "../contracts/planned-sessions";
 import { getRequiredDb } from "../db";
-import { createDrizzlePlannedSessionRepository } from "../infrastructure/repositories";
+import { createDrizzlePlannedSessionRepository } from "../infrastructure/repositories/drizzle-planned-session-repository";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 type PlannedSessionRouterDependencies = {
@@ -55,6 +56,13 @@ function mapPlannedSessionError(error: unknown): never {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Planned session access denied",
+      cause: error,
+    });
+  }
+  if (error instanceof ActivityPlanVariantResolutionError) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Unknown activity plan variant",
       cause: error,
     });
   }
@@ -111,6 +119,9 @@ export function createPlannedSessionsRouter(
             sessionId: services.createId(),
             groupEventId: input.session.groupEventId ?? null,
             activityPlanId: input.session.activityPlanId,
+            ...(input.session.variantId === undefined
+              ? {}
+              : { variantId: input.session.variantId }),
             capturedAt: services.now(),
           });
           return receipt(result.status, toPlannedSessionDto(result.session));

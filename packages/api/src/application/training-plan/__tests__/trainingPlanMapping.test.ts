@@ -98,10 +98,12 @@ describe("training plan response mapping", () => {
           {
             offset_days: 0,
             activity_plan_id: "11111111-1111-4111-8111-111111111111",
+            activity_plan_variant_id: "11111111-1111-4111-8111-111111111111",
           },
           {
             offset_days: 8,
             activity_plan_id: "22222222-2222-4222-8222-222222222222",
+            activity_plan_variant_id: "22222222-2222-4222-8222-222222222222",
           },
         ],
       },

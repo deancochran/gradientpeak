@@ -1,5 +1,5 @@
 import { canonicalActivityCategorySchema } from "@repo/core";
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import { activityPlanDocumentSchema, resolveActivityPlanVariant } from "@repo/core/activity-plan";
 import { z } from "zod";
 
 export class InvalidStoredActivityPlanError extends Error {
@@ -21,12 +21,13 @@ export type ActivityPlanExecutionDto = z.infer<typeof activityPlanExecutionDtoSc
 export function toActivityPlanExecutionDto<T extends { structure: unknown }>(
   plan: T,
 ): T & ActivityPlanExecutionDto {
-  const parsed = activityPlanStructureSchema.safeParse(plan.structure);
+  const parsed = activityPlanDocumentSchema.safeParse(plan.structure);
   if (!parsed.success) {
     throw new InvalidStoredActivityPlanError();
   }
+  const resolved = resolveActivityPlanVariant(parsed.data);
   const execution = activityPlanExecutionDtoSchema.parse({
-    activity_category: parsed.data.activity_category,
+    activity_category: resolved.structure.activity_category,
   });
 
   return {

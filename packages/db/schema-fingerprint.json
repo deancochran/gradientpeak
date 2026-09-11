@@ -4535,6 +4535,16 @@
       "generated": ""
     },
     {
+      "name": "planned_session_id",
+      "type": "uuid",
+      "table": "events",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 25,
+      "generated": ""
+    },
+    {
       "name": "follower_id",
       "type": "uuid",
       "table": "follows",
@@ -6168,7 +6178,7 @@
       "name": "contract_version",
       "type": "text",
       "table": "planned_sessions",
-      "default": "'planned-session-v1'::text",
+      "default": "'planned-session-v2'::text",
       "notNull": true,
       "identity": "",
       "position": 3,
@@ -6432,6 +6442,36 @@
       "notNull": true,
       "identity": "",
       "position": 29,
+      "generated": ""
+    },
+    {
+      "name": "activity_plan_variant_id",
+      "type": "uuid",
+      "table": "planned_sessions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 30,
+      "generated": ""
+    },
+    {
+      "name": "activity_plan_variant_name",
+      "type": "text",
+      "table": "planned_sessions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 31,
+      "generated": ""
+    },
+    {
+      "name": "prescription_structure_hash",
+      "type": "text",
+      "table": "planned_sessions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 32,
       "generated": ""
     },
     {
@@ -9132,9 +9172,9 @@
       "definition": "CREATE INDEX idx_activity_plans_profile_id ON public.activity_plans USING btree (profile_id) WHERE (profile_id IS NOT NULL)"
     },
     {
-      "name": "idx_activity_plans_structure_categories",
+      "name": "idx_activity_plans_structure_category",
       "table": "activity_plans",
-      "definition": "CREATE INDEX idx_activity_plans_structure_categories ON public.activity_plans USING gin (structure jsonb_path_ops)"
+      "definition": "CREATE INDEX idx_activity_plans_structure_category ON public.activity_plans USING btree (((structure #>> '{variants,0,structure,activity_category}'::text[])))"
     },
     {
       "name": "idx_activity_plans_system_templates",
@@ -9510,6 +9550,11 @@
       "name": "events_pkey",
       "table": "events",
       "definition": "CREATE UNIQUE INDEX events_pkey ON public.events USING btree (id)"
+    },
+    {
+      "name": "events_planned_session_unique",
+      "table": "events",
+      "definition": "CREATE UNIQUE INDEX events_planned_session_unique ON public.events USING btree (planned_session_id) WHERE (planned_session_id IS NOT NULL)"
     },
     {
       "name": "idx_events_activity_plan_id",
@@ -9940,6 +9985,11 @@
       "name": "planned_sessions_completed_activity_idx",
       "table": "planned_sessions",
       "definition": "CREATE INDEX planned_sessions_completed_activity_idx ON public.planned_sessions USING btree (completed_activity_id) WHERE (completed_activity_id IS NOT NULL)"
+    },
+    {
+      "name": "planned_sessions_id_profile_activity_plan_unique",
+      "table": "planned_sessions",
+      "definition": "CREATE UNIQUE INDEX planned_sessions_id_profile_activity_plan_unique ON public.planned_sessions USING btree (id, profile_id, activity_plan_id)"
     },
     {
       "name": "planned_sessions_id_profile_unique",
@@ -10596,6 +10646,15 @@
       "definition": "CREATE OR REPLACE FUNCTION public.activity_parent_segment_set_constraint_trigger()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nbegin\n  perform public.validate_activity_segment_set(new.id);\n  return null;\nend $function$\n",
       "volatility": "v",
       "securityDefiner": true
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog"],
+      "identity": "activity_plan_document_is_canonical(jsonb)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_document_is_canonical(input jsonb)\n RETURNS boolean\n LANGUAGE plpgsql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  variant_value jsonb;\n  variant_id text;\n  variant_name text;\n  default_variant_id text;\n  activity_category text;\n  seen_ids text[] := '{}'::text[];\n  seen_names text[] := '{}'::text[];\n  default_matches integer := 0;\nBEGIN\n  IF input IS NULL\n    OR pg_catalog.jsonb_typeof(input) <> 'object'\n    OR NOT public.activity_plan_jsonb_has_exact_keys(\n      input,\n      ARRAY['contractVersion', 'defaultVariantId', 'variants']\n    )\n    OR input -> 'contractVersion' <> '1'::jsonb\n    OR NOT public.activity_plan_jsonb_is_uuid(input -> 'defaultVariantId')\n    OR input ->> 'defaultVariantId' <> pg_catalog.lower(input ->> 'defaultVariantId')\n    OR input ->> 'defaultVariantId' = '00000000-0000-0000-0000-000000000000'\n    OR pg_catalog.jsonb_typeof(input -> 'variants') <> 'array'\n    OR pg_catalog.jsonb_array_length(input -> 'variants') NOT BETWEEN 1 AND 16\n  THEN\n    RETURN false;\n  END IF;\n\n  default_variant_id := input ->> 'defaultVariantId';\n\n  FOR variant_value IN\n    SELECT value FROM pg_catalog.jsonb_array_elements(input -> 'variants')\n  LOOP\n    IF NOT public.activity_plan_jsonb_has_exact_keys(\n      variant_value,\n      ARRAY['id', 'name', 'structure']\n    )\n      OR NOT public.activity_plan_jsonb_is_uuid(variant_value -> 'id')\n      OR variant_value ->> 'id' <> pg_catalog.lower(variant_value ->> 'id')\n      OR variant_value ->> 'id' = '00000000-0000-0000-0000-000000000000'\n      OR NOT public.activity_plan_jsonb_is_string(variant_value -> 'name', 1, 100)\n      OR variant_value ->> 'name' <> pg_catalog.btrim(\n        variant_value ->> 'name',\n        U&'\\0009\\000A\\000B\\000C\\000D\\0020\\00A0\\1680\\2000\\2001\\2002\\2003\\2004\\2005\\2006\\2007\\2008\\2009\\200A\\2028\\2029\\202F\\205F\\3000\\FEFF'\n      )\n      OR NOT public.activity_plan_structure_is_canonical(variant_value -> 'structure')\n    THEN\n      RETURN false;\n    END IF;\n\n    variant_id := variant_value ->> 'id';\n    variant_name := pg_catalog.lower(variant_value ->> 'name');\n\n    IF variant_id = ANY(seen_ids) OR variant_name = ANY(seen_names) THEN\n      RETURN false;\n    END IF;\n\n    seen_ids := pg_catalog.array_append(seen_ids, variant_id);\n    seen_names := pg_catalog.array_append(seen_names, variant_name);\n\n    IF activity_category IS NULL THEN\n      activity_category := variant_value -> 'structure' ->> 'activity_category';\n    ELSIF activity_category <> variant_value -> 'structure' ->> 'activity_category' THEN\n      RETURN false;\n    END IF;\n\n    IF variant_id = default_variant_id THEN\n      default_matches := default_matches + 1;\n    END IF;\n  END LOOP;\n\n  RETURN default_matches = 1;\nEND\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
     },
     {
       "acl": "",
@@ -11744,7 +11803,14 @@
       "name": "activity_plans_structure_canonical_check",
       "table": "activity_plans",
       "validated": true,
-      "definition": "CHECK (activity_plan_structure_is_canonical(structure))"
+      "definition": "CHECK (activity_plan_document_is_canonical(structure))"
+    },
+    {
+      "kind": "c",
+      "name": "activity_plans_structure_document_v1_check",
+      "table": "activity_plans",
+      "validated": true,
+      "definition": "CHECK (jsonb_typeof(structure) = 'object'::text AND (structure -> 'contractVersion'::text) = '1'::jsonb AND jsonb_typeof(structure -> 'defaultVariantId'::text) = 'string'::text AND jsonb_typeof(structure -> 'variants'::text) = 'array'::text AND jsonb_array_length(structure -> 'variants'::text) >= 1 AND jsonb_array_length(structure -> 'variants'::text) <= 16 AND pg_column_size(structure) <= 1048576)"
     },
     {
       "kind": "c",
@@ -11752,13 +11818,6 @@
       "table": "activity_plans",
       "validated": true,
       "definition": "CHECK (structure_hash ~ '^v1:sha256:[0-9a-f]{64}$'::text)"
-    },
-    {
-      "kind": "c",
-      "name": "activity_plans_structure_v3_check",
-      "table": "activity_plans",
-      "validated": true,
-      "definition": "CHECK (jsonb_typeof(structure) = 'object'::text AND (structure ->> 'version'::text) = '3'::text AND ((structure ->> 'activity_category'::text) = ANY (ARRAY['run'::text, 'bike'::text, 'swim'::text, 'strength'::text, 'other'::text])) AND jsonb_typeof(structure -> 'segments'::text) = 'array'::text AND jsonb_array_length(structure -> 'segments'::text) >= 1 AND jsonb_array_length(structure -> 'segments'::text) <= 64 AND pg_column_size(structure) <= 1048576)"
     },
     {
       "kind": "c",
@@ -12636,6 +12695,20 @@
       "definition": "PRIMARY KEY (id)"
     },
     {
+      "kind": "c",
+      "name": "events_planned_session_kind_check",
+      "table": "events",
+      "validated": true,
+      "definition": "CHECK (planned_session_id IS NULL OR event_type = 'planned'::event_type AND activity_plan_id IS NOT NULL)"
+    },
+    {
+      "kind": "f",
+      "name": "events_planned_session_owner_fkey",
+      "table": "events",
+      "validated": true,
+      "definition": "FOREIGN KEY (planned_session_id, profile_id, activity_plan_id) REFERENCES planned_sessions(id, profile_id, activity_plan_id) ON DELETE RESTRICT"
+    },
+    {
       "kind": "f",
       "name": "events_profile_id_profiles_id_fk",
       "table": "events",
@@ -12711,6 +12784,13 @@
       "table": "events",
       "validated": true,
       "definition": "FOREIGN KEY (training_plan_id) REFERENCES training_plans(id) ON DELETE SET NULL"
+    },
+    {
+      "kind": "c",
+      "name": "events_training_plan_session_check",
+      "table": "events",
+      "validated": true,
+      "definition": "CHECK (training_plan_id IS NULL OR planned_session_id IS NOT NULL)"
     },
     {
       "kind": "p",
@@ -13434,11 +13514,25 @@
       "definition": "FOREIGN KEY (completed_activity_id, profile_id) REFERENCES activities(id, profile_id) ON DELETE RESTRICT"
     },
     {
+      "kind": "c",
+      "name": "planned_sessions_contract_version_check",
+      "table": "planned_sessions",
+      "validated": true,
+      "definition": "CHECK (contract_version = 'planned-session-v2'::text)"
+    },
+    {
       "kind": "f",
       "name": "planned_sessions_group_event_fkey",
       "table": "planned_sessions",
       "validated": true,
       "definition": "FOREIGN KEY (group_event_id) REFERENCES group_events(id) ON DELETE SET NULL"
+    },
+    {
+      "kind": "u",
+      "name": "planned_sessions_id_profile_activity_plan_unique",
+      "table": "planned_sessions",
+      "validated": true,
+      "definition": "UNIQUE (id, profile_id, activity_plan_id)"
     },
     {
       "kind": "u",
@@ -13473,7 +13567,7 @@
       "name": "planned_sessions_prescription_check",
       "table": "planned_sessions",
       "validated": true,
-      "definition": "CHECK (activity_plan_revision > 0 AND jsonb_typeof(prescription_structure) = 'object'::text AND pg_column_size(prescription_structure) <= 1048576 AND (prescription_quantification IS NULL OR jsonb_typeof(prescription_quantification) = 'object'::text AND pg_column_size(prescription_quantification) <= 262144))"
+      "definition": "CHECK (activity_plan_revision > 0 AND jsonb_typeof(prescription_structure) = 'object'::text AND pg_column_size(prescription_structure) <= 1048576 AND prescription_structure_hash ~ '^v1:sha256:[0-9a-f]{64}$'::text AND (prescription_quantification IS NULL OR jsonb_typeof(prescription_quantification) = 'object'::text AND pg_column_size(prescription_quantification) <= 262144))"
     },
     {
       "kind": "f",
@@ -13523,6 +13617,13 @@
       "table": "planned_sessions",
       "validated": true,
       "definition": "FOREIGN KEY (training_plan_id) REFERENCES training_plans(id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "planned_sessions_variant_provenance_check",
+      "table": "planned_sessions",
+      "validated": true,
+      "definition": "CHECK (activity_plan_variant_id <> '00000000-0000-0000-0000-000000000000'::uuid AND activity_plan_variant_name = btrim(activity_plan_variant_name, '\t\n\u000b\f\r                  　﻿'::text) AND char_length(activity_plan_variant_name) >= 1 AND char_length(activity_plan_variant_name) <= 100)"
     },
     {
       "kind": "c",

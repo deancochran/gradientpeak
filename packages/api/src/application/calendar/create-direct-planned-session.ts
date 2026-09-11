@@ -7,6 +7,7 @@ import {
 import type { DrizzleQueryExecutor } from "../../db";
 import type { PlannedSessionRepositoryPort } from "../../repositories/planned-session-repository-port";
 import { estimateActivityPlan } from "../activity-plans/estimate-activity-plans";
+import { activityPlanStructureHash } from "../activity-plans/structure-hash";
 import { createPlannedSession } from "./create-planned-session";
 import { PlannedSessionAccessError } from "./planned-session-errors";
 
@@ -21,6 +22,7 @@ export async function createDirectPlannedSession(input: {
   planningDate: string;
   source: DirectPlannedSessionSource;
   activityPlanId: string;
+  variantId?: string;
   groupEventId: string | null;
   capturedAt: Date;
 }) {
@@ -50,8 +52,12 @@ export async function createDirectPlannedSession(input: {
     },
     input.db,
     input.profileId,
-    { asOf: input.capturedAt },
+    {
+      asOf: input.capturedAt,
+      ...(input.variantId === undefined ? {} : { variantId: input.variantId }),
+    },
   );
+  const selectedVariant = estimated.resolvedActivityPlanVariant;
   const session = plannedSessionSchema.parse({
     contractVersion: PLANNED_SESSION_CONTRACT_VERSION,
     id: input.sessionId,
@@ -65,7 +71,10 @@ export async function createDirectPlannedSession(input: {
     prescription: {
       activityPlanId: plan.id,
       activityPlanRevision: plan.revision,
-      structure: plan.structure,
+      variantId: selectedVariant.variantId,
+      variantName: selectedVariant.variantName,
+      structure: selectedVariant.structure,
+      structureHash: activityPlanStructureHash(selectedVariant.structure),
       prescriptionQuantification: estimated.prescriptionQuantification,
       capturedAt: input.capturedAt.toISOString(),
     },

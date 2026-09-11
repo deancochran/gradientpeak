@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { initializeActivityPlanDocument } from "@repo/core/activity-plan";
 import { db, pool } from "@repo/db/client";
 import {
   activities,
@@ -102,7 +103,10 @@ async function seedPublicShareEntities(): Promise<SeedState> {
       id: publicActivityPlanId,
       profile_id: profileId,
       name: "Public Activity Plan",
-      structure: activityPlanStructure,
+      structure: initializeActivityPlanDocument({
+        activityPlanId: publicActivityPlanId,
+        structure: activityPlanStructure,
+      }),
       structure_hash: structureHash,
       content_visibility: "public",
       created_at: createdAt,
@@ -112,7 +116,10 @@ async function seedPublicShareEntities(): Promise<SeedState> {
       id: privateActivityPlanId,
       profile_id: profileId,
       name: "Private Activity Plan",
-      structure: activityPlanStructure,
+      structure: initializeActivityPlanDocument({
+        activityPlanId: privateActivityPlanId,
+        structure: activityPlanStructure,
+      }),
       structure_hash: structureHash,
       content_visibility: "private",
       created_at: createdAt,

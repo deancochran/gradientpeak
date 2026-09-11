@@ -1,5 +1,8 @@
-import type { AthletePerformanceTargetFacts } from "@repo/core";
-import { activityPlanStructureSchema } from "@repo/core";
+import {
+  type AthletePerformanceTargetFacts,
+  activityPlanDocumentSchema,
+  resolveActivityPlanVariant,
+} from "@repo/core";
 import type { DrizzleDbClient } from "@repo/db";
 import type { DrizzleTransactionClient } from "../../../db";
 import { hasWahooPlannedActivityScopes } from "../../integrations/wahoo/planned-activity-scopes";
@@ -77,10 +80,11 @@ export async function enqueueWahooRelativeTargetRefreshes(input: {
     candidateCount += events.length;
 
     for (const event of events) {
-      const structure = activityPlanStructureSchema.safeParse(event.activityPlan.structure);
-      if (!structure.success) continue;
+      const document = activityPlanDocumentSchema.safeParse(event.activityPlan.structure);
+      if (!document.success) continue;
+      const resolved = resolveActivityPlanVariant(document.data);
       const projectionInput = {
-        activityPlan: { ...event.activityPlan, structure: structure.data },
+        activityPlan: { ...event.activityPlan, structure: resolved.structure },
         eventId: event.eventId,
         startsAt: event.startsAt,
         timezone: event.timezone,

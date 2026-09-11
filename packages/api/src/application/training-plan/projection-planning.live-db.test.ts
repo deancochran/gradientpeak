@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 
 import { DRAFT_PLAN_PROJECTION_ALGORITHM_VERSION, trainingPlanSchema } from "@repo/core";
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import {
+  activityPlanStructureSchema,
+  initializeActivityPlanDocument,
+} from "@repo/core/activity-plan";
 import { db, pool } from "@repo/db/client";
 import {
   activities,
@@ -266,17 +269,27 @@ async function seedFixture() {
       },
     ],
   });
+  const activityDocument = initializeActivityPlanDocument({
+    activityPlanId,
+    structure: activityStructure,
+  });
   await db.insert(activityPlans).values({
     id: activityPlanId,
     profile_id: profileId,
     name: "Projected ride",
     content_visibility: "public",
-    structure: activityStructure,
-    structure_hash: activityPlanStructureHash(activityStructure),
+    structure: activityDocument,
+    structure_hash: activityPlanStructureHash(activityDocument),
   });
   const structure = {
     version: 1 as const,
-    sessions: [{ activity_plan_id: activityPlanId, offset_days: 0 }],
+    sessions: [
+      {
+        activity_plan_id: activityPlanId,
+        activity_plan_variant_id: activityPlanId,
+        offset_days: 0,
+      },
+    ],
     builder_planning_snapshot: {
       version: 1 as const,
       plan_preferences: {

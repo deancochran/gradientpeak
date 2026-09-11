@@ -238,6 +238,52 @@ describe("recording checkpoint recovery", () => {
     );
   });
 
+  it("recomputes and quarantines a forged scheduled prescription hash during recovery", async () => {
+    const value = await checkpoint();
+    if (value.variant !== "planned") throw new Error("Expected a planned checkpoint fixture");
+    const validStructureHash = `v1:sha256:${value.planHash}`;
+    const prescription = {
+      activityPlanId: "10000000-0000-4000-8000-000000000010",
+      activityPlanRevision: 2,
+      variantId: "10000000-0000-4000-8000-000000000011",
+      variantName: "Tempo",
+      structure: value.planSnapshot,
+      structureHash: `v1:sha256:${"f".repeat(64)}`,
+      prescriptionQuantification: null,
+      capturedAt: "2026-01-01T09:00:00.000Z",
+    };
+    journalMocks.row = {
+      sessionId: value.sessionId,
+      checkpointJson: JSON.stringify({
+        ...value,
+        planExecution: {
+          manifestVersion: 1,
+          compilerVersion: 1,
+          activityPlanId: prescription.activityPlanId,
+          scheduledEventId: null,
+          name: prescription.variantName,
+          description: null,
+          activityPlanRevision: prescription.activityPlanRevision,
+          structureHash: prescription.structureHash,
+          structure: value.planSnapshot,
+          plannedSession: {
+            id: "10000000-0000-4000-8000-000000000012",
+            sessionRevision: 1,
+            prescription,
+          },
+          personalizationEnabled: false,
+          targetPresentations: [],
+        },
+      }),
+    };
+
+    await expect(loadAndClaimRecordingCheckpoint("profile-1")).resolves.toMatchObject({
+      status: "quarantined",
+    });
+    expect(validStructureHash).not.toBe(prescription.structureHash);
+    expect(journalMocks.quarantineSession).toHaveBeenCalled();
+  });
+
   it("quarantines a cross-profile checkpoint", async () => {
     const value = await checkpoint();
     journalMocks.row = { sessionId: value.sessionId, checkpointJson: JSON.stringify(value) };

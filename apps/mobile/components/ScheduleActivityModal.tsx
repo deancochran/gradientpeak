@@ -61,7 +61,9 @@
  *
  */
 
-import type { ActivityPlanDetail, ActivityPlanSummary, eventCreateSchema } from "@repo/core";
+import { buildDirectPlannedSessionCreateInput } from "@repo/api/client";
+import { usePlannedSessionMutations } from "@repo/api/react";
+import type { ActivityPlanDetail, ActivityPlanSummary } from "@repo/core";
 import { THEME } from "@repo/tailwindcss/native";
 import { Button } from "@repo/ui/components/button";
 import { Form, FormDateInputField, FormTextareaField } from "@repo/ui/components/form";
@@ -69,7 +71,8 @@ import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { useEffect } from "react";
+import { randomUUID } from "expo-crypto";
+import { useEffect, useRef } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import { ActivityIndicator, View } from "react-native";
 import { z } from "zod";
@@ -77,6 +80,7 @@ import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppFormModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import { refreshScheduleWithCallbacks } from "@/lib/scheduling/refreshScheduleViews";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
 import { applyServerFormErrors, getErrorMessage } from "@/lib/utils/formErrors";
 import { isExistingEventActivityPlanEditable } from "./event/create/eventEditability";
@@ -100,6 +104,7 @@ interface ScheduleActivityModalProps {
   // Either provide activityPlanId (database ID), activityPlan (template object), or eventId (edit)
   activityPlanId?: string;
   activityPlan?: ActivityPlanSummary | ActivityPlanDetail;
+  variantId?: string;
   eventId?: string;
 
   // Optional pre-selected date
@@ -157,19 +162,6 @@ async function runMutation<TInput>(
   throw new Error("Mutation is unavailable");
 }
 
-function toScheduleCreatePayload(input: {
-  data: ScheduleActivityModalFormOutput;
-  activityPlanName: string;
-}): Extract<z.input<typeof eventCreateSchema>, { event_type: "planned" }> {
-  return {
-    activity_plan_id: input.data.activityPlanId,
-    event_type: "planned",
-    scheduled_date: input.data.scheduledDate,
-    notes: input.data.notes || undefined,
-    title: input.activityPlanName,
-  };
-}
-
 function toScheduleUpdatePayload(input: {
   data: ScheduleActivityModalFormOutput;
   eventId: string;
@@ -192,11 +184,14 @@ export function ScheduleActivityModal({
   onSuccess,
   activityPlanId,
   activityPlan,
+  variantId,
   eventId,
   preselectedDate,
 }: ScheduleActivityModalProps) {
   const { resolvedTheme } = useTheme();
   const isEditMode = !!eventId;
+  const profileId = useAuthStore((state) => state.profile?.id ?? null);
+  const operationId = useRef(randomUUID());
   const resolvedActivityPlanId = activityPlanId ?? activityPlan?.id ?? "";
   const isTemplate = !!activityPlan && !activityPlanId;
 
@@ -221,7 +216,7 @@ export function ScheduleActivityModal({
 
   // Fetch plan details (only if we have an ID, not a template)
   const { data: planDetails, isLoading: loadingPlan } = api.activityPlans.getById.useQuery(
-    { id: currentActivityPlanId },
+    { id: currentActivityPlanId, ...(variantId === undefined ? {} : { variantId }) },
     { enabled: !!currentActivityPlanId && visible && !isTemplate },
   );
 
@@ -258,9 +253,15 @@ export function ScheduleActivityModal({
 
   const queryClient = useQueryClient();
 
-  const createMutation = api.events.create.useMutation();
-
   const updateMutation = api.events.update.useMutation();
+
+  const plannedSessionMutations = usePlannedSessionMutations({
+    onConflict: async () => undefined,
+    onReceipt: async () => {
+      onClose();
+      await onSuccess?.();
+    },
+  });
 
   const handleMutationSuccess = async () => {
     await refreshScheduleWithCallbacks({
@@ -295,10 +296,10 @@ export function ScheduleActivityModal({
       return;
     }
 
-    if (!displayPlan) {
+    if (!displayPlan || !profileId) {
       setRootFormError(
         form,
-        new Error("Activity plan is unavailable"),
+        new Error("Activity plan or profile is unavailable"),
         "Failed to schedule activity.",
       );
       return;
@@ -316,14 +317,23 @@ export function ScheduleActivityModal({
 
     try {
       await runMutation(
-        createMutation,
-        toScheduleCreatePayload({
-          data,
-          activityPlanName: displayPlan.name,
-        }),
+        plannedSessionMutations.create,
+        (() => {
+          const input = buildDirectPlannedSessionCreateInput({
+            profileId,
+            planningDate: data.scheduledDate,
+            operationId: operationId.current,
+            activityPlanId: data.activityPlanId,
+          });
+          return {
+            ...input,
+            session: {
+              ...input.session,
+              ...(variantId === undefined ? {} : { variantId }),
+            },
+          };
+        })(),
       );
-
-      await handleMutationSuccess();
     } catch (error) {
       setRootFormError(form, error, "Failed to schedule activity. Please try again.");
     }
@@ -335,12 +345,13 @@ export function ScheduleActivityModal({
   });
 
   const isSubmitting =
-    submitForm.isSubmitting || createMutation.isPending || updateMutation.isPending;
+    submitForm.isSubmitting || plannedSessionMutations.create.isPending || updateMutation.isPending;
   const rootErrorMessage = form.formState?.errors.root?.message;
   const isLoading = (loadingPlan && !isTemplate) || loadingExistingActivity;
   const canSchedule =
     !isLoading &&
     displayPlan &&
+    (isEditMode || !!profileId) &&
     !!currentActivityPlanId &&
     !isSubmitting &&
     !existingPlanReadOnly &&
@@ -467,21 +478,23 @@ export function ScheduleActivityModal({
               </View>
             </Form>
 
-            <Form {...form}>
-              <FormTextareaField
-                control={form.control}
-                disabled={isSubmitting}
-                formatValue={(value) => value ?? ""}
-                label="Notes"
-                name="notes"
-                numberOfLines={5}
-                parseValue={(value) => value || null}
-                placeholder="Add any notes about this activity..."
-                description="Optional details to help you remember context when you review this activity later."
-                className="min-h-[100px]"
-                testId="schedule-notes-field"
-              />
-            </Form>
+            {isEditMode ? (
+              <Form {...form}>
+                <FormTextareaField
+                  control={form.control}
+                  disabled={isSubmitting}
+                  formatValue={(value) => value ?? ""}
+                  label="Notes"
+                  name="notes"
+                  numberOfLines={5}
+                  parseValue={(value) => value || null}
+                  placeholder="Add any notes about this activity..."
+                  description="Optional details to help you remember context when you review this activity later."
+                  className="min-h-[100px]"
+                  testId="schedule-notes-field"
+                />
+              </Form>
+            ) : null}
 
             {/* Error Messages */}
             {!currentActivityPlanId ? (

@@ -7,6 +7,7 @@ import {
   createActivityQuantificationEvidenceIdentity,
   createPlanActivityQuantificationSubjectIdentity,
   createPlanOccurrenceActivityQuantificationSubjectIdentity,
+  initializeActivityPlanDocument,
   SYSTEM_TEMPLATES,
 } from "@repo/core";
 import { describe, expect, it, vi } from "vitest";
@@ -20,7 +21,13 @@ function structureForActivityCategory(activity_category: "run" | "bike") {
     (candidate) => compileActivityPlan(candidate.structure).activity_category === activity_category,
   );
   if (!template) throw new Error(`Missing ${activity_category} system template`);
-  return template.structure;
+  return initializeActivityPlanDocument({
+    activityPlanId:
+      activity_category === "run"
+        ? "11111111-1111-4111-8111-111111111111"
+        : "22222222-2222-4222-8222-222222222222",
+    structure: template.structure,
+  });
 }
 
 function availableCommonLoad(

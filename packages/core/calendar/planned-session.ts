@@ -1,12 +1,17 @@
 import { z } from "zod";
+import {
+  activityPlanVariantIdSchema,
+  activityPlanVariantNameSchema,
+} from "../activity-plan/document-schema";
 import { activityPlanStructureSchema } from "../activity-plan/structure-schema";
 import { activityPrescriptionQuantificationBundleSchema } from "../activity-quantification/bundle";
 import { planningDayIdentitySchema } from "../athlete-intelligence/state-projection";
 
-export const PLANNED_SESSION_CONTRACT_VERSION = "planned-session-v1" as const;
+export const PLANNED_SESSION_CONTRACT_VERSION = "planned-session-v2" as const;
 
 const uuidSchema = z.string().uuid();
 const instantSchema = z.string().datetime({ offset: true });
+const structureHashSchema = z.string().regex(/^v1:sha256:[0-9a-f]{64}$/);
 export const plannedSessionOperationIdSchema = z
   .string()
   .min(32)
@@ -55,7 +60,10 @@ export const plannedSessionPrescriptionSnapshotSchema = z
   .object({
     activityPlanId: uuidSchema,
     activityPlanRevision: z.number().int().positive(),
+    variantId: activityPlanVariantIdSchema,
+    variantName: activityPlanVariantNameSchema,
     structure: activityPlanStructureSchema,
+    structureHash: structureHashSchema,
     prescriptionQuantification: activityPrescriptionQuantificationBundleSchema.nullable(),
     capturedAt: instantSchema,
   })
@@ -144,6 +152,18 @@ export type PlannedSessionPrescriptionSnapshot = z.infer<
   typeof plannedSessionPrescriptionSnapshotSchema
 >;
 export type PlannedSessionCompletion = z.infer<typeof plannedSessionCompletionSchema>;
+
+/** Minimal immutable session provenance exposed by event and calendar projections. */
+export const plannedSessionProjectionSchema = z
+  .object({
+    id: plannedSessionSchema.shape.id,
+    planningDate: plannedSessionSchema.shape.planningDate,
+    source: plannedSessionSchema.shape.source,
+    prescription: plannedSessionSchema.shape.prescription,
+    lifecycle: plannedSessionSchema.shape.lifecycle,
+  })
+  .strict();
+export type PlannedSessionProjection = z.infer<typeof plannedSessionProjectionSchema>;
 
 /**
  * Validates a profile's planned-session collection, including the database's

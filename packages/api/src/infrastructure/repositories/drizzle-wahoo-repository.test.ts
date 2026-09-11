@@ -1,3 +1,4 @@
+import { initializeActivityPlanDocument } from "@repo/core/activity-plan";
 import { schema } from "@repo/db";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
@@ -399,12 +400,12 @@ describe("Wahoo repository activity persistence boundary", () => {
   it("derives planned activity category from the canonical structure", async () => {
     const structure = {
       version: 3,
+      activity_category: "bike",
       segments: [
         {
           id: "10000000-0000-4000-8000-000000000001",
           name: "Bike",
           role: "activity",
-          activity_category: "bike",
           intervals: [
             {
               id: "20000000-0000-4000-8000-000000000001",
@@ -438,7 +439,10 @@ describe("Wahoo repository activity persistence boundary", () => {
             id: "plan-1",
             name: "Repeats",
             description: null,
-            structure,
+            structure: initializeActivityPlanDocument({
+              activityPlanId: "11111111-1111-4111-8111-111111111111",
+              structure,
+            }),
             updatedAt: new Date("2026-07-17T08:00:00.000Z"),
           },
         },

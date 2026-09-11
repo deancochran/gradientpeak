@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TrainingPlanEditor } from "./training-plan-editor";
 
 const planId = "22222222-2222-4222-8222-222222222222";
+const activityPlanId = "11111111-1111-4111-8111-111111111111";
+const variantId = "33333333-3333-4333-8333-333333333333";
 const mocks = vi.hoisted(() => ({
   baselineQuery: {} as Record<string, unknown>,
   create: vi.fn(),
@@ -69,6 +71,22 @@ vi.mock("../../lib/api/client", () => ({
       },
     },
     activityPlans: {
+      getById: {
+        useQuery: () => ({
+          data: {
+            detail: {
+              defaultVariantId: "11111111-1111-4111-8111-111111111111",
+              defaultVariantName: "Base",
+              variants: [
+                { id: "11111111-1111-4111-8111-111111111111", name: "Base" },
+                { id: "33333333-3333-4333-8333-333333333333", name: "Build" },
+              ],
+            },
+          },
+          isError: false,
+          isLoading: false,
+        }),
+      },
       list: {
         useQuery: () => ({
           data: {
@@ -118,7 +136,7 @@ describe("TrainingPlanEditor", () => {
     expect(screen.getByRole("status").textContent).toContain("Fitness");
     expect(screen.getByRole("status").textContent).toContain("Fatigue");
     expect(screen.getByRole("status").textContent).toContain("Form");
-    expect(screen.getByRole("status").textContent).toContain("ReadinessUnavailable");
+    expect(screen.getByRole("status").textContent).toContain("Readiness—");
 
     fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(planId));
@@ -129,6 +147,23 @@ describe("TrainingPlanEditor", () => {
       }),
     );
     expect(mocks.create.mock.calls[0]?.[0]).not.toHaveProperty("plannedSessions");
+    expect(mocks.create.mock.calls[0]?.[0].draft.structure.sessions[0]).not.toHaveProperty(
+      "activity_plan_variant_id",
+    );
+  });
+
+  it("sends an optional explicit activity-plan variant for the server to pin", async () => {
+    render(<TrainingPlanEditor onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Build plan" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add activity" }));
+    fireEvent.change(screen.getByLabelText("Variant"), { target: { value: variantId } });
+    fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(mocks.create.mock.calls[0]?.[0].draft.structure.sessions[0]).toMatchObject({
+      activity_plan_id: activityPlanId,
+      activity_plan_variant_id: variantId,
+    });
   });
 
   it("preserves the draft, refreshes, re-simulates, and visibly retries a stale conflict", async () => {

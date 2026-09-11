@@ -23,8 +23,12 @@ vi.mock("expo-crypto", () => ({
   ),
 }));
 
-import { createContractEpochInitializer } from "../../contract-epoch/contractEpochReset";
-import { loadDueActivitySubmissionQueueJobs } from "../activitySubmissionQueue/storage";
+import { createContractEpochInitializer } from "../../contract-epoch/contractEpochMigration";
+import {
+  claimDueActivitySubmissionQueueJob,
+  loadDueActivitySubmissionQueueJobs,
+  upsertActivitySubmissionQueueJob,
+} from "../activitySubmissionQueue/storage";
 import { activitySubmissionQueueJobSchema } from "../activitySubmissionQueue/types";
 import {
   inspectRecordingCheckpoint,
@@ -52,6 +56,7 @@ import {
   loadRecordingEvidenceCheckpoint,
   MAX_QUARANTINE_ROWS_PER_PROFILE,
   MAX_QUARANTINE_ROWS_PER_SESSION,
+  migrateRecordingEvidenceForContractEpoch,
   persistRecordingEvidenceCheckpoint,
   prepareExactRecordingEvidenceCleanup,
   QUARANTINED_EVIDENCE_RETENTION_MS,
@@ -60,7 +65,6 @@ import {
   type RecordingEvidenceSqlExecutor,
   readRecordingEvidenceCheckpoint,
   releaseRecordingEvidenceCheckpointClaim,
-  resetRecordingEvidenceJournal,
   resetRecordingEvidenceJournalForTests,
   retryAcceptedRecordingEvidenceCleanup,
   rollbackRecordingEvidenceSession,
@@ -147,175 +151,251 @@ describe("recording evidence native SQLite schema", () => {
     sqliteMocks.openDatabaseAsync.mockReset();
   });
 
-  it("hard-resets epoch-1 v4 evidence before epoch-2 startup and preserves a new recording on repeat startup", async () => {
-    expect(CURRENT_CONTRACT_EPOCH).toBe(2);
-    const transitionOrder: string[] = [];
-    const legacy = await nativeExecutor();
-    const current = await nativeExecutor();
-    close = current.close;
-    let legacyClosed = false;
-    const legacyHandle: RecordingEvidenceSqlExecutor & { closeAsync: () => Promise<void> } = {
-      ...legacy.executor,
-      closeAsync: async () => {
-        transitionOrder.push("close-v4");
-        legacyClosed = true;
-        legacy.close();
-      },
-    };
-    const currentHandle: RecordingEvidenceSqlExecutor & { closeAsync: () => Promise<void> } = {
-      ...current.executor,
-      closeAsync: async () => current.close(),
-    };
-    await legacy.executor.execAsync(`CREATE TABLE recording_evidence_sessions (
-      session_id TEXT PRIMARY KEY NOT NULL,
-      profile_id TEXT NOT NULL,
-      state TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      checkpoint_json TEXT,
-      checkpoint_digest TEXT
-    );
-    CREATE TABLE recording_stream_envelopes (
-      session_id TEXT NOT NULL,
-      stream_kind TEXT NOT NULL,
-      sequence INTEGER NOT NULL,
-      stream_order INTEGER NOT NULL,
-      timestamp INTEGER NOT NULL,
-      payload TEXT NOT NULL,
-      byte_size INTEGER NOT NULL,
-      sha256 TEXT NOT NULL,
-      commit_marker TEXT NOT NULL,
-      version INTEGER NOT NULL,
-      PRIMARY KEY (session_id, stream_kind, sequence)
-    );
-    CREATE TABLE activity_submission_queue_jobs (
-      id TEXT PRIMARY KEY NOT NULL,
-      session_id TEXT NOT NULL,
-      status TEXT NOT NULL,
-      job_json TEXT NOT NULL
-    );
-    PRAGMA user_version = 4;`);
-    const legacyCheckpoint = JSON.stringify({
-      schemaVersion: 4,
-      variant: "unplanned",
-      sessionId: "legacy-active",
+  it("resumes an interrupted epoch migration without deleting evidence, files, or queue rows", async () => {
+    expect(CURRENT_CONTRACT_EPOCH).toBe(3);
+    const native = await nativeExecutor();
+    close = native.close;
+    await initializeRecordingEvidenceDatabase(native.executor);
+    setRecordingEvidenceDatabaseForTests(native.executor);
+    const plannedCheckpoint = JSON.stringify({
+      schemaVersion: 5,
+      variant: "planned",
+      sessionId: "planned-active",
       profileId: "profile-epoch-upgrade",
-      lifecycle: "recording",
-      revision: 3,
-      start: {
-        startedAt: "2026-01-01T10:00:00.000Z",
-        updatedAt: "2026-01-01T10:05:00.000Z",
-      },
-      performanceTargets: {
-        contractVersion: "athlete-performance-target-facts-v2",
-        athleteId: "profile-epoch-upgrade",
-        asOf: "2026-01-01T10:00:00.000Z",
-      },
     });
-    await legacy.executor.runAsync(
-      "INSERT INTO recording_evidence_sessions (session_id, profile_id, state, created_at, checkpoint_json, checkpoint_digest) VALUES (?, ?, 'active', ?, ?, ?)",
-      "legacy-active",
-      "profile-epoch-upgrade",
-      1,
-      legacyCheckpoint,
-      createHash("sha256").update(legacyCheckpoint).digest("hex"),
+    const compatibleCheckpoint = JSON.stringify(
+      unplannedCheckpoint("unplanned-active", "profile-compatible"),
     );
-    await legacy.executor.runAsync(
-      "INSERT INTO recording_stream_envelopes VALUES (?, 'power', 0, 0, 1, ?, ?, ?, 'stream-committed-v1', 1)",
-      "legacy-active",
+    for (const [sessionId, profileId, checkpoint] of [
+      ["planned-active", "profile-epoch-upgrade", plannedCheckpoint],
+      ["unplanned-active", "profile-compatible", compatibleCheckpoint],
+    ] as const) {
+      await native.executor.runAsync(
+        "INSERT INTO recording_evidence_sessions (session_id, profile_id, state, created_at, checkpoint_json, checkpoint_digest) VALUES (?, ?, 'active', ?, ?, ?)",
+        sessionId,
+        profileId,
+        1,
+        checkpoint,
+        createHash("sha256").update(checkpoint).digest("hex"),
+      );
+    }
+    await native.executor.runAsync(
+      "INSERT INTO recording_stream_envelopes (session_id, stream_kind, sequence, stream_order, timestamp, payload, byte_size, sha256, commit_marker, version) VALUES (?, 'power', 0, 0, 1, ?, ?, ?, 'stream-committed-v1', 1)",
+      "planned-active",
       '{"watts":200}',
       13,
       createHash("sha256").update('{"watts":200}').digest("hex"),
     );
-    await legacy.executor.runAsync(
-      "INSERT INTO recording_evidence_sessions (session_id, profile_id, state, created_at) VALUES (?, ?, 'finalized', ?)",
-      "legacy-unsent",
+    await native.executor.runAsync(
+      "INSERT INTO recording_evidence_sessions (session_id, profile_id, state, created_at, finalized_path, finalized_artifact_json) VALUES (?, ?, 'finalized', ?, ?, ?)",
+      "invalid-finalized",
       "profile-epoch-upgrade",
       2,
-    );
-    await legacy.executor.runAsync(
-      "INSERT INTO activity_submission_queue_jobs VALUES (?, ?, 'pending', ?)",
-      "legacy-job",
-      "legacy-unsent",
+      "file:///documents/recording_evidence_invalid-finalized/fit/activity.fit",
       '{"schemaVersion":1}',
     );
-    expect(
-      await legacy.executor.getAllAsync<{ user_version: number }>("PRAGMA user_version"),
-    ).toEqual([{ user_version: 4 }]);
-    expect(
-      await legacy.executor.getAllAsync<{ session_id: string }>(
-        "SELECT session_id FROM recording_evidence_sessions ORDER BY session_id",
-      ),
-    ).toEqual([{ session_id: "legacy-active" }, { session_id: "legacy-unsent" }]);
+    const compatibleJob = activitySubmissionQueueJobSchema.parse({
+      schemaVersion: 3,
+      id: "compatible-job",
+      artifactId: "compatible-artifact",
+      sessionId: "compatible-session",
+      localActivityFilePath: "file:///documents/compatible.fit",
+      streamArtifactPaths: ["file:///documents/compatible-streams/"],
+      executionManifest: {
+        version: 1,
+        compilerVersion: 1,
+        planHash: "0".repeat(64),
+        occurrences: [],
+      },
+      draft: {
+        recordingSessionId: "compatible-session",
+        profileId: "profile-epoch-upgrade",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        finishedAt: "2026-01-01T01:00:00.000Z",
+        name: "Unsent recording",
+        activity_category: "bike",
+        durationSeconds: 1,
+        movingSeconds: 1,
+        distanceMeters: 1,
+      },
+      status: "queued",
+      attempts: 0,
+      createdAt: "2026-01-01T01:00:00.000Z",
+      updatedAt: "2026-01-01T01:00:00.000Z",
+    });
+    for (const [id, sessionId, jobJson] of [
+      ["compatible-job", "compatible-session", JSON.stringify(compatibleJob)],
+      ["invalid-job", "invalid-finalized", '{"schemaVersion":1}'],
+    ] as const) {
+      await native.executor.runAsync(
+        "INSERT INTO activity_submission_queue_jobs (id, operation_id, profile_id, session_id, artifact_id, status, attempts, retry_class, created_at, updated_at, job_json, schema_version) VALUES (?, ?, ?, ?, ?, 'queued', 0, 'none', ?, ?, ?, ?)",
+        id,
+        `operation-${id}`,
+        "profile-epoch-upgrade",
+        sessionId,
+        `artifact-${id}`,
+        1,
+        1,
+        jobJson,
+        id === "compatible-job" ? 3 : 1,
+      );
+    }
 
-    setRecordingEvidenceDatabaseForTests(legacyHandle);
-    sqliteMocks.deleteDatabaseAsync.mockImplementation(async () => {
-      transitionOrder.push("delete-v4");
-    });
-    sqliteMocks.openDatabaseAsync.mockImplementation(async () => {
-      transitionOrder.push("open-v6");
-      return currentHandle;
-    });
-    let marker: string | null = "1";
-    const resetRecordingEvidence = vi.fn(async () => {
-      transitionOrder.push("reset-start");
-      await resetRecordingEvidenceJournal();
-      transitionOrder.push("reset-complete");
-    });
+    let marker = "2";
+    let journal: string | null = null;
+    let interruptAfterSqliteCommit = true;
     const initializeEpoch = createContractEpochInitializer({
       getMarker: async () => marker,
       setMarker: async (value) => {
         marker = value;
-        transitionOrder.push(`marker-${value}`);
       },
-      clearOnboardingRecovery: async () => undefined,
-      clearSecureAuthState: async () => undefined,
-      resetRecordingEvidence,
-      clearAppStorage: async () => undefined,
-      cleanupStreamFiles: async () => undefined,
-      cleanupFitFiles: async () => undefined,
+      getMigrationJournal: async () => journal,
+      setMigrationJournal: async (value) => {
+        if (
+          interruptAfterSqliteCommit &&
+          (JSON.parse(value) as { phase: string }).phase === "recording-evidence-migrated"
+        ) {
+          interruptAfterSqliteCommit = false;
+          throw new Error("simulated process death");
+        }
+        journal = value;
+      },
+      migrateRecordingEvidence: ({ sourceEpoch, targetEpoch }) =>
+        migrateRecordingEvidenceForContractEpoch({
+          sourceEpoch,
+          targetEpoch,
+          isCheckpointCompatible: (value) =>
+            (JSON.parse(value) as { variant?: unknown }).variant === "unplanned",
+          now: 1_789_041_600_000,
+        }),
+      now: () => "2026-09-10T12:00:00.000Z",
     });
 
-    await expect(initializeEpoch()).resolves.toBe("reset");
-    expect(legacyClosed).toBe(true);
-    expect(transitionOrder).toEqual([
-      "reset-start",
-      "close-v4",
-      "delete-v4",
-      "open-v6",
-      "reset-complete",
-      "marker-2",
+    await expect(initializeEpoch()).rejects.toThrow("simulated process death");
+    expect(marker).toBe("2");
+    expect(
+      await native.executor.getAllAsync<{ session_id: string; state: string }>(
+        "SELECT session_id, state FROM recording_evidence_sessions ORDER BY session_id",
+      ),
+    ).toEqual([
+      { session_id: "invalid-finalized", state: "quarantined" },
+      { session_id: "planned-active", state: "quarantined" },
+      { session_id: "unplanned-active", state: "active" },
     ]);
     expect(
-      await current.executor.getAllAsync<{ user_version: number }>("PRAGMA user_version"),
-    ).toEqual([{ user_version: 6 }]);
+      await native.executor.getAllAsync<{ checkpoint_json: string }>(
+        "SELECT checkpoint_json FROM recording_evidence_sessions WHERE session_id = 'planned-active'",
+      ),
+    ).toEqual([{ checkpoint_json: plannedCheckpoint }]);
     expect(
-      await current.executor.getAllAsync("SELECT session_id FROM recording_evidence_sessions"),
-    ).toEqual([]);
+      await native.executor.getAllAsync<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM recording_stream_envelopes WHERE session_id = 'planned-active'",
+      ),
+    ).toEqual([{ count: 1 }]);
     expect(
-      await current.executor.getAllAsync("SELECT id FROM activity_submission_queue_jobs"),
-    ).toEqual([]);
-    await expect(inspectRecordingCheckpoint("profile-epoch-upgrade")).resolves.toEqual({
-      status: "none",
+      await native.executor.getAllAsync<{
+        finalized_path: string;
+        finalized_artifact_json: string;
+      }>(
+        "SELECT finalized_path, finalized_artifact_json FROM recording_evidence_sessions WHERE session_id = 'invalid-finalized'",
+      ),
+    ).toEqual([
+      {
+        finalized_path: "file:///documents/recording_evidence_invalid-finalized/fit/activity.fit",
+        finalized_artifact_json: '{"schemaVersion":1}',
+      },
+    ]);
+    expect(
+      await native.executor.getAllAsync<{ id: string; job_json: string; error_category: string }>(
+        "SELECT id, job_json, error_category FROM activity_submission_queue_jobs WHERE id = 'invalid-job'",
+      ),
+    ).toEqual([
+      {
+        id: "invalid-job",
+        job_json: '{"schemaVersion":1}',
+        error_category: "contract-epoch-quarantined",
+      },
+    ]);
+    await expect(loadDueActivitySubmissionQueueJobs("profile-epoch-upgrade", 1)).resolves.toEqual([
+      compatibleJob,
+    ]);
+    await expect(
+      claimDueActivitySubmissionQueueJob("invalid-job", "worker", "token", 1_000, 1),
+    ).resolves.toBeNull();
+    await upsertActivitySubmissionQueueJob({
+      ...compatibleJob,
+      id: "invalid-job",
+      artifactId: "artifact-invalid-job",
+      sessionId: "invalid-finalized",
+      draft: { ...compatibleJob.draft, recordingSessionId: "invalid-finalized" },
     });
+    expect(
+      await native.executor.getAllAsync<{ job_json: string; error_category: string }>(
+        "SELECT job_json, error_category FROM activity_submission_queue_jobs WHERE id = 'invalid-job'",
+      ),
+    ).toEqual([
+      {
+        job_json: '{"schemaVersion":1}',
+        error_category: "contract-epoch-quarantined",
+      },
+    ]);
 
-    const checkpoint = unplannedCheckpoint("epoch-2-v5", "profile-epoch-upgrade");
-    await allocateRecordingEvidenceSession({
-      sessionId: checkpoint.sessionId,
-      profileId: checkpoint.profileId,
+    await expect(initializeEpoch()).resolves.toBe("migrated");
+    expect(marker).toBe("3");
+    expect(JSON.parse(journal ?? "null")).toMatchObject({
+      phase: "complete",
+      summary: { quarantinedRecordingIntents: 2, quarantinedQueueJobs: 1 },
     });
-    await persistRecordingCheckpoint(checkpoint);
-    await expect(inspectRecordingCheckpoint(checkpoint.profileId)).resolves.toEqual({
-      status: "recovered",
-      checkpoint,
-    });
+    await expect(garbageCollectExpiredRecordingEvidence(4_102_444_800_000)).resolves.toBe(0);
+    expect(
+      await native.executor.getAllAsync<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM recording_evidence_quarantine WHERE reason LIKE 'contract-epoch:%'",
+      ),
+    ).toEqual([{ count: 4 }]);
+    expect(sqliteMocks.deleteDatabaseAsync).not.toHaveBeenCalled();
+  });
 
-    await expect(initializeEpoch()).resolves.toBe("current");
-    expect(resetRecordingEvidence).toHaveBeenCalledTimes(1);
-    expect(sqliteMocks.deleteDatabaseAsync).toHaveBeenCalledTimes(1);
-    await expect(inspectRecordingCheckpoint(checkpoint.profileId)).resolves.toEqual({
-      status: "recovered",
-      checkpoint,
+  it("durably blocks orphan cleanup for an upgraded store with only unindexed artifacts", async () => {
+    const native = await nativeExecutor();
+    close = native.close;
+    await initializeRecordingEvidenceDatabase(native.executor);
+    setRecordingEvidenceDatabaseForTests(native.executor);
+
+    const migrate = () =>
+      migrateRecordingEvidenceForContractEpoch({
+        sourceEpoch: "2",
+        targetEpoch: CURRENT_CONTRACT_EPOCH,
+        isCheckpointCompatible: () => false,
+        now: 1_789_041_600_000,
+      });
+
+    await expect(migrate()).resolves.toEqual({
+      quarantinedRecordingIntents: 0,
+      quarantinedQueueJobs: 0,
     });
+    await expect(migrate()).resolves.toEqual({
+      quarantinedRecordingIntents: 0,
+      quarantinedQueueJobs: 0,
+    });
+    expect(await hasQuarantinedRecordingEvidence()).toBe(true);
+    expect(
+      await native.executor.getAllAsync<{ reason: string; payload: string }>(
+        "SELECT reason, payload FROM recording_evidence_quarantine",
+      ),
+    ).toEqual([
+      {
+        reason: "contract-epoch:2-to-3:migration-manifest",
+        payload: JSON.stringify({
+          version: 1,
+          sourceEpoch: "2",
+          targetEpoch: 3,
+          preCutUnindexedArtifactsPreserved: true,
+          allowedResolution: ["recovery", "export", "explicit-discard"],
+        }),
+      },
+    ]);
+    await expect(garbageCollectExpiredRecordingEvidence(4_102_444_800_000)).resolves.toBe(0);
+    expect(sqliteMocks.deleteDatabaseAsync).not.toHaveBeenCalled();
   });
 
   it("creates the current schema from version zero and reopens it with constraints and foreign keys", async () => {

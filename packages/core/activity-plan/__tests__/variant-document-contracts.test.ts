@@ -10,6 +10,7 @@ import {
   ActivityPlanVariantResolutionError,
   activityPlanVariantResolutionFailureCodes,
   getCanonicalActivityPlanDocumentHashInput,
+  getCanonicalActivityPlanStructureHashInput,
   initializeActivityPlanDocument,
   resolveActivityPlanVariant,
 } from "../document";
@@ -305,5 +306,23 @@ describe("activity-plan document canonical hashing input", () => {
       const document = activityPlanDocumentSchema.parse(input);
       expect(getCanonicalActivityPlanDocumentHashInput(document)).not.toBe(baselineInput);
     }
+  });
+});
+
+describe("activity-plan V3 structure canonical hashing input", () => {
+  it("normalizes object key order but preserves executable structure changes", () => {
+    const structure = oneVariantActivityPlanDocumentFixture.variants[0]?.structure;
+    if (!structure) throw new Error("Expected a structure fixture");
+    const reordered = JSON.parse(JSON.stringify(structure)) as Record<string, unknown>;
+    const baseline = getCanonicalActivityPlanStructureHashInput(structure);
+    expect(getCanonicalActivityPlanStructureHashInput(reordered)).toBe(baseline);
+    expect(
+      getCanonicalActivityPlanStructureHashInput({
+        ...structure,
+        segments: structure.segments.map((segment, index) =>
+          index === 0 ? { ...segment, name: `${segment.name} changed` } : segment,
+        ),
+      }),
+    ).not.toBe(baseline);
   });
 });

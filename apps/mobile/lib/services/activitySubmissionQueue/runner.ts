@@ -1,3 +1,4 @@
+import { assertRecordingPlanExecutionStructureHashes } from "@/lib/recording/structureHash";
 import {
   claimDueActivitySubmissionQueueJob,
   renewClaimedActivitySubmissionQueueJob,
@@ -213,6 +214,7 @@ async function runActivitySubmissionQueueJobOnce(
   if (job.status === "failed" && job.retryClass && job.retryClass !== "transient") return job;
 
   try {
+    await assertRecordingPlanExecutionStructureHashes(job.planExecution);
     const recordingSessionId = job.draft.recordingSessionId;
 
     if (!job.artifactSha256 || !job.localActivityFileSize) {
@@ -304,6 +306,7 @@ async function runActivitySubmissionQueueJobOnce(
             startedAt: job.draft.startedAt,
             finishedAt: job.draft.finishedAt,
             activityPlanId: job.draft.activityPlanId,
+            ...(job.planExecution ? { planExecution: job.planExecution } : {}),
             executionManifest: job.executionManifest,
             uploadedArtifact: { ingestionId },
             summary: {

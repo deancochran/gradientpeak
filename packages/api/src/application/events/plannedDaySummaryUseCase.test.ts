@@ -1,5 +1,6 @@
 import type { CommonLoadAggregate } from "@repo/core";
 import {
+  activityPlanDocumentSchema,
   activityPrescriptionQuantificationSchema,
   commonLoadResultSchema,
   createActivityPlanPrescriptionQuantificationBundle,
@@ -7,6 +8,7 @@ import {
   createActivityQuantificationEvidenceIdentity,
   createPlanActivityQuantificationSubjectIdentity,
   createPlanOccurrenceActivityQuantificationSubjectIdentity,
+  resolveActivityPlanVariant,
 } from "@repo/core";
 import { describe, expect, it } from "vitest";
 import type {
@@ -53,10 +55,27 @@ function plan(id: string, planStructure: unknown): PlannedDaySummaryActivityPlan
     profile_id: "actor-1",
     name: id,
     description: null,
-    structure: planStructure,
+    structure: activityPlanDocumentSchema.parse({
+      contractVersion: 1,
+      defaultVariantId: "00000000-0000-4000-8000-000000000099",
+      variants: [
+        {
+          id: "00000000-0000-4000-8000-000000000099",
+          name: "Base",
+          structure: planStructure,
+        },
+      ],
+    }),
     gps_recording_enabled: false,
     structure_hash: `hash-${id}`,
     updated_at: new Date("2026-07-27T00:00:00.000Z"),
+  };
+}
+
+function invalidPlan(id: string, planStructure: unknown): PlannedDaySummaryActivityPlanRecord {
+  return {
+    ...plan(id, structure("bike")),
+    structure: planStructure as PlannedDaySummaryActivityPlanRecord["structure"],
   };
 }
 
@@ -140,14 +159,10 @@ async function summarize(
           common_load: commonLoad(72),
         };
         const aggregate = estimate.common_load;
-        const parsedStructure = structure("bike");
-        const sourceStructure =
-          typeof plan.structure === "object" && plan.structure !== null
-            ? plan.structure
-            : parsedStructure;
-        const activityCategory =
-          "activity_category" in sourceStructure ? sourceStructure.activity_category : undefined;
-        const category = activityCategory === "run" ? "run" : "bike";
+        const sourceStructure = resolveActivityPlanVariant(
+          activityPlanDocumentSchema.parse(plan.structure),
+        ).structure;
+        const category = sourceStructure.activity_category === "run" ? "run" : "bike";
         const method = category === "run" ? "run_pace_threshold" : "power_threshold";
         const quality = {
           source: "estimated" as const,
@@ -370,7 +385,7 @@ describe("plannedDaySummaryUseCase", () => {
   });
 
   it("counts mixed stored plans as unavailable", async () => {
-    const legacy = plan("plan-legacy", {
+    const legacy = invalidPlan("plan-legacy", {
       version: 3,
       segments: structure("bike", 2).segments.map((segment, index) => ({
         ...segment,
@@ -386,7 +401,7 @@ describe("plannedDaySummaryUseCase", () => {
   });
 
   it("counts unavailable, invalid, and unlinked plans without exposing issues", async () => {
-    const invalid = plan("plan-invalid", { version: 3, segments: [] });
+    const invalid = invalidPlan("plan-invalid", { version: 3, segments: [] });
     const { result } = await summarize([
       event("unavailable", null, "deleted-plan"),
       event("invalid", invalid),

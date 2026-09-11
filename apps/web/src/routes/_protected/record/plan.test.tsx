@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RecordPlanPage } from "./plan";
 
-const mocks = vi.hoisted(() => ({ navigate: vi.fn() }));
+const mocks = vi.hoisted(() => ({ detailInputs: [] as unknown[], navigate: vi.fn() }));
 const PLAN_ID = "00000000-0000-4000-8000-000000000010";
 const EVENT_ID = "00000000-0000-4000-8000-000000000020";
 const structure = {
@@ -110,30 +110,43 @@ vi.mock("../../../lib/api/client", () => ({
         }),
       },
       getById: {
-        useQuery: (input: { id: string }) => ({
-          data:
-            input.id === PLAN_ID
-              ? {
-                  detail: {
-                    ...plans[0],
-                    activityPlanRevision: 2,
-                    structure,
-                    structureHash: `v1:sha256:${"a".repeat(64)}`,
-                    metrics: [
-                      {
-                        key: "elapsed_duration",
-                        label: "Duration",
-                        status: "available",
-                        value: 60,
-                        unit: "seconds",
-                      },
-                    ],
-                  },
-                }
-              : undefined,
-          isLoading: false,
-          isError: false,
-        }),
+        useQuery: (input: { id: string }) => {
+          mocks.detailInputs.push(input);
+          return {
+            data:
+              input.id === PLAN_ID
+                ? {
+                    detail: {
+                      ...plans[0],
+                      activityPlanRevision: 2,
+                      structure,
+                      structureHash: `v1:sha256:${"a".repeat(64)}`,
+                      defaultVariantId: PLAN_ID,
+                      defaultVariantName: "Base",
+                      variants: [
+                        { id: PLAN_ID, name: "Base" },
+                        {
+                          id: "00000000-0000-4000-8000-000000000012",
+                          name: "Build",
+                        },
+                      ],
+                      resolvedVariant: { id: PLAN_ID, name: "Base", selection: "default" },
+                      metrics: [
+                        {
+                          key: "elapsed_duration",
+                          label: "Duration",
+                          status: "available",
+                          value: 60,
+                          unit: "seconds",
+                        },
+                      ],
+                    },
+                  }
+                : undefined,
+            isLoading: false,
+            isError: false,
+          };
+        },
       },
     },
   },
@@ -146,6 +159,7 @@ vi.mock("../../../lib/recording/provider", () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  mocks.detailInputs = [];
 });
 
 describe("RecordPlanPage", () => {
@@ -174,7 +188,9 @@ describe("RecordPlanPage", () => {
         gps: "off",
         activityPlanId: PLAN_ID,
         eventId: EVENT_ID,
+        variantId: PLAN_ID,
       },
     });
+    expect(mocks.detailInputs).toContainEqual({ id: PLAN_ID, personalize: false });
   });
 });

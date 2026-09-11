@@ -2,6 +2,7 @@ import {
   type ActivityObservationQuantification,
   type ActivityPrescriptionQuantification,
   activityObservationQuantificationSchema,
+  activityPlanDocumentSchema,
   activityPrescriptionQuantificationSchema,
   createActivityPlanPrescriptionQuantificationBundle,
   createActivityQuantificationCalculationIdentity,
@@ -13,7 +14,9 @@ import {
   createUnavailableAthletePerformanceTargetFacts,
   defaultAthletePreferenceProfile,
   estimateActivityPlanForTrainingContext,
+  initializeActivityPlanDocument,
   OPTION_1_FAVORITE_SWIM,
+  resolveActivityPlanVariant,
 } from "@repo/core";
 import { type CommonLoadResult, calculateAvailableCommonLoad } from "@repo/core/load";
 import { schema } from "@repo/db";
@@ -164,37 +167,44 @@ function createCaller(plan: DbPlan = {}) {
 }
 
 function buildActivityPlan(id: string, name: string, activity_category: "bike" | "run") {
+  const structure = {
+    version: 3 as const,
+    activity_category,
+    segments: [
+      {
+        id: "10000000-0000-4000-8000-000000000001",
+        name,
+        role: "activity" as const,
+        intervals: [
+          {
+            id: "20000000-0000-4000-8000-000000000001",
+            name,
+            repetitions: 1,
+            steps: [
+              {
+                id: "30000000-0000-4000-8000-000000000001",
+                name,
+                duration: { type: "time" as const, seconds: 600 },
+                targets: [{ type: "RPE" as const, intensity: 5 }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
   return {
     id,
     name,
     structure_hash: `v1:sha256:${"0".repeat(64)}`,
     gps_recording_enabled: true,
-    structure: {
-      version: 3 as const,
-      activity_category,
-      segments: [
-        {
-          id: "10000000-0000-4000-8000-000000000001",
-          name,
-          role: "activity" as const,
-          intervals: [
-            {
-              id: "20000000-0000-4000-8000-000000000001",
-              name,
-              repetitions: 1,
-              steps: [
-                {
-                  id: "30000000-0000-4000-8000-000000000001",
-                  name,
-                  duration: { type: "time" as const, seconds: 600 },
-                  targets: [{ type: "RPE" as const, intensity: 5 }],
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    },
+    structure: initializeActivityPlanDocument({
+      activityPlanId:
+        activity_category === "bike"
+          ? "11111111-1111-4111-8111-111111111111"
+          : "22222222-2222-4222-8222-222222222222",
+      structure,
+    }),
   };
 }
 
@@ -205,6 +215,7 @@ function buildCanonicalTrainingPlanStructure() {
       {
         offset_days: 0,
         activity_plan_id: "11111111-1111-4111-8111-111111111111",
+        activity_plan_variant_id: "11111111-1111-4111-8111-111111111111",
       },
     ],
     goal_blueprints: [
@@ -871,6 +882,8 @@ describe("homeRouter", () => {
     homeMocks.estimateActivityPlans.mockImplementation(
       async (plans: Array<{ id: string; structure: unknown } & Record<string, unknown>>) =>
         plans.map((plan) => {
+          const document = activityPlanDocumentSchema.parse(plan.structure);
+          const resolved = resolveActivityPlanVariant(document);
           const planning = estimateActivityPlanForTrainingContext({
             asOf: "2026-04-03T12:00:00.000Z",
             planId: plan.id,
@@ -878,7 +891,7 @@ describe("homeRouter", () => {
               "2026-04-03T12:00:00.000Z",
               "11111111-1111-4111-8111-111111111111",
             ),
-            structure: plan.structure,
+            structure: resolved.structure,
           });
           if (!planning.planProjection) throw new Error("Expected an activity-plan projection");
           return {
@@ -891,7 +904,10 @@ describe("homeRouter", () => {
 
     const optionOnePlan = {
       ...buildActivityPlan("option-1", OPTION_1_FAVORITE_SWIM.name, "bike"),
-      structure: OPTION_1_FAVORITE_SWIM.structure,
+      structure: initializeActivityPlanDocument({
+        activityPlanId: "33333333-3333-4333-8333-333333333333",
+        structure: OPTION_1_FAVORITE_SWIM.structure,
+      }),
     };
     const { caller } = createCaller({
       select: {

@@ -144,6 +144,7 @@ describe("projectCanonicalTrainingPlan", () => {
       {
         offset_days: 1,
         activity_plan_id: runTemplateId,
+        activity_plan_variant_id: runTemplateId,
         event_overrides: { title: "Aerobic run", description: "Controlled", start_time: "07:30" },
       },
     ]);
@@ -155,6 +156,7 @@ describe("projectCanonicalTrainingPlan", () => {
       description: "Controlled",
       starts_at: "2026-01-06T07:30:00.000Z",
       activity_plan_id: runTemplateId,
+      activity_plan_variant_id: runTemplateId,
     });
   });
 

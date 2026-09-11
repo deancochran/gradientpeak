@@ -1,4 +1,8 @@
-import type { RecordingActivityCategory, RecordingServiceActivityPlan } from "@repo/core";
+import type {
+  RecordingActivityCategory,
+  RecordingPlannedSessionLaunch,
+  RecordingServiceActivityPlan,
+} from "@repo/core";
 import { Alert } from "react-native";
 import type { ActivityRecorderService, RecordingLifecycle } from "@/lib/services/ActivityRecorder";
 import {
@@ -9,6 +13,7 @@ import {
   activitySelectionStore,
   type RecordingLaunchPayload,
 } from "@/lib/stores/activitySelectionStore";
+import { buildPlannedSessionRecordingLaunchPayload } from "./plannedSessionLaunch";
 
 export type RecordingObjectKind = "activity_plan" | "route";
 export type RecordingObjectAction =
@@ -33,6 +38,8 @@ export interface RecordingObjectActionCandidate {
   label?: string | null;
   activity_category?: string | null;
   plan?: RecordingServiceActivityPlan & { id?: string | null };
+  eventId?: string;
+  plannedSession?: RecordingPlannedSessionLaunch;
   canReadGeometry?: boolean;
 }
 
@@ -54,7 +61,12 @@ function isSamePlan(
   const currentPlan = service?.plan as
     | (RecordingServiceActivityPlan & { id?: string | null })
     | undefined;
-  return Boolean(currentPlan?.id && candidate.plan?.id && currentPlan.id === candidate.plan.id);
+  return Boolean(
+    currentPlan?.id &&
+      candidate.plan?.id &&
+      currentPlan.id === candidate.plan.id &&
+      JSON.stringify(currentPlan.structure) === JSON.stringify(candidate.plan.structure),
+  );
 }
 
 function getCategory(activity_category: string | null | undefined): RecordingActivityCategory {
@@ -220,12 +232,19 @@ export async function handleRecordingObjectAction({
         Alert.alert(resolution.label, resolution.disabledReason ?? "Try a different plan.");
         return;
       }
-      const payload: RecordingLaunchPayload = {
-        launchSource: "activity_plan",
-        activity_category: support.activity_category,
-        gpsRecordingEnabled: false,
-        plan,
-      };
+      const payload: RecordingLaunchPayload = candidate.plannedSession
+        ? await buildPlannedSessionRecordingLaunchPayload({
+            plannedSession: candidate.plannedSession,
+            ...(candidate.eventId === undefined ? {} : { eventId: candidate.eventId }),
+            name: candidate.label,
+            description: plan.description,
+          })
+        : {
+            launchSource: "activity_plan",
+            activity_category: support.activity_category,
+            gpsRecordingEnabled: false,
+            plan,
+          };
       activitySelectionStore.setSelection(payload);
       navigateToRecord();
       return;
@@ -262,7 +281,19 @@ export async function handleRecordingObjectAction({
         Alert.alert(resolution.label, resolution.disabledReason ?? "Try a different plan.");
         return;
       }
-      service.selectPlan(plan);
+      if (candidate.plannedSession) {
+        await buildPlannedSessionRecordingLaunchPayload({
+          plannedSession: candidate.plannedSession,
+          ...(candidate.eventId === undefined ? {} : { eventId: candidate.eventId }),
+          name: candidate.label,
+          description: plan.description,
+        });
+        service.selectPlan(plan, candidate.eventId, candidate.plannedSession);
+      } else if (candidate.eventId !== undefined) {
+        service.selectPlan(plan, candidate.eventId);
+      } else {
+        service.selectPlan(plan);
+      }
       navigateToRecord();
       return;
     }

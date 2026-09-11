@@ -4,16 +4,20 @@ import {
   type ActivityPlanPlanningEstimate,
   type ActivityPlanSummary,
   activityPlanDetailSchema,
+  activityPlanDocumentSchema,
   activityPlanPrescriptionQuantificationBundleSchema,
   activityPlanProjectionSchema,
   activityPlanStructureSchema,
   activityPlanSummarySchema,
+  activityPlanVariantIdSchema,
+  activityPlanVariantNameSchema,
   createActivityPlanMetric,
   createActivityPlanQuantificationIdentities,
   createUnavailableAthletePerformanceTargetFacts,
   estimateActivityPlanForTrainingContext,
   getPlannedEstimate,
   type PlannedEstimate,
+  resolveActivityPlanVariant,
   type ScheduledActivityPlanSummary,
   scheduledActivityPlanSummarySchema,
 } from "@repo/core";
@@ -46,12 +50,50 @@ const planProjectionSourceSchema = z.looseObject({
     .optional(),
   prescriptionQuantification: z.unknown().nullable().optional(),
   planProjection: z.unknown().nullable().optional(),
+  resolvedActivityPlanVariant: z
+    .strictObject({
+      selection: z.enum(["default", "explicit"]),
+      variantId: activityPlanVariantIdSchema,
+      variantName: activityPlanVariantNameSchema,
+      structure: activityPlanStructureSchema,
+    })
+    .optional(),
 });
 type PlanProjectionSource = z.infer<typeof planProjectionSourceSchema>;
 type ResolvedProjectionEvidence = {
   prescriptionQuantification: ActivityPlanPlanningEstimate["prescriptionQuantification"];
   planProjection: NonNullable<ActivityPlanPlanningEstimate["planProjection"]>;
 };
+type ActivityPlanVariantMetadata = {
+  defaultVariantId: string;
+  defaultVariantName: string;
+  variantCount: number;
+  variants: Array<{ id: string; name: string }>;
+};
+type ResolvedActivityPlanVariantSummary = {
+  id: string;
+  name: string;
+  selection: "default" | "explicit";
+};
+
+function resolveProjectionDocument(plan: PlanProjectionSource) {
+  const document = activityPlanDocumentSchema.parse(plan.structure);
+  const resolved = plan.resolvedActivityPlanVariant ?? resolveActivityPlanVariant(document);
+  const defaultVariant = document.variants.find(
+    (variant) => variant.id === document.defaultVariantId,
+  );
+  if (!defaultVariant) throw new Error("Activity-plan document default variant is missing");
+  return {
+    document,
+    resolved,
+    metadata: {
+      defaultVariantId: defaultVariant.id,
+      defaultVariantName: defaultVariant.name,
+      variantCount: document.variants.length,
+      variants: document.variants.map(({ id, name }) => ({ id, name })),
+    } satisfies ActivityPlanVariantMetadata,
+  };
+}
 
 export function canDuplicateFullActivityPlan(
   plan: Pick<PlanProjectionSource, "profile_id" | "is_system_template">,
@@ -230,6 +272,20 @@ function resolveProjectionEvidence(
 
 export function createActivityPlanProjectionMetrics(input: {
   id: string;
+  document: unknown;
+  updatedAt: Date | string;
+}): ActivityPlanMetric[] {
+  const document = activityPlanDocumentSchema.parse(input.document);
+  const { structure } = resolveActivityPlanVariant(document);
+  return createActivityPlanProjectionMetricsFromResolvedStructure({
+    id: input.id,
+    structure,
+    updatedAt: input.updatedAt,
+  });
+}
+
+export function createActivityPlanProjectionMetricsFromResolvedStructure(input: {
+  id: string;
   structure: unknown;
   updatedAt: Date | string;
 }): ActivityPlanMetric[] {
@@ -239,7 +295,11 @@ export function createActivityPlanProjectionMetrics(input: {
     profile_id: null,
     name: "Authored plan projection",
     description: null,
-    structure,
+    structure: {
+      contractVersion: 1,
+      defaultVariantId: input.id,
+      variants: [{ id: input.id, name: "Base", structure }],
+    },
     structure_hash: "public-projection",
     revision: 1,
     gps_recording_enabled: false,
@@ -249,6 +309,12 @@ export function createActivityPlanProjectionMetrics(input: {
     updated_at: input.updatedAt,
     prescriptionQuantification: null,
     planProjection: null,
+    resolvedActivityPlanVariant: {
+      selection: "default",
+      variantId: input.id,
+      variantName: "Base",
+      structure,
+    },
   });
   return planPresentation(resolveProjectionEvidence(plan, structure, false));
 }
@@ -263,7 +329,8 @@ function projectionOwner(plan: PlanProjectionSource) {
 }
 
 function summaryValue(plan: PlanProjectionSource, viewerId: string) {
-  const structure = activityPlanStructureSchema.parse(plan.structure);
+  const { metadata, resolved } = resolveProjectionDocument(plan);
+  const structure = resolved.structure;
   const isOwner = plan.profile_id === viewerId;
   const allowPersonalized =
     isOwner && !plan.is_system_template && plan.content_visibility !== "public";
@@ -294,30 +361,57 @@ function summaryValue(plan: PlanProjectionSource, viewerId: string) {
       canSchedule: true,
       canRecord: isOwner,
     },
+    variantMetadata: metadata,
   };
 }
 
-export function toActivityPlanSummary(plan: unknown, viewerId: string): ActivityPlanSummary {
-  return activityPlanSummarySchema.parse(
-    summaryValue(planProjectionSourceSchema.parse(plan), viewerId),
+export function toActivityPlanSummary(
+  plan: unknown,
+  viewerId: string,
+): ActivityPlanSummary & Omit<ActivityPlanVariantMetadata, "variants"> {
+  const { variantMetadata, ...summary } = summaryValue(
+    planProjectionSourceSchema.parse(plan),
+    viewerId,
   );
+  return {
+    ...activityPlanSummarySchema.parse(summary),
+    defaultVariantId: variantMetadata.defaultVariantId,
+    defaultVariantName: variantMetadata.defaultVariantName,
+    variantCount: variantMetadata.variantCount,
+  };
 }
 
-export function toActivityPlanDetail(plan: unknown, viewerId: string): ActivityPlanDetail {
+export function toActivityPlanDetail(
+  plan: unknown,
+  viewerId: string,
+): ActivityPlanDetail &
+  ActivityPlanVariantMetadata & { resolvedVariant: ResolvedActivityPlanVariantSummary } {
   const parsedPlan = planProjectionSourceSchema.parse(plan);
-  const summary = summaryValue(parsedPlan, viewerId);
+  const { metadata: variantMetadata, resolved } = resolveProjectionDocument(parsedPlan);
+  const { variantMetadata: _summaryVariantMetadata, ...summary } = summaryValue(
+    parsedPlan,
+    viewerId,
+  );
   const isOwner = parsedPlan.profile_id === viewerId;
-  return activityPlanDetailSchema.parse({
-    ...summary,
-    contractVersion: "activity-plan-detail-v1",
-    ...(isOwner
-      ? {
-          notes: parsedPlan.notes ?? null,
-          structureHash: parsedPlan.structure_hash,
-          gpsRecordingEnabled: parsedPlan.gps_recording_enabled,
-        }
-      : {}),
-  });
+  return {
+    ...activityPlanDetailSchema.parse({
+      ...summary,
+      contractVersion: "activity-plan-detail-v1",
+      ...(isOwner
+        ? {
+            notes: parsedPlan.notes ?? null,
+            structureHash: parsedPlan.structure_hash,
+            gpsRecordingEnabled: parsedPlan.gps_recording_enabled,
+          }
+        : {}),
+    }),
+    ...variantMetadata,
+    resolvedVariant: {
+      id: resolved.variantId,
+      name: resolved.variantName,
+      selection: resolved.selection,
+    },
+  };
 }
 
 export function toScheduledActivityPlanSummary(input: {
@@ -331,8 +425,12 @@ export function toScheduledActivityPlanSummary(input: {
   status: "scheduled" | "completed" | "cancelled" | "expired";
   trainingPlanId: string | null;
 }): ScheduledActivityPlanSummary {
+  const { variantMetadata: _variantMetadata, ...summary } = summaryValue(
+    planProjectionSourceSchema.parse(input.plan),
+    input.viewerId,
+  );
   return scheduledActivityPlanSummarySchema.parse({
-    ...summaryValue(planProjectionSourceSchema.parse(input.plan), input.viewerId),
+    ...summary,
     contractVersion: "scheduled-activity-plan-summary-v1",
     schedule: {
       eventId: input.eventId,

@@ -5,7 +5,7 @@ import type {
   CanonicalActivityCategory,
   EditableActivityPlanStructure,
 } from "@repo/core";
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import { activityPlanDocumentSchema, activityPlanStructureSchema } from "@repo/core/activity-plan";
 import {
   type ActivityTargetType,
   activityTargetDefinitionByType,
@@ -48,29 +48,80 @@ const visibilityOptions = ["private", "followers", "public"] as const;
 const selectClassName =
   "h-10 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
-export type ActivityPlanAuthoringValues = {
+type ActivityPlanAuthoringMetadata = {
   description: string | null;
   gps_recording_enabled: boolean;
   name: string;
   notes: string | null;
-  structure: ReturnType<typeof activityPlanStructureSchema.parse>;
   content_visibility: (typeof visibilityOptions)[number];
 };
 
-type ActivityPlanComposerProps = {
-  initial?: {
-    description?: string | null;
-    gps_recording_enabled?: boolean;
-    name: string;
-    notes?: string | null;
-    structure: unknown;
-    content_visibility?: string | null;
-  };
-  mode: "create" | "edit";
-  onCancel: () => void;
-  onSave: (values: ActivityPlanAuthoringValues) => Promise<void> | void;
-  pending?: boolean;
+export type ActivityPlanCreateAuthoringValues = ActivityPlanAuthoringMetadata & {
+  structure: ReturnType<typeof activityPlanStructureSchema.parse>;
 };
+
+export type ActivityPlanEditAuthoringValues = ActivityPlanAuthoringMetadata & {
+  structure: ReturnType<typeof activityPlanDocumentSchema.parse>;
+};
+
+type ActivityPlanComposerInitial = {
+  description?: string | null;
+  gps_recording_enabled?: boolean;
+  name: string;
+  notes?: string | null;
+  structure: unknown;
+  content_visibility?: string | null;
+};
+
+type ActivityPlanComposerProps = {
+  onCancel: () => void;
+  pending?: boolean;
+} & (
+  | {
+      initial?: ActivityPlanComposerInitial;
+      mode: "create";
+      onSave: (values: ActivityPlanCreateAuthoringValues) => Promise<void> | void;
+    }
+  | {
+      initial: ActivityPlanComposerInitial;
+      initialVariantId?: string;
+      mode: "edit";
+      onSave: (values: ActivityPlanEditAuthoringValues) => Promise<void> | void;
+    }
+);
+
+type EditableActivityPlanDocument = {
+  contractVersion: 1;
+  defaultVariantId: string;
+  variants: Array<{
+    id: string;
+    name: string;
+    structure: EditableActivityPlanStructure;
+  }>;
+};
+
+function editableDocument(value: unknown): EditableActivityPlanDocument | null {
+  const parsed = activityPlanDocumentSchema.safeParse(value);
+  if (!parsed.success) return null;
+  return {
+    contractVersion: 1,
+    defaultVariantId: parsed.data.defaultVariantId,
+    variants: parsed.data.variants.map((variant) => ({
+      id: variant.id,
+      name: variant.name,
+      structure: editableStructure(variant.structure),
+    })),
+  };
+}
+
+function nextVariantName(document: EditableActivityPlanDocument) {
+  const names = new Set(document.variants.map((variant) => variant.name.toLocaleLowerCase()));
+  for (let index = 2; index <= document.variants.length + 2; index += 1) {
+    const candidate = `Variant ${index}`;
+    if (!names.has(candidate.toLocaleLowerCase())) return candidate;
+  }
+  return `Variant ${document.variants.length + 1}`;
+}
 
 function editableStructure(value: unknown): EditableActivityPlanStructure {
   const parsed = activityPlanStructureSchema.safeParse(value);
@@ -117,34 +168,88 @@ function nextDuration(type: ActivityPlanDuration["type"], amount: number): Activ
   return { type: "untilFinished" };
 }
 
-export function ActivityPlanComposer({
-  initial,
-  mode,
-  onCancel,
-  onSave,
-  pending = false,
-}: ActivityPlanComposerProps) {
+export function ActivityPlanComposer(props: ActivityPlanComposerProps) {
+  const { initial, mode, onCancel, pending = false } = props;
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
-  const [visibility, setVisibility] = useState<ActivityPlanAuthoringValues["content_visibility"]>(
+  const [visibility, setVisibility] = useState<ActivityPlanAuthoringMetadata["content_visibility"]>(
     initial?.content_visibility === "public" || initial?.content_visibility === "followers"
       ? initial.content_visibility
       : "private",
   );
   const [gpsEnabled, setGpsEnabled] = useState(initial?.gps_recording_enabled ?? true);
-  const [structure, setStructure] = useState<EditableActivityPlanStructure>(() =>
+  const [createStructure, setCreateStructure] = useState<EditableActivityPlanStructure>(() =>
     initial ? editableStructure(initial.structure) : createActivityPlanStructure(),
   );
-  const [activity_category, setActivityCategory] = useState<CanonicalActivityCategory>(() =>
-    getActivityPlanActivityCategory(structure),
+  const [document, setDocument] = useState<EditableActivityPlanDocument | null>(() =>
+    mode === "edit" ? editableDocument(initial.structure) : null,
   );
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(() => {
+    if (mode !== "edit") return null;
+    const initialDocument = editableDocument(initial.structure);
+    if (!initialDocument) return null;
+    return initialDocument.variants.some((variant) => variant.id === props.initialVariantId)
+      ? (props.initialVariantId ?? initialDocument.defaultVariantId)
+      : initialDocument.defaultVariantId;
+  });
+  const selectedVariant = document?.variants.find((variant) => variant.id === selectedVariantId);
+  const structure = selectedVariant?.structure ?? createStructure;
+  const activity_category = getActivityPlanActivityCategory(structure);
+  const setStructure: React.Dispatch<React.SetStateAction<EditableActivityPlanStructure>> = (
+    action,
+  ) => {
+    if (mode === "create") {
+      setCreateStructure(action);
+      return;
+    }
+    setDocument((current) => {
+      if (!current || !selectedVariantId) return current;
+      return {
+        ...current,
+        variants: current.variants.map((variant) =>
+          variant.id === selectedVariantId
+            ? {
+                ...variant,
+                structure: typeof action === "function" ? action(variant.structure) : action,
+              }
+            : variant,
+        ),
+      };
+    });
+  };
   const [pendingActivityCategory, setPendingActivityCategory] =
     useState<CanonicalActivityCategory | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const saveButtonRef = useRef<HTMLButtonElement>(null);
-  const parsed = useMemo(() => activityPlanStructureSchema.safeParse(structure), [structure]);
+  const parsed = useMemo(
+    () =>
+      mode === "edit"
+        ? activityPlanDocumentSchema.safeParse(document)
+        : activityPlanStructureSchema.safeParse(createStructure),
+    [createStructure, document, mode],
+  );
   const firstIssue = parsed.success ? null : parsed.error.issues[0]?.message;
+
+  const updateAllStructures = (
+    update: (current: EditableActivityPlanStructure) => EditableActivityPlanStructure,
+  ) => {
+    if (mode === "create") {
+      setCreateStructure(update);
+      return;
+    }
+    setDocument((current) =>
+      current
+        ? {
+            ...current,
+            variants: current.variants.map((variant) => ({
+              ...variant,
+              structure: update(variant.structure),
+            })),
+          }
+        : current,
+    );
+  };
 
   const removeSegment = (segmentId: string) => {
     setStructure((current) => ({
@@ -180,21 +285,26 @@ export function ActivityPlanComposer({
 
   const save = async () => {
     setSaveError(null);
-    const validStructure = activityPlanStructureSchema.safeParse(structure);
-    if (!name.trim() || !validStructure.success) {
+    const validStructure = activityPlanStructureSchema.safeParse(createStructure);
+    const validDocument = activityPlanDocumentSchema.safeParse(document);
+    if (!name.trim() || (mode === "create" ? !validStructure.success : !validDocument.success)) {
       setSaveError("Enter a plan name and correct the activity structure before saving.");
       saveButtonRef.current?.focus();
       return;
     }
     try {
-      await onSave({
+      const metadata = {
         description: description.trim() || null,
         gps_recording_enabled: gpsEnabled,
         name: name.trim(),
         notes: notes.trim() || null,
-        structure: validStructure.data,
         content_visibility: visibility,
-      });
+      };
+      if (mode === "edit" && validDocument.success) {
+        await props.onSave({ ...metadata, structure: validDocument.data });
+      } else if (mode === "create" && validStructure.success) {
+        await props.onSave({ ...metadata, structure: validStructure.data });
+      }
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "Activity plan could not be saved.");
       saveButtonRef.current?.focus();
@@ -234,7 +344,7 @@ export function ActivityPlanComposer({
               id="activity-plan-visibility"
               onChange={(event) =>
                 setVisibility(
-                  event.currentTarget.value as ActivityPlanAuthoringValues["content_visibility"],
+                  event.currentTarget.value as ActivityPlanAuthoringMetadata["content_visibility"],
                 )
               }
               value={visibility}
@@ -258,12 +368,18 @@ export function ActivityPlanComposer({
               onChange={(event) => {
                 const nextActivityCategory = event.currentTarget.value as CanonicalActivityCategory;
                 if (nextActivityCategory === activity_category) return;
-                if (hasIncompatibleTargets(structure, nextActivityCategory)) {
+                const structures = document
+                  ? document.variants.map((variant) => variant.structure)
+                  : [structure];
+                if (
+                  structures.some((candidate) =>
+                    hasIncompatibleTargets(candidate, nextActivityCategory),
+                  )
+                ) {
                   setPendingActivityCategory(nextActivityCategory);
                   return;
                 }
-                setActivityCategory(nextActivityCategory);
-                setStructure((current) =>
+                updateAllStructures((current) =>
                   applyActivityPlanActivityCategory(current, nextActivityCategory),
                 );
               }}
@@ -299,6 +415,129 @@ export function ActivityPlanComposer({
           </div>
         </CardContent>
       </Card>
+
+      {mode === "edit" && document && selectedVariant ? (
+        <Card>
+          <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
+            <CardTitle>Variants</CardTitle>
+            <Button
+              onClick={() => {
+                const variantId = crypto.randomUUID();
+                const structureClone = activityPlanStructureSchema.parse(selectedVariant.structure);
+                setDocument((current) =>
+                  current
+                    ? {
+                        ...current,
+                        variants: [
+                          ...current.variants,
+                          {
+                            id: variantId,
+                            name: nextVariantName(current),
+                            structure: editableStructure(structureClone),
+                          },
+                        ],
+                      }
+                    : current,
+                );
+                setSelectedVariantId(variantId);
+              }}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              <Plus className="mr-1 h-4 w-4" /> Add variant
+            </Button>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <FieldLabel htmlFor="activity-plan-variant">Variant</FieldLabel>
+              <select
+                className={`${selectClassName} w-full`}
+                id="activity-plan-variant"
+                onChange={(event) => setSelectedVariantId(event.currentTarget.value)}
+                value={selectedVariant.id}
+              >
+                {document.variants.map((variant) => (
+                  <option key={variant.id} value={variant.id}>
+                    {variant.name}
+                    {variant.id === document.defaultVariantId ? " (default)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <FieldLabel htmlFor="activity-plan-variant-name">Variant name</FieldLabel>
+              <Input
+                id="activity-plan-variant-name"
+                maxLength={100}
+                onChange={(event) => {
+                  const variantName = event.currentTarget.value;
+                  setDocument((current) =>
+                    current
+                      ? {
+                          ...current,
+                          variants: current.variants.map((variant) =>
+                            variant.id === selectedVariant.id
+                              ? { ...variant, name: variantName }
+                              : variant,
+                          ),
+                        }
+                      : current,
+                  );
+                }}
+                value={selectedVariant.name}
+              />
+            </div>
+            <div className="flex flex-wrap gap-2 md:col-span-2">
+              <Button
+                disabled={selectedVariant.id === document.defaultVariantId}
+                onClick={() =>
+                  setDocument((current) =>
+                    current ? { ...current, defaultVariantId: selectedVariant.id } : current,
+                  )
+                }
+                type="button"
+                variant="outline"
+              >
+                {selectedVariant.id === document.defaultVariantId
+                  ? "Default variant"
+                  : "Set as default"}
+              </Button>
+              <Button
+                disabled={
+                  document.variants.length === 1 || selectedVariant.id === document.defaultVariantId
+                }
+                onClick={() => {
+                  const nextVariant = document.variants.find(
+                    (variant) => variant.id !== selectedVariant.id,
+                  );
+                  if (!nextVariant) return;
+                  setDocument((current) =>
+                    current
+                      ? {
+                          ...current,
+                          variants: current.variants.filter(
+                            (variant) => variant.id !== selectedVariant.id,
+                          ),
+                        }
+                      : current,
+                  );
+                  setSelectedVariantId(nextVariant.id);
+                }}
+                type="button"
+                variant="outline"
+              >
+                Delete variant
+              </Button>
+              {selectedVariant.id === document.defaultVariantId && document.variants.length > 1 ? (
+                <p className="self-center text-xs text-muted-foreground">
+                  Set another variant as default before deleting this one.
+                </p>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -401,8 +640,7 @@ export function ActivityPlanComposer({
             <AlertDialogAction
               onClick={() => {
                 if (!pendingActivityCategory) return;
-                setActivityCategory(pendingActivityCategory);
-                setStructure((current) =>
+                updateAllStructures((current) =>
                   applyActivityPlanActivityCategory(current, pendingActivityCategory, true),
                 );
                 setPendingActivityCategory(null);

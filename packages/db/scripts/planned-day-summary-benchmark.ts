@@ -64,7 +64,9 @@ function assertBoundedIndexedPlan(name: string, explain: Explain) {
 
 await withDisposableDatabase(process.argv.slice(2), "planned_day_summary_benchmark", async (db) => {
   await bootstrapSupabaseSchemas(db);
-  await applySqlFile(db, requireFreshBaseline().sourcePath);
+  for (const migrationPath of requireFreshBaseline().migrationPaths) {
+    await applySqlFile(db, migrationPath);
+  }
   await db.query(
     "insert into auth.users (id, email, raw_user_meta_data) values ($1, 'owner@example.test', '{}'::jsonb), ($2, 'other@example.test', '{}'::jsonb)",
     [ownerId, otherId],

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { activityPlanStructureSchema } from "../activity-plan";
 import { athletePerformanceTargetFactsSchema } from "../performance-model";
+import { recordingPlannedSessionLaunchSchema } from "./activity_payload";
 import { canonicalActivityCategorySchema } from "./activity-category";
 import { recordingCapabilitiesSchema } from "./recording_config";
 
@@ -260,10 +261,33 @@ export const recordingPlanExecutionSnapshotSchema = z
     activityPlanRevision: z.number().int().positive(),
     structureHash: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
     structure: activityPlanStructureSchema,
+    plannedSession: recordingPlannedSessionLaunchSchema.nullable().optional().default(null),
     personalizationEnabled: z.boolean(),
     targetPresentations: z.array(recordingPlanTargetPresentationEvidenceSchema).max(2_000),
   })
-  .strict();
+  .strict()
+  .superRefine((execution, context) => {
+    const prescription = execution.plannedSession?.prescription;
+    if (!prescription) return;
+    const checks = [
+      ["activityPlanId", execution.activityPlanId === prescription.activityPlanId],
+      [
+        "activityPlanRevision",
+        execution.activityPlanRevision === prescription.activityPlanRevision,
+      ],
+      ["structureHash", execution.structureHash === prescription.structureHash],
+      ["structure", JSON.stringify(execution.structure) === JSON.stringify(prescription.structure)],
+    ] as const;
+    for (const [field, valid] of checks) {
+      if (!valid) {
+        context.addIssue({
+          code: "custom",
+          path: [field],
+          message: "Locked execution must match the planned-session prescription",
+        });
+      }
+    }
+  });
 
 export const recordingSessionSnapshotSchema = z
   .object({

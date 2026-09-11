@@ -1,3 +1,4 @@
+import type { PlannedSession, PlannedSessionProjection } from "@repo/core/calendar";
 import type { ActivityPlanRow, ActivityRow, EventRow, PublicEventStatus } from "@repo/db";
 import type { DrizzleTransactionClient } from "../db";
 
@@ -13,6 +14,7 @@ type EventCompletionBase = Pick<
   | "activity_plan_id"
   | "route_id"
   | "training_plan_id"
+  | "planned_session_id"
   | "recurrence_rule"
   | "recurrence_timezone"
   | "series_id"
@@ -36,6 +38,15 @@ type SerializedEventActivityPlan = Omit<ActivityPlanRow, "created_at" | "updated
 
 export type EventCompletionEventRecord = EventCompletionBase & {
   activity_plan: SerializedEventActivityPlan | null;
+  planned_session: (PlannedSessionProjection & Pick<PlannedSession, "sessionRevision">) | null;
+  route: {
+    id: string;
+    name: string;
+    description: string | null;
+    total_distance: number;
+    total_ascent: number | null;
+    total_descent: number | null;
+  } | null;
 };
 
 export type EventDeleteCandidateRecord = Pick<EventRow, "activity_plan_id" | "id" | "event_type">;

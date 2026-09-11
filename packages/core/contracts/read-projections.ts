@@ -1,9 +1,9 @@
 import { z } from "zod";
-
 import { activityPlanStructureSchema } from "../activity-plan/structure-schema";
 import { activityPrescriptionQuantificationBundleSchema } from "../activity-quantification/bundle";
 import { activityPlanProjectionSchema } from "../activity-quantification/plan-projection";
 import { completedSegmentSummarySchema } from "../activity-segments/completed-segment-schema";
+import { plannedSessionProjectionSchema } from "../calendar/planned-session";
 import { groupEventRsvpStatusSchema } from "../groups/schemas";
 import { activityLapRecordListSchema } from "../schemas/activity_streams";
 import { canonicalActivityCategorySchema } from "../schemas/activity-category";
@@ -604,6 +604,7 @@ export const calendarProjectionItemSchema = z
     estimated: z.boolean(),
     partial: z.boolean(),
     plan: scheduledActivityPlanSummarySchema.nullable(),
+    plannedSession: plannedSessionProjectionSchema.nullable().default(null),
     activity: activityDisplayModelSchema.nullable(),
     event: z
       .strictObject({
@@ -639,7 +640,15 @@ export const calendarProjectionItemSchema = z
       {
         field: "event",
         valid:
-          (item.event !== null) === (item.kind === "planned_activity" || item.kind === "event"),
+          item.kind === "event"
+            ? item.event !== null
+            : item.kind === "planned_activity"
+              ? item.event !== null || item.plannedSession !== null
+              : item.event === null,
+      },
+      {
+        field: "plannedSession",
+        valid: item.plannedSession === null || item.kind === "planned_activity",
       },
       { field: "groupEvent", valid: (item.groupEvent !== null) === (item.kind === "group_event") },
       { field: "goal", valid: (item.goal !== null) === (item.kind === "goal") },

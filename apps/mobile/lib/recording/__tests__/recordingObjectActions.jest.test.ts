@@ -16,6 +16,10 @@ jest.mock("@/lib/stores/activitySelectionStore", () => ({
   __esModule: true,
   activitySelectionStore: { setSelection: jest.fn() },
 }));
+jest.mock("expo-crypto", () => ({
+  CryptoDigestAlgorithm: { SHA256: "SHA-256" },
+  digestStringAsync: jest.fn(async () => "1".repeat(64)),
+}));
 
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 
@@ -84,6 +88,41 @@ describe("handleRecordingObjectAction", () => {
 
     expect(service.selectPlan).toHaveBeenCalledWith(selectedPlan);
     expect(navigateToRecord).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes scheduled provenance when attaching a prescribed plan", async () => {
+    const navigateToRecord = jest.fn();
+    const service = { selectPlan: jest.fn() } as unknown as ActivityRecorderService;
+    const selectedPlan = plan("bike", [activitySegment("bike", 1)], id(702));
+    const plannedSession = {
+      id: id(700),
+      sessionRevision: 3,
+      prescription: {
+        activityPlanId: selectedPlan.id,
+        activityPlanRevision: 2,
+        variantId: id(701),
+        variantName: "Hard",
+        structure: selectedPlan.structure,
+        structureHash: `v1:sha256:${"1".repeat(64)}`,
+        prescriptionQuantification: null,
+        capturedAt: "2026-09-11T12:00:00.000Z",
+      },
+    };
+
+    await handleRecordingObjectAction({
+      candidate: {
+        objectKind: "activity_plan",
+        objectId: selectedPlan.id,
+        plan: selectedPlan,
+        eventId: "event-1",
+        plannedSession,
+      },
+      command: "attach_plan",
+      navigateToRecord,
+      service,
+    });
+
+    expect(service.selectPlan).toHaveBeenCalledWith(selectedPlan, "event-1", plannedSession);
   });
 
   it("returns to the recorder after attaching a route", async () => {

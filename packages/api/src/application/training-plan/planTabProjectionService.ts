@@ -1,4 +1,5 @@
 import {
+  activityPlanDocumentSchema,
   addDaysDateKey,
   buildTrainingTimelineWindow,
   type CompletedTrainingItem,
@@ -7,6 +8,7 @@ import {
   completedSegmentSummarySchema,
   dateOnlySchema,
   PLAN_ANALYSIS_WINDOW_MAX_DAYS,
+  resolveActivityPlanVariant,
   type ScheduledTrainingItem,
   type TrainingLoadTimelineInputPoint,
   trainingTimelineWindowSchema,
@@ -333,9 +335,9 @@ export type PlanTabProjectionDependencies = {
 };
 
 function extractActivityCategory(structure: unknown): string | null {
-  if (!structure || typeof structure !== "object" || Array.isArray(structure)) return null;
-  const value = (structure as { activity_category?: unknown }).activity_category;
-  return typeof value === "string" && value.trim() ? value : null;
+  const document = activityPlanDocumentSchema.safeParse(structure);
+  if (!document.success) return null;
+  return resolveActivityPlanVariant(document.data).structure.activity_category;
 }
 
 const defaultDependencies: PlanTabProjectionDependencies = {

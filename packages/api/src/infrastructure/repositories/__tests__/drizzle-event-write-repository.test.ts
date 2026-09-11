@@ -1,3 +1,4 @@
+import { initializeActivityPlanDocument } from "@repo/core/activity-plan";
 import type { DrizzleDbClient } from "@repo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { CreateOwnedEventInput } from "../../../repositories";
@@ -161,7 +162,15 @@ describe("createEventWriteRepository", () => {
         linked_activity_id,
         status,
       })),
-      [{ id: planId, structure: validStructure }],
+      [
+        {
+          id: planId,
+          structure: initializeActivityPlanDocument({
+            activityPlanId: planId,
+            structure: validStructure,
+          }),
+        },
+      ],
       updated,
     ];
     let selectCount = 0;

@@ -103,6 +103,7 @@ const planningDay = getCalendarDateInIanaZone;
 const projectedPlanActivityFactSchema = z
   .object({
     activityPlanId: z.string().uuid(),
+    activityPlanVariantId: z.string().uuid(),
     activityCategory: canonicalActivityCategorySchema,
     commonLoad: z.number().finite().nonnegative().max(10_000),
   })
@@ -196,14 +197,21 @@ export function deriveProjectedPlanStimuli(input: {
   const structure = canonicalPlanStructure(parsed.structure);
   if (structure.sessions.length > MAX_PLAN_SIMULATION_SESSIONS)
     return { status: "unavailable", reason: "too_many_sessions" };
-  const factsById = new Map(parsed.activityPlans.map((fact) => [fact.activityPlanId, fact]));
+  const factsById = new Map(
+    parsed.activityPlans.map((fact) => [
+      `${fact.activityPlanId}:${fact.activityPlanVariantId}`,
+      fact,
+    ]),
+  );
   const materialized = materializePlanToEvents(
     structure,
     parsed.startDate,
     parsed.planningTimezone,
   ).filter((event) => Date.parse(event.starts_at) >= Date.parse(parsed.notBefore));
   const sessions = materialized.map((event) => {
-    const fact = event.activity_plan_id ? factsById.get(event.activity_plan_id) : undefined;
+    const fact = event.activity_plan_id
+      ? factsById.get(`${event.activity_plan_id}:${event.activity_plan_variant_id}`)
+      : undefined;
     if (!fact) return null;
     return projectedTrainingStimulusSchema.parse({
       kind: "projected",

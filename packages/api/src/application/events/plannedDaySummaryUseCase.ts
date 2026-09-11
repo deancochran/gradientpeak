@@ -1,10 +1,11 @@
 import {
   type ActivityPrescriptionQuantificationBundle,
-  activityPlanStructureSchema,
+  activityPlanDocumentSchema,
   bindPrescriptionQuantificationToScheduledEvent,
   type CanonicalActivityCategory,
   type CommonLoadAggregate,
   createUnavailableActivityPlanPlanningEstimate,
+  resolveActivityPlanVariant,
   summarizePlannedDay,
 } from "@repo/core";
 import type {
@@ -48,8 +49,14 @@ export function getAvailablePlannedDaySummaryPlans(
 ): PlannedDaySummaryActivityPlanRecord[] {
   return events.flatMap((event) => {
     const plan = event.activity_plan;
-    return plan && activityPlanStructureSchema.safeParse(plan.structure).success ? [plan] : [];
+    return plan && activityPlanDocumentSchema.safeParse(plan.structure).success ? [plan] : [];
   });
+}
+
+function resolveDefaultStructure(plan: PlannedDaySummaryActivityPlanRecord) {
+  const document = activityPlanDocumentSchema.safeParse(plan.structure);
+  if (!document.success) return null;
+  return resolveActivityPlanVariant(document.data).structure;
 }
 
 function unavailableEventQuantification(input: {
@@ -79,7 +86,7 @@ export function summarizePlannedDayEvents(input: {
     return {
       event,
       plan,
-      parsed: plan ? activityPlanStructureSchema.safeParse(plan.structure) : null,
+      structure: plan ? resolveDefaultStructure(plan) : null,
     };
   });
   const estimatesByPlanId = new Map(input.estimates.map((plan) => [plan.id, plan]));
@@ -88,7 +95,7 @@ export function summarizePlannedDayEvents(input: {
   let unlinkedPlanCount = 0;
   let unavailableEstimateCount = 0;
   const prescriptionQuantifications: ActivityPrescriptionQuantificationBundle[] = [];
-  for (const { event, parsed, plan } of classifiedEvents) {
+  for (const { event, plan, structure } of classifiedEvents) {
     if (!plan) {
       if (event.activity_plan_id) unavailablePlanCount += 1;
       else unlinkedPlanCount += 1;
@@ -103,7 +110,7 @@ export function summarizePlannedDayEvents(input: {
       continue;
     }
 
-    if (!parsed?.success) {
+    if (!structure) {
       // The repository normally turns invalid joined plans into unavailable,
       // but fail closed if an alternate implementation returns one.
       unavailablePlanCount += 1;
@@ -130,14 +137,14 @@ export function summarizePlannedDayEvents(input: {
             date: input.date,
             eventId: event.id,
             planId: plan.id,
-            activityCategory: parsed.data.activity_category,
+            activityCategory: structure.activity_category,
           });
     } catch {
       eventQuantification = unavailableEventQuantification({
         date: input.date,
         eventId: event.id,
         planId: plan.id,
-        activityCategory: parsed.data.activity_category,
+        activityCategory: structure.activity_category,
       });
     }
     const eventAggregate = eventQuantification.summary;

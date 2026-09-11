@@ -45,6 +45,9 @@ const plannedSession = (lifecycle: unknown) => ({
   groupEventId: null,
   prescription: {
     activityPlanId: id(12),
+    variantId: id(12),
+    variantName: "Base",
+    structureHash: `v1:sha256:${"0".repeat(64)}`,
     activityPlanRevision: 1,
     structure,
     prescriptionQuantification: null,

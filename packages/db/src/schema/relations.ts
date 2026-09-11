@@ -448,6 +448,10 @@ export const eventsRelations = relations(events, ({ one, many }) => ({
     fields: [events.training_plan_id],
     references: [trainingPlans.id],
   }),
+  plannedSession: one(plannedSessions, {
+    fields: [events.planned_session_id, events.profile_id],
+    references: [plannedSessions.id, plannedSessions.profile_id],
+  }),
   activityPlan: one(activityPlans, {
     fields: [events.activity_plan_id],
     references: [activityPlans.id],
@@ -630,6 +634,7 @@ export const plannedSessionsRelations = relations(plannedSessions, ({ one, many 
     references: [plannedSessions.id, plannedSessions.profile_id],
   }),
   occurrences: many(plannedSessions, { relationName: "plannedSessionSeriesOccurrences" }),
+  events: many(events),
 }));
 
 export const activityEffortsRelations = relations(activityEfforts, ({ one, many }) => ({

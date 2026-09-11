@@ -1,4 +1,4 @@
-import type { ProviderIntegrationLifecycleStatus } from "@repo/core";
+import type { ActivityPlanDocument, ProviderIntegrationLifecycleStatus } from "@repo/core";
 import type { DrizzleQueryExecutor } from "../db";
 
 export type WahooIntegrationRecord = {
@@ -164,7 +164,7 @@ export interface WahooRepository {
       description: string | null;
       id: string;
       name: string;
-      structure: unknown;
+      structure: ActivityPlanDocument;
       updatedAt: string;
     } | null;
     id: string;
@@ -236,7 +236,7 @@ export interface WahooRepository {
         description: string | null;
         id: string;
         name: string;
-        structure: unknown;
+        structure: ActivityPlanDocument;
       };
       eventId: string;
       startsAt: string;

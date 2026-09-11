@@ -52,6 +52,9 @@ const baseSession = (overrides: Record<string, unknown> = {}) => {
     prescription: {
       activityPlanId: id(102),
       activityPlanRevision: 1,
+      variantId: id(102),
+      variantName: "Base",
+      structureHash: `v1:sha256:${"0".repeat(64)}`,
       structure,
       prescriptionQuantification: null,
       capturedAt: "2026-08-01T08:00:00.000Z",
@@ -62,6 +65,57 @@ const baseSession = (overrides: Record<string, unknown> = {}) => {
 };
 
 describe("planned session contract", () => {
+  it("accepts only v2 snapshots with canonical variant provenance", () => {
+    const session = baseSession();
+
+    expect(PLANNED_SESSION_CONTRACT_VERSION).toBe("planned-session-v2");
+    expect(plannedSessionSchema.parse(session).prescription).toMatchObject({
+      variantId: id(102),
+      variantName: "Base",
+    });
+    expect(
+      plannedSessionSchema.safeParse({ ...session, contractVersion: "planned-session-v1" }).success,
+    ).toBe(false);
+    expect(
+      plannedSessionSchema.safeParse({
+        ...session,
+        prescription: { ...session.prescription, variantId: undefined },
+      }).success,
+    ).toBe(false);
+    expect(
+      plannedSessionSchema.safeParse({
+        ...session,
+        prescription: { ...session.prescription, variantName: undefined },
+      }).success,
+    ).toBe(false);
+    expect(
+      plannedSessionSchema.safeParse({
+        ...session,
+        prescription: {
+          ...session.prescription,
+          variantId: "00000000-0000-0000-0000-000000000000",
+        },
+      }).success,
+    ).toBe(false);
+
+    for (const variantName of ["", " Base ", "x".repeat(101)]) {
+      expect(
+        plannedSessionSchema.safeParse({
+          ...session,
+          prescription: { ...session.prescription, variantName },
+        }).success,
+      ).toBe(false);
+    }
+
+    const uppercaseVariantId = id(102).toUpperCase();
+    expect(
+      plannedSessionSchema.parse({
+        ...session,
+        prescription: { ...session.prescription, variantId: uppercaseVariantId },
+      }).prescription.variantId,
+    ).toBe(id(102));
+  });
+
   it("retains target date when a training-plan session moves", () => {
     const source = {
       kind: "training_plan" as const,
@@ -82,6 +136,9 @@ describe("planned session contract", () => {
       prescription: {
         activityPlanId: id(13),
         activityPlanRevision: 3,
+        variantId: id(13),
+        variantName: "Base",
+        structureHash: `v1:sha256:${"0".repeat(64)}`,
         structure,
         prescriptionQuantification: null,
         capturedAt: "2026-08-01T08:00:00.000Z",
@@ -113,6 +170,9 @@ describe("planned session contract", () => {
       prescription: {
         activityPlanId: id(23),
         activityPlanRevision: 1,
+        variantId: id(23),
+        variantName: "Base",
+        structureHash: `v1:sha256:${"0".repeat(64)}`,
         structure,
         prescriptionQuantification: null,
         capturedAt: "2026-08-01T08:00:00.000Z",

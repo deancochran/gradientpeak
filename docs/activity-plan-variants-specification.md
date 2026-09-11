@@ -259,7 +259,9 @@ The selected structure and calculation bundle remain immutable. Later variant ed
 
 Existing planned-session snapshots retain their concrete V3 prescriptions during cutover. The migration assigns their source activity-plan ID as the Base variant ID, captures the name `Base`, and upgrades them to the variant-aware snapshot contract without changing prescription structure or quantification.
 
-Training-plan entries must eventually carry an explicit, approved policy for default following versus stable variant selection. Until that deferred product decision is approved, implementation must not silently infer one behavior. Direct scheduling is not blocked: it resolves the current default when omitted and snapshots the result immediately.
+Training-plan sessions always persist `activity_plan_variant_id`. Creation and update inputs may omit it only before server-side materialization; while holding the referenced accessible activity-plan documents inside the existing write transaction, the server resolves each omission to that plan's current default and stores the resolved variant ID immediately. A supplied variant ID must resolve exactly or the whole mutation fails without fallback. Duplicate operations preserve the already-pinned IDs while revalidating those exact variants. Later default changes never retarget persisted training-plan sessions. Existing and system-catalogue training-plan entries deterministically pin Base by setting `activity_plan_variant_id` to `activity_plan_id`, because those activity plans begin with one Base variant whose ID is the owning plan ID.
+
+Template application resolves each persisted training-plan session's exact pinned variant while the accessible activity-plan documents are locked in the scheduling transaction. Planned-session snapshots capture that pinned variant ID, its current name, and its concrete version-3 structure. A missing or unknown pinned variant aborts application; applying a training plan never consults a later default selection.
 
 ### Planned-session persistence
 

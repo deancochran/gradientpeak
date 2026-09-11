@@ -213,6 +213,9 @@ export const ACTIVITY_INGESTION_STATUS_V1_FIXTURES = [
 const prescription: PlannedSessionFixture["prescription"] = {
   activityPlanId: "00000000-0000-4000-8000-000000000030",
   activityPlanRevision: 7,
+  variantId: "00000000-0000-4000-8000-000000000030",
+  variantName: "Base",
+  structureHash: `v1:sha256:${"0".repeat(64)}`,
   structure: {
     version: 3,
     activity_category: "run",

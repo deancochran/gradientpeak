@@ -5,6 +5,8 @@ import {
   canonicalGoalObjectiveSchema,
   canonicalTrainingPlanStructureSchema,
   persistedTrainingPlanStructureSchema,
+  type TrainingPlanCreate,
+  trainingPlanCreateSchema,
 } from "@repo/core";
 import { createDefaultTrainingPlanBuilderState } from "./defaults";
 import type {
@@ -15,7 +17,7 @@ import type {
 
 export function buildCanonicalTrainingPlanStructure(
   state: TrainingPlanBuilderState,
-): CanonicalTrainingPlanStructure {
+): TrainingPlanCreate {
   const selectedGoals = state.goalContext.selectedGoals.map((goal) => ({
     title: goal.title,
     target_offset_days: goal.targetOffsetDays,
@@ -35,7 +37,7 @@ export function buildCanonicalTrainingPlanStructure(
       ...(goal.objective ? { objective: goal.objective } : {}),
     }));
 
-  return canonicalTrainingPlanStructureSchema.parse({
+  return trainingPlanCreateSchema.parse({
     version: 1,
     ...(goalBlueprints.length > 0 ? { goal_blueprints: goalBlueprints } : {}),
     builder_planning_snapshot: {
@@ -67,6 +69,9 @@ export function buildCanonicalTrainingPlanStructure(
         return {
           offset_days: session.offsetDays,
           activity_plan_id: session.activityPlan.id,
+          ...(session.activityPlanVariantId
+            ? { activity_plan_variant_id: session.activityPlanVariantId }
+            : {}),
           ...(eventOverrides ? { event_overrides: eventOverrides } : {}),
         };
       }),
@@ -198,6 +203,7 @@ export function createTrainingPlanBuilderStateFromExistingPlan({
           accessible: false,
           prescriptionQuantification: null,
         },
+        activityPlanVariantId: session.activity_plan_variant_id,
         ...(session.event_overrides ? { eventOverrides: session.event_overrides } : {}),
       })),
     },

@@ -1,7 +1,10 @@
 import {
   type AthletePerformanceTargetFacts,
+  activityPlanDocumentSchema,
+  activityPlanStructureSchema,
   athletePerformanceTargetFactsSchema,
   createUnavailableAthletePerformanceTargetFacts,
+  initializeActivityPlanDocument,
   SYSTEM_TEMPLATES,
 } from "@repo/core";
 import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
@@ -10,6 +13,14 @@ import { wahooPlannedActivityRequiredScopes } from "../../integrations/wahoo/pla
 import { WahooPlannedActivityProvider } from "./wahoo-planned-workout-provider";
 
 const operationTime = new Date("2026-07-28T12:00:00.000Z");
+const activityPlanId = "10000000-0000-4000-8000-000000000001";
+
+function asActivityPlanDocument(value: unknown) {
+  const document = activityPlanDocumentSchema.safeParse(value);
+  if (document.success) return document.data;
+  if (!activityPlanStructureSchema.safeParse(value).success) return value;
+  return initializeActivityPlanDocument({ activityPlanId, structure: value });
+}
 
 function performanceTargets(
   overrides: Partial<AthletePerformanceTargetFacts> = {},
@@ -65,9 +76,11 @@ function providerFixture(
     getPlannedEventForSync: vi.fn().mockResolvedValue({
       activityPlan: {
         description: "Bike session",
-        id: "plan-1",
+        id: activityPlanId,
         name: "Tempo Intervals",
-        structure: overrides.planStructure ?? SYSTEM_TEMPLATES[0]?.structure,
+        structure: asActivityPlanDocument(
+          overrides.planStructure ?? SYSTEM_TEMPLATES[0]?.structure,
+        ),
         updatedAt: "2026-07-28T10:00:00.000Z",
       },
       id: "event-1",
@@ -167,6 +180,40 @@ describe("WahooPlannedActivityProvider", () => {
     expect(enqueueJob.mock.calls[0]?.[0].payload.projectionSnapshot).toMatchObject({
       plan: { header: { ftp: 250 } },
     });
+  });
+
+  it("projects only the document default when nondefault variants differ", async () => {
+    const base = planWithRelativeTarget("%FTP", "bike");
+    const build = structuredClone(base);
+    const segment = build.segments[0];
+    if (!segment || segment.role !== "activity") throw new Error("Expected activity segment");
+    const step = segment.intervals[0]?.steps[0];
+    if (!step || step.duration.type !== "time") throw new Error("Expected timed step");
+    step.duration.seconds += 600;
+    const document = activityPlanDocumentSchema.parse({
+      contractVersion: 1,
+      defaultVariantId: activityPlanId,
+      variants: [
+        { id: activityPlanId, name: "Base", structure: base },
+        {
+          id: "20000000-0000-4000-8000-000000000002",
+          name: "Build",
+          structure: build,
+        },
+      ],
+    });
+    const baseline = providerFixture({ planStructure: base });
+    const withVariants = providerFixture({ planStructure: document });
+
+    await baseline.provider.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" });
+    await withVariants.provider.enqueuePublishEvent({
+      eventId: "event-1",
+      profileId: "profile-1",
+    });
+
+    expect(withVariants.enqueueJob.mock.calls[0]?.[0].payload.projectionHash).toBe(
+      baseline.enqueueJob.mock.calls[0]?.[0].payload.projectionHash,
+    );
   });
 
   it("exports a historical as-of HR fact into a structured run activity plan", async () => {

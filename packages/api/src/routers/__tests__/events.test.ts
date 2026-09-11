@@ -1,4 +1,8 @@
-import { activityPlanStructureSchema, SYSTEM_TEMPLATES } from "@repo/core";
+import {
+  activityPlanDocumentSchema,
+  initializeActivityPlanDocument,
+  SYSTEM_TEMPLATES,
+} from "@repo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   estimateActivityPlan,
@@ -108,7 +112,10 @@ function constraintQueryMap(): QueryMap {
       data: {
         id: "55555555-5555-4555-8555-555555555555",
         activity_category: "bike",
-        structure: createActivityPlanStructure("bike"),
+        structure: createActivityPlanDocument(
+          "55555555-5555-4555-8555-555555555555",
+          createActivityPlanStructure("bike"),
+        ),
         route_id: null,
       },
       error: null,
@@ -156,6 +163,7 @@ function createEventRow(overrides: Record<string, unknown> = {}) {
     all_day: true,
     timezone: "UTC",
     activity_plan_id: null,
+    planned_session_id: null,
     route_id: null,
     training_plan_id: null,
     recurrence_rule: null,
@@ -172,6 +180,7 @@ function createEventRow(overrides: Record<string, unknown> = {}) {
     ends_at: "2026-03-03T00:00:00.000Z",
     scheduled_date: "2026-03-02",
     activity_plan: null,
+    planned_session: null,
     ...overrides,
   };
 }
@@ -203,6 +212,35 @@ function createActivityPlanStructure(activity_category: "bike" | "run", segmentC
   };
 }
 
+function createPlannedSessionProjection(structure: ReturnType<typeof createActivityPlanStructure>) {
+  return {
+    id: "22222222-2222-4222-8222-222222222222",
+    sessionRevision: 5,
+    planningDate: "2026-03-02",
+    source: {
+      kind: "training_plan" as const,
+      trainingPlanId: "33333333-3333-4333-8333-333333333333",
+      trainingPlanRevision: 4,
+      sourceSessionKey: "session-2",
+    },
+    prescription: {
+      activityPlanId: "11111111-1111-4111-8111-111111111111",
+      activityPlanRevision: 7,
+      variantId: "44444444-4444-4444-8444-444444444444",
+      variantName: "Long",
+      structure,
+      structureHash: `v1:sha256:${"a".repeat(64)}`,
+      prescriptionQuantification: null,
+      capturedAt: "2026-03-01T00:00:00.000Z",
+    },
+    lifecycle: { status: "scheduled" as const },
+  };
+}
+
+function createActivityPlanDocument(activityPlanId: string, structure: unknown) {
+  return initializeActivityPlanDocument({ activityPlanId, structure });
+}
+
 function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "11111111-1111-4111-8111-111111111111",
@@ -210,7 +248,10 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
     name: "Activity plan",
     description: null,
     notes: null,
-    structure: createActivityPlanStructure("run"),
+    structure: createActivityPlanDocument(
+      "11111111-1111-4111-8111-111111111111",
+      createActivityPlanStructure("run"),
+    ),
     structure_hash: "test-structure-hash",
     revision: 1,
     gps_recording_enabled: true,
@@ -433,11 +474,31 @@ function createWriteRepository(params: {
     },
     async getAccessibleActivityPlan() {
       const plan = params.nextResult("activity_plans").data as { structure?: unknown } | null;
-      return plan ? { ...plan, structure: plan.structure ?? SYSTEM_TEMPLATES[0]?.structure } : null;
+      return plan
+        ? {
+            ...plan,
+            structure:
+              plan.structure ??
+              createActivityPlanDocument(
+                "11111111-1111-4111-8111-111111111111",
+                SYSTEM_TEMPLATES[0]?.structure,
+              ),
+          }
+        : null;
     },
     async getActivityPlanById() {
       const plan = params.nextResult("activity_plans").data as { structure?: unknown } | null;
-      return plan ? { ...plan, structure: plan.structure ?? SYSTEM_TEMPLATES[0]?.structure } : null;
+      return plan
+        ? {
+            ...plan,
+            structure:
+              plan.structure ??
+              createActivityPlanDocument(
+                "11111111-1111-4111-8111-111111111111",
+                SYSTEM_TEMPLATES[0]?.structure,
+              ),
+          }
+        : null;
     },
     async getAccessibleActivityRoute() {
       return params.nextResult("activity_routes").data ?? null;
@@ -471,7 +532,7 @@ function createWriteRepository(params: {
           (event) =>
             event.activity_plan_id !== null &&
             (("activity_plan_structure" in event &&
-              !activityPlanStructureSchema.safeParse(event.activity_plan_structure).success) ||
+              !activityPlanDocumentSchema.safeParse(event.activity_plan_structure).success) ||
               event.activity_plan_unavailable === true),
         )
       ) {
@@ -1237,7 +1298,10 @@ describe("eventsRouter generalization", () => {
           activity_plan: createActivityPlanRow({
             id: "11111111-1111-4111-8111-111111111111",
             name: "Tempo Builder",
-            structure: createActivityPlanStructure("run"),
+            structure: createActivityPlanDocument(
+              "11111111-1111-4111-8111-111111111111",
+              createActivityPlanStructure("run"),
+            ),
             route_id: "route-1",
             profile_id: "profile-1",
             updated_at: "2026-03-01T00:00:00.000Z",
@@ -1286,6 +1350,42 @@ describe("eventsRouter generalization", () => {
     );
   });
 
+  it("getById exposes the linked planned-session prescription without snake-case transport leakage", async () => {
+    const prescribedStructure = createActivityPlanStructure("bike", 2);
+    const plannedSession = createPlannedSessionProjection(prescribedStructure);
+    const { caller } = createCaller({
+      events: {
+        data: createEventRow({
+          id: "00000000-0000-4000-8000-000000000013",
+          activity_plan_id: plannedSession.prescription.activityPlanId,
+          planned_session_id: plannedSession.id,
+          planned_session: plannedSession,
+          activity_plan: createActivityPlanRow({
+            id: plannedSession.prescription.activityPlanId,
+            revision: plannedSession.prescription.activityPlanRevision,
+            structure: createActivityPlanDocument(
+              plannedSession.prescription.activityPlanId,
+              prescribedStructure,
+            ),
+            structure_hash: plannedSession.prescription.structureHash,
+          }),
+        }),
+        error: null,
+      },
+    });
+
+    const result = await caller.getById({
+      id: "00000000-0000-4000-8000-000000000013",
+    });
+
+    expect(result.plannedSession).toEqual(plannedSession);
+    expect(result.activityPlanSummary).toMatchObject({
+      activityPlanRevision: 7,
+      structure: prescribedStructure,
+    });
+    expect(result).not.toHaveProperty("planned_session");
+  });
+
   it("calendar range hydrates linked activity plans for planned events", async () => {
     const { calendarCaller } = createCaller({
       events: {
@@ -1298,7 +1398,10 @@ describe("eventsRouter generalization", () => {
               id: "11111111-1111-4111-8111-111111111111",
               name: "Threshold Ride",
               route_id: "route-2",
-              structure: createActivityPlanStructure("bike", 2),
+              structure: createActivityPlanDocument(
+                "11111111-1111-4111-8111-111111111111",
+                createActivityPlanStructure("bike", 2),
+              ),
               profile_id: "profile-2",
               updated_at: "2026-03-02T00:00:00.000Z",
             }),
@@ -1879,7 +1982,10 @@ describe("eventsRouter generalization", () => {
     const unlinked = createEventRow({ event_type: "custom" });
     const linked = createEventRow({
       activity_plan_id: "11111111-1111-4111-8111-111111111111",
-      activity_plan_structure: singleActivityCategoryStructure,
+      activity_plan_structure: createActivityPlanDocument(
+        "11111111-1111-4111-8111-111111111111",
+        singleActivityCategoryStructure,
+      ),
       route_id: "route-1",
     });
     const unlinkedCaller = createCaller({
@@ -1912,7 +2018,10 @@ describe("eventsRouter generalization", () => {
   ] as const)("rejects %s scope atomically when a non-anchor target has a legacy plan", async (scope) => {
     const anchor = createEventRow({
       activity_plan_id: "11111111-1111-4111-8111-111111111111",
-      activity_plan_structure: createActivityPlanStructure("run"),
+      activity_plan_structure: createActivityPlanDocument(
+        "11111111-1111-4111-8111-111111111111",
+        createActivityPlanStructure("run"),
+      ),
       id: "00000000-0000-4000-8000-000000000070",
       series_id: "00000000-0000-4000-8000-000000000071",
     });
@@ -2779,7 +2888,10 @@ describe("eventsRouter generalization", () => {
             id: eventId,
             starts_at: "2026-01-05T00:00:00.000Z",
             activity_plan_id: "22222222-2222-4222-8222-222222222222",
-            activity_plan_structure: createActivityPlanStructure("bike"),
+            activity_plan_structure: createActivityPlanDocument(
+              "11111111-1111-4111-8111-111111111111",
+              createActivityPlanStructure("bike"),
+            ),
             linked_activity_id: null,
             status: "scheduled",
           }),
@@ -2828,7 +2940,10 @@ describe("eventsRouter generalization", () => {
               id: eventId,
               starts_at: "2026-01-06T00:00:00.000Z",
               activity_plan_id: "33333333-3333-4333-8333-333333333333",
-              activity_plan_structure: createActivityPlanStructure("bike"),
+              activity_plan_structure: createActivityPlanDocument(
+                "11111111-1111-4111-8111-111111111111",
+                createActivityPlanStructure("bike"),
+              ),
               linked_activity_id: null,
               status: "scheduled",
             }),

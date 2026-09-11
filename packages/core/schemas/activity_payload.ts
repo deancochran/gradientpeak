@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { activityPlanStructureSchema } from "../activity-plan";
+import { plannedSessionPrescriptionSnapshotSchema } from "../calendar/planned-session";
 import {
   type CanonicalActivityCategory,
   canonicalActivityCategorySchema,
@@ -57,6 +58,16 @@ export const recordingServiceActivityPlanSchema = z
     is_system_template: z.boolean().optional(),
   });
 export type RecordingServiceActivityPlan = z.infer<typeof recordingServiceActivityPlanSchema>;
+
+/** Immutable scheduled-execution input copied from a linked planned session. */
+export const recordingPlannedSessionLaunchSchema = z
+  .object({
+    id: z.string().uuid(),
+    sessionRevision: z.number().int().positive(),
+    prescription: plannedSessionPrescriptionSnapshotSchema,
+  })
+  .strict();
+export type RecordingPlannedSessionLaunch = z.infer<typeof recordingPlannedSessionLaunchSchema>;
 
 // ==============================
 // ACTIVITY METRICS SCHEMA (for JSONB storage)
@@ -193,8 +204,42 @@ export const ActivityPayloadSchema = z
     gpsRecordingEnabled: z.literal(false),
     eventId: z.string().optional(),
     plan: recordingServiceActivityPlanSchema.optional(),
+    plannedSession: recordingPlannedSessionLaunchSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((payload, context) => {
+    if (!payload.plannedSession) return;
+    const { prescription } = payload.plannedSession;
+    if (!payload.plan) {
+      context.addIssue({
+        code: "custom",
+        path: ["plan"],
+        message: "A planned-session launch requires its prescribed plan snapshot",
+      });
+      return;
+    }
+    if (payload.plan.id !== prescription.activityPlanId) {
+      context.addIssue({
+        code: "custom",
+        path: ["plan", "id"],
+        message: "The launch plan must match the planned-session activity plan",
+      });
+    }
+    if (payload.activity_category !== prescription.structure.activity_category) {
+      context.addIssue({
+        code: "custom",
+        path: ["activity_category"],
+        message: "The launch category must match the planned-session prescription",
+      });
+    }
+    if (JSON.stringify(payload.plan.structure) !== JSON.stringify(prescription.structure)) {
+      context.addIssue({
+        code: "custom",
+        path: ["plan", "structure"],
+        message: "The launch structure must be the planned-session prescription snapshot",
+      });
+    }
+  });
 
 export type ActivityPayload = z.infer<typeof ActivityPayloadSchema>;
 

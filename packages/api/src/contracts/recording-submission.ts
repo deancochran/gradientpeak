@@ -2,6 +2,7 @@ import {
   activityLapRecordListSchema,
   contentVisibilitySchema,
   recordingExecutionManifestSchema,
+  recordingPlanExecutionSnapshotSchema,
 } from "@repo/core";
 import {
   MAX_ACTIVITY_FILE_SIZE_BYTES,
@@ -48,6 +49,7 @@ const recordingSummarySubmissionBaseShape = {
   startedAt: z.string().datetime({ offset: true }),
   finishedAt: z.string().datetime({ offset: true }),
   activityPlanId: z.string().uuid().nullable().optional(),
+  planExecution: recordingPlanExecutionSnapshotSchema.optional(),
   routeId: z.string().uuid().nullable().optional(),
   executionManifest: recordingExecutionManifestSchema,
   laps: activityLapRecordListSchema.optional(),
@@ -82,7 +84,14 @@ export const recordingSummarySubmissionInputSchema = z
   .refine((value) => new Date(value.finishedAt) > new Date(value.startedAt), {
     message: "finishedAt must be after startedAt",
     path: ["finishedAt"],
-  });
+  })
+  .refine(
+    (value) => !value.planExecution || value.activityPlanId === value.planExecution.activityPlanId,
+    {
+      message: "planExecution must match activityPlanId",
+      path: ["planExecution", "activityPlanId"],
+    },
+  );
 
 export const beginMobileRecordingUploadInputSchema = z
   .object({

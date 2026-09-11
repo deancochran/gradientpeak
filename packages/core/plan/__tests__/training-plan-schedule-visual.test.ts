@@ -15,9 +15,9 @@ describe("training plan schedule visual", () => {
           { title: "Race day", priority: 10, activity_category: "run", target_offset_days: 15 },
         ],
         sessions: [
-          { offset_days: 0, activity_plan_id: id(1) },
-          { offset_days: 2, activity_plan_id: id(2) },
-          { offset_days: 8, activity_plan_id: id(3) },
+          { offset_days: 0, activity_plan_id: id(1), activity_plan_variant_id: id(1) },
+          { offset_days: 2, activity_plan_id: id(2), activity_plan_variant_id: id(2) },
+          { offset_days: 8, activity_plan_id: id(3), activity_plan_variant_id: id(3) },
         ],
       },
     });
@@ -67,7 +67,7 @@ describe("training plan schedule visual", () => {
       structure: {
         version: 1,
         activity_category: ["bike"],
-        sessions: [{ offset_days: 0, activity_plan_id: id(4) }],
+        sessions: [{ offset_days: 0, activity_plan_id: id(4), activity_plan_variant_id: id(4) }],
       },
     });
 
@@ -89,7 +89,13 @@ describe("training plan schedule visual", () => {
       deriveTrainingPlanScheduleVisual({
         structure: {
           version: 1,
-          sessions: [{ offset_days: 104 * 7, activity_plan_id: id(5) }],
+          sessions: [
+            {
+              offset_days: 104 * 7,
+              activity_plan_id: id(5),
+              activity_plan_variant_id: id(5),
+            },
+          ],
         },
       }),
     ).toBeNull();

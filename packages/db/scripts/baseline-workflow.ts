@@ -7,6 +7,7 @@ import { dbPackageRoot } from "./_helpers";
 
 export type FreshBaseline = {
   filename: string;
+  migrationPaths: string[];
   name: "mvp_baseline";
   sourcePath: string;
   version: string;
@@ -57,6 +58,7 @@ export function requireFreshBaseline(root = dbPackageRoot): FreshBaseline {
   }
   return {
     filename,
+    migrationPaths: entries.map((entry) => resolve(authority, entry.name)),
     name: "mvp_baseline",
     sourcePath,
     version: filename.slice(0, 14),

@@ -1,4 +1,4 @@
-import { activityPlanStructureSchema } from "@repo/core";
+import { activityPlanDocumentSchema } from "@repo/core";
 import type { PublicEventStatus } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import type { Context } from "../../context";
@@ -136,7 +136,7 @@ export async function createEventUseCase<
         message: "Activity plan not found or not accessible",
       });
     }
-    if (!activityPlanStructureSchema.safeParse(activityPlan.structure).success) {
+    if (!activityPlanDocumentSchema.safeParse(activityPlan.structure).success) {
       throw new TRPCError({
         code: "BAD_REQUEST",
         message: "Only executable single-category activity plans can be scheduled",

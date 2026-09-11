@@ -20,6 +20,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, View } from "react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
 import { ActivityPlanBasicsSection } from "@/components/activity-plan/ActivityPlanBasicsSection";
+import { ActivityPlanVariantSelector } from "@/components/activity-plan/ActivityPlanVariantSelector";
 import { StepEditorDialog } from "@/components/activity-plan/activity/StepEditorDialog";
 import { findActivitySegmentForInterval } from "@/components/activity-plan/activityPlanSelection";
 import { StructureBuilderCard } from "@/components/activity-plan/structure/StructureBuilderCard";
@@ -103,6 +104,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     updateSegment,
     removeSegment,
     reorderSegments,
+    selectVariant,
     setStructure,
   } = useActivityPlanCreationStore();
 
@@ -267,7 +269,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     name: form.name,
     navigation,
     notes: form.notes,
-    structure: form.structure,
+    structure: form.document ?? form.structure,
     submit,
   });
 
@@ -491,6 +493,23 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
               );
             }}
           />
+
+          {form.document && form.selectedVariantId && form.document.variants.length > 1 ? (
+            <View className="rounded-lg border border-border bg-card p-3">
+              <ActivityPlanVariantSelector
+                defaultVariantId={form.document.defaultVariantId}
+                onSelect={(variantId) => {
+                  setSelectedIntervalId(null);
+                  setSelectedSegmentId(null);
+                  selectVariant(variantId ?? form.document?.defaultVariantId ?? "");
+                }}
+                selectedVariantId={form.selectedVariantId}
+                selection="explicit"
+                testIDPrefix="activity-plan-editor-variant"
+                variants={form.document.variants}
+              />
+            </View>
+          ) : null}
 
           {publishedStateQuery.data?.publishedState?.performanceTargets &&
           publishedStateQuery.data.status?.freshness === "stale" ? (

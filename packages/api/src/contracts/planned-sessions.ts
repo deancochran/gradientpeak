@@ -136,6 +136,7 @@ export const createPlannedSessionDtoRequestSchema = z
           .strict(),
         groupEventId: uuidSchema.nullable().optional(),
         activityPlanId: uuidSchema,
+        variantId: uuidSchema.optional(),
       })
       .strict(),
   })

@@ -1,4 +1,4 @@
-import { SYSTEM_TEMPLATES } from "@repo/core";
+import { initializeActivityPlanDocument, SYSTEM_TEMPLATES } from "@repo/core";
 import { describe, expect, it, vi } from "vitest";
 import type {
   CreateOwnedEventInput,
@@ -12,7 +12,10 @@ const profileId = "viewer-profile";
 const activityPlan = {
   id: activityPlanId,
   name: "Readable activity plan",
-  structure: SYSTEM_TEMPLATES[0]?.structure,
+  structure: initializeActivityPlanDocument({
+    activityPlanId,
+    structure: SYSTEM_TEMPLATES[0]?.structure,
+  }),
 };
 
 function createdEvent() {

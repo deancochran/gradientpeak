@@ -14,6 +14,7 @@ describe("materializePlanToEvents", () => {
           {
             offset_days: 2,
             activity_plan_id: activityPlanIdA,
+            activity_plan_variant_id: activityPlanIdA,
             event_overrides: {
               title: "Tempo before work",
               description: "Keep the opening controlled.",
@@ -37,6 +38,7 @@ describe("materializePlanToEvents", () => {
         event_title_override: "Tempo before work",
         event_type: "planned",
         activity_plan_id: activityPlanIdA,
+        activity_plan_variant_id: activityPlanIdA,
         all_day: false,
         source_day_offset: 2,
         source_path: "sessions.0",
@@ -49,7 +51,13 @@ describe("materializePlanToEvents", () => {
       {
         id: "33333333-3333-4333-8333-333333333333",
         version: 1,
-        sessions: [{ offset_days: 4, activity_plan_id: activityPlanIdA }],
+        sessions: [
+          {
+            offset_days: 4,
+            activity_plan_id: activityPlanIdA,
+            activity_plan_variant_id: activityPlanIdA,
+          },
+        ],
       },
       "2026-04-06",
       "America/Los_Angeles",
@@ -96,7 +104,13 @@ describe("materializePlanToEvents", () => {
     const events = materializePlanToEvents(
       {
         version: 1,
-        sessions: [{ offset_days: 0, activity_plan_id: activityPlanIdB }],
+        sessions: [
+          {
+            offset_days: 0,
+            activity_plan_id: activityPlanIdB,
+            activity_plan_variant_id: activityPlanIdB,
+          },
+        ],
       },
       "2026-04-06",
       "UTC",
@@ -109,6 +123,7 @@ describe("materializePlanToEvents", () => {
     const sessions = Array.from({ length: 11 }, (_, index) => ({
       offset_days: 0,
       activity_plan_id: `${String(index + 1).padStart(8, "0")}-0000-4000-8000-000000000000`,
+      activity_plan_variant_id: `${String(index + 1).padStart(8, "0")}-0000-4000-8000-000000000000`,
       event_overrides: { title: `Session ${index}` },
     }));
 

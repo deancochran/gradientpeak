@@ -274,7 +274,7 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
             {sessions.length === 0 ? <p>Add a activity to build the plan structure.</p> : null}
             {sessions.map((session, index) => (
               <fieldset
-                className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_8rem_auto]"
+                className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_1fr_8rem_auto]"
                 key={
                   session.draftId ??
                   `${session.offsetDays}-${session.activityPlanId}-${session.title}`
@@ -293,7 +293,11 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
                       setSessions((current) =>
                         current.map((item, itemIndex) =>
                           itemIndex === index
-                            ? { ...item, activityPlanId: event.target.value }
+                            ? {
+                                ...item,
+                                activityPlanId: event.target.value,
+                                variantId: undefined,
+                              }
                             : item,
                         ),
                       )
@@ -308,6 +312,18 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
                     ))}
                   </select>
                 </label>
+                <ActivityPlanVariantField
+                  activityPlanId={session.activityPlanId}
+                  fieldId={`training-plan-session-variant-${session.draftId}`}
+                  onChange={(variantId) =>
+                    setSessions((current) =>
+                      current.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, variantId } : item,
+                      ),
+                    )
+                  }
+                  variantId={session.variantId}
+                />
                 <label
                   className="space-y-1"
                   htmlFor={`training-plan-session-offset-${session.draftId}`}
@@ -450,5 +466,52 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function ActivityPlanVariantField({
+  activityPlanId,
+  fieldId,
+  onChange,
+  variantId,
+}: {
+  activityPlanId: string;
+  fieldId: string;
+  onChange: (variantId: string | undefined) => void;
+  variantId?: string;
+}) {
+  const detailQuery = api.activityPlans.getById.useQuery(
+    { id: activityPlanId, personalize: false },
+    { enabled: Boolean(activityPlanId), retry: false },
+  );
+  const detail = detailQuery.data?.detail;
+  const selectedVariantIsMissing = Boolean(
+    variantId && detail && !detail.variants.some((variant) => variant.id === variantId),
+  );
+
+  return (
+    <label className="space-y-1" htmlFor={fieldId}>
+      <span className="text-xs">Variant</span>
+      <select
+        className="h-10 w-full rounded-md border bg-background px-3"
+        disabled={!activityPlanId || detailQuery.isLoading || detailQuery.isError}
+        id={fieldId}
+        onChange={(event) => onChange(event.currentTarget.value || undefined)}
+        value={variantId ?? ""}
+      >
+        <option value="">
+          {detail ? `Current default (${detail.defaultVariantName})` : "Current default"}
+        </option>
+        {selectedVariantIsMissing && variantId ? (
+          <option value={variantId}>Unavailable selected variant</option>
+        ) : null}
+        {detail?.variants.map((variant) => (
+          <option key={variant.id} value={variant.id}>
+            {variant.name}
+            {variant.id === detail.defaultVariantId ? " (default)" : ""}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

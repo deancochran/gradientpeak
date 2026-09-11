@@ -19,7 +19,8 @@ export interface MaterializedPlanEvent {
   description: string | null;
   event_title_override: string | null;
   event_type: MaterializedPlanEventType;
-  activity_plan_id: string | null;
+  activity_plan_id: string;
+  activity_plan_variant_id: string;
   all_day: boolean;
   source_day_offset: number;
   source_path: string;
@@ -95,6 +96,7 @@ function materializeCanonicalPlan(
         event_title_override: eventTitleOverride,
         event_type: "planned" as const,
         activity_plan_id: session.activity_plan_id,
+        activity_plan_variant_id: session.activity_plan_variant_id,
         source_day_offset: session.offset_days,
         source_path: `sessions.${index}`,
         sourceSessionIndex: index,

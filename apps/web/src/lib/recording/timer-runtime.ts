@@ -26,6 +26,7 @@ export type TimerOnlyRecordingPlanConfiguration = {
   description: string | null;
   activityPlanRevision: number;
   structureHash: string;
+  /** Validated as an exact resolved V3 prescription before recording is configured. */
   structure: unknown;
 };
 

@@ -143,9 +143,26 @@ export function trainingPlanBuilderReducer(
         structure: {
           sessions: state.structure.sessions.map((session) =>
             session.localId === action.sessionId
-              ? { ...session, activityPlan: action.activityPlan }
+              ? (() => {
+                  const { activityPlanVariantId: _removed, ...withoutVariant } = session;
+                  return { ...withoutVariant, activityPlan: action.activityPlan };
+                })()
               : session,
           ),
+        },
+      };
+    case "session.selectActivityPlanVariant":
+      return {
+        ...state,
+        structure: {
+          sessions: state.structure.sessions.map((session) => {
+            if (session.localId !== action.sessionId) return session;
+            if (action.variantId === undefined) {
+              const { activityPlanVariantId: _removed, ...withoutVariant } = session;
+              return withoutVariant;
+            }
+            return { ...session, activityPlanVariantId: action.variantId };
+          }),
         },
       };
     case "scheduling.startDateUpdate":

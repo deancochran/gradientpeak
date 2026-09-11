@@ -6,6 +6,7 @@ import {
   compareCalendarProjectionItems,
   type SemanticMetric,
 } from "@repo/core";
+import { plannedSessionProjectionSchema } from "@repo/core/calendar";
 import { groupEventRsvpStatusSchema, resolveGroupEventRsvpStatus } from "@repo/core/groups";
 import { z } from "zod";
 
@@ -26,6 +27,7 @@ const eventSourceSchema = z.looseObject({
   linkedActivityDisplay: activityDisplayModelSchema.nullable().optional(),
   training_plan_id: z.string().nullable().optional(),
   activity_plan: z.unknown().nullable(),
+  planned_session: plannedSessionProjectionSchema.nullable().optional(),
 });
 
 const completedActivitySourceSchema = z.looseObject({
@@ -149,6 +151,15 @@ export function assembleCalendarProjectionRange(input: {
         (isCompleted && !event.linkedActivityDisplay) ||
         projectedMetrics.some((item) => item.status !== "available"),
       plan,
+      plannedSession: event.planned_session
+        ? {
+            id: event.planned_session.id,
+            planningDate: event.planned_session.planningDate,
+            source: event.planned_session.source,
+            prescription: event.planned_session.prescription,
+            lifecycle: event.planned_session.lifecycle,
+          }
+        : null,
       activity: isCompleted ? (event.linkedActivityDisplay ?? null) : null,
       event: {
         type: z.enum(["planned", "race_target", "custom"]).parse(event.event_type),
@@ -182,6 +193,7 @@ export function assembleCalendarProjectionRange(input: {
       estimated: false,
       partial: metrics.some((item) => item.status !== "available"),
       plan: null,
+      plannedSession: null,
       activity: activity.display,
       event: null,
       groupEvent: null,
@@ -224,6 +236,7 @@ export function assembleCalendarProjectionRange(input: {
       estimated: plan !== null,
       partial: plan?.metrics.some((item) => item.status !== "available") ?? false,
       plan,
+      plannedSession: null,
       activity: null,
       event: null,
       groupEvent: {
@@ -254,6 +267,7 @@ export function assembleCalendarProjectionRange(input: {
       estimated: false,
       partial: false,
       plan: null,
+      plannedSession: null,
       activity: null,
       event: null,
       groupEvent: null,

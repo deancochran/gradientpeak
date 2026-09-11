@@ -81,6 +81,8 @@ async function materialize() {
         as $$ select 'artifacts/sha256/' || target_profile_id::text || '/' || target_digest $$;
       create function public.activity_plan_structure_is_canonical(input jsonb)
         returns boolean language sql immutable set search_path = pg_catalog as $$ select true $$;
+      create function public.activity_plan_document_is_canonical(input jsonb)
+        returns boolean language sql immutable set search_path = pg_catalog as $$ select true $$;
       create function public.activity_plan_jsonb_has_exact_keys(input jsonb, required_keys text[], optional_keys text[] default '{}'::text[])
         returns boolean language sql immutable set search_path = pg_catalog as $$ select true $$;
       create function public.activity_plan_jsonb_is_uuid(input jsonb) returns boolean language sql immutable set search_path = pg_catalog as $$ select true $$;

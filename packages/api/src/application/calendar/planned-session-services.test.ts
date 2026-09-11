@@ -1,4 +1,7 @@
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import {
+  activityPlanStructureSchema,
+  initializeActivityPlanDocument,
+} from "@repo/core/activity-plan";
 import {
   PLANNED_SESSION_CONTRACT_VERSION,
   type PlannedSession,
@@ -88,6 +91,9 @@ function session(input: {
     prescription: {
       activityPlanId: input.activityPlanId ?? ownedActivityPlanId,
       activityPlanRevision: 1,
+      variantId: input.activityPlanId ?? ownedActivityPlanId,
+      variantName: "Base",
+      structureHash: `v1:sha256:${"0".repeat(64)}`,
       structure,
       prescriptionQuantification: null,
       capturedAt: "2026-08-01T00:00:00.000Z",
@@ -234,7 +240,10 @@ class MemoryPlannedSessionRepository implements PlannedSessionRepositoryPort {
       name: "Saved ride",
       description: null,
       revision: 1,
-      structure,
+      structure: initializeActivityPlanDocument({
+        activityPlanId: input.activityPlanId,
+        structure,
+      }),
       structureHash: `v1:sha256:${"a".repeat(64)}`,
       gpsRecordingEnabled: true,
       updatedAt: "2026-08-01T00:00:00.000Z",

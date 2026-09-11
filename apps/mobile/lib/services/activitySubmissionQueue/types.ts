@@ -7,6 +7,7 @@ import {
   canonicalActivityCategorySchema,
   contentVisibilitySchema,
   recordingExecutionManifestSchema,
+  recordingPlanExecutionSnapshotSchema,
 } from "@repo/core";
 import { z } from "zod";
 
@@ -57,6 +58,7 @@ export const activitySubmissionQueueJobSchema = z
     localActivityFileSize: z.number().nonnegative().nullable().optional(),
     streamArtifactPaths: z.array(z.string().min(1)),
     executionManifest: recordingExecutionManifestSchema,
+    planExecution: recordingPlanExecutionSnapshotSchema.nullable().optional(),
     draft: activitySubmissionQueueDraftSchema,
     activityId: z.string().min(1).optional(),
     ingestionId: z.string().min(1).optional(),

@@ -1,14 +1,94 @@
+import { SYSTEM_TEMPLATES } from "@repo/core";
+import {
+  activityPlanDocumentSchema,
+  initializeActivityPlanDocument,
+} from "@repo/core/activity-plan";
 import type { DrizzleDbClient } from "@repo/db/client";
 import { describe, expect, it } from "vitest";
 import { createPlanningTemplateRepository } from "../../../infrastructure";
 import type { TrainingPlanRepository } from "../../../repositories";
 import { createQueryMapDbMock } from "../../../test/mock-query-db";
 import { activityPlanStructureHash } from "../../activity-plans/structure-hash";
-import { createTrainingPlanUseCase, updateTrainingPlanUseCase } from "../mutationUseCases";
+import {
+  createTrainingPlanUseCase,
+  materializeTrainingPlanActivityPlanVariants,
+  updateTrainingPlanUseCase,
+} from "../mutationUseCases";
 
 describe("canonical training plan mutations", () => {
   const strictStructure = SYSTEM_TEMPLATES[0]?.structure;
   if (!strictStructure) throw new Error("Expected a strict system template fixture");
+  const documentFor = (id: string, structure: unknown = strictStructure) =>
+    initializeActivityPlanDocument({ activityPlanId: id, structure });
+
+  it("pins omissions immediately, preserves prior pins after a default change, and never falls back for an explicit ID", () => {
+    const activityPlanId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const buildVariantId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const unknownVariantId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const baseDocument = activityPlanDocumentSchema.parse({
+      contractVersion: 1,
+      defaultVariantId: activityPlanId,
+      variants: [
+        { id: activityPlanId, name: "Base", structure: strictStructure },
+        { id: buildVariantId, name: "Build", structure: strictStructure },
+      ],
+    });
+    const row = (document: typeof baseDocument) => ({
+      activityCategory: "run",
+      gpsRecordingEnabled: true,
+      id: activityPlanId,
+      isSystemTemplate: false,
+      structure: document,
+      structureHash: activityPlanStructureHash(document),
+    });
+    const inputStructure = {
+      version: 1 as const,
+      sessions: [
+        { offset_days: 0, activity_plan_id: activityPlanId },
+        {
+          offset_days: 1,
+          activity_plan_id: activityPlanId,
+          activity_plan_variant_id: buildVariantId,
+        },
+      ],
+    };
+
+    const pinned = materializeTrainingPlanActivityPlanVariants({
+      rows: [row(baseDocument)],
+      structure: inputStructure,
+    });
+    expect(pinned.sessions.map((session) => session.activity_plan_variant_id)).toEqual([
+      activityPlanId,
+      buildVariantId,
+    ]);
+
+    const changedDefault = activityPlanDocumentSchema.parse({
+      ...baseDocument,
+      defaultVariantId: buildVariantId,
+    });
+    const newlyPinned = materializeTrainingPlanActivityPlanVariants({
+      rows: [row(changedDefault)],
+      structure: { version: 1, sessions: [{ offset_days: 0, activity_plan_id: activityPlanId }] },
+    });
+    expect(newlyPinned.sessions[0]?.activity_plan_variant_id).toBe(buildVariantId);
+    expect(pinned.sessions[0]?.activity_plan_variant_id).toBe(activityPlanId);
+
+    expect(() =>
+      materializeTrainingPlanActivityPlanVariants({
+        rows: [row(changedDefault)],
+        structure: {
+          version: 1,
+          sessions: [
+            {
+              offset_days: 0,
+              activity_plan_id: activityPlanId,
+              activity_plan_variant_id: unknownVariantId,
+            },
+          ],
+        },
+      }),
+    ).toThrow(`unknown activity-plan variant: ${unknownVariantId}`);
+  });
   it("batch-rejects the whole create when any linked activity plan is not published", async () => {
     const publishedId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const unpublishedId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -19,8 +99,8 @@ describe("canonical training plan mutations", () => {
             id: publishedId,
             is_system_template: false,
             gps_recording_enabled: true,
-            structure: strictStructure,
-            structure_hash: activityPlanStructureHash(strictStructure),
+            structure: documentFor(publishedId),
+            structure_hash: activityPlanStructureHash(documentFor(publishedId)),
           },
         ],
         error: null,
@@ -61,7 +141,13 @@ describe("canonical training plan mutations", () => {
     const existingStructure = {
       id: "22222222-2222-4222-8222-222222222222",
       version: 1 as const,
-      sessions: [{ offset_days: 0, activity_plan_id: unavailableId }],
+      sessions: [
+        {
+          offset_days: 0,
+          activity_plan_id: unavailableId,
+          activity_plan_variant_id: unavailableId,
+        },
+      ],
     };
     const repository = {
       getOwnedTrainingPlan: async () => ({
@@ -177,8 +263,10 @@ describe("canonical training plan mutations", () => {
             id: expected.id,
             is_system_template: true,
             gps_recording_enabled: mismatched.gps_recording_enabled,
-            structure: mismatched.structure,
-            structure_hash: activityPlanStructureHash(mismatched.structure),
+            structure: documentFor(expected.id, mismatched.structure),
+            structure_hash: activityPlanStructureHash(
+              documentFor(expected.id, mismatched.structure),
+            ),
           },
         ],
         error: null,
@@ -216,7 +304,7 @@ describe("canonical training plan mutations", () => {
             id: linkedId,
             is_system_template: false,
             gps_recording_enabled: true,
-            structure: strictStructure,
+            structure: documentFor(linkedId),
             structure_hash: activityPlanStructureHash({ version: 3, segments: [] }),
           },
         ],
@@ -254,8 +342,8 @@ describe("canonical training plan mutations", () => {
             id: linkedId,
             is_system_template: false,
             gps_recording_enabled: true,
-            structure: strictStructure,
-            structure_hash: activityPlanStructureHash(strictStructure),
+            structure: documentFor(linkedId),
+            structure_hash: activityPlanStructureHash(documentFor(linkedId)),
           },
         ],
         error: null,
@@ -271,12 +359,24 @@ describe("canonical training plan mutations", () => {
         structure: {
           id: planId,
           version: 1,
-          sessions: [{ offset_days: 0, activity_plan_id: linkedId }],
+          sessions: [
+            {
+              offset_days: 0,
+              activity_plan_id: linkedId,
+              activity_plan_variant_id: linkedId,
+            },
+          ],
         },
         structure_hash: activityPlanStructureHash({
           id: planId,
           version: 1,
-          sessions: [{ offset_days: 0, activity_plan_id: linkedId }],
+          sessions: [
+            {
+              offset_days: 0,
+              activity_plan_id: linkedId,
+              activity_plan_variant_id: linkedId,
+            },
+          ],
         }),
       }),
     };
@@ -294,7 +394,13 @@ describe("canonical training plan mutations", () => {
           expectedStructureHash: activityPlanStructureHash({
             id: planId,
             version: 1,
-            sessions: [{ offset_days: 0, activity_plan_id: linkedId }],
+            sessions: [
+              {
+                offset_days: 0,
+                activity_plan_id: linkedId,
+                activity_plan_variant_id: linkedId,
+              },
+            ],
           }),
           structure: { version: 1, sessions: [{ offset_days: 1, activity_plan_id: linkedId }] },
         },
@@ -302,5 +408,3 @@ describe("canonical training plan mutations", () => {
     ).resolves.toMatchObject({ id: planId });
   });
 });
-
-import { SYSTEM_TEMPLATES } from "@repo/core";

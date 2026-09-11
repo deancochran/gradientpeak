@@ -1,11 +1,13 @@
 import {
-  type CanonicalTrainingPlanStructure,
   canonicalTrainingPlanStructureSchema,
   persistedTrainingPlanStructureSchema,
+  type TrainingPlanCreate,
+  trainingPlanCreateSchema,
 } from "@repo/core";
 
 export type TrainingPlanSessionDraft = {
   activityPlanId: string;
+  variantId?: string;
   draftId?: string;
   offsetDays: number;
   title: string;
@@ -13,13 +15,14 @@ export type TrainingPlanSessionDraft = {
 
 export function buildTrainingPlanStructure(
   sessions: readonly TrainingPlanSessionDraft[],
-): CanonicalTrainingPlanStructure {
-  return canonicalTrainingPlanStructureSchema.parse({
+): TrainingPlanCreate {
+  return trainingPlanCreateSchema.parse({
     version: 1,
     sessions: [...sessions]
       .sort((left, right) => left.offsetDays - right.offsetDays)
       .map((session) => ({
         activity_plan_id: session.activityPlanId,
+        ...(session.variantId ? { activity_plan_variant_id: session.variantId } : {}),
         offset_days: session.offsetDays,
         ...(session.title.trim() ? { event_overrides: { title: session.title.trim() } } : {}),
       })),
@@ -46,7 +49,8 @@ export function toTrainingPlanSessionDrafts(structure: unknown): TrainingPlanSes
 
   return persisted.data.sessions.map((session) => ({
     activityPlanId: session.activity_plan_id,
-    draftId: `${session.offset_days}-${session.activity_plan_id}-${session.event_overrides?.title ?? ""}`,
+    variantId: session.activity_plan_variant_id,
+    draftId: `${session.offset_days}-${session.activity_plan_id}-${session.activity_plan_variant_id ?? ""}-${session.event_overrides?.title ?? ""}`,
     offsetDays: session.offset_days,
     title: session.event_overrides?.title ?? "",
   }));
@@ -54,8 +58,9 @@ export function toTrainingPlanSessionDrafts(structure: unknown): TrainingPlanSes
 
 export function summarizeTrainingPlan(structure: unknown) {
   const parsed = canonicalTrainingPlanStructureSchema.safeParse(structure);
-  const persisted = parsed.success
-    ? parsed
+  const input = parsed.success ? parsed : trainingPlanCreateSchema.safeParse(structure);
+  const persisted = input.success
+    ? input
     : persistedTrainingPlanStructureSchema.safeParse(structure);
   if (!persisted.success || persisted.data.sessions.length === 0) {
     return { durationDays: 0, sessionCount: 0, weekCount: 0 };

@@ -1,16 +1,18 @@
 import {
+  activityPlanDocumentSchema,
   activityPlanDurationSchema,
   activityPlanMetricListSchema,
   activityPlanStructureSchema,
   activityPlanTargetSchema,
   canonicalActivityCategorySchema,
+  resolveActivityPlanVariant,
   trainingPlanSchema,
 } from "@repo/core";
 import { compileActivityPlan } from "@repo/core/activity-plan";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { createActivityPlanProjectionMetrics } from "../application/activity-plans/read-projections";
+import { createActivityPlanProjectionMetricsFromResolvedStructure } from "../application/activity-plans/read-projections";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, publicProcedure } from "../trpc";
 
@@ -100,6 +102,12 @@ export const publicActivityPlanShareSchema = z.strictObject({
   structure_summary: z.string(),
   structure: publicActivityPlanDisplayStructureSchema,
   metrics: activityPlanMetricListSchema,
+  defaultVariantId: z.string().uuid(),
+  defaultVariantName: z.string().trim().min(1).max(100),
+  variantCount: z.number().int().positive(),
+  variants: z.array(
+    z.strictObject({ id: z.string().uuid(), name: z.string().trim().min(1).max(100) }),
+  ),
   is_system_template: z.boolean(),
   owner: profileSummarySchema,
 });
@@ -317,7 +325,9 @@ export const publicShareRouter = createTRPCRouter({
       `);
       const row = getRows<PublicActivityPlanRow>(result)[0];
       if (!row) return null;
-      const structure = activityPlanStructureSchema.parse(row.structure);
+      const document = activityPlanDocumentSchema.parse(row.structure);
+      const resolved = resolveActivityPlanVariant(document);
+      const structure = resolved.structure;
       const compiled = compileActivityPlan(structure);
       return publicActivityPlanShareSchema.parse({
         id: row.id,
@@ -327,11 +337,15 @@ export const publicShareRouter = createTRPCRouter({
         structure_version: compiled.structureVersion,
         structure_summary: "Structured plan details",
         structure: toPublicActivityPlanDisplayStructure(structure),
-        metrics: createActivityPlanProjectionMetrics({
+        metrics: createActivityPlanProjectionMetricsFromResolvedStructure({
           id: row.id,
           structure,
           updatedAt: row.updated_at,
         }),
+        defaultVariantId: document.defaultVariantId,
+        defaultVariantName: resolved.variantName,
+        variantCount: document.variants.length,
+        variants: document.variants.map(({ id, name }) => ({ id, name })),
         is_system_template: row.is_system_template,
         owner: ownerFromRow(row),
       });

@@ -1203,7 +1203,9 @@ async function main() {
     "coaching_authorization",
     async (pool, targetUrl) => {
       await bootstrapSupabaseSchemas(pool);
-      await applySqlFile(pool, requireFreshBaseline().sourcePath);
+      for (const migrationPath of requireFreshBaseline().migrationPaths) {
+        await applySqlFile(pool, migrationPath);
+      }
       await seedProfiles(pool);
       await proveDecisionMatrix(pool);
       await proveMembershipCommands(pool);

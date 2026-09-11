@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { activityPlanStructureSchema } from "@repo/core";
+import { activityPlanDocumentSchema } from "@repo/core";
 import { type DrizzleDbClient, schema } from "@repo/db";
 import { and, asc, eq, gte, inArray, or } from "drizzle-orm";
 import type { EventDeleteScope, EventWriteRepository } from "../../repositories";
@@ -28,6 +28,7 @@ function serializeCreatedEvent(row: {
   notes: string | null;
   occurrence_key: string | null;
   original_starts_at: Date | null;
+  planned_session_id: string | null;
   profile_id: string;
   recurrence_rule: string | null;
   recurrence_timezone: string | null;
@@ -54,6 +55,8 @@ function serializeCreatedEvent(row: {
     original_starts_at: row.original_starts_at?.toISOString() ?? null,
     updated_at: row.updated_at.toISOString(),
     activity_plan: null,
+    planned_session: null,
+    route: null,
   };
 }
 
@@ -69,6 +72,7 @@ function serializeSplitEventRow(row: {
   notes: string | null;
   occurrence_key: string | null;
   original_starts_at: Date | null;
+  planned_session_id: string | null;
   profile_id: string;
   recurrence_rule: string | null;
   recurrence_timezone: string | null;
@@ -124,6 +128,7 @@ const splitEventReturningColumns = {
   activity_plan_id: schema.events.activity_plan_id,
   route_id: schema.events.route_id,
   training_plan_id: schema.events.training_plan_id,
+  planned_session_id: schema.events.planned_session_id,
   linked_activity_id: schema.events.linked_activity_id,
   recurrence_rule: schema.events.recurrence_rule,
   recurrence_timezone: schema.events.recurrence_timezone,
@@ -399,7 +404,7 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
           if (
             currentPlanIds.some((planId) => {
               const plan = plansById.get(planId);
-              return !plan || !activityPlanStructureSchema.safeParse(plan.structure).success;
+              return !plan || !activityPlanDocumentSchema.safeParse(plan.structure).success;
             })
           ) {
             throw new EventCurrentPlanUpdateConflict();

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { activityPlanDocumentSchema } from "@repo/core/activity-plan";
 import { schema } from "@repo/db";
 import { and, asc, eq, gt, gte, isNull, lte, ne, or, sql } from "drizzle-orm";
 import {
@@ -687,7 +688,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
             description: row.activityPlan.description,
             id: row.activityPlan.id,
             name: row.activityPlan.name,
-            structure: row.activityPlan.structure,
+            structure: activityPlanDocumentSchema.parse(row.activityPlan.structure),
             updatedAt: row.activityPlan.updatedAt.toISOString(),
           }
         : null;
@@ -1118,7 +1119,10 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         .for("share");
 
       return rows.map((row) => ({
-        activityPlan: row.activityPlan,
+        activityPlan: {
+          ...row.activityPlan,
+          structure: activityPlanDocumentSchema.parse(row.activityPlan.structure),
+        },
         eventId: row.eventId,
         startsAt: row.startsAt.toISOString(),
         timezone: row.timezone,

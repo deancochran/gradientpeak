@@ -49,6 +49,7 @@ export const planZeroCorrectnessFixture = {
       sessions: [
         {
           activity_plan_id: "22222222-2222-4222-8222-222222222222",
+          activity_plan_variant_id: "22222222-2222-4222-8222-222222222222",
           offset_days: 2,
         },
       ],
@@ -81,6 +82,7 @@ export const planZeroCorrectnessFixture = {
     activityPlans: [
       {
         activityPlanId: "22222222-2222-4222-8222-222222222222",
+        activityPlanVariantId: "22222222-2222-4222-8222-222222222222",
         activityCategory: "run" as const,
         commonLoad: 80,
       },

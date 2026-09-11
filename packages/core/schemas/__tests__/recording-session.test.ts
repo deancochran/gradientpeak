@@ -55,6 +55,32 @@ describe("recording session schemas", () => {
   });
 
   it("accepts a snapshot and artifact for a finalized session", () => {
+    const prescribedStructure = {
+      version: 3 as const,
+      activity_category: "bike" as const,
+      segments: [
+        {
+          id: "550e8400-e29b-41d4-a716-446655440003",
+          role: "activity" as const,
+          name: "Bike",
+          intervals: [
+            {
+              id: "550e8400-e29b-41d4-a716-446655440004",
+              name: "Work",
+              repetitions: 1,
+              steps: [
+                {
+                  id: "550e8400-e29b-41d4-a716-446655440005",
+                  name: "Steady",
+                  duration: { type: "time" as const, seconds: 600 },
+                  targets: [{ type: "RPE" as const, intensity: 7 }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
     const snapshot = {
       identity: {
         sessionId: "session-1",
@@ -105,6 +131,33 @@ describe("recording session schemas", () => {
         ],
       },
       capabilities: validCapabilities,
+      planExecution: {
+        manifestVersion: 1 as const,
+        compilerVersion: 1 as const,
+        activityPlanId: "550e8400-e29b-41d4-a716-446655440001",
+        scheduledEventId: "550e8400-e29b-41d4-a716-446655440000",
+        name: "Hard",
+        description: null,
+        activityPlanRevision: 2,
+        structureHash: `v1:sha256:${"0".repeat(64)}`,
+        structure: prescribedStructure,
+        plannedSession: {
+          id: "550e8400-e29b-41d4-a716-446655440006",
+          sessionRevision: 5,
+          prescription: {
+            activityPlanId: "550e8400-e29b-41d4-a716-446655440001",
+            activityPlanRevision: 2,
+            variantId: "550e8400-e29b-41d4-a716-446655440007",
+            variantName: "Hard",
+            structure: prescribedStructure,
+            structureHash: `v1:sha256:${"0".repeat(64)}`,
+            prescriptionQuantification: null,
+            capturedAt: "2026-03-19T10:00:00.000Z",
+          },
+        },
+        personalizationEnabled: false,
+        targetPresentations: [],
+      },
       policies: {
         sourcePolicy: {
           preferUserSelection: true,
@@ -171,6 +224,9 @@ describe("recording session schemas", () => {
 
     expect(artifact.success).toBe(true);
     expect(artifact.data?.finalStats.manualLapsMs).toEqual([]);
+    expect(artifact.data?.snapshot.planExecution?.plannedSession).toEqual(
+      snapshot.planExecution.plannedSession,
+    );
   });
 
   it("rejects obsolete recording threshold and default markers", () => {

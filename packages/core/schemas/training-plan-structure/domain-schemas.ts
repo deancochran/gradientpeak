@@ -115,11 +115,27 @@ export type TrainingPlanSessionEventOverrides = z.infer<
   typeof trainingPlanSessionEventOverridesSchema
 >;
 
+const trainingPlanStructureSessionShape = {
+  offset_days: z.number().int().min(0),
+  activity_plan_id: z.string().uuid(),
+  event_overrides: trainingPlanSessionEventOverridesSchema.optional(),
+};
+
+export const trainingPlanStructureInputSessionSchema = z
+  .object({
+    ...trainingPlanStructureSessionShape,
+    activity_plan_variant_id: z.string().uuid().optional(),
+  })
+  .strict();
+
+export type TrainingPlanStructureInputSession = z.infer<
+  typeof trainingPlanStructureInputSessionSchema
+>;
+
 export const canonicalTrainingPlanStructureSessionSchema = z
   .object({
-    offset_days: z.number().int().min(0),
-    activity_plan_id: z.string().uuid(),
-    event_overrides: trainingPlanSessionEventOverridesSchema.optional(),
+    ...trainingPlanStructureSessionShape,
+    activity_plan_variant_id: z.string().uuid(),
   })
   .strict();
 
@@ -195,53 +211,78 @@ export type TrainingPlanBuilderPlanningSnapshot = z.infer<
   typeof trainingPlanBuilderPlanningSnapshotSchema
 >;
 
+const trainingPlanStructureShape = {
+  version: z.literal(1),
+  activity_category: z.array(canonicalActivityCategorySchema).optional(),
+  experienceLevel: z.array(z.enum(["beginner", "intermediate", "advanced"])).optional(),
+  durationWeeks: z
+    .object({
+      recommended: z.number().int().min(1).max(104),
+      minimum: z.number().int().min(1).max(104).optional(),
+      maximum: z.number().int().min(1).max(104).optional(),
+    })
+    .strict()
+    .optional(),
+  goal_blueprints: z.array(trainingPlanGoalBlueprintSchema).optional(),
+  builder_planning_snapshot: trainingPlanBuilderPlanningSnapshotSchema.optional(),
+};
+
+function rejectDuplicateTrainingPlanSessions(
+  structure: {
+    sessions: Array<{
+      offset_days: number;
+      activity_plan_id: string;
+      activity_plan_variant_id?: string;
+      event_overrides?: { start_time?: string };
+    }>;
+  },
+  ctx: z.RefinementCtx,
+) {
+  const seenSessionKeys = new Set<string>();
+
+  structure.sessions.forEach((session, index) => {
+    const sessionKey = [
+      session.offset_days,
+      session.activity_plan_id,
+      session.activity_plan_variant_id ?? "",
+      session.event_overrides?.start_time ?? "",
+    ].join("|");
+
+    if (seenSessionKeys.has(sessionKey)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["sessions", index],
+        message:
+          "Duplicate sessions cannot share activity_plan_id, activity_plan_variant_id, offset_days, and event_overrides.start_time",
+      });
+      return;
+    }
+
+    seenSessionKeys.add(sessionKey);
+  });
+}
+
+/** Client/server input before the server pins each omitted activity-plan variant. */
+export const trainingPlanCreateSchema = z
+  .object({
+    ...trainingPlanStructureShape,
+    sessions: z.array(trainingPlanStructureInputSessionSchema).min(1),
+  })
+  .strict()
+  .superRefine(rejectDuplicateTrainingPlanSessions);
+
+export type TrainingPlanCreate = z.infer<typeof trainingPlanCreateSchema>;
+
+/** Canonical structure accepted from persistence; every session has a stable variant identity. */
 export const canonicalTrainingPlanStructureSchema = z
   .object({
-    version: z.literal(1),
-    activity_category: z.array(canonicalActivityCategorySchema).optional(),
-    experienceLevel: z.array(z.enum(["beginner", "intermediate", "advanced"])).optional(),
-    durationWeeks: z
-      .object({
-        recommended: z.number().int().min(1).max(104),
-        minimum: z.number().int().min(1).max(104).optional(),
-        maximum: z.number().int().min(1).max(104).optional(),
-      })
-      .strict()
-      .optional(),
-    goal_blueprints: z.array(trainingPlanGoalBlueprintSchema).optional(),
-    builder_planning_snapshot: trainingPlanBuilderPlanningSnapshotSchema.optional(),
+    ...trainingPlanStructureShape,
     sessions: z.array(canonicalTrainingPlanStructureSessionSchema).min(1),
   })
   .strict()
-  .superRefine((structure, ctx) => {
-    const seenSessionKeys = new Set<string>();
-
-    structure.sessions.forEach((session, index) => {
-      const sessionKey = [
-        session.offset_days,
-        session.activity_plan_id,
-        session.event_overrides?.start_time ?? "",
-      ].join("|");
-
-      if (seenSessionKeys.has(sessionKey)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["sessions", index],
-          message:
-            "Duplicate sessions cannot share activity_plan_id, offset_days, and event_overrides.start_time",
-        });
-        return;
-      }
-
-      seenSessionKeys.add(sessionKey);
-    });
-  });
+  .superRefine(rejectDuplicateTrainingPlanSessions);
 
 export type CanonicalTrainingPlanStructure = z.infer<typeof canonicalTrainingPlanStructureSchema>;
-
-export const trainingPlanCreateSchema = canonicalTrainingPlanStructureSchema;
-
-export type TrainingPlanCreate = z.infer<typeof trainingPlanCreateSchema>;
 
 export const trainingPlanSchema = canonicalTrainingPlanStructureSchema.safeExtend({
   id: z.string().uuid(),
