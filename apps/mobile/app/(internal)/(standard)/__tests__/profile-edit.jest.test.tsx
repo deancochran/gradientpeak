@@ -1,5 +1,7 @@
-import { fireEvent, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, waitFor } from "@testing-library/react-native";
 import type { ReactNode } from "react";
+import type { UseFormReturn } from "react-hook-form";
+import type { ProfileEditForm } from "@/lib/profile/profile-edit-form";
 import { createHost } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
 
@@ -9,6 +11,7 @@ let mockProfile: {
   cover_url: string | null;
   full_name: string;
   username: string;
+  planning_timezone?: string | null;
 } = {
   id: "user-1",
   avatar_url: null,
@@ -25,6 +28,7 @@ const mockInvalidateProfiles = jest.fn();
 const mockInvalidateProfileIdentityQueries = jest.fn();
 const mockRequestMediaLibraryPermissions = jest.fn();
 const mockLaunchImageLibrary = jest.fn();
+let mockForm: UseFormReturn<ProfileEditForm>;
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -33,6 +37,7 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: { Screen: createHost("StackScreen") },
+  useNavigation: () => ({ dispatch: jest.fn() }),
   useRouter: () => ({ back: jest.fn() }),
 }));
 jest.mock("expo-file-system", () => ({
@@ -71,16 +76,16 @@ jest.mock("@repo/ui/components/form", () => ({
   FormSwitchField: createHost("FormSwitchField"),
   FormTextareaField: createHost("FormTextareaField"),
   FormTextField: createHost("FormTextField"),
+  FormTimezoneField: createHost("FormTimezoneField"),
 }));
 jest.mock("@repo/ui/components/icon", () => ({ Icon: createHost("Icon") }));
 jest.mock("@repo/ui/components/loading", () => ({ LoadingButton: createHost("LoadingButton") }));
 jest.mock("@repo/ui/components/text", () => ({ Text: createHost("Text") }));
 jest.mock("@repo/ui/hooks", () => ({
-  useZodForm: ({ defaultValues }: { defaultValues: typeof mockProfile }) => ({
-    control: {},
-    reset: jest.fn(),
-    watch: (name: keyof typeof mockProfile) => defaultValues[name],
-  }),
+  useZodForm: (options: unknown) => {
+    mockForm = jest.requireActual("@repo/ui/hooks").useZodForm(options);
+    return mockForm;
+  },
   useZodFormSubmit: () => ({
     getSubmitButtonState: () => ({ disabled: false, label: "Save", loading: false }),
     handleSubmit: jest.fn(),
@@ -124,11 +129,36 @@ jest.mock("@repo/api/profile-identity-cache", () => ({
 jest.mock("@/lib/hooks/useAuth", () => ({
   useAuth: () => ({ profile: mockProfile, refreshProfile: mockRefreshProfile }),
 }));
+jest.mock("@/lib/calendar/eventSchedule", () => ({ getDeviceTimeZone: () => "America/New_York" }));
 jest.mock("@/lib/server-config", () => ({ getReachableSupabaseStorageUrl: (url: string) => url }));
 jest.mock("@/lib/stores/theme-store", () => ({ useTheme: () => ({ resolvedTheme: "light" }) }));
 jest.mock("@/lib/utils/formErrors", () => ({ handleSubmitFormError: jest.fn() }));
 
 const ProfileEdit = require("../profile-edit").default;
+
+it("defaults to the device timezone and retains dirty overrides on profile refresh", async () => {
+  const rendered = await renderNative(<ProfileEdit />);
+  expect(mockForm.getValues("planning_timezone")).toBe("America/New_York");
+  await act(async () =>
+    mockForm.setValue("planning_timezone", "Asia/Kathmandu", { shouldDirty: true }),
+  );
+  mockProfile = { ...mockProfile, full_name: "Refreshed name", planning_timezone: "Europe/London" };
+  await rendered.rerender(<ProfileEdit />);
+  expect(mockForm.getValues("planning_timezone")).toBe("Asia/Kathmandu");
+  expect(mockForm.getValues("full_name")).toBe("Refreshed name");
+});
+
+it("loads the saved timezone rather than the device default and resets for a new owner", async () => {
+  mockProfile = { ...mockProfile, planning_timezone: "Pacific/Auckland" };
+  const rendered = await renderNative(<ProfileEdit />);
+  expect(mockForm.getValues("planning_timezone")).toBe("Pacific/Auckland");
+  await act(async () =>
+    mockForm.setValue("planning_timezone", "Asia/Kathmandu", { shouldDirty: true }),
+  );
+  mockProfile = { ...mockProfile, id: "user-2", planning_timezone: "Europe/London" };
+  await rendered.rerender(<ProfileEdit />);
+  expect(mockForm.getValues("planning_timezone")).toBe("Europe/London");
+});
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -165,7 +195,9 @@ beforeEach(() => {
 it("renders the loaded required full name above username", async () => {
   await renderNative(<ProfileEdit />);
 
-  const fields = screen.container.queryAll((node) => node.type === "FormTextField");
+  const fields = screen.container.queryAll(
+    (node) => node.type === "FormTextField" || node.type === "FormTimezoneField",
+  );
   expect(fields.map((field) => field.props.name)).toEqual([
     "full_name",
     "username",
@@ -174,6 +206,7 @@ it("renders the loaded required full name above username", async () => {
   expect(fields[0]?.props).toEqual(
     expect.objectContaining({ label: "Full Name *", testId: "profile-edit-full-name" }),
   );
+  expect(fields[2]?.type).toBe("FormTimezoneField");
 });
 
 it("uploads with the returned path and commits it through profile media CAS", async () => {

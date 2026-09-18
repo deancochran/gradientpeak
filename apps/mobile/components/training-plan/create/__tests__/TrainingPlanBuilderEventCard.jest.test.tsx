@@ -24,6 +24,7 @@ jest.mock("@repo/ui/components/text", () => ({
 jest.mock("@repo/ui/hooks", () => ({
   __esModule: true,
   useZodForm: () => ({ control: {} }),
+  useInputDraft: (value: string) => [value, jest.fn()],
 }));
 jest.mock("react-hook-form", () => ({ useWatch: () => "" }));
 jest.mock("lucide-react-native", () => ({
@@ -66,8 +67,16 @@ const session = {
     prescriptionQuantification: createPrescriptionQuantificationBundleFixture(),
     published: true,
   },
+  id: "00000000-0000-4000-8000-000000000030",
   localId: "session-1",
   offsetDays: 0,
+  demand: {
+    activity_category: "other" as const,
+    training_intent: "general_maintenance" as const,
+    target_duration_minutes: null,
+    target_common_load: null,
+    importance: "normal" as const,
+  },
 };
 
 function withEstimatedDuration(
@@ -237,16 +246,17 @@ describe("TrainingPlanBuilderEventCard actions", () => {
     expect(screen.queryByText(/^Intensity: ~0\.80$/)).toBeNull();
   });
 
-  it("does not revive missing canonical estimates from session intent", async () => {
+  it("does not revive missing canonical estimates from session demand", async () => {
     await renderNative(
       <TrainingPlanBuilderEventCard
         event={{
           ...session,
-          intent: {
-            type: "threshold",
-            driver: "completion-duration",
-            targetDurationSeconds: 3_600,
-            targetLoad: 88,
+          demand: {
+            activity_category: "bike",
+            training_intent: "threshold_development",
+            target_duration_minutes: 60,
+            target_common_load: 88,
+            importance: "normal",
           },
         }}
         estimate={null}

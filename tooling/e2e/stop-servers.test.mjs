@@ -22,7 +22,7 @@ test("E2E shutdown is idempotent when both dedicated ports are idle", async () =
     killPorts: async (ports) => killed.push(ports),
   });
 
-  assert.deepEqual(E2E_SERVER_PORTS, [3100, 8082]);
+  assert.deepEqual(E2E_SERVER_PORTS, [3001, 8082]);
   assert.deepEqual(killed, []);
 });
 
@@ -40,8 +40,8 @@ test("E2E shutdown targets only active dedicated ports and verifies they become 
     wait: async () => {},
   });
 
-  assert.deepEqual(killed, [[3100, 8082]]);
-  assert.equal(checks.get(3100), 2);
+  assert.deepEqual(killed, [[3001, 8082]]);
+  assert.equal(checks.get(3001), 2);
   assert.equal(checks.get(8082), 2);
   assert.ok(!killed.flat().includes(3000));
   assert.ok(!killed.flat().includes(8081));
@@ -54,7 +54,7 @@ test("E2E shutdown trusts the read-back when the kill command reports failure", 
     isListening: async (port) => {
       const count = checks.get(port) ?? 0;
       checks.set(port, count + 1);
-      return port === 3100 && count === 0;
+      return port === 3001 && count === 0;
     },
     killPorts: async () => {
       throw new Error("kill command failed");
@@ -62,7 +62,7 @@ test("E2E shutdown trusts the read-back when the kill command reports failure", 
     wait: async () => {},
   });
 
-  assert.equal(checks.get(3100), 2);
+  assert.equal(checks.get(3001), 2);
   assert.equal(checks.get(8082), 2);
 });
 

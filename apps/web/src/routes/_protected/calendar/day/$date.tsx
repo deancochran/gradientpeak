@@ -11,7 +11,6 @@ import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 
 import { CalendarProjectionCard } from "../../../../components/calendar/calendar-projection-card";
-import { PlannedDaySummary } from "../../../../components/planning/planned-day-summary";
 import { api } from "../../../../lib/api/client";
 import {
   formatDayLabel,
@@ -105,15 +104,6 @@ function CalendarDayPage() {
           </CardContent>
         </Card>
       ) : null}
-
-      <PlannedDaySummary
-        {...(eventsQuery.data?.plannedLoadSummary === undefined
-          ? {}
-          : { data: eventsQuery.data.plannedLoadSummary })}
-        error={eventsQuery.isError}
-        isLoading={eventsQuery.isLoading}
-        onRetry={() => eventsQuery.refetch()}
-      />
 
       {eventsQuery.isError ? (
         <div

@@ -17,6 +17,7 @@ import { SAMPLE_MULTISPORT_COMPONENT_ACTIVITIES } from "./multisport";
 import { SAMPLE_OTHER_ACTIVITIES } from "./other-activity";
 import { SAMPLE_OUTDOOR_BIKE_ACTIVITIES } from "./outdoor-bike";
 import { SAMPLE_OUTDOOR_RUN_ACTIVITIES } from "./outdoor-run";
+import { classifySystemActivityTemplate } from "./system-activity-template-taxonomy";
 import { normalizeSystemActivityTemplateId } from "./template-ids";
 import { ALL_SAMPLE_PLANS } from "./training-plans";
 import {
@@ -112,7 +113,11 @@ export const TOTAL_SAMPLE_ACTIVITIES = SAMPLE_ACTIVITIES.length;
 // SYSTEM TEMPLATE REGISTRY
 // ============================================================================
 
-export type SystemTemplate = SystemActivityPlanTemplate & { id: string };
+export type SystemTemplate = SystemActivityPlanTemplate & {
+  id: string;
+  training_intent: NonNullable<SystemActivityPlanTemplate["training_intent"]>;
+  adaptation: NonNullable<SystemActivityPlanTemplate["adaptation"]> | null;
+};
 
 /**
  * Helper to map raw sample plans to SystemTemplate
@@ -127,10 +132,14 @@ function mapToTemplate(plan: SystemActivityPlanTemplate): SystemTemplate {
     activityCategory: deriveSystemActivityTemplateActivityCategory(plan.structure),
     name: plan.name ?? "template",
   });
+  const metadata = classifySystemActivityTemplate(plan);
+  const trainingIntent = plan.training_intent ?? metadata.training_intent;
 
   return {
     ...plan,
     id: normalizedId,
+    training_intent: trainingIntent,
+    adaptation: plan.adaptation ?? null,
   };
 }
 

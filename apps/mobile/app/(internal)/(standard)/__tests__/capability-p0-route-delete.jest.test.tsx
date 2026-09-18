@@ -108,7 +108,9 @@ jest.mock("@/lib/hooks/useReliableMutation", () => ({
 }));
 jest.mock("@/lib/api", () => ({
   api: {
-    useUtils: () => ({ routes: { invalidate: jest.fn() } }),
+    useUtils: () => ({
+      routes: { get: { invalidate: jest.fn(), reset: jest.fn() }, invalidate: jest.fn() },
+    }),
     routes: {
       get: {
         useQuery: () => ({

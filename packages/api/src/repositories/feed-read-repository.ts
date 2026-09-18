@@ -5,14 +5,28 @@ import {
   createSemanticMetric,
   type SemanticMetric,
 } from "@repo/core";
-import { sql } from "drizzle-orm";
+import { activities, activitySegments, comments, follows, profiles } from "@repo/db";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  exists,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  or,
+} from "drizzle-orm";
 import { z } from "zod";
 import { decodeFeedCursor } from "../application/feed/feedPage";
 import { resolveProfileMediaUrl } from "../application/storage/profile-media-url";
 import type { getRequiredDb } from "../db";
 import type { ActivityQuantifiedDerivedSummary } from "../lib/activity-analysis/derived";
 import { projectCompletedActivityCommonLoadMetrics } from "../lib/completed-activity-common-load-metrics";
-import { buildUuidInList, parseCountValue } from "../utils/sql";
+import { parseCountValue } from "../utils/sql";
 import { getLikeStats, type LikeStats } from "./like-stats";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
@@ -56,6 +70,7 @@ const feedActivityRowSchema = z
     content_visibility: z.enum(["private", "followers", "public"]),
   })
   .strict();
+const feedActivityBaseRowSchema = feedActivityRowSchema.omit({ category_composition: true });
 const commentCountRowSchema = z.object({
   entity_id: z.string().uuid(),
   comments_count: z.preprocess(parseCountValue, z.number().int().nonnegative()),
@@ -208,56 +223,117 @@ export async function listFeedActivityRows(
   const decodedCursor = decodeFeedCursor(input.cursor);
   const cursorFilter = decodedCursor
     ? decodedCursor.id
-      ? sql`and (a.started_at < ${decodedCursor.startedAt} or (a.started_at = ${decodedCursor.startedAt} and a.id < ${decodedCursor.id}::uuid))`
-      : sql`and a.started_at < ${decodedCursor.startedAt}`
-    : sql``;
-  const profileFilter = input.profileId ? sql`and a.profile_id = ${input.profileId}::uuid` : sql``;
-  const result = await db.execute(sql<FeedActivityRow>`
-    select
-      a.id, a.profile_id, a.name, a.started_at, a.finished_at,
-      coalesce((
-        select jsonb_agg(s.activity_category order by s.ordinal) from activity_segments s
-        where s.activity_id = a.id and s.role = 'activity'
-      ), '[]'::jsonb) as category_composition,
-      a.distance_meters, a.elapsed_ms, a.active_ms, a.moving_ms, a.timing_coverage,
-      a.avg_heart_rate,
-      a.max_heart_rate, a.avg_power, a.max_power, a.avg_cadence, a.avg_speed_mps,
-      a.max_speed_mps, a.normalized_speed_mps,
-       a.elevation_gain_meters, a.calories, (a.polyline is not null) as has_route,
-       a.content_visibility,
-      p.username as profile_username, p.avatar_url as profile_avatar_url
-    from activities a
-    left join profiles p on p.id = a.profile_id
-    where (
-      a.profile_id = ${viewerId}::uuid
-      or a.content_visibility = 'public'
-      or (
-        a.content_visibility = 'followers'
-        and exists (
-          select 1 from follows f
-          where f.follower_id = ${viewerId}::uuid
-            and f.following_id = a.profile_id and f.status = 'accepted'
+      ? or(
+          lt(activities.started_at, decodedCursor.startedAt),
+          and(
+            eq(activities.started_at, decodedCursor.startedAt),
+            lt(activities.id, decodedCursor.id),
+          ),
         )
-      )
+      : lt(activities.started_at, decodedCursor.startedAt)
+    : undefined;
+  const visibleToViewer = or(
+    eq(activities.profile_id, viewerId),
+    eq(activities.content_visibility, "public"),
+    and(
+      eq(activities.content_visibility, "followers"),
+      // This correlated predicate is required to keep follower visibility in the page query.
+      // Its tables and predicate values remain schema-bound Drizzle expressions.
+      exists(
+        db
+          .select({ followerId: follows.follower_id })
+          .from(follows)
+          .where(
+            and(
+              eq(follows.follower_id, viewerId),
+              eq(follows.following_id, activities.profile_id),
+              eq(follows.status, "accepted"),
+            ),
+          ),
+      ),
+    ),
+  );
+  const rows = await db
+    .select({
+      id: activities.id,
+      profile_id: activities.profile_id,
+      name: activities.name,
+      elapsed_ms: activities.elapsed_ms,
+      active_ms: activities.active_ms,
+      moving_ms: activities.moving_ms,
+      timing_coverage: activities.timing_coverage,
+      distance_meters: activities.distance_meters,
+      avg_heart_rate: activities.avg_heart_rate,
+      max_heart_rate: activities.max_heart_rate,
+      avg_power: activities.avg_power,
+      max_power: activities.max_power,
+      avg_cadence: activities.avg_cadence,
+      avg_speed_mps: activities.avg_speed_mps,
+      max_speed_mps: activities.max_speed_mps,
+      normalized_speed_mps: activities.normalized_speed_mps,
+      elevation_gain_meters: activities.elevation_gain_meters,
+      calories: activities.calories,
+      has_route: isNotNull(activities.polyline),
+      started_at: activities.started_at,
+      finished_at: activities.finished_at,
+      content_visibility: activities.content_visibility,
+      profile_username: profiles.username,
+      profile_avatar_url: profiles.avatar_url,
+    })
+    .from(activities)
+    .leftJoin(profiles, eq(profiles.id, activities.profile_id))
+    .where(
+      and(
+        visibleToViewer,
+        isNotNull(activities.started_at),
+        or(isNull(activities.entry_provenance), ne(activities.entry_provenance, "manual")),
+        input.profileId ? eq(activities.profile_id, input.profileId) : undefined,
+        cursorFilter,
+      ),
     )
-      ${profileFilter}
-      ${cursorFilter}
-    order by a.started_at desc, a.id desc
-    limit ${input.limit + 1}
-  `);
-  return z.array(feedActivityRowSchema).parse(result.rows);
+    .orderBy(desc(activities.started_at), desc(activities.id))
+    .limit(input.limit + 1);
+  const activityIds = rows.map((row) => row.id);
+  const segmentRows =
+    activityIds.length === 0
+      ? []
+      : await db
+          .select({
+            activity_id: activitySegments.activity_id,
+            activity_category: activitySegments.activity_category,
+          })
+          .from(activitySegments)
+          .where(
+            and(
+              inArray(activitySegments.activity_id, activityIds),
+              eq(activitySegments.role, "activity"),
+            ),
+          )
+          .orderBy(asc(activitySegments.activity_id), asc(activitySegments.ordinal));
+  const categoriesByActivityId = new Map<string, unknown[]>();
+  for (const segment of segmentRows) {
+    categoriesByActivityId.set(segment.activity_id, [
+      ...(categoriesByActivityId.get(segment.activity_id) ?? []),
+      segment.activity_category,
+    ]);
+  }
+  return z.array(feedActivityRowSchema).parse(
+    rows.map((row) => ({
+      ...feedActivityBaseRowSchema.parse(row),
+      category_composition: categoriesByActivityId.get(row.id) ?? [],
+    })),
+  );
 }
 
 export async function loadFeedActivityCommentCounts(db: DbClient, activityIds: string[]) {
   const commentCounts = new Map<string, number>();
   if (activityIds.length === 0) return commentCounts;
-  const result = await db.execute(sql`
-    select c.entity_id, count(*)::int as comments_count
-    from comments c
-    where c.entity_type = 'activity' and c.entity_id in (${buildUuidInList(activityIds)})
-    group by c.entity_id
-  `);
-  for (const comment of z.array(commentCountRowSchema).parse(result.rows)) {
+  const rows = await db
+    .select({ entity_id: comments.entity_id, comments_count: count(comments.id) })
+    .from(comments)
+    .where(and(eq(comments.entity_type, "activity"), inArray(comments.entity_id, activityIds)))
+    .groupBy(comments.entity_id);
+  for (const comment of z.array(commentCountRowSchema).parse(rows)) {
     commentCounts.set(comment.entity_id, comment.comments_count);
   }
   return commentCounts;

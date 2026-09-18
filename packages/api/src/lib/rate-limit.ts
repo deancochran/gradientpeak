@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { apiRateLimitWindows } from "@repo/db";
+import { and, asc, count, eq, lte, or, sql } from "drizzle-orm";
 
 import type { Context } from "../context";
 import { type DrizzleQueryExecutor, getRequiredDb } from "../db";
@@ -133,14 +134,19 @@ export class PostgresApiRateLimitStore implements ApiRateLimitStore {
     const resetAt = windowStartedAt.getTime() + this.windowMs;
     const keyHash = persistedRateLimitKey(identity);
     const incrementExisting = async (executor: DrizzleQueryExecutor) => {
-      const result = await executor.execute(sql<{ count: number }>`
-        update public.api_rate_limit_windows
-        set count = count + 1
-        where key_hash = ${keyHash} and window_started_at = ${windowStartedAt}
-        returning count
-      `);
-      const count = Number(result.rows[0]?.count);
-      return Number.isSafeInteger(count) && count > 0 ? count : undefined;
+      const [updated] = await executor
+        .update(apiRateLimitWindows)
+        .set({ count: sql`${apiRateLimitWindows.count} + 1` })
+        .where(
+          and(
+            eq(apiRateLimitWindows.key_hash, keyHash),
+            eq(apiRateLimitWindows.window_started_at, windowStartedAt),
+          ),
+        )
+        .returning({ count: apiRateLimitWindows.count });
+      return updated && Number.isSafeInteger(updated.count) && updated.count > 0
+        ? updated.count
+        : undefined;
     };
 
     const fastCount = await incrementExisting(db);
@@ -150,36 +156,56 @@ export class PostgresApiRateLimitStore implements ApiRateLimitStore {
       // This statement must be separate: following READ COMMITTED statements
       // see admissions committed by earlier lock holders.
       await tx.execute(sql`select pg_advisory_xact_lock(847219)`);
-      await tx.execute(sql`
-        delete from public.api_rate_limit_windows
-        where ctid in (
-          select ctid from public.api_rate_limit_windows
-          where expires_at <= now()
-          order by expires_at
-          limit ${this.expiredWindowCleanupBatchSize}
-        )
-      `);
+      const expired = await tx
+        .select({
+          keyHash: apiRateLimitWindows.key_hash,
+          windowStartedAt: apiRateLimitWindows.window_started_at,
+        })
+        .from(apiRateLimitWindows)
+        .where(lte(apiRateLimitWindows.expires_at, new Date()))
+        .orderBy(asc(apiRateLimitWindows.expires_at))
+        .limit(this.expiredWindowCleanupBatchSize);
+      if (expired.length > 0) {
+        await tx
+          .delete(apiRateLimitWindows)
+          .where(
+            or(
+              ...expired.map((window) =>
+                and(
+                  eq(apiRateLimitWindows.key_hash, window.keyHash),
+                  eq(apiRateLimitWindows.window_started_at, window.windowStartedAt),
+                ),
+              ),
+            ),
+          );
+      }
 
       const existingCount = await incrementExisting(tx);
       if (existingCount) return { count: existingCount, resetAt };
 
-      const capacity = await tx.execute(sql<{ count: string }>`
-        select count(*) as count from public.api_rate_limit_windows
-      `);
-      if (Number(capacity.rows[0]?.count) >= this.maxDurableWindows) {
+      const [capacity] = await tx.select({ count: count() }).from(apiRateLimitWindows);
+      if ((capacity?.count ?? 0) >= this.maxDurableWindows) {
         throw new Error("Rate-limit durable window capacity reached");
       }
 
-      const inserted = await tx.execute(sql<{ count: number }>`
-        insert into public.api_rate_limit_windows (key_hash, window_started_at, count, expires_at)
-        values (${keyHash}, ${windowStartedAt}, 1, ${new Date(resetAt)})
-        returning count
-      `);
-      const count = Number(inserted.rows[0]?.count);
-      if (!Number.isSafeInteger(count) || count < 1) {
+      const [inserted] = await tx
+        .insert(apiRateLimitWindows)
+        .values({
+          key_hash: keyHash,
+          window_started_at: windowStartedAt,
+          count: 1,
+          expires_at: new Date(resetAt),
+        })
+        .returning({ count: apiRateLimitWindows.count });
+      const insertedCount = inserted?.count;
+      if (
+        typeof insertedCount !== "number" ||
+        !Number.isSafeInteger(insertedCount) ||
+        insertedCount < 1
+      ) {
         throw new Error("Rate-limit counter did not return a valid count");
       }
-      return { count, resetAt };
+      return { count: insertedCount, resetAt };
     });
   }
 }

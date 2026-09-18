@@ -1,9 +1,7 @@
 import {
-  activityPlanDocumentSchema,
   activityPlanStructureSchema,
   athletePerformanceTargetFactsSchema,
   createUnavailableAthletePerformanceTargetFacts,
-  initializeActivityPlanDocument,
 } from "@repo/core";
 import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,7 +15,6 @@ vi.mock("../athlete-intelligence/published-athlete-state", () => publishedState)
 import { estimateActivityPlans } from "./estimate-activity-plans";
 
 const asOf = new Date("2026-08-01T12:00:00.000Z");
-const planId = "80000000-0000-4000-8000-000000000001";
 const structure = activityPlanStructureSchema.parse({
   version: 3,
   activity_category: "bike",
@@ -46,11 +43,11 @@ const structure = activityPlanStructureSchema.parse({
 });
 
 const plan = {
-  id: planId,
+  id: "80000000-0000-4000-8000-000000000001",
   profile_id: "90000000-0000-4000-8000-000000000001",
   name: "Bike plan",
   description: null,
-  structure: initializeActivityPlanDocument({ activityPlanId: planId, structure }),
+  structure,
   structure_hash: `v1:sha256:${"a".repeat(64)}`,
   gps_recording_enabled: true,
   updated_at: asOf,
@@ -125,50 +122,6 @@ describe("estimateActivityPlans", () => {
     expect(publishedState.readPublishedAthletePerformanceTargets).not.toHaveBeenCalled();
   });
 
-  it("derives default metrics and honors one exact explicit variant selection", async () => {
-    const buildStructure = structuredClone(structure);
-    const segment = buildStructure.segments[0];
-    if (!segment || segment.role !== "activity") throw new Error("Expected activity segment");
-    const step = segment.intervals[0]?.steps[0];
-    if (!step || step.duration.type !== "time") throw new Error("Expected timed step");
-    step.duration.seconds = 2_400;
-    const buildId = "80000000-0000-4000-8000-000000000002";
-    const document = activityPlanDocumentSchema.parse({
-      contractVersion: 1,
-      defaultVariantId: buildId,
-      variants: [
-        { id: planId, name: "Base", structure },
-        { id: buildId, name: "Build", structure: buildStructure },
-      ],
-    });
-
-    const [defaultEstimate] = await estimateActivityPlans(
-      [{ ...plan, structure: document }],
-      {} as never,
-      plan.profile_id,
-      { asOf },
-    );
-    const [explicitEstimate] = await estimateActivityPlans(
-      [{ ...plan, structure: document }],
-      {} as never,
-      plan.profile_id,
-      { asOf, variantId: planId },
-    );
-
-    expect(defaultEstimate?.resolvedActivityPlanVariant).toMatchObject({
-      selection: "default",
-      variantId: buildId,
-      variantName: "Build",
-    });
-    expect(defaultEstimate?.prescriptionQuantification.summary.duration.elapsed.value).toBe(2_400);
-    expect(explicitEstimate?.resolvedActivityPlanVariant).toMatchObject({
-      selection: "explicit",
-      variantId: planId,
-      variantName: "Base",
-    });
-    expect(explicitEstimate?.prescriptionQuantification.summary.duration.elapsed.value).toBe(1_800);
-  });
-
   it.each([
     ["confirmed", "complete"],
     ["provisional", "complete"],
@@ -226,10 +179,7 @@ describe("estimateActivityPlans", () => {
     const authoredBySomeoneElse = {
       ...plan,
       profile_id: "author-profile-1",
-      structure: initializeActivityPlanDocument({
-        activityPlanId: planId,
-        structure: absoluteStructure,
-      }),
+      structure: absoluteStructure,
     };
     const viewerTargets = buildPerformanceTargetFactsFixture({
       asOf: asOf.toISOString(),
@@ -280,15 +230,7 @@ describe("estimateActivityPlans", () => {
     step.targets = [{ type: "watts", intensity: 150 }];
 
     const [estimated] = await estimateActivityPlans(
-      [
-        {
-          ...plan,
-          structure: initializeActivityPlanDocument({
-            activityPlanId: planId,
-            structure: absoluteStructure,
-          }),
-        },
-      ],
+      [{ ...plan, structure: absoluteStructure }],
       {} as never,
       "viewer-profile-1",
       { asOf },

@@ -2,34 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
-import {
-  formatQaError,
-  listenerPidsFromSs,
-  parseArguments,
-  stabilizeService,
-  verifyListenerOwnership,
-  waitForPort,
-} from "./cli.mjs";
+import { formatQaError, parseArguments } from "./cli.mjs";
 import { createProfilePlan, profileForPaths, validateCiRuntimeDelegation } from "./profiles.mjs";
-
-function child({ exitCode = null, pid = 42 } = {}) {
-  const listeners = new Map();
-  const listen = (event, callback) => {
-    listeners.set(event, [...(listeners.get(event) ?? []), callback]);
-    if (event === "exit" && exitCode !== null) queueMicrotask(() => callback(exitCode));
-  };
-  return {
-    pid,
-    exitCode,
-    killed: false,
-    once: listen,
-    on: listen,
-    emit(event, value) {
-      if (event === "exit") this.exitCode = value;
-      for (const callback of listeners.get(event) ?? []) callback(value);
-    },
-  };
-}
 
 test("changed paths select static, web, backend, or full verification", () => {
   assert.equal(profileForPaths([]), "static");
@@ -58,7 +32,6 @@ test("runtime profiles point directly to the maintained browser smoke test", () 
         "--grep",
         "dashboard presents an explicit error and recovers its server content",
       ],
-      phase: "run",
     },
   ]);
   const fullCommands = createProfilePlan({ profile: "full", includeStatic: false }).commands;
@@ -90,7 +63,7 @@ test("normal quality, pre-push, and CI use focused owner checks", async () => {
     readFile(path.join(root, ".github/workflows/ci.yml"), "utf8"),
   ]);
   const manifest = JSON.parse(manifestSource);
-  assert.doesNotMatch(manifest.scripts.test, /parity|capability/);
+  assert.match(manifest.scripts.test, /test:parity/);
   assert.match(lefthook, /pre-push:[\s\S]*pnpm quality:push \{push_files\}/);
   assert.match(workflow, /run: pnpm test/);
   assert.deepEqual(validateCiRuntimeDelegation(workflow), []);
@@ -114,42 +87,4 @@ test("QA failures expose the exact failed command", () => {
     new AggregateError([new Error("Required QA command failed: pnpm test:e2e:web exited with 1.")]),
   );
   assert.match(message, /pnpm test:e2e:web exited with 1/);
-});
-
-test("health, stabilization, and listener ownership fail closed", async () => {
-  const exiting = child();
-  const waiting = waitForPort(3000, {
-    child: exiting,
-    connect: async () => {
-      throw new Error("closed");
-    },
-  });
-  exiting.emit("exit", 1);
-  await assert.rejects(waiting, /exited before health/);
-
-  const failing = child();
-  const stable = stabilizeService(failing, { timeout: 1_000 });
-  failing.emit("error", new Error("bind failed"));
-  await assert.rejects(stable, /failed during stabilization/);
-
-  await verifyListenerOwnership(
-    3000,
-    { pid: 42 },
-    {
-      listeners: async () => [100],
-      processGroup: async () => 42,
-    },
-  );
-  await assert.rejects(
-    verifyListenerOwnership(
-      3000,
-      { pid: 42 },
-      {
-        listeners: async () => [100],
-        processGroup: async () => 7,
-      },
-    ),
-    /not exclusively owned/,
-  );
-  assert.throws(() => listenerPidsFromSs("LISTEN 0 511 127.0.0.1:3000"), /identify/);
 });

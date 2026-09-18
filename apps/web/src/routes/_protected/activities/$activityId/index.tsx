@@ -29,7 +29,7 @@ import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-qua
 import { getNormalizedPowerPresentation } from "@repo/ui/lib/normalized-power-presentation";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Loader2, Lock, Share2, Trash2, UploadCloud } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { SessionRpeCard } from "../../../../components/activity/session-rpe-card";
 import {
@@ -96,6 +96,16 @@ function ActivityDetailPage() {
   const [failedLikeIntent, setFailedLikeIntent] = useState<boolean | null>(null);
   const [deleteFailed, setDeleteFailed] = useState(false);
   const [visibilityDialogOpen, setVisibilityDialogOpen] = useState(false);
+  const [sourceMoveTargets, setSourceMoveTargets] = useState<Record<string, string>>({});
+  const [sourceMoveStatus, setSourceMoveStatus] = useState<{
+    sourceId: string;
+    pending: boolean;
+    error: boolean;
+    message: string;
+  } | null>(null);
+  const sourceMovePending = useRef(false);
+  const sourceContext = useRef(activityId);
+  sourceContext.current = activityId;
   const activityQuery = api.activities.getById.useQuery({ id: activityId });
   const ownedActivitiesQuery = api.activities.listPaginated.useQuery({ limit: 20 });
   const effortsQuery = api.activities.getEfforts.useQuery({ id: activityId });
@@ -237,6 +247,7 @@ function ActivityDetailPage() {
     },
   });
   const resolveImportedSourceMutation = api.activities.resolveImportedSource.useMutation({
+    retry: false,
     onSuccess: async () => {
       await utils.activities.getById.invalidate({ id: activityId });
     },
@@ -246,6 +257,49 @@ function ActivityDetailPage() {
     onSuccess: () => toast.success("Separate activity import queued"),
     onError: () => toast.error("Separate activity could not be queued"),
   });
+  const sourceActionPending =
+    sourceMoveStatus?.pending ||
+    resolveImportedSourceMutation.isPending ||
+    keepImportedSourceSeparateMutation.isPending;
+  const moveSource = (sourceId: string) => {
+    const targetActivityId = sourceMoveTargets[sourceId];
+    if (
+      sourceMovePending.current ||
+      sourceActionPending ||
+      !targetActivityId ||
+      ownedActivitiesQuery.isLoading ||
+      ownedActivitiesQuery.isError ||
+      !ownedActivitiesQuery.data?.items.some(
+        (candidate) => candidate.id === targetActivityId && candidate.id !== activityId,
+      )
+    )
+      return;
+    sourceMovePending.current = true;
+    setSourceMoveStatus({ sourceId, pending: true, error: false, message: "Moving source…" });
+    resolveImportedSourceMutation.mutate(
+      { action: "move", sourceReferenceId: sourceId, targetActivityId },
+      {
+        onSuccess: () => {
+          if (sourceContext.current !== activityId) return;
+          setSourceMoveTargets((targets) => ({ ...targets, [sourceId]: "" }));
+          setSourceMoveStatus({ sourceId, pending: false, error: false, message: "Source moved." });
+        },
+        onError: () => {
+          if (sourceContext.current !== activityId) return;
+          setSourceMoveStatus({
+            sourceId,
+            pending: false,
+            error: true,
+            message:
+              "The source move could not be confirmed. Refresh activities before confirming again.",
+          });
+        },
+        onSettled: () => {
+          if (sourceContext.current === activityId) sourceMovePending.current = false;
+        },
+      },
+    );
+  };
   const sendCompletedActivityMutation = api.activities.sendCompletedActivityToProvider.useMutation({
     retry: false,
     onSuccess: (result) => {
@@ -272,6 +326,13 @@ function ActivityDetailPage() {
     setFailedLikeIntent(null);
     setDeleteFailed(false);
   }, [activity?.id]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: A new activity owns a new source-selection draft.
+  useEffect(() => {
+    setSourceMoveTargets({});
+    setSourceMoveStatus(null);
+    sourceMovePending.current = false;
+  }, [activityId]);
 
   const coordinates = useMemo(
     () => getActivityCoordinates(detail?.routePolyline, streamsQuery.data?.records),
@@ -472,7 +533,10 @@ function ActivityDetailPage() {
             ) : null}
           </>
         }
-        badges={[getVisibilityLabel(contentVisibility), formatDateTime(activity.time.startedAt)]}
+        badges={[
+          getVisibilityLabel(contentVisibility),
+          activity.time.startedAt ? formatDateTime(activity.time.startedAt) : "—",
+        ]}
         categories={categories}
         description={activity.notes || "No notes attached to this activity."}
         eyebrow="Activity detail"
@@ -564,7 +628,10 @@ function ActivityDetailPage() {
                     ? "—"
                     : `${normalizedPowerPresentation?.status === "partial" ? "~" : ""}${formatPower(normalizedPowerPresentation?.valueWatts)}`,
           },
-          { label: "Started", value: formatDateTime(activity.time.startedAt) },
+          {
+            label: "Started",
+            value: activity.time.startedAt ? formatDateTime(activity.time.startedAt) : "—",
+          },
         ]}
       />
       <p className="text-sm text-muted-foreground">
@@ -842,7 +909,7 @@ function ActivityDetailPage() {
                 {source.resolutionStatus === "review" ? (
                   <span className="flex flex-wrap gap-2">
                     <Button
-                      disabled={resolveImportedSourceMutation.isPending}
+                      disabled={Boolean(sourceActionPending)}
                       onClick={() =>
                         resolveImportedSourceMutation.mutate({
                           action: "confirm_same",
@@ -856,7 +923,7 @@ function ActivityDetailPage() {
                       Same activity
                     </Button>
                     <Button
-                      disabled={keepImportedSourceSeparateMutation.isPending}
+                      disabled={Boolean(sourceActionPending)}
                       onClick={() =>
                         keepImportedSourceSeparateMutation.mutate({ sourceReferenceId: source.id })
                       }
@@ -870,17 +937,23 @@ function ActivityDetailPage() {
                       Move to an activity
                     </label>
                     <select
-                      defaultValue=""
-                      disabled={resolveImportedSourceMutation.isPending}
+                      aria-describedby={
+                        sourceMoveStatus?.sourceId === source.id
+                          ? `move-source-status-${source.id}`
+                          : undefined
+                      }
+                      value={sourceMoveTargets[source.id] ?? ""}
+                      disabled={
+                        Boolean(sourceActionPending) ||
+                        ownedActivitiesQuery.isLoading ||
+                        ownedActivitiesQuery.isError
+                      }
                       id={`move-source-${source.id}`}
                       onChange={(event) => {
-                        if (event.target.value) {
-                          resolveImportedSourceMutation.mutate({
-                            action: "move",
-                            sourceReferenceId: source.id,
-                            targetActivityId: event.target.value,
-                          });
-                        }
+                        setSourceMoveTargets((targets) => ({
+                          ...targets,
+                          [source.id]: event.target.value,
+                        }));
                       }}
                     >
                       <option value="">Move to activity…</option>
@@ -893,7 +966,62 @@ function ActivityDetailPage() {
                         ))}
                     </select>
                     <Button
-                      disabled={resolveImportedSourceMutation.isPending}
+                      disabled={
+                        Boolean(sourceActionPending) ||
+                        ownedActivitiesQuery.isLoading ||
+                        ownedActivitiesQuery.isError ||
+                        !ownedActivitiesQuery.data?.items.some(
+                          (candidate) =>
+                            candidate.id === sourceMoveTargets[source.id] &&
+                            candidate.id !== activityId,
+                        )
+                      }
+                      onClick={() => moveSource(source.id)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      Confirm move
+                    </Button>
+                    {ownedActivitiesQuery.isLoading ? (
+                      <span role="status">Loading activities…</span>
+                    ) : null}
+                    {ownedActivitiesQuery.isError ? (
+                      <span role="alert">
+                        Activities could not be loaded.
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => void ownedActivitiesQuery.refetch()}
+                        >
+                          Retry activities
+                        </Button>
+                      </span>
+                    ) : null}
+                    {sourceMoveStatus?.sourceId === source.id ? (
+                      <span
+                        id={`move-source-status-${source.id}`}
+                        role={sourceMoveStatus.error ? "alert" : "status"}
+                      >
+                        {sourceMoveStatus.message}
+                        {sourceMoveStatus.error ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() =>
+                              void Promise.all([
+                                activityQuery.refetch(),
+                                ownedActivitiesQuery.refetch(),
+                              ])
+                            }
+                          >
+                            Refresh activities
+                          </Button>
+                        ) : null}
+                      </span>
+                    ) : null}
+                    <Button
+                      disabled={Boolean(sourceActionPending)}
                       onClick={() =>
                         resolveImportedSourceMutation.mutate({
                           action: "ignore",

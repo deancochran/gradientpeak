@@ -8,7 +8,8 @@ describe("validateRecordingSearch", () => {
       gps: "off",
       eventId: undefined,
       activityPlanId: undefined,
-      variantId: undefined,
+      plannedSessionId: undefined,
+      plannedSessionDate: undefined,
     });
   });
 
@@ -26,7 +27,8 @@ describe("validateRecordingSearch", () => {
       routeId: "11111111-1111-4111-8111-111111111111",
       eventId: undefined,
       activityPlanId: undefined,
-      variantId: undefined,
+      plannedSessionId: undefined,
+      plannedSessionDate: undefined,
     });
   });
 });

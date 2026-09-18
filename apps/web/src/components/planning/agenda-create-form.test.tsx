@@ -5,6 +5,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AgendaCreateForm } from "./agenda-create-form";
 
+vi.mock("../../lib/use-unsaved-changes-guard", () => ({
+  useUnsavedChangesGuard: () => ({
+    guardedCancel: (fn: () => void) => fn(),
+    markSaveFailed: vi.fn(),
+    markSaved: vi.fn(),
+  }),
+}));
+
 const mocks = vi.hoisted(() => ({
   action: vi.fn(),
 }));
@@ -62,7 +70,7 @@ describe("AgendaCreateForm", () => {
     resolve();
     await waitFor(() =>
       expect((screen.getByRole("button", { name: "Create" }) as HTMLButtonElement).disabled).toBe(
-        false,
+        true,
       ),
     );
   });

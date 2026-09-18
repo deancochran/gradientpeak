@@ -6,11 +6,13 @@ import type {
   CanonicalActivityCategory,
   EditableActivityPlanStructure,
 } from "@repo/core";
-import type { ActivityPlanDocumentInput } from "@repo/core/activity-plan";
+import { ACTIVITY_PLAN_LIMITS } from "@repo/core";
 import { randomUUID } from "expo-crypto";
 import { create } from "zustand";
 
 export type { EditableActivityPlanStructure } from "@repo/core";
+
+export type ActivityPlanCopyResult = { success: true } | { success: false; error: string };
 
 interface ActivityPlanCreationState {
   name: string;
@@ -18,16 +20,11 @@ interface ActivityPlanCreationState {
   /** The one plan-level activity_category; all authored activity segments inherit it. */
   activityCategory: CanonicalActivityCategory;
   structure: EditableActivityPlanStructure;
-  /** Whole persisted document in edit mode; create mode remains a single server-initialized variant. */
-  document: ActivityPlanDocumentInput | null;
-  selectedVariantId: string | null;
   notes: string;
   setName: (name: string) => void;
   setDescription: (description: string) => void;
   setActivityCategory: (activity_category: CanonicalActivityCategory) => void;
   setStructure: (structure: EditableActivityPlanStructure) => void;
-  setDocument: (document: ActivityPlanDocumentInput) => void;
-  selectVariant: (variantId: string) => void;
   setSegments: (segments: ActivityPlanSegment[]) => void;
   setNotes: (notes: string) => void;
   addSegment: (segment: ActivityPlanSegment) => void;
@@ -38,7 +35,7 @@ interface ActivityPlanCreationState {
   updateInterval: (intervalId: string, interval: ActivityPlanInterval) => void;
   removeInterval: (intervalId: string) => void;
   reorderIntervals: (intervals: ActivityPlanInterval[], segmentId?: string) => void;
-  copyInterval: (intervalId: string) => void;
+  copyInterval: (intervalId: string) => ActivityPlanCopyResult;
   addStepToInterval: (intervalId: string, step: ActivityPlanIntervalStep) => void;
   updateStepInInterval: (
     intervalId: string,
@@ -47,7 +44,7 @@ interface ActivityPlanCreationState {
   ) => void;
   removeStepFromInterval: (intervalId: string, stepId: string) => void;
   reorderStepsInInterval: (intervalId: string, steps: ActivityPlanIntervalStep[]) => void;
-  copyStepInInterval: (intervalId: string, stepId: string) => void;
+  copyStepInInterval: (intervalId: string, stepId: string) => ActivityPlanCopyResult;
   reset: () => void;
 }
 
@@ -72,7 +69,8 @@ export function createMinimalActivityPlanStructure(
               {
                 id: randomUUID(),
                 name: activityName,
-                duration: { type: "untilFinished" },
+                purpose: "work",
+                duration: { type: "time", seconds: 300 },
                 targets: [{ type: "RPE", intensity: 5 }],
               },
             ],
@@ -81,17 +79,6 @@ export function createMinimalActivityPlanStructure(
       },
     ],
   };
-}
-
-function generateDefaultActivityName(): string {
-  const now = new Date();
-  const date = now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  const time = now.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-  return `Activity Plan - ${date} ${time}`;
 }
 
 function mapActivitySegments(
@@ -107,38 +94,41 @@ function mapActivitySegments(
   };
 }
 
-function replaceSelectedVariantStructure(
-  state: Pick<ActivityPlanCreationState, "document" | "selectedVariantId">,
-  structure: EditableActivityPlanStructure,
-): Pick<ActivityPlanCreationState, "document" | "structure"> {
-  if (!state.document || !state.selectedVariantId) {
-    return { document: state.document, structure };
-  }
-
-  return {
-    document: {
-      ...state.document,
-      variants: state.document.variants.map((variant) =>
-        variant.id === state.selectedVariantId ? { ...variant, structure } : variant,
-      ),
-    },
-    structure,
-  };
-}
-
 const initialState = {
-  name: generateDefaultActivityName(),
+  name: "Untitled Run",
   description: "",
   activityCategory: "run" as CanonicalActivityCategory,
   structure: {
     version: 3 as const,
     activity_category: "run" as CanonicalActivityCategory,
-    segments: [] as ActivityPlanSegment[],
+    segments: createMinimalActivityPlanStructure().segments,
   },
-  document: null,
-  selectedVariantId: null,
   notes: "",
 };
+
+function expandedStepOccurrences(structure: EditableActivityPlanStructure) {
+  return structure.segments.reduce(
+    (total, segment) =>
+      total +
+      (segment.role === "activity"
+        ? segment.intervals.reduce(
+            (segmentTotal, interval) => segmentTotal + interval.steps.length * interval.repetitions,
+            0,
+          )
+        : 0),
+    0,
+  );
+}
+
+function copyStep(step: ActivityPlanIntervalStep): ActivityPlanIntervalStep {
+  return {
+    ...step,
+    id: randomUUID(),
+    name: `${step.name} (Copy)`,
+    duration: { ...step.duration },
+    targets: step.targets.map((target) => ({ ...target })),
+  };
+}
 
 export const useActivityPlanCreationStore = create<ActivityPlanCreationState>((set) => ({
   ...initialState,
@@ -148,233 +138,241 @@ export const useActivityPlanCreationStore = create<ActivityPlanCreationState>((s
     set((state) => ({
       activityCategory,
       structure: { ...state.structure, activity_category: activityCategory },
-      document: state.document
-        ? {
-            ...state.document,
-            variants: state.document.variants.map((variant) => ({
-              ...variant,
-              structure: { ...variant.structure, activity_category: activityCategory },
-            })),
-          }
-        : null,
     })),
   setStructure: (structure) =>
     set((state) =>
-      structure.activity_category === state.activityCategory
-        ? replaceSelectedVariantStructure(state, structure)
-        : state,
+      structure.activity_category === state.activityCategory ? { structure } : state,
     ),
-  setDocument: (document) =>
-    set(() => {
-      const selectedVariant = document.variants.find(
-        (variant) => variant.id === document.defaultVariantId,
-      );
-      if (!selectedVariant) return {};
-      return {
-        document,
-        selectedVariantId: selectedVariant.id,
-        activityCategory: selectedVariant.structure.activity_category,
-        structure: selectedVariant.structure,
-      };
-    }),
-  selectVariant: (variantId) =>
-    set((state) => {
-      const variant = state.document?.variants.find((candidate) => candidate.id === variantId);
-      if (!variant || variant.structure.activity_category !== state.activityCategory) return state;
-      return { selectedVariantId: variant.id, structure: variant.structure };
-    }),
   setSegments: (segments) =>
-    set((state) =>
-      replaceSelectedVariantStructure(state, {
+    set((state) => ({
+      structure: {
         version: 3,
         activity_category: state.activityCategory,
         segments,
-      }),
-    ),
+      },
+    })),
   setNotes: (notes) => set({ notes }),
   addSegment: (segment) =>
-    set((state) =>
-      replaceSelectedVariantStructure(state, {
+    set((state) => ({
+      structure: {
         version: 3,
         activity_category: state.activityCategory,
         segments: [...state.structure.segments, segment],
-      }),
-    ),
+      },
+    })),
   updateSegment: (segmentId, segment) =>
     set((state) => {
       const segments = state.structure.segments.map((item) =>
         item.id === segmentId ? segment : item,
       );
-      return replaceSelectedVariantStructure(state, {
-        version: 3,
-        activity_category: state.activityCategory,
-        segments,
-      });
+      return {
+        structure: {
+          version: 3,
+          activity_category: state.activityCategory,
+          segments,
+        },
+      };
     }),
   removeSegment: (segmentId) =>
-    set((state) =>
-      replaceSelectedVariantStructure(state, {
+    set((state) => ({
+      structure: {
         version: 3,
         activity_category: state.activityCategory,
         segments: state.structure.segments.filter((item) => item.id !== segmentId),
-      }),
-    ),
+      },
+    })),
   reorderSegments: (segments) =>
-    set((state) =>
-      replaceSelectedVariantStructure(state, {
+    set((state) => ({
+      structure: {
         version: 3,
         activity_category: state.activityCategory,
         segments,
-      }),
-    ),
+      },
+    })),
   addInterval: (interval, segmentId) =>
-    set((state) =>
-      replaceSelectedVariantStructure(
-        state,
-        mapActivitySegments(state.structure, (segment) =>
-          segment.id === segmentId ||
-          (!segmentId &&
-            segment === state.structure.segments.find((item) => item.role === "activity"))
-            ? { ...segment, intervals: [...segment.intervals, interval] }
-            : segment,
-        ),
+    set((state) => ({
+      structure: mapActivitySegments(state.structure, (segment) =>
+        segment.id === segmentId ||
+        (!segmentId &&
+          segment === state.structure.segments.find((item) => item.role === "activity"))
+          ? { ...segment, intervals: [...segment.intervals, interval] }
+          : segment,
       ),
-    ),
+    })),
   updateInterval: (intervalId, interval) =>
-    set((state) =>
-      replaceSelectedVariantStructure(
-        state,
-        mapActivitySegments(state.structure, (segment) => ({
-          ...segment,
-          intervals: segment.intervals.map((item) => (item.id === intervalId ? interval : item)),
-        })),
-      ),
-    ),
+    set((state) => ({
+      structure: mapActivitySegments(state.structure, (segment) => ({
+        ...segment,
+        intervals: segment.intervals.map((item) => (item.id === intervalId ? interval : item)),
+      })),
+    })),
   removeInterval: (intervalId) =>
-    set((state) =>
-      replaceSelectedVariantStructure(
-        state,
-        mapActivitySegments(state.structure, (segment) => ({
-          ...segment,
-          intervals: segment.intervals.filter((item) => item.id !== intervalId),
-        })),
-      ),
-    ),
+    set((state) => ({
+      structure: mapActivitySegments(state.structure, (segment) => ({
+        ...segment,
+        intervals: segment.intervals.filter((item) => item.id !== intervalId),
+      })),
+    })),
   reorderIntervals: (intervals, segmentId) =>
-    set((state) =>
-      replaceSelectedVariantStructure(
-        state,
-        mapActivitySegments(state.structure, (segment) =>
-          segment.id === segmentId ||
-          (!segmentId &&
-            segment.intervals.some((item) =>
-              intervals.some((candidate) => candidate.id === item.id),
-            ))
-            ? { ...segment, intervals }
-            : segment,
+    set((state) => ({
+      structure: mapActivitySegments(state.structure, (segment) =>
+        segment.id === segmentId ||
+        (!segmentId &&
+          segment.intervals.some((item) => intervals.some((candidate) => candidate.id === item.id)))
+          ? { ...segment, intervals }
+          : segment,
+      ),
+    })),
+  copyInterval: (intervalId) => {
+    let result: ActivityPlanCopyResult = {
+      success: false,
+      error: "Interval was not found.",
+    };
+    set((state) => {
+      const segment = state.structure.segments.find(
+        (item) =>
+          item.role === "activity" && item.intervals.some((interval) => interval.id === intervalId),
+      );
+      if (!segment || segment.role !== "activity") return state;
+      const interval = segment.intervals.find((item) => item.id === intervalId);
+      if (!interval) return state;
+      if (segment.intervals.length >= ACTIVITY_PLAN_LIMITS.maxIntervalsPerActivity) {
+        result = {
+          success: false,
+          error: `An activity can contain at most ${ACTIVITY_PLAN_LIMITS.maxIntervalsPerActivity} intervals.`,
+        };
+        return state;
+      }
+      if (
+        expandedStepOccurrences(state.structure) + interval.steps.length * interval.repetitions >
+        ACTIVITY_PLAN_LIMITS.maxExpandedStepOccurrences
+      ) {
+        result = {
+          success: false,
+          error: `A plan cannot exceed ${ACTIVITY_PLAN_LIMITS.maxExpandedStepOccurrences} expanded step occurrences.`,
+        };
+        return state;
+      }
+      const copiedInterval: ActivityPlanInterval = {
+        ...interval,
+        id: randomUUID(),
+        name: `${interval.name} (Copy)`,
+        steps: interval.steps.map(copyStep),
+      };
+      result = { success: true };
+      return {
+        structure: mapActivitySegments(state.structure, (item) =>
+          item.id === segment.id
+            ? {
+                ...item,
+                intervals: [
+                  ...item.intervals.slice(0, item.intervals.indexOf(interval) + 1),
+                  copiedInterval,
+                  ...item.intervals.slice(item.intervals.indexOf(interval) + 1),
+                ],
+              }
+            : item,
         ),
-      ),
-    ),
-  copyInterval: (intervalId) =>
-    set((state) =>
-      replaceSelectedVariantStructure(
-        state,
-        mapActivitySegments(state.structure, (segment) => {
-          const interval = segment.intervals.find((item) => item.id === intervalId);
-          if (!interval) return segment;
-          return {
-            ...segment,
-            intervals: [
-              ...segment.intervals,
-              {
-                ...interval,
-                id: randomUUID(),
-                name: `${interval.name} (Copy)`,
-                steps: interval.steps.map((step) => ({ ...step, id: randomUUID() })),
-              },
-            ],
-          };
-        }),
-      ),
-    ),
+      };
+    });
+    return result;
+  },
   addStepToInterval: (intervalId, step) =>
-    set((state) =>
-      replaceSelectedVariantStructure(
-        state,
-        mapActivitySegments(state.structure, (segment) => ({
-          ...segment,
-          intervals: segment.intervals.map((interval) =>
-            interval.id === intervalId
-              ? { ...interval, steps: [...interval.steps, step] }
-              : interval,
-          ),
-        })),
-      ),
-    ),
+    set((state) => ({
+      structure: mapActivitySegments(state.structure, (segment) => ({
+        ...segment,
+        intervals: segment.intervals.map((interval) =>
+          interval.id === intervalId ? { ...interval, steps: [...interval.steps, step] } : interval,
+        ),
+      })),
+    })),
   updateStepInInterval: (intervalId, stepId, step) =>
-    set((state) =>
-      replaceSelectedVariantStructure(
-        state,
-        mapActivitySegments(state.structure, (segment) => ({
-          ...segment,
-          intervals: segment.intervals.map((interval) =>
-            interval.id === intervalId
-              ? {
-                  ...interval,
-                  steps: interval.steps.map((item) => (item.id === stepId ? step : item)),
-                }
-              : interval,
-          ),
-        })),
-      ),
-    ),
+    set((state) => ({
+      structure: mapActivitySegments(state.structure, (segment) => ({
+        ...segment,
+        intervals: segment.intervals.map((interval) =>
+          interval.id === intervalId
+            ? {
+                ...interval,
+                steps: interval.steps.map((item) => (item.id === stepId ? step : item)),
+              }
+            : interval,
+        ),
+      })),
+    })),
   removeStepFromInterval: (intervalId, stepId) =>
-    set((state) =>
-      replaceSelectedVariantStructure(
-        state,
-        mapActivitySegments(state.structure, (segment) => ({
-          ...segment,
-          intervals: segment.intervals.map((interval) =>
-            interval.id === intervalId
-              ? { ...interval, steps: interval.steps.filter((item) => item.id !== stepId) }
-              : interval,
-          ),
-        })),
-      ),
-    ),
+    set((state) => ({
+      structure: mapActivitySegments(state.structure, (segment) => ({
+        ...segment,
+        intervals: segment.intervals.map((interval) =>
+          interval.id === intervalId
+            ? {
+                ...interval,
+                steps: interval.steps.filter((item) => item.id !== stepId),
+              }
+            : interval,
+        ),
+      })),
+    })),
   reorderStepsInInterval: (intervalId, steps) =>
-    set((state) =>
-      replaceSelectedVariantStructure(
-        state,
-        mapActivitySegments(state.structure, (segment) => ({
+    set((state) => ({
+      structure: mapActivitySegments(state.structure, (segment) => ({
+        ...segment,
+        intervals: segment.intervals.map((interval) =>
+          interval.id === intervalId ? { ...interval, steps } : interval,
+        ),
+      })),
+    })),
+  copyStepInInterval: (intervalId, stepId) => {
+    let result: ActivityPlanCopyResult = {
+      success: false,
+      error: "Step was not found.",
+    };
+    set((state) => {
+      const interval = state.structure.segments
+        .filter((segment): segment is ActivityPlanActivitySegment => segment.role === "activity")
+        .flatMap((segment) => segment.intervals)
+        .find((item) => item.id === intervalId);
+      const step = interval?.steps.find((item) => item.id === stepId);
+      if (!interval || !step) return state;
+      if (interval.steps.length >= ACTIVITY_PLAN_LIMITS.maxStepsPerInterval) {
+        result = {
+          success: false,
+          error: `An interval can contain at most ${ACTIVITY_PLAN_LIMITS.maxStepsPerInterval} steps.`,
+        };
+        return state;
+      }
+      if (
+        expandedStepOccurrences(state.structure) + interval.repetitions >
+        ACTIVITY_PLAN_LIMITS.maxExpandedStepOccurrences
+      ) {
+        result = {
+          success: false,
+          error: `A plan cannot exceed ${ACTIVITY_PLAN_LIMITS.maxExpandedStepOccurrences} expanded step occurrences.`,
+        };
+        return state;
+      }
+      const copiedStep = copyStep(step);
+      result = { success: true };
+      return {
+        structure: mapActivitySegments(state.structure, (segment) => ({
           ...segment,
-          intervals: segment.intervals.map((interval) =>
-            interval.id === intervalId ? { ...interval, steps } : interval,
-          ),
-        })),
-      ),
-    ),
-  copyStepInInterval: (intervalId, stepId) =>
-    set((state) =>
-      replaceSelectedVariantStructure(
-        state,
-        mapActivitySegments(state.structure, (segment) => ({
-          ...segment,
-          intervals: segment.intervals.map((interval) => {
-            if (interval.id !== intervalId) return interval;
-            const step = interval.steps.find((item) => item.id === stepId);
-            return step
+          intervals: segment.intervals.map((item) =>
+            item.id === intervalId
               ? {
-                  ...interval,
+                  ...item,
                   steps: [
-                    ...interval.steps,
-                    { ...step, id: randomUUID(), name: `${step.name} (Copy)` },
+                    ...item.steps.slice(0, item.steps.indexOf(step) + 1),
+                    copiedStep,
+                    ...item.steps.slice(item.steps.indexOf(step) + 1),
                   ],
                 }
-              : interval;
-          }),
+              : item,
+          ),
         })),
-      ),
-    ),
-  reset: () => set({ ...initialState, name: generateDefaultActivityName() }),
+      };
+    });
+    return result;
+  },
+  reset: () => set(initialState),
 }));

@@ -15,6 +15,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface AppFormModalProps {
+  /** Opt in when this caller has a single compact header primary action. */
+  actionPlacement?: "footer" | "header";
   children: React.ReactNode;
   description?: string;
   dismissDisabled?: boolean;
@@ -29,6 +31,7 @@ interface AppFormModalProps {
 }
 
 export function AppFormModal({
+  actionPlacement = "footer",
   children,
   description,
   dismissDisabled = false,
@@ -44,6 +47,8 @@ export function AppFormModal({
   const { bottom: bottomSafeAreaInset } = useSafeAreaInsets();
   const { contentContainerStyle, ...resolvedScrollProps } = scrollProps ?? {};
   const footerPaddingBottom = 16 + bottomSafeAreaInset;
+  const hasFooterActions =
+    actionPlacement === "footer" && (primaryAction || secondaryAction || tertiaryAction);
   const handleClose = () => {
     if (dismissDisabled) {
       return;
@@ -66,28 +71,66 @@ export function AppFormModal({
         testID={testID}
       >
         <View className="flex-1 bg-background">
-          <View className="flex-row items-start justify-between border-b border-border px-4 py-4">
-            <View className="flex-1 pr-3">
-              <Text accessibilityRole="header" className="text-xl font-semibold text-foreground">
-                {title}
-              </Text>
-              {description ? (
-                <Text className="mt-1 text-sm text-muted-foreground">{description}</Text>
-              ) : null}
-            </View>
-            <Button
-              accessibilityLabel={`Close ${title}`}
-              accessibilityState={{ disabled: dismissDisabled }}
-              className="rounded-full bg-muted"
-              disabled={dismissDisabled}
-              onPress={handleClose}
-              role="button"
-              size="icon"
-              testId={`${testID ?? "app-form-modal"}-close`}
-              variant="ghost"
-            >
-              <Icon as={X} size={20} className="text-muted-foreground" />
-            </Button>
+          <View className="border-b border-border">
+            {actionPlacement === "header" ? (
+              <>
+                <View className="flex-row items-center px-4 py-2">
+                  <Button
+                    accessibilityLabel={`Close ${title}`}
+                    accessibilityState={{ disabled: dismissDisabled }}
+                    className="min-h-12 min-w-12 rounded-full bg-muted"
+                    disabled={dismissDisabled}
+                    onPress={handleClose}
+                    role="button"
+                    size="icon"
+                    testId={`${testID ?? "app-form-modal"}-close`}
+                    variant="ghost"
+                  >
+                    <Icon as={X} size={20} className="text-muted-foreground" />
+                  </Button>
+                  <View className="flex-1 px-2">
+                    <Text
+                      accessibilityRole="header"
+                      className="text-center text-xl font-semibold text-foreground"
+                      numberOfLines={1}
+                    >
+                      {title}
+                    </Text>
+                  </View>
+                  <View className="min-w-12 items-end">{primaryAction}</View>
+                </View>
+                {description ? (
+                  <Text className="px-4 pb-3 text-sm text-muted-foreground">{description}</Text>
+                ) : null}
+              </>
+            ) : (
+              <View className="flex-row items-start justify-between px-4 py-4">
+                <View className="flex-1 pr-3">
+                  <Text
+                    accessibilityRole="header"
+                    className="text-xl font-semibold text-foreground"
+                  >
+                    {title}
+                  </Text>
+                  {description ? (
+                    <Text className="mt-1 text-sm text-muted-foreground">{description}</Text>
+                  ) : null}
+                </View>
+                <Button
+                  accessibilityLabel={`Close ${title}`}
+                  accessibilityState={{ disabled: dismissDisabled }}
+                  className="min-h-12 min-w-12 rounded-full bg-muted"
+                  disabled={dismissDisabled}
+                  onPress={handleClose}
+                  role="button"
+                  size="icon"
+                  testId={`${testID ?? "app-form-modal"}-close`}
+                  variant="ghost"
+                >
+                  <Icon as={X} size={20} className="text-muted-foreground" />
+                </Button>
+              </View>
+            )}
           </View>
 
           <ScrollView
@@ -95,10 +138,7 @@ export function AppFormModal({
             contentContainerClassName="p-4 gap-4"
             contentContainerStyle={[
               {
-                paddingBottom:
-                  footerContent || primaryAction || secondaryAction || tertiaryAction
-                    ? 16
-                    : footerPaddingBottom,
+                paddingBottom: footerContent || hasFooterActions ? 16 : footerPaddingBottom,
               },
               contentContainerStyle,
             ]}
@@ -115,7 +155,7 @@ export function AppFormModal({
             >
               {footerContent}
             </View>
-          ) : primaryAction || secondaryAction || tertiaryAction ? (
+          ) : hasFooterActions ? (
             <View
               className="border-t border-border bg-background px-4 pt-4"
               style={{ paddingBottom: footerPaddingBottom }}

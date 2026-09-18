@@ -194,18 +194,7 @@ describe("useTrainingPlanHeaderSocialActions", () => {
     delete process.env.EXPO_PUBLIC_WEB_URL;
   });
 
-  it("blocks sharing and concurrent commits while a visibility update is pending", async () => {
-    let resolveProfile: ((value: { id: string; planning_timezone: string }) => void) | undefined;
-    const profileFetch = jest.fn(
-      () =>
-        new Promise<{ id: string; planning_timezone: string }>((resolve) => {
-          resolveProfile = resolve;
-        }),
-    );
-    const utils = {
-      athleteIntelligence: { getReadModel: { fetch: jest.fn() } },
-      profiles: { get: { fetch: profileFetch } },
-    } as unknown as Parameters<typeof useTrainingPlanHeaderSocialActions>[0]["utils"];
+  it("directs private sharing to the editor without committing visibility", async () => {
     const { result } = await renderHook(() =>
       useTrainingPlanHeaderSocialActions({
         plan: {
@@ -216,44 +205,20 @@ describe("useTrainingPlanHeaderSocialActions", () => {
           editor: { revision: 1, structureHash: `v1:sha256:${"1".repeat(64)}` },
         },
         router: { replace: jest.fn() },
-        utils,
+        utils: emptyUtils,
       }),
     );
-
-    await act(() => {
-      result.current.handleChangeVisibility();
-    });
-    const visibilityAlert = (ReactNative.Alert.alert as jest.Mock).mock.calls.find(
-      ([title]) => title === "Change visibility",
-    );
-    expect(visibilityAlert).toBeDefined();
-    const publicAction = (
-      visibilityAlert?.[2] as Array<{
-        text: string;
-        onPress?: () => void;
-      }>
-    ).find((action) => action.text === "Public");
-    expect(publicAction?.onPress).toBeDefined();
-
-    await act(() => {
-      publicAction?.onPress?.();
-      publicAction?.onPress?.();
-    });
-    expect(result.current.visibilityPending).toBe(true);
-    expect(profileFetch).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       await result.current.handleShare();
     });
     expect(shareMock).not.toHaveBeenCalled();
     expect(ReactNative.Alert.alert as jest.Mock).toHaveBeenLastCalledWith(
-      "Updating visibility",
-      "Wait for the visibility update to finish before sharing.",
+      "Not public",
+      "Only public training plans have a share link. Use Edit plan to set visibility to Public.",
     );
 
-    await act(async () => {
-      resolveProfile?.({ id: "profile-1", planning_timezone: "UTC" });
-      await Promise.resolve();
-    });
+    expect(commitMutateAsyncMock).not.toHaveBeenCalled();
+    expect(result.current).not.toHaveProperty("handleChangeVisibility");
   });
 });

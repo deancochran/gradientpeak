@@ -1,8 +1,57 @@
+import { useState } from "react";
 import { fireEvent, renderNative } from "../../test/render-native";
 import { BoundedNumberInput } from "./index.native";
 
 describe("BoundedNumberInput native", () => {
-  it("keeps partial values while typing and only clamps on blur", async () => {
+  it("preserves non-clamping precision on blur and distinguishes blank from zero", async () => {
+    const onNumberChange = jest.fn();
+    const view = await renderNative(
+      <BoundedNumberInput
+        id="exact"
+        label="Exact"
+        value=""
+        min={0}
+        max={100}
+        decimals={2}
+        clampProjection={false}
+        onChange={jest.fn()}
+        onNumberChange={onNumberChange}
+      />,
+    );
+    const input = view.getByLabelText("Exact");
+    await fireEvent(input, "changeText", "14.444");
+    await fireEvent(input, "blur");
+    expect(input.props.value).toBe("14.444");
+    expect(onNumberChange).toHaveBeenLastCalledWith(14.444);
+    await fireEvent(input, "changeText", "");
+    expect(onNumberChange).toHaveBeenLastCalledWith(undefined);
+    await fireEvent(input, "changeText", "0");
+    expect(onNumberChange).toHaveBeenLastCalledWith(0);
+  });
+  it("preserves decimal punctuation and trailing zeros through a numeric parent echo", async () => {
+    function NumericParent() {
+      const [value, setValue] = useState<number | undefined>();
+      return (
+        <BoundedNumberInput
+          id="quantity"
+          label="Quantity"
+          value={value === undefined ? "" : String(value)}
+          onChange={() => undefined}
+          onNumberChange={setValue}
+        />
+      );
+    }
+    const { getByLabelText } = await renderNative(<NumericParent />);
+    const input = getByLabelText("Quantity");
+    await fireEvent(input, "changeText", "1.");
+    expect(input.props.value).toBe("1.");
+    await fireEvent(input, "changeText", "12.50");
+    expect(input.props.value).toBe("12.50");
+    await fireEvent(input, "blur");
+    expect(input.props.value).toBe("12.5");
+  });
+
+  it("keeps partial text while publishing a bounded projection before blur", async () => {
     const onChange = jest.fn();
     const onNumberChange = jest.fn();
 
@@ -25,7 +74,8 @@ describe("BoundedNumberInput native", () => {
     await fireEvent(input, "changeText", "7");
 
     expect(onChange).toHaveBeenLastCalledWith("7");
-    expect(onNumberChange).toHaveBeenLastCalledWith(7);
+    expect(onNumberChange).toHaveBeenLastCalledWith(30);
+    expect(input.props.value).toBe("7");
 
     await fireEvent(input, "blur");
 

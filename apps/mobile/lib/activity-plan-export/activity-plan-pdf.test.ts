@@ -69,7 +69,7 @@ describe("mobile activity plan PDF HTML", () => {
     expect(html).toContain("Bring a pace clock card");
   });
 
-  it("uses concise five-inch bike cues and a seven-inch fallback for longer workouts", () => {
+  it("uses concise five-inch bike cues and a seven-inch fallback for longer activity plans", () => {
     const profileBar = model.intensityProfile[0];
     const firstStep = model.sections[0]?.groups[0]?.steps[0];
     if (!profileBar || !firstStep) throw new Error("Expected compact PDF fixture data");

@@ -1,13 +1,10 @@
-import type { ActivityPlanRow, ActivityRouteRow, TrainingPlanRow } from "@repo/db";
+import type { ActivityRouteRow } from "@repo/db";
 import type { EventCompletionEventRecord, EventDeleteScope } from "./event-completion-repository";
 
-type OwnedActivityPlanRef = Pick<ActivityPlanRow, "id" | "name" | "structure">;
 type AccessibleActivityRouteRef = Pick<ActivityRouteRow, "id">;
-type OwnedTrainingPlanRef = Pick<TrainingPlanRow, "id">;
 export type EventWriteEventRecord = EventCompletionEventRecord & { route_id: string | null };
 
 export interface CreateOwnedEventInput {
-  activityPlanId: string | null;
   allDay: boolean;
   description: string | null;
   endsAt: string | null;
@@ -25,7 +22,6 @@ export interface CreateOwnedEventInput {
   status: "scheduled" | "completed" | "cancelled";
   timezone: string;
   title: string;
-  trainingPlanId: string | null;
 }
 
 export interface EventWriteRepository {
@@ -34,19 +30,10 @@ export interface EventWriteRepository {
     anchor: CreateOwnedEventInput;
     occurrences: Omit<CreateOwnedEventInput, "seriesId">[];
   }): Promise<EventWriteEventRecord[]>;
-  getAccessibleActivityPlan(input: {
-    activityPlanId: string;
-    profileId: string;
-  }): Promise<OwnedActivityPlanRef | null>;
-  getActivityPlanById(input: { activityPlanId: string }): Promise<OwnedActivityPlanRef | null>;
   getAccessibleActivityRoute(input: {
     profileId: string;
     routeId: string;
   }): Promise<AccessibleActivityRouteRef | null>;
-  getOwnedTrainingPlan(input: {
-    profileId: string;
-    trainingPlanId: string;
-  }): Promise<OwnedTrainingPlanRef | null>;
   listOwnedEventsForSeries(input: {
     anchorEvent: Pick<EventCompletionEventRecord, "id" | "series_id">;
     profileId: string;

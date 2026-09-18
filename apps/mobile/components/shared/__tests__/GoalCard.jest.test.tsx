@@ -75,6 +75,6 @@ describe("GoalCard", () => {
     );
 
     expect(screen.getByText("Readiness")).toBeTruthy();
-    expect(screen.getByText("Unavailable")).toBeTruthy();
+    expect(screen.getByText("—")).toBeTruthy();
   });
 });

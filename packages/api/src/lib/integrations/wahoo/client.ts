@@ -33,7 +33,7 @@ export interface WahooWorkoutData {
   externalId: string; // Your event_id (from events table)
   routeId?: number; // Optional route_id to attach to the Wahoo workout resource
   workoutTypeId: number; // Required: Wahoo workout type ID
-  durationMinutes: number; // Required: Duration in minutes
+  durationMinutes?: number | undefined; // Optional: omit when exact duration is unavailable
 }
 
 export interface WahooRouteData {
@@ -169,7 +169,7 @@ export interface WahooWorkout {
   id: number;
   name: string;
   starts: string; // ISO8601
-  minutes: number;
+  minutes?: number | null;
   workout_type_id: number;
   plan_id: number | null;
   plan_ids: number[];
@@ -222,12 +222,20 @@ function isValidWahooWorkout(value: unknown): value is WahooWorkout {
     Number.isSafeInteger(workout.id) &&
     typeof workout.name === "string" &&
     typeof workout.starts === "string" &&
-    Number.isFinite(workout.minutes) &&
+    (workout.minutes === undefined ||
+      workout.minutes === null ||
+      Number.isFinite(workout.minutes)) &&
     Number.isSafeInteger(workout.workout_type_id) &&
     typeof workout.workout_token === "string" &&
     typeof workout.created_at === "string" &&
     typeof workout.updated_at === "string"
   );
+}
+
+function assertWahooDurationMinutes(value: number | undefined) {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+    throw new Error("Wahoo duration minutes must be a nonnegative integer or omitted.");
+  }
 }
 
 function isValidWahooPlan(value: unknown): value is WahooPlan {
@@ -381,9 +389,10 @@ export class WahooClient {
    * @returns Full WahooWorkout object (with id, name, starts, etc.)
    */
   async createWorkout(workoutData: WahooWorkoutData, signal?: AbortSignal): Promise<WahooWorkout> {
+    assertWahooDurationMinutes(workoutData.durationMinutes);
     const workout: {
       external_id: string;
-      minutes: number;
+      minutes?: number;
       name: string;
       plan_id?: number;
       route_id?: number;
@@ -396,7 +405,9 @@ export class WahooClient {
       external_id: workoutData.externalId,
       workout_token: workoutData.externalId,
       workout_type_id: workoutData.workoutTypeId,
-      minutes: workoutData.durationMinutes,
+      ...(workoutData.durationMinutes !== undefined
+        ? { minutes: workoutData.durationMinutes }
+        : {}),
     };
 
     if (workoutData.planId !== undefined) {
@@ -429,7 +440,7 @@ export class WahooClient {
   }
 
   /**
-   * Update a Wahoo workout calendar entry (metadata only: name, date)
+   * Update a Wahoo workout calendar entry (name, date, plan binding, known duration)
    * Use this when the user changes its name or scheduled date
    */
   async updateWorkout(
@@ -438,14 +449,17 @@ export class WahooClient {
       name?: string;
       scheduledDate?: string;
       planId?: number;
+      durationMinutes?: number | undefined;
     },
     signal?: AbortSignal,
   ): Promise<{ success: boolean }> {
-    const workout: { name?: string; plan_id?: number; starts?: string } = {};
+    assertWahooDurationMinutes(updates.durationMinutes);
+    const workout: { name?: string; plan_id?: number; starts?: string; minutes?: number } = {};
 
     if (updates.name) workout.name = updates.name;
     if (updates.scheduledDate) workout.starts = updates.scheduledDate;
     if (updates.planId !== undefined) workout.plan_id = updates.planId;
+    if (updates.durationMinutes !== undefined) workout.minutes = updates.durationMinutes;
 
     await this.makeRequest(`/v1/workouts/${workoutId}`, {
       method: "PUT",

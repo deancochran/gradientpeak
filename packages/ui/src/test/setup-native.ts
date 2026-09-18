@@ -96,8 +96,21 @@ function mockCreateTabsPrimitiveModule() {
   const Root = ({ children, onValueChange, value, ...props }: TabsRootProps) =>
     mockReact.createElement(
       "@rn-primitives/tabs.Root",
-      { ...props, onValueChange, value },
-      mockReact.createElement(TabsContext.Provider, { value: { onValueChange, value } }, children),
+      {
+        ...props,
+        ...(onValueChange ? { onValueChange } : {}),
+        ...(value ? { value } : {}),
+      },
+      mockReact.createElement(
+        TabsContext.Provider,
+        {
+          value: {
+            ...(onValueChange ? { onValueChange } : {}),
+            ...(value ? { value } : {}),
+          },
+        },
+        children,
+      ),
     );
   const List = mockCreateHost("@rn-primitives/tabs.List");
   const Trigger = ({ children, onPress, value, ...props }: TabsTriggerProps) => {
@@ -173,6 +186,13 @@ jest.mock("@rn-primitives/tooltip", () => mockCreatePrimitiveModule("@rn-primiti
 jest.mock("@react-native-community/slider", () => ({
   __esModule: true,
   default: mockCreateHost("Slider"),
+}));
+
+// Library boundary only: this host exposes Picker props, not simulated OS interaction.
+jest.mock("@react-native-picker/picker", () => ({
+  Picker: Object.assign(mockCreateHost("NativePicker"), {
+    Item: mockCreateHost("NativePicker.Item"),
+  }),
 }));
 
 jest.mock("@react-native-community/datetimepicker", () => {

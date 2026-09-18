@@ -1,14 +1,16 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Route } from "./index";
+
+const navigation = vi.hoisted(() => ({ navigate: vi.fn(), search: {} as Record<string, unknown> }));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
-    useNavigate: () => vi.fn(),
-    useSearch: () => ({}),
+    useNavigate: () => navigation.navigate,
+    useSearch: () => ({ activity_category: "run" }),
   }),
 }));
 
@@ -134,6 +136,17 @@ vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 afterEach(cleanup);
 
 describe("ActivityPlansPage cards", () => {
+  it("does not restore a stale category when search follows an All selection", () => {
+    navigation.search = { activity_category: "run" };
+    navigation.navigate.mockImplementation(({ search }) => {
+      navigation.search = typeof search === "function" ? search(navigation.search) : search;
+    });
+    const Page = (Route as unknown as { component: React.ComponentType }).component;
+    render(<Page />);
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "Tempo" } });
+    expect(navigation.search).toEqual({ activity_category: undefined, q: "Tempo" });
+  });
   it("renders authored duration and calculated headline metrics on plan cards", () => {
     const ActivityPlansPage = (Route as unknown as { component: React.ComponentType }).component;
     render(<ActivityPlansPage />);
@@ -157,7 +170,7 @@ describe("ActivityPlansPage cards", () => {
     expect(screen.queryByText(/~30m|approximately 30m/i)).toBeNull();
     expect(screen.getByText("Activity prescription")).toBeTruthy();
     expect(
-      screen.getByRole("img", {
+      screen.getByRole("figure", {
         name: /widths are normalized.*height and color reflect authored intensity/i,
       }),
     ).toBeTruthy();

@@ -23,11 +23,13 @@ import {
   FormSwitchField,
   FormTextareaField,
   FormTextField,
+  FormTimezoneField,
 } from "@repo/ui/components/form";
 import { Label } from "@repo/ui/components/label";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Switch } from "@repo/ui/components/switch";
-import { createFileRoute } from "@tanstack/react-router";
+import { useZodForm } from "@repo/ui/hooks";
+import { createFileRoute, isRedirect } from "@tanstack/react-router";
 import {
   Calendar,
   Camera,
@@ -52,6 +54,7 @@ import {
   revokeOtherSessionsAction,
 } from "../../lib/profile/account-settings";
 import {
+  changePasswordFormSchema,
   getSettingsProfileFormDefaults,
   type SettingsProfileFormInput,
   type SettingsProfileFormValues,
@@ -62,9 +65,12 @@ import {
   updateSettingsProfileAction,
   uploadProfileAvatarAction,
 } from "../../lib/profile/server-actions";
-import { submitValidatedSettingsForm } from "../../lib/profile/settings-form-submit";
+import { useFormServerFn } from "../../lib/use-form-server-fn";
+import { useUnsavedChangesGuard } from "../../lib/use-unsaved-changes-guard";
 
 type AvatarFile = { file?: File; name: string };
+type ProfileMediaField = "avatar_url" | "cover_url";
+type ProfileMediaOperation = "upload" | "remove";
 
 function isAbsoluteUrl(value: string) {
   return /^https?:\/\//i.test(value);
@@ -81,10 +87,11 @@ export const Route = createFileRoute("/_protected/settings")({
   component: SettingsPage,
 });
 
-function SettingsPage() {
+export function SettingsPage() {
   const { user, isLoading: authLoading } = useAuth();
   const navigate = Route.useNavigate();
   const { flash, flashType } = Route.useSearch();
+  const utils = api.useUtils();
   const { data: profile, isLoading: profileLoading } = api.profiles.get.useQuery(undefined, {
     enabled: Boolean(user),
   });
@@ -94,23 +101,81 @@ function SettingsPage() {
   const [coverBlobUrl, setCoverBlobUrl] = useState<string | null>(null);
   const [coverFiles, setCoverFiles] = useState<Array<{ file?: File; name: string }>>([]);
   const [submittingProfile, setSubmittingProfile] = useState(false);
+  const [profileSaveError, setProfileSaveError] = useState<string | null>(null);
+  const [mediaErrors, setMediaErrors] = useState<Partial<Record<ProfileMediaField, string>>>({});
+  const [mediaOperations, setMediaOperations] = useState<
+    Partial<Record<ProfileMediaField, ProfileMediaOperation>>
+  >({});
   const profileSubmitPendingRef = useRef(false);
+  const profileSubmissionRef = useRef(0);
+  const profileSubmissionOwnerRef = useRef<string | null>(null);
+  const profileOwnerRef = useRef<string | null>(null);
+  const activeProfileOwnerRef = useRef(user?.id ?? null);
+  const mediaOperationRef = useRef<Record<ProfileMediaField, number>>({
+    avatar_url: 0,
+    cover_url: 0,
+  });
   const loading = authLoading || profileLoading;
+  const activeProfile = profile?.id === user?.id ? profile : null;
   const avatarFilePath =
-    profile?.avatar_url && !isAbsoluteUrl(profile.avatar_url) ? profile.avatar_url : null;
+    activeProfile?.avatar_url && !isAbsoluteUrl(activeProfile.avatar_url)
+      ? activeProfile.avatar_url
+      : null;
   const coverFilePath =
-    profile?.cover_url && !isAbsoluteUrl(profile.cover_url) ? profile.cover_url : null;
+    activeProfile?.cover_url && !isAbsoluteUrl(activeProfile.cover_url)
+      ? activeProfile.cover_url
+      : null;
 
   const form = useForm<SettingsProfileFormInput, undefined, SettingsProfileFormValues>({
     resolver: zodResolver(settingsProfileFormSchema),
     defaultValues: getSettingsProfileFormDefaults(),
   });
 
-  useEffect(() => {
-    if (!profile || form.formState.isDirty) return;
+  // Effects run after paint; invalidate an old account's request during render so
+  // its completion cannot release the next account's unsaved-change guard.
+  if (activeProfileOwnerRef.current !== (user?.id ?? null)) {
+    activeProfileOwnerRef.current = user?.id ?? null;
+    profileSubmissionRef.current += 1;
+    profileSubmitPendingRef.current = false;
+    mediaOperationRef.current.avatar_url += 1;
+    mediaOperationRef.current.cover_url += 1;
+  }
 
-    form.reset(getSettingsProfileFormDefaults(profile));
-  }, [form, form.formState.isDirty, profile]);
+  useEffect(() => {
+    if (!user?.id) {
+      profileOwnerRef.current = null;
+      form.reset(getSettingsProfileFormDefaults());
+      setAvatarFiles([]);
+      setCoverFiles([]);
+      setAvatarBlobUrl(null);
+      setCoverBlobUrl(null);
+      setMediaErrors({});
+      setMediaOperations({});
+      setSubmittingProfile(false);
+      setProfileSaveError(null);
+      return;
+    }
+
+    if (profileOwnerRef.current !== user.id) {
+      profileOwnerRef.current = user.id;
+      form.reset(getSettingsProfileFormDefaults());
+      setAvatarFiles([]);
+      setCoverFiles([]);
+      setAvatarBlobUrl(null);
+      setCoverBlobUrl(null);
+      setMediaErrors({});
+      setMediaOperations({});
+      setSubmittingProfile(false);
+      setProfileSaveError(null);
+    }
+  }, [form, user?.id]);
+
+  useEffect(() => {
+    if (!profile || profile.id !== user?.id) return;
+
+    // Keep fields being edited while accepting server refreshes for untouched fields.
+    form.reset(getSettingsProfileFormDefaults(profile), { keepDirtyValues: true });
+  }, [form, profile, user?.id]);
 
   const { data: avatarUrlData } = api.storage.getSignedUrl.useQuery(
     { filePath: avatarFilePath || "" },
@@ -122,32 +187,118 @@ function SettingsPage() {
   );
 
   useEffect(() => {
+    if (!activeProfile) return;
     setAvatarBlobUrl(
-      avatarFilePath ? (avatarUrlData?.signedUrl ?? null) : (profile?.avatar_url ?? null),
+      avatarFilePath ? (avatarUrlData?.signedUrl ?? null) : (activeProfile.avatar_url ?? null),
     );
-  }, [avatarFilePath, avatarUrlData?.signedUrl, profile?.avatar_url]);
+  }, [activeProfile, avatarFilePath, avatarUrlData?.signedUrl]);
 
   useEffect(() => {
+    if (!activeProfile) return;
     setCoverBlobUrl(
-      coverFilePath ? (coverUrlData?.signedUrl ?? null) : (profile?.cover_url ?? null),
+      coverFilePath ? (coverUrlData?.signedUrl ?? null) : (activeProfile.cover_url ?? null),
     );
-  }, [coverFilePath, coverUrlData?.signedUrl, profile?.cover_url]);
+  }, [activeProfile, coverFilePath, coverUrlData?.signedUrl]);
 
-  const handleProfileSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    if (profileSubmitPendingRef.current) return;
-    profileSubmitPendingRef.current = true;
-    setSubmittingProfile(true);
+  const { markSaveFailed, markSaved } = useUnsavedChangesGuard({
+    draft: form.watch(),
+    dirty: form.formState.isDirty,
+    message: "Discard unsaved profile changes?",
+    pending: submittingProfile,
+  });
+  const updateProfile = useFormServerFn(updateSettingsProfileAction, () => {
+    if (profileSubmissionOwnerRef.current === activeProfileOwnerRef.current) markSaved();
+  });
+  const uploadProfileMedia = useFormServerFn(uploadProfileAvatarAction, () => undefined);
+  const removeProfileMedia = useFormServerFn(removeProfileImageAction, () => undefined);
+
+  const handleMediaSubmit = async (
+    event: React.FormEvent<HTMLFormElement>,
+    field: ProfileMediaField,
+    operation: ProfileMediaOperation,
+  ) => {
+    event.preventDefault();
+    if (mediaOperations[field]) return;
+
+    // FormData must be captured before awaiting so browser event pooling cannot lose the file.
+    const data = new FormData(event.currentTarget);
+    data.set("__async", "true");
+    const owner = activeProfileOwnerRef.current;
+    const request = ++mediaOperationRef.current[field];
+    const isCurrent = () =>
+      activeProfileOwnerRef.current === owner && mediaOperationRef.current[field] === request;
+    setMediaErrors((errors) => ({ ...errors, [field]: undefined }));
+    setMediaOperations((operations) => ({ ...operations, [field]: operation }));
 
     try {
-      if (await submitValidatedSettingsForm(event, form.trigger)) return;
+      if (operation === "upload") {
+        const result = await uploadProfileMedia({ data });
+        if (!isCurrent()) return;
+        if (field === "avatar_url") {
+          setAvatarFiles([]);
+          setAvatarBlobUrl(result.url);
+        } else {
+          setCoverFiles([]);
+          setCoverBlobUrl(result.url);
+        }
+      } else {
+        await removeProfileMedia({ data });
+        if (!isCurrent()) return;
+        if (field === "avatar_url") {
+          setAvatarBlobUrl(null);
+        } else {
+          setCoverBlobUrl(null);
+        }
+      }
+      void utils.profiles.get.invalidate();
     } catch (error) {
-      profileSubmitPendingRef.current = false;
-      setSubmittingProfile(false);
-      throw error;
+      if (!isCurrent()) return;
+      setMediaErrors((errors) => ({
+        ...errors,
+        [field]:
+          error instanceof Error
+            ? error.message
+            : `Profile ${operation === "upload" ? "image upload" : "image removal"} failed.`,
+      }));
+    } finally {
+      if (isCurrent()) {
+        setMediaOperations((operations) => ({ ...operations, [field]: undefined }));
+      }
     }
+  };
 
-    profileSubmitPendingRef.current = false;
-    setSubmittingProfile(false);
+  const handleProfileSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    if (profileSubmitPendingRef.current) return;
+    const submittingUserId = activeProfileOwnerRef.current;
+    const submission = ++profileSubmissionRef.current;
+    const isCurrentSubmission = () =>
+      profileSubmissionRef.current === submission &&
+      activeProfileOwnerRef.current === submittingUserId;
+    profileSubmitPendingRef.current = true;
+    profileSubmissionOwnerRef.current = submittingUserId;
+    setSubmittingProfile(true);
+    setProfileSaveError(null);
+
+    try {
+      if (!(await form.trigger())) {
+        return;
+      }
+      await updateProfile({ data: new FormData(formElement) });
+    } catch (error) {
+      if (isRedirect(error)) throw error;
+      if (!isCurrentSubmission()) return;
+      markSaveFailed();
+      setProfileSaveError(
+        error instanceof Error ? error.message : "Profile could not be updated. Please try again.",
+      );
+    } finally {
+      if (isCurrentSubmission()) {
+        profileSubmitPendingRef.current = false;
+        setSubmittingProfile(false);
+      }
+    }
   };
 
   if (loading) {
@@ -189,16 +340,24 @@ function SettingsPage() {
           avatarFiles={avatarFiles}
           coverBlobUrl={coverBlobUrl}
           coverFiles={coverFiles}
+          coverError={mediaErrors.cover_url ?? null}
+          coverPending={mediaOperations.cover_url ?? null}
           form={form}
+          profileSaveError={profileSaveError}
           profileUsername={profile?.username}
           submittingProfile={submittingProfile}
           userEmail={user?.email}
+          avatarError={mediaErrors.avatar_url ?? null}
+          avatarPending={mediaOperations.avatar_url ?? null}
           onAvatarFilesChange={setAvatarFiles}
           onCoverFilesChange={setCoverFiles}
+          onMediaSubmit={handleMediaSubmit}
           onProfileSubmit={handleProfileSubmit}
         />
         <MyGroupsCard />
         <AccountInformationCard
+          key={`account:${user?.id}`}
+          accountId={user?.id}
           createdAt={createdAt}
           email={user?.email}
           emailVerified={user?.emailVerified}
@@ -206,6 +365,8 @@ function SettingsPage() {
         <ProductAnalyticsCard />
         <AppearanceCard />
         <SecurityCard
+          key={`security:${user?.id}`}
+          {...(user?.id === undefined ? {} : { accountId: user.id })}
           {...(user?.email !== undefined ? { email: user.email } : {})}
           {...(user?.emailVerified !== undefined ? { emailVerified: user.emailVerified } : {})}
         />
@@ -287,26 +448,42 @@ function MyGroupsCard() {
 function ProfileInformationCard({
   avatarBlobUrl,
   avatarFiles,
+  avatarError,
+  avatarPending,
   coverBlobUrl,
   coverFiles,
+  coverError,
+  coverPending,
   form,
   profileUsername,
   submittingProfile,
   userEmail,
+  profileSaveError,
   onAvatarFilesChange,
   onCoverFilesChange,
+  onMediaSubmit,
   onProfileSubmit,
 }: {
   avatarBlobUrl: string | null;
   avatarFiles: AvatarFile[];
+  avatarError: string | null;
+  avatarPending: ProfileMediaOperation | null;
   coverBlobUrl: string | null;
   coverFiles: AvatarFile[];
+  coverError: string | null;
+  coverPending: ProfileMediaOperation | null;
   form: UseFormReturn<SettingsProfileFormInput, undefined, SettingsProfileFormValues>;
   profileUsername?: string | null;
   submittingProfile: boolean;
   userEmail?: string | null;
+  profileSaveError: string | null;
   onAvatarFilesChange: (files: AvatarFile[]) => void;
   onCoverFilesChange: (files: AvatarFile[]) => void;
+  onMediaSubmit: (
+    event: React.FormEvent<HTMLFormElement>,
+    field: ProfileMediaField,
+    operation: ProfileMediaOperation,
+  ) => Promise<void>;
   onProfileSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }) {
   const publicValue = form.watch("is_public");
@@ -337,6 +514,7 @@ function ProfileInformationCard({
               method="post"
               encType="multipart/form-data"
               className="flex-1 space-y-2"
+              onSubmit={(event) => void onMediaSubmit(event, "cover_url", "upload")}
             >
               <input {...contractEpochFormInputProps} />
               <input type="hidden" name="field" value="cover_url" />
@@ -348,19 +526,33 @@ function ProfileInformationCard({
                 files={coverFiles}
                 onFilesChange={onCoverFilesChange}
               />
-              <Button type="submit" variant="outline" disabled={coverFiles.length === 0}>
-                Upload Cover
+              <Button
+                type="submit"
+                variant="outline"
+                disabled={coverFiles.length === 0 || !!coverPending}
+              >
+                {coverPending === "upload" ? "Uploading cover..." : "Upload Cover"}
               </Button>
             </form>
             {coverBlobUrl ? (
-              <form action={removeProfileImageAction.url} method="post">
+              <form
+                action={removeProfileImageAction.url}
+                method="post"
+                onSubmit={(event) => void onMediaSubmit(event, "cover_url", "remove")}
+              >
                 <input {...contractEpochFormInputProps} />
                 <input type="hidden" name="field" value="cover_url" />
-                <Button type="submit" variant="ghost">
-                  Remove Cover
+                <Button type="submit" variant="ghost" disabled={!!coverPending}>
+                  {coverPending === "remove" ? "Removing cover..." : "Remove Cover"}
                 </Button>
               </form>
             ) : null}
+            {coverPending ? (
+              <p role="status">
+                {coverPending === "upload" ? "Uploading cover..." : "Removing cover..."}
+              </p>
+            ) : null}
+            {coverError ? <p role="alert">{coverError}</p> : null}
           </div>
         </div>
         <div className="flex items-center gap-6">
@@ -388,6 +580,7 @@ function ProfileInformationCard({
           method="post"
           encType="multipart/form-data"
           className="space-y-3"
+          onSubmit={(event) => void onMediaSubmit(event, "avatar_url", "upload")}
         >
           <input {...contractEpochFormInputProps} />
           <FileInput
@@ -399,19 +592,33 @@ function ProfileInformationCard({
             onFilesChange={onAvatarFilesChange}
           />
           <input type="hidden" name="field" value="avatar_url" />
-          <Button type="submit" variant="outline" disabled={avatarFiles.length === 0}>
-            Upload Avatar
+          <Button
+            type="submit"
+            variant="outline"
+            disabled={avatarFiles.length === 0 || !!avatarPending}
+          >
+            {avatarPending === "upload" ? "Uploading avatar..." : "Upload Avatar"}
           </Button>
         </form>
         {avatarBlobUrl ? (
-          <form action={removeProfileImageAction.url} method="post">
+          <form
+            action={removeProfileImageAction.url}
+            method="post"
+            onSubmit={(event) => void onMediaSubmit(event, "avatar_url", "remove")}
+          >
             <input {...contractEpochFormInputProps} />
             <input type="hidden" name="field" value="avatar_url" />
-            <Button type="submit" variant="ghost">
-              Remove Avatar
+            <Button type="submit" variant="ghost" disabled={!!avatarPending}>
+              {avatarPending === "remove" ? "Removing avatar..." : "Remove Avatar"}
             </Button>
           </form>
         ) : null}
+        {avatarPending ? (
+          <p role="status">
+            {avatarPending === "upload" ? "Uploading avatar..." : "Removing avatar..."}
+          </p>
+        ) : null}
+        {avatarError ? <p role="alert">{avatarError}</p> : null}
         <Form {...form}>
           <form
             action={updateSettingsProfileAction.url}
@@ -481,13 +688,11 @@ function ProfileInformationCard({
                 placeholder="en"
               />
             </div>
-            <FormTextField
+            <FormTimezoneField
               control={form.control}
               description="Used to interpret calendar days and scheduled training."
               label="Planning Timezone"
               name="planning_timezone"
-              parseValue={(value) => value.trim() || null}
-              placeholder="America/Los_Angeles"
             />
             <FormSwitchField
               className="rounded-lg border p-4"
@@ -532,6 +737,11 @@ function ProfileInformationCard({
             >
               Update Profile
             </LoadingButton>
+            {profileSaveError ? (
+              <p aria-live="polite" className="text-sm text-destructive" role="alert">
+                {profileSaveError}
+              </p>
+            ) : null}
           </form>
         </Form>
       </CardContent>
@@ -540,14 +750,41 @@ function ProfileInformationCard({
 }
 
 function AccountInformationCard({
+  accountId,
   createdAt,
   email,
   emailVerified,
 }: {
+  accountId?: string;
   createdAt: string;
   email?: string | null;
   emailVerified?: boolean | null;
 }) {
+  const signOut = useFormServerFn(signOutAction, () => undefined, accountId);
+  const signOutPendingRef = useRef(false);
+  const [signOutPending, setSignOutPending] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
+
+  const handleSignOut = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (signOutPendingRef.current) return;
+
+    // Capture before awaiting; the no-input RPC retains Start's CSRF middleware.
+    void new FormData(event.currentTarget);
+    signOutPendingRef.current = true;
+    setSignOutPending(true);
+    setSignOutError(null);
+    try {
+      await signOut();
+    } catch (error) {
+      if (isRedirect(error)) throw error;
+      setSignOutError("Could not sign out. Please try again.");
+    } finally {
+      signOutPendingRef.current = false;
+      setSignOutPending(false);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -579,12 +816,27 @@ function AccountInformationCard({
             </p>
           </div>
         </div>
-        <form action={signOutAction.url} method="post">
+        <form
+          action={signOutAction.url}
+          method="post"
+          onSubmit={(event) => void handleSignOut(event)}
+        >
           <input {...contractEpochFormInputProps} />
-          <Button variant="outline" type="submit">
+          <LoadingButton
+            disabled={signOutPending}
+            loading={signOutPending}
+            loadingLabel="Signing out..."
+            variant="outline"
+            type="submit"
+          >
             Sign Out
-          </Button>
+          </LoadingButton>
         </form>
+        {signOutError ? (
+          <p className="text-sm text-destructive" role="alert">
+            {signOutError}
+          </p>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -620,12 +872,89 @@ function AppearanceCard() {
 }
 
 function SecurityCard({
+  accountId,
   email,
   emailVerified,
 }: {
+  accountId?: string;
   email?: string | null;
   emailVerified?: boolean | null;
 }) {
+  const passwordForm = useZodForm({
+    defaultValues: { confirmPassword: "", currentPassword: "", newPassword: "" },
+    schema: changePasswordFormSchema,
+  });
+  type SecurityOperation = "password" | "resend" | "revoke";
+  const pendingRef = useRef(false);
+  const [pending, setPending] = useState<SecurityOperation | null>(null);
+  const [resendStatus, setResendStatus] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<{
+    operation: SecurityOperation;
+    message: string;
+  } | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const changePassword = useFormServerFn(changePasswordAction, () => undefined, accountId);
+  const resendVerification = useFormServerFn(
+    resendVerificationFromSettingsAction,
+    () => undefined,
+    accountId,
+  );
+  const revokeOtherSessions = useFormServerFn(
+    revokeOtherSessionsAction,
+    () => undefined,
+    accountId,
+  );
+
+  const handleSecuritySubmit = async (
+    event: React.FormEvent<HTMLFormElement>,
+    operation: SecurityOperation,
+  ) => {
+    event.preventDefault();
+    if (pendingRef.current) return;
+    const data = new FormData(event.currentTarget);
+    data.set("__async", "true");
+    pendingRef.current = true;
+    setPending(operation);
+    setActionError(null);
+    setSuccess(null);
+    setResendStatus(null);
+    try {
+      if (operation === "password") {
+        if (!(await passwordForm.trigger(undefined, { shouldFocus: true }))) return;
+        const result = await changePassword({ data });
+        if (!result.ok) {
+          setActionError({ operation, message: result.message });
+          return;
+        }
+        passwordForm.reset();
+        setSuccess("Password updated and other sessions signed out.");
+      } else if (operation === "revoke") {
+        const result = await revokeOtherSessions({ data });
+        if (!result.ok) {
+          setActionError({ operation, message: result.message });
+          return;
+        }
+        setSuccess("Other sessions signed out.");
+      } else {
+        await resendVerification({ data });
+        setResendStatus("If this address can receive verification, a message is on its way.");
+      }
+    } catch {
+      setActionError({
+        operation,
+        message:
+          operation === "password"
+            ? "Password could not be updated. Check your current password and try again."
+            : operation === "revoke"
+              ? "Other sessions could not be signed out. Please try again."
+              : "Verification could not be requested. Please try again.",
+      });
+    } finally {
+      pendingRef.current = false;
+      setPending(null);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -646,62 +975,95 @@ function SecurityCard({
                 Confirm {email} to secure account recovery.
               </p>
             </div>
-            <form action={resendVerificationFromSettingsAction.url} method="post">
+            <form
+              action={resendVerificationFromSettingsAction.url}
+              method="post"
+              onSubmit={(event) => void handleSecuritySubmit(event, "resend")}
+            >
               <input {...contractEpochFormInputProps} />
               <input type="hidden" name="email" value={email} />
-              <Button type="submit" variant="outline">
+              <LoadingButton
+                disabled={pending !== null}
+                loading={pending === "resend"}
+                loadingLabel="Sending..."
+                type="submit"
+                variant="outline"
+              >
                 Resend verification
-              </Button>
+              </LoadingButton>
             </form>
+            {resendStatus ? (
+              <p className="text-sm text-muted-foreground" role="status">
+                {resendStatus}
+              </p>
+            ) : null}
+            {actionError?.operation === "resend" ? <p role="alert">{actionError.message}</p> : null}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">Your email address is verified.</p>
         )}
 
-        <form action={changePasswordAction.url} method="post" className="space-y-4">
-          <input {...contractEpochFormInputProps} />
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="current-password">Current password</Label>
-              <input
-                id="current-password"
-                name="currentPassword"
-                type="password"
+        <Form {...passwordForm}>
+          <form
+            action={changePasswordAction.url}
+            method="post"
+            className="space-y-4"
+            onSubmit={(event) => void handleSecuritySubmit(event, "password")}
+            aria-describedby={
+              actionError?.operation === "password" ? "password-action-error" : undefined
+            }
+          >
+            <input {...contractEpochFormInputProps} />
+            <div className="grid gap-4 sm:grid-cols-3">
+              <FormTextField
                 autoComplete="current-password"
+                control={passwordForm.control}
+                readOnly={pending !== null}
+                aria-describedby={
+                  actionError?.operation === "password" ? "password-action-error" : undefined
+                }
+                label="Current password"
+                name="currentPassword"
                 required
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                type="password"
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="new-password">New password</Label>
-              <input
-                id="new-password"
+              <FormTextField
+                autoComplete="new-password"
+                control={passwordForm.control}
+                readOnly={pending !== null}
+                label="New password"
                 name="newPassword"
-                type="password"
-                autoComplete="new-password"
-                minLength={8}
                 required
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                type="password"
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password">Confirm password</Label>
-              <input
-                id="confirm-password"
+              <FormTextField
+                autoComplete="new-password"
+                control={passwordForm.control}
+                readOnly={pending !== null}
+                label="Confirm password"
                 name="confirmPassword"
-                type="password"
-                autoComplete="new-password"
-                minLength={8}
                 required
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                type="password"
               />
             </div>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Use at least 8 characters, one uppercase letter, and one number.
-          </p>
-          <Button type="submit">Update password</Button>
-        </form>
+            <p className="text-xs text-muted-foreground">
+              Use at least 8 characters, one uppercase letter, and one number.
+            </p>
+            {actionError?.operation === "password" ? (
+              <p id="password-action-error" className="text-sm text-destructive" role="alert">
+                {actionError.message}
+              </p>
+            ) : null}
+            <LoadingButton
+              disabled={pending !== null}
+              loading={pending === "password"}
+              loadingLabel="Updating password..."
+              type="submit"
+            >
+              Update password
+            </LoadingButton>
+          </form>
+        </Form>
 
         <div className="flex flex-col gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -710,13 +1072,29 @@ function SecurityCard({
               Revoke all sessions except the browser you are using now.
             </p>
           </div>
-          <form action={revokeOtherSessionsAction.url} method="post">
+          <form
+            action={revokeOtherSessionsAction.url}
+            method="post"
+            onSubmit={(event) => void handleSecuritySubmit(event, "revoke")}
+          >
             <input {...contractEpochFormInputProps} />
-            <Button type="submit" variant="outline">
+            {actionError?.operation === "revoke" ? (
+              <p className="mb-2 text-sm text-destructive" role="alert">
+                {actionError.message}
+              </p>
+            ) : null}
+            <LoadingButton
+              disabled={pending !== null}
+              loading={pending === "revoke"}
+              loadingLabel="Signing out other sessions..."
+              type="submit"
+              variant="outline"
+            >
               Sign out other sessions
-            </Button>
+            </LoadingButton>
           </form>
         </div>
+        {success ? <p role="status">{success}</p> : null}
       </CardContent>
     </Card>
   );

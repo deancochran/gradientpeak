@@ -1,4 +1,4 @@
-import { parseDateOfBirth, profilePatchInputSchema } from "@repo/core";
+import { ianaTimezoneSchema, parseDateOfBirth, profilePatchInputSchema } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
@@ -12,7 +12,10 @@ import {
   updateProfile,
 } from "../application/profiles/updateProfile";
 import { getRequiredDb } from "../db";
-import { compareAndSwapOwnedProfileMedia } from "../repositories/profile-update-repository";
+import {
+  compareAndSwapOwnedProfileMedia,
+  initializeOwnedPlanningTimezone,
+} from "../repositories/profile-update-repository";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 const uuidSchema = z.string().uuid();
@@ -87,6 +90,27 @@ export const profilesRouter = createTRPCRouter({
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to fetch public profile",
+        });
+      }
+    }),
+
+  initializePlanningTimezone: protectedProcedure
+    .input(z.object({ timezone: ianaTimezoneSchema }).strict())
+    .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
+      try {
+        await initializeOwnedPlanningTimezone(db, {
+          profileId: ctx.session.user.id,
+          timezone: input.timezone,
+        });
+        const profile = await getSerializedProfile(db, ctx.session.user.id);
+        if (!profile) throw new TRPCError({ code: "NOT_FOUND", message: "Profile not found" });
+        return profile;
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to initialize planning timezone",
         });
       }
     }),

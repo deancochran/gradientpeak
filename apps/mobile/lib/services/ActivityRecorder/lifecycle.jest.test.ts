@@ -564,6 +564,28 @@ describe("ActivityRecorderService lifecycle", () => {
     expect(mutable.planExecution.clear).not.toHaveBeenCalled();
   });
 
+  it("does not replace the selected plan after the recording snapshot locks identity", () => {
+    const { service, mutable } = createService();
+    configureDistancePlan(mutable);
+    const originalPlan = mutable._plan;
+    if (!originalPlan) throw new Error("Expected configured plan");
+    mutable.sessionController.hasLockedSnapshot = jest.fn(() => true);
+    mutable.emit.mockClear();
+    mutable.planExecution.loadPlan = jest.fn();
+
+    service.selectPlan({
+      name: "Replacement run",
+      structure: originalPlan.structure,
+    });
+
+    expect(mutable._plan).toBe(originalPlan);
+    expect(mutable.planExecution.loadPlan).not.toHaveBeenCalled();
+    expect(mutable.emit).toHaveBeenCalledWith(
+      "error",
+      "Plan selection is locked after recording starts for the active session.",
+    );
+  });
+
   it("rejects a mixed-plan checkpoint before opening recovery artifacts", async () => {
     const { service } = createService();
 
@@ -996,13 +1018,17 @@ describe("ActivityRecorderService lifecycle", () => {
     const plannedSession = {
       id: "50000000-0000-4000-8000-000000000003",
       sessionRevision: 5,
+      source: { kind: "direct" as const, operationId: "recorder-lifecycle-test-operation-01" },
       prescription: {
         activityPlanId,
         activityPlanRevision: 4,
-        variantId: "50000000-0000-4000-8000-000000000004",
-        variantName: "Hard",
         structure: mutable._plan.structure,
         structureHash: `v1:sha256:${"1".repeat(64)}`,
+        resolution: {
+          mode: "default" as const,
+          trainingIntent: "general_maintenance" as const,
+          parameterValues: {},
+        },
         prescriptionQuantification: null,
         capturedAt: "2026-01-01T09:00:00.000Z",
       },
@@ -1012,8 +1038,6 @@ describe("ActivityRecorderService lifecycle", () => {
       id: activityPlanId,
       revision: 4,
       structure_hash: plannedSession.prescription.structureHash,
-      variant_id: plannedSession.prescription.variantId,
-      variant_name: plannedSession.prescription.variantName,
     };
     mutable._eventId = eventId;
     mutable._plannedSession = plannedSession;
@@ -1069,8 +1093,6 @@ describe("ActivityRecorderService lifecycle", () => {
       id: activityPlanId,
       revision: 4,
       structure_hash: plannedSession.prescription.structureHash,
-      variant_id: plannedSession.prescription.variantId,
-      variant_name: plannedSession.prescription.variantName,
     });
   });
 

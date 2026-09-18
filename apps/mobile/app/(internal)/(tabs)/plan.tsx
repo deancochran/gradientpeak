@@ -57,10 +57,13 @@ function PlanViewToggle({
   );
 }
 
-function PlanOverview() {
+function PlanOverview({
+  trainingPath,
+}: {
+  trainingPath: ReturnType<typeof usePlanTrainingPathData>;
+}) {
   const router = useRouter();
   usePerformanceScreenReady("route-plan");
-  const trainingPath = usePlanTrainingPathData();
   const hasBlockingFailure = trainingPath.queryFailureCount > 0 && !trainingPath.hasUsableData;
 
   return (
@@ -124,6 +127,7 @@ function PlanDashboardScreen() {
   const router = useRouter();
   const { view } = useLocalSearchParams<{ view?: string }>();
   const activeView: PlanView = view === "calendar" ? "calendar" : "overview";
+  const trainingPath = usePlanTrainingPathData();
 
   return (
     <View className="flex-1 bg-background" testID="plan-screen">
@@ -137,7 +141,31 @@ function PlanDashboardScreen() {
           } as never)
         }
       />
-      {activeView === "calendar" ? <CalendarTabView /> : <PlanOverview />}
+      {trainingPath.planningTimezoneState !== "ready" ? (
+        <View className="gap-3 px-4 pt-6" testID="plan-initializing">
+          {trainingPath.timezoneSetupError ? (
+            <>
+              <Text accessibilityRole="alert" className="text-sm text-destructive">
+                {trainingPath.timezoneSetupError}
+              </Text>
+              <Button
+                onPress={() => void trainingPath.retryTimezoneInitialization()}
+                disabled={trainingPath.timezoneInitializing}
+                variant="outline"
+                testID="plan-setup-retry"
+              >
+                <Text>Retry</Text>
+              </Button>
+            </>
+          ) : (
+            <Text className="text-sm text-muted-foreground">Preparing your plan…</Text>
+          )}
+        </View>
+      ) : activeView === "calendar" ? (
+        <CalendarTabView />
+      ) : (
+        <PlanOverview trainingPath={trainingPath} />
+      )}
     </View>
   );
 }

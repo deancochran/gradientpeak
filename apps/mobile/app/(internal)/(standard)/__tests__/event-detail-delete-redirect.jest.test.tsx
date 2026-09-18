@@ -44,6 +44,7 @@ jest.mock("expo-router", () => ({
       ),
   },
   useLocalSearchParams: () => ({ id: "event-1" }),
+  useNavigation: () => ({ dispatch: jest.fn() }),
   useRouter: () => ({
     back: jest.fn(),
     dismissTo: mockRouterDismissTo,
@@ -120,6 +121,7 @@ jest.mock("@react-native-community/datetimepicker", () => ({
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
+  ...jest.requireActual("@repo/core"),
   formatDurationSec: jest.fn(() => "60 min"),
   isActivityCompleted: () => false,
 }));
@@ -210,6 +212,33 @@ jest.mock("@/lib/api", () => ({
           isPending: false,
           mutate: jest.fn(),
         }),
+      },
+    },
+    activities: {
+      createManualDiaryEntry: {
+        useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }),
+      },
+    },
+    plannedSessions: {
+      create: { useMutation: () => ({ isPending: false, mutate: jest.fn() }) },
+      getById: {
+        useQuery: () => ({ data: null, error: null, isLoading: false }),
+      },
+      skip: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
+      linkCompletion: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
+      completionCandidates: {
+        useInfiniteQuery: () => ({
+          data: { pages: [{ items: [], nextCursor: null }] },
+          fetchNextPage: jest.fn(),
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          isLoading: false,
+        }),
+      },
+    },
+    profiles: {
+      get: {
+        useQuery: () => ({ data: null, error: null, isLoading: false }),
       },
     },
     activityPlans: {

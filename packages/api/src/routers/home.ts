@@ -1,7 +1,6 @@
 import {
   activityObservationQuantificationBundleSchema,
-  activityPlanDocumentSchema,
-  bindPrescriptionQuantificationToScheduledEvent,
+  activityPlanStructureSchema,
   calculateRollingTrainingQuality,
   canonicalActivityCategorySchema,
   canonicalTrainingPlanStructureSchema,
@@ -12,7 +11,6 @@ import {
   getPlannedEstimate,
   loadCoverageSchema,
   loadSeriesIdentitySchema,
-  resolveActivityPlanVariant,
 } from "@repo/core";
 import {
   addDaysDateOnlyUtc,
@@ -24,10 +22,11 @@ import {
   activityArtifactLinks,
   activityArtifacts,
   activitySourceReferences,
+  follows,
   schema,
-  type TrainingPlanRow,
+  trainingPlans,
 } from "@repo/db";
-import { and, asc, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, exists, gte, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { readAthleteReadModel } from "../application/athlete-intelligence/athlete-read-model";
 import {
@@ -58,14 +57,7 @@ function unavailableScheduledQuantification(
 }
 
 function scheduledQuantificationSource(item: PlannedActivityWithEstimation, asOf: Date) {
-  const prescriptionQuantification = item.activity_plan?.prescriptionQuantification;
-  if (!prescriptionQuantification || prescriptionQuantification.members.length === 0) {
-    return unavailableScheduledQuantification(item, asOf);
-  }
-  return bindPrescriptionQuantificationToScheduledEvent({
-    prescriptionQuantification,
-    eventId: item.id,
-  });
+  return unavailableScheduledQuantification(item, asOf);
 }
 
 function scheduledQuantification(item: PlannedActivityWithEstimation, asOf: Date) {
@@ -73,10 +65,8 @@ function scheduledQuantification(item: PlannedActivityWithEstimation, asOf: Date
 }
 
 export function getPlanCategoryComposition(structure: unknown) {
-  const parsed = activityPlanDocumentSchema.safeParse(structure);
-  return parsed.success
-    ? [resolveActivityPlanVariant(parsed.data).structure.activity_category]
-    : [];
+  const parsed = activityPlanStructureSchema.safeParse(structure);
+  return parsed.success ? [parsed.data.activity_category] : [];
 }
 
 export function getScheduleExecutionPresentation(plan: { activity_category: string } | null) {
@@ -100,12 +90,9 @@ const dashboardTrainingPlanRowSchema = z
   })
   .strict();
 
-const nextPlannedEventRowSchema = z
-  .object({
-    training_plan_id: z.string().nullable(),
-    starts_at: z.date(),
-  })
-  .strict();
+const nextPlannedSessionRowSchema = z.object({
+  training_plan_id: z.string().nullable(),
+});
 
 const workloadEnvelopeSchema = z
   .object({
@@ -280,34 +267,45 @@ export function projectCommonLoad(input: {
   });
 }
 
-type DashboardTrainingPlanRow = Pick<TrainingPlanRow, "id" | "name" | "description" | "structure">;
-
 async function getAccessibleTrainingPlan(
   db: ReturnType<typeof getRequiredDb>,
   input: { planId: string; profileId: string },
-): Promise<DashboardTrainingPlanRow | null> {
-  const result = await db.execute(sql<DashboardTrainingPlanRow>`
-    select id, name, description, structure
-    from training_plans
-    where id = ${input.planId}
-      and (
-        profile_id = ${input.profileId}
-        or is_system_template = true
-        or content_visibility = 'public'
-        or (
-          content_visibility = 'followers'
-          and exists (
-            select 1 from follows f
-            where f.follower_id = ${input.profileId}
-              and f.following_id = training_plans.profile_id
-              and f.status = 'accepted'
-          )
-        )
-      )
-    limit 1
-  `);
+): Promise<z.infer<typeof dashboardTrainingPlanRowSchema> | null> {
+  const [row] = await db
+    .select({
+      id: trainingPlans.id,
+      name: trainingPlans.name,
+      description: trainingPlans.description,
+      structure: trainingPlans.structure,
+    })
+    .from(trainingPlans)
+    .where(
+      and(
+        eq(trainingPlans.id, input.planId),
+        or(
+          eq(trainingPlans.profile_id, input.profileId),
+          eq(trainingPlans.is_system_template, true),
+          eq(trainingPlans.content_visibility, "public"),
+          and(
+            eq(trainingPlans.content_visibility, "followers"),
+            exists(
+              db
+                .select({ value: sql`1` })
+                .from(follows)
+                .where(
+                  and(
+                    eq(follows.follower_id, input.profileId),
+                    eq(follows.following_id, trainingPlans.profile_id),
+                    eq(follows.status, "accepted"),
+                  ),
+                ),
+            ),
+          ),
+        ),
+      ),
+    )
+    .limit(1);
 
-  const row = ((result as unknown as { rows: unknown[] }).rows ?? [])[0];
   return row ? dashboardTrainingPlanRowSchema.parse(row) : null;
 }
 
@@ -380,26 +378,25 @@ export const homeRouter = createTRPCRouter({
       const effectiveGender = featureFlags.personalizationGenderAdjustment ? userGender : undefined;
 
       // --- 1. Fetch Active Plan & Settings ---
-      const rawNextPlannedEvent = await db
+      const rawNextPlannedSession = await db
         .select({
-          training_plan_id: schema.events.training_plan_id,
-          starts_at: schema.events.starts_at,
+          training_plan_id: schema.plannedSessions.training_plan_id,
         })
-        .from(schema.events)
+        .from(schema.plannedSessions)
         .where(
           and(
-            eq(schema.events.profile_id, userId),
-            eq(schema.events.event_type, "planned"),
-            gte(schema.events.scheduled_date, todayDate),
-            isNotNull(schema.events.training_plan_id),
+            eq(schema.plannedSessions.profile_id, userId),
+            eq(schema.plannedSessions.status, "scheduled"),
+            gte(schema.plannedSessions.planning_date, todayDate),
+            isNotNull(schema.plannedSessions.training_plan_id),
           ),
         )
-        .orderBy(asc(schema.events.scheduled_date), asc(schema.events.starts_at))
+        .orderBy(asc(schema.plannedSessions.planning_date), asc(schema.plannedSessions.id))
         .limit(1)
         .then((rows) => rows[0] ?? null);
 
-      const nextPlannedEvent = rawNextPlannedEvent
-        ? nextPlannedEventRowSchema.parse(rawNextPlannedEvent)
+      const nextPlannedSession = rawNextPlannedSession
+        ? nextPlannedSessionRowSchema.parse(rawNextPlannedSession)
         : null;
 
       let plan: {
@@ -409,9 +406,9 @@ export const homeRouter = createTRPCRouter({
         structure: unknown;
       } | null = null;
 
-      if (nextPlannedEvent?.training_plan_id) {
+      if (nextPlannedSession?.training_plan_id) {
         plan = await getAccessibleTrainingPlan(db, {
-          planId: nextPlannedEvent.training_plan_id,
+          planId: nextPlannedSession.training_plan_id,
           profileId: userId,
         });
       }
@@ -657,24 +654,18 @@ export const homeRouter = createTRPCRouter({
           const plannedEstimate = getPlannedEstimate(prescriptionQuantification);
           const completeValue = (quantity: { status: string; value: number | null }) =>
             quantity.status === "known" || quantity.status === "estimated" ? quantity.value : null;
-          const objectiveIntensity =
-            plannedActivity.activity_plan?.planProjection?.objectiveIntensity;
-          const execution = plannedActivity.activity_plan
-            ? { activity_category: plannedActivity.activity_plan.activity_category }
-            : null;
           return {
             id: plannedActivity.id,
             date: plannedActivity.scheduled_date,
             isToday: plannedActivity.scheduled_date === todayStr,
             isCompleted:
               Boolean(plannedActivity.linked_activity_id) || plannedActivity.status === "completed",
-            activityName: plannedActivity.activity_plan?.name || "Activity",
-            ...getScheduleExecutionPresentation(execution),
+            activityName: "Planned session",
+            ...getScheduleExecutionPresentation(null),
             estimatedDuration: completeValue(plannedEstimate.durationSeconds),
             estimatedDistance: completeValue(plannedEstimate.distanceMeters),
             load: completeValue(plannedEstimate.load),
-            objectiveIntensity:
-              objectiveIntensity?.status === "available" ? objectiveIntensity.value : null,
+            objectiveIntensity: null,
           };
         });
 

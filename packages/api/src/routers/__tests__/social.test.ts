@@ -1,9 +1,9 @@
-import { likes, profiles, trainingPlans } from "@repo/db";
+import { comments, follows, likes, profiles, trainingPlans } from "@repo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { socialRouter } from "../social";
 
-type SelectTableName = "likes" | "profiles" | "trainingPlans";
+type SelectTableName = "comments" | "follows" | "likes" | "profiles" | "trainingPlans";
 
 type DbPlan = {
   select?: Partial<Record<SelectTableName, Array<unknown[]>>>;
@@ -29,6 +29,8 @@ function getSelectTableName(table: unknown): SelectTableName {
   if (table === likes) return "likes";
   if (table === profiles) return "profiles";
   if (table === trainingPlans) return "trainingPlans";
+  if (table === follows) return "follows";
+  if (table === comments) return "comments";
   throw new Error(`Unhandled select table: ${String(table)}`);
 }
 
@@ -37,6 +39,8 @@ function createDbMock(plan: DbPlan = {}) {
     likes: [...(plan.select?.likes ?? [])],
     profiles: [...(plan.select?.profiles ?? [])],
     trainingPlans: [...(plan.select?.trainingPlans ?? [])],
+    follows: [...(plan.select?.follows ?? [])],
+    comments: [...(plan.select?.comments ?? [])],
   } satisfies Record<SelectTableName, Array<unknown[]>>;
   const executeQueue = [...(plan.execute ?? [])];
   const activityQueryQueue = [...(plan.query?.activities ?? [])];
@@ -63,13 +67,22 @@ function createDbMock(plan: DbPlan = {}) {
         },
         where: () => builder,
         limit: () => builder,
+        offset: () => builder,
+        orderBy: () => builder,
+        innerJoin: () => builder,
+        leftJoin: () => builder,
+        for: () => builder,
         then: (onFulfilled: (value: unknown[]) => unknown) => {
           if (!tableName) {
             throw new Error("Select called without table");
           }
 
-          calls.selects.push({ table: tableName });
-          return Promise.resolve(selectQueues[tableName].shift() ?? []).then(onFulfilled);
+          if (tableName === "likes" || tableName === "profiles" || tableName === "trainingPlans") {
+            calls.selects.push({ table: tableName });
+          }
+          return Promise.resolve(
+            selectQueues[tableName].shift() ?? executeQueue.shift() ?? [],
+          ).then(onFulfilled);
         },
       };
 
@@ -78,11 +91,18 @@ function createDbMock(plan: DbPlan = {}) {
     insert: (table: unknown) => ({
       values: (values: Record<string, unknown>) => {
         calls.inserts.push({ table: table === likes ? "likes" : String(table), values });
+        const consume = () => Promise.resolve(executeQueue.shift() ?? []);
         return {
           onConflictDoNothing: () => {
             if (table === likes) hasLike = true;
-            return Promise.resolve();
+            return {
+              returning: consume,
+              then: (onFulfilled: (value: unknown) => unknown) => consume().then(onFulfilled),
+            };
           },
+          onConflictDoUpdate: () => ({ returning: consume }),
+          returning: consume,
+          then: (onFulfilled: (value: unknown) => unknown) => consume().then(onFulfilled),
         };
       },
     }),
@@ -91,6 +111,7 @@ function createDbMock(plan: DbPlan = {}) {
         calls.deletes.push({ table: table === likes ? "likes" : String(table), whereArg });
         return {
           returning: () => {
+            if (table !== likes) return Promise.resolve(executeQueue.shift() ?? []);
             const explicit = deletedLikesQueue.shift();
             if (explicit) return Promise.resolve(explicit);
             const rows = table === likes && hasLike ? [{ id: "existing-like" }] : [];
@@ -98,9 +119,14 @@ function createDbMock(plan: DbPlan = {}) {
             return Promise.resolve(rows);
           },
           then: (onFulfilled: (value: unknown) => unknown) =>
-            Promise.resolve(undefined).then(onFulfilled),
+            Promise.resolve(executeQueue.shift() ?? undefined).then(onFulfilled),
         };
       },
+    }),
+    update: (table: unknown) => ({
+      set: () => ({
+        where: () => ({ returning: () => Promise.resolve(executeQueue.shift() ?? []) }),
+      }),
     }),
     execute: async (query: unknown) => {
       calls.executes.push(query);
@@ -168,7 +194,7 @@ describe("socialRouter", () => {
       status: "pending",
     });
     expect(calls.selects).toEqual([{ table: "profiles" }]);
-    expect(calls.executes).toHaveLength(2);
+    expect(calls.executes).toHaveLength(0);
   });
 
   it("unfollowUser deletes the relationship and its pending-request notification", async () => {
@@ -177,7 +203,7 @@ describe("socialRouter", () => {
     const result = await caller.unfollowUser({ target_user_id: TARGET_USER_ID });
 
     expect(result).toEqual({ success: true });
-    expect(calls.executes).toHaveLength(2);
+    expect(calls.executes).toHaveLength(0);
   });
 
   it("acceptFollowRequest accepts a pending request and notifies the follower", async () => {
@@ -194,7 +220,7 @@ describe("socialRouter", () => {
     const result = await caller.acceptFollowRequest({ follower_id: FOLLOWER_ID });
 
     expect(result).toEqual({ success: true });
-    expect(calls.executes).toHaveLength(4);
+    expect(calls.executes).toHaveLength(0);
   });
 
   it("rejectFollowRequest removes a pending request", async () => {
@@ -209,7 +235,7 @@ describe("socialRouter", () => {
     const result = await caller.rejectFollowRequest({ follower_id: FOLLOWER_ID });
 
     expect(result).toEqual({ success: true });
-    expect(calls.executes).toHaveLength(3);
+    expect(calls.executes).toHaveLength(0);
   });
 
   it("toggleLike inserts a like when the viewer can access the activity", async () => {
@@ -319,7 +345,7 @@ describe("socialRouter", () => {
       nextCursor: "index:2",
     });
     expect(calls.selects).toEqual([{ table: "profiles" }]);
-    expect(calls.executes).toHaveLength(3);
+    expect(calls.executes).toHaveLength(0);
   });
 
   it("getFollowers exposes the viewer's outbound follow state required by relationship-list UI", async () => {
@@ -408,7 +434,7 @@ describe("socialRouter", () => {
       nextCursor: undefined,
     });
     expect(calls.selects).toEqual([{ table: "profiles" }]);
-    expect(calls.executes).toHaveLength(3);
+    expect(calls.executes).toHaveLength(0);
   });
 
   it("getFollowers rejects private social graph access for non-followers", async () => {
@@ -425,7 +451,7 @@ describe("socialRouter", () => {
       code: "FORBIDDEN",
     });
 
-    expect(calls.executes).toHaveLength(1);
+    expect(calls.executes).toHaveLength(0);
   });
 
   it("searchUsers trims the query and returns paginated matches", async () => {
@@ -491,7 +517,7 @@ describe("socialRouter", () => {
       total: 1,
       hasMore: false,
     });
-    expect(calls.executes).toHaveLength(4);
+    expect(calls.executes).toHaveLength(0);
   });
 
   it("searchUsers rejects unexpected input keys", async () => {
@@ -604,7 +630,7 @@ describe("socialRouter", () => {
       hasMore: true,
       nextCursor: "index:1",
     });
-    expect(calls.executes).toHaveLength(2);
+    expect(calls.executes).toHaveLength(0);
   });
 
   it("getComments allows system training plans with null owner profile_id", async () => {

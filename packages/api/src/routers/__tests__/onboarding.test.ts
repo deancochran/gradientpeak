@@ -6,7 +6,6 @@ import {
   profileGoals,
   profileMetrics,
   profiles,
-  profileTrainingSettings,
   providerSyncJobs,
 } from "@repo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -146,16 +145,6 @@ function createCaller(input?: {
         if (table === profileAthleteState) {
           return { where: () => ({ limit: async () => [] }) };
         }
-        if (table === profileTrainingSettings) {
-          return {
-            where: () => ({
-              limit: () => ({
-                for: async () => [],
-                then: (resolve: (rows: unknown[]) => void) => resolve([]),
-              }),
-            }),
-          };
-        }
         if (table === profileGoals) {
           const projectedGoal =
             storedGoal && selection
@@ -245,7 +234,6 @@ describe("onboarding lifecycle", () => {
     await expect(caller.completeLifecycleSetup({ profile: identityOnlyProfile })).resolves.toEqual({
       status: "completed",
       goal: { status: "skipped" },
-      settings: { status: "skipped" },
       created: { profile_metrics: 0 },
     });
     expect(getStatus()).toBe("completed");
@@ -263,7 +251,6 @@ describe("onboarding lifecycle", () => {
     ).resolves.toMatchObject({
       status: "completed",
       goal: { status: "saved" },
-      settings: { status: "skipped" },
     });
     expect(insertedTables).toEqual([profileGoals]);
   });

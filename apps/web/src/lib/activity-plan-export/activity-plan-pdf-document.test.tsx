@@ -55,7 +55,7 @@ describe("activity plan PDF document", () => {
     ).toEqual([360, 216]);
   });
 
-  it("uses five-inch and seven-inch cue strips for short and long bike workouts", () => {
+  it("uses five-inch and seven-inch cue strips for short and long bike activity plans", () => {
     const firstStep = model.sections[0]?.groups[0]?.steps[0];
     if (!firstStep) throw new Error("Expected bike cue fixture step");
     expect(getActivityPlanPdfPageSize(model)).toEqual([162, 360]);

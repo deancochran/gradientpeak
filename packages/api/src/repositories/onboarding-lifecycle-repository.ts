@@ -1,8 +1,5 @@
 import { createHash } from "node:crypto";
 import {
-  type AthleteTrainingSettings,
-  athleteTrainingSettingsSchema,
-  defaultAthletePreferenceProfile,
   type ExecutableIntegrationProviderId,
   executableIntegrationProviderIdSchema,
   type ProfileGoalCreate,
@@ -18,7 +15,6 @@ import {
   profileGoals,
   profileMetrics,
   profiles,
-  profileTrainingSettings,
   providerSyncJobs,
 } from "@repo/db";
 import { and, eq, sql } from "drizzle-orm";
@@ -135,12 +131,6 @@ export async function readLockedFinalOnboardingState(tx: Transaction, profileId:
     .from(profileGoals)
     .where(eq(profileGoals.id, getOnboardingGoalId(profileId)))
     .limit(1);
-  const [settings] = await tx
-    .select({ settings: profileTrainingSettings.settings })
-    .from(profileTrainingSettings)
-    .where(eq(profileTrainingSettings.profile_id, profileId))
-    .limit(1)
-    .for("update");
   const metrics = await tx
     .select({
       calculation_version: profileMetrics.calculation_version,
@@ -162,7 +152,6 @@ export async function readLockedFinalOnboardingState(tx: Transaction, profileId:
     goal: goal ? profileGoalRecordSchema.parse(goal) : null,
     metrics,
     profile,
-    settings: settings ? athleteTrainingSettingsSchema.parse(settings.settings) : null,
   };
 }
 
@@ -170,75 +159,12 @@ export function onboardingGoalMatches(stored: ProfileGoalCreate, requested: Prof
   return canonicalGoalContent(stored) === canonicalGoalContent(requested);
 }
 
-export function applyOnboardingSettingsPatch(input: {
-  current: AthleteTrainingSettings;
-  patch: {
-    preset?: "safer" | "balanced" | "push_harder";
-    minSessionsPerWeek?: number;
-    maxSessionsPerWeek?: number;
-    maxSingleSessionMinutes?: number;
-    maxWeeklyMinutes?: number;
-  };
-  onboardingIntents?: AthleteTrainingSettings["onboarding_intents"];
-}): AthleteTrainingSettings {
-  const pace = input.patch.preset
-    ? { safer: 0.25, balanced: 0.5, push_harder: 0.75 }[input.patch.preset]
-    : input.current.training_style.progression_pace;
-  return athleteTrainingSettingsSchema.parse({
-    ...input.current,
-    dose_limits: {
-      ...input.current.dose_limits,
-      min_sessions_per_week:
-        input.patch.minSessionsPerWeek ?? input.current.dose_limits.min_sessions_per_week,
-      max_sessions_per_week:
-        input.patch.maxSessionsPerWeek ?? input.current.dose_limits.max_sessions_per_week,
-      max_single_session_duration_minutes:
-        input.patch.maxSingleSessionMinutes ??
-        input.current.dose_limits.max_single_session_duration_minutes,
-      max_weekly_duration_minutes:
-        input.patch.maxWeeklyMinutes ?? input.current.dose_limits.max_weekly_duration_minutes,
-    },
-    training_style: { ...input.current.training_style, progression_pace: pace },
-    onboarding_intents: input.onboardingIntents,
-  });
-}
-
-export function onboardingSettingsSatisfyRequest(input: {
-  stored: AthleteTrainingSettings;
-  patch: {
-    preset?: "safer" | "balanced" | "push_harder";
-    minSessionsPerWeek?: number;
-    maxSessionsPerWeek?: number;
-    maxSingleSessionMinutes?: number;
-    maxWeeklyMinutes?: number;
-  };
-  onboardingIntents?: AthleteTrainingSettings["onboarding_intents"];
-}) {
-  const requestedPace = input.patch.preset
-    ? { safer: 0.25, balanced: 0.5, push_harder: 0.75 }[input.patch.preset]
-    : undefined;
-  return (
-    canonicalJson(input.stored.onboarding_intents) === canonicalJson(input.onboardingIntents) &&
-    (input.patch.minSessionsPerWeek === undefined ||
-      input.stored.dose_limits.min_sessions_per_week === input.patch.minSessionsPerWeek) &&
-    (input.patch.maxSessionsPerWeek === undefined ||
-      input.stored.dose_limits.max_sessions_per_week === input.patch.maxSessionsPerWeek) &&
-    (input.patch.maxSingleSessionMinutes === undefined ||
-      input.stored.dose_limits.max_single_session_duration_minutes ===
-        input.patch.maxSingleSessionMinutes) &&
-    (input.patch.maxWeeklyMinutes === undefined ||
-      input.stored.dose_limits.max_weekly_duration_minutes === input.patch.maxWeeklyMinutes) &&
-    (requestedPace === undefined || input.stored.training_style.progression_pace === requestedPace)
-  );
-}
-
 export function completedOnboardingReplayMatches(input: {
   goalMatches: boolean;
   metricsMatch: boolean;
   profileMatches: boolean;
-  settingsMatch: boolean;
 }) {
-  return input.goalMatches && input.metricsMatch && input.profileMatches && input.settingsMatch;
+  return input.goalMatches && input.metricsMatch && input.profileMatches;
 }
 
 export async function readOnboardingProfileState(db: Db, profileId: string) {
@@ -484,47 +410,4 @@ export async function saveIdempotentOnboardingGoal(db: Db | Transaction, goal: P
   }
 
   return stored;
-}
-
-export async function saveChangedOnboardingSettings(input: {
-  db: Db | Transaction;
-  profileId: string;
-  patch: {
-    preset?: "safer" | "balanced" | "push_harder";
-    minSessionsPerWeek?: number;
-    maxSessionsPerWeek?: number;
-    maxSingleSessionMinutes?: number;
-    maxWeeklyMinutes?: number;
-  };
-  onboardingIntents?: AthleteTrainingSettings["onboarding_intents"];
-}): Promise<"saved" | "unchanged"> {
-  const save = async (tx: Db | Transaction) => {
-    const [currentRow] = await tx
-      .select({ settings: profileTrainingSettings.settings })
-      .from(profileTrainingSettings)
-      .where(eq(profileTrainingSettings.profile_id, input.profileId))
-      .limit(1)
-      .for("update");
-    const current = athleteTrainingSettingsSchema.parse(
-      currentRow?.settings ?? defaultAthletePreferenceProfile,
-    );
-    const desired = applyOnboardingSettingsPatch({
-      current,
-      patch: input.patch,
-      onboardingIntents: input.onboardingIntents,
-    });
-
-    if (currentRow && canonicalJson(current) === canonicalJson(desired)) return "unchanged";
-
-    const now = new Date();
-    await tx
-      .insert(profileTrainingSettings)
-      .values({ profile_id: input.profileId, settings: desired, updated_at: now })
-      .onConflictDoUpdate({
-        target: profileTrainingSettings.profile_id,
-        set: { settings: desired, updated_at: now },
-      });
-    return "saved";
-  };
-  return "transaction" in input.db ? input.db.transaction(save) : save(input.db);
 }

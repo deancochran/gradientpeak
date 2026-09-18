@@ -36,6 +36,7 @@ function calendarItem(
     partial: false,
     plan: null,
     plannedSession: null,
+    plannedActual: null,
     activity: null,
     event:
       kind === "planned_activity" || kind === "event"

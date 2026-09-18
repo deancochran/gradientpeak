@@ -193,6 +193,26 @@ await withDisposableDatabase(process.argv.slice(2), "activity_file_ingestions", 
   assert.equal(result.rows[0]?.staging_cleanup_pending, false);
   assert.ok(result.rows[0]?.staging_cleaned_at instanceof Date);
 
+  await db.query(
+    `insert into public.activities (
+      id, profile_id, name, entry_provenance, manual_activity_category, diary_date, diary_timezone,
+      started_at, finished_at, elapsed_ms, distance_meters, parser_version, decoded_contract_version, materializer_version
+    ) values ($1, $2, 'Manual scalar evidence', 'manual', 'bike', '2026-08-20', 'UTC',
+      null, null, null, null, 'manual-diary-v1', 'manual-diary-v1', 'manual-diary-v1')`,
+    ["70000000-0000-4000-8000-000000000001", profileId],
+  );
+  await assert.rejects(
+    db.query(
+      `insert into public.activities (
+        id, profile_id, name, started_at, finished_at, elapsed_ms,
+        parser_version, decoded_contract_version, materializer_version
+      ) values ($1, $2, 'Unsegmented recording', now(), now() + interval '1 second', 1000,
+        'fixture', 'fixture', 'fixture')`,
+      ["70000000-0000-4000-8000-000000000002", profileId],
+    ),
+    /segment ordinals must be contiguous from zero/,
+  );
+
   const privacy = await db.query<{
     anon_can_select: boolean;
     authenticated_can_select: boolean;

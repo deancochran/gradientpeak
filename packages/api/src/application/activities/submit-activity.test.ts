@@ -1550,7 +1550,6 @@ describe("submitActivity", () => {
     });
     const result = await submitActivity(db, {
       ...createInput(),
-      providerProvenance: undefined,
       composition: { persist: (tx, context) => composition(tx as unknown as MockTx, context) },
     });
     expect(transaction).toHaveBeenCalledOnce();
@@ -1563,7 +1562,6 @@ describe("submitActivity", () => {
     await expect(
       submitActivity(db, {
         ...createInput(),
-        providerProvenance: undefined,
         composition: {
           persist: async () => {
             throw new Error("planned-session-link-rejected");

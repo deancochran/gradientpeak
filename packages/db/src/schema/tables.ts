@@ -1,10 +1,7 @@
-import type { ActivityPlanDocument } from "@repo/core/activity-plan";
+import type { ActivityPlanAdaptation, ActivityPlanTrainingIntent } from "@repo/core/activity-plan";
 import type { ActivityTrainingEffect } from "@repo/core/athlete-derived-state";
-import {
-  PLANNED_SESSION_CONTRACT_VERSION,
-  type PlannedSessionPrescriptionSnapshot,
-} from "@repo/core/calendar";
 import { GROUP_EVENT_RSVP_STATUSES } from "@repo/core/groups";
+import type { ResolutionManifest } from "@repo/core/plan";
 import { type PreferredUnitSystem, preferredUnitSystemValues } from "@repo/core/units";
 import { sql } from "drizzle-orm";
 import {
@@ -888,8 +885,14 @@ export const activityPlans = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     notes: text("notes"),
-    structure: jsonb("structure").$type<ActivityPlanDocument>().notNull(),
+    training_intent: text("training_intent")
+      .$type<ActivityPlanTrainingIntent>()
+      .notNull()
+      .default("general_maintenance"),
+    structure: jsonb("structure").notNull(),
+    adaptation: jsonb("adaptation").$type<ActivityPlanAdaptation>(),
     structure_hash: text("structure_hash").notNull(),
+    semantic_hash: text("semantic_hash").notNull(),
     revision: integer("revision").notNull().default(1),
     gps_recording_enabled: boolean("gps_recording_enabled").notNull().default(true),
     content_visibility: text("content_visibility", { enum: ["private", "followers", "public"] })
@@ -902,16 +905,28 @@ export const activityPlans = pgTable(
   },
   (table) => [
     check(
-      "activity_plans_structure_document_v1_check",
-      sql`jsonb_typeof(${table.structure}) = 'object' and ${table.structure}->'contractVersion' = '1'::jsonb and jsonb_typeof(${table.structure}->'defaultVariantId') = 'string' and jsonb_typeof(${table.structure}->'variants') = 'array' and jsonb_array_length(${table.structure}->'variants') between 1 and 16 and pg_column_size(${table.structure}) <= 1048576`,
+      "activity_plans_structure_v3_check",
+      sql`jsonb_typeof(${table.structure}) = 'object' and ${table.structure}->>'version' = '3' and ${table.structure}->>'activity_category' in ('run', 'bike', 'swim', 'strength', 'other') and jsonb_typeof(${table.structure}->'segments') = 'array' and jsonb_array_length(${table.structure}->'segments') between 1 and 64 and pg_column_size(${table.structure}) <= 1048576`,
     ),
     check(
       "activity_plans_structure_canonical_check",
-      sql`public.activity_plan_document_is_canonical(${table.structure})`,
+      sql`public.activity_plan_structure_is_canonical(${table.structure}) or public.activity_plan_authoring_structure_is_valid(${table.structure})`,
     ),
     check(
       "activity_plans_structure_hash_check",
       sql`${table.structure_hash} ~ '^v1:sha256:[0-9a-f]{64}$'`,
+    ),
+    check(
+      "activity_plans_semantic_hash_check",
+      sql`${table.semantic_hash} ~ '^v1:sha256:[0-9a-f]{64}$'`,
+    ),
+    check(
+      "activity_plans_training_intent_check",
+      sql`${table.training_intent} in ('recovery', 'aerobic_base', 'durable_endurance', 'threshold_development', 'race_specific', 'vo2max', 'anaerobic_capacity', 'muscular_endurance', 'speed_skill', 'technique', 'strength_support', 'general_maintenance')`,
+    ),
+    check(
+      "activity_plans_adaptation_check",
+      sql`${table.adaptation} is null or (jsonb_typeof(${table.adaptation}) = 'object' and pg_column_size(${table.adaptation}) <= 262144)`,
     ),
     check("activity_plans_revision_check", sql`${table.revision} >= 1`),
     check(
@@ -940,8 +955,9 @@ export const activityPlans = pgTable(
       .on(table.is_system_template)
       .where(sql`${table.is_system_template} = true`),
     index("idx_activity_plans_content_visibility").on(table.content_visibility),
-    index("idx_activity_plans_structure_category").on(
-      sql`(${table.structure} #>> '{variants,0,structure,activity_category}')`,
+    index("idx_activity_plans_structure_categories").using(
+      "gin",
+      table.structure.op("jsonb_path_ops"),
     ),
   ],
 );
@@ -1139,7 +1155,7 @@ export const trainingPlans = pgTable(
     check("training_plans_revision_check", sql`${table.revision} > 0`),
     check(
       "training_plans_projection_validation_check",
-      sql`num_nonnulls(${table.validated_state_revision}, ${table.validated_at}, ${table.projection_algorithm_version}) in (0, 3) and (${table.validated_state_revision} is null or ${table.validated_state_revision} >= 0) and (${table.projection_algorithm_version} is null or btrim(${table.projection_algorithm_version}) <> '')`,
+      sql`(num_nonnulls(${table.validated_state_revision}, ${table.validated_at}, ${table.projection_algorithm_version}) = 0 or (${table.validated_at} is not null and ${table.projection_algorithm_version} is not null)) and (${table.validated_state_revision} is null or ${table.validated_state_revision} >= 0) and (${table.projection_algorithm_version} is null or btrim(${table.projection_algorithm_version}) <> '')`,
     ),
     index("idx_training_plans_profile_id")
       .on(table.profile_id)
@@ -1175,13 +1191,6 @@ export const events = pgTable(
     starts_at: timestamp("starts_at", { withTimezone: true, mode: "date" }).notNull(),
     ends_at: timestamp("ends_at", { withTimezone: true, mode: "date" }),
     scheduled_date: text("scheduled_date").notNull(),
-    training_plan_id: uuid("training_plan_id").references(() => trainingPlans.id, {
-      onDelete: "set null",
-    }),
-    planned_session_id: uuid("planned_session_id"),
-    activity_plan_id: uuid("activity_plan_id").references(() => activityPlans.id, {
-      onDelete: "set null",
-    }),
     linked_activity_id: uuid("linked_activity_id").references(() => activities.id),
     route_id: uuid("route_id").references(() => activityRoutes.id),
     recurrence_rule: text("recurrence_rule"),
@@ -1193,23 +1202,6 @@ export const events = pgTable(
   },
   (table) => [
     unique("events_id_profile_id_unique").on(table.id, table.profile_id),
-    foreignKey({
-      columns: [table.planned_session_id, table.profile_id, table.activity_plan_id],
-      // The session table is declared later because its completion link points to activities.
-      // A getter keeps this cyclic composite reference lazy while retaining owner integrity.
-      get foreignColumns() {
-        return [
-          plannedSessions.id,
-          plannedSessions.profile_id,
-          plannedSessions.activity_plan_id,
-        ] as [
-          typeof plannedSessions.id,
-          typeof plannedSessions.profile_id,
-          typeof plannedSessions.activity_plan_id,
-        ];
-      },
-      name: "events_planned_session_owner_fkey",
-    }).onDelete("restrict"),
     check(
       "events_time_window",
       sql`${table.ends_at} is null or ${table.ends_at} > ${table.starts_at}`,
@@ -1242,26 +1234,9 @@ export const events = pgTable(
       "events_series_not_self",
       sql`${table.series_id} is null or ${table.series_id} <> ${table.id}`,
     ),
-    check(
-      "events_planned_session_kind_check",
-      sql`${table.planned_session_id} is null or (${table.event_type} = 'planned' and ${table.activity_plan_id} is not null)`,
-    ),
-    check(
-      "events_training_plan_session_check",
-      sql`${table.training_plan_id} is null or ${table.planned_session_id} is not null`,
-    ),
-    uniqueIndex("events_planned_session_unique")
-      .on(table.planned_session_id)
-      .where(sql`${table.planned_session_id} is not null`),
     uniqueIndex("idx_events_series_occurrence_unique")
       .on(table.series_id, table.occurrence_key)
       .where(sql`${table.series_id} is not null`),
-    index("idx_events_training_plan_id")
-      .on(table.training_plan_id)
-      .where(sql`${table.training_plan_id} is not null`),
-    index("idx_events_activity_plan_id")
-      .on(table.activity_plan_id)
-      .where(sql`${table.activity_plan_id} is not null`),
     index("idx_events_linked_activity_id")
       .on(table.linked_activity_id)
       .where(sql`${table.linked_activity_id} is not null`),
@@ -1276,11 +1251,6 @@ export const events = pgTable(
       table.status,
       table.starts_at,
     ),
-    index("idx_events_planned_day_summary")
-      .on(table.profile_id, table.scheduled_date, table.starts_at, table.id, table.activity_plan_id)
-      .where(
-        sql`${table.event_type} = 'planned' and ${table.status} in ('scheduled', 'completed')`,
-      ),
   ],
 );
 
@@ -1361,13 +1331,18 @@ export const activities = pgTable(
     }),
     route_id: uuid("route_id").references(() => activityRoutes.id, { onDelete: "set null" }),
     name: text("name").notNull(),
-    started_at: timestamp("started_at", { withTimezone: true, mode: "date" }).notNull(),
-    finished_at: timestamp("finished_at", { withTimezone: true, mode: "date" }).notNull(),
+    // Manual reports may only have a civil day; no midnight instant is invented.
+    entry_provenance: text("entry_provenance"),
+    manual_activity_category: activityCategoryEnum("manual_activity_category"),
+    diary_date: date("diary_date"),
+    diary_timezone: text("diary_timezone"),
+    started_at: timestamp("started_at", { withTimezone: true, mode: "date" }),
+    finished_at: timestamp("finished_at", { withTimezone: true, mode: "date" }),
     notes: text("notes"),
     content_visibility: text("content_visibility", { enum: ["private", "followers", "public"] })
       .notNull()
       .default("private"),
-    elapsed_ms: bigint("elapsed_ms", { mode: "number" }).notNull(),
+    elapsed_ms: bigint("elapsed_ms", { mode: "number" }),
     active_ms: bigint("active_ms", { mode: "number" }),
     moving_ms: bigint("moving_ms", { mode: "number" }),
     timing_coverage: text("timing_coverage", {
@@ -1390,7 +1365,7 @@ export const activities = pgTable(
     })
       .defaultNow()
       .notNull(),
-    distance_meters: integer("distance_meters").notNull().default(0),
+    distance_meters: integer("distance_meters").default(0),
     elevation_gain_meters: numeric("elevation_gain_meters", {
       precision: 10,
       scale: 2,
@@ -1443,9 +1418,16 @@ export const activities = pgTable(
       withTimezone: true,
       mode: "date",
     }),
+    superseded_by_activity_id: uuid("superseded_by_activity_id"),
+    superseded_at: timestamp("superseded_at", { withTimezone: true, mode: "date" }),
+    reconciliation_operation_id: uuid("reconciliation_operation_id"),
+    reconciled_planned_session_id: uuid("reconciled_planned_session_id"),
   },
   (table) => [
     unique("activities_id_profile_id_unique").on(table.id, table.profile_id),
+    uniqueIndex("activities_profile_reconciliation_operation_unique")
+      .on(table.profile_id, table.reconciliation_operation_id)
+      .where(sql`${table.reconciliation_operation_id} is not null`),
     index("idx_activities_activity_plan")
       .on(table.activity_plan_id)
       .where(sql`${table.activity_plan_id} is not null`),
@@ -1462,8 +1444,22 @@ export const activities = pgTable(
       "activities_content_visibility_check",
       sql`${table.content_visibility} in ('private', 'followers', 'public')`,
     ),
-    check("activities_distance_meters_check", sql`${table.distance_meters} >= 0`),
-    check("activities_elapsed_ms_check", sql`${table.elapsed_ms} > 0`),
+    check(
+      "activities_distance_meters_check",
+      sql`${table.distance_meters} is null or ${table.distance_meters} >= 0`,
+    ),
+    check(
+      "activities_elapsed_ms_check",
+      sql`${table.elapsed_ms} is null or ${table.elapsed_ms} >= 0`,
+    ),
+    check(
+      "activities_manual_observation_check",
+      sql`(${table.entry_provenance} = 'manual' and ${table.manual_activity_category} is not null and ${table.diary_date} is not null and ${table.diary_timezone} is not null and ((${table.started_at} is null and ${table.finished_at} is null) or (${table.started_at} is not null and ${table.finished_at} is not null))) or (${table.entry_provenance} is distinct from 'manual' and ${table.manual_activity_category} is null and ${table.diary_date} is null and ${table.diary_timezone} is null and ${table.started_at} is not null and ${table.finished_at} is not null and ${table.elapsed_ms} > 0 and ${table.distance_meters} is not null)`,
+    ),
+    check(
+      "activities_manual_supersession_check",
+      sql`(${table.superseded_by_activity_id} is null and ${table.superseded_at} is null and ${table.reconciliation_operation_id} is null and ${table.reconciled_planned_session_id} is null) or (${table.entry_provenance} = 'manual' and ${table.superseded_by_activity_id} is not null and ${table.superseded_by_activity_id} <> ${table.id} and ${table.superseded_at} is not null and ${table.reconciliation_operation_id} is not null and ${table.reconciled_planned_session_id} is not null)`,
+    ),
     check(
       "activities_active_ms_check",
       sql`${table.active_ms} is null or (${table.active_ms} >= 0 and ${table.active_ms} <= ${table.elapsed_ms})`,
@@ -1500,6 +1496,43 @@ export const activities = pgTable(
       "activities_athlete_state_confidence_check",
       sql`${table.athlete_state_evidence_confidence} is null or ${table.athlete_state_evidence_confidence} between 0 and 1`,
     ),
+  ],
+);
+
+/** Durable replay ledger for athlete-entered scalar diary observations. */
+export const manualTrainingDiaryOperations = pgTable(
+  "manual_training_diary_operations",
+  {
+    id: uuid("id").primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    operation_id: uuid("operation_id").notNull(),
+    request_fingerprint: text("request_fingerprint").notNull(),
+    activity_id: uuid("activity_id")
+      .notNull()
+      .references(() => activities.id, { onDelete: "restrict" }),
+    planned_session_id: uuid("planned_session_id"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("manual_training_diary_operations_profile_operation_unique").on(
+      table.profile_id,
+      table.operation_id,
+    ),
+    foreignKey({
+      columns: [table.activity_id, table.profile_id],
+      foreignColumns: [activities.id, activities.profile_id],
+      name: "manual_training_diary_operations_activity_owner_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.planned_session_id, table.profile_id],
+      foreignColumns: [plannedSessions.id, plannedSessions.profile_id],
+      name: "manual_training_diary_operations_planned_session_owner_fkey",
+    }).onDelete("restrict"),
+    index("manual_training_diary_operations_activity_idx").on(table.activity_id),
   ],
 );
 
@@ -2065,6 +2098,90 @@ export const activityFileIngestions = pgTable(
   ],
 );
 
+export const trainingPlanApplications = pgTable(
+  "training_plan_applications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    training_plan_id: uuid("training_plan_id")
+      .notNull()
+      .references(() => trainingPlans.id, { onDelete: "restrict" }),
+    source_revision: integer("source_revision").notNull(),
+    start_date: date("start_date").notNull(),
+    planning_timezone: text("planning_timezone").notNull(),
+    application_revision: integer("application_revision").notNull().default(1),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("training_plan_applications_id_profile_unique").on(table.id, table.profile_id),
+    unique("training_plan_applications_id_profile_plan_unique").on(
+      table.id,
+      table.profile_id,
+      table.training_plan_id,
+    ),
+    check("training_plan_applications_source_revision_check", sql`${table.source_revision} > 0`),
+    check("training_plan_applications_revision_check", sql`${table.application_revision} > 0`),
+    check(
+      "training_plan_applications_timezone_check",
+      sql`btrim(${table.planning_timezone}) <> ''`,
+    ),
+    index("training_plan_applications_profile_plan_idx").on(
+      table.profile_id,
+      table.training_plan_id,
+      table.created_at,
+    ),
+  ],
+);
+
+export const trainingPlanApplicationCommandReceipts = pgTable(
+  "training_plan_application_command_receipts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    operation_id: text("operation_id").notNull(),
+    command: text("command", { enum: ["apply", "update", "remove", "save_plan"] }).notNull(),
+    request_fingerprint: text("request_fingerprint").notNull(),
+    application_id: uuid("application_id"),
+    result: jsonb("result").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("training_plan_application_command_receipts_profile_operation_unique").on(
+      table.profile_id,
+      table.operation_id,
+    ),
+    foreignKey({
+      columns: [table.application_id, table.profile_id],
+      foreignColumns: [trainingPlanApplications.id, trainingPlanApplications.profile_id],
+      name: "training_plan_application_command_receipts_application_owner_fkey",
+    }).onDelete("restrict"),
+    check(
+      "training_plan_application_command_receipts_operation_check",
+      sql`${table.operation_id} ~ '^[A-Za-z0-9_-]{32,128}$'`,
+    ),
+    check(
+      "training_plan_application_command_receipts_fingerprint_check",
+      sql`${table.request_fingerprint} ~ '^v1:sha256:[0-9a-f]{64}$'`,
+    ),
+    check(
+      "training_plan_application_command_receipts_result_check",
+      sql`jsonb_typeof(${table.result}) = 'object'`,
+    ),
+    index("training_plan_application_command_receipts_application_idx").on(table.application_id),
+  ],
+);
+
 export const plannedSessions = pgTable(
   "planned_sessions",
   {
@@ -2072,9 +2189,7 @@ export const plannedSessions = pgTable(
     profile_id: uuid("profile_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
-    contract_version: text("contract_version", { enum: [PLANNED_SESSION_CONTRACT_VERSION] })
-      .notNull()
-      .default(PLANNED_SESSION_CONTRACT_VERSION),
+    contract_version: text("contract_version").notNull().default("planned-session-v1"),
     session_revision: integer("session_revision").notNull().default(1),
     planning_date: date("planning_date").notNull(),
     original_target_date: date("original_target_date").notNull(),
@@ -2085,23 +2200,14 @@ export const plannedSessions = pgTable(
       onDelete: "restrict",
     }),
     training_plan_revision: integer("training_plan_revision"),
-    source_session_key: text("source_session_key"),
-    series_id: uuid("series_id"),
-    occurrence_key: date("occurrence_key"),
+    training_plan_application_id: uuid("training_plan_application_id"),
+    source_session_id: uuid("source_session_id"),
     group_event_id: uuid("group_event_id"),
     activity_plan_id: uuid("activity_plan_id")
       .notNull()
       .references(() => activityPlans.id, { onDelete: "restrict" }),
     activity_plan_revision: integer("activity_plan_revision").notNull(),
-    activity_plan_variant_id: uuid("activity_plan_variant_id").notNull(),
-    activity_plan_variant_name: text("activity_plan_variant_name").notNull(),
-    prescription_structure: jsonb("prescription_structure")
-      .$type<PlannedSessionPrescriptionSnapshot["structure"]>()
-      .notNull(),
-    prescription_structure_hash: text("prescription_structure_hash").notNull(),
-    prescription_quantification: jsonb("prescription_quantification").$type<
-      PlannedSessionPrescriptionSnapshot["prescriptionQuantification"]
-    >(),
+    resolution_manifest: jsonb("resolution_manifest").$type<ResolutionManifest>().notNull(),
     prescription_captured_at: timestamp("prescription_captured_at", {
       withTimezone: true,
       mode: "date",
@@ -2111,6 +2217,8 @@ export const plannedSessions = pgTable(
     cancelled_at: timestamp("cancelled_at", { withTimezone: true, mode: "date" }),
     completed_activity_id: uuid("completed_activity_id"),
     completion_state: plannedSessionCompletionStateEnum("completion_state"),
+    completion_outcome: text("completion_outcome"),
+    skip_operation_id: uuid("skip_operation_id"),
     linked_at: timestamp("linked_at", { withTimezone: true, mode: "date" }),
     completion_unlinked_at: timestamp("completion_unlinked_at", {
       withTimezone: true,
@@ -2135,9 +2243,13 @@ export const plannedSessions = pgTable(
       table.idempotency_key,
     ),
     foreignKey({
-      columns: [table.series_id, table.profile_id],
-      foreignColumns: [table.id, table.profile_id],
-      name: "planned_sessions_series_owner_fkey",
+      columns: [table.training_plan_application_id, table.profile_id, table.training_plan_id],
+      foreignColumns: [
+        trainingPlanApplications.id,
+        trainingPlanApplications.profile_id,
+        trainingPlanApplications.training_plan_id,
+      ],
+      name: "planned_sessions_application_source_fkey",
     }).onDelete("restrict"),
     foreignKey({
       columns: [table.completed_activity_id, table.profile_id],
@@ -2151,32 +2263,24 @@ export const plannedSessions = pgTable(
     }).onDelete("set null"),
     check("planned_sessions_revision_check", sql`${table.session_revision} > 0`),
     check(
-      "planned_sessions_contract_version_check",
-      sql`${table.contract_version} = 'planned-session-v2'`,
-    ),
-    check(
       "planned_sessions_idempotency_length_check",
       sql`char_length(${table.idempotency_key}) between 1 and 512`,
     ),
     check(
       "planned_sessions_source_check",
-      sql`(${table.source_kind} = 'direct' and ${table.direct_operation_id} ~ '^[A-Za-z0-9_-]{32,128}$' and ${table.idempotency_key} = 'direct:' || ${table.direct_operation_id} and num_nonnulls(${table.training_plan_id}, ${table.training_plan_revision}, ${table.source_session_key}, ${table.series_id}, ${table.occurrence_key}) = 0) or (${table.source_kind} = 'training_plan' and ${table.training_plan_id} is not null and ${table.training_plan_revision} > 0 and ${table.source_session_key} is not null and char_length(btrim(${table.source_session_key})) between 1 and 128 and ${table.idempotency_key} = 'training-plan:' || ${table.training_plan_id}::text || ':' || ${table.training_plan_revision}::text || ':' || ${table.source_session_key} and num_nonnulls(${table.direct_operation_id}, ${table.series_id}, ${table.occurrence_key}) = 0) or (${table.source_kind} = 'recurrence' and ${table.series_id} is not null and ${table.occurrence_key} is not null and ${table.occurrence_key} = ${table.original_target_date} and ${table.idempotency_key} = 'recurrence:' || ${table.series_id}::text || ':' || ${table.occurrence_key}::text and num_nonnulls(${table.direct_operation_id}, ${table.training_plan_id}, ${table.training_plan_revision}, ${table.source_session_key}) = 0)`,
-    ),
-    check(
-      "planned_sessions_variant_provenance_check",
-      sql`${table.activity_plan_variant_id} <> '00000000-0000-0000-0000-000000000000'::uuid and ${table.activity_plan_variant_name} = btrim(${table.activity_plan_variant_name}, U&'\\0009\\000A\\000B\\000C\\000D\\0020\\00A0\\1680\\2000\\2001\\2002\\2003\\2004\\2005\\2006\\2007\\2008\\2009\\200A\\2028\\2029\\202F\\205F\\3000\\FEFF') and char_length(${table.activity_plan_variant_name}) between 1 and 100`,
+      sql`(${table.source_kind} = 'direct' and ${table.direct_operation_id} ~ '^[A-Za-z0-9_-]{32,128}$' and ${table.idempotency_key} = 'direct:' || ${table.direct_operation_id} and num_nonnulls(${table.training_plan_id}, ${table.training_plan_revision}, ${table.training_plan_application_id}, ${table.source_session_id}) = 0) or (${table.source_kind} = 'training_plan' and ${table.training_plan_id} is not null and ${table.training_plan_revision} > 0 and ${table.source_session_id} is not null and ((${table.training_plan_application_id} is not null and ${table.idempotency_key} = 'training-plan:' || ${table.training_plan_application_id}::text || ':' || ${table.training_plan_revision}::text || ':' || ${table.source_session_id}::text) or (${table.training_plan_application_id} is null and ${table.idempotency_key} = 'training-plan:' || ${table.training_plan_id}::text || ':' || ${table.training_plan_revision}::text || ':' || ${table.source_session_id}::text)) and ${table.direct_operation_id} is null)`,
     ),
     check(
       "planned_sessions_prescription_check",
-      sql`${table.activity_plan_revision} > 0 and jsonb_typeof(${table.prescription_structure}) = 'object' and pg_column_size(${table.prescription_structure}) <= 1048576 and ${table.prescription_structure_hash} ~ '^v1:sha256:[0-9a-f]{64}$' and (${table.prescription_quantification} is null or (jsonb_typeof(${table.prescription_quantification}) = 'object' and pg_column_size(${table.prescription_quantification}) <= 262144))`,
+      sql`${table.activity_plan_revision} > 0 and jsonb_typeof(${table.resolution_manifest}) = 'object' and pg_column_size(${table.resolution_manifest}) <= 1048576 and jsonb_typeof(${table.resolution_manifest}->'resolver_version') = 'string' and btrim(${table.resolution_manifest}->>'resolver_version') <> '' and jsonb_typeof(${table.resolution_manifest}->'policy_version') = 'string' and btrim(${table.resolution_manifest}->>'policy_version') <> '' and ${table.resolution_manifest}->>'activity_plan_id' = ${table.activity_plan_id}::text and ${table.resolution_manifest}->'activity_plan_revision' = to_jsonb(${table.activity_plan_revision}) and ${table.resolution_manifest}->>'activity_plan_semantic_hash' ~ '^v1:sha256:[0-9a-f]{64}$' and jsonb_typeof(${table.resolution_manifest}->'session_demand') = 'object' and jsonb_typeof(${table.resolution_manifest}->'adaptation_values') = 'object' and (${table.resolution_manifest}->'effective_target_duration_minutes' = 'null'::jsonb or jsonb_typeof(${table.resolution_manifest}->'effective_target_duration_minutes') = 'number') and (${table.resolution_manifest}->'effective_target_common_load' = 'null'::jsonb or jsonb_typeof(${table.resolution_manifest}->'effective_target_common_load') = 'number') and jsonb_typeof(${table.resolution_manifest}->'evidence_facts') = 'array' and jsonb_typeof(${table.resolution_manifest}->'reason_codes') = 'array' and jsonb_typeof(${table.resolution_manifest}->'resolved_structure') = 'object' and ${table.resolution_manifest}->>'resolved_structure_hash' ~ '^v1:sha256:[0-9a-f]{64}$' and jsonb_typeof(${table.resolution_manifest}->'prescription_estimate') = 'object' and ${table.resolution_manifest}->>'fingerprint' ~ '^v1:sha256:[0-9a-f]{64}$'`,
     ),
     check(
       "planned_sessions_lifecycle_check",
-      sql`(${table.status} = 'scheduled' and num_nonnulls(${table.cancellation_reason}, ${table.cancelled_at}, ${table.completed_activity_id}, ${table.completion_state}, ${table.linked_at}, ${table.completion_unlinked_at}) = 0) or (${table.status} = 'cancelled' and ${table.cancellation_reason} is not null and ${table.cancelled_at} is not null and num_nonnulls(${table.completed_activity_id}, ${table.completion_state}, ${table.linked_at}, ${table.completion_unlinked_at}) = 0) or (${table.status} = 'completed' and num_nonnulls(${table.cancellation_reason}, ${table.cancelled_at}) = 0 and ((${table.completion_state} = 'linked' and ${table.completed_activity_id} is not null and ${table.linked_at} is not null and ${table.completion_unlinked_at} is null) or (${table.completion_state} = 'activity_deleted' and ${table.completed_activity_id} is null and ${table.linked_at} is not null and ${table.completion_unlinked_at} >= ${table.linked_at})))`,
+      sql`(${table.status} = 'scheduled' and num_nonnulls(${table.cancellation_reason}, ${table.cancelled_at}, ${table.completed_activity_id}, ${table.completion_state}, ${table.completion_outcome}, ${table.skip_operation_id}, ${table.linked_at}, ${table.completion_unlinked_at}) = 0) or (${table.status} = 'cancelled' and ${table.cancellation_reason} is not null and ${table.cancelled_at} is not null and num_nonnulls(${table.completed_activity_id}, ${table.completion_state}, ${table.completion_outcome}, ${table.skip_operation_id}, ${table.linked_at}, ${table.completion_unlinked_at}) = 0) or (${table.status} = 'completed' and num_nonnulls(${table.cancellation_reason}, ${table.cancelled_at}) = 0 and ((${table.completion_state} = 'linked' and ${table.completed_activity_id} is not null and ${table.completion_outcome} in ('full', 'partial') and ${table.skip_operation_id} is null and ${table.linked_at} is not null and ${table.completion_unlinked_at} is null) or (${table.completion_state} = 'activity_deleted' and ${table.completed_activity_id} is null and ${table.completion_outcome} in ('full', 'partial') and ${table.skip_operation_id} is null and ${table.linked_at} is not null and ${table.completion_unlinked_at} >= ${table.linked_at}) or (${table.completion_state} is null and ${table.completion_outcome} = 'skipped' and ${table.completed_activity_id} is null and ${table.skip_operation_id} is not null and ${table.linked_at} is not null and ${table.completion_unlinked_at} is null)))`,
     ),
     check(
-      "planned_sessions_series_not_self_check",
-      sql`${table.series_id} is null or ${table.series_id} <> ${table.id}`,
+      "planned_sessions_completion_outcome_check",
+      sql`${table.completion_outcome} is null or ${table.completion_outcome} in ('full', 'partial', 'skipped')`,
     ),
     index("planned_sessions_profile_date_idx").on(table.profile_id, table.planning_date, table.id),
     index("planned_sessions_profile_status_date_idx").on(
@@ -2188,6 +2292,15 @@ export const plannedSessions = pgTable(
     index("planned_sessions_training_plan_idx")
       .on(table.training_plan_id, table.profile_id)
       .where(sql`${table.training_plan_id} is not null`),
+    index("planned_sessions_application_status_date_idx")
+      .on(
+        table.training_plan_application_id,
+        table.profile_id,
+        table.status,
+        table.planning_date,
+        table.id,
+      )
+      .where(sql`${table.training_plan_application_id} is not null`),
     index("planned_sessions_activity_plan_idx").on(table.activity_plan_id),
     uniqueIndex("planned_sessions_profile_group_event_unique")
       .on(table.profile_id, table.group_event_id)
@@ -2195,9 +2308,6 @@ export const plannedSessions = pgTable(
     index("planned_sessions_completed_activity_idx")
       .on(table.completed_activity_id)
       .where(sql`${table.completed_activity_id} is not null`),
-    uniqueIndex("planned_sessions_series_occurrence_unique")
-      .on(table.series_id, table.occurrence_key)
-      .where(sql`${table.series_id} is not null`),
   ],
 );
 
@@ -2750,6 +2860,9 @@ export const integrations = pgTable(
     external_id: text("external_id").notNull(),
     lifecycle_status: text("lifecycle_status").notNull().default("active"),
     generation: integer("generation").notNull().default(1),
+    wahoo_event_route_delivery_enabled: boolean("wahoo_event_route_delivery_enabled")
+      .notNull()
+      .default(false),
     disconnect_requested_at: timestamp("disconnect_requested_at", {
       withTimezone: true,
       mode: "date",
@@ -2867,14 +2980,6 @@ export const profileMetrics = pgTable(
     ),
   ],
 );
-
-export const profileTrainingSettings = pgTable("profile_training_settings", {
-  profile_id: uuid("profile_id")
-    .primaryKey()
-    .references(() => profiles.id),
-  settings: jsonb("settings").notNull(),
-  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
-});
 
 export const apiRateLimitWindows = pgTable(
   "api_rate_limit_windows",

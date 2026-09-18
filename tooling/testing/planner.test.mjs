@@ -449,9 +449,10 @@ test("command mapping uses package scripts and only enables runtime explicitly",
   assert.equal(commandsForTests(tests, { runtime: true }).length, 4);
 });
 
-test("Auth uses Vitest, DB self-running tests use one safe tsx command each", () => {
+test("Auth uses Vitest, DB validation tests use Vitest, and DB self-running tests use one safe tsx command each", () => {
   const tests = [
     { kind: "unit", path: "packages/auth/src/contracts/forms.test.ts" },
+    { kind: "unit", path: "packages/db/src/validation/activity-session-rpe-evidence.test.ts" },
     { kind: "unit", path: "packages/db/scripts/canonical-json.test.ts" },
     { kind: "unit", path: "packages/db/scripts/storage-assets-contract.test.ts" },
   ];
@@ -461,6 +462,16 @@ test("Auth uses Vitest, DB self-running tests use one safe tsx command each", ()
       command: "pnpm",
       args: ["--filter", "@repo/auth", "test", "src/contracts/forms.test.ts"],
       tests: ["packages/auth/src/contracts/forms.test.ts"],
+    },
+    {
+      command: "pnpm",
+      args: [
+        "exec",
+        "vitest",
+        "run",
+        "packages/db/src/validation/activity-session-rpe-evidence.test.ts",
+      ],
+      tests: ["packages/db/src/validation/activity-session-rpe-evidence.test.ts"],
     },
     {
       command: "pnpm",

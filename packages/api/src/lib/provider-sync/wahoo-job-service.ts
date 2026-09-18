@@ -30,13 +30,13 @@ import { isWahooStagingCleanupPayload, WAHOO_STAGING_CLEANUP_JOB } from "./wahoo
 
 const WAHOO_PUBLISH_HORIZON_DAYS = 6;
 const WAHOO_DISCONNECT_JOB = "wahoo.disconnect";
-const WAHOO_PUBLISH_EVENT_JOB = "wahoo.publish_event";
-const WAHOO_UNSYNC_EVENT_JOB = "wahoo.unsync_event";
+const WAHOO_PUBLISH_PLANNED_SESSION_JOB = "wahoo.publish_planned_session";
+const WAHOO_UNSYNC_PLANNED_SESSION_JOB = "wahoo.unsync_planned_session";
 
 type WahooDisconnectPayload = { expectedGeneration: number };
 type WahooPublishJobPayload = {
   performanceModelAsOf: string;
-  eventId: string;
+  plannedSessionId: string;
   operation: "publish";
   projectionHash: string;
   projectionSnapshot: WahooProjectionSnapshot;
@@ -45,7 +45,7 @@ type WahooPublishJobPayload = {
 };
 
 type WahooUnsyncJobPayload = {
-  eventId: string;
+  plannedSessionId: string;
   operation: "unsync";
   unsyncTarget?: { externalId: string; resourceLinkId: string };
 };
@@ -56,8 +56,8 @@ function isWahooJobPayload(value: unknown): value is WahooJobPayload {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const payload = value as Record<string, unknown>;
   if (
-    typeof payload.eventId !== "string" ||
-    payload.eventId.length === 0 ||
+    typeof payload.plannedSessionId !== "string" ||
+    payload.plannedSessionId.length === 0 ||
     (payload.operation !== "publish" && payload.operation !== "unsync")
   )
     return false;
@@ -162,7 +162,9 @@ export class WahooSyncJobService {
         jobTypes: [
           WAHOO_DISCONNECT_JOB,
           WAHOO_PROFILE_ENRICHMENT_JOB,
-          ...(plannedActivityDrainEnabled ? [WAHOO_PUBLISH_EVENT_JOB, WAHOO_UNSYNC_EVENT_JOB] : []),
+          ...(plannedActivityDrainEnabled
+            ? [WAHOO_PUBLISH_PLANNED_SESSION_JOB, WAHOO_UNSYNC_PLANNED_SESSION_JOB]
+            : []),
           ...(this.deps.removeWahooStagingObject ? [WAHOO_STAGING_CLEANUP_JOB] : []),
         ],
         limit: capacity,
@@ -178,7 +180,7 @@ export class WahooSyncJobService {
           this.deps.providerSyncRepository.getQueueTelemetry?.({
             jobTypes: [
               ...(plannedActivityDrainEnabled
-                ? [WAHOO_PUBLISH_EVENT_JOB, WAHOO_UNSYNC_EVENT_JOB]
+                ? [WAHOO_PUBLISH_PLANNED_SESSION_JOB, WAHOO_UNSYNC_PLANNED_SESSION_JOB]
                 : []),
               ...(this.deps.removeWahooStagingObject ? [WAHOO_STAGING_CLEANUP_JOB] : []),
             ],
@@ -306,15 +308,19 @@ export class WahooSyncJobService {
               return finalized ? (deadLetter ? "dead_lettered" : "failed") : "failed";
             }
           }
-          if (job.jobType === WAHOO_PUBLISH_EVENT_JOB || job.jobType === WAHOO_UNSYNC_EVENT_JOB) {
+          if (
+            job.jobType === WAHOO_PUBLISH_PLANNED_SESSION_JOB ||
+            job.jobType === WAHOO_UNSYNC_PLANNED_SESSION_JOB
+          ) {
             const expectedOperation =
-              job.jobType === WAHOO_PUBLISH_EVENT_JOB ? "publish" : "unsync";
+              job.jobType === WAHOO_PUBLISH_PLANNED_SESSION_JOB ? "publish" : "unsync";
             if (
               !this.deps.syncService ||
               !isWahooJobPayload(job.payload) ||
               job.payload.operation !== expectedOperation ||
               job.operation !== expectedOperation ||
-              job.internalResourceId !== job.payload.eventId
+              job.internalResourceId !== job.payload.plannedSessionId ||
+              job.resourceKind !== "planned_session"
             ) {
               const finalized = await this.deps.providerSyncRepository.markJobFailed({
                 id: job.id,
@@ -342,41 +348,45 @@ export class WahooSyncJobService {
               const payload = job.payload;
               const result =
                 payload.operation === "publish"
-                  ? await this.deps.syncService.syncEvent(payload.eventId, job.profileId, {
-                      performanceModelAsOf: payload.performanceModelAsOf,
-                      expectedProjectionHash: payload.projectionHash,
-                      expectedStartsAt: payload.startsAt,
-                      expectedTimezone: payload.timezone,
-                      expectedIntegrationGeneration: generation,
-                      integrationId: job.integrationId,
-                      queuedProjectionSnapshot: payload.projectionSnapshot,
-                      signal: context.signal,
-                      updateDesiredProjection: async (latest) => {
-                        const desiredPayload = {
-                          eventId: payload.eventId,
-                          operation: "publish" as const,
-                          projectionHash: latest.projectionHash,
-                          projectionSnapshot: latest.projectionSnapshot,
-                          startsAt: payload.startsAt,
-                          timezone: payload.timezone,
-                        };
-                        return this.deps.providerSyncRepository.updateRunningJobDesiredState({
-                          expectedIntegrationGeneration: generation,
-                          id: job.id,
-                          integrationId: job.integrationId,
-                          payload: {
-                            performanceModelAsOf: latest.performanceModelAsOf,
-                            ...desiredPayload,
-                          },
-                          payloadHash: hashPlannedActivityPayload(desiredPayload),
-                          profileId: job.profileId,
-                          provider: "wahoo",
-                          workerId,
-                        });
+                  ? await this.deps.syncService.syncPlannedSession(
+                      payload.plannedSessionId,
+                      job.profileId,
+                      {
+                        performanceModelAsOf: payload.performanceModelAsOf,
+                        expectedProjectionHash: payload.projectionHash,
+                        expectedStartsAt: payload.startsAt,
+                        expectedTimezone: payload.timezone,
+                        expectedIntegrationGeneration: generation,
+                        integrationId: job.integrationId,
+                        queuedProjectionSnapshot: payload.projectionSnapshot,
+                        signal: context.signal,
+                        updateDesiredProjection: async (latest) => {
+                          const desiredPayload = {
+                            plannedSessionId: payload.plannedSessionId,
+                            operation: "publish" as const,
+                            projectionHash: latest.projectionHash,
+                            projectionSnapshot: latest.projectionSnapshot,
+                            startsAt: payload.startsAt,
+                            timezone: payload.timezone,
+                          };
+                          return this.deps.providerSyncRepository.updateRunningJobDesiredState({
+                            expectedIntegrationGeneration: generation,
+                            id: job.id,
+                            integrationId: job.integrationId,
+                            payload: {
+                              performanceModelAsOf: latest.performanceModelAsOf,
+                              ...desiredPayload,
+                            },
+                            payloadHash: hashPlannedActivityPayload(desiredPayload),
+                            profileId: job.profileId,
+                            provider: "wahoo",
+                            workerId,
+                          });
+                        },
                       },
-                    })
-                  : await this.deps.syncService.unsyncEvent(
-                      payload.eventId,
+                    )
+                  : await this.deps.syncService.unsyncPlannedSession(
+                      payload.plannedSessionId,
                       job.profileId,
                       payload.unsyncTarget,
                       {

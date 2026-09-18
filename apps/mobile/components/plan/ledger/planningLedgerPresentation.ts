@@ -1,7 +1,7 @@
 import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import type { PlanningLedger } from "@repo/core";
 
-export type TrainingComposition =
+export type MobileTrainingComposition =
   inferRouterOutputs<AppRouter>["trainingPlans"]["getPlanningLedger"]["trainingComposition"];
 
 type MetricValue = PlanningLedger["load"]["completed"];
@@ -281,7 +281,7 @@ function categoryTitle(category: string) {
 }
 
 export function buildDurationCompositionPresentation(
-  composition?: TrainingComposition | null,
+  composition?: MobileTrainingComposition | null,
 ): DurationCompositionPresentation {
   if (!composition) {
     return {
@@ -391,7 +391,7 @@ function sourceWindow(
 
 export function buildPlanningLedgerPresentation(
   ledger: PlanningLedger,
-  trainingComposition?: TrainingComposition | null,
+  trainingComposition?: MobileTrainingComposition | null,
 ): PlanningLedgerPresentation {
   const completed = metricNumber(ledger.load.completed);
   const planned = metricNumber(ledger.load.planned);

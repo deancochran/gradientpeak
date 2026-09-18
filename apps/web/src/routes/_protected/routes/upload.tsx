@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { createFileRoute } from "@tanstack/react-router";
+import { useRef } from "react";
 import { toast } from "sonner";
 import { RouteUploadForm } from "../../../components/protected/route-upload-form";
 import { useAuth } from "../../../components/providers/auth-provider";
@@ -13,6 +14,8 @@ function RouteUploadPage() {
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
   const { user } = useAuth();
+  const currentUser = useRef(user?.id);
+  currentUser.current = user?.id;
   const uploadMutation = api.routes.upload.useMutation();
 
   return (
@@ -34,6 +37,7 @@ function RouteUploadPage() {
         <CardContent>
           {user?.id ? (
             <RouteUploadForm
+              key={user.id}
               idempotencyScope={user.id}
               onCancel={() =>
                 void navigate({
@@ -59,10 +63,12 @@ function RouteUploadPage() {
                   name: values.name,
                 })
               }
-              onSuccess={(route) => {
-                void utils.routes.invalidate();
+              onSuccess={async (route) => {
+                if (currentUser.current !== user.id) return;
+                await Promise.allSettled([Promise.resolve().then(() => utils.routes.invalidate())]);
+                if (currentUser.current !== user.id) return;
                 toast.success("Route uploaded");
-                void navigate({ to: "/routes/$routeId", params: { routeId: route.id } });
+                await navigate({ to: "/routes/$routeId", params: { routeId: route.id } });
               }}
               onSubmitError={() => toast.error("Route upload failed")}
             />

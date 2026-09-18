@@ -216,11 +216,17 @@ export function scoreTargetSatisfaction(input: {
       const effectiveTarget = resolveEffectiveScoringTarget({
         rawTarget: input.target.target_time_s,
         targetType: input.target.target_type,
-        surplusPreference: input.projection.target_surplus_preference,
+        ...(input.projection.target_surplus_preference === undefined
+          ? {}
+          : { surplusPreference: input.projection.target_surplus_preference }),
         readinessConfidence,
         feasibilityConfidence: planFeasibilityConfidence,
-        weeksToGoal: input.projection.weeks_to_goal,
-        limiterShare: input.projection.limiter_share,
+        ...(input.projection.weeks_to_goal === undefined
+          ? {}
+          : { weeksToGoal: input.projection.weeks_to_goal }),
+        ...(input.projection.limiter_share === undefined
+          ? {}
+          : { limiterShare: input.projection.limiter_share }),
       });
       const projectionInferred = input.projection.projected_race_time_s === undefined;
       const projected =
@@ -245,12 +251,13 @@ export function scoreTargetSatisfaction(input: {
           resolveProjectionInferencePenalty({ projectionInferred, readinessConfidence }),
       );
       const gap = Math.max(0, projected - effectiveTarget.effective_scoring_target);
+      const unmetGap = toUnmetGap(gap);
 
       return {
         kind: "race_performance",
         score_0_100: Math.round(utility * 100),
         target_weight: targetWeight,
-        unmet_gap: toUnmetGap(gap),
+        ...(unmetGap === undefined ? {} : { unmet_gap: unmetGap }),
         effective_target: effectiveTarget,
         rationale_codes: [
           "distribution_attainment_utility",
@@ -266,11 +273,17 @@ export function scoreTargetSatisfaction(input: {
       const effectiveTarget = resolveEffectiveScoringTarget({
         rawTarget: input.target.target_speed_mps,
         targetType: input.target.target_type,
-        surplusPreference: input.projection.target_surplus_preference,
+        ...(input.projection.target_surplus_preference === undefined
+          ? {}
+          : { surplusPreference: input.projection.target_surplus_preference }),
         readinessConfidence,
         feasibilityConfidence: planFeasibilityConfidence,
-        weeksToGoal: input.projection.weeks_to_goal,
-        limiterShare: input.projection.limiter_share,
+        ...(input.projection.weeks_to_goal === undefined
+          ? {}
+          : { weeksToGoal: input.projection.weeks_to_goal }),
+        ...(input.projection.limiter_share === undefined
+          ? {}
+          : { limiterShare: input.projection.limiter_share }),
       });
       const projectionInferred = input.projection.projected_speed_mps === undefined;
       const projected =
@@ -294,12 +307,13 @@ export function scoreTargetSatisfaction(input: {
           resolveProjectionInferencePenalty({ projectionInferred, readinessConfidence }),
       );
       const gap = Math.max(0, effectiveTarget.effective_scoring_target - projected);
+      const unmetGap = toUnmetGap(gap);
 
       return {
         kind: "pace_threshold",
         score_0_100: Math.round(utility * 100),
         target_weight: targetWeight,
-        unmet_gap: toUnmetGap(gap),
+        ...(unmetGap === undefined ? {} : { unmet_gap: unmetGap }),
         effective_target: effectiveTarget,
         rationale_codes: [
           "distribution_attainment_utility",
@@ -315,11 +329,17 @@ export function scoreTargetSatisfaction(input: {
       const effectiveTarget = resolveEffectiveScoringTarget({
         rawTarget: input.target.target_watts,
         targetType: input.target.target_type,
-        surplusPreference: input.projection.target_surplus_preference,
+        ...(input.projection.target_surplus_preference === undefined
+          ? {}
+          : { surplusPreference: input.projection.target_surplus_preference }),
         readinessConfidence,
         feasibilityConfidence: planFeasibilityConfidence,
-        weeksToGoal: input.projection.weeks_to_goal,
-        limiterShare: input.projection.limiter_share,
+        ...(input.projection.weeks_to_goal === undefined
+          ? {}
+          : { weeksToGoal: input.projection.weeks_to_goal }),
+        ...(input.projection.limiter_share === undefined
+          ? {}
+          : { limiterShare: input.projection.limiter_share }),
       });
       const projectionInferred = input.projection.projected_power_watts === undefined;
       const projected =
@@ -343,12 +363,13 @@ export function scoreTargetSatisfaction(input: {
           resolveProjectionInferencePenalty({ projectionInferred, readinessConfidence }),
       );
       const gap = Math.max(0, effectiveTarget.effective_scoring_target - projected);
+      const unmetGap = toUnmetGap(gap);
 
       return {
         kind: "power_threshold",
         score_0_100: Math.round(utility * 100),
         target_weight: targetWeight,
-        unmet_gap: toUnmetGap(gap),
+        ...(unmetGap === undefined ? {} : { unmet_gap: unmetGap }),
         effective_target: effectiveTarget,
         rationale_codes: [
           "distribution_attainment_utility",
@@ -364,11 +385,17 @@ export function scoreTargetSatisfaction(input: {
       const effectiveTarget = resolveEffectiveScoringTarget({
         rawTarget: input.target.target_lthr_bpm,
         targetType: input.target.target_type,
-        surplusPreference: input.projection.target_surplus_preference,
+        ...(input.projection.target_surplus_preference === undefined
+          ? {}
+          : { surplusPreference: input.projection.target_surplus_preference }),
         readinessConfidence,
         feasibilityConfidence: planFeasibilityConfidence,
-        weeksToGoal: input.projection.weeks_to_goal,
-        limiterShare: input.projection.limiter_share,
+        ...(input.projection.weeks_to_goal === undefined
+          ? {}
+          : { weeksToGoal: input.projection.weeks_to_goal }),
+        ...(input.projection.limiter_share === undefined
+          ? {}
+          : { limiterShare: input.projection.limiter_share }),
       });
       const projectionInferred = input.projection.projected_lthr_bpm === undefined;
       const projected =
@@ -391,12 +418,13 @@ export function scoreTargetSatisfaction(input: {
           resolveProjectionInferencePenalty({ projectionInferred, readinessConfidence }),
       );
       const gap = Math.max(0, effectiveTarget.effective_scoring_target - projected);
+      const unmetGap = toUnmetGap(gap);
 
       return {
         kind: "hr_threshold",
         score_0_100: Math.round(utility * 100),
         target_weight: targetWeight,
-        unmet_gap: toUnmetGap(gap),
+        ...(unmetGap === undefined ? {} : { unmet_gap: unmetGap }),
         effective_target: effectiveTarget,
         rationale_codes: [
           "distribution_attainment_utility",

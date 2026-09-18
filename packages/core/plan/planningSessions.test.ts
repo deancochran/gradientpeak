@@ -53,6 +53,14 @@ function targets(
   });
 }
 
+const runDemand = {
+  activity_category: "run" as const,
+  training_intent: "aerobic_base" as const,
+  target_duration_minutes: 60,
+  target_common_load: 50,
+  importance: "normal" as const,
+};
+
 describe("planningSessions", () => {
   it("derives athlete-context estimates for assigned planned sessions", () => {
     const asOf = "2026-07-12T12:00:00.000Z";
@@ -74,7 +82,9 @@ describe("planningSessions", () => {
     });
     const session = plannedTrainingSessionSchema.parse({
       localId: "session-1",
+      id: "11111111-1111-4111-8111-111111111110",
       offsetDays: 0,
+      demand: runDemand,
       activityPlan: {
         id: "11111111-1111-4111-8111-111111111111",
         name: "5K tempo",
@@ -160,7 +170,9 @@ describe("planningSessions", () => {
     });
     const session = plannedTrainingSessionSchema.parse({
       localId: "session-open",
+      id: "11111111-1111-4111-8111-111111111111",
       offsetDays: 0,
+      demand: runDemand,
       activityPlan: {
         id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         name: "Open session",
@@ -288,7 +300,14 @@ describe("planningSessions", () => {
     });
     const session = plannedTrainingSessionSchema.parse({
       localId: "assigned-session",
+      id: "11111111-1111-4111-8111-111111111112",
       offsetDays: 0,
+      demand: {
+        ...runDemand,
+        activity_category: "bike",
+        training_intent: "threshold_development",
+        importance: "key",
+      },
       activityPlan: {
         id: plan.id,
         name: "Assigned bike",
@@ -319,7 +338,13 @@ describe("planningSessions", () => {
     });
     const session = plannedTrainingSessionSchema.parse({
       localId: "session-bike",
+      id: "11111111-1111-4111-8111-111111111113",
       offsetDays: 0,
+      demand: {
+        ...runDemand,
+        activity_category: "bike",
+        training_intent: "aerobic_base",
+      },
       activityPlan: {
         id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
         name: "Bike",

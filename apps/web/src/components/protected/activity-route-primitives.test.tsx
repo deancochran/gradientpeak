@@ -166,19 +166,51 @@ describe("resource card selectors", () => {
         <RouteListCard
           onOpen={() => undefined}
           route={{
+            created_at: "2026-07-17T10:00:00.000Z",
+            updated_at: "2026-07-17T10:00:00.000Z",
+            description: null,
             id: "route-1",
             name: "Ridge loop",
-            created_at: "2026-07-17T10:00:00.000Z",
+            profile_id: null,
+            file_path: "routes/ridge-loop.gpx",
+            storage_state: "ready",
+            total_distance: 1_000,
+            total_ascent: null,
+            total_descent: null,
+            elevation_polyline: null,
+            polyline: "encoded-polyline",
+            is_system_template: false,
+            is_public: false,
+            likes_count: 0,
+            has_liked: false,
           }}
         />
         <ActivityEffortListCard
           effort={{
             id: "effort-1",
+            created_at: new Date("2026-07-17T10:00:00.000Z"),
+            profile_id: "profile-1",
+            activity_id: "activity-1",
+            segment_id: "segment-1",
             activity_category: "run",
-            effort_type: "threshold",
-            recorded_at: "2026-07-17T10:00:00.000Z",
+            effort_type: "power",
+            source_series: "power",
+            recorded_at: new Date("2026-07-17T10:00:00.000Z"),
+            duration_seconds: 300,
+            distance_meters: null,
+            source_artifact_id: "artifact-1",
+            source_revision: 1,
+            start_offset_ms: 0,
+            end_offset_ms: 300_000,
+            window_coverage: 1,
+            max_gap_seconds: 0,
             value: 300,
-            unit: "seconds",
+            unit: "watts",
+            source: "derived",
+            method: "activity_file_best_effort",
+            calculation_version: "best-effort-extraction-v1",
+            quality_score: null,
+            provenance: {},
           }}
           onOpen={() => undefined}
         />

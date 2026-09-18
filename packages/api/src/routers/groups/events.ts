@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { activityPlanDocumentSchema, materializeRecurrenceOccurrences } from "@repo/core";
+import { activityPlanStructureSchema, materializeRecurrenceOccurrences } from "@repo/core";
 import {
   createOneOffGroupEventInputSchema,
   createRecurringEventSeriesInputSchema,
@@ -210,7 +210,7 @@ async function assertActivityPlansAvailableForGroupEvent(
     });
   }
 
-  if (!activityPlanDocumentSchema.safeParse(row.structure).success) {
+  if (!activityPlanStructureSchema.safeParse(row.structure).success) {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message:

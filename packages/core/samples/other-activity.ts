@@ -26,30 +26,35 @@ export const YOGA_FLOW: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Centering & Breath",
+      purpose: "warmup",
       duration: Duration.minutes(10),
       targets: [Target.maxHR(50)],
       notes: "Focus on breathing, gentle movements to center yourself",
     })
     .step({
       name: "Sun Salutations",
+      purpose: "technique",
       duration: Duration.minutes(20),
       targets: [Target.maxHR(60)],
       notes: "5-8 rounds of sun salutation A and B, link breath with movement",
     })
     .step({
       name: "Standing Poses",
+      purpose: "technique",
       duration: Duration.minutes(15),
       targets: [Target.maxHR(55)],
       notes: "Warrior poses, triangle, tree pose - hold for 5-8 breaths each",
     })
     .step({
       name: "Floor Sequence",
+      purpose: "technique",
       duration: Duration.minutes(10),
       targets: [Target.maxHR(45)],
       notes: "Hip openers, twists, gentle backbends",
     })
     .step({
       name: "Relaxation",
+      purpose: "cooldown",
       duration: Duration.minutes(5),
       targets: [Target.maxHR(40)],
       notes: "Complete stillness, body scan, deep relaxation",
@@ -70,12 +75,14 @@ export const ROCK_CLIMBING_SESSION: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Dynamic Warm-up",
+      purpose: "warmup",
       duration: Duration.minutes(15),
       targets: [Target.maxHR(60)],
       notes: "Arm circles, finger/wrist mobility, easy traversing or easy routes",
     })
     .step({
       name: "Easy Routes",
+      purpose: "warmup",
       duration: Duration.minutes(20),
       targets: [Target.maxHR(65)],
       notes: "Climb 3-5 easy routes to get movement patterns flowing",
@@ -85,12 +92,14 @@ export const ROCK_CLIMBING_SESSION: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Challenging Route",
+          purpose: "work",
           duration: Duration.minutes(5),
           targets: [Target.maxHR(80)],
           notes: "Project routes, work specific moves, push your grade",
         },
         {
           name: "Rest & Recovery",
+          purpose: "recovery",
           duration: Duration.minutes(3),
           targets: [Target.maxHR(55)],
           notes: "Complete rest, hydrate, chalk up, visualize next attempt",
@@ -99,12 +108,14 @@ export const ROCK_CLIMBING_SESSION: RecordingServiceActivityPlan = {
     })
     .step({
       name: "Volume Climbing",
+      purpose: "work",
       duration: Duration.minutes(15),
       targets: [Target.maxHR(70)],
       notes: "Climb continuously on moderate routes for endurance",
     })
     .step({
       name: "Cool-down & Stretch",
+      purpose: "cooldown",
       duration: Duration.minutes(10),
       targets: [Target.maxHR(50)],
       notes: "Easy traversing, forearm stretches, shoulder mobility",
@@ -125,24 +136,28 @@ export const HIKING_ADVENTURE: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Trail Approach",
+      purpose: "work",
       duration: Duration.minutes(30),
       targets: [Target.maxHR(65)],
       notes: "Steady pace on relatively flat or gently rolling terrain",
     })
     .step({
       name: "Uphill Section",
+      purpose: "work",
       duration: Duration.minutes(40),
       targets: [Target.maxHR(75)],
       notes: "Steady uphill hiking, adjust pace to maintain breathing rhythm",
     })
     .step({
       name: "Summit Break",
+      purpose: "recovery",
       duration: Duration.minutes(10),
       targets: [Target.maxHR(50)],
       notes: "Hydrate, fuel, take photos, enjoy the accomplishment",
     })
     .step({
       name: "Trail Descent",
+      purpose: "work",
       duration: Duration.minutes(40),
       targets: [Target.maxHR(60)],
       notes: "Control pace on downhill, focus on foot placement and knee impact",
@@ -163,24 +178,28 @@ export const CROSSFIT_WOD: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "General Warm-up",
+      purpose: "warmup",
       duration: Duration.minutes(10),
       targets: [Target.maxHR(65)],
       notes: "Row/bike, dynamic stretching, movement prep",
     })
     .step({
       name: "Specific Warm-up",
+      purpose: "warmup",
       duration: Duration.minutes(10),
       targets: [Target.maxHR(70)],
       notes: "Practice WOD movements at light weight/modified versions",
     })
     .step({
       name: "Main WOD",
+      purpose: "work",
       duration: Duration.minutes(15),
       targets: [Target.maxHR(88)],
       notes: "AMRAP, EMOM, or time-based activity - push hard but maintain form",
     })
     .step({
       name: "Cool-down & Mobility",
+      purpose: "cooldown",
       duration: Duration.minutes(10),
       targets: [Target.maxHR(50)],
       notes: "Easy movement, static stretching, foam rolling",
@@ -201,18 +220,21 @@ export const WALKING_RECOVERY: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Easy Start",
+      purpose: "warmup",
       duration: Duration.minutes(15),
       targets: [Target.maxHR(55)],
       notes: "Very comfortable walking pace, focus on posture and breathing",
     })
     .step({
       name: "Steady Walk",
+      purpose: "recovery",
       duration: Duration.minutes(20),
       targets: [Target.maxHR(60)],
       notes: "Slightly brisker pace but still conversational",
     })
     .step({
       name: "Easy Finish",
+      purpose: "cooldown",
       duration: Duration.minutes(10),
       targets: [Target.maxHR(55)],
       notes: "Return to gentle pace, enjoy the surroundings",
@@ -232,8 +254,18 @@ export const OTHER_THRESHOLD_ROW: RecordingServiceActivityPlan = {
       name: "Threshold Repeats",
       repeat: 4,
       steps: [
-        { name: "Threshold Row", duration: Duration.minutes(8), targets: [Target.rpe(8)] },
-        { name: "Easy Row", duration: Duration.minutes(3), targets: [Target.rpe(2)] },
+        {
+          name: "Threshold Row",
+          purpose: "work",
+          duration: Duration.minutes(8),
+          targets: [Target.rpe(8)],
+        },
+        {
+          name: "Easy Row",
+          purpose: "recovery",
+          duration: Duration.minutes(3),
+          targets: [Target.rpe(2)],
+        },
       ],
     })
     .cooldown({ duration: Duration.minutes(10), targets: [Target.rpe(2)] })
@@ -250,6 +282,7 @@ export const OTHER_LONG_ENDURANCE_ELLIPTICAL: RecordingServiceActivityPlan = {
     .warmup({ duration: Duration.minutes(10), targets: [Target.rpe(2)] })
     .step({
       name: "Steady Endurance",
+      purpose: "work",
       duration: Duration.minutes(100),
       targets: [Target.rpe(4)],
       notes: "Maintain smooth, sustainable pressure and relaxed upper-body posture.",
@@ -269,12 +302,14 @@ export const OTHER_RACE_SIMULATION: RecordingServiceActivityPlan = {
     .warmup({ duration: Duration.minutes(12), targets: [Target.rpe(3)] })
     .step({
       name: "Race Simulation",
+      purpose: "work",
       duration: Duration.minutes(36),
       targets: [Target.rpe(7)],
       notes: "Sustain event-specific pacing and practice planned transitions or fueling.",
     })
     .step({
       name: "Finishing Effort",
+      purpose: "work",
       duration: Duration.minutes(8),
       targets: [Target.rpe(8)],
       notes: "Finish strongly while preserving movement quality.",

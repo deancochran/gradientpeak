@@ -1,4 +1,5 @@
 import { PLAN_ANALYSIS_WINDOW_PERIODS, type PlanAnalysisWindowPeriod } from "@repo/core";
+import { Button } from "@repo/ui/components/button";
 import { Tabs, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -99,12 +100,31 @@ function PlanAnalysisContent({
   usePerformanceScreenReady("route-plan-analysis");
   const progressQuery = api.athleteIntelligence.getGoalProgress.useQuery(
     { goalId },
-    { enabled: true },
+    { enabled: trainingPath.planningTimezoneState === "ready" },
   );
   const thresholdQuery = api.athleteIntelligence.getThresholdOverview.useQuery(
     { historyLimit: 100 },
-    { enabled: view === "progress" },
+    { enabled: view === "progress" && trainingPath.planningTimezoneState === "ready" },
   );
+  if (trainingPath.planningTimezoneState !== "ready") {
+    return (
+      <View className="flex-1 gap-3 bg-background p-4" testID="plan-analysis-initializing">
+        {trainingPath.timezoneSetupError ? (
+          <>
+            <Text accessibilityRole="alert">{trainingPath.timezoneSetupError}</Text>
+            <Button
+              onPress={() => void trainingPath.retryTimezoneInitialization()}
+              disabled={trainingPath.timezoneInitializing}
+            >
+              <Text>Retry</Text>
+            </Button>
+          </>
+        ) : (
+          <Text>Preparing your plan…</Text>
+        )}
+      </View>
+    );
+  }
   const progress = progressQuery.data?.result;
   const progressEvidence = mergeGoalProgressThresholdEvidence(
     thresholdQuery.data?.history.items ?? [],

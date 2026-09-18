@@ -8,6 +8,7 @@ export async function linkPlannedSessionCompletion(input: {
   sessionId: string;
   expectedRevision: number;
   activityId: string;
+  outcome?: "full" | "partial";
   linkedAt: string;
 }) {
   const mutation = plannedSessionMutationSchema.parse({
@@ -16,6 +17,7 @@ export async function linkPlannedSessionCompletion(input: {
     sessionId: input.sessionId,
     expectedRevision: input.expectedRevision,
     activityId: input.activityId,
+    outcome: input.outcome ?? "full",
     linkedAt: input.linkedAt,
   });
   return requireUpdatedPlannedSession(await input.repository.mutateOwned(mutation));

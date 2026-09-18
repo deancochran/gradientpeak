@@ -6,7 +6,7 @@ const transaction = { kind: "transaction" };
 
 const mocks = vi.hoisted(() => ({
   enqueueJobInTransaction: vi.fn(),
-  enqueueWahooPlannedActivitySyncAfterCalendarMutation: vi.fn(),
+  enqueueWahooPlannedSessionSyncAfterMutation: vi.fn(),
   refreshSetupDataInTransaction: vi.fn(),
   withOpenIntegrationManagementTransaction: vi.fn(),
 }));
@@ -27,8 +27,7 @@ vi.mock("../wahoo-profile-setup-service", () => ({
   },
 }));
 vi.mock("../../lib/provider-sync/planned-activities", () => ({
-  enqueueWahooPlannedActivitySyncAfterCalendarMutation:
-    mocks.enqueueWahooPlannedActivitySyncAfterCalendarMutation,
+  enqueueWahooPlannedSessionSyncAfterMutation: mocks.enqueueWahooPlannedSessionSyncAfterMutation,
 }));
 
 import { syncIntegrationNow } from "./syncNowUseCase";
@@ -86,7 +85,7 @@ describe("syncIntegrationNow", () => {
       status: "queued",
     });
     mocks.enqueueJobInTransaction.mockResolvedValue({ id: "job-id", status: "queued" });
-    mocks.enqueueWahooPlannedActivitySyncAfterCalendarMutation.mockResolvedValue({
+    mocks.enqueueWahooPlannedSessionSyncAfterMutation.mockResolvedValue({
       affectedCount: 1,
       operation: "publish",
       queued: true,
@@ -145,9 +144,9 @@ describe("syncIntegrationNow", () => {
       transaction,
       expect.objectContaining({ jobType: "wahoo.activity_history_reconcile" }),
     );
-    expect(mocks.enqueueWahooPlannedActivitySyncAfterCalendarMutation).toHaveBeenCalledWith({
+    expect(mocks.enqueueWahooPlannedSessionSyncAfterMutation).toHaveBeenCalledWith({
       db,
-      eventIds: ["event-1"],
+      plannedSessionIds: ["event-1"],
       operation: "publish",
       profileId: PROFILE_ID,
       transaction,

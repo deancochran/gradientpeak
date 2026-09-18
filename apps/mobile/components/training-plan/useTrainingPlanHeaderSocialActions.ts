@@ -1,17 +1,18 @@
+import type { AppRouter } from "@repo/api/client";
 import { invalidateTrainingPlanQueries } from "@repo/api/react";
 import { type ContentVisibility, formatDateOnlyInTimeZone } from "@repo/core";
-import { trainingPlanSchema } from "@repo/core/schemas";
+import type { inferRouterInputs } from "@trpc/server";
+import { randomUUID } from "expo-crypto";
 import type { ImperativeRouter } from "expo-router";
 import { Alert, Share } from "react-native";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { getPublicShareUrl } from "@/lib/share/public-share-url";
 
-const VISIBILITY_LABELS: Record<ContentVisibility, string> = {
-  private: "Private",
-  followers: "Followers",
-  public: "Public",
-};
+type TrainingPlanCommitRequest = Extract<
+  inferRouterInputs<AppRouter>["trainingPlans"]["commit"],
+  { kind: "duplicate" }
+>;
 
 function resolvePlanVisibility(
   plan: {
@@ -55,16 +56,7 @@ export function useTrainingPlanHeaderSocialActions({
 }: UseTrainingPlanHeaderSocialActionsParams) {
   const React = require("react") as typeof import("react");
 
-  const [contentVisibility, setContentVisibility] = React.useState<ContentVisibility>(
-    resolvePlanVisibility(plan),
-  );
-  const [visibilityPending, setVisibilityPending] = React.useState(false);
-  const visibilityPendingRef = React.useRef(false);
-  React.useEffect(() => {
-    if (!visibilityPendingRef.current) {
-      setContentVisibility(resolvePlanVisibility(plan));
-    }
-  }, [plan?.content_visibility]);
+  const contentVisibility = resolvePlanVisibility(plan);
 
   const [isLiked, setIsLiked] = React.useState(plan?.has_liked ?? false);
   const [likesCount, setLikesCount] = React.useState(plan?.likes_count ?? 0);
@@ -75,6 +67,7 @@ export function useTrainingPlanHeaderSocialActions({
   }, [plan?.has_liked, plan?.likes_count]);
 
   const commitPlanMutation = api.trainingPlans.commit.useMutation();
+  const retainedCommitRequestRef = React.useRef<TrainingPlanCommitRequest | null>(null);
 
   const toggleLikeMutation = api.social.toggleLike.useMutation({
     onError: () => {
@@ -83,87 +76,12 @@ export function useTrainingPlanHeaderSocialActions({
     },
   });
 
-  const handleChangeVisibility = () => {
-    if (!plan || visibilityPendingRef.current) return;
-    const commitVisibility = async (visibility: ContentVisibility) => {
-      if (visibilityPendingRef.current) return;
-      visibilityPendingRef.current = true;
-      setVisibilityPending(true);
-      try {
-        const profile = await utils.profiles.get.fetch();
-        const state = await utils.athleteIntelligence.getReadModel.fetch({
-          profileId: profile.id,
-          sections: { status: true },
-        });
-        const parsed = trainingPlanSchema.parse(plan.structure);
-        if (state.publishedRevision === null || !plan.editor)
-          throw new Error("Refresh the plan and athlete state before saving.");
-        const { id: _planId, ...structure } = parsed;
-        const result = await commitPlanMutation.mutateAsync({
-          kind: "update",
-          basePublishedRevision: state.publishedRevision,
-          draft: {
-            planId: plan.id,
-            expectedRevision: plan.editor.revision,
-            expectedStructureHash: plan.editor.structureHash,
-            name: plan.name ?? "Training plan",
-            description: plan.description ?? null,
-            contentVisibility: visibility,
-            structure,
-            previewStartDate: formatDateOnlyInTimeZone(
-              new Date(),
-              profile.planning_timezone ?? "UTC",
-            ),
-          },
-        });
-        if (result.status !== "saved") throw new Error("The plan changed. Refresh and retry.");
-        await invalidateTrainingPlanQueries(utils);
-        setContentVisibility(visibility);
-      } catch (error) {
-        setContentVisibility(resolvePlanVisibility(plan));
-        Alert.alert(
-          "Update Failed",
-          error instanceof Error ? error.message : "Failed to update visibility",
-        );
-      } finally {
-        visibilityPendingRef.current = false;
-        setVisibilityPending(false);
-      }
-    };
-    Alert.alert(
-      "Change visibility",
-      `Current visibility is ${VISIBILITY_LABELS[contentVisibility]}.`,
-      [
-        {
-          text: "Private",
-          onPress: () => void commitVisibility("private"),
-        },
-        {
-          text: "Followers",
-          onPress: () => void commitVisibility("followers"),
-        },
-        {
-          text: "Public",
-          onPress: () => void commitVisibility("public"),
-        },
-        { text: "Cancel", style: "cancel" },
-      ],
-    );
-  };
-
   const handleShare = async () => {
     if (!plan?.id) return;
-    if (visibilityPendingRef.current) {
-      Alert.alert(
-        "Updating visibility",
-        "Wait for the visibility update to finish before sharing.",
-      );
-      return;
-    }
     if (contentVisibility !== "public") {
       Alert.alert(
         "Not public",
-        "Only public training plans have a share link. Change visibility to Public first.",
+        "Only public training plans have a share link. Use Edit plan to set visibility to Public.",
       );
       return;
     }
@@ -201,29 +119,54 @@ export function useTrainingPlanHeaderSocialActions({
       return;
     }
     try {
+      const retainedCommitRequest = retainedCommitRequestRef.current;
+      if (retainedCommitRequest) {
+        const result = await commitPlanMutation.mutateAsync(retainedCommitRequest);
+        if (result.status === "operation_conflict") {
+          retainedCommitRequestRef.current = null;
+          throw new Error("This duplicate conflicts with another operation. Review and retry.");
+        }
+        if (result.status !== "saved") {
+          retainedCommitRequestRef.current = null;
+          throw new Error("The plan or athlete state changed. Refresh and retry.");
+        }
+        retainedCommitRequestRef.current = null;
+        await invalidateTrainingPlanQueries(utils);
+        Alert.alert("Duplicated", "Training plan added to your plans.", [
+          {
+            text: "Open",
+            onPress: () => router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(result.planId)),
+          },
+        ]);
+        return;
+      }
       const profile = await utils.profiles.get.fetch();
       if (!profile?.id) throw new Error("Refresh your profile before duplicating.");
-      const state = await utils.athleteIntelligence.getReadModel.fetch({
-        profileId: profile.id,
-        sections: { status: true },
-      });
-      if (state.publishedRevision === null) {
-        throw new Error("Refresh athlete state before duplicating this plan.");
-      }
-      const result = await commitPlanMutation.mutateAsync({
+      const draft = {
+        sourcePlanId: plan.id,
+        name: `${plan.name} (Copy)`,
+        previewStartDate: formatDateOnlyInTimeZone(new Date(), profile.planning_timezone ?? "UTC"),
+      };
+      const preview = await utils.trainingPlans.preview.fetch({ kind: "duplicate", draft });
+      if (preview.status !== "available") throw new Error("Refresh the plan before duplicating.");
+      const commitRequest = {
         kind: "duplicate",
-        basePublishedRevision: state.publishedRevision,
-        draft: {
-          sourcePlanId: plan.id,
-          name: `${plan.name} (Copy)`,
-          previewStartDate: formatDateOnlyInTimeZone(
-            new Date(),
-            profile.planning_timezone ?? "UTC",
-          ),
-        },
-      });
-      if (result.status !== "saved")
+        operationId: randomUUID(),
+        basePublishedRevision: preview.basePublishedRevision,
+        previewFingerprint: preview.previewFingerprint,
+        draft,
+      } satisfies TrainingPlanCommitRequest;
+      retainedCommitRequestRef.current = commitRequest;
+      const result = await commitPlanMutation.mutateAsync(commitRequest);
+      if (result.status === "operation_conflict") {
+        retainedCommitRequestRef.current = null;
+        throw new Error("This duplicate conflicts with another operation. Review and retry.");
+      }
+      if (result.status !== "saved") {
+        retainedCommitRequestRef.current = null;
         throw new Error("The plan or athlete state changed. Refresh and retry.");
+      }
+      retainedCommitRequestRef.current = null;
       await invalidateTrainingPlanQueries(utils);
       Alert.alert("Duplicated", "Training plan added to your plans.", [
         {
@@ -243,11 +186,9 @@ export function useTrainingPlanHeaderSocialActions({
     duplicatePending: commitPlanMutation.isPending,
     contentVisibility,
     handleDuplicate,
-    handleChangeVisibility,
     handleShare,
     handleToggleLike,
     isLiked,
     likesCount,
-    visibilityPending,
   };
 }

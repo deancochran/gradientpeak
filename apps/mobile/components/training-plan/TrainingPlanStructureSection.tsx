@@ -1,17 +1,13 @@
-import type { ActivityPlanSummary } from "@repo/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import type React from "react";
-import { ScrollView, TouchableOpacity, View } from "react-native";
-import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
-import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
+import { View } from "react-native";
 
 type StructureSessionRow = {
   key: string;
   title: string;
   activityPlanId: string | null;
   dayOffset: number;
-  sourcePath: Array<string | number>;
 };
 
 type GroupedMicrocycleSessions = {
@@ -23,47 +19,25 @@ type GroupedMicrocycleSessions = {
 };
 
 interface TrainingPlanStructureSectionProps {
-  activityPlanItems: ActivityPlanSummary[];
   activityPlanNameById: Map<string, string>;
   formatCompactDayLabel: (dayOffset: number) => string;
   groupedStructureSessions: GroupedMicrocycleSessions[];
   embedded?: boolean;
   hideMicrocycleHeaders?: boolean;
-  isLoadingActivityPlans: boolean;
-  isOwnedByUser: boolean;
-  onActivityPickerOpenChange: (open: boolean) => void;
-  onOpenActivityPickerForSession: (session: StructureSessionRow) => void;
-  onRefreshActivityPlans: () => void;
-  onRemoveActivityFromSession: (session: StructureSessionRow) => void;
   renderSessionActivityContent?: (session: StructureSessionRow) => React.ReactNode;
-  onSelectActivityForSession: (activityPlan: ActivityPlanSummary) => void;
-  selectedSessionRow: StructureSessionRow | null;
-  showActivityPicker: boolean;
   title?: string;
   description?: string;
-  updatePlanStructurePending: boolean;
 }
 
 export function TrainingPlanStructureSection({
-  activityPlanItems,
   activityPlanNameById,
   description,
   embedded = false,
   formatCompactDayLabel,
   groupedStructureSessions,
   hideMicrocycleHeaders = false,
-  isLoadingActivityPlans,
-  isOwnedByUser,
-  onActivityPickerOpenChange,
-  onOpenActivityPickerForSession,
-  onRefreshActivityPlans,
-  onRemoveActivityFromSession,
   renderSessionActivityContent,
-  onSelectActivityForSession,
-  selectedSessionRow,
-  showActivityPicker,
   title,
-  updatePlanStructurePending,
 }: TrainingPlanStructureSectionProps) {
   const microcycleContainerClassName = embedded
     ? "gap-3"
@@ -140,32 +114,6 @@ export function TrainingPlanStructureSection({
                             </View>
                           </View>
                         )}
-                        <View className="flex-row flex-wrap gap-2">
-                          {isOwnedByUser ? (
-                            <TouchableOpacity
-                              onPress={() => onOpenActivityPickerForSession(session)}
-                              disabled={updatePlanStructurePending}
-                              className="rounded-full border border-border px-2 py-1"
-                              activeOpacity={0.8}
-                            >
-                              <Text className="text-[11px] font-medium text-primary">
-                                {session.activityPlanId ? "Change" : "Add"}
-                              </Text>
-                            </TouchableOpacity>
-                          ) : null}
-                          {isOwnedByUser && session.activityPlanId ? (
-                            <TouchableOpacity
-                              onPress={() => onRemoveActivityFromSession(session)}
-                              disabled={updatePlanStructurePending}
-                              className="rounded-full border border-destructive/30 px-2 py-1"
-                              activeOpacity={0.8}
-                            >
-                              <Text className="text-[11px] font-medium text-destructive">
-                                Remove
-                              </Text>
-                            </TouchableOpacity>
-                          ) : null}
-                        </View>
                       </View>
                     );
                   })}
@@ -193,46 +141,6 @@ export function TrainingPlanStructureSection({
           <CardContent>{sectionContent}</CardContent>
         </Card>
       )}
-
-      {showActivityPicker ? (
-        <AppSelectionModal
-          description={
-            selectedSessionRow
-              ? `Select an activity plan for ${selectedSessionRow.title}.`
-              : "Select an activity plan for this session."
-          }
-          emptyMessage={
-            !isLoadingActivityPlans && activityPlanItems.length === 0
-              ? "You do not have any activity plans yet."
-              : undefined
-          }
-          isLoading={isLoadingActivityPlans}
-          loadingMessage="Loading activity plans..."
-          onClose={() => onActivityPickerOpenChange(false)}
-          onRefresh={onRefreshActivityPlans}
-          refreshDisabled={isLoadingActivityPlans || updatePlanStructurePending}
-          testID="training-plan-activity-picker-modal"
-          title={
-            selectedSessionRow?.activityPlanId ? "Replace activity plan" : "Assign activity plan"
-          }
-        >
-          <ScrollView>
-            <View className="gap-2 py-1">
-              {activityPlanItems.map((activityPlan) => (
-                <ActivityPlanCard
-                  key={activityPlan.id}
-                  {...(!updatePlanStructurePending
-                    ? { onPress: () => void onSelectActivityForSession(activityPlan) }
-                    : {})}
-                  plan={activityPlan}
-                  testID={`training-plan-activity-picker-option-${activityPlan.id}`}
-                  variant="compact"
-                />
-              ))}
-            </View>
-          </ScrollView>
-        </AppSelectionModal>
-      ) : null}
     </>
   );
 }

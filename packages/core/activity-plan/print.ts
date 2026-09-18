@@ -7,6 +7,7 @@ import {
   resolveActivityPlanSessionFlow,
 } from "./session-flow-personalization";
 import type { ActivityPlanDuration } from "./structure-schema";
+import { consolidateActivityPlanText } from "./text-consolidation";
 
 export type ActivityPlanPrintFormat = "full-page" | "swim-deck-card" | "bike-cue-strip";
 export type ActivityPlanBikeCueLength = "short" | "long";
@@ -149,7 +150,7 @@ export function getActivityPlanPrintFormats(
 export function getActivityPlanPrintFormatLabel(format: ActivityPlanPrintFormat): string {
   switch (format) {
     case "full-page":
-      return "Full workout";
+      return "Full activity plan";
     case "swim-deck-card":
       return "Swim deck card";
     case "bike-cue-strip":
@@ -288,8 +289,8 @@ export function buildActivityPlanPrintModel(input: {
           name: labelsMatch(step.name, input.title) ? null : step.name,
           instruction:
             targetLabels.length > 0 ? `${duration} at ${targetLabels.join(" · ")}` : duration,
-          description: step.description ?? null,
-          notes: step.notes ?? null,
+          description: null,
+          notes: consolidateActivityPlanText(step.notes, step.description, "Description"),
         };
       });
       const onlyStepName = steps.length === 1 ? steps[0]?.name : null;
@@ -312,11 +313,11 @@ export function buildActivityPlanPrintModel(input: {
 
   return {
     activityCategory: structure.activity_category,
-    description: input.description?.trim() || null,
+    description: consolidateActivityPlanText(input.description, input.notes, "Notes"),
     format: input.format,
     intensityProfile: buildIntensityProfile(authoredStructure),
     intensityReferences: [...intensityReferences],
-    notes: input.notes?.trim() || null,
+    notes: null,
     sections,
     title: input.title.trim() || "Activity plan",
     totals: printTotals({ distanceMeters, repetitionCount, timeSeconds }),

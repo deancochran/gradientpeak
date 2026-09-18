@@ -1,6 +1,7 @@
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
+import { Text } from "@repo/ui/components/text";
 import { Stack } from "expo-router";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { HeaderTextAction } from "@/components/shared/HeaderAction";
@@ -26,6 +27,14 @@ function TrainingPlansListScreen() {
   >(null);
   const [draftVisibilityFilter, setDraftVisibilityFilter] = useState<typeof visibilityFilter>(null);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
+  const pageFlights = useRef(new Set<string>());
+  const queryKey = JSON.stringify([searchQuery.trim(), visibilityFilter]);
+  const [pageState, setPageState] = useState<{
+    key: string;
+    pending: boolean;
+    error: string | null;
+  } | null>(null);
+  const currentPageState = pageState?.key === queryKey ? pageState : null;
 
   const {
     data,
@@ -55,8 +64,34 @@ function TrainingPlansListScreen() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await refetch();
-    setRefreshing(false);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+  const loadMore = async () => {
+    if (!hasNextPage || isFetchingNextPage || pageFlights.current.has(queryKey)) return;
+    pageFlights.current.add(queryKey);
+    setPageState({ key: queryKey, pending: true, error: null });
+    try {
+      await fetchNextPage();
+    } catch (error) {
+      setPageState((current) =>
+        current?.key === queryKey
+          ? {
+              key: queryKey,
+              pending: false,
+              error:
+                error instanceof Error ? error.message : "Unable to load more plans. Try again.",
+            }
+          : current,
+      );
+      return;
+    } finally {
+      pageFlights.current.delete(queryKey);
+    }
+    setPageState((current) => (current?.key === queryKey ? null : current));
   };
 
   return (
@@ -100,7 +135,7 @@ function TrainingPlansListScreen() {
           </View>
         }
         hasNextPage={hasNextPage}
-        isFetchingNextPage={isFetchingNextPage}
+        isFetchingNextPage={isFetchingNextPage || Boolean(currentPageState?.pending)}
         isError={isError}
         isLoading={isLoading}
         isEmptyFiltered={hasActiveQuery}
@@ -114,7 +149,7 @@ function TrainingPlansListScreen() {
           />
         }
         loadingMoreLabel="Loading more plans..."
-        onLoadMore={() => void fetchNextPage()}
+        onLoadMore={() => void loadMore()}
         onRefresh={handleRefresh}
         onRetry={refetch}
         refreshing={refreshing}
@@ -127,6 +162,9 @@ function TrainingPlansListScreen() {
           </View>
         )}
       />
+      {currentPageState?.error ? (
+        <Text accessibilityRole="alert">{currentPageState.error}</Text>
+      ) : null}
       <IndexFilterSheet
         visible={isFilterSheetOpen}
         title="Training Plan Filters"

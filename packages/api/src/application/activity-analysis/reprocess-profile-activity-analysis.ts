@@ -1,6 +1,6 @@
 import { type AthletePerformanceTargetFacts, getCalendarDateInIanaZone } from "@repo/core";
 import { activities, activitySegments, type DrizzleDbClient, profiles } from "@repo/db";
-import { and, asc, eq, gt, gte, inArray, lt, or } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNotNull, lt, or } from "drizzle-orm";
 import { withProfileFencedRepeatableReadSnapshot } from "../../db";
 import {
   createActivityAnalysisStore,
@@ -126,7 +126,12 @@ async function readCurrentTargets(
   }
   const result = new Map<string, AthletePerformanceTargetFacts>();
   for (let offset = 0; offset < scopedActivities.length; offset += TARGET_BATCH_SIZE) {
-    const batch = scopedActivities.slice(offset, offset + TARGET_BATCH_SIZE);
+    const batch = scopedActivities
+      .slice(offset, offset + TARGET_BATCH_SIZE)
+      .filter(
+        (activity): activity is ActivityWithSegments & { started_at: Date } =>
+          activity.started_at !== null,
+      );
     const snapshots = await store.getPerformanceTargetsForRequests({
       requests: batch.map((activity) => ({
         profileId,
@@ -165,6 +170,7 @@ async function evaluate(
     .where(
       and(
         eq(activities.profile_id, input.profileId),
+        isNotNull(activities.started_at),
         input.from ? gte(activities.started_at, input.from) : undefined,
         input.to ? lt(activities.started_at, input.to) : undefined,
         input.claimedAthleteState?.activityAnalysisCursor
@@ -187,9 +193,13 @@ async function evaluate(
         .limit(ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE + 1)
     : await scopedQuery.orderBy(asc(activities.started_at), asc(activities.id));
   const hasMore = scopedRowsWithLookahead.length > ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE;
-  const scopedRows = hasMore
-    ? scopedRowsWithLookahead.slice(0, ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE)
-    : scopedRowsWithLookahead;
+  const scopedRows = (
+    hasMore
+      ? scopedRowsWithLookahead.slice(0, ACTIVITY_ANALYSIS_REFRESH_BATCH_SIZE)
+      : scopedRowsWithLookahead
+  ).filter(
+    (activity): activity is typeof activity & { started_at: Date } => activity.started_at !== null,
+  );
   const lastScopedActivity = scopedRows.at(-1);
   const segmentRows =
     scopedRows.length === 0

@@ -3,7 +3,10 @@ import type {
   SystemActivityTemplateDefinition,
   VersionedSystemContentDefinition,
 } from "@repo/core";
-import { initializeActivityPlanDocument } from "@repo/core/activity-plan";
+import {
+  activityPlanAuthoringContentSchema,
+  activityPlanSemanticHash,
+} from "@repo/core/activity-plan";
 import { canonicalTrainingPlanStructureSchema } from "@repo/core/schemas";
 import { structureHash } from "./canonical-json";
 
@@ -13,13 +16,7 @@ export type SystemTrainingPlanDefinition = VersionedSystemContentDefinition<
 
 export function persistedTrainingPlanStructure(template: (typeof ALL_SAMPLE_PLANS)[number]) {
   const { id: _id, ...structure } = template.structure;
-  return canonicalTrainingPlanStructureSchema.parse({
-    ...structure,
-    sessions: structure.sessions.map((session) => ({
-      ...session,
-      activity_plan_variant_id: session.activity_plan_id,
-    })),
-  });
+  return canonicalTrainingPlanStructureSchema.parse(structure);
 }
 
 export function materializeSystemActivityTemplateSeedValues(
@@ -27,10 +24,14 @@ export function materializeSystemActivityTemplateSeedValues(
 ) {
   const template = definition.content;
   if (!template.id) throw new Error(`System activity template ${definition.key} is missing an ID`);
-  const structure = initializeActivityPlanDocument({
-    activityPlanId: template.id,
+  const trainingIntent = template.training_intent ?? "general_maintenance";
+  const validated = activityPlanAuthoringContentSchema.parse({
     structure: template.structure,
+    adaptation: template.adaptation ?? null,
+    intent: { training_intent: trainingIntent },
   });
+  const structure = validated.structure;
+  const adaptation = validated.adaptation ?? null;
   return {
     id: template.id,
     profile_id: null,
@@ -43,8 +44,15 @@ export function materializeSystemActivityTemplateSeedValues(
     description: template.description,
     structure,
     structure_hash: structureHash(structure),
+    semantic_hash: activityPlanSemanticHash({
+      structure,
+      adaptation,
+      trainingIntent,
+    }),
     gps_recording_enabled: template.gps_recording_enabled ?? true,
     notes: template.notes ?? null,
+    training_intent: trainingIntent,
+    adaptation,
   };
 }
 

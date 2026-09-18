@@ -1,4 +1,7 @@
-import type { RecordingServiceActivityPlan } from "@repo/core";
+import {
+  getCanonicalActivityPlanStructureHashInput,
+  type RecordingServiceActivityPlan,
+} from "@repo/core";
 import { Alert } from "react-native";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
@@ -18,7 +21,13 @@ jest.mock("@/lib/stores/activitySelectionStore", () => ({
 }));
 jest.mock("expo-crypto", () => ({
   CryptoDigestAlgorithm: { SHA256: "SHA-256" },
-  digestStringAsync: jest.fn(async () => "1".repeat(64)),
+  digestStringAsync: jest.fn(async (_algorithm: string, value: string) =>
+    jest
+      .requireActual<typeof import("node:crypto")>("node:crypto")
+      .createHash("sha256")
+      .update(value)
+      .digest("hex"),
+  ),
 }));
 
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
@@ -94,17 +103,51 @@ describe("handleRecordingObjectAction", () => {
     const navigateToRecord = jest.fn();
     const service = { selectPlan: jest.fn() } as unknown as ActivityRecorderService;
     const selectedPlan = plan("bike", [activitySegment("bike", 1)], id(702));
+    const resolvedStructureHash = `v1:sha256:${jest
+      .requireActual<typeof import("node:crypto")>("node:crypto")
+      .createHash("sha256")
+      .update(getCanonicalActivityPlanStructureHashInput(selectedPlan.structure))
+      .digest("hex")}`;
     const plannedSession = {
       id: id(700),
       sessionRevision: 3,
+      source: { kind: "direct" as const, operationId: "recording-object-action-test-0001" },
       prescription: {
-        activityPlanId: selectedPlan.id,
-        activityPlanRevision: 2,
-        variantId: id(701),
-        variantName: "Hard",
-        structure: selectedPlan.structure,
-        structureHash: `v1:sha256:${"1".repeat(64)}`,
-        prescriptionQuantification: null,
+        resolutionManifest: {
+          resolver_version: "prescription-resolver-v1",
+          policy_version: "training-plan-policy-v1",
+          training_plan_id: null,
+          training_plan_revision: null,
+          training_plan_hash: null,
+          athlete_context_revision: null,
+          activity_plan_id: selectedPlan.id,
+          activity_plan_revision: 2,
+          activity_plan_semantic_hash: `v1:sha256:${"1".repeat(64)}`,
+          effective_target_duration_minutes: null,
+          effective_target_common_load: null,
+          evidence_facts: [],
+          session_demand: {
+            activity_category: selectedPlan.structure.activity_category,
+            training_intent: "aerobic_base" as const,
+            target_duration_minutes: null,
+            target_common_load: null,
+            importance: "normal" as const,
+          },
+          adaptation_values: {},
+          fallback_level: "system_default_no_context" as const,
+          reason_codes: [],
+          resolved_structure: selectedPlan.structure,
+          resolved_structure_hash: resolvedStructureHash,
+          prescription_estimate: {
+            duration: { status: "unavailable" as const, value_seconds: null },
+            common_load: { status: "unavailable" as const, value: null },
+            rest_seconds: 0,
+            has_open_completion: false,
+            warnings: [],
+            factors: [],
+          },
+          fingerprint: `v1:sha256:${"2".repeat(64)}`,
+        },
         capturedAt: "2026-09-11T12:00:00.000Z",
       },
     };
@@ -114,7 +157,7 @@ describe("handleRecordingObjectAction", () => {
         objectKind: "activity_plan",
         objectId: selectedPlan.id,
         plan: selectedPlan,
-        eventId: "event-1",
+        eventId: id(701),
         plannedSession,
       },
       command: "attach_plan",
@@ -122,7 +165,8 @@ describe("handleRecordingObjectAction", () => {
       service,
     });
 
-    expect(service.selectPlan).toHaveBeenCalledWith(selectedPlan, "event-1", plannedSession);
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(service.selectPlan).toHaveBeenCalledWith(selectedPlan, id(701), plannedSession);
   });
 
   it("returns to the recorder after attaching a route", async () => {
@@ -237,5 +281,23 @@ describe("handleRecordingObjectAction", () => {
     expect(resolveRecordingObjectAction({ candidate, lifecycle: "active", service })).toMatchObject(
       { primaryAction: "selected", secondaryActions: ["return"] },
     );
+  });
+
+  it("does not offer plan replacement after recording starts", () => {
+    const currentPlan = plan("bike", [activitySegment("bike", 1)], id(801));
+    const replacement = plan("bike", [activitySegment("bike", 1)], id(802));
+    const service = { plan: currentPlan } as unknown as ActivityRecorderService;
+
+    expect(
+      resolveRecordingObjectAction({
+        candidate: {
+          objectKind: "activity_plan",
+          objectId: replacement.id ?? "",
+          plan: replacement,
+        },
+        lifecycle: "active",
+        service,
+      }),
+    ).toMatchObject({ primaryAction: "disabled", command: null, label: "Plan locked" });
   });
 });

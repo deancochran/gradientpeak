@@ -321,7 +321,7 @@ export function createGoalsRouter(
 
         return {
           ...createdGoal,
-          cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
+          cache_tags: ["goals.list", "goals.getById"],
         };
       } catch (error) {
         rethrowTrpcError(error);
@@ -384,7 +384,7 @@ export function createGoalsRouter(
           }
           return {
             ...updatedGoal,
-            cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
+            cache_tags: ["goals.list", "goals.getById"],
           };
         } catch (error) {
           rethrowPrivateGoalTrpcError(error);
@@ -434,7 +434,7 @@ export function createGoalsRouter(
 
       return {
         success: true,
-        cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
+        cache_tags: ["goals.list", "goals.getById"],
       };
     }),
   });

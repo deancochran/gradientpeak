@@ -152,7 +152,7 @@ describe("API client contract v1 fixtures", () => {
 
   it("covers every public planned-session source, lifecycle, cancellation, completion, and receipt outcome", () => {
     expect(new Set(PLANNED_SESSION_V1_FIXTURES.map(({ source }) => source.kind))).toEqual(
-      new Set(["direct", "training_plan", "recurrence"]),
+      new Set(["direct", "training_plan"]),
     );
     expect(new Set(PLANNED_SESSION_V1_FIXTURES.map(({ lifecycle }) => lifecycle.status))).toEqual(
       new Set(["scheduled", "cancelled", "completed"]),
@@ -163,7 +163,7 @@ describe("API client contract v1 fixtures", () => {
           lifecycle.status === "cancelled" ? [lifecycle.reason] : [],
         ),
       ),
-    ).toEqual(new Set(["user_requested", "plan_replaced", "series_cancelled"]));
+    ).toEqual(new Set(["user_requested", "series_cancelled"]));
     expect(
       new Set(
         PLANNED_SESSION_V1_FIXTURES.flatMap(({ lifecycle }) =>

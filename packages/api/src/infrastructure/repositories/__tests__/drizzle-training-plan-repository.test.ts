@@ -1,10 +1,15 @@
 import type { InferredStateSnapshot } from "@repo/core";
 import type { TrainingPlanRow } from "@repo/db";
+import type { DrizzleDbClient } from "@repo/db/client";
 import type { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
 import { activityPlanStructureHash } from "../../../application/activity-plans/structure-hash";
 import { createQueryMapDbMock } from "../../../test/mock-query-db";
 import { createTrainingPlanRepository } from "../drizzle-training-plan-repository";
+
+function createRepository(db: unknown) {
+  return createTrainingPlanRepository(db as DrizzleDbClient);
+}
 
 function createSnapshot(overrides: Partial<InferredStateSnapshot> = {}): InferredStateSnapshot {
   return {
@@ -77,18 +82,18 @@ function createMissingReturningDb(method: "insert" | "update") {
 }
 
 describe("drizzle-training-plan-repository", () => {
-  it("normalizes timestamp strings returned by raw SQL reads", async () => {
+  it("returns schema-derived timestamp rows", async () => {
     const validatedAt = "2026-04-02T03:04:05.000Z";
     const row = createTrainingPlanRow({
-      validated_at: validatedAt as unknown as Date,
-      created_at: "2026-04-01T00:00:00.000Z" as unknown as Date,
-      updated_at: "2026-04-01T01:00:00.000Z" as unknown as Date,
+      validated_at: new Date(validatedAt),
+      created_at: new Date("2026-04-01T00:00:00.000Z"),
+      updated_at: new Date("2026-04-01T01:00:00.000Z"),
     });
     const { db } = createQueryMapDbMock({
       training_plans: { data: [row], error: null },
     });
 
-    const result = await createTrainingPlanRepository(db).getAccessibleTrainingPlan({
+    const result = await createRepository(db).getAccessibleTrainingPlan({
       id: "11111111-1111-4111-8111-111111111111",
       profileId: "22222222-2222-4222-8222-222222222222",
     });
@@ -111,7 +116,7 @@ describe("drizzle-training-plan-repository", () => {
     const { db, callLog } = createQueryMapDbMock({
       training_plans: { data: [createdPlan], error: null },
     });
-    const repository = createTrainingPlanRepository(db);
+    const repository = createRepository(db);
 
     const result = await repository.createTrainingPlan({
       profileId: "profile-1",
@@ -137,7 +142,7 @@ describe("drizzle-training-plan-repository", () => {
 
   it("generates a required relational id aligned with structure.id", async () => {
     const { db, callLog } = createQueryMapDbMock();
-    const repository = createTrainingPlanRepository(db);
+    const repository = createRepository(db);
 
     await repository.createTrainingPlan({
       profileId: "profile-1",
@@ -160,7 +165,7 @@ describe("drizzle-training-plan-repository", () => {
   });
 
   it("throws BAD_REQUEST when create returns no row", async () => {
-    const repository = createTrainingPlanRepository(createMissingReturningDb("insert") as any);
+    const repository = createRepository(createMissingReturningDb("insert"));
 
     await expect(
       repository.createTrainingPlan({
@@ -177,12 +182,12 @@ describe("drizzle-training-plan-repository", () => {
 
   it("gets an owned training plan and returns null when none resolves", async () => {
     const ownedPlan = createTrainingPlanRow({ id: "owned-plan" });
-    const found = createTrainingPlanRepository(
+    const found = createRepository(
       createQueryMapDbMock({
         training_plans: { data: [ownedPlan], error: null },
       }).db,
     );
-    const missing = createTrainingPlanRepository(
+    const missing = createRepository(
       createQueryMapDbMock({
         training_plans: { data: [], error: null },
       }).db,
@@ -206,7 +211,7 @@ describe("drizzle-training-plan-repository", () => {
     const { db, callLog } = createQueryMapDbMock({
       training_plans: { data: [updatedPlan], error: null },
     });
-    const repository = createTrainingPlanRepository(db);
+    const repository = createRepository(db);
 
     const result = await repository.updateTrainingPlan({
       id: "plan-2",
@@ -236,7 +241,7 @@ describe("drizzle-training-plan-repository", () => {
   });
 
   it("throws a stale conflict when update returns no row", async () => {
-    const repository = createTrainingPlanRepository(createMissingReturningDb("update") as any);
+    const repository = createRepository(createMissingReturningDb("update"));
 
     await expect(
       repository.updateTrainingPlan({
@@ -256,11 +261,12 @@ describe("drizzle-training-plan-repository", () => {
   it("gets the prior snapshot from the earliest active future-plan fallback", async () => {
     const snapshot = createSnapshot();
     const { db, callLog } = createQueryMapDbMock({
-      events: {
+      planned_sessions: {
         data: [
           {
             training_plan_id: "future-plan",
-            starts_at: "2026-04-10T10:00:00.000Z",
+            planning_date: "2026-04-10",
+            status: "scheduled",
           },
         ],
         error: null,
@@ -279,21 +285,25 @@ describe("drizzle-training-plan-repository", () => {
         error: null,
       },
     });
-    const repository = createTrainingPlanRepository(db);
+    const repository = createRepository(db);
 
     await expect(repository.getPriorInferredStateSnapshot("profile-1")).resolves.toEqual(snapshot);
     expect(callLog.map((entry) => `${entry.operation}:${entry.table}`)).toEqual([
-      "select:events",
+      "select:planned_sessions",
       "select:training_plans",
     ]);
   });
 
   it("returns null when prior snapshot metadata is missing or invalid", async () => {
-    const missingMetadataRepository = createTrainingPlanRepository(
+    const missingMetadataRepository = createRepository(
       createQueryMapDbMock({
-        events: {
+        planned_sessions: {
           data: [
-            { training_plan_id: "plan-missing-metadata", starts_at: "2026-04-10T10:00:00.000Z" },
+            {
+              training_plan_id: "plan-missing-metadata",
+              planning_date: "2026-04-10",
+              status: "scheduled",
+            },
           ],
           error: null,
         },
@@ -303,11 +313,15 @@ describe("drizzle-training-plan-repository", () => {
         },
       }).db,
     );
-    const invalidMetadataRepository = createTrainingPlanRepository(
+    const invalidMetadataRepository = createRepository(
       createQueryMapDbMock({
-        events: {
+        planned_sessions: {
           data: [
-            { training_plan_id: "plan-invalid-metadata", starts_at: "2026-04-10T10:00:00.000Z" },
+            {
+              training_plan_id: "plan-invalid-metadata",
+              planning_date: "2026-04-10",
+              status: "scheduled",
+            },
           ],
           error: null,
         },
@@ -354,7 +368,7 @@ describe("drizzle-training-plan-repository", () => {
         error: null,
       },
     });
-    const repository = createTrainingPlanRepository(db);
+    const repository = createRepository(db);
 
     await repository.persistInferredStateSnapshot({
       profileId: "profile-1",
@@ -397,15 +411,15 @@ describe("drizzle-training-plan-repository", () => {
 
   it("does nothing when no target plan resolves", async () => {
     const { db, callLog } = createQueryMapDbMock({
-      events: { data: [], error: null },
+      planned_sessions: { data: [], error: null },
     });
-    const repository = createTrainingPlanRepository(db);
+    const repository = createRepository(db);
 
     await repository.persistInferredStateSnapshot({
       profileId: "profile-1",
       inferredStateSnapshot: createSnapshot(),
     });
 
-    expect(callLog).toEqual([{ table: "events", operation: "select" }]);
+    expect(callLog).toEqual([{ table: "planned_sessions", operation: "select" }]);
   });
 });

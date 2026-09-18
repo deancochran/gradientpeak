@@ -1,8 +1,10 @@
+import { isValidDateOnlyUtc } from "@repo/core/calendar";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
 import { createFileRoute } from "@tanstack/react-router";
 import { Import } from "lucide-react";
+import { useEffect, useState } from "react";
 import {
   ActivityListCard,
   DetailPageIntro,
@@ -34,12 +36,10 @@ export function validateActivityHistorySearch(
     ...(category !== undefined ? { category } : {}),
     ...(sort !== undefined ? { sort } : {}),
     ...(search.order === "asc" || search.order === "desc" ? { order: search.order } : {}),
-    ...(typeof search.from === "string" && /^\d{4}-\d{2}-\d{2}$/.test(search.from)
+    ...(typeof search.from === "string" && isValidDateOnlyUtc(search.from)
       ? { from: search.from }
       : {}),
-    ...(typeof search.to === "string" && /^\d{4}-\d{2}-\d{2}$/.test(search.to)
-      ? { to: search.to }
-      : {}),
+    ...(typeof search.to === "string" && isValidDateOnlyUtc(search.to) ? { to: search.to } : {}),
   };
 }
 
@@ -51,6 +51,20 @@ export const Route = createFileRoute("/_protected/activities/")({
 function ActivitiesPage() {
   const navigate = Route.useNavigate();
   const search = Route.useSearch();
+  const [dateDraft, setDateDraft] = useState({ from: search.from ?? "", to: search.to ?? "" });
+  const [hasPendingDateDraft, setHasPendingDateDraft] = useState(false);
+  const dateError = getDateRangeError(dateDraft);
+  useEffect(() => {
+    const appliedMatchesDraft =
+      (search.from ?? "") === dateDraft.from && (search.to ?? "") === dateDraft.to;
+    if (hasPendingDateDraft && appliedMatchesDraft) {
+      setHasPendingDateDraft(false);
+      return;
+    }
+    if (!hasPendingDateDraft && !appliedMatchesDraft) {
+      setDateDraft({ from: search.from ?? "", to: search.to ?? "" });
+    }
+  }, [hasPendingDateDraft, search.from, search.to]);
   const activitiesQuery = api.activities.listPaginated.useInfiniteQuery(
     {
       limit: 20,
@@ -76,6 +90,16 @@ function ActivitiesPage() {
         return next;
       },
     });
+  const applyDateDraft = () => {
+    if (dateError) return;
+    updateSearch(
+      {
+        ...(dateDraft.from ? { from: dateDraft.from } : {}),
+        ...(dateDraft.to ? { to: dateDraft.to } : {}),
+      },
+      [...(dateDraft.from ? [] : (["from"] as const)), ...(dateDraft.to ? [] : (["to"] as const))],
+    );
+  };
   return (
     <div className="container mx-auto max-w-6xl space-y-6 py-4">
       <DetailPageIntro
@@ -137,11 +161,11 @@ function ActivitiesPage() {
               <Input
                 id="activity-history-from"
                 onChange={(event) => {
-                  const from = event.currentTarget.value;
-                  updateSearch(from ? { from } : {}, from ? [] : ["from"]);
+                  setHasPendingDateDraft(true);
+                  setDateDraft((draft) => ({ ...draft, from: event.currentTarget.value }));
                 }}
                 type="date"
-                value={search.from ?? ""}
+                value={dateDraft.from}
               />
             </label>
             <label className="space-y-1 text-sm" htmlFor="activity-history-to">
@@ -149,16 +173,27 @@ function ActivitiesPage() {
               <Input
                 id="activity-history-to"
                 onChange={(event) => {
-                  const to = event.currentTarget.value;
-                  updateSearch(to ? { to } : {}, to ? [] : ["to"]);
+                  setHasPendingDateDraft(true);
+                  setDateDraft((draft) => ({ ...draft, to: event.currentTarget.value }));
                 }}
                 type="date"
-                value={search.to ?? ""}
+                value={dateDraft.to}
               />
             </label>
           </div>
+          {hasPendingDateDraft ? (
+            <p className="text-sm text-muted-foreground" role="status">
+              Date filter edits have not been applied.
+            </p>
+          ) : null}
+          {dateError ? <p role="alert">{dateError}</p> : null}
+          <Button onClick={applyDateDraft} type="button">
+            Apply dates
+          </Button>
           <Button
             onClick={() => {
+              setHasPendingDateDraft(false);
+              setDateDraft({ from: "", to: "" });
               void navigate({ search: {} });
             }}
             type="button"
@@ -228,6 +263,13 @@ function ActivitiesPage() {
       </Card>
     </div>
   );
+}
+
+function getDateRangeError({ from, to }: { from: string; to: string }) {
+  if (from && !isValidDateOnlyUtc(from)) return "From must be a valid calendar date.";
+  if (to && !isValidDateOnlyUtc(to)) return "To must be a valid calendar date.";
+  if (from && to && from > to) return "From date cannot be after To date.";
+  return null;
 }
 
 function FilterSelect({

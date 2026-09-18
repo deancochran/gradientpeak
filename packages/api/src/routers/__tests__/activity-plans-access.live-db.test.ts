@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { initializeActivityPlanDocument } from "@repo/core/activity-plan";
 import { db, pool } from "@repo/db/client";
 import { activityPlans, contentAccessGrants, follows, profiles, users } from "@repo/db/schema";
 import { eq, ilike, inArray, or } from "drizzle-orm";
@@ -10,11 +9,11 @@ const createdAt = new Date("2026-07-01T12:00:00.000Z");
 const expiredAt = new Date("2020-01-01T00:00:00.000Z");
 const activityPlanStructure = {
   version: 3,
-  activity_category: "bike",
   segments: [
     {
       id: "10000000-0000-4000-8000-000000000001",
       role: "activity",
+      activity_category: "bike",
       name: "Bike",
       intervals: [
         {
@@ -84,11 +83,9 @@ async function seedPlan(input: {
     name: `Access ${id}`,
     description: null,
     notes: null,
-    structure: initializeActivityPlanDocument({
-      activityPlanId: id,
-      structure: activityPlanStructure,
-    }),
+    structure: activityPlanStructure,
     structure_hash: structureHash,
+    semantic_hash: structureHash,
     gps_recording_enabled: true,
     content_visibility: input.system ? "public" : input.visibility,
     is_system_template: input.system ?? false,

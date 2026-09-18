@@ -563,6 +563,7 @@ export async function getCommonLoadHistory(input: {
         .where(
           and(
             eq(activities.profile_id, input.profileId),
+            isNotNull(activities.started_at),
             gte(activities.started_at, envelopeStart),
             lt(activities.started_at, envelopeEnd),
             lt(activities.started_at, historyAsOf),
@@ -572,10 +573,13 @@ export async function getCommonLoadHistory(input: {
         .limit(commonLoadHistoryActivityLimit + 1);
       if (activityRows.length > commonLoadHistoryActivityLimit) return unavailableWindow(input);
 
-      const windowActivityRows = activityRows.filter((activity) => {
-        const date = localDate(activity.started_at, input.planningTimezone);
-        return activity.started_at < historyAsOf && date >= startDate && date <= endDate;
-      });
+      const windowActivityRows = activityRows.filter(
+        (activity): activity is typeof activity & { started_at: Date } => {
+          if (activity.started_at === null) return false;
+          const date = localDate(activity.started_at, input.planningTimezone);
+          return activity.started_at < historyAsOf && date >= startDate && date <= endDate;
+        },
+      );
 
       const activityIds = windowActivityRows.map((activity) => activity.id);
       const currentArtifactRows =

@@ -113,7 +113,6 @@ describe("completeLifecycleSetup completed replay", () => {
     ).resolves.toEqual({
       status: "already_completed",
       goal: { status: "unchanged" },
-      settings: { status: "unchanged" },
       created: { profile_metrics: 0 },
     });
     expect(inserts).not.toHaveBeenCalled();
@@ -132,7 +131,6 @@ describe("completeLifecycleSetup completed replay", () => {
     ).resolves.toEqual({
       status: "already_completed",
       goal: { status: "skipped" },
-      settings: { status: "skipped" },
       created: { profile_metrics: 0 },
     });
     expect(inserts).not.toHaveBeenCalled();
@@ -163,7 +161,6 @@ describe("completedOnboardingReplayMatches", () => {
         goalMatches: true,
         metricsMatch: true,
         profileMatches: true,
-        settingsMatch: true,
       }),
     ).toBe(true);
     expect(
@@ -171,7 +168,6 @@ describe("completedOnboardingReplayMatches", () => {
         goalMatches: true,
         metricsMatch: true,
         profileMatches: false,
-        settingsMatch: true,
       }),
     ).toBe(false);
   });

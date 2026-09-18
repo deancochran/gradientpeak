@@ -28,9 +28,20 @@ export * from "./periodReview";
 export * from "./planned-day-summary";
 export * from "./planned-estimate";
 export * from "./planningGoals";
-export * from "./planningPreferences";
 export * from "./planningSchedule";
-export * from "./planningSessions";
+export {
+  applyEstimatedSessionActivityFacts,
+  type EstimatedPlannedTrainingSession,
+  estimatedPlannedTrainingSessionSchema,
+  type PlannedTrainingActivityPlanFacts,
+  type PlannedTrainingEventOverrides,
+  type PlannedTrainingSession,
+  plannedTrainingActivityPlanFactsSchema,
+  plannedTrainingEventOverridesSchema,
+  plannedTrainingSessionSchema,
+  type SessionDemand,
+} from "./planningSessions";
+export * from "./prescriptionResolution";
 export * from "./projection/effective-controls";
 export {
   type BuildDeterministicProjectionInput,
@@ -63,6 +74,7 @@ export * from "./scoring/targetSatisfaction";
 export * from "./thresholdGoalProgress";
 export * from "./training-plan-schedule-visual";
 export * from "./trainingLoadTimeline";
+export * from "./trainingPlanPreferences";
 export * from "./trainingPreferenceCatalog";
 export * from "./trainingPrescription";
 export * from "./trainingSettingsDefaults";
@@ -73,4 +85,5 @@ export * from "./verification/assertCoachingInvariants";
 export * from "./verification/comparePlanLoadToHeuristic";
 export * from "./verification/systemPlanAudit";
 export * from "./verification/trainingPlanTemplateVariety";
+export * from "./week-editing";
 export * from "./weeklyAllocation";

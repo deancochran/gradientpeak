@@ -1,11 +1,10 @@
 import { canonicalActivityCategorySchema } from "@repo/core";
 import {
-  activityPlanDocumentSchema,
+  activityPlanAdaptationSchema,
   activityPlanStructureSchema,
-  activityPlanVariantIdSchema,
-  activityPlanVariantNameSchema,
+  activityPlanTrainingIntentSchema,
 } from "@repo/core/activity-plan";
-import { PLANNED_SESSION_CONTRACT_VERSION } from "@repo/core/calendar";
+import { prescriptionResolutionManifestSchema } from "@repo/core/plan";
 import { canonicalEffortUnitSchema } from "@repo/core/units";
 import { createInsertSchema, createSelectSchema, createUpdateSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -66,7 +65,6 @@ import {
   profileGoals,
   profileMetrics,
   profiles,
-  profileTrainingSettings,
   providerSyncJobs,
   providerSyncState,
   providerWebhookReceipts,
@@ -135,13 +133,19 @@ export const publicActivityRoutesInsertSchema = createInsertSchema(activityRoute
 export const publicActivityRoutesUpdateSchema = createUpdateSchema(activityRoutes);
 
 export const publicActivityPlansRowSchema = createSelectSchema(activityPlans, {
-  structure: activityPlanDocumentSchema,
+  adaptation: activityPlanAdaptationSchema.nullable(),
+  structure: activityPlanStructureSchema,
+  training_intent: activityPlanTrainingIntentSchema,
 });
 export const publicActivityPlansInsertSchema = createInsertSchema(activityPlans, {
-  structure: activityPlanDocumentSchema,
+  adaptation: activityPlanAdaptationSchema.nullable().optional(),
+  structure: activityPlanStructureSchema,
+  training_intent: activityPlanTrainingIntentSchema.optional(),
 });
 export const publicActivityPlansUpdateSchema = createUpdateSchema(activityPlans, {
-  structure: activityPlanDocumentSchema.optional(),
+  adaptation: activityPlanAdaptationSchema.nullable().optional(),
+  structure: activityPlanStructureSchema.optional(),
+  training_intent: activityPlanTrainingIntentSchema.optional(),
 });
 
 export const publicTrainingPlansRowSchema = createSelectSchema(trainingPlans);
@@ -238,28 +242,27 @@ export const publicThresholdEvidenceRowSchema = createSelectSchema(thresholdEvid
 export const publicThresholdEvidenceInsertSchema = createInsertSchema(thresholdEvidence);
 export const publicThresholdEvidenceUpdateSchema = createUpdateSchema(thresholdEvidence);
 export const publicPlannedSessionsRowSchema = createSelectSchema(plannedSessions, {
-  activity_plan_variant_id: activityPlanVariantIdSchema,
-  activity_plan_variant_name: activityPlanVariantNameSchema,
-  contract_version: z.literal(PLANNED_SESSION_CONTRACT_VERSION),
-  prescription_structure: activityPlanStructureSchema,
-  prescription_structure_hash: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
+  resolution_manifest: prescriptionResolutionManifestSchema,
 });
 export const publicPlannedSessionsInsertSchema = createInsertSchema(plannedSessions, {
-  activity_plan_variant_id: activityPlanVariantIdSchema,
-  activity_plan_variant_name: activityPlanVariantNameSchema,
-  contract_version: z.literal(PLANNED_SESSION_CONTRACT_VERSION).optional(),
-  prescription_structure: activityPlanStructureSchema,
-  prescription_structure_hash: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
+  resolution_manifest: prescriptionResolutionManifestSchema,
 });
-export const publicPlannedSessionsUpdateSchema = createUpdateSchema(plannedSessions, {
-  activity_plan_variant_id: activityPlanVariantIdSchema.optional(),
-  activity_plan_variant_name: activityPlanVariantNameSchema.optional(),
-  contract_version: z.literal(PLANNED_SESSION_CONTRACT_VERSION).optional(),
-  prescription_structure: activityPlanStructureSchema.optional(),
-  prescription_structure_hash: z
-    .string()
-    .regex(/^v1:sha256:[0-9a-f]{64}$/)
-    .optional(),
+const immutablePlannedSessionUpdateFieldSchema = z.never().optional();
+export const publicPlannedSessionsUpdateSchema = createUpdateSchema(plannedSessions).extend({
+  profile_id: immutablePlannedSessionUpdateFieldSchema,
+  contract_version: immutablePlannedSessionUpdateFieldSchema,
+  original_target_date: immutablePlannedSessionUpdateFieldSchema,
+  source_kind: immutablePlannedSessionUpdateFieldSchema,
+  idempotency_key: immutablePlannedSessionUpdateFieldSchema,
+  direct_operation_id: immutablePlannedSessionUpdateFieldSchema,
+  training_plan_id: immutablePlannedSessionUpdateFieldSchema,
+  training_plan_revision: immutablePlannedSessionUpdateFieldSchema,
+  source_session_id: immutablePlannedSessionUpdateFieldSchema,
+  activity_plan_id: immutablePlannedSessionUpdateFieldSchema,
+  activity_plan_revision: immutablePlannedSessionUpdateFieldSchema,
+  resolution_manifest: immutablePlannedSessionUpdateFieldSchema,
+  prescription_captured_at: immutablePlannedSessionUpdateFieldSchema,
+  created_at: immutablePlannedSessionUpdateFieldSchema,
 });
 
 export const publicIntegrationsRowSchema = createSelectSchema(integrations);
@@ -297,12 +300,6 @@ export const publicThresholdEvaluationEffortsUpdateSchema = z.never();
 export const publicThresholdsRowSchema = createSelectSchema(thresholds);
 export const publicThresholdsInsertSchema = createInsertSchema(thresholds);
 export const publicThresholdsUpdateSchema = z.never();
-
-export const publicProfileTrainingSettingsRowSchema = createSelectSchema(profileTrainingSettings);
-export const publicProfileTrainingSettingsInsertSchema =
-  createInsertSchema(profileTrainingSettings);
-export const publicProfileTrainingSettingsUpdateSchema =
-  createUpdateSchema(profileTrainingSettings);
 
 export const publicProfileGoalsRowSchema = createSelectSchema(profileGoals);
 export const publicProfileGoalsInsertSchema = createInsertSchema(profileGoals);
@@ -472,15 +469,6 @@ export type PublicProviderWebhookReceiptsUpdate = z.infer<
 export type PublicProfileMetricsRow = z.infer<typeof publicProfileMetricsRowSchema>;
 export type PublicProfileMetricsInsert = z.infer<typeof publicProfileMetricsInsertSchema>;
 export type PublicProfileMetricsUpdate = z.infer<typeof publicProfileMetricsUpdateSchema>;
-export type PublicProfileTrainingSettingsRow = z.infer<
-  typeof publicProfileTrainingSettingsRowSchema
->;
-export type PublicProfileTrainingSettingsInsert = z.infer<
-  typeof publicProfileTrainingSettingsInsertSchema
->;
-export type PublicProfileTrainingSettingsUpdate = z.infer<
-  typeof publicProfileTrainingSettingsUpdateSchema
->;
 export type PublicProfileGoalsRow = z.infer<typeof publicProfileGoalsRowSchema>;
 export type PublicProfileGoalsInsert = z.infer<typeof publicProfileGoalsInsertSchema>;
 export type PublicProfileGoalsUpdate = z.infer<typeof publicProfileGoalsUpdateSchema>;

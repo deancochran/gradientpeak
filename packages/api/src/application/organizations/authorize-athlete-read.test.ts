@@ -32,6 +32,23 @@ function createDb(decision: string, events: string[]) {
   return { db: db as unknown as DrizzleDbClient, transaction };
 }
 
+function authorizedOrganizationSelect(organizationId: string | null, events: string[]) {
+  return vi.fn(() => ({
+    from: vi.fn(() => ({
+      innerJoin: vi.fn(() => ({
+        where: vi.fn(() => ({
+          orderBy: vi.fn(() => ({
+            limit: vi.fn(async () => {
+              events.push("authorize");
+              return organizationId ? [{ organizationId }] : [];
+            }),
+          })),
+        })),
+      })),
+    })),
+  }));
+}
+
 describe("authorized athlete read transaction", () => {
   it("runs an allowed projection callback before the authorization transaction commits", async () => {
     const events: string[] = [];
@@ -64,6 +81,7 @@ describe("authorized athlete read transaction", () => {
   it("keeps any-organization consent resolution and the protected read in one transaction", async () => {
     const events: string[] = [];
     const transaction = {
+      selectDistinct: authorizedOrganizationSelect(input.organizationId, events),
       execute: vi.fn(async () => {
         events.push("authorize");
         return { rows: [{ organization_id: input.organizationId }] };
@@ -100,7 +118,10 @@ describe("authorized athlete read transaction", () => {
   });
 
   it("does not read athlete data when no organization has valid scoped consent", async () => {
-    const transaction = { execute: vi.fn(async () => ({ rows: [] })) };
+    const transaction = {
+      selectDistinct: authorizedOrganizationSelect(null, []),
+      execute: vi.fn(async () => ({ rows: [] })),
+    };
     const db = {
       $client: {},
       transaction: vi.fn((operation: (value: typeof transaction) => Promise<unknown>) =>
@@ -124,6 +145,7 @@ describe("authorized athlete read transaction", () => {
   it("resolves opaque ownership, authorizes, and reads the full resource in one transaction", async () => {
     const events: string[] = [];
     const transaction = {
+      selectDistinct: authorizedOrganizationSelect(input.organizationId, events),
       execute: vi.fn(async () => {
         events.push("authorize");
         return { rows: [{ organization_id: input.organizationId }] };
@@ -167,6 +189,7 @@ describe("authorized athlete read transaction", () => {
   it("never performs the full resource read after resolved ownership is denied", async () => {
     const events: string[] = [];
     const transaction = {
+      selectDistinct: authorizedOrganizationSelect(null, events),
       execute: vi.fn(async () => {
         events.push("authorize");
         return { rows: [] };

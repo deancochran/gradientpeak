@@ -5,9 +5,9 @@ import { applyE2EFileEnvironment, localE2EDatabaseEnvironment } from "./e2e/supp
 const env = loadEnv("test", process.cwd(), "");
 applyE2EFileEnvironment(process.env, env);
 
-const PORT = Number(process.env.E2E_WEB_PORT ?? 3100);
-if (PORT !== 3100) {
-  throw new Error("Playwright E2E requires E2E_WEB_PORT=3100.");
+const PORT = Number(process.env.E2E_WEB_PORT ?? 3001);
+if (PORT !== 3001) {
+  throw new Error("Playwright E2E requires E2E_WEB_PORT=3001.");
 }
 const baseURL = `http://127.0.0.1:${PORT}`;
 const reuseExistingServer = process.env.E2E_REUSE_EXISTING_SERVER === "1";

@@ -1,5 +1,4 @@
 import {
-  activityPlanDocumentSchema,
   addDaysDateKey,
   buildTrainingTimelineWindow,
   type CompletedTrainingItem,
@@ -8,7 +7,6 @@ import {
   completedSegmentSummarySchema,
   dateOnlySchema,
   PLAN_ANALYSIS_WINDOW_MAX_DAYS,
-  resolveActivityPlanVariant,
   type ScheduledTrainingItem,
   type TrainingLoadTimelineInputPoint,
   trainingTimelineWindowSchema,
@@ -26,11 +24,11 @@ import {
   activities,
   activityPlans,
   activitySegments,
-  events,
+  plannedSessions,
   profileGoals,
   trainingPlans,
 } from "@repo/db";
-import { and, asc, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { type DrizzleQueryExecutor, withRepeatableReadSnapshot } from "../../db";
 import { createEventReadRepository } from "../../infrastructure/repositories";
@@ -145,11 +143,10 @@ const currentScheduledPlanSchema = z
   .object({
     id: z.string().uuid(),
     name: z.string().min(1),
-    scheduleBatchId: z.string().uuid().nullable(),
-    nextEventId: z.string().uuid(),
-    nextEventTitle: z.string().min(1),
-    nextEventDate: dateOnlySchema,
-    nextEventAt: z.string().datetime({ offset: true }),
+    applicationReceipt: z.string().min(1),
+    nextPlannedSessionId: z.string().uuid(),
+    nextPlannedSessionTitle: z.string().min(1),
+    nextPlannedSessionDate: dateOnlySchema,
     nextActivityPlanId: z.string().uuid().nullable(),
   })
   .strict();
@@ -335,9 +332,9 @@ export type PlanTabProjectionDependencies = {
 };
 
 function extractActivityCategory(structure: unknown): string | null {
-  const document = activityPlanDocumentSchema.safeParse(structure);
-  if (!document.success) return null;
-  return resolveActivityPlanVariant(document.data).structure.activity_category;
+  if (!structure || typeof structure !== "object" || Array.isArray(structure)) return null;
+  const value = (structure as { activity_category?: unknown }).activity_category;
+  return typeof value === "string" && value.trim() ? value : null;
 }
 
 const defaultDependencies: PlanTabProjectionDependencies = {
@@ -364,42 +361,37 @@ const defaultDependencies: PlanTabProjectionDependencies = {
       .select({
         id: trainingPlans.id,
         name: trainingPlans.name,
-        scheduleBatchId: events.schedule_batch_id,
-        nextEventId: events.id,
-        nextEventTitle: events.title,
-        nextEventDate: events.scheduled_date,
-        nextEventAt: events.starts_at,
-        nextActivityPlanId: events.activity_plan_id,
+        trainingPlanRevision: plannedSessions.training_plan_revision,
+        nextPlannedSessionId: plannedSessions.id,
+        nextPlannedSessionDate: plannedSessions.planning_date,
+        resolutionManifest: plannedSessions.resolution_manifest,
       })
-      .from(events)
+      .from(plannedSessions)
       .innerJoin(
         trainingPlans,
         and(
-          eq(trainingPlans.id, events.training_plan_id),
-          eq(trainingPlans.profile_id, events.profile_id),
+          eq(trainingPlans.id, plannedSessions.training_plan_id),
+          eq(trainingPlans.profile_id, plannedSessions.profile_id),
         ),
       )
       .where(
         and(
-          eq(events.profile_id, profileId),
-          eq(events.event_type, "planned"),
-          eq(events.status, "scheduled"),
-          isNotNull(events.training_plan_id),
-          gte(events.starts_at, asOf),
+          eq(plannedSessions.profile_id, profileId),
+          eq(plannedSessions.status, "scheduled"),
+          gte(plannedSessions.planning_date, asOf.toISOString().slice(0, 10)),
         ),
       )
-      .orderBy(asc(events.starts_at))
+      .orderBy(asc(plannedSessions.planning_date), asc(plannedSessions.id))
       .limit(1);
     return row
       ? {
           id: row.id,
           name: row.name,
-          scheduleBatchId: row.scheduleBatchId,
-          nextEventId: row.nextEventId,
-          nextEventTitle: row.nextEventTitle,
-          nextEventDate: row.nextEventDate,
-          nextEventAt: row.nextEventAt.toISOString(),
-          nextActivityPlanId: row.nextActivityPlanId,
+          applicationReceipt: `${row.id}:${row.trainingPlanRevision}`,
+          nextPlannedSessionId: row.nextPlannedSessionId,
+          nextPlannedSessionTitle: "Scheduled session",
+          nextPlannedSessionDate: row.nextPlannedSessionDate,
+          nextActivityPlanId: null,
         }
       : null;
   },
@@ -424,14 +416,16 @@ const defaultDependencies: PlanTabProjectionDependencies = {
         ? []
         : await db
             .select({
-              id: events.id,
-              eventTitle: events.title,
-              planName: activityPlans.name,
-              planStructure: activityPlans.structure,
+              id: plannedSessions.id,
+              resolutionManifest: plannedSessions.resolution_manifest,
             })
-            .from(events)
-            .leftJoin(activityPlans, eq(activityPlans.id, events.activity_plan_id))
-            .where(and(eq(events.profile_id, profileId), inArray(events.id, scheduledIds)));
+            .from(plannedSessions)
+            .where(
+              and(
+                eq(plannedSessions.profile_id, profileId),
+                inArray(plannedSessions.id, scheduledIds),
+              ),
+            );
     const includeCategoryDoses = completedIds.length <= MAX_CATEGORY_COMPOSITION_ACTIVITIES;
     const completedRows =
       completedIds.length === 0
@@ -486,8 +480,8 @@ const defaultDependencies: PlanTabProjectionDependencies = {
         scheduledRows.map((row) => [
           row.id,
           {
-            title: row.planName?.trim() || row.eventTitle.trim() || "Scheduled session",
-            activityCategory: extractActivityCategory(row.planStructure),
+            title: "Scheduled session",
+            activityCategory: extractActivityCategory(row.resolutionManifest.resolved_structure),
           },
         ]),
       ),

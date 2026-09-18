@@ -1,8 +1,8 @@
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
-import type { NavigationAction } from "expo-router/react-navigation";
+import { type NavigationAction, usePreventRemove } from "expo-router/react-navigation";
 import type { ReactNode } from "react";
-import { type RefObject, useEffect, useMemo, useRef } from "react";
+import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
 
 type ActivityPlanComposerProcessParams = {
@@ -12,6 +12,7 @@ type ActivityPlanComposerProcessParams = {
   description: string;
   isEditMode: boolean;
   isEditBlocked: boolean;
+  hydrationVersion: number;
   isLoading: boolean;
   isSubmitting: boolean;
   name: string;
@@ -35,6 +36,7 @@ export function useActivityPlanComposerProcess({
   description,
   isEditMode,
   isEditBlocked,
+  hydrationVersion,
   isLoading,
   isSubmitting,
   name,
@@ -43,7 +45,8 @@ export function useActivityPlanComposerProcess({
   structure,
   submit,
 }: ActivityPlanComposerProcessParams) {
-  const initialSignatureRef = useRef<string | null>(null);
+  const appliedHydrationVersionRef = useRef<number | null>(null);
+  const [baselineSignature, setBaselineSignature] = useState<string | null>(null);
   const submitRef = useRef(submit);
   submitRef.current = submit;
   const formSignature = useMemo(
@@ -59,37 +62,45 @@ export function useActivityPlanComposerProcess({
   );
 
   useEffect(() => {
-    if (isLoading || initialSignatureRef.current) {
+    if (isLoading) {
       return;
     }
-    initialSignatureRef.current = formSignature;
-  }, [isLoading, formSignature]);
+    if (baselineSignature === null || appliedHydrationVersionRef.current !== hydrationVersion) {
+      setBaselineSignature(formSignature);
+      appliedHydrationVersionRef.current = hydrationVersion;
+    }
+  }, [baselineSignature, formSignature, hydrationVersion, isLoading]);
 
-  const isDirty =
-    initialSignatureRef.current !== null && initialSignatureRef.current !== formSignature;
-
+  const isDirty = baselineSignature !== null && baselineSignature !== formSignature;
+  const previousSignature = useRef(formSignature);
   useEffect(() => {
-    const unsubscribe = navigation.addListener("beforeRemove", (event) => {
-      if (allowNavigationRef.current || !isDirty || isSubmitting) {
-        return;
-      }
+    if (previousSignature.current !== formSignature && !isSubmitting)
+      allowNavigationRef.current = false;
+    previousSignature.current = formSignature;
+  }, [allowNavigationRef, formSignature, isSubmitting]);
 
-      event.preventDefault();
-      Alert.alert("Discard changes?", "Your edits will be lost.", [
-        { text: "Keep Editing", style: "cancel" },
-        {
-          text: "Discard",
-          style: "destructive",
-          onPress: () => {
-            allowNavigationRef.current = true;
-            navigation.dispatch(event.data.action);
-          },
+  usePreventRemove(!allowNavigationRef.current && (isDirty || isSubmitting), ({ data }) => {
+    if (allowNavigationRef.current) {
+      navigation.dispatch(data.action);
+      return;
+    }
+    if (isSubmitting) {
+      Alert.alert("Saving changes", "Please wait for the save to finish before leaving.");
+      return;
+    }
+    if (!isDirty) return;
+    Alert.alert("Discard changes?", "Your edits will be lost.", [
+      { text: "Keep Editing", style: "cancel" },
+      {
+        text: "Discard",
+        style: "destructive",
+        onPress: () => {
+          allowNavigationRef.current = true;
+          navigation.dispatch(data.action);
         },
-      ]);
-    });
-
-    return unsubscribe;
-  }, [allowNavigationRef, navigation, isDirty, isSubmitting]);
+      },
+    ]);
+  });
 
   useEffect(() => {
     navigation.setOptions({

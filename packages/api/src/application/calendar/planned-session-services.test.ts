@@ -1,7 +1,4 @@
-import {
-  activityPlanStructureSchema,
-  initializeActivityPlanDocument,
-} from "@repo/core/activity-plan";
+import { activityPlanSemanticHash, activityPlanStructureSchema } from "@repo/core/activity-plan";
 import {
   PLANNED_SESSION_CONTRACT_VERSION,
   type PlannedSession,
@@ -13,6 +10,7 @@ import type {
   CreateOwnedPlannedSessionResult,
   PlannedSessionRepositoryPort,
 } from "../../repositories/planned-session-repository-port";
+import { createResolutionManifestFixture } from "../../test/builders/planned-session";
 import { cancelPlannedSession } from "./cancel-planned-session";
 import { createPlannedSession } from "./create-planned-session";
 import { linkPlannedSessionCompletion } from "./link-planned-session-completion";
@@ -70,9 +68,8 @@ function session(input: {
         kind: "training_plan";
         trainingPlanId: string;
         trainingPlanRevision: number;
-        sourceSessionKey: string;
-      }
-    | { kind: "recurrence"; seriesId: string; occurrenceKey: string };
+        sourceSessionId: string;
+      };
   activityPlanId?: string;
   planningDate?: string;
   groupEventId?: string | null;
@@ -89,13 +86,17 @@ function session(input: {
     idempotencyKey: plannedSessionIdempotencyKey(input.source),
     groupEventId: input.groupEventId ?? null,
     prescription: {
-      activityPlanId: input.activityPlanId ?? ownedActivityPlanId,
-      activityPlanRevision: 1,
-      variantId: input.activityPlanId ?? ownedActivityPlanId,
-      variantName: "Base",
-      structureHash: `v1:sha256:${"0".repeat(64)}`,
-      structure,
-      prescriptionQuantification: null,
+      resolutionManifest: createResolutionManifestFixture({
+        activityPlanId: input.activityPlanId ?? ownedActivityPlanId,
+        structure,
+        demand: {
+          activity_category: "bike",
+          training_intent: "general_maintenance",
+          target_duration_minutes: 30,
+          target_common_load: null,
+          importance: "normal",
+        },
+      }),
       capturedAt: "2026-08-01T00:00:00.000Z",
     },
     lifecycle: { status: "scheduled" },
@@ -240,11 +241,15 @@ class MemoryPlannedSessionRepository implements PlannedSessionRepositoryPort {
       name: "Saved ride",
       description: null,
       revision: 1,
-      structure: initializeActivityPlanDocument({
-        activityPlanId: input.activityPlanId,
-        structure,
-      }),
+      structure,
+      adaptation: null,
+      trainingIntent: "general_maintenance" as const,
       structureHash: `v1:sha256:${"a".repeat(64)}`,
+      semanticHash: activityPlanSemanticHash({
+        structure,
+        adaptation: null,
+        trainingIntent: "general_maintenance",
+      }),
       gpsRecordingEnabled: true,
       updatedAt: "2026-08-01T00:00:00.000Z",
     };
@@ -256,7 +261,7 @@ class MemoryPlannedSessionRepository implements PlannedSessionRepositoryPort {
 }
 
 describe("planned-session application services", () => {
-  it("converges direct, training-plan, and recurrence source replays", async () => {
+  it("converges direct and training-plan source replays", async () => {
     const repository = new MemoryPlannedSessionRepository();
     const direct = session({
       id: "00000000-0000-4000-8000-000000000001",
@@ -268,19 +273,12 @@ describe("planned-session application services", () => {
         kind: "training_plan",
         trainingPlanId: ownedTrainingPlanId,
         trainingPlanRevision: 3,
-        sourceSessionKey: "2026-08-20:sessions.0",
+        sourceSessionId: "00000000-0000-4000-8000-000000000004",
       },
     });
     await createPlannedSession({ repository, profileId, session: direct });
     await createPlannedSession({ repository, profileId, session: training });
-    const recurrence = session({
-      id: "00000000-0000-4000-8000-000000000003",
-      planningDate: "2026-08-21",
-      source: { kind: "recurrence", seriesId: direct.id, occurrenceKey: "2026-08-21" },
-    });
-    await createPlannedSession({ repository, profileId, session: recurrence });
-
-    for (const candidate of [direct, training, recurrence]) {
+    for (const candidate of [direct, training]) {
       const replay = await createPlannedSession({
         repository,
         profileId,
@@ -357,7 +355,7 @@ describe("planned-session application services", () => {
               kind: "training_plan",
               trainingPlanId,
               trainingPlanRevision: 1,
-              sourceSessionKey: id,
+              sourceSessionId: id,
             },
           }),
         }),
@@ -385,41 +383,11 @@ describe("planned-session application services", () => {
             kind: "training_plan",
             trainingPlanId: otherTrainingPlanId,
             trainingPlanRevision: 1,
-            sourceSessionKey: "other-plan",
+            sourceSessionId: "00000000-0000-4000-8000-000000000024",
           },
         }),
       }),
     ).rejects.toBeInstanceOf(PlannedSessionAccessError);
-  });
-
-  it("preserves recurrence target identity and prescription after a move", async () => {
-    const repository = new MemoryPlannedSessionRepository();
-    const series = session({
-      id: "00000000-0000-4000-8000-000000000030",
-      source: { kind: "direct", operationId: `direct_${"d".repeat(32)}` },
-    });
-    await createPlannedSession({ repository, profileId, session: series });
-    const occurrence = session({
-      id: "00000000-0000-4000-8000-000000000031",
-      planningDate: "2026-08-25",
-      source: { kind: "recurrence", seriesId: series.id, occurrenceKey: "2026-08-25" },
-    });
-    await createPlannedSession({ repository, profileId, session: occurrence });
-
-    const moved = await movePlannedSession({
-      repository,
-      profileId,
-      sessionId: occurrence.id,
-      expectedRevision: 1,
-      planningDate: "2026-08-27",
-    });
-
-    expect(moved).toMatchObject({
-      planningDate: "2026-08-27",
-      originalTargetDate: "2026-08-25",
-      source: { occurrenceKey: "2026-08-25" },
-      prescription: occurrence.prescription,
-    });
   });
 
   it("enforces one group-event association per profile and owner-scoped range reads", async () => {

@@ -41,42 +41,14 @@ import {
 } from "../TrainingPlanBuilderSheetContent";
 
 const basePlanPreferences = {
-  durationWeeks: null,
-  weeklySessionCount: null,
-  targetWeeklyHours: null,
-  restDaysPerWeek: null,
-  maxSingleSessionDurationMinutes: null,
-  progressionPace: null,
-  recoveryPriority: null,
-  weekPatternPreference: null,
-  strengthIntegrationPriority: null,
-  doubleDayTolerance: null,
-  longSessionFatigueTolerance: null,
-  taperStylePreference: null,
+  weekly_session_count: null,
+  target_weekly_duration_minutes: null,
+  maximum_session_duration_minutes: null,
+  preferred_weekdays: [],
+  rest_days: [],
+  progression_style: null,
+  recovery_priority: null,
 };
-
-const planningConstraintFields = [
-  {
-    key: "durationWeeks" as const,
-    label: "Duration",
-    inputKind: "number" as const,
-    defaultUnit: "weeks",
-    helperText: "How many weeks this plan-local override should cover.",
-    min: 1,
-    max: 104,
-    step: 1,
-    value: {
-      value: null,
-      source: "unknown" as const,
-      unit: "weeks",
-      overridden: false,
-    },
-    visible: false,
-    required: false,
-    reason: null,
-    canRemove: false,
-  },
-];
 
 function DraftHarness() {
   const drafts = useTrainingPlanBuilderSheetDrafts();
@@ -105,17 +77,23 @@ function DraftHarness() {
       <Text testID="preferences-draft">{JSON.stringify(preferenceDraft)}</Text>
       <Pressable
         testID="preferences-set-duration"
-        onPress={() => drafts.updatePlanningConstraintDraft("durationWeeks", 8)}
+        onPress={() =>
+          drafts.planningPreferencesForm.setValue("weekly_session_count", 8, { shouldDirty: true })
+        }
       />
       <Pressable
         testID="preferences-clear-duration"
-        onPress={() => drafts.updatePlanningConstraintDraft("durationWeeks", null)}
+        onPress={() =>
+          drafts.planningPreferencesForm.setValue("weekly_session_count", null, {
+            shouldDirty: true,
+          })
+        }
       />
       <Pressable
         testID="preferences-set-impossible-frequency"
         onPress={() => {
-          drafts.updatePlanningConstraintDraft("weeklySessionCount", 6);
-          drafts.updatePlanningConstraintDraft("restDaysPerWeek", 2);
+          drafts.planningPreferencesForm.setValue("weekly_session_count", 6, { shouldDirty: true });
+          drafts.planningPreferencesForm.setValue("rest_days", [0, 1], { shouldDirty: true });
         }}
       />
       <Text testID="preferences-can-save">{drafts.canSavePlanningPreferences ? "yes" : "no"}</Text>
@@ -174,7 +152,6 @@ async function renderDraftHarness({
       activeSheet={activeSheet}
       activityPlanCategoryFilter={categoryFilter}
       activityPlanSort={sort}
-      planningConstraintFields={planningConstraintFields}
       planPreferences={basePlanPreferences}
       planMetadata={{ name: "Plan", description: "", contentVisibility: "private" }}
       onApplyActivityFilters={onApplyActivityFilters}
@@ -243,13 +220,6 @@ describe("TrainingPlanBuilderSheetDraftsProvider", () => {
     });
     await fireEvent.press(screen.getByTestId("preferences-apply"));
     expect(onApplyPlanningPreferences).toHaveBeenLastCalledWith(basePlanPreferences);
-
-    await fireEvent.press(screen.getByTestId("preferences-set-duration"));
-    await fireEvent.press(screen.getByTestId("preferences-apply"));
-    expect(onApplyPlanningPreferences).toHaveBeenLastCalledWith({
-      ...basePlanPreferences,
-      durationWeeks: 8,
-    });
   });
 
   it("blocks impossible planning preference drafts from applying", async () => {

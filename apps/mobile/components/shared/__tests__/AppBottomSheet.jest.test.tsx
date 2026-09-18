@@ -23,18 +23,20 @@ jest.mock("@gorhom/bottom-sheet", () => {
   type MockBottomSheetProps = React.PropsWithChildren<
     Record<string, unknown> & {
       footerComponent?: (props: { animatedFooterPosition: { value: number } }) => React.ReactNode;
+      backdropComponent?: (props: Record<string, unknown>) => React.ReactNode;
     }
   >;
   type MockHostProps = React.PropsWithChildren<Record<string, unknown>>;
 
   const BottomSheetModal = React.forwardRef(
-    ({ children, footerComponent, ...props }: MockBottomSheetProps, ref) => {
+    ({ children, footerComponent, backdropComponent, ...props }: MockBottomSheetProps, ref) => {
       React.useImperativeHandle(ref, () => ({ dismiss: mockDismiss, present: mockPresent }));
 
       return React.createElement(
         "BottomSheetModal",
         { testID: "bottom-sheet-modal", ...props },
         children,
+        backdropComponent?.({ testID: "sheet-backdrop" }),
         footerComponent?.({ animatedFooterPosition: { value: 0 } }),
       );
     },
@@ -92,6 +94,26 @@ const {
 } = require("../AppBottomSheet");
 
 describe("AppBottomSheet safe-area spacing", () => {
+  it("routes a guarded backdrop close request to the owner before dismissal", async () => {
+    const close = jest.fn();
+    const view = await renderNative(
+      <AppBottomSheet guardedClose onClose={close} title="Draft" visible>
+        <Text>Draft retained</Text>
+      </AppBottomSheet>,
+    );
+    expect(screen.getByTestId("bottom-sheet-modal").props.enablePanDownToClose).toBe(false);
+    expect(screen.getByTestId("sheet-backdrop").props.pressBehavior).toBe("none");
+    await fireEvent.press(screen.getByTestId("sheet-backdrop"));
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(mockDismiss).not.toHaveBeenCalled();
+    expect(screen.getByText("Draft retained")).toBeTruthy();
+    await view.rerender(
+      <AppBottomSheet guardedClose onClose={close} title="Draft" visible={false}>
+        <Text>Draft retained</Text>
+      </AppBottomSheet>,
+    );
+    expect(mockDismiss).toHaveBeenCalledTimes(1);
+  });
   beforeEach(() => {
     mockDismiss.mockClear();
     mockPresent.mockClear();
@@ -216,5 +238,23 @@ describe("AppBottomSheet safe-area spacing", () => {
     await fireEvent.press(screen.getByTestId("app-bottom-sheet-close"));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("app-bottom-sheet").props.style).toEqual({ flex: 1 });
+  });
+
+  it("can opt into a centered editor header with one right-side action", async () => {
+    await renderNative(
+      <AppBottomSheet
+        headerAction={<Text>Done</Text>}
+        headerLayout="centered"
+        onBack={jest.fn()}
+        onClose={jest.fn()}
+        title="Edit interval"
+        visible
+      >
+        <Text>Content</Text>
+      </AppBottomSheet>,
+    );
+
+    expect(screen.getByText("Edit interval").props.className).toContain("text-center");
+    expect(screen.getByText("Done")).toBeTruthy();
   });
 });

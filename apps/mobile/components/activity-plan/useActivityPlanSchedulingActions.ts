@@ -15,7 +15,6 @@ interface UseActivityPlanSchedulingActionsParams {
   planId?: string;
   canDuplicatePlan?: boolean;
   canSchedulePlan?: boolean;
-  onSchedule: () => void;
   queryClient: ReturnType<typeof import("@tanstack/react-query").useQueryClient>;
   router: Pick<ImperativeRouter, "back" | "navigate" | "replace">;
   utils: ReturnType<typeof api.useUtils>;
@@ -30,7 +29,6 @@ export function useActivityPlanSchedulingActions({
   planId,
   canDuplicatePlan = false,
   canSchedulePlan = false,
-  onSchedule,
   queryClient,
   router,
   utils,
@@ -58,6 +56,7 @@ export function useActivityPlanSchedulingActions({
       ]);
     },
     onError: (error) => {
+      duplicateActionRef.current = null;
       Alert.alert("Duplicate failed", error.message || "Could not duplicate this activity plan");
     },
   });
@@ -88,7 +87,13 @@ export function useActivityPlanSchedulingActions({
       );
       return;
     }
-    onSchedule();
+    router.navigate({
+      pathname: "/event-detail",
+      params: {
+        activityPlanId: activityPlan.id,
+        mode: "create",
+      },
+    });
   };
 
   const handleReschedule = () => {
@@ -113,6 +118,7 @@ export function useActivityPlanSchedulingActions({
   };
 
   const handleDuplicate = () => {
+    if (duplicateActionRef.current || duplicatePlanMutation.isPending) return;
     if (!canDuplicatePlan) {
       Alert.alert(
         "Duplicate unavailable",
@@ -142,8 +148,14 @@ export function useActivityPlanSchedulingActions({
       router.navigate(ROUTES.PLAN.EVENT_UPDATE(plannedActivity.id));
       return;
     }
-    onSchedule();
-  }, [action, activityPlan?.id, eventId, plannedActivity?.id, canSchedulePlan, onSchedule, router]);
+    router.navigate({
+      pathname: "/event-detail",
+      params: {
+        activityPlanId: activityPlan.id,
+        mode: "create",
+      },
+    });
+  }, [action, activityPlan?.id, eventId, plannedActivity?.id, canSchedulePlan, router]);
 
   return {
     duplicatePending: duplicatePlanMutation.isPending,

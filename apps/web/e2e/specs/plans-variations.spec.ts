@@ -188,9 +188,10 @@ test("[variation:activity-plans.structure-retry:narrow-focus] narrow structure e
 });
 
 test("[variation:training-plans.library:owned-detail-back] owned search opens detail and browser back restores the owned result", async ({
+  athleteActor,
   athletePage,
 }, testInfo) => {
-  await withTrainingPlanLibraryFixture(testInfo, async (fixture) => {
+  await withTrainingPlanLibraryFixture(testInfo, athleteActor, async (fixture) => {
     const plans = new TrainingPlansPage(athletePage);
     await plans.openLibrary();
     const search = plans.searchInput();
@@ -204,9 +205,10 @@ test("[variation:training-plans.library:owned-detail-back] owned search opens de
 });
 
 test("[variation:training-plans.library:narrow-template] narrow template tab scrolls to and opens the exact template card", async ({
+  athleteActor,
   athletePage,
 }, testInfo) => {
-  await withTrainingPlanLibraryFixture(testInfo, async (fixture) => {
+  await withTrainingPlanLibraryFixture(testInfo, athleteActor, async (fixture) => {
     const plans = new TrainingPlansPage(athletePage);
     await athletePage.setViewportSize({ width: 390, height: 844 });
     await plans.openLibrary();
@@ -218,13 +220,14 @@ test("[variation:training-plans.library:narrow-template] narrow template tab scr
 });
 
 test("[variation:training-plans.lifecycle:detail-history] created plan detail survives reload and back-forward navigation", async ({
+  athleteActor,
   athletePage,
 }, testInfo) => {
   const name = trainingPlanName(testInfo, "Training plan");
   let restore: (() => Promise<void>) | undefined;
   try {
-    restore = await prepareTrainingPlanPrerequisites();
-    await createEditAndReloadTrainingPlan(athletePage, testInfo);
+    restore = await prepareTrainingPlanPrerequisites(athleteActor);
+    await createEditAndReloadTrainingPlan(athletePage, testInfo, athleteActor.profileId);
     const plans = new TrainingPlansPage(athletePage);
     await plans.openLibrary();
     await plans.openPlan(name);
@@ -240,12 +243,13 @@ test("[variation:training-plans.lifecycle:detail-history] created plan detail su
 });
 
 test("[variation:training-plans.lifecycle:cancel-edit] browser back abandons an unsaved description while the persisted edit remains", async ({
+  athleteActor,
   athletePage,
 }, testInfo) => {
   let restore: (() => Promise<void>) | undefined;
   try {
-    restore = await prepareTrainingPlanPrerequisites();
-    await createEditAndReloadTrainingPlan(athletePage, testInfo);
+    restore = await prepareTrainingPlanPrerequisites(athleteActor);
+    await createEditAndReloadTrainingPlan(athletePage, testInfo, athleteActor.profileId);
     await athletePage.getByRole("button", { name: "Edit" }).click();
     await athletePage.getByLabel("Description").fill("Unsaved description variation");
     await athletePage.goBack();
@@ -302,17 +306,19 @@ test("[variation:training-preferences:keyboard-restore] keyboard save persists a
 });
 
 test("[variation:training-plans.schedule:agenda-back] scheduled activity opens its plan and returns to the retained day agenda", async ({
+  athleteActor,
   athletePage,
 }, testInfo) => {
-  await withTrainingPlanLibraryFixture(testInfo, async (fixture) => {
+  await withTrainingPlanLibraryFixture(testInfo, athleteActor, async (fixture) => {
     const plans = new TrainingPlansPage(athletePage);
     const calendar = new CalendarPage(athletePage);
     await plans.openLibrary();
     await plans.openPlan(fixture.ownedName);
-    await plans.applyToSchedule("2026-12-21");
+    await plans.reviewSchedule("2026-12-21");
+    await plans.confirmSchedule();
     await calendar.openDay("2026-12-21", { month: "2026-12", view: "agenda" });
     const planned = athletePage.getByRole("link", {
-      name: "Open planned activity Playwright Tempo Builder",
+      name: "Open planned activity bike session",
     });
     await planned.click();
     await expect(athletePage.getByRole("heading", { name: "Playwright tempo" })).toBeVisible();

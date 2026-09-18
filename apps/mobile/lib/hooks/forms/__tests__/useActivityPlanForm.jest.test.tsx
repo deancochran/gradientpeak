@@ -7,6 +7,11 @@ const alertMock = jest.fn();
 const createMock = jest.fn(async (_input: unknown) => ({ id: "created-1" }));
 const updateMock = jest.fn(async (_input: unknown) => ({ id: "updated-1" }));
 const getByIdMock = jest.fn(() => ({ data: undefined, isLoading: false }));
+const refetchMock = jest.fn();
+let createOptions: { onSuccess: (data: { id: string }) => Promise<void> };
+jest.mock("@repo/api/react", () => ({
+  invalidateActivityPlanQueries: jest.fn(async () => undefined),
+}));
 
 jest.mock("expo-router", () => ({ __esModule: true, useRouter: () => ({ back: backMock }) }));
 jest.mock("expo-crypto", () => ({
@@ -30,7 +35,12 @@ jest.mock("@/lib/api", () => ({
     }),
     activityPlans: {
       getById: { useQuery: () => getByIdMock() },
-      create: { useMutation: () => ({ mutateAsync: createMock, isPending: false, error: null }) },
+      create: {
+        useMutation: (options: typeof createOptions) => {
+          createOptions = options;
+          return { mutateAsync: createMock, isPending: false, error: null };
+        },
+      },
       update: { useMutation: () => ({ mutateAsync: updateMock, isPending: false, error: null }) },
     },
   },
@@ -65,6 +75,7 @@ function validStructure() {
               {
                 id: ids.step,
                 name: "Steady",
+                purpose: "work" as const,
                 duration: { type: "time" as const, seconds: 300 },
                 targets: [{ type: "%FTP" as const, intensity: 75 }],
               },
@@ -85,6 +96,7 @@ function validStructure() {
               {
                 id: ids.step2,
                 name: "Finish",
+                purpose: "work" as const,
                 duration: { type: "time" as const, seconds: 300 },
                 targets: [{ type: "%FTP" as const, intensity: 70 }],
               },
@@ -100,15 +112,50 @@ describe("useActivityPlanForm", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     getByIdMock.mockReturnValue({ data: undefined, isLoading: false });
+    refetchMock.mockResolvedValue({ data: undefined, isError: true });
     useActivityPlanCreationStore.setState({
       name: "Morning brick",
       description: "",
       activityCategory: "bike",
       notes: "",
       structure: { version: 3, activity_category: "bike", segments: [] },
-      document: null,
-      selectedVariantId: null,
     });
+  });
+
+  it("single-flights a pending write and retains the draft on rejection", async () => {
+    useActivityPlanCreationStore.setState({
+      structure: validStructure(),
+      description: "Keep instructions",
+    });
+    let reject!: (error: Error) => void;
+    createMock.mockReturnValueOnce(
+      new Promise((_done, fail) => {
+        reject = fail;
+      }),
+    );
+    const { result } = await renderHook(() => useActivityPlanForm());
+    await act(() => {
+      void result.current.submit();
+      void result.current.submit();
+    });
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(result.current.isSubmitting).toBe(true);
+    await act(async () => reject(new Error("Write unavailable")));
+    expect(result.current.form.description).toBe("Keep instructions");
+    expect(result.current.submitError).toBe("Write unavailable");
+    expect(result.current.isSubmitting).toBe(false);
+  });
+
+  it("does not clear a new editor's store after an old create completes", async () => {
+    useActivityPlanCreationStore.setState({ structure: validStructure() });
+    const onSuccess = jest.fn();
+    const view = await renderHook(() => useActivityPlanForm({ onSuccess }));
+    const oldSuccess = createOptions.onSuccess;
+    await view.unmount();
+    useActivityPlanCreationStore.setState({ name: "New editor draft" });
+    await act(async () => oldSuccess({ id: "created-1" }));
+    expect(useActivityPlanCreationStore.getState().name).toBe("New editor draft");
+    expect(onSuccess).not.toHaveBeenCalled();
   });
 
   it("rejects a missing segment list", async () => {
@@ -162,25 +209,8 @@ describe("useActivityPlanForm", () => {
     expect(createMock.mock.calls[0]?.[0]).not.toHaveProperty("routeId");
   });
 
-  it("edits one variant while saving the complete activity-plan document", async () => {
+  it("keeps an existing canonical plan editable and submittable", async () => {
     const structure = validStructure();
-    const secondVariantId = "00000000-0000-4000-8000-000000000020";
-    const document = {
-      contractVersion: 1 as const,
-      defaultVariantId: "00000000-0000-4000-8000-000000000010",
-      variants: [
-        {
-          id: "00000000-0000-4000-8000-000000000010",
-          name: "Base",
-          structure,
-        },
-        {
-          id: secondVariantId,
-          name: "Long",
-          structure: structuredClone(structure),
-        },
-      ],
-    };
     getByIdMock.mockReturnValue({
       data: {
         detail: null,
@@ -189,10 +219,13 @@ describe("useActivityPlanForm", () => {
           name: "Existing plan",
           description: null,
           notes: null,
-          structure: document,
+          structure,
           structureHash: "a".repeat(64),
+          activityPlanRevision: 7,
           gpsRecordingEnabled: true,
           contentVisibility: "private",
+          trainingIntent: "aerobic_base",
+          adaptation: null,
         },
       },
       isLoading: false,
@@ -202,41 +235,88 @@ describe("useActivityPlanForm", () => {
 
     expect(result.current.editStatus).toBe("editable");
     expect(result.current.canSubmit).toBe(true);
-    await act(() => {
-      result.current.selectVariant(secondVariantId);
-      const interval = validStructure().segments[0]?.intervals[0];
-      if (!interval) throw new Error("Expected interval");
-      useActivityPlanCreationStore.getState().updateInterval(interval.id, {
-        ...interval,
-        name: "Edited long interval",
-      });
-    });
     await act(async () => {
       await expect(result.current.submit()).resolves.toEqual({ id: "updated-1" });
     });
     expect(updateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "plan-1",
+        structure,
         expectedStructureHash: "a".repeat(64),
-        structure: expect.objectContaining({
-          defaultVariantId: document.defaultVariantId,
-          variants: [
-            expect.objectContaining({ id: document.defaultVariantId, structure }),
-            expect.objectContaining({
-              id: secondVariantId,
-              structure: expect.objectContaining({
-                segments: expect.arrayContaining([
-                  expect.objectContaining({
-                    intervals: expect.arrayContaining([
-                      expect.objectContaining({ name: "Edited long interval" }),
-                    ]),
-                  }),
-                ]),
-              }),
-            }),
-          ],
-        }),
+        expectedRevision: 7,
+        training_intent: "aerobic_base",
+        adaptation: null,
       }),
     );
+  });
+
+  it("preserves an edited draft when an explicit server reload fails", async () => {
+    const structure = validStructure();
+    const edit = {
+      id: "plan-1",
+      name: "Existing plan",
+      description: null,
+      notes: null,
+      structure,
+      structureHash: "a".repeat(64),
+      gpsRecordingEnabled: true,
+      contentVisibility: "private",
+    };
+    getByIdMock.mockReturnValue({
+      data: { detail: null, edit },
+      isError: false,
+      isLoading: false,
+      refetch: refetchMock,
+    } as never);
+    refetchMock.mockResolvedValue({ data: { detail: null, edit }, isError: true });
+
+    const { result } = await renderHook(() => useActivityPlanForm({ planId: "plan-1" }));
+    await act(async () => undefined);
+    await act(async () => result.current.setName("Keep this draft"));
+
+    await act(async () => {
+      await expect(result.current.reloadFromServer()).resolves.toBe(false);
+    });
+
+    expect(result.current.form.name).toBe("Keep this draft");
+    refetchMock.mockResolvedValue({
+      data: { edit: { ...edit, name: "Fresh server name" } },
+      isError: false,
+    });
+    await act(async () => {
+      await result.current.retryLoad();
+    });
+    expect(result.current.form.name).toBe("Keep this draft");
+  });
+  it("keeps the loaded revision token with the draft across background refetch and conflicts", async () => {
+    const edit = {
+      id: "plan-1",
+      name: "Loaded",
+      description: null,
+      notes: null,
+      structure: validStructure(),
+      structureHash: "a".repeat(64),
+      activityPlanRevision: 7,
+      trainingIntent: "general_maintenance",
+      adaptation: null,
+      gpsRecordingEnabled: true,
+      contentVisibility: "private",
+    };
+    getByIdMock.mockReturnValue({ data: { edit }, isLoading: false } as never);
+    const view = await renderHook(() => useActivityPlanForm({ planId: "plan-1" }));
+    await act(async () => view.result.current.setName("Keep draft"));
+    getByIdMock.mockReturnValue({
+      data: { edit: { ...edit, activityPlanRevision: 8 } },
+      isLoading: false,
+    } as never);
+    await view.rerender({});
+    updateMock.mockRejectedValueOnce(new Error("STALE_ACTIVITY_PLAN_REVISION"));
+    await act(async () => {
+      await view.result.current.submit();
+    });
+    expect(updateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Keep draft", expectedRevision: 7 }),
+    );
+    expect(view.result.current.form.name).toBe("Keep draft");
   });
 });

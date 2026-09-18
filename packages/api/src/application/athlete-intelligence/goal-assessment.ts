@@ -146,7 +146,12 @@ export async function getGoalAssessment(input: {
     },
     now,
   });
-  return assessGoalFromReadModel({ goal, readModel, now, plannedSessions: input.plannedSessions });
+  return assessGoalFromReadModel({
+    goal,
+    readModel,
+    now,
+    ...(input.plannedSessions === undefined ? {} : { plannedSessions: input.plannedSessions }),
+  });
 }
 
 export async function getGoalAssessmentBatch(input: {

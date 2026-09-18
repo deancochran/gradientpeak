@@ -18,6 +18,14 @@ function shouldEnableReplay(env) {
   );
 }
 
+function shouldEnableSentry(env, isDevelopment, dsn = env.EXPO_PUBLIC_SENTRY_DSN) {
+  return (
+    Boolean(dsn) &&
+    env.EXPO_PUBLIC_MAESTRO_E2E !== "1" &&
+    (!isDevelopment || env.EXPO_PUBLIC_ENABLE_SENTRY_IN_DEV === "1")
+  );
+}
+
 function createMobileSentryOptions(env, environment) {
   const replayEnabled = shouldEnableReplay(env);
   const tracesSampleRate = readSampleRate(env.EXPO_PUBLIC_SENTRY_TRACES_SAMPLE_RATE, 0);
@@ -33,6 +41,7 @@ function createMobileSentryOptions(env, environment) {
     replaysSessionSampleRate: replayEnabled
       ? readSampleRate(env.EXPO_PUBLIC_SENTRY_REPLAYS_SESSION_SAMPLE_RATE, 0)
       : 0,
+    sampleRate: 1,
     sendDefaultPii: false,
     tracesSampleRate,
   };
@@ -41,5 +50,6 @@ function createMobileSentryOptions(env, environment) {
 module.exports = {
   createMobileSentryOptions,
   readSampleRate,
+  shouldEnableSentry,
   shouldEnableReplay,
 };

@@ -43,6 +43,21 @@ function FormHarness({ onSubmit }: { onSubmit: (value: { pace: number }) => void
 }
 
 describe("PaceSecondsField native", () => {
+  it("adjusts canonical pace by five seconds", async () => {
+    const onChangeSeconds = jest.fn();
+    const { getByLabelText } = await renderNative(
+      <PaceSecondsField
+        id="pace"
+        label="Pace"
+        onChangeSeconds={onChangeSeconds}
+        valueSeconds={270}
+      />,
+    );
+    await fireEvent.press(getByLabelText("Increase Pace"));
+    await fireEvent.press(getByLabelText("Decrease Pace"));
+    expect(onChangeSeconds).toHaveBeenNthCalledWith(1, 275);
+    expect(onChangeSeconds).toHaveBeenNthCalledWith(2, 270);
+  });
   it("retains an incomplete draft and emits a corrected valid value before blur", async () => {
     const onBlur = jest.fn();
     const onChangeSeconds = jest.fn();

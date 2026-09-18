@@ -4,9 +4,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RecordPlanPage } from "./plan";
 
-const mocks = vi.hoisted(() => ({ detailInputs: [] as unknown[], navigate: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  navigate: vi.fn(),
+  listError: false,
+  listEmpty: false,
+  dayError: false,
+  detailError: false,
+  refetchPlans: vi.fn(),
+  refetchDay: vi.fn(),
+  refetchDetail: vi.fn(),
+}));
 const PLAN_ID = "00000000-0000-4000-8000-000000000010";
-const EVENT_ID = "00000000-0000-4000-8000-000000000020";
+const SESSION_ID = "00000000-0000-4000-8000-000000000020";
 const structure = {
   version: 3,
   activity_category: "run",
@@ -46,6 +55,9 @@ const plans = [
     description: "Steady work",
     activityCategory: "run",
     capabilities: { canRecord: true },
+    structure,
+    metrics: [],
+    engagement: { likes: 0, viewerHasLiked: false },
   },
   {
     id: "00000000-0000-4000-8000-000000000011",
@@ -53,6 +65,9 @@ const plans = [
     description: "Easy spin",
     activityCategory: "bike",
     capabilities: { canRecord: true },
+    structure,
+    metrics: [],
+    engagement: { likes: 0, viewerHasLiked: false },
   },
 ];
 
@@ -74,17 +89,33 @@ vi.mock("../../../lib/api/client", () => ({
             projection: {
               items: [
                 {
-                  id: EVENT_ID,
+                  id: SESSION_ID,
                   kind: "planned_activity",
                   status: "scheduled",
                   calendarDate: "2026-08-19",
                   timing: { startsAt: null },
-                  plan: plans[0],
+                  plannedSession: {
+                    id: SESSION_ID,
+                    planningDate: "2026-08-19",
+                    sessionRevision: 4,
+                    lifecycle: { status: "scheduled" },
+                    prescription: {
+                      capturedAt: "2026-08-01T00:00:00.000Z",
+                      resolutionManifest: {
+                        activity_plan_id: PLAN_ID,
+                        activity_plan_revision: 2,
+                        resolved_structure: structure,
+                        resolved_structure_hash: `v1:sha256:${"a".repeat(64)}`,
+                      },
+                    },
+                  },
                 },
               ],
             },
           },
           isLoading: false,
+          isError: mocks.dayError,
+          refetch: mocks.refetchDay,
         }),
       },
     },
@@ -94,59 +125,52 @@ vi.mock("../../../lib/api/client", () => ({
           data: {
             pages: [
               {
-                items: input.search
-                  ? plans.filter((plan) =>
-                      plan.name.toLowerCase().includes((input.search ?? "").toLowerCase()),
-                    )
-                  : plans,
+                items: mocks.listEmpty
+                  ? []
+                  : input.search
+                    ? plans.filter((plan) =>
+                        plan.name.toLowerCase().includes((input.search ?? "").toLowerCase()),
+                      )
+                    : plans,
                 nextCursor: undefined,
               },
             ],
           },
           isFetching: false,
+          isLoading: false,
+          isError: mocks.listError,
+          refetch: mocks.refetchPlans,
           isFetchingNextPage: false,
           hasNextPage: false,
           fetchNextPage: vi.fn(),
         }),
       },
       getById: {
-        useQuery: (input: { id: string }) => {
-          mocks.detailInputs.push(input);
-          return {
-            data:
-              input.id === PLAN_ID
-                ? {
-                    detail: {
-                      ...plans[0],
-                      activityPlanRevision: 2,
-                      structure,
-                      structureHash: `v1:sha256:${"a".repeat(64)}`,
-                      defaultVariantId: PLAN_ID,
-                      defaultVariantName: "Base",
-                      variants: [
-                        { id: PLAN_ID, name: "Base" },
-                        {
-                          id: "00000000-0000-4000-8000-000000000012",
-                          name: "Build",
-                        },
-                      ],
-                      resolvedVariant: { id: PLAN_ID, name: "Base", selection: "default" },
-                      metrics: [
-                        {
-                          key: "elapsed_duration",
-                          label: "Duration",
-                          status: "available",
-                          value: 60,
-                          unit: "seconds",
-                        },
-                      ],
-                    },
-                  }
-                : undefined,
-            isLoading: false,
-            isError: false,
-          };
-        },
+        useQuery: (input: { id: string }) => ({
+          data:
+            input.id === PLAN_ID
+              ? {
+                  detail: {
+                    ...plans[0],
+                    activityPlanRevision: 2,
+                    structure,
+                    structureHash: `v1:sha256:${"a".repeat(64)}`,
+                    metrics: [
+                      {
+                        key: "elapsed_duration",
+                        label: "Duration",
+                        status: "available",
+                        value: 60,
+                        unit: "seconds",
+                      },
+                    ],
+                  },
+                }
+              : undefined,
+          isLoading: false,
+          isError: mocks.detailError,
+          refetch: mocks.refetchDetail,
+        }),
       },
     },
   },
@@ -159,10 +183,44 @@ vi.mock("../../../lib/recording/provider", () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
-  mocks.detailInputs = [];
+  mocks.listError = false;
+  mocks.listEmpty = false;
+  mocks.dayError = false;
+  mocks.detailError = false;
 });
 
 describe("RecordPlanPage", () => {
+  it("shows a zero-result failure rather than empty and retries without losing search", () => {
+    mocks.listError = true;
+    mocks.listEmpty = true;
+    render(<RecordPlanPage />);
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search all activity plans" }), {
+      target: { value: "tempo" },
+    });
+    expect(screen.getByRole("alert").textContent).toContain("Activity plans could not be loaded");
+    expect(screen.queryByText("No activity plans match your search.")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry activity plans" }));
+    expect(mocks.refetchPlans).toHaveBeenCalledOnce();
+    expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("tempo");
+  });
+
+  it("uses the canonical selectable card and preserves selection while retrying detail", () => {
+    const view = render(<RecordPlanPage />);
+    const card = screen.getByTestId(`activity-plan-card-${PLAN_ID}`);
+    fireEvent.click(card);
+    expect(card.getAttribute("aria-pressed")).toBe("true");
+    expect(card.getAttribute("aria-label")).toBe("Select Tempo run");
+    mocks.detailError = true;
+    view.rerender(<RecordPlanPage />);
+    expect(
+      (screen.getByRole("button", { name: "Use this plan" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Retry selected plan" }));
+    expect(mocks.refetchDetail).toHaveBeenCalledOnce();
+    expect(card.getAttribute("aria-pressed")).toBe("true");
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
   it("searches all visible recordable plans", () => {
     render(<RecordPlanPage />);
     const search = screen.getByRole("searchbox", { name: "Search all activity plans" });
@@ -171,14 +229,16 @@ describe("RecordPlanPage", () => {
     expect(screen.queryByText("Recovery ride")).toBeNull();
   });
 
-  it("records missing-fact and RPE targets as authored without an independent personalization choice", () => {
+  it("selects a planned session by identity rather than loading its mutable activity plan", () => {
     render(<RecordPlanPage />);
-    fireEvent.click(screen.getByRole("button", { name: /Tempo run.*Scheduled instance/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /run session.*Frozen scheduled prescription/i }),
+    );
 
     expect(screen.queryByRole("switch", { name: "Calculated targets" })).toBeNull();
     expect(screen.getByText("80% Threshold HR")).toBeTruthy();
     expect(screen.getByText("7 RPE")).toBeTruthy();
-    expect(screen.getByText(/Recording uses the plan's authored targets/i)).toBeTruthy();
+    expect(screen.getByText("Recording uses this session's frozen prescription.")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Use this plan" }));
     expect(mocks.navigate).toHaveBeenCalledWith({
@@ -186,11 +246,9 @@ describe("RecordPlanPage", () => {
       search: {
         activity_category: "run",
         gps: "off",
-        activityPlanId: PLAN_ID,
-        eventId: EVENT_ID,
-        variantId: PLAN_ID,
+        plannedSessionId: SESSION_ID,
+        plannedSessionDate: "2026-08-19",
       },
     });
-    expect(mocks.detailInputs).toContainEqual({ id: PLAN_ID, personalize: false });
   });
 });

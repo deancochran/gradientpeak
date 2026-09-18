@@ -13,8 +13,10 @@ vi.mock("../protected/activity-route-primitives", () => ({
   ),
 }));
 vi.mock("../activity-plan/planned-activity-card", () => ({
-  PlannedActivityCard: ({ item }: { item: { id: string } }) => (
-    <div data-testid={`canonical-planned-${item.id}`}>Planned</div>
+  PlannedActivityCard: ({ item }: { item: { id: string; navigation: { href: string } } }) => (
+    <a data-testid={`canonical-planned-${item.id}`} href={item.navigation.href}>
+      Planned
+    </a>
   ),
 }));
 vi.mock("../planning/goal-card", () => ({
@@ -64,7 +66,9 @@ describe("CalendarProjectionCard", () => {
     );
 
     rerender(<CalendarProjectionCard item={item("planned_activity")} />);
-    expect(screen.getByTestId("canonical-planned-planned_activity-1")).toBeTruthy();
+    expect(screen.getByTestId("canonical-planned-planned_activity-1").getAttribute("href")).toBe(
+      "/calendar/events/planned_activity-1?resourceType=planned_session",
+    );
 
     rerender(
       <CalendarProjectionCard

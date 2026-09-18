@@ -93,7 +93,9 @@ export function PlanDashboardContent({
         progressError={progressQuery.isError}
         progressLoading={progressQuery.isLoading}
         readinessLoading={assessmentQuery.isLoading}
-        readinessStatus={assessmentQuery.data?.assessment?.status}
+        {...(assessmentQuery.data?.assessment?.status === undefined
+          ? {}
+          : { readinessStatus: assessmentQuery.data.assessment.status })}
         selectedGoal={selectedGoal}
         totalGoalCount={portfolioQuery.data?.totalGoalCount ?? null}
       />

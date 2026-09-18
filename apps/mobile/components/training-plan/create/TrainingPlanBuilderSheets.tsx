@@ -82,6 +82,9 @@ export function TrainingPlanBuilderSheets({ controller }: TrainingPlanBuilderShe
   const sheetHasSaveAction = builderSheetHasSaveAction(activeSheet);
   const sheetActionLabel = getBuilderSheetActionLabel(activeSheet);
   const closeBuilderSheet = () => {
+    if (selection.sessionId) {
+      controller.numericDrafts.clearErrors(`session:${selection.sessionId}:`);
+    }
     controller.actions.cancelPendingSessionDraft();
     closeSheet();
   };
@@ -95,12 +98,12 @@ export function TrainingPlanBuilderSheets({ controller }: TrainingPlanBuilderShe
       activeSheet={activeSheet}
       activityPlanCategoryFilter={activityPicker.categoryFilter}
       activityPlanSort={activityPicker.sort}
-      planningConstraintFields={sheets.planningConstraintFields}
       planPreferences={sheets.planPreferences}
       planMetadata={builder.state.details}
       onApplyActivityFilters={activityPicker.applyFiltersDraft}
       onApplyPlanningPreferences={builder.actions.updatePlanningPreferences}
       onApplyMetadata={builder.actions.updateDetails}
+      onNumericDraftError={controller.numericDrafts.setError}
     >
       <TrainingPlanBuilderSheetFrame
         activeSheet={activeSheet}
@@ -153,6 +156,7 @@ export function TrainingPlanBuilderSheets({ controller }: TrainingPlanBuilderShe
           goBackSheet={goBackSheet}
           onSelectActivityPlan={activityPicker.selectPlan}
           onRemoveSession={controller.actions.confirmRemoveSession}
+          onNumericDraftError={controller.numericDrafts.setError}
           pushSheet={pushSheet}
           selectedSessionId={selection.sessionId}
           setActivityPlanSearchQuery={activityPicker.setSearchQuery}

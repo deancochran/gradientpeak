@@ -13,7 +13,6 @@ describe("UI ownership guardrails", () => {
 
     expect(actualFiles).toEqual([
       "ActivityCard.tsx",
-      "ActivityPlanAttributionRow.tsx",
       "ActivityPlanCard.tsx",
       "ActivityPlanSummary.tsx",
       "AppBottomSheet.tsx",
@@ -24,6 +23,7 @@ describe("UI ownership guardrails", () => {
       "CompactInsightCard.tsx",
       "DetailChartModal.tsx",
       "EntityOwnerRow.tsx",
+      "FormScreen.tsx",
       "GoalCard.tsx",
       "HeaderAction.tsx",
       "HeaderButtons.tsx",
@@ -65,7 +65,9 @@ describe("UI ownership guardrails", () => {
       "activity-plan/activity-plan-card.tsx",
       "activity-plan/activity-plan-comments.tsx",
       "activity-plan/activity-plan-composer.tsx",
+      "activity-plan/activity-plan-edit-session.tsx",
       "activity-plan/activity-plan-estimates.tsx",
+      "activity-plan/activity-plan-pdf-actions.tsx",
       "activity-plan/activity-plan-session-flow.tsx",
       "activity-plan/activity-plan-structure.tsx",
       "activity-plan/activity-plan-timeline-chart.tsx",
@@ -92,7 +94,6 @@ describe("UI ownership guardrails", () => {
       "planning/goal-card.tsx",
       "planning/goal-intelligence-card.tsx",
       "planning/plan-dashboard.tsx",
-      "planning/planned-day-summary.tsx",
       "planning/training-load-chart.tsx",
       "planning/training-load-path.tsx",
       "profile-preview-chart.tsx",
@@ -128,8 +129,6 @@ describe("UI ownership guardrails", () => {
       "training-plan/training-plan-library.tsx",
       "training-plan/training-plan-model.ts",
       "training-plan/training-plan-planned-preview.tsx",
-      "training-plan/training-preferences-editor.tsx",
-      "training-plan/training-preferences-form.ts",
       "update-password-form.tsx",
     ]);
   });

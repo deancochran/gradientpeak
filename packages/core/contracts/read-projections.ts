@@ -1,9 +1,11 @@
 import { z } from "zod";
+
 import { activityPlanStructureSchema } from "../activity-plan/structure-schema";
 import { activityPrescriptionQuantificationBundleSchema } from "../activity-quantification/bundle";
 import { activityPlanProjectionSchema } from "../activity-quantification/plan-projection";
 import { completedSegmentSummarySchema } from "../activity-segments/completed-segment-schema";
 import { plannedSessionProjectionSchema } from "../calendar/planned-session";
+import { plannedSessionComparisonSchema } from "../calendar/planned-session-comparison";
 import { groupEventRsvpStatusSchema } from "../groups/schemas";
 import { activityLapRecordListSchema } from "../schemas/activity_streams";
 import { canonicalActivityCategorySchema } from "../schemas/activity-category";
@@ -215,8 +217,10 @@ export const activityDisplayModelSchema = z.strictObject({
   href: hrefSchema,
   owner: projectionOwnerSchema,
   time: z.strictObject({
-    startedAt: instantSchema,
+    startedAt: instantSchema.nullable(),
     finishedAt: instantSchema.nullable(),
+    diaryDate: z.iso.date().nullable().optional(),
+    diaryTimezone: z.string().min(1).nullable().optional(),
   }),
   activityComposition: z.strictObject({
     kind: z.enum(["single", "multisport", "unknown"]),
@@ -279,10 +283,10 @@ export const activityDetailDisplaySchema = z.strictObject({
   summary: activityDisplayModelSchema,
   performance: z.strictObject({
     timingCoverage: z.enum(["complete", "partial", "unavailable"]),
-    elapsedSeconds: z.number().finite().nonnegative(),
+    elapsedSeconds: nullableFiniteNumberSchema,
     activeSeconds: nullableFiniteNumberSchema,
     movingSeconds: nullableFiniteNumberSchema,
-    distanceMeters: z.number().finite().nonnegative(),
+    distanceMeters: nullableFiniteNumberSchema,
     elevationGainMeters: nullableFiniteNumberSchema,
     calories: nullableFiniteNumberSchema,
     averageHeartRate: nullableFiniteNumberSchema,
@@ -605,6 +609,7 @@ export const calendarProjectionItemSchema = z
     partial: z.boolean(),
     plan: scheduledActivityPlanSummarySchema.nullable(),
     plannedSession: plannedSessionProjectionSchema.nullable().default(null),
+    plannedActual: plannedSessionComparisonSchema.nullable().default(null),
     activity: activityDisplayModelSchema.nullable(),
     event: z
       .strictObject({
@@ -649,6 +654,10 @@ export const calendarProjectionItemSchema = z
       {
         field: "plannedSession",
         valid: item.plannedSession === null || item.kind === "planned_activity",
+      },
+      {
+        field: "plannedActual",
+        valid: item.plannedActual === null || item.kind === "planned_activity",
       },
       { field: "groupEvent", valid: (item.groupEvent !== null) === (item.kind === "group_event") },
       { field: "goal", valid: (item.goal !== null) === (item.kind === "goal") },
@@ -705,6 +714,7 @@ export const calendarProjectionRangeSchema = z
     truncated: z.boolean(),
     truncation: z.strictObject({
       events: z.boolean(),
+      plannedSessions: z.boolean(),
       completedActivities: z.boolean(),
       groupEvents: z.boolean(),
       goals: z.boolean(),

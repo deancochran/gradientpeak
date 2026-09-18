@@ -117,6 +117,13 @@
     }
   },
   "integer-stepper": {
+    "reps": {
+      "id": "reps",
+      "value": 8,
+      "min": 1,
+      "max": 1000,
+      "testId": "reps-stepper"
+    },
     "weeks": {
       "id": "microcycle-weeks",
       "value": 6,
@@ -142,6 +149,70 @@
   "metric-card": {
     "fatigue": {
       "value": 68
+    }
+  },
+  "native-picker": {
+    "rpe": {
+      "value": 5,
+      "options": [
+        {
+          "value": 1
+        },
+        {
+          "value": 1.5
+        },
+        {
+          "value": 2
+        },
+        {
+          "value": 2.5
+        },
+        {
+          "value": 3
+        },
+        {
+          "value": 3.5
+        },
+        {
+          "value": 4
+        },
+        {
+          "value": 4.5
+        },
+        {
+          "value": 5
+        },
+        {
+          "value": 5.5
+        },
+        {
+          "value": 6
+        },
+        {
+          "value": 6.5
+        },
+        {
+          "value": 7
+        },
+        {
+          "value": 7.5
+        },
+        {
+          "value": 8
+        },
+        {
+          "value": 8.5
+        },
+        {
+          "value": 9
+        },
+        {
+          "value": 9.5
+        },
+        {
+          "value": 10
+        }
+      ]
     }
   },
   "number-slider-input": {
@@ -183,6 +254,25 @@
     "activityCategory": {
       "id": "preferred-activity-category",
       "testId": "preferred-activity-category-radio-group"
+    }
+  },
+  "segmented-duration-field": {
+    "short": {
+      "id": "segmented-duration-short",
+      "valueSeconds": 180
+    },
+    "long": {
+      "id": "segmented-duration-long",
+      "valueSeconds": 3661
+    },
+    "incomplete": {
+      "id": "segmented-duration-incomplete",
+      "valueSeconds": 61
+    },
+    "disabled": {
+      "id": "segmented-duration-disabled",
+      "valueSeconds": 86400,
+      "disabled": true
     }
   },
   "select": {

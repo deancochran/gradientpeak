@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
 
 import { MAX_ROUTE_FILE_SIZE_BYTES } from "@repo/core/route-files";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RouteUploadForm } from "./route-upload-form";
+
+vi.mock("../../lib/use-unsaved-changes-guard", () => ({
+  useUnsavedChangesGuard: () => ({
+    guardedCancel: (fn: () => void) => fn(),
+    markSaveFailed: vi.fn(),
+    markSaved: vi.fn(),
+  }),
+}));
 
 afterEach(() => {
   cleanup();
@@ -57,6 +65,31 @@ function renderForm(props: Partial<React.ComponentProps<typeof RouteUploadForm>>
 }
 
 describe("RouteUploadForm", () => {
+  it("does not start a write after the upload owner unmounts during file preparation", async () => {
+    const read = deferred<string>();
+    const onSubmit = vi.fn();
+    const view = renderForm({ onSubmit });
+    view.selectFile(routeFile("pending.gpx", { readText: vi.fn(() => read.promise) }).file);
+    view.submit();
+    await screen.findByText("Reading route file...", { selector: "p" });
+    view.unmount();
+    await act(async () => read.resolve("<gpx />"));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("submits an explicitly cleared optional description as null", async () => {
+    const onSubmit = vi.fn().mockResolvedValue({ id: "route-1" });
+    const { selectFile, submit } = renderForm({ onSubmit });
+    selectFile(routeFile("notes.gpx").file);
+    fireEvent.change(screen.getByLabelText("Description"), {
+      target: { value: "Temporary notes" },
+    });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "" } });
+    submit();
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ description: null })),
+    );
+  });
   it("validates metadata, reads only on valid submit, and keeps XML out of form values", async () => {
     const onSubmit = vi.fn();
     const { file, readText } = routeFile("ridge-loop.gpx", { content: "<gpx>secret</gpx>" });
@@ -245,7 +278,11 @@ describe("RouteUploadForm", () => {
 
   it("stays terminal after the API commits even when post-commit work fails", async () => {
     const onSubmit = vi.fn().mockResolvedValue({ id: "route-1" });
-    const onSuccess = vi.fn().mockRejectedValue(new Error("Navigation failed"));
+    const navigation = deferred<void>();
+    const onSuccess = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Navigation failed"))
+      .mockReturnValueOnce(navigation.promise);
     const { selectFile, submit } = renderForm({ onSubmit, onSuccess });
     selectFile(routeFile("committed.gpx").file);
 
@@ -258,5 +295,14 @@ describe("RouteUploadForm", () => {
     expect(
       (screen.getByRole("button", { name: /Route uploaded/ }) as HTMLButtonElement).disabled,
     ).toBe(true);
+    expect((await screen.findByRole("alert")).textContent).toContain("Route saved");
+    fireEvent.click(screen.getByRole("button", { name: "Open route" }));
+    fireEvent.click(screen.getByRole("button", { name: "Opening route..." }));
+    expect(onSuccess).toHaveBeenCalledTimes(2);
+    expect(onSuccess.mock.calls[1]?.[0]).toBe(onSuccess.mock.calls[0]?.[0]);
+    navigation.resolve();
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Open route" })).toBeNull());
+    submit();
+    expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 });

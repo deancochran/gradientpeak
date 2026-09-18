@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { activityPlanDocumentSchema } from "@repo/core/activity-plan";
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { schema } from "@repo/db";
 import { and, asc, eq, gt, gte, isNull, lte, ne, or, sql } from "drizzle-orm";
 import {
@@ -10,7 +10,7 @@ import {
 import type {
   CreateWahooRepositoryOptions,
   WahooEventResourceLinkGenerationGuard,
-  WahooEventResourceProviderMetadata,
+  WahooPlannedSessionResourceProviderMetadata,
   WahooRepository,
 } from "../../repositories";
 import { attachActivitySourceReference } from "../../repositories/activity-source-reference-repository";
@@ -19,16 +19,16 @@ function toIsoString(value: Date | null): string | null {
   return value ? value.toISOString() : null;
 }
 
-export function toWahooEventResourceProviderMetadata(
+export function toWahooPlannedSessionResourceProviderMetadata(
   value: unknown,
-): WahooEventResourceProviderMetadata | null {
+): WahooPlannedSessionResourceProviderMetadata | null {
   if (!value || typeof value !== "object" || !("wahoo" in value)) return null;
 
   const wahoo = (value as Record<string, unknown>).wahoo;
   if (!wahoo || typeof wahoo !== "object") return null;
 
   const wahooValue = wahoo as Record<string, unknown>;
-  const metadata: NonNullable<WahooEventResourceProviderMetadata["wahoo"]> = {};
+  const metadata: NonNullable<WahooPlannedSessionResourceProviderMetadata["wahoo"]> = {};
   if (typeof wahooValue.planId === "number") metadata.planId = wahooValue.planId;
   if (typeof wahooValue.providerAccountExternalId === "string") {
     metadata.providerAccountExternalId = wahooValue.providerAccountExternalId;
@@ -47,6 +47,9 @@ export function toWahooEventResourceProviderMetadata(
   return Object.keys(metadata).length > 0 ? { wahoo: metadata } : null;
 }
 
+/** @deprecated Generic-event delivery is disabled. */
+export const toWahooEventResourceProviderMetadata = toWahooPlannedSessionResourceProviderMetadata;
+
 export function wahooActiveIntegrationGenerationPredicate(
   input: WahooEventResourceLinkGenerationGuard,
 ) {
@@ -59,6 +62,19 @@ export function wahooActiveIntegrationGenerationPredicate(
   );
 }
 
+export function wahooPlannedSessionResourceLinkOwnershipPredicate(
+  input: WahooEventResourceLinkGenerationGuard & { id: string },
+) {
+  return and(
+    eq(schema.integrationResourceLinks.id, input.id),
+    eq(schema.integrationResourceLinks.integration_id, input.integrationId),
+    eq(schema.integrationResourceLinks.profile_id, input.profileId),
+    eq(schema.integrationResourceLinks.provider, "wahoo"),
+    eq(schema.integrationResourceLinks.resource_kind, "planned_session"),
+  );
+}
+
+/** @deprecated Generic-event delivery is disabled. */
 export function wahooEventResourceLinkOwnershipPredicate(
   input: WahooEventResourceLinkGenerationGuard & { id: string },
 ) {
@@ -67,7 +83,7 @@ export function wahooEventResourceLinkOwnershipPredicate(
     eq(schema.integrationResourceLinks.integration_id, input.integrationId),
     eq(schema.integrationResourceLinks.profile_id, input.profileId),
     eq(schema.integrationResourceLinks.provider, "wahoo"),
-    eq(schema.integrationResourceLinks.resource_kind, "event"),
+    eq(schema.integrationResourceLinks.resource_kind, "planned_session"),
   );
 }
 
@@ -195,7 +211,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
       });
     },
 
-    async createEventResourceLink(input) {
+    async createPlannedSessionResourceLink(input) {
       await db.transaction(async (tx) => {
         const [active] = await tx
           .select({ id: schema.integrations.id })
@@ -205,16 +221,56 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           .for("share");
         if (!active) throw new Error("integration_generation_inactive");
 
-        const [ownedEvent] = await tx
-          .select({ id: schema.events.id })
-          .from(schema.events)
+        const [ownedSession] = await tx
+          .select({ id: schema.plannedSessions.id })
+          .from(schema.plannedSessions)
           .where(
-            and(eq(schema.events.id, input.eventId), eq(schema.events.profile_id, input.profileId)),
+            and(
+              eq(schema.plannedSessions.id, input.plannedSessionId),
+              eq(schema.plannedSessions.profile_id, input.profileId),
+            ),
           )
           .limit(1)
           .for("share");
-        if (!ownedEvent) throw new Error("planned_activity_not_owned");
+        if (!ownedSession) throw new Error("planned_session_not_owned");
 
+        await tx.insert(schema.integrationResourceLinks).values({
+          id: randomUUID(),
+          created_at: new Date(),
+          external_id: input.externalId,
+          integration_id: input.integrationId,
+          internal_resource_id: input.plannedSessionId,
+          profile_id: input.profileId,
+          provider: input.provider,
+          provider_metadata: input.providerMetadata ?? null,
+          resource_kind: "planned_session",
+          synced_at: new Date(input.syncedAt),
+          updated_at: new Date(input.updatedAt),
+        });
+      });
+    },
+
+    async createEventResourceLink(input) {
+      await db.transaction(async (tx) => {
+        const [active] = await tx
+          .select({ id: schema.integrations.id })
+          .from(schema.integrations)
+          .where(wahooActiveIntegrationGenerationPredicate(input))
+          .limit(1)
+          .for("share");
+        if (!active) throw new Error("integration_generation_inactive");
+        const [ownedSession] = await tx
+          .select({ id: schema.plannedSessions.id })
+          .from(schema.plannedSessions)
+          .where(
+            and(
+              eq(schema.plannedSessions.id, input.eventId),
+              eq(schema.plannedSessions.profile_id, input.profileId),
+            ),
+          )
+          .limit(1)
+          .for("share");
+        if (!ownedSession) throw new Error("planned_session_not_owned");
         await tx.insert(schema.integrationResourceLinks).values({
           id: randomUUID(),
           created_at: new Date(),
@@ -224,10 +280,26 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           profile_id: input.profileId,
           provider: input.provider,
           provider_metadata: input.providerMetadata ?? null,
-          resource_kind: "event",
+          resource_kind: "planned_session",
           synced_at: new Date(input.syncedAt),
           updated_at: new Date(input.updatedAt),
         });
+      });
+    },
+
+    async deletePlannedSessionResourceLink(input) {
+      await db.transaction(async (tx) => {
+        const [active] = await tx
+          .select({ id: schema.integrations.id })
+          .from(schema.integrations)
+          .where(wahooActiveIntegrationGenerationPredicate(input))
+          .limit(1)
+          .for("share");
+        if (!active) throw new Error("integration_generation_inactive");
+
+        await tx
+          .delete(schema.integrationResourceLinks)
+          .where(wahooPlannedSessionResourceLinkOwnershipPredicate(input));
       });
     },
 
@@ -240,10 +312,9 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           .limit(1)
           .for("share");
         if (!active) throw new Error("integration_generation_inactive");
-
         await tx
           .delete(schema.integrationResourceLinks)
-          .where(wahooEventResourceLinkOwnershipPredicate(input));
+          .where(wahooPlannedSessionResourceLinkOwnershipPredicate(input));
       });
     },
 
@@ -291,12 +362,16 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
     async createGroupEventRouteDeliveryResourceLink(input) {
       await db.transaction(async (tx) => {
         const [active] = await tx
-          .select({ id: schema.integrations.id })
+          .select({
+            id: schema.integrations.id,
+            routeDeliveryEnabled: schema.integrations.wahoo_event_route_delivery_enabled,
+          })
           .from(schema.integrations)
           .where(wahooActiveIntegrationGenerationPredicate(input))
           .limit(1)
           .for("share");
         if (!active) throw new Error("integration_generation_inactive");
+        if (!active.routeDeliveryEnabled) throw new Error("group_event_route_delivery_disabled");
 
         const [eligible] = await tx
           .select({ id: schema.groupEvents.id })
@@ -330,10 +405,6 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
               eq(schema.groupEventSeriesRsvps.profile_id, input.profileId),
             ),
           )
-          .innerJoin(
-            schema.profileTrainingSettings,
-            eq(schema.profileTrainingSettings.profile_id, input.profileId),
-          )
           .where(
             and(
               eq(schema.groupEvents.id, input.eventId),
@@ -345,7 +416,6 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
               isNull(schema.groupEvents.cancelled_at),
               sql<boolean>`coalesce(${schema.groupEventRsvps.status}, ${schema.groupEventSeriesRsvps.status}, 'going') = 'going'`,
               gt(schema.groupEvents.starts_at, new Date()),
-              sql<boolean>`coalesce(${schema.profileTrainingSettings.settings}->>'wahooEventRouteDeliveryEnabled', 'false') = 'true'`,
               or(
                 eq(schema.activityRoutes.profile_id, input.profileId),
                 eq(schema.activityRoutes.is_public, true),
@@ -601,7 +671,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
             eq(schema.integrationResourceLinks.provider, "wahoo"),
             eq(schema.integrationResourceLinks.external_id, externalWorkoutId),
             eq(schema.integrationResourceLinks.profile_id, profileId),
-            eq(schema.integrationResourceLinks.resource_kind, "event"),
+            eq(schema.integrationResourceLinks.resource_kind, "planned_session"),
           ),
         )
         .limit(1);
@@ -609,21 +679,48 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
       return row?.eventId ?? null;
     },
 
+    // Compatibility for imported activity linking. The identifier is now a
+    // planned-session ID and the activity-plan identity comes from its frozen manifest.
     async getEventActivityPlanId({ eventId, profileId }) {
       const [row] = await db
-        .select({ activityPlanId: schema.events.activity_plan_id })
-        .from(schema.events)
-
+        .select({ manifest: schema.plannedSessions.resolution_manifest })
+        .from(schema.plannedSessions)
         .where(
           and(
-            eq(schema.events.id, eventId),
-            eq(schema.events.event_type, "planned"),
-            eq(schema.events.profile_id, profileId),
+            eq(schema.plannedSessions.id, eventId),
+            eq(schema.plannedSessions.profile_id, profileId),
           ),
         )
         .limit(1);
+      return row?.manifest?.activity_plan_id ?? null;
+    },
 
-      return row?.activityPlanId ?? null;
+    async getPlannedSessionResourceLink({ plannedSessionId, forUpdate, profileId, provider }) {
+      const query = db
+        .select({
+          externalId: schema.integrationResourceLinks.external_id,
+          id: schema.integrationResourceLinks.id,
+          providerMetadata: schema.integrationResourceLinks.provider_metadata,
+          updatedAt: schema.integrationResourceLinks.updated_at,
+        })
+        .from(schema.integrationResourceLinks)
+        .where(
+          and(
+            eq(schema.integrationResourceLinks.internal_resource_id, plannedSessionId),
+            eq(schema.integrationResourceLinks.profile_id, profileId),
+            eq(schema.integrationResourceLinks.provider, provider),
+            eq(schema.integrationResourceLinks.resource_kind, "planned_session"),
+          ),
+        );
+      const [row] = await (forUpdate ? query.for("update").limit(1) : query.limit(1));
+
+      return row
+        ? {
+            ...row,
+            providerMetadata: toWahooPlannedSessionResourceProviderMetadata(row.providerMetadata),
+            updatedAt: toIsoString(row.updatedAt),
+          }
+        : null;
     },
 
     async getEventResourceLink({ eventId, forUpdate, profileId, provider }) {
@@ -640,65 +737,95 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
             eq(schema.integrationResourceLinks.internal_resource_id, eventId),
             eq(schema.integrationResourceLinks.profile_id, profileId),
             eq(schema.integrationResourceLinks.provider, provider),
-            eq(schema.integrationResourceLinks.resource_kind, "event"),
+            eq(schema.integrationResourceLinks.resource_kind, "planned_session"),
           ),
         );
       const [row] = await (forUpdate ? query.for("update").limit(1) : query.limit(1));
-
       return row
         ? {
             ...row,
-            providerMetadata: toWahooEventResourceProviderMetadata(row.providerMetadata),
+            providerMetadata: toWahooPlannedSessionResourceProviderMetadata(row.providerMetadata),
             updatedAt: toIsoString(row.updatedAt),
           }
         : null;
     },
 
-    async getPlannedEventForSync({ eventId, profileId }) {
+    async getPlannedSessionForSync({ plannedSessionId, profileId }) {
       const [row] = await db
         .select({
-          id: schema.events.id,
-          startsAt: schema.events.starts_at,
-          timezone: schema.events.timezone,
-          activityPlan: {
-            id: schema.activityPlans.id,
-            name: schema.activityPlans.name,
-            description: schema.activityPlans.description,
-            structure: schema.activityPlans.structure,
-            updatedAt: schema.activityPlans.updated_at,
-          },
-          routeId: schema.events.route_id,
+          id: schema.plannedSessions.id,
+          planningDate: schema.plannedSessions.planning_date,
+          timezone: schema.profiles.planning_timezone,
+          manifest: schema.plannedSessions.resolution_manifest,
+          capturedAt: schema.plannedSessions.prescription_captured_at,
         })
-        .from(schema.events)
-
-        .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
+        .from(schema.plannedSessions)
+        .innerJoin(schema.profiles, eq(schema.profiles.id, schema.plannedSessions.profile_id))
         .where(
           and(
-            eq(schema.events.id, eventId),
-            eq(schema.events.profile_id, profileId),
-            eq(schema.events.event_type, "planned"),
+            eq(schema.plannedSessions.id, plannedSessionId),
+            eq(schema.plannedSessions.profile_id, profileId),
+            eq(schema.plannedSessions.status, "scheduled"),
           ),
         )
         .limit(1);
 
       if (!row) return null;
 
-      const activityPlan = row.activityPlan?.id
-        ? {
-            description: row.activityPlan.description,
-            id: row.activityPlan.id,
-            name: row.activityPlan.name,
-            structure: activityPlanDocumentSchema.parse(row.activityPlan.structure),
-            updatedAt: row.activityPlan.updatedAt.toISOString(),
-          }
-        : null;
+      const manifest = row.manifest;
+      if (!manifest) return null;
 
       return {
         id: row.id,
-        routeId: row.routeId,
-        startsAt: row.startsAt.toISOString(),
-        timezone: row.timezone,
-        activityPlan,
+        plannedSessionId: row.id,
+        planningDate: row.planningDate,
+        timezone: row.timezone ?? "UTC",
+        activityPlan: {
+          description: null,
+          id: manifest.activity_plan_id,
+          name: "Planned activity",
+          structure: activityPlanStructureSchema.parse(manifest.resolved_structure),
+          updatedAt: row.capturedAt.toISOString(),
+        },
+      };
+    },
+
+    // Legacy adapter surface is intentionally backed by the immutable planned-session snapshot,
+    // never an event or mutable activity-plan row. Generic event enqueue is disabled upstream.
+    async getPlannedEventForSync({ eventId, profileId }) {
+      const [row] = await db
+        .select({
+          id: schema.plannedSessions.id,
+          planningDate: schema.plannedSessions.planning_date,
+          timezone: schema.profiles.planning_timezone,
+          manifest: schema.plannedSessions.resolution_manifest,
+          capturedAt: schema.plannedSessions.prescription_captured_at,
+        })
+        .from(schema.plannedSessions)
+        .innerJoin(schema.profiles, eq(schema.profiles.id, schema.plannedSessions.profile_id))
+        .where(
+          and(
+            eq(schema.plannedSessions.id, eventId),
+            eq(schema.plannedSessions.profile_id, profileId),
+            eq(schema.plannedSessions.status, "scheduled"),
+          ),
+        )
+        .limit(1);
+      if (!row) return null;
+      const manifest = row.manifest;
+      if (!manifest) return null;
+      return {
+        id: row.id,
+        startsAt: `${row.planningDate}T12:00:00.000Z`,
+        timezone: row.timezone ?? "UTC",
+        routeId: null,
+        activityPlan: {
+          description: null,
+          id: manifest.activity_plan_id,
+          name: "Planned activity",
+          structure: activityPlanStructureSchema.parse(manifest.resolved_structure),
+          updatedAt: row.capturedAt.toISOString(),
+        },
       };
     },
 
@@ -769,8 +896,13 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           ),
         )
         .innerJoin(
-          schema.profileTrainingSettings,
-          eq(schema.profileTrainingSettings.profile_id, profileId),
+          schema.integrations,
+          and(
+            eq(schema.integrations.profile_id, profileId),
+            eq(schema.integrations.provider, "wahoo"),
+            eq(schema.integrations.lifecycle_status, "active"),
+            eq(schema.integrations.wahoo_event_route_delivery_enabled, true),
+          ),
         )
         .where(
           and(
@@ -783,7 +915,6 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
             isNull(schema.groupEvents.cancelled_at),
             sql<boolean>`coalesce(${schema.groupEventRsvps.status}, ${schema.groupEventSeriesRsvps.status}, 'going') = 'going'`,
             gt(schema.groupEvents.starts_at, new Date()),
-            sql<boolean>`coalesce(${schema.profileTrainingSettings.settings}->>'wahooEventRouteDeliveryEnabled', 'false') = 'true'`,
             or(
               eq(schema.activityRoutes.profile_id, profileId),
               eq(schema.activityRoutes.is_public, true),
@@ -837,8 +968,13 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           ),
         )
         .innerJoin(
-          schema.profileTrainingSettings,
-          eq(schema.profileTrainingSettings.profile_id, profileId),
+          schema.integrations,
+          and(
+            eq(schema.integrations.profile_id, profileId),
+            eq(schema.integrations.provider, "wahoo"),
+            eq(schema.integrations.lifecycle_status, "active"),
+            eq(schema.integrations.wahoo_event_route_delivery_enabled, true),
+          ),
         )
         .where(
           and(
@@ -861,7 +997,6 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
                   ),
                 )
               : undefined,
-            sql<boolean>`coalesce(${schema.profileTrainingSettings.settings}->>'wahooEventRouteDeliveryEnabled', 'false') = 'true'`,
             or(
               eq(schema.activityRoutes.profile_id, profileId),
               eq(schema.activityRoutes.is_public, true),
@@ -1044,88 +1179,6 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         provider: row.provider,
         syncedAt: toIsoString(row.syncedAt),
         updatedAt: toIsoString(row.updatedAt),
-      }));
-    },
-
-    async listUpcomingWahooSyncedPlannedEvents({
-      after,
-      limit,
-      profileId,
-      startsAtGte,
-      startsAtLte,
-    }) {
-      const startsAtLowerBound = new Date(startsAtGte);
-      const startsAtUpperBound = new Date(startsAtLte);
-      const afterStartsAt = after ? new Date(after.startsAt) : null;
-      const rows = await db
-        .select({
-          eventId: schema.events.id,
-          startsAt: schema.events.starts_at,
-          timezone: schema.events.timezone,
-          activityPlan: {
-            description: schema.activityPlans.description,
-            id: schema.activityPlans.id,
-            name: schema.activityPlans.name,
-            structure: schema.activityPlans.structure,
-          },
-        })
-        .from(schema.events)
-        .innerJoin(
-          schema.activityPlans,
-          eq(schema.activityPlans.id, schema.events.activity_plan_id),
-        )
-        .where(
-          and(
-            eq(schema.events.profile_id, profileId),
-            eq(schema.events.event_type, "planned"),
-            eq(schema.events.status, "scheduled"),
-            isNull(schema.events.route_id),
-            gte(schema.events.starts_at, startsAtLowerBound),
-            lte(schema.events.starts_at, startsAtUpperBound),
-            after && afterStartsAt
-              ? or(
-                  gt(schema.events.starts_at, afterStartsAt),
-                  and(
-                    eq(schema.events.starts_at, afterStartsAt),
-                    gt(schema.events.id, after.eventId),
-                  ),
-                )
-              : undefined,
-            sql`(
-              exists (
-                select 1
-                from integration_resource_links target_refresh_link
-                where target_refresh_link.profile_id = ${profileId}
-                  and target_refresh_link.provider = 'wahoo'
-                  and target_refresh_link.resource_kind = 'event'
-                  and target_refresh_link.internal_resource_id = ${schema.events.id}
-              )
-              or exists (
-                select 1
-                from provider_sync_jobs target_refresh_job
-                where target_refresh_job.profile_id = ${profileId}
-                  and target_refresh_job.provider = 'wahoo'
-                  and target_refresh_job.resource_kind = 'event'
-                  and target_refresh_job.internal_resource_id = ${schema.events.id}
-                  and target_refresh_job.job_type = 'wahoo.publish_event'
-                  and target_refresh_job.operation = 'publish'
-                  and target_refresh_job.status in ('queued', 'running', 'failed')
-              )
-            )`,
-          ),
-        )
-        .orderBy(asc(schema.events.starts_at), asc(schema.events.id))
-        .limit(Math.min(Math.max(1, limit), 100))
-        .for("share");
-
-      return rows.map((row) => ({
-        activityPlan: {
-          ...row.activityPlan,
-          structure: activityPlanDocumentSchema.parse(row.activityPlan.structure),
-        },
-        eventId: row.eventId,
-        startsAt: row.startsAt.toISOString(),
-        timezone: row.timezone,
       }));
     },
 

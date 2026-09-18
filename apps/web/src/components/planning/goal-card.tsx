@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Target } from "lucide-react";
 
-export type GoalCardData = {
+export type WebGoalCardData = {
   id: string;
   objectiveSummary?: string | null;
   targetDate?: string | null;
@@ -20,7 +20,7 @@ function formatTargetDate(dateKey: string) {
   }).format(new Date(`${dateKey}T00:00:00.000Z`));
 }
 
-export function GoalCard({ goal, href }: { goal: GoalCardData; href: string }) {
+export function GoalCard({ goal, href }: { goal: WebGoalCardData; href: string }) {
   return (
     <Card
       className="transition-colors hover:border-amber-500/50"

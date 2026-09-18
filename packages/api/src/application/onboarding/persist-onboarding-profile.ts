@@ -1,6 +1,5 @@
-import { athletePreferenceProfileSchema, defaultAthletePreferenceProfile } from "@repo/core";
 import type { CompleteOnboarding } from "@repo/core/schemas/onboarding";
-import { profiles, profileTrainingSettings } from "@repo/db";
+import { profiles } from "@repo/db";
 import { eq } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 
@@ -47,26 +46,4 @@ export async function persistOnboardingProfile({
   if (!updatedProfile?.id) {
     throw new OnboardingProfileNotFoundError();
   }
-
-  const [existingRow] = await tx
-    .select({ settings: profileTrainingSettings.settings })
-    .from(profileTrainingSettings)
-    .where(eq(profileTrainingSettings.profile_id, profileId))
-    .limit(1);
-  const existingSettings = existingRow
-    ? athletePreferenceProfileSchema.parse(existingRow.settings)
-    : defaultAthletePreferenceProfile;
-  const settings = athletePreferenceProfileSchema.parse({
-    ...existingSettings,
-    onboarding_intents: input.intents,
-  });
-  const now = new Date();
-
-  await tx
-    .insert(profileTrainingSettings)
-    .values({ profile_id: profileId, settings, updated_at: now })
-    .onConflictDoUpdate({
-      target: profileTrainingSettings.profile_id,
-      set: { settings, updated_at: now },
-    });
 }

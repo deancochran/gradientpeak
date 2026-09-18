@@ -1,12 +1,21 @@
-import { activityPlanDocumentSchema, activityPlanStructureSchema } from "@repo/core/activity-plan";
+import { activityPlanSemanticHash, activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 import type { PlannedSessionRepositoryPort } from "../../repositories/planned-session-repository-port";
+import { ActivityPlanIntegrityError } from "../activity-plans/resolver-candidate";
+import { activityPlanStructureHash } from "../activity-plans/structure-hash";
 import { createDirectPlannedSession } from "./create-direct-planned-session";
 import { PlannedSessionAccessError } from "./planned-session-errors";
 
+vi.mock("../athlete-intelligence/load-planning-baseline", () => ({
+  loadPlanningBaseline: vi.fn(async () => ({
+    status: "no_context",
+    as_of: "2026-08-17T12:34:56.000Z",
+  })),
+}));
+
 const profileId = "11111111-1111-4111-8111-111111111111";
 const activityPlanId = "22222222-2222-4222-8222-222222222222";
-const buildVariantId = "88888888-8888-4888-8888-888888888888";
 const groupEventId = "77777777-7777-4777-8777-777777777777";
 const structure = activityPlanStructureSchema.parse({
   version: 3,
@@ -25,6 +34,7 @@ const structure = activityPlanStructureSchema.parse({
             {
               id: "55555555-5555-4555-8555-555555555555",
               name: "Steady",
+              purpose: "work",
               duration: { type: "time", seconds: 1_800 },
               targets: [{ type: "RPE", intensity: 5 }],
             },
@@ -34,22 +44,6 @@ const structure = activityPlanStructureSchema.parse({
     },
   ],
 });
-const buildDocument = () => {
-  const buildStructure = structuredClone(structure);
-  const segment = buildStructure.segments[0];
-  if (!segment || segment.role !== "activity") throw new Error("Expected activity segment");
-  const step = segment.intervals[0]?.steps[0];
-  if (!step || step.duration.type !== "time") throw new Error("Expected timed step");
-  step.duration.seconds = 2_400;
-  return activityPlanDocumentSchema.parse({
-    contractVersion: 1,
-    defaultVariantId: activityPlanId,
-    variants: [
-      { id: activityPlanId, name: "Base", structure },
-      { id: buildVariantId, name: "Build", structure: buildStructure },
-    ],
-  });
-};
 
 function repositoryWithPlan() {
   const createOwned = vi.fn<PlannedSessionRepositoryPort["createOwned"]>(
@@ -65,8 +59,15 @@ function repositoryWithPlan() {
       name: "Steady run",
       description: null,
       revision: 9,
-      structure: buildDocument(),
-      structureHash: `v1:sha256:${"a".repeat(64)}`,
+      structure,
+      adaptation: null,
+      trainingIntent: "general_maintenance",
+      structureHash: activityPlanStructureHash(structure),
+      semanticHash: activityPlanSemanticHash({
+        structure,
+        adaptation: null,
+        trainingIntent: "general_maintenance",
+      }),
       gpsRecordingEnabled: true,
       updatedAt: "2026-08-01T08:00:00.000Z",
     })),
@@ -78,7 +79,41 @@ function repositoryWithPlan() {
 }
 
 describe("createDirectPlannedSession", () => {
-  it("captures revision, structure, quantification, and time from server-owned sources", async () => {
+  it("rejects policy-invalid historical plans before creating a new frozen prescription", async () => {
+    const { createOwned, repository } = repositoryWithPlan();
+    const plan = await repository.getActivityPlanPrescriptionSource({ profileId, activityPlanId });
+    if (!plan) throw new Error("Missing fixture plan");
+    const historical = structuredClone(structure);
+    const segment = historical.segments[0];
+    if (segment?.role !== "activity" || !segment.intervals[0]?.steps[0])
+      throw new Error("Missing step");
+    delete segment.intervals[0].steps[0].purpose;
+    vi.mocked(repository.getActivityPlanPrescriptionSource).mockResolvedValueOnce({
+      ...plan,
+      structure: historical,
+      structureHash: activityPlanStructureHash(historical),
+      semanticHash: activityPlanSemanticHash({
+        structure: historical,
+        adaptation: null,
+        trainingIntent: "general_maintenance",
+      }),
+    });
+    await expect(
+      createDirectPlannedSession({
+        db: {} as never,
+        repository,
+        profileId,
+        sessionId: "66666666-6666-4666-8666-666666666666",
+        planningDate: "2026-08-20",
+        source: { kind: "direct", operationId: "a".repeat(32) },
+        activityPlanId,
+        groupEventId: null,
+        capturedAt: new Date("2026-08-17T12:34:56.000Z"),
+      }),
+    ).rejects.toBeInstanceOf(ZodError);
+    expect(createOwned).not.toHaveBeenCalled();
+  });
+  it("captures a resolution manifest and time from server-owned sources", async () => {
     const { createOwned, repository } = repositoryWithPlan();
     const capturedAt = new Date("2026-08-17T12:34:56.000Z");
 
@@ -96,14 +131,15 @@ describe("createDirectPlannedSession", () => {
 
     const created = createOwned.mock.calls[0]?.[0].session;
     expect(created?.prescription).toMatchObject({
-      activityPlanId,
-      activityPlanRevision: 9,
-      variantId: activityPlanId,
-      variantName: "Base",
-      structure,
+      resolutionManifest: {
+        activity_plan_id: activityPlanId,
+        activity_plan_revision: 9,
+        fallback_level: "system_default_no_context",
+        resolved_structure: structure,
+      },
       capturedAt: capturedAt.toISOString(),
     });
-    expect(created?.prescription.prescriptionQuantification).toBeTruthy();
+    expect(created?.prescription.resolutionManifest.adaptation_values).toEqual({});
   });
 
   it("does not reveal or create a session from an unavailable plan", async () => {
@@ -126,33 +162,14 @@ describe("createDirectPlannedSession", () => {
     expect(createOwned).not.toHaveBeenCalled();
   });
 
-  it("resolves an explicit variant once and snapshots its identity, name, and concrete V3", async () => {
+  it("raises a typed integrity failure before writing an inconsistent catalog plan", async () => {
     const { createOwned, repository } = repositoryWithPlan();
-
-    await createDirectPlannedSession({
-      db: {} as never,
-      repository,
-      profileId,
-      sessionId: "66666666-6666-4666-8666-666666666666",
-      planningDate: "2026-08-20",
-      source: { kind: "direct", operationId: "b".repeat(32) },
-      activityPlanId,
-      variantId: buildVariantId,
-      groupEventId: null,
-      capturedAt: new Date("2026-08-17T12:34:56.000Z"),
+    const plan = await repository.getActivityPlanPrescriptionSource({ profileId, activityPlanId });
+    if (!plan) throw new Error("Test fixture plan is unavailable");
+    vi.mocked(repository.getActivityPlanPrescriptionSource).mockResolvedValueOnce({
+      ...plan,
+      structureHash: `v1:sha256:${"0".repeat(64)}`,
     });
-
-    const prescription = createOwned.mock.calls[0]?.[0].session.prescription;
-    expect(prescription).toMatchObject({
-      variantId: buildVariantId,
-      variantName: "Build",
-      structure: { version: 3 },
-    });
-    expect(prescription?.structure).not.toHaveProperty("variants");
-  });
-
-  it("fails an unknown explicit variant without falling back to Base", async () => {
-    const { createOwned, repository } = repositoryWithPlan();
 
     await expect(
       createDirectPlannedSession({
@@ -161,13 +178,12 @@ describe("createDirectPlannedSession", () => {
         profileId,
         sessionId: "66666666-6666-4666-8666-666666666666",
         planningDate: "2026-08-20",
-        source: { kind: "direct", operationId: "c".repeat(32) },
+        source: { kind: "direct", operationId: "a".repeat(32) },
         activityPlanId,
-        variantId: "99999999-9999-4999-8999-999999999999",
         groupEventId: null,
         capturedAt: new Date("2026-08-17T12:34:56.000Z"),
       }),
-    ).rejects.toMatchObject({ code: "ACTIVITY_PLAN_UNKNOWN_EXPLICIT_VARIANT" });
+    ).rejects.toBeInstanceOf(ActivityPlanIntegrityError);
     expect(createOwned).not.toHaveBeenCalled();
   });
 

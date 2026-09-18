@@ -1,11 +1,6 @@
 // packages/api/src/routers/index.ts
 import { createTRPCRouter } from "../trpc";
-import {
-  onboardingRouter,
-  profileAccessRouter,
-  profileSettingsRouter,
-  profilesRouter,
-} from "./account";
+import { onboardingRouter, profileAccessRouter, profilesRouter } from "./account";
 import { activitiesRouter, activityFilesRouter, routesRouter } from "./activity";
 import { athleteIntelligenceRouter } from "./athlete-intelligence";
 import { groupsRouter } from "./groups";
@@ -45,7 +40,6 @@ export const appRouter = createTRPCRouter({
   storage: storageRouter,
   home: homeRouter,
   feed: feedRouter,
-  profileSettings: profileSettingsRouter,
   groups: groupsRouter,
   publicShare: publicShareRouter,
   organizations: organizationsRouter,

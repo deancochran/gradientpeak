@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { stringifyCanonicalJson } from "../../athlete-intelligence/canonical-json";
 import { createUnavailableAthletePerformanceTargetFacts } from "../../performance-model";
+import { sha256Hex } from "../../utils/sha256";
 
 import {
   recordingLaunchIntentSchema,
@@ -139,19 +141,48 @@ describe("recording session schemas", () => {
         name: "Hard",
         description: null,
         activityPlanRevision: 2,
-        structureHash: `v1:sha256:${"0".repeat(64)}`,
+        structureHash: `v1:sha256:${sha256Hex(stringifyCanonicalJson(prescribedStructure))}`,
         structure: prescribedStructure,
         plannedSession: {
           id: "550e8400-e29b-41d4-a716-446655440006",
           sessionRevision: 5,
+          source: { kind: "direct", operationId: "core-recording-session-test-operation" },
           prescription: {
-            activityPlanId: "550e8400-e29b-41d4-a716-446655440001",
-            activityPlanRevision: 2,
-            variantId: "550e8400-e29b-41d4-a716-446655440007",
-            variantName: "Hard",
-            structure: prescribedStructure,
-            structureHash: `v1:sha256:${"0".repeat(64)}`,
-            prescriptionQuantification: null,
+            resolutionManifest: {
+              resolver_version: "prescription-resolver-v1",
+              policy_version: "training-plan-policy-v1",
+              training_plan_id: null,
+              training_plan_revision: null,
+              training_plan_hash: null,
+              athlete_context_revision: null,
+              activity_plan_id: "550e8400-e29b-41d4-a716-446655440001",
+              activity_plan_revision: 2,
+              activity_plan_semantic_hash: `v1:sha256:${"a".repeat(64)}`,
+              effective_target_duration_minutes: null,
+              effective_target_common_load: null,
+              evidence_facts: [],
+              session_demand: {
+                activity_category: "bike",
+                training_intent: "aerobic_base",
+                target_duration_minutes: 30,
+                target_common_load: null,
+                importance: "normal",
+              },
+              adaptation_values: {},
+              fallback_level: "system_default_no_context",
+              reason_codes: [],
+              resolved_structure: prescribedStructure,
+              resolved_structure_hash: `v1:sha256:${sha256Hex(stringifyCanonicalJson(prescribedStructure))}`,
+              prescription_estimate: {
+                duration: { status: "exact", value_seconds: 1800 },
+                common_load: { status: "unavailable", value: null },
+                rest_seconds: 0,
+                has_open_completion: false,
+                warnings: [],
+                factors: ["canonical prescription quantification"],
+              },
+              fingerprint: `v1:sha256:${"b".repeat(64)}`,
+            },
             capturedAt: "2026-03-19T10:00:00.000Z",
           },
         },

@@ -4,6 +4,19 @@ import { fireEvent, renderNative, screen } from "../../../../test/render-native"
 
 const refresh = jest.fn();
 let hasUsableData = true;
+let timezoneInitializing = false;
+let timezoneSetupError: string | null = null;
+let planningTimezoneState = "ready";
+let view = "overview";
+const retryTimezoneInitialization = jest.fn(async () => undefined);
+beforeEach(() => {
+  hasUsableData = true;
+  planningTimezoneState = "ready";
+  timezoneInitializing = false;
+  timezoneSetupError = null;
+  view = "overview";
+  jest.clearAllMocks();
+});
 
 jest.mock("react-native", () => ({
   ...jest.requireActual("@repo/ui/test/react-native"),
@@ -18,6 +31,9 @@ jest.mock("@/components/ErrorBoundary", () => ({
   ScreenErrorFallback: createHost("Fallback"),
 }));
 jest.mock("@/components/shared", () => ({ AppHeader: createHost("AppHeader") }));
+jest.mock("@/components/calendar", () => ({
+  CalendarTabView: () => React.createElement("View", { testID: "CalendarTabView" }),
+}));
 jest.mock("@/components/plan/training-path/PlanDashboardContent", () => ({
   PlanDashboardContent: () => React.createElement("View", { testID: "plan-command-center" }),
 }));
@@ -26,6 +42,10 @@ jest.mock("@/components/plan/training-path/usePlanTrainingPathData", () => ({
     refreshing: false,
     handleRefresh: refresh,
     queryFailureCount: 2,
+    timezoneInitializing,
+    timezoneSetupError,
+    planningTimezoneState,
+    retryTimezoneInitialization,
     hasUsableData,
     dailyTrainingPathPoints: [],
     goalMarkers: [],
@@ -39,10 +59,10 @@ jest.mock("@/components/plan/training-path/usePlanTrainingPathData", () => ({
   }),
 }));
 jest.mock("@/lib/performance", () => ({ usePerformanceScreenReady: jest.fn() }));
-jest.mock("@/lib/stores/trainingPreferencesSheetStore", () => ({
-  useTrainingPreferencesSheetStore: () => jest.fn(),
+jest.mock("expo-router", () => ({
+  useLocalSearchParams: () => ({ view }),
+  useRouter: () => ({ navigate: jest.fn() }),
 }));
-jest.mock("expo-router", () => ({ useRouter: () => ({ navigate: jest.fn() }) }));
 
 const Plan = require("../plan").default;
 
@@ -61,4 +81,37 @@ it("labels a full load failure accurately", async () => {
   expect(screen.getByText("Your plan could not be loaded")).toBeTruthy();
   expect(screen.queryByTestId("plan-command-center")).toBeNull();
   expect(screen.getAllByTestId("plan-query-error")).toHaveLength(1);
+});
+
+it.each([
+  "overview",
+  "calendar",
+])("prepares %s automatically without a timezone prompt", async (selectedView) => {
+  hasUsableData = false;
+  planningTimezoneState = "initializing";
+  timezoneInitializing = true;
+  view = selectedView;
+  await renderNative(<Plan />);
+  expect(screen.getByText("Preparing your plan…")).toBeTruthy();
+  expect(screen.queryByText("Set your planning timezone")).toBeNull();
+  expect(screen.queryByTestId("plan-timezone-input")).toBeNull();
+  expect(screen.queryByTestId("plan-command-center")).toBeNull();
+  expect(screen.queryByTestId("CalendarTabView")).toBeNull();
+});
+
+it("offers retry after failed automatic setup without timezone selection", async () => {
+  planningTimezoneState = "initializing";
+  timezoneSetupError = "Plan setup could not be completed. Check your connection and retry.";
+  await renderNative(<Plan />);
+  expect(screen.getByText(timezoneSetupError)).toBeTruthy();
+  await fireEvent.press(screen.getByTestId("plan-setup-retry"));
+  expect(retryTimezoneInitialization).toHaveBeenCalledTimes(1);
+  expect(screen.queryByTestId("plan-timezone-input")).toBeNull();
+});
+
+it("shows the calendar once the planning timezone is ready", async () => {
+  view = "calendar";
+  await renderNative(<Plan />);
+  expect(screen.getByTestId("CalendarTabView")).toBeTruthy();
+  expect(screen.queryByTestId("plan-initializing")).toBeNull();
 });

@@ -11,17 +11,18 @@ import {
   FormTextareaField,
   FormTextField,
   FormTimeInputField,
+  FormTimezoneField,
 } from "@repo/ui/components/form";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { RecurrenceFields } from "@repo/ui/components/recurrence-fields";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
-import { format } from "date-fns";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Modal, ScrollView, TouchableOpacity, View } from "react-native";
 import { z } from "zod";
 import { InlineNotice } from "@/components/shared/LayoutPrimitives";
-import { dateKeyToLocalDate, getDeviceTimeZone } from "@/lib/calendar/eventSchedule";
+import { getDetectedDeviceTimeZone } from "@/lib/calendar/eventSchedule";
+import { useDirtyCloseGuard } from "@/lib/hooks/useDirtyCloseGuard";
 
 export type ManualEventCreateType = "race_target" | "custom";
 
@@ -31,6 +32,7 @@ type CalendarManualCreateFormValues = {
   scheduled_date: string;
   scheduled_time: string | null;
   all_day: boolean;
+  timezone: string | null;
 };
 
 const calendarManualCreateSchema = z.object({
@@ -42,6 +44,7 @@ const calendarManualCreateSchema = z.object({
     .regex(/^\d{2}:\d{2}$/)
     .nullable(),
   all_day: z.boolean(),
+  timezone: z.string().min(1, "Choose the event time zone.").nullable(),
 });
 
 type CalendarManualCreateModalProps = {
@@ -67,14 +70,13 @@ function buildInitialValues(
   activeDate: string,
   _createType: ManualEventCreateType,
 ): CalendarManualCreateFormValues {
-  const startsAt = dateKeyToLocalDate(activeDate, 9);
-
   return {
     title: "",
     notes: null,
     scheduled_date: activeDate,
-    scheduled_time: format(startsAt, "HH:mm"),
+    scheduled_time: null,
     all_day: false,
+    timezone: null,
   };
 }
 
@@ -90,7 +92,9 @@ function buildStartsAt(input: {
     year ?? 1970,
     (month ?? 1) - 1,
     day ?? 1,
-    input.allDay ? 9 : (scheduledHours ?? 0),
+    // All-day events are keyed by scheduledDate. Noon is only a local Date carrier for callers
+    // that still require an instant; it is never presented or persisted as an appointment time.
+    input.allDay ? 12 : (scheduledHours ?? 0),
     input.allDay ? 0 : (scheduledMinutes ?? 0),
     0,
     0,
@@ -134,20 +138,37 @@ export function CalendarManualCreateModal({
 
   const title = form.watch("title");
   const allDay = form.watch("all_day");
+  const timezone = form.watch("timezone");
+  const wasVisibleRef = useRef(false);
+  const createTypeRef = useRef<ManualEventCreateType | null>(null);
 
   useEffect(() => {
-    if (!visible || !createType) {
+    if (!visible) {
+      wasVisibleRef.current = false;
       return;
     }
 
+    if (!createType || (wasVisibleRef.current && createTypeRef.current === createType)) return;
     form.reset(buildInitialValues(activeDate, createType));
     setRecurrence({ ...DEFAULT_WEEKLY_COUNT_RECURRENCE });
+    wasVisibleRef.current = true;
+    createTypeRef.current = createType;
   }, [activeDate, createType, form, visible]);
 
   const submitForm = useZodFormSubmit<CalendarManualCreateFormValues>({
     form,
     onSubmit: async (data) => {
       if (!createType) return;
+      if (!data.timezone) {
+        form.setError("timezone", { message: "Choose the event time zone." });
+        return;
+      }
+      if (!data.all_day && !data.scheduled_time) {
+        form.setError("scheduled_time", {
+          message: "Choose a start time or mark this event all day.",
+        });
+        return;
+      }
 
       const startsAt = buildStartsAt({
         scheduledDate: data.scheduled_date,
@@ -162,7 +183,7 @@ export function CalendarManualCreateModal({
         scheduledDate: data.scheduled_date,
         startsAt,
         allDay: data.all_day,
-        timezone: getDeviceTimeZone(),
+        timezone: data.timezone,
         recurrence: serializeWeeklyCountRecurrence({
           recurrence,
           startInstant: startsAt,
@@ -172,6 +193,10 @@ export function CalendarManualCreateModal({
   });
 
   const canSubmit = !!createType && !submitting && title.trim().length > 0;
+  const requestClose = useDirtyCloseGuard({
+    isDirty: form.formState.isDirty,
+    isPending: submitting,
+  });
   const submitButtonState = submitForm.getSubmitButtonState({
     disabled: !canSubmit,
     label: "Create Event",
@@ -183,12 +208,17 @@ export function CalendarManualCreateModal({
   }
 
   return (
-    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal
+      visible
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={() => requestClose(onClose)}
+    >
       <View className="flex-1 bg-background">
         <View className="flex-row items-center justify-between border-b border-border px-4 py-4">
           <Text className="text-lg font-semibold">{getManualCreateTitle(createType)}</Text>
           <TouchableOpacity
-            onPress={onClose}
+            onPress={() => requestClose(onClose)}
             className="rounded-md bg-muted px-3 py-2"
             activeOpacity={0.8}
             testID="close-manual-create"
@@ -229,6 +259,14 @@ export function CalendarManualCreateModal({
                   testId="manual-create-all-day-toggle"
                 />
 
+                <FormTimezoneField
+                  control={form.control}
+                  deviceTimeZone={getDetectedDeviceTimeZone()}
+                  label="Event time zone"
+                  name="timezone"
+                  testId="manual-create-timezone"
+                />
+
                 {!allDay ? (
                   <FormTimeInputField
                     accessibilityHint="Choose the start time for this event"
@@ -267,7 +305,12 @@ export function CalendarManualCreateModal({
 
         <View className="border-t border-border px-4 py-4">
           <View className="flex-row gap-2">
-            <Button variant="outline" className="flex-1" onPress={onClose} disabled={submitting}>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onPress={() => requestClose(onClose)}
+              disabled={submitting}
+            >
               <Text className="text-foreground">Cancel</Text>
             </Button>
             <LoadingButton

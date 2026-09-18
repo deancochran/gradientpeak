@@ -51,13 +51,15 @@ it("renders the fixed factual weekly chart with model-owned Today and goal marke
 });
 
 it("renders finite weekly load without exposing its internal partial status", async () => {
+  const firstWeek = model.weeks[0];
+  if (!firstWeek) throw new Error("Expected fixture week");
   await renderNative(
     <TrainingPathChart
       model={{
         ...model,
         weeks: [
           {
-            ...model.weeks[0],
+            ...firstWeek,
             completedLoadStatus: "partial" as const,
             effectiveLoadStatus: "partial" as const,
             effectiveRemainingLoadStatus: "partial" as const,
@@ -79,17 +81,19 @@ it("renders finite weekly load without exposing its internal partial status", as
 });
 
 it("renders production-model weekly load fields without effective aliases", async () => {
+  const firstWeek = model.weeks[0];
+  if (!firstWeek) throw new Error("Expected fixture week");
   await renderNative(
     <TrainingPathChart
       model={{
         ...model,
         weeks: [
           {
-            ...model.weeks[0],
+            ...firstWeek,
             completedLoad: 20,
             completedLoadStatus: "partial" as const,
-            effectiveCompletedLoad: undefined,
-            effectiveRemainingLoad: undefined,
+            effectiveCompletedLoad: null,
+            effectiveRemainingLoad: null,
             plannedLoad: 40,
             plannedLoadStatus: "partial" as const,
           },

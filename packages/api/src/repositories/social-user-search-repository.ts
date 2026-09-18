@@ -1,9 +1,9 @@
-import { sql } from "drizzle-orm";
+import { follows, profiles } from "@repo/db";
+import { and, asc, count, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { resolveProfileMediaUrl } from "../application/storage/profile-media-url";
 import type { getRequiredDb } from "../db";
 import { buildIndexPageInfo, parseIndexCursor } from "../utils/index-cursor";
-import { getSqlCount } from "../utils/sql";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
@@ -49,70 +49,56 @@ export async function searchSocialUsers({
   const trimmedQuery = input.query?.trim() ?? "";
   const searchPattern = `%${trimmedQuery}%`;
   const offset = input.cursor ? parseIndexCursor(input.cursor) : input.offset;
-  const profileSortClause =
+  const profileSort =
     input.sort_by === "oldest"
-      ? sql`p.created_at asc, p.id asc`
+      ? [asc(profiles.created_at), asc(profiles.id)]
       : input.sort_by === "username_asc"
-        ? sql`p.username asc nulls last, p.created_at desc, p.id asc`
+        ? [sql`${profiles.username} asc nulls last`, desc(profiles.created_at), asc(profiles.id)]
         : input.sort_by === "username_desc"
-          ? sql`p.username desc nulls last, p.created_at desc, p.id asc`
-          : sql`p.created_at desc, p.id asc`;
+          ? [sql`${profiles.username} desc nulls last`, desc(profiles.created_at), asc(profiles.id)]
+          : [desc(profiles.created_at), asc(profiles.id)];
 
-  const usersResult = trimmedQuery
-    ? await db.execute(sql`
-        select p.id, p.username,
-          case when p.is_public is true or f.status = 'accepted' then p.full_name else null end as full_name,
-          p.avatar_url, p.is_public,
-          f.status as follow_status, p.created_at, p.updated_at
-        from profiles p
-        left join follows f
-          on f.following_id = p.id
-          and f.follower_id = ${viewerId}::uuid
-        where p.id != ${viewerId}::uuid
-          and (
-            p.username ilike ${searchPattern}
-            or ((p.is_public is true or f.status = 'accepted') and p.full_name ilike ${searchPattern})
-          )
-        order by ${profileSortClause}
-        limit ${input.limit}
-        offset ${offset}
-      `)
-    : await db.execute(sql`
-        select p.id, p.username,
-          case when p.is_public is true or f.status = 'accepted' then p.full_name else null end as full_name,
-          p.avatar_url, p.is_public,
-          f.status as follow_status, p.created_at, p.updated_at
-        from profiles p
-        left join follows f
-          on f.following_id = p.id
-          and f.follower_id = ${viewerId}::uuid
-        where p.id != ${viewerId}::uuid
-        order by ${profileSortClause}
-        limit ${input.limit}
-        offset ${offset}
-      `);
+  const fullNameVisible = or(eq(profiles.is_public, true), eq(follows.status, "accepted"));
+  const searchCondition = trimmedQuery
+    ? or(
+        ilike(profiles.username, searchPattern),
+        and(fullNameVisible, ilike(profiles.full_name, searchPattern)),
+      )
+    : undefined;
+  const where = and(ne(profiles.id, viewerId), searchCondition);
+  const usersResult = await db
+    .select({
+      id: profiles.id,
+      username: profiles.username,
+      full_name: sql`case when ${fullNameVisible} then ${profiles.full_name} else null end`,
+      avatar_url: profiles.avatar_url,
+      is_public: profiles.is_public,
+      follow_status: follows.status,
+      created_at: profiles.created_at,
+      updated_at: profiles.updated_at,
+    })
+    .from(profiles)
+    .leftJoin(
+      follows,
+      and(eq(follows.following_id, profiles.id), eq(follows.follower_id, viewerId)),
+    )
+    .where(where)
+    .orderBy(...profileSort)
+    .limit(input.limit)
+    .offset(offset);
 
-  const users = z.array(socialUserSearchResultSchema).parse(usersResult.rows);
-  const total = await getSqlCount(
-    trimmedQuery
-      ? db.execute(sql`
-          select count(*)::int as value
-          from profiles p
-          left join follows f
-            on f.following_id = p.id
-            and f.follower_id = ${viewerId}::uuid
-          where p.id != ${viewerId}::uuid
-            and (
-              p.username ilike ${searchPattern}
-              or ((p.is_public is true or f.status = 'accepted') and p.full_name ilike ${searchPattern})
-            )
-        `)
-      : db.execute(sql`
-          select count(*)::int as value
-          from profiles p
-          where p.id != ${viewerId}::uuid
-        `),
-  );
+  const users = z.array(socialUserSearchResultSchema).parse(usersResult);
+  const [totalRow] = trimmedQuery
+    ? await db
+        .select({ value: count() })
+        .from(profiles)
+        .leftJoin(
+          follows,
+          and(eq(follows.following_id, profiles.id), eq(follows.follower_id, viewerId)),
+        )
+        .where(where)
+    : await db.select({ value: count() }).from(profiles).where(ne(profiles.id, viewerId));
+  const total = z.object({ value: z.number().int().nonnegative() }).parse(totalRow).value;
 
   return {
     users: users.map((user) => ({

@@ -13,6 +13,7 @@ type TableName = "conversationParticipants" | "conversations" | "messages";
 type MockPlan = {
   executeErrors?: Error[];
   executeRows?: Array<Array<Record<string, unknown>>>;
+  existingConversationRows?: Array<Array<Record<string, unknown>>>;
   insertedConversationRows?: Array<Array<Record<string, unknown>>>;
   membershipRows?: Array<unknown[]>;
   messageRows?: Array<unknown[]>;
@@ -84,6 +85,7 @@ function createMessageRow(overrides: Partial<Record<string, unknown>> = {}) {
 function createDbMock(plan: MockPlan = {}) {
   const executeErrorQueue = [...(plan.executeErrors ?? [])];
   const executeRowQueue = [...(plan.executeRows ?? [])];
+  const existingConversationQueue = [...(plan.existingConversationRows ?? [])];
   const insertedConversationQueue = [...(plan.insertedConversationRows ?? [])];
   const membershipQueue = [...(plan.membershipRows ?? [])];
   const messageQueue = [...(plan.messageRows ?? [])];
@@ -112,7 +114,7 @@ function createDbMock(plan: MockPlan = {}) {
     return [];
   };
 
-  const createSelectBuilder = () => {
+  const createSelectBuilder = (isUnreadCount = false) => {
     let joined = false;
     let tableName: TableName | null = null;
 
@@ -126,17 +128,37 @@ function createDbMock(plan: MockPlan = {}) {
         return builder;
       },
       where: () => {
+        if (isUnreadCount) {
+          return Promise.resolve(unreadCountQueue.shift() ?? []);
+        }
+
         if (tableName === "messages" && joined) {
           return Promise.resolve(resolveSelectRows(tableName, joined));
         }
 
         return builder;
       },
-      orderBy: () => Promise.resolve(resolveSelectRows(tableName!, joined)),
+      orderBy: () =>
+        Promise.resolve(
+          tableName === "conversations"
+            ? (existingConversationQueue.shift() ?? [])
+            : resolveSelectRows(tableName!, joined),
+        ),
       limit: (count: number) =>
-        Promise.resolve(resolveSelectRows(tableName!, joined).slice(0, count)),
+        Promise.resolve(
+          (tableName === "conversations"
+            ? (existingConversationQueue.shift() ?? [])
+            : resolveSelectRows(tableName!, joined)
+          ).slice(0, count),
+        ),
       then: (onFulfilled: (rows: unknown[]) => unknown, onRejected?: (error: unknown) => unknown) =>
-        Promise.resolve(resolveSelectRows(tableName!, joined)).then(onFulfilled, onRejected),
+        Promise.resolve(
+          isUnreadCount
+            ? (unreadCountQueue.shift() ?? [])
+            : tableName === "conversations"
+              ? (existingConversationQueue.shift() ?? [])
+              : resolveSelectRows(tableName!, joined),
+        ).then(onFulfilled, onRejected),
     };
 
     return builder;
@@ -186,7 +208,8 @@ function createDbMock(plan: MockPlan = {}) {
   };
 
   const db = {
-    select: () => createSelectBuilder(),
+    select: (selection?: Record<string, unknown>) =>
+      createSelectBuilder(Boolean(selection?.unread_count)),
     insert,
     update,
     transaction: async (
@@ -224,7 +247,7 @@ function createCaller(plan: MockPlan = {}, userId = OWNER_ID) {
 describe("messagingRouter", () => {
   it("getOrCreateDM returns an existing direct-message conversation", async () => {
     const { caller, calls } = createCaller({
-      executeRows: [[createConversationRow()]],
+      existingConversationRows: [[createConversationRow()]],
     });
 
     await expect(caller.getOrCreateDM({ target_user_id: PEER_ID })).resolves.toEqual({
@@ -236,6 +259,7 @@ describe("messagingRouter", () => {
     });
 
     expect(calls.inserts).toHaveLength(0);
+    expect(calls.execute).toHaveLength(0);
   });
 
   it("getOrCreateDM rejects unexpected input keys", async () => {
@@ -433,11 +457,12 @@ describe("messagingRouter", () => {
   });
 
   it("getUnreadCount returns the participant-cursor unread count as a number", async () => {
-    const { caller } = createCaller({
-      executeRows: [[{ unread_count: "3" }]],
+    const { caller, calls } = createCaller({
+      unreadCountRows: [[{ unread_count: "3" }]],
     });
 
     await expect(caller.getUnreadCount()).resolves.toBe(3);
+    expect(calls.execute).toHaveLength(0);
   });
 
   it("getConversations wraps SQL failures so missing-table regressions surface clearly", async () => {

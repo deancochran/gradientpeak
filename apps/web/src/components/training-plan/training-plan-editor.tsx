@@ -1,11 +1,20 @@
+import type { AppRouter } from "@repo/api/client";
+import {
+  type ContentVisibility,
+  copyTrainingPlanWeek,
+  summarizeTrainingPlanWeek,
+} from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
 import { Textarea } from "@repo/ui/components/textarea";
 import { skipToken } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import type { inferRouterInputs } from "@trpc/server";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { z } from "zod";
 
 import { api } from "../../lib/api/client";
+import { useUnsavedChangesGuard } from "../../lib/use-unsaved-changes-guard";
 import {
   buildTrainingPlanStructure,
   summarizeTrainingPlan,
@@ -13,10 +22,15 @@ import {
   toTrainingPlanSessionDrafts,
 } from "./training-plan-model";
 
+const activityCategories = ["bike", "run", "swim", "strength", "other"] as const;
+const startDateSchema = z.iso.date();
+
 type TrainingPlanEditorProps = {
   planId?: string;
   onSaved: (id: string) => void;
 };
+
+type TrainingPlanCommitRequest = inferRouterInputs<AppRouter>["trainingPlans"]["commit"];
 
 export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps) {
   const utils = api.useUtils();
@@ -43,8 +57,10 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
   );
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [contentVisibility, setContentVisibility] = useState<ContentVisibility>("private");
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [sessions, setSessions] = useState<TrainingPlanSessionDraft[]>([]);
+  const [sourceStructure, setSourceStructure] = useState<unknown>(undefined);
   const [hydratedId, setHydratedId] = useState<string | null>(null);
   const [projectionConflict, setProjectionConflict] = useState<{
     message: string;
@@ -52,18 +68,51 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
     reason: "state" | "plan";
   } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [startDateError, setStartDateError] = useState<string | null>(null);
+  const [copySourceWeek, setCopySourceWeek] = useState(0);
+  const [copyDestinationWeek, setCopyDestinationWeek] = useState(1);
+  const initialDraftRef = useRef<string | null>(null);
+  const snapshotRef = useRef<{
+    description: string;
+    contentVisibility: ContentVisibility;
+    name: string;
+    sessions: TrainingPlanSessionDraft[];
+    sourceStructure: unknown;
+    startDate: string;
+  } | null>(null);
+
+  if (!planId && snapshotRef.current === null) {
+    snapshotRef.current = {
+      description,
+      contentVisibility,
+      name,
+      sessions,
+      sourceStructure,
+      startDate,
+    };
+  }
 
   useEffect(() => {
     if (!planId || !planQuery.data || hydratedId === planId) return;
     setName(planQuery.data.name);
     setDescription(planQuery.data.description ?? "");
+    setContentVisibility(planQuery.data.content_visibility);
     setSessions(toTrainingPlanSessionDrafts(planQuery.data.structure));
+    setSourceStructure(planQuery.data.structure);
+    snapshotRef.current = {
+      description: planQuery.data.description ?? "",
+      contentVisibility: planQuery.data.content_visibility,
+      name: planQuery.data.name,
+      sessions: toTrainingPlanSessionDrafts(planQuery.data.structure),
+      sourceStructure: structuredClone(planQuery.data.structure),
+      startDate,
+    };
     setHydratedId(planId);
-  }, [hydratedId, planId, planQuery.data]);
+  }, [hydratedId, planId, planQuery.data, startDate]);
 
   const preview = useMemo(() => {
     try {
-      const structure = buildTrainingPlanStructure(sessions);
+      const structure = buildTrainingPlanStructure(sessions, sourceStructure);
       return { structure, summary: summarizeTrainingPlan(structure), error: null };
     } catch (error) {
       return {
@@ -72,17 +121,37 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
         error: error instanceof Error ? error.message : "Invalid plan structure",
       };
     }
-  }, [sessions]);
+  }, [sessions, sourceStructure]);
 
   const draftFingerprint = useMemo(
-    () => JSON.stringify({ description, name, structure: preview.structure }),
-    [description, name, preview.structure],
+    () =>
+      JSON.stringify({
+        description,
+        contentVisibility,
+        name,
+        startDate,
+        sessions,
+        structure: preview.structure,
+      }),
+    [description, contentVisibility, name, preview.structure, sessions, startDate],
   );
+  if (!planId && initialDraftRef.current === null) initialDraftRef.current = draftFingerprint;
+  if (planId && hydratedId === planId && initialDraftRef.current === null) {
+    initialDraftRef.current = draftFingerprint;
+  }
+  const commitMutation = api.trainingPlans.commit.useMutation();
+  const saving = commitMutation.isPending;
+  const { guardedCancel, markSaved } = useUnsavedChangesGuard({
+    draft: draftFingerprint,
+    dirty: initialDraftRef.current !== null && draftFingerprint !== initialDraftRef.current,
+    pending: saving,
+  });
   const authoritativePreviewInput = useMemo(() => {
     if (!preview.structure || !name.trim()) return null;
     const commonDraft = {
       name: name.trim(),
       description: description.trim() || null,
+      contentVisibility,
       structure: preview.structure,
       previewStartDate: startDate,
     };
@@ -98,7 +167,15 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
         expectedStructureHash: editor.structureHash,
       },
     };
-  }, [description, name, planId, planQuery.data?.editor, preview.structure, startDate]);
+  }, [
+    description,
+    contentVisibility,
+    name,
+    planId,
+    planQuery.data?.editor,
+    preview.structure,
+    startDate,
+  ]);
   const authoritativePreviewQuery = api.trainingPlans.preview.useQuery(
     authoritativePreviewInput ?? skipToken,
     {
@@ -108,8 +185,8 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
     },
   );
 
-  const commitMutation = api.trainingPlans.commit.useMutation();
-  const saving = commitMutation.isPending;
+  const retainedCommitRequestRef = useRef<TrainingPlanCommitRequest | null>(null);
+  const [hasUncertainCommit, setHasUncertainCommit] = useState(false);
   const activityPlans = activityPlansQuery.data?.items ?? [];
   const authoritativeProjection =
     authoritativePreviewQuery.data?.status === "available"
@@ -121,7 +198,8 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
     setSessions((current) => [
       ...current,
       {
-        activityPlanId: firstPlan?.id ?? "",
+        activityPlanId: firstPlan?.id ?? null,
+        activityCategory: firstPlan?.activityCategory ?? "other",
         draftId: crypto.randomUUID(),
         offsetDays:
           current.length === 0 ? 0 : Math.max(...current.map((item) => item.offsetDays)) + 1,
@@ -129,11 +207,72 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
       },
     ]);
   };
+  const weekCount = Math.max(
+    preview.structure?.durationWeeks?.recommended ?? 0,
+    sessions.length === 0
+      ? 1
+      : Math.floor(Math.max(...sessions.map((session) => session.offsetDays)) / 7) + 1,
+  );
+  const weekIndexes = Array.from({ length: weekCount }, (_, weekIndex) => weekIndex);
+  const copyWeek = () => {
+    if (!preview.structure) {
+      setFormError("Complete the current activities before copying a week.");
+      return;
+    }
+    const result = copyTrainingPlanWeek({
+      sessions: preview.structure.sessions,
+      sourceWeekIndex: copySourceWeek,
+      destinationWeekIndex: copyDestinationWeek,
+      createId: crypto.randomUUID,
+      ...(preview.structure.durationWeeks?.recommended !== undefined
+        ? { durationWeeks: preview.structure.durationWeeks.recommended }
+        : {}),
+    });
+    if (result.status === "rejected") {
+      setFormError(
+        result.reason === "session_limit"
+          ? "A training plan can contain at most 366 activities."
+          : "Choose a destination within the current plan duration.",
+      );
+      return;
+    }
+    setSessions(toTrainingPlanSessionDrafts({ ...preview.structure, sessions: result.sessions }));
+    setFormError(null);
+  };
 
   const save = async () => {
     setFormError(null);
+    const retainedCommitRequest = retainedCommitRequestRef.current;
+    if (retainedCommitRequest) {
+      try {
+        const result = await commitMutation.mutateAsync(retainedCommitRequest);
+        if (result.status === "saved") {
+          retainedCommitRequestRef.current = null;
+          setHasUncertainCommit(false);
+          await utils.trainingPlans.invalidate();
+          markSaved();
+          onSaved(result.planId);
+          return;
+        }
+        retainedCommitRequestRef.current = null;
+        setHasUncertainCommit(false);
+        setFormError(
+          "The prior save was not applied. Review the refreshed plan before saving again.",
+        );
+        await Promise.all([athleteReadModelQuery.refetch(), planQuery.refetch()]);
+      } catch (error) {
+        setFormError(
+          `${error instanceof Error ? error.message : "Could not save this plan."} The outcome is unknown; retry the same save to reconcile it.`,
+        );
+      }
+      return;
+    }
     if (!name.trim()) {
       setFormError("Plan name is required.");
+      return;
+    }
+    if (!startDateSchema.safeParse(startDate).success) {
+      setStartDateError("Enter a valid plan start date.");
       return;
     }
     if (!preview.structure) {
@@ -145,28 +284,22 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
       !authoritativeProjection ||
       authoritativePreviewQuery.isFetching
     ) {
-      setFormError("Wait for the authoritative preview before saving this draft.");
+      setFormError("Wait for the authoritative preview before saving this plan.");
       return;
     }
-    const basePublishedRevision = athleteReadModelQuery.data?.publishedRevision;
-    if (basePublishedRevision === null || basePublishedRevision === undefined) {
-      setFormError("Published athlete state is unavailable. Refresh and retry.");
-      return;
-    }
-
     try {
       const commonDraft = {
         name: name.trim(),
         description: description.trim() || null,
+        contentVisibility,
         structure: preview.structure,
         previewStartDate: startDate,
       };
       const editor = planQuery.data?.editor;
-      const result = await commitMutation.mutateAsync(
+      const commitDraft =
         planId && editor
           ? {
-              kind: "update",
-              basePublishedRevision,
+              kind: "update" as const,
               draft: {
                 ...commonDraft,
                 planId,
@@ -174,27 +307,54 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
                 expectedStructureHash: editor.structureHash,
               },
             }
-          : { kind: "create", basePublishedRevision, draft: commonDraft },
-      );
+          : { kind: "create" as const, draft: commonDraft };
+      const commitPreview = await utils.trainingPlans.preview.fetch(commitDraft);
+      if (commitPreview.status !== "available") {
+        setFormError("The authoritative preview is unavailable. Refresh and retry.");
+        return;
+      }
+      if (!commitPreview.applicable) {
+        setFormError(
+          commitPreview.explanations.join(" ") ||
+            "One or more sessions need additional planning input before this plan can be saved.",
+        );
+        return;
+      }
+      const commitRequest: TrainingPlanCommitRequest = {
+        ...commitDraft,
+        operationId: crypto.randomUUID(),
+        basePublishedRevision: commitPreview.basePublishedRevision,
+        previewFingerprint: commitPreview.previewFingerprint,
+      };
+      retainedCommitRequestRef.current = commitRequest;
+      const result = await commitMutation.mutateAsync(commitRequest);
       if (result.status === "stale") {
+        retainedCommitRequestRef.current = null;
         setProjectionConflict({
           fingerprint: draftFingerprint,
-          reason:
-            result.reason === "state_revision" || result.reason === "state_unavailable"
-              ? "state"
-              : "plan",
+          reason: result.reason === "state_revision" ? "state" : "plan",
           message:
-            result.reason === "state_revision" || result.reason === "state_unavailable"
-              ? "Athlete state changed while saving. Your draft is preserved and has been re-simulated against the refreshed baseline."
-              : "The persisted plan changed while saving. Your draft is preserved; review the refreshed plan before retrying.",
+            result.reason === "state_revision"
+              ? "Athlete state changed while saving. Your changes are preserved and have been re-simulated against the refreshed baseline."
+              : "The saved plan changed while saving. Your changes are preserved; review the refreshed plan before retrying.",
         });
         await Promise.all([athleteReadModelQuery.refetch(), planQuery.refetch()]);
         return;
       }
+      if (result.status === "operation_conflict") {
+        retainedCommitRequestRef.current = null;
+        setFormError("This save request conflicts with another operation. Review and save again.");
+        return;
+      }
       await utils.trainingPlans.invalidate();
+      retainedCommitRequestRef.current = null;
+      markSaved();
       onSaved(result.planId);
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : "Could not save this plan. Try again.");
+      setHasUncertainCommit(true);
+      setFormError(
+        `${error instanceof Error ? error.message : "Could not save this plan."} The outcome is unknown; retry the same save to reconcile it.`,
+      );
     }
   };
 
@@ -220,8 +380,14 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_22rem]">
-      <div className="space-y-5">
+    <form
+      className="grid gap-6 lg:grid-cols-[1fr_22rem]"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void save();
+      }}
+    >
+      <fieldset className="space-y-5" disabled={saving}>
         <div>
           <p className="text-sm font-medium text-muted-foreground">Plan builder</p>
           <h1 className="text-3xl font-semibold">
@@ -231,6 +397,7 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
         <label className="block space-y-2" htmlFor="training-plan-name">
           <span className="text-sm font-medium">Name</span>
           <Input
+            disabled={hasUncertainCommit}
             id="training-plan-name"
             onChange={(event) => setName(event.target.value)}
             value={name}
@@ -239,25 +406,55 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
         <label className="block space-y-2" htmlFor="training-plan-description">
           <span className="text-sm font-medium">Description</span>
           <Textarea
+            disabled={hasUncertainCommit}
             id="training-plan-description"
             onChange={(event) => setDescription(event.target.value)}
             value={description}
           />
         </label>
+        <label className="block space-y-2" htmlFor="training-plan-visibility">
+          <span className="text-sm font-medium">Visibility</span>
+          <select
+            className="h-10 w-full rounded-md border bg-background px-3"
+            disabled={saving || hasUncertainCommit}
+            id="training-plan-visibility"
+            onChange={(event) => setContentVisibility(event.target.value as ContentVisibility)}
+            value={contentVisibility}
+          >
+            <option value="private">Private</option>
+            <option value="followers">Followers</option>
+            <option value="public">Public</option>
+          </select>
+        </label>
         <label className="block space-y-2" htmlFor="training-plan-start-date">
           <span className="text-sm font-medium">Start date</span>
           <Input
+            aria-describedby={startDateError ? "training-plan-start-date-error" : undefined}
+            aria-invalid={Boolean(startDateError)}
+            disabled={hasUncertainCommit}
             id="training-plan-start-date"
-            onChange={(event) => setStartDate(event.target.value)}
+            onChange={(event) => {
+              setStartDate(event.target.value);
+              setStartDateError(null);
+            }}
             type="date"
             value={startDate}
           />
+          {startDateError ? (
+            <span
+              className="text-sm text-destructive"
+              id="training-plan-start-date-error"
+              role="alert"
+            >
+              {startDateError}
+            </span>
+          ) : null}
         </label>
         <Card>
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Activities</CardTitle>
             <Button
-              disabled={activityPlansQuery.isLoading}
+              disabled={activityPlansQuery.isLoading || hasUncertainCommit}
               onClick={addSession}
               type="button"
               variant="outline"
@@ -266,6 +463,46 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
             </Button>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-end gap-2 rounded-lg border p-3">
+              <label className="space-y-1 text-sm" htmlFor="copy-source-week">
+                <span>Copy week</span>
+                <select
+                  disabled={hasUncertainCommit}
+                  id="copy-source-week"
+                  onChange={(event) => setCopySourceWeek(Number(event.target.value))}
+                  value={copySourceWeek}
+                >
+                  {weekIndexes.map((weekIndex) => (
+                    <option key={`source-week-${weekIndex}`} value={weekIndex}>
+                      Week {weekIndex + 1}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1 text-sm" htmlFor="copy-destination-week">
+                <span>To week</span>
+                <select
+                  disabled={hasUncertainCommit}
+                  id="copy-destination-week"
+                  onChange={(event) => setCopyDestinationWeek(Number(event.target.value))}
+                  value={copyDestinationWeek}
+                >
+                  {weekIndexes.map((weekIndex) => (
+                    <option key={`destination-week-${weekIndex}`} value={weekIndex}>
+                      Week {weekIndex + 1}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button
+                disabled={hasUncertainCommit}
+                onClick={copyWeek}
+                type="button"
+                variant="outline"
+              >
+                Copy week
+              </Button>
+            </div>
             {activityPlansQuery.error ? (
               <p role="alert">
                 Could not load owned activities: {activityPlansQuery.error.message}
@@ -274,7 +511,8 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
             {sessions.length === 0 ? <p>Add a activity to build the plan structure.</p> : null}
             {sessions.map((session, index) => (
               <fieldset
-                className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_1fr_8rem_auto]"
+                className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_8rem_auto]"
+                disabled={hasUncertainCommit}
                 key={
                   session.draftId ??
                   `${session.offsetDays}-${session.activityPlanId}-${session.title}`
@@ -289,22 +527,25 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
                   <select
                     className="h-10 w-full rounded-md border bg-background px-3"
                     id={`training-plan-session-activity-${session.draftId}`}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const plan = activityPlans.find((item) => item.id === event.target.value);
                       setSessions((current) =>
                         current.map((item, itemIndex) =>
                           itemIndex === index
                             ? {
                                 ...item,
-                                activityPlanId: event.target.value,
-                                variantId: undefined,
+                                activityPlanId: event.target.value || null,
+                                ...(plan
+                                  ? { activityCategory: plan.activityCategory, title: plan.name }
+                                  : {}),
                               }
                             : item,
                         ),
-                      )
-                    }
-                    value={session.activityPlanId}
+                      );
+                    }}
+                    value={session.activityPlanId ?? ""}
                   >
-                    <option value="">Choose a activity</option>
+                    <option value="">Choose automatically</option>
                     {activityPlans.map((plan) => (
                       <option key={plan.id} value={plan.id}>
                         {plan.name}
@@ -312,38 +553,79 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
                     ))}
                   </select>
                 </label>
-                <ActivityPlanVariantField
-                  activityPlanId={session.activityPlanId}
-                  fieldId={`training-plan-session-variant-${session.draftId}`}
-                  onChange={(variantId) =>
-                    setSessions((current) =>
-                      current.map((item, itemIndex) =>
-                        itemIndex === index ? { ...item, variantId } : item,
-                      ),
-                    )
-                  }
-                  variantId={session.variantId}
-                />
+                {session.activityPlanId === null ? (
+                  <label
+                    className="space-y-1"
+                    htmlFor={`training-plan-session-category-${session.draftId}`}
+                  >
+                    <span className="text-xs">Activity category</span>
+                    <select
+                      className="h-10 w-full rounded-md border bg-background px-3"
+                      id={`training-plan-session-category-${session.draftId}`}
+                      onChange={(event) =>
+                        setSessions((current) =>
+                          current.map((item, itemIndex) =>
+                            itemIndex === index
+                              ? {
+                                  ...item,
+                                  activityCategory: event.target
+                                    .value as TrainingPlanSessionDraft["activityCategory"],
+                                }
+                              : item,
+                          ),
+                        )
+                      }
+                      value={session.activityCategory}
+                    >
+                      {activityCategories.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
                 <label
                   className="space-y-1"
                   htmlFor={`training-plan-session-offset-${session.draftId}`}
                 >
                   <span className="text-xs">Day offset</span>
                   <Input
+                    aria-describedby={
+                      Number.isFinite(session.offsetDays)
+                        ? undefined
+                        : `training-plan-session-offset-error-${session.draftId}`
+                    }
                     id={`training-plan-session-offset-${session.draftId}`}
                     min={0}
                     onChange={(event) =>
                       setSessions((current) =>
                         current.map((item, itemIndex) =>
                           itemIndex === index
-                            ? { ...item, offsetDays: Number(event.target.value) }
+                            ? {
+                                ...item,
+                                offsetDays:
+                                  event.target.value === ""
+                                    ? Number.NaN
+                                    : Number(event.target.value),
+                              }
                             : item,
                         ),
                       )
                     }
                     type="number"
-                    value={session.offsetDays}
+                    aria-invalid={!Number.isFinite(session.offsetDays)}
+                    value={Number.isFinite(session.offsetDays) ? session.offsetDays : ""}
                   />
+                  {!Number.isFinite(session.offsetDays) ? (
+                    <span
+                      className="text-xs text-destructive"
+                      id={`training-plan-session-offset-error-${session.draftId}`}
+                      role="alert"
+                    >
+                      Enter a day offset of zero or greater.
+                    </span>
+                  ) : null}
                 </label>
                 <Button
                   className="self-end"
@@ -378,13 +660,45 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
           </div>
         ) : null}
         <Button
-          disabled={saving || !name.trim() || !preview.structure || !authoritativeProjection}
-          onClick={() => void save()}
-          type="button"
+          disabled={
+            saving ||
+            (!hasUncertainCommit &&
+              (!name.trim() || !preview.structure || !authoritativeProjection))
+          }
+          type="submit"
         >
-          {saving ? "Saving…" : planId ? "Save changes" : "Create plan"}
+          {saving
+            ? "Saving…"
+            : hasUncertainCommit
+              ? "Retry save"
+              : planId
+                ? "Save changes"
+                : "Create plan"}
         </Button>
-      </div>
+        {snapshotRef.current ? (
+          <Button
+            disabled={saving || hasUncertainCommit}
+            onClick={() =>
+              guardedCancel(() => {
+                const snapshot = snapshotRef.current;
+                if (!snapshot) return;
+                setName(snapshot.name);
+                setDescription(snapshot.description);
+                setContentVisibility(snapshot.contentVisibility);
+                setSessions(snapshot.sessions);
+                setSourceStructure(structuredClone(snapshot.sourceStructure));
+                setStartDate(snapshot.startDate);
+                setFormError(null);
+                setStartDateError(null);
+              })
+            }
+            type="button"
+            variant="outline"
+          >
+            Cancel changes
+          </Button>
+        ) : null}
+      </fieldset>
       <Card className="h-fit lg:sticky lg:top-6">
         <CardHeader>
           <CardTitle>Preview</CardTitle>
@@ -392,6 +706,23 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
         <CardContent className="space-y-3">
           <p>{preview.summary.sessionCount} activities</p>
           <p>{preview.summary.weekCount} weeks</p>
+          {preview.structure ? (
+            <p className="text-sm text-muted-foreground">
+              Week {copySourceWeek + 1}:{" "}
+              {Object.entries(
+                summarizeTrainingPlanWeek({
+                  sessions: preview.structure.sessions,
+                  weekIndex: copySourceWeek,
+                }),
+              )
+                .filter(([, summary]) => summary.sessionCount > 0)
+                .map(
+                  ([category, summary]) =>
+                    `${category} ${summary.knownDurationMinutes} min${summary.unknownDurationSessionCount ? ` + ${summary.unknownDurationSessionCount} unknown` : ""}`,
+                )
+                .join(" · ") || "No activities"}
+            </p>
+          ) : null}
           {preview.error ? (
             <p className="text-sm text-destructive">Complete each activity to preview and save.</p>
           ) : null}
@@ -410,7 +741,7 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
           <div aria-live="polite" className="border-t pt-3" role="status">
             <p className="font-medium">Authoritative server projection</p>
             {authoritativePreviewQuery.isFetching ? (
-              <p>Validating this draft…</p>
+              <p>Validating this plan…</p>
             ) : authoritativePreviewQuery.error ? (
               <div>
                 <p>Projection could not be loaded.</p>
@@ -459,59 +790,12 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
             ) : null}
             {authoritativeProjection ? (
               <p className="border-t pt-2 text-xs text-muted-foreground">
-                The server projection is current for this exact draft.
+                The server projection is current for these exact changes.
               </p>
             ) : null}
           </div>
         </CardContent>
       </Card>
-    </div>
-  );
-}
-
-function ActivityPlanVariantField({
-  activityPlanId,
-  fieldId,
-  onChange,
-  variantId,
-}: {
-  activityPlanId: string;
-  fieldId: string;
-  onChange: (variantId: string | undefined) => void;
-  variantId?: string;
-}) {
-  const detailQuery = api.activityPlans.getById.useQuery(
-    { id: activityPlanId, personalize: false },
-    { enabled: Boolean(activityPlanId), retry: false },
-  );
-  const detail = detailQuery.data?.detail;
-  const selectedVariantIsMissing = Boolean(
-    variantId && detail && !detail.variants.some((variant) => variant.id === variantId),
-  );
-
-  return (
-    <label className="space-y-1" htmlFor={fieldId}>
-      <span className="text-xs">Variant</span>
-      <select
-        className="h-10 w-full rounded-md border bg-background px-3"
-        disabled={!activityPlanId || detailQuery.isLoading || detailQuery.isError}
-        id={fieldId}
-        onChange={(event) => onChange(event.currentTarget.value || undefined)}
-        value={variantId ?? ""}
-      >
-        <option value="">
-          {detail ? `Current default (${detail.defaultVariantName})` : "Current default"}
-        </option>
-        {selectedVariantIsMissing && variantId ? (
-          <option value={variantId}>Unavailable selected variant</option>
-        ) : null}
-        {detail?.variants.map((variant) => (
-          <option key={variant.id} value={variant.id}>
-            {variant.name}
-            {variant.id === detail.defaultVariantId ? " (default)" : ""}
-          </option>
-        ))}
-      </select>
-    </label>
+    </form>
   );
 }

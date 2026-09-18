@@ -2,7 +2,7 @@ import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import { Button } from "@repo/ui/components/button";
 import { SearchField } from "@repo/ui/components/search-field";
 import { Text } from "@repo/ui/components/text";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { GroupCard } from "@/components/groups/GroupCards";
 import { ProfileCard } from "@/components/profile/ProfileCard";
@@ -63,7 +63,7 @@ function SocialSectionState({
   }
   if (error) {
     return (
-      <View className="items-start gap-2" testID={`${testID}-error`}>
+      <View accessibilityRole="alert" className="items-start gap-2" testID={`${testID}-error`}>
         <Text className="text-sm text-destructive">Could not load this section.</Text>
         <Button onPress={onRetry} size="sm" testID={`${testID}-retry`} variant="outline">
           <Text>Retry</Text>
@@ -81,7 +81,11 @@ function SocialSectionState({
   return null;
 }
 
-export function GroupsAndPeopleStep({ data, updateData }: StepProps) {
+export function GroupsAndPeopleStep(props: StepProps) {
+  return <AccountGroupsAndPeopleStep key={props.accountIdentity ?? "anonymous"} {...props} />;
+}
+
+function AccountGroupsAndPeopleStep({ data, updateData }: StepProps) {
   const [groupSearch, setGroupSearch] = useState("");
   const [peopleSearch, setPeopleSearch] = useState("");
   const [selectedGroups, setSelectedGroups] = useState<Record<string, GroupSummary>>({});
@@ -109,6 +113,28 @@ export function GroupsAndPeopleStep({ data, updateData }: StepProps) {
     { getNextPageParam: (lastPage) => lastPage.nextCursor },
   );
 
+  useEffect(() => {
+    const visibleGroups = groupsQuery.data?.pages.flatMap((page) => page.items) ?? [];
+    const selected = visibleGroups.filter((group) => data.selected_group_ids.includes(group.id));
+    if (selected.length === 0) return;
+    setSelectedGroups((current) => ({
+      ...current,
+      ...Object.fromEntries(selected.map((group) => [group.id, group])),
+    }));
+  }, [data.selected_group_ids, groupsQuery.data?.pages]);
+
+  useEffect(() => {
+    const visiblePeople = peopleQuery.data?.pages.flatMap((page) => page.users) ?? [];
+    const selected = visiblePeople.filter((profile) =>
+      data.selected_follow_profile_ids.includes(profile.id),
+    );
+    if (selected.length === 0) return;
+    setSelectedPeople((current) => ({
+      ...current,
+      ...Object.fromEntries(selected.map((profile) => [profile.id, profile])),
+    }));
+  }, [data.selected_follow_profile_ids, peopleQuery.data?.pages]);
+
   const invitationItems = useMemo(
     () => invitationsQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [invitationsQuery.data?.pages],
@@ -122,7 +148,7 @@ export function GroupsAndPeopleStep({ data, updateData }: StepProps) {
       if (selected) byId.set(selected.id, selected);
     }
     return [...byId.values()];
-  }, [data.selected_group_ids, groupsQuery.data?.pages, selectedGroups]);
+  }, [selectedGroups, data.selected_group_ids, groupsQuery.data?.pages]);
 
   const peopleItems = useMemo(() => {
     const items = peopleQuery.data?.pages.flatMap((page) => page.users) ?? [];
@@ -132,7 +158,7 @@ export function GroupsAndPeopleStep({ data, updateData }: StepProps) {
       if (selected) byId.set(selected.id, selected);
     }
     return [...byId.values()];
-  }, [data.selected_follow_profile_ids, peopleQuery.data?.pages, selectedPeople]);
+  }, [selectedPeople, data.selected_follow_profile_ids, peopleQuery.data?.pages]);
 
   const toggleInvitation = (invitation: MyGroupInvitation) => {
     const selected = data.selected_invitation_ids.includes(invitation.id);
@@ -210,7 +236,12 @@ export function GroupsAndPeopleStep({ data, updateData }: StepProps) {
           Choose invitations, groups, and people now. Nothing is sent until you finish setup.
         </Text>
         {selectionFeedback ? (
-          <Text className="text-sm text-destructive" testID="onboarding-social-selection-limit">
+          <Text
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+            className="text-sm text-destructive"
+            testID="onboarding-social-selection-limit"
+          >
             {selectionFeedback}
           </Text>
         ) : null}

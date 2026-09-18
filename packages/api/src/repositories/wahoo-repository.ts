@@ -1,4 +1,4 @@
-import type { ActivityPlanDocument, ProviderIntegrationLifecycleStatus } from "@repo/core";
+import type { ActivityPlanStructure, ProviderIntegrationLifecycleStatus } from "@repo/core";
 import type { DrizzleQueryExecutor } from "../db";
 
 export type WahooIntegrationRecord = {
@@ -17,7 +17,7 @@ export type WahooIntegrationRecord = {
   scope?: string | null;
 };
 
-export type WahooEventResourceProviderMetadata = {
+export type WahooPlannedSessionResourceProviderMetadata = {
   wahoo?: {
     planId?: number;
     providerAccountExternalId?: string;
@@ -27,20 +27,24 @@ export type WahooEventResourceProviderMetadata = {
     sourceRouteId?: string | null;
   };
 };
+/** @deprecated Generic-event delivery is disabled; retained only for unrelated legacy reads. */
+export type WahooEventResourceProviderMetadata = WahooPlannedSessionResourceProviderMetadata;
 
-export type WahooEventResourceLinkRecord = {
+export type WahooPlannedSessionResourceLinkRecord = {
   externalId: string;
   id: string;
-  providerMetadata: WahooEventResourceProviderMetadata | null;
+  providerMetadata: WahooPlannedSessionResourceProviderMetadata | null;
   updatedAt: string | null;
 };
+/** @deprecated Generic-event delivery is disabled. */
+export type WahooEventResourceLinkRecord = WahooPlannedSessionResourceLinkRecord;
 
 export type WahooRouteResourceLinkRecord = {
   externalId: string;
   id: string;
   integrationId: string;
   payloadHash: string | null;
-  providerMetadata: WahooEventResourceProviderMetadata | null;
+  providerMetadata: WahooPlannedSessionResourceProviderMetadata | null;
   providerUpdatedAt: string | null;
   updatedAt: string | null;
 };
@@ -65,6 +69,18 @@ export interface WahooRepository {
     fieldsFilled: Array<"dob" | "gender" | "weight_kg">;
     fieldsKept: Array<"dob" | "gender" | "weight_kg">;
   }>;
+  createPlannedSessionResourceLink(input: {
+    plannedSessionId: string;
+    externalId: string;
+    integrationId: string;
+    expectedIntegrationGeneration: number;
+    profileId: string;
+    provider: "wahoo";
+    providerMetadata?: WahooPlannedSessionResourceProviderMetadata | null;
+    syncedAt: string;
+    updatedAt: string;
+  }): Promise<void>;
+  /** @deprecated Generic-event delivery is disabled; the compatibility name targets a planned session. */
   createEventResourceLink(input: {
     eventId: string;
     externalId: string;
@@ -76,6 +92,10 @@ export interface WahooRepository {
     syncedAt: string;
     updatedAt: string;
   }): Promise<void>;
+  deletePlannedSessionResourceLink(
+    input: WahooEventResourceLinkGenerationGuard & { id: string },
+  ): Promise<void>;
+  /** @deprecated Generic-event delivery is disabled. */
   deleteEventResourceLink(
     input: WahooEventResourceLinkGenerationGuard & { id: string },
   ): Promise<void>;
@@ -152,19 +172,41 @@ export interface WahooRepository {
     profileId: string;
     externalWorkoutId: string;
   }): Promise<string | null>;
+  /** @deprecated The identifier is a planned-session ID after the scheduling hard cut. */
   getEventActivityPlanId(input: { eventId: string; profileId: string }): Promise<string | null>;
+  getPlannedSessionResourceLink(input: {
+    plannedSessionId: string;
+    forUpdate?: boolean;
+    profileId: string;
+    provider: "wahoo";
+  }): Promise<WahooPlannedSessionResourceLinkRecord | null>;
+  getPlannedSessionForSync(input: { plannedSessionId: string; profileId: string }): Promise<{
+    activityPlan: {
+      description: string | null;
+      id: string;
+      name: string;
+      structure: ActivityPlanStructure;
+      updatedAt: string;
+    } | null;
+    id: string;
+    plannedSessionId: string;
+    planningDate: string;
+    timezone: string;
+  } | null>;
+  /** @deprecated Generic-event delivery is disabled. */
   getEventResourceLink(input: {
     eventId: string;
     forUpdate?: boolean;
     profileId: string;
     provider: "wahoo";
   }): Promise<WahooEventResourceLinkRecord | null>;
+  /** @deprecated Generic-event delivery is disabled. */
   getPlannedEventForSync(input: { eventId: string; profileId: string }): Promise<{
     activityPlan: {
       description: string | null;
       id: string;
       name: string;
-      structure: ActivityPlanDocument;
+      structure: ActivityPlanStructure;
       updatedAt: string;
     } | null;
     id: string;
@@ -215,6 +257,7 @@ export interface WahooRepository {
     profileId: string;
     provider: "wahoo";
   }): Promise<WahooGroupEventRouteDeliveryResourceLinkRecord | null>;
+  /** @deprecated Generic-event delivery is disabled. */
   listEventResourceLinks(input: { eventId: string; profileId: string }): Promise<
     Array<{
       externalId: string;
@@ -222,25 +265,6 @@ export interface WahooRepository {
       provider: string;
       syncedAt: string | null;
       updatedAt: string | null;
-    }>
-  >;
-  listUpcomingWahooSyncedPlannedEvents(input: {
-    after?: { eventId: string; startsAt: string };
-    limit: number;
-    profileId: string;
-    startsAtGte: string;
-    startsAtLte: string;
-  }): Promise<
-    Array<{
-      activityPlan: {
-        description: string | null;
-        id: string;
-        name: string;
-        structure: ActivityPlanDocument;
-      };
-      eventId: string;
-      startsAt: string;
-      timezone: string;
     }>
   >;
   listOwnedRoutesForMirror(input: {
@@ -266,12 +290,14 @@ export interface WahooRepository {
     limit: number;
     profileId: string;
   }): Promise<Array<{ eventId: string; sourceRouteId: string | null }>>;
+  /** @deprecated Generic-event delivery is disabled. */
   isWahooPlanReferencedByOtherEvent(input: {
     excludeLinkId: string;
     integrationId: string;
     planId: number;
     profileId: string;
   }): Promise<boolean>;
+  /** @deprecated Generic-event delivery is disabled. */
   updateEventResourceLink(input: {
     externalId?: string;
     expectedIntegrationGeneration: number;

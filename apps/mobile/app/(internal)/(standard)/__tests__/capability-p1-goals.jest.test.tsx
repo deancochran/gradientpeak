@@ -29,6 +29,7 @@ jest.mock("expo-router", () => ({
       options?.headerRight?.() ?? null,
   },
   useLocalSearchParams: () => ({ id: "missing-goal" }),
+  useNavigation: () => ({ dispatch: jest.fn() }),
   useRouter: () => ({ back, navigate }),
 }));
 
@@ -86,6 +87,9 @@ jest.mock("@/lib/api", () => ({
   api: {
     athleteIntelligence: {
       getGoalAssessmentBatch: {
+        useQuery: () => ({ data: { entries: [] }, isLoading: false }),
+      },
+      getGoalPortfolio: {
         useQuery: () => ({ data: { entries: [] }, isLoading: false }),
       },
     },

@@ -22,8 +22,10 @@ import {
   FormTextareaField,
   FormTextField,
   FormTimeInputField,
+  FormTimezoneField,
   FormWeightInputField,
 } from "./index.native";
+import { getTimezoneOptions, isValidIanaTimezone } from "./shared";
 
 const profileSchema = z.object({
   activity_category: z.string(),
@@ -52,7 +54,7 @@ function getPickerByMode(nodes: ReactTestInstance[], mode: "date" | "time"): Rea
 }
 
 function getLastNode(nodes: ReactTestInstance[], label: string): ReactTestInstance {
-  const node = nodes.at(-1);
+  const node = nodes[nodes.length - 1];
 
   if (!node) {
     throw new Error(`Expected ${label} to be rendered`);
@@ -134,7 +136,19 @@ function FormFieldsHarness() {
         testId="wake-time-field"
       />
       <FormBoundedNumberField control={methods.control} decimals={0} label="FTP" name="ftp" />
-      <FormNumberField control={methods.control} label="Target Power" name="target_power" />
+      <FormNumberField
+        clampOnBlur={false}
+        control={methods.control}
+        label="Target Power"
+        max={300}
+        name="target_power"
+      />
+      <FormNumberField
+        control={methods.control}
+        label="Clamped Target Power"
+        max={300}
+        name="target_power"
+      />
       <FormPaceField control={methods.control} label="Pace" name="pace" />
       <FormPercentSliderField
         control={methods.control}
@@ -254,7 +268,132 @@ function DraftSubmitHarness({ onSubmit }: { onSubmit: (values: { amount: number 
   );
 }
 
+function OptionalNumberSubmitHarness({
+  onSubmit,
+}: {
+  onSubmit: (values: { amount?: number }) => void;
+}) {
+  const methods = useZodForm({
+    schema: z.object({ amount: z.number().optional() }),
+    defaultValues: { amount: 10 },
+  });
+  const submit = useZodFormSubmit({ form: methods, onSubmit });
+
+  return (
+    <Form {...methods}>
+      <FormNumberField control={methods.control} label="Optional amount" name="amount" />
+      <Button testId="submit-optional-amount" onPress={submit.handleSubmit}>
+        <Text>Submit optional amount</Text>
+      </Button>
+    </Form>
+  );
+}
+
+function NullableNumberHarness() {
+  const methods = useZodForm({
+    schema: z.object({ amount: z.number().finite().nullable() }),
+    defaultValues: { amount: 0 },
+  });
+
+  return (
+    <Form {...methods}>
+      <FormNumberField
+        clampOnBlur={false}
+        control={methods.control}
+        emptyValue={null}
+        label="Nullable amount"
+        name="amount"
+      />
+      <Button
+        testId="set-amount-error"
+        onPress={() => methods.setError("amount", { message: "Amount is invalid" })}
+      >
+        <Text>Set amount error</Text>
+      </Button>
+      <Text>{JSON.stringify(methods.watch())}</Text>
+    </Form>
+  );
+}
+
+function TimezoneHarness({ disabled = false }: { disabled?: boolean }) {
+  const methods = useZodForm({
+    schema: z.object({ timezone: z.string().nullable() }),
+    defaultValues: { timezone: "Pacific/Kiritimati" },
+  });
+
+  return (
+    <Form {...methods}>
+      <FormTimezoneField
+        control={methods.control}
+        label="Planning timezone"
+        name="timezone"
+        disabled={disabled}
+      />
+      <Text>{JSON.stringify(methods.watch())}</Text>
+      <Text testID="timezone-touched">
+        {String(Boolean(methods.formState.touchedFields.timezone))}
+      </Text>
+    </Form>
+  );
+}
+
+function TimeFirstDateTimeHarness() {
+  const methods = useZodForm({
+    schema: z.object({ recorded_at: z.string().nullable() }),
+    defaultValues: { recorded_at: null },
+  });
+
+  return (
+    <Form {...methods}>
+      <FormDateTimeField
+        control={methods.control}
+        label="Recorded at"
+        name="recorded_at"
+        testId="time-first"
+      />
+      <Text>{JSON.stringify(methods.watch())}</Text>
+    </Form>
+  );
+}
+
 describe("Form fields native", () => {
+  it("filters timezone choices and preserves canonical selection and clearing", async () => {
+    const { getByLabelText, getByText } = await renderNative(<TimezoneHarness />);
+    await fireEvent(getByLabelText("Search timezones"), "changeText", "kathmandu");
+    await fireEvent.press(getByLabelText("Asia / Kathmandu"));
+    expect(getByText(/"timezone":"Asia\/Kathmandu"/)).toBeTruthy();
+    await fireEvent(getByLabelText("Search timezones"), "changeText", "not set");
+    await fireEvent.press(getByLabelText("Not set"));
+    expect(getByText(/"timezone":null/)).toBeTruthy();
+  });
+  it("discards same-value bounded and weight drafts on form reset", async () => {
+    function ResetForm() {
+      const form = useZodForm({
+        schema: z.object({ quantity: z.number(), weight: z.number() }),
+        defaultValues: { quantity: 1, weight: 70 },
+      });
+      return (
+        <Form {...form}>
+          <FormBoundedNumberField control={form.control} name="quantity" label="Quantity" />
+          <FormWeightInputField control={form.control} name="weight" label="Weight" unit="kg" />
+          <Button onPress={() => form.reset()}>
+            <Text>Reset drafts</Text>
+          </Button>
+        </Form>
+      );
+    }
+    const { getByLabelText, getByText } = await renderNative(<ResetForm />);
+    const quantity = getByLabelText("Quantity");
+    const weight = getByLabelText("Weight");
+    await fireEvent(quantity, "changeText", "1.0");
+    await fireEvent(weight, "changeText", "70.0");
+    expect(quantity.props.value).toBe("1.0");
+    expect(weight.props.value).toBe("70.0");
+    await fireEvent.press(getByText("Reset drafts"));
+    expect(quantity.props.value).toBe("1");
+    expect(weight.props.value).toBe("70");
+  });
+
   it("binds shared controlled wrappers to react-hook-form", async () => {
     const { container, getAllByText, getByLabelText, getByTestId, getByText } = await renderNative(
       <FormFieldsHarness />,
@@ -273,7 +412,7 @@ describe("Form fields native", () => {
     await fireEvent.press(getLastNode(getAllByText("Done"), "Done button"));
     await fireEvent(getByLabelText("Duration"), "changeText", "45:00");
     await fireEvent(getByLabelText("Duration"), "blur");
-    await fireEvent.press(getByText("+"));
+    await fireEvent.press(getByLabelText("Increase Max Sessions"));
     await fireEvent.press(getByTestId("recorded-at-field-date"));
     const datePicker = getPickerByMode(getAllByTypeName("DateTimePicker"), "date");
     await fireEvent(datePicker, "change", {}, new Date(2026, 2, 24, 0, 0));
@@ -350,6 +489,136 @@ describe("Form fields native", () => {
 
     expect(input.props.value).toBe("12");
     expect(getByText(/"target_power":12/)).toBeTruthy();
+  });
+
+  it("preserves opt-out out-of-range drafts while the default field clamps", async () => {
+    const { getByLabelText, getByText } = await renderNative(<FormFieldsHarness />);
+    const preserved = getByLabelText("Target Power");
+    const clamped = getByLabelText("Clamped Target Power");
+
+    await fireEvent(preserved, "changeText", "500");
+    await fireEvent(preserved, "blur");
+    expect(preserved.props.value).toBe("500");
+    expect(getByText(/"target_power":500/)).toBeTruthy();
+
+    await fireEvent(clamped, "changeText", "500");
+    await fireEvent(clamped, "blur");
+    expect(clamped.props.value).toBe("300");
+    expect(getByText(/"target_power":300/)).toBeTruthy();
+  });
+
+  it("keeps invalid optional number drafts visible and rejects submission instead of clearing", async () => {
+    const onSubmit = jest.fn();
+    const { getByLabelText, getByTestId } = await renderNative(
+      <OptionalNumberSubmitHarness onSubmit={onSubmit} />,
+    );
+    const input = getByLabelText("Optional amount");
+
+    await fireEvent(input, "changeText", "invalid");
+    await fireEvent(input, "blur");
+    expect(input.props.value).toBe("invalid");
+
+    await act(async () => {
+      await fireEvent.press(getByTestId("submit-optional-amount"));
+    });
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(input.props.value).toBe("invalid");
+  });
+
+  it("preserves zero, clears to null, and announces numeric errors", async () => {
+    const { getByLabelText, getByTestId, getByText } = await renderNative(
+      <NullableNumberHarness />,
+    );
+    const input = getByLabelText("Nullable amount");
+
+    expect(input.props.value).toBe("0");
+    await fireEvent(input, "changeText", "");
+    await fireEvent(input, "blur");
+    expect(getByText(/"amount":null/)).toBeTruthy();
+
+    await fireEvent.press(getByTestId("set-amount-error"));
+    expect(getByText("Amount is invalid").props).toMatchObject({
+      accessibilityLiveRegion: "assertive",
+      accessibilityRole: "alert",
+    });
+  });
+
+  it("preserves valid timezone values without selecting one automatically", async () => {
+    expect(isValidIanaTimezone("Pacific/Kiritimati")).toBe(true);
+    const options = getTimezoneOptions("Pacific/Kiritimati", "UTC");
+    expect(options?.some((option) => option.value === "Pacific/Kiritimati")).toBe(true);
+    expect(options?.find((option) => option.value === "")?.label).toBe("Not set");
+
+    const { getByText } = await renderNative(<TimezoneHarness />);
+    expect(getByText(/"timezone":"Pacific\/Kiritimati"/)).toBeTruthy();
+  });
+
+  it("controls the existing Dialog through open/change, closes after selection and preserves nullable clear", async () => {
+    const view = await renderNative(<TimezoneHarness />);
+    const dialog = () =>
+      getLastNode(
+        view.container.queryAll((node) => node.type === "@rn-primitives/dialog.Root"),
+        "Timezone dialog",
+      );
+    expect(dialog().props.open).toBe(false);
+    await fireEvent(dialog(), "openChange", true);
+    expect(dialog().props.open).toBe(true);
+    await fireEvent(view.getByLabelText("Search timezones"), "changeText", "new york");
+    await fireEvent.press(view.getByLabelText("America / New York"));
+    expect(view.getByText(/"timezone":"America\/New_York"/)).toBeTruthy();
+    expect(dialog().props.open).toBe(false);
+    expect(view.getByTestId("timezone-touched").props.children).toBe("true");
+    await fireEvent(dialog(), "openChange", true);
+    expect(view.getByLabelText("Search timezones").props.value).toBe("");
+    await fireEvent.press(view.getByLabelText("Not set"));
+    expect(view.getByText(/"timezone":null/)).toBeTruthy();
+    expect(dialog().props.open).toBe(false);
+  });
+
+  it("dismisses and clears search when disabled without reopening when enabled", async () => {
+    const view = await renderNative(<TimezoneHarness />);
+    const dialog = () =>
+      getLastNode(
+        view.container.queryAll((node) => node.type === "@rn-primitives/dialog.Root"),
+        "Timezone dialog",
+      );
+    await fireEvent(dialog(), "openChange", true);
+    await fireEvent(view.getByLabelText("Search timezones"), "changeText", "new york");
+    await view.rerender(<TimezoneHarness disabled />);
+    expect(dialog().props.open).toBe(false);
+    expect(view.getByLabelText("Planning timezone").props.accessibilityState.disabled).toBe(true);
+    await view.rerender(<TimezoneHarness />);
+    expect(dialog().props.open).toBe(false);
+    expect(view.getByText(/"timezone":"Pacific\/Kiritimati"/)).toBeTruthy();
+    await fireEvent(dialog(), "openChange", true);
+    await fireEvent(dialog(), "openChange", false);
+    expect(view.getByTestId("timezone-touched").props.children).toBe("true");
+  });
+
+  it("uses the local calendar day when a time is selected before a date", async () => {
+    const localNow = new Date();
+    const expectedDate = `${localNow.getFullYear()}-${String(localNow.getMonth() + 1).padStart(2, "0")}-${String(localNow.getDate()).padStart(2, "0")}`;
+    const toISOString = jest.spyOn(Date.prototype, "toISOString").mockImplementation(() => {
+      throw new Error("UTC formatting must not be used for local datetime fallbacks");
+    });
+
+    try {
+      const { container, getAllByText, getByTestId, getByText } = await renderNative(
+        <TimeFirstDateTimeHarness />,
+      );
+      const getAllByTypeName = (type: string) =>
+        container.queryAll((node) => node.type === type) as ReactTestInstance[];
+
+      await fireEvent.press(getByTestId("time-first-time"));
+      const timePicker = getPickerByMode(getAllByTypeName("DateTimePicker"), "time");
+      await fireEvent(timePicker, "change", {}, new Date(2026, 2, 23, 4, 15));
+      await fireEvent.press(getLastNode(getAllByText("Done"), "Done button"));
+
+      expect(getByText(new RegExp(`"recorded_at":"${expectedDate}T04:15"`))).toBeTruthy();
+    } finally {
+      toISOString.mockRestore();
+    }
   });
 
   it("flushes a focused number draft before constructing the submit payload", async () => {

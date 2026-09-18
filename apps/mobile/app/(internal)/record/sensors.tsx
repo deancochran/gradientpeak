@@ -12,7 +12,7 @@ import {
   Zap,
 } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, View } from "react-native";
+import { ActivityIndicator, Alert, AppState, Linking, ScrollView, View } from "react-native";
 import type { Device } from "react-native-ble-plx";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import {
@@ -59,6 +59,7 @@ function SensorsScreen() {
   const [availableDevices, setAvailableDevices] = useState<Device[]>([]);
   const [connectingDevices, setConnectingDevices] = useState<Set<string>>(new Set());
   const [isRequestingPermission, setIsRequestingPermission] = useState(false);
+  const [isResettingSensors, setIsResettingSensors] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [connectErrors, setConnectErrors] = useState<Record<string, string>>({});
 
@@ -120,6 +121,15 @@ function SensorsScreen() {
     }
   }, []);
 
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        void refreshPermissions();
+      }
+    });
+    return () => subscription.remove();
+  }, [refreshPermissions]);
+
   const requestBluetoothPermission = useCallback(async () => {
     if (isRequestingPermission) return;
 
@@ -135,6 +145,14 @@ function SensorsScreen() {
       setIsRequestingPermission(false);
     }
   }, [isRequestingPermission, refreshPermissions]);
+
+  const openBluetoothSettings = useCallback(async () => {
+    try {
+      await Linking.openSettings();
+    } catch {
+      setScanError("Unable to open system settings. Allow Bluetooth access, then return here.");
+    }
+  }, []);
 
   const bluetoothGranted = permissions?.bluetooth?.granted ?? false;
   const bluetoothCanAsk = permissions?.bluetooth?.canAskAgain ?? false;
@@ -200,27 +218,27 @@ function SensorsScreen() {
   }, [stopScan]);
 
   const handleConnectDevice = useCallback(
-    async (device: Device) => {
-      if (connectingDevices.has(device.id)) return;
+    async (deviceId: string) => {
+      if (connectingDevices.has(deviceId)) return;
 
-      setConnectingDevices((prev) => new Set(prev).add(device.id));
+      setConnectingDevices((prev) => new Set(prev).add(deviceId));
       setConnectErrors((prev) => {
         const next = { ...prev };
-        delete next[device.id];
+        delete next[deviceId];
         return next;
       });
 
       try {
-        await connectDevice(device.id);
+        await connectDevice(deviceId);
       } catch (error: unknown) {
         console.error("Connection failed:", error);
         const errorMessage =
           error instanceof Error ? error.message : "Connection failed. Move closer and try again.";
-        setConnectErrors((prev) => ({ ...prev, [device.id]: errorMessage || "Connection failed" }));
+        setConnectErrors((prev) => ({ ...prev, [deviceId]: errorMessage || "Connection failed" }));
       } finally {
         setConnectingDevices((prev) => {
           const next = new Set(prev);
-          next.delete(device.id);
+          next.delete(deviceId);
           return next;
         });
       }
@@ -251,14 +269,30 @@ function SensorsScreen() {
   );
 
   const handleResetSensors = useCallback(async () => {
+    if (isResettingSensors) return;
+    setIsResettingSensors(true);
     try {
       await resetSensors();
       setScanError(null);
       setConnectErrors({});
     } catch (error) {
       console.error("Failed to reset sensors:", error);
+      setScanError("Unable to reset sensor setup. Try again before connecting another sensor.");
+    } finally {
+      setIsResettingSensors(false);
     }
-  }, [resetSensors]);
+  }, [isResettingSensors, resetSensors]);
+
+  const confirmResetSensors = useCallback(() => {
+    Alert.alert(
+      "Reset sensor setup?",
+      "This disconnects all sensors and forgets saved devices. You will need to connect them again.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Reset sensors", style: "destructive", onPress: () => void handleResetSensors() },
+      ],
+    );
+  }, [handleResetSensors]);
 
   const trainerFailure = getTrainerFailure({
     scanError,
@@ -300,9 +334,19 @@ function SensorsScreen() {
           <EmptyListState
             title={readinessIssue.title}
             description={readinessIssue.description}
-            actionLabel={readinessIssue.action === "permission" ? "Grant access" : undefined}
+            actionLabel={
+              readinessIssue.action === "permission"
+                ? "Grant access"
+                : readinessIssue.action === "settings"
+                  ? "Open settings"
+                  : undefined
+            }
             onAction={
-              readinessIssue.action === "permission" ? requestBluetoothPermission : undefined
+              readinessIssue.action === "permission"
+                ? requestBluetoothPermission
+                : readinessIssue.action === "settings"
+                  ? openBluetoothSettings
+                  : undefined
             }
           />
         ) : trainerFailure ? (
@@ -353,7 +397,8 @@ function SensorsScreen() {
                     key={sensor.id}
                     sensor={sensor}
                     isConnecting={connectingDevices.has(sensor.id)}
-                    onConnect={connectDevice}
+                    error={connectErrors[sensor.id]}
+                    onConnect={handleConnectDevice}
                     onForget={handleForgetDevice}
                   />
                 ))
@@ -399,7 +444,7 @@ function SensorsScreen() {
                         </View>
                         <Button
                           size="sm"
-                          onPress={() => handleConnectDevice(device)}
+                          onPress={() => handleConnectDevice(device.id)}
                           disabled={isConnecting}
                           className="h-8"
                         >
@@ -422,14 +467,20 @@ function SensorsScreen() {
         )}
 
         {!readinessIssue && (connectedSensors.length > 0 || knownSensors.length > 0) && (
-          <TroubleshootingCard onReset={handleResetSensors} />
+          <TroubleshootingCard isResetting={isResettingSensors} onReset={confirmResetSensors} />
         )}
       </ScrollView>
     </View>
   );
 }
 
-function TroubleshootingCard({ onReset }: { onReset: () => void | Promise<void> }) {
+function TroubleshootingCard({
+  isResetting,
+  onReset,
+}: {
+  isResetting: boolean;
+  onReset: () => void;
+}) {
   return (
     <View className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4">
       <View className="flex-row items-start gap-3">
@@ -440,8 +491,16 @@ function TroubleshootingCard({ onReset }: { onReset: () => void | Promise<void> 
             Reset sensor setup disconnects all sensors and forgets known devices. Use this only if
             connections are stuck or showing the wrong devices.
           </Text>
-          <Button size="sm" variant="ghost" onPress={onReset} className="mt-3 h-8 self-start px-0">
-            <Text className="text-xs font-medium text-red-700">Reset sensor setup</Text>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={isResetting}
+            onPress={onReset}
+            className="mt-3 min-h-11 self-start px-2"
+          >
+            <Text className="text-xs font-medium text-red-700">
+              {isResetting ? "Resetting sensor setup..." : "Reset sensor setup"}
+            </Text>
           </Button>
         </View>
       </View>
@@ -496,11 +555,13 @@ function getReadinessIssue({
 function KnownSensorRow({
   sensor,
   isConnecting,
+  error,
   onConnect,
   onForget,
 }: {
   sensor: PersistedSensor;
   isConnecting: boolean;
+  error?: string;
   onConnect: (deviceId: string) => Promise<void>;
   onForget: (deviceId: string) => Promise<void>;
 }) {
@@ -514,6 +575,7 @@ function KnownSensorRow({
           <Text className="mt-1 text-xs text-muted-foreground">
             Last connected {formatLastConnected(sensor.lastConnected)}
           </Text>
+          {error ? <Text className="mt-2 text-xs text-red-700">{error}</Text> : null}
         </View>
         <View className="items-end gap-2">
           <Button

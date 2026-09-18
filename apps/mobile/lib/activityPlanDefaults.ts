@@ -20,6 +20,7 @@ export function createDefaultActivityPlanStep({
   return {
     id,
     name: "New Step",
+    purpose: "work",
     duration: { type: "time", seconds: DEFAULT_ACTIVITY_PLAN_STEP_DURATION_SECONDS },
     targets: [
       getActivityPlanDefaultTarget({

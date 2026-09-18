@@ -10,7 +10,10 @@ export type RecordingLauncherSearch = {
   gps: RecordingGpsMode;
   eventId?: string;
   activityPlanId?: string;
-  variantId?: string;
+  /** Immutable calendar session selected for recording. */
+  plannedSessionId?: string;
+  /** Calendar date used to retrieve the selected planned-session projection. */
+  plannedSessionDate?: string;
   /** Selected route to retain through the recording launcher. */
   routeId?: string;
 };
@@ -64,9 +67,14 @@ export function validateRecordingSearch(search: Record<string, unknown>): Record
       typeof search.activityPlanId === "string" && uuidPattern.test(search.activityPlanId)
         ? search.activityPlanId
         : undefined,
-    variantId:
-      typeof search.variantId === "string" && uuidPattern.test(search.variantId)
-        ? search.variantId
+    plannedSessionId:
+      typeof search.plannedSessionId === "string" && uuidPattern.test(search.plannedSessionId)
+        ? search.plannedSessionId
+        : undefined,
+    plannedSessionDate:
+      typeof search.plannedSessionDate === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(search.plannedSessionDate)
+        ? search.plannedSessionDate
         : undefined,
     routeId:
       typeof search.routeId === "string" && uuidPattern.test(search.routeId)

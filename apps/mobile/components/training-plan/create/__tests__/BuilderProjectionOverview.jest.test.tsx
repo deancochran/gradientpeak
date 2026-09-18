@@ -203,7 +203,23 @@ describe("BuilderProjectionOverview", () => {
         {...props}
         state={{
           ...props.state,
-          structure: { sessions: [{ activityPlan: null, localId: "session-1", offsetDays: 0 }] },
+          structure: {
+            sessions: [
+              {
+                activityPlan: null,
+                id: "00000000-0000-4000-8000-000000000020",
+                localId: "00000000-0000-4000-8000-000000000020",
+                offsetDays: 0,
+                demand: {
+                  activity_category: "other",
+                  training_intent: "general_maintenance",
+                  target_duration_minutes: null,
+                  target_common_load: null,
+                  importance: "normal",
+                },
+              },
+            ],
+          },
         }}
       />,
     );
@@ -228,8 +244,16 @@ describe("BuilderProjectionOverview", () => {
                   }),
                   published: true,
                 },
-                localId: "session-1",
+                id: "00000000-0000-4000-8000-000000000020",
+                localId: "00000000-0000-4000-8000-000000000020",
                 offsetDays: 0,
+                demand: {
+                  activity_category: "other",
+                  training_intent: "general_maintenance",
+                  target_duration_minutes: null,
+                  target_common_load: null,
+                  importance: "normal",
+                },
               },
             ],
           },

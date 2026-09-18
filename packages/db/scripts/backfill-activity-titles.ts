@@ -31,6 +31,7 @@ try {
         isNotNull(activitySegments.activity_category),
       ),
     )
+    .where(isNotNull(activities.started_at))
     .orderBy(asc(activities.id), asc(activitySegments.ordinal));
 
   const activityById = new Map<
@@ -43,6 +44,7 @@ try {
     }
   >();
   for (const row of rows) {
+    if (row.startedAt === null) continue;
     if (activityById.has(row.id)) continue;
     activityById.set(row.id, {
       name: row.name,

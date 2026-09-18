@@ -165,9 +165,10 @@ test("agenda.create and events.recurrence persist a bounded series and honor del
 });
 
 test("[P0] selected-day agenda shows planned and completed information for an arbitrary date", async ({
+  athleteActor,
   athletePage,
 }, testInfo) => {
-  await withDayAgendaFixture(testInfo, async (fixture) => {
+  await withDayAgendaFixture(testInfo, athleteActor, async (fixture) => {
     await athletePage.goto(`/calendar/day/${fixture.date}?month=2026-11&view=agenda`);
     await expect(athletePage.getByRole("heading", { name: "Agenda", exact: true })).toBeVisible();
     await expect(

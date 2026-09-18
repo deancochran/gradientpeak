@@ -9,6 +9,7 @@ import {
   FormSwitchField,
   FormTextareaField,
   FormTextField,
+  FormTimezoneField,
 } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
 import { LoadingButton } from "@repo/ui/components/loading";
@@ -18,7 +19,7 @@ import { File as ExpoFile } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import { Stack, useRouter } from "expo-router";
 import { Camera, ImagePlus, X } from "lucide-react-native";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -33,7 +34,9 @@ import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
 import { api } from "@/lib/api";
+import { getDeviceTimeZone } from "@/lib/calendar/eventSchedule";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
 import {
   getProfileEditFormDefaults,
   type ProfileEditForm,
@@ -137,14 +140,25 @@ function ProfileEditScreen() {
       : null;
   const form = useZodForm({
     schema: profileEditFormSchema,
-    defaultValues: getProfileEditFormDefaults(profile),
+    defaultValues: getProfileEditFormDefaults(profile, getDeviceTimeZone()),
+  });
+  const { allowNavigationAfterSuccess } = useDirtyNavigationGuard({
+    isDirty: form.formState.isDirty,
+    isPending: updateProfileMutation.isPending || Boolean(uploadingImageField),
   });
   const watchedUsername = form.watch("username");
   const watchedIsPublic = form.watch("is_public");
   const profileInitial = watchedUsername?.charAt(0)?.toUpperCase() || "U";
+  const formOwner = useRef(profile?.id);
+  // RHF requires a dirty-field subscription when merging background refreshes.
+  void form.formState.dirtyFields;
 
   useEffect(() => {
-    form.reset(getProfileEditFormDefaults(profile));
+    const sameOwner = formOwner.current === profile?.id;
+    formOwner.current = profile?.id;
+    form.reset(getProfileEditFormDefaults(profile, getDeviceTimeZone()), {
+      keepDirtyValues: sameOwner,
+    });
   }, [form, profile]);
 
   const submitForm = useZodFormSubmit<ProfileEditForm>({
@@ -154,6 +168,7 @@ function ProfileEditScreen() {
       await updateProfileMutation.mutateAsync(toProfilePatchInput(data));
 
       await Promise.all([invalidateProfileIdentityQueries(utils), refreshProfile()]);
+      allowNavigationAfterSuccess();
       router.back();
     },
     onError: (error) =>
@@ -515,13 +530,12 @@ function ProfileEditScreen() {
                   ]}
                 />
 
-                <FormTextField
+                <FormTimezoneField
                   control={form.control}
+                  deviceTimeZone={getDeviceTimeZone()}
                   description="Used to interpret calendar days and scheduled training."
                   label="Planning Timezone"
                   name="planning_timezone"
-                  parseValue={(value) => value.trim() || null}
-                  placeholder="America/Los_Angeles"
                   testId="profile-edit-planning-timezone"
                 />
 

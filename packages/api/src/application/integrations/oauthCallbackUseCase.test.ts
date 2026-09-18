@@ -691,7 +691,6 @@ describe("OAuth callback use case", () => {
     const result = await handleOAuthCallback({
       ...deps,
       code: "strava-code",
-      enqueueProviderJobInTransaction: undefined,
       error: null,
       fallbackRedirect: "http://localhost:3000/integrations",
       provider: "strava",

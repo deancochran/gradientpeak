@@ -82,6 +82,9 @@ function createDb(fixture: DbFixture = {}) {
         },
       ]);
     }
+    if (Object.hasOwn(shape, "followerId")) {
+      return queryResult(fixture.acceptedFollower ? [{ followerId: VIEWER_ID }] : []);
+    }
     if (Object.hasOwn(shape, "byteSize")) return queryResult(artifact ? [artifact] : []);
     if (Object.hasOwn(shape, "activityCategory")) return queryResult(segments);
     throw new Error("Unexpected profile test query");
@@ -336,7 +339,7 @@ describe("public completed-activity effort authorization and bounds", () => {
 
   it("re-checks follower access before a cache hit and fails closed after revocation", async () => {
     const fixture: DbFixture = { visibility: "followers", acceptedFollower: true };
-    const { db, execute } = createDb(fixture);
+    const { db, select } = createDb(fixture);
     const storage = createStorage();
     const cache = createPublicActivityEffortProfileCache();
     const read = () =>
@@ -352,7 +355,7 @@ describe("public completed-activity effort authorization and bounds", () => {
     fixture.acceptedFollower = false;
     await expect(read()).resolves.toBeNull();
 
-    expect(execute).toHaveBeenCalledTimes(2);
+    expect(select).toHaveBeenCalledTimes(6);
     expect(storage.readObjectBounded).toHaveBeenCalledTimes(1);
   });
 

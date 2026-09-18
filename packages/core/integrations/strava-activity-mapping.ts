@@ -6,7 +6,7 @@ import type { CanonicalActivityCategory } from "../schemas/activity-category";
 export type StravaCanonicalActivitySource = {
   id: string;
   name: string;
-  sportType: string;
+  rawType: string;
   startedAt: string;
   elapsedSeconds: number;
   movingSeconds: number;
@@ -80,11 +80,11 @@ const bikeTypes = new Set([
 const swimTypes = new Set(["Swim"]);
 const strengthTypes = new Set(["WeightTraining", "Crossfit"]);
 
-export function mapStravaSportType(sportType: string): CanonicalActivityCategory {
-  if (runTypes.has(sportType)) return "run";
-  if (bikeTypes.has(sportType)) return "bike";
-  if (swimTypes.has(sportType)) return "swim";
-  if (strengthTypes.has(sportType)) return "strength";
+export function mapStravaActivityCategory(rawType: string): CanonicalActivityCategory {
+  if (runTypes.has(rawType)) return "run";
+  if (bikeTypes.has(rawType)) return "bike";
+  if (swimTypes.has(rawType)) return "swim";
+  if (strengthTypes.has(rawType)) return "strength";
   return "other";
 }
 
@@ -159,7 +159,7 @@ export function mapStravaActivityToCanonical(input: {
     elapsedMs,
     Math.max(0, Math.round(input.activity.movingSeconds * 1_000)),
   );
-  const activityCategory = mapStravaSportType(input.activity.sportType);
+  const activityCategory = mapStravaActivityCategory(input.activity.rawType);
   const rawAverageHeartRate = average(streams.heartrate);
   const rawAveragePower = average(streams.watts);
   const rawAverageCadence = average(streams.cadence);
@@ -226,7 +226,7 @@ export function mapStravaActivityToCanonical(input: {
         activity_category: activityCategory,
         startOffsetMs: 0,
         endOffsetMs: elapsedMs,
-        source: { kind: "raw", rawType: input.activity.sportType },
+        source: { kind: "raw", rawType: input.activity.rawType },
         summary,
       },
     ],

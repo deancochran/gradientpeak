@@ -81,6 +81,7 @@ describe("simplified web onboarding", () => {
     expect(form).not.toBeNull();
     if (!form) return;
     fireEvent.submit(form);
+    fireEvent.submit(form);
     await waitFor(() => expect(mocks.complete).toHaveBeenCalledTimes(1));
     const formData = mocks.complete.mock.calls[0]?.[0]?.data as FormData;
     expect(formData.get("full_name")).toBe("Web Athlete");

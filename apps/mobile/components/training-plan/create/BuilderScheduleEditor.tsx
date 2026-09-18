@@ -18,12 +18,14 @@ type BuilderScheduleEditorProps = {
   chartReview: TrainingPlanBuilderController["chartReview"];
   estimateBySessionId: Map<string, ActivityPlanPlanningEstimate>;
   onAddSessionAtOffset: (offsetDays: number) => void;
+  onCopyWeek: (sourceWeekIndex: number, destinationWeekIndex: number) => void;
   onDuplicateSession: (sessionId: string) => void;
   onMoveSessionByDays: (sessionId: string, days: number) => void;
   onPressSession: (sessionId: string) => void;
   onRemoveSession: (sessionId: string) => void;
   selectedDayPointOverride?: DailyTrainingAdjustmentPoint | null;
   showChart?: boolean;
+  weekSummary?: string;
 };
 
 type BuilderSelectedDayPlanningPanelProps = {
@@ -42,6 +44,7 @@ type BuilderSelectedDayPlanningPanelProps = {
 export function BuilderScheduleEditor({
   chartReview,
   onAddSessionAtOffset,
+  onCopyWeek,
   onDuplicateSession,
   onMoveSessionByDays,
   onPressSession,
@@ -50,6 +53,7 @@ export function BuilderScheduleEditor({
   showChart = true,
   estimateBySessionId,
   viewModel,
+  weekSummary,
 }: BuilderScheduleEditorProps) {
   const selectedWeekIndex = chartReview.selectedWeekIndex;
   const selectedTimelineWeek =
@@ -97,6 +101,16 @@ export function BuilderScheduleEditor({
       ) : (
         renderSelectedDayPanel(selectedDayPoint)
       )}
+      <Button
+        onPress={() => onCopyWeek(selectedWeekIndex, selectedWeekIndex + 1)}
+        testID="builder-copy-week"
+        variant="outline"
+      >
+        <Text>
+          Copy week {selectedWeekIndex + 1} to week {selectedWeekIndex + 2}
+        </Text>
+      </Button>
+      {weekSummary ? <Text className="text-xs text-muted-foreground">{weekSummary}</Text> : null}
     </View>
   );
 }

@@ -51,26 +51,27 @@ export const updateEventActionSchema = z
     }
   });
 
-const createEventActionSchema = z.object({
-  activity_plan_id: z.string().uuid().optional(),
-  all_day: z.enum(["true", "false"]).optional(),
-  event_type: z.enum(["custom", "race_target", "planned"]),
-  notes: z.string().optional(),
-  recurrence_count: z.coerce.number().int().min(1).max(52).default(1),
-  redirectTo: z.string().optional(),
-  scheduled_date: z.string().min(1),
-  time: z.string().default("09:00"),
-  timezone: z.string().min(1).default("UTC"),
-  title: z.string().trim().min(1),
-});
-
-const attachActivityPlanActionSchema = z.object({
-  activity_plan_id: z.string().uuid().optional(),
-  event_id: z.string().uuid(),
-  operation: z.enum(["attach", "remove"]),
-  redirectTo: z.string().optional(),
-  title: z.string().trim().min(1),
-});
+const createEventActionSchema = z
+  .object({
+    all_day: z.enum(["true", "false"]).optional(),
+    event_type: z.enum(["custom", "race_target"]),
+    notes: z.string().optional(),
+    recurrence_count: z.coerce.number().int().min(1).max(52).default(1),
+    redirectTo: z.string().optional(),
+    scheduled_date: z.string().min(1),
+    time: z.string().optional(),
+    timezone: z.string().min(1),
+    title: z.string().trim().min(1),
+  })
+  .superRefine((value, context) => {
+    if (value.all_day !== "true" && !value.time?.trim()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Choose a time or mark this event all day.",
+        path: ["time"],
+      });
+    }
+  });
 
 const updateGoalActionSchema = goalActionSchema.extend({ goal_id: z.string().uuid() });
 const deleteGoalActionSchema = z.object({
@@ -239,32 +240,24 @@ export const createCalendarEventAction = createServerFn({ method: "POST" }).hand
         timezone: parsedData.timezone,
       });
       const notes = parsedData.notes?.trim() || null;
-      const created =
-        parsedData.event_type === "planned"
-          ? await caller.events.create({
-              activity_plan_id: parsedData.activity_plan_id ?? "",
-              event_type: "planned",
-              notes,
-              scheduled_date: parsedData.scheduled_date,
-              title: parsedData.title,
-            })
-          : await caller.events.create({
-              all_day: parsedData.all_day === "true",
-              event_type: parsedData.event_type,
-              notes,
-              recurrence,
-              scheduled_date: parsedData.scheduled_date,
-              starts_at:
-                parsedData.all_day === "true"
-                  ? buildAllDayStartIso(parsedData.scheduled_date)
-                  : scheduledDateTimeToIsoInstant({
-                      scheduledDate: parsedData.scheduled_date,
-                      time: parsedData.time,
-                      timeZone: parsedData.timezone,
-                    }),
-              timezone: parsedData.timezone,
-              title: parsedData.title,
-            });
+      const scheduledTime = parsedData.time;
+      const created = await caller.events.create({
+        all_day: parsedData.all_day === "true",
+        event_type: parsedData.event_type,
+        notes,
+        recurrence,
+        scheduled_date: parsedData.scheduled_date,
+        starts_at:
+          parsedData.all_day === "true"
+            ? buildAllDayStartIso(parsedData.scheduled_date)
+            : scheduledDateTimeToIsoInstant({
+                scheduledDate: parsedData.scheduled_date,
+                time: scheduledTime ?? "",
+                timeZone: parsedData.timezone,
+              }),
+        timezone: parsedData.timezone,
+        title: parsedData.title,
+      });
 
       createdEventId = created.id;
     } catch (error) {
@@ -364,55 +357,6 @@ export const updateCalendarEventAction = createServerFn({ method: "POST" }).hand
       href: buildFlashHref(
         parsedData.redirectTo ?? `/calendar/events/${parsedData.event_id}`,
         "Event updated",
-        "success",
-      ),
-      statusCode: 303,
-    });
-  },
-);
-
-export const attachCalendarActivityPlanAction = createServerFn({ method: "POST" }).handler(
-  async ({ data }) => {
-    const redirectTo = getRedirectTarget(data, "/calendar?view=agenda&scheduled=true");
-    let parsedData: z.infer<typeof attachActivityPlanActionSchema>;
-
-    try {
-      parsedData = fromFormData(attachActivityPlanActionSchema, data);
-    } catch {
-      throw redirect({
-        href: buildFlashHref(redirectTo, "Choose an activity plan and try again.", "error"),
-        statusCode: 303,
-      });
-    }
-
-    try {
-      const caller = await createServerActionCaller();
-      await caller.events.update({
-        id: parsedData.event_id,
-        scope: "single",
-        patch:
-          parsedData.operation === "remove"
-            ? { activity_plan_id: null, title: parsedData.title }
-            : {
-                activity_plan_id: parsedData.activity_plan_id,
-                title: parsedData.title,
-              },
-      });
-    } catch (error) {
-      throw redirect({
-        href: buildFlashHref(
-          parsedData.redirectTo ?? redirectTo,
-          error instanceof Error ? error.message : "Unable to update the activity plan.",
-          "error",
-        ),
-        statusCode: 303,
-      });
-    }
-
-    throw redirect({
-      href: buildFlashHref(
-        parsedData.redirectTo ?? `/calendar/events/${parsedData.event_id}`,
-        parsedData.operation === "remove" ? "Activity plan removed" : "Activity plan attached",
         "success",
       ),
       statusCode: 303,

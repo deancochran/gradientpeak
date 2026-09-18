@@ -14,6 +14,7 @@ import { getTodayDateKey, shiftDateKey } from "../../lib/planning";
 export function RouteEventAttachment({ routeId }: { routeId: string }) {
   const utils = api.useUtils();
   const [eventId, setEventId] = useState("");
+  const [attachError, setAttachError] = useState<string | null>(null);
   const today = getTodayDateKey();
   const eventsQuery = api.calendar.range.useQuery({
     startDate: today,
@@ -40,7 +41,7 @@ export function RouteEventAttachment({ routeId }: { routeId: string }) {
       ]);
       toast.success("Route attached to event");
     },
-    onError: (error) => toast.error(error.message || "Route attachment failed"),
+    onError: (error) => setAttachError(error.message || "Route attachment failed"),
   });
 
   return (
@@ -53,10 +54,22 @@ export function RouteEventAttachment({ routeId }: { routeId: string }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {eventsQuery.isError ? (
-          <p className="text-sm text-destructive" role="alert">
-            Events could not be loaded. Try again.
+        {eventsQuery.isLoading ? (
+          <p className="text-sm text-muted-foreground" role="status">
+            Loading events...
           </p>
+        ) : eventsQuery.isError ? (
+          <div className="flex items-center gap-3" role="alert">
+            <p className="text-sm text-destructive">Events could not be loaded.</p>
+            <Button
+              onClick={() => void eventsQuery.refetch()}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Retry
+            </Button>
+          </div>
         ) : (
           <div className="flex flex-col gap-3 sm:flex-row">
             <label className="min-w-0 flex-1 space-y-2 text-sm font-medium">
@@ -64,7 +77,7 @@ export function RouteEventAttachment({ routeId }: { routeId: string }) {
               <select
                 aria-label="Event"
                 className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                disabled={eventsQuery.isLoading || events.length === 0}
+                disabled={attachMutation.isPending || events.length === 0}
                 onChange={(event) => setEventId(event.target.value)}
                 value={eventId}
               >
@@ -79,13 +92,14 @@ export function RouteEventAttachment({ routeId }: { routeId: string }) {
             <Button
               className="self-end"
               disabled={!eventId || attachMutation.isPending}
-              onClick={() =>
+              onClick={() => {
+                setAttachError(null);
                 attachMutation.mutate({
                   id: eventId,
                   patch: { route_id: routeId },
                   scope: "single",
-                })
-              }
+                });
+              }}
               type="button"
             >
               {attachMutation.isPending ? "Attaching..." : "Attach route"}
@@ -94,6 +108,11 @@ export function RouteEventAttachment({ routeId }: { routeId: string }) {
         )}
         {!eventsQuery.isLoading && !eventsQuery.isError && events.length === 0 ? (
           <p className="text-sm text-muted-foreground">No events are available to attach.</p>
+        ) : null}
+        {attachError ? (
+          <p className="text-sm text-destructive" role="alert">
+            {attachError}
+          </p>
         ) : null}
       </CardContent>
     </Card>

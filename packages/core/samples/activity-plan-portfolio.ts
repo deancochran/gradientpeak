@@ -77,7 +77,6 @@ export type ActivityPlanPortfolioReport = {
   metadataCoverage: number;
   metadataMismatches: readonly string[];
   objectiveScore: number;
-  progressionScore: number;
   size: number;
   triathlonPlanCount: number;
   validStructureCount: number;
@@ -183,20 +182,6 @@ function inferPrimaryIntensity(structure: ParsedActivityPlan): ActivityPlanInten
     return "vo2max";
   }
   return null;
-}
-
-function prescriptionWorkload(structure: ParsedActivityPlan): number {
-  return activitySteps(structure).reduce((total, { repetitions, step }) => {
-    const units =
-      step.duration.type === "time"
-        ? step.duration.seconds
-        : step.duration.type === "distance"
-          ? step.duration.meters
-          : step.duration.type === "repetitions"
-            ? step.duration.count * 30
-            : 300;
-    return total + units * repetitions;
-  }, 0);
 }
 
 function hasTriathlonEvidence(
@@ -330,59 +315,6 @@ export function evaluateActivityPlanPortfolio(
               exactSemanticDuplicates.reduce((total, names) => total + names.length - 1, 0)) /
               templates.length,
         );
-  const templatesById = new Map(templates.map((template) => [template.id, template]));
-  const progressionFamilies = new Map<string, ActivityPlanPortfolioMetadata[]>();
-  for (const entry of metadata) {
-    const levels = progressionFamilies.get(entry.family) ?? [];
-    levels.push(entry);
-    progressionFamilies.set(entry.family, levels);
-  }
-  const difficultyOrder: readonly ActivityPlanDifficulty[] = [
-    "foundation",
-    "development",
-    "advanced",
-    "race-specific",
-  ];
-  const demonstratesProgression = (levels: readonly ActivityPlanPortfolioMetadata[]): boolean => {
-    const ordered = difficultyOrder.map((difficulty) =>
-      levels.find((entry) => entry.difficulty === difficulty),
-    );
-    if (levels.length !== 4 || ordered.some((entry) => !entry)) return false;
-    const workloads = ordered.map((entry) => {
-      const template = entry ? templatesById.get(entry.templateId) : undefined;
-      const parsed = template ? activityPlanStructureSchema.safeParse(template.structure) : null;
-      return parsed?.success ? prescriptionWorkload(parsed.data) : null;
-    });
-    const [foundation, development, advanced, raceSpecific] = workloads;
-    if (
-      foundation === null ||
-      foundation === undefined ||
-      development === null ||
-      development === undefined ||
-      advanced === null ||
-      advanced === undefined ||
-      raceSpecific === null ||
-      raceSpecific === undefined
-    ) {
-      return false;
-    }
-    const raceEntry = ordered[3];
-    const raceTemplate = raceEntry ? templatesById.get(raceEntry.templateId) : undefined;
-    const documentsTaper = /race prep/i.test(
-      `${raceTemplate?.name ?? ""} ${raceTemplate?.description ?? ""}`,
-    );
-    return (
-      development > foundation &&
-      advanced > development &&
-      raceSpecific >= foundation &&
-      (raceSpecific >= advanced || documentsTaper)
-    );
-  };
-  const progressionScore =
-    progressionFamilies.size === 0
-      ? 0
-      : [...progressionFamilies.values()].filter(demonstratesProgression).length /
-        progressionFamilies.size;
   const triathlonScore = Math.min(triathlonPlanCount / 60, 1);
   const volumeScore = Math.min(templates.length / ACTIVITY_PLAN_PORTFOLIO_VOLUME_SATURATION, 1);
   const coverageScore = categoryCoverage * 0.4 + intensityCoverage * 0.6;
@@ -392,9 +324,8 @@ export function evaluateActivityPlanPortfolio(
       coverageScore * 0.25 +
       uniquenessScore * 0.15 +
       triathlonScore * 0.1 +
-      progressionScore * 0.1 +
-      metadataCoverage * 0.05 +
-      volumeScore * 0.05);
+      metadataCoverage * 0.1 +
+      volumeScore * 0.1);
 
   return {
     categoryCoverage,
@@ -407,7 +338,6 @@ export function evaluateActivityPlanPortfolio(
     metadataCoverage,
     metadataMismatches,
     objectiveScore,
-    progressionScore,
     size: templates.length,
     triathlonPlanCount,
     validStructureCount,

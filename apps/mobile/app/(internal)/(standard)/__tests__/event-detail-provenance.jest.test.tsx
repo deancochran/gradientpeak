@@ -1,6 +1,6 @@
 import React from "react";
 import { createHost } from "../../../../test/mock-components";
-import { fireEvent, renderNative, screen } from "../../../../test/render-native";
+import { renderNative, screen } from "../../../../test/render-native";
 import EventDetailScreen from "../event-detail";
 
 const mockNavigateTo = jest.fn();
@@ -36,6 +36,7 @@ jest.mock("expo-router", () => ({
       ),
   },
   useLocalSearchParams: () => ({ id: "event-1" }),
+  useNavigation: () => ({ dispatch: jest.fn() }),
   useRouter: () => ({
     back: jest.fn(),
     navigate: jest.fn(),
@@ -148,6 +149,33 @@ jest.mock("@/lib/api", () => ({
         useMutation: () => ({ isPending: false, mutate: jest.fn() }),
       },
     },
+    activities: {
+      createManualDiaryEntry: {
+        useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }),
+      },
+    },
+    plannedSessions: {
+      create: { useMutation: () => ({ isPending: false, mutate: jest.fn() }) },
+      getById: {
+        useQuery: () => ({ data: null, error: null, isLoading: false }),
+      },
+      skip: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
+      linkCompletion: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
+      completionCandidates: {
+        useInfiniteQuery: () => ({
+          data: { pages: [{ items: [], nextCursor: null }] },
+          fetchNextPage: jest.fn(),
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          isLoading: false,
+        }),
+      },
+    },
+    profiles: {
+      get: {
+        useQuery: () => ({ data: null, error: null, isLoading: false }),
+      },
+    },
     trainingPlans: {
       get: {
         useQuery: () => ({
@@ -197,16 +225,14 @@ describe("event detail provenance", () => {
     jest.clearAllMocks();
   });
 
-  it("shows tappable training plan provenance", async () => {
+  it("does not expose executable-plan provenance on generic event records", async () => {
     await renderNative(<EventDetailScreen />);
 
     expect(screen.queryByText("Event details")).toBeNull();
-    expect(screen.getByText("Source")).toBeTruthy();
-    expect(screen.getByText("Spring Build")).toBeTruthy();
+    expect(screen.queryByText("Source")).toBeNull();
+    expect(screen.queryByText("Spring Build")).toBeNull();
     expect(screen.queryByTestId("event-detail-options-open-training-plan")).toBeNull();
-
-    await fireEvent.press(screen.getByTestId("event-detail-source-training-plan"));
-
-    expect(mockNavigateTo).toHaveBeenCalledWith("/training-plan-detail?id=plan-123");
+    expect(screen.queryByTestId("event-detail-source-training-plan")).toBeNull();
+    expect(mockNavigateTo).not.toHaveBeenCalled();
   });
 });

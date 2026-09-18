@@ -10,7 +10,7 @@ import {
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { ChevronLeft } from "lucide-react-native";
-import type { ReactNode } from "react";
+import type { ComponentRef, ReactNode, Ref } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import { View } from "react-native";
@@ -28,6 +28,7 @@ export const APP_BOTTOM_SHEET_PRESENTATIONS = {
 };
 
 type AppBottomSheetProps = {
+  scrollRef?: Ref<ComponentRef<typeof BottomSheetScrollView>>;
   children: ReactNode;
   contentKey?: string;
   contentMode?: "scroll" | "custom";
@@ -37,10 +38,14 @@ type AppBottomSheetProps = {
   description?: string;
   footer?: ReactNode;
   headerAction?: ReactNode;
+  /** Opt in for compact editors that need a centered title between back and Done/Add. */
+  headerLayout?: "default" | "centered";
   headerContent?: ReactNode;
   initialSnapIndex?: number;
   onBack?: () => void;
   onClose: () => void;
+  /** Route close requests through the owner before dismissing a transactional draft. */
+  guardedClose?: boolean;
   showCloseAction?: boolean;
   showTitleHeader?: boolean;
   snapPoints?: string[];
@@ -51,6 +56,7 @@ type AppBottomSheetProps = {
 };
 
 type AppBottomSheetContentProps = {
+  scrollRef?: Ref<ComponentRef<typeof BottomSheetScrollView>>;
   children: ReactNode;
   contentContainerStyle?: StyleProp<ViewStyle>;
   contentKey?: string;
@@ -63,6 +69,7 @@ type AppBottomSheetContentProps = {
 };
 
 export function AppBottomSheetContent({
+  scrollRef,
   children,
   contentContainerStyle,
   contentKey,
@@ -77,6 +84,7 @@ export function AppBottomSheetContent({
 
   return (
     <BottomSheetScrollView
+      {...(scrollRef === undefined ? {} : { ref: scrollRef })}
       key={contentKey}
       enableFooterMarginAdjustment={enableFooterMarginAdjustment}
       style={{ flex: 1 }}
@@ -99,6 +107,7 @@ export function AppBottomSheetContent({
 }
 
 export function AppBottomSheet({
+  scrollRef,
   children,
   contentKey,
   contentMode = "scroll",
@@ -108,10 +117,12 @@ export function AppBottomSheet({
   description,
   footer,
   headerAction,
+  headerLayout = "default",
   headerContent,
   initialSnapIndex,
   onBack,
   onClose,
+  guardedClose = false,
   showCloseAction = false,
   showTitleHeader = true,
   snapPoints: snapPointProp,
@@ -137,10 +148,11 @@ export function AppBottomSheet({
         {...props}
         appearsOnIndex={0}
         disappearsOnIndex={-1}
-        pressBehavior="close"
+        pressBehavior={guardedClose ? "none" : "close"}
+        {...(guardedClose ? { onPress: onClose } : {})}
       />
     ),
-    [],
+    [guardedClose, onClose],
   );
   const renderFooter = useCallback(
     (props: BottomSheetFooterProps) => {
@@ -171,8 +183,20 @@ export function AppBottomSheet({
   const header = hasHeader ? (
     <View className="border-b border-border bg-background pb-3 pt-2">
       {showTitleHeader ? (
-        <View className="flex-row items-start justify-between gap-3 px-4">
-          <View className="flex-row flex-1 items-start gap-2">
+        <View
+          className={
+            headerLayout === "centered"
+              ? "flex-row items-center gap-3 px-4"
+              : "flex-row items-start justify-between gap-3 px-4"
+          }
+        >
+          <View
+            className={
+              headerLayout === "centered"
+                ? "flex-row flex-1 items-center gap-2"
+                : "flex-row flex-1 items-start gap-2"
+            }
+          >
             {onBack ? (
               <Button
                 accessibilityLabel={`Back from ${title}`}
@@ -188,7 +212,15 @@ export function AppBottomSheet({
               </Button>
             ) : null}
             <View className="flex-1 gap-1">
-              <Text accessibilityRole="header" className="text-lg font-semibold text-foreground">
+              <Text
+                accessibilityRole="header"
+                className={
+                  headerLayout === "centered"
+                    ? "text-center text-lg font-semibold text-foreground"
+                    : "text-lg font-semibold text-foreground"
+                }
+                numberOfLines={1}
+              >
                 {title}
               </Text>
               {description ? (
@@ -227,13 +259,13 @@ export function AppBottomSheet({
       stackBehavior={stackBehavior}
       enableDynamicSizing={false}
       enableContentPanningGesture={contentPanningGestureEnabled}
-      enablePanDownToClose
+      enablePanDownToClose={!guardedClose}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
       backdropComponent={renderBackdrop}
       footerComponent={hasFooter ? renderFooter : undefined}
-      onDismiss={onClose}
+      onDismiss={guardedClose ? undefined : onClose}
       handleIndicatorStyle={{
         width: 40,
         height: 4,
@@ -267,6 +299,7 @@ export function AppBottomSheet({
         <BottomSheetView style={{ flex: 1 }} testID={testID}>
           {header}
           <AppBottomSheetContent
+            {...(scrollRef === undefined ? {} : { scrollRef })}
             contentKey={contentKey}
             enableFooterMarginAdjustment={Boolean(footer)}
             paddingBottom={

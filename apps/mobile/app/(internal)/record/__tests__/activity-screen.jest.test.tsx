@@ -4,6 +4,7 @@ import { fireEvent, renderNative, screen } from "../../../../test/render-native"
 const backMock = jest.fn();
 
 const service = {
+  state: "ready",
   hasPlan: false,
   selectActivityFromPayload: jest.fn(),
 };
@@ -89,6 +90,7 @@ const ActivitySelectionScreen = require("../activity").default;
 describe("record activity screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    service.state = "ready";
     activityStatusMock = { activityCategory: "run", gpsRecordingEnabled: false };
     sessionContractMock = {
       editing: { canEditActivity: true, canEditGps: true },
@@ -111,6 +113,17 @@ describe("record activity screen", () => {
     expect(backMock).toHaveBeenCalled();
   });
 
+  it("exposes activity choices as a radio group with the selected category announced", async () => {
+    await renderNative(<ActivitySelectionScreen />);
+
+    const run = screen.getByTestId("record-activity-option-run");
+    const bike = screen.getByTestId("record-activity-option-bike");
+
+    expect(run.props.accessibilityRole).toBe("radio");
+    expect(run.props.accessibilityState).toEqual({ disabled: false, selected: true });
+    expect(bike.props.accessibilityState).toEqual({ disabled: false, selected: false });
+  });
+
   it("does not offer a save path when a plan locks activity category", async () => {
     sessionContractMock = {
       editing: { canEditActivity: false, canEditGps: true },
@@ -122,5 +135,21 @@ describe("record activity screen", () => {
     expect(screen.queryByTestId("record-gps-option-on")).toBeNull();
     expect(screen.getByTestId("record-activity-save-button").props.disabled).toBe(true);
     expect(service.selectActivityFromPayload).not.toHaveBeenCalled();
+  });
+
+  it("locks choices when runtime editing becomes unavailable after selection", async () => {
+    const view = await renderNative(<ActivitySelectionScreen />);
+    await fireEvent.press(screen.getByTestId("record-activity-option-bike"));
+    service.state = "recording";
+    sessionContractMock.editing.canEditActivity = false;
+    await view.rerender(<ActivitySelectionScreen />);
+    expect(screen.getByText(/Activity identity is locked after recording starts/)).toBeTruthy();
+    expect(screen.getByTestId("record-activity-option-bike").props.accessibilityLabel).toBe("Bike");
+    expect(
+      screen.getByTestId("record-activity-option-bike").props.accessibilityState.disabled,
+    ).toBe(true);
+    await fireEvent.press(screen.getByTestId("record-activity-save-button"));
+    expect(service.selectActivityFromPayload).not.toHaveBeenCalled();
+    expect(backMock).not.toHaveBeenCalled();
   });
 });

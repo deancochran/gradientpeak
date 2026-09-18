@@ -31,7 +31,7 @@ const mocks = vi.hoisted(() => {
   });
   return {
     emptyQuery,
-    routeSearch: { q: "tempo" as string | undefined },
+    routeSearch: { q: "tempo" } as Record<string, string>,
     activityPlans: vi.fn(emptyQuery),
     trainingPlans: vi.fn(emptyQuery),
     routes: vi.fn(emptyQuery),
@@ -71,7 +71,11 @@ beforeEach(() => {
   for (const [, queryName] of SCOPES) {
     mocks[queryName].mockImplementation(mocks.emptyQuery);
   }
-  mocks.routeSearch.q = "tempo";
+  mocks.routeSearch = { q: "tempo" };
+  mocks.navigate.mockImplementation(({ search }: { search: Record<string, string> }) => {
+    mocks.routeSearch = search;
+    return Promise.resolve();
+  });
 });
 
 afterEach(() => {
@@ -82,7 +86,7 @@ afterEach(() => {
 describe("discovery route", () => {
   it("sends persisted search and scope filters to the active paginated API", () => {
     const SearchPage = (Route as unknown as { component: React.ComponentType }).component;
-    render(<SearchPage />);
+    const view = render(<SearchPage />);
 
     expect(mocks.activityPlans).toHaveBeenLastCalledWith(
       expect.objectContaining({ ownerScope: "discoverable", search: "tempo", limit: 20 }),
@@ -90,8 +94,15 @@ describe("discovery route", () => {
     );
 
     fireEvent.click(screen.getByRole("tab", { name: "Routes" }));
+    view.rerender(<SearchPage />);
     fireEvent.change(screen.getByLabelText("Minimum distance (km)"), { target: { value: "12.5" } });
     fireEvent.change(screen.getByLabelText("Sort routes"), { target: { value: "distance_desc" } });
+    expect(mocks.routes).toHaveBeenLastCalledWith(
+      expect.objectContaining({ min_distance_m: undefined }),
+      expect.any(Object),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+    view.rerender(<SearchPage />);
 
     expect(mocks.routes).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -106,9 +117,10 @@ describe("discovery route", () => {
 
   it("renders an empty recovery action rather than treating it as an error", () => {
     const SearchPage = (Route as unknown as { component: React.ComponentType }).component;
-    render(<SearchPage />);
+    const view = render(<SearchPage />);
     expect(screen.getByText("No activity plans match your search and filters.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Clear search and filters" }));
+    view.rerender(<SearchPage />);
     expect(mocks.activityPlans).toHaveBeenLastCalledWith(
       expect.objectContaining({ search: undefined }),
       expect.any(Object),

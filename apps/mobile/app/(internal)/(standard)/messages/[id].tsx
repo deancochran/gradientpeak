@@ -7,7 +7,7 @@ import { Text } from "@repo/ui/components/text";
 import { cn } from "@repo/ui/lib/cn";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { Send } from "lucide-react-native";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { FlatList, KeyboardAvoidingView, Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
@@ -67,6 +67,8 @@ function MessageBubble({
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [inputText, setInputText] = useState("");
+  const [sendError, setSendError] = useState<string | null>(null);
+  const sendInFlightRef = useRef(false);
   const insets = useSafeAreaInsets();
   const utils = api.useUtils();
   const { user } = useAuth();
@@ -104,18 +106,30 @@ export default function ChatScreen() {
   }, [id, markAsReadMutation.mutate, messages.length]);
 
   const sendMessageMutation = api.messaging.sendMessage.useMutation({
-    onSuccess: async () => {
-      setInputText("");
+    onSuccess: async (_message, variables) => {
+      if (inputText === variables.content) setInputText("");
       await invalidateConversationQueries(utils, id);
     },
+    onError: (error) =>
+      setSendError(error instanceof Error ? error.message : "Unable to send message"),
   });
 
   const handleSend = () => {
-    if (!inputText.trim()) return;
-    sendMessageMutation.mutate({
-      conversation_id: id,
-      content: inputText,
-    });
+    if (!inputText.trim() || sendInFlightRef.current) return;
+    const content = inputText.trim();
+    sendInFlightRef.current = true;
+    setSendError(null);
+    sendMessageMutation.mutate(
+      {
+        conversation_id: id,
+        content,
+      },
+      {
+        onSettled: () => {
+          sendInFlightRef.current = false;
+        },
+      },
+    );
   };
 
   return (
@@ -192,6 +206,8 @@ export default function ChatScreen() {
             className="flex-1 rounded-full bg-muted/40"
             testId="message-input"
             placeholder="Type a message..."
+            accessibilityLabel="Message"
+            editable={!sendMessageMutation.isPending}
             value={inputText}
             onChangeText={setInputText}
           />
@@ -205,6 +221,15 @@ export default function ChatScreen() {
             <Send size={20} className="text-primary-foreground" />
           </Button>
         </View>
+        {sendError ? (
+          <Text
+            accessibilityLiveRegion="assertive"
+            accessibilityRole="alert"
+            className="px-3 text-sm text-destructive"
+          >
+            {sendError}. Your message is still in the field.
+          </Text>
+        ) : null}
       </KeyboardAvoidingView>
     </View>
   );

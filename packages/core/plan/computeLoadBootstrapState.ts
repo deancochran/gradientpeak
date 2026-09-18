@@ -135,7 +135,9 @@ export function computeLoadBootstrapState(
     latestActivityDate === null ? null : daysBetween(safeAsOf, latestActivityDate);
 
   if (activeDays === 0) {
-    const prior = resolveNoHistoryStartingPrior({ age: input.profile_age });
+    const prior = resolveNoHistoryStartingPrior({
+      ...(input.profile_age === undefined ? {} : { age: input.profile_age }),
+    });
     return {
       starting_longTermLoad: prior.starting_longTermLoad,
       starting_recentLoad: prior.starting_longTermLoad,
@@ -156,7 +158,7 @@ export function computeLoadBootstrapState(
     dailyLoad: normalizedDailyLoad,
     initialLongTermLoad: 0,
     initialRecentLoad: 0,
-    userAge: input.profile_age,
+    ...(input.profile_age === undefined ? {} : { userAge: input.profile_age }),
   });
   const lastPoint = loadSeries[loadSeries.length - 1];
   const rawLongTermLoad = lastPoint?.longTermLoad ?? 0;

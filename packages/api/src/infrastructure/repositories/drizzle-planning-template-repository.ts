@@ -1,46 +1,25 @@
 import {
-  activityPlanDocumentSchema,
   activityPlanStructureSchema,
+  buildSystemActivityTemplateCatalog,
   compileActivityPlan,
   deriveSystemActivityTemplateActivityCategory,
   normalizeActivityTemplateStructureForAudit,
-  resolveActivityPlanVariant,
   SYSTEM_TEMPLATES,
 } from "@repo/core";
+import { activityPlans } from "@repo/db";
 import type { DrizzleDbClient } from "@repo/db/client";
-import { sql } from "drizzle-orm";
-import { activityPlanDocumentHash } from "../../application/activity-plans/structure-hash";
+import { and, asc, eq, inArray, or } from "drizzle-orm";
+import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import type { LockedPlanningTemplateRow, PlanningTemplateRepository } from "../../repositories";
 
-function rows(result: unknown): Array<{
-  gps_recording_enabled: boolean;
-  id: string;
-  is_system_template?: boolean;
-  structure: unknown;
-  structure_hash: string;
-}> {
-  return (
-    (
-      result as {
-        rows?: Array<{
-          gps_recording_enabled: boolean;
-          id: string;
-          is_system_template?: boolean;
-          structure: unknown;
-          structure_hash: string;
-        }>;
-      }
-    ).rows ?? []
-  ).filter((row) => typeof row.id === "string");
-}
-
 const catalogSignatures = new Map(
-  SYSTEM_TEMPLATES.flatMap((source) => {
-    const parsed = activityPlanStructureSchema.safeParse(source.structure);
+  buildSystemActivityTemplateCatalog().flatMap((candidate) => {
+    const source = SYSTEM_TEMPLATES.find((template) => template.id === candidate.template_id);
+    const parsed = activityPlanStructureSchema.safeParse(source?.structure);
     return parsed.success
       ? [
           [
-            source.id,
+            candidate.template_id,
             JSON.stringify(normalizeActivityTemplateStructureForAudit(parsed.data)),
           ] as const,
         ]
@@ -72,38 +51,35 @@ function isMatchingSystemTemplate(row: {
   ) {
     return false;
   }
-  const parsed = activityPlanDocumentSchema.safeParse(row.structure);
+  const parsed = activityPlanStructureSchema.safeParse(row.structure);
   if (!parsed.success) return false;
-  if (activityPlanDocumentHash(parsed.data) !== row.structure_hash) return false;
-  const resolved = resolveActivityPlanVariant(parsed.data);
-  if (
-    compileActivityPlan(resolved.structure).activity_category !== expectedMetadata.activityCategory
-  ) {
+  if (activityPlanStructureHash(parsed.data) !== row.structure_hash) return false;
+  if (compileActivityPlan(parsed.data).activity_category !== expectedMetadata.activityCategory) {
     return false;
   }
   return (
-    resolved.variantId === row.id &&
-    resolved.variantName === "Base" &&
-    JSON.stringify(normalizeActivityTemplateStructureForAudit(resolved.structure)) ===
-      expectedSignature
+    JSON.stringify(normalizeActivityTemplateStructureForAudit(parsed.data)) === expectedSignature
   );
 }
 
 export function createPlanningTemplateRepository(db: DrizzleDbClient): PlanningTemplateRepository {
   const listAvailablePublicSystemTemplateIds = async () => {
-    const result = await db.execute(sql<{
-      gps_recording_enabled: boolean;
-      id: string;
-      structure: unknown;
-      structure_hash: string;
-    }>`
-      select id, structure, structure_hash, gps_recording_enabled
-      from activity_plans
-      where is_system_template = true
-        and content_visibility = 'public'
-      order by id asc
-    `);
-    return rows(result)
+    const rows = await db
+      .select({
+        gps_recording_enabled: activityPlans.gps_recording_enabled,
+        id: activityPlans.id,
+        structure: activityPlans.structure,
+        structure_hash: activityPlans.structure_hash,
+      })
+      .from(activityPlans)
+      .where(
+        and(
+          eq(activityPlans.is_system_template, true),
+          eq(activityPlans.content_visibility, "public"),
+        ),
+      )
+      .orderBy(asc(activityPlans.id));
+    return rows
       .filter(isMatchingSystemTemplate)
       .map((row) => row.id)
       .sort((left, right) => left.localeCompare(right));
@@ -120,55 +96,34 @@ export function createPlanningTemplateRepository(db: DrizzleDbClient): PlanningT
         missingIds: requested.filter((id) => !available.has(id)),
       };
     },
-    async withLockedPublishedTemplates(profileId, templateIds, operation) {
+    async withLockedPublishedTemplates(templateIds, operation) {
       const requested = [...new Set(templateIds)].sort((left, right) => left.localeCompare(right));
       return db.transaction(async (tx) => {
-        const result = await tx.execute(sql<{
-          gps_recording_enabled: boolean;
-          id: string;
-          is_system_template: boolean;
-          structure: unknown;
-          structure_hash: string;
-        }>`
-          select id, is_system_template, structure, structure_hash, gps_recording_enabled
-          from activity_plans
-          where id in (${sql.join(
-            requested.map((id) => sql`${id}::uuid`),
-            sql`, `,
-          )})
-            and (
-              profile_id = ${profileId}::uuid
-              or is_system_template = true
-              or content_visibility = 'public'
-              or (
-                content_visibility = 'followers'
-                and exists (
-                  select 1 from follows f
-                  where f.follower_id = ${profileId}::uuid
-                    and f.following_id = activity_plans.profile_id
-                    and f.status = 'accepted'
-                )
-              )
-              or exists (
-                select 1 from content_access_grants cag
-                where cag.content_type = 'activity_plan'
-                  and cag.content_id = activity_plans.id
-                  and cag.grantee_profile_id = ${profileId}::uuid
-                  and cag.access_level = 'read'
-                  and cag.revoked_at is null
-                  and (cag.expires_at is null or cag.expires_at > now())
-              )
-            )
-          order by id asc
-          for update
-        `);
-        const sourceRows = rows(result);
+        const sourceRows = await tx
+          .select({
+            gps_recording_enabled: activityPlans.gps_recording_enabled,
+            id: activityPlans.id,
+            is_system_template: activityPlans.is_system_template,
+            structure: activityPlans.structure,
+            structure_hash: activityPlans.structure_hash,
+          })
+          .from(activityPlans)
+          .where(
+            and(
+              inArray(activityPlans.id, requested),
+              or(
+                eq(activityPlans.content_visibility, "public"),
+                eq(activityPlans.is_system_template, true),
+              ),
+            ),
+          )
+          .orderBy(asc(activityPlans.id))
+          .for("update");
         const lockedRows: LockedPlanningTemplateRow[] = sourceRows.map((row) => {
-          const parsed = activityPlanDocumentSchema.safeParse(row.structure);
+          const parsed = activityPlanStructureSchema.safeParse(row.structure);
           const activityCategory =
-            parsed.success && activityPlanDocumentHash(parsed.data) === row.structure_hash
-              ? compileActivityPlan(resolveActivityPlanVariant(parsed.data).structure)
-                  .activity_category
+            parsed.success && activityPlanStructureHash(parsed.data) === row.structure_hash
+              ? compileActivityPlan(parsed.data).activity_category
               : "other";
           return {
             activityCategory,
@@ -182,11 +137,11 @@ export function createPlanningTemplateRepository(db: DrizzleDbClient): PlanningT
         const availableIds = new Set(
           sourceRows
             .filter((row) => {
-              const parsed = activityPlanDocumentSchema.safeParse(row.structure);
+              const parsed = activityPlanStructureSchema.safeParse(row.structure);
               if (
                 typeof row.gps_recording_enabled !== "boolean" ||
                 !parsed.success ||
-                activityPlanDocumentHash(parsed.data) !== row.structure_hash
+                activityPlanStructureHash(parsed.data) !== row.structure_hash
               ) {
                 return false;
               }

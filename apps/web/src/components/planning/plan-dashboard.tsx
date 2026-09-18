@@ -105,16 +105,16 @@ export function PlanDashboard() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="outline">
-                    Next event{` `}
+                    Next session{` `}
                     {new Date(
-                      planTabQuery.data.currentScheduledPlan.nextEventAt,
+                      `${planTabQuery.data.currentScheduledPlan.nextPlannedSessionDate}T12:00:00`,
                     ).toLocaleDateString()}
                   </Badge>
                 </div>
               </>
             ) : (
               <p className="text-sm text-muted-foreground">
-                No active plan detected from future scheduled events.
+                No active plan detected from future planned sessions.
               </p>
             )}
           </CardContent>
@@ -269,14 +269,6 @@ export function PlanDashboard() {
         <Button asChild variant="outline">
           <Link to="/calendar" search={{ month: getMonthKey(new Date()), view: "month" }}>
             Open calendar
-          </Link>
-        </Button>
-        <Button asChild variant="outline">
-          <Link
-            to="/calendar"
-            search={{ month: getMonthKey(new Date()), scheduled: true, view: "agenda" }}
-          >
-            Scheduled activities
           </Link>
         </Button>
       </div>

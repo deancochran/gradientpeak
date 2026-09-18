@@ -5,7 +5,7 @@ import { isTrpcProcedure } from "../pages/network";
 import { registerTrainingPlanCleanup } from "../training-plans/cleanup";
 import { isolatedActorIdentity, retainedSuccessContextOptions } from "./actors";
 import { E2ECleanupRegistry, runCleanupFixture } from "./cleanup";
-import type { E2EQuery, LocalE2EDatabase } from "./database";
+import { LocalE2EDatabase } from "./database";
 import {
   applyE2EFileEnvironment,
   localE2EDatabaseEnvironment,
@@ -25,6 +25,29 @@ const testCoordinates = {
 };
 
 describe("local E2E database safety", () => {
+  it("exposes only the typed transaction boundary and remains closed after close", async () => {
+    const previousDatabaseUrl = process.env.DATABASE_URL;
+    const previousPostgresUrl = process.env.POSTGRES_URL;
+    process.env.DATABASE_URL = "postgresql://tester:***@127.0.0.1:55322/e2e";
+    process.env.POSTGRES_URL = "postgresql://tester:***@127.0.0.1:55322/e2e";
+    const database = new LocalE2EDatabase();
+    try {
+      expect(database.db).toBeDefined();
+      expect("query" in database).toBe(false);
+      expect("connect" in database).toBe(false);
+      await database.close();
+      await database.close();
+      await expect(database.typedTransaction(async () => undefined)).rejects.toThrow(
+        /already closed/,
+      );
+    } finally {
+      if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDatabaseUrl;
+      if (previousPostgresUrl === undefined) delete process.env.POSTGRES_URL;
+      else process.env.POSTGRES_URL = previousPostgresUrl;
+    }
+  });
+
   it("carries local database credentials onto the dedicated E2E port", () => {
     const environment: Record<string, string | undefined> = {};
 
@@ -54,13 +77,11 @@ describe("local E2E database safety", () => {
     expect(() =>
       localE2EDatabaseUrl({
         DATABASE_URL: "postgresql://tester:test@database.example.com:5432/e2e",
-        POSTGRES_URL: undefined,
       }),
     ).toThrow(/local-only/);
     expect(() =>
       localE2EDatabaseUrl({
         DATABASE_URL: "https://localhost/e2e",
-        POSTGRES_URL: undefined,
       }),
     ).toThrow(/PostgreSQL protocol/);
     expect(() =>
@@ -88,10 +109,10 @@ describe("local E2E database safety", () => {
     try {
       const { default: config } = await import("../../playwright.config");
       expect(config.workers).toBe(1);
-      expect(config.use?.baseURL).toBe("http://127.0.0.1:3100");
+      expect(config.use?.baseURL).toBe("http://127.0.0.1:3001");
       expect(config.webServer).toMatchObject({
         reuseExistingServer: false,
-        url: "http://127.0.0.1:3100",
+        url: "http://127.0.0.1:3001",
       });
     } finally {
       if (previousPort === undefined) delete process.env.PORT;
@@ -116,7 +137,7 @@ describe("local E2E database safety", () => {
       const { default: config } = await import("../../playwright.config");
       expect(config.webServer).toMatchObject({
         reuseExistingServer: true,
-        url: "http://127.0.0.1:3100",
+        url: "http://127.0.0.1:3001",
       });
     } finally {
       if (previousReuse === undefined) delete process.env.E2E_REUSE_EXISTING_SERVER;
@@ -177,7 +198,7 @@ describe("local E2E database safety", () => {
     process.env.E2E_WEB_PORT = "3000";
     vi.resetModules();
     try {
-      await expect(import("../../playwright.config")).rejects.toThrow(/requires E2E_WEB_PORT=3100/);
+      await expect(import("../../playwright.config")).rejects.toThrow(/requires E2E_WEB_PORT=3001/);
     } finally {
       if (previousPort === undefined) delete process.env.E2E_WEB_PORT;
       else process.env.E2E_WEB_PORT = previousPort;
@@ -192,16 +213,27 @@ describe("local E2E database safety", () => {
     expect(packageJson.scripts["dev:app:e2e"]).toBe("node scripts/start-e2e-web.mjs");
 
     expect(resolveE2EWebEnvironment({})).toMatchObject({
-      APP_URL: "http://127.0.0.1:3100",
-      OAUTH_CALLBACK_BASE_URL: "http://127.0.0.1:3100",
+      APP_URL: "http://127.0.0.1:3001",
+      OAUTH_CALLBACK_BASE_URL: "http://127.0.0.1:3001",
       DATABASE_URL: expect.stringContaining("@127.0.0.1:55322/"),
       NEXT_PRIVATE_SUPABASE_URL: "http://127.0.0.1:55321",
       NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:55321",
-      PORT: "3100",
+      ENABLE_LOCAL_ERROR_LOG: "0",
+      PORT: "3001",
       POSTGRES_URL: expect.stringContaining("@127.0.0.1:55322/"),
+      SENTRY_DSN: "",
+      VITE_SENTRY_DSN: "",
     });
 
-    expect(() => resolveE2EWebEnvironment({ PORT: "3000" })).toThrow(/PORT=3100/);
+    expect(
+      resolveE2EWebEnvironment({
+        ENABLE_LOCAL_ERROR_LOG: "1",
+        SENTRY_DSN: "https://public@example.test/1",
+        VITE_SENTRY_DSN: "https://public@example.test/1",
+      }),
+    ).toMatchObject({ ENABLE_LOCAL_ERROR_LOG: "0", SENTRY_DSN: "", VITE_SENTRY_DSN: "" });
+
+    expect(() => resolveE2EWebEnvironment({ PORT: "3000" })).toThrow(/PORT=3001/);
     expect(() =>
       resolveE2EWebEnvironment({
         DATABASE_URL: "postgresql://tester:***@127.0.0.1:54322/postgres",
@@ -359,17 +391,11 @@ describe("exact cleanup registry", () => {
     expect(attach).toHaveBeenCalledOnce();
   });
 
-  it("constrains training-plan cleanup by exact ID and owner", async () => {
+  it("executes training-plan cleanup through the typed transaction boundary", async () => {
     const registry = new E2ECleanupRegistry();
-    const calls: Array<[string, readonly unknown[] | undefined]> = [];
-    const client = {
-      query: async (sql: string, parameters?: readonly unknown[]) => {
-        calls.push([sql, parameters]);
-        return { rows: [] } as never;
-      },
-    } as E2EQuery;
+    const typedTransaction = vi.fn(async () => undefined);
     const database = {
-      transaction: async (operation: (query: E2EQuery) => Promise<void>) => operation(client),
+      typedTransaction,
     } as unknown as LocalE2EDatabase;
     registerTrainingPlanCleanup(registry, {
       id: "11111111-1111-4111-8111-111111111111",
@@ -380,44 +406,21 @@ describe("exact cleanup registry", () => {
 
     await registry.cleanup(database);
 
-    expect(calls).toHaveLength(2);
-    for (const [sql] of calls) {
-      expect(sql).toMatch(/"id"|"training_plan_id"/);
-      expect(sql).toMatch(/"profile_id"/);
-      expect(sql).not.toMatch(/"name"/);
-    }
-    expect(calls[1]?.[1]).toEqual([
-      "11111111-1111-4111-8111-111111111111",
-      "22222222-2222-4222-8222-222222222222",
-    ]);
+    expect(typedTransaction).toHaveBeenCalledOnce();
+    expect(registry.size).toBe(0);
   });
 
-  it("constrains system-template cleanup to an exact unowned template", async () => {
+  it("rejects mismatched system-template ownership before registering cleanup", () => {
     const registry = new E2ECleanupRegistry();
-    const calls: Array<[string, readonly unknown[] | undefined]> = [];
-    const client = {
-      query: async (sql: string, parameters?: readonly unknown[]) => {
-        calls.push([sql, parameters]);
-        return { rows: [] } as never;
-      },
-    } as E2EQuery;
-    const database = {
-      transaction: async (operation: (query: E2EQuery) => Promise<void>) => operation(client),
-    } as unknown as LocalE2EDatabase;
-    registerTrainingPlanCleanup(registry, {
-      id: "33333333-3333-4333-8333-333333333333",
-      ownerProfileId: null,
-      scheduledByProfileId: "22222222-2222-4222-8222-222222222222",
-      systemTemplate: true,
-    });
-
-    await registry.cleanup(database);
-
-    expect(calls[1]?.[0]).toMatch(/"id" = \$1/);
-    expect(calls[1]?.[0]).toMatch(/"profile_id" is null/);
-    expect(calls[1]?.[0]).toMatch(/"is_system_template" = true/);
-    expect(calls[1]?.[0]).not.toMatch(/"name"/);
-    expect(calls[1]?.[1]).toEqual(["33333333-3333-4333-8333-333333333333"]);
+    expect(() =>
+      registerTrainingPlanCleanup(registry, {
+        id: "33333333-3333-4333-8333-333333333333",
+        ownerProfileId: null,
+        scheduledByProfileId: "22222222-2222-4222-8222-222222222222",
+        systemTemplate: false,
+      }),
+    ).toThrow(/owner does not match/);
+    expect(registry.size).toBe(0);
   });
 });
 

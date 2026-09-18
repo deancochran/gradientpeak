@@ -59,6 +59,29 @@ describe("read projections", () => {
     ).toThrow();
   });
 
+  it("represents an all-day manual activity without a synthetic measured instant", () => {
+    expect(
+      activityDisplayModelSchema.parse({
+        ...activityDisplay,
+        time: {
+          startedAt: null,
+          finishedAt: null,
+          diaryDate: "2026-01-02",
+          diaryTimezone: "America/Denver",
+        },
+        metrics: [],
+      }),
+    ).toMatchObject({
+      time: {
+        startedAt: null,
+        finishedAt: null,
+        diaryDate: "2026-01-02",
+        diaryTimezone: "America/Denver",
+      },
+      metrics: [],
+    });
+  });
+
   it("requires an explicit number or explicit unavailable null for every metric", () => {
     expect(
       semanticMetricSchema.safeParse({
@@ -559,7 +582,13 @@ describe("read projections", () => {
         },
       ],
       truncated: false,
-      truncation: { events: false, completedActivities: false, groupEvents: false, goals: false },
+      truncation: {
+        events: false,
+        plannedSessions: false,
+        completedActivities: false,
+        groupEvents: false,
+        goals: false,
+      },
     };
 
     expect(calendarProjectionRangeSchema.safeParse(range).success).toBe(false);
@@ -590,6 +619,7 @@ describe("read projections", () => {
       partial: false,
       plan: null,
       plannedSession: null,
+      plannedActual: null,
       activity: null,
       event: allDay ? null : { type: "custom" as const, trainingPlanId: null },
       groupEvent: null,

@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { defaultAthletePreferenceProfile } from "@repo/core";
 import { db, pool } from "@repo/db/client";
 import { sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
@@ -119,14 +118,9 @@ function goalInput(profileId: string, title: string) {
   };
 }
 
-async function readPersistedState(profileId: string, goalId: string) {
-  const [settings, goals] = await Promise.all([
-    db.execute(
-      sql`select settings from profile_training_settings where profile_id = ${profileId}::uuid`,
-    ),
-    db.execute(sql`select title from profile_goals where id = ${goalId}::uuid`),
-  ]);
-  return { settings: settings.rows[0]?.settings, title: goals.rows[0]?.title };
+async function readPersistedGoalTitle(goalId: string) {
+  const goals = await db.execute(sql`select title from profile_goals where id = ${goalId}::uuid`);
+  return goals.rows[0]?.title;
 }
 
 async function waitForRelationshipLock(blockerPid: number, timeoutMs = 2_000) {
@@ -177,9 +171,6 @@ afterEach(async () => {
     await client.query("delete from profile_goals where profile_id = any($1::uuid[])", [
       seededProfileIds,
     ]);
-    await client.query("delete from profile_training_settings where profile_id = any($1::uuid[])", [
-      seededProfileIds,
-    ]);
     await client.query(
       "delete from organization_audit_events where organization_id = any($1::uuid[])",
       [seededOrganizationIds],
@@ -215,7 +206,6 @@ afterEach(async () => {
         (select count(*)::int from users where id = any($1::uuid[])) as users,
         (select count(*)::int from profiles where id = any($1::uuid[])) as profiles,
         (select count(*)::int from profile_goals where profile_id = any($1::uuid[])) as goals,
-        (select count(*)::int from profile_training_settings where profile_id = any($1::uuid[])) as settings,
         (select count(*)::int from organizations where id = any($2::uuid[])) as organizations,
         (select count(*)::int from organization_memberships where organization_id = any($2::uuid[])) as memberships,
         (select count(*)::int from organization_membership_role_grants where organization_id = any($2::uuid[])) as role_grants,
@@ -235,7 +225,6 @@ afterEach(async () => {
       organizations: 0,
       profiles: 0,
       role_grants: 0,
-      settings: 0,
       users: 0,
     });
   } finally {
@@ -284,23 +273,11 @@ describe("delegated profile write revocation through appRouter", () => {
     const athleteId = await seedProfile("Athlete");
     const coachId = await seedProfile("Coach");
     const relationship = await activeRelationship(coachId, athleteId);
-    const owner = await createCaller(athleteId);
     const coach = await createCaller(coachId);
 
-    await owner.profileSettings.upsert({
-      profile_id: athleteId,
-      settings: defaultAthletePreferenceProfile,
-    });
-    await coach.profileSettings.upsert({
-      profile_id: athleteId,
-      settings: defaultAthletePreferenceProfile,
-    });
     const goal = await coach.goals.create(goalInput(athleteId, "Active coach goal"));
 
-    expect(await readPersistedState(athleteId, goal.id)).toEqual({
-      settings: defaultAthletePreferenceProfile,
-      title: "Active coach goal",
-    });
+    expect(await readPersistedGoalTitle(goal.id)).toBe("Active coach goal");
 
     await expect(
       coach.profileAccess.revoke({ coach_id: coachId, athlete_id: athleteId }),
@@ -323,12 +300,6 @@ describe("delegated profile write revocation through appRouter", () => {
     });
 
     await expect(
-      coach.profileSettings.upsert({
-        profile_id: athleteId,
-        settings: defaultAthletePreferenceProfile,
-      }),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(
       coach.goals.create(goalInput(athleteId, "Revoked coach goal")),
     ).rejects.toMatchObject({
       code: "FORBIDDEN",
@@ -340,10 +311,7 @@ describe("delegated profile write revocation through appRouter", () => {
     });
     await expect(coach.goals.delete({ id: goal.id })).rejects.toMatchObject({ code: "NOT_FOUND" });
 
-    expect(await readPersistedState(athleteId, goal.id)).toEqual({
-      settings: defaultAthletePreferenceProfile,
-      title: "Active coach goal",
-    });
+    expect(await readPersistedGoalTitle(goal.id)).toBe("Active coach goal");
   });
 
   it("rejects an unrelated caller from revoking an exact coach-athlete relationship", async () => {
@@ -374,26 +342,23 @@ describe("delegated profile write revocation through appRouter", () => {
       await held.query("select id from coaching_assignments where engagement_id = $1 for update", [
         relationship.engagementId,
       ]);
-      const write = coach.profileSettings.upsert({
-        profile_id: athleteId,
-        settings: defaultAthletePreferenceProfile,
-      });
+      const write = coach.goals.create(goalInput(athleteId, "Committed before revoke"));
       await waitForRelationshipLock(blockerPid);
       const revoke = coach.profileAccess.revoke({ coach_id: coachId, athlete_id: athleteId });
 
       await held.query("commit");
       committed = true;
-      await expect(within(write)).resolves.toMatchObject({ profile_id: athleteId });
+      await expect(within(write)).resolves.toMatchObject({ title: "Committed before revoke" });
       await expect(within(revoke)).resolves.toEqual({ revoked: true });
     } finally {
       if (!committed) await held.query("rollback").catch(() => undefined);
       held.release();
     }
 
-    const settings = await db.execute(
-      sql`select settings from profile_training_settings where profile_id = ${athleteId}::uuid`,
+    const goals = await db.execute(
+      sql`select title from profile_goals where profile_id = ${athleteId}::uuid`,
     );
-    expect(settings.rows[0]?.settings).toEqual(defaultAthletePreferenceProfile);
+    expect(goals.rows[0]?.title).toBe("Committed before revoke");
   }, 15_000);
 
   it("commits revoke before a later waiting delegated procedure, which then fails closed", async () => {

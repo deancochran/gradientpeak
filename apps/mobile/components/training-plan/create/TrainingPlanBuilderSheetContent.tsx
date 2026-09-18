@@ -2,12 +2,13 @@ import type {
   ActivityPlanPlanningEstimate,
   ActivityPlanSummary,
   ContentVisibility,
-  TrainingPreferenceValidationIssue,
+  TrainingPlanPreferences,
+  TrainingPlanPreferenceValidationIssue,
 } from "@repo/core";
 import {
   isAthletePlanningContextEditableFieldKey,
-  planningPreferencesSchema,
-  validatePlanningPreferencesConsistency,
+  trainingPlanPreferencesSchema,
+  validateTrainingPlanPreferences,
 } from "@repo/core";
 import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
@@ -20,7 +21,6 @@ import {
   type SetStateAction,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -41,12 +41,6 @@ import {
   BuilderLocalGoalCreateContent,
 } from "@/components/training-plan/create/BuilderGoalEditorSheetContent";
 import { BuilderSessionEditorContent } from "@/components/training-plan/create/BuilderSessionEditorSheetContent";
-import {
-  addTrainingPlanPreferenceField,
-  applyTrainingPlanPreferenceFieldOverride,
-  type TrainingPlanPreferenceFieldKey,
-} from "@/lib/training-plan-creation/preferences-context";
-import type { TrainingPlanBuilderPlanPreferences } from "@/lib/training-plan-creation/types";
 import type { useTrainingPlanCreationService } from "@/lib/training-plan-creation/useTrainingPlanCreationService";
 import type { BuilderSheet } from "./BuilderSheetTypes";
 import {
@@ -63,9 +57,11 @@ type TrainingPlanBuilderSheetDraftsContextValue = {
   canSaveMetadata: boolean;
   draftActivityPlanCategoryFilter: ActivityCategoryFilter;
   draftActivityPlanSort: ActivityPlanSort;
-  draftPlanningConstraintFields: TrainingPlanBuilderService["derived"]["planningConstraintFields"];
-  planningPreferenceIssues: TrainingPreferenceValidationIssue[];
-  planningPreferencesForm: UseFormReturn<TrainingPlanBuilderPlanPreferences>;
+  planningPreferenceIssues: TrainingPlanPreferenceValidationIssue[];
+  planningPreferencesForm: UseFormReturn<TrainingPlanPreferences>;
+  preferenceNumericDrafts: Record<string, string>;
+  setPreferenceNumericDraft: (key: string, value: string) => void;
+  draftPlanPreferences: TrainingPlanPreferences;
   metadataForm: UseFormReturn<TrainingPlanMetadataFormValues>;
   draftContentVisibility: ContentVisibility;
   applyActivityFiltersDraft: () => void;
@@ -76,14 +72,11 @@ type TrainingPlanBuilderSheetDraftsContextValue = {
   prepareActivityFiltersDraft: () => void;
   preparePlanningPreferencesDraft: () => void;
   resetActivityFiltersDraft: () => void;
-  addPlanningConstraintDraft: (fieldKey: TrainingPlanPreferenceFieldKey) => void;
-  updatePlanningConstraintDraft: (
-    fieldKey: TrainingPlanPreferenceFieldKey,
-    value: number | null,
-  ) => void;
+  setDraftPlanPreferences: (preferences: TrainingPlanPreferences) => void;
   setDraftContentVisibility: Dispatch<SetStateAction<ContentVisibility>>;
   setDraftActivityPlanCategoryFilter: Dispatch<SetStateAction<ActivityCategoryFilter>>;
   setDraftActivityPlanSort: Dispatch<SetStateAction<ActivityPlanSort>>;
+  reportNumericDraftError: (key: string, message: string | null) => void;
 };
 
 const TrainingPlanBuilderSheetDraftsContext =
@@ -94,8 +87,7 @@ type TrainingPlanBuilderSheetDraftsProviderProps = {
   activityPlanCategoryFilter: ActivityCategoryFilter;
   activityPlanSort: ActivityPlanSort;
   children: ReactNode;
-  planningConstraintFields: TrainingPlanBuilderService["derived"]["planningConstraintFields"];
-  planPreferences: TrainingPlanBuilderPlanPreferences;
+  planPreferences: TrainingPlanPreferences;
   planMetadata: {
     name: string;
     description: string;
@@ -105,23 +97,24 @@ type TrainingPlanBuilderSheetDraftsProviderProps = {
     categoryFilter: ActivityCategoryFilter;
     sort: ActivityPlanSort;
   }) => void;
-  onApplyPlanningPreferences: (preferences: TrainingPlanBuilderPlanPreferences) => void;
+  onApplyPlanningPreferences: (preferences: TrainingPlanPreferences) => void;
   onApplyMetadata: (
     metadata: TrainingPlanMetadataFormValues & { contentVisibility: ContentVisibility },
   ) => void;
+  onNumericDraftError?: (key: string, message: string | null) => void;
 };
 
 export function TrainingPlanBuilderSheetDraftsProvider({
-  activeSheet,
+  activeSheet: _activeSheet,
   activityPlanCategoryFilter,
   activityPlanSort,
   children,
-  planningConstraintFields,
   planPreferences,
   planMetadata,
   onApplyActivityFilters,
   onApplyPlanningPreferences,
   onApplyMetadata,
+  onNumericDraftError = () => undefined,
 }: TrainingPlanBuilderSheetDraftsProviderProps) {
   const metadataForm = useZodForm({
     schema: trainingPlanMetadataFormSchema,
@@ -132,56 +125,55 @@ export function TrainingPlanBuilderSheetDraftsProvider({
     planMetadata.contentVisibility,
   );
   const planningPreferencesForm = useZodForm({
-    schema: planningPreferencesSchema,
+    schema: trainingPlanPreferencesSchema,
     defaultValues: planPreferences,
     mode: "onChange",
-  }) as UseFormReturn<TrainingPlanBuilderPlanPreferences>;
-  const draftPlanningPreferences = planningPreferencesSchema.parse(planningPreferencesForm.watch());
-  const canResetPlanningPreferences = planningPreferencesForm.formState.isDirty;
+  }) as UseFormReturn<TrainingPlanPreferences>;
+  const draftPlanningPreferences = trainingPlanPreferencesSchema.parse(
+    planningPreferencesForm.watch(),
+  );
   const planningPreferenceIssues = useMemo(
-    () => validatePlanningPreferencesConsistency(draftPlanningPreferences),
+    () => validateTrainingPlanPreferences(draftPlanningPreferences),
     [draftPlanningPreferences],
   );
-  const canSavePlanningPreferences = planningPreferenceIssues.every(
-    (issue) => issue.severity !== "blocking",
+  const [preferenceNumericErrors, setPreferenceNumericErrors] = useState<Record<string, string>>(
+    {},
   );
+  // Raw text belongs to the same transaction as parsed preferences, including explicit Revert.
+  const [preferenceNumericDrafts, setPreferenceNumericDrafts] = useState<Record<string, string>>(
+    {},
+  );
+  const setPreferenceNumericDraft = useCallback((key: string, value: string) => {
+    setPreferenceNumericDrafts((current) => ({ ...current, [key]: value }));
+  }, []);
+  const canResetPlanningPreferences =
+    planningPreferencesForm.formState.isDirty || Object.keys(preferenceNumericDrafts).length > 0;
+  const reportPreferenceNumericDraftError = useCallback(
+    (key: string, message: string | null) => {
+      setPreferenceNumericErrors((current) => {
+        if (message === null) {
+          if (!(key in current)) return current;
+          const { [key]: _removed, ...next } = current;
+          return next;
+        }
+        return current[key] === message ? current : { ...current, [key]: message };
+      });
+      onNumericDraftError(`preferences:${key}`, message);
+    },
+    [onNumericDraftError],
+  );
+  const canSavePlanningPreferences =
+    planningPreferenceIssues.length === 0 && Object.keys(preferenceNumericErrors).length === 0;
   const metadataValues = metadataForm.watch();
   const canSaveMetadata = trainingPlanMetadataFormSchema.safeParse(metadataValues).success;
   const [draftActivityPlanCategoryFilter, setDraftActivityPlanCategoryFilter] =
     useState<ActivityCategoryFilter>(activityPlanCategoryFilter);
   const [draftActivityPlanSort, setDraftActivityPlanSort] = useState(activityPlanSort);
-  const draftPlanningConstraintFields = useMemo(
-    () =>
-      planningConstraintFields.map((field) => ({
-        ...field,
-        visible: field.visible || draftPlanningPreferences[field.key] !== null,
-        value: {
-          ...field.value,
-          value: draftPlanningPreferences[field.key],
-          source:
-            draftPlanningPreferences[field.key] === null ? field.value.source : "manual_override",
-          overridden: draftPlanningPreferences[field.key] !== null,
-        },
-      })),
-    [draftPlanningPreferences, planningConstraintFields],
-  );
-
-  useEffect(() => {
-    if (activeSheet === "preferences") {
-      planningPreferencesForm.reset(planPreferences);
-    }
-  }, [activeSheet, planPreferences, planningPreferencesForm]);
 
   const prepareMetadataDraft = useCallback(() => {
     metadataForm.reset({ name: planMetadata.name, description: planMetadata.description });
     setDraftContentVisibility(planMetadata.contentVisibility);
   }, [metadataForm, planMetadata.description, planMetadata.name, planMetadata.contentVisibility]);
-
-  useEffect(() => {
-    if (activeSheet === "metadata") {
-      prepareMetadataDraft();
-    }
-  }, [activeSheet, prepareMetadataDraft]);
 
   const prepareActivityFiltersDraft = useCallback(() => {
     setDraftActivityPlanCategoryFilter(activityPlanCategoryFilter);
@@ -190,7 +182,16 @@ export function TrainingPlanBuilderSheetDraftsProvider({
 
   const preparePlanningPreferencesDraft = useCallback(() => {
     planningPreferencesForm.reset(planPreferences);
-  }, [planPreferences, planningPreferencesForm]);
+    setPreferenceNumericDrafts({});
+    for (const key of Object.keys(preferenceNumericErrors)) {
+      reportPreferenceNumericDraftError(key, null);
+    }
+  }, [
+    planPreferences,
+    planningPreferencesForm,
+    preferenceNumericErrors,
+    reportPreferenceNumericDraftError,
+  ]);
 
   const resetActivityFiltersDraft = useCallback(() => {
     setDraftActivityPlanCategoryFilter(null);
@@ -226,34 +227,12 @@ export function TrainingPlanBuilderSheetDraftsProvider({
   }, [draftActivityPlanCategoryFilter, draftActivityPlanSort, onApplyActivityFilters]);
 
   const setPlanningPreferencesDraft = useCallback(
-    (preferences: TrainingPlanBuilderPlanPreferences) => {
-      planningPreferencesForm.reset(planningPreferencesSchema.parse(preferences), {
+    (preferences: TrainingPlanPreferences) => {
+      planningPreferencesForm.reset(trainingPlanPreferencesSchema.parse(preferences), {
         keepDefaultValues: true,
       });
     },
     [planningPreferencesForm],
-  );
-
-  const addPlanningConstraintDraft = useCallback(
-    (fieldKey: TrainingPlanPreferenceFieldKey) => {
-      setPlanningPreferencesDraft(
-        addTrainingPlanPreferenceField(planningPreferencesForm.getValues(), fieldKey),
-      );
-    },
-    [planningPreferencesForm, setPlanningPreferencesDraft],
-  );
-
-  const updatePlanningConstraintDraft = useCallback(
-    (fieldKey: TrainingPlanPreferenceFieldKey, value: number | null) => {
-      setPlanningPreferencesDraft(
-        applyTrainingPlanPreferenceFieldOverride(
-          planningPreferencesForm.getValues(),
-          fieldKey,
-          value,
-        ),
-      );
-    },
-    [planningPreferencesForm, setPlanningPreferencesDraft],
   );
 
   const applyPlanningPreferencesDraft = useCallback(() => {
@@ -261,7 +240,7 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       return;
     }
     onApplyPlanningPreferences(
-      planningPreferencesSchema.parse(planningPreferencesForm.getValues()),
+      trainingPlanPreferencesSchema.parse(planningPreferencesForm.getValues()),
     );
   }, [canSavePlanningPreferences, onApplyPlanningPreferences, planningPreferencesForm]);
 
@@ -288,9 +267,12 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       canSaveMetadata,
       draftActivityPlanCategoryFilter,
       draftActivityPlanSort,
-      draftPlanningConstraintFields,
+      draftPlanningPreferences,
       planningPreferenceIssues,
       planningPreferencesForm,
+      preferenceNumericDrafts,
+      setPreferenceNumericDraft,
+      draftPlanPreferences: draftPlanningPreferences,
       metadataForm,
       draftContentVisibility,
       applyActivityFiltersDraft,
@@ -301,8 +283,8 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       prepareActivityFiltersDraft,
       preparePlanningPreferencesDraft,
       resetActivityFiltersDraft,
-      addPlanningConstraintDraft,
-      updatePlanningConstraintDraft,
+      setDraftPlanPreferences: setPlanningPreferencesDraft,
+      reportNumericDraftError: reportPreferenceNumericDraftError,
       setDraftContentVisibility,
       setDraftActivityPlanCategoryFilter,
       setDraftActivityPlanSort,
@@ -310,9 +292,11 @@ export function TrainingPlanBuilderSheetDraftsProvider({
     [
       draftActivityPlanCategoryFilter,
       draftActivityPlanSort,
-      draftPlanningConstraintFields,
+      draftPlanningPreferences,
       planningPreferenceIssues,
       planningPreferencesForm,
+      preferenceNumericDrafts,
+      setPreferenceNumericDraft,
       canResetPlanningPreferences,
       canSavePlanningPreferences,
       canSaveMetadata,
@@ -326,8 +310,8 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       prepareActivityFiltersDraft,
       preparePlanningPreferencesDraft,
       resetActivityFiltersDraft,
-      addPlanningConstraintDraft,
-      updatePlanningConstraintDraft,
+      setPlanningPreferencesDraft,
+      reportPreferenceNumericDraftError,
     ],
   );
 
@@ -428,6 +412,7 @@ type TrainingPlanBuilderSheetContentProps = {
   goBackSheet: () => void;
   onSelectActivityPlan: (activityPlan: ActivityPlanSummary) => void;
   onRemoveSession: (sessionId: string) => void;
+  onNumericDraftError: (key: string, message: string | null) => void;
   pushSheet: (sheet: BuilderSheet) => void;
   selectedSessionId: string | null;
   setActivityPlanSearchQuery: Dispatch<SetStateAction<string>>;
@@ -445,6 +430,7 @@ export function TrainingPlanBuilderSheetContent({
   goBackSheet,
   onSelectActivityPlan,
   onRemoveSession,
+  onNumericDraftError,
   pushSheet,
   selectedSessionId,
   setActivityPlanSearchQuery,
@@ -555,11 +541,12 @@ export function TrainingPlanBuilderSheetContent({
   if (activeSheet === "preferences") {
     return (
       <BuilderPlanPreferencesContextForm
-        fields={sheetDrafts.draftPlanningConstraintFields}
+        numericDrafts={sheetDrafts.preferenceNumericDrafts}
+        onNumericDraftChange={sheetDrafts.setPreferenceNumericDraft}
         issues={sheetDrafts.planningPreferenceIssues}
-        onAddField={sheetDrafts.addPlanningConstraintDraft}
-        onChangeField={sheetDrafts.updatePlanningConstraintDraft}
-        onRemoveField={(fieldKey) => sheetDrafts.updatePlanningConstraintDraft(fieldKey, null)}
+        preferences={sheetDrafts.draftPlanPreferences}
+        onChange={sheetDrafts.setDraftPlanPreferences}
+        onNumericDraftError={sheetDrafts.reportNumericDraftError}
       />
     );
   }
@@ -573,6 +560,7 @@ export function TrainingPlanBuilderSheetContent({
             : null
         }
         onChange={builder.actions.updateSession}
+        onNumericDraftError={onNumericDraftError}
         onDuplicate={(sessionId) => {
           const duplicate = builder.actions.duplicateSession(sessionId);
           if (duplicate) {

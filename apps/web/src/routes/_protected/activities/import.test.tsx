@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     | {
         onCancel: () => void;
         onSubmit: (values: unknown) => Promise<unknown>;
+        onSuccess?: (result: unknown) => Promise<unknown> | undefined;
         phase: string;
       }
     | undefined,
@@ -98,12 +99,13 @@ describe("ActivityImportPage", () => {
     const file = new File(["fit"], "Morning.FIT", { type: "application/octet-stream" });
 
     await act(async () => {
-      await mocks.formProps?.onSubmit({
+      const result = await mocks.formProps?.onSubmit({
         file,
         files: [{ file, name: file.name, size: file.size, type: file.type }],
         name: "Morning ride",
         notes: "Felt good",
       });
+      await mocks.formProps?.onSuccess?.(result as { id: string });
     });
 
     expect(mocks.signedUrl).toHaveBeenCalledWith({ fileName: "Morning.FIT", fileSize: file.size });
@@ -173,7 +175,8 @@ describe("ActivityImportPage", () => {
     };
 
     await act(async () => {
-      await mocks.formProps?.onSubmit(values);
+      const result = await mocks.formProps?.onSubmit(values);
+      await mocks.formProps?.onSuccess?.(result as { id: string });
     });
     await act(async () => {
       await mocks.formProps?.onSubmit(values);
@@ -199,7 +202,8 @@ describe("ActivityImportPage", () => {
     };
 
     await act(async () => {
-      await mocks.formProps?.onSubmit(values);
+      const result = await mocks.formProps?.onSubmit(values);
+      await mocks.formProps?.onSuccess?.(result as { id: string });
     });
     await act(async () => {
       await mocks.formProps?.onSubmit(values);

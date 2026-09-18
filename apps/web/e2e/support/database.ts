@@ -1,4 +1,6 @@
-import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from "pg";
+import { createDbClient } from "@repo/db/client";
+import { profiles, users } from "@repo/db/schema";
+import { eq, ilike } from "drizzle-orm";
 import { localE2EDatabaseUrl } from "./database-url";
 
 export {
@@ -7,80 +9,61 @@ export {
   localE2EDatabaseUrl,
 } from "./database-url";
 
-export type E2EQuery = {
-  query<Row extends QueryResultRow = QueryResultRow>(
-    text: string,
-    values?: readonly unknown[],
-  ): Promise<QueryResult<Row>>;
-};
-
 export type E2EActor = {
   email: string;
   profileId: string;
 };
 
-export type E2EConnection = E2EQuery & { release: () => void };
+/** The schema-bound client used by E2E fixtures for ordinary data access. */
+export type E2EDrizzleDatabase = ReturnType<typeof createDbClient>["db"];
+export type E2EDrizzleTransaction = Parameters<E2EDrizzleDatabase["transaction"]>[0] extends (
+  transaction: infer Transaction,
+) => unknown
+  ? Transaction
+  : never;
 
-export class LocalE2EDatabase implements E2EQuery {
-  readonly #pool: Pool;
+export class LocalE2EDatabase {
+  readonly db: E2EDrizzleDatabase;
+  readonly #closePool: () => Promise<void>;
   #closed = false;
 
   constructor(
     options: { max?: number; connectionTimeoutMillis?: number; queryTimeout?: number } = {},
   ) {
-    this.#pool = new Pool({
-      connectionString: localE2EDatabaseUrl(),
-      connectionTimeoutMillis: options.connectionTimeoutMillis ?? 10_000,
-      max: options.max,
-      query_timeout: options.queryTimeout ?? 10_000,
-    });
-  }
-
-  query<Row extends QueryResultRow = QueryResultRow>(text: string, values?: readonly unknown[]) {
-    this.#assertOpen();
-    return this.#pool.query<Row>(text, values ? [...values] : undefined);
-  }
-
-  async connect(): Promise<E2EConnection> {
-    this.#assertOpen();
-    const client = await this.#pool.connect();
-    return {
-      ...queryAdapter(client),
-      release: () => client.release(),
-    };
-  }
-
-  async transaction<Result>(operation: (client: E2EQuery) => Promise<Result>) {
-    this.#assertOpen();
-    const client = await this.#pool.connect();
-    try {
-      await client.query("begin");
-      const result = await operation(queryAdapter(client));
-      await client.query("commit");
-      return result;
-    } catch (error) {
-      await client.query("rollback").catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  async actorByEmail(email: string, query: E2EQuery = this): Promise<E2EActor | null> {
-    const result = await query.query<{ email: string; id: string }>(
-      `select u."email", p."id"
-       from "profiles" p
-       inner join "users" u on u."id" = p."id"
-       where lower(u."email") = lower($1)
-       limit 1`,
-      [email],
+    const client = createDbClient(
+      { url: localE2EDatabaseUrl() },
+      {
+        connectionTimeoutMillis: options.connectionTimeoutMillis ?? 10_000,
+        max: options.max,
+        query_timeout: options.queryTimeout ?? 10_000,
+      },
     );
-    const actor = result.rows[0];
-    return actor ? { email: actor.email, profileId: actor.id } : null;
+    this.db = client.db;
+    this.#closePool = client.close;
   }
 
-  async requireActorByEmail(email: string, query: E2EQuery = this) {
-    const actor = await this.actorByEmail(email, query);
+  /**
+   * Pins a Drizzle transaction to one PostgreSQL connection. New fixtures must
+   * use this typed handle rather than issuing SQL text through the pool.
+   */
+  async typedTransaction<Result>(operation: (database: E2EDrizzleTransaction) => Promise<Result>) {
+    this.#assertOpen();
+    return this.db.transaction(operation);
+  }
+
+  async actorByEmail(email: string): Promise<E2EActor | null> {
+    this.#assertOpen();
+    const [actor] = await this.db
+      .select({ email: users.email, profileId: profiles.id })
+      .from(profiles)
+      .innerJoin(users, eq(users.id, profiles.id))
+      .where(ilike(users.email, email))
+      .limit(1);
+    return actor ? { email: actor.email, profileId: actor.profileId } : null;
+  }
+
+  async requireActorByEmail(email: string) {
+    const actor = await this.actorByEmail(email);
     if (!actor) throw new Error(`The local E2E actor ${email} has not been provisioned.`);
     return actor;
   }
@@ -88,7 +71,7 @@ export class LocalE2EDatabase implements E2EQuery {
   async close() {
     if (this.#closed) return;
     this.#closed = true;
-    await this.#pool.end();
+    await this.#closePool();
   }
 
   #assertOpen() {
@@ -106,10 +89,4 @@ export async function withLocalE2EDatabase<Result>(
   } finally {
     await database.close();
   }
-}
-
-function queryAdapter(client: PoolClient): E2EQuery {
-  return {
-    query: (text, values) => client.query(text, values ? [...values] : undefined),
-  };
 }

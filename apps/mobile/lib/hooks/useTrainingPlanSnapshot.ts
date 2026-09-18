@@ -9,7 +9,6 @@ import { useCallback, useMemo } from "react";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { useProfileGoals } from "./useProfileGoals";
-import { useProfileSettings } from "./useProfileSettings";
 
 interface UseTrainingPlanSnapshotOptions {
   curveWindow?: "overview" | "tab";
@@ -117,7 +116,6 @@ function isTrainingPlanSnapshotData(value: unknown): value is TrainingPlanSnapsh
  */
 export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions = {}) {
   const profileGoals = useProfileGoals({ loadAllPages: true });
-  const profileSettings = useProfileSettings();
   const profileQuery = api.profiles.get.useQuery(undefined, scheduleAwareReadQueryOptions);
   const planQuery = api.trainingPlans.get.useQuery(
     options.planId ? { id: options.planId } : skipToken,
@@ -262,6 +260,5 @@ export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions 
       weeklySummaries: async () => undefined,
     },
     profileGoals: profileGoals.goals,
-    profileSettings: profileSettings.settings,
   };
 }

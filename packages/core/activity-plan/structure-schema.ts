@@ -70,6 +70,7 @@ export const activityPlanIntervalStepSchema = z
     name: activityPlanNameSchema,
     description: activityPlanDescriptionSchema.optional(),
     notes: activityPlanNotesSchema.optional(),
+    purpose: z.enum(["warmup", "work", "recovery", "cooldown", "technique"]).optional(),
     duration: activityPlanDurationSchema,
     targets: z.array(activityPlanTargetSchema).min(1).max(3),
   })
@@ -152,4 +153,27 @@ export type EditableActivityPlanStructure = {
 
 export function validateActivityPlanStructure(data: unknown) {
   return activityPlanStructureSchema.safeParse(data);
+}
+
+function canonicalActivityPlanJson(value: unknown): string {
+  if (value === null || typeof value === "boolean" || typeof value === "string")
+    return JSON.stringify(value);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("Activity plan contains a non-finite number");
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return `[${value.map(canonicalActivityPlanJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value)
+      .filter(([, nested]) => nested !== undefined)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalActivityPlanJson(nested)}`)
+      .join(",")}}`;
+  }
+  throw new Error(`Activity plan contains unsupported ${typeof value}`);
+}
+
+/** Canonical, cross-runtime hash input for the sole executable V3 structure contract. */
+export function getCanonicalActivityPlanStructureHashInput(input: unknown): string {
+  return canonicalActivityPlanJson(activityPlanStructureSchema.parse(input));
 }

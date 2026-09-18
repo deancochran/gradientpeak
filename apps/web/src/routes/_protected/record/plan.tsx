@@ -1,4 +1,5 @@
 import {
+  type CalendarProjectionItem,
   compileActivityPlan,
   orderActivityPlanTargetsForPresentation,
   resolveActivityPlanTargetPresentation,
@@ -16,7 +17,7 @@ import { SearchField } from "@repo/ui/components/search-field";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { CalendarDays, Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
-
+import { ActivityPlanCard } from "../../../components/activity-plan/activity-plan-card";
 import { api } from "../../../lib/api/client";
 import { getTodayDateKey } from "../../../lib/planning";
 import { useTimerOnlyRecording } from "../../../lib/recording/provider";
@@ -27,7 +28,10 @@ export const Route = createFileRoute("/_protected/record/plan")({
   component: RecordPlanPage,
 });
 
-type SelectedPlan = { planId: string; eventId: string | null; variantId?: string };
+type PlannedSession = NonNullable<CalendarProjectionItem["plannedSession"]>;
+type SelectedPlan =
+  | { kind: "library"; planId: string }
+  | { kind: "planned_session"; session: PlannedSession };
 
 export function RecordPlanPage() {
   const navigate = Route.useNavigate();
@@ -36,13 +40,7 @@ export function RecordPlanPage() {
   const identityLocked = Boolean(recording.state.reducer.snapshot);
   const [searchText, setSearchText] = useState("");
   const [selected, setSelected] = useState<SelectedPlan | null>(
-    launcher.activityPlanId
-      ? {
-          planId: launcher.activityPlanId,
-          eventId: launcher.eventId ?? null,
-          ...(launcher.variantId ? { variantId: launcher.variantId } : {}),
-        }
-      : null,
+    launcher.activityPlanId ? { kind: "library", planId: launcher.activityPlanId } : null,
   );
   const todayQuery = api.calendar.day.useQuery({ date: getTodayDateKey() });
   const plansQuery = api.activityPlans.list.useInfiniteQuery(
@@ -50,34 +48,59 @@ export function RecordPlanPage() {
     { getNextPageParam: (lastPage) => lastPage.nextCursor },
   );
   const detailQuery = api.activityPlans.getById.useQuery(
-    {
-      id: selected?.planId ?? "",
-      personalize: false,
-      ...(selected?.variantId === undefined ? {} : { variantId: selected.variantId }),
-    },
-    { enabled: Boolean(selected?.planId), retry: false },
+    { id: selected?.kind === "library" ? selected.planId : "", personalize: false },
+    { enabled: selected?.kind === "library", retry: false },
   );
 
-  const todayEvents = (todayQuery.data?.projection.items ?? []).filter(
-    (event) => event.kind === "planned_activity" && event.status === "scheduled" && event.plan,
+  const todaySessions = (todayQuery.data?.projection.items ?? []).flatMap((item) =>
+    item.kind === "planned_activity" &&
+    item.status === "scheduled" &&
+    item.plannedSession?.lifecycle.status === "scheduled"
+      ? [item.plannedSession]
+      : [],
   );
   const visiblePlans = useMemo(
     () => plansQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [plansQuery.data?.pages],
   );
   const detail = detailQuery.data?.detail;
-  const compiled = detail?.structure ? compileActivityPlan(detail.structure) : null;
+  const plannedSession = selected?.kind === "planned_session" ? selected.session : null;
+  const prescription = plannedSession?.prescription.resolutionManifest;
+  const selectedStructure = prescription?.resolved_structure ?? detail?.structure;
+  const selectedCategory =
+    prescription?.resolved_structure.activity_category ?? detail?.activityCategory;
+  const compiled = selectedStructure ? compileActivityPlan(selectedStructure) : null;
+  const selectedName = plannedSession
+    ? `Scheduled ${prescription?.resolved_structure.activity_category ?? "activity"} session`
+    : detail?.name;
 
   const usePlan = () => {
-    if (!selected || !detail?.capabilities.canRecord || !detail.structure) return;
+    if (!selected || !selectedStructure || !selectedCategory) return;
+    if (
+      selected.kind === "library" &&
+      (detailQuery.isLoading || detailQuery.isError || detail?.id !== selected.planId)
+    )
+      return;
+    if (selected.kind === "planned_session") {
+      void navigate({
+        to: "/record",
+        search: {
+          activity_category: selectedCategory,
+          gps: "off",
+          plannedSessionId: selected.session.id,
+          plannedSessionDate: selected.session.planningDate,
+          ...(launcher.routeId ? { routeId: launcher.routeId } : {}),
+        },
+      });
+      return;
+    }
+    if (!detail?.capabilities.canRecord) return;
     void navigate({
       to: "/record",
       search: {
-        activity_category: detail.activityCategory,
+        activity_category: selectedCategory,
         gps: "off",
         activityPlanId: detail.id,
-        variantId: detail.resolvedVariant.id,
-        ...(selected.eventId ? { eventId: selected.eventId } : {}),
         ...(launcher.routeId ? { routeId: launcher.routeId } : {}),
       },
     });
@@ -105,7 +128,8 @@ export function RecordPlanPage() {
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Choose an activity plan</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Scheduled plans keep their event identity. Library plans start without inventing one.
+            Scheduled sessions retain their immutable prescription. Library plans start without
+            inventing a scheduled identity.
           </p>
         </div>
         <Button asChild variant="outline">
@@ -117,34 +141,44 @@ export function RecordPlanPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Today&apos;s scheduled plans</CardTitle>
+          <CardTitle>Today&apos;s planned sessions</CardTitle>
           <CardDescription>
-            Prefer the scheduled instance when it matches today&apos;s session.
+            Choose a scheduled session to record its frozen prescription.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2">
-          {todayQuery.isLoading ? <p role="status">Loading today&apos;s plans…</p> : null}
-          {!todayQuery.isLoading && todayEvents.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No scheduled plans today.</p>
+          {todayQuery.isLoading ? <p role="status">Loading today&apos;s sessions…</p> : null}
+          {todayQuery.isError ? (
+            <div role="alert" className="text-sm text-destructive">
+              <p>Today&apos;s planned sessions could not be loaded.</p>
+              <Button type="button" variant="outline" onClick={() => void todayQuery.refetch()}>
+                Retry planned sessions
+              </Button>
+            </div>
           ) : null}
-          {todayEvents.map((event) => {
-            const plan = event.plan;
-            if (!plan) return null;
+          {!todayQuery.isLoading && !todayQuery.isError && todaySessions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No planned sessions today.</p>
+          ) : null}
+          {todaySessions.map((session) => {
+            const manifest = session.prescription.resolutionManifest;
             return (
               <button
+                aria-pressed={
+                  selected?.kind === "planned_session" && selected.session.id === session.id
+                }
                 className="rounded-lg border p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                key={event.id}
-                onClick={() => setSelected({ planId: plan.id, eventId: event.id })}
+                key={session.id}
+                onClick={() => setSelected({ kind: "planned_session", session })}
                 type="button"
               >
                 <div className="flex flex-wrap gap-2">
-                  <Badge>{plan.activityCategory}</Badge>
-                  <Badge variant="outline">
-                    {formatScheduledTime(event.timing.startsAt ?? event.calendarDate)}
-                  </Badge>
+                  <Badge>{manifest.resolved_structure.activity_category}</Badge>
+                  <Badge variant="outline">{formatScheduledTime(session.planningDate)}</Badge>
                 </div>
-                <p className="mt-2 font-medium">{plan.name}</p>
-                <p className="text-sm text-muted-foreground">Scheduled instance</p>
+                <p className="mt-2 font-medium capitalize">
+                  {manifest.resolved_structure.activity_category} session
+                </p>
+                <p className="text-sm text-muted-foreground">Frozen scheduled prescription</p>
               </button>
             );
           })}
@@ -170,26 +204,28 @@ export function RecordPlanPage() {
             testId="record-plan-search"
             value={searchText}
           />
+          {plansQuery.isLoading ? <p role="status">Loading activity plans…</p> : null}
+          {plansQuery.isError ? (
+            <div role="alert">
+              <p>Activity plans could not be loaded.</p>
+              <Button type="button" variant="outline" onClick={() => void plansQuery.refetch()}>
+                Retry activity plans
+              </Button>
+            </div>
+          ) : null}
+          {!plansQuery.isLoading && !plansQuery.isError && visiblePlans.length === 0 ? (
+            <p>No activity plans match your search.</p>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
             {visiblePlans.map((plan) => (
-              <button
-                className="rounded-lg border p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+              <ActivityPlanCard
                 disabled={!plan.capabilities.canRecord}
                 key={plan.id}
-                onClick={() => setSelected({ planId: plan.id, eventId: null })}
-                type="button"
-              >
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">{plan.activityCategory}</Badge>
-                  {!plan.capabilities.canRecord ? (
-                    <Badge variant="secondary">View only</Badge>
-                  ) : null}
-                </div>
-                <p className="mt-2 font-medium">{plan.name}</p>
-                <p className="text-sm text-muted-foreground">
-                  {plan.description ?? "Activity plan"}
-                </p>
-              </button>
+                onOpen={() => setSelected({ kind: "library", planId: plan.id })}
+                openLabel={`Select ${plan.name}${plan.capabilities.canRecord ? "" : " (view only)"}`}
+                selected={selected?.kind === "library" && selected.planId === plan.id}
+                plan={plan}
+              />
             ))}
           </div>
           {plansQuery.hasNextPage ? (
@@ -207,26 +243,36 @@ export function RecordPlanPage() {
       {selected ? (
         <Card aria-live="polite">
           <CardHeader>
-            <CardTitle>{detail?.name ?? "Plan setup"}</CardTitle>
+            <CardTitle>{selectedName ?? "Plan setup"}</CardTitle>
             <CardDescription>
               Review the prescription before locking it into this recording.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
-            {detailQuery.isLoading ? (
+            {selected.kind === "library" && detailQuery.isLoading ? (
               <Loader2 aria-label="Loading plan setup" className="h-5 w-5 animate-spin" />
             ) : null}
-            {detailQuery.isError || (detail && !detail.capabilities.canRecord) ? (
-              <p role="alert" className="text-sm text-destructive">
+            {selected.kind === "library" &&
+            (detailQuery.isError || (detail && !detail.capabilities.canRecord)) ? (
+              <div role="alert" className="text-sm text-destructive">
                 This plan&apos;s executable steps are unavailable for recording.
-              </p>
+                {detailQuery.isError ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void detailQuery.refetch()}
+                  >
+                    Retry selected plan
+                  </Button>
+                ) : null}
+              </div>
             ) : null}
-            {detail && compiled ? (
+            {selectedStructure && selectedCategory && compiled ? (
               <>
                 <div className="flex flex-wrap gap-2">
-                  <Badge>{detail.activityCategory}</Badge>
+                  <Badge>{selectedCategory}</Badge>
                   <Badge variant="outline">{compiled.occurrences.length} steps</Badge>
-                  {detail.metrics
+                  {(detail?.metrics ?? [])
                     .filter((metric) => metric.status !== "unavailable")
                     .map((metric) => (
                       <Badge key={metric.key} variant="outline">
@@ -234,32 +280,10 @@ export function RecordPlanPage() {
                       </Badge>
                     ))}
                 </div>
-                {detail.variants.length > 1 ? (
-                  <label className="block max-w-sm space-y-2" htmlFor="record-plan-variant">
-                    <span className="text-sm font-medium">Activity plan variant</span>
-                    <select
-                      className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      id="record-plan-variant"
-                      onChange={(event) =>
-                        setSelected((current) =>
-                          current ? { ...current, variantId: event.currentTarget.value } : current,
-                        )
-                      }
-                      value={detail.resolvedVariant.id}
-                    >
-                      {detail.variants.map((variant) => (
-                        <option key={variant.id} value={variant.id}>
-                          {variant.name}
-                          {variant.id === detail.defaultVariantId ? " (default)" : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
                 <p className="rounded-lg border p-3 text-sm text-muted-foreground">
-                  Recording uses the plan&apos;s authored targets. Session Flow personalization is
-                  display-only until it explicitly hands a selected target representation to the
-                  recorder.
+                  {plannedSession
+                    ? "Recording uses this session's frozen prescription."
+                    : "Recording uses the plan's authored targets. Session Flow personalization is display-only until it explicitly hands a selected target representation to the recorder."}
                 </p>
                 <ol className="space-y-2">
                   {compiled.occurrences.map((occurrence, index) => (
@@ -274,7 +298,7 @@ export function RecordPlanPage() {
                             (target) =>
                               resolveActivityPlanTargetPresentation({
                                 target,
-                                activityCategory: detail.activityCategory,
+                                activityCategory: selectedCategory,
                                 asOf: new Date().toISOString(),
                               }).label,
                           )
@@ -284,7 +308,17 @@ export function RecordPlanPage() {
                   ))}
                 </ol>
                 <div className="flex flex-wrap gap-3">
-                  <Button onClick={usePlan}>Use this plan</Button>
+                  <Button
+                    disabled={
+                      selected.kind === "library" &&
+                      (detailQuery.isLoading ||
+                        detailQuery.isError ||
+                        !detail?.capabilities.canRecord)
+                    }
+                    onClick={usePlan}
+                  >
+                    Use this plan
+                  </Button>
                   <Button
                     variant="outline"
                     onClick={() => {

@@ -1099,7 +1099,7 @@ describe("activity detail screen", () => {
     );
   });
 
-  it("renders a canonical segment diagnostic for an unavailable parent aggregate", async () => {
+  it("keeps unavailable aggregate metrics explicit when segment diagnostics are unavailable", async () => {
     const segmentQuantification = createObservationQuantificationBundleFixture({
       status: "threshold_missing",
     });
@@ -1129,10 +1129,9 @@ describe("activity detail screen", () => {
     await renderNative(<ActivityDetailScreen />);
     await fireEvent.press(screen.getByTestId("activity-detail-tab-breakdown"));
 
-    expect(
-      screen.getAllByText(/activity-category-specific LTHR is missing for this activity/),
-    ).toHaveLength(1);
-    expect(screen.queryByText("A required threshold is missing.")).toBeNull();
+    expect(screen.getByText("Load & Intensity")).toBeTruthy();
+    expect(screen.getAllByText("—")).toHaveLength(2);
+    expect(screen.getByText("No derived efforts are available for this activity.")).toBeTruthy();
   });
 
   it("routes likes through the social mutation", async () => {

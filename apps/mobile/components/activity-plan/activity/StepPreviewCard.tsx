@@ -4,6 +4,7 @@
 
 import {
   type ActivityPlanIntervalStep,
+  consolidateActivityPlanText,
   formatTargetValue,
   getStepIntensityColor,
   getTargetDisplayName,
@@ -53,8 +54,10 @@ const StepPreviewCard = memo<StepPreviewCardProps>(function StepPreviewCard({
           >
             {step.name}
           </Text>
-          {step.description && (
-            <Text className="text-xs text-muted-foreground mt-1">{step.description}</Text>
+          {consolidateActivityPlanText(step.notes, step.description, "Description") && (
+            <Text className="text-xs text-muted-foreground mt-1">
+              {consolidateActivityPlanText(step.notes, step.description, "Description")}
+            </Text>
           )}
         </View>
 

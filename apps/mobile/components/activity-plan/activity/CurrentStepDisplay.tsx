@@ -1,4 +1,4 @@
-import type { ActivityPlanStructure } from "@repo/core";
+import { type ActivityPlanStructure, consolidateActivityPlanText } from "@repo/core";
 import { formatDuration } from "@repo/core/duration/time-format";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -39,14 +39,17 @@ const CurrentStepDisplay = memo<{
               <Text className="text-base font-semibold">
                 {currentStep.name || `Step ${planProgress.currentStepIndex + 1}`}
               </Text>
-              {currentStep.description && (
-                <Text className="text-sm text-muted-foreground mt-1">
-                  {currentStep.description}
-                </Text>
-              )}
-              {currentStep.notes && (
+              {consolidateActivityPlanText(
+                currentStep.notes,
+                currentStep.description,
+                "Description",
+              ) && (
                 <Text className="text-xs text-muted-foreground mt-2 italic">
-                  Note: {currentStep.notes}
+                  {consolidateActivityPlanText(
+                    currentStep.notes,
+                    currentStep.description,
+                    "Description",
+                  )}
                 </Text>
               )}
             </View>

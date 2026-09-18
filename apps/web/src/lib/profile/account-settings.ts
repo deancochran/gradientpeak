@@ -1,3 +1,4 @@
+import { CONTRACT_EPOCH_HEADER } from "@repo/api/client";
 import { authEmailSchema } from "@repo/auth/forms";
 import { getGradientPeakAuth } from "@repo/auth/server";
 import { redirect } from "@tanstack/react-router";
@@ -10,11 +11,19 @@ import { buildFlashHref } from "../flash";
 import { changePasswordFormSchema } from "./form-schemas";
 
 function formObject(data: unknown) {
-  return data instanceof FormData ? Object.fromEntries(data.entries()) : data;
+  if (!(data instanceof FormData)) return data;
+  return Object.fromEntries(
+    [...data.entries()].filter(([key]) => key !== "__async" && key !== CONTRACT_EPOCH_HEADER),
+  );
 }
 
+const isEnhanced = (data: unknown) => data instanceof FormData && data.get("__async") === "true";
+
 export const changePasswordAction = createServerFn({ method: "POST" })
-  .validator((data) => changePasswordFormSchema.parse(formObject(data)))
+  .validator((data) => ({
+    ...changePasswordFormSchema.parse(formObject(data)),
+    enhanced: isEnhanced(data),
+  }))
   .handler(async ({ data }) => {
     try {
       await getGradientPeakAuth().api.changePassword({
@@ -26,10 +35,16 @@ export const changePasswordAction = createServerFn({ method: "POST" })
         headers: getRequestHeaders(),
       });
     } catch (error) {
+      if (data.enhanced)
+        return {
+          ok: false as const,
+          message: "Password could not be updated. Check your current password and try again.",
+        };
       const message = error instanceof Error ? error.message : "Unable to change password";
       throw redirect({ href: buildFlashHref("/settings", message, "error"), statusCode: 303 });
     }
 
+    if (data.enhanced) return { ok: true as const };
     throw redirect({
       href: buildFlashHref(
         "/settings",
@@ -40,22 +55,33 @@ export const changePasswordAction = createServerFn({ method: "POST" })
     });
   });
 
-export const revokeOtherSessionsAction = createServerFn({ method: "POST" }).handler(async () => {
-  try {
-    await getGradientPeakAuth().api.revokeOtherSessions({ headers: getRequestHeaders() });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to sign out other sessions";
-    throw redirect({ href: buildFlashHref("/settings", message, "error"), statusCode: 303 });
-  }
+export const revokeOtherSessionsAction = createServerFn({ method: "POST" })
+  .validator((data: unknown) => ({ enhanced: isEnhanced(data) }))
+  .handler(async ({ data }) => {
+    try {
+      await getGradientPeakAuth().api.revokeOtherSessions({ headers: getRequestHeaders() });
+    } catch (error) {
+      if (data.enhanced)
+        return {
+          ok: false as const,
+          message: "Other sessions could not be signed out. Please try again.",
+        };
+      const message = error instanceof Error ? error.message : "Unable to sign out other sessions";
+      throw redirect({ href: buildFlashHref("/settings", message, "error"), statusCode: 303 });
+    }
 
-  throw redirect({
-    href: buildFlashHref("/settings", "Other sessions signed out", "success"),
-    statusCode: 303,
+    if (data.enhanced) return { ok: true as const };
+    throw redirect({
+      href: buildFlashHref("/settings", "Other sessions signed out", "success"),
+      statusCode: 303,
+    });
   });
-});
 
 export const resendVerificationFromSettingsAction = createServerFn({ method: "POST" })
-  .validator((data) => z.object({ email: authEmailSchema }).strict().parse(formObject(data)))
+  .validator((data) => ({
+    ...z.object({ email: authEmailSchema }).strict().parse(formObject(data)),
+    enhanced: isEnhanced(data),
+  }))
   .handler(async ({ data }) => {
     try {
       await getGradientPeakAuth().api.sendVerificationEmail({
@@ -67,14 +93,16 @@ export const resendVerificationFromSettingsAction = createServerFn({ method: "PO
         },
       });
     } catch {
-      throw redirect({
-        href: buildFlashHref("/settings", "Unable to resend verification email", "error"),
-        statusCode: 303,
-      });
+      // Keep the acknowledgement independent of delivery outcome.
     }
 
+    if (data.enhanced) return { ok: true as const };
     throw redirect({
-      href: buildFlashHref("/settings", "Verification email sent", "success"),
+      href: buildFlashHref(
+        "/settings",
+        "If this address can receive verification, a message is on its way.",
+        "success",
+      ),
       statusCode: 303,
     });
   });

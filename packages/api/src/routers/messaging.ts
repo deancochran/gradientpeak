@@ -7,10 +7,12 @@ import {
   conversationParticipants,
   conversations,
   messages,
+  profiles,
   publicConversationsRowSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { eq, sql } from "drizzle-orm";
+import { and, count, eq, isNull, ne, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import {
   getConversationMessagesForViewer,
@@ -69,6 +71,10 @@ const conversationSummaryRowSchema = z.object({
   peer_profile_avatar_url: z.string().nullable(),
 });
 
+const markedConversationSchema = z.object({
+  conversation_id: z.string().uuid(),
+});
+
 function toIsoString(value: Date | string | null | undefined) {
   if (!value) {
     return null;
@@ -101,32 +107,32 @@ export const messagingRouter = createTRPCRouter({
           });
         }
 
-        const existingConversationResult = await db.execute(sql`
-          select c.id, c.is_group, c.group_name, c.created_at, c.last_message_at
-          from conversations c
-          where c.is_group = false
-            and exists(
-              select 1
-              from conversation_participants cp
-              where cp.conversation_id = c.id
-                and cp.user_id = ${ctx.session.user.id}::uuid
-            )
-            and exists(
-              select 1
-              from conversation_participants cp
-              where cp.conversation_id = c.id
-                and cp.user_id = ${input.target_user_id}::uuid
-            )
-            and (
-              select count(*)
-              from conversation_participants cp
-              where cp.conversation_id = c.id
-            ) = 2
-          limit 1
-        `);
+        const viewerMembership = alias(conversationParticipants, "viewer_membership");
+        const targetMembership = alias(conversationParticipants, "target_membership");
+        const participantCount = alias(conversationParticipants, "participant_count");
+        const [existingConversation] = await db
+          .select({
+            id: conversations.id,
+            is_group: conversations.is_group,
+            group_name: conversations.group_name,
+            created_at: conversations.created_at,
+            last_message_at: conversations.last_message_at,
+          })
+          .from(conversations)
+          .innerJoin(viewerMembership, eq(viewerMembership.conversation_id, conversations.id))
+          .innerJoin(targetMembership, eq(targetMembership.conversation_id, conversations.id))
+          .where(
+            and(
+              eq(conversations.is_group, false),
+              eq(viewerMembership.user_id, ctx.session.user.id),
+              eq(targetMembership.user_id, input.target_user_id),
+              sql`(select count(*) from ${participantCount} where ${participantCount.conversation_id} = ${conversations.id}) = 2`,
+            ),
+          )
+          .limit(1);
 
-        const existingConversationRow = existingConversationResult.rows[0]
-          ? conversationRowSchema.parse(existingConversationResult.rows[0])
+        const existingConversationRow = existingConversation
+          ? conversationRowSchema.parse(existingConversation)
           : null;
 
         if (existingConversationRow) {
@@ -169,8 +175,7 @@ export const messagingRouter = createTRPCRouter({
 
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message:
-            "Failed to load or create direct message conversation. The existing DM lookup remains on narrow SQL because expressing the exact two-participant constraint is still awkward in Drizzle.",
+          message: "Failed to load or create direct message conversation.",
           cause: error,
         });
       }
@@ -255,58 +260,63 @@ export const messagingRouter = createTRPCRouter({
     const db = getRequiredDb(ctx);
 
     try {
+      const membership = alias(conversationParticipants, "membership");
+      const conversation = alias(conversations, "conversation");
+      const latestMessage = alias(messages, "latest_message");
+      const peerMembership = alias(conversationParticipants, "peer_membership");
+      const peerProfile = alias(profiles, "peer_profile");
       const result = await db.execute(sql`
         select
-          c.id,
-          c.is_group,
-          c.group_name,
-          c.created_at,
-          c.last_message_at,
+          ${conversation.id},
+          ${conversation.is_group},
+          ${conversation.group_name},
+          ${conversation.created_at},
+          ${conversation.last_message_at},
           coalesce(unread_counts.unread_count, 0) as unread_count,
-          lm.id as last_message_id,
-          lm.conversation_id as last_message_conversation_id,
-          lm.sender_id as last_message_sender_id,
-          lm.content as last_message_content,
-          lm.created_at as last_message_created_at,
-          lm.deleted_at as last_message_deleted_at,
-          peer.id as peer_profile_id,
-          peer.username as peer_profile_username,
-          peer.full_name as peer_profile_full_name,
-          peer.avatar_url as peer_profile_avatar_url
-        from conversation_participants membership
-        inner join conversations c on c.id = membership.conversation_id
+          ${latestMessage.id} as last_message_id,
+          ${latestMessage.conversation_id} as last_message_conversation_id,
+          ${latestMessage.sender_id} as last_message_sender_id,
+          ${latestMessage.content} as last_message_content,
+          ${latestMessage.created_at} as last_message_created_at,
+          ${latestMessage.deleted_at} as last_message_deleted_at,
+          ${peerProfile.id} as peer_profile_id,
+          ${peerProfile.username} as peer_profile_username,
+          ${peerProfile.full_name} as peer_profile_full_name,
+          ${peerProfile.avatar_url} as peer_profile_avatar_url
+        from ${membership}
+        inner join ${conversation} on ${conversation.id} = ${membership.conversation_id}
         left join lateral (
           select count(*) as unread_count
-          from messages m
-          where m.conversation_id = c.id
-            and m.sender_id <> ${ctx.session.user.id}::uuid
-            and m.deleted_at is null
+          from ${messages}
+          where ${messages.conversation_id} = ${conversation.id}
+            and ${messages.sender_id} <> ${ctx.session.user.id}
+            and ${messages.deleted_at} is null
             and (
-              membership.last_read_at is null
-              or (m.created_at, m.id) > (
-                membership.last_read_at,
-                membership.last_read_message_id
+              ${membership.last_read_at} is null
+              or (${messages.created_at}, ${messages.id}) > (
+                ${membership.last_read_at},
+                ${membership.last_read_message_id}
               )
             )
         ) unread_counts on true
         left join lateral (
-          select m.id, m.conversation_id, m.sender_id, m.content, m.created_at, m.deleted_at
-          from messages m
-          where m.conversation_id = c.id
-          order by m.created_at desc, m.id desc
+          select ${latestMessage.id}, ${latestMessage.conversation_id}, ${latestMessage.sender_id}, ${latestMessage.content}, ${latestMessage.created_at}, ${latestMessage.deleted_at}
+          from ${latestMessage}
+          where ${latestMessage.conversation_id} = ${conversation.id}
+          order by ${latestMessage.created_at} desc, ${latestMessage.id} desc
           limit 1
-        ) lm on true
+        ) latest_message on true
         left join lateral (
-          select p.id, p.username, p.full_name, p.avatar_url
-          from conversation_participants cp
-          inner join profiles p on p.id = cp.user_id
-          where cp.conversation_id = c.id
-            and cp.user_id <> ${ctx.session.user.id}::uuid
-          order by cp.user_id asc
+          select ${peerProfile.id}, ${peerProfile.username}, ${peerProfile.full_name}, ${peerProfile.avatar_url}
+          from ${peerMembership}
+          inner join ${peerProfile} on ${peerProfile.id} = ${peerMembership.user_id}
+          where ${peerMembership.conversation_id} = ${conversation.id}
+            and ${peerMembership.user_id} <> ${ctx.session.user.id}
+          order by ${peerMembership.user_id} asc
           limit 1
-        ) peer on true
-        where membership.user_id = ${ctx.session.user.id}::uuid
-        order by c.last_message_at desc nulls last, c.created_at desc
+        ) peer_profile on true
+        where ${membership.user_id} = ${ctx.session.user.id}
+        order by ${conversation.last_message_at} desc nulls last, ${conversation.created_at} desc
       `);
 
       const rows = result.rows.map((row) => conversationSummaryRowSchema.parse(row));
@@ -349,8 +359,7 @@ export const messagingRouter = createTRPCRouter({
 
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
-        message:
-          "Failed to load conversations. The summary query still uses narrow SQL because the lateral unread, last-message, and peer-profile projection is materially clearer there.",
+        message: "Failed to load conversations.",
         cause: error,
       });
     }
@@ -419,55 +428,60 @@ export const messagingRouter = createTRPCRouter({
     const db = getRequiredDb(ctx);
 
     try {
+      const participant = alias(conversationParticipants, "participant");
+      const message = alias(messages, "message");
       const result = await db.execute(sql`
         with target as (
           select
-            participant.conversation_id,
-            participant.user_id,
-            latest.created_at as latest_created_at,
-            latest.id as latest_message_id
-          from conversation_participants participant
+            ${participant.conversation_id},
+            ${participant.user_id},
+            latest_message.created_at as latest_created_at,
+            latest_message.id as latest_message_id
+          from ${participant}
           left join lateral (
-            select message.created_at, message.id
-            from messages message
-            where message.conversation_id = participant.conversation_id
-              and message.sender_id <> participant.user_id
-              and message.deleted_at is null
-            order by message.created_at desc, message.id desc
+            select ${message.created_at}, ${message.id}
+            from ${message}
+            where ${message.conversation_id} = ${participant.conversation_id}
+              and ${message.sender_id} <> ${participant.user_id}
+              and ${message.deleted_at} is null
+            order by ${message.created_at} desc, ${message.id} desc
             limit 1
-          ) latest on true
-          where participant.conversation_id = ${input.conversation_id}::uuid
-            and participant.user_id = ${ctx.session.user.id}::uuid
+          ) latest_message on true
+          where ${participant.conversation_id} = ${input.conversation_id}
+            and ${participant.user_id} = ${ctx.session.user.id}
         )
-        update conversation_participants participant
+        update ${participant}
         set
           last_read_at = case
             when target.latest_message_id is not null and (
-              participant.last_read_at is null
+              ${participant.last_read_at} is null
               or (target.latest_created_at, target.latest_message_id) > (
-                participant.last_read_at,
-                participant.last_read_message_id
+                ${participant.last_read_at},
+                ${participant.last_read_message_id}
               )
             ) then target.latest_created_at
-            else participant.last_read_at
+            else ${participant.last_read_at}
           end,
           last_read_message_id = case
             when target.latest_message_id is not null and (
-              participant.last_read_at is null
+              ${participant.last_read_at} is null
               or (target.latest_created_at, target.latest_message_id) > (
-                participant.last_read_at,
-                participant.last_read_message_id
+                ${participant.last_read_at},
+                ${participant.last_read_message_id}
               )
             ) then target.latest_message_id
-            else participant.last_read_message_id
+            else ${participant.last_read_message_id}
           end
         from target
-        where participant.conversation_id = target.conversation_id
-          and participant.user_id = target.user_id
-        returning participant.conversation_id
+        where ${participant.conversation_id} = target.conversation_id
+          and ${participant.user_id} = target.user_id
+        returning ${participant.conversation_id}
       `);
 
-      if (!result.rows[0]) {
+      const markedConversation = result.rows[0]
+        ? markedConversationSchema.parse(result.rows[0])
+        : null;
+      if (!markedConversation) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found." });
       }
 
@@ -489,24 +503,23 @@ export const messagingRouter = createTRPCRouter({
     const db = getRequiredDb(ctx);
 
     try {
-      const result = await db.execute(sql`
-        select count(*)::int as unread_count
-        from conversation_participants participant
-        inner join messages message
-          on message.conversation_id = participant.conversation_id
-        where participant.user_id = ${ctx.session.user.id}::uuid
-          and message.sender_id <> participant.user_id
-          and message.deleted_at is null
-          and (
-            participant.last_read_at is null
-            or (message.created_at, message.id) > (
-              participant.last_read_at,
-              participant.last_read_message_id
-            )
-          )
-      `);
+      const [result] = await db
+        .select({ unread_count: count() })
+        .from(conversationParticipants)
+        .innerJoin(messages, eq(messages.conversation_id, conversationParticipants.conversation_id))
+        .where(
+          and(
+            eq(conversationParticipants.user_id, ctx.session.user.id),
+            ne(messages.sender_id, conversationParticipants.user_id),
+            isNull(messages.deleted_at),
+            or(
+              isNull(conversationParticipants.last_read_at),
+              sql`(${messages.created_at}, ${messages.id}) > (${conversationParticipants.last_read_at}, ${conversationParticipants.last_read_message_id})`,
+            ),
+          ),
+        );
 
-      return Number(result.rows[0]?.unread_count ?? 0);
+      return Number(result?.unread_count ?? 0);
     } catch (error) {
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",

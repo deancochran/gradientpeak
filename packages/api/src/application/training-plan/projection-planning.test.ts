@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readPublishedAthleteStateSnapshotData } from "../../repositories/athlete-state-repository";
 import { readAthleteReadModel } from "../athlete-intelligence/athlete-read-model";
 import {
+  hasPublishedRevisionConflict,
   resolveAuthoritativePlanReadinessHorizon,
   trainingPlanCommitInputSchema,
   trainingPlanPreviewInputSchema,
@@ -98,6 +99,15 @@ beforeEach(() => {
 });
 
 describe("projection planning", () => {
+  it("allows a stale context with the previewed revision and rejects a published revision change", () => {
+    expect(
+      hasPublishedRevisionConflict({ currentPublishedRevision: 4, expectedPublishedRevision: 4 }),
+    ).toBe(false);
+    expect(
+      hasPublishedRevisionConflict({ currentPublishedRevision: 5, expectedPublishedRevision: 4 }),
+    ).toBe(true);
+  });
+
   it("keeps preview feedback separate from commit authority", () => {
     const previewInput = {
       kind: "create" as const,
@@ -106,10 +116,27 @@ describe("projection planning", () => {
         previewStartDate: "2026-07-20",
         structure: {
           version: 1 as const,
+          plan_preferences: {
+            weekly_session_count: null,
+            target_weekly_duration_minutes: null,
+            maximum_session_duration_minutes: null,
+            preferred_weekdays: [],
+            rest_days: [],
+            progression_style: null,
+            recovery_priority: null,
+          },
           sessions: [
             {
+              id: "22222222-2222-4222-8222-222222222222",
               offset_days: 0,
               activity_plan_id: "33333333-3333-4333-8333-333333333333",
+              demand: {
+                activity_category: "run",
+                training_intent: "aerobic_base",
+                target_duration_minutes: null,
+                target_common_load: null,
+                importance: "normal",
+              },
             },
           ],
         },
@@ -123,7 +150,12 @@ describe("projection planning", () => {
       }).success,
     ).toBe(false);
 
-    const commitInput = { ...previewInput, basePublishedRevision: 4 };
+    const commitInput = {
+      ...previewInput,
+      operationId: "training_plan_commit_test_0000001",
+      basePublishedRevision: 4,
+      previewFingerprint: `v1:sha256:${"a".repeat(64)}`,
+    };
     expect(trainingPlanCommitInputSchema.parse(commitInput)).toEqual(commitInput);
     expect(
       trainingPlanCommitInputSchema.safeParse({

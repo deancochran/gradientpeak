@@ -1,7 +1,7 @@
 import {
   analyzeActivityDerivedMetrics,
   type CommonLoadResult,
-  getNormalizedIntensity,
+  getKnownNormalizedIntensity,
   quantifyCompletedActivityObservation,
 } from "@repo/core";
 import { selectRunningNormalizedGradedSpeedMetersPerSecond } from "@repo/core/calculations";
@@ -312,11 +312,11 @@ describe("running numerical trust import/live parity", () => {
       commonLoad: { status: "partial" },
     });
 
-    expect(getNormalizedIntensity(finalCommonLoad)).toBeCloseTo(
+    expect(getKnownNormalizedIntensity(finalCommonLoad)).toBeCloseTo(
       vector.expected.normalizedIntensity,
       12,
     );
-    expect(getNormalizedIntensity(live.commonLoad)).toBeCloseTo(
+    expect(getKnownNormalizedIntensity(live.commonLoad)).toBeCloseTo(
       vector.expected.normalizedIntensity,
       12,
     );

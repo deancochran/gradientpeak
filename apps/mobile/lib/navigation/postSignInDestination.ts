@@ -1,6 +1,6 @@
-export type PostSignInDestination = "/integrations" | "/training-preferences";
+export type PostSignInDestination = "/integrations";
 
-const POST_SIGN_IN_DESTINATIONS = new Set<string>(["/integrations", "/training-preferences"]);
+const POST_SIGN_IN_DESTINATIONS = new Set<string>(["/integrations"]);
 
 export function parsePostSignInDestination(
   value: string | string[] | undefined,

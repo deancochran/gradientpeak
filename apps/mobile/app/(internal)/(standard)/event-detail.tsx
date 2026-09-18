@@ -1,13 +1,13 @@
 import { Button } from "@repo/ui/components/button";
-import { Card, CardContent } from "@repo/ui/components/card";
-import { Icon } from "@repo/ui/components/icon";
+import { Form, FormNumberField, FormTextareaField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
-import { skipToken, useQueryClient } from "@tanstack/react-query";
+import { flushPendingFormDrafts, useZodForm } from "@repo/ui/hooks";
+import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { CheckCircle2 } from "lucide-react-native";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Pressable, ScrollView, View } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { z } from "zod";
 import {
   type CreateEventDefaults,
   CreateEventFlow,
@@ -18,28 +18,44 @@ import {
   parseRecurrenceEndDate,
   parseRecurrenceFrequency,
 } from "@/components/event/EventEditorCard";
-import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppConfirmModal, AppFormModal } from "@/components/shared/AppFormModal";
 import { DetailOverflowMenu } from "@/components/shared/detail";
 import { RouteCard } from "@/components/shared/RouteCard";
-import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
 import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
-import {
-  getEventStatusLabel,
-  getEventTitle,
-  isAuthoritativeCompletedCalendarEvent,
-} from "@/lib/calendar/eventPresentation";
+import { getEventStatusLabel, getEventTitle } from "@/lib/calendar/eventPresentation";
 import { formatEventTime, getEventScheduledDate } from "@/lib/calendar/eventSchedule";
 import { ROUTES } from "@/lib/constants/routes";
 import { markEstimated } from "@/lib/estimatedMetrics";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
+import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { buildPlannedSessionRecordingLaunchPayload } from "@/lib/recording/plannedSessionLaunch";
 import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
-import { getActivityColor } from "@/lib/utils/plan/colors";
+import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const actualDetailsSchema = z.object({
+  distanceKilometers: z.number().finite().nonnegative().nullable(),
+  durationMinutes: z.number().finite().nonnegative().nullable(),
+  notes: z.string().max(10_000).nullable(),
+  rpe: z.number().int().min(1).max(10).nullable(),
+});
+
+function formatComparisonDuration(value: number | null) {
+  if (value === null) return "Unknown";
+  const minutes = Math.round(value / 60);
+  return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+function formatComparisonDistance(value: number | null) {
+  if (value === null) return "Unknown";
+  return value >= 1000 ? `${(value / 1000).toFixed(1)} km` : `${Math.round(value)} m`;
+}
 
 function isRecurringEvent(
   event:
@@ -214,6 +230,12 @@ export default function EventDetailScreen() {
   const router = useRouter();
   const navigateTo = useAppNavigate();
   const createEventFlowRef = useRef<CreateEventFlowHandle>(null);
+  const [createDirty, setCreateDirty] = useState(false);
+  const [createPending, setCreatePending] = useState(false);
+  const { allowNavigationAfterSuccess } = useDirtyNavigationGuard({
+    isDirty: createDirty,
+    isPending: createPending,
+  });
   const { Stack } = require("expo-router") as typeof import("expo-router");
   const queryClient = useQueryClient();
   const {
@@ -227,6 +249,7 @@ export default function EventDetailScreen() {
     planSuggestionType,
     planSuggestionLoadDelta,
     planSuggestionDescription,
+    resourceType,
   } = useLocalSearchParams<{
     id?: string;
     mode?: string;
@@ -238,8 +261,11 @@ export default function EventDetailScreen() {
     planSuggestionType?: string;
     planSuggestionLoadDelta?: string;
     planSuggestionDescription?: string;
+    resourceType?: string;
   }>();
   const eventId = typeof id === "string" ? id : "";
+  const isPlannedSession = resourceType === "planned_session" && UUID_PATTERN.test(eventId);
+  const hasInvalidResource = resourceType !== undefined && !isPlannedSession;
   const startsInCreateMode = mode === "create";
   const createDate = typeof date === "string" ? date : undefined;
   const preselectedActivityPlanId = typeof activityPlanId === "string" ? activityPlanId : undefined;
@@ -278,7 +304,47 @@ export default function EventDetailScreen() {
     { id: eventId },
     {
       ...scheduleAwareReadQueryOptions,
-      enabled: !!eventId && !isRedirecting && !isClosingAfterDelete && !startsInCreateMode,
+      enabled:
+        !!eventId &&
+        !hasInvalidResource &&
+        !isPlannedSession &&
+        !isRedirecting &&
+        !isClosingAfterDelete &&
+        !startsInCreateMode,
+    },
+  );
+  const plannedSessionQuery = api.plannedSessions.getById.useQuery(
+    { id: eventId },
+    { enabled: isPlannedSession && !startsInCreateMode && !hasInvalidResource },
+  );
+  const profileQuery = api.profiles.get.useQuery(undefined, { enabled: isPlannedSession });
+  const createManualDiaryEntry = api.activities.createManualDiaryEntry.useMutation({
+    retry: false,
+  });
+  const skipPlannedSession = api.plannedSessions.skip.useMutation({ retry: false });
+  const linkPlannedSessionCompletion = api.plannedSessions.linkCompletion.useMutation({
+    retry: false,
+  });
+  const [associationOpen, setAssociationOpen] = useState(false);
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  const plannedRequestRef = useRef<
+    | { kind: "complete"; input: Parameters<typeof createManualDiaryEntry.mutateAsync>[0] }
+    | { kind: "skip"; input: Parameters<typeof skipPlannedSession.mutateAsync>[0] }
+    | { kind: "associate"; input: Parameters<typeof linkPlannedSessionCompletion.mutateAsync>[0] }
+    | null
+  >(null);
+  const plannedInFlightRef = useRef(false);
+  const [plannedError, setPlannedError] = useState<string | null>(null);
+  const [actualDetailsOpen, setActualDetailsOpen] = useState(false);
+  const completionForm = useZodForm({
+    defaultValues: { distanceKilometers: null, durationMinutes: null, notes: null, rpe: null },
+    schema: actualDetailsSchema,
+  });
+  const completionCandidatesQuery = api.plannedSessions.completionCandidates.useInfiniteQuery(
+    { sessionId: eventId, limit: 20 },
+    {
+      enabled: isPlannedSession && associationOpen,
+      getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     },
   );
   const accessDenied = !startsInCreateMode && isAccessDeniedError(error);
@@ -286,7 +352,6 @@ export default function EventDetailScreen() {
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
   const [deleteScopeModalVisible, setDeleteScopeModalVisible] = useState(false);
   const [pendingDeleteScope, setPendingDeleteScope] = useState<EventMutationScope | null>(null);
-  const [activityPlanPickerOpen, setActivityPlanPickerOpen] = useState(false);
 
   useEffect(() => {
     redirectOnNotFound(error);
@@ -301,116 +366,26 @@ export default function EventDetailScreen() {
       setIsClosingAfterDelete(false);
     },
   });
-  const updateEventMutation = api.events.update.useMutation({
-    onSuccess: async () => {
-      await refreshScheduleViews(queryClient, "eventMutation");
-    },
-  });
-
   const recurring = useMemo(() => isRecurringEvent(event), [event]);
-  const activityPlan = event?.activityPlanSummary;
   const route = event?.route;
-  const isPlannedEvent = !startsInCreateMode && event?.event_type === "planned";
-  const updateSupportsRecurrence = !isPlannedEvent;
+  const updateSupportsRecurrence = true;
   const comments = useEntityCommentsController({ entityId: event?.id, entityType: "event" });
-  const { data: sourceTrainingPlan } = api.trainingPlans.get.useQuery(
-    event?.training_plan_id ? { id: event.training_plan_id } : skipToken,
-    {
-      ...scheduleAwareReadQueryOptions,
-      enabled: !startsInCreateMode && typeof event?.training_plan_id === "string",
-    },
-  );
-  const completed = isPlannedEvent && event ? isAuthoritativeCompletedCalendarEvent(event) : false;
-  const activityCategory =
-    typeof activityPlan?.activityCategory === "string" ? activityPlan.activityCategory : "other";
-  const activityColor = getActivityColor(activityCategory);
-  const _detailTitle = startsInCreateMode
-    ? "Create Event"
-    : isPlannedEvent
-      ? "Schedule details"
-      : "Event details";
+  const _detailTitle = startsInCreateMode ? "Create Event" : "Event details";
   const _detailSubtitle = startsInCreateMode
     ? "choose event type"
     : event
-      ? `${formatEventType(event.event_type)}${isPlannedEvent && activityColor.name ? ` · ${activityColor.name}` : ""}${recurring ? " · recurring" : ""}`
+      ? `${formatEventType(event.event_type)}${recurring ? " · recurring" : ""}`
       : "event";
-  const displayTitle = startsInCreateMode
-    ? "Create event"
-    : event
-      ? isPlannedEvent
-        ? event.title?.trim() || "Scheduled activity"
-        : getEventTitle(event)
-      : activityPlan?.name || "Event";
+  const displayTitle = startsInCreateMode ? "Create event" : event ? getEventTitle(event) : "Event";
   const statusLabel = event ? getEventStatusLabel(event) : null;
   const displayStartsAt = event ? new Date(event.starts_at) : new Date();
   const displayAllDay = !!event?.all_day;
   const displayScheduleDate = event ? getEventScheduledDate(event) : null;
   const displayNotes = event?.notes ?? "";
 
-  const handleOpenPlanDetail = () => {
-    if (!activityPlan?.id || !event) return;
-
-    navigateTo({
-      pathname: "/activity-plan-detail",
-      params: {
-        eventId: event.id,
-        planId: activityPlan.id,
-      },
-    });
-  };
-
   const handleOpenRouteDetail = () => {
     if (!route?.id) return;
     navigateTo(ROUTES.ROUTES.DETAIL(route.id));
-  };
-
-  const handleOpenSourceTrainingPlan = () => {
-    if (!event?.training_plan_id) {
-      return;
-    }
-
-    navigateTo(ROUTES.PLAN.TRAINING_PLAN.DETAIL(event.training_plan_id));
-  };
-
-  const handleAttachActivityPlan = async (item: ResourcePickerItem) => {
-    if (!event) return;
-
-    try {
-      await updateEventMutation.mutateAsync({
-        id: event.id,
-        scope: "single",
-        patch: {
-          activity_plan_id: item.id,
-          title: event.title?.trim() || item.name || "Scheduled activity",
-        },
-      });
-      setActivityPlanPickerOpen(false);
-    } catch (error) {
-      Alert.alert(
-        "Unable to attach activity plan",
-        error instanceof Error ? error.message : "Please try again.",
-      );
-    }
-  };
-
-  const handleRemoveActivityPlan = async () => {
-    if (!event) return;
-
-    try {
-      await updateEventMutation.mutateAsync({
-        id: event.id,
-        scope: "single",
-        patch: {
-          activity_plan_id: null,
-          title: event.title?.trim() || activityPlan?.name || "Event",
-        },
-      });
-    } catch (error) {
-      Alert.alert(
-        "Unable to remove activity plan",
-        error instanceof Error ? error.message : "Please try again.",
-      );
-    }
   };
 
   const closeDeleteFlow = () => {
@@ -453,11 +428,15 @@ export default function EventDetailScreen() {
       return (
         <Button
           onPress={() => createEventFlowRef.current?.submit()}
+          disabled={createPending}
+          accessibilityState={{ busy: createPending, disabled: createPending }}
           size="sm"
           testID="event-detail-save-button"
           variant="ghost"
         >
-          <Text className="text-sm font-semibold text-primary">Create</Text>
+          <Text className="text-sm font-semibold text-primary">
+            {createPending ? "Creating…" : "Create"}
+          </Text>
         </Button>
       );
     }
@@ -475,20 +454,6 @@ export default function EventDetailScreen() {
             testID: "event-detail-options-edit",
           },
           {
-            label: activityPlan ? "Change Activity Plan" : "Attach Activity Plan",
-            onPress: () => setActivityPlanPickerOpen(true),
-            testID: "event-detail-options-activity-plan",
-          },
-          ...(activityPlan
-            ? [
-                {
-                  label: updateEventMutation.isPending ? "Removing..." : "Remove Activity Plan",
-                  onPress: handleRemoveActivityPlan,
-                  testID: "event-detail-options-remove-activity-plan",
-                },
-              ]
-            : []),
-          {
             label: deleteMutation.isPending ? "Deleting..." : "Delete Event",
             onPress: handleDeletePress,
             testID: "event-detail-options-delete",
@@ -500,7 +465,10 @@ export default function EventDetailScreen() {
     );
   };
 
-  if ((!startsInCreateMode && isLoading) || isRedirecting) {
+  if (
+    (!startsInCreateMode && (isPlannedSession ? plannedSessionQuery.isLoading : isLoading)) ||
+    isRedirecting
+  ) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
         <LoadingState message={isRedirecting ? "Closing event..." : "Loading event..."} />
@@ -521,7 +489,31 @@ export default function EventDetailScreen() {
     );
   }
 
-  if (!startsInCreateMode && !event) {
+  if (hasInvalidResource) {
+    return (
+      <View className="flex-1 items-center justify-center px-6 bg-background">
+        <EmptyState
+          actionLabel="Go back"
+          description="This calendar resource link is invalid."
+          onAction={() => router.back()}
+          title="Event unavailable"
+        />
+      </View>
+    );
+  }
+
+  if (isPlannedSession && !plannedSessionQuery.data) {
+    return (
+      <EmptyState
+        actionLabel="Go back"
+        description="This planned session may have been removed."
+        onAction={() => router.back()}
+        title="Planned session not found"
+      />
+    );
+  }
+
+  if (!startsInCreateMode && !isPlannedSession && !event) {
     return (
       <View className="flex-1 items-center justify-center px-6 bg-background">
         <EmptyState
@@ -534,46 +526,398 @@ export default function EventDetailScreen() {
     );
   }
 
+  if (isPlannedSession && plannedSessionQuery.data) {
+    const session = plannedSessionQuery.data;
+    const category = session.prescription.resolutionManifest.resolved_structure.activity_category;
+    const timezone = profileQuery.data?.planning_timezone ?? null;
+    const today = timezone
+      ? new Intl.DateTimeFormat("en-CA", {
+          timeZone: timezone,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        })
+          .formatToParts(new Date())
+          .filter((part) => part.type !== "literal")
+          .map((part) => part.value)
+          .join("-")
+      : null;
+    const available =
+      session.lifecycle.status === "scheduled" && today !== null && session.planningDate <= today;
+    const run = async (outcome: "full" | "partial" | "skip") => {
+      if (!available || !timezone || plannedInFlightRef.current) return;
+      const existing = plannedRequestRef.current;
+      if (existing && (outcome === "skip") !== (existing.kind === "skip")) {
+        setPlannedError("Retry the saved action or refresh before choosing a different action.");
+        return;
+      }
+      flushPendingFormDrafts(completionForm.control);
+      if (outcome !== "skip" && !(await completionForm.trigger())) {
+        setPlannedError("Correct the actual details before completing this session.");
+        return;
+      }
+      const { distanceKilometers, durationMinutes, notes, rpe } = completionForm.getValues();
+      plannedInFlightRef.current = true;
+      setPlannedError(null);
+      try {
+        if (outcome === "skip") {
+          const input =
+            existing?.kind === "skip"
+              ? existing.input
+              : {
+                  profileId: session.profileId,
+                  sessionId: session.id,
+                  expectedRevision: session.sessionRevision,
+                  operationId: crypto.randomUUID(),
+                };
+          plannedRequestRef.current = { kind: "skip", input };
+          await skipPlannedSession.mutateAsync(input);
+        } else {
+          const input =
+            existing?.kind === "complete"
+              ? existing.input
+              : {
+                  observation: {
+                    operationId: crypto.randomUUID(),
+                    diaryDate: session.planningDate,
+                    diaryTimezone: timezone,
+                    name: "Completed activity",
+                    activityCategory: category,
+                    notes: notes?.trim() || null,
+                    elapsedMs: durationMinutes === null ? null : durationMinutes * 60_000,
+                    distanceMeters: distanceKilometers === null ? null : distanceKilometers * 1_000,
+                    startedAt: null,
+                    finishedAt: null,
+                    ...(rpe === null ? {} : { rpe, rpeOperationId: crypto.randomUUID() }),
+                  },
+                  plannedSession: {
+                    sessionId: session.id,
+                    expectedRevision: session.sessionRevision,
+                    outcome,
+                  },
+                };
+          plannedRequestRef.current = { kind: "complete", input };
+          await createManualDiaryEntry.mutateAsync(input);
+        }
+        plannedRequestRef.current = null;
+        await plannedSessionQuery.refetch();
+      } catch (error) {
+        setPlannedError(
+          error instanceof Error
+            ? error.message
+            : "Action status is unknown. Retry the saved action or refresh.",
+        );
+      } finally {
+        plannedInFlightRef.current = false;
+      }
+    };
+    const record = async () => {
+      activitySelectionStore.setSelection(
+        await buildPlannedSessionRecordingLaunchPayload({
+          plannedSession: {
+            id: session.id,
+            sessionRevision: session.sessionRevision,
+            source: session.source,
+            prescription: session.prescription,
+          },
+          name: "Scheduled activity plan",
+        }),
+      );
+      navigateTo(ROUTES.RECORD as never);
+    };
+    const linkedActivityId =
+      session.lifecycle.status === "completed" && session.lifecycle.completion.state === "linked"
+        ? session.lifecycle.completion.activityId
+        : null;
+    const completionCandidates =
+      completionCandidatesQuery.data?.pages.flatMap((page) => page.items) ?? [];
+    const selectedCandidate = completionCandidates.find((item) => item.id === selectedCandidateId);
+    const associateRecordedActivity = async () => {
+      if (!selectedCandidate || plannedInFlightRef.current) return;
+      const existing = plannedRequestRef.current;
+      if (existing && existing.kind !== "associate") {
+        setPlannedError("Retry the saved action or refresh before choosing a different action.");
+        return;
+      }
+      const input =
+        existing?.kind === "associate"
+          ? existing.input
+          : {
+              profileId: session.profileId,
+              sessionId: session.id,
+              expectedRevision: session.sessionRevision,
+              activityId: selectedCandidate.id,
+              operationId: crypto.randomUUID(),
+            };
+      plannedRequestRef.current = { kind: "associate", input };
+      plannedInFlightRef.current = true;
+      setPlannedError(null);
+      try {
+        await linkPlannedSessionCompletion.mutateAsync(input);
+        plannedRequestRef.current = null;
+        await Promise.all([
+          plannedSessionQuery.refetch(),
+          completionCandidatesQuery.refetch(),
+          refreshScheduleViews(queryClient, "eventMutation"),
+          queryClient.invalidateQueries({ queryKey: ["activities"] }),
+        ]);
+      } catch (error) {
+        setPlannedError(
+          error instanceof Error
+            ? error.message
+            : "Association status is unknown. Retry the same request.",
+        );
+        await plannedSessionQuery.refetch();
+      } finally {
+        plannedInFlightRef.current = false;
+      }
+    };
+    return (
+      <View className="flex-1 bg-background" testID="planned-session-detail-screen">
+        <ScrollView className="flex-1" contentContainerClassName="p-4 gap-4">
+          <View className="gap-3 rounded-3xl bg-card p-5">
+            <Text className="text-3xl font-semibold text-foreground">{category} session</Text>
+            <Text className="text-sm text-muted-foreground">
+              Planned for {session.planningDate}
+            </Text>
+            <EventStatusPill label={session.lifecycle.status} />
+            <View className="gap-1 border-t border-border pt-3" testID="planned-session-comparison">
+              <Text className="text-sm text-muted-foreground">
+                Planned duration:{" "}
+                {formatComparisonDuration(session.comparison?.planned.durationSeconds ?? null)}
+              </Text>
+              {session.comparison?.actual.state === "observed" ||
+              session.comparison?.actual.state === "unknown" ? (
+                <>
+                  <Text className="text-sm text-muted-foreground">
+                    Actual duration:{" "}
+                    {formatComparisonDuration(session.comparison.actual.durationSeconds)}
+                  </Text>
+                  <Text className="text-sm text-muted-foreground">
+                    Actual distance:{" "}
+                    {formatComparisonDistance(session.comparison.actual.distanceMeters)}
+                  </Text>
+                </>
+              ) : session.comparison?.actual.state === "not_performed" ? (
+                <Text className="text-sm text-muted-foreground">Actual: Not performed</Text>
+              ) : null}
+            </View>
+          </View>
+          {linkedActivityId ? (
+            <Button
+              onPress={() => navigateTo(ROUTES.ACTIVITIES.DETAIL(linkedActivityId))}
+              testID="planned-session-linked-activity"
+            >
+              <Text>View completed activity</Text>
+            </Button>
+          ) : null}
+          {linkedActivityId ? (
+            <View className="gap-2">
+              <Button
+                disabled={plannedInFlightRef.current}
+                onPress={() => setAssociationOpen((open) => !open)}
+                testID="planned-session-associate-recorded"
+                variant="outline"
+              >
+                <Text>Associate recorded activity</Text>
+              </Button>
+              {associationOpen ? (
+                <View className="gap-2" testID="planned-session-completion-candidates">
+                  {completionCandidatesQuery.isLoading ? (
+                    <Text className="text-sm text-muted-foreground">
+                      Loading recorded activities...
+                    </Text>
+                  ) : null}
+                  {completionCandidatesQuery.data?.pages[0]?.canAssociate === false ? (
+                    <Text className="text-sm text-muted-foreground">
+                      This completion cannot be replaced right now.
+                    </Text>
+                  ) : null}
+                  {completionCandidates.map((candidate) => (
+                    <Button
+                      key={candidate.id}
+                      onPress={() => setSelectedCandidateId(candidate.id)}
+                      testID={`planned-session-candidate-${candidate.id}`}
+                      variant={selectedCandidateId === candidate.id ? "default" : "outline"}
+                    >
+                      <Text>
+                        {candidate.name} · {format(new Date(candidate.startedAt), "MMM d, yyyy")} ·{" "}
+                        {Math.round(candidate.elapsedMs / 60_000)} min ·{" "}
+                        {candidate.activityCategory}
+                      </Text>
+                    </Button>
+                  ))}
+                  {!completionCandidatesQuery.isLoading &&
+                  completionCandidatesQuery.data?.pages[0]?.canAssociate !== false &&
+                  completionCandidates.length === 0 ? (
+                    <Text className="text-sm text-muted-foreground">
+                      No recorded activities are available.
+                    </Text>
+                  ) : null}
+                  {completionCandidatesQuery.hasNextPage ? (
+                    <Button
+                      disabled={
+                        completionCandidatesQuery.isFetchingNextPage || plannedInFlightRef.current
+                      }
+                      onPress={() => void completionCandidatesQuery.fetchNextPage()}
+                      testID="planned-session-candidates-load-more"
+                      variant="outline"
+                    >
+                      <Text>Load more</Text>
+                    </Button>
+                  ) : null}
+                  <Button
+                    disabled={!selectedCandidate || plannedInFlightRef.current}
+                    onPress={() => void associateRecordedActivity()}
+                    testID="planned-session-confirm-association"
+                  >
+                    <Text>Confirm association</Text>
+                  </Button>
+                  {plannedRequestRef.current?.kind === "associate" ? (
+                    <Button
+                      disabled={plannedInFlightRef.current}
+                      onPress={() => void associateRecordedActivity()}
+                      testID="planned-session-retry-association"
+                      variant="outline"
+                    >
+                      <Text>Retry saved request</Text>
+                    </Button>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+          {available ? (
+            <View className="gap-2">
+              <Button onPress={() => void record()} testID="planned-session-record">
+                <Text>Record activity</Text>
+              </Button>
+              <Button
+                onPress={() => setActualDetailsOpen((open) => !open)}
+                testID="planned-session-actual-details-toggle"
+                variant="outline"
+              >
+                <Text>Actual details (optional)</Text>
+              </Button>
+              {actualDetailsOpen ||
+              Object.values(completionForm.watch()).some((value) => value !== null) ? (
+                <Form {...completionForm}>
+                  <View className="gap-2 rounded-xl border border-border p-3">
+                    <Text className="text-sm text-muted-foreground">
+                      Leave fields blank when unknown. Planned values are never copied here.
+                    </Text>
+                    <FormNumberField
+                      clampOnBlur={false}
+                      control={completionForm.control}
+                      emptyValue={null}
+                      label="Actual duration (minutes, optional)"
+                      min={0}
+                      name="durationMinutes"
+                      testId="planned-session-actual-duration"
+                    />
+                    <FormNumberField
+                      clampOnBlur={false}
+                      control={completionForm.control}
+                      emptyValue={null}
+                      label="Actual distance (km, optional)"
+                      min={0}
+                      name="distanceKilometers"
+                      testId="planned-session-actual-distance"
+                    />
+                    <FormNumberField
+                      allowDecimal={false}
+                      clampOnBlur={false}
+                      control={completionForm.control}
+                      emptyValue={null}
+                      label="RPE (1-10, optional)"
+                      max={10}
+                      min={1}
+                      name="rpe"
+                      testId="planned-session-actual-rpe"
+                    />
+                    <FormTextareaField
+                      control={completionForm.control}
+                      formatValue={(value) => value ?? ""}
+                      label="Notes (optional)"
+                      name="notes"
+                      parseValue={(value) => value || null}
+                      testId="planned-session-actual-notes"
+                    />
+                  </View>
+                </Form>
+              ) : null}
+              <Button
+                disabled={plannedInFlightRef.current}
+                onPress={() => void run("full")}
+                testID="planned-session-complete-full"
+              >
+                <Text>Complete activity</Text>
+              </Button>
+              <Button
+                disabled={plannedInFlightRef.current}
+                onPress={() => void run("partial")}
+                testID="planned-session-complete-partial"
+                variant="outline"
+              >
+                <Text>Complete partially</Text>
+              </Button>
+              <Button
+                disabled={plannedInFlightRef.current}
+                onPress={() => void run("skip")}
+                testID="planned-session-skip"
+                variant="outline"
+              >
+                <Text>Skip session</Text>
+              </Button>
+            </View>
+          ) : (
+            <Text className="text-sm text-muted-foreground">
+              Completion is available on or after the planned date in your planning timezone.
+            </Text>
+          )}
+          {plannedError ? (
+            <View>
+              <Text className="text-sm text-destructive">{plannedError}</Text>
+              {plannedRequestRef.current ? (
+                <Button
+                  onPress={() =>
+                    void (plannedRequestRef.current?.kind === "associate"
+                      ? associateRecordedActivity()
+                      : run(plannedRequestRef.current?.kind === "skip" ? "skip" : "full"))
+                  }
+                  testID="planned-session-retry"
+                >
+                  <Text>Retry saved action</Text>
+                </Button>
+              ) : null}
+            </View>
+          ) : null}
+        </ScrollView>
+      </View>
+    );
+  }
+
   return (
-    <View className="flex-1 bg-background" testID="event-detail-screen">
+    <KeyboardAvoidingView
+      className="flex-1 bg-background"
+      enabled={startsInCreateMode}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={80}
+      testID="event-detail-screen"
+    >
       <Stack.Screen
         options={{
           headerRight: renderHeaderActions,
           title: startsInCreateMode ? "Create Event" : undefined,
         }}
       />
-      <ScrollView className="flex-1" contentContainerClassName="p-4 gap-4">
-        {!startsInCreateMode && completed ? (
-          <Card className="border-green-200 bg-green-50">
-            <CardContent className="p-3">
-              <View className="flex-row items-center gap-2">
-                <Icon as={CheckCircle2} size={20} className="text-green-600" />
-                <Text className="font-semibold text-green-600">Activity Completed</Text>
-              </View>
-            </CardContent>
-          </Card>
-        ) : null}
-
+      <ScrollView
+        className="flex-1"
+        contentContainerClassName="p-4 gap-4"
+        keyboardShouldPersistTaps="handled"
+      >
         {!startsInCreateMode ? (
           <View className="gap-4 rounded-3xl bg-card p-5">
-            {event?.training_plan_id ? (
-              <Pressable
-                className="flex-row items-center justify-between gap-3"
-                onPress={handleOpenSourceTrainingPlan}
-                testID="event-detail-source-training-plan"
-              >
-                <View className="min-w-0 flex-1 gap-0.5">
-                  <Text className="text-xs font-semibold uppercase tracking-wide text-primary">
-                    Source
-                  </Text>
-                  <Text className="text-sm font-medium text-foreground" numberOfLines={1}>
-                    {sourceTrainingPlan?.name ?? "Training plan"}
-                  </Text>
-                </View>
-                <Text className="text-xs font-semibold text-primary">Open</Text>
-              </Pressable>
-            ) : null}
-
             <View className="gap-2">
               <View className="flex-row flex-wrap gap-2">
                 {statusLabel ? <EventStatusPill label={statusLabel} /> : null}
@@ -596,7 +940,7 @@ export default function EventDetailScreen() {
                   starts_at: displayStartsAt.toISOString(),
                   ends_at: event?.ends_at ?? null,
                   timezone: event?.timezone,
-                  preserveInstant: completed,
+                  preserveInstant: false,
                 })}
               </Text>
               {recurring ? (
@@ -610,34 +954,6 @@ export default function EventDetailScreen() {
               <Text className="text-sm leading-6 text-muted-foreground">{displayNotes}</Text>
             ) : null}
           </View>
-        ) : null}
-
-        {!startsInCreateMode && activityPlan ? (
-          <View className="gap-3 rounded-2xl bg-card p-4">
-            <View className="gap-0.5">
-              <Text className="text-base font-semibold text-foreground">Activity</Text>
-              <Text className="text-sm text-muted-foreground">
-                Open the linked plan to review the session details.
-              </Text>
-            </View>
-            <ActivityPlanCard
-              plan={activityPlan}
-              onPress={handleOpenPlanDetail}
-              testID="event-detail-activity-plan-card"
-              variant="default"
-            />
-          </View>
-        ) : !startsInCreateMode && event ? (
-          <Pressable
-            className="rounded-2xl border border-dashed border-border bg-card px-4 py-4"
-            onPress={() => setActivityPlanPickerOpen(true)}
-            testID="event-detail-attach-activity-plan-card"
-          >
-            <Text className="text-sm font-semibold text-foreground">Attach Activity Plan</Text>
-            <Text className="mt-1 text-xs text-muted-foreground">
-              Search visible activity plans and associate one with this event.
-            </Text>
-          </Pressable>
         ) : null}
 
         {!startsInCreateMode && route ? (
@@ -664,7 +980,14 @@ export default function EventDetailScreen() {
             createDate={createDate}
             defaults={planSuggestionDefaults}
             onCancel={() => router.back()}
-            onCreated={(createdEvent) => router.replace(ROUTES.PLAN.EVENT_DETAIL(createdEvent.id))}
+            onDirtyChange={setCreateDirty}
+            onPendingChange={setCreatePending}
+            onCreated={(resource) => {
+              allowNavigationAfterSuccess();
+              resource.kind === "event"
+                ? router.replace(ROUTES.PLAN.EVENT_DETAIL(resource.id))
+                : router.replace(ROUTES.PLAN.CALENDAR);
+            }}
             preselectedActivityPlanId={preselectedActivityPlanId}
             preselectedRoute={preselectedRoute}
             scheduleGapNote={scheduleGapNote}
@@ -741,15 +1064,6 @@ export default function EventDetailScreen() {
           title="Delete Event"
         />
       ) : null}
-      <ResourcePickerModal
-        visible={activityPlanPickerOpen}
-        scope="activityPlans"
-        selectedId={activityPlan?.id ?? null}
-        title={activityPlan ? "Change Activity Plan" : "Attach Activity Plan"}
-        description="Search activity plans visible to your profile."
-        onClose={() => setActivityPlanPickerOpen(false)}
-        onSelect={handleAttachActivityPlan}
-      />
-    </View>
+    </KeyboardAvoidingView>
   );
 }

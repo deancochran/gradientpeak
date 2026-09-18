@@ -223,12 +223,6 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
         },
       },
     },
-    profileSettings: {
-      baseline_fitness: {
-        is_enabled: true,
-        override_longTermLoad: 220,
-      },
-    },
   }),
 }));
 

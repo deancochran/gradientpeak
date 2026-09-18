@@ -1,9 +1,4 @@
-import {
-  type ActivityPlanPlanningEstimate,
-  type ActivityPrescriptionQuantificationBundle,
-  type AthletePlanningContext,
-  estimatePlanningActivityPlanForAthlete,
-} from "@repo/core";
+import type { ActivityPrescriptionQuantificationBundle, AthletePlanningContext } from "@repo/core";
 import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import { type ActivityPlanFitSummary, scoreActivityPlanFit } from "./activity-plan-fit";
 import type { UseTrainingPlanCreationServiceOptions } from "./service-types";
@@ -31,7 +26,7 @@ export type ActivityPlanPickerState<TItem extends ActivityPlanPickerItem = Activ
   {
     activityPlanItems: TItem[];
     activityPlanFitById: Map<string, ActivityPlanFitSummary>;
-    activityPlanEstimateById: Map<string, ActivityPlanPlanningEstimate>;
+    activityPlanEstimateById: Map<string, never>;
   };
 
 export function deriveActivityPlanPickerState<TItem extends ActivityPlanPickerItem>({
@@ -54,37 +49,18 @@ export function deriveActivityPlanPickerState<TItem extends ActivityPlanPickerIt
   const fitById = new Map(
     items.flatMap((item) => {
       const fit = scoreActivityPlanFit({
-        intent: selectedSession?.intent,
+        demand: selectedSession?.demand,
         estimatedCommonLoad: getActivityPlanQuantitySummary(item).commonLoad,
         estimatedDurationSeconds: getActivityPlanQuantitySummary(item).durationSeconds,
       });
       return fit ? [[item.id, fit] as const] : [];
     }),
   );
-  const estimateById = new Map(
-    athleteContext
-      ? items.map((item) => {
-          const activityPlan = {
-            id: item.id,
-            name: item.name,
-            ...(item.activity_category !== undefined
-              ? { activity_category: item.activity_category }
-              : {}),
-            ...(item.prescriptionQuantification !== undefined
-              ? { prescriptionQuantification: item.prescriptionQuantification }
-              : {}),
-            ...(item.structure !== undefined ? { structure: item.structure } : {}),
-          };
-          return [
-            item.id,
-            estimatePlanningActivityPlanForAthlete({ activityPlan, athleteContext }),
-          ] as const;
-        })
-      : [],
-  );
+  // Candidate estimates are resolver-owned; the picker only ranks static fit.
+  const estimateById = new Map<string, never>();
 
   const sortedItems = [...items].sort((left, right) => {
-    if (selectedSession?.intent) {
+    if (selectedSession?.demand) {
       const fitDiff = (fitById.get(right.id)?.score ?? 0) - (fitById.get(left.id)?.score ?? 0);
       if (fitDiff !== 0) {
         return fitDiff;

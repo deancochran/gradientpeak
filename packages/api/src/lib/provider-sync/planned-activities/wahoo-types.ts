@@ -19,12 +19,12 @@ export type WahooPlannedActivityProviderQueueResult = {
 
 export interface WahooPlannedActivityAdapter {
   readonly provider: "wahoo";
-  enqueuePublishEvent(input: {
-    eventId: string;
+  enqueuePublishPlannedSession(input: {
+    plannedSessionId: string;
     profileId: string;
   }): Promise<WahooPlannedActivityProviderQueueResult>;
-  enqueueUnsyncEvent(input: {
-    eventId: string;
+  enqueueUnsyncPlannedSession(input: {
+    plannedSessionId: string;
     profileId: string;
     unsyncTarget?: { externalId: string; resourceLinkId: string };
   }): Promise<WahooPlannedActivityProviderQueueResult>;

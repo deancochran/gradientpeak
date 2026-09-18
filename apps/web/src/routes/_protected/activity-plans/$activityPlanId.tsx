@@ -1,3 +1,4 @@
+import type { AppRouter } from "@repo/api/client";
 import {
   activityPlanStructureSchema,
   buildActivityPlanPrintModel,
@@ -24,12 +25,13 @@ import {
 } from "@repo/ui/components/card";
 import { DateInput } from "@repo/ui/components/date-input";
 import { createFileRoute } from "@tanstack/react-router";
+import type { inferRouterInputs } from "@trpc/server";
 import { ArrowLeft, CalendarDays, Copy, Loader2, Pencil, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ActivityPlanComments } from "../../../components/activity-plan/activity-plan-comments";
-import { ActivityPlanComposer } from "../../../components/activity-plan/activity-plan-composer";
+import { ActivityPlanEditSession } from "../../../components/activity-plan/activity-plan-edit-session";
 import { ActivityPlanEstimateRow } from "../../../components/activity-plan/activity-plan-estimates";
 import { ActivityPlanPdfActions } from "../../../components/activity-plan/activity-plan-pdf-actions";
 import { ActivityPlanSessionFlow } from "../../../components/activity-plan/activity-plan-session-flow";
@@ -44,12 +46,8 @@ import { api } from "../../../lib/api/client";
 import { getTodayDateKey, shiftDateKey } from "../../../lib/planning";
 
 export const Route = createFileRoute("/_protected/activity-plans/$activityPlanId")({
-  validateSearch: (search: Record<string, unknown>): { edit?: true; variantId?: string } => ({
-    ...(search.edit === true || search.edit === "true" ? { edit: true as const } : {}),
-    ...(typeof search.variantId === "string" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(search.variantId)
-      ? { variantId: search.variantId }
-      : {}),
+  validateSearch: (search: Record<string, unknown>) => ({
+    edit: search.edit === true || search.edit === "true" ? true : undefined,
   }),
   component: ActivityPlanDetailPage,
 });
@@ -58,18 +56,13 @@ function ActivityPlanDetailPage() {
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
   const { activityPlanId } = Route.useParams();
-  const { edit: editMode, variantId } = Route.useSearch();
+  const activePlanId = useRef(activityPlanId);
+  activePlanId.current = activityPlanId;
+  const { edit: editMode } = Route.useSearch();
   const editing = editMode === true;
-  const [personalizationSelection, setPersonalizationSelection] = useState<{
-    key: string;
-    enabled: boolean;
-  } | null>(null);
+  const [personalizationChoice, setPersonalizationChoice] = useState<boolean | null>(null);
   const planQuery = api.activityPlans.getById.useQuery(
-    {
-      id: activityPlanId,
-      personalize: false,
-      ...(variantId === undefined ? {} : { variantId }),
-    },
+    { id: activityPlanId, personalize: false },
     { retry: false },
   );
   const performanceTargetsQuery = api.athleteIntelligence.getReadModel.useQuery(
@@ -79,57 +72,40 @@ function ActivityPlanDetailPage() {
     },
   );
   const today = getTodayDateKey();
-  const legacyScheduleQuery = api.calendar.range.useQuery({
-    startDate: shiftDateKey(today, -183),
-    endDateExclusive: shiftDateKey(today, 183),
-    activityPlanId,
-    includeAdhoc: true,
-    limit: 100,
-  });
   const profileQuery = api.profiles.get.useQuery();
-  const plannedSessionsQuery = api.plannedSessions.range.useQuery(
+  const scheduleQuery = api.plannedSessions.range.useQuery(
     {
       profileId: profileQuery.data?.id ?? "",
-      range: {
-        startDate: shiftDateKey(today, -183),
-        endDate: shiftDateKey(today, 183),
-      },
+      range: { startDate: shiftDateKey(today, -183), endDate: shiftDateKey(today, 182) },
     },
     { enabled: Boolean(profileQuery.data?.id) },
   );
   const [liked, setLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(0);
   const [scheduleDate, setScheduleDate] = useState(() => new Date().toISOString().slice(0, 10));
-  type PlannedSession = NonNullable<typeof plannedSessionsQuery.data>["items"][number];
-  const [scheduledSessionOverride, setScheduledSessionOverride] = useState<{
-    key: string;
-    session: PlannedSession;
-  } | null>(null);
-  const [scheduleOperation, setScheduleOperation] = useState<{ key: string; id: string } | null>(
-    null,
-  );
+  const [dateDirty, setDateDirty] = useState(false);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const scheduleGuard = useRef(false);
+  const scheduleContext = JSON.stringify([activityPlanId, profileQuery.data?.id]);
+  const currentContext = useRef(scheduleContext);
+  currentContext.current = scheduleContext;
+  type CreateScheduleInput = inferRouterInputs<AppRouter>["plannedSessions"]["create"];
+  const retainedSchedule = useRef<{ context: string; input: CreateScheduleInput } | null>(null);
+  const [retainedContext, setRetainedContext] = useState<string | null>(null);
+  const scheduleHeld = retainedContext === scheduleContext;
+  const previousScheduleContext = useRef<string | null>(null);
+  const [deleteProgress, setDeleteProgress] = useState<string | null>(null);
+  const [deleteBlocked, setDeleteBlocked] = useState(false);
   const detail = planQuery.data?.detail;
   const edit = planQuery.data?.edit;
-  const selectionKey = `${activityPlanId}:${detail?.resolvedVariant.id ?? "unresolved"}`;
-  const personalizationChoice =
-    personalizationSelection?.key === selectionKey ? personalizationSelection.enabled : null;
-  const legacyScheduledEvents = (legacyScheduleQuery.data?.items ?? []).filter(
-    (item) =>
-      item.kind === "planned_activity" &&
-      item.status === "scheduled" &&
-      item.plan?.id === activityPlanId,
+  const linkedSessions = (scheduleQuery.data?.items ?? []).filter(
+    (session) => session.prescription.resolutionManifest.activity_plan_id === activityPlanId,
   );
-  const scheduledSessions = (plannedSessionsQuery.data?.items ?? []).filter(
-    (session) =>
-      session.lifecycle.status === "scheduled" &&
-      session.prescription.activityPlanId === activityPlanId &&
-      session.prescription.variantId === detail?.resolvedVariant.id,
+  const scheduledEvents = linkedSessions.filter(
+    (session) => session.lifecycle.status === "scheduled",
   );
-  const scheduledSession =
-    scheduledSessionOverride?.key === selectionKey
-      ? scheduledSessionOverride.session
-      : scheduledSessions[0];
-  const scheduledDependencyIds = [...new Set([...legacyScheduledEvents.map((event) => event.id)])];
+  const hasProtectedHistory = deleteBlocked || linkedSessions.length > 0;
+  const scheduledEvent = scheduledEvents[0];
   const isOwner = detail?.capabilities.canEdit ?? false;
   const parsedStructure = activityPlanStructureSchema.safeParse(detail?.structure);
   const displayStructure = parsedStructure.success ? parsedStructure.data : null;
@@ -144,9 +120,9 @@ function ActivityPlanDetailPage() {
   );
   const printModel = detail
     ? buildActivityPlanPrintModel({
-        description: detail.description,
         format: "full-page",
-        notes: detail.notes,
+        ...(detail.description === undefined ? {} : { description: detail.description }),
+        ...(detail.notes === undefined ? {} : { notes: detail.notes }),
         ...(performanceTargets ? { performanceTargets } : {}),
         personalizeTargets,
         structure: displayStructure,
@@ -155,23 +131,26 @@ function ActivityPlanDetailPage() {
     : null;
 
   useEffect(() => {
+    setPersonalizationChoice(null);
+    setDeleteBlocked(false);
+    setDeleteProgress(null);
+  }, [activityPlanId]);
+
+  useEffect(() => {
     setLiked(detail?.engagement.viewerHasLiked ?? false);
     setLikesCount(detail?.engagement.likes ?? 0);
   }, [detail?.engagement.likes, detail?.engagement.viewerHasLiked]);
 
   useEffect(() => {
-    if (scheduledSession?.planningDate) {
-      setScheduleDate(scheduledSession.planningDate);
+    if (previousScheduleContext.current !== scheduleContext) {
+      previousScheduleContext.current = scheduleContext;
+      setDateDirty(false);
+      setScheduleDate(scheduledEvent?.planningDate ?? getTodayDateKey());
+      setScheduleError(null);
+    } else if (scheduledEvent?.planningDate && !dateDirty && !scheduleHeld) {
+      setScheduleDate(scheduledEvent.planningDate);
     }
-  }, [scheduledSession?.planningDate]);
-
-  const getScheduleOperationId = () => {
-    const key = `${selectionKey}:${scheduleDate}`;
-    if (scheduleOperation?.key === key) return scheduleOperation.id;
-    const id = crypto.randomUUID().replaceAll("-", "");
-    setScheduleOperation({ key, id });
-    return id;
-  };
+  }, [scheduledEvent?.planningDate, dateDirty, scheduleHeld, scheduleContext]);
 
   const toggleLike = api.social.toggleLike.useMutation({
     onError: () => {
@@ -192,62 +171,84 @@ function ActivityPlanDetailPage() {
     onError: (error) => toast.error(error.message || "Activity plan could not be duplicated"),
   });
   const updatePlan = api.activityPlans.update.useMutation({
-    onSuccess: async () => {
-      await utils.activityPlans.invalidate();
-      void navigate({ search: { edit: undefined, variantId }, replace: true });
+    onSuccess: async (_result, variables) => {
+      if (variables.id !== activePlanId.current) return;
+      await Promise.allSettled([Promise.resolve().then(() => utils.activityPlans.invalidate())]);
+      if (variables.id !== activePlanId.current) return;
       toast.success("Activity plan updated");
     },
-    onError: async (error) => {
+    onError: async (error, variables) => {
+      if (variables.id !== activePlanId.current) return;
       if (error.data?.code === "CONFLICT") await planQuery.refetch();
       toast.error(
         error.data?.code === "CONFLICT"
-          ? "This plan changed elsewhere. It has been refreshed; review and save again."
+          ? "This plan changed elsewhere. Your changes are kept. Cancel and reopen the editor to load the latest saved plan."
           : error.message,
       );
     },
   });
   const createSchedule = api.plannedSessions.create.useMutation({
-    onSuccess: async (receipt) => {
-      setScheduledSessionOverride({ key: selectionKey, session: receipt.session });
-      await plannedSessionsQuery.refetch();
+    retry: false,
+    onSuccess: async () => {
+      if (retainedSchedule.current?.context !== currentContext.current) return;
+      retainedSchedule.current = null;
+      setRetainedContext(null);
+      setDateDirty(false);
+      await Promise.allSettled([
+        Promise.resolve().then(() => utils.calendar.invalidate()),
+        Promise.resolve().then(() => scheduleQuery.refetch()),
+      ]);
       toast.success("Activity plan scheduled");
     },
-    onError: (error) => toast.error(error.message || "Activity plan could not be scheduled"),
+    onError: (error) => {
+      if (retainedSchedule.current?.context !== currentContext.current) return;
+      setScheduleError(
+        error.message || "Activity plan could not be scheduled. Retry the same request.",
+      );
+      if (["BAD_REQUEST", "NOT_FOUND", "FORBIDDEN"].includes(error.data?.code ?? "")) {
+        retainedSchedule.current = null;
+        setRetainedContext(null);
+      }
+    },
+    onSettled: () => {
+      scheduleGuard.current = false;
+    },
   });
   const updateSchedule = api.plannedSessions.move.useMutation({
-    onSuccess: async (receipt) => {
-      setScheduledSessionOverride({ key: selectionKey, session: receipt.session });
-      await plannedSessionsQuery.refetch();
+    onSuccess: async () => {
+      setDateDirty(false);
+      await Promise.allSettled([
+        Promise.resolve().then(() => utils.calendar.invalidate()),
+        Promise.resolve().then(() => scheduleQuery.refetch()),
+      ]);
       toast.success("Activity plan rescheduled");
     },
-    onError: (error) => toast.error(error.message || "Activity plan could not be rescheduled"),
+    onError: (error) => setScheduleError(error.message || "Activity plan could not be rescheduled"),
+    onSettled: () => {
+      scheduleGuard.current = false;
+    },
   });
-  const cancelSchedule = api.plannedSessions.cancel.useMutation({
-    onSuccess: () => {
-      setScheduledSessionOverride(null);
-      void plannedSessionsQuery.refetch();
+  const removeSchedule = api.plannedSessions.cancel.useMutation({
+    onSuccess: async () => {
+      await Promise.all([utils.calendar.invalidate(), scheduleQuery.refetch()]);
       toast.success("Activity plan removed from the schedule");
     },
-    onError: (error) => toast.error(error.message || "Scheduled activity could not be removed"),
-  });
-  const removeLegacySchedule = api.events.delete.useMutation({
-    onError: (error) => toast.error(error.message || "Scheduled activity could not be removed"),
+    onError: (error) =>
+      setScheduleError(error.message || "Scheduled activity could not be removed"),
   });
   const deletePlan = api.activityPlans.delete.useMutation({
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
+      if (variables.id !== activePlanId.current) return;
       void navigate({ to: "/activity-plans" } as never);
       void utils.activityPlans.invalidate();
       toast.success("Activity plan deleted");
     },
-    onError: (error) => toast.error(error.message || "Activity plan could not be deleted"),
+    onError: (error, variables) => {
+      if (variables.id !== activePlanId.current) return;
+      setDeleteProgress(error.message || "Activity plan could not be deleted");
+      if (error.data?.code === "CONFLICT") setDeleteBlocked(true);
+    },
   });
-
-  const removeSchedulesAndDelete = async () => {
-    for (const eventId of scheduledDependencyIds) {
-      await removeLegacySchedule.mutateAsync({ id: eventId });
-    }
-    await deletePlan.mutateAsync({ id: activityPlanId });
-  };
 
   if (planQuery.isLoading) {
     return (
@@ -284,28 +285,13 @@ function ActivityPlanDetailPage() {
   if (editing && edit) {
     return (
       <div className="container mx-auto max-w-6xl space-y-6 py-4">
-        <ActivityPlanComposer
-          initial={{
-            name: edit.name,
-            description: edit.description,
-            notes: edit.notes,
-            structure: edit.structure,
-            gps_recording_enabled: edit.gpsRecordingEnabled,
-            content_visibility: edit.contentVisibility,
-          }}
-          initialVariantId={detail.resolvedVariant.id}
-          mode="edit"
-          onCancel={() => void navigate({ search: { edit: undefined, variantId }, replace: true })}
-          onSave={(values) =>
-            updatePlan
-              .mutateAsync({
-                ...values,
-                expectedStructureHash: edit.structureHash,
-                id: edit.id,
-              })
-              .then(() => undefined)
-          }
+        <ActivityPlanEditSession
+          key={activityPlanId}
+          edit={edit}
+          onCancel={() => void navigate({ search: { edit: undefined }, replace: true })}
+          onUpdate={(values) => updatePlan.mutateAsync(values)}
           pending={updatePlan.isPending}
+          onSaved={() => navigate({ search: { edit: undefined }, replace: true })}
         />
       </div>
     );
@@ -351,41 +337,18 @@ function ActivityPlanDetailPage() {
             ) : null}
             {isOwner ? (
               <Button
-                onClick={() => void navigate({ search: { edit: true, variantId } })}
+                onClick={() => void navigate({ search: { edit: true } })}
                 type="button"
                 variant="outline"
               >
                 <Pencil className="mr-2 h-4 w-4" /> Edit
               </Button>
             ) : null}
-            {detail.capabilities.canRecord ? (
-              <Button
-                onClick={() =>
-                  void navigate({
-                    to: "/record",
-                    search: {
-                      activity_category: detail.activityCategory,
-                      activityPlanId: detail.id,
-                      gps: "off",
-                      variantId: detail.resolvedVariant.id,
-                    },
-                  } as never)
-                }
-                type="button"
-                variant="outline"
-              >
-                Record variant
-              </Button>
-            ) : null}
             {isOwner ? (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
-                    disabled={
-                      legacyScheduledEvents.length === 0 &&
-                      legacyScheduleQuery.isLoading &&
-                      !legacyScheduleQuery.data
-                    }
+                    disabled={!scheduledEvent && scheduleQuery.isLoading && !scheduleQuery.data}
                     type="button"
                     variant="destructive"
                   >
@@ -396,24 +359,32 @@ function ActivityPlanDetailPage() {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete activity plan?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      {scheduledDependencyIds.length > 0
-                        ? `This plan has ${scheduledDependencyIds.length} scheduled session${scheduledDependencyIds.length === 1 ? "" : "s"}. Remove linked schedules before deleting the plan.`
+                      {hasProtectedHistory
+                        ? `This plan has planned-session history${scheduledEvents.length ? `, including ${scheduledEvents.length} scheduled session${scheduledEvents.length === 1 ? "" : "s"}` : ""}, and cannot be deleted. Canceling a schedule preserves that history.`
                         : "This permanently removes the plan from your library. Deletion will be blocked if any linked schedule exists."}
                     </AlertDialogDescription>
+                    {deleteProgress ? (
+                      <p className="text-sm text-destructive" role="alert">
+                        {deleteProgress}
+                      </p>
+                    ) : null}
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
-                      disabled={deletePlan.isPending || removeLegacySchedule.isPending}
-                      onClick={() =>
-                        scheduledDependencyIds.length > 0
-                          ? void removeSchedulesAndDelete()
-                          : deletePlan.mutate({ id: activityPlanId })
+                      disabled={
+                        deletePlan.isPending ||
+                        removeSchedule.isPending ||
+                        hasProtectedHistory ||
+                        scheduleQuery.isError ||
+                        (!scheduledEvent && scheduleQuery.isLoading && !scheduleQuery.data)
                       }
+                      onClick={(event) => {
+                        event.preventDefault();
+                        if (!hasProtectedHistory) deletePlan.mutate({ id: activityPlanId });
+                      }}
                     >
-                      {scheduledDependencyIds.length > 0
-                        ? "Remove schedules and delete"
-                        : "Delete plan"}
+                      {deletePlan.isPending ? "Deleting..." : "Delete plan"}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -426,40 +397,6 @@ function ActivityPlanDetailPage() {
         eyebrow="Activity plan"
         title={detail.name}
       />
-
-      {detail.variants.length > 1 ? (
-        <Card className="print:hidden">
-          <CardHeader>
-            <CardTitle>Plan variant</CardTitle>
-            <CardDescription>
-              Calculations, prescription details, scheduling, and recording use the selected
-              variant.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="max-w-sm space-y-2">
-            <label className="text-sm font-medium" htmlFor="activity-plan-detail-variant">
-              Activity plan variant
-            </label>
-            <select
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-              id="activity-plan-detail-variant"
-              onChange={(event) =>
-                void navigate({
-                  search: { edit: undefined, variantId: event.currentTarget.value },
-                })
-              }
-              value={detail.resolvedVariant.id}
-            >
-              {detail.variants.map((variant) => (
-                <option key={variant.id} value={variant.id}>
-                  {variant.name}
-                  {variant.id === detail.defaultVariantId ? " (default)" : ""}
-                </option>
-              ))}
-            </select>
-          </CardContent>
-        </Card>
-      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[2fr_1fr] print:block">
         <Card>
@@ -525,9 +462,7 @@ function ActivityPlanDetailPage() {
             structure={displayStructure}
             {...(performanceTargets ? { performanceTargets } : {})}
             personalizeTargets={personalizeTargets}
-            onPersonalizeTargetsChange={(enabled) =>
-              setPersonalizationSelection({ key: selectionKey, enabled })
-            }
+            onPersonalizeTargetsChange={setPersonalizationChoice}
             showPersonalizationControl
             showStepNames={false}
             personalizationFactsLoading={performanceTargetsQuery.isLoading}
@@ -550,19 +485,24 @@ function ActivityPlanDetailPage() {
       {detail.capabilities.canSchedule ? (
         <Card className="print:hidden" data-testid="activity-plan-schedule">
           <CardHeader>
-            <CardTitle>{scheduledSession ? "Reschedule activity" : "Schedule activity"}</CardTitle>
+            <CardTitle>{scheduledEvent ? "Reschedule activity" : "Schedule activity"}</CardTitle>
             <CardDescription>
-              {scheduledSession
-                ? `${detail.resolvedVariant.name} is currently scheduled for ${scheduledSession.planningDate}.`
-                : `Add the ${detail.resolvedVariant.name} variant to your calendar.`}
+              {scheduledEvent
+                ? `Currently scheduled for ${scheduledEvent.planningDate}.`
+                : "Add this reusable plan to your calendar."}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-wrap items-end gap-3">
             <div className="min-w-56">
               <DateInput
+                disabled={scheduleHeld || createSchedule.isPending || updateSchedule.isPending}
                 id="activity-plan-schedule-date"
                 label="Schedule date"
-                onChange={(value) => setScheduleDate(value ?? "")}
+                onChange={(value) => {
+                  if (scheduleGuard.current || scheduleHeld) return;
+                  setDateDirty(true);
+                  setScheduleDate(value ?? "");
+                }}
                 value={scheduleDate}
               />
             </div>
@@ -570,45 +510,57 @@ function ActivityPlanDetailPage() {
               disabled={
                 !scheduleDate ||
                 !profileQuery.data?.id ||
-                plannedSessionsQuery.isLoading ||
+                profileQuery.isLoading ||
+                profileQuery.isError ||
+                scheduleQuery.isLoading ||
+                scheduleQuery.isError ||
                 createSchedule.isPending ||
                 updateSchedule.isPending
               }
               onClick={() => {
+                if (scheduleGuard.current || scheduleQuery.isError || scheduleQuery.isLoading)
+                  return;
                 if (!profileQuery.data?.id) return;
-                if (scheduledSession) {
+                scheduleGuard.current = true;
+                setScheduleError(null);
+                if (scheduledEvent && !scheduleHeld) {
                   updateSchedule.mutate({
                     profileId: profileQuery.data.id,
-                    sessionId: scheduledSession.id,
-                    expectedRevision: scheduledSession.sessionRevision,
+                    sessionId: scheduledEvent.id,
+                    expectedRevision: scheduledEvent.sessionRevision,
                     planningDate: scheduleDate,
                   });
                 } else {
-                  createSchedule.mutate({
-                    profileId: profileQuery.data.id,
-                    session: {
-                      activityPlanId: detail.id,
-                      planningDate: scheduleDate,
-                      source: { kind: "direct", operationId: getScheduleOperationId() },
-                      variantId: detail.resolvedVariant.id,
-                    },
-                  });
+                  const input =
+                    retainedSchedule.current?.context === scheduleContext
+                      ? retainedSchedule.current.input
+                      : {
+                          profileId: profileQuery.data.id,
+                          session: {
+                            planningDate: scheduleDate,
+                            source: { kind: "direct" as const, operationId: crypto.randomUUID() },
+                            activityPlanId: detail.id,
+                          },
+                        };
+                  retainedSchedule.current = { context: scheduleContext, input };
+                  setRetainedContext(scheduleContext);
+                  createSchedule.mutate(input);
                 }
               }}
               type="button"
             >
               <CalendarDays className="mr-2 h-4 w-4" />
-              {scheduledSession ? "Reschedule" : "Schedule"}
+              {scheduleHeld ? "Retry schedule" : scheduledEvent ? "Reschedule" : "Schedule"}
             </Button>
-            {scheduledSession ? (
+            {scheduledEvent ? (
               <Button
-                disabled={cancelSchedule.isPending}
+                disabled={removeSchedule.isPending}
                 onClick={() => {
                   if (!profileQuery.data?.id) return;
-                  cancelSchedule.mutate({
+                  removeSchedule.mutate({
                     profileId: profileQuery.data.id,
-                    sessionId: scheduledSession.id,
-                    expectedRevision: scheduledSession.sessionRevision,
+                    sessionId: scheduledEvent.id,
+                    expectedRevision: scheduledEvent.sessionRevision,
                     reason: "user_requested",
                   });
                 }}
@@ -619,6 +571,16 @@ function ActivityPlanDetailPage() {
               </Button>
             ) : null}
           </CardContent>
+          {scheduleQuery.isLoading ? <p role="status">Loading scheduled sessions...</p> : null}
+          {scheduleQuery.isError ? (
+            <div role="alert">
+              <p>Scheduled sessions could not be loaded. Your date is kept.</p>
+              <Button type="button" variant="outline" onClick={() => void scheduleQuery.refetch()}>
+                Retry loading schedule
+              </Button>
+            </div>
+          ) : null}
+          {scheduleError ? <p role="alert">{scheduleError}</p> : null}
         </Card>
       ) : null}
 

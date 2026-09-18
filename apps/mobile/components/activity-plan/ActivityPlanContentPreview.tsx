@@ -8,6 +8,7 @@ import type {
   CanonicalActivityCategory,
 } from "@repo/core";
 import {
+  consolidateActivityPlanText,
   deriveActivityPlanPresentation,
   getActivityPlanSessionFlowTargetPresentations,
   orderActivityPlanTargetsForPresentation,
@@ -248,7 +249,9 @@ export function ActivityPlanContentPreview({
                             className={`mt-4 gap-2 ${interval.repetitions > 1 ? "border-l-2 border-primary/30 pl-3" : ""}`}
                           >
                             {showIntervalHeader ? (
-                              <Text className="text-base leading-5 text-foreground">
+                              <Text
+                                className={`text-base leading-5 text-foreground ${interval.repetitions > 1 ? "" : "font-semibold"}`}
+                              >
                                 {[
                                   intervalLabel,
                                   interval.repetitions > 1
@@ -311,14 +314,17 @@ export function ActivityPlanContentPreview({
                                       {detailSummary}
                                     </Text>
                                   ) : null}
-                                  {step.description ? (
-                                    <Text className="mt-1 text-sm leading-5 text-muted-foreground">
-                                      {step.description}
-                                    </Text>
-                                  ) : null}
-                                  {step.notes ? (
+                                  {consolidateActivityPlanText(
+                                    step.notes,
+                                    step.description,
+                                    "Description",
+                                  ) ? (
                                     <Text className="text-sm leading-5 text-muted-foreground">
-                                      {step.notes}
+                                      {consolidateActivityPlanText(
+                                        step.notes,
+                                        step.description,
+                                        "Description",
+                                      )}
                                     </Text>
                                   ) : null}
                                 </View>

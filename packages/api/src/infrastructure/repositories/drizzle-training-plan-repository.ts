@@ -1,54 +1,29 @@
 import { type InferredStateSnapshot, inferredStateSnapshotSchema } from "@repo/core";
 import type { TrainingPlanInsert, TrainingPlanRow } from "@repo/db";
 import { schema } from "@repo/db";
+import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
-import { and, asc, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  exists,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import type {
   CreateTrainingPlanRecordInput,
   TrainingPlanRepository,
   UpdateTrainingPlanRecordInput,
 } from "../../repositories";
-
-type DrizzleLike = {
-  execute: any;
-  insert: any;
-  select: any;
-  update: any;
-};
-
-type TrainingPlanCountRow = { value: number | string };
-type RawTrainingPlanRow = Omit<TrainingPlanRow, "created_at" | "updated_at" | "validated_at"> & {
-  created_at: Date | string;
-  updated_at: Date | string;
-  validated_at?: Date | string | null;
-};
-type UpcomingTrainingPlanEvent = {
-  schedule_batch_id: string | null;
-  starts_at: Date;
-  training_plan_id: string | null;
-};
-
-function getSqlRows<T>(result: unknown) {
-  return ((result as { rows?: T[] }).rows ?? []) as T[];
-}
-
-function parseRawTimestamp(value: Date | string): Date {
-  const parsed = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    throw new TypeError("Training plan row contains an invalid timestamp");
-  }
-  return parsed;
-}
-
-function normalizeRawTrainingPlanRow(row: RawTrainingPlanRow): TrainingPlanRow {
-  return {
-    ...row,
-    created_at: parseRawTimestamp(row.created_at),
-    updated_at: parseRawTimestamp(row.updated_at),
-    validated_at: row.validated_at == null ? null : parseRawTimestamp(row.validated_at),
-  };
-}
 
 function todayStartIsoUtc(): string {
   const now = new Date();
@@ -64,7 +39,46 @@ function isUuidString(value: unknown): value is string {
   );
 }
 
-export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepository {
+export function createTrainingPlanRepository(db: DrizzleDbClient): TrainingPlanRepository {
+  const accessibleTo = (profileId: string) =>
+    or(
+      eq(schema.trainingPlans.profile_id, profileId),
+      eq(schema.trainingPlans.is_system_template, true),
+      eq(schema.trainingPlans.content_visibility, "public"),
+      and(
+        eq(schema.trainingPlans.content_visibility, "followers"),
+        exists(
+          db
+            .select({ follower_id: schema.follows.follower_id })
+            .from(schema.follows)
+            .where(
+              and(
+                eq(schema.follows.follower_id, profileId),
+                eq(schema.follows.following_id, schema.trainingPlans.profile_id),
+                eq(schema.follows.status, "accepted"),
+              ),
+            ),
+        ),
+      ),
+      exists(
+        db
+          .select({ id: schema.contentAccessGrants.id })
+          .from(schema.contentAccessGrants)
+          .where(
+            and(
+              eq(schema.contentAccessGrants.content_type, "training_plan"),
+              eq(schema.contentAccessGrants.content_id, schema.trainingPlans.id),
+              eq(schema.contentAccessGrants.grantee_profile_id, profileId),
+              eq(schema.contentAccessGrants.access_level, "read"),
+              isNull(schema.contentAccessGrants.revoked_at),
+              or(
+                isNull(schema.contentAccessGrants.expires_at),
+                gt(schema.contentAccessGrants.expires_at, new Date()),
+              ),
+            ),
+          ),
+      ),
+    );
   const parseTrainingPlanStructure = (value: unknown): Record<string, unknown> | null => {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return null;
@@ -114,25 +128,25 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
       return data ? { id: data.id, structure: data.structure } : null;
     }
 
-    const activeEvents = await db
+    const activeSessions = await db
       .select({
-        training_plan_id: schema.events.training_plan_id,
-        starts_at: schema.events.starts_at,
+        training_plan_id: schema.plannedSessions.training_plan_id,
+        starts_at: schema.plannedSessions.planning_date,
       })
-      .from(schema.events)
+      .from(schema.plannedSessions)
 
       .where(
         and(
-          eq(schema.events.profile_id, input.profileId),
-          eq(schema.events.event_type, "planned"),
-          isNotNull(schema.events.training_plan_id),
-          gte(schema.events.starts_at, new Date()),
+          eq(schema.plannedSessions.profile_id, input.profileId),
+          eq(schema.plannedSessions.status, "scheduled"),
+          isNotNull(schema.plannedSessions.training_plan_id),
+          gte(schema.plannedSessions.planning_date, new Date().toISOString().slice(0, 10)),
         ),
       )
-      .orderBy(asc(schema.events.starts_at))
+      .orderBy(asc(schema.plannedSessions.planning_date))
       .limit(1);
 
-    const activePlanId = activeEvents[0]?.training_plan_id;
+    const activePlanId = activeSessions[0]?.training_plan_id;
     if (!activePlanId) {
       return null;
     }
@@ -155,126 +169,79 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
     id: string;
     profileId: string;
   }): Promise<TrainingPlanRow | null> => {
-    const result = await db.execute(sql<TrainingPlanRow>`
-      select *
-      from training_plans
-      where id = ${input.id}::uuid
-        and (
-          profile_id = ${input.profileId}::uuid
-          or is_system_template = true
-          or content_visibility = 'public'
-          or (
-            content_visibility = 'followers'
-            and exists (
-              select 1 from follows f
-              where f.follower_id = ${input.profileId}::uuid
-                and f.following_id = training_plans.profile_id
-                and f.status = 'accepted'
-            )
-          )
-          or exists (
-            select 1
-            from content_access_grants
-            where content_access_grants.content_type = 'training_plan'
-              and content_access_grants.content_id = training_plans.id
-              and content_access_grants.grantee_profile_id = ${input.profileId}::uuid
-              and content_access_grants.access_level = 'read'
-              and content_access_grants.revoked_at is null
-              and (content_access_grants.expires_at is null or content_access_grants.expires_at > now())
-          )
-        )
-      limit 1
-    `);
-
-    const row = getSqlRows<RawTrainingPlanRow>(result)[0];
-    return row ? normalizeRawTrainingPlanRow(row) : null;
+    const [row] = await db
+      .select()
+      .from(schema.trainingPlans)
+      .where(and(eq(schema.trainingPlans.id, input.id), accessibleTo(input.profileId)))
+      .limit(1);
+    return row ?? null;
   };
 
   const listPublicTemplateTrainingPlans = async (
     filters?: Parameters<TrainingPlanRepository["listPublicTemplateTrainingPlans"]>[0],
   ): Promise<TrainingPlanRow[]> => {
     const searchPattern = filters?.search?.trim() ? `%${filters.search.trim()}%` : null;
-    const sortClause =
+    const durationWeeks = sql`coalesce((${schema.trainingPlans.structure}->'durationWeeks'->>'recommended')::int, 0)`;
+    const conditions = [
+      eq(schema.trainingPlans.is_system_template, true),
+      eq(schema.trainingPlans.content_visibility, "public"),
+      filters?.activity_category
+        ? sql`exists (
+            select 1
+            from jsonb_array_elements_text(coalesce(${schema.trainingPlans.structure}->'activity_category', '[]'::jsonb)) as activity_category(value)
+            where activity_category.value = ${filters.activity_category}
+          )`
+        : undefined,
+      filters?.experience_level
+        ? sql`exists (
+            select 1
+            from jsonb_array_elements_text(coalesce(${schema.trainingPlans.structure}->'experienceLevel', '[]'::jsonb)) as experience(value)
+            where experience.value = ${filters.experience_level}
+          )`
+        : undefined,
+      filters?.min_weeks === undefined ? undefined : sql`${durationWeeks} >= ${filters.min_weeks}`,
+      filters?.max_weeks === undefined ? undefined : sql`${durationWeeks} <= ${filters.max_weeks}`,
+      filters?.min_sessions_per_week === undefined
+        ? undefined
+        : sql`coalesce(${schema.trainingPlans.sessions_per_week_target}, 0) >= ${filters.min_sessions_per_week}`,
+      filters?.max_sessions_per_week === undefined
+        ? undefined
+        : sql`coalesce(${schema.trainingPlans.sessions_per_week_target}, 0) <= ${filters.max_sessions_per_week}`,
+      searchPattern ? sql`${schema.trainingPlans.name} ilike ${searchPattern}` : undefined,
+    ];
+    const orderBy =
       filters?.sort_by === "oldest"
-        ? sql`created_at asc`
+        ? [asc(schema.trainingPlans.created_at)]
         : filters?.sort_by === "duration_desc"
-          ? sql`coalesce((training_plans.structure->'durationWeeks'->>'recommended')::int, 0) desc, created_at desc`
+          ? [sql`${durationWeeks} desc`, desc(schema.trainingPlans.created_at)]
           : filters?.sort_by === "duration_asc"
-            ? sql`coalesce((training_plans.structure->'durationWeeks'->>'recommended')::int, 0) asc, created_at desc`
+            ? [sql`${durationWeeks} asc`, desc(schema.trainingPlans.created_at)]
             : filters?.sort_by === "sessions_desc"
-              ? sql`sessions_per_week_target desc nulls last, created_at desc`
+              ? [
+                  desc(schema.trainingPlans.sessions_per_week_target),
+                  desc(schema.trainingPlans.created_at),
+                ]
               : filters?.sort_by === "sessions_asc"
-                ? sql`sessions_per_week_target asc nulls last, created_at desc`
-                : sql`created_at desc`;
+                ? [
+                    asc(schema.trainingPlans.sessions_per_week_target),
+                    desc(schema.trainingPlans.created_at),
+                  ]
+                : [desc(schema.trainingPlans.created_at)];
 
-    const result = await db.execute(sql<TrainingPlanRow>`
-      select
-        id,
-        name,
-        description,
-        structure,
-        structure_hash,
-        sessions_per_week_target,
-        duration_hours,
-        is_system_template,
-        content_visibility,
-        created_at,
-        updated_at,
-        profile_id
-      from training_plans
-      where is_system_template = true
-        and content_visibility = 'public'
-        and (
-          ${filters?.activity_category ?? null}::text is null
-          or exists (
-            select 1
-            from jsonb_array_elements_text(coalesce(training_plans.structure->'activity_category', '[]'::jsonb)) as activity_category(value)
-            where activity_category.value = ${filters?.activity_category ?? null}
-          )
-        )
-        and (
-          ${filters?.experience_level ?? null}::text is null
-          or exists (
-            select 1
-            from jsonb_array_elements_text(coalesce(training_plans.structure->'experienceLevel', '[]'::jsonb)) as experience(value)
-            where experience.value = ${filters?.experience_level ?? null}
-          )
-        )
-        and (
-          ${filters?.min_weeks ?? null}::int is null
-          or coalesce((training_plans.structure->'durationWeeks'->>'recommended')::int, 0) >= ${filters?.min_weeks ?? null}
-        )
-        and (
-          ${filters?.max_weeks ?? null}::int is null
-          or coalesce((training_plans.structure->'durationWeeks'->>'recommended')::int, 0) <= ${filters?.max_weeks ?? null}
-        )
-        and (
-          ${filters?.min_sessions_per_week ?? null}::int is null
-          or coalesce(training_plans.sessions_per_week_target, 0) >= ${filters?.min_sessions_per_week ?? null}
-        )
-        and (
-          ${filters?.max_sessions_per_week ?? null}::int is null
-          or coalesce(training_plans.sessions_per_week_target, 0) <= ${filters?.max_sessions_per_week ?? null}
-        )
-        and (
-          ${searchPattern}::text is null
-          or training_plans.name ilike ${searchPattern}
-        )
-      order by ${sortClause}
-    `);
-
-    return getSqlRows<RawTrainingPlanRow>(result).map(normalizeRawTrainingPlanRow);
+    return db
+      .select()
+      .from(schema.trainingPlans)
+      .where(and(...conditions))
+      .orderBy(...orderBy);
   };
 
   return {
     async countOwnedTrainingPlans(profileId: string): Promise<number> {
-      const result = await db.execute(sql<TrainingPlanCountRow>`
-        select count(*)::int as value
-        from training_plans
-        where profile_id = ${profileId}::uuid
-      `);
-
-      return Number(getSqlRows<TrainingPlanCountRow>(result)[0]?.value ?? 0);
+      const [result] = await db
+        .select({ value: count() })
+        .from(schema.trainingPlans)
+        .where(eq(schema.trainingPlans.profile_id, profileId));
+      return result?.value ?? 0;
     },
 
     async createTrainingPlan(input: CreateTrainingPlanRecordInput): Promise<TrainingPlanRow> {
@@ -304,7 +271,7 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
         });
       }
 
-      return data as TrainingPlanRow;
+      return data;
     },
 
     async getAccessibleTrainingPlan(input): Promise<TrainingPlanRow | null> {
@@ -312,34 +279,34 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
     },
 
     async getActivePlanFromFutureEvents(profileId) {
-      const upcomingEvents = await db
+      const upcomingSessions = await db
         .select({
-          training_plan_id: schema.events.training_plan_id,
-          schedule_batch_id: schema.events.schedule_batch_id,
-          starts_at: schema.events.starts_at,
+          training_plan_id: schema.plannedSessions.training_plan_id,
+          starts_at: schema.plannedSessions.planning_date,
         })
-        .from(schema.events)
+        .from(schema.plannedSessions)
 
         .where(
           and(
-            eq(schema.events.profile_id, profileId),
-            eq(schema.events.event_type, "planned"),
-            isNotNull(schema.events.training_plan_id),
-            gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
+            eq(schema.plannedSessions.profile_id, profileId),
+            eq(schema.plannedSessions.status, "scheduled"),
+            isNotNull(schema.plannedSessions.training_plan_id),
+            gte(schema.plannedSessions.planning_date, todayStartIsoUtc().slice(0, 10)),
           ),
         )
-        .orderBy(asc(schema.events.starts_at))
+        .orderBy(asc(schema.plannedSessions.planning_date))
         .limit(50);
 
-      const nextScheduledPlanEvent = (upcomingEvents as UpcomingTrainingPlanEvent[]).find(
-        (event) => isUuidString(event.training_plan_id) && event.starts_at instanceof Date,
+      const nextScheduledPlanEvent = upcomingSessions.find(
+        (session): session is typeof session & { training_plan_id: string } =>
+          isUuidString(session.training_plan_id),
       );
 
       if (!nextScheduledPlanEvent) {
         return null;
       }
 
-      const trainingPlanId = nextScheduledPlanEvent.training_plan_id as string;
+      const trainingPlanId = nextScheduledPlanEvent.training_plan_id;
       const trainingPlan = await getAccessibleTrainingPlan({ id: trainingPlanId, profileId });
 
       if (!trainingPlan) {
@@ -347,10 +314,10 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
       }
 
       return {
-        scheduleBatchId: nextScheduledPlanEvent.schedule_batch_id ?? null,
+        scheduleBatchId: null,
         trainingPlanId,
         trainingPlan,
-        nextEventAt: nextScheduledPlanEvent.starts_at.toISOString(),
+        nextEventAt: `${nextScheduledPlanEvent.starts_at}T00:00:00.000Z`,
       };
     },
 
@@ -366,7 +333,7 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
         )
         .limit(1);
 
-      return (plan as TrainingPlanRow | undefined) ?? null;
+      return plan ?? null;
     },
 
     async getPublicTemplateTrainingPlan(id: string): Promise<TrainingPlanRow | null> {
@@ -410,57 +377,31 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
           ),
         );
 
-      return rows.map((row: { entity_id: string }) => row.entity_id);
+      return rows.map((row) => row.entity_id);
     },
 
     async listTrainingPlans(input): Promise<TrainingPlanRow[]> {
-      const conditions = [sql`1 = 1`];
+      const conditions = [];
 
       if (input.ownerScope === "own") {
-        conditions.push(sql`profile_id = ${input.profileId}::uuid`);
+        conditions.push(eq(schema.trainingPlans.profile_id, input.profileId));
       } else if (input.ownerScope === "system") {
-        conditions.push(sql`is_system_template = true`);
+        conditions.push(eq(schema.trainingPlans.is_system_template, true));
       } else if (input.ownerScope === "public") {
-        conditions.push(sql`content_visibility = 'public'`);
+        conditions.push(eq(schema.trainingPlans.content_visibility, "public"));
       } else {
-        conditions.push(sql`(
-          profile_id = ${input.profileId}::uuid
-          or is_system_template = true
-          or content_visibility = 'public'
-          or (
-            content_visibility = 'followers'
-            and exists (
-              select 1 from follows f
-              where f.follower_id = ${input.profileId}::uuid
-                and f.following_id = training_plans.profile_id
-                and f.status = 'accepted'
-            )
-          )
-          or exists (
-            select 1
-            from content_access_grants
-            where content_access_grants.content_type = 'training_plan'
-              and content_access_grants.content_id = training_plans.id
-              and content_access_grants.grantee_profile_id = ${input.profileId}::uuid
-              and content_access_grants.access_level = 'read'
-              and content_access_grants.revoked_at is null
-              and (content_access_grants.expires_at is null or content_access_grants.expires_at > now())
-          )
-        )`);
+        conditions.push(accessibleTo(input.profileId));
       }
 
       if (input.visibility) {
-        conditions.push(sql`content_visibility = ${input.visibility}`);
+        conditions.push(eq(schema.trainingPlans.content_visibility, input.visibility));
       }
 
-      const result = await db.execute(sql<TrainingPlanRow>`
-        select *
-        from training_plans
-        where ${sql.join(conditions, sql` and `)}
-        order by created_at desc
-      `);
-
-      return getSqlRows<RawTrainingPlanRow>(result).map(normalizeRawTrainingPlanRow);
+      return db
+        .select()
+        .from(schema.trainingPlans)
+        .where(and(...conditions))
+        .orderBy(desc(schema.trainingPlans.created_at));
     },
 
     async updateTrainingPlan(input: UpdateTrainingPlanRecordInput): Promise<TrainingPlanRow> {
@@ -498,7 +439,7 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
         });
       }
 
-      return updatedPlan as TrainingPlanRow;
+      return updatedPlan;
     },
 
     async getPriorInferredStateSnapshot(profileId: string) {

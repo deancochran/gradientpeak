@@ -1,6 +1,17 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
-import { type E2EQuery, withLocalE2EDatabase } from "../../support/database";
+import {
+  activityEfforts,
+  follows,
+  notifications,
+  profileGoals,
+  profileMetrics,
+  profiles,
+  users,
+  verifications,
+} from "@repo/db/schema";
+import { inArray, or } from "drizzle-orm";
+import { withLocalE2EDatabase } from "../../support/database";
 
 const TEST_ACTOR_DOMAIN = "@example.test";
 const VERIFICATION_CONSUMPTION_ID = /^email-verification:[a-f0-9]{64}$/;
@@ -9,49 +20,6 @@ export type AuthArtifactSnapshot = {
   actorEmails: string[];
   verificationConsumptionIds: string[];
 };
-
-export const AUTH_ARTIFACT_CLEANUP_SQL = {
-  activityEfforts: `delete from "activity_efforts" effort
-    using "users" u
-    where effort."profile_id" = u."id" and u."email" = any($1::text[])`,
-  profileGoals: `delete from "profile_goals" goal
-    using "users" u
-    where goal."profile_id" = u."id" and u."email" = any($1::text[])`,
-  profileMetrics: `delete from "profile_metrics" metric
-    using "users" u
-    where metric."profile_id" = u."id" and u."email" = any($1::text[])`,
-  profileTrainingSettings: `delete from "profile_training_settings" settings
-    using "users" u
-    where settings."profile_id" = u."id" and u."email" = any($1::text[])`,
-  notifications: `delete from "notifications" notification
-    using "users" u
-    where (notification."user_id" = u."id" or notification."actor_id" = u."id")
-      and u."email" = any($1::text[])`,
-  follows: `delete from "follows" follow
-    using "users" u
-    where (follow."follower_id" = u."id" or follow."following_id" = u."id")
-      and u."email" = any($1::text[])`,
-  profiles: `delete from "profiles" p
-    using "users" u
-    where p."id" = u."id" and u."email" = any($1::text[])`,
-  users: `delete from "users" where "email" = any($1::text[])`,
-  verificationRows: `delete from "verifications"
-    where "identifier" = any($1::text[])`,
-  verificationConsumptionMarkers: `delete from "verifications"
-    where "identifier" = any($1::text[])`,
-} as const;
-
-export const AUTH_ACTOR_CLEANUP_ORDER = [
-  "notifications",
-  "follows",
-  "profileTrainingSettings",
-  "profileGoals",
-  "profileMetrics",
-  "activityEfforts",
-  "profiles",
-  "users",
-  "verificationRows",
-] as const satisfies readonly (keyof typeof AUTH_ARTIFACT_CLEANUP_SQL)[];
 
 export class AuthArtifactRegistry {
   readonly #actorEmails = new Set<string>();
@@ -130,16 +98,45 @@ export async function cleanupAuthArtifacts(snapshot: AuthArtifactSnapshot) {
   }
 
   await withLocalE2EDatabase((database) =>
-    database.transaction(async (client: E2EQuery) => {
+    database.typedTransaction(async (transaction) => {
       if (snapshot.actorEmails.length > 0) {
-        for (const statement of AUTH_ACTOR_CLEANUP_ORDER) {
-          await client.query(AUTH_ARTIFACT_CLEANUP_SQL[statement], [snapshot.actorEmails]);
+        const actors = await transaction
+          .select({ id: users.id })
+          .from(users)
+          .where(inArray(users.email, snapshot.actorEmails));
+        const actorIds = actors.map((actor) => actor.id);
+        if (actorIds.length > 0) {
+          await transaction
+            .delete(notifications)
+            .where(
+              or(
+                inArray(notifications.user_id, actorIds),
+                inArray(notifications.actor_id, actorIds),
+              ),
+            );
+          await transaction
+            .delete(follows)
+            .where(
+              or(inArray(follows.follower_id, actorIds), inArray(follows.following_id, actorIds)),
+            );
+          await transaction.delete(profileGoals).where(inArray(profileGoals.profile_id, actorIds));
+          await transaction
+            .delete(profileMetrics)
+            .where(inArray(profileMetrics.profile_id, actorIds));
+          await transaction
+            .delete(activityEfforts)
+            .where(inArray(activityEfforts.profile_id, actorIds));
+          await transaction.delete(profiles).where(inArray(profiles.id, actorIds));
+          await transaction.delete(users).where(inArray(users.id, actorIds));
         }
+        await transaction
+          .delete(verifications)
+          .where(inArray(verifications.identifier, snapshot.actorEmails));
       }
       if (snapshot.verificationConsumptionIds.length > 0) {
-        await client.query(AUTH_ARTIFACT_CLEANUP_SQL.verificationConsumptionMarkers, [
-          snapshot.verificationConsumptionIds,
-        ]);
+        await transaction
+          .delete(verifications)
+          .where(inArray(verifications.identifier, snapshot.verificationConsumptionIds));
       }
     }),
   );

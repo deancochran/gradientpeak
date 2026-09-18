@@ -114,6 +114,7 @@ export async function readPublishedThresholdHistory(
   >();
   for (const row of provenance) {
     const sourceActivities = activitiesByEvaluation.get(row.evaluationId) ?? [];
+    if (row.finishedAt === null) continue;
     if (!sourceActivities.some((activity) => activity.id === row.activityId)) {
       sourceActivities.push({
         id: row.activityId,

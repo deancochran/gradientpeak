@@ -90,6 +90,27 @@ describe("useZodFormSubmit", () => {
     expect(screen.getByTestId("button-state")).toHaveTextContent("Save");
   });
 
+  it("accepts one same-frame submit and permits retry after a failure", async () => {
+    let rejectSubmit: (error: Error) => void = () => undefined;
+    const onSubmit = vi.fn(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectSubmit = reject;
+        }),
+    );
+    render(<SubmitHarness onSubmit={onSubmit} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+
+    rejectSubmit(new Error("retry"));
+    await waitFor(() => expect(screen.getByTestId("pending-state")).toHaveTextContent("idle"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
+  });
+
   it("stores submit errors and calls onError without rethrowing when disabled", async () => {
     const error = new Error("Save failed");
     const onError = vi.fn();

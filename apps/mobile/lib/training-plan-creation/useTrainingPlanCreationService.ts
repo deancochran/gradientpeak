@@ -1,9 +1,12 @@
+import type { AppRouter } from "@repo/api/client";
 import {
   type AthletePlanningContext,
   diffDateOnlyUtcDays,
   selectAthletePlanningContextFields,
 } from "@repo/core";
 import { skipToken } from "@tanstack/react-query";
+import type { inferRouterInputs } from "@trpc/server";
+import { randomUUID } from "expo-crypto";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
@@ -21,7 +24,6 @@ import {
 } from "./canonical-draft";
 import { createDefaultTrainingPlanBuilderState } from "./defaults";
 import { subscribeToTrainingPlanGoalCreation } from "./goalCreationHandoff";
-import { selectTrainingPlanPreferenceFields } from "./preferences-context";
 import { trainingPlanBuilderReducer } from "./reducer";
 import { selectBuilderSummary } from "./selectors";
 import type {
@@ -34,14 +36,12 @@ export type {
   UseTrainingPlanCreationServiceOptions,
 } from "./service-types";
 
-import type {
-  TrainingPlanBuilderGoalBlueprint,
-  TrainingPlanBuilderSession,
-  TrainingPlanBuilderSessionIntent,
-} from "./types";
+import type { TrainingPlanBuilderGoalBlueprint, TrainingPlanBuilderSession } from "./types";
 import { useTrainingPlanCreationQueries } from "./useTrainingPlanCreationQueries";
 
-const createLocalId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const createLocalId = () => randomUUID();
+
+type TrainingPlanCommitRequest = inferRouterInputs<AppRouter>["trainingPlans"]["commit"];
 
 function preserveLocalAthleteContextOverrides(
   current: AthletePlanningContext,
@@ -144,15 +144,19 @@ function toSelectedGoalBlueprint(input: {
   };
 }
 
-function createSession(
-  offsetDays: number,
-  title?: string,
-  intent?: TrainingPlanBuilderSessionIntent,
-): TrainingPlanBuilderSession {
+function createSession(offsetDays: number, title?: string): TrainingPlanBuilderSession {
+  const id = createLocalId();
   return {
-    localId: createLocalId(),
+    id,
+    localId: id,
     offsetDays,
-    ...(intent ? { intent } : {}),
+    demand: {
+      activity_category: "other",
+      training_intent: "general_maintenance",
+      target_duration_minutes: null,
+      target_common_load: null,
+      importance: "normal",
+    },
     activityPlan: null,
     ...(title ? { eventOverrides: { title } } : {}),
   };
@@ -167,11 +171,13 @@ export function useTrainingPlanCreationService({
   onUpdateError,
   planId,
 }: UseTrainingPlanCreationServiceOptions = {}) {
+  const utils = api.useUtils();
   const [state, dispatch] = useReducer(trainingPlanBuilderReducer, undefined, () =>
     createDefaultTrainingPlanBuilderState(),
   );
   const [persistedPlanId, setPersistedPlanId] = useState<string | null>(null);
   const [projectionConflict, setProjectionConflict] = useState<string | null>(null);
+  const retainedCommitRequestRef = useRef<TrainingPlanCommitRequest | null>(null);
   const hydratedCreationContextAsOfRef = useRef<string | null>(null);
   const hydratedEditPlanIdRef = useRef<string | null>(null);
   const {
@@ -318,7 +324,7 @@ export function useTrainingPlanCreationService({
     if (authoritativePreviewInput === null) {
       return {
         status: "backend_input_unavailable" as const,
-        reason: "A valid canonical draft is required for preview.",
+        reason: "Valid plan details are required for preview.",
       };
     }
     if (
@@ -419,16 +425,45 @@ export function useTrainingPlanCreationService({
 
   const persistAndValidatePlan = useCallback(async () => {
     setProjectionConflict(null);
+    let commitRequest = retainedCommitRequestRef.current;
+    if (commitRequest) {
+      // An interrupted write may have succeeded; only replay the exact idempotent request.
+      try {
+        const result = await commitPlanMutation.mutateAsync(commitRequest);
+        if (result.status === "stale") {
+          retainedCommitRequestRef.current = null;
+          setProjectionConflict(
+            result.reason === "state_revision"
+              ? "Athlete state changed while saving. Your changes were preserved and re-simulated against the refreshed baseline."
+              : "The saved plan changed while saving. Your changes were preserved; review the refreshed plan and retry.",
+          );
+          await Promise.all([publishedStateQuery.refetch(), editPlanQuery.refetch()]);
+          return;
+        }
+        if (result.status === "operation_conflict") {
+          retainedCommitRequestRef.current = null;
+          setProjectionConflict(
+            "This save request conflicts with another operation. Review and retry.",
+          );
+          return;
+        }
+        retainedCommitRequestRef.current = null;
+        setPersistedPlanId(result.planId);
+        const savedPlan = { id: result.planId };
+        if (mode === "edit") onUpdated?.(savedPlan);
+        else onCreated?.(savedPlan);
+      } catch (error) {
+        setProjectionConflict(
+          `${error instanceof Error ? error.message : "Could not save and validate this plan."} The outcome is unknown; retrying will safely reconcile this save.`,
+        );
+      }
+      return;
+    }
     if (previewLifecycle.status !== "backend_preview_ready") {
-      setProjectionConflict("Wait for the authoritative preview before saving this draft.");
+      setProjectionConflict("Wait for the authoritative preview before saving this plan.");
       return;
     }
     const existingPlanId = planId ?? persistedPlanId;
-    const basePublishedRevision = publishedStateQuery.data?.publishedRevision;
-    if (basePublishedRevision === null || basePublishedRevision === undefined) {
-      setProjectionConflict("Published athlete state is unavailable. Refresh and retry.");
-      return;
-    }
     try {
       const draft = buildCanonicalTrainingPlanDraft(state);
       const commonDraft = {
@@ -440,11 +475,10 @@ export function useTrainingPlanCreationService({
         setProjectionConflict("The persisted plan changed. Refresh before retrying.");
         return;
       }
-      const result = await commitPlanMutation.mutateAsync(
+      const commitDraft =
         existingPlanId && editor
           ? {
-              kind: "update",
-              basePublishedRevision,
+              kind: "update" as const,
               draft: {
                 ...commonDraft,
                 planId: existingPlanId,
@@ -452,24 +486,52 @@ export function useTrainingPlanCreationService({
                 expectedStructureHash: editor.structureHash,
               },
             }
-          : { kind: "create", basePublishedRevision, draft: commonDraft },
-      );
-      if (result.status === "stale") {
+          : { kind: "create" as const, draft: commonDraft };
+      const commitPreview = await utils.trainingPlans.preview.fetch(commitDraft);
+      if (commitPreview.status !== "available") {
+        setProjectionConflict("The authoritative preview is unavailable. Refresh and retry.");
+        return;
+      }
+      if (!commitPreview.applicable) {
         setProjectionConflict(
-          result.reason === "state_revision" || result.reason === "state_unavailable"
-            ? "Athlete state changed while saving. Your draft was preserved and re-simulated against the refreshed baseline."
-            : "The persisted plan changed while saving. Your draft was preserved; review the refreshed plan and retry.",
+          commitPreview.explanations.join(" ") ||
+            "One or more sessions need additional planning input before this plan can be saved.",
+        );
+        return;
+      }
+      commitRequest = {
+        ...commitDraft,
+        operationId: randomUUID(),
+        basePublishedRevision: commitPreview.basePublishedRevision,
+        previewFingerprint: commitPreview.previewFingerprint,
+      };
+      retainedCommitRequestRef.current = commitRequest;
+      const result = await commitPlanMutation.mutateAsync(commitRequest);
+      if (result.status === "stale") {
+        retainedCommitRequestRef.current = null;
+        setProjectionConflict(
+          result.reason === "state_revision"
+            ? "Athlete state changed while saving. Your changes were preserved and re-simulated against the refreshed baseline."
+            : "The saved plan changed while saving. Your changes were preserved; review the refreshed plan and retry.",
         );
         await Promise.all([publishedStateQuery.refetch(), editPlanQuery.refetch()]);
         return;
       }
+      if (result.status === "operation_conflict") {
+        retainedCommitRequestRef.current = null;
+        setProjectionConflict(
+          "This save request conflicts with another operation. Review and retry.",
+        );
+        return;
+      }
+      retainedCommitRequestRef.current = null;
       setPersistedPlanId(result.planId);
       const savedPlan = { id: result.planId };
       if (mode === "edit") onUpdated?.(savedPlan);
       else onCreated?.(savedPlan);
     } catch (error) {
       setProjectionConflict(
-        error instanceof Error ? error.message : "Could not save and validate this plan.",
+        `${error instanceof Error ? error.message : "Could not save and validate this plan."} The outcome is unknown; retrying will safely reconcile this save.`,
       );
     }
   }, [
@@ -483,17 +545,24 @@ export function useTrainingPlanCreationService({
     previewLifecycle.status,
     publishedStateQuery,
     state,
+    utils.trainingPlans.preview,
   ]);
 
   const savePlan = useMemo(() => {
-    const canSave = previewLifecycle.status === "backend_preview_ready";
+    const hasUncertainCommit = retainedCommitRequestRef.current !== null;
+    const canSave = hasUncertainCommit || previewLifecycle.status === "backend_preview_ready";
     const readiness = canSave
       ? {
-          detail:
-            mode === "edit"
+          detail: hasUncertainCommit
+            ? "The previous save outcome is unknown. Retry the same save to reconcile it."
+            : mode === "edit"
               ? "The authoritative preview is ready to save."
               : "The authoritative preview is ready to create.",
-          label: mode === "edit" ? "Ready to save" : "Ready to create",
+          label: hasUncertainCommit
+            ? "Retry save"
+            : mode === "edit"
+              ? "Ready to save"
+              : "Ready to create",
           status: "ready" as const,
         }
       : previewLifecycle.status === "backend_preview_pending"
@@ -532,10 +601,6 @@ export function useTrainingPlanCreationService({
     () => selectAthletePlanningContextFields(state.athleteContext),
     [state.athleteContext],
   );
-  const planningConstraintFields = useMemo(
-    () => selectTrainingPlanPreferenceFields(state.planPreferences),
-    [state.planPreferences],
-  );
   const viewModel = useMemo(
     () => ({
       strategy: {
@@ -549,11 +614,10 @@ export function useTrainingPlanCreationService({
         projection,
       },
       sheets: {
-        planningConstraintFields,
         planPreferences: state.planPreferences,
       },
     }),
-    [builderPresentation, planningConstraintFields, projection, state],
+    [builderPresentation, projection, state],
   );
 
   const actions = useMemo(
@@ -588,7 +652,6 @@ export function useTrainingPlanCreationService({
         hydratedEditPlanIdRef.current !== planId),
     derived: {
       athleteContextFields,
-      planningConstraintFields,
       summary,
       backendPlanningPreview: {
         data: backendPlanningPreviewQuery.data,

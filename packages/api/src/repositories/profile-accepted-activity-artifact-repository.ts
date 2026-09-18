@@ -1,5 +1,5 @@
 import { activities, activityArtifactLinks, activityArtifacts, activitySegments } from "@repo/db";
-import { sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { DrizzleQueryExecutor } from "../db";
 
@@ -56,13 +56,6 @@ const currentSourceRowSchema = z
   })
   .strict();
 
-function rowsFrom(result: unknown): unknown[] {
-  if (result && typeof result === "object" && "rows" in result && Array.isArray(result.rows)) {
-    return result.rows;
-  }
-  throw new Error("Accepted activity artifact query returned an invalid result");
-}
-
 export interface AcceptedActivityArtifactCursor {
   activityId: string;
   startedAt: Date;
@@ -84,7 +77,7 @@ export interface ProfileAcceptedActivityArtifact {
 
 /** Reads unique activities through their profile-owned, current, accepted source artifact. */
 export async function listProfileCurrentAcceptedActivityArtifacts(
-  db: Pick<DrizzleQueryExecutor, "execute">,
+  db: DrizzleQueryExecutor,
   input: {
     profileId: string;
     limit: number;
@@ -94,13 +87,23 @@ export async function listProfileCurrentAcceptedActivityArtifacts(
   if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100) {
     throw new Error("Accepted activity artifact page size must be between 1 and 100");
   }
-  const result = await db.execute(sql`
-    select
-      ${activities.id} as "activityId",
-      ${activities.started_at} as "startedAt",
-      ${activities.finished_at} as "finishedAt",
-      ${activities.segments_revision} as "segmentsRevision",
-      jsonb_agg(
+  const cursorCondition = input.cursor
+    ? or(
+        gt(activities.started_at, input.cursor.startedAt),
+        and(
+          eq(activities.started_at, input.cursor.startedAt),
+          gt(activities.id, input.cursor.activityId),
+        ),
+      )
+    : undefined;
+  const rows = await db
+    .select({
+      activityId: activities.id,
+      startedAt: activities.started_at,
+      finishedAt: activities.finished_at,
+      segmentsRevision: activities.segments_revision,
+      artifacts: sql`
+        jsonb_agg(
         jsonb_build_object(
           'artifactId', ${activityArtifacts.id},
           'bucket', ${activityArtifacts.bucket},
@@ -110,36 +113,46 @@ export async function listProfileCurrentAcceptedActivityArtifacts(
           'mediaType', ${activityArtifacts.media_type},
           'path', ${activityArtifacts.path}
         ) order by ${activityArtifactLinks.ordinal}, ${activityArtifactLinks.id}
-      ) as artifacts
-    from ${activities}
-    inner join ${activityArtifactLinks}
-      on ${activityArtifactLinks.activity_id} = ${activities.id}
-      and ${activityArtifactLinks.profile_id} = ${activities.profile_id}
-    inner join ${activityArtifacts}
-      on ${activityArtifacts.id} = ${activityArtifactLinks.artifact_id}
-      and ${activityArtifacts.profile_id} = ${activities.profile_id}
-    where ${activities.profile_id} = ${input.profileId}
-      and ${activityArtifactLinks.profile_id} = ${input.profileId}
-      and ${activityArtifacts.profile_id} = ${input.profileId}
-      and ${activityArtifactLinks.role} = 'source'
-      and ${activityArtifactLinks.is_current} = true
-      and ${activityArtifacts.availability} = 'accepted'
-      and ${activityArtifacts.deletion_requested_at} is null
-      and ${activityArtifacts.deleted_at} is null
-      and (
-        ${input.cursor === undefined}
-        or ${activities.started_at} > ${input.cursor?.startedAt ?? new Date(0)}
-        or (
-          ${activities.started_at} = ${input.cursor?.startedAt ?? new Date(0)}
-          and ${activities.id} > ${input.cursor?.activityId ?? "00000000-0000-0000-0000-000000000000"}
-        )
-      )
-    group by ${activities.id}, ${activities.started_at}, ${activities.finished_at}, ${activities.segments_revision}
-    order by ${activities.started_at}, ${activities.id}
-    limit ${input.limit}
-  `);
+      )`.as("artifacts"),
+    })
+    .from(activities)
+    .innerJoin(
+      activityArtifactLinks,
+      and(
+        eq(activityArtifactLinks.activity_id, activities.id),
+        eq(activityArtifactLinks.profile_id, activities.profile_id),
+      ),
+    )
+    .innerJoin(
+      activityArtifacts,
+      and(
+        eq(activityArtifacts.id, activityArtifactLinks.artifact_id),
+        eq(activityArtifacts.profile_id, activities.profile_id),
+      ),
+    )
+    .where(
+      and(
+        eq(activities.profile_id, input.profileId),
+        eq(activityArtifactLinks.profile_id, input.profileId),
+        eq(activityArtifacts.profile_id, input.profileId),
+        eq(activityArtifactLinks.role, "source"),
+        eq(activityArtifactLinks.is_current, true),
+        eq(activityArtifacts.availability, "accepted"),
+        isNull(activityArtifacts.deletion_requested_at),
+        isNull(activityArtifacts.deleted_at),
+        cursorCondition,
+      ),
+    )
+    .groupBy(
+      activities.id,
+      activities.started_at,
+      activities.finished_at,
+      activities.segments_revision,
+    )
+    .orderBy(asc(activities.started_at), asc(activities.id))
+    .limit(input.limit);
 
-  return rowsFrom(result).map((raw) => {
+  return rows.map((raw) => {
     const row = pageRowSchema.parse(raw);
     if (row.artifacts.length !== 1) {
       throw new Error("Activity must have exactly one current accepted source artifact");
@@ -160,15 +173,16 @@ export interface CurrentAcceptedActivitySourceState {
 
 /** Revalidates the exact accepted source and its immutable current segment identities. */
 export async function readCurrentAcceptedActivitySourceState(
-  db: Pick<DrizzleQueryExecutor, "execute">,
+  db: DrizzleQueryExecutor,
   input: { profileId: string; activityId: string; artifactId: string },
 ): Promise<CurrentAcceptedActivitySourceState | null> {
-  const result = await db.execute(sql`
-    select
-      ${activities.started_at} as "startedAt",
-      ${activities.finished_at} as "finishedAt",
-      ${activities.segments_revision} as "segmentsRevision",
-      coalesce(
+  const rows = await db
+    .select({
+      startedAt: activities.started_at,
+      finishedAt: activities.finished_at,
+      segmentsRevision: activities.segments_revision,
+      segments: sql`
+        coalesce(
         jsonb_agg(
           jsonb_build_object(
             'activityCategory', ${activitySegments.activity_category},
@@ -190,32 +204,52 @@ export async function readCurrentAcceptedActivitySourceState(
           ) order by ${activitySegments.ordinal}
         ) filter (where ${activitySegments.id} is not null),
         '[]'::jsonb
-      ) as segments
-    from ${activities}
-    inner join ${activityArtifactLinks}
-      on ${activityArtifactLinks.activity_id} = ${activities.id}
-      and ${activityArtifactLinks.profile_id} = ${activities.profile_id}
-    inner join ${activityArtifacts}
-      on ${activityArtifacts.id} = ${activityArtifactLinks.artifact_id}
-      and ${activityArtifacts.profile_id} = ${activities.profile_id}
-    left join ${activitySegments}
-      on ${activitySegments.activity_id} = ${activities.id}
-      and ${activitySegments.profile_id} = ${activities.profile_id}
-    where ${activities.id} = ${input.activityId}
-      and ${activities.profile_id} = ${input.profileId}
-      and ${activityArtifactLinks.activity_id} = ${input.activityId}
-      and ${activityArtifactLinks.artifact_id} = ${input.artifactId}
-      and ${activityArtifactLinks.profile_id} = ${input.profileId}
-      and ${activityArtifactLinks.role} = 'source'
-      and ${activityArtifactLinks.is_current} = true
-      and ${activityArtifacts.id} = ${input.artifactId}
-      and ${activityArtifacts.profile_id} = ${input.profileId}
-      and ${activityArtifacts.availability} = 'accepted'
-      and ${activityArtifacts.deletion_requested_at} is null
-      and ${activityArtifacts.deleted_at} is null
-    group by ${activities.id}, ${activities.started_at}, ${activities.finished_at}, ${activities.segments_revision}
-  `);
-  const rows = rowsFrom(result);
+      )`.as("segments"),
+    })
+    .from(activities)
+    .innerJoin(
+      activityArtifactLinks,
+      and(
+        eq(activityArtifactLinks.activity_id, activities.id),
+        eq(activityArtifactLinks.profile_id, activities.profile_id),
+      ),
+    )
+    .innerJoin(
+      activityArtifacts,
+      and(
+        eq(activityArtifacts.id, activityArtifactLinks.artifact_id),
+        eq(activityArtifacts.profile_id, activities.profile_id),
+      ),
+    )
+    .leftJoin(
+      activitySegments,
+      and(
+        eq(activitySegments.activity_id, activities.id),
+        eq(activitySegments.profile_id, activities.profile_id),
+      ),
+    )
+    .where(
+      and(
+        eq(activities.id, input.activityId),
+        eq(activities.profile_id, input.profileId),
+        eq(activityArtifactLinks.activity_id, input.activityId),
+        eq(activityArtifactLinks.artifact_id, input.artifactId),
+        eq(activityArtifactLinks.profile_id, input.profileId),
+        eq(activityArtifactLinks.role, "source"),
+        eq(activityArtifactLinks.is_current, true),
+        eq(activityArtifacts.id, input.artifactId),
+        eq(activityArtifacts.profile_id, input.profileId),
+        eq(activityArtifacts.availability, "accepted"),
+        isNull(activityArtifacts.deletion_requested_at),
+        isNull(activityArtifacts.deleted_at),
+      ),
+    )
+    .groupBy(
+      activities.id,
+      activities.started_at,
+      activities.finished_at,
+      activities.segments_revision,
+    );
   if (rows.length === 0) return null;
   if (rows.length !== 1) throw new Error("Accepted activity source state was ambiguous");
   return currentSourceRowSchema.parse(rows[0]);

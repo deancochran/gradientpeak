@@ -9,7 +9,7 @@ import {
 import { SearchField } from "@repo/ui/components/search-field";
 import { createFileRoute } from "@tanstack/react-router";
 import { ClipboardList, Loader2, Plus } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ActivityPlanCard } from "../../../components/activity-plan/activity-plan-card";
@@ -45,6 +45,7 @@ function ActivityPlansPage() {
   const search = routeSearch.q ?? "";
   const utils = api.useUtils();
   const [creating, setCreating] = useState(false);
+  const createdPlanId = useRef<string | null>(null);
   const plansQuery = api.activityPlans.list.useInfiniteQuery(
     {
       activityCategories: activity_category === "all" ? undefined : [activity_category],
@@ -56,13 +57,11 @@ function ActivityPlansPage() {
   );
   const plans = plansQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const createMutation = api.activityPlans.create.useMutation({
+    retry: false,
     onSuccess: async (plan) => {
-      await utils.activityPlans.invalidate();
+      await Promise.allSettled([Promise.resolve().then(() => utils.activityPlans.invalidate())]);
+      createdPlanId.current = plan.id;
       toast.success("Activity plan created");
-      void navigate({
-        to: "/activity-plans/$activityPlanId",
-        params: { activityPlanId: plan.id },
-      } as never);
     },
     onError: (error) => toast.error(error.message || "Activity plan could not be created"),
   });
@@ -75,6 +74,13 @@ function ActivityPlansPage() {
           onCancel={() => setCreating(false)}
           onSave={(values) => createMutation.mutateAsync(values).then(() => undefined)}
           pending={createMutation.isPending}
+          onSaved={async () => {
+            if (createdPlanId.current)
+              await navigate({
+                to: "/activity-plans/$activityPlanId",
+                params: { activityPlanId: createdPlanId.current },
+              } as never);
+          }}
         />
       </div>
     );
@@ -112,10 +118,7 @@ function ActivityPlansPage() {
             name="activityPlanSearch"
             onValueChange={(q) =>
               void navigate({
-                search: {
-                  activity_category: activity_category === "all" ? undefined : activity_category,
-                  q: q || undefined,
-                },
+                search: (previous) => ({ ...previous, q: q || undefined }),
                 replace: true,
               })
             }
@@ -127,13 +130,14 @@ function ActivityPlansPage() {
             <legend className="sr-only">Activity category</legend>
             {categoryOptions.map((option) => (
               <Button
+                aria-pressed={activity_category === option.value}
                 key={option.value}
                 onClick={() =>
                   void navigate({
-                    search: {
+                    search: (previous) => ({
+                      ...previous,
                       activity_category: option.value === "all" ? undefined : option.value,
-                      q: search || undefined,
-                    },
+                    }),
                     replace: true,
                   })
                 }

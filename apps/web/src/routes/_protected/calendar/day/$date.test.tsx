@@ -173,6 +173,7 @@ vi.mock("../../../../lib/api/client", () => ({
                 truncated: false,
                 truncation: {
                   events: false,
+                  plannedSessions: false,
                   completedActivities: false,
                   groupEvents: false,
                   goals: false,
@@ -210,10 +211,10 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe("CalendarDayPage planned workload", () => {
+describe("CalendarDayPage", () => {
   const CalendarDayPage = (Route as unknown as { component: React.ComponentType }).component;
 
-  it("uses the canonical day route input and leaves each agenda Event independent", () => {
+  it("uses the canonical day route input and leaves each agenda event independent", () => {
     mocks.events = [
       { id: "bike-event", starts_at: "2026-07-27T08:00:00.000Z", title: "Bike intervals" },
       {
@@ -243,7 +244,6 @@ describe("CalendarDayPage planned workload", () => {
     render(<CalendarDayPage />);
 
     expect(mocks.summaryInputs).toEqual([{ date: "2026-07-27" }]);
-    expect(screen.getByText("1 Event")).toBeTruthy();
     expect(screen.getByText("Bike intervals")).toBeTruthy();
     expect(screen.getByText("Cancelled run")).toBeTruthy();
     expect(screen.getByText("2 calendar items")).toBeTruthy();
@@ -308,17 +308,16 @@ describe("CalendarDayPage planned workload", () => {
     expect(screen.getByText("12:30 AM")).toBeTruthy();
   });
 
-  it("keeps loaded Event cards visible when the complete summary endpoint fails and retries it separately", () => {
+  it("keeps loaded event cards visible when the day agenda fails and retries it", () => {
     mocks.events = [{ id: "event-1", starts_at: "2026-07-27T08:00:00.000Z", title: "Run easy" }];
     mocks.summaryError = true;
 
     render(<CalendarDayPage />);
 
-    expect(screen.getByText("Planned workload could not be loaded.")).toBeTruthy();
+    expect(screen.getByText("The day agenda could not be fully loaded.")).toBeTruthy();
     expect(screen.getByText("Run easy")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Retry planned workload" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(mocks.summaryRefetch).toHaveBeenCalledOnce();
-    expect(screen.queryByText("No planned Events for this day.")).toBeNull();
   });
 
   it("keeps Event detail links keyboard-focusable and clickable when the summary fails", () => {

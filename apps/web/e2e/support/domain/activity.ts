@@ -1,8 +1,38 @@
+import { createHash } from "node:crypto";
+import {
+  activityPlanAdaptationSchema,
+  activityPlanSemanticHash,
+  activityPlanStructureSchema,
+  activityPlanTrainingIntentSchema,
+  getCanonicalActivityPlanStructureHashInput,
+} from "@repo/core/activity-plan";
+import { completedSegmentSummarySchema } from "@repo/core/activity-segments";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
+import {
+  type ActivityInsert,
+  type ActivityPlanInsert,
+  type ActivityRouteInsert,
+  type ActivitySegmentInsert,
+  activities,
+  activityPlans,
+  activityRoutes,
+  activitySegments,
+  comments,
+  events,
+  likes,
+  plannedSessions,
+} from "@repo/db/schema";
+import { and, eq } from "drizzle-orm";
 import type { E2ECleanupRegistry } from "../cleanup";
 import type { LocalE2EDatabase } from "../database";
 import type { E2EExecutionIdentity } from "../identity";
 import { utcDateTime } from "../identity";
-import { fixtureStructureHash } from "./shared";
+
+function activityPlanStructureHash(structure: unknown) {
+  return `v1:sha256:${createHash("sha256")
+    .update(getCanonicalActivityPlanStructureHashInput(structure))
+    .digest("hex")}`;
+}
 
 type OwnedInput = { actorEmail: string; label?: string; name?: string };
 type FixtureRecord = { id: string; name: string; url: string };
@@ -17,19 +47,56 @@ export class ActivityFixtureBuilder {
   async create(input: OwnedInput & { date?: string }): Promise<FixtureRecord> {
     const label = input.label ?? "activity";
     const id = this.identity.uuid(label);
+    const segmentId = this.identity.uuid(`${label}-segment`);
     const name = input.name ?? this.identity.name(`Playwright ${label}`);
     const date = input.date ?? this.identity.calendarDate(label);
     const actor = await this.database.requireActorByEmail(input.actorEmail);
-    await this.database.query(
-      `insert into "activities" (
-         "id", "profile_id", "name", "started_at", "finished_at", "elapsed_ms",
-         "active_ms", "moving_ms", "timing_coverage", "parser_version",
-         "decoded_contract_version", "materializer_version", "segments_generated_at"
-       ) values ($1, $2, $3, $4::timestamptz, $5::timestamptz, 3600000,
-         3600000, 3600000, 'complete', 'e2e-fixture-v1', 'e2e-fixture-v1',
-         'e2e-fixture-v1', $5::timestamptz)`,
-      [id, actor.profileId, name, utcDateTime(date), utcDateTime(date, "10:00:00")],
-    );
+    const startedAt = new Date(utcDateTime(date));
+    const finishedAt = new Date(utcDateTime(date, "10:00:00"));
+    const activity: ActivityInsert = {
+      id,
+      profile_id: actor.profileId,
+      name,
+      started_at: startedAt,
+      finished_at: finishedAt,
+      elapsed_ms: 3_600_000,
+      active_ms: 3_600_000,
+      moving_ms: 3_600_000,
+      timing_coverage: "complete",
+      parser_version: "e2e-fixture-v1",
+      decoded_contract_version: "e2e-fixture-v1",
+      materializer_version: "e2e-fixture-v1",
+      segments_generated_at: finishedAt,
+      entry_provenance: null,
+      distance_meters: 10_000,
+    };
+    const summary = completedSegmentSummarySchema.parse({
+      version: 1,
+      timing: { timingCoverage: "complete", activeMs: 3_600_000, movingMs: 3_600_000 },
+      normalizedPowerResult: calculateCyclingNormalizedPower({ samples: [] }),
+    });
+    const segment: ActivitySegmentInsert = {
+      id: segmentId,
+      activity_id: id,
+      profile_id: actor.profileId,
+      ordinal: 0,
+      role: "activity",
+      activity_category: "bike",
+      start_offset_ms: 0,
+      end_offset_ms: 3_600_000,
+      summary,
+      summary_version: 1,
+      timing_coverage: "complete",
+      active_ms: 3_600_000,
+      moving_ms: 3_600_000,
+      segment_revision: 1,
+      parser_version: "e2e-fixture-v1",
+      materializer_version: "e2e-fixture-v1",
+    };
+    await this.database.typedTransaction(async (database) => {
+      await database.insert(activities).values(activity);
+      await database.insert(activitySegments).values(segment);
+    });
     this.register(id, actor.profileId);
     return { id, name, url: `/activities/${id}` };
   }
@@ -39,19 +106,20 @@ export class ActivityFixtureBuilder {
       kind: "activity",
       id,
       cleanup: async (database) => {
-        await database.transaction(async (query) => {
-          await query.query(
-            `delete from "comments" where "entity_type" = 'activity' and "entity_id" = $1`,
-            [id],
-          );
-          await query.query(
-            `delete from "likes" where "entity_type" = 'activity' and "entity_id" = $1`,
-            [id],
-          );
-          await query.query(
-            `delete from "activities" where "id" = $1 and ($2::uuid is null or "profile_id" = $2)`,
-            [id, profileId ?? null],
-          );
+        await database.typedTransaction(async (transaction) => {
+          await transaction
+            .delete(comments)
+            .where(and(eq(comments.entity_type, "activity"), eq(comments.entity_id, id)));
+          await transaction
+            .delete(likes)
+            .where(and(eq(likes.entity_type, "activity"), eq(likes.entity_id, id)));
+          await transaction
+            .delete(activities)
+            .where(
+              profileId
+                ? and(eq(activities.id, id), eq(activities.profile_id, profileId))
+                : eq(activities.id, id),
+            );
         });
       },
     });
@@ -98,20 +166,29 @@ export class ActivityPlanFixtureBuilder {
         },
       ],
     };
-    await this.database.query(
-      `insert into "activity_plans" (
-         "id", "profile_id", "name", "description", "notes", "structure", "structure_hash",
-         "gps_recording_enabled", "content_visibility", "is_system_template"
-       ) values ($1, $2, $3, 'Exact-ID browser fixture.', 'Bring bottles', $4::jsonb, $5, true, $6, false)`,
-      [
-        id,
-        actor.profileId,
-        name,
-        JSON.stringify(structure),
-        fixtureStructureHash(structure),
-        input.visibility ?? "private",
-      ],
-    );
+    const parsedStructure = activityPlanStructureSchema.parse(structure);
+    const adaptation = activityPlanAdaptationSchema.nullable().parse(null);
+    const trainingIntent = activityPlanTrainingIntentSchema.parse("general_maintenance");
+    const activityPlan: ActivityPlanInsert = {
+      id,
+      profile_id: actor.profileId,
+      name,
+      description: "Exact-ID browser fixture.",
+      notes: "Bring bottles",
+      structure: parsedStructure,
+      adaptation,
+      structure_hash: activityPlanStructureHash(parsedStructure),
+      semantic_hash: activityPlanSemanticHash({
+        structure: parsedStructure,
+        adaptation,
+        trainingIntent,
+      }),
+      training_intent: trainingIntent,
+      gps_recording_enabled: true,
+      content_visibility: input.visibility ?? "private",
+      is_system_template: false,
+    };
+    await this.database.db.insert(activityPlans).values(activityPlan);
     this.register(id, actor.profileId);
     return { id, name, url: `/activity-plans/${id}` };
   }
@@ -121,25 +198,21 @@ export class ActivityPlanFixtureBuilder {
       kind: "activity-plan",
       id,
       cleanup: async (database) => {
-        await database.transaction(async (query) => {
-          await query.query(
-            `delete from "comments" where "entity_type" = 'event' and "entity_id" in
-              (select "id" from "events" where "activity_plan_id" = $1)`,
-            [id],
-          );
-          await query.query('delete from "events" where "activity_plan_id" = $1', [id]);
-          await query.query(
-            `delete from "comments" where "entity_type" = 'activity_plan' and "entity_id" = $1`,
-            [id],
-          );
-          await query.query(
-            `delete from "likes" where "entity_type" = 'activity_plan' and "entity_id" = $1`,
-            [id],
-          );
-          await query.query(
-            `delete from "activity_plans" where "id" = $1 and ($2::uuid is null or "profile_id" = $2)`,
-            [id, profileId ?? null],
-          );
+        await database.typedTransaction(async (transaction) => {
+          await transaction.delete(plannedSessions).where(eq(plannedSessions.activity_plan_id, id));
+          await transaction
+            .delete(comments)
+            .where(and(eq(comments.entity_type, "activity_plan"), eq(comments.entity_id, id)));
+          await transaction
+            .delete(likes)
+            .where(and(eq(likes.entity_type, "activity_plan"), eq(likes.entity_id, id)));
+          await transaction
+            .delete(activityPlans)
+            .where(
+              profileId
+                ? and(eq(activityPlans.id, id), eq(activityPlans.profile_id, profileId))
+                : eq(activityPlans.id, id),
+            );
         });
       },
     });
@@ -158,20 +231,20 @@ export class RouteFixtureBuilder {
     const id = this.identity.uuid(label);
     const name = input.name ?? this.identity.name(`Playwright ${label}`);
     const actor = await this.database.requireActorByEmail(input.actorEmail);
-    await this.database.query(
-      `insert into "activity_routes" (
-         "id", "profile_id", "name", "description", "file_path", "storage_state",
-         "total_distance", "total_ascent", "total_descent", "polyline", "is_public"
-        ) values ($1, $2, $3, 'Exact-ID browser fixture.', $4, 'ready', 10000, 120, 110, $5, $6)`,
-      [
-        id,
-        actor.profileId,
-        name,
-        `e2e/${id}.gpx`,
-        "_p~iF~ps|U_ulLnnqC_mqNvxq`@",
-        input.isPublic ?? false,
-      ],
-    );
+    const route: ActivityRouteInsert = {
+      id,
+      profile_id: actor.profileId,
+      name,
+      description: "Exact-ID browser fixture.",
+      file_path: `e2e/${id}.gpx`,
+      storage_state: "ready",
+      total_distance: 10_000,
+      total_ascent: 120,
+      total_descent: 110,
+      polyline: "_p~iF~ps|U_ulLnnqC_mqNvxq`@",
+      is_public: input.isPublic ?? false,
+    };
+    await this.database.db.insert(activityRoutes).values(route);
     this.register(id, actor.profileId);
     return { id, name, url: `/routes/${id}` };
   }
@@ -181,20 +254,21 @@ export class RouteFixtureBuilder {
       kind: "activity-route",
       id,
       cleanup: async (database) => {
-        await database.transaction(async (query) => {
-          await query.query('update "events" set "route_id" = null where "route_id" = $1', [id]);
-          await query.query(
-            `delete from "comments" where "entity_type" = 'route' and "entity_id" = $1`,
-            [id],
-          );
-          await query.query(
-            `delete from "likes" where "entity_type" = 'route' and "entity_id" = $1`,
-            [id],
-          );
-          await query.query(
-            `delete from "activity_routes" where "id" = $1 and ($2::uuid is null or "profile_id" = $2)`,
-            [id, profileId ?? null],
-          );
+        await database.typedTransaction(async (transaction) => {
+          await transaction.update(events).set({ route_id: null }).where(eq(events.route_id, id));
+          await transaction
+            .delete(comments)
+            .where(and(eq(comments.entity_type, "route"), eq(comments.entity_id, id)));
+          await transaction
+            .delete(likes)
+            .where(and(eq(likes.entity_type, "route"), eq(likes.entity_id, id)));
+          await transaction
+            .delete(activityRoutes)
+            .where(
+              profileId
+                ? and(eq(activityRoutes.id, id), eq(activityRoutes.profile_id, profileId))
+                : eq(activityRoutes.id, id),
+            );
         });
       },
     });

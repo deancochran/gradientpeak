@@ -33,6 +33,17 @@ export type ProfileFields = Partial<
 
 export type ProfileMediaField = "avatar_url" | "cover_url";
 
+/** A device default may fill a gap, but must never overwrite a saved preference. */
+export async function initializeOwnedPlanningTimezone(
+  db: DbClient,
+  input: { profileId: string; timezone: string },
+) {
+  await db
+    .update(profiles)
+    .set({ planning_timezone: input.timezone, updated_at: new Date() })
+    .where(and(eq(profiles.id, input.profileId), isNull(profiles.planning_timezone)));
+}
+
 export async function compareAndSwapOwnedProfileMedia(
   db: DbClient,
   input: {
@@ -43,13 +54,16 @@ export async function compareAndSwapOwnedProfileMedia(
     now: Date;
   },
 ) {
-  const column = profiles[input.field];
+  const fields =
+    input.field === "avatar_url" ? { avatar_url: input.next } : { cover_url: input.next };
+  const expectedValue =
+    input.field === "avatar_url"
+      ? sql`${profiles.avatar_url} IS NOT DISTINCT FROM ${input.expected}`
+      : sql`${profiles.cover_url} IS NOT DISTINCT FROM ${input.expected}`;
   const [updated] = await db
     .update(profiles)
-    .set({ [input.field]: input.next, updated_at: input.now })
-    .where(
-      and(eq(profiles.id, input.profileId), sql`${column} IS NOT DISTINCT FROM ${input.expected}`),
-    )
+    .set({ ...fields, updated_at: input.now })
+    .where(and(eq(profiles.id, input.profileId), expectedValue))
     .returning({ id: profiles.id });
 
   return Boolean(updated);

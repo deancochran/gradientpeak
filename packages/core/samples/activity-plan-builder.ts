@@ -2,7 +2,10 @@ import type {
   ActivityPlanDuration,
   ActivityPlanStructure,
   ActivityPlanTarget,
+  AdaptationControl,
+  AdaptationState,
 } from "../activity-plan";
+import { activityPlanStructureSchema } from "../activity-plan";
 import { deterministicUuidFromSeed } from "../plan/normalizeGoalInput";
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
 
@@ -12,6 +15,7 @@ type StepInput = {
   targets?: ActivityPlanTarget[];
   notes?: string;
   description?: string;
+  purpose?: "warmup" | "work" | "recovery" | "cooldown" | "technique";
 };
 
 type DraftInterval = {
@@ -20,6 +24,12 @@ type DraftInterval = {
   steps: StepInput[];
   notes?: string;
 };
+
+export function requiredSampleItem<T>(values: readonly T[], index: number, context: string): T {
+  const value = values[index];
+  if (value === undefined) throw new Error(`Missing ${context} at index ${index}.`);
+  return value;
+}
 
 /** Template-only builder that authors strict documents with stable nested IDs. */
 export class SystemActivityPlanBuilder {
@@ -44,17 +54,27 @@ export class SystemActivityPlanBuilder {
       name: config.name ?? `Interval ${this.intervals.length + 1}`,
       repetitions: config.repeat,
       steps: config.steps,
-      notes: config.notes,
+      ...(config.notes === undefined ? {} : { notes: config.notes }),
     });
     return this;
   }
 
   warmup(config: Omit<StepInput, "name"> & { name?: string }): this {
-    return this.step({ ...config, name: config.name ?? "Warmup", intervalName: "Warmup" });
+    return this.step({
+      ...config,
+      name: config.name ?? "Warmup",
+      intervalName: "Warmup",
+      purpose: "warmup",
+    });
   }
 
   cooldown(config: Omit<StepInput, "name"> & { name?: string }): this {
-    return this.step({ ...config, name: config.name ?? "Cooldown", intervalName: "Cooldown" });
+    return this.step({
+      ...config,
+      name: config.name ?? "Cooldown",
+      intervalName: "Cooldown",
+      purpose: "cooldown",
+    });
   }
 
   rest(config: { name?: string; duration: ActivityPlanDuration; notes?: string }): this {
@@ -62,8 +82,9 @@ export class SystemActivityPlanBuilder {
       name: config.name ?? "Rest",
       duration: config.duration,
       targets: [{ type: "RPE", intensity: 1 }],
-      notes: config.notes,
+      ...(config.notes === undefined ? {} : { notes: config.notes }),
       intervalName: "Rest",
+      purpose: "recovery",
     });
   }
 
@@ -72,7 +93,7 @@ export class SystemActivityPlanBuilder {
 
     const segmentSeed = `system-template:${this.activity_category}:${this.identity}`;
 
-    return {
+    return activityPlanStructureSchema.parse({
       version: 3,
       activity_category: this.activity_category,
       segments: [
@@ -91,12 +112,13 @@ export class SystemActivityPlanBuilder {
               targets: step.targets?.length ? step.targets : [{ type: "RPE", intensity: 5 }],
               ...(step.description ? { description: step.description } : {}),
               ...(step.notes ? { notes: step.notes } : {}),
+              ...(step.purpose ? { purpose: step.purpose } : {}),
             })),
             ...(interval.notes ? { notes: interval.notes } : {}),
           })),
         },
       ],
-    } as ActivityPlanStructure;
+    });
   }
 }
 
@@ -105,6 +127,28 @@ export function createSystemActivityPlanBuilder(
   identity: string,
 ) {
   return new SystemActivityPlanBuilder(activity_category, identity);
+}
+
+/** Creates stable semantic-adaptation identities for one system activity plan. */
+export function createSystemActivityPlanAdaptationBuilder(identity: string) {
+  return {
+    control(input: Omit<AdaptationControl, "id">): AdaptationControl {
+      return {
+        ...input,
+        id: deterministicUuidFromSeed(
+          `system-template-adaptation:${identity}:control:${input.key}`,
+        ),
+      };
+    },
+    state(input: Omit<AdaptationState, "id">): AdaptationState {
+      return {
+        ...input,
+        id: deterministicUuidFromSeed(
+          `system-template-adaptation:${identity}:state:${input.label}`,
+        ),
+      };
+    },
+  };
 }
 
 /** Binds explicit, ordered identity keys to a source module's authored template definitions. */

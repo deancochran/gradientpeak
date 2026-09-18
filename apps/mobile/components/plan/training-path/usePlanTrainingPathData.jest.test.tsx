@@ -5,11 +5,25 @@ const mockProjectionRefetch = jest.fn(async () => undefined);
 const mockRefreshProfile = jest.fn(async () => undefined);
 const mockCalendarDayInvalidate = jest.fn(async () => undefined);
 const mockGoalAssessmentInvalidate = jest.fn(async () => undefined);
+const mockGoalPortfolioInvalidate = jest.fn(async () => undefined);
 const mockGoalProgressInvalidate = jest.fn(async () => undefined);
 const mockThresholdOverviewInvalidate = jest.fn(async () => undefined);
+const mockProfilesInvalidate = jest.fn(async () => undefined);
+const mockSetProfileData = jest.fn();
+const mockPlanProjectionInvalidate = jest.fn(async () => undefined);
+const mockPlanPeriodReviewInvalidate = jest.fn(async () => undefined);
+const mockReadModelInvalidate = jest.fn(async () => undefined);
+const mockUpdateProfile = jest.fn(async (_input: { timezone: string }) => ({
+  planning_timezone: _input.timezone,
+}));
+let mockAccountId = "account-a";
 const mockProjectionUseQuery = jest.fn();
 let mockPlanningTimezone: string | null = "America/Los_Angeles";
 let mockProfileLoading = false;
+let mockProfileMissing = false;
+let mockProfileError: Error | null = null;
+let mockAuthReady = true;
+let mockDetectedTimezone: string | null = "America/Los_Angeles";
 
 const load = {
   plannedLoad: 70,
@@ -143,16 +157,36 @@ jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
     useUtils: () => ({
+      profiles: { invalidate: mockProfilesInvalidate, get: { setData: mockSetProfileData } },
       athleteIntelligence: {
+        getReadModel: { invalidate: mockReadModelInvalidate },
         getGoalAssessment: { invalidate: mockGoalAssessmentInvalidate },
+        getGoalPortfolio: { invalidate: mockGoalPortfolioInvalidate },
         getGoalProgress: { invalidate: mockGoalProgressInvalidate },
         getThresholdOverview: { invalidate: mockThresholdOverviewInvalidate },
       },
       calendar: { day: { invalidate: mockCalendarDayInvalidate } },
+      trainingPlans: {
+        getPlanPeriodReview: {
+          invalidate: () => mockPlanPeriodReviewInvalidate(),
+        },
+        getPlanTabProjection: {
+          invalidate: () => mockPlanProjectionInvalidate(),
+        },
+      },
     }),
     trainingPlans: {
+      getPlanPeriodReview: {
+        invalidate: () => mockPlanPeriodReviewInvalidate(),
+      },
       getPlanTabProjection: {
         useQuery: (input: unknown, options: unknown) => mockProjectionUseQuery(input, options),
+        invalidate: () => mockPlanProjectionInvalidate(),
+      },
+    },
+    profiles: {
+      initializePlanningTimezone: {
+        useMutation: () => ({ isPending: false, mutateAsync: mockUpdateProfile }),
       },
     },
   },
@@ -160,24 +194,31 @@ jest.mock("@/lib/api", () => ({
 jest.mock("@/lib/auth/auth-headers", () => ({ hasSessionAuthCredentials: () => true }));
 jest.mock("@/lib/hooks/useAuth", () => ({
   useAuth: () => ({
-    profile: { planning_timezone: mockPlanningTimezone },
+    user: { id: mockAccountId },
+    profile: mockProfileMissing
+      ? null
+      : { id: mockAccountId, planning_timezone: mockPlanningTimezone },
     profileLoading: mockProfileLoading,
+    profileError: mockProfileError,
     refreshProfile: mockRefreshProfile,
   }),
 }));
 jest.mock("@/lib/stores/auth-store", () => ({
   useAuthStore: (selector: (state: { ready: boolean; session: object }) => unknown) =>
-    selector({ ready: true, session: {} }),
+    selector({ ready: mockAuthReady, session: {} }),
 }));
 jest.mock("./trainingPathPlanningTime", () => ({
   getTrainingPathTodayKey: (_now: Date, timezone: string | null) =>
     timezone ? "2026-04-06" : null,
   millisecondsUntilNextTrainingPathDay: () => 60_000,
 }));
+jest.mock("@/lib/calendar/eventSchedule", () => ({
+  getDetectedDeviceTimeZone: () => mockDetectedTimezone,
+}));
 
 import {
   buildPlanTabProjectionPresentation,
-  type PlanTabProjection,
+  type MobilePlanTabProjection,
 } from "./planTabProjectionPresentation";
 import { usePlanTrainingPathData } from "./usePlanTrainingPathData";
 
@@ -185,14 +226,22 @@ describe("usePlanTrainingPathData", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockPlanningTimezone = "America/Los_Angeles";
+    mockAccountId = "account-a";
+    mockUpdateProfile
+      .mockReset()
+      .mockImplementation(async ({ timezone }) => ({ planning_timezone: timezone }));
     mockProfileLoading = false;
+    mockProfileMissing = false;
+    mockProfileError = null;
+    mockAuthReady = true;
+    mockDetectedTimezone = "America/Los_Angeles";
     mockProjectionData = projection;
     mockProjectionUseQuery.mockImplementation(() => queryResult({ data: mockProjectionData }));
   });
 
   it("converts a projection into the chart presentation", () => {
     const result = buildPlanTabProjectionPresentation({
-      projection: projection as unknown as PlanTabProjection,
+      projection: projection as unknown as MobilePlanTabProjection,
       selectedWeekStart: "2026-04-06",
       weekWindow: { start: "2026-03-30", end: "2026-04-12" },
       todayKey: "2026-04-06",
@@ -230,7 +279,7 @@ describe("usePlanTrainingPathData", () => {
           verifiedThrough: "2026-04-05",
           maturity: "establishing_baseline",
         },
-      } as unknown as PlanTabProjection,
+      } as unknown as MobilePlanTabProjection,
       selectedWeekStart: "2026-04-06",
       weekWindow: { start: "2026-03-30", end: "2026-04-12" },
       todayKey: "2026-04-06",
@@ -271,9 +320,9 @@ describe("usePlanTrainingPathData", () => {
             hasUnavailableCompletedLoad: completedLoadStatus === "unavailable",
           },
         },
-      } as unknown as PlanTabProjection;
+      } as unknown as MobilePlanTabProjection;
     };
-    const present = (variant: PlanTabProjection) =>
+    const present = (variant: MobilePlanTabProjection) =>
       buildPlanTabProjectionPresentation({
         projection: variant,
         selectedWeekStart: "2026-04-06",
@@ -298,8 +347,10 @@ describe("usePlanTrainingPathData", () => {
     });
 
     const incompleteSubtotalProjection = buildVariant("unavailable", null);
+    const existingDayLoad = incompleteSubtotalProjection.dayLoads["2026-04-06"];
+    if (!existingDayLoad) throw new Error("Expected fixture day load");
     incompleteSubtotalProjection.dayLoads["2026-04-06"] = {
-      ...incompleteSubtotalProjection.dayLoads["2026-04-06"],
+      ...existingDayLoad,
       knownCompletedLoadSubtotal: 20,
     };
     const incompleteSubtotal = present(incompleteSubtotalProjection);
@@ -365,7 +416,7 @@ describe("usePlanTrainingPathData", () => {
           remainingLoadStatus: "partial",
         },
       },
-    } as unknown as PlanTabProjection;
+    } as unknown as MobilePlanTabProjection;
 
     const result = buildPlanTabProjectionPresentation({
       projection: partialProjection,
@@ -411,7 +462,7 @@ describe("usePlanTrainingPathData", () => {
           scheduledLoadStatus: "unavailable",
         },
       },
-    } as unknown as PlanTabProjection;
+    } as unknown as MobilePlanTabProjection;
 
     const result = buildPlanTabProjectionPresentation({
       projection: subtotalProjection,
@@ -633,21 +684,207 @@ describe("usePlanTrainingPathData", () => {
     expect(result.current.handleAnalysisPeriodShift).toEqual(expect.any(Function));
   });
 
-  it("uses UTC as a safe request anchor when a legacy profile has no planning timezone", async () => {
+  it("automatically initializes a missing timezone and enables planning after persistence", async () => {
     mockPlanningTimezone = null;
-
-    const { result } = await renderHook(() => usePlanTrainingPathData());
-
+    const { result, rerender } = await renderHook(() => usePlanTrainingPathData());
+    expect(mockUpdateProfile).toHaveBeenCalledWith({ timezone: "America/Los_Angeles" });
+    expect(mockProjectionUseQuery).toHaveBeenCalledWith(
+      { startDate: "1970-01-01", endDate: "1970-01-01" },
+      expect.objectContaining({ enabled: false }),
+    );
+    await act(async () => undefined);
     expect(mockProjectionUseQuery).toHaveBeenCalledWith(
       { startDate: "2026-03-17", endDate: "2026-04-27" },
       expect.objectContaining({ enabled: true }),
     );
-    expect(result.current).toMatchObject({
-      planningTimezoneState: "ready",
-      chartUnavailable: false,
-      chartLoading: false,
-      queryFailureCount: 0,
+    expect(result.current.timezoneInitializing).toBe(false);
+    expect(result.current.hasUsableData).toBe(true);
+    await rerender({});
+    expect(mockUpdateProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for profile hydration before initializing", async () => {
+    mockPlanningTimezone = null;
+    mockProfileLoading = true;
+    const { rerender } = await renderHook(() => usePlanTrainingPathData());
+    expect(mockUpdateProfile).not.toHaveBeenCalled();
+    mockProfileLoading = false;
+    mockPlanningTimezone = "Pacific/Auckland";
+    await rerender({});
+    expect(mockUpdateProfile).not.toHaveBeenCalled();
+  });
+
+  it("persists the device timezone and refreshes cached profile and Plan reads", async () => {
+    mockPlanningTimezone = null;
+    mockDetectedTimezone = "America/New_York";
+    await renderHook(() => usePlanTrainingPathData());
+    await act(async () => undefined);
+    expect(mockUpdateProfile).toHaveBeenCalledWith({ timezone: "America/New_York" });
+    expect(mockSetProfileData).toHaveBeenCalledWith(undefined, {
+      planning_timezone: "America/New_York",
     });
+    expect(mockRefreshProfile).toHaveBeenCalledTimes(1);
+    expect(mockProfilesInvalidate).toHaveBeenCalledTimes(1);
+    expect(mockPlanProjectionInvalidate).toHaveBeenCalledTimes(1);
+    expect(mockPlanPeriodReviewInvalidate).toHaveBeenCalledTimes(1);
+    expect(mockReadModelInvalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    null,
+    "PST",
+    "Not/A_Zone",
+  ])("falls back to UTC when device detection returns %s", async (detected) => {
+    mockPlanningTimezone = null;
+    mockDetectedTimezone = detected;
+    const { result } = await renderHook(() => usePlanTrainingPathData());
+    await act(async () => undefined);
+    expect(result.current.timezoneSetupError).toBeNull();
+    expect(result.current.timezoneInitializing).toBe(false);
+    expect(result.current.planningTimezoneState).toBe("ready");
+    expect(mockUpdateProfile).toHaveBeenCalledWith({ timezone: "UTC" });
+  });
+
+  it("does not prompt to replace an existing planning timezone", async () => {
+    const { result } = await renderHook(() => usePlanTrainingPathData());
+
+    expect(result.current.timezoneInitializing).toBe(false);
+    expect(mockUpdateProfile).not.toHaveBeenCalled();
+  });
+
+  it("does not loop on failure and permits an explicit safe retry", async () => {
+    mockPlanningTimezone = null;
+    mockUpdateProfile.mockRejectedValueOnce(new Error("offline"));
+    const { result, rerender } = await renderHook(() => usePlanTrainingPathData());
+    await act(async () => undefined);
+    expect(result.current.timezoneSetupError).toContain("retry");
+    await rerender({});
+    expect(mockUpdateProfile).toHaveBeenCalledTimes(1);
+    expect(result.current.timezoneInitializing).toBe(false);
+    await act(async () => result.current.retryTimezoneInitialization());
+    expect(result.current.timezoneInitializing).toBe(false);
+    expect(mockUpdateProfile).toHaveBeenCalledTimes(2);
+  });
+
+  it("retains acknowledged persistence when a follow-up refresh fails", async () => {
+    mockPlanningTimezone = null;
+    mockRefreshProfile.mockRejectedValueOnce(new Error("offline"));
+    const { result, rerender } = await renderHook(() => usePlanTrainingPathData());
+    await act(async () => undefined);
+    await rerender({});
+    expect(result.current.timezoneInitializing).toBe(false);
+    expect(result.current.timezoneSetupError).toBeNull();
+    expect(mockUpdateProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores initialization responses from a previous account", async () => {
+    mockPlanningTimezone = null;
+    let resolve!: (value: { planning_timezone: string }) => void;
+    mockUpdateProfile.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const { result, rerender } = await renderHook(() => usePlanTrainingPathData());
+    mockAccountId = "account-b";
+    mockPlanningTimezone = "Pacific/Auckland";
+    await rerender({});
+    await act(async () => resolve({ planning_timezone: "America/New_York" }));
+    expect(result.current.timezoneInitializing).toBe(false);
+    expect(mockRefreshProfile).not.toHaveBeenCalled();
+  });
+
+  it("single-flights automatic initialization and repeated retry callbacks", async () => {
+    mockPlanningTimezone = null;
+    let resolve!: (value: { planning_timezone: string }) => void;
+    mockUpdateProfile.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const { result } = await renderHook(() => usePlanTrainingPathData());
+    await act(async () => {
+      void result.current.retryTimezoneInitialization();
+      void result.current.retryTimezoneInitialization();
+    });
+    expect(mockUpdateProfile).toHaveBeenCalledTimes(1);
+    expect(result.current.timezoneInitializing).toBe(true);
+    await act(async () => resolve({ planning_timezone: "America/New_York" }));
+    expect(result.current.timezoneInitializing).toBe(false);
+    expect(result.current.planningTimezoneState).toBe("ready");
+  });
+
+  it("waits for auth readiness and does not repeat a write on subsequent renders", async () => {
+    mockPlanningTimezone = null;
+    mockAuthReady = false;
+    const { rerender } = await renderHook(() => usePlanTrainingPathData());
+    expect(mockUpdateProfile).not.toHaveBeenCalled();
+    mockAuthReady = true;
+    await rerender({});
+    await act(async () => undefined);
+    await rerender({});
+    expect(mockUpdateProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a failed profile read before attempting initialization", async () => {
+    mockProfileMissing = true;
+    mockProfileError = new Error("offline");
+    const { result, rerender } = await renderHook(() => usePlanTrainingPathData());
+    expect(result.current.timezoneSetupError).toContain("profile could not be loaded");
+    await act(async () => result.current.retryTimezoneInitialization());
+    expect(mockRefreshProfile).toHaveBeenCalledTimes(1);
+    expect(mockUpdateProfile).not.toHaveBeenCalled();
+    mockProfileMissing = false;
+    mockProfileError = null;
+    mockPlanningTimezone = null;
+    await rerender({});
+    await act(async () => undefined);
+    expect(mockUpdateProfile).toHaveBeenCalledTimes(1);
+    expect(result.current.planningTimezoneState).toBe("ready");
+  });
+
+  it("uses the server's saved winner rather than replacing it with the device default", async () => {
+    mockPlanningTimezone = null;
+    mockUpdateProfile.mockResolvedValueOnce({ planning_timezone: "Pacific/Auckland" });
+    const { result } = await renderHook(() => usePlanTrainingPathData());
+    await act(async () => undefined);
+    expect(result.current.planningTimezoneState).toBe("ready");
+    expect(mockSetProfileData).toHaveBeenCalledWith(undefined, {
+      planning_timezone: "Pacific/Auckland",
+    });
+  });
+
+  it("does not apply late initialization after unmount", async () => {
+    mockPlanningTimezone = null;
+    let resolve!: (value: { planning_timezone: string }) => void;
+    mockUpdateProfile.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    const { unmount } = await renderHook(() => usePlanTrainingPathData());
+    await unmount();
+    await act(async () => resolve({ planning_timezone: "America/New_York" }));
+    expect(mockSetProfileData).not.toHaveBeenCalled();
+    expect(mockRefreshProfile).not.toHaveBeenCalled();
+  });
+
+  it("initializes a new gap after a saved override is explicitly cleared", async () => {
+    mockPlanningTimezone = null;
+    const { result, rerender } = await renderHook(() => usePlanTrainingPathData());
+    await act(async () => undefined);
+    mockPlanningTimezone = "Pacific/Auckland";
+    await rerender({});
+    expect(mockUpdateProfile).toHaveBeenCalledTimes(1);
+    mockPlanningTimezone = null;
+    await rerender({});
+    await act(async () => undefined);
+    expect(mockUpdateProfile).toHaveBeenCalledTimes(2);
+    expect(mockUpdateProfile).toHaveBeenLastCalledWith({ timezone: "America/Los_Angeles" });
+    expect(result.current.planningTimezoneState).toBe("ready");
   });
 
   it("refreshes every resource visible in the coordinated Plan workflow", async () => {
@@ -659,6 +896,7 @@ describe("usePlanTrainingPathData", () => {
     expect(mockRefreshProfile).toHaveBeenCalledTimes(1);
     expect(mockCalendarDayInvalidate).toHaveBeenCalledTimes(1);
     expect(mockGoalAssessmentInvalidate).toHaveBeenCalledTimes(1);
+    expect(mockGoalPortfolioInvalidate).toHaveBeenCalledTimes(1);
     expect(mockGoalProgressInvalidate).toHaveBeenCalledTimes(1);
     expect(mockThresholdOverviewInvalidate).toHaveBeenCalledTimes(1);
   });
@@ -672,6 +910,7 @@ describe("usePlanTrainingPathData", () => {
     expect(mockProjectionRefetch).toHaveBeenCalledTimes(1);
     expect(mockRefreshProfile).toHaveBeenCalledTimes(1);
     expect(mockGoalAssessmentInvalidate).toHaveBeenCalledTimes(1);
+    expect(mockGoalPortfolioInvalidate).toHaveBeenCalledTimes(1);
     expect(mockGoalProgressInvalidate).toHaveBeenCalledTimes(1);
     expect(mockThresholdOverviewInvalidate).toHaveBeenCalledTimes(1);
   });

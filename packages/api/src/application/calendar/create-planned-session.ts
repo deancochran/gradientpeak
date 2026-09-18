@@ -29,7 +29,7 @@ export async function createPlannedSession(input: {
   if (
     !(await input.repository.activityPlanExistsForProfile({
       profileId: input.profileId,
-      activityPlanId: session.prescription.activityPlanId,
+      activityPlanId: session.prescription.resolutionManifest.activity_plan_id,
     }))
   ) {
     throw new PlannedSessionAccessError(
@@ -44,15 +44,6 @@ export async function createPlannedSession(input: {
     }))
   ) {
     throw new PlannedSessionAccessError("The training plan is not owned or system-provided");
-  }
-  if (session.source.kind === "recurrence") {
-    const series = await input.repository.getOwned({
-      profileId: input.profileId,
-      sessionId: session.source.seriesId,
-    });
-    if (!series) {
-      throw new PlannedSessionAccessError("The recurrence series is not owned by this profile");
-    }
   }
   if (session.groupEventId) {
     await requirePlannedSessionGroupEventAccess({

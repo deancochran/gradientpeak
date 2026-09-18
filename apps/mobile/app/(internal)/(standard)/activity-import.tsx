@@ -19,6 +19,7 @@ import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
+import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { ActivityFileUploader } from "@/lib/services/fit/ActivityFileUploader";
 
@@ -89,6 +90,10 @@ export default function ActivityImportScreen() {
     getSignedUrlMutation.isPending ||
     processActivityFileMutation.isPending;
   const isFormDisabled = isImporting || importSummary !== null;
+  useDirtyNavigationGuard({
+    isDirty: form.formState.isDirty && !terminalSuccessRef.current,
+    isPending: isImporting,
+  });
 
   useEffect(() => {
     const fileKey = selectedActivityFile

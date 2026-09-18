@@ -31,6 +31,7 @@ jest.mock("@/components/calendar", () => ({
 jest.mock("@/lib/performance", () => ({ usePerformanceScreenReady: jest.fn() }));
 jest.mock("@/components/plan/training-path/usePlanTrainingPathData", () => ({
   usePlanTrainingPathData: () => ({
+    planningTimezoneState: "ready",
     chartLoading: false,
     chartUnavailable: false,
     dailyTrainingPathPoints: [{ date: "2026-04-15", fitnessCtl: 42 }],
@@ -49,11 +50,11 @@ jest.mock("@/components/plan/training-path/usePlanTrainingPathData", () => ({
 jest.mock("@/components/plan/training-path/PlanDashboardContent", () => ({
   PlanDashboardContent: ({
     onCreateGoal,
-    onOpenGoal,
+    onOpenGoal = () => {},
     onOpenGoals,
-    onOpenSourceActivity,
-    onViewDetails,
-  }: Record<string, (...args: never[]) => void>) =>
+    onOpenSourceActivity = () => {},
+    onViewDetails = () => {},
+  }: Record<string, ((...args: never[]) => void) | undefined>) =>
     React.createElement(
       "View",
       { testID: "plan-command-center" },

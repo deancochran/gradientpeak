@@ -14,7 +14,7 @@ vi.mock("./planned-activity-scopes", async (importOriginal) => {
 });
 
 import { hashPlannedActivityPayload } from "../../provider-sync/planned-activities/planned-activity-hash";
-import { getWahooProjectionSnapshot } from "./plan-converter";
+import { calculateWorkoutDuration, getWahooProjectionSnapshot } from "./plan-converter";
 import {
   decideRouteOnlyWahooConvergence,
   resolveWahooSyncMetrics,
@@ -64,13 +64,6 @@ function planWithRelativeTarget(type: "%FTP" | "%ThresholdHR", activityCategory:
     }
   }
   return structure;
-}
-
-function planDocument(structure: unknown) {
-  return core.initializeActivityPlanDocument({
-    activityPlanId: "11111111-1111-4111-8111-111111111111",
-    structure,
-  });
 }
 
 function remoteWorkout(overrides: Record<string, unknown> = {}) {
@@ -159,12 +152,7 @@ function syncFixture(
         description: "Bike session",
         id: "plan-1",
         name: "Tempo Intervals",
-        structure:
-          input.planStructure ??
-          core.initializeActivityPlanDocument({
-            activityPlanId: "11111111-1111-4111-8111-111111111111",
-            structure: core.SYSTEM_TEMPLATES[0]?.structure,
-          }),
+        structure: input.planStructure ?? core.SYSTEM_TEMPLATES[0]?.structure,
         updatedAt: "2026-07-28T10:00:00.000Z",
       },
       id: "event-1",
@@ -479,6 +467,108 @@ describe("route-only Wahoo convergence decision", () => {
 });
 
 describe("WahooSyncService planned-activity reconciliation", () => {
+  const withDuration = (duration: core.ActivityPlanDuration) => {
+    const structure = planWithRelativeTarget("%FTP", "bike");
+    const segment = structure.segments.find((segment) => segment.role === "activity");
+    if (segment?.role !== "activity" || !segment.intervals[0]?.steps[0])
+      throw new Error("Missing fixture step");
+    segment.intervals[0].steps[0].duration = duration;
+    return structure;
+  };
+
+  it.each([
+    { type: "untilFinished" },
+    { type: "repetitions", count: 8 },
+  ] satisfies core.ActivityPlanDuration[])("rejects historic $type before provider writes", async (duration) => {
+    const { service, execution, wahooClient } = syncFixture({
+      planStructure: withDuration(duration),
+    });
+    await expect(service.syncEvent("event-1", "profile-1", execution)).resolves.toMatchObject({
+      success: false,
+      failureCode: "unsupported_target",
+      retryable: false,
+    });
+    expect(wahooClient.createPlan).not.toHaveBeenCalled();
+    expect(wahooClient.createWorkout).not.toHaveBeenCalled();
+    expect(wahooClient.updateWorkout).not.toHaveBeenCalled();
+    expect(wahooClient.createRoute).not.toHaveBeenCalled();
+  });
+
+  it("exports distance plans without invented duration metadata", async () => {
+    const { service, execution, wahooClient } = syncFixture({
+      planStructure: withDuration({ type: "distance", meters: 500 }),
+      wahooClient: {
+        getPlans: vi.fn().mockResolvedValue([]),
+        createPlan: vi.fn().mockResolvedValue({ id: 42 }),
+        createWorkout: vi.fn().mockResolvedValue(remoteWorkout({ minutes: null })),
+      },
+    });
+    const result = await service.syncEvent("event-1", "profile-1", execution);
+    expect(result).toMatchObject({
+      success: true,
+      warnings: expect.arrayContaining([expect.stringContaining("duration metadata is omitted")]),
+    });
+    expect(wahooClient.createWorkout).toHaveBeenCalledOnce();
+    expect(wahooClient.createWorkout.mock.calls[0]?.[0]).not.toHaveProperty("durationMinutes");
+    expect(wahooClient.createPlan.mock.calls[0]?.[0].structure.intervals).toContainEqual(
+      expect.objectContaining({ exit_trigger_type: "distance", exit_trigger_value: 500 }),
+    );
+  });
+
+  it("rejects stale nonzero metadata before exporting a changed distance plan", async () => {
+    const { service, execution, wahooClient } = syncFixture({
+      planStructure: withDuration({ type: "distance", meters: 500 }),
+      wahooClient: {
+        findWorkoutByToken: vi
+          .fn()
+          .mockResolvedValue({ complete: true, workout: remoteWorkout({ minutes: 60 }) }),
+      },
+    });
+    await expect(service.syncEvent("event-1", "profile-1", execution)).resolves.toMatchObject({
+      success: false,
+      failureCode: "duration_unavailable",
+      retryable: false,
+    });
+    expect(wahooClient.createPlan).not.toHaveBeenCalled();
+    expect(wahooClient.createWorkout).not.toHaveBeenCalled();
+    expect(wahooClient.updateWorkout).not.toHaveBeenCalled();
+  });
+
+  it("updates a distance entry with absent metadata without inserting fake minutes", async () => {
+    const { service, execution, wahooClient } = syncFixture({
+      planStructure: withDuration({ type: "distance", meters: 500 }),
+      existingLink: { id: "link-1", externalId: "99", updatedAt: null },
+      wahooClient: {
+        findWorkoutByToken: vi
+          .fn()
+          .mockResolvedValue({ complete: true, workout: remoteWorkout({ minutes: null }) }),
+      },
+    });
+    await expect(service.syncEvent("event-1", "profile-1", execution)).resolves.toMatchObject({
+      success: true,
+    });
+    expect(wahooClient.updateWorkout).toHaveBeenCalledOnce();
+    expect(wahooClient.updateWorkout.mock.calls[0]?.[1]).not.toHaveProperty("durationMinutes");
+  });
+
+  it("updates known duration metadata using the rounded total of compiled seconds", async () => {
+    const structure = withDuration({ type: "time", seconds: 61 });
+    const { service, execution, wahooClient } = syncFixture({
+      planStructure: structure,
+      existingLink: { id: "link-1", externalId: "99", updatedAt: null },
+      wahooClient: {
+        findWorkoutByToken: vi.fn().mockResolvedValue({ complete: true, workout: remoteWorkout() }),
+      },
+    });
+    await expect(service.syncEvent("event-1", "profile-1", execution)).resolves.toMatchObject({
+      success: true,
+    });
+    const seconds = calculateWorkoutDuration(structure);
+    if (seconds === null) throw new Error("Expected known fixture duration");
+    expect(wahooClient.updateWorkout.mock.calls[0]?.[1]).toMatchObject({
+      durationMinutes: Math.ceil(seconds / 60),
+    });
+  });
   it("creates one Wahoo planned-activity resource and a generation-guarded local link", async () => {
     const { execution, getPerformanceTargets, repository, service, wahooClient } = syncFixture();
 
@@ -551,7 +641,7 @@ describe("WahooSyncService planned-activity reconciliation", () => {
     });
     const { execution, service, wahooClient } = syncFixture({
       performanceTargets: latestTargets,
-      planStructure: planDocument(planStructure),
+      planStructure,
     });
     const updateDesiredProjection = vi.fn().mockResolvedValue(true);
 
@@ -585,7 +675,7 @@ describe("WahooSyncService planned-activity reconciliation", () => {
         integration.profileId,
       ),
       existingLink: { externalId: "99", id: "link-1" },
-      planStructure: planDocument(planWithRelativeTarget("%FTP", "bike")),
+      planStructure: planWithRelativeTarget("%FTP", "bike"),
     });
 
     await expect(service.syncEvent("event-1", "profile-1", execution)).resolves.toMatchObject({
@@ -613,7 +703,7 @@ describe("WahooSyncService planned-activity reconciliation", () => {
         integration.profileId,
       ),
       existingLink: { externalId: "99", id: "link-1" },
-      planStructure: planDocument(planStructure),
+      planStructure,
     });
 
     await expect(service.syncEvent("event-1", "profile-1", execution)).resolves.toMatchObject({
@@ -763,19 +853,30 @@ describe("WahooSyncService planned-activity reconciliation", () => {
     expect(createEventResourceLink).toHaveBeenCalledTimes(2);
   });
 
-  it("verifies an ambiguous PUT before treating it as successful", async () => {
+  it.each([
+    true,
+    false,
+  ])("verifies duration during ambiguous PUT recovery (matches=%s)", async (matches) => {
+    const structure = planWithRelativeTarget("%FTP", "bike");
+    const seconds = calculateWorkoutDuration(structure);
+    if (seconds === null) throw new Error("Expected timed fixture");
     const existing = remoteWorkout({ name: "Old name", plan_id: 1 });
     const updateWorkout = vi.fn().mockRejectedValue(new Error("socket closed"));
     const { execution, service, wahooClient } = syncFixture({
+      planStructure: structure,
       wahooClient: {
         findWorkoutByToken: vi.fn().mockResolvedValue({ complete: true, workout: existing }),
-        getWorkout: vi.fn().mockResolvedValue(remoteWorkout()),
+        getWorkout: vi
+          .fn()
+          .mockResolvedValue(
+            remoteWorkout({ minutes: Math.ceil(seconds / 60) + (matches ? 0 : 1) }),
+          ),
         updateWorkout,
       },
     });
 
     await expect(service.syncEvent("event-1", "profile-1", execution)).resolves.toMatchObject({
-      success: true,
+      success: matches,
     });
     expect(updateWorkout).toHaveBeenCalledTimes(1);
     expect(wahooClient.getWorkout).toHaveBeenCalledWith("99", execution.signal);

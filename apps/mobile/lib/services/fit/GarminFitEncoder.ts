@@ -269,7 +269,6 @@ type EmittedLength = {
 };
 
 export class GarminFitEncoder {
-  private recordingId: string;
   private userId: string;
   private storageUri: string;
   private outputFilePath: string;
@@ -283,7 +282,6 @@ export class GarminFitEncoder {
   private emittedLengths: EmittedLength[] = [];
 
   constructor(recordingId: string, userId: string, _config?: Partial<EncoderConfig>) {
-    this.recordingId = recordingId;
     this.userId = userId;
     const paths = canonicalRecordingEvidenceUris(recordingId);
     this.storageUri = paths.fitDirectoryUri;
@@ -309,7 +307,6 @@ export class GarminFitEncoder {
       this.startTime = startedAt.getTime();
       this.timerStartedAt = startedAt.getTime();
       this.isInitialized = true;
-      console.log(`[GarminFitEncoder] Initialized for recording ${this.recordingId}`);
     } catch (error) {
       console.error(error instanceof Error && error.name ? error.name.slice(0, 80) : "failed");
       throw error;

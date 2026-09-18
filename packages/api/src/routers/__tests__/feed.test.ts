@@ -3,6 +3,7 @@ import {
   createObservationQuantificationBundle,
   quantifyCompletedActivityObservation,
 } from "@repo/core";
+import { type SQL, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const analysisMocks = vi.hoisted(() => ({
@@ -115,16 +116,54 @@ type DbPlan = {
 };
 
 function createDbMock(plan: DbPlan = {}) {
-  const executeQueue = [...(plan.execute ?? [])];
+  const [activityRows = [], commentRows = []] = plan.execute ?? [];
 
   return {
-    execute: vi.fn(async () => ({ rows: executeQueue.shift() ?? [] })),
+    execute: vi.fn(async () => ({ rows: [] })),
     select: vi.fn((fields?: Record<string, unknown>) => {
+      if (fields && "followerId" in fields) {
+        return {
+          from: vi.fn(() => ({
+            where: vi.fn((condition: SQL) => sql`select 1 where ${condition}`),
+          })),
+        };
+      }
+      if (fields && "id" in fields) {
+        const selectedRows = activityRows.map((row) =>
+          Object.fromEntries(Object.keys(fields).map((key) => [key, row[key]])),
+        );
+        return {
+          from: vi.fn(() => ({
+            leftJoin: vi.fn(() => ({
+              where: vi.fn(() => ({
+                orderBy: vi.fn(() => ({ limit: vi.fn(async () => selectedRows) })),
+              })),
+            })),
+          })),
+        };
+      }
+      if (fields && "activity_category" in fields) {
+        const segments = activityRows.flatMap((activity) =>
+          Array.isArray(activity.category_composition)
+            ? activity.category_composition.map((category: unknown) => ({
+                activity_id: activity.id,
+                activity_category: category,
+              }))
+            : [],
+        );
+        return {
+          from: vi.fn(() => ({ where: vi.fn(() => ({ orderBy: vi.fn(async () => segments) })) })),
+        };
+      }
       if (fields && "entity_id" in fields) {
         return {
           from: vi.fn(() => ({
             where: vi.fn(() => ({
-              groupBy: vi.fn(() => Promise.resolve(plan.likeStatsRows ?? [])),
+              groupBy: vi.fn(() =>
+                Promise.resolve(
+                  "comments_count" in fields ? commentRows : (plan.likeStatsRows ?? []),
+                ),
+              ),
             })),
           })),
         };
@@ -297,8 +336,8 @@ describe("feedRouter", () => {
         ],
       }),
     );
-    expect(db.execute).toHaveBeenCalledTimes(2);
-    expect(db.select).toHaveBeenCalledTimes(1);
+    expect(db.execute).not.toHaveBeenCalled();
+    expect(db.select).toHaveBeenCalledTimes(5);
   });
 
   it("getFeed uses a stable composite cursor for activities with matching timestamps", async () => {

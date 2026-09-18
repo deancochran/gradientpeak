@@ -1,4 +1,5 @@
 import { act, fireEvent, render } from "@testing-library/react-native";
+import { INITIAL_ONBOARDING_DATA } from "../onboarding-data";
 import { GroupsAndPeopleStep } from "./GroupsAndPeopleStep";
 
 const mockGroupsQuery = jest.fn();
@@ -171,5 +172,140 @@ describe("GroupsAndPeopleStep search", () => {
         social_action_statuses: expect.objectContaining({ "follow:profile-1": "pending" }),
       }),
     );
+  });
+
+  it("keeps selected canonical cards through query failure and retry, but clears cached cards on account change", async () => {
+    const selectedGroup = {
+      id: "group-1",
+      name: "Morning Runners",
+      viewer: { canJoin: true, canRequestToJoin: false },
+    };
+    const { rerender, getByTestId, queryByTestId } = await render(
+      <GroupsAndPeopleStep
+        accountIdentity="account-a"
+        data={
+          {
+            selected_follow_profile_ids: [],
+            selected_group_actions: [
+              { action: "join", action_key: "group:group-1", group_id: "group-1" },
+            ],
+            selected_group_ids: ["group-1"],
+            selected_invitation_ids: [],
+            social_action_statuses: {},
+          } as never
+        }
+        updateData={jest.fn()}
+      />,
+    );
+    mockGroupsQuery.mockReturnValue({
+      ...queryResult,
+      data: { pages: [{ items: [selectedGroup] }] },
+      isFetching: false,
+    });
+    await rerender(
+      <GroupsAndPeopleStep
+        accountIdentity="account-a"
+        data={
+          {
+            selected_follow_profile_ids: [],
+            selected_group_actions: [
+              { action: "join", action_key: "group:group-1", group_id: "group-1" },
+            ],
+            selected_group_ids: ["group-1"],
+            selected_invitation_ids: [],
+            social_action_statuses: {},
+          } as never
+        }
+        updateData={jest.fn()}
+      />,
+    );
+    expect(getByTestId("onboarding-group-group-1")).toBeTruthy();
+
+    mockGroupsQuery.mockReturnValue({
+      ...queryResult,
+      data: { pages: [] },
+      isError: true,
+      isFetching: false,
+      isLoading: false,
+    });
+    await rerender(
+      <GroupsAndPeopleStep
+        accountIdentity="account-a"
+        data={
+          {
+            selected_follow_profile_ids: [],
+            selected_group_actions: [
+              { action: "join", action_key: "group:group-1", group_id: "group-1" },
+            ],
+            selected_group_ids: ["group-1"],
+            selected_invitation_ids: [],
+            social_action_statuses: {},
+          } as never
+        }
+        updateData={jest.fn()}
+      />,
+    );
+    expect(getByTestId("onboarding-groups-error")).toBeTruthy();
+    expect(getByTestId("onboarding-group-group-1")).toBeTruthy();
+    expect(queryByTestId("onboarding-groups-empty")).toBeNull();
+    await fireEvent.press(getByTestId("onboarding-groups-retry"));
+    expect(queryResult.refetch).toHaveBeenCalledTimes(1);
+
+    await rerender(
+      <GroupsAndPeopleStep
+        accountIdentity="account-b"
+        data={
+          {
+            selected_follow_profile_ids: [],
+            selected_group_actions: [],
+            selected_group_ids: [],
+            selected_invitation_ids: [],
+            social_action_statuses: {},
+          } as never
+        }
+        updateData={jest.fn()}
+      />,
+    );
+    expect(queryByTestId("onboarding-group-group-1")).toBeNull();
+  });
+
+  it("retains selected people and search through refresh, error, and retry, then clears local state for the next account", async () => {
+    const person = { id: "person-1", username: "runner", follow_status: null };
+    mockPeopleQuery.mockReturnValue({ ...queryResult, data: { pages: [{ users: [person] }] } });
+    const data = { ...INITIAL_ONBOARDING_DATA, selected_follow_profile_ids: ["person-1"] };
+    const updateData = jest.fn();
+    const view = await render(
+      <GroupsAndPeopleStep accountIdentity="a" data={data} updateData={updateData} />,
+    );
+    await fireEvent.changeText(view.getByTestId("onboarding-people-search"), "runner draft");
+    mockPeopleQuery.mockReturnValue({
+      ...queryResult,
+      data: { pages: [] },
+      isError: true,
+      isFetching: false,
+    });
+    await view.rerender(
+      <GroupsAndPeopleStep accountIdentity="a" data={data} updateData={updateData} />,
+    );
+    expect(view.getByTestId("onboarding-profile-person-1").props.selected).toBe(true);
+    expect(view.getByTestId("onboarding-people-search").props.value).toBe("runner draft");
+    expect(view.queryByTestId("onboarding-people-empty")).toBeNull();
+    await fireEvent.press(view.getByTestId("onboarding-people-retry"));
+    expect(queryResult.refetch).toHaveBeenCalledTimes(1);
+    mockPeopleQuery.mockReturnValue({ ...queryResult, data: { pages: [] }, isFetching: false });
+    await view.rerender(
+      <GroupsAndPeopleStep accountIdentity="a" data={data} updateData={updateData} />,
+    );
+    expect(view.getByTestId("onboarding-profile-person-1").props.selected).toBe(true);
+    expect(updateData).not.toHaveBeenCalled();
+    await view.rerender(
+      <GroupsAndPeopleStep
+        accountIdentity="b"
+        data={{ ...data, selected_follow_profile_ids: [] }}
+        updateData={updateData}
+      />,
+    );
+    expect(view.queryByTestId("onboarding-profile-person-1")).toBeNull();
+    expect(view.getByTestId("onboarding-people-search").props.value).toBe("");
   });
 });

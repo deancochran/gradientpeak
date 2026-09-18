@@ -1,3 +1,14 @@
+import {
+  comments,
+  conversationParticipants,
+  conversations,
+  follows,
+  groupEvents,
+  groupMemberships,
+  groups,
+  messages,
+} from "@repo/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 import type { E2ECleanupRegistry } from "../cleanup";
 import type { LocalE2EDatabase } from "../database";
 import type { E2EExecutionIdentity } from "../identity";
@@ -22,18 +33,19 @@ export class GroupFixtureBuilder {
     const name = input.name ?? this.identity.name(`Playwright ${label}`);
     const slug = this.identity.slug(label);
     const actor = await this.database.requireActorByEmail(input.actorEmail);
-    await this.database.transaction(async (query) => {
-      await query.query(
-        `insert into "groups" (
-           "id", "created_by_profile_id", "name", "slug", "description", "access_level", "join_policy"
-         ) values ($1, $2, $3, $4, 'Exact-ID browser fixture.', 'public', $5)`,
-        [id, actor.profileId, name, slug, input.joinPolicy ?? "open"],
-      );
-      await query.query(
-        `insert into "group_memberships" ("group_id", "profile_id", "role", "status")
-         values ($1, $2, 'owner', 'active')`,
-        [id, actor.profileId],
-      );
+    await this.database.typedTransaction(async (database) => {
+      await database.insert(groups).values({
+        id,
+        created_by_profile_id: actor.profileId,
+        name,
+        slug,
+        description: "Exact-ID browser fixture.",
+        access_level: "public",
+        join_policy: input.joinPolicy ?? "open",
+      });
+      await database
+        .insert(groupMemberships)
+        .values({ group_id: id, profile_id: actor.profileId, role: "owner", status: "active" });
     });
     this.register(id, actor.profileId);
     return { id, name, url: `/groups/${id}` };
@@ -44,17 +56,28 @@ export class GroupFixtureBuilder {
       kind: "group",
       id,
       cleanup: async (database) => {
-        await database.transaction(async (query) => {
-          await query.query(
-            `delete from "comments" where "entity_type" = 'event' and "entity_id" in
-              (select "id" from "group_events" where "group_id" = $1)`,
-            [id],
-          );
-          await query.query(
-            `delete from "groups" where "id" = $1
-              and ($2::uuid is null or "created_by_profile_id" = $2)`,
-            [id, ownerProfileId ?? null],
-          );
+        await database.typedTransaction(async (transaction) => {
+          const events = await transaction
+            .select({ id: groupEvents.id })
+            .from(groupEvents)
+            .where(eq(groupEvents.group_id, id));
+          if (events.length)
+            await transaction.delete(comments).where(
+              and(
+                eq(comments.entity_type, "event"),
+                inArray(
+                  comments.entity_id,
+                  events.map((event) => event.id),
+                ),
+              ),
+            );
+          await transaction
+            .delete(groups)
+            .where(
+              ownerProfileId
+                ? and(eq(groups.id, id), eq(groups.created_by_profile_id, ownerProfileId))
+                : eq(groups.id, id),
+            );
         });
       },
     });
@@ -75,23 +98,33 @@ export class SocialFixtureBuilder {
   }) {
     const follower = await this.database.requireActorByEmail(input.followerEmail);
     const following = await this.database.requireActorByEmail(input.followingEmail);
-    await this.database.query(
-      `insert into "follows" ("follower_id", "following_id", "status", "created_at", "updated_at")
-       values ($1, $2, $3, now(), now())
-       on conflict ("follower_id", "following_id") do update
-       set "status" = excluded."status", "updated_at" = now()`,
-      [follower.profileId, following.profileId, input.status ?? "accepted"],
-    );
+    const now = new Date();
+    await this.database.db
+      .insert(follows)
+      .values({
+        follower_id: follower.profileId,
+        following_id: following.profileId,
+        status: input.status ?? "accepted",
+        created_at: now,
+        updated_at: now,
+      })
+      .onConflictDoUpdate({
+        target: [follows.follower_id, follows.following_id],
+        set: { status: input.status ?? "accepted", updated_at: now },
+      });
     const id = `${follower.profileId}:${following.profileId}`;
     this.cleanup.registerExactId({
       kind: "follow",
       id,
       cleanup: (database) =>
-        database
-          .query('delete from "follows" where "follower_id" = $1 and "following_id" = $2', [
-            follower.profileId,
-            following.profileId,
-          ])
+        database.db
+          .delete(follows)
+          .where(
+            and(
+              eq(follows.follower_id, follower.profileId),
+              eq(follows.following_id, following.profileId),
+            ),
+          )
           .then(() => undefined),
     });
     return {
@@ -112,22 +145,24 @@ export class SocialFixtureBuilder {
     const label = input.label ?? "comment";
     const id = this.identity.uuid(label);
     const actor = await this.database.requireActorByEmail(input.actorEmail);
-    await this.database.query(
-      `insert into "comments" ("id", "profile_id", "entity_type", "entity_id", "content", "created_at", "updated_at")
-       values ($1, $2, $3, $4, $5, now(), now())`,
-      [
-        id,
-        actor.profileId,
-        input.entityType,
-        input.entityId,
-        input.content ?? this.identity.name("Playwright comment"),
-      ],
-    );
+    const now = new Date();
+    await this.database.db.insert(comments).values({
+      id,
+      profile_id: actor.profileId,
+      entity_type: input.entityType,
+      entity_id: input.entityId,
+      content: input.content ?? this.identity.name("Playwright comment"),
+      created_at: now,
+      updated_at: now,
+    });
     this.cleanup.registerExactId({
       kind: "comment",
       id,
       cleanup: (database) =>
-        database.query('delete from "comments" where "id" = $1', [id]).then(() => undefined),
+        database.db
+          .delete(comments)
+          .where(eq(comments.id, id))
+          .then(() => undefined),
     });
     return {
       id,
@@ -152,26 +187,32 @@ export class MessagingFixtureBuilder {
     const id = this.identity.uuid(label);
     const messageId = this.identity.uuid(`${label}-message`);
     const name = this.identity.name(`Playwright ${label}`);
-    const participants = await Promise.all(
-      input.participantEmails.map((email) => this.database.requireActorByEmail(email)),
-    );
-    await this.database.transaction(async (query) => {
-      await query.query(
-        `insert into "conversations" ("id", "is_group", "group_name", "created_at", "last_message_at")
-         values ($1, $2, $3, now(), now())`,
-        [id, participants.length > 2, participants.length > 2 ? name : null],
-      );
+    const [senderEmail, ...recipientEmails] = input.participantEmails;
+    const sender = await this.database.requireActorByEmail(senderEmail);
+    const participants = [
+      sender,
+      ...(await Promise.all(
+        recipientEmails.map((email) => this.database.requireActorByEmail(email)),
+      )),
+    ];
+    await this.database.typedTransaction(async (database) => {
+      await database.insert(conversations).values({
+        id,
+        is_group: participants.length > 2,
+        group_name: participants.length > 2 ? name : null,
+        last_message_at: new Date(),
+      });
       for (const actor of participants) {
-        await query.query(
-          `insert into "conversation_participants" ("conversation_id", "user_id") values ($1, $2)`,
-          [id, actor.profileId],
-        );
+        await database
+          .insert(conversationParticipants)
+          .values({ conversation_id: id, user_id: actor.profileId });
       }
-      await query.query(
-        `insert into "messages" ("id", "conversation_id", "sender_id", "content", "created_at")
-         values ($1, $2, $3, $4, now())`,
-        [messageId, id, participants[0]?.profileId, this.identity.name("Playwright message")],
-      );
+      await database.insert(messages).values({
+        id: messageId,
+        conversation_id: id,
+        sender_id: sender.profileId,
+        content: this.identity.name("Playwright message"),
+      });
     });
     this.register(id);
     return { id, messageId, name, url: `/messages/${id}` };
@@ -182,7 +223,10 @@ export class MessagingFixtureBuilder {
       kind: "conversation",
       id,
       cleanup: (database) =>
-        database.query('delete from "conversations" where "id" = $1', [id]).then(() => undefined),
+        database.db
+          .delete(conversations)
+          .where(eq(conversations.id, id))
+          .then(() => undefined),
     });
   }
 }

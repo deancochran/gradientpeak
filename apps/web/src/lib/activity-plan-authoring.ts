@@ -16,10 +16,14 @@ function id() {
   return crypto.randomUUID();
 }
 
-export function createActivityPlanStep(name = "Steady effort"): ActivityPlanIntervalStep {
+export function createActivityPlanStep(
+  name = "Steady effort",
+  purpose: NonNullable<ActivityPlanIntervalStep["purpose"]> = "work",
+): ActivityPlanIntervalStep {
   return {
     id: id(),
     name,
+    purpose,
     duration: { type: "time", seconds: 600 },
     targets: [{ type: "RPE", intensity: 5 }],
   };
@@ -31,6 +35,17 @@ export function createActivityPlanInterval(name = "Main set"): ActivityPlanInter
     name,
     repetitions: 1,
     steps: [createActivityPlanStep()],
+  };
+}
+
+export function duplicateActivityPlanInterval(
+  interval: ActivityPlanInterval,
+): ActivityPlanInterval {
+  return {
+    ...interval,
+    id: id(),
+    name: `${interval.name} (Copy)`,
+    steps: interval.steps.map((step) => ({ ...step, id: id() })),
   };
 }
 
@@ -82,34 +97,11 @@ export function hasIncompatibleTargets(
 export function applyActivityPlanActivityCategory(
   structure: EditableActivityPlanStructure,
   activity_category: CanonicalActivityCategory,
-  resetIncompatibleTargets = false,
 ): EditableActivityPlanStructure {
   return {
     version: 3,
     activity_category,
-    segments: structure.segments.map((segment) => {
-      if (segment.role !== "activity") return segment;
-      return {
-        ...segment,
-        intervals: segment.intervals.map((interval) => ({
-          ...interval,
-          steps: interval.steps.map((step) => ({
-            ...step,
-            targets:
-              resetIncompatibleTargets &&
-              step.targets.some(
-                (target) =>
-                  !isTargetTypePermittedForActivity({
-                    activityCategory: activity_category,
-                    targetType: target.type,
-                  }),
-              )
-                ? [{ type: "RPE", intensity: 5 }]
-                : step.targets,
-          })),
-        })),
-      };
-    }),
+    segments: structure.segments,
   };
 }
 

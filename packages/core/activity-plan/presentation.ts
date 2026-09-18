@@ -17,6 +17,7 @@ export type ActivityPlanPresentationOccurrence = {
   intensityBasis: ActivityPlanIntensityBasis;
   intensityLabel: string | null;
   intervalId: string | null;
+  stepId: string | null;
   visualIntensity: number | null;
   occurrenceId: string;
   role: "activity" | "rest";
@@ -28,6 +29,14 @@ export type ActivityPlanPresentationModel = {
   activity_category: CanonicalActivityCategory;
   stepCount: number;
   structure: ActivityPlanStructure;
+};
+
+export type ActivityPlanIntervalSummary = {
+  hasOpenDuration: boolean;
+  hasPartialQuantities: boolean;
+  perRepeat: { distanceMeters: number; repetitionCount: number; timedSeconds: number };
+  repetitions: number;
+  total: { distanceMeters: number; repetitionCount: number; timedSeconds: number };
 };
 
 const thresholdPercentTypes = new Set<ActivityTargetType>(["%FTP", "%MaxHR", "%ThresholdHR"]);
@@ -168,6 +177,7 @@ export function deriveActivityPlanPresentation(
       duration: occurrence.duration,
       globalOrdinal: occurrence.globalOrdinal,
       intervalId: occurrence.intervalId,
+      stepId: occurrence.stepId,
       occurrenceId: occurrence.occurrenceId,
       role: occurrence.role,
       ...intensity,
@@ -180,5 +190,62 @@ export function deriveActivityPlanPresentation(
     activity_category: compiled.activity_category,
     stepCount: occurrences.length,
     structure: parsed.data,
+  };
+}
+
+/** Summarizes compiler-expanded work without converting distance or open work into time. */
+export function summarizeCompiledActivityPlanInterval(
+  compiled: CompiledActivityPlan,
+  intervalId: string,
+): ActivityPlanIntervalSummary | null {
+  const occurrences = compiled.occurrences.filter(
+    (occurrence) => occurrence.role === "activity" && occurrence.intervalId === intervalId,
+  );
+  const firstOccurrence = occurrences[0];
+  if (!firstOccurrence || firstOccurrence.repeatIteration === null) return null;
+
+  const repetitions = occurrences.reduce(
+    (maximum, occurrence) => Math.max(maximum, (occurrence.repeatIteration ?? -1) + 1),
+    0,
+  );
+  const summarize = (values: readonly (typeof occurrences)[number][]) => {
+    let distanceMeters = 0;
+    let repetitionCount = 0;
+    let timedSeconds = 0;
+    let hasOpenDuration = false;
+    for (const occurrence of values) {
+      if (occurrence.duration.type === "time") timedSeconds += occurrence.duration.seconds;
+      else if (occurrence.duration.type === "distance")
+        distanceMeters += occurrence.duration.meters;
+      else if (occurrence.duration.type === "repetitions")
+        repetitionCount += occurrence.duration.count;
+      else hasOpenDuration = true;
+    }
+    return {
+      distanceMeters,
+      repetitionCount,
+      timedSeconds,
+      hasOpenDuration,
+      hasPartialQuantities:
+        hasOpenDuration || new Set(values.map((item) => item.duration.type)).size > 1,
+    };
+  };
+
+  const perRepeat = summarize(occurrences.filter((occurrence) => occurrence.repeatIteration === 0));
+  const total = summarize(occurrences);
+  return {
+    hasOpenDuration: total.hasOpenDuration,
+    hasPartialQuantities: total.hasPartialQuantities,
+    perRepeat: {
+      distanceMeters: perRepeat.distanceMeters,
+      repetitionCount: perRepeat.repetitionCount,
+      timedSeconds: perRepeat.timedSeconds,
+    },
+    repetitions,
+    total: {
+      distanceMeters: total.distanceMeters,
+      repetitionCount: total.repetitionCount,
+      timedSeconds: total.timedSeconds,
+    },
   };
 }

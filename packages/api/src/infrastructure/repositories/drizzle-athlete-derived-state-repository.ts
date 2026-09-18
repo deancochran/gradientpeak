@@ -28,7 +28,7 @@ import {
   type ThresholdEvidenceRow,
   thresholdEvidence,
 } from "@repo/db";
-import { and, asc, eq, gt, gte, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { TransitionAthleteRecalculationResult } from "../../contracts/athlete-derived-state";
 import type { DrizzleQueryExecutor, DrizzleTransactionClient } from "../../db";
@@ -542,22 +542,36 @@ export function createDrizzleAthleteDerivedStateRepository(
             ),
           );
         if (input.expectedPublishedRevision !== input.targetPublishedRevision) {
-          await tx.execute(sql`
-            insert into daily_training_load (
-              profile_id, planning_date, contract_version, common_load, fitness, fatigue,
-              form, readiness, coverage_status, contributing_activity_count,
-              omitted_activity_count, source_revision, calculation_version, published_at
+          await tx
+            .insert(dailyTrainingLoad)
+            .select(
+              tx
+                .select({
+                  profile_id: dailyTrainingLoad.profile_id,
+                  planning_date: dailyTrainingLoad.planning_date,
+                  contract_version: dailyTrainingLoad.contract_version,
+                  common_load: dailyTrainingLoad.common_load,
+                  fitness: dailyTrainingLoad.fitness,
+                  fatigue: dailyTrainingLoad.fatigue,
+                  form: dailyTrainingLoad.form,
+                  readiness: dailyTrainingLoad.readiness,
+                  coverage_status: dailyTrainingLoad.coverage_status,
+                  contributing_activity_count: dailyTrainingLoad.contributing_activity_count,
+                  omitted_activity_count: dailyTrainingLoad.omitted_activity_count,
+                  source_revision: sql`${input.targetPublishedRevision}`.as("source_revision"),
+                  calculation_version: dailyTrainingLoad.calculation_version,
+                  published_at: sql`clock_timestamp()`.as("published_at"),
+                })
+                .from(dailyTrainingLoad)
+                .where(
+                  and(
+                    eq(dailyTrainingLoad.profile_id, input.profileId),
+                    eq(dailyTrainingLoad.source_revision, input.expectedPublishedRevision),
+                    lt(dailyTrainingLoad.planning_date, input.fromPlanningDate),
+                  ),
+                ),
             )
-            select profile_id, planning_date, contract_version, common_load, fitness, fatigue,
-              form, readiness, coverage_status, contributing_activity_count,
-              omitted_activity_count, ${input.targetPublishedRevision}, calculation_version,
-              clock_timestamp()
-            from daily_training_load
-            where profile_id = ${input.profileId}::uuid
-              and source_revision = ${input.expectedPublishedRevision}
-              and planning_date < ${input.fromPlanningDate}::date
-            on conflict do nothing
-          `);
+            .onConflictDoNothing();
         }
         if (days.length > 0) await tx.insert(dailyTrainingLoad).values(days.map(dailyValues));
 

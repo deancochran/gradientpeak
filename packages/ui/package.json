@@ -4,6 +4,14 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./components/native-picker": {
+      "react-native": "./src/components/native-picker/index.native.tsx"
+    },
+    "./components/segmented-duration-field": {
+      "react-native": "./src/components/segmented-duration-field/index.native.tsx",
+      "default": "./src/components/segmented-duration-field/index.web.tsx"
+    },
+    "./components/segmented-duration-field/shared": "./src/components/segmented-duration-field/shared.ts",
     "./components/icon": {
       "react-native": "./src/components/icon/index.native.tsx",
       "default": "./src/components/icon/index.web.tsx"
@@ -141,6 +149,7 @@
     "@hookform/resolvers": "^5.9.1",
     "@react-native-community/datetimepicker": "9.1.0",
     "@react-native-community/slider": "5.2.1",
+    "@react-native-picker/picker": "2.11.4",
     "@repo/core": "workspace:*",
     "@rn-primitives/accordion": "^1.5.2",
     "@rn-primitives/alert-dialog": "^1.5.2",

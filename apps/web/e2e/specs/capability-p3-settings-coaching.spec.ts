@@ -1,5 +1,11 @@
+import {
+  organizationMembershipRoleGrants,
+  organizationMemberships,
+  organizations,
+} from "@repo/db/schema";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { expect, test } from "../fixtures";
-import { withLocalE2EDatabase } from "../support/database";
+import { type E2EDrizzleTransaction, withLocalE2EDatabase } from "../support/database";
 import type { E2EExecutionIdentity } from "../support/identity";
 
 async function seedCoachOrganization(
@@ -13,31 +19,24 @@ async function seedCoachOrganization(
   const organizationName = `Playwright Coaching ${organizationId}`;
 
   await withLocalE2EDatabase(async (database) => {
-    await database.transaction(async (query) => {
-      await query.query("set constraints all deferred");
-      await query.query(
-        `insert into "organizations"
-        ("id", "created_by_profile_id", "root_owner_membership_id", "name", "slug", "timezone")
-       values ($1, $2, $3, $4, $5, 'UTC')`,
-        [
-          organizationId,
-          rootOwnerId,
-          rootMembershipId,
-          organizationName,
-          `playwright-${organizationId}`,
-        ],
-      );
-      await query.query(
-        `insert into "organization_memberships" ("id", "organization_id", "profile_id")
-       values ($1, $2, $3), ($4, $2, $5)`,
-        [rootMembershipId, organizationId, rootOwnerId, coachMembershipId, coachId],
-      );
-      await query.query(
-        `insert into "organization_membership_role_grants"
-         ("organization_id", "membership_id", "role_key")
-        values ($1, $2, 'admin'), ($1, $3, 'coach')`,
-        [organizationId, rootMembershipId, coachMembershipId],
-      );
+    await database.typedTransaction(async (transaction) => {
+      await deferConstraints(transaction);
+      await transaction.insert(organizations).values({
+        id: organizationId,
+        created_by_profile_id: rootOwnerId,
+        root_owner_membership_id: rootMembershipId,
+        name: organizationName,
+        slug: `playwright-${organizationId}`,
+        timezone: "UTC",
+      });
+      await transaction.insert(organizationMemberships).values([
+        { id: rootMembershipId, organization_id: organizationId, profile_id: rootOwnerId },
+        { id: coachMembershipId, organization_id: organizationId, profile_id: coachId },
+      ]);
+      await transaction.insert(organizationMembershipRoleGrants).values([
+        { organization_id: organizationId, membership_id: rootMembershipId, role_key: "admin" },
+        { organization_id: organizationId, membership_id: coachMembershipId, role_key: "coach" },
+      ]);
     });
   });
   return {
@@ -45,31 +44,38 @@ async function seedCoachOrganization(
     organizationName,
     revokeCoach: async () => {
       await withLocalE2EDatabase((database) =>
-        database.query(
-          `update "organization_membership_role_grants"
-           set "revoked_at" = now()
-         where "organization_id" = $1 and "membership_id" = $2
-           and "role_key" = 'coach' and "revoked_at" is null`,
-          [organizationId, coachMembershipId],
-        ),
+        database.db
+          .update(organizationMembershipRoleGrants)
+          .set({ revoked_at: new Date() })
+          .where(
+            and(
+              eq(organizationMembershipRoleGrants.organization_id, organizationId),
+              eq(organizationMembershipRoleGrants.membership_id, coachMembershipId),
+              eq(organizationMembershipRoleGrants.role_key, "coach"),
+              isNull(organizationMembershipRoleGrants.revoked_at),
+            ),
+          ),
       );
     },
     cleanup: async () => {
       await withLocalE2EDatabase((database) =>
-        database.transaction(async (query) => {
-          await query.query("set constraints all deferred");
-          await query.query(
-            'delete from "organization_membership_role_grants" where "organization_id" = $1',
-            [organizationId],
-          );
-          await query.query('delete from "organizations" where "id" = $1', [organizationId]);
-          await query.query('delete from "organization_memberships" where "organization_id" = $1', [
-            organizationId,
-          ]);
+        database.typedTransaction(async (transaction) => {
+          await deferConstraints(transaction);
+          await transaction
+            .delete(organizationMembershipRoleGrants)
+            .where(eq(organizationMembershipRoleGrants.organization_id, organizationId));
+          await transaction.delete(organizations).where(eq(organizations.id, organizationId));
+          await transaction
+            .delete(organizationMemberships)
+            .where(eq(organizationMemberships.organization_id, organizationId));
         }),
       );
     },
   };
+}
+
+async function deferConstraints(transaction: E2EDrizzleTransaction) {
+  await transaction.execute(sql`set constraints all deferred`);
 }
 
 test("settings.select-theme persists a chosen theme across reloads", async ({ athletePage }) => {

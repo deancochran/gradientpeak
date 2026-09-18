@@ -48,6 +48,8 @@ export function ActivityPlanTimelineChart({
   height = 112,
   label = "Activity prescription timeline",
   presentation,
+  onOccurrenceSelect,
+  selectedOccurrenceId,
   structure,
   testIDPrefix = "activity-plan-timeline",
 }: {
@@ -55,6 +57,8 @@ export function ActivityPlanTimelineChart({
   height?: number;
   label?: string;
   presentation?: ActivityPlanPresentationModel | null;
+  onOccurrenceSelect?: (occurrence: TimelineOccurrence) => void;
+  selectedOccurrenceId?: string | null;
   structure?: unknown;
   testIDPrefix?: string;
 }) {
@@ -66,37 +70,50 @@ export function ActivityPlanTimelineChart({
   const summary = `${label} with ${workCount} work block${workCount === 1 ? "" : "s"} and ${recoveryCount} recovery block${recoveryCount === 1 ? "" : "s"}. Bar widths are normalized and capped from authored duration, distance, or repetitions; bar height and color reflect authored intensity.`;
 
   return (
-    <div
+    <figure
       aria-label={summary}
       className="flex items-end gap-1 overflow-hidden rounded-xl border bg-muted/20"
       data-testid={testIDPrefix}
-      role="img"
       style={{ height }}
     >
-      {model.occurrences.map((occurrence, index) => (
-        <span
-          aria-hidden="true"
-          className={`min-w-1 rounded-sm border border-border ${occurrence.role === "rest" || occurrence.visualIntensity === null ? "bg-muted-foreground/35" : ""}`}
-          data-duration={durationLabel(occurrence.duration)}
-          data-intensity={occurrence.intensityLabel ?? "unavailable"}
-          data-kind={occurrence.role === "rest" ? "recovery" : "work"}
-          data-testid={`${testIDPrefix}-bar-${index}`}
-          key={occurrence.occurrenceId}
-          style={{
+      {model.occurrences.map((occurrence, index) => {
+        const interactive = Boolean(onOccurrenceSelect && occurrence.role === "activity");
+        const sharedProps = {
+          className: `min-w-1 rounded-sm border border-border ${occurrence.role === "rest" || occurrence.visualIntensity === null ? "bg-muted-foreground/35" : ""}`,
+          "data-duration": durationLabel(occurrence.duration),
+          "data-intensity": occurrence.intensityLabel ?? "unavailable",
+          "data-kind": occurrence.role === "rest" ? "recovery" : "work",
+          style: {
             backgroundColor: occurrenceColor(occurrence),
             flexBasis: 0,
             flexGrow: occurrenceWeight(occurrence.duration),
             height: occurrenceHeight(occurrence, height),
-          }}
-          title={
-            compact
-              ? undefined
-              : [occurrence.intensityLabel, durationLabel(occurrence.duration)]
-                  .filter(Boolean)
-                  .join(" · ")
-          }
-        />
-      ))}
-    </div>
+          },
+          title: compact
+            ? undefined
+            : [occurrence.intensityLabel, durationLabel(occurrence.duration)]
+                .filter(Boolean)
+                .join(" · "),
+        };
+        return interactive ? (
+          <button
+            aria-label={`Edit ${occurrence.intensityLabel ?? "work"}, ${durationLabel(occurrence.duration)}`}
+            aria-pressed={selectedOccurrenceId === occurrence.occurrenceId}
+            data-testid={`${testIDPrefix}-bar-${index}`}
+            key={occurrence.occurrenceId}
+            onClick={() => onOccurrenceSelect?.(occurrence)}
+            type="button"
+            {...sharedProps}
+          />
+        ) : (
+          <span
+            aria-hidden="true"
+            data-testid={`${testIDPrefix}-bar-${index}`}
+            key={occurrence.occurrenceId}
+            {...sharedProps}
+          />
+        );
+      })}
+    </figure>
   );
 }

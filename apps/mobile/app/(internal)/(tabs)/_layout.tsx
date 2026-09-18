@@ -3,7 +3,6 @@ import { Tabs } from "expo-router";
 import type { BottomTabBarButtonProps } from "expo-router/js-tabs";
 import { Circle, Home, Route, Search, Users } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
-import { TrainingPreferencesEditor } from "@/components/settings/training-preferences/TrainingPreferencesEditor";
 import { useSessionView } from "@/lib/hooks/useActivityRecorder";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
@@ -14,7 +13,6 @@ import {
   defaultRecordLaunchPayload,
 } from "@/lib/stores/activitySelectionStore";
 import { useTheme } from "@/lib/stores/theme-store";
-import { useTrainingPreferencesSheetStore } from "@/lib/stores/trainingPreferencesSheetStore";
 import { getNavigationTheme, getResolvedThemeScale } from "@/lib/theme";
 
 function MeasuredTabButton({
@@ -47,8 +45,6 @@ export default function InternalLayout() {
   const navigateTo = useAppNavigate();
   const { service: recorderService } = useActivityRecorderService();
   const recordingLifecycle = useSessionView(recorderService)?.lifecycle ?? "idle";
-  const trainingPreferencesVisible = useTrainingPreferencesSheetStore((state) => state.visible);
-  const closeTrainingPreferences = useTrainingPreferencesSheetStore((state) => state.close);
 
   const navTheme = getNavigationTheme(resolvedTheme);
   const currentTheme = getResolvedThemeScale(resolvedTheme);
@@ -151,13 +147,6 @@ export default function InternalLayout() {
         <Tabs.Screen name="calendar" options={{ href: null }} />
         <Tabs.Screen name="profile" options={{ href: null }} />
       </Tabs>
-      {trainingPreferencesVisible ? (
-        <TrainingPreferencesEditor
-          visible={trainingPreferencesVisible}
-          showLauncher={false}
-          onClose={closeTrainingPreferences}
-        />
-      ) : null}
     </View>
   );
 }

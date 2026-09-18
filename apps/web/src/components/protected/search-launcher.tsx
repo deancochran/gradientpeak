@@ -66,7 +66,7 @@ export function SearchLauncher({ className, mode = "icon" }: SearchLauncherProps
   const submitSearch = async () => {
     await navigate({
       to: "/search",
-      search: { q: query.trim() === "" ? undefined : query.trim() },
+      search: query.trim() === "" ? {} : { q: query.trim() },
     });
     setOpen(false);
   };
@@ -83,7 +83,7 @@ export function SearchLauncher({ className, mode = "icon" }: SearchLauncherProps
       >
         <Link
           to="/search"
-          search={{ q: undefined }}
+          search={{}}
           onClick={(event) => {
             event.preventDefault();
             setOpen(true);
@@ -97,7 +97,7 @@ export function SearchLauncher({ className, mode = "icon" }: SearchLauncherProps
       <Button asChild variant="ghost" size="icon" className={className}>
         <Link
           to="/search"
-          search={{ q: undefined }}
+          search={{}}
           aria-label="Open search"
           title="Open search"
           onClick={(event) => {

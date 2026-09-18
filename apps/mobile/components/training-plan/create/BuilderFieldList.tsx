@@ -1,6 +1,9 @@
+import { numericUxPolicies } from "@repo/core/utils/numeric-ux-policy";
+import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { Pressable, View } from "react-native";
+import { useEffect, useState } from "react";
+import { View } from "react-native";
 import { PlanningInputFieldRow } from "@/components/training-plan/PlanningInputFieldRow";
 
 export interface BuilderFieldDescriptor<TKey extends string = string> {
@@ -45,24 +48,18 @@ function formatFieldSource(source: string, overridden?: boolean) {
   return "Not set";
 }
 
-export function getBuilderNumberStep({
-  label,
-  unitLabel,
-}: {
-  label: string;
-  unitLabel?: string | null;
-}) {
-  const normalizedLabel = label.toLowerCase();
+export function getBuilderNumberStep({ unitLabel }: { unitLabel?: string | null }) {
   const normalizedUnit = unitLabel?.toLowerCase();
 
-  if (normalizedUnit === "kg" || normalizedUnit === "cm" || normalizedUnit === "bpm") return 1;
-  if (normalizedUnit === "w" || normalizedUnit === "watts") return 5;
-  if (normalizedUnit === "h" || normalizedUnit === "hr" || normalizedUnit === "hours") return 0.5;
-  if (normalizedLabel.includes("hour")) return 0.5;
-  if (normalizedLabel.includes("ftp") || normalizedLabel.includes("power")) return 5;
-  if (normalizedLabel.includes("fitness")) return 5;
-  if (normalizedLabel.includes("load")) return 10;
-  return 1;
+  if (normalizedUnit === "kg" || normalizedUnit === "lb" || normalizedUnit === "lbs")
+    return numericUxPolicies.weight.adjustmentStep;
+  if (normalizedUnit === "cm") return numericUxPolicies.count.adjustmentStep;
+  if (normalizedUnit === "bpm") return numericUxPolicies.plannedBpm.adjustmentStep;
+  if (normalizedUnit === "w" || normalizedUnit === "watts")
+    return numericUxPolicies.plannedPowerWatts.adjustmentStep;
+  if (normalizedUnit === "h" || normalizedUnit === "hr" || normalizedUnit === "hours")
+    return numericUxPolicies.durationHours.adjustmentStep;
+  return numericUxPolicies.count.adjustmentStep;
 }
 
 export function BuilderFieldList<TKey extends string>({
@@ -160,42 +157,28 @@ function CompactNumberControl({
   unitLabel?: string;
   value: number | null;
 }) {
-  const step = providedStep ?? getBuilderNumberStep({ label, unitLabel });
-  const nextValue = value ?? min;
-  const canDecrease = value !== null && value > min;
-  const canIncrease = max === undefined || nextValue < max;
-  const displaysAsPercent = !unitLabel && max !== undefined && max <= 1;
-  const displayValue =
-    value === null
-      ? "Not set"
-      : displaysAsPercent
-        ? `${Math.round(value * 100)}%`
-        : `${value}${unitLabel ? ` ${unitLabel}` : ""}`;
+  const step = providedStep ?? getBuilderNumberStep({ unitLabel });
+  const [draft, setDraft] = useState(value === null ? "" : String(value));
+  useEffect(() => setDraft(value === null ? "" : String(value)), [value]);
   return (
-    <View className="flex-row items-center justify-between gap-3 rounded-2xl bg-muted/30 px-3 py-2">
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Decrease ${label}`}
-        className="h-11 w-11 items-center justify-center rounded-full bg-background"
-        disabled={!canDecrease}
-        onPress={() => onChange(value !== null && value - step >= min ? value - step : null)}
-      >
-        <Text className="text-lg font-medium text-foreground">−</Text>
-      </Pressable>
-      <View className="min-w-0 flex-1 items-center">
-        <Text className="text-base font-semibold text-foreground">{displayValue}</Text>
-      </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Increase ${label}`}
-        className="h-11 w-11 items-center justify-center rounded-full bg-background"
-        disabled={!canIncrease}
-        onPress={() =>
-          onChange(max === undefined ? nextValue + step : Math.min(max, nextValue + step))
-        }
-      >
-        <Text className="text-lg font-medium text-foreground">+</Text>
-      </Pressable>
-    </View>
+    <BoundedNumberInput
+      adjustmentStep={step}
+      decimals={step < 1 ? 3 : 0}
+      id={`builder-${label.replaceAll(/[^a-z0-9]+/gi, "-").toLowerCase()}`}
+      label={label}
+      {...(max === undefined ? {} : { max })}
+      min={min}
+      onChange={(nextValue) => {
+        setDraft(nextValue);
+        if (!nextValue.trim()) onChange(null);
+      }}
+      onNumberChange={(nextValue) => {
+        // Invalid text is still being edited; it must not remove the optional field.
+        if (nextValue !== undefined) onChange(nextValue);
+      }}
+      showAdjustmentButtons
+      {...(unitLabel === undefined ? {} : { unitLabel })}
+      value={draft}
+    />
   );
 }

@@ -1,7 +1,6 @@
 import { expect, type Page, type TestInfo } from "@playwright/test";
 import { expectNoHorizontalOverflow } from "../pages/assertions";
 import { TrainingPlansPage } from "../pages/plans";
-import { currentE2EActor } from "../support/actors";
 import { currentE2ECleanupRegistry } from "../support/cleanup";
 import { createE2EExecutionIdentity } from "../support/identity";
 import { registerTrainingPlanCleanup } from "./cleanup";
@@ -38,7 +37,7 @@ export async function expectTrainingPlanLibraries(
   await expectNoHorizontalOverflow(page);
 }
 
-async function createPlan(page: Page, testInfo: TestInfo, suffix: string) {
+async function createPlan(page: Page, testInfo: TestInfo, profileId: string, suffix: string) {
   const name = trainingPlanName(testInfo, suffix);
   await page.goto("/training-plans/create");
   await page.getByLabel("Name").fill(name);
@@ -50,11 +49,17 @@ async function createPlan(page: Page, testInfo: TestInfo, suffix: string) {
   await activitySelectors.nth(0).selectOption({ label: "Playwright Tempo Builder" });
   await activitySelectors.nth(1).selectOption({ label: "Playwright Tempo Builder" });
   await page.getByRole("spinbutton", { name: "Day offset" }).nth(1).fill("1");
+  const commitResponse = page.waitForResponse((response) =>
+    response.url().includes("trainingPlans.commit"),
+  );
   await page.getByRole("button", { name: "Create plan" }).click();
+  const commitBody = await (await commitResponse).text();
+  if (commitBody.includes('"status":"stale"')) {
+    throw new Error(`Training-plan create commit was stale: ${commitBody}`);
+  }
   await expect(page).toHaveURL(/\/training-plans\/[0-9a-f-]+$/i);
   const id = page.url().match(/\/training-plans\/([0-9a-f-]+)$/i)?.[1];
   if (!id) throw new Error("Created training plan URL did not contain a plan ID.");
-  const profileId = currentE2EActor("athlete").profileId;
   registerTrainingPlanCleanup(currentE2ECleanupRegistry(), {
     id,
     ownerProfileId: profileId,
@@ -65,8 +70,12 @@ async function createPlan(page: Page, testInfo: TestInfo, suffix: string) {
   return { id, name };
 }
 
-export async function createEditAndReloadTrainingPlan(page: Page, testInfo: TestInfo) {
-  const { name } = await createPlan(page, testInfo, "Training plan");
+export async function createEditAndReloadTrainingPlan(
+  page: Page,
+  testInfo: TestInfo,
+  profileId: string,
+) {
+  const { name } = await createPlan(page, testInfo, profileId, "Training plan");
   await page.reload();
   await expect(page.getByRole("heading", { name })).toBeVisible();
   await page.getByRole("button", { name: "Edit" }).click();
@@ -78,36 +87,4 @@ export async function createEditAndReloadTrainingPlan(page: Page, testInfo: Test
   await expect(page.getByText(description)).toBeVisible();
   await expectNoHorizontalOverflow(page);
   return name;
-}
-
-export async function saveAndRestoreTrainingPreferences(page: Page) {
-  await page.goto("/training-preferences");
-  await expect(page.getByRole("heading", { name: "Training preferences" })).toBeVisible();
-  await page.getByRole("button", { name: "Schedule" }).click();
-  const min = page.getByTestId("training-preferences-min-sessions-per-week");
-  const max = page.getByTestId("training-preferences-max-sessions-per-week");
-  const originalMin = await min.inputValue();
-  const originalMax = await max.inputValue();
-  await max.fill("1");
-  await min.fill("2");
-  await page.getByRole("button", { name: "Save preferences" }).click();
-  await expect(page.getByRole("alert")).toContainText(
-    "Minimum sessions per week cannot exceed maximum sessions",
-  );
-  await expect(min).toHaveValue("2");
-  await expect(max).toHaveValue("1");
-
-  await max.fill("3");
-  await page.getByRole("button", { name: "Save preferences" }).click();
-  await expect(page.getByText("Training preferences saved.")).toBeVisible();
-  await page.reload();
-  await page.getByRole("button", { name: "Schedule" }).click();
-  await expect(min).toHaveValue("2");
-  await expect(max).toHaveValue("3");
-
-  await min.fill(originalMin);
-  await max.fill(originalMax);
-  await page.getByRole("button", { name: "Save preferences" }).click();
-  await expect(page.getByText("Training preferences saved.")).toBeVisible();
-  await expectNoHorizontalOverflow(page);
 }

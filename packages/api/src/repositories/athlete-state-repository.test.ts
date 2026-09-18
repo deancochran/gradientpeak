@@ -76,6 +76,8 @@ function publishedReadRow() {
       source_revision: 5,
       published_revision: 4,
       dirty_from_at: "2026-07-31T12:00:00.000Z",
+      activity_analysis_cursor_started_at: null,
+      activity_analysis_cursor_activity_id: null,
       fitness: 40,
       fatigue: 35,
       evidence_confidence: 0.8,
@@ -130,11 +132,12 @@ describe("published athlete-state repository snapshot", () => {
     });
     const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0] as never);
     const normalizedSql = query.sql.replace(/\s+/g, " ");
-    expect(normalizedSql).toContain("where profile.id = $1");
-    expect(normalizedSql).toContain("where state.profile_id = $2");
-    expect(normalizedSql).toContain("where run.profile_id = $3");
-    expect(normalizedSql).toContain("estimate.profile_id = profile.id");
-    expect(normalizedSql).toContain("estimate.source_revision = state.published_revision");
+    expect(normalizedSql).toContain('where "profile"."id" = $1');
+    expect(normalizedSql).toContain('where "state"."profile_id" = $2');
+    expect(normalizedSql).toContain('where "run"."profile_id" = $3');
+    expect(normalizedSql).toContain('"estimate"."profile_id" = profile.id');
+    expect(normalizedSql).toContain('"estimate"."source_revision" = state.published_revision');
+    expect(normalizedSql).toContain('"state"."published_revision"');
     if (!result) throw new Error("Expected published athlete-state snapshot");
     expect(
       result.current?.estimates.every(
@@ -154,7 +157,21 @@ describe("published athlete-state repository snapshot", () => {
 
     expect(execute).toHaveBeenCalledOnce();
     const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0] as never);
-    expect(query.sql.replace(/\s+/g, " ")).toContain("where state.profile_id = $2 for update");
+    expect(query.sql.replace(/\s+/g, " ")).toContain('where "state"."profile_id" = $2 for update');
+  });
+
+  it("does not qualify aliased UPDATE target columns while claiming a state row", async () => {
+    const execute = vi.fn().mockResolvedValue({ rows: [] });
+
+    await claimNextAthleteState({ execute } as never, {
+      now: new Date(COMPUTED_AT),
+      leaseMilliseconds: 60_000,
+    });
+
+    const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0] as never);
+    const normalizedSql = query.sql.replace(/\s+/g, " ");
+    expect(normalizedSql).toContain('update "profile_athlete_state" state set lease_token =');
+    expect(normalizedSql).not.toContain('set "state"."lease_token"');
   });
 });
 

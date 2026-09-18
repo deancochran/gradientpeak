@@ -1,8 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   type ActivityPlanInterval,
-  type ActivityPlanIntervalStep,
-  type ActivityPlanSegment,
   type ActivityPlanTargetAnchors,
   type ActivityTargetCategory,
   type AthletePerformanceTargetFacts,
@@ -13,21 +11,21 @@ import {
   getAvailablePerformanceTargetValue,
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
+import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
+import { Textarea } from "@repo/ui/components/textarea";
 import { randomUUID } from "expo-crypto";
 import { useNavigation, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, useWindowDimensions, View } from "react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ActivityPlanBasicsSection } from "@/components/activity-plan/ActivityPlanBasicsSection";
-import { ActivityPlanVariantSelector } from "@/components/activity-plan/ActivityPlanVariantSelector";
-import { StepEditorDialog } from "@/components/activity-plan/activity/StepEditorDialog";
 import { findActivitySegmentForInterval } from "@/components/activity-plan/activityPlanSelection";
 import { StructureBuilderCard } from "@/components/activity-plan/structure/StructureBuilderCard";
 import { StructureIntervalSheet } from "@/components/activity-plan/structure/StructureIntervalSheet";
 import { useActivityPlanBasicsForm } from "@/components/activity-plan/useActivityPlanBasicsForm";
 import { useActivityPlanComposerProcess } from "@/components/activity-plan/useActivityPlanComposerProcess";
-import { APP_BOTTOM_SHEET_PRESENTATIONS, AppBottomSheet } from "@/components/shared/AppBottomSheet";
 import { createDefaultActivityPlanStep } from "@/lib/activityPlanDefaults";
 import { api } from "@/lib/api";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
@@ -70,7 +68,12 @@ const createDefaultInterval = (
   id: randomUUID(),
   name: `Interval ${index + 1}`,
   repetitions: 1,
-  steps: [createDefaultActivityPlanStep({ activityCategory: activity_category, anchors })],
+  steps: [
+    createDefaultActivityPlanStep({
+      activityCategory: activity_category,
+      anchors,
+    }),
+  ],
 });
 
 export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContract) {
@@ -78,14 +81,15 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   const router = useRouter();
   const navigation = useNavigation();
   const allowNavigationRef = useRef(false);
+  const reloadFromServerRef = useRef<() => Promise<boolean>>(() => Promise.resolve(false));
   const performanceModelAsOf = useRef(new Date().toISOString()).current;
+  const { width } = useWindowDimensions();
+  const { bottom: bottomSafeAreaInset } = useSafeAreaInsets();
 
-  const [editingIntervalId, setEditingIntervalId] = useState<string | null>(null);
-  const [editingStepId, setEditingStepId] = useState<string | null>(null);
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedIntervalId, setSelectedIntervalId] = useState<string | null>(null);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
   const [showChartCoachmark, setShowChartCoachmark] = useState(false);
+  const [legacyDetailsOpen, setLegacyDetailsOpen] = useState(false);
   const [undoState, setUndoState] = useState<{
     message: string;
     onUndo: () => void;
@@ -94,17 +98,12 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
 
   const {
     addInterval,
-    addStepToInterval,
-    updateStepInInterval,
     removeInterval,
-    removeStepFromInterval,
     updateInterval,
     copyInterval,
-    addSegment,
+    reorderIntervals,
     updateSegment,
     removeSegment,
-    reorderSegments,
-    selectVariant,
     setStructure,
   } = useActivityPlanCreationStore();
 
@@ -119,6 +118,11 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     isSubmitting,
     isLoading,
     isEditBlocked,
+    editStatus,
+    hydrationVersion,
+    reloadFromServer,
+    retryLoad,
+    submitError,
   } = useActivityPlanForm({
     planId: isEditMode ? props.planId : undefined,
     onSuccess: (planId) => {
@@ -142,7 +146,10 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
         {
           text: "View Plan",
           onPress: () => {
-            router.replace({ pathname: "/activity-plan-detail", params: { planId } });
+            router.replace({
+              pathname: "/activity-plan-detail",
+              params: { planId },
+            });
           },
         },
       ]);
@@ -153,7 +160,23 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
         `Failed to ${isEditMode ? "update" : "save"} activity plan. Please try again.`,
       );
     },
+    onConflict: () => {
+      Alert.alert(
+        "Plan changed elsewhere",
+        "Your edits are still on this screen. Reloading will replace them with the latest saved plan.",
+        [
+          { text: "Keep editing", style: "cancel" },
+          {
+            text: "Reload server plan",
+            onPress: () => void reloadFromServerRef.current(),
+          },
+        ],
+      );
+    },
   });
+  reloadFromServerRef.current = reloadFromServer;
+  const submittingRef = useRef(isSubmitting);
+  submittingRef.current = isSubmitting;
 
   const basicsForm = useActivityPlanBasicsForm({
     description: form.description,
@@ -164,17 +187,28 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   });
 
   const showUndoToast = (message: string, onUndo: () => void) => {
+    // Store actions are synchronous. Capture the post-deletion root, then compare at
+    // action time so even a same-turn mutation cannot be overwritten by this inverse.
+    const undoStructure = useActivityPlanCreationStore.getState().structure;
     if (undoTimeoutRef.current) {
       clearTimeout(undoTimeoutRef.current);
       undoTimeoutRef.current = null;
     }
 
     const undo = () => {
+      if (submittingRef.current) return;
       if (undoTimeoutRef.current) {
         clearTimeout(undoTimeoutRef.current);
         undoTimeoutRef.current = null;
       }
-      onUndo();
+      if (useActivityPlanCreationStore.getState().structure !== undoStructure) {
+        Alert.alert(
+          "Undo expired",
+          "The plan structure changed after deletion. Undo is unavailable so your later changes are kept.",
+        );
+      } else {
+        onUndo();
+      }
       setUndoState(null);
     };
 
@@ -191,12 +225,16 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   };
 
   const activitySegments = form.structure.segments.filter((segment) => segment.role === "activity");
+  const hasLegacySections = form.structure.segments.length > 1;
   const selectedActivitySegment =
     activitySegments.find((segment) => segment.id === selectedSegmentId) ?? activitySegments[0];
   const intervals = selectedActivitySegment?.intervals ?? [];
   const profileId = useAuthStore((state) => state.profile?.id ?? state.user?.id ?? null);
   const publishedStateQuery = api.athleteIntelligence.getReadModel.useQuery(
-    { profileId: profileId ?? "", sections: { publishedState: true, status: true } },
+    {
+      profileId: profileId ?? "",
+      sections: { publishedState: true, status: true },
+    },
     { enabled: profileId !== null },
   );
   const performanceTargets = useMemo(
@@ -224,24 +262,29 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     }),
     [form.activityCategory, performanceTargets],
   );
-  const stepBeingEdited = useMemo(() => {
-    if (!editingIntervalId || !editingStepId) {
-      return undefined;
-    }
-
-    const interval = intervals.find((item) => item.id === editingIntervalId);
-    return interval?.steps.find((item) => item.id === editingStepId);
-  }, [editingIntervalId, editingStepId, intervals]);
 
   const structureStats = useMemo(() => {
     const parsed = activityPlanStructureSchema.safeParse(form.structure);
     if (!parsed.success) {
-      return { durationMs: 0, stepCount: 0, distanceMeters: 0 };
+      return {
+        durationMs: null,
+        hasOpenDuration: false,
+        hasPartialDuration: false,
+        stepCount: 0,
+        distanceMeters: 0,
+      };
     }
     const stats = calculateActivityPlanStats(compileActivityPlan(parsed.data));
 
     return {
-      durationMs: Math.round((stats.duration.exactElapsedSeconds ?? 0) * 1000),
+      durationMs:
+        stats.duration.exactElapsedSeconds === null
+          ? null
+          : Math.round(stats.duration.exactElapsedSeconds * 1000),
+      hasOpenDuration: stats.duration.openOccurrenceCount > 0,
+      hasPartialDuration:
+        stats.duration.openOccurrenceCount > 0 &&
+        stats.duration.timedActiveSeconds + stats.duration.restSeconds > 0,
       stepCount: stats.occurrenceCount,
       distanceMeters: stats.duration.activity_categories.reduce(
         (sum, item) => sum + item.distanceMeters,
@@ -253,23 +296,21 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   const selectedInterval = selectedIntervalId
     ? intervals.find((interval) => interval.id === selectedIntervalId)
     : undefined;
-  const selectedIntervalIndex = selectedInterval
-    ? intervals.findIndex((interval) => interval.id === selectedInterval.id)
-    : -1;
 
   useActivityPlanComposerProcess({
     activityCategory: form.activityCategory,
     allowNavigationRef,
-    canSubmit,
+    canSubmit: canSubmit && !selectedInterval,
     description: form.description,
     isEditMode,
     isEditBlocked,
+    hydrationVersion,
     isLoading,
     isSubmitting,
     name: form.name,
     navigation,
     notes: form.notes,
-    structure: form.document ?? form.structure,
+    structure: form.structure,
     submit,
   });
 
@@ -303,45 +344,31 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
 
   const handleAddInterval = () => {
     if (!selectedActivitySegment) return;
-    addInterval(
-      createDefaultInterval(form.structure.activity_category, intervals.length, targetAnchors),
-      selectedActivitySegment.id,
+    const interval = createDefaultInterval(
+      form.structure.activity_category,
+      intervals.length,
+      targetAnchors,
     );
+    addInterval(interval, selectedActivitySegment.id);
+    setSelectedIntervalId(interval.id);
   };
 
-  const handleAddSegment = (role: ActivityPlanSegment["role"]) => {
-    const id = randomUUID();
-    const segment: ActivityPlanSegment =
-      role === "activity"
-        ? {
-            id,
-            role,
-            name: `Activity ${activitySegments.length + 1}`,
-            intervals: [createDefaultInterval(form.activityCategory, 0, targetAnchors)],
-          }
-        : {
-            id,
-            role,
-            name: "Rest",
-            duration: { type: "time", seconds: 60 },
-          };
-    addSegment(segment);
-    if (role === "activity") setSelectedSegmentId(id);
-  };
-
-  const moveSegment = (index: number, offset: -1 | 1) => {
-    const target = index + offset;
-    if (target < 0 || target >= form.structure.segments.length) return;
-    const segments = [...form.structure.segments];
-    const currentSegment = segments[index];
-    const targetSegment = segments[target];
-    if (!currentSegment || !targetSegment) return;
-    [segments[index], segments[target]] = [targetSegment, currentSegment];
-    reorderSegments(segments);
+  const handleRemoveSegment = (segmentId: string) => {
+    const previousStructure = useActivityPlanCreationStore.getState().structure;
+    const segment = previousStructure.segments.find((item) => item.id === segmentId);
+    if (
+      !segment ||
+      (segment.role === "activity" &&
+        previousStructure.segments.filter((item) => item.role === "activity").length <= 1)
+    )
+      return;
+    removeSegment(segmentId);
+    if (selectedSegmentId === segmentId) setSelectedSegmentId(null);
+    showUndoToast("Activity plan section deleted", () => setStructure(previousStructure));
   };
 
   const handleRemoveInterval = (intervalId: string) => {
-    const previousStructure = form.structure;
+    const previousStructure = useActivityPlanCreationStore.getState().structure;
     removeInterval(intervalId);
     if (selectedIntervalId === intervalId) {
       setSelectedIntervalId(null);
@@ -352,48 +379,15 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     });
   };
 
-  const handleDeleteStep = (intervalId: string, stepId: string) => {
-    const previousStructure = form.structure;
-    removeStepFromInterval(intervalId, stepId);
-    showUndoToast("Step deleted", () => {
-      setStructure(previousStructure);
-      setSelectedIntervalId(intervalId);
-    });
-  };
-
-  const handleChangeIntervalRepetitions = (interval: ActivityPlanInterval, value: number) => {
-    updateInterval(interval.id, {
-      ...interval,
-      repetitions: Number.isFinite(value) ? value : 0,
-    });
-  };
-
-  const openAddStep = (intervalId: string) => {
-    setEditingIntervalId(intervalId);
-    setEditingStepId(null);
-    setEditDialogOpen(true);
-  };
-
-  const openEditStep = (intervalId: string, stepId: string) => {
-    setEditingIntervalId(intervalId);
-    setEditingStepId(stepId);
-    setEditDialogOpen(true);
-  };
-
-  const handleSaveStep = (step: ActivityPlanIntervalStep) => {
-    if (!editingIntervalId) {
-      return;
-    }
-
-    if (editingStepId) {
-      updateStepInInterval(editingIntervalId, editingStepId, step);
-    } else {
-      addStepToInterval(editingIntervalId, step);
-    }
-
-    setEditDialogOpen(false);
-    setEditingIntervalId(null);
-    setEditingStepId(null);
+  const requestRemoveInterval = (intervalId: string) => {
+    Alert.alert("Delete interval?", "This removes the interval from this plan.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => handleRemoveInterval(intervalId),
+      },
+    ]);
   };
 
   if (isLoading) {
@@ -406,14 +400,22 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   }
 
   if (isEditBlocked) {
+    const canRetry = editStatus === "error";
     return (
       <View className="flex-1 items-center justify-center gap-3 bg-background p-6">
         <Text accessibilityRole="header" className="text-lg font-semibold text-foreground">
           Plan unavailable
         </Text>
         <Text className="text-center text-sm text-muted-foreground">
-          This plan cannot be safely edited on mobile.
+          {canRetry
+            ? "The latest plan could not be loaded. Your changes have been kept."
+            : "This plan uses an unsupported activity structure and was not changed."}
         </Text>
+        {canRetry ? (
+          <Button onPress={() => void retryLoad()}>
+            <Text>Retry</Text>
+          </Button>
+        ) : null}
         <Button onPress={() => router.back()}>
           <Text>Back to plans</Text>
         </Button>
@@ -421,198 +423,188 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     );
   }
 
-  const issueMaps = (() => {
-    const intervalIssues: Record<string, { interval: number; step: number; total: number }> = {};
-    const stepIssueCountsByInterval: Record<string, Record<string, number>> = {};
-
-    Object.entries(validation.errors).forEach(([key]) => {
-      if (key.startsWith("interval:")) {
-        const [, intervalId] = key.split(":");
-        if (!intervalId) {
-          return;
-        }
-        const current = intervalIssues[intervalId] ?? {
-          interval: 0,
-          step: 0,
-          total: 0,
-        };
-        current.interval += 1;
-        current.total += 1;
-        intervalIssues[intervalId] = current;
-        return;
-      }
-
-      if (key.startsWith("step:")) {
-        const [, intervalId, stepId] = key.split(":");
-        if (!intervalId || !stepId) {
-          return;
-        }
-        const current = intervalIssues[intervalId] ?? {
-          interval: 0,
-          step: 0,
-          total: 0,
-        };
-        current.step += 1;
-        current.total += 1;
-        intervalIssues[intervalId] = current;
-
-        const stepIssues = stepIssueCountsByInterval[intervalId] ?? {};
-        stepIssues[stepId] = (stepIssues[stepId] ?? 0) + 1;
-        stepIssueCountsByInterval[intervalId] = stepIssues;
-      }
-    });
-
-    return {
-      intervalIssues,
-      stepIssueCountsByInterval,
-    };
-  })();
-
   return (
     <View className="flex-1 bg-background">
-      <NestableScrollContainer className="flex-1 p-4" showsVerticalScrollIndicator={false}>
-        <View className="gap-4 pb-10">
-          <ActivityPlanBasicsSection
-            activityCategory={form.activityCategory}
-            activityCategoryError={validation.errors.activity_category}
-            form={basicsForm}
-            onChangeActivityCategory={(activity_category) => {
-              const nextCategory = activity_category as ActivityCategory;
-              if (nextCategory === form.activityCategory) return;
-              Alert.alert(
-                "Change plan activity category?",
-                "Changing the activity category preserves your current targets. Review any activity-category-specific targets in each step before saving.",
-                [
-                  { text: "Keep current activity category", style: "cancel" },
-                  {
-                    text: "Change activity category",
-                    style: "destructive",
-                    onPress: () => setActivityCategory(nextCategory),
-                  },
-                ],
-              );
-            }}
-          />
-
-          {form.document && form.selectedVariantId && form.document.variants.length > 1 ? (
-            <View className="rounded-lg border border-border bg-card p-3">
-              <ActivityPlanVariantSelector
-                defaultVariantId={form.document.defaultVariantId}
-                onSelect={(variantId) => {
-                  setSelectedIntervalId(null);
-                  setSelectedSegmentId(null);
-                  selectVariant(variantId ?? form.document?.defaultVariantId ?? "");
-                }}
-                selectedVariantId={form.selectedVariantId}
-                selection="explicit"
-                testIDPrefix="activity-plan-editor-variant"
-                variants={form.document.variants}
-              />
-            </View>
-          ) : null}
-
-          {publishedStateQuery.data?.publishedState?.performanceTargets &&
-          publishedStateQuery.data.status?.freshness === "stale" ? (
-            <Text className="text-sm text-muted-foreground">
-              Using the last published performance targets. They remain usable, but newer activity
-              data may update them.
-            </Text>
-          ) : null}
-
-          <View className="gap-3 rounded-lg border border-border bg-card p-3">
-            <Text className="text-base font-semibold text-foreground">Ordered segments</Text>
-            {form.structure.segments.map((segment, index) => (
-              <Pressable
-                key={segment.id}
-                onPress={() => segment.role === "activity" && setSelectedSegmentId(segment.id)}
-                accessibilityRole={segment.role === "activity" ? "button" : undefined}
-                accessibilityLabel={
-                  segment.role === "activity"
-                    ? `Select ${segment.name}, ${form.structure.activity_category}, ${segment.intervals.length} interval${segment.intervals.length === 1 ? "" : "s"}`
-                    : undefined
-                }
-                accessibilityState={
-                  segment.role === "activity"
-                    ? { selected: selectedActivitySegment?.id === segment.id }
-                    : undefined
-                }
-                className={`rounded-lg border p-3 ${selectedActivitySegment?.id === segment.id ? "border-primary bg-primary/5" : "border-border"}`}
-              >
-                <View className="flex-row items-center justify-between gap-2">
-                  <View className="flex-1">
-                    <Text className="font-medium text-foreground">{segment.name}</Text>
-                    <Text className="text-xs text-muted-foreground">
-                      {segment.role === "activity"
-                        ? `${form.structure.activity_category} · ${segment.intervals.length} interval${segment.intervals.length === 1 ? "" : "s"}`
-                        : `${segment.role} · ${Math.round(segment.duration.seconds / 60)} min`}
-                    </Text>
-                  </View>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onPress={() => moveSegment(index, -1)}
-                    disabled={index === 0}
-                  >
-                    <Text>↑</Text>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onPress={() => moveSegment(index, 1)}
-                    disabled={index === form.structure.segments.length - 1}
-                  >
-                    <Text>↓</Text>
-                  </Button>
-                  <Button variant="ghost" size="sm" onPress={() => removeSegment(segment.id)}>
-                    <Text>Remove</Text>
-                  </Button>
-                </View>
-                {segment.role !== "activity" ? (
-                  <View className="mt-2 flex-row gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onPress={() =>
-                        updateSegment(segment.id, {
-                          ...segment,
-                          duration: {
-                            type: "time",
-                            seconds: Math.max(1, segment.duration.seconds - 60),
-                          },
-                        })
-                      }
-                    >
-                      <Text>-1 min</Text>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onPress={() =>
-                        updateSegment(segment.id, {
-                          ...segment,
-                          duration: { type: "time", seconds: segment.duration.seconds + 60 },
-                        })
-                      }
-                    >
-                      <Text>+1 min</Text>
-                    </Button>
-                  </View>
-                ) : null}
-              </Pressable>
-            ))}
-            <View className="flex-row flex-wrap gap-2">
-              <Button variant="outline" size="sm" onPress={() => handleAddSegment("activity")}>
-                <Text>Add activity</Text>
-              </Button>
-              <Button variant="outline" size="sm" onPress={() => handleAddSegment("rest")}>
-                <Text>Add rest</Text>
-              </Button>
-            </View>
+      {isSubmitting ? <Text accessibilityLiveRegion="polite">Saving activity plan...</Text> : null}
+      {submitError ? (
+        <Text accessibilityRole="alert" className="px-6 text-destructive">
+          {submitError}
+        </Text>
+      ) : null}
+      <NestableScrollContainer
+        className="flex-1"
+        contentContainerStyle={{
+          paddingHorizontal: width < 390 ? 20 : 24,
+          paddingTop: 16,
+          paddingBottom: Math.max(24, bottomSafeAreaInset + 16),
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View
+          className="w-full gap-4"
+          pointerEvents={isSubmitting ? "none" : "auto"}
+          accessibilityElementsHidden={isSubmitting}
+          importantForAccessibility={isSubmitting ? "no-hide-descendants" : "auto"}
+        >
+          <View className="rounded-3xl border border-border bg-card p-4">
+            <ActivityPlanBasicsSection
+              disabled={isSubmitting}
+              activityCategory={form.activityCategory}
+              activityCategoryError={validation.errors.activity_category}
+              form={basicsForm}
+              onChangeActivityCategory={(activity_category) => {
+                const nextCategory = activity_category as ActivityCategory;
+                if (nextCategory === form.activityCategory) return;
+                Alert.alert(
+                  "Change plan activity category?",
+                  "Changing the activity category preserves your current durations and targets. Correct any incompatible values in each step before saving.",
+                  [
+                    { text: "Keep current activity category", style: "cancel" },
+                    {
+                      text: "Change activity category",
+                      style: "destructive",
+                      onPress: () => {
+                        if (!submittingRef.current) setActivityCategory(nextCategory);
+                      },
+                    },
+                  ],
+                );
+              }}
+            />
           </View>
+
+          {Object.entries(validation.errors)
+            .filter(
+              ([key]) =>
+                !["name", "activity_category", "segments", "intervals"].includes(key) &&
+                !key.startsWith("step:") &&
+                !key.startsWith("interval:"),
+            )
+            .map(([key, message]) => (
+              <Text key={key} accessibilityRole="alert" className="text-sm text-destructive">
+                {key}: {message}
+              </Text>
+            ))}
+
+          {hasLegacySections ? (
+            <View className="gap-2">
+              <Text className="text-xs font-medium text-muted-foreground">
+                Activity plan sections
+              </Text>
+              {form.structure.segments.map((segment) => (
+                <Pressable
+                  key={segment.id}
+                  onPress={() => segment.role === "activity" && setSelectedSegmentId(segment.id)}
+                  accessibilityRole={segment.role === "activity" ? "button" : undefined}
+                  accessibilityLabel={
+                    segment.role === "activity"
+                      ? `Open ${segment.name}, ${form.structure.activity_category}, ${segment.intervals.length} interval${segment.intervals.length === 1 ? "" : "s"}`
+                      : undefined
+                  }
+                  accessibilityState={
+                    segment.role === "activity"
+                      ? { selected: selectedActivitySegment?.id === segment.id }
+                      : undefined
+                  }
+                  className={`rounded-md border px-3 py-2 ${selectedActivitySegment?.id === segment.id ? "border-primary bg-primary/5" : "border-border"}`}
+                >
+                  <View className="flex-row items-center justify-between gap-2">
+                    <View className="flex-1">
+                      <Text className="font-medium text-foreground">{segment.name}</Text>
+                      <Text className="text-xs text-muted-foreground">
+                        {segment.role === "activity"
+                          ? `${form.structure.activity_category} · ${segment.intervals.length} interval${segment.intervals.length === 1 ? "" : "s"}`
+                          : `${segment.role} · ${Math.round(segment.duration.seconds / 60)} min`}
+                      </Text>
+                    </View>
+                  </View>
+                  {legacyDetailsOpen ? (
+                    <View className="mt-3 gap-2">
+                      <Text className="text-xs font-medium text-muted-foreground">
+                        Section name
+                      </Text>
+                      <Input
+                        editable={!isSubmitting}
+                        accessibilityLabel={`Section name ${segment.name}`}
+                        maxLength={100}
+                        onChangeText={(name) => updateSegment(segment.id, { ...segment, name })}
+                        value={segment.name}
+                      />
+                      <Text className="text-xs font-medium text-muted-foreground">
+                        Section notes
+                      </Text>
+                      <Textarea
+                        editable={!isSubmitting}
+                        accessibilityLabel={`Section notes ${segment.name}`}
+                        maxLength={1000}
+                        numberOfLines={2}
+                        onChangeText={(notes) => updateSegment(segment.id, { ...segment, notes })}
+                        value={segment.notes ?? ""}
+                      />
+                      {segment.role !== "activity" || activitySegments.length > 1 ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onPress={() => handleRemoveSegment(segment.id)}
+                        >
+                          <Text className="text-destructive">Remove section</Text>
+                        </Button>
+                      ) : null}
+                    </View>
+                  ) : null}
+                  {segment.role !== "activity" ? (
+                    <View className="mt-2 flex-row gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onPress={() =>
+                          updateSegment(segment.id, {
+                            ...segment,
+                            duration: {
+                              type: "time",
+                              seconds: Math.max(1, segment.duration.seconds - 60),
+                            },
+                          })
+                        }
+                      >
+                        <Text>-1 min</Text>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onPress={() =>
+                          updateSegment(segment.id, {
+                            ...segment,
+                            duration: {
+                              type: "time",
+                              seconds: segment.duration.seconds + 60,
+                            },
+                          })
+                        }
+                      >
+                        <Text>+1 min</Text>
+                      </Button>
+                    </View>
+                  ) : null}
+                </Pressable>
+              ))}
+              <Button
+                accessibilityLabel="Legacy section details"
+                onPress={() => setLegacyDetailsOpen((open) => !open)}
+                size="sm"
+                variant="ghost"
+              >
+                <Text className="text-muted-foreground">
+                  {legacyDetailsOpen ? "Hide section details" : "Section details"}
+                </Text>
+              </Button>
+            </View>
+          ) : null}
 
           {selectedActivitySegment ? (
             <StructureBuilderCard
               structure={form.structure}
+              segmentId={selectedActivitySegment.id}
               intervals={intervals}
               structureStats={structureStats}
               validationErrors={validation.errors}
@@ -620,65 +612,37 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
               showChartCoachmark={showChartCoachmark}
               onAddInterval={handleAddInterval}
               onDismissChartCoachmark={dismissChartCoachmark}
+              onDuplicateInterval={(intervalId) => copyInterval(intervalId)}
+              onDeleteInterval={requestRemoveInterval}
+              onReorderIntervals={(nextIntervals) =>
+                reorderIntervals(nextIntervals, selectedActivitySegment.id)
+              }
               onTimelineIntervalPress={openIntervalSheet}
             />
           ) : null}
         </View>
       </NestableScrollContainer>
 
-      <StepEditorDialog
-        open={editDialogOpen}
-        onOpenChange={setEditDialogOpen}
-        step={stepBeingEdited}
-        onSave={(step) => handleSaveStep(step)}
-        activityCategory={form.structure.activity_category}
-        targetAnchors={targetAnchors}
-      />
-
-      <AppBottomSheet
-        visible={Boolean(selectedInterval)}
-        title={selectedInterval ? `Interval ${selectedIntervalIndex + 1}` : "Interval"}
-        showCloseAction
-        initialSnapIndex={APP_BOTTOM_SHEET_PRESENTATIONS.inspector.initialSnapIndex}
-        snapPoints={APP_BOTTOM_SHEET_PRESENTATIONS.inspector.snapPoints}
-        onClose={() => {
-          setSelectedIntervalId(null);
-        }}
-      >
-        {selectedInterval ? (
-          <StructureIntervalSheet
-            interval={selectedInterval}
-            intervalIndex={selectedIntervalIndex >= 0 ? selectedIntervalIndex : 0}
-            intervalIssue={issueMaps.intervalIssues[selectedInterval.id]}
-            stepIssueCounts={issueMaps.stepIssueCountsByInterval[selectedInterval.id] ?? {}}
-            onAdjustRepetitions={(delta) =>
-              handleChangeIntervalRepetitions(
-                selectedInterval,
-                selectedInterval.repetitions + delta,
-              )
-            }
-            onAddStep={() => {
-              openAddStep(selectedInterval.id);
-              setSelectedIntervalId(null);
-            }}
-            onDuplicateInterval={() => copyInterval(selectedInterval.id)}
-            onDeleteInterval={() => handleRemoveInterval(selectedInterval.id)}
-            onDeleteStep={(stepId) => {
-              handleDeleteStep(selectedInterval.id, stepId);
-            }}
-            onEditStep={(stepId) => {
-              openEditStep(selectedInterval.id, stepId);
-              setSelectedIntervalId(null);
-            }}
-          />
-        ) : null}
-      </AppBottomSheet>
+      {selectedInterval ? (
+        <StructureIntervalSheet
+          key={selectedInterval.id}
+          interval={selectedInterval}
+          activityCategory={form.structure.activity_category}
+          targetAnchors={targetAnchors}
+          onClose={() => setSelectedIntervalId(null)}
+          onCommit={(interval) => {
+            updateInterval(interval.id, interval);
+            setSelectedIntervalId(null);
+          }}
+        />
+      ) : null}
 
       {undoState ? (
         <View className="absolute bottom-4 left-4 right-4 rounded-lg border border-border bg-card px-3 py-2">
           <View className="flex-row items-center justify-between gap-3">
             <Text className="flex-1 text-sm text-foreground">{undoState.message}</Text>
             <Pressable
+              disabled={isSubmitting}
               onPress={undoState.onUndo}
               className="min-h-11 items-center justify-center rounded-md px-3"
               accessibilityRole="button"

@@ -13,11 +13,15 @@ export function ActivityPlanCard({
   openLabel,
   onOpen,
   plan,
+  selected,
+  disabled = false,
 }: {
   href?: string;
   openLabel?: string;
   onOpen?: () => void;
   plan: ActivityPlanSummary | ScheduledActivityPlanSummary;
+  selected?: boolean;
+  disabled?: boolean;
 }) {
   const presentation = deriveActivityPlanPresentation(plan.structure);
   const ownerLabel = plan.owner?.username
@@ -71,8 +75,7 @@ export function ActivityPlanCard({
     </>
   );
 
-  const className =
-    "block w-full rounded-2xl border bg-card p-5 text-left transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  const className = `block w-full rounded-2xl border bg-card p-5 text-left transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selected ? "border-primary ring-1 ring-primary" : ""} ${disabled ? "cursor-not-allowed opacity-60" : ""}`;
   const accessibilityLabel = openLabel ?? `Open activity plan ${plan.name}`;
   if (href) {
     return (
@@ -89,6 +92,8 @@ export function ActivityPlanCard({
   return (
     <button
       aria-label={accessibilityLabel}
+      aria-pressed={selected}
+      disabled={disabled}
       className={className}
       data-testid={`activity-plan-card-${plan.id}`}
       onClick={onOpen}

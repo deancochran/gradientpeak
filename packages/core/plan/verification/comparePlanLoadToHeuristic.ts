@@ -110,10 +110,16 @@ function normalizeHeuristicTarget(
       targetLike.recommended_weekly_load ??
       null,
     recommended_baseline_load_range: targetLike.recommended_baseline_load_range ?? null,
-    microcycles: heuristic.microcycles?.map((microcycle) => ({
-      week_start_date: microcycle.week_start_date,
-      planned_weekly_load: microcycle.planned_weekly_load,
-    })),
+    ...(heuristic.microcycles === undefined
+      ? {}
+      : {
+          microcycles: heuristic.microcycles.map((microcycle) => ({
+            ...(microcycle.week_start_date === undefined
+              ? {}
+              : { week_start_date: microcycle.week_start_date }),
+            planned_weekly_load: microcycle.planned_weekly_load,
+          })),
+        }),
   };
 }
 

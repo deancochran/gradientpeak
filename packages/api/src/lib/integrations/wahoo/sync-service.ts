@@ -5,13 +5,11 @@
 
 import { createHash } from "node:crypto";
 import {
-  type ActivityPlanDocument,
   type ActivityPlanStructure,
   type AthletePerformanceTargetFacts,
-  activityPlanDocumentSchema,
+  activityPlanStructureSchema,
   compileActivityPlan,
   getAvailablePerformanceTargetValue,
-  resolveActivityPlanVariant,
 } from "@repo/core";
 import { canonicalUtcInstant, formatIsoInstantInIanaZone } from "@repo/core/calendar";
 import { encodeRouteCourseFit } from "@repo/core/server";
@@ -49,6 +47,7 @@ import {
   convertToWahooPlan,
   getWahooProjectionSnapshot,
   validateWahooCompatibility,
+  WahooPlanConversionError,
   type WahooProjectionSnapshot,
 } from "./plan-converter";
 import {
@@ -171,7 +170,7 @@ interface WahooRepository {
       description: string | null;
       id: string;
       name: string;
-      structure: ActivityPlanDocument;
+      structure: ActivityPlanStructure;
       updatedAt: string;
     } | null;
     id: string;
@@ -307,7 +306,7 @@ type WahooActivityPlan = {
   description: string | null;
   id: string;
   name: string;
-  structure: ActivityPlanDocument;
+  structure: ActivityPlanStructure;
   updated_at: string;
 };
 
@@ -315,7 +314,7 @@ type WahooRepositoryActivityPlan = {
   description: string | null;
   id: string;
   name: string;
-  structure: ActivityPlanDocument;
+  structure: ActivityPlanStructure;
   updatedAt: string;
 };
 
@@ -407,6 +406,7 @@ export type SyncFailureCategory = "eligibility" | "integration" | "provider";
 export type SyncFailureCode =
   | "authorization_reset_required"
   | "missing_metric"
+  | "duration_unavailable"
   | "missing_performance_model_context"
   | "unsupported_target"
   | "unsupported_segment"
@@ -479,13 +479,21 @@ function isExpectedOwnedWahooRoute(route: WahooRoute, externalId: string): boole
 
 function workoutMatchesDesiredState(
   workout: WahooWorkout,
-  desired: { name: string; planId: number; scheduledDate: string },
+  desired: {
+    name: string;
+    planId: number;
+    scheduledDate: string;
+    durationMinutes?: number | undefined;
+  },
 ): boolean {
   const actualStarts = Date.parse(workout.starts);
   const desiredStarts = Date.parse(desired.scheduledDate);
   return (
     workout.name === desired.name &&
     workout.plan_id === desired.planId &&
+    (desired.durationMinutes === undefined
+      ? workout.minutes == null || workout.minutes === 0
+      : workout.minutes === desired.durationMinutes) &&
     Number.isFinite(actualStarts) &&
     Number.isFinite(desiredStarts) &&
     actualStarts === desiredStarts
@@ -526,6 +534,14 @@ export function decideRouteOnlyWahooConvergence(input: {
 }
 
 function classifyPlanConversionFailure(error: unknown): SyncResult | null {
+  if (error instanceof WahooPlanConversionError) {
+    return createSyncFailure({
+      category: "eligibility",
+      code: error.code === "unsupported_segment" ? "unsupported_segment" : "unsupported_target",
+      error: error.message,
+      retryable: false,
+    });
+  }
   if (!(error instanceof Error)) return null;
 
   const missingMetric =
@@ -591,6 +607,25 @@ export class WahooSyncService {
 
   private get repository() {
     return this.deps.repository;
+  }
+
+  /** Planned-session jobs use the immutable snapshot reader; event enqueue is disabled. */
+  async syncPlannedSession(
+    plannedSessionId: string,
+    profileId: string,
+    execution?: Parameters<WahooSyncService["syncEvent"]>[2],
+  ): Promise<SyncResult> {
+    return this.syncEvent(plannedSessionId, profileId, execution);
+  }
+
+  /** Planned-session jobs use the immutable snapshot reader; event enqueue is disabled. */
+  async unsyncPlannedSession(
+    plannedSessionId: string,
+    profileId: string,
+    capturedTarget?: { externalId: string; resourceLinkId: string },
+    execution?: Parameters<WahooSyncService["unsyncEvent"]>[3],
+  ): Promise<SyncResult> {
+    return this.unsyncEvent(plannedSessionId, profileId, capturedTarget, execution);
   }
 
   private async getSupersededProviderEffect(
@@ -1737,8 +1772,8 @@ export class WahooSyncService {
         );
       }
 
-      const document = activityPlanDocumentSchema.safeParse(activityPlan.structure);
-      if (!document.success) {
+      const parsedStructure = activityPlanStructureSchema.safeParse(activityPlan.structure);
+      if (!parsedStructure.success) {
         return rejectOrUnsync(
           createSyncFailure({
             category: "eligibility",
@@ -1748,7 +1783,7 @@ export class WahooSyncService {
           }),
         );
       }
-      const structure = resolveActivityPlanVariant(document.data).structure;
+      const structure = parsedStructure.data;
       const compiled = compileActivityPlan(structure);
       const normalizedPlanned: WahooPlannedEvent = {
         id: planned.id,
@@ -2179,7 +2214,12 @@ export class WahooSyncService {
   }
 
   private async updateWorkoutAndVerify(input: {
-    desired: { name: string; planId: number; scheduledDate: string };
+    desired: {
+      name: string;
+      planId: number;
+      scheduledDate: string;
+      durationMinutes?: number | undefined;
+    };
     execution: WahooProviderEffectExecution;
     signal?: AbortSignal;
     wahooClient: WahooClient;
@@ -2194,6 +2234,9 @@ export class WahooSyncService {
           name: input.desired.name,
           planId: input.desired.planId,
           scheduledDate: input.desired.scheduledDate,
+          ...(input.desired.durationMinutes !== undefined
+            ? { durationMinutes: input.desired.durationMinutes }
+            : {}),
         },
         input.signal,
       );
@@ -2236,7 +2279,7 @@ export class WahooSyncService {
 
   private async ensureWorkout(input: {
     desired: {
-      durationMinutes: number;
+      durationMinutes?: number | undefined;
       name: string;
       planId: number;
       scheduledDate: string;
@@ -2263,6 +2306,11 @@ export class WahooSyncService {
       };
     }
     if (lookup.workout) {
+      const durationFailure = this.unknownDurationConflict(
+        input.desired.durationMinutes,
+        lookup.workout,
+      );
+      if (durationFailure) return { success: false, result: durationFailure };
       const updateFailure = await this.updateWorkoutAndVerify({
         desired: input.desired,
         execution: input.execution,
@@ -2280,7 +2328,9 @@ export class WahooSyncService {
     try {
       const workout = await input.wahooClient.createWorkout(
         {
-          durationMinutes: input.desired.durationMinutes,
+          ...(input.desired.durationMinutes !== undefined
+            ? { durationMinutes: input.desired.durationMinutes }
+            : {}),
           externalId: input.eventId,
           name: input.desired.name,
           planId: input.desired.planId,
@@ -2330,6 +2380,11 @@ export class WahooSyncService {
         };
       }
       if (reconciled.workout) {
+        const durationFailure = this.unknownDurationConflict(
+          input.desired.durationMinutes,
+          reconciled.workout,
+        );
+        if (durationFailure) return { success: false, result: durationFailure };
         const updateFailure = await this.updateWorkoutAndVerify({
           desired: input.desired,
           execution: input.execution,
@@ -2353,9 +2408,46 @@ export class WahooSyncService {
     }
   }
 
-  /**
-   * Create a new sync (first time syncing this planned activity)
+  private unknownDurationConflict(
+    durationMinutes: number | undefined,
+    workout: WahooWorkout,
+  ): SyncResult | null {
+    if (durationMinutes !== undefined || workout.minutes == null || workout.minutes === 0)
+      return null;
+    return createSyncFailure({
+      category: "eligibility",
+      code: "duration_unavailable",
+      retryable: false,
+      error:
+        "Exact duration is unavailable for distance completion. The existing Wahoo duration cannot be safely cleared; remove the existing calendar entry before exporting again.",
+    });
+  }
+
+  /** Omission is documented; clearing an existing value with null is not. Fail
+   * before plan/route writes rather than retain an old guessed duration silently.
    */
+  private async preflightUnknownDuration(
+    eventId: string,
+    durationMinutes: number | undefined,
+    client: WahooClient,
+    signal?: AbortSignal,
+  ): Promise<SyncResult | null> {
+    if (durationMinutes !== undefined) return null;
+    const lookup = await client.findWorkoutByToken({
+      token: eventId,
+      ...(signal ? { signal } : {}),
+    });
+    if (!lookup.complete)
+      return createSyncFailure({
+        category: "provider",
+        code: "ambiguous_create",
+        retryable: false,
+        error: "Wahoo duration metadata reconciliation was incomplete",
+      });
+    return lookup.workout ? this.unknownDurationConflict(durationMinutes, lookup.workout) : null;
+  }
+
+  /** Create a new sync (first time syncing this planned activity). */
   private async createNewSync(
     planned: WahooPlannedEvent,
     structure: ActivityPlanStructure,
@@ -2376,6 +2468,20 @@ export class WahooSyncService {
       signal?: AbortSignal;
     },
   ): Promise<SyncResult> {
+    const durationSeconds = calculateWorkoutDuration(structure);
+    const durationMinutes = durationSeconds === null ? undefined : Math.ceil(durationSeconds / 60);
+    const durationFailure = await this.preflightUnknownDuration(
+      planned.id,
+      durationMinutes,
+      wahooClient,
+      execution.signal,
+    );
+    if (durationFailure) return durationFailure;
+    if (durationSeconds === null)
+      warnings = [
+        ...(warnings ?? []),
+        "Exact duration is unavailable for distance completion; duration metadata is omitted.",
+      ];
     // Sync route first if present
     const syncedRoute = await this.syncRouteForWorkout({
       activityType,
@@ -2443,9 +2549,6 @@ export class WahooSyncService {
         retryable: false,
       });
     }
-
-    const durationSeconds = calculateWorkoutDuration(structure);
-    const durationMinutes = Math.ceil(durationSeconds / 60);
 
     const scheduledDate = new Date(planned.starts_at);
     const today = new Date();
@@ -2631,6 +2734,20 @@ export class WahooSyncService {
       signal?: AbortSignal;
     },
   ): Promise<SyncResult> {
+    const durationSeconds = calculateWorkoutDuration(structure);
+    const durationMinutes = durationSeconds === null ? undefined : Math.ceil(durationSeconds / 60);
+    const durationFailure = await this.preflightUnknownDuration(
+      planned.id,
+      durationMinutes,
+      wahooClient,
+      execution.signal,
+    );
+    if (durationFailure) return durationFailure;
+    if (durationSeconds === null)
+      warnings = [
+        ...(warnings ?? []),
+        "Exact duration is unavailable for distance completion; duration metadata is omitted.",
+      ];
     const syncedRoute = await this.syncRouteForWorkout({
       activityType,
       execution,
@@ -2688,8 +2805,6 @@ export class WahooSyncService {
     });
     if (!ensuredPlan.success) return ensuredPlan.result;
     const planId = ensuredPlan.plan.id;
-    const durationMinutes = Math.ceil(calculateWorkoutDuration(structure) / 60);
-
     const ensuredWorkout = await this.ensureWorkout({
       desired: {
         durationMinutes,

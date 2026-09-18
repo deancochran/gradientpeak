@@ -243,7 +243,7 @@ export function TimerOnlyRecordingProvider({
         backgroundPaused: false,
         error:
           result.status === "discarded-invalid"
-            ? "An invalid saved timer draft was discarded."
+            ? "An invalid saved timer recording was discarded."
             : null,
       }));
     } catch (error) {
@@ -614,7 +614,7 @@ export function TimerOnlyRecordingProvider({
         busy: false,
         error:
           error instanceof TimerDraftStorageInUseError
-            ? "Another tab took over this timer. Finalization was fenced and the recovery draft was retained."
+            ? "Another tab took over this timer. Finalization was fenced and the recovery recording was retained."
             : error instanceof Error
               ? error.message
               : "The recording could not be finalized durably.",

@@ -6,7 +6,12 @@ import {
   prepareMobileSentryEvent,
   sanitizeMobileSentryContext,
 } from "./sentry-config";
-import { createMobileSentryOptions, readSampleRate, shouldEnableReplay } from "./sentry-options.js";
+import {
+  createMobileSentryOptions,
+  readSampleRate,
+  shouldEnableReplay,
+  shouldEnableSentry,
+} from "./sentry-options.js";
 
 function errorEvent(overrides: Omit<ErrorEvent, "type">): ErrorEvent {
   return { type: undefined, ...overrides };
@@ -19,6 +24,7 @@ describe("mobile Sentry configuration", () => {
       enableLogs: false,
       replaysOnErrorSampleRate: 0,
       replaysSessionSampleRate: 0,
+      sampleRate: 1,
       sendDefaultPii: false,
       tracesSampleRate: 0,
     });
@@ -34,36 +40,46 @@ describe("mobile Sentry configuration", () => {
     expect(createMobileSentryOptions(optedIn, "production").replaysOnErrorSampleRate).toBe(1);
   });
 
+  it("keeps configured ordinary development enabled but suppresses Maestro fixtures", () => {
+    const configuredDevelopment = {
+      EXPO_PUBLIC_ENABLE_SENTRY_IN_DEV: "1",
+      EXPO_PUBLIC_SENTRY_DSN: "https://public@example.test/1",
+    };
+
+    expect(shouldEnableSentry(configuredDevelopment, true)).toBe(true);
+    expect(
+      shouldEnableSentry({ ...configuredDevelopment, EXPO_PUBLIC_MAESTRO_E2E: "1" }, true),
+    ).toBe(false);
+  });
+
   it("rejects invalid sample rates", () => {
     expect(readSampleRate("NaN", 0)).toBe(0);
     expect(readSampleRate("-1", 0)).toBe(0);
     expect(readSampleRate("0.5", 0)).toBe(0.5);
   });
 
-  it("redacts sensitive explicit context and bounds collections", () => {
+  it("allows only shared finite operational context", () => {
     expect(
       sanitizeMobileSentryContext({
         email: "private@example.test",
-        safe: "x".repeat(600),
-        list: Array.from({ length: 30 }, (_, index) => index),
+        procedure: "activities.create",
+        diagnostic_reason: "missing_column",
+        note: "private note",
       }),
     ).toEqual({
-      email: "[Redacted]",
-      safe: "x".repeat(500),
-      list: Array.from({ length: 20 }, (_, index) => index),
+      procedure: "activities.create",
+      diagnostic_reason: "missing_column",
     });
   });
 
-  it("bounds recursion and circular references", () => {
+  it("denies arbitrary nested and circular context without mutating it", () => {
     const circular: Record<string, unknown> = {};
     circular.self = circular;
 
     expect(
       sanitizeMobileSentryContext({ deep: { one: { two: { three: { four: true } } } }, circular }),
-    ).toEqual({
-      deep: { one: { two: { three: "[Truncated]" } } },
-      circular: { self: "[Circular]" },
-    });
+    ).toEqual({});
+    expect(circular.self).toBe(circular);
   });
 
   it("removes development users and request data", () => {
@@ -94,7 +110,84 @@ describe("mobile Sentry configuration", () => {
       options.beforeSend(errorEvent({ extra: { accessToken: "secret", operation: "sync" } })),
     ).toEqual({
       type: undefined,
-      extra: { accessToken: "[Redacted]", operation: "sync" },
+      extra: { operation: "sync" },
+    });
+  });
+
+  it("replaces raw exception text with a shared recognized diagnostic summary", () => {
+    const cause = Object.assign(new Error("SELECT private FROM profiles"), { code: "42703" });
+    const prepared = prepareMobileSentryEvent(
+      errorEvent({
+        exception: { values: [{ type: "PostgresError", value: "private@example.test" }] },
+      }),
+      "development",
+      { originalException: new Error("failed", { cause }) },
+    );
+
+    expect(prepared?.exception?.values?.[0]?.value).toBe("Database schema is missing a column.");
+    expect(JSON.stringify(prepared)).not.toMatch(/private@example\.test|SELECT/);
+  });
+
+  it("retains only symbolication-safe mobile frames and strips raw event text", () => {
+    const prepared = prepareMobileSentryEvent(
+      errorEvent({
+        message: "private@example.test",
+        exception: {
+          values: [
+            {
+              type: "PostgresError",
+              value: "Bearer synthetic-secret",
+              stacktrace: {
+                frames: [
+                  {
+                    filename: "https://example.test/app.js?token=secret",
+                    function: "saveActivity",
+                    vars: { token: "secret" },
+                    lineno: 7,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+      "development",
+      { originalException: Object.assign(new Error("failed"), { code: "42703" }) },
+    );
+
+    expect(prepared?.exception?.values?.[0]).toEqual({
+      type: "Error",
+      value: "Database schema is missing a column.",
+      stacktrace: { frames: [{ filename: "app.js", function: "saveActivity", lineno: 7 }] },
+    });
+    expect(JSON.stringify(prepared)).not.toMatch(/example\.test|secret|private@example\.test/);
+  });
+
+  it("denies arbitrary extras and breadcrumb text including PII, SQL, causes, and coordinates", () => {
+    const prepared = prepareMobileSentryEvent(
+      errorEvent({
+        extra: {
+          note: "private note",
+          cause: "person@example.test",
+          sql: "SELECT * FROM profiles WHERE id = $1",
+          coordinates: { latitude: 1, longitude: 2 },
+          procedure: "activities.create",
+        },
+        breadcrumbs: [
+          {
+            message: "person@example.test",
+            category: "private",
+            data: { note: "private", coordinates: [1, 2], outcome: "success" },
+          },
+        ],
+      }),
+      "development",
+    );
+
+    expect(prepared).toEqual({
+      type: undefined,
+      extra: { procedure: "activities.create" },
+      breadcrumbs: [{ data: { outcome: "success" } }],
     });
   });
 

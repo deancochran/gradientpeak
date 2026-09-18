@@ -1,16 +1,14 @@
-import {
-  type ActivityPlanPresentationModel,
-  type ActivityPlanStructure,
-  deriveActivityPlanPresentation,
-  type SemanticMetric,
+import type {
+  ActivityPlanPresentationModel,
+  ActivityPlanStructure,
+  SemanticMetric,
 } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { formatActivityPlanHeadlineMetric } from "@repo/ui/lib/activity-plan-metric-presentation";
 import type { ReactNode } from "react";
 import { View } from "react-native";
-import { ActivityPlanAttributionRow } from "./ActivityPlanAttributionRow";
 import type { EntityOwner } from "./EntityOwnerRow";
-import { ResourceMetricsRow } from "./ResourceCardPrimitives";
+import { ResourceAttributionRow, ResourceMetricsRow } from "./ResourceCardPrimitives";
 
 type ActivityPlanSummaryProps = {
   description?: string | null;
@@ -26,21 +24,6 @@ type ActivityPlanSummaryProps = {
   variant?: "embedded" | "standalone";
   showAttribution?: boolean;
 };
-
-export function formatActivityCategoryLabel(
-  activityCategory: string | null | undefined,
-): string | null {
-  if (!activityCategory) return null;
-
-  return activityCategory
-    .split("_")
-    .map((segment) => (segment ? `${segment[0]?.toUpperCase() ?? ""}${segment.slice(1)}` : segment))
-    .join(" ");
-}
-
-export function countActivityPlanSteps(structure: ActivityPlanStructure | unknown): number {
-  return deriveActivityPlanPresentation(structure)?.stepCount ?? 0;
-}
 
 const estimateOrder = ["distance", "elapsed_duration", "common_load"] as const;
 const estimateLabels: Record<(typeof estimateOrder)[number], string> = {
@@ -113,10 +96,11 @@ export function ActivityPlanSummary({
       <ActivityPlanMetricsRow {...(projectionMetrics !== undefined ? { projectionMetrics } : {})} />
 
       {showAttribution ? (
-        <ActivityPlanAttributionRow
+        <ResourceAttributionRow
           compact={variant !== "standalone"}
           {...(owner !== undefined ? { owner } : {})}
-          {...(updatedAt !== undefined ? { updatedAt } : {})}
+          testID="activity-plan-attribution-row"
+          {...(updatedAt !== undefined ? { timestamp: updatedAt } : {})}
         />
       ) : null}
     </View>

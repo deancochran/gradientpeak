@@ -58,7 +58,7 @@ const config = defineConfig(({ mode }) => {
   }
 
   return {
-    cacheDir: process.env.VITE_CACHE_DIR,
+    ...(process.env.VITE_CACHE_DIR === undefined ? {} : { cacheDir: process.env.VITE_CACHE_DIR }),
     server: {
       allowedHosts: ["dev.gradientpeak.com", "tokyo.goose-noodlefish.ts.net"],
       host: process.env.DEV_HOST ?? "0.0.0.0",
@@ -86,9 +86,9 @@ const config = defineConfig(({ mode }) => {
       viteReact(),
       nitro({ rollupConfig: { external: [/^@sentry\//] } }),
       sentryTanstackStart({
-        authToken: env.SENTRY_AUTH_TOKEN,
-        org: env.SENTRY_ORG,
-        project: env.SENTRY_PROJECT,
+        ...(env.SENTRY_AUTH_TOKEN === undefined ? {} : { authToken: env.SENTRY_AUTH_TOKEN }),
+        ...(env.SENTRY_ORG === undefined ? {} : { org: env.SENTRY_ORG }),
+        ...(env.SENTRY_PROJECT === undefined ? {} : { project: env.SENTRY_PROJECT }),
       }),
       clientDisconnectSuppressionPlugin(),
     ],

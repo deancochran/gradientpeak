@@ -164,7 +164,9 @@ export function deriveCreationContext(input: DeriveCreationContextInput): Creati
     input.profile?.gender === "male" || input.profile?.gender === "female"
       ? input.profile.gender
       : null;
-  const starterPrior = resolveNoHistoryStartingPrior({ age: userAge });
+  const starterPrior = resolveNoHistoryStartingPrior({
+    ...(userAge === undefined ? {} : { age: userAge }),
+  });
   const maxSustainableLongTermLoad = getMaxSustainableLongTermLoad(userAge);
   const missingRequiredOnboardingFields = input.profile?.dob ? [] : ["dob"];
   const primaryCategory = input.activity_context?.primary_category;
@@ -342,15 +344,15 @@ export function deriveCreationContext(input: DeriveCreationContextInput): Creati
   const learnedRampRate = learnIndividualRampRate(
     (input.completed_activities ?? []).map((activity) => ({
       occurred_at: activity.occurred_at,
-      load: activity.load,
+      ...(activity.load === undefined ? {} : { load: activity.load }),
     })),
   );
 
   const trainingQuality = calculateRollingTrainingQuality(
     (input.completed_activities ?? []).map((activity) => ({
       occurred_at: activity.occurred_at,
-      common_load: activity.common_load,
-      zones: activity.zones,
+      ...(activity.common_load === undefined ? {} : { common_load: activity.common_load }),
+      ...(activity.zones === undefined ? {} : { zones: activity.zones }),
     })),
     28,
     safeAsOf,

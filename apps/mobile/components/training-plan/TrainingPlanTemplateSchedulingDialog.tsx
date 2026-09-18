@@ -9,6 +9,12 @@ type ScheduleApplicationMode = "full" | "remaining";
 
 interface TrainingPlanTemplateSchedulingDialogProps {
   applyPending: boolean;
+  inputsLocked?: boolean;
+  previewPending?: boolean;
+  scheduleError?: string | null;
+  applicationsLoading?: boolean;
+  applicationsError?: string | null;
+  onRetryApplications?: () => void;
   onApply: () => void;
   onScheduleModalOpenChange: (open: boolean) => void;
   onSelectScheduleApplicationMode: (mode: ScheduleApplicationMode) => void;
@@ -20,6 +26,22 @@ interface TrainingPlanTemplateSchedulingDialogProps {
     helperText: string;
   };
   scheduleAnchorMode: ScheduleAnchorMode;
+  scheduleReview: {
+    preview: {
+      applicable: boolean;
+      replacement: { affected: Array<unknown> } | null;
+      sessions: Array<{ planningDate: string }>;
+      unresolved: Array<unknown>;
+    };
+  } | null;
+  scheduledApplications: Array<{
+    application_id: string;
+    eligible_future_count: number;
+    source_revision: number;
+    start_date: string;
+  }>;
+  selectedApplicationId: string;
+  onSelectApplication: (applicationId: string) => void;
   setTemplateAnchorDate: (value: string) => void;
   showScheduleModal: boolean;
   templateAnchorDate: string;
@@ -39,6 +61,12 @@ function SelectionIndicator({ active }: { active: boolean }) {
 
 export function TrainingPlanTemplateSchedulingDialog({
   applyPending,
+  inputsLocked = applyPending,
+  previewPending = false,
+  scheduleError,
+  applicationsLoading = false,
+  applicationsError,
+  onRetryApplications,
   onApply,
   onScheduleModalOpenChange,
   onSelectScheduleApplicationMode,
@@ -46,6 +74,10 @@ export function TrainingPlanTemplateSchedulingDialog({
   scheduleApplicationMode,
   scheduleAnchorContent,
   scheduleAnchorMode,
+  scheduleReview,
+  scheduledApplications,
+  selectedApplicationId,
+  onSelectApplication,
   setTemplateAnchorDate,
   showScheduleModal,
   templateAnchorDate,
@@ -56,27 +88,68 @@ export function TrainingPlanTemplateSchedulingDialog({
 
   return showScheduleModal ? (
     <AppFormModal
-      description="Choose how this plan should be applied, then pick the date anchor for the generated schedule."
+      description={
+        scheduleReview
+          ? "Review the server-generated schedule before confirming."
+          : "Choose how this plan should be applied, then pick the date anchor for the generated schedule."
+      }
       onClose={handleClose}
+      dismissDisabled={applyPending}
       primaryAction={
-        <Button onPress={onApply} disabled={applyPending} testID="training-plan-schedule-confirm">
+        <Button
+          onPress={onApply}
+          disabled={
+            applyPending ||
+            previewPending ||
+            (!scheduleReview && (applicationsLoading || Boolean(applicationsError))) ||
+            (scheduleReview !== null && !scheduleReview.preview.applicable)
+          }
+          testID="training-plan-schedule-confirm"
+        >
           <Text className="text-primary-foreground font-semibold">
-            {applyPending ? "Scheduling..." : "Schedule"}
+            {applyPending
+              ? "Scheduling..."
+              : previewPending
+                ? "Reviewing..."
+                : scheduleReview
+                  ? "Confirm schedule"
+                  : "Review schedule"}
           </Text>
         </Button>
       }
       secondaryAction={
-        <Button variant="outline" onPress={handleClose} testID="training-plan-schedule-cancel">
+        <Button
+          variant="outline"
+          disabled={applyPending}
+          onPress={handleClose}
+          testID="training-plan-schedule-cancel"
+        >
           <Text className="text-foreground font-medium">Cancel</Text>
         </Button>
       }
       testID="training-plan-schedule-modal"
       title="Schedule this plan"
     >
+      {previewPending ? (
+        <Text accessibilityLiveRegion="polite">Preparing schedule review...</Text>
+      ) : null}
+      {scheduleError ? <Text accessibilityRole="alert">{scheduleError}</Text> : null}
+      {applicationsLoading ? (
+        <Text accessibilityLiveRegion="polite">Loading scheduled applications...</Text>
+      ) : null}
+      {applicationsError ? (
+        <View>
+          <Text accessibilityRole="alert">{applicationsError}</Text>
+          <Button onPress={onRetryApplications}>
+            <Text>Retry scheduled applications</Text>
+          </Button>
+        </View>
+      ) : null}
       <View className="gap-2 rounded-2xl border border-border bg-card p-4">
         <Text className="text-sm font-medium text-foreground">How much of the plan?</Text>
         <View className="gap-2">
           <TouchableOpacity
+            disabled={inputsLocked}
             onPress={() => onSelectScheduleApplicationMode("full")}
             className={`rounded-lg border px-3 py-3 ${scheduleApplicationMode === "full" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
             activeOpacity={0.8}
@@ -93,6 +166,7 @@ export function TrainingPlanTemplateSchedulingDialog({
             </View>
           </TouchableOpacity>
           <TouchableOpacity
+            disabled={inputsLocked}
             onPress={() => onSelectScheduleApplicationMode("remaining")}
             className={`rounded-lg border px-3 py-3 ${scheduleApplicationMode === "remaining" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
             activeOpacity={0.8}
@@ -120,7 +194,7 @@ export function TrainingPlanTemplateSchedulingDialog({
             onPress={() => onSelectScheduleAnchorMode("start")}
             className={`rounded-lg border px-3 py-3 ${scheduleAnchorMode === "start" ? "border-primary bg-primary/5" : "border-border bg-background"} ${scheduleApplicationMode === "remaining" ? "opacity-50" : ""}`}
             activeOpacity={0.8}
-            disabled={scheduleApplicationMode === "remaining"}
+            disabled={inputsLocked || scheduleApplicationMode === "remaining"}
             testID="training-plan-anchor-start"
           >
             <View className="flex-row items-start gap-3">
@@ -134,6 +208,7 @@ export function TrainingPlanTemplateSchedulingDialog({
             </View>
           </TouchableOpacity>
           <TouchableOpacity
+            disabled={inputsLocked}
             onPress={() => onSelectScheduleAnchorMode("finish")}
             className={`rounded-lg border px-3 py-3 ${scheduleAnchorMode === "finish" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
             activeOpacity={0.8}
@@ -154,6 +229,7 @@ export function TrainingPlanTemplateSchedulingDialog({
 
       <View className="rounded-2xl border border-border bg-card p-4">
         <DateField
+          disabled={inputsLocked}
           id="apply-template-anchor-date"
           label={scheduleAnchorContent.fieldLabel}
           value={templateAnchorDate || undefined}
@@ -164,6 +240,56 @@ export function TrainingPlanTemplateSchedulingDialog({
           pickerPresentation="modal"
         />
       </View>
+      <View className="gap-2 rounded-2xl border border-border bg-card p-4">
+        <Text className="text-sm font-medium text-foreground">Scheduled application</Text>
+        <TouchableOpacity
+          disabled={inputsLocked || applicationsLoading || Boolean(applicationsError)}
+          className={`rounded-lg border px-3 py-3 ${selectedApplicationId ? "border-border bg-background" : "border-primary bg-primary/5"}`}
+          onPress={() => onSelectApplication("")}
+          testID="training-plan-application-new"
+        >
+          <Text className="text-sm font-semibold text-foreground">New independent schedule</Text>
+        </TouchableOpacity>
+        {scheduledApplications.map((application) => (
+          <TouchableOpacity
+            disabled={inputsLocked || applicationsLoading || Boolean(applicationsError)}
+            className={`rounded-lg border px-3 py-3 ${selectedApplicationId === application.application_id ? "border-primary bg-primary/5" : "border-border bg-background"}`}
+            key={application.application_id}
+            onPress={() => onSelectApplication(application.application_id)}
+            testID={`training-plan-application-${application.application_id}`}
+          >
+            <Text className="text-sm font-semibold text-foreground">{application.start_date}</Text>
+            <Text className="text-xs text-muted-foreground">
+              {application.eligible_future_count} future session
+              {application.eligible_future_count === 1 ? "" : "s"}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      {scheduleReview ? (
+        <View className="gap-1 rounded-2xl border border-border bg-card p-4">
+          <Text className="text-sm font-medium text-foreground">Schedule review</Text>
+          <Text className="text-sm text-muted-foreground">
+            {scheduleReview.preview.sessions.length} session
+            {scheduleReview.preview.sessions.length === 1 ? "" : "s"} scheduled from{" "}
+            {scheduleReview.preview.sessions[0]?.planningDate ?? "the server-selected date"}.
+          </Text>
+          {scheduleReview.preview.replacement ? (
+            <Text className="text-sm text-muted-foreground">
+              Replaces {scheduleReview.preview.replacement.affected.length} currently scheduled
+              session
+              {scheduleReview.preview.replacement.affected.length === 1 ? "" : "s"}.
+            </Text>
+          ) : null}
+          {scheduleReview.preview.unresolved.length > 0 ? (
+            <Text className="text-sm text-destructive">
+              {scheduleReview.preview.unresolved.length} session
+              {scheduleReview.preview.unresolved.length === 1 ? " needs" : "s need"} attention
+              before confirmation.
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
     </AppFormModal>
   ) : null;
 }

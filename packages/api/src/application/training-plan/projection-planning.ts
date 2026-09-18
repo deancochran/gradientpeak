@@ -1,35 +1,43 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
-  activityPlanDocumentSchema,
+  ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
+  addDaysDateOnlyUtc,
   DRAFT_PLAN_PROJECTION_ALGORITHM_VERSION,
-  deriveDraftPlanProjection,
   derivePlanGoalReadinessContext,
-  deriveProjectedPlanStimuli,
   ianaTimezoneSchema,
   MAX_PLAN_SIMULATION_SESSIONS,
-  type ProjectedTrainingStimulus,
+  missingPlanningInputSchema,
   planSimulationResultSchema,
+  prescriptionResolutionManifestSchema,
+  resolutionFailureSchema,
   resolvePlanReadinessHorizon,
+  resolvePrescription,
+  scheduledDateTimeToIsoInstant,
+  simulateTrainingPlan,
   trainingPlanCreateSchema,
   trainingPlanSchema,
 } from "@repo/core";
-import { activityPlans, events, profiles, trainingPlans } from "@repo/db";
-import { and, asc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { stringifyCanonicalJson } from "@repo/core/athlete-intelligence";
+import { plannedSessionIdempotencyKey, plannedSessionSchema } from "@repo/core/calendar";
+import {
+  activityPlans,
+  profiles,
+  schema,
+  trainingPlanApplicationCommandReceipts,
+  trainingPlans,
+} from "@repo/db";
+import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   type DrizzleQueryExecutor,
-  type DrizzleTransactionClient,
   type getRequiredDb,
   withProfileFencedRepeatableReadSnapshot,
 } from "../../db";
 import { createContentAccessPermissions } from "../../permissions/content-access";
-import { estimateActivityPlan } from "../activity-plans/estimate-activity-plans";
-import {
-  activityPlanDocumentHash,
-  activityPlanStructureHash,
-} from "../activity-plans/structure-hash";
+import { toVerifiedResolverCandidates } from "../activity-plans/resolver-candidate";
+import { activityPlanStructureHash } from "../activity-plans/structure-hash";
 import { readAthleteReadModel } from "../athlete-intelligence/athlete-read-model";
-import { materializeTrainingPlanActivityPlanVariants } from "./mutationUseCases";
+import { loadPlanningBaseline } from "../athlete-intelligence/load-planning-baseline";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
@@ -37,7 +45,40 @@ export const resolveAuthoritativePlanReadinessHorizon = resolvePlanReadinessHori
 
 const dateKeySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const structureHashSchema = z.string().regex(/^v1:sha256:[0-9a-f]{64}$/);
+const resolutionFingerprintSchema = z.string().regex(/^v1:sha256:[0-9a-f]{64}$/);
 const contentVisibilitySchema = z.enum(["private", "followers", "public"]);
+const operationIdSchema = z
+  .string()
+  .min(32)
+  .max(128)
+  .regex(/^[A-Za-z0-9_-]+$/);
+
+const trainingPlanPreviewSessionResultSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      sourceSessionId: z.string().uuid(),
+      planningDate: dateKeySchema,
+      status: z.literal("resolved"),
+      manifest: prescriptionResolutionManifestSchema,
+    })
+    .strict(),
+  z
+    .object({
+      sourceSessionId: z.string().uuid(),
+      planningDate: dateKeySchema,
+      status: z.literal("needs_input"),
+      missing: z.array(missingPlanningInputSchema).min(1),
+    })
+    .strict(),
+  z
+    .object({
+      sourceSessionId: z.string().uuid(),
+      planningDate: dateKeySchema,
+      status: z.literal("unsupported"),
+      reasons: z.array(resolutionFailureSchema).min(1),
+    })
+    .strict(),
+]);
 
 const editableTemplateDraftSchema = z
   .object({
@@ -85,20 +126,36 @@ export const trainingPlanPreviewInputSchema = z.discriminatedUnion("kind", [
 ]);
 
 export const trainingPlanCommitInputSchema = z.discriminatedUnion("kind", [
-  createOperationSchema.extend({ basePublishedRevision: z.number().int().nonnegative() }).strict(),
-  updateOperationSchema.extend({ basePublishedRevision: z.number().int().nonnegative() }).strict(),
+  createOperationSchema
+    .extend({
+      operationId: operationIdSchema,
+      basePublishedRevision: z.number().int().nonnegative().nullable(),
+      previewFingerprint: resolutionFingerprintSchema,
+    })
+    .strict(),
+  updateOperationSchema
+    .extend({
+      operationId: operationIdSchema,
+      basePublishedRevision: z.number().int().nonnegative().nullable(),
+      previewFingerprint: resolutionFingerprintSchema,
+    })
+    .strict(),
   duplicateOperationSchema
-    .extend({ basePublishedRevision: z.number().int().nonnegative() })
+    .extend({
+      operationId: operationIdSchema,
+      basePublishedRevision: z.number().int().nonnegative().nullable(),
+      previewFingerprint: resolutionFingerprintSchema,
+    })
     .strict(),
 ]);
 
 const planOperationStaleReasonSchema = z.enum([
-  "state_unavailable",
   "state_revision",
   "plan_unavailable",
   "plan_revision",
   "plan_structure",
   "linked_plan_unavailable",
+  "preview_drift",
 ]);
 
 const planOperationStaleResultSchema = z
@@ -115,8 +172,22 @@ export const trainingPlanPreviewResultSchema = z.discriminatedUnion("status", [
   z
     .object({
       status: z.literal("available"),
-      basePublishedRevision: z.number().int().nonnegative(),
+      basePublishedRevision: z.number().int().nonnegative().nullable(),
+      previewFingerprint: resolutionFingerprintSchema,
       simulation: planSimulationResultSchema,
+      applicable: z.boolean(),
+      sessionResults: z.array(trainingPlanPreviewSessionResultSchema),
+      explanations: z.array(z.string().min(1).max(240)),
+      unresolvedInputs: z.array(
+        z
+          .object({
+            sourceSessionId: z.string().uuid(),
+            status: z.enum(["needs_input", "unsupported"]),
+            codes: z.array(z.string().min(1)),
+            messages: z.array(z.string().min(1).max(240)),
+          })
+          .strict(),
+      ),
     })
     .strict(),
   planOperationStaleResultSchema,
@@ -130,13 +201,20 @@ export const trainingPlanCommitResultSchema = z.discriminatedUnion("status", [
       planId: z.string().uuid(),
       planRevision: z.number().int().positive(),
       planStructureHash: structureHashSchema,
-      publishedRevision: z.number().int().nonnegative(),
+      publishedRevision: z.number().int().nonnegative().nullable(),
+      previewFingerprint: resolutionFingerprintSchema,
       validatedAt: z.string().datetime({ offset: true }),
       simulation: planSimulationResultSchema,
     })
     .strict(),
   planOperationStaleResultSchema,
+  z.object({ status: z.literal("operation_conflict") }).strict(),
 ]);
+
+function commitRequestFingerprint(values: z.output<typeof trainingPlanCommitInputSchema>) {
+  const { operationId: _operationId, ...request } = values;
+  return `v1:sha256:${createHash("sha256").update(stringifyCanonicalJson(request)).digest("hex")}`;
+}
 
 type PlanOperationStaleResult = z.infer<typeof planOperationStaleResultSchema>;
 type ResolvedDraft = {
@@ -145,11 +223,21 @@ type ResolvedDraft = {
   name: string;
   description: string | null;
   contentVisibility?: "private" | "followers" | "public";
-  structure: z.infer<typeof trainingPlanCreateSchema> & { id: string };
+  structure: z.infer<typeof trainingPlanSchema>;
   previewStartDate: string;
   currentPlanRevision: number | null;
   currentPlanStructureHash: string | null;
 };
+
+export function hasPublishedRevisionConflict(input: {
+  currentPublishedRevision: number | null;
+  expectedPublishedRevision: number | null | undefined;
+}) {
+  return (
+    input.expectedPublishedRevision != null &&
+    input.currentPublishedRevision !== input.expectedPublishedRevision
+  );
+}
 
 function staleResult(input: {
   reason: z.infer<typeof planOperationStaleReasonSchema>;
@@ -164,117 +252,6 @@ function staleResult(input: {
     currentPlanStructureHash: null,
     ...input,
   });
-}
-
-type PersistedPlanStimuliDerivation =
-  | {
-      status: "available";
-      sessions: ProjectedTrainingStimulus[];
-      planningTimezone: string;
-      activityPlans: Array<{
-        activityPlanId: string;
-        activityPlanVariantId: string;
-        activityCategory: "bike" | "other" | "run" | "strength" | "swim";
-        commonLoad: number;
-      }>;
-    }
-  | {
-      status: "unavailable";
-      reason:
-        | "too_many_sessions"
-        | "missing_profile"
-        | "missing_schedule"
-        | "missing_activity_plan"
-        | "activity_plan_structure"
-        | "load_unavailable";
-    };
-
-export async function derivePersistedPlanStimuli(input: {
-  db: DrizzleQueryExecutor;
-  profileId: string;
-  planId: string;
-  structure: z.infer<typeof trainingPlanSchema>;
-  startDate: string;
-  baselineAsOf: string;
-  now: Date;
-  planningTimezone?: string;
-}): Promise<PersistedPlanStimuliDerivation> {
-  if (input.structure.sessions.length > MAX_PLAN_SIMULATION_SESSIONS)
-    return { status: "unavailable", reason: "too_many_sessions" };
-  let planningTimezone = input.planningTimezone;
-  if (!planningTimezone) {
-    const [profile] = await input.db
-      .select({ planningTimezone: profiles.planning_timezone })
-      .from(profiles)
-      .where(eq(profiles.id, input.profileId))
-      .limit(1);
-    if (!profile) return { status: "unavailable", reason: "missing_profile" };
-    const parsedTimezone = ianaTimezoneSchema.safeParse(profile.planningTimezone);
-    planningTimezone = parsedTimezone.success ? parsedTimezone.data : "UTC";
-  }
-  const activityPlanIds = [
-    ...new Set(input.structure.sessions.map((session) => session.activity_plan_id)),
-  ];
-  const rows = await input.db
-    .select()
-    .from(activityPlans)
-    .where(inArray(activityPlans.id, activityPlanIds));
-  if (rows.length !== activityPlanIds.length)
-    return { status: "unavailable", reason: "missing_activity_plan" };
-  if (
-    rows.some((row) => {
-      const document = activityPlanDocumentSchema.safeParse(row.structure);
-      return !document.success || activityPlanDocumentHash(document.data) !== row.structure_hash;
-    })
-  )
-    return { status: "unavailable", reason: "activity_plan_structure" };
-  const rowById = new Map(rows.map((row) => [row.id, row]));
-  const references = [
-    ...new Map(
-      input.structure.sessions.map((session) => [
-        `${session.activity_plan_id}:${session.activity_plan_variant_id}`,
-        {
-          activityPlanId: session.activity_plan_id,
-          activityPlanVariantId: session.activity_plan_variant_id,
-        },
-      ]),
-    ).values(),
-  ];
-  const facts = await Promise.all(
-    references.map(async (reference) => {
-      const row = rowById.get(reference.activityPlanId);
-      if (!row) return null;
-      const plan = await estimateActivityPlan(row, input.db, input.profileId, {
-        asOf: input.now,
-        variantId: reference.activityPlanVariantId,
-      });
-      const load = plan.prescriptionQuantification.summary.commonLoad;
-      if (load.status !== "complete") return null;
-      return {
-        activityPlanId: plan.id,
-        activityPlanVariantId: reference.activityPlanVariantId,
-        activityCategory:
-          plan.prescriptionQuantification.members[0]?.activity_category ?? ("other" as const),
-        commonLoad: load.load,
-      };
-    }),
-  );
-  if (facts.some((fact) => fact === null))
-    return { status: "unavailable", reason: "load_unavailable" };
-  const activityPlanFacts = facts.filter((fact): fact is NonNullable<typeof fact> => fact !== null);
-  const derivation = deriveProjectedPlanStimuli({
-    planId: input.planId,
-    structure: input.structure,
-    activityPlans: activityPlanFacts,
-    planningTimezone,
-    startDate: input.startDate,
-    notBefore: new Date(
-      Math.max(input.now.getTime(), Date.parse(input.baselineAsOf)),
-    ).toISOString(),
-  });
-  return derivation.status === "available"
-    ? { ...derivation, planningTimezone, activityPlans: activityPlanFacts }
-    : { status: "unavailable", reason: derivation.reason };
 }
 
 async function readSourcePlan(input: {
@@ -348,7 +325,7 @@ async function resolveDraft(input: {
     ...(input.values.draft.contentVisibility === undefined
       ? {}
       : { contentVisibility: input.values.draft.contentVisibility }),
-    structure: { ...trainingPlanCreateSchema.parse(input.values.draft.structure), id: planId },
+    structure: trainingPlanSchema.parse({ ...input.values.draft.structure, id: planId }),
     previewStartDate: input.values.draft.previewStartDate,
     currentPlanRevision:
       input.values.kind === "update" ? input.values.draft.expectedRevision : null,
@@ -357,63 +334,16 @@ async function resolveDraft(input: {
   };
 }
 
-async function lockReferencedActivityPlans(input: {
-  tx: DrizzleTransactionClient;
-  profileId: string;
-  structure: z.infer<typeof trainingPlanCreateSchema> & { id: string };
-  lock: boolean;
-}): Promise<z.infer<typeof trainingPlanSchema>> {
-  const ids = [...new Set(input.structure.sessions.map((session) => session.activity_plan_id))];
-  const rows = input.tx
-    .select({
-      gpsRecordingEnabled: activityPlans.gps_recording_enabled,
-      id: activityPlans.id,
-      isSystemTemplate: activityPlans.is_system_template,
-      structure: activityPlans.structure,
-      structureHash: activityPlans.structure_hash,
-    })
-    .from(activityPlans)
-    .where(
-      and(
-        inArray(activityPlans.id, ids),
-        or(
-          eq(activityPlans.profile_id, input.profileId),
-          eq(activityPlans.content_visibility, "public"),
-          eq(activityPlans.is_system_template, true),
-          sql`(${activityPlans.content_visibility} = 'followers' and exists (
-            select 1 from follows f
-            where f.follower_id = ${input.profileId}::uuid
-              and f.following_id = ${activityPlans.profile_id}
-              and f.status = 'accepted'
-          ))`,
-          sql`exists (
-            select 1 from content_access_grants cag
-            where cag.content_type = 'activity_plan'
-              and cag.content_id = ${activityPlans.id}
-              and cag.grantee_profile_id = ${input.profileId}::uuid
-              and cag.access_level = 'read'
-              and cag.revoked_at is null
-              and (cag.expires_at is null or cag.expires_at > now())
-          )`,
-        ),
-      ),
-    )
-    .orderBy(activityPlans.id);
-  const lockedRows = input.lock ? await rows.for("share") : await rows;
-  return materializeTrainingPlanActivityPlanVariants({
-    rows: lockedRows.map((row) => ({ ...row, activityCategory: "other" })),
-    structure: input.structure,
-  }) as z.infer<typeof trainingPlanSchema>;
-}
-
 async function deriveProjection(input: {
   db: DrizzleQueryExecutor;
   profileId: string;
   draft: ResolvedDraft;
-  expectedPublishedRevision?: number;
+  expectedPublishedRevision?: number | null;
   now: Date;
   lockAuthority: boolean;
 }) {
+  if (input.draft.structure.sessions.length > MAX_PLAN_SIMULATION_SESSIONS)
+    return staleResult({ reason: "plan_structure" });
   const readModel = await readAthleteReadModel({
     db: input.db,
     profileId: input.profileId,
@@ -425,21 +355,11 @@ async function deriveProjection(input: {
     now: input.now,
     lockStateForUpdate: input.lockAuthority,
   });
-  const baseline = readModel.currentBaseline?.baseline;
-  const status = readModel.status;
-  if (!baseline || !status || !readModel.currentBaseline)
-    return staleResult({
-      reason: "state_unavailable",
-      currentPublishedRevision: readModel.publishedRevision,
-      currentPlanRevision: input.draft.currentPlanRevision,
-      currentPlanStructureHash: input.draft.currentPlanStructureHash,
-    });
   if (
-    status.freshness !== "fresh" ||
-    readModel.publishedRevision === null ||
-    (input.expectedPublishedRevision !== undefined &&
-      (readModel.publishedRevision !== input.expectedPublishedRevision ||
-        status.sourceRevision !== input.expectedPublishedRevision))
+    hasPublishedRevisionConflict({
+      currentPublishedRevision: readModel.publishedRevision,
+      expectedPublishedRevision: input.expectedPublishedRevision,
+    })
   )
     return staleResult({
       reason: "state_revision",
@@ -447,74 +367,253 @@ async function deriveProjection(input: {
       currentPlanRevision: input.draft.currentPlanRevision,
       currentPlanStructureHash: input.draft.currentPlanStructureHash,
     });
-  let materializedStructure: z.infer<typeof trainingPlanSchema>;
-  try {
-    materializedStructure = await lockReferencedActivityPlans({
-      tx: input.db as DrizzleTransactionClient,
-      profileId: input.profileId,
-      structure: input.draft.structure,
-      lock: input.lockAuthority,
+  const planningTimezone =
+    ianaTimezoneSchema.safeParse(readModel.currentBaseline?.planningTimezone).data ?? "UTC";
+  const baseline = await loadPlanningBaseline({
+    db: input.db,
+    profileId: input.profileId,
+    now: input.now,
+  });
+  const explicitIds = new Set(
+    input.draft.structure.sessions.flatMap((session) =>
+      session.activity_plan_id ? [session.activity_plan_id] : [],
+    ),
+  );
+  const hasAutomaticSelection = input.draft.structure.sessions.some(
+    (session) => session.activity_plan_id === null,
+  );
+  const candidateScope = or(
+    eq(activityPlans.profile_id, input.profileId),
+    eq(activityPlans.content_visibility, "public"),
+    eq(activityPlans.is_system_template, true),
+  );
+  const candidateQuery = input.db
+    .select()
+    .from(activityPlans)
+    .where(
+      !hasAutomaticSelection && explicitIds.size > 0
+        ? and(candidateScope, inArray(activityPlans.id, [...explicitIds]))
+        : candidateScope,
+    )
+    .orderBy(activityPlans.id)
+    .limit(1001);
+  const lockableCandidateQuery = candidateQuery as typeof candidateQuery & {
+    for?: (strength: "share") => typeof candidateQuery;
+  };
+  const rows = await (input.lockAuthority && lockableCandidateQuery.for
+    ? lockableCandidateQuery.for("share")
+    : candidateQuery);
+  if (rows.length > 1000 || [...explicitIds].some((id) => !rows.some((row) => row.id === id)))
+    return staleResult({
+      reason: "linked_plan_unavailable",
+      currentPublishedRevision: readModel.publishedRevision,
     });
+  let candidates: ReturnType<typeof toVerifiedResolverCandidates>;
+  try {
+    candidates = toVerifiedResolverCandidates(
+      rows.map((row) => ({
+        id: row.id,
+        revision: row.revision,
+        structure: row.structure,
+        structureHash: row.structure_hash,
+        semanticHash: row.semantic_hash,
+        adaptation: row.adaptation,
+        trainingIntent: row.training_intent,
+      })),
+      [...explicitIds],
+    );
   } catch {
     return staleResult({
       reason: "linked_plan_unavailable",
       currentPublishedRevision: readModel.publishedRevision,
-      currentPlanRevision: input.draft.currentPlanRevision,
-      currentPlanStructureHash: input.draft.currentPlanStructureHash,
     });
   }
-  const derivation = await derivePersistedPlanStimuli({
-    db: input.db,
-    profileId: input.profileId,
-    planId: input.draft.planId,
-    structure: materializedStructure,
-    startDate: input.draft.previewStartDate,
-    baselineAsOf: baseline.asOf,
-    now: input.now,
-    planningTimezone: readModel.currentBaseline.planningTimezone,
-  });
-  if (derivation.status === "unavailable")
-    return staleResult({
-      reason:
-        derivation.reason === "missing_activity_plan" ||
-        derivation.reason === "activity_plan_structure"
-          ? "linked_plan_unavailable"
-          : "plan_structure",
-      currentPublishedRevision: readModel.publishedRevision,
-      currentPlanRevision: input.draft.currentPlanRevision,
-      currentPlanStructureHash: input.draft.currentPlanStructureHash,
+  const simulatedSessions: Array<{
+    kind: "projected";
+    sourceId: string;
+    scheduledAt: string;
+    activityCategory: "bike" | "other" | "run" | "strength" | "swim";
+    commonLoad: number;
+  }> = [];
+  const sessionResults: z.output<typeof trainingPlanPreviewSessionResultSchema>[] = [];
+  for (const session of input.draft.structure.sessions) {
+    const planningDate = addDaysDateOnlyUtc(input.draft.previewStartDate, session.offset_days);
+    const resolution = resolvePrescription({
+      demand: session.demand,
+      activity_plan_id: session.activity_plan_id,
+      preferences: input.draft.structure.plan_preferences,
+      baseline,
+      planning_weekday: new Date(
+        `${addDaysDateOnlyUtc(input.draft.previewStartDate, session.offset_days)}T00:00:00.000Z`,
+      ).getUTCDay(),
+      candidates: session.activity_plan_id
+        ? candidates.filter((candidate) => candidate.id === session.activity_plan_id)
+        : candidates,
+      provenance:
+        input.draft.kind === "update" && input.draft.currentPlanRevision
+          ? {
+              training_plan_id: input.draft.planId,
+              training_plan_revision: input.draft.currentPlanRevision + 1,
+              training_plan_hash: activityPlanStructureHash(input.draft.structure),
+            }
+          : undefined,
     });
-  const projection = deriveDraftPlanProjection({
-    baseline,
-    planId: input.draft.planId,
-    structure: materializedStructure,
-    activityPlans: derivation.activityPlans,
-    planningTimezone: derivation.planningTimezone,
-    startDate: input.draft.previewStartDate,
-    simulationAt: resolveAuthoritativePlanReadinessHorizon({
-      baselineAsOf: baseline.asOf,
-      plannedSessions: derivation.sessions,
-      goal: derivePlanGoalReadinessContext({
-        planId: input.draft.planId,
-        structure: materializedStructure,
-        planningTimezone: derivation.planningTimezone,
-        startDate: input.draft.previewStartDate,
+    if (resolution.status !== "resolved") {
+      sessionResults.push({ sourceSessionId: session.id, planningDate, ...resolution });
+      continue;
+    }
+    const prospectiveRevision =
+      input.draft.kind === "update" ? (input.draft.currentPlanRevision ?? 0) + 1 : 1;
+    plannedSessionSchema.parse({
+      contractVersion: "planned-session-v1",
+      id: session.id,
+      profileId: input.profileId,
+      sessionRevision: 1,
+      planningDate,
+      originalTargetDate: planningDate,
+      source: {
+        kind: "training_plan",
+        trainingPlanId: input.draft.planId,
+        trainingPlanRevision: prospectiveRevision,
+        sourceSessionId: session.id,
+      },
+      idempotencyKey: plannedSessionIdempotencyKey({
+        kind: "training_plan",
+        trainingPlanId: input.draft.planId,
+        trainingPlanRevision: prospectiveRevision,
+        sourceSessionId: session.id,
       }),
-    }),
-  });
-  return projection.status === "available"
-    ? ({
-        status: "available" as const,
-        publishedRevision: readModel.publishedRevision,
-        simulation: projection.simulation,
-        structure: materializedStructure,
-      } as const)
-    : staleResult({
-        reason: "plan_structure",
-        currentPublishedRevision: readModel.publishedRevision,
-        currentPlanRevision: input.draft.currentPlanRevision,
-        currentPlanStructureHash: input.draft.currentPlanStructureHash,
+      groupEventId: null,
+      prescription: {
+        resolutionManifest: resolution.manifest,
+        capturedAt: input.now.toISOString(),
+      },
+      lifecycle: { status: "scheduled" },
+    });
+    sessionResults.push({
+      sourceSessionId: session.id,
+      planningDate,
+      status: "resolved",
+      manifest: resolution.manifest,
+    });
+    if (
+      resolution.manifest.prescription_estimate.common_load.status === "complete" &&
+      resolution.manifest.prescription_estimate.common_load.value !== null
+    )
+      simulatedSessions.push({
+        kind: "projected",
+        sourceId: session.id,
+        scheduledAt: scheduledDateTimeToIsoInstant({
+          scheduledDate: planningDate,
+          time: session.event_overrides?.start_time ?? "00:00",
+          timeZone: planningTimezone,
+        }),
+        activityCategory: session.demand.activity_category,
+        commonLoad: resolution.manifest.prescription_estimate.common_load.value,
       });
+  }
+  const simulationBaseline = readModel.currentBaseline?.baseline ?? {
+    contractVersion: ATHLETE_STATE_PROJECTION_ALGORITHM_VERSION,
+    athleteId: input.profileId,
+    stateRevision: 0,
+    asOf: input.now.toISOString(),
+    longTermLoad: 0,
+    recentLoad: 0,
+    loadBalance: 0,
+    evidenceConfidence: 0,
+    capabilities: [],
+    athleteAgeYears: null,
+  };
+  const futureSimulatedSessions = simulatedSessions.filter(
+    (session) => Date.parse(session.scheduledAt) >= Date.parse(simulationBaseline.asOf),
+  );
+  const goal = derivePlanGoalReadinessContext({
+    planId: input.draft.planId,
+    structure: input.draft.structure,
+    planningTimezone,
+    startDate: input.draft.previewStartDate,
+  });
+  const simulation = simulateTrainingPlan({
+    baseline: simulationBaseline,
+    plannedSessions: futureSimulatedSessions,
+    simulationAt: resolveAuthoritativePlanReadinessHorizon({
+      baselineAsOf: simulationBaseline.asOf,
+      plannedSessions: futureSimulatedSessions,
+      goal,
+    }),
+    planningTimezone,
+    goal,
+  });
+  const { id: _draftPlanId, ...fingerprintedPlan } = input.draft.structure;
+  const orderedSessionResults = sessionResults;
+  const unresolvedInputs = orderedSessionResults.flatMap((result) =>
+    result.status === "resolved"
+      ? []
+      : [
+          {
+            sourceSessionId: result.sourceSessionId,
+            status: result.status,
+            codes:
+              result.status === "needs_input"
+                ? result.missing.map((item) => item.code)
+                : result.reasons.map((item) => item.code),
+            messages:
+              result.status === "needs_input"
+                ? result.missing.map((item) => item.message)
+                : result.reasons.map((item) => item.message),
+          },
+        ],
+  );
+  const explanations = unresolvedInputs.flatMap((result) => result.messages);
+  const resolvedInputs = orderedSessionResults.flatMap((result) =>
+    result.status === "resolved"
+      ? [
+          {
+            sourceSessionId: result.sourceSessionId,
+            planningDate: result.planningDate,
+            activityPlanId: result.manifest.activity_plan_id,
+            activityPlanRevision: result.manifest.activity_plan_revision,
+            activityPlanSemanticHash: result.manifest.activity_plan_semantic_hash,
+            prescriptionFingerprint: result.manifest.fingerprint,
+          },
+        ]
+      : [],
+  );
+  const previewFingerprint = `v1:sha256:${createHash("sha256")
+    .update(
+      stringifyCanonicalJson({
+        draft: {
+          kind: input.draft.kind,
+          name: input.draft.name,
+          description: input.draft.description,
+          contentVisibility: input.draft.contentVisibility ?? null,
+          structure: fingerprintedPlan,
+          previewStartDate: input.draft.previewStartDate,
+          currentPlanRevision:
+            input.draft.kind === "update" ? input.draft.currentPlanRevision : null,
+          currentPlanStructureHash:
+            input.draft.kind === "update" ? input.draft.currentPlanStructureHash : null,
+        },
+        publishedRevision: readModel.publishedRevision,
+        baseline:
+          baseline.status === "available"
+            ? { status: baseline.status, revision: baseline.revision }
+            : { status: baseline.status },
+        resolvedInputs,
+        unresolvedInputs,
+      }),
+    )
+    .digest("hex")}`;
+  return {
+    status: "available" as const,
+    publishedRevision: readModel.publishedRevision,
+    simulation,
+    previewFingerprint,
+    applicable: unresolvedInputs.length === 0,
+    sessionResults: orderedSessionResults,
+    explanations,
+    unresolvedInputs,
+  };
 }
 
 export async function previewTrainingPlan(input: {
@@ -537,7 +636,12 @@ export async function previewTrainingPlan(input: {
     ? trainingPlanPreviewResultSchema.parse({
         status: "available",
         basePublishedRevision: projection.publishedRevision,
+        previewFingerprint: projection.previewFingerprint,
         simulation: projection.simulation,
+        applicable: projection.applicable,
+        sessionResults: projection.sessionResults,
+        explanations: projection.explanations,
+        unresolvedInputs: projection.unresolvedInputs,
       })
     : projection;
 }
@@ -555,6 +659,25 @@ export async function commitTrainingPlan(input: {
     // Establish the profile fence before PostgreSQL fixes the repeatable-read snapshot.
     input.profileId,
     async (tx) => {
+      const requestFingerprint = commitRequestFingerprint(values);
+      const [receipt] = await tx
+        .select({
+          requestFingerprint: trainingPlanApplicationCommandReceipts.request_fingerprint,
+          result: trainingPlanApplicationCommandReceipts.result,
+        })
+        .from(trainingPlanApplicationCommandReceipts)
+        .where(
+          and(
+            eq(trainingPlanApplicationCommandReceipts.profile_id, input.profileId),
+            eq(trainingPlanApplicationCommandReceipts.operation_id, values.operationId),
+          ),
+        )
+        .limit(1);
+      if (receipt) {
+        if (receipt.requestFingerprint !== requestFingerprint)
+          return trainingPlanCommitResultSchema.parse({ status: "operation_conflict" });
+        return trainingPlanCommitResultSchema.parse(receipt.result);
+      }
       let currentPlanRevision: number | null = null;
       let currentPlanStructureHash: string | null = null;
       if (values.kind === "update") {
@@ -594,9 +717,6 @@ export async function commitTrainingPlan(input: {
         profileId: input.profileId,
         values: operationValues,
         lock: true,
-        ...(values.kind === "create" || values.kind === "duplicate"
-          ? { createPlanId: randomUUID() }
-          : {}),
       });
       if ("status" in draft) return draft;
       draft.currentPlanRevision = currentPlanRevision ?? draft.currentPlanRevision;
@@ -610,7 +730,21 @@ export async function commitTrainingPlan(input: {
         lockAuthority: true,
       });
       if (projection.status !== "available") return projection;
-      const structureHash = activityPlanStructureHash(projection.structure);
+      if (!projection.applicable)
+        return staleResult({
+          reason: "plan_structure",
+          currentPublishedRevision: projection.publishedRevision,
+          currentPlanRevision,
+          currentPlanStructureHash,
+        });
+      if (values.previewFingerprint !== projection.previewFingerprint)
+        return staleResult({
+          reason: "preview_drift",
+          currentPublishedRevision: projection.publishedRevision,
+          currentPlanRevision,
+          currentPlanStructureHash,
+        });
+      let structureHash = activityPlanStructureHash(draft.structure);
       let savedRevision: number;
       if (values.kind === "update") {
         const [saved] = await tx
@@ -621,7 +755,7 @@ export async function commitTrainingPlan(input: {
             ...(draft.contentVisibility === undefined
               ? {}
               : { content_visibility: draft.contentVisibility }),
-            structure: projection.structure,
+            structure: draft.structure,
             structure_hash: structureHash,
             revision: sql`${trainingPlans.revision} + 1`,
             validated_state_revision: projection.publishedRevision,
@@ -647,6 +781,12 @@ export async function commitTrainingPlan(input: {
           });
         savedRevision = saved.revision;
       } else {
+        const persistedPlanId = randomUUID();
+        const persistedStructure = trainingPlanSchema.parse({
+          ...draft.structure,
+          id: persistedPlanId,
+        });
+        const persistedStructureHash = activityPlanStructureHash(persistedStructure);
         let visibility = draft.contentVisibility;
         if (visibility === undefined) {
           const [profile] = await tx
@@ -660,13 +800,13 @@ export async function commitTrainingPlan(input: {
         const [saved] = await tx
           .insert(trainingPlans)
           .values({
-            id: draft.planId,
+            id: persistedPlanId,
             profile_id: input.profileId,
             name: draft.name,
             description: draft.description,
             content_visibility: visibility,
-            structure: projection.structure,
-            structure_hash: structureHash,
+            structure: persistedStructure,
+            structure_hash: persistedStructureHash,
             validated_state_revision: projection.publishedRevision,
             validated_at: now,
             projection_algorithm_version: DRAFT_PLAN_PROJECTION_ALGORITHM_VERSION,
@@ -675,17 +815,30 @@ export async function commitTrainingPlan(input: {
           .returning({ revision: trainingPlans.revision });
         if (!saved) throw new Error("Failed to save training plan");
         savedRevision = saved.revision;
+        draft.planId = persistedPlanId;
+        draft.structure = persistedStructure;
+        structureHash = persistedStructureHash;
       }
-      return trainingPlanCommitResultSchema.parse({
+      const result = trainingPlanCommitResultSchema.parse({
         status: "saved",
         kind: values.kind,
         planId: draft.planId,
         planRevision: savedRevision,
         planStructureHash: structureHash,
         publishedRevision: projection.publishedRevision,
+        previewFingerprint: projection.previewFingerprint,
         validatedAt: now.toISOString(),
         simulation: projection.simulation,
       });
+      await tx.insert(trainingPlanApplicationCommandReceipts).values({
+        profile_id: input.profileId,
+        operation_id: values.operationId,
+        command: "save_plan",
+        request_fingerprint: requestFingerprint,
+        application_id: null,
+        result,
+      });
+      return result;
     },
   );
 }
@@ -706,21 +859,20 @@ export async function getTrainingPlanEditorMetadata(input: {
 }) {
   if (input.plan.profile_id !== input.profileId) return null;
   const parsed = trainingPlanSchema.safeParse(input.plan.structure);
-  const [nextEvent] = await input.db
+  const [nextPlannedSession] = await input.db
     .select({
-      scheduleBatchId: events.schedule_batch_id,
-      scheduledDate: events.scheduled_date,
+      planningDate: schema.plannedSessions.planning_date,
+      trainingPlanRevision: schema.plannedSessions.training_plan_revision,
     })
-    .from(events)
+    .from(schema.plannedSessions)
     .where(
       and(
-        eq(events.profile_id, input.profileId),
-        eq(events.training_plan_id, input.plan.id),
-        eq(events.status, "scheduled"),
-        isNotNull(events.schedule_batch_id),
+        eq(schema.plannedSessions.profile_id, input.profileId),
+        eq(schema.plannedSessions.training_plan_id, input.plan.id),
+        eq(schema.plannedSessions.status, "scheduled"),
       ),
     )
-    .orderBy(asc(events.scheduled_date), asc(events.id))
+    .orderBy(asc(schema.plannedSessions.planning_date), asc(schema.plannedSessions.id))
     .limit(1);
   const readModel = await readAthleteReadModel({
     db: input.db,
@@ -753,13 +905,13 @@ export async function getTrainingPlanEditorMetadata(input: {
           ? 0
           : Math.max(...parsed.data.sessions.map((session) => session.offset_days)) + 1
         : 0,
-      preferredWeekdays: parsed.success
-        ? (parsed.data.builder_planning_snapshot?.scheduling.preferred_weekdays ?? [])
-        : [],
+      preferredWeekdays: parsed.success ? parsed.data.plan_preferences.preferred_weekdays : [],
     },
     schedule: {
-      activeScheduleBatchId: nextEvent?.scheduleBatchId ?? null,
-      nextScheduledDate: nextEvent?.scheduledDate ?? null,
+      applicationReceipt: nextPlannedSession
+        ? `${input.plan.id}:${nextPlannedSession.trainingPlanRevision}`
+        : null,
+      nextScheduledDate: nextPlannedSession?.planningDate ?? null,
     },
   };
 }

@@ -1,7 +1,8 @@
 import type {
   AthletePlanningContextFieldDescriptor,
   AthletePlanningContextFieldKey,
-  TrainingPreferenceValidationIssue,
+  TrainingPlanPreferences,
+  TrainingPlanPreferenceValidationIssue,
 } from "@repo/core";
 import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
@@ -15,14 +16,9 @@ import {
   SelectValue,
 } from "@repo/ui/components/select";
 import { Text } from "@repo/ui/components/text";
-import type { ReactNode } from "react";
-import { View } from "react-native";
-import { PlanLocalPreferencesSection } from "@/components/settings/training-preferences/sections/PlanLocalPreferencesSection";
+import { type ReactNode, useState } from "react";
+import { Pressable, View } from "react-native";
 import { BuilderFieldList } from "@/components/training-plan/create/BuilderFieldList";
-import type {
-  TrainingPlanPreferenceFieldDescriptor,
-  TrainingPlanPreferenceFieldKey,
-} from "@/lib/training-plan-creation/preferences-context";
 
 type BuilderActivityCategory = "run" | "bike" | "swim" | "strength" | "other";
 type BuilderExperienceLevel = "new" | "recreational" | "trained" | "competitive";
@@ -102,11 +98,12 @@ export interface BuilderAthleteContextFormProps {
 }
 
 export interface BuilderPlanPreferencesContextFormProps {
-  fields: TrainingPlanPreferenceFieldDescriptor[];
-  issues?: TrainingPreferenceValidationIssue[];
-  onAddField: (fieldKey: TrainingPlanPreferenceFieldKey) => void;
-  onChangeField: (fieldKey: TrainingPlanPreferenceFieldKey, value: number | null) => void;
-  onRemoveField: (fieldKey: TrainingPlanPreferenceFieldKey) => void;
+  preferences: TrainingPlanPreferences;
+  numericDrafts: Record<string, string>;
+  onNumericDraftChange: (key: string, value: string) => void;
+  issues?: TrainingPlanPreferenceValidationIssue[];
+  onChange: (preferences: TrainingPlanPreferences) => void;
+  onNumericDraftError: (key: string, message: string | null) => void;
 }
 
 const activityCategoryOptions: SelectOption<BuilderActivityCategory>[] = [
@@ -148,7 +145,7 @@ function TextField({
   label: string;
   onChange: (value: string) => void;
   placeholder?: string;
-  value?: string;
+  value?: string | undefined;
 }) {
   return (
     <View className="gap-2">
@@ -176,7 +173,7 @@ function LocalSelect<TValue extends string>({
   onClear: () => void;
   options: SelectOption<TValue>[];
   placeholder: string;
-  value?: TValue;
+  value?: TValue | undefined;
 }) {
   const selectedOption = findOption(options, value);
 
@@ -225,25 +222,25 @@ function NumberField({
   unitLabel,
   value,
 }: {
-  helperText?: string;
+  helperText?: string | undefined;
   label: string;
-  max?: number;
+  max?: number | undefined;
   min?: number;
   onChange: (value: string) => void;
-  placeholder?: string;
-  unitLabel?: string;
-  value?: string;
+  placeholder?: string | undefined;
+  unitLabel?: string | undefined;
+  value?: string | undefined;
 }) {
   return (
     <BoundedNumberInput
       decimals={0}
-      helperText={helperText}
+      {...(helperText ? { helperText } : {})}
       label={label}
-      max={max}
+      {...(max === undefined ? {} : { max })}
       min={min}
       onChange={onChange}
-      placeholder={placeholder}
-      unitLabel={unitLabel}
+      {...(placeholder ? { placeholder } : {})}
+      {...(unitLabel ? { unitLabel } : {})}
       value={value ?? ""}
     />
   );
@@ -271,18 +268,189 @@ export function BuilderAthleteContextForm({
 }
 
 export function BuilderPlanPreferencesContextForm({
-  fields,
+  preferences,
+  numericDrafts,
+  onNumericDraftChange,
   issues = [],
-  onChangeField,
-  onRemoveField,
+  onChange,
+  onNumericDraftError,
 }: BuilderPlanPreferencesContextFormProps) {
+  const [showAdvanced, setShowAdvanced] = useState(
+    preferences.maximum_session_duration_minutes !== null ||
+      preferences.preferred_weekdays.length > 0 ||
+      preferences.rest_days.length > 0 ||
+      preferences.progression_style !== null ||
+      preferences.recovery_priority !== null,
+  );
+  const update = (patch: Partial<TrainingPlanPreferences>) =>
+    onChange({ ...preferences, ...patch });
+  const updateNumber = (
+    field:
+      | "weekly_session_count"
+      | "target_weekly_duration_minutes"
+      | "maximum_session_duration_minutes",
+    value: string,
+    min: number,
+    max: number,
+  ) => {
+    onNumericDraftChange(field, value);
+    if (!value.trim()) {
+      onNumericDraftError(field, null);
+      update({ [field]: null });
+      return;
+    }
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+      onNumericDraftError(field, `Enter a whole number from ${min} to ${max}.`);
+      return;
+    }
+    onNumericDraftError(field, null);
+    update({ [field]: parsed });
+  };
+  const hasInvalidNumberDraft = (field: string, min: number, max: number) => {
+    const value = numericDrafts[field];
+    if (value === undefined || value.trim() === "") return false;
+    const parsed = Number(value);
+    return !Number.isInteger(parsed) || parsed < min || parsed > max;
+  };
+  const toggleWeekday = (key: "preferred_weekdays" | "rest_days", weekday: number) => {
+    const current = preferences[key];
+    const next = current.includes(weekday)
+      ? current.filter((value) => value !== weekday)
+      : [...current, weekday].sort((left, right) => left - right);
+    const oppositeKey = key === "preferred_weekdays" ? "rest_days" : "preferred_weekdays";
+    update({
+      [key]: next,
+      [oppositeKey]: preferences[oppositeKey].filter((value) => value !== weekday),
+    });
+  };
   return (
-    <PlanLocalPreferencesSection
-      fields={fields}
-      issues={issues}
-      onChangeField={onChangeField}
-      onRemoveField={onRemoveField}
-    />
+    <View className="gap-5">
+      <HelperCopy>These preferences apply only to this training plan.</HelperCopy>
+      <BoundedNumberInput
+        decimals={0}
+        label="Sessions per week"
+        min={1}
+        max={14}
+        error={
+          hasInvalidNumberDraft("weekly_session_count", 1, 14)
+            ? "Enter a whole number from 1 to 14."
+            : undefined
+        }
+        onChange={(value) => updateNumber("weekly_session_count", value, 1, 14)}
+        value={
+          numericDrafts.weekly_session_count ?? preferences.weekly_session_count?.toString() ?? ""
+        }
+      />
+      <BoundedNumberInput
+        decimals={0}
+        label="Weekly duration"
+        min={1}
+        max={10080}
+        unitLabel="min"
+        error={
+          hasInvalidNumberDraft("target_weekly_duration_minutes", 1, 10080)
+            ? "Enter a whole number from 1 to 10080."
+            : undefined
+        }
+        onChange={(value) => updateNumber("target_weekly_duration_minutes", value, 1, 10080)}
+        value={
+          numericDrafts.target_weekly_duration_minutes ??
+          preferences.target_weekly_duration_minutes?.toString() ??
+          ""
+        }
+      />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: showAdvanced }}
+        className="min-h-11 self-start justify-center rounded-full px-2 py-1"
+        onPress={() => setShowAdvanced((visible) => !visible)}
+      >
+        <Text className="text-xs font-semibold text-primary">
+          {showAdvanced ? "Hide advanced preferences" : "Add advanced preferences"}
+        </Text>
+      </Pressable>
+      {showAdvanced ? (
+        <>
+          <BoundedNumberInput
+            decimals={0}
+            label="Maximum session duration"
+            min={1}
+            max={600}
+            unitLabel="min"
+            error={
+              hasInvalidNumberDraft("maximum_session_duration_minutes", 1, 600)
+                ? "Enter a whole number from 1 to 600."
+                : undefined
+            }
+            onChange={(value) => updateNumber("maximum_session_duration_minutes", value, 1, 600)}
+            value={
+              numericDrafts.maximum_session_duration_minutes ??
+              preferences.maximum_session_duration_minutes?.toString() ??
+              ""
+            }
+          />
+          {(["preferred_weekdays", "rest_days"] as const).map((key) => (
+            <View className="gap-2" key={key}>
+              <Text className="text-sm font-medium text-foreground">
+                {key === "preferred_weekdays" ? "Preferred training days" : "Rest days"}
+              </Text>
+              <View className="flex-row gap-1">
+                {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label, weekday) => (
+                  <Pressable
+                    accessibilityLabel={`${key}-${label}`}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: preferences[key].includes(weekday) }}
+                    className={`min-h-11 flex-1 items-center justify-center rounded-lg ${preferences[key].includes(weekday) ? "bg-primary" : "bg-muted"}`}
+                    key={label}
+                    onPress={() => toggleWeekday(key, weekday)}
+                  >
+                    <Text
+                      className={
+                        preferences[key].includes(weekday)
+                          ? "text-primary-foreground"
+                          : "text-foreground"
+                      }
+                    >
+                      {label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          ))}
+          <LocalSelect
+            label="Progression style"
+            onChange={(progression_style) => update({ progression_style })}
+            onClear={() => update({ progression_style: null })}
+            options={[
+              { value: "conservative", label: "Conservative" },
+              { value: "balanced", label: "Balanced" },
+              { value: "ambitious", label: "Ambitious" },
+            ]}
+            placeholder="Choose progression"
+            value={preferences.progression_style ?? undefined}
+          />
+          <LocalSelect
+            label="Recovery priority"
+            onChange={(recovery_priority) => update({ recovery_priority })}
+            onClear={() => update({ recovery_priority: null })}
+            options={[
+              { value: "low", label: "Low" },
+              { value: "balanced", label: "Balanced" },
+              { value: "high", label: "High" },
+            ]}
+            placeholder="Choose recovery priority"
+            value={preferences.recovery_priority ?? undefined}
+          />
+        </>
+      ) : null}
+      {issues.map((issue) => (
+        <Text className="text-xs text-destructive" key={issue.code}>
+          {issue.message}
+        </Text>
+      ))}
+    </View>
   );
 }
 

@@ -1,5 +1,6 @@
 import { Button } from "@repo/ui/components/button";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useRef, useState } from "react";
 
 import { AuthCardShell } from "../../components/auth-card-shell";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
@@ -7,6 +8,7 @@ import { publicAuthPageMiddleware, resolveRouteAuthSession } from "../../lib/aut
 import { sendVerificationEmailAction } from "../../lib/auth/server-actions";
 import { getVerificationEmail } from "../../lib/auth/verification-email";
 import { contractEpochFormInputProps } from "../../lib/contract-epoch";
+import { useFormServerFn } from "../../lib/use-form-server-fn";
 
 export const Route = createFileRoute("/auth/verify")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -23,20 +25,56 @@ export const Route = createFileRoute("/auth/verify")({
   },
   beforeLoad: async ({ serverContext }) => {
     const session = await resolveRouteAuthSession(serverContext);
-    return { authenticatedEmail: session?.user.email };
+    return { authenticatedEmail: session?.user.email, accountIdentity: session?.user.id };
   },
   component: VerifyEmailPage,
 });
 
 function VerifyEmailPage() {
+  const { email } = Route.useSearch();
+  const { authenticatedEmail, accountIdentity } = Route.useRouteContext();
+  return (
+    <VerificationForm
+      key={`${accountIdentity ?? "anonymous"}:${getVerificationEmail(email, authenticatedEmail) ?? ""}`}
+    />
+  );
+}
+
+function VerificationForm() {
   const navigate = Route.useNavigate();
   const { email, flash, flashType, source } = Route.useSearch();
   const { authenticatedEmail } = Route.useRouteContext();
   const verificationEmail = getVerificationEmail(email, authenticatedEmail);
+  const resend = useFormServerFn(sendVerificationEmailAction, () => undefined);
+  const resendPendingRef = useRef(false);
+  const [resendPending, setResendPending] = useState(false);
+  const [resendStatus, setResendStatus] = useState<string | null>(null);
+  const [resendError, setResendError] = useState<string | null>(null);
   const description =
     source === "sign-up"
       ? `Check your inbox for a verification link for ${verificationEmail ?? "your email"}. If it does not arrive, resend it below.`
       : `Check your inbox for a verification link sent to ${verificationEmail ?? "your email"}.`;
+
+  const handleResend = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (resendPendingRef.current) return;
+    const data = new FormData(event.currentTarget);
+    data.set("__async", "true");
+    resendPendingRef.current = true;
+    setResendPending(true);
+    setResendStatus(null);
+    setResendError(null);
+    try {
+      await resend({ data });
+      setResendStatus("If this address can receive verification, a message is on its way.");
+    } catch {
+      // Delivery failures are acknowledged generically by the server; transport failures can retry.
+      setResendError("Verification could not be requested. Please try again.");
+    } finally {
+      resendPendingRef.current = false;
+      setResendPending(false);
+    }
+  };
 
   return (
     <div className="flex min-h-[70vh] items-center justify-center py-6 md:py-10">
@@ -58,13 +96,24 @@ function VerifyEmailPage() {
               Open the verification email on this device. If you already verified this account, you
               can return to sign in.
             </p>
-            <form action={sendVerificationEmailAction.url} method="post" className="space-y-3">
+            <form
+              action={sendVerificationEmailAction.url}
+              method="post"
+              className="space-y-3"
+              onSubmit={(event) => void handleResend(event)}
+            >
               <input {...contractEpochFormInputProps} />
               <input type="hidden" name="email" value={verificationEmail ?? ""} />
               <input type="hidden" name="source" value={source ?? ""} />
-              <Button type="submit" className="w-full" disabled={!verificationEmail}>
-                Resend Verification Email
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={!verificationEmail || resendPending}
+              >
+                {resendPending ? "Sending verification email..." : "Resend Verification Email"}
               </Button>
+              {resendStatus ? <p role="status">{resendStatus}</p> : null}
+              {resendError ? <p role="alert">{resendError}</p> : null}
             </form>
             <Button asChild variant="link" className="w-full px-0">
               <Link

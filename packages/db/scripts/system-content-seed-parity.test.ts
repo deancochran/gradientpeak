@@ -1,12 +1,6 @@
 import assert from "node:assert/strict";
 import { getSystemActivityTemplateDefinitions, getSystemTrainingPlanDefinitions } from "@repo/core";
 import {
-  activityPlanDocumentSchema,
-  activityPlanStructureSchema,
-  INITIAL_ACTIVITY_PLAN_VARIANT_NAME,
-} from "@repo/core/activity-plan";
-import { structureHash } from "./canonical-json";
-import {
   materializeSystemActivityTemplateSeedValues,
   materializeSystemTrainingPlanSeedValues,
 } from "./system-content-seed-values";
@@ -32,21 +26,6 @@ for (const [definition, row] of activityDefinitions.map(
   assert.equal(row.profile_id, null);
   assert.equal(row.is_system_template, true);
   assert.equal(row.content_visibility, "public");
-
-  const templateId = definition.content.id;
-  assert.ok(templateId);
-  const document = activityPlanDocumentSchema.parse(row.structure);
-  assert.equal(document.contractVersion, 1);
-  assert.equal(document.defaultVariantId, templateId);
-  assert.equal(document.variants.length, 1);
-  assert.equal(document.variants[0]?.id, templateId);
-  assert.equal(document.variants[0]?.name, INITIAL_ACTIVITY_PLAN_VARIANT_NAME);
-  assert.deepEqual(
-    document.variants[0]?.structure,
-    activityPlanStructureSchema.parse(definition.content.structure),
-  );
-  assert.equal(row.structure_hash, structureHash(document));
-  assert.notEqual(row.structure_hash, structureHash(definition.content.structure));
 }
 
 for (const [definition, row] of trainingDefinitions.map(
@@ -60,13 +39,6 @@ for (const [definition, row] of trainingDefinitions.map(
   assert.equal(row.profile_id, null);
   assert.equal(row.is_system_template, true);
   assert.equal(row.content_visibility, "public");
-  for (const session of row.structure.sessions) {
-    assert.equal(
-      session.activity_plan_variant_id,
-      session.activity_plan_id,
-      "system training-plan sessions must deterministically pin each initial Base variant",
-    );
-  }
 }
 
 assert.deepEqual(

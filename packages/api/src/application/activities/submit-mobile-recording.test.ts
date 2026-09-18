@@ -2,13 +2,13 @@ import {
   ACTIVITY_FILE_INGESTION_CONTRACT_VERSION,
   activityFileIngestionOperationSchema,
 } from "@repo/core/activity-files";
-import { initializeActivityPlanDocument } from "@repo/core/activity-plan";
 import {
   PLANNED_SESSION_CONTRACT_VERSION,
   plannedSessionIdempotencyKey,
   plannedSessionSchema,
 } from "@repo/core/calendar";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { activityPlanV3StructureHash } from "../activity-plans/structure-hash";
 
 const activityWriter = vi.hoisted(() => ({ submitActivity: vi.fn() }));
 const artifactFinalizer = vi.hoisted(() => ({ finalizeActivityArtifactIngestion: vi.fn() }));
@@ -49,7 +49,6 @@ vi.mock("@repo/core/server/fit-sdk-parser", () => fitFileParser);
 
 import { recordingSummarySubmissionInputSchema } from "../../contracts/recording-submission";
 import { mobileRecordingOperationId } from "../activity-file-ingestion/mobile-recording-upload";
-import { activityPlanStructureHash } from "../activity-plans/structure-hash";
 import { recordingSessionActivityId } from "./submit-activity";
 import { submitMobileRecording } from "./submit-mobile-recording";
 
@@ -175,25 +174,52 @@ function activityPlanStructure(activity_category: "bike" | "run", segmentCount =
 }
 
 const SCHEDULED_SESSION_ID = "33333333-3333-4333-8333-333333333333";
-const SCHEDULED_VARIANT_ID = "33333333-3333-4333-8333-333333333334";
-
 function scheduledFixture(recordingSessionId = "scheduled-recording-session") {
   const structure = activityPlanStructure("run");
-  const structureHash = activityPlanStructureHash(structure);
+  const structureHash = activityPlanV3StructureHash(structure);
   const source = { kind: "direct" as const, operationId: "scheduled_recording_operation_1234" };
   const prescription = {
-    activityPlanId: PLAN_ID,
-    activityPlanRevision: 7,
-    variantId: SCHEDULED_VARIANT_ID,
-    variantName: "Tempo",
-    structure,
-    structureHash,
-    prescriptionQuantification: null,
+    resolutionManifest: {
+      resolver_version: "prescription-resolver-v1",
+      policy_version: "training-plan-policy-v1",
+      training_plan_id: null,
+      training_plan_revision: null,
+      training_plan_hash: null,
+      athlete_context_revision: null,
+      activity_plan_id: PLAN_ID,
+      activity_plan_revision: 7,
+      activity_plan_semantic_hash: `v1:sha256:${"a".repeat(64)}`,
+      effective_target_duration_minutes: null,
+      effective_target_common_load: null,
+      evidence_facts: [],
+      session_demand: {
+        activity_category: "run" as const,
+        training_intent: "aerobic_base" as const,
+        target_duration_minutes: 30,
+        target_common_load: null,
+        importance: "normal" as const,
+      },
+      adaptation_values: {},
+      fallback_level: "system_default_no_context" as const,
+      reason_codes: [],
+      resolved_structure: structure,
+      resolved_structure_hash: structureHash,
+      prescription_estimate: {
+        duration: { status: "exact" as const, value_seconds: 1800 },
+        common_load: { status: "unavailable" as const, value: null },
+        rest_seconds: 0,
+        has_open_completion: false,
+        warnings: [],
+        factors: [],
+      },
+      fingerprint: `v1:sha256:${"b".repeat(64)}`,
+    },
     capturedAt: "2026-07-23T08:00:00.000Z",
   };
   const plannedSession = {
     id: SCHEDULED_SESSION_ID,
     sessionRevision: 4,
+    source,
     prescription,
   };
   const scheduledSubmission = recordingSummarySubmissionInputSchema.parse({
@@ -292,17 +318,23 @@ describe("submitMobileRecording", () => {
 
   it("rejects forged and mutated V3 prescription hashes before artifact storage", async () => {
     const { scheduledSubmission, structure } = scheduledFixture("forged-prescription-session");
+    const execution = scheduledSubmission.planExecution;
+    const plannedSession = execution?.plannedSession;
+    if (!execution || !plannedSession) throw new Error("Expected scheduled execution fixture");
     const forgedHash = `v1:sha256:${"f".repeat(64)}`;
-    const forged = recordingSummarySubmissionInputSchema.parse({
+    const forged = recordingSummarySubmissionInputSchema.safeParse({
       ...scheduledSubmission,
       planExecution: {
-        ...scheduledSubmission.planExecution,
+        ...execution,
         structureHash: forgedHash,
         plannedSession: {
-          ...scheduledSubmission.planExecution?.plannedSession,
+          ...plannedSession,
           prescription: {
-            ...scheduledSubmission.planExecution?.plannedSession?.prescription,
-            structureHash: forgedHash,
+            ...plannedSession.prescription,
+            resolutionManifest: {
+              ...plannedSession.prescription.resolutionManifest,
+              resolved_structure_hash: forgedHash,
+            },
           },
         },
       },
@@ -313,34 +345,25 @@ describe("submitMobileRecording", () => {
         index === 0 ? { ...segment, name: "Mutated after capture" } : segment,
       ),
     };
-    const mutatedSubmission = recordingSummarySubmissionInputSchema.parse({
+    const mutatedSubmission = recordingSummarySubmissionInputSchema.safeParse({
       ...scheduledSubmission,
       planExecution: {
-        ...scheduledSubmission.planExecution,
+        ...execution,
         structure: mutated,
         plannedSession: {
-          ...scheduledSubmission.planExecution?.plannedSession,
+          ...plannedSession,
           prescription: {
-            ...scheduledSubmission.planExecution?.plannedSession?.prescription,
-            structure: mutated,
+            ...plannedSession.prescription,
+            resolutionManifest: {
+              ...plannedSession.prescription.resolutionManifest,
+              resolved_structure: mutated,
+            },
           },
         },
       },
     });
-    const db = createDb({ activities: [], ingestions: [undefined] });
-
-    await expect(
-      submitMobileRecording(db as never, {} as never, {
-        actorProfileId: PROFILE_ID,
-        submission: forged,
-      }),
-    ).rejects.toMatchObject({ code: "manifest_invalid" });
-    await expect(
-      submitMobileRecording(db as never, {} as never, {
-        actorProfileId: PROFILE_ID,
-        submission: mutatedSubmission,
-      }),
-    ).rejects.toMatchObject({ code: "manifest_invalid" });
+    expect(forged.success).toBe(false);
+    expect(mutatedSubmission.success).toBe(false);
     expect(uploadFlow.prepareMobileRecordingArtifact).not.toHaveBeenCalled();
     expect(activityWriter.submitActivity).not.toHaveBeenCalled();
   });
@@ -384,7 +407,7 @@ describe("submitMobileRecording", () => {
             contentVisibility: "private",
             isSystem: false,
             ownerProfileId: PROFILE_ID,
-            structure: initializeActivityPlanDocument({ activityPlanId: PLAN_ID, structure }),
+            structure,
           },
         ],
       ],
@@ -407,13 +430,13 @@ describe("submitMobileRecording", () => {
     expect(current).toEqual(completed);
   });
 
-  it("rejects wrong scheduled provenance and leaves acceptance to the transaction rollback", async () => {
+  it("rejects wrong scheduled source identity and leaves acceptance to the transaction rollback", async () => {
     const { authoritative, scheduledSubmission, structure } = scheduledFixture(
       "wrong-provenance-session",
     );
     plannedSessionRepository.getOwned.mockResolvedValue({
       ...authoritative,
-      prescription: { ...authoritative.prescription, variantName: "Authoritative name" },
+      source: { kind: "direct", operationId: "different-scheduled-recording-operation" },
     });
     activityWriter.submitActivity.mockImplementation(async (_db, input) => {
       await input.composition?.persist({} as never, {
@@ -432,7 +455,7 @@ describe("submitMobileRecording", () => {
             contentVisibility: "private",
             isSystem: false,
             ownerProfileId: PROFILE_ID,
-            structure: initializeActivityPlanDocument({ activityPlanId: PLAN_ID, structure }),
+            structure,
           },
         ],
       ],
@@ -494,10 +517,7 @@ describe("submitMobileRecording", () => {
             contentVisibility: "private",
             isSystem: false,
             ownerProfileId: PROFILE_ID,
-            structure: initializeActivityPlanDocument({
-              activityPlanId: PLAN_ID,
-              structure: activityPlanStructure("run", 2),
-            }),
+            structure: activityPlanStructure("run", 2),
           },
         ],
       ],

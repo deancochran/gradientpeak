@@ -10,7 +10,6 @@ import {
   DropdownMenuTrigger,
 } from "@repo/ui/components/dropdown-menu";
 import { Link } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import {
   Bell,
   Building2,
@@ -21,16 +20,16 @@ import {
   MessageSquare,
   Plug,
   Settings,
-  SlidersHorizontal,
   Target,
   UserRound,
   Users,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { api } from "../../lib/api/client";
 import { signOutAction } from "../../lib/auth/server-actions";
 import { contractEpochFormInputProps } from "../../lib/contract-epoch";
+import { useFormServerFn } from "../../lib/use-form-server-fn";
 import { useAuth } from "../providers/auth-provider";
 
 function getInitials(email: string | null | undefined) {
@@ -40,11 +39,18 @@ function getInitials(email: string | null | undefined) {
 
 export function UserNav() {
   const { user } = useAuth();
+  return <AccountUserNav key={user?.id ?? "anonymous"} />;
+}
+
+function AccountUserNav() {
+  const { user } = useAuth();
   const { data: profile } = api.profiles.get.useQuery(undefined, {
     enabled: Boolean(user?.id),
   });
-  const signOut = useServerFn(signOutAction);
+  const signOut = useFormServerFn(signOutAction, () => undefined, user?.id);
   const [isPending, setIsPending] = useState(false);
+  const pendingRef = useRef(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const displayName = user?.email ?? "User";
   type AccountLink = {
     icon: typeof Home;
@@ -60,7 +66,6 @@ export function UserNav() {
       | "/organizations"
       | "/calendar"
       | "/training-plans"
-      | "/training-preferences"
       | "/settings";
   };
   const accountLinks: AccountLink[] = [
@@ -73,18 +78,23 @@ export function UserNav() {
     { to: "/calendar", label: "Calendar", icon: CalendarDays },
     { to: "/goals", label: "Goals", icon: Target },
     { to: "/groups", label: "Groups", icon: Users },
-    { to: "/training-preferences", label: "Training preferences", icon: SlidersHorizontal },
     { to: "/integrations", label: "Integrations", icon: Plug },
     { to: "/settings", label: "Settings", icon: Settings },
   ];
 
-  const handleSignOut = async () => {
+  const handleSignOut = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (pendingRef.current) return;
+    void new FormData(event.currentTarget);
+    pendingRef.current = true;
     setIsPending(true);
+    setSignOutError(null);
     try {
       await signOut();
-    } catch (error) {
-      console.error("Logout failed:", error);
+    } catch {
+      setSignOutError("Could not sign out. Please try again.");
     } finally {
+      pendingRef.current = false;
       setIsPending(false);
     }
   };
@@ -138,11 +148,16 @@ export function UserNav() {
           ))}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild disabled={isPending} className="cursor-pointer">
+        <DropdownMenuItem
+          asChild
+          disabled={isPending}
+          onSelect={(event) => event.preventDefault()}
+          className="cursor-pointer"
+        >
           <form
             action={signOutAction.url}
             method="post"
-            onSubmit={handleSignOut}
+            onSubmit={(event) => void handleSignOut(event)}
             className="w-full"
           >
             <input {...contractEpochFormInputProps} />
@@ -152,6 +167,11 @@ export function UserNav() {
             </button>
           </form>
         </DropdownMenuItem>
+        {signOutError ? (
+          <p className="px-2 text-sm text-destructive" role="alert">
+            {signOutError}
+          </p>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

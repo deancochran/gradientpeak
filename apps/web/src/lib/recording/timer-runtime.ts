@@ -13,8 +13,10 @@ import {
   type RecordingActivityCategory,
   type RecordingCommand,
   type RecordingPlanExecutionSnapshot,
+  type RecordingPlannedSessionLaunch,
   type RecordingSessionReducerState,
   type RecordingSessionSnapshot,
+  recordingPlannedSessionLaunchSchema,
   reduceRecordingEvents,
   resolveActivityPlanTargetPresentation,
 } from "@repo/core";
@@ -26,8 +28,9 @@ export type TimerOnlyRecordingPlanConfiguration = {
   description: string | null;
   activityPlanRevision: number;
   structureHash: string;
-  /** Validated as an exact resolved V3 prescription before recording is configured. */
   structure: unknown;
+  /** Immutable planned-session provenance and prescription, when selected from the calendar. */
+  plannedSession?: RecordingPlannedSessionLaunch;
 };
 
 export type TimerOnlyRecordingConfiguration = {
@@ -106,11 +109,24 @@ export function configureTimerOnlyRecording(
   }
   if (configuration.plan) {
     const parsed = activityPlanStructureSchema.safeParse(configuration.plan.structure);
+    const plannedSession = configuration.plan.plannedSession
+      ? recordingPlannedSessionLaunchSchema.safeParse(configuration.plan.plannedSession)
+      : null;
     if (
       !parsed.success ||
       parsed.data.activity_category !== configuration.activity_category ||
       configuration.plan.activityPlanId !== configuration.activityPlanId ||
-      configuration.plan.scheduledEventId !== (configuration.eventId ?? null)
+      configuration.plan.scheduledEventId !== (configuration.eventId ?? null) ||
+      (plannedSession !== null &&
+        (!plannedSession.success ||
+          configuration.plan.activityPlanId !==
+            plannedSession.data.prescription.resolutionManifest.activity_plan_id ||
+          configuration.plan.activityPlanRevision !==
+            plannedSession.data.prescription.resolutionManifest.activity_plan_revision ||
+          configuration.plan.structureHash !==
+            plannedSession.data.prescription.resolutionManifest.resolved_structure_hash ||
+          JSON.stringify(parsed.data) !==
+            JSON.stringify(plannedSession.data.prescription.resolutionManifest.resolved_structure)))
     ) {
       return { state, rejectedReason: "The selected activity plan is invalid or inconsistent." };
     }
@@ -294,7 +310,7 @@ export function recoverTimerOnlyRecording(untrustedDraft: unknown): TimerOnlyRec
   if (!parsedDraft.success) {
     return {
       state: createInitialTimerOnlyRecordingState(),
-      rejectedReason: "Cannot recover an invalid recording draft.",
+      rejectedReason: "Cannot recover an invalid recording.",
     };
   }
 
@@ -525,6 +541,7 @@ function lockPlanExecution(
     activityPlanRevision: plan.activityPlanRevision,
     structureHash: plan.structureHash,
     structure,
+    plannedSession: plan.plannedSession ?? null,
     personalizationEnabled: false,
     targetPresentations: compiled.occurrences.map((occurrence) => ({
       occurrenceId: occurrence.occurrenceId,

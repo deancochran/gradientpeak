@@ -125,7 +125,7 @@ export function PlanTrainingInsight({
         emptyLabel="No training values are available in this range."
         endLabel={window.end}
         goalColor={theme.target}
-        goalPosition={goalIndex >= 0 ? positionForIndex(goalIndex) : undefined}
+        {...(goalIndex >= 0 ? { goalPosition: positionForIndex(goalIndex) } : {})}
         gridColor={theme.grid}
         legend={
           metric === "load" ? (
@@ -152,13 +152,13 @@ export function PlanTrainingInsight({
             onSelectDate?.(nearest.date);
           }
         }}
-        selectedLabel={selected ? format(parseDateKey(selected.date), "MMM d, yyyy") : undefined}
+        {...(selected ? { selectedLabel: format(parseDateKey(selected.date), "MMM d, yyyy") } : {})}
         startLabel={window.start}
         state={visible.length && values.length ? "ready" : "empty"}
         summary={chartSummary}
         testID="plan-training-chart"
         todayColor={theme.marker}
-        todayPosition={todayIndex >= 0 ? positionForIndex(todayIndex) : undefined}
+        {...(todayIndex >= 0 ? { todayPosition: positionForIndex(todayIndex) } : {})}
         yLabels={[
           Math.round(maximum).toString(),
           Math.round((maximum + minimum) / 2).toString(),

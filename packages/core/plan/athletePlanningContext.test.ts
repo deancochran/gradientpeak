@@ -8,7 +8,6 @@ import {
   createEffectiveAthleteSnapshot,
   selectAthletePlanningContextFields,
 } from "./athletePlanningContext";
-import { mapPlanningPreferencesToCreationConstraints } from "./planningPreferences";
 
 describe("athletePlanningContext", () => {
   it("does not resolve performance targets from general profile observations", () => {
@@ -312,32 +311,5 @@ describe("athletePlanningContext", () => {
         coverage: { profileMetrics: coverage, activityEfforts: coverage },
       }).coverage,
     ).toEqual({ profileMetrics: coverage, activityEfforts: coverage });
-  });
-
-  it("maps simple planning preferences through canonical creation constraints", () => {
-    expect(
-      mapPlanningPreferencesToCreationConstraints({
-        preferences: {
-          durationWeeks: null,
-          weeklySessionCount: 4,
-          targetWeeklyHours: null,
-          restDaysPerWeek: null,
-          maxSingleSessionDurationMinutes: null,
-          progressionPace: null,
-          recoveryPriority: null,
-          weekPatternPreference: null,
-          strengthIntegrationPriority: null,
-          doubleDayTolerance: null,
-          longSessionFatigueTolerance: null,
-          taperStylePreference: null,
-        },
-        preferredWeekdays: [1, 3, 5],
-      }),
-    ).toMatchObject({
-      hard_rest_days: ["sunday", "tuesday", "thursday", "saturday"],
-      min_sessions_per_week: 3,
-      max_sessions_per_week: 4,
-      goal_difficulty_preference: "balanced",
-    });
   });
 });

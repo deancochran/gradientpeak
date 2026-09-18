@@ -6,6 +6,7 @@ import {
   type GoalEditorRaceTargetMode,
   getGoalDraftQualityFeedback,
 } from "@repo/core";
+import { numericUxPolicies } from "@repo/core/utils/numeric-ux-policy";
 import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { DurationInput } from "@repo/ui/components/duration-input";
 import {
@@ -37,10 +38,19 @@ import {
   Trophy,
 } from "lucide-react-native";
 import type React from "react";
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
-import { Pressable, View } from "react-native";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Alert, Pressable, View } from "react-native";
 import { z } from "zod";
 import { AppFormModal } from "@/components/shared/AppFormModal";
+import { useDirtyCloseGuard } from "@/lib/hooks/useDirtyCloseGuard";
 
 interface GoalEditorModalProps {
   visible: boolean;
@@ -49,7 +59,7 @@ interface GoalEditorModalProps {
   title?: string;
   isSubmitting?: boolean;
   onClose: () => void;
-  onSubmit: (value: GoalEditorDraft) => void;
+  onSubmit: (value: GoalEditorDraft) => void | Promise<void>;
 }
 
 export interface GoalEditorFormProps {
@@ -59,7 +69,8 @@ export interface GoalEditorFormProps {
   showSubmitAction?: boolean;
   contentSizing?: "fill" | "intrinsic";
   onDraftChange?: (draft: GoalEditorDraft) => void;
-  onSubmit: (value: GoalEditorDraft) => void;
+  onDirtyChange?: (isDirty: boolean) => void;
+  onSubmit: (value: GoalEditorDraft) => void | Promise<void>;
 }
 
 export type GoalEditorFormHandle = {
@@ -337,6 +348,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
       showSubmitAction = true,
       contentSizing = "fill",
       onDraftChange,
+      onDirtyChange,
       onSubmit,
     },
     ref,
@@ -349,17 +361,37 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
       },
     });
     const draft = form.watch() as GoalEditorDraft;
+    const [locallySubmitting, setLocallySubmitting] = useState(false);
+    const busy = isSubmitting || locallySubmitting;
+    const busyRef = useRef(busy);
+    busyRef.current = busy;
+    const submitGuard = useRef(false);
+    const mounted = useRef(true);
+    const [submitFeedback, setSubmitFeedback] = useState<string | null>(null);
+    const [invalidNumericFields, setInvalidNumericFields] = useState<Record<string, boolean>>({});
+    const invalidDraft = Object.values(invalidNumericFields).some(Boolean);
+    const isDirty = form.formState.isDirty || invalidDraft;
     const onDraftChangeRef = useRef(onDraftChange);
     const lastEmittedDraftRef = useRef<string | null>(null);
     const shouldObserveDraft = onDraftChange !== undefined;
     onDraftChangeRef.current = onDraftChange;
 
     useEffect(() => {
+      mounted.current = true;
+      return () => {
+        mounted.current = false;
+      };
+    }, []);
+
+    useEffect(() => {
+      // A parent refresh is not permission to replace this goal's local draft.
+      // Different goals remount this existing form through the owner's stable key.
+      if (busy || isDirty) return;
       form.reset({
         ...createEmptyGoalDraft(),
         ...initialValue,
       });
-    }, [form, initialValue]);
+    }, [form, initialValue, busy, isDirty]);
 
     useEffect(() => {
       if (!shouldObserveDraft) {
@@ -405,13 +437,33 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
       draft.title.trim().length > 0 &&
       draft.targetDate.length > 0 &&
       hasDraftTarget(draft) &&
-      !isSubmitting;
+      !Object.values(invalidNumericFields).some(Boolean) &&
+      !busy;
 
-    const submitCurrentDraft = useCallback(() => {
+    const submitCurrentDraft = useCallback(async () => {
+      if (submitGuard.current || busyRef.current) return;
       if (canSubmit) {
-        onSubmit(form.getValues() as GoalEditorDraft);
+        submitGuard.current = true;
+        busyRef.current = true;
+        setLocallySubmitting(true);
+        setSubmitFeedback(null);
+        try {
+          await onSubmit({ ...form.getValues() } as GoalEditorDraft);
+        } catch (error) {
+          if (mounted.current)
+            setSubmitFeedback(
+              error instanceof Error ? error.message : "Unable to save goal. Please try again.",
+            );
+        } finally {
+          submitGuard.current = false;
+          if (mounted.current) setLocallySubmitting(false);
+        }
+        return;
       }
+      setSubmitFeedback("Complete the goal name, date, and target before saving.");
     }, [canSubmit, form, onSubmit]);
+
+    useEffect(() => onDirtyChange?.(isDirty), [isDirty, onDirtyChange]);
 
     useImperativeHandle(
       ref,
@@ -422,6 +474,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
     );
 
     const updateDraft = (patch: Partial<GoalEditorDraft>) => {
+      if (busyRef.current) return;
       for (const [key, value] of Object.entries(patch)) {
         form.setValue(key as keyof z.infer<typeof goalEditorFormSchema>, value as never, {
           shouldDirty: true,
@@ -429,38 +482,74 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
       }
     };
 
-    const handleGoalTypeChange = (goalType: GoalEditorGoalType) => {
-      const base = createEmptyGoalDraft();
+    const confirmReplacement = (replace: () => void) => {
+      if (busyRef.current) return;
       const current = form.getValues() as GoalEditorDraft;
+      if (!isDirty && !current.title.trim() && !hasDraftTarget(current)) {
+        replace();
+        return;
+      }
+      Alert.alert(
+        "Replace goal details?",
+        "This replaces the current goal focus and targets. Your date and priority are kept.",
+        [
+          { text: "Keep editing", style: "cancel" },
+          {
+            text: "Replace",
+            style: "destructive",
+            onPress: () => {
+              if (mounted.current && !busyRef.current) replace();
+            },
+          },
+        ],
+      );
+    };
 
-      form.reset({
-        ...base,
-        title: current.title,
-        targetDate: current.targetDate,
-        importance: current.importance,
-        goalType,
-        activityCategory:
-          goalType === "pace_threshold"
-            ? "run"
-            : goalType === "power_threshold"
-              ? "bike"
-              : current.activityCategory,
+    const handleGoalTypeChange = (goalType: GoalEditorGoalType) => {
+      if (goalType === draft.goalType) return;
+      confirmReplacement(() => {
+        setInvalidNumericFields({});
+        const base = createEmptyGoalDraft();
+        const current = form.getValues() as GoalEditorDraft;
+
+        form.reset(
+          {
+            ...base,
+            title: current.title,
+            targetDate: current.targetDate,
+            importance: current.importance,
+            goalType,
+            activityCategory:
+              goalType === "pace_threshold"
+                ? "run"
+                : goalType === "power_threshold"
+                  ? "bike"
+                  : current.activityCategory,
+          },
+          { keepDefaultValues: true },
+        );
       });
     };
 
     const handlePresetPress = (preset: GoalPreset) => {
-      const base = createEmptyGoalDraft();
-      const current = form.getValues() as GoalEditorDraft;
+      confirmReplacement(() => {
+        setInvalidNumericFields({});
+        const base = createEmptyGoalDraft();
+        const current = form.getValues() as GoalEditorDraft;
 
-      form.reset({
-        ...base,
-        title: preset.title,
-        targetDate: current.targetDate,
-        importance: current.importance,
-        goalType: preset.goalType,
-        activityCategory: preset.activityCategory,
-        raceDistanceKm: preset.raceDistanceKm ?? base.raceDistanceKm,
-        raceTargetMode: preset.raceTargetMode ?? base.raceTargetMode,
+        form.reset(
+          {
+            ...base,
+            title: preset.title,
+            targetDate: current.targetDate,
+            importance: current.importance,
+            goalType: preset.goalType,
+            activityCategory: preset.activityCategory,
+            raceDistanceKm: preset.raceDistanceKm ?? base.raceDistanceKm,
+            raceTargetMode: preset.raceTargetMode ?? base.raceTargetMode,
+          },
+          { keepDefaultValues: true },
+        );
       });
     };
 
@@ -477,6 +566,8 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                   key={preset.label}
                   accessibilityLabel={`Use ${preset.title} preset`}
                   accessibilityRole="button"
+                  disabled={busy}
+                  accessibilityState={{ disabled: busy }}
                   hitSlop={8}
                   onPress={() => handlePresetPress(preset)}
                   className="min-h-11 justify-center rounded-full bg-secondary px-3 py-1.5"
@@ -496,11 +587,20 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
               <Text className="text-xs text-muted-foreground">{qualityFeedback.message}</Text>
             </View>
           ) : null}
+          {submitFeedback ? (
+            <Text
+              accessibilityRole="alert"
+              className="text-sm text-destructive"
+              testID="goal-submit-feedback"
+            >
+              {submitFeedback}
+            </Text>
+          ) : null}
 
           <GoalSection icon={Flag} title="Goal basics">
             <FormTextField
               control={form.control}
-              disabled={isSubmitting}
+              disabled={busy}
               label="Name"
               name="title"
               placeholder="Spring 10K, Raise FTP..."
@@ -522,7 +622,11 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                     }
                   }}
                 >
-                  <SelectTrigger accessibilityLabel="Goal focus" testID="goal-type-select-trigger">
+                  <SelectTrigger
+                    disabled={busy}
+                    accessibilityLabel="Goal focus"
+                    testID="goal-type-select-trigger"
+                  >
                     <SelectValue placeholder="Focus" />
                   </SelectTrigger>
                   <SelectContent>
@@ -562,6 +666,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                     }}
                   >
                     <SelectTrigger
+                      disabled={busy}
                       accessibilityLabel="Activity"
                       testID="goal-activity-select-trigger"
                     >
@@ -586,6 +691,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
             <View className="flex-row gap-2">
               <View className="flex-1">
                 <FormDateInputField
+                  disabled={busy}
                   control={form.control}
                   label="Date"
                   name="targetDate"
@@ -605,6 +711,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                   }}
                 >
                   <SelectTrigger
+                    disabled={busy}
                     accessibilityLabel="Priority"
                     testID="goal-importance-select-trigger"
                   >
@@ -651,6 +758,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                       }}
                     >
                       <SelectTrigger
+                        disabled={busy}
                         accessibilityLabel="Suggested distance"
                         testID="goal-distance-preset-select-trigger"
                       >
@@ -691,6 +799,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                       }}
                     >
                       <SelectTrigger
+                        disabled={busy}
                         accessibilityLabel="Target style"
                         testID="goal-target-style-select-trigger"
                       >
@@ -724,16 +833,23 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
               <View className="flex-row gap-2">
                 <View className="flex-1">
                   <BoundedNumberInput
+                    disabled={busy}
+                    adjustmentStep={numericUxPolicies.distanceKilometers.adjustmentStep}
+                    clampProjection={false}
                     id="goal-distance"
                     label={getDistanceLabel(draft.goalType)}
                     value={draft.raceDistanceKm == null ? "" : String(draft.raceDistanceKm)}
                     onChange={() => undefined}
+                    onInvalidChange={(invalid) =>
+                      setInvalidNumericFields((current) => ({ ...current, distance: invalid }))
+                    }
                     onNumberChange={(value) => updateDraft({ raceDistanceKm: value ?? null })}
                     min={0}
                     max={1000}
                     decimals={1}
                     unitLabel="km"
                     placeholder="21.1"
+                    showAdjustmentButtons
                     accessibilityHint="Enter distance in kilometers"
                   />
                 </View>
@@ -742,6 +858,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                   {draft.goalType === "completion" ||
                   (draft.raceTargetMode ?? "time") === "time" ? (
                     <DurationInput
+                      disabled={busy}
                       id="goal-duration"
                       label={draft.goalType === "completion" ? "Duration" : "Goal time"}
                       value={draft.targetDuration ?? ""}
@@ -754,6 +871,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                   {draft.goalType === "race_performance" &&
                   (draft.raceTargetMode ?? "time") === "pace" ? (
                     <PaceInput
+                      disabled={busy}
                       id="goal-race-pace"
                       label="Goal pace"
                       value={draft.targetPace ?? ""}
@@ -771,6 +889,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
               <View className="flex-row gap-2">
                 <View className="flex-1">
                   <PaceInput
+                    disabled={busy}
                     id="goal-threshold-pace"
                     label="Target pace"
                     value={draft.targetPace ?? ""}
@@ -780,6 +899,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                 </View>
                 <View className="flex-1">
                   <DurationInput
+                    disabled={busy}
                     id="goal-threshold-pace-duration"
                     label="Test time"
                     value={draft.thresholdTestDuration ?? ""}
@@ -796,21 +916,29 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
               <View className="flex-row gap-2">
                 <View className="flex-1">
                   <BoundedNumberInput
+                    disabled={busy}
+                    adjustmentStep={numericUxPolicies.plannedPowerWatts.adjustmentStep}
+                    clampProjection={false}
                     id="goal-power"
                     label="Watts"
                     value={draft.targetWatts == null ? "" : String(draft.targetWatts)}
                     onChange={() => undefined}
+                    onInvalidChange={(invalid) =>
+                      setInvalidNumericFields((current) => ({ ...current, power: invalid }))
+                    }
                     onNumberChange={(value) => updateDraft({ targetWatts: value ?? null })}
                     min={1}
                     max={2000}
                     decimals={0}
                     unitLabel="W"
                     placeholder="285"
+                    showAdjustmentButtons
                     accessibilityHint="Enter target power in watts"
                   />
                 </View>
                 <View className="flex-1">
                   <DurationInput
+                    disabled={busy}
                     id="goal-power-duration"
                     label="Test time"
                     value={draft.thresholdTestDuration ?? ""}
@@ -825,16 +953,23 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
           {draft.goalType === "hr_threshold" ? (
             <GoalSection icon={Gauge} title="Heart rate target">
               <BoundedNumberInput
+                disabled={busy}
+                adjustmentStep={numericUxPolicies.plannedBpm.adjustmentStep}
+                clampProjection={false}
                 id="goal-heart-rate"
                 label="Target bpm"
                 value={draft.targetBpm == null ? "" : String(draft.targetBpm)}
                 onChange={() => undefined}
+                onInvalidChange={(invalid) =>
+                  setInvalidNumericFields((current) => ({ ...current, heartRate: invalid }))
+                }
                 onNumberChange={(value) => updateDraft({ targetBpm: value ?? null })}
                 min={1}
                 max={260}
                 decimals={0}
                 unitLabel="bpm"
                 placeholder="168"
+                showAdjustmentButtons
                 accessibilityHint="Enter target threshold heart rate in beats per minute"
               />
             </GoalSection>
@@ -845,6 +980,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
               <View className="flex-row gap-2">
                 <View className="flex-1">
                   <FormIntegerStepperField
+                    disabled={busy}
                     control={form.control}
                     label="Sessions / week"
                     name="consistencySessionsPerWeek"
@@ -855,6 +991,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
                 </View>
                 <View className="flex-1">
                   <FormIntegerStepperField
+                    disabled={busy}
                     control={form.control}
                     label="Weeks"
                     name="consistencyWeeks"
@@ -870,7 +1007,7 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
           {showSubmitAction ? (
             <LoadingButton
               disabled={!canSubmit}
-              loading={isSubmitting}
+              loading={busy}
               loadingLabel="Saving..."
               onPress={submitCurrentDraft}
             >
@@ -892,16 +1029,19 @@ export function GoalEditorModal({
   onClose,
   onSubmit,
 }: GoalEditorModalProps) {
+  const [isDirty, setIsDirty] = useState(false);
+  const requestClose = useDirtyCloseGuard({ isDirty, isPending: isSubmitting });
   if (!visible) {
     return null;
   }
 
   return (
-    <AppFormModal onClose={onClose} testID="goal-editor-modal" title={title}>
+    <AppFormModal onClose={() => requestClose(onClose)} testID="goal-editor-modal" title={title}>
       <GoalEditorForm
         initialValue={initialValue}
         submitLabel={submitLabel}
         isSubmitting={isSubmitting}
+        onDirtyChange={setIsDirty}
         onSubmit={onSubmit}
       />
     </AppFormModal>

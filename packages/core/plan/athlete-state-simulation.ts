@@ -103,7 +103,6 @@ const planningDay = getCalendarDateInIanaZone;
 const projectedPlanActivityFactSchema = z
   .object({
     activityPlanId: z.string().uuid(),
-    activityPlanVariantId: z.string().uuid(),
     activityCategory: canonicalActivityCategorySchema,
     commonLoad: z.number().finite().nonnegative().max(10_000),
   })
@@ -112,7 +111,7 @@ const projectedPlanActivityFactSchema = z
 const projectedPlanStimulusDerivationInputSchema = z
   .object({
     planId: z.string().uuid(),
-    structure: z.union([canonicalTrainingPlanStructureSchema, trainingPlanSchema]),
+    structure: z.unknown(),
     activityPlans: z.array(projectedPlanActivityFactSchema).max(MAX_PLAN_SIMULATION_SESSIONS),
     planningTimezone: z.string().trim().min(1),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -134,14 +133,15 @@ export const projectedPlanStimulusDerivationSchema = z.discriminatedUnion("statu
 
 export type ProjectedPlanStimulusDerivation = z.infer<typeof projectedPlanStimulusDerivationSchema>;
 
-type SimulatablePlanStructure =
-  | z.infer<typeof canonicalTrainingPlanStructureSchema>
-  | z.infer<typeof trainingPlanSchema>;
+type SimulatablePlanStructure = unknown;
 
 function canonicalPlanStructure(structure: SimulatablePlanStructure) {
-  if (!("id" in structure)) return structure;
-  const { id: _id, ...canonical } = structure;
-  return canonical;
+  const persisted = trainingPlanSchema.safeParse(structure);
+  if (persisted.success) {
+    const { id: _id, ...canonical } = persisted.data;
+    return canonical;
+  }
+  return canonicalTrainingPlanStructureSchema.parse(structure);
 }
 
 export function derivePlanGoalReadinessContext(input: {
@@ -185,9 +185,7 @@ export function derivePlanGoalReadinessContext(input: {
 /** Pure adapter shared by draft clients and authoritative server validation. */
 export function deriveProjectedPlanStimuli(input: {
   planId: string;
-  structure:
-    | z.infer<typeof canonicalTrainingPlanStructureSchema>
-    | z.infer<typeof trainingPlanSchema>;
+  structure: SimulatablePlanStructure;
   activityPlans: Array<z.infer<typeof projectedPlanActivityFactSchema>>;
   planningTimezone: string;
   startDate: string;
@@ -197,21 +195,14 @@ export function deriveProjectedPlanStimuli(input: {
   const structure = canonicalPlanStructure(parsed.structure);
   if (structure.sessions.length > MAX_PLAN_SIMULATION_SESSIONS)
     return { status: "unavailable", reason: "too_many_sessions" };
-  const factsById = new Map(
-    parsed.activityPlans.map((fact) => [
-      `${fact.activityPlanId}:${fact.activityPlanVariantId}`,
-      fact,
-    ]),
-  );
+  const factsById = new Map(parsed.activityPlans.map((fact) => [fact.activityPlanId, fact]));
   const materialized = materializePlanToEvents(
     structure,
     parsed.startDate,
     parsed.planningTimezone,
   ).filter((event) => Date.parse(event.starts_at) >= Date.parse(parsed.notBefore));
   const sessions = materialized.map((event) => {
-    const fact = event.activity_plan_id
-      ? factsById.get(`${event.activity_plan_id}:${event.activity_plan_variant_id}`)
-      : undefined;
+    const fact = event.activity_plan_id ? factsById.get(event.activity_plan_id) : undefined;
     if (!fact) return null;
     return projectedTrainingStimulusSchema.parse({
       kind: "projected",

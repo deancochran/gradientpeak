@@ -164,7 +164,11 @@ test("rejects wildcard and non-loopback E2E container bindings", () => {
           {
             ...valid[0],
             NetworkSettings: {
-              Ports: { "5432/tcp": [{ HostIp: hostIp, HostPort: "55322" }] },
+              Ports: {
+                "5432/tcp": [
+                  { ...(hostIp === undefined ? {} : { HostIp: hostIp }), HostPort: "55322" },
+                ],
+              },
             },
           },
           valid[1],

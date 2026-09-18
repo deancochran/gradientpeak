@@ -1,4 +1,5 @@
 import type { TrainingPlan } from "../schemas";
+import { sha256Uuid } from "../utils/sha256";
 
 export type SystemTrainingPlanTemplate = {
   id: string;
@@ -15,11 +16,17 @@ type SamplePlanSession = {
   activity_plan_id: string;
 };
 
+type SampleSessionDemand = TrainingPlan["sessions"][number]["demand"];
+
 function buildWeeklySessions(weeks: ReadonlyArray<ReadonlyArray<SamplePlanSession>>) {
   return weeks.flatMap((week, weekIndex) =>
-    week.map((session) => ({
+    week.map((session, sessionIndex) => ({
+      id: sha256Uuid(
+        `sample-training-session:${weekIndex}:${sessionIndex}:${session.day}:${session.activity_plan_id}:${session.title}`,
+      ),
       offset_days: weekIndex * 7 + session.day,
       activity_plan_id: session.activity_plan_id,
+      demand: demandForSampleSession({ session, weekIndex, totalWeeks: weeks.length }),
       event_overrides: {
         title: session.title,
       },
@@ -38,6 +45,7 @@ function buildModernCompatibleTemplateStructure(input: {
   sessionsPerWeekTarget: number;
   minRestDaysPerWeek: number;
   maxConsecutiveDays: number;
+  maximumSessionDurationMinutes?: number;
   sessions: unknown[];
 }) {
   return {
@@ -45,13 +53,16 @@ function buildModernCompatibleTemplateStructure(input: {
     activity_category: [...input.activity_categories],
     experienceLevel: [...input.experienceLevel],
     durationWeeks: { recommended: input.durationWeeks },
-    sessions: input.sessions.map((session) => {
-      if (!session || typeof session !== "object" || Array.isArray(session)) return session;
-      const activityPlanId = (session as { activity_plan_id?: unknown }).activity_plan_id;
-      return typeof activityPlanId === "string"
-        ? { ...session, activity_plan_variant_id: activityPlanId }
-        : session;
-    }),
+    plan_preferences: {
+      weekly_session_count: input.sessionsPerWeekTarget,
+      target_weekly_duration_minutes: null,
+      maximum_session_duration_minutes: input.maximumSessionDurationMinutes ?? null,
+      preferred_weekdays: [],
+      rest_days: [],
+      progression_style: null,
+      recovery_priority: null,
+    },
+    sessions: input.sessions,
   };
 }
 
@@ -79,6 +90,93 @@ const DUATHLON_CLOSING_RUN_COMPONENT_ID = "73d53dd1-f8b8-4d7f-9ba7-dfa4de116206"
 const SWIM_TECHNIQUE_ID = "6c9d0e1f-2a3b-4c5d-ae7f-8a9b0c1d2e3f";
 const SWIM_ENDURANCE_ID = "7d0e1f2a-3b4c-4d6e-bf8a-9b0c1d2e3f4a";
 const STRENGTH_CIRCUIT_ID = "aaaa1111-2222-4333-8444-555555555555";
+
+const SAMPLE_ACTIVITY_PLAN_REFERENCES: Record<
+  string,
+  Pick<SampleSessionDemand, "activity_category" | "training_intent"> & {
+    durationTargets?: readonly [number, number, number];
+  }
+> = {
+  [RUN_EASY_ID]: {
+    activity_category: "run",
+    training_intent: "recovery",
+    durationTargets: [25, 30, 35],
+  },
+  [RUN_AEROBIC_ID]: {
+    activity_category: "run",
+    training_intent: "aerobic_base",
+    durationTargets: [25, 30, 35],
+  },
+  [RUN_TEMPO_ID]: { activity_category: "run", training_intent: "durable_endurance" },
+  [RUN_THRESHOLD_ID]: { activity_category: "run", training_intent: "threshold_development" },
+  [RUN_LONG_ID]: { activity_category: "run", training_intent: "durable_endurance" },
+  [RUN_RACE_PACE_LONG_ID]: { activity_category: "run", training_intent: "race_specific" },
+  [RUN_SPEED_ID]: { activity_category: "run", training_intent: "vo2max" },
+  [RUN_5K_PACE_ID]: { activity_category: "run", training_intent: "race_specific" },
+  [BIKE_ENDURANCE_ID]: {
+    activity_category: "bike",
+    training_intent: "aerobic_base",
+    durationTargets: [50, 60, 70],
+  },
+  [BIKE_SWEET_SPOT_ID]: { activity_category: "bike", training_intent: "threshold_development" },
+  [BIKE_RECOVERY_ID]: { activity_category: "bike", training_intent: "recovery" },
+  [BIKE_CLIMBING_ID]: { activity_category: "bike", training_intent: "muscular_endurance" },
+  [BIKE_LONG_ID]: { activity_category: "bike", training_intent: "durable_endurance" },
+  [BIKE_PROGRESSIVE_LONG_ID]: { activity_category: "bike", training_intent: "durable_endurance" },
+  [SPRINT_TRIATHLON_SWIM_COMPONENT_ID]: {
+    activity_category: "swim",
+    training_intent: "aerobic_base",
+  },
+  [SPRINT_TRIATHLON_BIKE_COMPONENT_ID]: {
+    activity_category: "bike",
+    training_intent: "speed_skill",
+  },
+  [SPRINT_TRIATHLON_RUN_COMPONENT_ID]: { activity_category: "run", training_intent: "speed_skill" },
+  [DUATHLON_OPENING_RUN_COMPONENT_ID]: {
+    activity_category: "run",
+    training_intent: "durable_endurance",
+  },
+  [DUATHLON_BIKE_COMPONENT_ID]: { activity_category: "bike", training_intent: "aerobic_base" },
+  [DUATHLON_CLOSING_RUN_COMPONENT_ID]: {
+    activity_category: "run",
+    training_intent: "durable_endurance",
+  },
+  [SWIM_TECHNIQUE_ID]: { activity_category: "swim", training_intent: "technique" },
+  [SWIM_ENDURANCE_ID]: { activity_category: "swim", training_intent: "aerobic_base" },
+  [STRENGTH_CIRCUIT_ID]: { activity_category: "strength", training_intent: "strength_support" },
+};
+
+function demandForSampleSession(input: {
+  session: SamplePlanSession;
+  weekIndex: number;
+  totalWeeks: number;
+}) {
+  const reference = SAMPLE_ACTIVITY_PLAN_REFERENCES[input.session.activity_plan_id];
+  if (!reference)
+    throw new Error(`Missing sample activity-plan reference: ${input.session.activity_plan_id}`);
+  const isReducedSession = /maintenance|primer|recovery|taper/i.test(input.session.title);
+  const isFinalWeek = input.weekIndex === input.totalWeeks - 1;
+  const target_duration_minutes = reference.durationTargets
+    ? isReducedSession || isFinalWeek || input.weekIndex % 4 === 3
+      ? reference.durationTargets[0]
+      : reference.durationTargets[Math.min(input.weekIndex % 4, 2)]
+    : null;
+
+  return {
+    activity_category: reference.activity_category,
+    training_intent: reference.training_intent,
+    target_duration_minutes,
+    target_common_load: null,
+    importance:
+      reference.training_intent === "recovery" || reference.training_intent === "technique"
+        ? "support"
+        : ["threshold_development", "durable_endurance", "race_specific", "vo2max"].includes(
+              reference.training_intent,
+            )
+          ? "key"
+          : "normal",
+  } as const;
+}
 
 const MARATHON_FOUNDATION_WEEKS = [
   [
@@ -674,6 +772,7 @@ const RAW_SAMPLE_PLANS: Array<
       sessionsPerWeekTarget: 4,
       minRestDaysPerWeek: 2,
       maxConsecutiveDays: 3,
+      maximumSessionDurationMinutes: 180,
       sessions: buildWeeklySessions(CYCLING_ENDURANCE_BUILDER_WEEKS),
     }),
   },
@@ -770,5 +869,27 @@ export const ALL_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = RAW_SAMPLE_PLANS.m
   structure: {
     ...plan.structure,
     id: plan.id,
+    sessions: (plan.structure as TrainingPlan).sessions.map((session, sessionIndex) => {
+      const normalized = session as typeof session & {
+        demand?: SampleSessionDemand;
+        id?: string;
+      };
+      const activityPlanId = normalized.activity_plan_id;
+      if (normalized.demand || activityPlanId === null) return normalized;
+      const title = normalized.event_overrides?.title ?? "Session";
+      return {
+        ...normalized,
+        id: sha256Uuid(`sample-training-session:${plan.id}:${sessionIndex}`),
+        demand: demandForSampleSession({
+          session: {
+            day: normalized.offset_days % 7,
+            title,
+            activity_plan_id: activityPlanId,
+          },
+          weekIndex: Math.floor(normalized.offset_days / 7),
+          totalWeeks: (plan.structure as TrainingPlan).durationWeeks?.recommended ?? 1,
+        }),
+      };
+    }),
   } as TrainingPlan,
 }));

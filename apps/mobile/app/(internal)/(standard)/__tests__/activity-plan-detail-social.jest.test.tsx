@@ -1,4 +1,4 @@
-import { act, waitFor } from "@testing-library/react-native";
+import { act } from "@testing-library/react-native";
 import React from "react";
 import { createActivityPlanSummary } from "../../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../../test/mock-components";
@@ -10,6 +10,9 @@ const alertMock = jest.fn();
 const toggleLikeMutateMock = jest.fn();
 const addCommentMutateMock = jest.fn();
 const refetchCommentsMock = jest.fn();
+const openEntityCommentsMock = jest.fn();
+let planError: Error | null = null;
+const refetchPlanMock = jest.fn();
 
 type HostProps = {
   children?: React.ReactNode;
@@ -109,6 +112,11 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   useAppNavigate: () => routerMock.push,
 }));
 
+jest.mock("@/components/social/EntityCommentsSheetProvider", () => ({
+  __esModule: true,
+  useEntityCommentsSheet: () => ({ openEntityComments: openEntityCommentsMock }),
+}));
+
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
@@ -126,7 +134,14 @@ jest.mock("@/lib/api", () => ({
       trainingPlans: { invalidate: jest.fn() },
     }),
     activityPlans: {
-      getById: { useQuery: () => ({ data: null, isLoading: false }) },
+      getById: {
+        useQuery: () => ({
+          data: null,
+          isLoading: false,
+          error: planError,
+          refetch: refetchPlanMock,
+        }),
+      },
       duplicate: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
       delete: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
       update: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
@@ -237,12 +252,24 @@ describe("activity plan detail social orchestration", () => {
     refetchCommentsMock.mockReset();
     alertMock.mockReset();
     nativeAlertMock.mockReset();
+    planError = null;
+    refetchPlanMock.mockReset();
     routerMock.back.mockReset();
     routerMock.push.mockReset();
     routerMock.replace.mockReset();
     Object.keys(localSearchParamsMock).forEach((key) => {
       delete localSearchParamsMock[key];
     });
+  });
+
+  it("shows a retryable query failure instead of an absent plan", async () => {
+    localSearchParamsMock.planId = "11111111-1111-4111-8111-111111111111";
+    planError = new Error("Offline");
+    await renderNative(<ActivityPlanDetail />);
+    expect(screen.getByText("Activity plan could not be loaded.")).toBeTruthy();
+    expect(screen.queryByText("Activity plan not found")).toBeNull();
+    await act(() => _findButton((label) => label === "Retry plan")?.props.onPress());
+    expect(refetchPlanMock).toHaveBeenCalledTimes(1);
   });
 
   it("toggles like through the social mutation", async () => {
@@ -265,7 +292,7 @@ describe("activity plan detail social orchestration", () => {
     });
   });
 
-  it("adds a trimmed comment and clears via success flow", async () => {
+  it("opens the shared comments sheet for the activity plan", async () => {
     localSearchParamsMock.template = JSON.stringify(
       createActivityPlanSummary({
         id: "11111111-1111-1111-1111-111111111111",
@@ -275,23 +302,13 @@ describe("activity plan detail social orchestration", () => {
 
     await renderNative(<ActivityPlanDetail />);
 
-    const textarea = getAllByTypeOrEmpty("Textarea")[0];
     await act(() => {
-      textarea?.props?.onChangeText?.("  Great work  ");
+      screen.getByTestId("activity-plan-comments-button").props.onPress();
     });
 
-    await act(async () => {
-      screen.getByTestId("activity-plan-add-comment-button").props.onPress();
-      await Promise.resolve();
-    });
-
-    expect(addCommentMutateMock).toHaveBeenCalledWith({
-      entity_id: "11111111-1111-1111-1111-111111111111",
-      entity_type: "activity_plan",
-      content: "Great work",
-    });
-    await waitFor(() => {
-      expect(refetchCommentsMock).toHaveBeenCalled();
+    expect(openEntityCommentsMock).toHaveBeenCalledWith({
+      entityId: "11111111-1111-1111-1111-111111111111",
+      entityType: "activity_plan",
     });
   });
 });

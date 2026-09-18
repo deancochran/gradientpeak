@@ -108,17 +108,25 @@ function createDbMock(queryMap: QueryMap = {}) {
   };
 
   const createSelectBuilder = (isCountSelect = false) => {
+    let isProfileAccess = false;
     const builder: any = {
       from: (table: any) => {
         _activeTable = getTableName(table);
+        isProfileAccess = String(
+          table?.[Symbol.for("drizzle:Name")] ?? table?._?.name ?? "",
+        ).includes("coaching_assignments");
         return builder;
       },
+      innerJoin: () => builder,
       where: () => builder,
       orderBy: () => builder,
       limit: () => builder,
       offset: () => builder,
+      for: () => builder,
       then: (onFulfilled: (value: any[]) => unknown, onRejected?: (reason: unknown) => unknown) =>
-        Promise.resolve(nextSelectResult(isCountSelect)).then(onFulfilled, onRejected),
+        Promise.resolve(
+          isProfileAccess ? (queryMap.profileAccess ?? []) : nextSelectResult(isCountSelect),
+        ).then(onFulfilled, onRejected),
     };
 
     return builder;
@@ -366,7 +374,7 @@ describe("goalsRouter", () => {
 
     expect(result).toMatchObject({
       ...createdGoal,
-      cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
+      cache_tags: ["goals.list", "goals.getById"],
     });
     expect(callLog).toContainEqual({
       operation: "insert",
@@ -454,7 +462,7 @@ describe("goalsRouter", () => {
 
     expect(result).toMatchObject({
       ...updatedGoal,
-      cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
+      cache_tags: ["goals.list", "goals.getById"],
     });
     expect(callLog).toContainEqual({
       operation: "update",
@@ -500,7 +508,7 @@ describe("goalsRouter", () => {
 
     expect(result).toEqual({
       success: true,
-      cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
+      cache_tags: ["goals.list", "goals.getById"],
     });
     expect(callLog).toContainEqual({ operation: "delete", table: "profile_goals" });
   });

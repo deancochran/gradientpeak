@@ -22,7 +22,7 @@ type StravaWebhookDependencies = {
 function errorResponse(status: number, error: string) {
   return Response.json(
     { error, received: false },
-    { status, headers: status === 503 ? { "Retry-After": "60" } : undefined },
+    { status, ...(status === 503 ? { headers: { "Retry-After": "60" } } : {}) },
   );
 }
 

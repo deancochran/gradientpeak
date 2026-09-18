@@ -32,4 +32,11 @@ describe("Textarea native", () => {
       expect.arrayContaining([expect.objectContaining({ color: NATIVE_THEME.light.foreground })]),
     );
   });
+
+  it("forwards refs to the native text input", async () => {
+    const ref = jest.fn();
+    await renderNative(<Textarea {...textareaFixtures.notes} ref={ref} />);
+
+    expect(ref).toHaveBeenCalled();
+  });
 });

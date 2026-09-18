@@ -7,9 +7,10 @@ import {
   type PlannedCalculatedQuantity,
   type PlannedQuantity,
 } from "@repo/core";
+import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Form, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
-import { useZodForm } from "@repo/ui/hooks";
+import { useInputDraft, useZodForm } from "@repo/ui/hooks";
 import { formatActivityPlanHeadlineMetric } from "@repo/ui/lib/activity-plan-metric-presentation";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import { useCallback, useEffect } from "react";
@@ -36,6 +37,8 @@ const TIME_PRESETS = [
   { label: "Evening", value: "18:00" },
 ] as const;
 
+const PLANNED_DURATION_PRESETS = [30, 45, 60, 90] as const;
+
 const activityTitleSchema = z.object({
   title: z.string(),
 });
@@ -56,6 +59,7 @@ type TrainingPlanBuilderEventEditorProps = {
   onDuplicate: (eventId: string) => void;
   onOpenActivityPicker: (eventId: string) => void;
   onRemove: (eventId: string) => void;
+  onNumericDraftError?: (key: string, message: string | null) => void;
 };
 
 function getEventTitle(event: TrainingPlanBuilderSession) {
@@ -355,6 +359,7 @@ export function TrainingPlanBuilderEventEditor({
   onDuplicate,
   onOpenActivityPicker,
   onRemove,
+  onNumericDraftError = () => undefined,
 }: TrainingPlanBuilderEventEditorProps) {
   const updateEvent = useCallback(
     (patch: Partial<TrainingPlanBuilderSession>) => {
@@ -411,6 +416,30 @@ export function TrainingPlanBuilderEventEditor({
   };
   const moveWeek = (deltaWeeks: number) => {
     updateEvent({ offsetDays: Math.max(0, event.offsetDays + deltaWeeks * 7) });
+  };
+  const updateDemand = (patch: Partial<TrainingPlanBuilderSession["demand"]>) =>
+    updateEvent({ demand: { ...event.demand, ...patch } });
+  const [plannedDurationDraft, setPlannedDurationDraft] = useInputDraft(
+    event.demand.target_duration_minutes?.toString() ?? "",
+    event.localId,
+  );
+  const updatePlannedDuration = (value: string) => {
+    setPlannedDurationDraft(value);
+    if (!value.trim()) {
+      onNumericDraftError(`session:${event.localId}:planned-duration`, null);
+      updateDemand({ target_duration_minutes: null });
+      return;
+    }
+    const duration = Number(value);
+    if (!Number.isInteger(duration) || duration < 1 || duration > 600) {
+      onNumericDraftError(
+        `session:${event.localId}:planned-duration`,
+        "Planned duration must be a whole number from 1 to 600 minutes.",
+      );
+      return;
+    }
+    onNumericDraftError(`session:${event.localId}:planned-duration`, null);
+    updateDemand({ target_duration_minutes: duration });
   };
   return (
     <View className="gap-4 pb-1" testID="builder-session-editor-modal">
@@ -473,6 +502,123 @@ export function TrainingPlanBuilderEventEditor({
       )}
 
       <View className="gap-4">
+        <View className="gap-2">
+          <Text className="text-sm font-semibold text-muted-foreground">Session demand</Text>
+          <View
+            accessibilityLabel="Activity category"
+            accessibilityRole="radiogroup"
+            className="flex-row gap-1"
+          >
+            {(["run", "bike", "swim", "strength", "other"] as const).map((category) => (
+              <ChoicePill
+                className="flex-1 px-1"
+                isSelected={event.demand.activity_category === category}
+                key={category}
+                onPress={() => updateDemand({ activity_category: category })}
+              >
+                {category}
+              </ChoicePill>
+            ))}
+          </View>
+          <View
+            accessibilityLabel="Session importance"
+            accessibilityRole="radiogroup"
+            className="flex-row gap-2"
+          >
+            {(["support", "normal", "key"] as const).map((importance) => (
+              <ChoicePill
+                className="flex-1"
+                isSelected={event.demand.importance === importance}
+                key={importance}
+                onPress={() => updateDemand({ importance })}
+              >
+                {importance}
+              </ChoicePill>
+            ))}
+          </View>
+          <View
+            accessibilityLabel="Training intent"
+            accessibilityRole="radiogroup"
+            className="gap-1"
+          >
+            {(
+              [
+                "recovery",
+                "aerobic_base",
+                "durable_endurance",
+                "threshold_development",
+                "vo2max",
+                "race_specific",
+                "anaerobic_capacity",
+                "muscular_endurance",
+                "speed_skill",
+                "technique",
+                "strength_support",
+                "general_maintenance",
+              ] as const
+            ).map((training_intent) => (
+              <ChoicePill
+                allowTextWrap
+                isSelected={event.demand.training_intent === training_intent}
+                key={training_intent}
+                onPress={() => updateDemand({ training_intent })}
+              >
+                {training_intent.replaceAll("_", " ")}
+              </ChoicePill>
+            ))}
+          </View>
+          <BoundedNumberInput
+            adjustmentStep={5}
+            decimals={0}
+            label="Planned duration"
+            max={600}
+            min={1}
+            {...(plannedDurationDraft.trim() &&
+            (!Number.isInteger(Number(plannedDurationDraft)) ||
+              Number(plannedDurationDraft) < 1 ||
+              Number(plannedDurationDraft) > 600)
+              ? { error: "Enter a whole number from 1 to 600." }
+              : {})}
+            onChange={updatePlannedDuration}
+            showAdjustmentButtons
+            unitLabel="min"
+            value={plannedDurationDraft}
+          />
+          <View
+            accessibilityLabel="Planned duration presets"
+            accessibilityRole="radiogroup"
+            className="flex-row gap-2"
+          >
+            {PLANNED_DURATION_PRESETS.map((duration) => (
+              <ChoicePill
+                className="flex-1 px-1"
+                isSelected={event.demand.target_duration_minutes === duration}
+                key={duration}
+                onPress={() => updatePlannedDuration(String(duration))}
+              >
+                {`${duration} min`}
+              </ChoicePill>
+            ))}
+          </View>
+          <BoundedNumberInput
+            adjustmentStep={10}
+            clampProjection={false}
+            decimals={0}
+            label="Target common load"
+            max={10000}
+            min={0}
+            onChange={() => undefined}
+            onInvalidChange={(invalid) =>
+              onNumericDraftError(
+                `session:${event.localId}:target-common-load`,
+                invalid ? "Target common load must be a whole number from 0 to 10000." : null,
+              )
+            }
+            onNumberChange={(value) => updateDemand({ target_common_load: value ?? null })}
+            showAdjustmentButtons
+            value={event.demand.target_common_load?.toString() ?? ""}
+          />
+        </View>
         <View className="gap-2">
           <Text className="text-sm font-semibold text-muted-foreground">Week</Text>
           <View className="flex-row items-center gap-3">

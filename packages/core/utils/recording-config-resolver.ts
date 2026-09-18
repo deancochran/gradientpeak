@@ -122,14 +122,16 @@ export class RecordingConfigResolver {
       activityCategory: intent.activityCategory,
       gpsRecordingEnabled: false,
       mode: intent.mode === "planned" ? "planned" : "unplanned",
-      eventId: intent.eventId,
-      activityPlanId: intent.activityPlanId,
-      routeId: intent.routeId,
-      routeGeometryAvailable: context.routeGeometryAvailable,
-      plan: context.plan,
+      ...(intent.eventId === undefined ? {} : { eventId: intent.eventId }),
+      ...(intent.activityPlanId === undefined ? {} : { activityPlanId: intent.activityPlanId }),
+      ...(intent.routeId === undefined ? {} : { routeId: intent.routeId }),
+      ...(context.routeGeometryAvailable === undefined
+        ? {}
+        : { routeGeometryAvailable: context.routeGeometryAvailable }),
+      ...(context.plan === undefined ? {} : { plan: context.plan }),
       devices: context.devices,
       gpsAvailable: false,
-      session: context.session,
+      ...(context.session === undefined ? {} : { session: context.session }),
     };
   }
 
@@ -149,25 +151,29 @@ export class RecordingConfigResolver {
       activityCategory: snapshot.activity.activity_category,
       gpsRecordingEnabled: false,
       mode: activityPlanId ? "planned" : "unplanned",
-      eventId: snapshot.activity.eventId,
-      activityPlanId,
-      routeId,
-      routeGeometryAvailable: context.routeGeometryAvailable,
+      ...(snapshot.activity.eventId === undefined ? {} : { eventId: snapshot.activity.eventId }),
+      ...(activityPlanId === undefined ? {} : { activityPlanId }),
+      ...(routeId === undefined ? {} : { routeId }),
+      ...(context.routeGeometryAvailable === undefined
+        ? {}
+        : { routeGeometryAvailable: context.routeGeometryAvailable }),
       plan: context.plan ?? {
         hasStructure: activityPlanId !== null,
         stepCount: 0,
         requiresManualAdvance: !snapshot.policies.controlPolicy.autoAdvanceSteps,
       },
       devices: {
-        ftmsTrainer: trainer
+        ...(trainer
           ? {
-              deviceId: trainer.deviceId,
-              autoControlEnabled:
-                snapshot.policies.controlPolicy.trainerMode === "auto" &&
-                trainer.supportsAutoControl,
-              controlReady: trainer.supportsManualControl || trainer.supportsAutoControl,
+              ftmsTrainer: {
+                deviceId: trainer.deviceId,
+                autoControlEnabled:
+                  snapshot.policies.controlPolicy.trainerMode === "auto" &&
+                  trainer.supportsAutoControl,
+                controlReady: trainer.supportsManualControl || trainer.supportsAutoControl,
+              },
             }
-          : undefined,
+          : {}),
         hasPowerMeter: hasSourceType(snapshot, "power_meter"),
         hasHeartRateMonitor:
           hasSourceType(snapshot, "chest_strap") || hasSourceType(snapshot, "optical"),

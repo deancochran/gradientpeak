@@ -5,10 +5,7 @@ import { TRPCError } from "@trpc/server";
 import { and, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { profileGoalWriteDataSchema } from "../application/goals/profile-goal-write";
-import {
-  completeLifecycleSetup,
-  lifecycleSettingsPatchSchema,
-} from "../application/onboarding/complete-lifecycle-setup";
+import { completeLifecycleSetup } from "../application/onboarding/complete-lifecycle-setup";
 import { saveOnboardingDraft } from "../application/onboarding/complete-onboarding";
 import { OnboardingProfileNotFoundError } from "../application/onboarding/persist-onboarding-profile";
 import {
@@ -46,14 +43,12 @@ const completeLifecycleSetupInputSchema = z
   .object({
     profile: completeOnboardingSchema,
     goal: profileGoalWriteDataSchema.optional(),
-    settings_patch: lifecycleSettingsPatchSchema.optional(),
   })
   .strict();
 const completeLifecycleSetupOutputSchema = z
   .object({
     status: z.enum(["completed", "already_completed"]),
     goal: z.object({ status: z.enum(["saved", "unchanged", "skipped"]) }).strict(),
-    settings: z.object({ status: z.enum(["saved", "unchanged", "skipped"]) }).strict(),
     created: z.object({ profile_metrics: z.number().int().nonnegative() }).strict(),
   })
   .strict();

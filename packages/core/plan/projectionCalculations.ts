@@ -3858,10 +3858,14 @@ function buildDeterministicProjectionPayloadFromInputs(
     startDate,
     endDate,
     weeklyTargets: dailyLoadWeeklyTargets,
-    preferenceProfile: input.preference_profile,
+    ...(input.preference_profile === undefined
+      ? {}
+      : { preferenceProfile: input.preference_profile }),
     weeklyAllocation,
-    plannedSessions: input.planned_sessions,
-    schedulingConstraints: input.scheduling_constraints,
+    ...(input.planned_sessions === undefined ? {} : { plannedSessions: input.planned_sessions }),
+    ...(input.scheduling_constraints === undefined
+      ? {}
+      : { schedulingConstraints: input.scheduling_constraints }),
     capacityContext: {
       startingLongTermLoad: points[0]?.predicted_fitness_longTermLoad ?? null,
       startingRecentLoad: points[0]?.predicted_fatigue_recentLoad ?? null,

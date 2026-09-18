@@ -1,5 +1,6 @@
 "use client";
 
+import { Popover } from "radix-ui";
 import { useEffect, useRef, useState } from "react";
 import {
   type Control,
@@ -8,12 +9,20 @@ import {
   type FieldPathValue,
   type FieldValues,
   useFormState,
+  useWatch,
 } from "react-hook-form";
-import { usePendingFormDraft } from "../../hooks/pending-form-drafts";
+import { useFormDraftResetKey, usePendingFormDraft } from "../../hooks/pending-form-drafts";
 
 import { cn } from "../../lib/cn";
 import { BoundedNumberInput } from "../bounded-number-input/index.web";
 import { Button } from "../button/index.web";
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "../command/index.web";
 import { DateInput } from "../date-input/index.web";
 import { DurationInput } from "../duration-input/index.web";
 import { FileInput } from "../file-input/index.web";
@@ -52,7 +61,10 @@ import {
   type FormTextareaFieldProps,
   type FormTextFieldProps,
   type FormTimeInputFieldProps,
+  type FormTimezoneFieldProps,
   type FormWeightInputFieldProps,
+  filterTimezoneOptions,
+  getTimezoneOptions,
 } from "./shared";
 
 function FormFileField<TFieldValues extends FieldValues, TName extends FieldPath<TFieldValues>>({
@@ -121,41 +133,48 @@ function FormTextField<TFieldValues extends FieldValues, TName extends FieldPath
   testId,
   ...inputProps
 }: FormTextFieldProps<TFieldValues, TName>) {
+  const { isSubmitting } = useFormState({ control });
+
   return (
     <FormField
       control={control}
       name={name}
       rules={rules}
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel>
-            {label}
-            {required ? " *" : null}
-          </FormLabel>
-          <FormControl>
-            <Input
-              {...inputProps}
-              accessibilityLabel={label}
-              disabled={disabled}
-              name={field.name}
-              onBlur={field.onBlur}
-              onChange={(event) => {
-                const nextValue = event.currentTarget.value;
-                field.onChange(
-                  parseValue
-                    ? parseValue(nextValue)
-                    : (nextValue as FieldPathValue<TFieldValues, TName>),
-                );
-              }}
-              required={required}
-              testId={testId}
-              value={formatValue(field.value)}
-            />
-          </FormControl>
-          {description ? <FormDescription>{description}</FormDescription> : null}
-          <FormMessage />
-        </FormItem>
-      )}
+      render={({ field }) => {
+        const isDisabled = disabled || field.disabled || isSubmitting;
+
+        return (
+          <FormItem>
+            <FormLabel>
+              {label}
+              {required ? " *" : null}
+            </FormLabel>
+            <FormControl>
+              <Input
+                {...inputProps}
+                accessibilityLabel={label}
+                disabled={isDisabled}
+                name={field.name}
+                onBlur={field.onBlur}
+                onChange={(event) => {
+                  const nextValue = event.currentTarget.value;
+                  field.onChange(
+                    parseValue
+                      ? parseValue(nextValue)
+                      : (nextValue as FieldPathValue<TFieldValues, TName>),
+                  );
+                }}
+                required={required}
+                inputRef={field.ref}
+                testId={testId}
+                value={formatValue(field.value)}
+              />
+            </FormControl>
+            {description ? <FormDescription>{description}</FormDescription> : null}
+            <FormMessage />
+          </FormItem>
+        );
+      }}
     />
   );
 }
@@ -174,6 +193,7 @@ function NumberFieldControl<
   TName extends FieldPath<TFieldValues>,
 >({
   allowDecimal = true,
+  clampOnBlur = true,
   control,
   description,
   disabled,
@@ -189,6 +209,7 @@ function NumberFieldControl<
   required,
   testId,
 }: NumberFieldControlProps<TFieldValues, TName>) {
+  const { isSubmitting } = useFormState({ control });
   const [draftValue, setDraftValue] = useState(() => formatValue(field.value));
   const draftValueRef = useRef(draftValue);
   const isDraftPendingRef = useRef(false);
@@ -200,6 +221,10 @@ function NumberFieldControl<
   };
 
   useEffect(() => {
+    if (isDraftPendingRef.current) {
+      return;
+    }
+
     const nextValue = formatValue(field.value);
     draftValueRef.current = nextValue;
     isDraftPendingRef.current = false;
@@ -218,20 +243,18 @@ function NumberFieldControl<
     } else {
       const parsed = allowDecimal ? Number(raw) : Number.parseInt(raw, 10);
       if (!Number.isFinite(parsed)) {
+        // NaN is rejected by numeric schemas, unlike undefined for optional fields.
+        isDraftPendingRef.current = true;
+        field.onChange(Number.NaN as FieldPathValue<TFieldValues, TName>);
         if (markTouched) {
-          updateDraftValue(formatValue(field.value), false);
           field.onBlur();
-        } else {
-          isDraftPendingRef.current = false;
-          field.onChange(undefined as FieldPathValue<TFieldValues, TName>);
         }
         return;
       }
 
-      nextValue = Math.min(max ?? parsed, Math.max(min ?? parsed, parsed)) as FieldPathValue<
-        TFieldValues,
-        TName
-      >;
+      nextValue = (
+        clampOnBlur ? Math.min(max ?? parsed, Math.max(min ?? parsed, parsed)) : parsed
+      ) as FieldPathValue<TFieldValues, TName>;
     }
 
     field.onChange(nextValue);
@@ -240,6 +263,7 @@ function NumberFieldControl<
       field.onBlur();
     }
   };
+  const isDisabled = disabled || field.disabled || isSubmitting;
 
   usePendingFormDraft(control, {
     commit: () => {
@@ -259,13 +283,14 @@ function NumberFieldControl<
       <FormControl>
         <Input
           accessibilityLabel={label}
-          disabled={disabled}
+          disabled={isDisabled}
           inputMode={allowDecimal ? "decimal" : "numeric"}
           name={field.name}
           onBlur={() => commitDraft()}
           onChange={(event) => updateDraftValue(event.currentTarget.value)}
           placeholder={placeholder}
           required={required}
+          inputRef={field.ref}
           testId={testId}
           type="text"
           value={draftValue}
@@ -359,6 +384,7 @@ function FormBoundedNumberField<
   unitLabel,
   required,
 }: FormBoundedNumberFieldProps<TFieldValues, TName>) {
+  const resetKey = useFormDraftResetKey(control);
   return (
     <FormField
       control={control}
@@ -366,6 +392,7 @@ function FormBoundedNumberField<
       rules={rules}
       render={({ field, fieldState }) => (
         <BoundedNumberInput
+          resetKey={resetKey}
           decimals={decimals}
           disabled={disabled}
           error={fieldState.error?.message}
@@ -397,6 +424,7 @@ function FormIntegerStepperField<
 >({
   control,
   description,
+  disabled,
   label,
   max,
   min,
@@ -405,6 +433,8 @@ function FormIntegerStepperField<
   step,
   testId,
 }: FormIntegerStepperFieldProps<TFieldValues, TName>) {
+  const { isSubmitting } = useFormState({ control });
+
   return (
     <FormField
       control={control}
@@ -412,6 +442,7 @@ function FormIntegerStepperField<
       rules={rules}
       render={({ field, fieldState }) => (
         <IntegerStepper
+          disabled={disabled || field.disabled || isSubmitting}
           error={fieldState.error?.message}
           helperText={description}
           id={String(name)}
@@ -446,42 +477,49 @@ function FormTextareaField<
   testId,
   ...textareaProps
 }: FormTextareaFieldProps<TFieldValues, TName>) {
+  const { isSubmitting } = useFormState({ control });
+
   return (
     <FormField
       control={control}
       name={name}
       rules={rules}
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel>
-            {label}
-            {required ? " *" : null}
-          </FormLabel>
-          <FormControl>
-            <Textarea
-              {...textareaProps}
-              accessibilityLabel={label}
-              disabled={disabled}
-              name={field.name}
-              onBlur={field.onBlur}
-              onChange={(event) => {
-                const nextValue = event.currentTarget.value;
-                field.onChange(
-                  parseValue
-                    ? parseValue(nextValue)
-                    : (nextValue as FieldPathValue<TFieldValues, TName>),
-                );
-              }}
-              placeholder={placeholder}
-              required={required}
-              testId={testId}
-              value={formatValue(field.value)}
-            />
-          </FormControl>
-          {description ? <FormDescription>{description}</FormDescription> : null}
-          <FormMessage />
-        </FormItem>
-      )}
+      render={({ field }) => {
+        const isDisabled = disabled || field.disabled || isSubmitting;
+
+        return (
+          <FormItem>
+            <FormLabel>
+              {label}
+              {required ? " *" : null}
+            </FormLabel>
+            <FormControl>
+              <Textarea
+                {...textareaProps}
+                accessibilityLabel={label}
+                disabled={isDisabled}
+                name={field.name}
+                onBlur={field.onBlur}
+                onChange={(event) => {
+                  const nextValue = event.currentTarget.value;
+                  field.onChange(
+                    parseValue
+                      ? parseValue(nextValue)
+                      : (nextValue as FieldPathValue<TFieldValues, TName>),
+                  );
+                }}
+                placeholder={placeholder}
+                required={required}
+                inputRef={field.ref}
+                testId={testId}
+                value={formatValue(field.value)}
+              />
+            </FormControl>
+            {description ? <FormDescription>{description}</FormDescription> : null}
+            <FormMessage />
+          </FormItem>
+        );
+      }}
     />
   );
 }
@@ -747,6 +785,132 @@ function FormTimeInputField<
   );
 }
 
+function FormTimezoneField<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+>({
+  control,
+  deviceTimeZone,
+  description,
+  disabled,
+  label,
+  name,
+  placeholder = "Select a timezone",
+  required,
+  rules,
+  testId,
+}: FormTimezoneFieldProps<TFieldValues, TName>) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const { isSubmitting } = useFormState({ control });
+  const currentValue = useWatch({ control, name });
+  const options = getTimezoneOptions(
+    typeof currentValue === "string" ? currentValue : null,
+    deviceTimeZone,
+  );
+
+  return (
+    <FormField
+      control={control}
+      name={name}
+      {...(rules ? { rules } : {})}
+      render={({ field }) => {
+        const isDisabled = disabled || field.disabled || isSubmitting;
+        return (
+          <FormItem>
+            <FormLabel>
+              {label}
+              {required ? " *" : null}
+            </FormLabel>
+            <Popover.Root
+              open={open && !isDisabled}
+              onOpenChange={(next) => {
+                setOpen(next);
+                setSearch("");
+                if (!next) field.onBlur();
+              }}
+            >
+              <Popover.Trigger asChild>
+                <FormControl>
+                  <Button
+                    ref={field.ref}
+                    type="button"
+                    variant="outline"
+                    disabled={isDisabled}
+                    aria-label={label}
+                    aria-expanded={open}
+                    {...(testId === undefined ? {} : { testId })}
+                  >
+                    {options.find((option) => option.value === currentValue)?.label ??
+                      currentValue ??
+                      placeholder}
+                  </Button>
+                </FormControl>
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content
+                  aria-label={label}
+                  align="start"
+                  sideOffset={4}
+                  className="z-50 w-80 rounded-md border bg-popover p-1 shadow-md"
+                >
+                  <Command
+                    label="Search timezones"
+                    filter={(value, query, keywords) =>
+                      filterTimezoneOptions(
+                        [
+                          {
+                            value: value === "not-set" ? "" : value,
+                            label: keywords?.[0] ?? value,
+                          },
+                        ],
+                        query,
+                      ).length > 0
+                        ? 1
+                        : 0
+                    }
+                  >
+                    <CommandInput
+                      aria-label="Search timezones"
+                      placeholder="Search timezones"
+                      value={search}
+                      onValueChange={setSearch}
+                    />
+                    <CommandList>
+                      <CommandEmpty>No timezones found</CommandEmpty>
+                      {/* Keep items registered; cmdk filters without repeatedly unregistering the catalog. */}
+                      {options.map((option) => (
+                        <CommandItem
+                          key={option.value}
+                          value={option.value || "not-set"}
+                          keywords={[option.label]}
+                          disabled={isDisabled}
+                          onSelect={() => {
+                            if (isDisabled) return;
+                            field.onChange(option.value || null);
+                            field.onBlur();
+                            setOpen(false);
+                            setSearch("");
+                          }}
+                        >
+                          {option.label}
+                          {(currentValue ?? "") === option.value ? " ✓" : ""}
+                        </CommandItem>
+                      ))}
+                    </CommandList>
+                  </Command>
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
+            {description ? <FormDescription>{description}</FormDescription> : null}
+            <FormMessage />
+          </FormItem>
+        );
+      }}
+    />
+  );
+}
+
 function FormDurationField<
   TFieldValues extends FieldValues,
   TName extends FieldPath<TFieldValues>,
@@ -891,6 +1055,7 @@ function FormWeightInputField<
   testId,
   ...weightProps
 }: FormWeightInputFieldProps<TFieldValues, TName>) {
+  const resetKey = useFormDraftResetKey(control);
   return (
     <FormField
       control={control}
@@ -899,6 +1064,7 @@ function FormWeightInputField<
       render={({ field, fieldState }) => (
         <WeightInputField
           {...weightProps}
+          resetKey={`${weightProps.resetKey ?? ""}:${resetKey}`}
           error={fieldState.error?.message}
           helperText={description}
           id={String(name)}
@@ -929,5 +1095,6 @@ export {
   FormTextareaField,
   FormTextField,
   FormTimeInputField,
+  FormTimezoneField,
   FormWeightInputField,
 };

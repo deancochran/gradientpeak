@@ -4,13 +4,12 @@ import {
   type SocialLikeEntityType,
   socialCommentEntityTypeSchema,
 } from "@repo/core";
-import { activities, events, follows, likes } from "@repo/db";
-import { and, eq, sql } from "drizzle-orm";
+import { activities, comments, events, follows, likes, profiles } from "@repo/db";
+import { and, asc, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { resolveProfileMediaUrl } from "../application/storage/profile-media-url";
 import type { getRequiredDb } from "../db";
 import { createContentAccessPermissions } from "../permissions/content-access";
-import { getSqlCount } from "../utils/sql";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 const commentInsertRowSchema = z
@@ -138,20 +137,34 @@ export async function addContentCommentRecord(
   const commentId = input.comment_id ?? randomUUID();
   const now = new Date();
   const content = input.content.trim();
-  const insertResult = await db.execute(sql`
-    insert into comments (id, profile_id, entity_id, entity_type, content, created_at, updated_at)
-    values (
-      ${commentId}::uuid, ${viewerId}::uuid, ${input.entity_id}::uuid, ${input.entity_type},
-      ${content}, ${now}, ${now}
-    )
-    on conflict (id) do update set id = excluded.id
-    where comments.profile_id = excluded.profile_id
-      and comments.entity_id = excluded.entity_id
-      and comments.entity_type = excluded.entity_type
-      and comments.content = excluded.content
-    returning id, profile_id, entity_id, entity_type, content, created_at
-  `);
-  const insertedComment = commentInsertRowSchema.parse(insertResult.rows[0]);
+  const [insertedRow] = await db
+    .insert(comments)
+    .values({
+      id: commentId,
+      profile_id: viewerId,
+      entity_id: input.entity_id,
+      entity_type: input.entity_type,
+      content,
+      created_at: now,
+      updated_at: now,
+    })
+    .onConflictDoUpdate({
+      target: comments.id,
+      set: { id: comments.id },
+      setWhere: sql`${comments.profile_id} = ${viewerId}
+        and ${comments.entity_id} = ${input.entity_id}
+        and ${comments.entity_type} = ${input.entity_type}
+        and ${comments.content} = ${content}`,
+    })
+    .returning({
+      id: comments.id,
+      profile_id: comments.profile_id,
+      entity_id: comments.entity_id,
+      entity_type: comments.entity_type,
+      content: comments.content,
+      created_at: comments.created_at,
+    });
+  const insertedComment = commentInsertRowSchema.parse(insertedRow);
   return { ...insertedComment, created_at: toIsoString(insertedComment.created_at) };
 }
 
@@ -164,22 +177,29 @@ export async function loadContentComments(
     offset: number;
   },
 ) {
-  const commentsResult = await db.execute(sql`
-    select c.id, c.content, c.created_at, p.id as profile_id,
-      p.username as profile_username, p.avatar_url as profile_avatar_url
-    from comments c left join profiles p on p.id = c.profile_id
-    where c.entity_id = ${input.entityId}::uuid and c.entity_type = ${input.entityType}
-    order by c.created_at asc limit ${input.limit} offset ${input.offset}
-  `);
-  const comments = z.array(commentListRowSchema).parse(commentsResult.rows);
-  const total = await getSqlCount(
-    db.execute(sql`
-      select count(*)::int as value from comments
-      where entity_id = ${input.entityId}::uuid and entity_type = ${input.entityType}
-    `),
-  );
+  const commentsList = await db
+    .select({
+      id: comments.id,
+      content: comments.content,
+      created_at: comments.created_at,
+      profile_id: profiles.id,
+      profile_username: profiles.username,
+      profile_avatar_url: profiles.avatar_url,
+    })
+    .from(comments)
+    .leftJoin(profiles, eq(profiles.id, comments.profile_id))
+    .where(and(eq(comments.entity_id, input.entityId), eq(comments.entity_type, input.entityType)))
+    .orderBy(asc(comments.created_at))
+    .limit(input.limit)
+    .offset(input.offset);
+  const parsedComments = z.array(commentListRowSchema).parse(commentsList);
+  const [totalRow] = await db
+    .select({ value: count() })
+    .from(comments)
+    .where(and(eq(comments.entity_id, input.entityId), eq(comments.entity_type, input.entityType)));
+  const total = z.object({ value: z.number().int().nonnegative() }).parse(totalRow).value;
   return {
-    comments: comments.map((comment) => ({
+    comments: parsedComments.map((comment) => ({
       id: comment.id,
       content: comment.content,
       created_at: toIsoString(comment.created_at),

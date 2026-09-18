@@ -1,19 +1,7 @@
 import { createHash } from "node:crypto";
-import {
-  activityPlanDocumentSchema,
-  getCanonicalActivityPlanDocumentHashInput,
-  getCanonicalActivityPlanStructureHashInput,
-} from "@repo/core/activity-plan";
+import { getCanonicalActivityPlanStructureHashInput } from "@repo/core/activity-plan";
 import { stringifyCanonicalJson } from "@repo/core/athlete-intelligence";
 
-export function activityPlanDocumentHash(document: unknown) {
-  const parsed = activityPlanDocumentSchema.parse(document);
-  return `v1:sha256:${createHash("sha256")
-    .update(getCanonicalActivityPlanDocumentHashInput(parsed))
-    .digest("hex")}`;
-}
-
-/** Generic compatibility hash retained for excluded training-plan persistence callers. */
 export function activityPlanStructureHash(structure: unknown) {
   return `v1:sha256:${createHash("sha256").update(stringifyCanonicalJson(structure)).digest("hex")}`;
 }

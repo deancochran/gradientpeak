@@ -46,6 +46,7 @@ import {
   markAthleteStateDirty,
   publishAthleteState,
   readPerformanceEffortPage,
+  readPublishedAthleteStateSnapshotData,
   renewAthleteStateClaim,
 } from "./athlete-state-repository";
 
@@ -251,6 +252,16 @@ afterEach(async () => {
 afterAll(async () => pool.end());
 
 describe("athlete state persistence", () => {
+  it("executes the published-state snapshot CTE for a synthetic profile", async () => {
+    const profileId = await seedProfile("America/Los_Angeles");
+
+    await expect(readPublishedAthleteStateSnapshotData(db, { profileId })).resolves.toEqual({
+      planningTimezone: "America/Los_Angeles",
+      current: null,
+      blockingImport: null,
+    });
+  });
+
   it("publishes a chronological contribution incrementally and agrees with a fenced rebuild", async () => {
     const profileId = await seedProfile();
     const firstFinishedAt = new Date("2026-01-01T10:00:00.000Z");

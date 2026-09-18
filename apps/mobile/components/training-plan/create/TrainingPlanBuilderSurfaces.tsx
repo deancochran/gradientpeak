@@ -34,7 +34,7 @@ export function TrainingPlanBuilderSurfaces({ controller }: TrainingPlanBuilderS
       <View className="gap-5">
         {hasContextError ? (
           <QueryNotice
-            detail="Some athlete context could not be loaded. You can keep editing the draft."
+            detail="Some athlete context could not be loaded. You can keep editing the plan."
             label="Athlete context unavailable"
             onRetry={() => {
               for (const query of contextQueries) void query.refetch();

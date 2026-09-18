@@ -90,6 +90,17 @@ const routerNavigateMock = jest.fn();
 const routerDismissToMock = jest.fn();
 const navigateToMock = jest.fn();
 const deleteEventMutateMock = jest.fn();
+const completePlannedMock = jest.fn();
+const associateRecordedMock = jest.fn();
+let completionCandidates: { canAssociate: boolean; items: unknown[]; nextCursor: null } = {
+  canAssociate: true,
+  items: [],
+  nextCursor: null,
+};
+const eventQueryCalls: unknown[][] = [];
+const plannedQueryCalls: unknown[][] = [];
+let routeParams: Record<string, string> = { id: "event-1" };
+let plannedSession: unknown = null;
 var getActivityColorMock = jest.fn((_activityCategory: string) => ({ name: "Outdoor Run" }));
 
 type StackScreenProps = Record<string, unknown> & {
@@ -122,7 +133,8 @@ jest.mock("expo-router", () => ({
         typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
       ),
   },
-  useLocalSearchParams: () => ({ id: "event-1" }),
+  useLocalSearchParams: () => routeParams,
+  useNavigation: () => ({ dispatch: jest.fn() }),
   useRouter: () => ({
     back: jest.fn(),
     dismissTo: routerDismissToMock,
@@ -257,12 +269,15 @@ jest.mock("@/lib/api", () => ({
     }),
     events: {
       getById: {
-        useQuery: () => ({
-          data: projectedEventData(),
-          error: eventQueryState.error,
-          isLoading: eventQueryState.isLoading,
-          refetch: jest.fn(),
-        }),
+        useQuery: (...args: unknown[]) => {
+          eventQueryCalls.push(args);
+          return {
+            data: projectedEventData(),
+            error: eventQueryState.error,
+            isLoading: eventQueryState.isLoading,
+            refetch: jest.fn(),
+          };
+        },
       },
       create: {
         useMutation: () => ({
@@ -282,6 +297,31 @@ jest.mock("@/lib/api", () => ({
           mutate: deleteEventMutateMock,
         }),
       },
+    },
+    plannedSessions: {
+      create: { useMutation: () => ({ isPending: false, mutate: jest.fn() }) },
+      getById: {
+        useQuery: (...args: unknown[]) => {
+          plannedQueryCalls.push(args);
+          return { data: plannedSession, isLoading: false, error: null, refetch: jest.fn() };
+        },
+      },
+      completionCandidates: {
+        useInfiniteQuery: () => ({
+          data: { pages: [completionCandidates] },
+          fetchNextPage: jest.fn(),
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          isLoading: false,
+          refetch: jest.fn(),
+        }),
+      },
+      linkCompletion: { useMutation: () => ({ mutateAsync: associateRecordedMock }) },
+      skip: { useMutation: () => ({ mutateAsync: jest.fn() }) },
+    },
+    profiles: { get: { useQuery: () => ({ data: { planning_timezone: "UTC" } }) } },
+    activities: {
+      createManualDiaryEntry: { useMutation: () => ({ mutateAsync: completePlannedMock }) },
     },
     activityPlans: {
       list: {
@@ -326,6 +366,11 @@ jest.mock("@/lib/api", () => ({
 describe("event detail fallback screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    routeParams = { id: "event-1" };
+    plannedSession = null;
+    completionCandidates = { canAssociate: true, items: [], nextCursor: null };
+    eventQueryCalls.length = 0;
+    plannedQueryCalls.length = 0;
     eventQueryState.data = eventDetailData;
     eventQueryState.error = null;
     eventQueryState.isLoading = false;
@@ -347,14 +392,158 @@ describe("event detail fallback screen", () => {
     };
   });
 
-  it("renders planned activity content directly instead of the fallback note", async () => {
-    const rendered = await renderNative(<EventDetailScreen />);
+  it("isolates planned-session reads and completes without invented actual values", async () => {
+    routeParams = {
+      id: "00000000-0000-4000-8000-000000000001",
+      resourceType: "planned_session",
+    };
+    plannedSession = {
+      id: routeParams.id,
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 1,
+      planningDate: "2000-01-01",
+      lifecycle: { status: "scheduled" },
+      source: { kind: "direct", operationId: "a".repeat(32) },
+      prescription: {
+        resolutionManifest: {
+          activity_plan_id: "00000000-0000-4000-8000-000000000003",
+          resolved_structure: { activity_category: "run" },
+        },
+      },
+    };
+    completePlannedMock.mockRejectedValueOnce(new Error("Request status is unknown"));
+    await renderNative(<EventDetailScreen />);
+    expect(eventQueryCalls[0]?.[1]).toMatchObject({ enabled: false });
+    expect(plannedQueryCalls[0]?.[1]).toMatchObject({ enabled: true });
+    await fireEvent.press(screen.getByTestId("planned-session-actual-details-toggle"));
+    const duration = screen.getByLabelText("Actual duration (minutes, optional)");
+    await fireEvent(duration, "changeText", "30");
+    await fireEvent.press(screen.getByTestId("planned-session-complete-full"));
+    await waitFor(() => expect(completePlannedMock).toHaveBeenCalledTimes(1));
+    const payload = completePlannedMock.mock.calls[0]?.[0];
+    expect(payload.observation).toMatchObject({
+      activityCategory: "run",
+      diaryDate: "2000-01-01",
+      name: "Completed activity",
+    });
+    expect(payload.observation).toMatchObject({
+      elapsedMs: 1_800_000,
+      distanceMeters: null,
+      notes: null,
+    });
+    expect(duration.props.value).toBe("30");
+    expect(screen.getByTestId("planned-session-retry")).toBeTruthy();
+  });
+
+  it("retains an invalid actual draft and does not submit a planned completion", async () => {
+    routeParams = {
+      id: "00000000-0000-4000-8000-000000000001",
+      resourceType: "planned_session",
+    };
+    plannedSession = {
+      id: routeParams.id,
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 1,
+      planningDate: "2000-01-01",
+      lifecycle: { status: "scheduled" },
+      source: { kind: "direct", operationId: "a".repeat(32) },
+      prescription: {
+        resolutionManifest: {
+          activity_plan_id: "00000000-0000-4000-8000-000000000003",
+          resolved_structure: { activity_category: "run" },
+        },
+      },
+    };
+    await renderNative(<EventDetailScreen />);
+
+    await fireEvent.press(screen.getByTestId("planned-session-actual-details-toggle"));
+    const duration = screen.getByLabelText("Actual duration (minutes, optional)");
+    await fireEvent(duration, "changeText", "invalid");
+    await fireEvent.press(screen.getByTestId("planned-session-complete-full"));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Correct the actual details before completing this session."),
+      ).toBeTruthy(),
+    );
+    expect(duration.props.value).toBe("invalid");
+    expect(completePlannedMock).not.toHaveBeenCalled();
+  });
+
+  it("does not expose planned completion controls before the planning date", async () => {
+    routeParams = { id: "00000000-0000-4000-8000-000000000001", resourceType: "planned_session" };
+    plannedSession = {
+      id: routeParams.id,
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 1,
+      planningDate: "2999-01-01",
+      lifecycle: { status: "scheduled" },
+      source: { kind: "direct", operationId: "a".repeat(32) },
+      prescription: {
+        resolutionManifest: {
+          activity_plan_id: "00000000-0000-4000-8000-000000000003",
+          resolved_structure: { activity_category: "run" },
+        },
+      },
+    };
+    await renderNative(<EventDetailScreen />);
+    expect(screen.queryByTestId("planned-session-complete-full")).toBeNull();
+  });
+
+  it("does not associate until the user explicitly chooses a recorded activity", async () => {
+    routeParams = { id: "00000000-0000-4000-8000-000000000001", resourceType: "planned_session" };
+    plannedSession = {
+      id: routeParams.id,
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 2,
+      planningDate: "2000-01-01",
+      lifecycle: {
+        status: "completed",
+        completion: { state: "linked", activityId: "00000000-0000-4000-8000-000000000004" },
+      },
+      source: { kind: "direct", operationId: "a".repeat(32) },
+      prescription: {
+        resolutionManifest: {
+          activity_plan_id: "00000000-0000-4000-8000-000000000003",
+          resolved_structure: { activity_category: "run" },
+        },
+      },
+    };
+    completionCandidates = {
+      canAssociate: true,
+      items: [
+        {
+          id: "00000000-0000-4000-8000-000000000005",
+          name: "Imported run",
+          activityCategory: "run",
+          startedAt: "2026-08-10T08:00:00.000Z",
+          elapsedMs: 1800000,
+        },
+      ],
+      nextCursor: null,
+    };
+    await renderNative(<EventDetailScreen />);
+    await fireEvent.press(screen.getByTestId("planned-session-associate-recorded"));
+    expect(associateRecordedMock).not.toHaveBeenCalled();
+    await fireEvent.press(
+      screen.getByTestId("planned-session-candidate-00000000-0000-4000-8000-000000000005"),
+    );
+    await fireEvent.press(screen.getByTestId("planned-session-confirm-association"));
+    await waitFor(() => expect(associateRecordedMock).toHaveBeenCalledTimes(1));
+    expect(associateRecordedMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activityId: "00000000-0000-4000-8000-000000000005",
+        expectedRevision: 2,
+        profileId: "00000000-0000-4000-8000-000000000002",
+        sessionId: "00000000-0000-4000-8000-000000000001",
+      }),
+    );
+  });
+
+  it("renders an executable event without an event-owned activity-plan attachment", async () => {
+    await renderNative(<EventDetailScreen />);
 
     expect(screen.queryByText("Advanced event detail")).toBeNull();
-    expect(getHostByType(rendered, "ActivityPlanCard").props.plan).toEqual(
-      expect.objectContaining({ id: "plan-1", name: "Tempo Builder" }),
-    );
-    expect(getHostByType(rendered, "ActivityPlanCard").props.onPress).toEqual(expect.any(Function));
     expect(screen.getByText("Monday, March 23, 2026")).toBeTruthy();
     expect(screen.getByTestId("event-detail-title").props.children).toBe("Tempo Builder");
     expect(screen.getByText(format(new Date(eventDetailData.starts_at), "h:mm a"))).toBeTruthy();
@@ -363,7 +552,7 @@ describe("event detail fallback screen", () => {
     expect(screen.queryByTestId("event-detail-options-open-activity-plan")).toBeNull();
     expect(screen.getByTestId("event-detail-options-trigger")).toBeTruthy();
     expect(screen.getByText("Comments (0)")).toBeTruthy();
-    expect(getActivityColorMock).toHaveBeenCalledWith("run");
+    expect(getActivityColorMock).not.toHaveBeenCalled();
   });
 
   it("does not present a cancelled linked event as completed", async () => {
@@ -423,21 +612,13 @@ describe("event detail fallback screen", () => {
     expect(routerNavigateMock).toHaveBeenCalledWith(ROUTES.PLAN.EVENT_UPDATE("event-1"));
   });
 
-  it("provides the existing event actions through the shared overflow contract", async () => {
+  it("provides generic event actions through the shared overflow contract", async () => {
     const rendered = await renderNative(<EventDetailScreen />);
 
     const menu = getHostByType(rendered, "DetailOverflowMenu");
     expect(menu.props.testID).toBe("event-detail-options-trigger");
     expect(menu.props.actions).toEqual([
       expect.objectContaining({ label: "Edit Event", testID: "event-detail-options-edit" }),
-      expect.objectContaining({
-        label: "Change Activity Plan",
-        testID: "event-detail-options-activity-plan",
-      }),
-      expect.objectContaining({
-        label: "Remove Activity Plan",
-        testID: "event-detail-options-remove-activity-plan",
-      }),
       expect.objectContaining({
         label: "Delete Event",
         testID: "event-detail-options-delete",
@@ -446,7 +627,7 @@ describe("event detail fallback screen", () => {
     ]);
   });
 
-  it("goes straight to delete confirmation for recurring planned events", async () => {
+  it("requires a delete scope for recurring executable events", async () => {
     eventDetailData.recurrence_rule = "FREQ=WEEKLY;UNTIL=20260530T235959Z";
 
     await renderNative(<EventDetailScreen />);
@@ -456,8 +637,8 @@ describe("event detail fallback screen", () => {
 
     await fireEvent.press(screen.getByTestId("event-detail-options-delete"));
 
-    expect(screen.getByTestId("event-detail-delete-confirm-modal")).toBeTruthy();
-
+    expect(screen.getByTestId("event-detail-delete-scope-modal")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("event-detail-delete-scope-single"));
     await fireEvent.press(screen.getByTestId("event-detail-delete-confirm"));
 
     expect(deleteEventMutateMock).toHaveBeenCalledWith({ id: "event-1", scope: "single" });
@@ -492,6 +673,7 @@ describe("event detail fallback screen", () => {
     expect(screen.getByText("Repeats")).toBeTruthy();
 
     await fireEvent.press(screen.getByTestId("event-detail-options-delete"));
+    await fireEvent.press(screen.getByTestId("event-detail-delete-scope-single"));
     await fireEvent.press(screen.getByTestId("event-detail-delete-confirm"));
 
     expect(deleteEventMutateMock).toHaveBeenCalledWith({ id: "event-1", scope: "single" });

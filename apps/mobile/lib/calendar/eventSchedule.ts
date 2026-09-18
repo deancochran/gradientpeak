@@ -1,12 +1,19 @@
 import { getCalendarDateInIanaZone, scheduledDateTimeToIsoInstant } from "@repo/core/calendar";
 import { format } from "date-fns";
 
-export function getDeviceTimeZone(): string {
+export function getDetectedDeviceTimeZone(): string | null {
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (!timeZone) return null;
+    Intl.DateTimeFormat("en-US", { timeZone }).format();
+    return timeZone;
   } catch {
-    return "UTC";
+    return null;
   }
+}
+
+export function getDeviceTimeZone(): string {
+  return getDetectedDeviceTimeZone() ?? "UTC";
 }
 
 function getFormatter(timeZone: string, options: Intl.DateTimeFormatOptions) {

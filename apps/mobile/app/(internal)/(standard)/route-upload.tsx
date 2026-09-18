@@ -7,9 +7,11 @@ import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { Stack, useRouter } from "expo-router";
 import { AlertCircle } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, View } from "react-native";
+import { FormScreen } from "@/components/shared/FormScreen";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
 import {
   getRouteFileReadErrorMessage,
   nativeRouteFileMetadataSchema,
@@ -41,8 +43,11 @@ export default function UploadRouteScreen() {
       description: "",
     },
   });
-
   const uploadMutation = api.routes.upload.useMutation();
+  const { allowNavigationAfterSuccess } = useDirtyNavigationGuard({
+    isDirty: form.formState.isDirty,
+    isPending: uploadPhase === "reading" || uploadPhase === "uploading" || uploadMutation.isPending,
+  });
   const files = form.watch("files");
   const selectedFile = files[0] ?? null;
   const isFormDisabled =
@@ -164,6 +169,7 @@ export default function UploadRouteScreen() {
         await Promise.allSettled([Promise.resolve().then(() => utils.routes.invalidate())]);
 
         try {
+          allowNavigationAfterSuccess();
           router.back();
         } catch {
           form.setError("root", {
@@ -217,7 +223,7 @@ export default function UploadRouteScreen() {
           ),
         }}
       />
-      <ScrollView className="flex-1 p-4" keyboardShouldPersistTaps="handled">
+      <FormScreen>
         <Form {...form}>
           <View className="gap-6">
             <Card>
@@ -275,7 +281,7 @@ export default function UploadRouteScreen() {
             </Card>
           </View>
         </Form>
-      </ScrollView>
+      </FormScreen>
     </View>
   );
 }

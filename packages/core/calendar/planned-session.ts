@@ -1,17 +1,11 @@
 import { z } from "zod";
-import {
-  activityPlanVariantIdSchema,
-  activityPlanVariantNameSchema,
-} from "../activity-plan/document-schema";
-import { activityPlanStructureSchema } from "../activity-plan/structure-schema";
-import { activityPrescriptionQuantificationBundleSchema } from "../activity-quantification/bundle";
 import { planningDayIdentitySchema } from "../athlete-intelligence/state-projection";
+import { prescriptionResolutionManifestSchema } from "../plan/prescriptionResolution";
 
-export const PLANNED_SESSION_CONTRACT_VERSION = "planned-session-v2" as const;
+export const PLANNED_SESSION_CONTRACT_VERSION = "planned-session-v1" as const;
 
 const uuidSchema = z.string().uuid();
 const instantSchema = z.string().datetime({ offset: true });
-const structureHashSchema = z.string().regex(/^v1:sha256:[0-9a-f]{64}$/);
 export const plannedSessionOperationIdSchema = z
   .string()
   .min(32)
@@ -28,43 +22,35 @@ export const plannedSessionSourceSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("training_plan"),
+      // Null is reserved for verified legacy provenance that could not be
+      // assigned safely during the forward migration; new applications set it.
+      applicationId: uuidSchema.nullable().default(null),
       trainingPlanId: uuidSchema,
       trainingPlanRevision: z.number().int().positive(),
-      sourceSessionKey: z.string().trim().min(1).max(128),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("recurrence"),
-      seriesId: uuidSchema,
-      occurrenceKey: planningDayIdentitySchema,
+      sourceSessionId: uuidSchema,
     })
     .strict(),
 ]);
 
 export type PlannedSessionSource = z.infer<typeof plannedSessionSourceSchema>;
 
-export function plannedSessionIdempotencyKey(sourceInput: PlannedSessionSource): string {
+export function plannedSessionIdempotencyKey(
+  sourceInput: z.input<typeof plannedSessionSourceSchema>,
+): string {
   const source = plannedSessionSourceSchema.parse(sourceInput);
   switch (source.kind) {
     case "direct":
       return `direct:${source.operationId}`;
     case "training_plan":
-      return `training-plan:${source.trainingPlanId}:${source.trainingPlanRevision}:${source.sourceSessionKey}`;
-    case "recurrence":
-      return `recurrence:${source.seriesId}:${source.occurrenceKey}`;
+      return source.applicationId
+        ? `training-plan:${source.applicationId}:${source.trainingPlanRevision}:${source.sourceSessionId}`
+        : `training-plan:${source.trainingPlanId}:${source.trainingPlanRevision}:${source.sourceSessionId}`;
   }
 }
 
 export const plannedSessionPrescriptionSnapshotSchema = z
   .object({
-    activityPlanId: uuidSchema,
-    activityPlanRevision: z.number().int().positive(),
-    variantId: activityPlanVariantIdSchema,
-    variantName: activityPlanVariantNameSchema,
-    structure: activityPlanStructureSchema,
-    structureHash: structureHashSchema,
-    prescriptionQuantification: activityPrescriptionQuantificationBundleSchema.nullable(),
+    resolutionManifest: prescriptionResolutionManifestSchema,
     capturedAt: instantSchema,
   })
   .strict();
@@ -75,6 +61,8 @@ export const plannedSessionCompletionSchema = z.discriminatedUnion("state", [
       state: z.literal("linked"),
       activityId: uuidSchema,
       linkedAt: instantSchema,
+      // Existing linked completions predate outcome capture and are preserved as full.
+      outcome: z.enum(["full", "partial"]).default("full"),
     })
     .strict(),
   z
@@ -82,6 +70,7 @@ export const plannedSessionCompletionSchema = z.discriminatedUnion("state", [
       state: z.literal("activity_deleted"),
       linkedAt: instantSchema,
       unlinkedAt: instantSchema,
+      outcome: z.enum(["full", "partial"]).default("full"),
     })
     .strict()
     .superRefine((completion, context) => {
@@ -93,6 +82,13 @@ export const plannedSessionCompletionSchema = z.discriminatedUnion("state", [
         });
       }
     }),
+  z
+    .object({
+      state: z.literal("skipped"),
+      skippedAt: instantSchema,
+      operationId: uuidSchema,
+    })
+    .strict(),
 ]);
 
 export const plannedSessionLifecycleSchema = z.discriminatedUnion("status", [
@@ -135,16 +131,6 @@ export const plannedSessionSchema = z
         message: "Planned-session identity must be derived from its immutable source",
       });
     }
-    if (
-      session.source.kind === "recurrence" &&
-      session.source.occurrenceKey !== session.originalTargetDate
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["source", "occurrenceKey"],
-        message: "A recurrence occurrence key is its original planning date",
-      });
-    }
   });
 
 export type PlannedSession = z.infer<typeof plannedSessionSchema>;
@@ -157,6 +143,8 @@ export type PlannedSessionCompletion = z.infer<typeof plannedSessionCompletionSc
 export const plannedSessionProjectionSchema = z
   .object({
     id: plannedSessionSchema.shape.id,
+    profileId: plannedSessionSchema.shape.profileId,
+    sessionRevision: plannedSessionSchema.shape.sessionRevision,
     planningDate: plannedSessionSchema.shape.planningDate,
     source: plannedSessionSchema.shape.source,
     prescription: plannedSessionSchema.shape.prescription,

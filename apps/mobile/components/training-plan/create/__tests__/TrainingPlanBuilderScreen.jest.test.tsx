@@ -5,7 +5,7 @@ import {
   simulateTrainingPlan,
 } from "@repo/core";
 import React from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, Text, TextInput, View } from "react-native";
 import { publishTrainingPlanGoalCreation } from "@/lib/training-plan-creation/goalCreationHandoff";
 import { createActivityPlanSummary } from "../../../../test/activity-plan-projection-fixture";
 import { act, fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
@@ -16,6 +16,50 @@ const activityPlanCardProps: Array<{
   plan?: { name?: string };
 }> = [];
 const trainingPathChartProps: unknown[] = [];
+const preventRemoveMock = jest.fn();
+const dispatchMock = jest.fn();
+// Keep the application sheet/frame/provider real; only replace the native presentation driver.
+jest.mock("@gorhom/bottom-sheet", () => {
+  const React: typeof import("react") = require("react");
+  const { View, ScrollView, FlatList } = require("react-native");
+  return {
+    BottomSheetModal: React.forwardRef(
+      (
+        {
+          children,
+          footerComponent: Footer,
+          ...props
+        }: React.PropsWithChildren<{
+          footerComponent?: React.ComponentType;
+        }>,
+        ref: React.ForwardedRef<{ present: () => void; dismiss: () => void }>,
+      ) => {
+        React.useImperativeHandle(ref, () => ({ present() {}, dismiss() {} }));
+        return (
+          <View {...props}>
+            {children}
+            {Footer ? <Footer /> : null}
+          </View>
+        );
+      },
+    ),
+    BottomSheetScrollView: ScrollView,
+    BottomSheetFlatList: FlatList,
+    BottomSheetView: View,
+    BottomSheetFooter: View,
+    BottomSheetBackdrop: View,
+  };
+});
+jest.mock("../BuilderProjectionOverview", () => ({
+  BuilderProjectionOverview: ({
+    renderBelowChart,
+  }: {
+    renderBelowChart?: (context: { selectedDayPoint: null }) => React.ReactNode;
+  }) => <View>{renderBelowChart?.({ selectedDayPoint: null })}</View>,
+}));
+jest.mock("expo-router/react-navigation", () => ({
+  usePreventRemove: (...args: unknown[]) => preventRemoveMock(...args),
+}));
 const FIXTURE_NOW = new Date(Date.UTC(2026, 5, 15, 12));
 
 function fixtureIsoDate(daysFromNow: number) {
@@ -44,6 +88,7 @@ let mockAuthoritativePreviewData: unknown;
 let mockAuthoritativePreviewError: Error | null;
 let mockEditPlanError: Error | null;
 let mockPerformanceModelError: Error | null;
+let mockQueryRefresh = 0;
 const mockContextRefetch = {
   profile: jest.fn(),
   profileMetrics: jest.fn(),
@@ -73,11 +118,27 @@ const editableTrainingPlan = {
   structure: {
     id: "22222222-2222-4222-8222-222222222222",
     version: 1,
+    plan_preferences: {
+      weekly_session_count: 1,
+      target_weekly_duration_minutes: 60,
+      maximum_session_duration_minutes: 90,
+      preferred_weekdays: [1],
+      rest_days: [0, 2, 3, 4, 5, 6],
+      progression_style: "balanced",
+      recovery_priority: "balanced",
+    },
     sessions: [
       {
+        id: "33333333-3333-4333-8333-333333333333",
         offset_days: 0,
         activity_plan_id: activityPlan.id,
-        activity_plan_variant_id: activityPlan.id,
+        demand: {
+          activity_category: "bike",
+          training_intent: "aerobic_base",
+          target_duration_minutes: 60,
+          target_common_load: 40,
+          importance: "normal",
+        },
         event_overrides: { title: "Existing aerobic day" },
       },
     ],
@@ -168,6 +229,9 @@ jest.mock("lucide-react-native", () => {
     BarChart3: Icon,
     CalendarDays: Icon,
     Check: Icon,
+    ChevronDown: Icon,
+    ChevronDownIcon: Icon,
+    ChevronUpIcon: Icon,
     ChevronLeft: Icon,
     ChevronRight: Icon,
     Clock: Icon,
@@ -202,6 +266,7 @@ jest.mock("expo-router", () => ({
       </View>
     ),
   },
+  useNavigation: () => ({ dispatch: dispatchMock }),
   useRouter: () => ({ push: jest.fn(), replace: jest.fn() }),
 }));
 
@@ -222,14 +287,7 @@ jest.mock("@repo/ui/components/button", () => ({
 
 jest.mock("@repo/ui/components/input", () => ({
   __esModule: true,
-  Input: ({ onChangeText, placeholder, testID, value }: React.ComponentProps<typeof TextInput>) => (
-    <TextInput
-      onChangeText={onChangeText}
-      placeholder={placeholder}
-      testID={testID}
-      value={value}
-    />
-  ),
+  Input: (props: React.ComponentProps<typeof TextInput>) => <TextInput {...props} />,
 }));
 
 jest.mock("@repo/ui/components/text", () => ({
@@ -378,12 +436,6 @@ jest.mock("../BuilderGoalEditorSheetContent", () => ({
   ),
 }));
 
-jest.mock("../BuilderAssumptionsPreferencesForms", () => ({
-  __esModule: true,
-  BuilderAthleteContextForm: () => <View testID="builder-athlete-context-form" />,
-  BuilderPlanPreferencesContextForm: () => <View testID="builder-planning-constraints-form" />,
-}));
-
 jest.mock("../BuilderSessionEditorSheetContent", () => ({
   __esModule: true,
   BuilderSessionEditorContent: ({
@@ -400,85 +452,6 @@ jest.mock("../BuilderSessionEditorSheetContent", () => ({
       >
         <Text>Assign</Text>
       </Pressable>
-    </View>
-  ),
-}));
-
-jest.mock("@/components/shared/AppBottomSheet", () => ({
-  __esModule: true,
-  APP_BOTTOM_SHEET_PRESENTATIONS: {
-    filter: { initialSnapIndex: 0, snapPoints: ["78%"] },
-    inspector: { initialSnapIndex: 0, snapPoints: ["82%", "96%"] },
-    browser: { initialSnapIndex: 1, snapPoints: ["88%", "96%"] },
-  },
-  AppBottomSheet: ({
-    children,
-    headerAction,
-    headerContent,
-    onClose,
-    visible,
-  }: {
-    children?: React.ReactNode;
-    headerAction?: React.ReactNode;
-    headerContent?: React.ReactNode;
-    onClose?: () => void;
-    visible?: boolean;
-  }) =>
-    visible ? (
-      <View testID="training-plan-builder-sheet">
-        <Pressable testID="training-plan-builder-sheet-close" onPress={onClose}>
-          <Text>Close</Text>
-        </Pressable>
-        {headerAction}
-        {headerContent}
-        {children}
-      </View>
-    ) : null,
-}));
-
-jest.mock("../BuilderStrategyComposer", () => ({
-  __esModule: true,
-  BuilderStrategyComposer: ({
-    onAddActivity,
-    onEditMetadata,
-    onOpenAthleteContext,
-    onOpenGoals,
-    onOpenPlanningConstraints,
-    renderBelowChart,
-    planningBriefRows,
-    state,
-  }: {
-    onAddActivity: () => void;
-    onEditMetadata?: () => void;
-    onOpenAthleteContext?: () => void;
-    onOpenGoals?: () => void;
-    onOpenPlanningConstraints?: () => void;
-    renderBelowChart?: (context: { selectedDayPoint: null }) => React.ReactNode;
-    planningBriefRows: Array<{ key: string; label: string; value: string }>;
-    state: { details: { name?: string } };
-  }) => (
-    <View testID="builder-strategy-composer">
-      <Pressable onPress={onEditMetadata}>
-        <Text>{state.details.name || "Name your plan"}</Text>
-      </Pressable>
-      <Pressable onPress={onOpenGoals}>
-        <Text>Goals</Text>
-      </Pressable>
-      <Pressable onPress={onOpenAthleteContext}>
-        <Text>Athlete</Text>
-      </Pressable>
-      <Pressable onPress={onOpenPlanningConstraints}>
-        <Text>Preferences</Text>
-      </Pressable>
-      <View testID="builder-configuration-rows">
-        {planningBriefRows.map((row) => (
-          <View key={row.key} accessibilityLabel={`${row.label}: ${row.value}`} />
-        ))}
-      </View>
-      <Pressable onPress={onAddActivity}>
-        <Text>Add activity</Text>
-      </Pressable>
-      {renderBelowChart?.({ selectedDayPoint: null })}
     </View>
   ),
 }));
@@ -502,7 +475,18 @@ jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
     useUtils: () => ({
-      trainingPlans: { invalidate: mockInvalidateProjectionPlanView },
+      trainingPlans: {
+        invalidate: mockInvalidateProjectionPlanView,
+        preview: {
+          fetch: jest.fn(async () => ({
+            applicable: true,
+            basePublishedRevision: projectionBaseline.publishedRevision,
+            explanations: [],
+            previewFingerprint: "fixture-preview",
+            status: "available",
+          })),
+        },
+      },
     }),
     profiles: {
       get: {
@@ -536,6 +520,7 @@ jest.mock("@/lib/api", () => ({
             ? undefined
             : {
                 ...projectionBaseline,
+                publishedRevision: projectionBaseline.publishedRevision + mockQueryRefresh,
                 currentBaseline: {
                   ...projectionBaseline.currentBaseline,
                   planningContext: creationContext.athleteContext,
@@ -602,7 +587,7 @@ jest.mock("@/lib/api", () => ({
         useQuery: (input: { id?: string } | symbol) => ({
           data:
             !mockEditPlanError && typeof input === "object" && input?.id
-              ? editableTrainingPlan
+              ? structuredClone(editableTrainingPlan)
               : undefined,
           error: mockEditPlanError,
           isError: Boolean(mockEditPlanError),
@@ -659,12 +644,15 @@ describe("TrainingPlanBuilderScreen", () => {
   beforeEach(() => {
     jest.useFakeTimers();
     jest.setSystemTime(FIXTURE_NOW);
+    preventRemoveMock.mockClear();
+    dispatchMock.mockClear();
     activityPlanCardProps.length = 0;
     trainingPathChartProps.length = 0;
     mockAuthoritativePreviewData = undefined;
     mockAuthoritativePreviewError = null;
     mockEditPlanError = null;
     mockPerformanceModelError = null;
+    mockQueryRefresh = 0;
     for (const refetch of Object.values(mockContextRefetch)) refetch.mockReset();
     for (const refetch of Object.values(mockProjectionRefetch)) refetch.mockReset();
     mockInvalidateProjectionPlanView.mockReset();
@@ -698,6 +686,88 @@ describe("TrainingPlanBuilderScreen", () => {
     });
   });
 
+  it.each([
+    "create",
+    "edit",
+  ] as const)("renders real %s athlete assumptions through refresh and reopening", async (mode) => {
+    const surface = () => (
+      <TrainingPlanBuilderScreen mode={mode} planId={editableTrainingPlan.id} />
+    );
+    const rendered = await renderNative(surface());
+    await fireEvent.press(screen.getByTestId("builder-configuration-athleteContext"));
+    if (!screen.queryByLabelText("Weight")) await fireEvent.press(screen.getByText("Weight"));
+    await fireEvent.changeText(screen.getByLabelText("Weight"), "73.25");
+    await fireEvent.changeText(screen.getByLabelText("Weight"), "invalid");
+    mockQueryRefresh += 1;
+    await rendered.rerender(surface());
+    expect(screen.getByLabelText("Weight").props.value).toBe("invalid");
+    await fireEvent.changeText(screen.getByLabelText("Weight"), "73.25");
+    await fireEvent.press(screen.getByText("Close"));
+    await fireEvent.press(screen.getByTestId("builder-configuration-athleteContext"));
+    expect(screen.getByLabelText("Weight").props.value).toBe("73.25");
+  });
+
+  it.each([
+    "create",
+    "edit",
+  ] as const)("keeps real %s preference inputs through refresh, applies once, and cancels on close", async (mode) => {
+    const surface = () => (
+      <TrainingPlanBuilderScreen mode={mode} planId={editableTrainingPlan.id} />
+    );
+    const rendered = await renderNative(surface());
+    await fireEvent.press(screen.getByTestId("builder-configuration-planningConstraints"));
+    const initial = screen.getByLabelText("Sessions per week").props.value;
+    await fireEvent.changeText(screen.getByLabelText("Sessions per week"), "4");
+    await fireEvent.changeText(screen.getByLabelText("Weekly duration"), "1e");
+    if (mode === "create") await fireEvent.press(screen.getByText("Add advanced preferences"));
+    await fireEvent.press(screen.getByLabelText("preferred_weekdays-Mon"));
+    for (let refresh = 0; refresh < 3; refresh += 1) {
+      mockQueryRefresh += 1;
+      await rendered.rerender(surface());
+    }
+    expect(screen.getByLabelText("Sessions per week").props.value).toBe("4");
+    expect(screen.getByLabelText("Weekly duration").props.value).toBe("1e");
+    expect(screen.getByLabelText("preferred_weekdays-Mon").props.accessibilityState.checked).toBe(
+      true,
+    );
+    expect(screen.getByTestId("training-plan-builder-sheet-save").props.disabled).toBe(true);
+    await fireEvent.press(screen.getByText("Revert changes"));
+    expect(screen.getByLabelText("Sessions per week").props.value).toBe(initial);
+    expect(screen.getByLabelText("Weekly duration").props.value).toBe(mode === "edit" ? "60" : "");
+    expect(screen.getByLabelText("preferred_weekdays-Mon").props.accessibilityState.checked).toBe(
+      false,
+    );
+    await fireEvent.changeText(screen.getByLabelText("Sessions per week"), "4");
+    await fireEvent.changeText(screen.getByLabelText("Weekly duration"), "");
+    if (mode === "edit") {
+      for (const day of ["Mon", "Wed", "Thu"]) {
+        await fireEvent.press(screen.getByLabelText(`rest_days-${day}`));
+      }
+      await fireEvent.press(screen.getByLabelText("Clear Recovery priority"));
+    }
+    await fireEvent.press(screen.getByLabelText("preferred_weekdays-Mon"));
+    expect(screen.getByTestId("training-plan-builder-sheet-save").props.disabled).toBe(false);
+    await fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
+    expect(screen.queryByTestId("training-plan-builder-sheet")).toBeNull();
+    await fireEvent.press(screen.getByTestId("builder-configuration-planningConstraints"));
+    expect(screen.getByLabelText("Sessions per week").props.value).toBe("4");
+    expect(screen.getByLabelText("Weekly duration").props.value).toBe("");
+    expect(screen.getByLabelText("preferred_weekdays-Mon").props.accessibilityState.checked).toBe(
+      true,
+    );
+    expect(screen.queryByLabelText("Clear Recovery priority")).toBeNull();
+    await fireEvent.changeText(screen.getByLabelText("Sessions per week"), "invalid");
+    await fireEvent.press(screen.getByText("Revert changes"));
+    expect(screen.getByLabelText("Sessions per week").props.value).toBe("4");
+    await fireEvent.changeText(screen.getByLabelText("Sessions per week"), "invalid");
+    await fireEvent.press(screen.getByLabelText("Close Preferences"));
+    await fireEvent.press(screen.getByTestId("builder-configuration-planningConstraints"));
+    expect(screen.getByLabelText("Sessions per week").props.value).toBe("4");
+    expect(screen.queryByText("Enter a whole number from 1 to 14.")).toBeNull();
+    expect(mockMutations.create).not.toHaveBeenCalled();
+    expect(mockMutations.update).not.toHaveBeenCalled();
+  });
+
   it("opens plan metadata editing from the main composer", async () => {
     await renderNative(<TrainingPlanBuilderScreen />);
 
@@ -708,6 +778,30 @@ describe("TrainingPlanBuilderScreen", () => {
       screen.getByPlaceholderText("Base builder, race prep, return to training..."),
     ).toBeTruthy();
     expect(screen.getByPlaceholderText("What this plan is designed to do")).toBeTruthy();
+  });
+
+  it("guards back cancellation for visibility-only changes and leaves only after discard", async () => {
+    const alert = jest.spyOn(Alert, "alert");
+    await renderNative(<TrainingPlanBuilderScreen mode="edit" planId={editableTrainingPlan.id} />);
+    await fireEvent.press(screen.getByText("Existing builder plan"));
+    await fireEvent.press(screen.getByLabelText("Followers training plan"));
+    await fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
+    const [enabled, onRemove] = preventRemoveMock.mock.calls.at(-1) ?? [];
+    expect(enabled).toBe(true);
+    const action = { type: "GO_BACK" };
+    await act(() => onRemove({ data: { action } }));
+    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenLastCalledWith(
+      "Discard changes?",
+      "Your edits will be lost.",
+      expect.any(Array),
+    );
+    const buttons = alert.mock.calls.at(-1)?.[2];
+    expect(buttons?.find((button) => button.text === "Keep editing")?.style).toBe("cancel");
+    await act(() => buttons?.find((button) => button.text === "Discard")?.onPress?.());
+    expect(dispatchMock).toHaveBeenCalledWith(action);
+    expect(mockMutations.update).not.toHaveBeenCalled();
+    alert.mockRestore();
   });
 
   it("opens builder-local goals off the main composer", async () => {
@@ -724,7 +818,7 @@ describe("TrainingPlanBuilderScreen", () => {
   it("renders the compact production configuration rows", async () => {
     await renderNative(<TrainingPlanBuilderScreen />);
 
-    expect(screen.getByTestId("builder-configuration-rows")).toBeTruthy();
+    expect(screen.getByTestId("builder-configuration-grid")).toBeTruthy();
     expect(screen.getByLabelText(/Goals: No goals selected/)).toBeTruthy();
     expect(screen.getByLabelText(/Schedule:/)).toBeTruthy();
   });
@@ -753,7 +847,7 @@ describe("TrainingPlanBuilderScreen", () => {
 
     await fireEvent.press(screen.getByText("Athlete"));
 
-    expect(screen.getByTestId("builder-athlete-context-form")).toBeTruthy();
+    expect(screen.getByText("Optional athlete details for this plan only.")).toBeTruthy();
   });
 
   it("opens sparse planning constraints off the main composer", async () => {
@@ -761,7 +855,7 @@ describe("TrainingPlanBuilderScreen", () => {
 
     await fireEvent.press(screen.getByText("Preferences"));
 
-    expect(screen.getByTestId("builder-planning-constraints-form")).toBeTruthy();
+    expect(screen.getByLabelText("Sessions per week")).toBeTruthy();
   });
 
   it("opens date-free plan settings from the strategy composer", async () => {
@@ -824,6 +918,7 @@ describe("TrainingPlanBuilderScreen", () => {
       screen.getByPlaceholderText("Base builder, race prep, return to training..."),
       "FTP build",
     );
+    await fireEvent.press(screen.getByLabelText("Followers training plan"));
     await fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
     await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
     await fireEvent.press(
@@ -844,6 +939,7 @@ describe("TrainingPlanBuilderScreen", () => {
         basePublishedRevision: projectionBaseline.publishedRevision,
         draft: expect.objectContaining({
           name: "FTP build",
+          contentVisibility: "followers",
           structure: expect.objectContaining({
             sessions: [
               expect.objectContaining({
@@ -893,6 +989,7 @@ describe("TrainingPlanBuilderScreen", () => {
   });
 
   it("hydrates edit mode into the new builder save flow", async () => {
+    mockAuthoritativePreviewData = { status: "available", simulation: authoritativeSimulation };
     await renderNative(
       <TrainingPlanBuilderScreen mode="edit" planId="22222222-2222-4222-8222-222222222222" />,
     );
@@ -912,6 +1009,17 @@ describe("TrainingPlanBuilderScreen", () => {
     await fireEvent.press(screen.getByLabelText("Public training plan"));
     expect(screen.getByLabelText("Public training plan").props.accessibilityState).toEqual({
       checked: true,
+    });
+    expect(mockMutations.update).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByTestId("training-plan-builder-sheet-save"));
+    await fireEvent.press(screen.getByText("Save"));
+    await waitFor(() => expect(mockMutations.update).toHaveBeenCalledTimes(1));
+    expect(mockMutations.update.mock.calls[0]?.[0]).toMatchObject({
+      kind: "update",
+      draft: {
+        planId: editableTrainingPlan.id,
+        contentVisibility: "public",
+      },
     });
   });
 

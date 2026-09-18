@@ -1,4 +1,5 @@
 import { selectThresholdCandidate } from "@repo/core/performance-calibration";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import {
   insertThresholdEvaluation,
@@ -397,10 +398,10 @@ describe("threshold as-of resolution", () => {
       asOf: new Date("2026-08-10T12:00:00.000Z"),
     });
 
-    const queryText = JSON.stringify(db.execute.mock.calls[0]?.[0]);
+    const queryText = new PgDialect().sqlToQuery(db.execute.mock.calls[0]?.[0] as never).sql;
     expect(queryText).toContain("'lthr'::text");
     expect(queryText).not.toContain("'lthr'::threshold_metric");
-    expect(queryText).toContain("published.metric::text = identity.metric");
+    expect(queryText).toContain('"published"."metric"::text = identity.metric');
   });
 
   it("keeps compatible historical published rows readable across policy bumps", async () => {

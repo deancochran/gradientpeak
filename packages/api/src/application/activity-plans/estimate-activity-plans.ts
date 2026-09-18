@@ -1,9 +1,4 @@
-import {
-  type ActivityPlanDocument,
-  activityPlanDocumentSchema,
-  type ResolvedActivityPlanVariant,
-  resolveActivityPlanVariant,
-} from "@repo/core/activity-plan";
+import { compileActivityPlan } from "@repo/core/activity-plan";
 import type { CommonLoadResult } from "@repo/core/load";
 import {
   type AthletePerformanceTargetFacts,
@@ -31,7 +26,6 @@ export type SupportedActivityPlan = EstimatableActivityPlan &
 export type ActivityPlanWithEstimate<TPlan extends EstimatableActivityPlan> = TPlan & {
   prescriptionQuantification: ActivityPlanPlanningEstimate["prescriptionQuantification"];
   planProjection: NonNullable<ActivityPlanPlanningEstimate["planProjection"]>;
-  resolvedActivityPlanVariant: ResolvedActivityPlanVariant;
 };
 
 export type CurrentActivityPlanEstimateOptions = {
@@ -39,14 +33,11 @@ export type CurrentActivityPlanEstimateOptions = {
   asOf?: Date;
   /** Opts into estimates derived from the authenticated viewer's current performance facts. */
   personalize?: boolean;
-  /** Selects one exact variant; omission resolves the document default. */
-  variantId?: string;
 };
 
 function buildEstimatedPlan<TPlan extends EstimatableActivityPlan>(
   plan: TPlan,
   planning: ActivityPlanPlanningEstimate,
-  resolvedActivityPlanVariant: ResolvedActivityPlanVariant,
 ): ActivityPlanWithEstimate<TPlan> {
   if (!planning.planProjection) {
     throw new Error("Activity-plan estimator did not produce a plan projection");
@@ -55,18 +46,16 @@ function buildEstimatedPlan<TPlan extends EstimatableActivityPlan>(
     ...plan,
     prescriptionQuantification: planning.prescriptionQuantification,
     planProjection: planning.planProjection,
-    resolvedActivityPlanVariant,
   };
 }
 
 function estimatePlan(
   plan: EstimatableActivityPlan,
-  resolvedActivityPlanVariant: ResolvedActivityPlanVariant,
   performanceTargets: AthletePerformanceTargetFacts,
 ): ActivityPlanPlanningEstimate {
   return estimateActivityPlanForTrainingContext({
     asOf: performanceTargets.asOf,
-    structure: resolvedActivityPlanVariant.structure,
+    structure: plan.structure,
     performanceTargets,
     stage: "plan",
     planId: plan.id,
@@ -75,12 +64,15 @@ function estimatePlan(
 
 function unavailablePlan<TPlan extends EstimatableActivityPlan>(
   plan: TPlan,
-  resolvedActivityPlanVariant: ResolvedActivityPlanVariant,
   asOf: Date,
   reason: "source_missing" | "invalid_data" = "source_missing",
 ): ActivityPlanWithEstimate<TPlan> {
-  const activityCategory: CommonLoadResult["activity_category"] =
-    resolvedActivityPlanVariant.structure.activity_category;
+  let activityCategory: CommonLoadResult["activity_category"] = "other";
+  try {
+    activityCategory = compileActivityPlan(plan.structure).activity_category;
+  } catch {
+    // Invalid stored structures cannot supply an activity category.
+  }
   const planning = createUnavailableActivityPlanPlanningEstimate({
     asOf: asOf.toISOString(),
     stage: "plan",
@@ -95,21 +87,6 @@ function unavailablePlan<TPlan extends EstimatableActivityPlan>(
     ...plan,
     prescriptionQuantification: planning.prescriptionQuantification,
     planProjection: planning.planProjection,
-    resolvedActivityPlanVariant,
-  };
-}
-
-function resolvePlanVariant(
-  plan: EstimatableActivityPlan,
-  variantId: string | undefined,
-): { document: ActivityPlanDocument; variant: ResolvedActivityPlanVariant } {
-  const document = activityPlanDocumentSchema.parse(plan.structure);
-  return {
-    document,
-    variant: resolveActivityPlanVariant(
-      document,
-      variantId === undefined ? undefined : { variantId },
-    ),
   };
 }
 
@@ -120,8 +97,7 @@ export async function estimateActivityPlan<TPlan extends SupportedActivityPlan>(
   options?: CurrentActivityPlanEstimateOptions,
 ): Promise<ActivityPlanWithEstimate<TPlan>> {
   const [estimated] = await estimateActivityPlans([plan], db, profileId, options);
-  if (!estimated) throw new Error("Activity-plan estimator did not receive a plan");
-  return estimated;
+  return estimated ?? unavailablePlan(plan, options?.asOf ?? new Date());
 }
 
 export async function estimateActivityPlans<TPlan extends SupportedActivityPlan>(
@@ -140,42 +116,36 @@ export async function estimateActivityPlans<TPlan extends SupportedActivityPlan>
       profileId,
     );
     return normalizedPlans.map((plan) => {
-      const { variant } = resolvePlanVariant(plan, options?.variantId);
       try {
-        return buildEstimatedPlan(plan, estimatePlan(plan, variant, planIntentTargets), variant);
+        return buildEstimatedPlan(plan, estimatePlan(plan, planIntentTargets));
       } catch (error) {
         console.error(
           `Failed to estimate activity plan ${plan.id}: ${error instanceof Error ? error.message : "unknown estimation error"}`,
         );
-        return unavailablePlan(plan, variant, asOf, "invalid_data");
+        return unavailablePlan(plan, asOf, "invalid_data");
       }
     });
   }
-  let published: Awaited<ReturnType<typeof readPublishedAthletePerformanceTargets>>;
   try {
-    published = await readPublishedAthletePerformanceTargets({ db, profileId, now: asOf });
+    const published = await readPublishedAthletePerformanceTargets({ db, profileId, now: asOf });
+    const memo = new Map<string, ActivityPlanPlanningEstimate>();
+    return normalizedPlans.map((plan) => {
+      const key = JSON.stringify({ id: plan.id, structure: plan.structure });
+      const existing = memo.get(key);
+      if (existing) return buildEstimatedPlan(plan, existing);
+      try {
+        const planning = estimatePlan(plan, published.targets);
+        memo.set(key, planning);
+        return buildEstimatedPlan(plan, planning);
+      } catch (error) {
+        console.error(
+          `Failed to estimate activity plan ${plan.id}: ${error instanceof Error ? error.message : "unknown estimation error"}`,
+        );
+        return unavailablePlan(plan, asOf, "invalid_data");
+      }
+    });
   } catch {
     console.error("Failed to load the published activity-plan estimation snapshot.");
-    return normalizedPlans.map((plan) => {
-      const { variant } = resolvePlanVariant(plan, options?.variantId);
-      return unavailablePlan(plan, variant, asOf);
-    });
+    return normalizedPlans.map((plan) => unavailablePlan(plan, asOf));
   }
-  const memo = new Map<string, ActivityPlanPlanningEstimate>();
-  return normalizedPlans.map((plan) => {
-    const { variant } = resolvePlanVariant(plan, options?.variantId);
-    const key = JSON.stringify({ id: plan.id, structure: variant.structure });
-    const existing = memo.get(key);
-    if (existing) return buildEstimatedPlan(plan, existing, variant);
-    try {
-      const planning = estimatePlan(plan, variant, published.targets);
-      memo.set(key, planning);
-      return buildEstimatedPlan(plan, planning, variant);
-    } catch (error) {
-      console.error(
-        `Failed to estimate activity plan ${plan.id}: ${error instanceof Error ? error.message : "unknown estimation error"}`,
-      );
-      return unavailablePlan(plan, variant, asOf, "invalid_data");
-    }
-  });
 }

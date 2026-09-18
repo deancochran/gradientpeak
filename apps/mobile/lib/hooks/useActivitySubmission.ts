@@ -77,6 +77,7 @@ interface SubmissionState {
 }
 
 type Action =
+  | { type: "EMPTY" }
   | {
       type: "READY";
       artifact: RecordingSessionArtifact;
@@ -113,6 +114,18 @@ type Action =
 
 function submissionReducer(state: SubmissionState, action: Action): SubmissionState {
   switch (action.type) {
+    case "EMPTY":
+      return {
+        phase: "ready",
+        artifact: null,
+        activity: null,
+        error: null,
+        hasStreams: false,
+        activityId: null,
+        queueStatus: null,
+        ingestionId: null,
+      };
+
     case "READY":
       return {
         phase: "ready",
@@ -288,12 +301,14 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
           return;
         }
 
-        throw new Error("No finalized activity artifact found");
+        dispatch({ type: "EMPTY" });
+        return;
       }
 
       const profileId = profile?.id;
       if (!profileId) {
-        throw new Error("No profile found for activity submission");
+        dispatch({ type: "EMPTY" });
+        return;
       }
       if (
         service?.recordingMetadata?.profileId &&
@@ -338,9 +353,12 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
 
   // Listen for recording completion event
   useEffect(() => {
-    void processRecording();
+    if (!service) {
+      dispatch({ type: "EMPTY" });
+      return;
+    }
 
-    if (!service) return;
+    void processRecording();
 
     const handleRecordingComplete = () => {
       console.log("[useActivitySubmission] Finalized artifact ready event received");
@@ -560,17 +578,11 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       dispatch({ type: "QUEUE_STATUS", status: "queued" });
 
       try {
-        if (state.artifact.activityFilePath) {
-          await submitOnce(state.artifact, {
-            ...activityForSubmit,
-            notes: activityForSubmit.notes ?? null,
-          });
-          return true;
-        } else {
-          // No activity file found
-          console.error("[useActivitySubmission] No activity file found in recording metadata");
-          throw new Error("No activity file generated. Please try recording again.");
-        }
+        await submitOnce(state.artifact, {
+          ...activityForSubmit,
+          notes: activityForSubmit.notes ?? null,
+        });
+        return true;
       } catch (err) {
         console.error("[useActivitySubmission] Submission failed:", err);
 

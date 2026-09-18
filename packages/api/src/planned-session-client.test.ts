@@ -12,10 +12,12 @@ describe("buildDirectPlannedSessionCreateInput", () => {
       profileId: fixture.profileId,
       planningDate: fixture.planningDate,
       operationId: "direct-operation-00000000000000000001",
-      activityPlanId: fixture.prescription.activityPlanId,
+      activityPlanId: fixture.prescription.resolutionManifest.activity_plan_id,
     });
 
-    expect(result.session.activityPlanId).toBe(fixture.prescription.activityPlanId);
+    expect(result.session.activityPlanId).toBe(
+      fixture.prescription.resolutionManifest.activity_plan_id,
+    );
     expect(result.session).not.toHaveProperty("prescription");
     expect(result.session).not.toHaveProperty("capturedAt");
   });

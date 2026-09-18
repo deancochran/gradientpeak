@@ -270,13 +270,23 @@ export const recordingPlanExecutionSnapshotSchema = z
     const prescription = execution.plannedSession?.prescription;
     if (!prescription) return;
     const checks = [
-      ["activityPlanId", execution.activityPlanId === prescription.activityPlanId],
+      [
+        "activityPlanId",
+        execution.activityPlanId === prescription.resolutionManifest.activity_plan_id,
+      ],
       [
         "activityPlanRevision",
-        execution.activityPlanRevision === prescription.activityPlanRevision,
+        execution.activityPlanRevision === prescription.resolutionManifest.activity_plan_revision,
       ],
-      ["structureHash", execution.structureHash === prescription.structureHash],
-      ["structure", JSON.stringify(execution.structure) === JSON.stringify(prescription.structure)],
+      [
+        "structureHash",
+        execution.structureHash === prescription.resolutionManifest.resolved_structure_hash,
+      ],
+      [
+        "structure",
+        JSON.stringify(execution.structure) ===
+          JSON.stringify(prescription.resolutionManifest.resolved_structure),
+      ],
     ] as const;
     for (const [field, valid] of checks) {
       if (!valid) {

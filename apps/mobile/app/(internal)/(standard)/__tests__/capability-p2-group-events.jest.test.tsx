@@ -56,6 +56,7 @@ jest.mock("expo-router", () => ({
       options?.headerRight?.() ?? null,
   },
   useLocalSearchParams: () => ({ groupEventId: event.id }),
+  useNavigation: () => ({ dispatch: jest.fn() }),
   useRouter: () => ({ replace: replaceMock, push: jest.fn() }),
 }));
 

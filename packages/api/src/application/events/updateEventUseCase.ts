@@ -1,4 +1,3 @@
-import { activityPlanDocumentSchema } from "@repo/core";
 import { getCalendarDateInIanaZone } from "@repo/core/calendar";
 import { TRPCError } from "@trpc/server";
 import type { Context } from "../../context";
@@ -6,10 +5,6 @@ import type {
   createEventCompletionRepository,
   createEventWriteRepository,
 } from "../../infrastructure/repositories";
-import {
-  EventCurrentPlanUpdateConflict,
-  EventPlanReplacementCompletionConflict,
-} from "../../infrastructure/repositories/drizzle-event-write-repository";
 import type { WahooPlannedActivityQueueResult } from "../../lib/provider-sync/planned-activities";
 import type { createContentAccessPermissions } from "../../permissions/content-access";
 import type { EventWriteEventRecord } from "../../repositories";
@@ -20,11 +15,10 @@ type ProtectedContext = Context & {
   };
 };
 
-type CoreEventType = "planned" | "race_target" | "custom";
-type DbEventType = "planned" | "race_target" | "custom";
+type CoreEventType = "race_target" | "custom";
+type DbEventType = CoreEventType;
 
 type NormalizedEventUpdatePatch = {
-  activity_plan_id?: string | null;
   route_id?: string | null;
   notes?: string | null;
   title?: string;
@@ -37,14 +31,12 @@ type NormalizedEventUpdatePatch = {
 };
 
 type MappedEvent = {
-  activity_plan_id: string | null;
   event_type: CoreEventType;
   id: string;
   linked_activity_id: string | null;
   route_id: string | null;
   scheduled_date: string;
   status: "scheduled" | "completed" | "cancelled";
-  training_plan_id: string | null;
   updated_at: string;
 };
 
@@ -57,7 +49,7 @@ type UpdateEventUseCaseDependencies<TInput, TMappedEvent extends MappedEvent> = 
     changedDate?: string | null;
     changeAt?: string;
   }) => unknown;
-  enqueueWahooPlannedActivityJobs: (
+  enqueueWahooPlannedActivityJobs?: (
     ctx: ProtectedContext,
     input: { eventIds: string[]; operation: "publish" | "unsync"; profileId?: string },
   ) => Promise<WahooPlannedActivityQueueResult | null>;
@@ -115,8 +107,7 @@ export async function updateEventUseCase<
 
   if (
     scope !== "single" &&
-    (patch.activity_plan_id !== undefined ||
-      patch.route_id !== undefined ||
+    (patch.route_id !== undefined ||
       patch.all_day !== undefined ||
       patch.timezone !== undefined ||
       patch.starts_at !== undefined ||
@@ -129,79 +120,16 @@ export async function updateEventUseCase<
     });
   }
 
-  if (
-    existingEventType === "planned" &&
-    (patch.starts_at !== undefined ||
-      patch.ends_at !== undefined ||
-      patch.timezone !== undefined ||
-      patch.all_day !== undefined)
-  ) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "Planned sessions accept calendar-date schedule updates only",
-    });
-  }
-
   const hasScheduledDateMove =
     scheduledDate !== undefined && scheduledDate !== existingEvent.scheduled_date;
   const hasStartsAtMove = dependencies.hasInstantChanged(patch.starts_at, existingEvent.starts_at);
   const hasEndsAtMove = dependencies.hasInstantChanged(patch.ends_at, existingEvent.ends_at);
   const isMoveRescheduleUpdate = hasScheduledDateMove || hasStartsAtMove || hasEndsAtMove;
-  const isPlannedLikeEvent = existingEventType === "planned" || targetEventType === "planned";
   const hasCompletionLinkage =
     existingEvent.linked_activity_id !== null || existingEvent.status === "completed";
 
-  const nextActivityPlanId =
-    patch.activity_plan_id !== undefined ? patch.activity_plan_id : existingEvent.activity_plan_id;
   const nextRouteId =
     patch.route_id !== undefined ? patch.route_id : (existingEvent.route_id ?? null);
-
-  if (targetEventType === "planned" && !nextActivityPlanId && !nextRouteId) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "A planned event requires activity_plan_id or route_id",
-    });
-  }
-
-  if (typeof patch.activity_plan_id === "string") {
-    if (permissions) {
-      await permissions.requireRead(
-        ctx.session.user.id,
-        { type: "activity_plan", id: patch.activity_plan_id },
-        "Activity plan not found or not accessible",
-      );
-    }
-    const activityPlan = permissions
-      ? await eventWriteRepository.getActivityPlanById({ activityPlanId: patch.activity_plan_id })
-      : await eventWriteRepository.getAccessibleActivityPlan({
-          activityPlanId: patch.activity_plan_id,
-          profileId: ctx.session.user.id,
-        });
-
-    if (!activityPlan) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: "Activity plan not found or not accessible",
-      });
-    }
-    if (!activityPlanDocumentSchema.safeParse(activityPlan.structure).success) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: "Only executable single-category activity plans can be scheduled",
-      });
-    }
-  }
-
-  if (
-    patch.activity_plan_id !== undefined &&
-    patch.activity_plan_id !== existingEvent.activity_plan_id &&
-    (existingEvent.linked_activity_id !== null || existingEvent.status === "completed")
-  ) {
-    throw new TRPCError({
-      code: "CONFLICT",
-      message: "Unlink the completed activity before replacing an activity plan",
-    });
-  }
 
   if (typeof patch.route_id === "string") {
     if (permissions) {
@@ -233,7 +161,6 @@ export async function updateEventUseCase<
     });
   }
   const eventUpdates: Record<string, unknown> = {
-    ...(patch.activity_plan_id !== undefined ? { activity_plan_id: patch.activity_plan_id } : {}),
     ...(patch.route_id !== undefined ? { route_id: patch.route_id } : {}),
     ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
     ...(patch.title !== undefined ? { title: patch.title } : {}),
@@ -269,7 +196,7 @@ export async function updateEventUseCase<
     eventUpdates.ends_at = dependencies.toNextDayStartIso(String(eventUpdates.scheduled_date));
   }
 
-  if (isMoveRescheduleUpdate && isPlannedLikeEvent && hasCompletionLinkage) {
+  if (isMoveRescheduleUpdate && hasCompletionLinkage) {
     eventUpdates.linked_activity_id = null;
 
     if (existingEvent.status === "completed") {
@@ -283,16 +210,9 @@ export async function updateEventUseCase<
       anchorEvent: existingEvent,
       eventUpdates,
       profileId: ctx.session.user.id,
-      rejectPlanReplacementWithCompletion: patch.activity_plan_id !== undefined,
       scope,
     });
   } catch (error) {
-    if (error instanceof EventCurrentPlanUpdateConflict) {
-      throw new TRPCError({ code: "CONFLICT", message: error.message });
-    }
-    if (error instanceof EventPlanReplacementCompletionConflict) {
-      throw new TRPCError({ code: "CONFLICT", message: error.message });
-    }
     throw new TRPCError({
       code: "BAD_REQUEST",
       message: error instanceof Error ? error.message : "Failed to update event",
@@ -324,61 +244,17 @@ export async function updateEventUseCase<
           actorProfileId: ctx.session.user.id,
           granteeProfileId: row.profile_id,
           eventId: row.id,
-          activityPlanId: row.activity_plan_id,
-          trainingPlanId: row.training_plan_id,
         });
       }),
     );
   }
 
-  let plannedActivitySyncResult: WahooPlannedActivityQueueResult | null = null;
-  const updatedPlannedEventIds = updatedRows
-    .filter((row) => row.event_type === "planned" && row.activity_plan_id && row.route_id === null)
-    .map((row) => row.id);
-  const removedPlannedEventIds =
-    existingEvent.event_type === "planned" &&
-    existingEvent.activity_plan_id &&
-    (event.event_type !== "planned" ||
-      event.activity_plan_id === null ||
-      (existingEvent.route_id === null && event.route_id !== null))
-      ? updatedRows.map((row) => row.id)
-      : [];
-
-  if (updatedPlannedEventIds.length > 0 || removedPlannedEventIds.length > 0) {
-    try {
-      plannedActivitySyncResult =
-        updatedPlannedEventIds.length > 0
-          ? await dependencies.enqueueWahooPlannedActivityJobs(ctx, {
-              eventIds: updatedPlannedEventIds,
-              operation: "publish",
-            })
-          : await dependencies.enqueueWahooPlannedActivityJobs(ctx, {
-              eventIds: removedPlannedEventIds,
-              operation: "unsync",
-            });
-    } catch (error) {
-      console.error("Failed to enqueue planned activity update jobs:", error);
-      plannedActivitySyncResult = {
-        affectedCount: updatedPlannedEventIds.length || removedPlannedEventIds.length,
-        operation: updatedPlannedEventIds.length > 0 ? "publish" : "unsync",
-        queued: false,
-        success: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unknown error during planned activity sync queueing",
-      };
-    }
-  }
-
   return {
     ...event,
-    plannedActivitySync: plannedActivitySyncResult,
     mutation_scope: scope,
     affected_count: updatedRows.length,
     affected_event_ids: updatedRows.map((row) => row.id),
     insight_refresh_hint: dependencies.buildInsightRefreshHint({
-      trainingPlanId: event.training_plan_id,
       changedDate: event.scheduled_date,
       changeAt: event.updated_at,
     }),

@@ -396,16 +396,11 @@ function limitRecoveredReplayToFinish(
 }
 
 function assertGpsFreeReplay(replay: DurableStreamReplay): DurableStreamReplay {
-  const legacy = replay as unknown as {
-    locations?: unknown[];
-    fitRecords: Array<
-      DurableStreamReplay["fitRecords"][number] & { latitude?: number; longitude?: number }
-    >;
-  };
-  const hasCoordinateRecord = legacy.fitRecords.some(
-    (record) => record.latitude !== undefined || record.longitude !== undefined,
+  const legacyLocations = "locations" in replay ? replay.locations : undefined;
+  const hasCoordinateRecord = replay.fitRecords.some(
+    (record) => "latitude" in record || "longitude" in record,
   );
-  if ((legacy.locations?.length ?? 0) > 0 || hasCoordinateRecord) {
+  if ((Array.isArray(legacyLocations) && legacyLocations.length > 0) || hasCoordinateRecord) {
     throw new Error("Coordinate-bearing in-app recording recovery is not supported");
   }
   return replay;
@@ -477,7 +472,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   public selectedActivityCategory: RecordingActivityCategory = "run";
   private hasConfiguredSetup: boolean = false;
   private currentLaunchSource: RecordingConfiguration["input"]["launchSource"] = "manual";
-  public recordingMetadata?: RecordingMetadata;
+  public recordingMetadata?: RecordingMetadata | undefined;
   private finalizedArtifact: RecordingSessionArtifact | null = null;
   private readonly sessionController = new RecordingSessionController();
 
@@ -499,7 +494,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private planBoundaryTransition: Promise<void> = Promise.resolve();
   private checkpointDirty = false;
   private checkpointWriteInFlight: Promise<void> | null = null;
-  private checkpointWriteTimer?: ReturnType<typeof setTimeout>;
+  private checkpointWriteTimer?: ReturnType<typeof setTimeout> | undefined;
   private lastCheckpointWriteAt = 0;
   private recoveredCheckpoint: ActivityRecorderCheckpoint | null = null;
   private recoveredReplay: DurableStreamReplay | null = null;
@@ -507,31 +502,31 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   // === Plan State (minimal tracking) ===
   private _plan: RecordingActivityPlanInput | undefined;
-  private _eventId?: string;
-  private _plannedSession?: RecordingPlannedSessionLaunch;
+  private _eventId?: string | undefined;
+  private _plannedSession?: RecordingPlannedSessionLaunch | undefined;
 
   private readonly routeController = new RouteController();
 
   // === Private Managers ===
-  private notificationsManager?: NotificationsManager;
-  private fitEncoder?: GarminFitEncoder;
+  private notificationsManager?: NotificationsManager | undefined;
+  private fitEncoder?: GarminFitEncoder | undefined;
 
   // === App State Management ===
   private appState: AppStateStatus = AppState.currentState;
-  private appStateSubscription?: { remove: () => void };
+  private appStateSubscription?: { remove: () => void } | undefined;
 
   // === Timing ===
-  private startTime?: number;
+  private startTime?: number | undefined;
   private pausedTime: number = 0;
-  private lastPauseTime?: number;
-  private elapsedTimeInterval?: ReturnType<typeof setInterval> | number;
+  private lastPauseTime?: number | undefined;
+  private elapsedTimeInterval?: ReturnType<typeof setInterval> | number | undefined;
   private sessionUpdateTimer: ReturnType<typeof setTimeout> | number | undefined;
   private lastSessionUpdateAt = 0;
   private fitRecordingUpdateInFlight = false;
   private fitRecordingUpdatePending = false;
   private lastFitDistanceMeters = 0;
   private lifecycleTransition: Promise<void> = Promise.resolve();
-  private recordingEndTime?: number;
+  private recordingEndTime?: number | undefined;
   private liveMetricsFinalized = false;
   private fitFinalized = false;
   private finalizationFailed = false;
@@ -619,9 +614,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this.handleAppStateChange(nextState),
     );
 
-    console.log("[ActivityRecorderService] Initialized", {
-      profileId: profile.id,
-    });
+    console.log("[ActivityRecorderService] Initialized");
     this.sessionController.setLifecycle(this.state);
     this.publishSessionUpdate();
   }
@@ -1578,13 +1571,15 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         ? {
             manifestVersion: 1 as const,
             compilerVersion: ACTIVITY_PLAN_COMPILER_VERSION,
-            activityPlanId: this._plannedSession.prescription.activityPlanId,
+            activityPlanId: this._plannedSession.prescription.resolutionManifest.activity_plan_id,
             scheduledEventId: this._eventId ?? null,
             name: this._plan.name,
             description: this._plan.description ?? null,
-            activityPlanRevision: this._plannedSession.prescription.activityPlanRevision,
-            structureHash: this._plannedSession.prescription.structureHash,
-            structure: this._plannedSession.prescription.structure,
+            activityPlanRevision:
+              this._plannedSession.prescription.resolutionManifest.activity_plan_revision,
+            structureHash:
+              this._plannedSession.prescription.resolutionManifest.resolved_structure_hash,
+            structure: this._plannedSession.prescription.resolutionManifest.resolved_structure,
             plannedSession: this._plannedSession,
             personalizationEnabled: false,
             targetPresentations: [],
@@ -1653,13 +1648,13 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     const ftmsTrainer = this.sensorsManager.getSelectedFTMSTrainer();
 
     return {
-      ftmsTrainer: ftmsTrainer
+      ...(ftmsTrainer
         ? {
             deviceId: ftmsTrainer.id,
             autoControlEnabled: !this.isTrainerManualMode(),
             controlReady: Boolean(ftmsTrainer.ftmsController?.hasControlPermission()),
           }
-        : undefined,
+        : {}),
       hasPowerMeter: sourceTypes.includes("power_meter") || sourceTypes.includes("trainer_power"),
       hasHeartRateMonitor:
         sourceTypes.includes("chest_strap") ||
@@ -1850,6 +1845,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     if (this.recoveredCheckpoint !== null) {
       throw new Error("Resume or discard the recovered recording before selecting a new plan.");
     }
+    if (!this.ensureMutableSessionIdentity("Plan selection")) return;
     const support = getMobileRecordingPlanSupport(plan);
     if (!support.supported) {
       throw new Error(support.message);
@@ -2928,12 +2924,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         ? {
             revision: lockedExecution.activityPlanRevision,
             structure_hash: lockedExecution.structureHash,
-            ...(lockedExecution.plannedSession?.prescription.variantId
-              ? { variant_id: lockedExecution.plannedSession.prescription.variantId }
-              : {}),
-            ...(lockedExecution.plannedSession?.prescription.variantName
-              ? { variant_name: lockedExecution.plannedSession.prescription.variantName }
-              : {}),
           }
         : {}),
       gps_recording_enabled: false,
@@ -3260,12 +3250,14 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         await assertRecordingPlanExecutionStructureHashes({
           manifestVersion: 1,
           compilerVersion: ACTIVITY_PLAN_COMPILER_VERSION,
-          activityPlanId: this._plannedSession.prescription.activityPlanId,
+          activityPlanId: this._plannedSession.prescription.resolutionManifest.activity_plan_id,
           scheduledEventId: this._eventId ?? null,
-          name: this._plan?.name ?? this._plannedSession.prescription.variantName,
+          name: this._plan?.name ?? "Scheduled activity plan",
           description: this._plan?.description ?? null,
-          activityPlanRevision: this._plannedSession.prescription.activityPlanRevision,
-          structureHash: this._plannedSession.prescription.structureHash,
+          activityPlanRevision:
+            this._plannedSession.prescription.resolutionManifest.activity_plan_revision,
+          structureHash:
+            this._plannedSession.prescription.resolutionManifest.resolved_structure_hash,
           structure: activityPlanStructureSchema.parse(executionPlan.structure),
           plannedSession: this._plannedSession,
           personalizationEnabled: false,

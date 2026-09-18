@@ -9,6 +9,7 @@ import { useRef, useState } from "react";
 import { api } from "../../lib/api/client";
 import { getTodayDateKey, isValidDateKey } from "../../lib/planning";
 import { createPlanGoalAction, updatePlanGoalAction } from "../../lib/planning/server-actions";
+import { useUnsavedChangesGuard } from "../../lib/use-unsaved-changes-guard";
 
 type EditableGoal = {
   activity_category: string;
@@ -74,6 +75,33 @@ export function PlanGoalForm({
   const hasFieldError = Boolean(
     titleError || dateError || priorityError || sessionsError || weeksError,
   );
+  const initialValues = useRef({
+    activity: goal?.activity_category ?? "run",
+    date: goal?.target_date ?? initialDate ?? getTodayDateKey(),
+    priority: String(goal?.priority ?? 5),
+    sessions: String(consistencyPayload?.target_sessions_per_week ?? 4),
+    title: goal?.title ?? "",
+    weeks: String(consistencyPayload?.target_weeks ?? 8),
+  });
+  const dirty =
+    goalTitle !== initialValues.current.title ||
+    goalDate !== initialValues.current.date ||
+    goalPriority !== initialValues.current.priority ||
+    goalActivityCategory !== initialValues.current.activity ||
+    goalSessionsPerWeek !== initialValues.current.sessions ||
+    goalWeeks !== initialValues.current.weeks;
+  const { guardedCancel, markSaved } = useUnsavedChangesGuard({
+    draft: {
+      goalActivityCategory,
+      goalDate,
+      goalPriority,
+      goalSessionsPerWeek,
+      goalTitle,
+      goalWeeks,
+    },
+    dirty,
+    pending: isSubmitting,
+  });
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -95,6 +123,15 @@ export function PlanGoalForm({
         return;
       }
       await Promise.all([utils.goals.invalidate(), utils.athleteIntelligence.invalidate()]);
+      initialValues.current = {
+        activity: goalActivityCategory,
+        date: goalDate,
+        priority: goalPriority,
+        sessions: goalSessionsPerWeek,
+        title: goalTitle,
+        weeks: goalWeeks,
+      };
+      markSaved();
       window.location.assign(result.redirectTo);
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Unable to save goal. Try again.");
@@ -117,6 +154,7 @@ export function PlanGoalForm({
           </span>
         </div>
         <Input
+          disabled={isSubmitting}
           id="goal-title"
           aria-describedby={isTitleTouched && titleError ? "goal-title-error" : undefined}
           aria-invalid={Boolean(isTitleTouched && titleError)}
@@ -125,7 +163,9 @@ export function PlanGoalForm({
           required
           maxLength={100}
           value={goalTitle}
-          onChange={(event) => setGoalTitle(event.target.value)}
+          onChange={(event) => {
+            if (!submittingRef.current) setGoalTitle(event.target.value);
+          }}
           onBlur={() => setIsTitleTouched(true)}
         />
         {isTitleTouched && titleError ? (
@@ -137,22 +177,28 @@ export function PlanGoalForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <DateInput
+            disabled={isSubmitting}
             id="goal-date"
             label="Target date"
             name="target_date"
             {...(dateError ? { error: dateError } : {})}
             required
             value={goalDate}
-            onChange={(value) => setGoalDate(value ?? "")}
+            onChange={(value) => {
+              if (!submittingRef.current) setGoalDate(value ?? "");
+            }}
           />
         </div>
         <div className="space-y-2">
           <Label htmlFor="goal-activity">Activity</Label>
           <select
+            disabled={isSubmitting}
             id="goal-activity"
             name="activity_category"
             value={goalActivityCategory}
-            onChange={(event) => setGoalActivityCategory(event.target.value)}
+            onChange={(event) => {
+              if (!submittingRef.current) setGoalActivityCategory(event.target.value);
+            }}
             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           >
             <option value="run">Run</option>
@@ -166,6 +212,7 @@ export function PlanGoalForm({
       <div className="grid gap-4 sm:grid-cols-3">
         <div>
           <BoundedNumberInput
+            disabled={isSubmitting}
             id="goal-priority"
             decimals={0}
             {...(priorityError ? { error: priorityError } : {})}
@@ -175,11 +222,14 @@ export function PlanGoalForm({
             name="priority"
             required
             value={goalPriority}
-            onChange={setGoalPriority}
+            onChange={(value) => {
+              if (!submittingRef.current) setGoalPriority(value);
+            }}
           />
         </div>
         <div>
           <BoundedNumberInput
+            disabled={isSubmitting}
             id="goal-sessions"
             decimals={0}
             {...(sessionsError ? { error: sessionsError } : {})}
@@ -189,11 +239,14 @@ export function PlanGoalForm({
             name="target_sessions_per_week"
             required
             value={goalSessionsPerWeek}
-            onChange={setGoalSessionsPerWeek}
+            onChange={(value) => {
+              if (!submittingRef.current) setGoalSessionsPerWeek(value);
+            }}
           />
         </div>
         <div>
           <BoundedNumberInput
+            disabled={isSubmitting}
             id="goal-weeks"
             decimals={0}
             {...(weeksError ? { error: weeksError } : {})}
@@ -203,7 +256,9 @@ export function PlanGoalForm({
             name="target_weeks"
             required
             value={goalWeeks}
-            onChange={setGoalWeeks}
+            onChange={(value) => {
+              if (!submittingRef.current) setGoalWeeks(value);
+            }}
           />
         </div>
       </div>
@@ -218,6 +273,14 @@ export function PlanGoalForm({
         disabled={!(goal?.profile_id ?? profileId) || hasFieldError || isSubmitting}
       >
         {isSubmitting ? "Saving..." : goal ? "Save goal" : "Create goal"}
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        disabled={isSubmitting}
+        onClick={() => guardedCancel(() => window.location.assign(redirectTo))}
+      >
+        Cancel
       </Button>
     </form>
   );

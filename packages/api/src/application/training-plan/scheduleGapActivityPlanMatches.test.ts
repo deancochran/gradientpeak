@@ -7,10 +7,11 @@ import {
   createActivityQuantificationEvidenceIdentity,
   createPlanActivityQuantificationSubjectIdentity,
   createPlanOccurrenceActivityQuantificationSubjectIdentity,
-  initializeActivityPlanDocument,
   SYSTEM_TEMPLATES,
 } from "@repo/core";
-import { describe, expect, it, vi } from "vitest";
+import type { DrizzleDbClient } from "@repo/db/client";
+import { describe, expect, it } from "vitest";
+import { createQueryMapDbMock } from "../../test/mock-query-db";
 import {
   buildScheduleGapActivityPlanMatches,
   loadOwnedActivityPlansForScheduleGap,
@@ -21,13 +22,7 @@ function structureForActivityCategory(activity_category: "run" | "bike") {
     (candidate) => compileActivityPlan(candidate.structure).activity_category === activity_category,
   );
   if (!template) throw new Error(`Missing ${activity_category} system template`);
-  return initializeActivityPlanDocument({
-    activityPlanId:
-      activity_category === "run"
-        ? "11111111-1111-4111-8111-111111111111"
-        : "22222222-2222-4222-8222-222222222222",
-    structure: template.structure,
-  });
+  return template.structure;
 }
 
 function availableCommonLoad(
@@ -153,22 +148,23 @@ function unavailableCommonLoad(): CommonLoadResult {
 
 describe("schedule-gap activity plan loading", () => {
   it("loads canonical plans without direct estimation-cache SQL", async () => {
-    const execute = vi.fn(async (_query: unknown) => ({
-      rows: [
-        { id: "plan-1", profile_id: "profile-1", structure: structureForActivityCategory("run") },
-      ],
-    }));
+    const { db, callLog } = createQueryMapDbMock({
+      activity_plans: {
+        data: [
+          { id: "plan-1", profile_id: "profile-1", structure: structureForActivityCategory("run") },
+        ],
+        error: null,
+      },
+    });
     const result = await loadOwnedActivityPlansForScheduleGap({
-      db: { execute } as any,
+      db: db as unknown as Pick<DrizzleDbClient, "select">,
       profileId: "profile-1",
     });
 
     expect(result).toEqual([
       { id: "plan-1", profile_id: "profile-1", structure: structureForActivityCategory("run") },
     ]);
-    const sqlTree = JSON.stringify(execute.mock.calls[0]?.[0]);
-    expect(sqlTree).toContain("activity_plans");
-    expect(sqlTree).not.toContain("activity_plan_derived_metrics_cache");
+    expect(callLog).toEqual([{ operation: "select", table: "activity_plans" }]);
   });
 
   it("does not match a plan with unavailable authoritative TSS", () => {

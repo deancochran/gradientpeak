@@ -1,7 +1,13 @@
 import { CONTRACT_EPOCH_HEADER, CURRENT_CONTRACT_EPOCH } from "@repo/api/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
-import { ApiRequestTimeoutError, createMobileHeaders, fetchWithTimeout } from "./api";
+import {
+  ApiRequestTimeoutError,
+  createMobileHeaders,
+  fetchWithTimeout,
+  getSafeApiErrorDiagnostic,
+  reportMobileApiError,
+} from "./api";
 
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 vi.mock("@/lib/auth/auth-headers", () => ({
@@ -12,6 +18,7 @@ vi.mock("@/lib/logging/mobile-action-log", () => ({
   logMobileAction: vi.fn(),
 }));
 vi.mock("@/lib/server-config", () => ({ getServerConfig: () => ({ apiUrl: "http://localhost" }) }));
+vi.mock("@/lib/services/sentry", () => ({ captureException: vi.fn() }));
 
 afterEach(() => {
   vi.useRealTimers();
@@ -188,5 +195,115 @@ describe("createMobileHeaders", () => {
     expect(headers.get(CONTRACT_EPOCH_HEADER)).toBe(String(CURRENT_CONTRACT_EPOCH));
     expect(headers.get("cookie")).toBe("better-auth.session_token=redacted");
     expect(headers.get("x-client-type")).toBe("mobile");
+  });
+});
+
+describe("getSafeApiErrorDiagnostic", () => {
+  it("allows only finite tRPC metadata without preserving raw error text", () => {
+    expect(
+      getSafeApiErrorDiagnostic({
+        name: "TRPCClientError",
+        message: "Failed query: select private_data",
+        data: {
+          code: "BAD_REQUEST",
+          applicationErrorCode: "ACTIVITY_PLAN_INTEGRITY_FAILED",
+          httpStatus: 400,
+        },
+      }),
+    ).toEqual({
+      errorClass: "TRPCClientError",
+      trpcCode: "BAD_REQUEST",
+      applicationErrorCode: "ACTIVITY_PLAN_INTEGRITY_FAILED",
+      httpStatus: 400,
+    });
+  });
+
+  it("denies unknown metadata and invalid status values", () => {
+    expect(
+      getSafeApiErrorDiagnostic({
+        name: "CustomError",
+        data: { code: "DATABASE_FAILURE", applicationErrorCode: "UNTRUSTED", httpStatus: 200 },
+      }),
+    ).toEqual({
+      errorClass: "UnknownError",
+      trpcCode: null,
+      applicationErrorCode: null,
+      httpStatus: null,
+    });
+  });
+});
+
+describe("reportMobileApiError", () => {
+  const privateMessage = "Failed query: select private_data where token = secret";
+  const privateInput = { profileId: "private-id", token: "secret" };
+
+  afterEach(() => {
+    (globalThis as { __DEV__?: boolean }).__DEV__ = false;
+  });
+
+  it.each(["BAD_REQUEST", "CONFLICT"])("warns safely for expected %s responses", (code) => {
+    (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const error = {
+      name: "TRPCClientError",
+      message: privateMessage,
+      input: privateInput,
+      data: { code, httpStatus: code === "CONFLICT" ? 409 : 400 },
+    };
+
+    reportMobileApiError("plannedSessions.create", error);
+
+    expect(warn).toHaveBeenCalledWith("[api]", "plannedSessions.create", {
+      errorClass: "TRPCClientError",
+      trpcCode: code,
+      applicationErrorCode: null,
+      httpStatus: code === "CONFLICT" ? 409 : 400,
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(privateMessage);
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("private-id");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("secret");
+  });
+
+  it("keeps an internal 500 in the error channel without raw failure details", () => {
+    (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const error = {
+      name: "TRPCClientError",
+      message: privateMessage,
+      input: privateInput,
+      data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 500 },
+    };
+
+    reportMobileApiError("plannedSessions.create", error);
+
+    expect(errorLog).toHaveBeenCalledWith("[api]", "plannedSessions.create", {
+      errorClass: "TRPCClientError",
+      trpcCode: "INTERNAL_SERVER_ERROR",
+      applicationErrorCode: null,
+      httpStatus: 500,
+    });
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain(privateMessage);
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain("private-id");
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain("secret");
+  });
+
+  it("captures an unknown transport failure as operational while logging no raw data", async () => {
+    (globalThis as { __DEV__?: boolean }).__DEV__ = true;
+    const { captureException } = await import("@/lib/services/sentry");
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const error = Object.assign(new TypeError(privateMessage), { input: privateInput });
+
+    reportMobileApiError("plannedSessions.create", error);
+
+    expect(captureException).toHaveBeenCalledWith(error, { procedure: "plannedSessions.create" });
+    expect(errorLog).toHaveBeenCalledWith("[api]", "plannedSessions.create", {
+      errorClass: "TypeError",
+      trpcCode: null,
+      applicationErrorCode: null,
+      httpStatus: null,
+    });
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain(privateMessage);
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain("private-id");
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain("secret");
   });
 });

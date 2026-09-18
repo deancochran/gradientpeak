@@ -5,8 +5,6 @@ import {
   canonicalGoalObjectiveSchema,
   canonicalTrainingPlanStructureSchema,
   persistedTrainingPlanStructureSchema,
-  type TrainingPlanCreate,
-  trainingPlanCreateSchema,
 } from "@repo/core";
 import { createDefaultTrainingPlanBuilderState } from "./defaults";
 import type {
@@ -17,16 +15,7 @@ import type {
 
 export function buildCanonicalTrainingPlanStructure(
   state: TrainingPlanBuilderState,
-): TrainingPlanCreate {
-  const selectedGoals = state.goalContext.selectedGoals.map((goal) => ({
-    title: goal.title,
-    target_offset_days: goal.targetOffsetDays,
-    ...(goal.targetDate !== undefined ? { target_date: goal.targetDate } : {}),
-    priority: goal.priority,
-    activity_category: goal.activityCategory,
-    objective: goal.objective,
-    ...(goal.sourceProfileGoalId ? { source_profile_goal_id: goal.sourceProfileGoalId } : {}),
-  }));
+): CanonicalTrainingPlanStructure {
   const goalBlueprints = state.goalContext.selectedGoals
     .filter((goal) => goal.title.trim().length > 0)
     .map((goal) => ({
@@ -37,44 +26,20 @@ export function buildCanonicalTrainingPlanStructure(
       ...(goal.objective ? { objective: goal.objective } : {}),
     }));
 
-  return trainingPlanCreateSchema.parse({
+  return canonicalTrainingPlanStructureSchema.parse({
     version: 1,
     ...(goalBlueprints.length > 0 ? { goal_blueprints: goalBlueprints } : {}),
-    builder_planning_snapshot: {
-      version: 1,
-      plan_preferences: {
-        duration_weeks: state.planPreferences.durationWeeks,
-        weekly_session_count: state.planPreferences.weeklySessionCount,
-        target_weekly_hours: state.planPreferences.targetWeeklyHours,
-        rest_days_per_week: state.planPreferences.restDaysPerWeek,
-        max_single_session_duration_minutes: state.planPreferences.maxSingleSessionDurationMinutes,
-        progression_pace: state.planPreferences.progressionPace,
-        recovery_priority: state.planPreferences.recoveryPriority,
-        week_pattern_preference: state.planPreferences.weekPatternPreference,
-        strength_integration_priority: state.planPreferences.strengthIntegrationPriority,
-        double_day_tolerance: state.planPreferences.doubleDayTolerance,
-        long_session_fatigue_tolerance: state.planPreferences.longSessionFatigueTolerance,
-        taper_style_preference: state.planPreferences.taperStylePreference,
-      },
-      scheduling: { preferred_weekdays: state.scheduling.preferredWeekdays },
-      goal_context: { selected_goals: selectedGoals },
-    },
-    sessions: state.structure.sessions
-      .filter(
-        (session): session is typeof session & { activityPlan: TrainingPlanActivityPlanFacts } =>
-          session.activityPlan !== null,
-      )
-      .map((session) => {
-        const eventOverrides = normalizeEventOverrides(session.eventOverrides);
-        return {
-          offset_days: session.offsetDays,
-          activity_plan_id: session.activityPlan.id,
-          ...(session.activityPlanVariantId
-            ? { activity_plan_variant_id: session.activityPlanVariantId }
-            : {}),
-          ...(eventOverrides ? { event_overrides: eventOverrides } : {}),
-        };
-      }),
+    plan_preferences: state.planPreferences,
+    sessions: state.structure.sessions.map((session) => {
+      const eventOverrides = normalizeEventOverrides(session.eventOverrides);
+      return {
+        id: session.id,
+        offset_days: session.offsetDays,
+        demand: session.demand,
+        activity_plan_id: session.activityPlan?.id ?? null,
+        ...(eventOverrides ? { event_overrides: eventOverrides } : {}),
+      };
+    }),
   });
 }
 
@@ -117,11 +82,23 @@ function toActivityPlanFacts(activityPlan: ActivityPlanSummary): TrainingPlanAct
 export function getTrainingPlanStructureActivityPlanIds(structure: unknown): string[] {
   const canonical = canonicalTrainingPlanStructureSchema.safeParse(structure);
   if (canonical.success) {
-    return Array.from(new Set(canonical.data.sessions.map((session) => session.activity_plan_id)));
+    return Array.from(
+      new Set(
+        canonical.data.sessions.flatMap((session) =>
+          session.activity_plan_id === null ? [] : [session.activity_plan_id],
+        ),
+      ),
+    );
   }
   const persisted = persistedTrainingPlanStructureSchema.safeParse(structure);
   if (!persisted.success) return [];
-  return Array.from(new Set(persisted.data.sessions.map((session) => session.activity_plan_id)));
+  return Array.from(
+    new Set(
+      persisted.data.sessions.flatMap((session) =>
+        session.activity_plan_id === null ? [] : [session.activity_plan_id],
+      ),
+    ),
+  );
 }
 
 export function createTrainingPlanBuilderStateFromExistingPlan({
@@ -141,7 +118,6 @@ export function createTrainingPlanBuilderStateFromExistingPlan({
     ),
   );
   const anchorDate = fallbackDate ?? defaultState.anchorDate;
-  const planningSnapshot = structure.builder_planning_snapshot;
 
   return {
     ...defaultState,
@@ -152,15 +128,14 @@ export function createTrainingPlanBuilderStateFromExistingPlan({
     },
     anchorDate,
     goalContext: {
-      selectedGoals: (
-        planningSnapshot?.goal_context.selected_goals ??
-        structure.goal_blueprints ??
-        []
-      ).map((goal, index) => {
+      selectedGoals: (structure.goal_blueprints ?? []).map((goal, index) => {
         const objective = canonicalGoalObjectiveSchema.safeParse(goal.objective);
         const sourceProfileGoalId =
-          "source_profile_goal_id" in goal ? goal.source_profile_goal_id : null;
-        const targetDate = "target_date" in goal ? goal.target_date : null;
+          "source_profile_goal_id" in goal && typeof goal.source_profile_goal_id === "string"
+            ? goal.source_profile_goal_id
+            : null;
+        const targetDate =
+          "target_date" in goal && typeof goal.target_date === "string" ? goal.target_date : null;
         return {
           localId: `existing-goal-${index}`,
           title: goal.title,
@@ -173,46 +148,30 @@ export function createTrainingPlanBuilderStateFromExistingPlan({
         };
       }),
     },
-    planPreferences: planningSnapshot
-      ? {
-          durationWeeks: planningSnapshot.plan_preferences.duration_weeks,
-          weeklySessionCount: planningSnapshot.plan_preferences.weekly_session_count,
-          targetWeeklyHours: planningSnapshot.plan_preferences.target_weekly_hours,
-          restDaysPerWeek: planningSnapshot.plan_preferences.rest_days_per_week,
-          maxSingleSessionDurationMinutes:
-            planningSnapshot.plan_preferences.max_single_session_duration_minutes ?? null,
-          progressionPace: planningSnapshot.plan_preferences.progression_pace ?? null,
-          recoveryPriority: planningSnapshot.plan_preferences.recovery_priority ?? null,
-          weekPatternPreference: planningSnapshot.plan_preferences.week_pattern_preference ?? null,
-          strengthIntegrationPriority:
-            planningSnapshot.plan_preferences.strength_integration_priority ?? null,
-          doubleDayTolerance: planningSnapshot.plan_preferences.double_day_tolerance ?? null,
-          longSessionFatigueTolerance:
-            planningSnapshot.plan_preferences.long_session_fatigue_tolerance ?? null,
-          taperStylePreference: planningSnapshot.plan_preferences.taper_style_preference ?? null,
-        }
-      : defaultState.planPreferences,
+    planPreferences: structure.plan_preferences,
     structure: {
-      sessions: structure.sessions.map((session, index) => ({
-        localId: `existing-session-${index}`,
+      sessions: structure.sessions.map((session) => ({
+        id: session.id,
+        localId: session.id,
         offsetDays: session.offset_days,
-        activityPlan: activityPlanFactsById.get(session.activity_plan_id) ?? {
-          id: session.activity_plan_id,
-          name: "Unavailable activity plan",
-          published: false,
-          accessible: false,
-          prescriptionQuantification: null,
-        },
-        activityPlanVariantId: session.activity_plan_variant_id,
+        demand: session.demand,
+        activityPlan:
+          session.activity_plan_id === null
+            ? null
+            : (activityPlanFactsById.get(session.activity_plan_id) ?? {
+                id: session.activity_plan_id,
+                name: "Unavailable activity plan",
+                published: false,
+                accessible: false,
+                prescriptionQuantification: null,
+              }),
         ...(session.event_overrides ? { eventOverrides: session.event_overrides } : {}),
       })),
     },
     scheduling: {
       ...defaultState.scheduling,
       startDate: anchorDate,
-      preferredWeekdays:
-        planningSnapshot?.scheduling.preferred_weekdays ??
-        defaultState.scheduling.preferredWeekdays,
+      preferredWeekdays: structure.plan_preferences.preferred_weekdays,
     },
   };
 }

@@ -35,7 +35,7 @@ const swimStructure = {
 } as const;
 
 describe("activity plan print model", () => {
-  it("offers a full workout to every category and the swim-specific card to swim plans", () => {
+  it("offers a full activity plan to every category and the swim-specific card to swim plans", () => {
     expect(getActivityPlanPrintFormats("run")).toEqual(["full-page"]);
     expect(getActivityPlanPrintFormats("swim")).toEqual(["full-page", "swim-deck-card"]);
     expect(getActivityPlanPrintFormats("bike")).toEqual(["full-page", "bike-cue-strip"]);
@@ -99,7 +99,7 @@ describe("activity plan print model", () => {
     });
   });
 
-  it("rejects a sport-specific format for the wrong category", () => {
+  it("rejects a category-specific format for the wrong category", () => {
     expect(
       buildActivityPlanPrintModel({
         format: "bike-cue-strip",

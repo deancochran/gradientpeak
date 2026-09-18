@@ -76,6 +76,8 @@ export function RecordingControlSheet({
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const { resolvedTheme } = useTheme();
+  const bottomSheetRef = React.useRef<BottomSheet>(null);
+  const [isExpanded, setIsExpanded] = React.useState(false);
   const nativeVisualTokens = getNativeVisualTokens(resolvedTheme);
   const actionHandlers = React.useMemo(
     () => ({
@@ -102,6 +104,7 @@ export function RecordingControlSheet({
 
   return (
     <BottomSheet
+      ref={bottomSheetRef}
       index={0}
       snapPoints={model.snapPoints}
       enableDynamicSizing
@@ -109,6 +112,7 @@ export function RecordingControlSheet({
       maxDynamicContentSize={Math.round(height * 0.82)}
       backgroundStyle={{ backgroundColor: nativeVisualTokens.bottomSheetBackground }}
       handleComponent={null}
+      onChange={(index) => setIsExpanded(index > 0)}
     >
       <BottomSheetView
         className="flex-1 overflow-hidden border-t border-border bg-background/95 px-4 shadow-2xl"
@@ -117,14 +121,20 @@ export function RecordingControlSheet({
         }}
         testID="recording-control-sheet"
       >
-        <View
+        <Pressable
+          accessibilityHint={
+            isExpanded ? "Hides session setup options." : "Shows session setup options."
+          }
+          accessibilityLabel="Session options"
           className="items-center justify-start"
+          accessibilityRole="button"
+          accessibilityState={{ expanded: isExpanded }}
+          onPress={() => bottomSheetRef.current?.snapToIndex(isExpanded ? 0 : 1)}
           style={{ height: RECORDING_SHEET_HANDLE_HEIGHT }}
-          accessibilityRole="adjustable"
           testID="recording-control-sheet-handle"
         >
           <View className="mt-1 h-1 w-10 rounded-full bg-muted-foreground/60" />
-        </View>
+        </Pressable>
 
         <View style={{ height: RECORDING_SHEET_CONTROL_TOP_INSET }} />
 
@@ -164,25 +174,30 @@ export function RecordingControlSheet({
           paddingBottom={12}
           showsVerticalScrollIndicator={false}
         >
-          <View className="gap-2" testID="recording-setup-action-rail">
-            {model.sections.flatMap((section) =>
-              section.items.map((item) => (
-                <SetupActionRow
-                  key={item.id}
-                  item={item}
-                  iconColors={nativeVisualTokens.icon}
-                  statusLabel={getSetupStatusLabel(item.id, {
-                    sensorCount,
-                    sessionContract,
-                  })}
-                  onRemove={getSetupRemoveHandler(item.id, {
-                    onRemovePlan,
-                    onRemoveRoute,
-                    sessionContract,
-                  })}
-                />
-              )),
-            )}
+          <View className="gap-4" testID="recording-setup-action-rail">
+            {model.sections.map((section) => (
+              <View key={section.id} className="gap-2">
+                <Text className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {section.title}
+                </Text>
+                {section.items.map((item) => (
+                  <SetupActionRow
+                    key={item.id}
+                    item={item}
+                    iconColors={nativeVisualTokens.icon}
+                    statusLabel={getSetupStatusLabel(item.id, {
+                      sensorCount,
+                      sessionContract,
+                    })}
+                    onRemove={getSetupRemoveHandler(item.id, {
+                      onRemovePlan,
+                      onRemoveRoute,
+                      sessionContract,
+                    })}
+                  />
+                ))}
+              </View>
+            ))}
           </View>
         </AppBottomSheetContent>
       </BottomSheetView>

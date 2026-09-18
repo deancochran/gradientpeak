@@ -1,13 +1,12 @@
-import { profiles } from "@repo/db";
-import { eq, sql } from "drizzle-orm";
+import { follows, profiles } from "@repo/db";
+import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { resolveProfileMediaUrl } from "../application/storage/profile-media-url";
 import type { getRequiredDb } from "../db";
-import { buildUuidInList, getSqlCount } from "../utils/sql";
 import { socialProfileListItemSchema } from "./social-user-search-repository";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
-type SqlExecutor = Pick<DbClient, "execute">;
+type SelectExecutor = Pick<DbClient, "select">;
 const followStatusSchema = z.enum(["pending", "accepted"]);
 export const followRecordSchema = z
   .object({
@@ -20,13 +19,16 @@ const followingRelationshipRowSchema = z
   .object({ following_id: z.string().uuid(), status: followStatusSchema })
   .strict();
 
-export async function getFollowRecord(db: SqlExecutor, followerId: string, followingId: string) {
-  const result = await db.execute(sql`
-    select follower_id, following_id, status from follows
-    where follower_id = ${followerId}::uuid and following_id = ${followingId}::uuid
-    limit 1
-  `);
-  const row = result.rows[0];
+export async function getFollowRecord(db: SelectExecutor, followerId: string, followingId: string) {
+  const [row] = await db
+    .select({
+      follower_id: follows.follower_id,
+      following_id: follows.following_id,
+      status: follows.status,
+    })
+    .from(follows)
+    .where(and(eq(follows.follower_id, followerId), eq(follows.following_id, followingId)))
+    .limit(1);
   return row ? followRecordSchema.parse(row) : null;
 }
 
@@ -53,37 +55,44 @@ export async function loadSocialGraph(
 ) {
   const listCondition =
     input.direction === "followers"
-      ? sql`f.following_id = ${input.targetUserId}::uuid`
-      : sql`f.follower_id = ${input.targetUserId}::uuid`;
+      ? eq(follows.following_id, input.targetUserId)
+      : eq(follows.follower_id, input.targetUserId);
   const profileJoin =
-    input.direction === "followers" ? sql`p.id = f.follower_id` : sql`p.id = f.following_id`;
-  const countCondition =
     input.direction === "followers"
-      ? sql`following_id = ${input.targetUserId}::uuid`
-      : sql`follower_id = ${input.targetUserId}::uuid`;
-  const usersResult = await db.execute(sql`
-    select p.id, p.username, p.full_name, p.avatar_url, p.is_public, p.created_at, p.updated_at
-    from follows f join profiles p on ${profileJoin}
-    where ${listCondition} and f.status = 'accepted'
-    order by p.created_at desc, p.id asc
-    limit ${input.limit} offset ${input.offset}
-  `);
-  const users = z.array(socialProfileListItemSchema).parse(usersResult.rows);
-  const total = await getSqlCount(
-    db.execute(sql`
-      select count(*)::int as value from follows
-      where ${countCondition} and status = 'accepted'
-    `),
+      ? eq(profiles.id, follows.follower_id)
+      : eq(profiles.id, follows.following_id);
+  const selectProfiles = {
+    id: profiles.id,
+    username: profiles.username,
+    full_name: profiles.full_name,
+    avatar_url: profiles.avatar_url,
+    is_public: profiles.is_public,
+    created_at: profiles.created_at,
+    updated_at: profiles.updated_at,
+  };
+  const users = z.array(socialProfileListItemSchema).parse(
+    await db
+      .select(selectProfiles)
+      .from(follows)
+      .innerJoin(profiles, profileJoin)
+      .where(and(listCondition, eq(follows.status, "accepted")))
+      .orderBy(desc(profiles.created_at), asc(profiles.id))
+      .limit(input.limit)
+      .offset(input.offset),
   );
+  const [totalRow] = await db
+    .select({ value: count() })
+    .from(follows)
+    .where(and(listCondition, eq(follows.status, "accepted")));
+  const total = z.object({ value: z.number().int().nonnegative() }).parse(totalRow).value;
   const userIds = users.map((user) => user.id);
   const statusMap = new Map<string, z.infer<typeof followStatusSchema>>();
   if (userIds.length > 0) {
-    const result = await db.execute(sql`
-      select following_id, status from follows
-      where follower_id = ${input.viewerId}::uuid
-        and following_id in (${buildUuidInList(userIds)})
-    `);
-    for (const relationship of z.array(followingRelationshipRowSchema).parse(result.rows)) {
+    const relationships = await db
+      .select({ following_id: follows.following_id, status: follows.status })
+      .from(follows)
+      .where(and(eq(follows.follower_id, input.viewerId), inArray(follows.following_id, userIds)));
+    for (const relationship of z.array(followingRelationshipRowSchema).parse(relationships)) {
       statusMap.set(relationship.following_id, relationship.status);
     }
   }

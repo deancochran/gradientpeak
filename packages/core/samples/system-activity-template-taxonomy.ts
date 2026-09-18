@@ -1,4 +1,11 @@
+import type { ActivityPlanTrainingIntent } from "../activity-plan";
 import { getExactDurationSeconds } from "../duration";
+import { EXPANDED_ENDURANCE_BIKE_ACTIVITIES } from "./endurance-expansion-bike";
+import { EXPANDED_ENDURANCE_OTHER_ACTIVITIES } from "./endurance-expansion-other";
+import { EXPANDED_ENDURANCE_RUN_ACTIVITIES } from "./endurance-expansion-run";
+import { EXPANDED_ENDURANCE_STRENGTH_ACTIVITIES } from "./endurance-expansion-strength";
+import { EXPANDED_ENDURANCE_SWIM_ACTIVITIES } from "./endurance-expansion-swim";
+import { ICONIC_ENDURANCE_ACTIVITIES } from "./iconic-endurance";
 import {
   SAMPLE_INDOOR_TRAINER_ACTIVITIES,
   SAMPLE_RECOVERY_WORKOUT,
@@ -58,18 +65,7 @@ export type SystemActivityTemplateArchetype =
   | "general_aerobic"
   | "mixed_support";
 
-export type SystemActivityTemplateTrainingIntent =
-  | "recovery"
-  | "aerobic_base"
-  | "durable_endurance"
-  | "threshold_development"
-  | "race_specific"
-  | "vo2max"
-  | "muscular_endurance"
-  | "speed_skill"
-  | "technique"
-  | "strength_support"
-  | "general_maintenance";
+export type SystemActivityTemplateTrainingIntent = ActivityPlanTrainingIntent;
 
 export type SystemActivityTemplateIntensityFamily =
   | "recovery"
@@ -165,18 +161,11 @@ function deriveRunArchetype(name: string): SystemActivityTemplateArchetype {
   if (includesAny(name, ["5k pace", "race pace", "time trial", "yasso", "mile repeat"])) {
     return "race_pace";
   }
+  if (includesAny(name, ["anaerobic", "sprint", "stride", "neuromuscular", "speed skill"])) {
+    return "anaerobic_power";
+  }
   if (
-    includesAny(name, [
-      "speed",
-      "vo2",
-      "fartlek",
-      "hill",
-      "interval",
-      "track",
-      "repeat",
-      "ladder",
-      "stride",
-    ])
+    includesAny(name, ["vo2", "fartlek", "hill", "interval", "track", "repeat", "ladder", "stride"])
   ) {
     return "vo2_speed";
   }
@@ -372,6 +361,36 @@ function deriveRecoveryCostBand(input: {
 }
 
 const SYSTEM_TEMPLATE_SOURCE_GROUPS = [
+  {
+    source_file: "endurance-expansion-bike.ts",
+    execution_context: "indoor" as const,
+    templates: EXPANDED_ENDURANCE_BIKE_ACTIVITIES,
+  },
+  {
+    source_file: "endurance-expansion-run.ts",
+    execution_context: "outdoor" as const,
+    templates: EXPANDED_ENDURANCE_RUN_ACTIVITIES,
+  },
+  {
+    source_file: "endurance-expansion-swim.ts",
+    execution_context: "indoor" as const,
+    templates: EXPANDED_ENDURANCE_SWIM_ACTIVITIES,
+  },
+  {
+    source_file: "endurance-expansion-strength.ts",
+    execution_context: "indoor" as const,
+    templates: EXPANDED_ENDURANCE_STRENGTH_ACTIVITIES,
+  },
+  {
+    source_file: "endurance-expansion-other.ts",
+    execution_context: "indoor" as const,
+    templates: EXPANDED_ENDURANCE_OTHER_ACTIVITIES,
+  },
+  {
+    source_file: "iconic-endurance.ts",
+    execution_context: "outdoor" as const,
+    templates: ICONIC_ENDURANCE_ACTIVITIES,
+  },
   {
     source_file: "indoor-bike-activity.ts",
     execution_context: "indoor" as const,

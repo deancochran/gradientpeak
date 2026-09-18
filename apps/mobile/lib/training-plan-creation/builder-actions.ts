@@ -4,13 +4,6 @@ import type {
   CanonicalActivityCategory,
 } from "@repo/core";
 import type { Dispatch } from "react";
-import {
-  addTrainingPlanPreferenceField,
-  applyTrainingPlanConstraintPreset,
-  applyTrainingPlanPreferenceFieldOverride,
-  type TrainingPlanConstraintPreset,
-  type TrainingPlanPreferenceFieldKey,
-} from "./preferences-context";
 import { selectSessionById } from "./selectors";
 import type {
   TrainingPlanActivityPlanFacts,
@@ -24,11 +17,7 @@ import type {
 export function createTrainingPlanBuilderActions(input: {
   dispatch: Dispatch<TrainingPlanBuilderAction>;
   state: TrainingPlanBuilderState;
-  createSession: (
-    offsetDays: number,
-    title?: string,
-    intent?: TrainingPlanBuilderSession["intent"],
-  ) => TrainingPlanBuilderSession;
+  createSession: (offsetDays: number, title?: string) => TrainingPlanBuilderSession;
   createLocalId: () => string;
   toSelectedGoalBlueprint: (goal: {
     id: string;
@@ -58,9 +47,11 @@ export function createTrainingPlanBuilderActions(input: {
       if (!source) {
         return null;
       }
+      const id = createLocalId();
       const session: TrainingPlanBuilderSession = {
         ...source,
-        localId: createLocalId(),
+        id,
+        localId: id,
         offsetDays: offsetDays ?? source.offsetDays,
       };
       dispatch({ type: "session.add", session });
@@ -72,8 +63,6 @@ export function createTrainingPlanBuilderActions(input: {
     },
     assignActivityPlan: (sessionId: string, activityPlan: TrainingPlanActivityPlanFacts | null) =>
       dispatch({ type: "session.assignActivityPlan", sessionId, activityPlan }),
-    selectActivityPlanVariant: (sessionId: string, variantId?: string) =>
-      dispatch({ type: "session.selectActivityPlanVariant", sessionId, variantId }),
     updateSession: (session: TrainingPlanBuilderSession) =>
       dispatch({ type: "session.update", session }),
     removeSession: (sessionId: string) => dispatch({ type: "session.remove", sessionId }),
@@ -90,23 +79,8 @@ export function createTrainingPlanBuilderActions(input: {
       dispatch({ type: "athleteContext.fieldOverride", override }),
     removeAthleteContextField: (fieldKey: AthletePlanningContextEditableFieldKey) =>
       dispatch({ type: "athleteContext.fieldRemove", fieldKey }),
-    addPlanningConstraint: (fieldKey: TrainingPlanPreferenceFieldKey) =>
-      dispatch({
-        type: "planPreferences.update",
-        patch: addTrainingPlanPreferenceField(state.planPreferences, fieldKey),
-      }),
-    applyPlanningConstraintPreset: (preset: TrainingPlanConstraintPreset) =>
-      dispatch({
-        type: "planPreferences.update",
-        patch: applyTrainingPlanConstraintPreset(preset),
-      }),
     updatePlanningPreferences: (preferences: TrainingPlanBuilderState["planPreferences"]) =>
       dispatch({ type: "planPreferences.update", patch: preferences }),
-    updatePlanningConstraint: (fieldKey: TrainingPlanPreferenceFieldKey, value: number | null) =>
-      dispatch({
-        type: "planPreferences.update",
-        patch: applyTrainingPlanPreferenceFieldOverride(state.planPreferences, fieldKey, value),
-      }),
     toggleSelectedGoal: (goal: Parameters<typeof input.toSelectedGoalBlueprint>[0]) =>
       dispatch({
         type: "goalContext.toggleSelectedGoal",

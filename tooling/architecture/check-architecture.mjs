@@ -664,6 +664,141 @@ function scanUnsafe(path, sourceFile, findings, owner) {
   }
 }
 
+function isStringQueryArgument(argument) {
+  return (
+    ts.isStringLiteralLike(argument) ||
+    ts.isNoSubstitutionTemplateLiteral(argument) ||
+    ts.isTemplateExpression(argument)
+  );
+}
+
+function sqlTagBindings(sourceFile) {
+  const bindings = new Set();
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || statement.moduleSpecifier.text !== "drizzle-orm")
+      continue;
+    const named = statement.importClause?.namedBindings;
+    if (!named || !ts.isNamedImports(named)) continue;
+    for (const element of named.elements) {
+      if ((element.propertyName?.text ?? element.name.text) === "sql")
+        bindings.add(element.name.text);
+    }
+  }
+  return bindings;
+}
+
+function rawSqlExecuteKind(argument, sqlBindings) {
+  if (!ts.isTaggedTemplateExpression(argument) || !ts.isIdentifier(argument.tag)) return undefined;
+  if (!sqlBindings.has(argument.tag.text)) return undefined;
+  const text = argument.template.getText().replace(/^`|`$/g, "").trim().toLowerCase();
+  if (/^select\s+pg_advisory_/.test(text)) return "advisory-lock";
+  if (/^select\s+set_config\s*\(/.test(text)) return "session-setting";
+  if (/^with\b/.test(text)) return "complex-cte";
+  if (/^select\b/.test(text) && /\b(?:join|over|group\s+by|exists|union)\b/.test(text))
+    return "complex-query";
+  if (/^select\s+(?:public\.)?[a-z_][a-z0-9_]*\s*\(/.test(text)) return "stored-function";
+  if (/^(?:select|insert|update|delete)\b/.test(text)) return "ordinary-crud";
+  return undefined;
+}
+
+function isExactPathAllowlisted(path, entries = []) {
+  return entries.some((entry) => entry.path === path);
+}
+
+function scanTypedPersistence(path, sourceFile, config, findings) {
+  if (TEST_FILE.test(path)) return;
+  const policy = config.typedPersistence;
+  if (!policy || !matches(path, policy.scopePatterns ?? [])) return;
+
+  for (const imported of importsFrom(sourceFile)) {
+    if (imported.specifier === "pg" || imported.specifier.startsWith("pg/")) {
+      addFinding(
+        findings,
+        "direct-pg-import",
+        path,
+        `${imported.specifier}|${lineOf(sourceFile, imported.node)}`,
+        {
+          line: lineOf(sourceFile, imported.node),
+          specifier: imported.specifier,
+        },
+      );
+    }
+  }
+
+  const sqlBindings = sqlTagBindings(sourceFile);
+  function visit(node) {
+    if (!ts.isCallExpression(node)) {
+      ts.forEachChild(node, visit);
+      return;
+    }
+    if (
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "getSqlRows" &&
+      node.typeArguments?.length
+    ) {
+      addFinding(
+        findings,
+        "cast-only-sql-rows",
+        path,
+        `${lineOf(sourceFile, node)}|${node.getText(sourceFile)}`,
+        {
+          line: lineOf(sourceFile, node),
+        },
+      );
+    }
+    if (!ts.isPropertyAccessExpression(node.expression)) {
+      ts.forEachChild(node, visit);
+      return;
+    }
+    const method = node.expression.name.text;
+    const argument = node.arguments[0];
+    if (
+      method === "query" &&
+      argument &&
+      isStringQueryArgument(argument) &&
+      !isExactPathAllowlisted(path, policy.lowLevelQueryAllowlist)
+    ) {
+      addFinding(
+        findings,
+        "low-level-query-string",
+        path,
+        `${lineOf(sourceFile, node)}|${node.expression.getText(sourceFile)}`,
+        {
+          line: lineOf(sourceFile, node),
+          method: node.expression.getText(sourceFile),
+        },
+      );
+    }
+    if (method === "execute" && argument) {
+      const kind = rawSqlExecuteKind(argument, sqlBindings);
+      if (kind && !["ordinary-crud", "advisory-lock", "session-setting"].includes(kind)) {
+        const exception = (policy.rawSqlExecuteExceptions ?? []).find(
+          (entry) => entry.path === path && entry.allowedKinds?.includes(kind),
+        );
+        if (!exception) {
+          addFinding(
+            findings,
+            "raw-sql-crud-execute",
+            path,
+            `${lineOf(sourceFile, node)}|${kind}`,
+            {
+              kind,
+              line: lineOf(sourceFile, node),
+            },
+          );
+        }
+      } else if (kind === "ordinary-crud") {
+        addFinding(findings, "raw-sql-crud-execute", path, `${lineOf(sourceFile, node)}|${kind}`, {
+          kind,
+          line: lineOf(sourceFile, node),
+        });
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  ts.forEachChild(sourceFile, visit);
+}
+
 export function validateReviewedEntries(config, today = new Date().toISOString().slice(0, 10)) {
   const errors = [];
   for (const entry of [...(config.exceptions ?? []), ...(config.reviewedIgnores ?? [])]) {
@@ -688,6 +823,20 @@ export function validateReviewedEntries(config, today = new Date().toISOString()
     if (!mapping.expiresOn) errors.push(`${mapping.id}: allowed enum difference missing expiry`);
     else if (mapping.expiresOn < today)
       errors.push(`${mapping.id}: allowed enum difference expired`);
+  }
+  for (const collection of [
+    config.typedPersistence?.lowLevelQueryAllowlist ?? [],
+    config.typedPersistence?.rawSqlExecuteExceptions ?? [],
+  ]) {
+    for (const entry of collection) {
+      if (!entry.path || /[*?]/.test(entry.path))
+        errors.push(`${entry.id ?? entry.path}: path must be exact`);
+      if (!entry.reason) errors.push(`${entry.id ?? entry.path}: missing reason`);
+      if (!entry.validation)
+        errors.push(`${entry.id ?? entry.path}: missing validation requirement`);
+      if (entry.allowedKinds && entry.allowedKinds.length === 0)
+        errors.push(`${entry.id ?? entry.path}: missing allowed SQL kind`);
+    }
   }
   return errors;
 }
@@ -756,6 +905,7 @@ export function analyzeProject(root, config, trackedFiles) {
 
     scanForbiddenSourcePatterns(path, text, config, findings);
     if (sourceFile) scanUnsafe(path, sourceFile, findings, owner);
+    if (sourceFile) scanTypedPersistence(path, sourceFile, config, findings);
     const importedModules = sourceFile ? importsFrom(sourceFile) : cssImports(text);
     for (const imported of importedModules) {
       let targetOwner;
@@ -1195,6 +1345,7 @@ export function canonicalPolicy(config) {
     owners: config.owners ?? {},
     reviewedIgnores: config.reviewedIgnores ?? [],
     scanExcludes: config.scanExcludes ?? [],
+    typedPersistence: config.typedPersistence ?? {},
   });
 }
 
@@ -1386,6 +1537,40 @@ export function compareMergeBaseProtection(current, previous, approved = false) 
             added,
           }),
         );
+      }
+    }
+  }
+  const previousTypedPersistence = previous.config?.typedPersistence;
+  const currentTypedPersistence = current.config?.typedPersistence;
+  if (previousTypedPersistence) {
+    if (!currentTypedPersistence) {
+      findings.push(
+        policyFinding("merge-base-coverage-weakening", { removedTypedPersistence: true }),
+      );
+    } else {
+      for (const pattern of previousTypedPersistence.scopePatterns ?? []) {
+        if (!(currentTypedPersistence.scopePatterns ?? []).includes(pattern)) {
+          findings.push(
+            policyFinding("merge-base-coverage-weakening", {
+              typedPersistenceScopeRemoved: pattern,
+            }),
+          );
+        }
+      }
+      for (const key of ["lowLevelQueryAllowlist", "rawSqlExecuteExceptions"]) {
+        const previousEntries = new Map(
+          (previousTypedPersistence[key] ?? []).map((entry) => [entry.id, entry]),
+        );
+        for (const entry of currentTypedPersistence[key] ?? []) {
+          if (JSON.stringify(entry) !== JSON.stringify(previousEntries.get(entry.id))) {
+            findings.push(
+              policyFinding("merge-base-exception-widening", {
+                collection: `typedPersistence.${key}`,
+                id: entry.id,
+              }),
+            );
+          }
+        }
       }
     }
   }

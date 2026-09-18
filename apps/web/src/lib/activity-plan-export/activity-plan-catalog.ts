@@ -1,21 +1,27 @@
 import {
-  type ActivityPlanDifficulty,
-  type ActivityPlanPortfolioMetadata,
-  EXPANDED_ENDURANCE_BIKE_METADATA,
-  EXPANDED_ENDURANCE_OTHER_METADATA,
-  EXPANDED_ENDURANCE_RUN_METADATA,
-  EXPANDED_ENDURANCE_STRENGTH_METADATA,
-  EXPANDED_ENDURANCE_SWIM_METADATA,
-  ICONIC_ENDURANCE_METADATA,
+  ALL_SAMPLE_PLANS,
+  deriveTrainingPlanScheduleVisual,
   SYSTEM_TEMPLATES,
   type SystemTemplate,
+  type SystemTrainingPlanTemplate,
+  type TrainingPlanScheduleVisualModel,
 } from "@repo/core";
 import { type ActivityPlanPrintModel, buildActivityPlanPrintModel } from "@repo/core/activity-plan";
 
 export type ActivityPlanCatalogEntry = {
+  adaptation: ActivityPlanCatalogAdaptation | null;
   key: string;
   model: ActivityPlanPrintModel;
 };
+
+export type ActivityPlanCatalogAdaptation = {
+  allowedStates: readonly string[] | null;
+  controls: readonly string[];
+};
+
+type ActivityPlanCatalogAdaptationControl = NonNullable<
+  SystemTemplate["adaptation"]
+>["controls"][number];
 
 export type ActivityPlanCatalogSection = {
   entries: readonly ActivityPlanCatalogEntry[];
@@ -34,10 +40,10 @@ export type ActivityPlanCatalogPage = {
 
 export type ActivityPlanCatalogLayout = {
   contentsPages: readonly ActivityPlanCatalogContentsPage[];
-  discoveryPages: readonly ActivityPlanCatalogDiscoveryPage[];
+  finderSections: readonly ActivityPlanCatalogFinderSection[];
   planPages: readonly ActivityPlanCatalogPage[];
-  pathways: readonly ActivityPlanCatalogPathwayPage[];
   sections: readonly ActivityPlanCatalogSection[];
+  trainingPlanSection: ActivityPlanCatalogTrainingPlanSection | null;
 };
 
 export type ActivityPlanCatalogContentsPage = {
@@ -45,31 +51,55 @@ export type ActivityPlanCatalogContentsPage = {
   key: string;
 };
 
-export type ActivityPlanCatalogDiscoveryEntry = {
-  entry: ActivityPlanCatalogEntry;
-  metadata: ActivityPlanPortfolioMetadata;
-};
-
-export type ActivityPlanCatalogDiscoveryPage = {
-  entries: readonly ActivityPlanCatalogDiscoveryEntry[];
+export type ActivityPlanCatalogFinderSection = {
+  entryCount: number;
+  endPageNumber: number;
+  firstEntryKey: string;
   key: string;
-};
-
-export type ActivityPlanCatalogPathwayFamily = {
-  entries: readonly ActivityPlanCatalogDiscoveryEntry[];
-  family: string;
-  label: string;
-};
-
-export type ActivityPlanCatalogPathwayPage = {
-  families: readonly [ActivityPlanCatalogPathwayFamily, ActivityPlanCatalogPathwayFamily];
-  key: string;
+  startPageNumber: number;
   title: string;
+};
+
+export type ActivityPlanCatalogTrainingSession = {
+  activityPageNumber: number;
+  activityPlanId: string;
+  activityTitle: string;
+  dayIndex: number;
+  key: string;
+  targetCommonLoad: number | null;
+  targetDurationMinutes: number | null;
+  title: string;
+  trainingIntent: string;
+  importance: "key" | "normal" | "support";
+  weekIndex: number;
+};
+
+export type ActivityPlanCatalogTrainingWeek = {
+  sessions: readonly ActivityPlanCatalogTrainingSession[];
+  weekIndex: number;
+};
+
+export type ActivityPlanCatalogTrainingPlan = {
+  activityCategories: readonly string[];
+  description: string;
+  experienceLevels: readonly string[];
+  id: string;
+  name: string;
+  overviewPageNumber: number;
+  schedulePageNumber: number;
+  scheduleVisual: TrainingPlanScheduleVisualModel;
+  sessionsPerWeekTarget: number;
+  weeks: readonly ActivityPlanCatalogTrainingWeek[];
+};
+
+export type ActivityPlanCatalogTrainingPlanSection = {
+  alignmentBlankPageNumber?: number;
+  openerPageNumber: number;
+  plans: readonly ActivityPlanCatalogTrainingPlan[];
 };
 
 /** Cover, publication information, finder, and the two reference pages. */
 export const ACTIVITY_PLAN_CATALOG_BASE_FRONT_MATTER_PAGES = 5;
-export const ACTIVITY_PLAN_CATALOG_WORKSHEET_PAGE_COUNT = 4;
 export const ACTIVITY_PLAN_CATALOG_INTERIOR_MARGINS = {
   binding: 48,
   outside: 30,
@@ -86,7 +116,6 @@ export const ACTIVITY_PLAN_CATALOG_PRINT_GEOMETRY = {
   trimWidth: 612,
 } as const;
 const ACTIVITY_PLAN_CATALOG_CONTENTS_COLUMN_ROWS = 48;
-const ACTIVITY_PLAN_CATALOG_DISCOVERY_PAGE_ROWS = 42;
 export const ACTIVITY_PLAN_CATALOG_TWO_UP_GEOMETRY = {
   firstContentBottom: 403,
   secondContentBottom: 768,
@@ -114,57 +143,6 @@ const CATALOG_SECTIONS = [
   { key: "multisport", title: "Multisport programmes" },
 ] as const;
 
-const DIFFICULTY_ORDER: readonly ActivityPlanDifficulty[] = [
-  "foundation",
-  "development",
-  "advanced",
-  "race-specific",
-];
-
-const PATHWAY_DEFINITIONS = [
-  {
-    families: [
-      ["bike:aerobic-durability", "Bike aerobic durability"],
-      ["bike:threshold-power", "Bike threshold power"],
-    ],
-    key: "bike-pathways",
-    title: "Guided pathways · Cycling",
-  },
-  {
-    families: [
-      ["run:aerobic-long-run", "Run aerobic long run"],
-      ["run:stride-speed", "Run stride speed"],
-    ],
-    key: "run-pathways",
-    title: "Guided pathways · Running",
-  },
-  {
-    families: [
-      ["swim:aerobic-continuity", "Swim aerobic continuity"],
-      ["swim:css-threshold", "Swim CSS threshold"],
-    ],
-    key: "swim-pathways",
-    title: "Guided pathways · Swimming",
-  },
-  {
-    families: [
-      ["strength:movement-capacity", "Strength movement capacity"],
-      ["other:mobility-reset", "Mobility reset"],
-    ],
-    key: "capacity-pathways",
-    title: "Guided pathways · Capacity & reset",
-  },
-] as const;
-
-export const ACTIVITY_PLAN_PORTFOLIO_METADATA: readonly ActivityPlanPortfolioMetadata[] = [
-  ...EXPANDED_ENDURANCE_BIKE_METADATA,
-  ...EXPANDED_ENDURANCE_RUN_METADATA,
-  ...EXPANDED_ENDURANCE_SWIM_METADATA,
-  ...EXPANDED_ENDURANCE_STRENGTH_METADATA,
-  ...EXPANDED_ENDURANCE_OTHER_METADATA,
-  ...ICONIC_ENDURANCE_METADATA,
-];
-
 function wrappedLines(value: string | null, charactersPerLine: number): number {
   if (!value) return 0;
   return value
@@ -177,7 +155,7 @@ function wrappedLines(value: string | null, charactersPerLine: number): number {
  * the rendered PDF boundaries, so a continuation or slot crossing aborts before overwrite.
  */
 export function estimateActivityPlanTwoUpHeight(model: ActivityPlanPrintModel): number {
-  let height = 49;
+  let height = 23;
   height += wrappedLines(model.title, 34) * 16;
   height += wrappedLines(model.description, 82) * 11;
   height += model.intensityProfile.length > 0 ? 70 : 0;
@@ -221,20 +199,65 @@ export function isActivityPlanTwoUpEligible(model: ActivityPlanPrintModel): bool
   return estimateActivityPlanTwoUpHeight(model) <= 300;
 }
 
+function isActivityPlanCatalogEntryTwoUpEligible(entry: ActivityPlanCatalogEntry): boolean {
+  return entry.adaptation === null && isActivityPlanTwoUpEligible(entry.model);
+}
+
+function formatAuthoredDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3_600);
+  const minutes = Math.floor((seconds % 3_600) / 60);
+  return [hours ? `${hours}h` : null, minutes ? `${minutes}m` : null].filter(Boolean).join(" ");
+}
+
+function buildActivityPlanCatalogAdaptation(
+  template: SystemTemplate,
+): ActivityPlanCatalogAdaptation | null {
+  const adaptation = template.adaptation;
+  if (!adaptation) return null;
+  const formatValue = (control: ActivityPlanCatalogAdaptationControl, value: number): string => {
+    if (control.kind === "interval_repetitions") return `${value} reps`;
+    if (control.kind === "target_intensity") {
+      const target = control.targets.find((candidate) => candidate.type === "target_intensity");
+      return target ? `${value} ${target.targetType}` : String(value);
+    }
+    const target = control.targets.find(
+      (candidate) => candidate.type === "step_quantity" || candidate.type === "recovery_step",
+    );
+    const quantityType = target?.quantityType ?? "time";
+    if (quantityType === "time") return formatAuthoredDuration(value);
+    if (quantityType === "distance") return value >= 1_000 ? `${value / 1_000} km` : `${value} m`;
+    return `${value} reps`;
+  };
+  const controls = adaptation.controls.map(
+    (control) =>
+      `${control.label}: default ${formatValue(control, control.range.default)}; range ${formatValue(control, control.range.minimum)}-${formatValue(control, control.range.maximum)}`,
+  );
+  const allowedStates = adaptation.allowedStates?.map((state) => {
+    const values = adaptation.controls
+      .map((control) => {
+        const value = state.values[control.key];
+        return value === undefined ? null : `${control.label} ${formatValue(control, value)}`;
+      })
+      .filter((value): value is string => value !== null);
+    return `${state.label}: ${values.join(", ")}`;
+  });
+  return { allowedStates: allowedStates ?? null, controls };
+}
+
 export function buildActivityPlanCatalogModels(
   templates: readonly SystemTemplate[] = SYSTEM_TEMPLATES,
 ): ActivityPlanCatalogEntry[] {
   return templates.map((template) => {
     const model = buildActivityPlanPrintModel({
-      description: template.description,
       format: "full-page",
-      notes: template.notes,
+      ...(template.description === undefined ? {} : { description: template.description }),
+      ...(template.notes === undefined ? {} : { notes: template.notes }),
       personalizeTargets: false,
       structure: template.structure,
       title: template.name,
     });
     if (!model) throw new Error(`Unable to render system activity plan: ${template.name}`);
-    return { key: template.id, model };
+    return { adaptation: buildActivityPlanCatalogAdaptation(template), key: template.id, model };
   });
 }
 
@@ -244,34 +267,13 @@ function getCatalogSectionKey(entry: ActivityPlanCatalogEntry): string {
 
 export function buildActivityPlanCatalogLayout(
   entries: readonly ActivityPlanCatalogEntry[],
-  metadata: readonly ActivityPlanPortfolioMetadata[] = ACTIVITY_PLAN_PORTFOLIO_METADATA,
+  trainingPlans: readonly SystemTrainingPlanTemplate[] = ALL_SAMPLE_PLANS,
 ): ActivityPlanCatalogLayout {
   const sections = CATALOG_SECTIONS.map(({ key, title }) => ({
     entries: entries.filter((entry) => getCatalogSectionKey(entry) === key),
     key,
     title,
   })).filter((section) => section.entries.length > 0);
-
-  const entryById = new Map(entries.map((entry) => [entry.key, entry]));
-  const metadataById = new Map(metadata.map((item) => [item.templateId, item]));
-  const discoveryEntries = metadata
-    .map((item) => {
-      const entry = entryById.get(item.templateId);
-      return entry ? { entry, metadata: item } : null;
-    })
-    .filter((item): item is ActivityPlanCatalogDiscoveryEntry => item !== null)
-    .sort((left, right) => left.entry.model.title.localeCompare(right.entry.model.title));
-  const discoveryPages: ActivityPlanCatalogDiscoveryPage[] = [];
-  for (
-    let index = 0;
-    index < discoveryEntries.length;
-    index += ACTIVITY_PLAN_CATALOG_DISCOVERY_PAGE_ROWS
-  ) {
-    discoveryPages.push({
-      entries: discoveryEntries.slice(index, index + ACTIVITY_PLAN_CATALOG_DISCOVERY_PAGE_ROWS),
-      key: `discovery-${discoveryPages.length + 1}`,
-    });
-  }
 
   const contentsColumns: ActivityPlanCatalogSection[] = [];
   for (const section of sections) {
@@ -312,50 +314,15 @@ export function buildActivityPlanCatalogLayout(
     });
   }
 
-  const pathwayFamily = (family: string, label: string): ActivityPlanCatalogPathwayFamily => {
-    const familyEntries = DIFFICULTY_ORDER.map((difficulty) => {
-      const item = metadata.find(
-        (candidate) => candidate.family === family && candidate.difficulty === difficulty,
-      );
-      const entry = item ? entryById.get(item.templateId) : undefined;
-      return item && entry ? { entry, metadata: item } : null;
-    }).filter((item): item is ActivityPlanCatalogDiscoveryEntry => item !== null);
-    if (familyEntries.length !== DIFFICULTY_ORDER.length) {
-      throw new Error(`Catalog pathway ${family} does not have four authoritative levels`);
-    }
-    return { entries: familyEntries, family, label };
-  };
-  const pathways: ActivityPlanCatalogPathwayPage[] =
-    metadata.length === 0
-      ? []
-      : PATHWAY_DEFINITIONS.map(({ families, key, title }) => {
-          const [firstFamily, secondFamily] = families;
-          if (!firstFamily || !secondFamily)
-            throw new Error(`Catalog pathway page ${key} is incomplete`);
-          return {
-            families: [
-              pathwayFamily(firstFamily[0], firstFamily[1]),
-              pathwayFamily(secondFamily[0], secondFamily[1]),
-            ],
-            key,
-            title,
-          };
-        });
-
   const planPages: ActivityPlanCatalogPage[] = [];
-  let pageNumber =
-    ACTIVITY_PLAN_CATALOG_BASE_FRONT_MATTER_PAGES +
-    discoveryPages.length +
-    pathways.length +
-    contentsPages.length +
-    1;
+  let pageNumber = ACTIVITY_PLAN_CATALOG_BASE_FRONT_MATTER_PAGES + contentsPages.length + 1;
   for (const section of sections) {
     const remaining = [...section.entries];
     while (remaining.length > 0) {
       const first = remaining.shift();
       if (!first) break;
-      const nextEligibleIndex = isActivityPlanTwoUpEligible(first.model)
-        ? remaining.findIndex((entry) => isActivityPlanTwoUpEligible(entry.model))
+      const nextEligibleIndex = isActivityPlanCatalogEntryTwoUpEligible(first)
+        ? remaining.findIndex(isActivityPlanCatalogEntryTwoUpEligible)
         : -1;
       const second = nextEligibleIndex >= 0 ? remaining.splice(nextEligibleIndex, 1)[0] : undefined;
       const pair = second ? ([first, second] as const) : ([first] as const);
@@ -369,10 +336,100 @@ export function buildActivityPlanCatalogLayout(
     }
   }
 
-  // Metadata is optional for catalog inclusion, but authoritative metadata must resolve uniquely.
-  if (metadataById.size !== metadata.length)
-    throw new Error("Catalog metadata contains duplicate template IDs");
-  return { contentsPages, discoveryPages, planPages, pathways, sections };
+  const activityPageNumbers = new Map(
+    planPages.flatMap((page) => page.entries.map((entry) => [entry.key, page.pageNumber])),
+  );
+  const activityTitles = new Map(entries.map((entry) => [entry.key, entry.model.title]));
+  const finderSections = sections.map((section) => {
+    const pageNumbers = planPages
+      .filter((page) => page.sectionKey === section.key)
+      .map((page) => page.pageNumber);
+    const firstEntry = section.entries[0];
+    const startPageNumber = pageNumbers[0];
+    const endPageNumber = pageNumbers.at(-1);
+    if (!firstEntry || !startPageNumber || !endPageNumber) {
+      throw new Error(`Catalog section ${section.title} has no rendered activity page`);
+    }
+    return {
+      entryCount: section.entries.length,
+      endPageNumber,
+      firstEntryKey: firstEntry.key,
+      key: section.key,
+      startPageNumber,
+      title: section.title,
+    };
+  });
+  const nextPageNumber = pageNumber;
+  const alignmentBlankPageNumber =
+    trainingPlans.length > 0 && nextPageNumber % 2 === 0 ? nextPageNumber : undefined;
+  const openerPageNumber = nextPageNumber + (alignmentBlankPageNumber ? 1 : 0);
+  const trainingPlanSection =
+    trainingPlans.length === 0
+      ? null
+      : {
+          ...(alignmentBlankPageNumber ? { alignmentBlankPageNumber } : {}),
+          openerPageNumber,
+          plans: trainingPlans.map((plan, index) => {
+            const scheduleVisual = deriveTrainingPlanScheduleVisual({ structure: plan.structure });
+            if (!scheduleVisual) {
+              throw new Error(`Unable to visualize system training plan: ${plan.name}`);
+            }
+            const weeks: ActivityPlanCatalogTrainingWeek[] = Array.from(
+              { length: scheduleVisual.totalWeeks },
+              (_, weekIndex) => ({
+                weekIndex,
+                sessions: plan.structure.sessions
+                  .filter(
+                    (session) =>
+                      Math.floor(session.offset_days / 7) === weekIndex &&
+                      session.activity_plan_id !== null,
+                  )
+                  .map((session, sessionIndex) => {
+                    const activityPlanId = session.activity_plan_id;
+                    if (activityPlanId === null) {
+                      throw new Error(
+                        `Training plan ${plan.name} has an automatic session that cannot be exported as a fixed activity.`,
+                      );
+                    }
+                    const activityPageNumber = activityPageNumbers.get(activityPlanId);
+                    const activityTitle = activityTitles.get(activityPlanId);
+                    if (!activityPageNumber || !activityTitle) {
+                      throw new Error(
+                        `Training plan ${plan.name} references an activity missing from the catalog: ${activityPlanId}`,
+                      );
+                    }
+                    return {
+                      activityPageNumber,
+                      activityPlanId,
+                      activityTitle,
+                      dayIndex: session.offset_days % 7,
+                      key: `${session.offset_days}-${activityPlanId}-${sessionIndex}`,
+                      targetCommonLoad: session.demand.target_common_load,
+                      targetDurationMinutes: session.demand.target_duration_minutes,
+                      title: session.event_overrides?.title ?? activityTitle,
+                      trainingIntent: session.demand.training_intent,
+                      importance: session.demand.importance,
+                      weekIndex,
+                    };
+                  }),
+              }),
+            );
+            return {
+              activityCategories: plan.structure.activity_category ?? [],
+              description: plan.description,
+              experienceLevels: plan.structure.experienceLevel ?? [],
+              id: plan.id,
+              name: plan.name,
+              overviewPageNumber: openerPageNumber + 1 + index * 2,
+              schedulePageNumber: openerPageNumber + 2 + index * 2,
+              scheduleVisual,
+              sessionsPerWeekTarget: plan.sessions_per_week_target,
+              weeks,
+            };
+          }),
+        };
+
+  return { contentsPages, finderSections, planPages, sections, trainingPlanSection };
 }
 
 export function assertActivityPlanCatalogLayout(
@@ -395,7 +452,7 @@ export function assertActivityPlanCatalogLayout(
     }
     if (
       page.entries.length === 2 &&
-      page.entries.some((entry) => !isActivityPlanTwoUpEligible(entry.model))
+      page.entries.some((entry) => !isActivityPlanCatalogEntryTwoUpEligible(entry))
     ) {
       throw new Error(`Catalog page ${page.pageNumber} contains an unsafe two-up activity`);
     }
@@ -403,13 +460,11 @@ export function assertActivityPlanCatalogLayout(
 }
 
 export function getActivityPlanCatalogContentPageCount(layout: ActivityPlanCatalogLayout): number {
+  const finalTrainingPlanPage = layout.trainingPlanSection?.plans.at(-1)?.schedulePageNumber;
+  if (finalTrainingPlanPage) return finalTrainingPlanPage;
   return (
-    ACTIVITY_PLAN_CATALOG_BASE_FRONT_MATTER_PAGES +
-    layout.discoveryPages.length +
-    layout.pathways.length +
-    layout.contentsPages.length +
-    layout.planPages.length +
-    ACTIVITY_PLAN_CATALOG_WORKSHEET_PAGE_COUNT
+    layout.planPages.at(-1)?.pageNumber ??
+    ACTIVITY_PLAN_CATALOG_BASE_FRONT_MATTER_PAGES + layout.contentsPages.length
   );
 }
 
@@ -417,20 +472,6 @@ export function activityPlanCatalogNeedsBlankBeforeBackCover(
   layout: ActivityPlanCatalogLayout,
 ): boolean {
   return getActivityPlanCatalogContentPageCount(layout) % 2 === 0;
-}
-
-/** The first worksheet always follows every rendered front-matter and plan page. */
-export function getActivityPlanCatalogWorksheetStartPage(
-  layout: ActivityPlanCatalogLayout,
-): number {
-  return (
-    ACTIVITY_PLAN_CATALOG_BASE_FRONT_MATTER_PAGES +
-    layout.discoveryPages.length +
-    layout.pathways.length +
-    layout.contentsPages.length +
-    layout.planPages.length +
-    1
-  );
 }
 
 /** Returns physical-page margins, putting the wider margin at the duplex binding edge. */

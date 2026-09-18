@@ -13,18 +13,19 @@ export async function buildPlannedSessionRecordingLaunchPayload(input: {
   description?: string | null;
 }): Promise<RecordingLaunchPayload> {
   const { prescription } = input.plannedSession;
-  const recomputedHash = `v1:sha256:${await hashRecordingPlan(prescription.structure)}`;
-  if (recomputedHash !== prescription.structureHash) {
+  const manifest = prescription.resolutionManifest;
+  const recomputedHash = `v1:sha256:${await hashRecordingPlan(manifest.resolved_structure)}`;
+  if (recomputedHash !== manifest.resolved_structure_hash) {
     throw new Error("Invalid planned-session prescription structure hash");
   }
   const plan: RecordingServiceActivityPlan = {
-    id: prescription.activityPlanId,
-    name: input.name?.trim() || prescription.variantName,
+    id: manifest.activity_plan_id,
+    name: input.name?.trim() || "Scheduled activity plan",
     description: input.description ?? null,
-    structure: prescription.structure,
+    structure: manifest.resolved_structure,
   };
   const payload = ActivityPayloadSchema.parse({
-    activity_category: prescription.structure.activity_category,
+    activity_category: manifest.resolved_structure.activity_category,
     gpsRecordingEnabled: false,
     ...(input.eventId === undefined ? {} : { eventId: input.eventId }),
     plan,

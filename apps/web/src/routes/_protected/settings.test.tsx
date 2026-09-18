@@ -28,4 +28,25 @@ describe("settings profile submission", () => {
     expect(submit.mock.instances[0]).toBe(form);
     submit.mockRestore();
   });
+
+  it("invokes the authoritative-save callback only after validation passes", async () => {
+    const form = document.createElement("form");
+    const submit = vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(() => {});
+    const onValidSubmit = vi.fn();
+    const event = {
+      preventDefault: vi.fn(),
+      currentTarget: form,
+    };
+
+    await submitValidatedSettingsForm(event, () => Promise.resolve(false), onValidSubmit);
+
+    expect(onValidSubmit).not.toHaveBeenCalled();
+    expect(submit).not.toHaveBeenCalled();
+
+    await submitValidatedSettingsForm(event, () => Promise.resolve(true), onValidSubmit);
+
+    expect(onValidSubmit).toHaveBeenCalledOnce();
+    expect(submit).toHaveBeenCalledOnce();
+    submit.mockRestore();
+  });
 });

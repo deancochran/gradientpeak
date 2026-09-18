@@ -38,7 +38,6 @@ function recoveryRecord(
     lifecycle: {
       required: { status: "saved", retryable: false },
       goal: { status: "skipped", retryable: false },
-      settings: { status: "skipped", retryable: false },
     },
     ...overrides,
   };
@@ -98,18 +97,6 @@ describe("onboarding recovery secure storage", () => {
       }),
     ],
     [
-      "deep-malformed settings patch",
-      JSON.stringify({
-        ...recoveryRecord(),
-        settingsPatch: { minSessionsPerWeek: 12, maxSessionsPerWeek: 2 },
-        lifecycle: {
-          required: { status: "saved", retryable: false },
-          goal: { status: "skipped", retryable: false },
-          settings: { status: "pending", retryable: true },
-        },
-      }),
-    ],
-    [
       "deep-malformed profile retry",
       JSON.stringify({
         ...recoveryRecord(),
@@ -137,7 +124,6 @@ describe("onboarding recovery secure storage", () => {
       lifecycle: {
         required: { status: "saved", retryable: false },
         goal: { status: "pending", retryable: true },
-        settings: { status: "skipped", retryable: false },
       },
     } as PendingOnboardingRecoveryRecord;
 

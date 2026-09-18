@@ -57,7 +57,6 @@ const queryMap: QueryMap = {
   likes: { data: [], error: null },
   notifications: { data: [], error: null },
   profile_metrics: { data: [], error: null },
-  profile_training_settings: { data: [], error: null },
   profiles: {
     data: {
       id: SESSION_USER_ID,

@@ -2,11 +2,12 @@ import { INITIAL_ONBOARDING_DATA } from "@/components/onboarding/onboarding-data
 import { buildCompleteOnboardingInput } from "./complete-onboarding-input";
 
 describe("buildCompleteOnboardingInput", () => {
-  it("emits only normalized identity and shared contract defaults", () => {
+  it("emits normalized identity, selected timezone, and shared contract defaults", () => {
     const result = buildCompleteOnboardingInput({
       ...INITIAL_ONBOARDING_DATA,
       full_name: "  New Athlete  ",
       username: "new_athlete",
+      planning_timezone: "Pacific/Chatham",
       max_hr: 185,
       intent: ["train_event"],
     });
@@ -19,6 +20,7 @@ describe("buildCompleteOnboardingInput", () => {
         full_name: "New Athlete",
         intents: [],
         username: "new_athlete",
+        planning_timezone: "Pacific/Chatham",
       },
       profile: { full_name: "New Athlete", username: "new_athlete" },
     });

@@ -1,4 +1,7 @@
-import { sanitizeTelemetryContext } from "@repo/api/telemetry-sanitizer";
+import {
+  extractSafeErrorDiagnostic,
+  sanitizeTelemetryContext,
+} from "@repo/api/telemetry-sanitizer";
 
 export const SENTRY_DATA_COLLECTION = {
   userInfo: false,
@@ -75,7 +78,14 @@ export function prepareSentryEvent(event, hint) {
     ...(safeOperationalString(event.dist) ? { dist: event.dist } : {}),
     ...(safeEnum(event.message, EVENT_MESSAGE_VALUES) ? { message: event.message } : {}),
     ...(debugImages.length > 0 ? { debug_meta: { images: debugImages } } : {}),
-    ...(event.exception?.values ? { exception: sanitizeException(event.exception) } : {}),
+    ...(event.exception?.values
+      ? {
+          exception: sanitizeException(
+            event.exception,
+            extractSafeErrorDiagnostic(hint?.originalException).safe_summary,
+          ),
+        }
+      : {}),
     ...(event.extra ? { extra: sanitizeTelemetryContext(event.extra) } : {}),
     ...(Array.isArray(event.breadcrumbs)
       ? { breadcrumbs: event.breadcrumbs.map(sanitizeBreadcrumb) }
@@ -112,11 +122,11 @@ const SENSITIVE_FRAME_VALUE =
 const DEBUG_IMAGE_TYPE = "sourcemap";
 const DEBUG_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function sanitizeException(exception) {
+function sanitizeException(exception, summary) {
   return {
     values: exception.values.map(({ type, stacktrace }) => ({
       ...(safeFrameString(type) ? { type } : {}),
-      value: "An unexpected error occurred.",
+      value: summary,
       ...(stacktrace
         ? {
             stacktrace: {
@@ -208,6 +218,7 @@ export function createServerSentryOptions(env) {
     enableLogs: false,
     environment: env.APP_ENV ?? env.NODE_ENV ?? "development",
     includeLocalVariables: false,
+    sampleRate: 1,
     sendDefaultPii: false,
     tracesSampleRate: 0,
   };
@@ -227,6 +238,7 @@ export function createBrowserSentryOptions(env) {
     replaysSessionSampleRate: replayEnabled
       ? readSentrySampleRate(env.VITE_SENTRY_REPLAYS_SESSION_SAMPLE_RATE, 0)
       : 0,
+    sampleRate: 1,
     sendDefaultPii: false,
     tracesSampleRate: 0,
   };

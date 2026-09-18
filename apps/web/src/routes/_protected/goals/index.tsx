@@ -4,6 +4,7 @@ import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useRef, useState } from "react";
 
 import { RouteFlashToast, type RouteFlashType } from "../../../components/route-flash-toast";
 import { api } from "../../../lib/api/client";
@@ -24,7 +25,8 @@ export const Route = createFileRoute("/_protected/goals/")({
   component: GoalsPage,
 });
 
-function GoalsPage() {
+export function GoalsPage() {
+  const navigate = Route.useNavigate();
   const search = Route.useSearch() as {
     category?: CanonicalActivityCategory;
     flash?: string;
@@ -47,6 +49,30 @@ function GoalsPage() {
   const isProfileUnavailable = profileQuery.isSuccess && !profileQuery.data;
   const hasQueryError = profileQuery.isError || isProfileUnavailable || goalsQuery.isError;
   const isQueryLoading = profileQuery.isLoading || goalsQuery.isLoading;
+  const [isApplyingFilters, setIsApplyingFilters] = useState(false);
+  const applyPendingRef = useRef(false);
+  const applyFilters = (form: HTMLFormElement) => {
+    if (applyPendingRef.current) return;
+    applyPendingRef.current = true;
+    setIsApplyingFilters(true);
+    const values = new FormData(form);
+    const query = values.get("q");
+    const category = canonicalActivityCategorySchema.safeParse(values.get("category"));
+    const sort = values.get("sort");
+    void navigate({
+      search: {
+        q: typeof query === "string" ? query.trim() : "",
+        category: category.success ? category.data : undefined,
+        flash: undefined,
+        flashType: undefined,
+        sort: sort === "priority" || sort === "created_at" ? sort : "target_date",
+      },
+      replace: true,
+    }).finally(() => {
+      applyPendingRef.current = false;
+      setIsApplyingFilters(false);
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -68,7 +94,14 @@ function GoalsPage() {
           </Link>
         </Button>
       </div>
-      <form method="get" className="grid gap-3 rounded-xl border p-4 sm:grid-cols-3">
+      <form
+        method="get"
+        className="grid gap-3 rounded-xl border p-4 sm:grid-cols-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          applyFilters(event.currentTarget);
+        }}
+      >
         <Input
           aria-label="Search goals"
           name="q"
@@ -98,9 +131,35 @@ function GoalsPage() {
           <option value="priority">Priority</option>
           <option value="created_at">Created</option>
         </select>
-        <Button type="submit" variant="outline">
+        <Button disabled={isApplyingFilters} type="submit" variant="outline">
           Apply filters
         </Button>
+        <Button
+          disabled={isApplyingFilters}
+          onClick={() => {
+            if (applyPendingRef.current) return;
+            applyPendingRef.current = true;
+            setIsApplyingFilters(true);
+            void navigate({
+              search: {
+                category: undefined,
+                flash: undefined,
+                flashType: undefined,
+                q: "",
+                sort: "target_date",
+              },
+              replace: true,
+            }).finally(() => {
+              applyPendingRef.current = false;
+              setIsApplyingFilters(false);
+            });
+          }}
+          type="button"
+          variant="ghost"
+        >
+          Clear filters
+        </Button>
+        {isApplyingFilters ? <p role="status">Updating goals...</p> : null}
       </form>
       {hasQueryError ? (
         <div role="alert" className="rounded-xl border border-destructive/40 p-4">

@@ -3,14 +3,16 @@ import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
 import { Textarea } from "@repo/ui/components/textarea";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../lib/api/client";
+import { useUnsavedChangesGuard } from "../../lib/use-unsaved-changes-guard";
 import { MutationError, type WebGroupSummary } from "./group-ui";
 
 type GroupFormProps = {
   group?: WebGroupSummary | null;
   isSubmitting: boolean;
   onCancel: () => void;
+  onSuccess?: () => void;
   onSubmit: (value: CreateGroupInput) => Promise<void>;
   submitLabel: string;
 };
@@ -26,6 +28,7 @@ export function GroupForm({
   group,
   isSubmitting,
   onCancel,
+  onSuccess,
   onSubmit,
   submitLabel,
 }: GroupFormProps) {
@@ -42,6 +45,43 @@ export function GroupForm({
   );
   const [error, setError] = useState<unknown>(null);
   const [uploading, setUploading] = useState<"avatar" | "cover" | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadRetry, setUploadRetry] = useState<Partial<Record<"avatar" | "cover", File>>>({});
+  const uploadAttemptRef = useRef(0);
+  const uploadInFlightRef = useRef(false);
+  const groupId = group?.id;
+  const previousGroupIdRef = useRef(groupId);
+  const initialValues = useRef({
+    accessLevel: group?.access_level ?? "public",
+    avatarUrl: group?.avatar_url ?? "",
+    coverUrl: group?.cover_url ?? "",
+    description: group?.description ?? "",
+    joinPolicy: group?.join_policy === "open" ? "open" : "invite_only",
+    name: group?.name ?? "",
+  });
+  const { guardedCancel, markSaved } = useUnsavedChangesGuard({
+    draft: { accessLevel, avatarUrl, coverUrl, description, joinPolicy, name },
+    dirty:
+      name !== initialValues.current.name ||
+      description !== initialValues.current.description ||
+      avatarUrl !== initialValues.current.avatarUrl ||
+      coverUrl !== initialValues.current.coverUrl ||
+      accessLevel !== initialValues.current.accessLevel ||
+      joinPolicy !== initialValues.current.joinPolicy,
+    pending: isSubmitting,
+  });
+  const hasUploadReview = Boolean(uploadRetry.avatar || uploadRetry.cover);
+
+  useEffect(() => {
+    if (previousGroupIdRef.current === groupId) return;
+
+    previousGroupIdRef.current = groupId;
+    uploadAttemptRef.current += 1;
+    uploadInFlightRef.current = false;
+    setUploading(null);
+    setUploadError(null);
+    setUploadRetry({});
+  }, [groupId]);
 
   const uploadImage = async (kind: "avatar" | "cover", file: File | undefined) => {
     if (!file) return;
@@ -49,8 +89,11 @@ export function GroupForm({
       setError(new Error("Choose a JPEG, PNG, GIF, or WebP image."));
       return;
     }
+    if (uploadInFlightRef.current) return;
+
+    const attempt = ++uploadAttemptRef.current;
+    uploadInFlightRef.current = true;
     try {
-      setError(null);
       setUploading(kind);
       const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
       const signed = await uploadMutation.mutateAsync({
@@ -63,12 +106,22 @@ export function GroupForm({
         body: file,
       });
       if (!response.ok) throw new Error("Image upload failed.");
+      if (attempt !== uploadAttemptRef.current) return;
+
       if (kind === "avatar") setAvatarUrl(signed.publicUrl);
       else setCoverUrl(signed.publicUrl);
+      setUploadError(null);
+      setUploadRetry((files) => ({ ...files, [kind]: undefined }));
     } catch (cause) {
-      setError(cause);
+      if (attempt === uploadAttemptRef.current) {
+        setUploadError(cause instanceof Error ? cause.message : "Image upload failed.");
+        setUploadRetry((files) => ({ ...files, [kind]: file }));
+      }
     } finally {
-      setUploading(null);
+      if (attempt === uploadAttemptRef.current) {
+        uploadInFlightRef.current = false;
+        setUploading(null);
+      }
     }
   };
 
@@ -77,6 +130,7 @@ export function GroupForm({
       className="space-y-5"
       onSubmit={(event) => {
         event.preventDefault();
+        if (uploadInFlightRef.current || hasUploadReview) return;
         setError(null);
         void onSubmit({
           name: name.trim(),
@@ -85,7 +139,12 @@ export function GroupForm({
           cover_url: coverUrl || null,
           access_level: accessLevel,
           join_policy: joinPolicy,
-        }).catch(setError);
+        })
+          .then(() => {
+            markSaved();
+            onSuccess?.();
+          })
+          .catch(setError);
       }}
     >
       {coverUrl ? (
@@ -184,17 +243,53 @@ export function GroupForm({
           Uploading {uploading}…
         </p>
       ) : null}
+      {uploadError ? (
+        <div aria-live="polite" className="flex items-center gap-3" role="alert">
+          <p>{uploadError}</p>
+          {uploadRetry.avatar ? (
+            <Button
+              onClick={() => void uploadImage("avatar", uploadRetry.avatar)}
+              type="button"
+              variant="outline"
+            >
+              Retry avatar upload
+            </Button>
+          ) : null}
+          {uploadRetry.cover ? (
+            <Button
+              onClick={() => void uploadImage("cover", uploadRetry.cover)}
+              type="button"
+              variant="outline"
+            >
+              Retry cover upload
+            </Button>
+          ) : null}
+          <Button
+            onClick={() => {
+              setUploadError(null);
+              setUploadRetry({});
+            }}
+            type="button"
+            variant="ghost"
+          >
+            Keep current image
+          </Button>
+        </div>
+      ) : null}
       <MutationError error={error} />
       <div className="flex justify-end gap-3">
         <Button
-          disabled={isSubmitting || Boolean(uploading)}
-          onClick={onCancel}
+          disabled={isSubmitting || Boolean(uploading) || hasUploadReview}
+          onClick={() => guardedCancel(onCancel)}
           type="button"
           variant="outline"
         >
           Cancel
         </Button>
-        <Button disabled={isSubmitting || Boolean(uploading) || !name.trim()} type="submit">
+        <Button
+          disabled={isSubmitting || Boolean(uploading) || hasUploadReview || !name.trim()}
+          type="submit"
+        >
           {isSubmitting ? "Saving…" : submitLabel}
         </Button>
       </div>

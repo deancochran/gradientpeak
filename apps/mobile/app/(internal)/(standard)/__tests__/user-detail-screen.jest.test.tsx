@@ -133,6 +133,11 @@ jest.mock("@/lib/api", () => ({
     profiles: {
       getPublicById: { useQuery: () => profileQueryState },
     },
+    feed: {
+      getProfileActivities: {
+        useQuery: () => ({ data: { items: [] }, isError: false, isLoading: false }),
+      },
+    },
     groups: {
       forProfile: {
         useQuery: () => ({

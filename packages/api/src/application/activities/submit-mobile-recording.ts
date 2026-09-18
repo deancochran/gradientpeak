@@ -1,5 +1,5 @@
 import {
-  activityPlanDocumentSchema,
+  activityPlanStructureSchema,
   getCanonicalActivityPlanStructureHashInput,
 } from "@repo/core/activity-plan";
 import {
@@ -13,7 +13,7 @@ import { safeDecodeFitFile } from "@repo/core/server/fit-sdk-parser";
 import { activities, activityPlans, activityRoutes, profiles } from "@repo/db";
 import { and, eq } from "drizzle-orm";
 import type { MobileRecordingSubmissionInput } from "../../contracts/recording-submission";
-import type { getRequiredDb } from "../../db";
+import type { DrizzleTransactionClient, getRequiredDb } from "../../db";
 import {
   createDrizzleActivityIngestionRepository,
   createDrizzlePlannedSessionRepository,
@@ -34,7 +34,14 @@ import {
   prepareMobileRecordingArtifact,
   retryMobileRecordingStagingCleanup,
 } from "../activity-file-ingestion/mobile-recording-upload";
-import { activityPlanV3StructureHash } from "../activity-plans/structure-hash";
+import {
+  activityPlanStructureHash,
+  activityPlanV3StructureHash,
+} from "../activity-plans/structure-hash";
+import {
+  ManualCompletionReconciliationConflictError,
+  reconcileManualPlannedSessionCompletion,
+} from "../calendar/reconcile-manual-planned-session-completion";
 import { recordingSessionActivityId, submitActivity } from "./submit-activity";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
@@ -211,7 +218,7 @@ async function resolveRecordingActivityPlanId(
     );
   }
 
-  if (!activityPlanDocumentSchema.safeParse(plan.structure).success) {
+  if (!activityPlanStructureSchema.safeParse(plan.structure).success) {
     throw new MobileRecordingSubmissionError(
       "forbidden",
       "Activity plan is not available for mobile recording",
@@ -293,7 +300,8 @@ function assertDeclaredPrescriptionHashes(submission: MobileRecordingSubmissionI
   const prescription = execution.plannedSession?.prescription;
   if (
     prescription &&
-    activityPlanV3StructureHash(prescription.structure) !== prescription.structureHash
+    activityPlanStructureHash(prescription.resolutionManifest.resolved_structure) !==
+      prescription.resolutionManifest.resolved_structure_hash
   ) {
     throw new MobileRecordingSubmissionError(
       "manifest_invalid",
@@ -315,6 +323,8 @@ async function verifyScheduledRecordingProvenance(input: {
   activityId: string;
   linkedAt: Date;
   allowLink: boolean;
+  reconciliationOperationId?: string;
+  tx?: DrizzleTransactionClient;
 }): Promise<void> {
   const execution = input.submission.planExecution;
   const submittedSession = execution?.plannedSession;
@@ -333,21 +343,28 @@ async function verifyScheduledRecordingProvenance(input: {
   const submitted = submittedSession.prescription;
   const expected = authoritative.prescription;
   const fieldsMatch =
-    execution.activityPlanId === expected.activityPlanId &&
-    input.submission.activityPlanId === expected.activityPlanId &&
-    execution.activityPlanRevision === expected.activityPlanRevision &&
-    execution.structureHash === expected.structureHash &&
-    submitted.activityPlanId === expected.activityPlanId &&
-    submitted.activityPlanRevision === expected.activityPlanRevision &&
-    submitted.variantId === expected.variantId &&
-    submitted.variantName === expected.variantName &&
-    submitted.structureHash === expected.structureHash &&
+    stringifyCanonicalJson(submittedSession.source) ===
+      stringifyCanonicalJson(authoritative.source) &&
+    execution.activityPlanId === expected.resolutionManifest.activity_plan_id &&
+    input.submission.activityPlanId === expected.resolutionManifest.activity_plan_id &&
+    execution.activityPlanRevision === expected.resolutionManifest.activity_plan_revision &&
+    execution.structureHash === expected.resolutionManifest.resolved_structure_hash &&
+    submitted.resolutionManifest.activity_plan_id ===
+      expected.resolutionManifest.activity_plan_id &&
+    submitted.resolutionManifest.activity_plan_revision ===
+      expected.resolutionManifest.activity_plan_revision &&
+    submitted.resolutionManifest.resolved_structure_hash ===
+      expected.resolutionManifest.resolved_structure_hash &&
+    stringifyCanonicalJson(submitted.resolutionManifest) ===
+      stringifyCanonicalJson(expected.resolutionManifest) &&
     submitted.capturedAt === expected.capturedAt &&
-    stringifyCanonicalJson(submitted.prescriptionQuantification) ===
-      stringifyCanonicalJson(expected.prescriptionQuantification) &&
-    sameCanonicalStructure(execution.structure, expected.structure) &&
-    sameCanonicalStructure(submitted.structure, expected.structure) &&
-    activityPlanV3StructureHash(expected.structure) === expected.structureHash;
+    sameCanonicalStructure(execution.structure, expected.resolutionManifest.resolved_structure) &&
+    sameCanonicalStructure(
+      submitted.resolutionManifest.resolved_structure,
+      expected.resolutionManifest.resolved_structure,
+    ) &&
+    activityPlanStructureHash(expected.resolutionManifest.resolved_structure) ===
+      expected.resolutionManifest.resolved_structure_hash;
   if (!fieldsMatch) {
     throw new MobileRecordingSubmissionError(
       "conflict",
@@ -361,6 +378,32 @@ async function verifyScheduledRecordingProvenance(input: {
       authoritative.lifecycle.completion.activityId === input.activityId &&
       authoritative.sessionRevision >= submittedSession.sessionRevision + 1;
     if (exactReplay) return;
+    if (
+      authoritative.lifecycle.completion.state === "linked" &&
+      input.allowLink &&
+      input.tx &&
+      input.reconciliationOperationId
+    ) {
+      try {
+        const reconciled = await reconcileManualPlannedSessionCompletion({
+          tx: input.tx,
+          profileId: input.submission.profileId,
+          sessionId: submittedSession.id,
+          expectedRevision: authoritative.sessionRevision,
+          activityId: input.activityId,
+          operationId: input.reconciliationOperationId,
+          reconciledAt: input.linkedAt,
+        });
+        if (
+          reconciled.session.lifecycle.status === "completed" &&
+          reconciled.session.lifecycle.completion.state === "linked"
+        )
+          return;
+      } catch (error) {
+        if (!(error instanceof ManualCompletionReconciliationConflictError)) throw error;
+        // A trusted recording may only replace the bounded manual placeholder.
+      }
+    }
     throw new MobileRecordingSubmissionError(
       "conflict",
       "Planned session is already completed by another activity",
@@ -383,6 +426,7 @@ async function verifyScheduledRecordingProvenance(input: {
     sessionId: submittedSession.id,
     expectedRevision: submittedSession.sessionRevision,
     activityId: input.activityId,
+    outcome: "full",
     linkedAt: input.linkedAt.toISOString(),
   });
   if (
@@ -518,10 +562,21 @@ export async function submitMobileRecording(
     });
     return replay;
   }
-  const resolvedActivityPlanId = await resolveRecordingActivityPlanId(db, {
-    activityPlanId: submission.activityPlanId,
-    profileId: submission.profileId,
-  });
+  const scheduledPrescription = submission.planExecution?.plannedSession?.prescription;
+  if (submission.planExecution?.scheduledEventId && !scheduledPrescription) {
+    throw new MobileRecordingSubmissionError(
+      "manifest_invalid",
+      "Scheduled recording identifiers require an immutable planned-session snapshot",
+    );
+  }
+  // Scheduled recordings execute the frozen resolver snapshot. Mutable plans may
+  // legitimately have changed or become unavailable after launch.
+  const resolvedActivityPlanId = scheduledPrescription
+    ? scheduledPrescription.resolutionManifest.activity_plan_id
+    : await resolveRecordingActivityPlanId(db, {
+        activityPlanId: submission.activityPlanId,
+        profileId: submission.profileId,
+      });
   const resolvedRouteId = await resolveRecordingRouteId(db, {
     profileId: submission.profileId,
     routeId: submission.routeId,
@@ -660,10 +715,12 @@ export async function submitMobileRecording(
                   persist: (tx, { activityId: acceptedActivityId, now }) =>
                     verifyScheduledRecordingProvenance({
                       repository: createDrizzlePlannedSessionRepository(tx),
+                      tx,
                       submission,
                       activityId: acceptedActivityId,
                       linkedAt: now,
                       allowLink: true,
+                      reconciliationOperationId: operationId,
                     }),
                 },
               }

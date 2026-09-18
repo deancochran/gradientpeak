@@ -23,6 +23,7 @@ import { ClearFieldAction } from "@/components/shared/ClearFieldAction";
 import { EmptyState, ErrorState, LoadingState } from "@/components/shared/ScreenState";
 import { SearchField } from "@/components/shared/SearchField";
 import { eventDateForEditor, getDeviceTimeZone } from "@/lib/calendar/eventSchedule";
+import { formatRecurrenceUntil, recurrenceEndDate } from "@/lib/calendar/recurrenceInput";
 
 export type CreateEventType = "custom" | "planned";
 export type EventRecurrenceFrequency = "none" | "daily" | "weekly" | "monthly";
@@ -54,6 +55,7 @@ export function parseRecurrenceFrequency(event: {
 }
 
 export function parseRecurrenceEndDate(event: {
+  timezone?: string | null;
   recurrence_rule?: string | null;
   recurrence?: { rule?: string | null } | null;
 }): string | null {
@@ -62,13 +64,7 @@ export function parseRecurrenceEndDate(event: {
     return null;
   }
 
-  const untilMatch = rule.toUpperCase().match(/(?:^|;)UNTIL=(\d{8})(?:T\d{6}Z)?(?:;|$)/);
-  if (!untilMatch?.[1]) {
-    return null;
-  }
-
-  const rawDate = untilMatch[1];
-  return `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`;
+  return recurrenceEndDate(rule, event.timezone ?? "UTC");
 }
 
 export function buildRecurrenceFromFrequency(
@@ -84,10 +80,10 @@ export function buildRecurrenceFromFrequency(
     return null;
   }
 
-  const untilDate = endDate.replace(/-/g, "");
+  const until = formatRecurrenceUntil(endDate, timezone);
 
   return {
-    rule: `FREQ=${frequency.toUpperCase()};UNTIL=${untilDate}T235959Z`,
+    rule: `FREQ=${frequency.toUpperCase()};UNTIL=${until}`,
     timezone,
   };
 }
@@ -235,6 +231,8 @@ export function EventEditorCard({
                     const isSelected = createEventType === value;
                     return (
                       <Pressable
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: isSelected }}
                         key={value}
                         onPress={() => onChangeCreateEventType(value as CreateEventType)}
                         className={`flex-1 rounded-md border px-3 py-3 ${isSelected ? "border-primary bg-primary/10" : "border-border bg-card"}`}
@@ -397,6 +395,8 @@ export function EventEditorCard({
                       const isSelected = recurrenceFrequency === value;
                       return (
                         <Pressable
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: isSelected }}
                           key={value}
                           onPress={() => onChangeRecurrenceFrequency(value)}
                           className={`rounded-md border px-3 py-2 ${isSelected ? "border-primary bg-primary/10" : "border-border bg-card"}`}
@@ -523,6 +523,8 @@ export function EventEditorCard({
                       const isSelected = recurrenceFrequency === value;
                       return (
                         <Pressable
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: isSelected }}
                           key={value}
                           onPress={() => onChangeRecurrenceFrequency(value)}
                           className={`rounded-md border px-3 py-2 ${isSelected ? "border-primary bg-primary/10" : "border-border bg-card"}`}

@@ -10,6 +10,11 @@
   "ignoreFiles": ["apps/web/src/routeTree.gen.ts"],
   "workspaces": {
     "apps/mobile": {
+      "entry": [
+        "components/dev/**/*.native.stories.tsx",
+        "components/dev/expo-ui-picker/ExpoUiPickerDemo.{ios,android}.tsx"
+      ],
+      "ignoreBinaries": ["maestro"],
       "ignoreDependencies": [
         "@react-native-community/netinfo",
         "buffer",

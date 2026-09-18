@@ -1,3 +1,4 @@
+import { ianaTimezoneSchema } from "@repo/core/athlete-intelligence";
 import type * as React from "react";
 import type {
   Control,
@@ -17,6 +18,7 @@ import type { PercentSliderInputProps } from "../percent-slider-input/shared";
 import type { Option } from "../select/shared";
 import type { TimeInputProps } from "../time-input/shared";
 import type { WeightInputFieldProps } from "../weight-input-field/shared";
+import { BUNDLED_TIMEZONES } from "./timezones";
 
 type SharedTextFieldInputProps = {
   autoCapitalize?: TextInputProps["autoCapitalize"];
@@ -74,6 +76,8 @@ export type FormNumberFieldProps<
   TName extends FieldPath<TFieldValues>,
 > = ControlledFieldProps<TFieldValues, TName> & {
   allowDecimal?: boolean;
+  /** Preserve out-of-range numeric drafts for schema validation instead of clamping them on blur. */
+  clampOnBlur?: boolean;
   emptyValue?: FieldPathValue<TFieldValues, TName>;
   formatValue?: (value: FieldPathValue<TFieldValues, TName>) => string;
   max?: number;
@@ -241,6 +245,58 @@ export type FormWeightInputFieldProps<
     WeightInputFieldProps,
     "error" | "helperText" | "id" | "label" | "onChangeKg" | "required" | "valueKg"
   >;
+
+export type FormTimezoneFieldProps<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+> = ControlledFieldProps<TFieldValues, TName> & {
+  /** An app-supplied device timezone is offered but never selected automatically. */
+  deviceTimeZone?: string | null;
+  placeholder?: string;
+};
+
+export function isValidIanaTimezone(value: string): boolean {
+  return ianaTimezoneSchema.safeParse(value).success;
+}
+
+export function getTimezoneOptions(currentValue?: string | null, deviceTimeZone?: string | null) {
+  const supportedValuesOf = (
+    Intl as typeof Intl & {
+      supportedValuesOf?: (key: "timeZone") => string[];
+    }
+  ).supportedValuesOf;
+  let zones: string[] = [];
+  try {
+    zones = supportedValuesOf?.("timeZone") ?? [];
+  } catch {
+    // Some native runtimes expose the function without supporting timeZone.
+  }
+
+  const extras = [currentValue, deviceTimeZone].filter(
+    (value): value is string => typeof value === "string",
+  );
+  // The bundle fills enumeration gaps, not gaps in the runtime's timezone rules.
+  // Reuse form/API validation, and keep supported aliases exactly as saved.
+  const values = [...new Set([...BUNDLED_TIMEZONES, ...zones, ...extras])]
+    .filter(isValidIanaTimezone)
+    .sort();
+  return [
+    { label: "Not set", value: "" },
+    ...values.map((value) => ({ label: value.replaceAll("_", " ").replaceAll("/", " / "), value })),
+  ];
+}
+
+export function filterTimezoneOptions(
+  options: ReturnType<typeof getTimezoneOptions>,
+  query: string,
+) {
+  const normalized = query.trim().toLowerCase().replaceAll("_", " ").replaceAll("/", " ");
+  const terms = normalized.split(/\s+/).filter(Boolean);
+  return options.filter((option) => {
+    const text = `${option.value} ${option.label}`.toLowerCase().replaceAll("_", " ");
+    return terms.every((term) => text.includes(term));
+  });
+}
 
 export function defaultFormatValue(value: unknown): string {
   if (typeof value === "string") {

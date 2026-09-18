@@ -123,7 +123,9 @@ export function PlanProgressInsight({
             ? `Goal deadline ${format(parseDateKey(deadlineDate), "MMM d, yyyy")}`
             : "Goal"
         }
-        goalPosition={deadlineVisible && deadlineDate ? positionForDate(deadlineDate) : undefined}
+        {...(deadlineVisible && deadlineDate
+          ? { goalPosition: positionForDate(deadlineDate) }
+          : {})}
         gridColor={theme.grid}
         legend={
           <>
@@ -164,16 +166,16 @@ export function PlanProgressInsight({
           );
           if (nearest) setSelectedId(nearest.thresholdId ?? nearest.effectiveAt);
         }}
-        selectedLabel={
-          selected ? formatPlanThresholdValue(selected.activityCategory, selected.value) : undefined
-        }
-        staleLabel={staleLabel}
+        {...(selected
+          ? { selectedLabel: formatPlanThresholdValue(selected.activityCategory, selected.value) }
+          : {})}
+        {...(staleLabel ? { staleLabel } : {})}
         startLabel={window.start}
         state={visiblePoints.length ? "ready" : "empty"}
         summary={`${axisUnit(visiblePoints[0])}. ${evidenceSummary} ${deadlineSummary}`}
         testID="plan-progress-chart"
         todayColor={theme.marker}
-        todayPosition={todayVisible ? positionForDate(todayKey) : undefined}
+        {...(todayVisible ? { todayPosition: positionForDate(todayKey) } : {})}
         yLabels={[
           axisValue(maximum, visiblePoints[0]?.unit ?? trend?.unit),
           axisValue((maximum + minimum) / 2, visiblePoints[0]?.unit ?? trend?.unit),
@@ -234,7 +236,7 @@ export function PlanProgressInsight({
                     r={isSelected ? 7 : 4}
                     stroke={theme.completed}
                     strokeWidth={isSelected ? 3 : 0}
-                    testID={isSelected ? "plan-progress-selected-point" : undefined}
+                    {...(isSelected ? { testID: "plan-progress-selected-point" } : {})}
                   />
                 );
               })}

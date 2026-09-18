@@ -42,6 +42,7 @@ type QueryBuilder = {
   innerJoin?: ReturnType<typeof vi.fn>;
   leftJoin?: ReturnType<typeof vi.fn>;
   limit?: ReturnType<typeof vi.fn>;
+  offset?: ReturnType<typeof vi.fn>;
   orderBy?: ReturnType<typeof vi.fn>;
   returning?: ReturnType<typeof vi.fn>;
   set?: ReturnType<typeof vi.fn>;
@@ -206,7 +207,6 @@ function inferTableFromSql(query: unknown): string {
   }
   const tables = [
     "training_plans",
-    "profile_training_settings",
     "profile_goals",
     "activity_plans",
     "activity_efforts",
@@ -248,6 +248,7 @@ export function createQueryMapDbMock(queryMap: QueryMap = {}) {
         orderBy: vi.fn(() => builder),
         groupBy: vi.fn(() => builder),
         limit: vi.fn(() => builder),
+        offset: vi.fn(() => builder),
         for: vi.fn(() => builder),
       },
       () => {

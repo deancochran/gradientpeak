@@ -1,8 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  withLocalE2EDatabase: vi.fn(),
+}));
+
+vi.mock("../../e2e/support/database", () => mocks);
 
 import {
-  AUTH_ACTOR_CLEANUP_ORDER,
-  AUTH_ARTIFACT_CLEANUP_SQL,
   AuthArtifactRegistry,
   registerAuthActor,
   runWithAuthArtifactRegistry,
@@ -40,29 +44,11 @@ describe("auth lane artifact registry", () => {
     expect(second.drain().actorEmails).toEqual(["second-1@example.test"]);
   });
 
-  it("uses parameterized exact text identities and never wildcard deletion", () => {
-    for (const [name, sql] of Object.entries(AUTH_ARTIFACT_CLEANUP_SQL)) {
-      expect(sql).toContain("any($1::text[])");
-      expect(sql.toLowerCase()).not.toContain(" like ");
-      expect(sql).not.toContain("example.test");
-      if (name === "verificationConsumptionMarkers") {
-        expect(sql).toContain('where "identifier" = any($1::text[])');
-      }
-    }
-  });
+  it("normalizes registered actor identities before cleanup snapshots are produced", () => {
+    const registry = new AuthArtifactRegistry();
+    registry.registerActorEmail("Mixed-Case@example.test");
 
-  it("deletes every full-onboarding artifact before the actor profile", () => {
-    expect(AUTH_ACTOR_CLEANUP_ORDER).toEqual([
-      "notifications",
-      "follows",
-      "profileTrainingSettings",
-      "profileGoals",
-      "profileMetrics",
-      "activityEfforts",
-      "profiles",
-      "users",
-      "verificationRows",
-    ]);
+    expect(registry.drain().actorEmails).toEqual(["mixed-case@example.test"]);
   });
 
   it("rejects identities and digest markers outside the auth lane contract", () => {
@@ -71,5 +57,6 @@ describe("auth lane artifact registry", () => {
     expect(() =>
       registry.registerVerificationConsumptionId("email-verification:not-a-digest"),
     ).toThrow(/Invalid verification-consumption/);
+    expect(mocks.withLocalE2EDatabase).not.toHaveBeenCalled();
   });
 });

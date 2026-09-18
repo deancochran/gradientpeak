@@ -42,10 +42,41 @@ describe("TrainingPlanDetailHeaderActionsSection", () => {
           created_at: "2026-01-01T00:00:00.000Z",
           structure: {
             version: 1,
+            plan_preferences: {
+              weekly_session_count: 2,
+              target_weekly_duration_minutes: 120,
+              maximum_session_duration_minutes: 90,
+              preferred_weekdays: [1, 4],
+              rest_days: [0, 2, 3, 5, 6],
+              progression_style: "balanced",
+              recovery_priority: "balanced",
+            },
             durationWeeks: { recommended: 8 },
             sessions: [
-              { offset_days: 0, activity_plan_id: "11111111-1111-4111-8111-111111111111" },
-              { offset_days: 49, activity_plan_id: "11111111-1111-4111-8111-111111111111" },
+              {
+                id: "22222222-2222-4222-8222-222222222222",
+                offset_days: 0,
+                activity_plan_id: "11111111-1111-4111-8111-111111111111",
+                demand: {
+                  activity_category: "run",
+                  training_intent: "aerobic_base",
+                  target_duration_minutes: 60,
+                  target_common_load: 40,
+                  importance: "normal",
+                },
+              },
+              {
+                id: "33333333-3333-4333-8333-333333333333",
+                offset_days: 49,
+                activity_plan_id: "11111111-1111-4111-8111-111111111111",
+                demand: {
+                  activity_category: "run",
+                  training_intent: "aerobic_base",
+                  target_duration_minutes: 60,
+                  target_common_load: 40,
+                  importance: "normal",
+                },
+              },
             ],
           },
         }}

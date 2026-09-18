@@ -53,7 +53,7 @@ function durationLabel(
     case "repetitions":
       return `${duration.count} repetitions`;
     case "untilFinished":
-      return "until finished";
+      return "Duration not specified";
   }
 }
 
@@ -80,10 +80,15 @@ export function TimelineChart({
   }
 
   return (
-    <View style={{ height, width: "100%" }} testID="timeline-chart">
-      <View className="h-full w-full flex-row items-end">
+    <View
+      className="overflow-hidden rounded-lg border border-border bg-muted/20 p-2"
+      style={{ height, width: "100%" }}
+      testID="timeline-chart"
+    >
+      <View className="flex-1 flex-row items-end">
         {timeline.map((occurrence, index) => {
           const isBoundary = occurrence.role !== "activity";
+          const hasOpenDuration = occurrence.duration.type === "untilFinished";
           const selected = occurrence.intervalId === selectedIntervalId;
           const label = [
             `${occurrence.role} segment ${occurrence.globalOrdinal + 1}`,
@@ -102,11 +107,13 @@ export function TimelineChart({
               accessibilityLabel={label}
               accessibilityRole={occurrence.intervalId && onIntervalPress ? "button" : undefined}
               accessibilityState={selected ? { selected: true } : undefined}
-              className={`justify-end rounded-md border ${selected ? "border-primary" : "border-border"} ${isBoundary || occurrence.visualIntensity === null ? "bg-muted" : ""}`}
+              className={`justify-end rounded-md border ${selected ? "border-primary" : "border-border"} ${isBoundary || occurrence.visualIntensity === null || hasOpenDuration ? "bg-muted/30" : ""} ${hasOpenDuration ? "border-dashed" : ""}`}
               style={{
                 backgroundColor: isBoundary
                   ? undefined
-                  : intensityColor(occurrence.visualIntensity),
+                  : hasOpenDuration
+                    ? undefined
+                    : intensityColor(occurrence.visualIntensity),
                 height: isBoundary ? 28 : intensityHeight(occurrence.visualIntensity, height),
                 flexBasis: 0,
                 flexGrow: occurrenceWeight(occurrence.duration),

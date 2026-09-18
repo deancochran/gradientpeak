@@ -39,6 +39,11 @@ export function useRecordScreenController() {
     null,
   );
   const [pendingPlanId, setPendingPlanId] = React.useState<string | null>(null);
+  const selectionOwner = React.useRef<{
+    userId: string | undefined;
+    service: typeof service;
+  } | null>(null);
+  const [planSelectionError, setPlanSelectionError] = React.useState<string | null>(null);
   const performanceModelAsOf = React.useRef(new Date().toISOString()).current;
 
   const { sessionContract, sessionView } = useRecordingConfig(service);
@@ -83,6 +88,13 @@ export function useRecordScreenController() {
     if (!pendingPlanId || !pendingPlanQuery.data?.detail || !service) {
       return;
     }
+    if (
+      selectionOwner.current?.userId !== user?.id ||
+      selectionOwner.current?.service !== service ||
+      resourcePickerScope !== "activityPlans"
+    )
+      return;
+    if (pendingPlanQuery.isError || pendingPlanQuery.data.detail.id !== pendingPlanId) return;
 
     try {
       const planDetail = pendingPlanQuery.data.detail;
@@ -98,25 +110,22 @@ export function useRecordScreenController() {
         structure: structure.data,
       };
       service.selectPlan(pendingPlan);
+      setPlanSelectionError(null);
       setPendingPlanId(null);
       setResourcePickerScope(null);
     } catch (error) {
-      Alert.alert(
-        "Plan Attachment Failed",
+      setPlanSelectionError(
         error instanceof Error ? error.message : "Unable to attach this activity plan.",
       );
-      setPendingPlanId(null);
     }
-  }, [pendingPlanId, pendingPlanQuery.data, service]);
-
-  React.useEffect(() => {
-    if (!pendingPlanId || !pendingPlanQuery.error) {
-      return;
-    }
-
-    Alert.alert("Plan Attachment Failed", "Unable to load this activity plan.");
-    setPendingPlanId(null);
-  }, [pendingPlanId, pendingPlanQuery.error]);
+  }, [
+    pendingPlanId,
+    pendingPlanQuery.data,
+    pendingPlanQuery.isError,
+    service,
+    user?.id,
+    resourcePickerScope,
+  ]);
 
   React.useEffect(() => {
     if (!service || !performanceTargets) return;
@@ -357,8 +366,20 @@ export function useRecordScreenController() {
   }, []);
 
   const onBack = React.useCallback(() => {
+    if (recordingLifecycle === "active") {
+      Alert.alert(
+        "Keep recording?",
+        "Your recording will continue while you return to the app. You can return to it from the Record tab.",
+        [
+          { text: "Stay", style: "cancel" },
+          { text: "Finish activity", style: "destructive", onPress: () => void handleFinish() },
+          { text: "Leave recording", onPress: () => router.back() },
+        ],
+      );
+      return;
+    }
     router.back();
-  }, [router]);
+  }, [handleFinish, recordingLifecycle, router]);
 
   const onOpenActivity = React.useCallback(() => {
     navigateTo("/record/activity");
@@ -374,6 +395,8 @@ export function useRecordScreenController() {
 
   const onCloseResourcePicker = React.useCallback(() => {
     setResourcePickerScope(null);
+    setPendingPlanId(null);
+    setPlanSelectionError(null);
   }, []);
 
   const onSelectResource = React.useCallback(
@@ -393,9 +416,11 @@ export function useRecordScreenController() {
         return;
       }
 
+      selectionOwner.current = { userId: user?.id, service };
+      setPlanSelectionError(null);
       setPendingPlanId(item.id);
     },
-    [resourcePickerScope, service],
+    [resourcePickerScope, service, user?.id],
   );
 
   const onOpenSensors = React.useCallback(() => {
@@ -452,6 +477,13 @@ export function useRecordScreenController() {
       onResume: resume,
       recordingState,
       resourcePickerScope,
+      selectedPlanId: pendingPlanId ?? service?.plan?.id ?? null,
+      planSelectionPending: Boolean(pendingPlanId && pendingPlanQuery.isLoading),
+      planSelectionError:
+        pendingPlanId && pendingPlanQuery.error
+          ? "Unable to load this activity plan."
+          : planSelectionError,
+      retrySelectedPlan: () => void pendingPlanQuery.refetch(),
       sensorCount,
       service,
       serviceState: state,
@@ -482,6 +514,11 @@ export function useRecordScreenController() {
       plan?.hasPlan,
       recordingState,
       resourcePickerScope,
+      pendingPlanId,
+      pendingPlanQuery.isLoading,
+      pendingPlanQuery.error,
+      pendingPlanQuery.refetch,
+      planSelectionError,
       resume,
       sensorCount,
       service,

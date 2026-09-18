@@ -1,7 +1,6 @@
 import { type DrizzleDbClient, schema } from "@repo/db";
-import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or } from "drizzle-orm";
 import type { EventCompletionRepository, EventDeleteScope } from "../../repositories";
-import { mapPlannedSessionRow } from "./drizzle-planned-session-repository";
 
 function applyDeleteScopeFilters(input: {
   anchorEvent: { id: string; series_id: string | null; starts_at: string };
@@ -40,10 +39,7 @@ const splitCompletionEventColumns = {
   starts_at: schema.events.starts_at,
   scheduled_date: schema.events.scheduled_date,
   ends_at: schema.events.ends_at,
-  activity_plan_id: schema.events.activity_plan_id,
   route_id: schema.events.route_id,
-  training_plan_id: schema.events.training_plan_id,
-  planned_session_id: schema.events.planned_session_id,
   linked_activity_id: schema.events.linked_activity_id,
   recurrence_rule: schema.events.recurrence_rule,
   recurrence_timezone: schema.events.recurrence_timezone,
@@ -56,11 +52,7 @@ type CompletionEventRow = Pick<
   keyof typeof splitCompletionEventColumns
 >;
 
-function serializeCompletionRow(
-  row: CompletionEventRow,
-  activityPlan: typeof schema.activityPlans.$inferSelect | null = null,
-  plannedSession: typeof schema.plannedSessions.$inferSelect | null = null,
-) {
+function serializeCompletionRow(row: CompletionEventRow) {
   return {
     ...row,
     created_at: row.created_at.toISOString(),
@@ -68,22 +60,8 @@ function serializeCompletionRow(
     ends_at: row.ends_at?.toISOString() ?? null,
     original_starts_at: row.original_starts_at?.toISOString() ?? null,
     updated_at: row.updated_at.toISOString(),
-    activity_plan: activityPlan
-      ? {
-          ...activityPlan,
-          created_at: activityPlan.created_at.toISOString(),
-          updated_at: activityPlan.updated_at.toISOString(),
-        }
-      : null,
-    planned_session: plannedSession ? mapPlannedSessionRow(plannedSession) : null,
     route: null,
   };
-}
-
-function matchesExpectedActivityPlan(activityPlanId: string | null) {
-  return activityPlanId === null
-    ? isNull(schema.events.activity_plan_id)
-    : eq(schema.events.activity_plan_id, activityPlanId);
 }
 
 export function createEventCompletionRepository(db: DrizzleDbClient): EventCompletionRepository {
@@ -104,30 +82,17 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
       const [row] = await db
         .select({
           event: splitCompletionEventColumns,
-          activity_plan: schema.activityPlans,
-          planned_session: schema.plannedSessions,
         })
         .from(schema.events)
-        .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
-        .leftJoin(
-          schema.plannedSessions,
-          eq(schema.events.planned_session_id, schema.plannedSessions.id),
-        )
         .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
         .limit(1);
 
       if (!row) return null;
 
-      return serializeCompletionRow(row.event, row.activity_plan, row.planned_session);
+      return serializeCompletionRow(row.event);
     },
 
-    async updateEventCompletionLink({
-      eventId,
-      expectedActivityPlanId,
-      profileId,
-      linkedActivityId,
-      status,
-    }) {
+    async updateEventCompletionLink({ eventId, profileId, linkedActivityId, status }) {
       const now = new Date();
       const [row] = await db.transaction(async (tx) => {
         const [updatedEvent] = await tx
@@ -137,13 +102,7 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
             linked_activity_id: linkedActivityId,
             updated_at: now,
           })
-          .where(
-            and(
-              eq(schema.events.id, eventId),
-              eq(schema.events.profile_id, profileId),
-              matchesExpectedActivityPlan(expectedActivityPlanId),
-            ),
-          )
+          .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
           .returning({ id: schema.events.id });
 
         if (!updatedEvent) return [];
@@ -151,25 +110,15 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
         return tx
           .select({
             event: splitCompletionEventColumns,
-            activity_plan: schema.activityPlans,
-            planned_session: schema.plannedSessions,
           })
           .from(schema.events)
-          .leftJoin(
-            schema.activityPlans,
-            eq(schema.events.activity_plan_id, schema.activityPlans.id),
-          )
-          .leftJoin(
-            schema.plannedSessions,
-            eq(schema.events.planned_session_id, schema.plannedSessions.id),
-          )
           .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
           .limit(1);
       });
 
       if (!row) return null;
 
-      return serializeCompletionRow(row.event, row.activity_plan, row.planned_session);
+      return serializeCompletionRow(row.event);
     },
 
     async listHistoricalActivitiesForReconciliation({
@@ -187,17 +136,24 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
         .where(
           and(
             eq(schema.activities.profile_id, profileId),
+            isNotNull(schema.activities.started_at),
             gte(schema.activities.started_at, new Date(dateFromInclusiveIso)),
             lt(schema.activities.started_at, new Date(dateToExclusiveIso)),
           ),
         )
         .orderBy(desc(schema.activities.started_at), asc(schema.activities.id));
 
-      return rows.map((row) => ({
-        id: row.id,
-        started_at: row.started_at.toISOString(),
-        activity_plan_id: row.activity_plan_id,
-      }));
+      return rows.flatMap((row) =>
+        row.started_at === null
+          ? []
+          : [
+              {
+                id: row.id,
+                started_at: row.started_at.toISOString(),
+                activity_plan_id: row.activity_plan_id,
+              },
+            ],
+      );
     },
 
     async listHistoricalEventsForReconciliation({
@@ -210,19 +166,15 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
         .select({
           id: schema.events.id,
           starts_at: schema.events.starts_at,
-          activity_plan_id: schema.events.activity_plan_id,
-          activity_plan_structure: schema.activityPlans.structure,
-          training_plan_id: schema.events.training_plan_id,
           status: schema.events.status,
           linked_activity_id: schema.events.linked_activity_id,
           event_type: schema.events.event_type,
         })
         .from(schema.events)
-        .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
         .where(
           and(
             eq(schema.events.profile_id, profileId),
-            inArray(schema.events.event_type, ["planned", "race_target"]),
+            eq(schema.events.event_type, "race_target"),
             isNull(schema.events.linked_activity_id),
             ne(schema.events.status, "cancelled"),
             gte(schema.events.starts_at, new Date(dateFromInclusiveIso)),
@@ -234,22 +186,14 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
 
       return rows.map((row) => ({
         id: row.id,
-        activity_plan_id: row.activity_plan_id,
-        activity_plan_structure: row.activity_plan_structure,
-        training_plan_id: row.training_plan_id,
         status: row.status,
         linked_activity_id: row.linked_activity_id,
-        event_type: row.event_type as "planned" | "race_target",
+        event_type: row.event_type,
         starts_at: row.starts_at.toISOString(),
       }));
     },
 
-    async linkHistoricalCompletionIfEligible({
-      activityId,
-      eventId,
-      expectedActivityPlanId,
-      profileId,
-    }) {
+    async linkHistoricalCompletionIfEligible({ activityId, eventId, profileId }) {
       const now = new Date();
       const [row] = await db.transaction(async (tx) => {
         const [updatedEvent] = await tx
@@ -263,7 +207,6 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
             and(
               eq(schema.events.id, eventId),
               eq(schema.events.profile_id, profileId),
-              matchesExpectedActivityPlan(expectedActivityPlanId),
               ne(schema.events.status, "cancelled"),
               isNull(schema.events.linked_activity_id),
             ),
@@ -279,7 +222,6 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
         return tx
           .select({
             id: schema.events.id,
-            training_plan_id: schema.events.training_plan_id,
             starts_at: schema.events.starts_at,
             updated_at: schema.events.updated_at,
           })
@@ -292,7 +234,6 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
 
       return {
         id: row.id,
-        training_plan_id: row.training_plan_id,
         starts_at: row.starts_at.toISOString(),
         updated_at: row.updated_at.toISOString(),
       };
@@ -301,7 +242,6 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
     async listOwnedEventsForDeleteScope({ anchorEvent, profileId, scope }) {
       const rows = await db
         .select({
-          activity_plan_id: schema.events.activity_plan_id,
           id: schema.events.id,
           event_type: schema.events.event_type,
         })
@@ -316,7 +256,6 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
       const rows = await db.transaction(async (tx) => {
         const candidateQuery = tx
           .select({
-            activity_plan_id: schema.events.activity_plan_id,
             id: schema.events.id,
             event_type: schema.events.event_type,
           })

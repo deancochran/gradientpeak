@@ -1,3 +1,4 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import type { TrainingPlanPlannedSchedulePreview } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -7,7 +8,6 @@ import { Alert, Share, View } from "react-native";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
 import { getPublicShareUrl } from "@/lib/share/public-share-url";
 import { deriveTrainingPlanSummaryMetrics } from "@/lib/trainingPlanVisual";
-import type { EntityOwner } from "./EntityOwnerRow";
 import {
   type ResourceCardAccessory,
   ResourceCardActionButton,
@@ -19,27 +19,21 @@ import {
 } from "./ResourceCardPrimitives";
 import { TrainingPlanPlannedPreview } from "./TrainingPlanPlannedPreview";
 
-export interface TrainingPlanCardPlan {
-  id: string;
-  name: string;
-  description?: string | null;
-  sessions_per_week_target?: number | null;
-  sessionsPerWeek?: number | null;
-  durationWeeks?: {
-    min?: number | null;
-    recommended?: number | null;
-  } | null;
-  activity_category?: string[] | string | null;
-  experienceLevel?: string[] | string | null;
-  likes_count?: number | null;
-  has_liked?: boolean | null;
-  created_at?: string | Date | null;
-  updated_at?: string | Date | null;
-  owner?: EntityOwner | null;
-  structure?: unknown;
-  plannedSchedulePreview?: TrainingPlanPlannedSchedulePreview | null;
-  visibility?: string | null;
-}
+type TrainingPlanTemplateListItem =
+  inferRouterOutputs<AppRouter>["trainingPlans"]["listTemplates"]["items"][number];
+type TrainingPlanListItem = inferRouterOutputs<AppRouter>["trainingPlans"]["list"]["items"][number];
+
+export type TrainingPlanCardPlan = Pick<TrainingPlanTemplateListItem, "id" | "name"> &
+  Partial<Omit<TrainingPlanTemplateListItem, "created_at" | "id" | "name" | "updated_at">> &
+  Partial<Pick<TrainingPlanListItem, "content_visibility" | "owner" | "structure">> & {
+    created_at?: TrainingPlanTemplateListItem["created_at"] | TrainingPlanListItem["created_at"];
+    updated_at?: TrainingPlanTemplateListItem["updated_at"] | TrainingPlanListItem["updated_at"];
+    activity_category?: string[] | string | null;
+    durationWeeks?: { min?: number | null; recommended?: number | null } | null;
+    experienceLevel?: string[] | string | null;
+    sessionsPerWeek?: number | null;
+    plannedSchedulePreview?: TrainingPlanPlannedSchedulePreview | null;
+  };
 
 type TrainingPlanCardProps = {
   plan: TrainingPlanCardPlan;
@@ -78,7 +72,7 @@ export function TrainingPlanCard({
   });
   const handleCommentPress = onCommentPress ?? onPress;
   const handleShare = async () => {
-    if (plan.visibility !== "public") {
+    if (plan.content_visibility !== "public") {
       Alert.alert(
         "Not public",
         "Only public training plans have a share link. Change visibility to Public first.",

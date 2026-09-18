@@ -601,7 +601,7 @@ export function createStravaRepository({ db }: { db: DrizzleDbClient }): StravaR
           priority: input.priority,
           profileId: integration.profileId,
           provider: "strava",
-          resourceKind: input.objectType === "activity" ? "activity" : undefined,
+          ...(input.objectType === "activity" ? { resourceKind: "activity" } : {}),
           runAt: new Date().toISOString(),
           syncLaneKey:
             input.objectType === "activity"

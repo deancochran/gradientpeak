@@ -205,7 +205,7 @@ export function deriveActivityDurations(
   activity: Pick<ActivityRow, "elapsed_ms" | "active_ms" | "moving_ms" | "timing_coverage">,
 ) {
   return {
-    elapsed_seconds: activity.elapsed_ms / 1_000,
+    elapsed_seconds: millisecondsToSeconds(activity.elapsed_ms),
     active_seconds:
       activity.timing_coverage === "unavailable" ? null : millisecondsToSeconds(activity.active_ms),
     moving_seconds:
@@ -529,7 +529,7 @@ export function buildCompletedSegmentAnalysisActivity(input: {
 }
 
 function buildSegmentDerivedSummary(input: {
-  activity: ActivityWithSegments;
+  activity: ActivityWithSegments & { started_at: Date };
   segment: ActivitySegmentReadRow & {
     activity_category: NonNullable<ActivitySegmentReadRow["activity_category"]>;
   };
@@ -693,7 +693,11 @@ export async function buildActivitySegmentDerivedSummaries(input: {
   /** Restricts historical reprocessing to context used by canonical target-based load. */
   contextEvidenceScope?: "thresholds";
 }): Promise<SegmentDerivedSummary[]> {
-  const { store, profileId, activities } = input;
+  const { store, profileId } = input;
+  const activities = input.activities.filter(
+    (activity): activity is ActivityWithSegments & { started_at: Date } =>
+      activity.started_at !== null,
+  );
   const computedAsOf = (input.computedAsOf ?? new Date()).toISOString();
   if (activities.length === 0) return [];
   const requests = activities.flatMap((activity) =>
@@ -1039,7 +1043,7 @@ export async function buildDynamicStressSeries(input: {
     }
     streamKeys.add(summary.load_stream_key);
     const activity = activitiesById.get(summary.activity_id);
-    const date = activity ? toIsoString(activity.started_at).split("T")[0] : undefined;
+    const date = activity?.started_at ? toIsoString(activity.started_at).split("T")[0] : undefined;
     if (date) byDate.set(date, (byDate.get(date) ?? 0) + load.load);
   }
   const first = segmentSummaries.find((summary) => summary.load_stream_key)?.common_load ?? null;

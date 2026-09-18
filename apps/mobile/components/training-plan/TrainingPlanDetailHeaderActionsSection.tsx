@@ -1,10 +1,10 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import type { TrainingPlanPlannedSchedulePreview as TrainingPlanPlannedSchedulePreviewModel } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { MessageCircle, Share2 } from "lucide-react-native";
 import { useMemo, useState } from "react";
-import { Pressable, View } from "react-native";
-import type { EntityOwner } from "@/components/shared/EntityOwnerRow";
+import { View } from "react-native";
 import {
   ResourceCardActionButton,
   ResourceLikeButton,
@@ -17,7 +17,6 @@ import { TrainingPlanSummaryHeader } from "./TrainingPlanSummaryHeader";
 
 interface TrainingPlanDetailHeaderActionsSectionProps {
   handleToggleLike: () => void | Promise<void>;
-  handleChangeVisibility?: () => void;
   handleShare: () => void | Promise<void>;
   shareDisabled?: boolean;
   isScheduledPlan?: boolean;
@@ -32,21 +31,28 @@ interface TrainingPlanDetailHeaderActionsSectionProps {
     plannedLoad: number;
     sessions: number;
   };
-  plan: {
-    created_at: string | Date;
-    description?: string | null;
-    id?: string;
-    name: string;
-    owner?: EntityOwner | null;
-    plannedSchedulePreview?: TrainingPlanPlannedSchedulePreviewModel | null;
-    structure?: unknown;
-    [key: string]: unknown;
-  };
+  plan: TrainingPlanDetailHeaderPlan;
 }
+
+type TrainingPlanDetailOutput = inferRouterOutputs<AppRouter>["trainingPlans"]["get"];
+
+type TrainingPlanDetailHeaderPlan = Omit<
+  Pick<
+    TrainingPlanDetailOutput,
+    "created_at" | "description" | "id" | "name" | "owner" | "structure"
+  >,
+  "created_at" | "description" | "id" | "owner" | "structure"
+> & {
+  created_at: string | Date;
+  description?: TrainingPlanDetailOutput["description"];
+  id?: string;
+  owner?: TrainingPlanDetailOutput["owner"];
+  plannedSchedulePreview?: TrainingPlanPlannedSchedulePreviewModel | null;
+  structure?: TrainingPlanDetailOutput["structure"];
+};
 
 export function TrainingPlanDetailHeaderActionsSection({
   handleToggleLike,
-  handleChangeVisibility,
   handleShare,
   shareDisabled = false,
   isScheduledPlan = false,
@@ -74,23 +80,14 @@ export function TrainingPlanDetailHeaderActionsSection({
     <View className="gap-4 rounded-3xl border border-border bg-card p-4">
       <ResourceOwnerActionRow
         actions={
-          <>
-            {handleChangeVisibility ? (
-              <HeaderTextAction
-                label="Change visibility"
-                onPress={handleChangeVisibility}
-                testID="training-plan-change-visibility-button"
-              />
-            ) : null}
-            <ResourceCardActionButton
-              accessibilityLabel="Share training plan"
-              disabled={shareDisabled}
-              onPress={() => void handleShare()}
-              testID="training-plan-share-button"
-            >
-              <Icon as={Share2} size={20} className="text-foreground" />
-            </ResourceCardActionButton>
-          </>
+          <ResourceCardActionButton
+            accessibilityLabel="Share training plan"
+            disabled={shareDisabled}
+            onPress={() => void handleShare()}
+            testID="training-plan-share-button"
+          >
+            <Icon as={Share2} size={20} className="text-foreground" />
+          </ResourceCardActionButton>
         }
         categoryLabel={isScheduledPlan ? "Scheduled program" : "Program template"}
         fallbackLabel="GradientPeak"
@@ -188,27 +185,6 @@ export function TrainingPlanDetailHeaderActionsSection({
         </View>
       ) : null}
     </View>
-  );
-}
-
-function HeaderTextAction({
-  label,
-  onPress,
-  testID,
-}: {
-  label: string;
-  onPress: () => void;
-  testID: string;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      className="rounded-full border border-border px-2.5 py-1.5"
-      onPress={onPress}
-      testID={testID}
-    >
-      <Text className="text-xs font-semibold text-foreground">{label}</Text>
-    </Pressable>
   );
 }
 

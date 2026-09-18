@@ -1,3 +1,4 @@
+import { extractSafeErrorDiagnostic } from "@repo/api/telemetry-sanitizer";
 import * as Sentry from "@sentry/react-native";
 import { isRunningInExpoGo } from "expo";
 import Constants from "expo-constants";
@@ -6,6 +7,10 @@ import {
   sanitizeMobileSentryContext,
   shouldEnableReplay,
 } from "./sentry-config";
+import {
+  type MobileSentryEnvironment,
+  shouldEnableSentry as shouldEnableSentryRuntime,
+} from "./sentry-options.js";
 
 type SentryLevel = "info" | "warning" | "error";
 
@@ -16,17 +21,28 @@ function getSentryDsn() {
   return extra.sentryDsn ?? process.env.EXPO_PUBLIC_SENTRY_DSN;
 }
 
+function getSentryEnvironment(): MobileSentryEnvironment {
+  // Expo replaces only direct EXPO_PUBLIC_* property access in the app bundle.
+  return {
+    EXPO_PUBLIC_ENABLE_SENTRY_IN_DEV: process.env.EXPO_PUBLIC_ENABLE_SENTRY_IN_DEV,
+    EXPO_PUBLIC_ENABLE_SENTRY_REPLAY: process.env.EXPO_PUBLIC_ENABLE_SENTRY_REPLAY,
+    EXPO_PUBLIC_MAESTRO_E2E: process.env.EXPO_PUBLIC_MAESTRO_E2E,
+    EXPO_PUBLIC_SENTRY_DSN: getSentryDsn(),
+    EXPO_PUBLIC_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE:
+      process.env.EXPO_PUBLIC_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE,
+    EXPO_PUBLIC_SENTRY_REPLAYS_SESSION_SAMPLE_RATE:
+      process.env.EXPO_PUBLIC_SENTRY_REPLAYS_SESSION_SAMPLE_RATE,
+    EXPO_PUBLIC_SENTRY_TRACES_SAMPLE_RATE: process.env.EXPO_PUBLIC_SENTRY_TRACES_SAMPLE_RATE,
+  };
+}
+
 function shouldEnableSentryReplay() {
-  return shouldEnableReplay(process.env);
+  return shouldEnableReplay(getSentryEnvironment());
 }
 
 function shouldEnableSentry(): boolean {
-  const dsn = getSentryDsn();
-  if (!dsn) {
-    return false;
-  }
-
-  return !__DEV__ || process.env.EXPO_PUBLIC_ENABLE_SENTRY_IN_DEV === "1";
+  const environment = getSentryEnvironment();
+  return shouldEnableSentryRuntime(environment, __DEV__, environment.EXPO_PUBLIC_SENTRY_DSN);
 }
 
 export function initSentry() {
@@ -39,10 +55,7 @@ export function initSentry() {
   );
 
   Sentry.init({
-    ...createRuntimeSentryConfig(
-      { ...process.env, EXPO_PUBLIC_SENTRY_DSN: String(getSentryDsn()) },
-      environment,
-    ),
+    ...createRuntimeSentryConfig(getSentryEnvironment(), environment),
     enableNativeFramesTracking: !isRunningInExpoGo(),
     integrations(integrations) {
       integrations.push(
@@ -72,7 +85,10 @@ export function captureException(error: Error, context?: Record<string, unknown>
 
   if (!sentryInitialized) {
     if (__DEV__) {
-      console.error("Error captured (Sentry disabled):", error, context);
+      console.error("[sentry-disabled]", {
+        ...sanitizeMobileSentryContext(context),
+        ...extractSafeErrorDiagnostic(error),
+      });
     }
     return;
   }
@@ -91,7 +107,7 @@ export function captureMessage(
 
   if (!sentryInitialized) {
     if (__DEV__) {
-      console.log(`Message captured (Sentry disabled) [${level}]:`, message, context);
+      console.log("[sentry-disabled-message]", { level, ...sanitizeMobileSentryContext(context) });
     }
     return;
   }

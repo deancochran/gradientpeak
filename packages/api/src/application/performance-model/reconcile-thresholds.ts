@@ -22,7 +22,7 @@ import {
   type ThresholdSelectionResult,
 } from "@repo/core/performance-calibration";
 import { activities, activityEfforts, thresholds } from "@repo/db";
-import { and, asc, eq, gt, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
 import type { DrizzleTransactionClient } from "../../db";
 import { createDrizzleAthleteDerivedStateRepository } from "../../infrastructure/repositories";
 import { markAthleteStateDirty } from "../../repositories/athlete-state-repository";
@@ -462,7 +462,9 @@ export async function reconcileThresholdsWithProfileLockHeld(
     now: Date;
   },
 ) {
-  const sources = await readThresholdEvidenceSources(tx, input);
+  const sources = (await readThresholdEvidenceSources(tx, input)).filter(
+    (source): source is typeof source & { finishedAt: Date } => source.finishedAt !== null,
+  );
   const impacts = new Map(
     (input.preInvalidatedIdentities ?? []).map((impact) => [
       `${impact.activityCategory}/${impact.metric}`,
@@ -671,6 +673,7 @@ export async function finalizeThresholdsAfterHistoryImport(
       .where(
         and(
           eq(activities.profile_id, input.profileId),
+          isNotNull(activities.finished_at),
           lte(activities.finished_at, input.asOf),
           cursor
             ? or(
@@ -700,6 +703,7 @@ export async function finalizeThresholdsAfterHistoryImport(
       ]);
     }
     for (const activity of page) {
+      if (activity.finishedAt === null) continue;
       const reconciled = await reconcileThresholdsWithProfileLockHeld(tx, {
         profileId: input.profileId,
         activityId: activity.id,
@@ -711,7 +715,9 @@ export async function finalizeThresholdsAfterHistoryImport(
     }
     const last = page.at(-1);
     if (!last || page.length < HISTORY_FINALIZATION_PAGE_SIZE) break;
-    cursor = last;
+    const lastFinishedAt = last.finishedAt;
+    if (lastFinishedAt === null) break;
+    cursor = { finishedAt: lastFinishedAt, id: last.id };
   }
 
   const identities = (["bike", "run", "swim"] as const).flatMap((activityCategory) =>

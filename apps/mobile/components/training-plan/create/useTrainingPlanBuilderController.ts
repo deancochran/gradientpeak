@@ -1,6 +1,6 @@
 import type { ActivityPlanPlanningEstimate, ActivityPlanSummary } from "@repo/core";
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
 import type {
   ActivityCategoryFilter,
@@ -18,6 +18,8 @@ type ActivityPlanListItem = ActivityPlanSummary;
 type TrainingPlanBuilderControllerOptions = {
   mode: "create" | "edit";
   planId?: string;
+  onDirtyChange?: (isDirty: boolean) => void;
+  onPersisted?: () => void;
 };
 
 function toActivityPlanFacts(activityPlan: ActivityPlanListItem): TrainingPlanActivityPlanFacts {
@@ -45,6 +47,8 @@ function toEstimatedActivityPlanFacts(
 export function useTrainingPlanBuilderController({
   mode,
   planId,
+  onDirtyChange,
+  onPersisted,
 }: TrainingPlanBuilderControllerOptions) {
   const router = useRouter();
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -54,6 +58,7 @@ export function useTrainingPlanBuilderController({
     useState<ActivityCategoryFilter>(null);
   const [activityPlanSort, setActivityPlanSort] = useState<ActivityPlanSort>("newest");
   const [pendingSessionDraftId, setPendingSessionDraftId] = useState<string | null>(null);
+  const [numericDraftErrors, setNumericDraftErrors] = useState<Record<string, string>>({});
   const [selectedWeekStart, setSelectedWeekStart] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const sheetStack = useBuilderSheetStack<BuilderSheet>();
@@ -69,18 +74,33 @@ export function useTrainingPlanBuilderController({
       selectedSessionId,
     },
     onCreated: (createdPlan) => {
+      onPersisted?.();
       router.replace({ pathname: "/training-plan-detail", params: { id: createdPlan.id } });
     },
     onCreateError: (error) => {
       Alert.alert("Could not create plan", error.message || "Try again after reviewing the plan.");
     },
     onUpdated: (updatedPlan) => {
+      onPersisted?.();
       router.replace({ pathname: "/training-plan-detail", params: { id: updatedPlan.id } });
     },
     onUpdateError: (error) => {
       Alert.alert("Could not update plan", error.message || "Try again after reviewing the plan.");
     },
   });
+  const initialDraftRef = useRef<string | null>(null);
+  const draftSignature = JSON.stringify(builder.state);
+  useEffect(() => {
+    if (builder.isHydratingEditPlan || initialDraftRef.current !== null) return;
+    initialDraftRef.current = draftSignature;
+  }, [builder.isHydratingEditPlan, draftSignature]);
+  const hasInvalidNumericDrafts = Object.keys(numericDraftErrors).length > 0;
+  useEffect(() => {
+    onDirtyChange?.(
+      hasInvalidNumericDrafts ||
+        (initialDraftRef.current !== null && initialDraftRef.current !== draftSignature),
+    );
+  }, [draftSignature, hasInvalidNumericDrafts, onDirtyChange]);
 
   const selectedSession = selectedSessionId
     ? builder.actions.getSessionById(selectedSessionId)
@@ -188,6 +208,11 @@ export function useTrainingPlanBuilderController({
   );
 
   const handleSave = useCallback(async () => {
+    const numericErrors = Object.values(numericDraftErrors);
+    if (numericErrors.length > 0) {
+      Alert.alert("Plan needs attention", numericErrors.join("\n"));
+      return;
+    }
     if (!builder.derived.savePlan.canSave) {
       Alert.alert(
         "Plan needs attention",
@@ -197,7 +222,25 @@ export function useTrainingPlanBuilderController({
     }
 
     await builder.derived.savePlan.execute();
-  }, [builder.derived.savePlan]);
+  }, [builder.derived.savePlan, numericDraftErrors]);
+  const setNumericDraftError = useCallback((key: string, message: string | null) => {
+    setNumericDraftErrors((current) => {
+      if (message === null) {
+        if (!(key in current)) return current;
+        const { [key]: _removed, ...next } = current;
+        return next;
+      }
+      return current[key] === message ? current : { ...current, [key]: message };
+    });
+  }, []);
+  const clearNumericDraftErrors = useCallback((prefix: string) => {
+    setNumericDraftErrors((current) => {
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([key]) => !key.startsWith(prefix)),
+      );
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, []);
 
   const selectActivityPlan = useCallback(
     (activityPlan: ActivityPlanListItem) => {
@@ -228,12 +271,13 @@ export function useTrainingPlanBuilderController({
     const pendingSession = builder.actions.getSessionById(pendingSessionDraftId);
     if (pendingSession && !pendingSession.activityPlan) {
       builder.actions.removeSession(pendingSessionDraftId);
+      clearNumericDraftErrors(`session:${pendingSessionDraftId}:`);
       if (selectedSessionId === pendingSessionDraftId) {
         setSelectedSessionId(null);
       }
     }
     setPendingSessionDraftId(null);
-  }, [builder.actions, pendingSessionDraftId, selectedSessionId]);
+  }, [builder.actions, clearNumericDraftErrors, pendingSessionDraftId, selectedSessionId]);
 
   const confirmRemoveSession = useCallback(
     (sessionId: string) => {
@@ -244,6 +288,7 @@ export function useTrainingPlanBuilderController({
           text: "Remove",
           onPress: () => {
             builder.actions.removeSession(sessionId);
+            clearNumericDraftErrors(`session:${sessionId}:`);
             if (selectedSessionId === sessionId) {
               setSelectedSessionId(null);
               sheetStack.closeSheet();
@@ -252,7 +297,7 @@ export function useTrainingPlanBuilderController({
         },
       ]);
     },
-    [builder.actions, selectedSessionId, sheetStack.closeSheet],
+    [builder.actions, clearNumericDraftErrors, selectedSessionId, sheetStack.closeSheet],
   );
 
   const applyActivityFiltersDraft = useCallback(
@@ -273,13 +318,21 @@ export function useTrainingPlanBuilderController({
     () => ({
       title: mode === "edit" ? "Edit training plan" : "Create training plan",
       primaryLabel: builder.derived.savePlan.label,
-      primaryDisabled: !builder.derived.savePlan.canSave || isSaving,
+      primaryDisabled:
+        !builder.derived.savePlan.canSave || Object.keys(numericDraftErrors).length > 0 || isSaving,
       isSaving,
       showDoneAction: false,
       done: () => undefined,
       save: handleSave,
     }),
-    [builder.derived.savePlan.canSave, builder.derived.savePlan.label, handleSave, isSaving, mode],
+    [
+      builder.derived.savePlan.canSave,
+      builder.derived.savePlan.label,
+      handleSave,
+      isSaving,
+      mode,
+      numericDraftErrors,
+    ],
   );
   const selection = useMemo(
     () => ({
@@ -328,6 +381,13 @@ export function useTrainingPlanBuilderController({
     chartReview,
     header,
     isSaving,
+    numericDrafts: {
+      clearErrors: clearNumericDraftErrors,
+      hasInvalid: hasInvalidNumericDrafts,
+      hasInvalidFor: (prefix: string) =>
+        Object.keys(numericDraftErrors).some((key) => key.startsWith(prefix)),
+      setError: setNumericDraftError,
+    },
     selection,
     sheetStack,
   };

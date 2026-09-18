@@ -3,7 +3,6 @@ import {
   type AthleteReadAccessDenialReason,
 } from "@repo/core/organizations";
 import { describe, expect, it, vi } from "vitest";
-import type { DrizzleQueryExecutor } from "../db";
 import { createAthleteReadAccessRepository } from "./athlete-read-access-repository";
 
 const actorProfileId = "11111111-1111-4111-8111-111111111111";
@@ -37,7 +36,7 @@ function createExecutor(decision?: string) {
     return { rows: decision === undefined ? [] : [{ decision }] };
   });
   return {
-    executor: { execute } as unknown as DrizzleQueryExecutor,
+    executor: { execute } as never,
     getQuery: () => query,
   };
 }
@@ -90,12 +89,13 @@ describe("athlete read access repository", () => {
   });
 
   it("resolves an organization only through the canonical exact-scope decision", async () => {
-    let query: unknown;
-    const execute = vi.fn(async (input: unknown) => {
-      query = input;
-      return { rows: [{ organization_id: organizationId }] };
-    });
-    const repository = createAthleteReadAccessRepository({ execute } as never);
+    const limit = vi.fn().mockResolvedValue([{ organizationId }]);
+    const orderBy = vi.fn(() => ({ limit }));
+    const where = vi.fn(() => ({ orderBy }));
+    const innerJoin = vi.fn(() => ({ where }));
+    const from = vi.fn(() => ({ innerJoin }));
+    const selectDistinct = vi.fn(() => ({ from }));
+    const repository = createAthleteReadAccessRepository({ selectDistinct } as never);
 
     await expect(
       repository.findAuthorizedOrganizationId({
@@ -104,18 +104,24 @@ describe("athlete read access repository", () => {
         scope: "metrics",
       }),
     ).resolves.toBe(organizationId);
-    expect(collectParameters(query)).toEqual([
-      actorProfileId,
-      athleteProfileId,
-      actorProfileId,
-      athleteProfileId,
-      "metrics",
-    ]);
+    expect(selectDistinct).toHaveBeenCalledOnce();
+    expect(innerJoin).toHaveBeenCalledOnce();
+    expect(where).toHaveBeenCalledOnce();
+    expect(orderBy).toHaveBeenCalledOnce();
+    expect(limit).toHaveBeenCalledWith(1);
   });
 
   it("fails closed when no shared organization returns an allow decision", async () => {
     const repository = createAthleteReadAccessRepository({
-      execute: vi.fn(async () => ({ rows: [] })),
+      selectDistinct: vi.fn(() => ({
+        from: vi.fn(() => ({
+          innerJoin: vi.fn(() => ({
+            where: vi.fn(() => ({
+              orderBy: vi.fn(() => ({ limit: vi.fn().mockResolvedValue([]) })),
+            })),
+          })),
+        })),
+      })),
     } as never);
 
     await expect(

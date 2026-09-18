@@ -8,7 +8,16 @@ import {
   DEFAULT_ROUTE_SORT,
   DEFAULT_TRAINING_PLAN_SORT,
   matchesActivityPlanDerivedFilters,
+  parseNumericInput,
 } from "./index";
+
+describe("discovery numeric drafts", () => {
+  it("does not coerce malformed numeric input into a different filter value", () => {
+    expect(parseNumericInput("1x")).toBeNull();
+    expect(parseNumericInput("1.2", { allowDecimal: true })).toBe(1.2);
+    expect(parseNumericInput("")).toBeNull();
+  });
+});
 
 function activityPlan(id: string, objectiveIntensity: number | null) {
   const objectiveMetric: ActivityPlanMetric =

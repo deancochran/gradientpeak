@@ -1,13 +1,15 @@
+import { stringifyCanonicalJson } from "../athlete-intelligence/canonical-json";
 import {
   type CanonicalTrainingPlanStructure,
+  type TrainingPlanPreferences,
   type TrainingPlanSessionEventOverrides,
   trainingPlanSchema,
 } from "../schemas/training-plan-structure";
+import { sha256Hex, sha256Uuid } from "../utils/sha256";
 import type { DailyLoadDistributionPoint } from "./dailyLoadDistribution";
 import type { DailyLoadRecommendationPrimaryFocus } from "./dailyLoadRecommendation";
-import { addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "./dateOnlyUtc";
+import { diffDateOnlyUtcDays } from "./dateOnlyUtc";
 import type { GoalAnchoredProjectionPlan } from "./goalAnchoredProjectionPlan";
-import { deterministicUuidFromSeed } from "./normalizeGoalInput";
 import type { NormalizedSystemActivityTemplateCatalogEntry } from "./verification/activityTemplateCatalog";
 
 export const CANONICAL_TRAINING_PLAN_PROJECTION_POLICY_VERSION = 1 as const;
@@ -17,6 +19,7 @@ type ProjectionPoint = DailyLoadDistributionPoint & {
 };
 
 export type CanonicalTrainingPlanResolutionManifestEntry = {
+  session_id: string;
   date: string;
   offset_days: number;
   activity_category: DailyLoadDistributionPoint["activity_category"];
@@ -25,6 +28,7 @@ export type CanonicalTrainingPlanResolutionManifestEntry = {
   phase: string | null;
   selected_activity_plan_id: string;
   selected_template_signature: string;
+  event_overrides?: TrainingPlanSessionEventOverrides;
 };
 
 export type CanonicalTrainingPlanResolutionFailure = {
@@ -174,19 +178,86 @@ function goalBlueprints(plan: GoalAnchoredProjectionPlan) {
   }));
 }
 
+function trainingIntentForFocus(
+  focus: DailyLoadRecommendationPrimaryFocus,
+): NormalizedSystemActivityTemplateCatalogEntry["training_intent"] {
+  switch (focus) {
+    case "recovery":
+      return "recovery";
+    case "endurance":
+      return "aerobic_base";
+    case "long_endurance":
+      return "durable_endurance";
+    case "tempo":
+    case "threshold":
+      return "threshold_development";
+    case "vo2":
+      return "vo2max";
+    case "anaerobic":
+      return "anaerobic_capacity";
+    case "race_specific":
+      return "race_specific";
+    case "strength_endurance":
+    case "hypertrophy":
+    case "max_strength":
+    case "power":
+      return "strength_support";
+    case "mobility":
+    case "mixed_conditioning":
+      return "general_maintenance";
+    case "rest":
+      return "recovery";
+  }
+}
+
+function importanceForFocus(focus: DailyLoadRecommendationPrimaryFocus) {
+  switch (focus) {
+    case "recovery":
+    case "mobility":
+      return "support" as const;
+    case "tempo":
+    case "threshold":
+    case "vo2":
+    case "anaerobic":
+    case "race_specific":
+    case "max_strength":
+    case "power":
+      return "key" as const;
+    default:
+      return "normal" as const;
+  }
+}
+
+function durationMinutes(durationSeconds: number | null | undefined): number | null {
+  return durationSeconds === null || durationSeconds === undefined
+    ? null
+    : Math.round(durationSeconds / 60);
+}
+
+function deterministicSessionId(value: unknown): string {
+  return sha256Uuid(stringifyCanonicalJson(value));
+}
+
 export function projectCanonicalTrainingPlan(input: {
   planId: string;
+  preferences: TrainingPlanPreferences;
   projection: GoalAnchoredProjectionPlan;
   dailyLoadPoints: ProjectionPoint[];
   candidates: NormalizedSystemActivityTemplateCatalogEntry[];
 }): ProjectCanonicalTrainingPlanResult {
   const points = input.dailyLoadPoints
-    .filter((point) => point.recommended_load > 0 && point.primary_focus !== "rest")
-    .sort((left, right) => left.date.localeCompare(right.date));
+    .map((point, sourceIndex) => ({ point, sourceIndex }))
+    .filter(({ point }) => point.recommended_load > 0 && point.primary_focus !== "rest")
+    .sort(
+      (left, right) =>
+        left.point.date.localeCompare(right.point.date) ||
+        stringifyCanonicalJson(left.point).localeCompare(stringifyCanonicalJson(right.point)) ||
+        left.sourceIndex - right.sourceIndex,
+    );
   const resolutionManifest: CanonicalTrainingPlanResolutionManifestEntry[] = [];
   const unresolved: CanonicalTrainingPlanResolutionFailure[] = [];
 
-  for (const point of points) {
+  for (const [pointOrdinal, { point }] of points.entries()) {
     const phase = phaseForDate(input.projection, point.date);
     const compatible = input.candidates.filter(
       (candidate) =>
@@ -210,6 +281,13 @@ export function projectCanonicalTrainingPlan(input: {
       continue;
     }
     resolutionManifest.push({
+      session_id: deterministicSessionId({
+        plan_id: input.planId,
+        point,
+        selected_activity_plan_id: selected.template_id,
+        selected_template_signature: selected.structure_signature,
+        point_ordinal: pointOrdinal,
+      }),
       date: point.date,
       offset_days: diffDateOnlyUtcDays(input.projection.start_date, point.date),
       activity_category: point.activity_category,
@@ -218,17 +296,23 @@ export function projectCanonicalTrainingPlan(input: {
       phase,
       selected_activity_plan_id: selected.template_id,
       selected_template_signature: selected.structure_signature,
+      ...(point.event_overrides ? { event_overrides: point.event_overrides } : {}),
     });
   }
 
   const fingerprintPayload = {
     policy_version: CANONICAL_TRAINING_PLAN_PROJECTION_POLICY_VERSION,
+    plan_id: input.planId,
+    preferences: input.preferences,
+    projection: input.projection,
+    daily_load_points: input.dailyLoadPoints,
+    candidates: [...input.candidates].sort((left, right) =>
+      stringifyCanonicalJson(left).localeCompare(stringifyCanonicalJson(right)),
+    ),
     resolution_manifest: resolutionManifest,
     unresolved,
   };
-  const fingerprint = deterministicUuidFromSeed(
-    `canonical-training-plan-projection|${JSON.stringify(fingerprintPayload)}`,
-  );
+  const fingerprint = `v1:sha256:${sha256Hex(stringifyCanonicalJson(fingerprintPayload))}`;
   if (unresolved.length > 0 || resolutionManifest.length === 0) {
     return {
       status: "unresolved",
@@ -252,63 +336,30 @@ export function projectCanonicalTrainingPlan(input: {
     };
   }
 
-  const pointByDate = new Map(points.map((point) => [point.date, point]));
+  const selectedCandidateById = new Map(
+    input.candidates.map((candidate) => [candidate.template_id, candidate]),
+  );
   const blueprints = goalBlueprints(input.projection);
-  const durationWeeks = Math.max(
-    1,
-    Math.ceil(
-      (diffDateOnlyUtcDays(input.projection.start_date, input.projection.end_date) + 1) / 7,
-    ),
-  );
-  const weeklySessionCount = Math.max(
-    1,
-    Math.min(14, Math.round(resolutionManifest.length / durationWeeks)),
-  );
-  const preferredWeekdays = [
-    ...new Set(
-      resolutionManifest.map((entry) => new Date(`${entry.date}T00:00:00.000Z`).getUTCDay()),
-    ),
-  ].sort((left, right) => left - right);
   const structure = trainingPlanSchema.parse({
     id: input.planId,
     version: 1,
-    activity_category: [...new Set(points.map((point) => point.activity_category))].sort(),
-    durationWeeks: {
-      recommended: durationWeeks,
-    },
+    activity_category: [...new Set(points.map(({ point }) => point.activity_category))].sort(),
+    plan_preferences: input.preferences,
     goal_blueprints: blueprints,
-    builder_planning_snapshot: {
-      version: 1,
-      plan_preferences: {
-        duration_weeks: durationWeeks,
-        weekly_session_count: weeklySessionCount,
-        target_weekly_hours: null,
-        rest_days_per_week: null,
-      },
-      scheduling: {
-        preferred_weekdays: preferredWeekdays,
-      },
-      goal_context: {
-        selected_goals: blueprints.map((goal) => ({
-          title: goal.title,
-          target_offset_days: goal.target_offset_days ?? null,
-          target_date:
-            goal.target_offset_days === undefined
-              ? null
-              : addDaysDateOnlyUtc(input.projection.start_date, goal.target_offset_days),
-          priority: goal.priority,
-          activity_category: goal.activity_category ?? null,
-          objective: goal.objective ?? null,
-        })),
-      },
-    },
     sessions: resolutionManifest.map((entry) => ({
+      id: entry.session_id,
       offset_days: entry.offset_days,
       activity_plan_id: entry.selected_activity_plan_id,
-      activity_plan_variant_id: entry.selected_activity_plan_id,
-      ...(pointByDate.get(entry.date)?.event_overrides
-        ? { event_overrides: pointByDate.get(entry.date)?.event_overrides }
-        : {}),
+      demand: {
+        activity_category: entry.activity_category,
+        training_intent: trainingIntentForFocus(entry.focus),
+        target_duration_minutes: durationMinutes(
+          selectedCandidateById.get(entry.selected_activity_plan_id)?.duration_seconds,
+        ),
+        target_common_load: entry.recommended_load,
+        importance: importanceForFocus(entry.focus),
+      },
+      ...(entry.event_overrides ? { event_overrides: entry.event_overrides } : {}),
     })),
   });
 

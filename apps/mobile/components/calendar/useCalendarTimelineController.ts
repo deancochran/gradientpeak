@@ -7,18 +7,13 @@ import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { buildCalendarItemRoute } from "@/lib/calendar/calendarItemRouting";
 import {
-  addDaysToDateKey,
   addMonthsToDateKey,
   getMonthGridStartKey,
   getStartOfMonthKey,
   parseDateKey,
 } from "@/lib/calendar/dateMath";
-import { mergeDirectPlannedSessionsIntoCalendar } from "@/lib/calendar/plannedSessionCalendarProjection";
-import { ROUTES } from "@/lib/constants/routes";
 import { useLocalTodayKey } from "@/lib/hooks/useLocalTodayKey";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
-import { buildPlannedSessionRecordingLaunchPayload } from "@/lib/recording/plannedSessionLaunch";
-import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useCalendarStore } from "@/lib/stores/calendar-store";
 
@@ -42,7 +37,6 @@ export function useCalendarTimelineController() {
   const persistedActiveDate = useCalendarStore((state) => state.activeDate);
   const setActiveDate = useCalendarStore((state) => state.setActiveDate);
   const authReady = useAuthStore((state) => state.ready);
-  const profileId = useAuthStore((state) => state.user?.id ?? "");
   const eventsQueryEnabled = useAuthStore(
     (state) => state.ready && !!state.session && hasSessionAuthCredentials(),
   );
@@ -70,29 +64,9 @@ export function useCalendarTimelineController() {
       placeholderData: keepPreviousData,
     },
   );
-  const plannedSessionsQuery = api.plannedSessions.range.useQuery(
-    {
-      profileId,
-      range: {
-        startDate: pageStartDate,
-        endDate: addDaysToDateKey(pageStartDate, CALENDAR_PAGE_SIZE_DAYS - 1),
-      },
-    },
-    {
-      ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled && hydrated && Boolean(profileId),
-      placeholderData: keepPreviousData,
-    },
-  );
-
   const projectionItems = useMemo(() => {
-    const items = [...(eventsQuery.data?.items ?? [])].sort(compareCalendarProjectionItems);
-    return mergeDirectPlannedSessionsIntoCalendar({
-      items,
-      sessions: plannedSessionsQuery.data?.items ?? [],
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-    });
-  }, [eventsQuery.data?.items, plannedSessionsQuery.data?.items]);
+    return [...(eventsQuery.data?.items ?? [])].sort(compareCalendarProjectionItems);
+  }, [eventsQuery.data?.items]);
   const itemsByDate = useMemo(() => buildItemsByDate(projectionItems), [projectionItems]);
   const selectDate = useCallback(
     (dateKey: string) => {
@@ -115,48 +89,22 @@ export function useCalendarTimelineController() {
   }, [navigateTo, settledDateKey]);
 
   const handleOpenItem = useCallback(
-    async (item: CalendarProjectionItem) => {
-      if (item.plannedSession?.source.kind === "direct" && item.event === null) {
-        const session = plannedSessionsQuery.data?.items.find(
-          (candidate) => candidate.id === item.plannedSession?.id,
-        );
-        if (!session) return;
-        activitySelectionStore.setSelection(
-          await buildPlannedSessionRecordingLaunchPayload({
-            plannedSession: {
-              id: session.id,
-              sessionRevision: session.sessionRevision,
-              prescription: session.prescription,
-            },
-            name: item.title,
-          }),
-        );
-        navigateTo(ROUTES.RECORD as never);
-        return;
-      }
+    (item: CalendarProjectionItem) => {
       const route = buildCalendarItemRoute(item);
       if (route) navigateTo(route as never);
     },
-    [navigateTo, plannedSessionsQuery.data?.items],
+    [navigateTo],
   );
 
   return {
     activeMonthKey,
-    calendarProjectionTruncated:
-      (eventsQuery.data?.truncated ?? false) || (plannedSessionsQuery.data?.truncated ?? false),
-    hasActivitiesData: Boolean(eventsQuery.data || plannedSessionsQuery.data),
-    hasPartialError:
-      eventsQuery.isError ||
-      eventsQuery.isRefetchError ||
-      plannedSessionsQuery.isError ||
-      plannedSessionsQuery.isRefetchError,
+    calendarProjectionTruncated: eventsQuery.data?.truncated ?? false,
+    hasActivitiesData: Boolean(eventsQuery.data),
+    hasPartialError: eventsQuery.isError || eventsQuery.isRefetchError,
     hydrated,
-    isLoadingAdjacentPage:
-      (eventsQuery.isFetching && Boolean(eventsQuery.data)) ||
-      (plannedSessionsQuery.isFetching && Boolean(plannedSessionsQuery.data)),
+    isLoadingAdjacentPage: eventsQuery.isFetching && Boolean(eventsQuery.data),
     itemsByDate,
-    loadingEvents:
-      !authReady || !hydrated || eventsQuery.isLoading || plannedSessionsQuery.isLoading,
+    loadingEvents: !authReady || !hydrated || eventsQuery.isLoading,
     monthTitle: format(parseDateKey(activeMonthKey), "MMMM yyyy"),
     onCreateEvent: handleCreateEvent,
     onMoveMonth: moveMonth,
@@ -164,7 +112,7 @@ export function useCalendarTimelineController() {
     onSelectDate: selectDate,
     onToday: () => selectDate(todayKey),
     retryActivities: async () => {
-      await Promise.all([eventsQuery.refetch(), plannedSessionsQuery.refetch()]);
+      await eventsQuery.refetch();
     },
     selectedDateKey: settledDateKey,
     todayKey,

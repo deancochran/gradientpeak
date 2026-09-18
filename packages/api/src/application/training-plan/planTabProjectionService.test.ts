@@ -166,11 +166,10 @@ function dependencies(): PlanTabProjectionDependencies {
     readCurrentScheduledPlan: vi.fn(async () => ({
       id: "33333333-3333-4333-8333-333333333333",
       name: "Spring plan",
-      scheduleBatchId: null,
-      nextEventId: "22222222-2222-4222-8222-222222222222",
-      nextEventTitle: "Tempo ride",
-      nextEventDate: "2026-04-07",
-      nextEventAt: "2026-04-07T15:00:00.000Z",
+      applicationReceipt: "33333333-3333-4333-8333-333333333333:1",
+      nextPlannedSessionId: "22222222-2222-4222-8222-222222222222",
+      nextPlannedSessionTitle: "Tempo ride",
+      nextPlannedSessionDate: "2026-04-07",
       nextActivityPlanId: "55555555-5555-4555-8555-555555555555",
     })),
     readGoalMarkers: vi.fn(async () => [
@@ -216,8 +215,8 @@ describe("readPlanTabProjection", () => {
       contractVersion: "plan-tab-projection-v2",
       currentScheduledPlan: {
         name: "Spring plan",
-        nextEventTitle: "Tempo ride",
-        nextEventDate: "2026-04-07",
+        nextPlannedSessionTitle: "Tempo ride",
+        nextPlannedSessionDate: "2026-04-07",
       },
       dayLoads: {
         "2026-04-06": {

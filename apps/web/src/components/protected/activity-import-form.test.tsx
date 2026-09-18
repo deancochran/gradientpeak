@@ -5,7 +5,24 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ActivityImportForm } from "./activity-import-form";
 
-afterEach(cleanup);
+const guardMocks = vi.hoisted(() => ({
+  guardedCancel: vi.fn((fn: () => void) => fn()),
+  markSaveFailed: vi.fn(),
+  markSaved: vi.fn(),
+}));
+
+vi.mock("../../lib/use-unsaved-changes-guard", () => ({
+  useUnsavedChangesGuard: () => ({
+    guardedCancel: guardMocks.guardedCancel,
+    markSaveFailed: guardMocks.markSaveFailed,
+    markSaved: guardMocks.markSaved,
+  }),
+}));
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 function activityFile(name: string, size = 4, type = "application/octet-stream") {
   const file = new File([new Uint8Array(Math.min(size, 4))], name, { type });
@@ -158,6 +175,18 @@ describe("ActivityImportForm", () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
   });
 
+  it("sends null after optional notes are explicitly cleared", async () => {
+    const onSubmit = vi.fn().mockResolvedValue({ id: "activity-1" });
+    const { selectFile, submit } = renderForm({ onSubmit });
+    selectFile(activityFile("notes.fit"));
+    fireEvent.change(screen.getByLabelText("Notes"), { target: { value: "Remove these notes" } });
+    fireEvent.change(screen.getByLabelText("Notes"), { target: { value: "" } });
+    submit();
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ notes: null })),
+    );
+  });
+
   it.each([
     ["signing", "Preparing upload..."],
     ["uploading", "Uploading activity file..."],
@@ -176,5 +205,34 @@ describe("ActivityImportForm", () => {
     expect(
       (screen.getByRole("button", { name: new RegExp(label) }) as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+
+  it("marks the draft saved and navigates through onSuccess only after the import resolves", async () => {
+    const onSubmit = vi.fn().mockResolvedValue({ id: "activity-1" });
+    const onSuccess = vi.fn().mockResolvedValue(undefined);
+    const { selectFile, submit } = renderForm({ onSubmit, onSuccess });
+    selectFile(activityFile("commit.fit"));
+    submit();
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith({ id: "activity-1" }));
+    expect(guardMocks.markSaved).toHaveBeenCalledTimes(1);
+    expect(guardMocks.markSaved.mock.invocationCallOrder[0]).toBeLessThan(
+      onSuccess.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it("keeps the draft guarded when the import rejects", async () => {
+    const onSubmit = vi.fn().mockRejectedValue(new Error("Storage unavailable"));
+    const onSuccess = vi.fn();
+    const { selectFile, submit } = renderForm({ onSubmit, onSuccess });
+    selectFile(activityFile("reject.fit"));
+    submit();
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(guardMocks.markSaved).not.toHaveBeenCalled();
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert", { name: "" }).textContent).toContain(
+      "The activity file could not be imported. Check the file and try again.",
+    );
   });
 });

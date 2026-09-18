@@ -1,5 +1,6 @@
 import {
   type ActivityPlanDuration,
+  consolidateActivityPlanText,
   deriveActivityPlanPresentation,
   getActivityPlanSessionFlowTargetPresentations,
   resolveActivityPlanSessionFlow,
@@ -184,14 +185,17 @@ export function ActivityPlanSessionFlow({
                                 ).map((target) => target.label),
                               })}
                             </p>
-                            {step.description ? (
-                              <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                                {step.description}
-                              </p>
-                            ) : null}
-                            {step.notes ? (
+                            {consolidateActivityPlanText(
+                              step.notes,
+                              step.description,
+                              "Description",
+                            ) ? (
                               <p className="text-sm leading-5 text-muted-foreground">
-                                {step.notes}
+                                {consolidateActivityPlanText(
+                                  step.notes,
+                                  step.description,
+                                  "Description",
+                                )}
                               </p>
                             ) : null}
                           </li>

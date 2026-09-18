@@ -1,4 +1,8 @@
 import type { ActivityDisplayModel, PlanningLedger } from "@repo/core";
+import {
+  type PlannedSessionComparison,
+  summarizePlannedSessionComparisons,
+} from "@repo/core/calendar";
 import { Text } from "@repo/ui/components/text";
 import { Info } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
@@ -10,7 +14,8 @@ import { LedgerLoadHero } from "./LedgerLoadHero";
 import { PlanningLedgerDiagnosticsSheet } from "./PlanningLedgerDiagnosticsSheet";
 import {
   buildPlanningLedgerPresentation,
-  type TrainingComposition,
+  formatDurationSeconds,
+  type MobileTrainingComposition,
 } from "./planningLedgerPresentation";
 import { TrainingCompositionSummary } from "./TrainingCompositionSummary";
 import { TrainingStateContextChart } from "./TrainingStateContextChart";
@@ -37,16 +42,23 @@ function Section({
   );
 }
 
+function formatComparisonDistance(value: number | null) {
+  if (value === null) return null;
+  return value >= 1_000 ? `${(value / 1_000).toFixed(1)} km` : `${Math.round(value)} m`;
+}
+
 export function PlanningLedgerView({
   completedActivities,
   ledger,
   onOpenEntry,
+  plannedActuals = [],
   trainingComposition,
 }: {
   completedActivities: readonly ActivityDisplayModel[];
   ledger: PlanningLedger;
   onOpenEntry: (target: NavigationTarget) => void;
-  trainingComposition?: TrainingComposition | null;
+  plannedActuals?: readonly PlannedSessionComparison[];
+  trainingComposition?: MobileTrainingComposition | null;
 }) {
   const presentation = useMemo(
     () => buildPlanningLedgerPresentation(ledger, trainingComposition),
@@ -72,6 +84,10 @@ export function PlanningLedgerView({
       entry.kind === "event" ||
       entry.kind === "group_event" ||
       entry.kind === "completed",
+  );
+  const plannedActualSummary = useMemo(
+    () => summarizePlannedSessionComparisons(plannedActuals),
+    [plannedActuals],
   );
   const visibleResourceEntries =
     ledger.period === "day" || selectedDate === null
@@ -102,6 +118,23 @@ export function PlanningLedgerView({
             onSelectDate={setSelectedDate}
             selectedDate={selectedDate}
           />
+          {plannedActualSummary.planned.durationSeconds.value !== null ? (
+            <Text
+              className="text-xs text-muted-foreground"
+              testID="planning-ledger-planned-actual-summary"
+            >
+              Planned duration:{" "}
+              {formatDurationSeconds(plannedActualSummary.planned.durationSeconds.value)} · Actual
+              duration:{" "}
+              {plannedActualSummary.actual.durationSeconds.value === null
+                ? "Unknown"
+                : formatDurationSeconds(plannedActualSummary.actual.durationSeconds.value)}
+              {plannedActualSummary.actual.durationSeconds.missingCount ? " (partial)" : ""}
+              {formatComparisonDistance(plannedActualSummary.actual.distanceMeters.value)
+                ? ` · Actual distance: ${formatComparisonDistance(plannedActualSummary.actual.distanceMeters.value)}${plannedActualSummary.actual.distanceMeters.missingCount ? " (partial)" : ""}`
+                : ""}
+            </Text>
+          ) : null}
         </Section>
       ) : null}
 

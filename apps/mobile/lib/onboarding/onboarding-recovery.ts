@@ -8,9 +8,10 @@ import {
 import { z } from "zod";
 import { safeSecureStore } from "@/lib/storage/safe-secure-store";
 
-// v4 is a hard cut: v3 dynamic keys predate the registry and are intentionally
+// v5 is a hard cut: profile-level training preference recovery is unsupported.
+// Earlier dynamic keys are intentionally
 // unreadable/unmanaged rather than migrated into the current namespace.
-export const ONBOARDING_RECOVERY_VERSION = 4 as const;
+export const ONBOARDING_RECOVERY_VERSION = 5 as const;
 export const ONBOARDING_RECOVERY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const ONBOARDING_RECOVERY_MAX_BYTES = 8 * 1024;
 export const ONBOARDING_SOCIAL_SELECTION_LIMIT = 8;
@@ -40,7 +41,6 @@ const lifecycleSchema = z
   .object({
     required: recoverySectionSchema,
     goal: recoverySectionSchema,
-    settings: recoverySectionSchema,
   })
   .strict();
 
@@ -63,29 +63,6 @@ const goalWriteDataSchema = z
         code: "custom",
         path: ["target_payload"],
         message: "Goal write data is not canonical",
-      });
-    }
-  });
-
-const settingsPatchSchema = z
-  .object({
-    preset: z.enum(["safer", "balanced", "push_harder"]).optional(),
-    minSessionsPerWeek: z.number().int().min(0).max(21).optional(),
-    maxSessionsPerWeek: z.number().int().min(0).max(21).optional(),
-    maxSingleSessionMinutes: z.number().int().min(20).max(600).optional(),
-    maxWeeklyMinutes: z.number().int().min(30).max(10080).optional(),
-  })
-  .strict()
-  .superRefine((patch, context) => {
-    if (
-      patch.minSessionsPerWeek !== undefined &&
-      patch.maxSessionsPerWeek !== undefined &&
-      patch.minSessionsPerWeek > patch.maxSessionsPerWeek
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["minSessionsPerWeek"],
-        message: "Minimum sessions per week cannot exceed maximum sessions",
       });
     }
   });
@@ -135,7 +112,6 @@ const pendingRecoverySchema = z
     expiresAt: z.number().int().positive(),
     profileRetry: profileRetrySchema,
     goal: goalWriteDataSchema.optional(),
-    settingsPatch: settingsPatchSchema.optional(),
     social: socialRecoverySchema,
     lifecycle: lifecycleSchema,
   })
@@ -150,17 +126,6 @@ const pendingRecoverySchema = z
         code: "custom",
         path: ["goal"],
         message: "Retryable goal data is required",
-      });
-    }
-    if (
-      (record.lifecycle.settings.status === "pending" ||
-        (record.lifecycle.settings.status === "failed" && record.lifecycle.settings.retryable)) &&
-      !record.settingsPatch
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["settingsPatch"],
-        message: "Retryable settings data is required",
       });
     }
   });
@@ -180,7 +145,7 @@ const recoveryRecordSchema = z.discriminatedUnion("status", [
 ]);
 const onboardingRecoveryRegistryEntrySchema = z
   .object({
-    key: z.string().regex(/^onboarding-recovery\.v4\.(raw|hex)\.[A-Za-z0-9._-]+$/),
+    key: z.string().regex(/^onboarding-recovery\.v5\.(raw|hex)\.[A-Za-z0-9._-]+$/),
     userId: recoveryUserIdSchema,
   })
   .strict();
@@ -206,7 +171,6 @@ export type PendingOnboardingRecoveryRecord = z.infer<typeof pendingRecoverySche
 export type CompletedOnboardingRecoveryRecord = z.infer<typeof completedRecoverySchema>;
 export type OnboardingRecoveryRecord = z.infer<typeof recoveryRecordSchema>;
 export type OnboardingRecoveryGoal = z.infer<typeof goalWriteDataSchema>;
-export type OnboardingRecoverySettingsPatch = z.infer<typeof settingsPatchSchema>;
 
 type RecoveryListener = (record: OnboardingRecoveryRecord | null) => void;
 const listeners = new Map<string, Set<RecoveryListener>>();

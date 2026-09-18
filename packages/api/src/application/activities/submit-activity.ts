@@ -860,7 +860,7 @@ export async function submitActivity(
           .orderBy(asc(activities.started_at), asc(activities.id))
           .limit(20);
         const candidates = candidateRows.flatMap((candidate) =>
-          candidate.activityCategory
+          candidate.activityCategory && candidate.elapsedMs !== null && candidate.startedAt !== null
             ? [
                 {
                   activityCategory: candidate.activityCategory,
@@ -1090,7 +1090,9 @@ export async function submitActivity(
         name: completedActivityTitle({
           activityCategory: primaryActivityCategory,
           startedAt,
-          timezone: profile?.planningTimezone,
+          ...(profile?.planningTimezone === undefined
+            ? {}
+            : { timezone: profile.planningTimezone }),
         }),
         notes: input.notes === undefined ? (existing?.notes ?? null) : input.notes,
         content_visibility: visibility,
@@ -1232,7 +1234,7 @@ export async function submitActivity(
         await replaceSegments(tx, {
           activityId,
           profileId: input.profileId,
-          artifactId,
+          ...(artifactId === undefined ? {} : { artifactId }),
           segmentSet,
           revision,
           parserVersion,

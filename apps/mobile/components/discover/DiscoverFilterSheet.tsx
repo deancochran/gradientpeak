@@ -1,6 +1,7 @@
 import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Text } from "@repo/ui/components/text";
 import type React from "react";
+import { useState } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { AppBottomSheet } from "@/components/shared/AppBottomSheet";
 import {
@@ -76,6 +77,17 @@ export function DiscoverFilterSheet({
   onApply,
   onClose,
 }: DiscoverFilterSheetProps) {
+  const [numericErrors, setNumericErrors] = useState<Record<string, string>>({});
+  const allValidationErrors = [...validationErrors, ...Object.values(numericErrors)];
+  const setNumericError = (key: string, error: string | null) => {
+    setNumericErrors((current) => {
+      if (!error && !current[key]) return current;
+      const next = { ...current };
+      if (error) next[key] = error;
+      else delete next[key];
+      return next;
+    });
+  };
   const isResetDisabled =
     (scope === "activityPlans" &&
       areSortStatesEqual(activityPlanSort, DEFAULT_ACTIVITY_PLAN_SORT) &&
@@ -97,7 +109,10 @@ export function DiscoverFilterSheet({
       visible={visible}
       title="Sort & Filters"
       description={`Refine the ${getScopeNoun(scope)} list.`}
-      onClose={onClose}
+      onClose={() => {
+        setNumericErrors({});
+        onClose();
+      }}
       snapPoints={DISCOVER_FILTER_SHEET_SNAP_POINTS}
       initialSnapIndex={0}
       contentPaddingBottom={156}
@@ -105,7 +120,10 @@ export function DiscoverFilterSheet({
       footer={
         <View className="flex-row gap-3">
           <TouchableOpacity
-            onPress={onReset}
+            onPress={() => {
+              setNumericErrors({});
+              onReset();
+            }}
             activeOpacity={0.85}
             disabled={isResetDisabled}
             testID="discover-filter-reset"
@@ -119,15 +137,15 @@ export function DiscoverFilterSheet({
           <TouchableOpacity
             onPress={onApply}
             activeOpacity={0.85}
-            disabled={validationErrors.length > 0}
+            disabled={allValidationErrors.length > 0}
             testID="discover-filter-apply"
             className={`flex-1 items-center justify-center rounded-2xl px-4 py-3 ${
-              validationErrors.length > 0 ? "bg-muted" : "bg-primary"
+              allValidationErrors.length > 0 ? "bg-muted" : "bg-primary"
             }`}
           >
             <Text
               className={`text-sm font-semibold ${
-                validationErrors.length > 0 ? "text-muted-foreground" : "text-primary-foreground"
+                allValidationErrors.length > 0 ? "text-muted-foreground" : "text-primary-foreground"
               }`}
             >
               Apply
@@ -136,9 +154,9 @@ export function DiscoverFilterSheet({
         </View>
       }
     >
-      {validationErrors.length > 0 ? (
+      {allValidationErrors.length > 0 ? (
         <View className="mb-4 gap-1 rounded-2xl border border-destructive/40 bg-destructive/10 px-3 py-3">
-          {validationErrors.map((error) => (
+          {allValidationErrors.map((error) => (
             <Text key={error} className="text-xs text-destructive">
               {error}
             </Text>
@@ -229,6 +247,7 @@ export function DiscoverFilterSheet({
               maxPlaceholder="Max minutes"
               unitLabel="minutes"
               testIDPrefix="discover-filter-activityPlans-duration"
+              onValidationChange={setNumericError}
             />
           </FilterSection>
 
@@ -252,6 +271,7 @@ export function DiscoverFilterSheet({
               maxPlaceholder="Max Common Load"
               unitLabel="common load"
               testIDPrefix="discover-filter-activityPlans-common-load"
+              onValidationChange={setNumericError}
             />
           </FilterSection>
 
@@ -276,6 +296,7 @@ export function DiscoverFilterSheet({
               decimals={2}
               unitLabel="intensity ratio"
               testIDPrefix="discover-filter-activityPlans-objective-intensity"
+              onValidationChange={setNumericError}
             />
           </FilterSection>
         </View>
@@ -376,6 +397,7 @@ export function DiscoverFilterSheet({
               maxPlaceholder="Max weeks"
               unitLabel="weeks"
               testIDPrefix="discover-filter-trainingPlans-weeks"
+              onValidationChange={setNumericError}
             />
           </FilterSection>
 
@@ -399,6 +421,7 @@ export function DiscoverFilterSheet({
               maxPlaceholder="Max sessions"
               unitLabel="sessions per week"
               testIDPrefix="discover-filter-trainingPlans-sessions"
+              onValidationChange={setNumericError}
             />
           </FilterSection>
         </View>
@@ -457,6 +480,7 @@ export function DiscoverFilterSheet({
               decimals={2}
               unitLabel="kilometers"
               testIDPrefix="discover-filter-routes-distance"
+              onValidationChange={setNumericError}
             />
           </FilterSection>
 
@@ -480,6 +504,7 @@ export function DiscoverFilterSheet({
               maxPlaceholder="Max ascent m"
               unitLabel="meters"
               testIDPrefix="discover-filter-routes-ascent"
+              onValidationChange={setNumericError}
             />
           </FilterSection>
         </View>
@@ -532,6 +557,8 @@ function FilterChip({
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.8}
+      accessibilityRole="button"
+      accessibilityState={{ selected: isActive }}
       testID={testID}
       className={`rounded-full border px-3 py-2 ${
         isActive ? "border-primary bg-primary/10" : "border-border bg-background"
@@ -655,6 +682,7 @@ function RangeInputRow({
   maxPlaceholder,
   unitLabel,
   testIDPrefix,
+  onValidationChange,
   decimals = 0,
 }: {
   minValue: number | null;
@@ -665,6 +693,7 @@ function RangeInputRow({
   maxPlaceholder: string;
   unitLabel?: string;
   testIDPrefix: string;
+  onValidationChange: (key: string, error: string | null) => void;
   decimals?: number;
 }) {
   return (
@@ -675,7 +704,15 @@ function RangeInputRow({
           <BoundedNumberInput
             decimals={decimals}
             label="Min"
-            onChange={onMinChange}
+            onChange={(value) => {
+              onMinChange(value);
+              onValidationChange(
+                `${testIDPrefix}-min`,
+                value.trim() && parseNumericInput(value, { allowDecimal: decimals > 0 }) === null
+                  ? "Enter a valid non-negative number."
+                  : null,
+              );
+            }}
             placeholder={minPlaceholder}
             testID={`${testIDPrefix}-min`}
             value={minValue?.toString() ?? ""}
@@ -685,7 +722,15 @@ function RangeInputRow({
           <BoundedNumberInput
             decimals={decimals}
             label="Max"
-            onChange={onMaxChange}
+            onChange={(value) => {
+              onMaxChange(value);
+              onValidationChange(
+                `${testIDPrefix}-max`,
+                value.trim() && parseNumericInput(value, { allowDecimal: decimals > 0 }) === null
+                  ? "Enter a valid non-negative number."
+                  : null,
+              );
+            }}
             placeholder={maxPlaceholder}
             testID={`${testIDPrefix}-max`}
             value={maxValue?.toString() ?? ""}

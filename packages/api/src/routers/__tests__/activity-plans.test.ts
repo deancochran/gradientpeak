@@ -1,7 +1,6 @@
 import {
-  activityPlanDocumentSchema,
+  activityPlanAuthoringIssueCodes,
   activityPlanStructureSchema,
-  initializeActivityPlanDocument,
 } from "@repo/core/activity-plan";
 import {
   activityPlans,
@@ -11,6 +10,7 @@ import {
   follows,
   groupEvents,
   likes,
+  plannedSessions,
   profiles,
 } from "@repo/db";
 import type { TRPCError } from "@trpc/server";
@@ -19,8 +19,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { estimationState, plannedActivitySyncState } = vi.hoisted(() => ({
   estimationState: {
-    estimateActivityPlan: vi.fn(),
-    estimateActivityPlans: vi.fn(),
+    estimateActivityPlan: vi.fn(async (plan: any) => ({
+      ...plan,
+      prescriptionQuantification: null,
+    })),
+    estimateActivityPlans: vi.fn(async (plans: any[]) =>
+      plans.map((plan) => ({
+        ...plan,
+        prescriptionQuantification: null,
+      })),
+    ),
   },
   plannedActivitySyncState: {
     enqueueWahooPlannedActivityJobs: vi.fn(),
@@ -45,7 +53,7 @@ vi.mock("../../application/activity-plans/estimate-activity-plans", async (impor
 });
 
 import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
-import { activityPlansRouter, duplicateActivityPlanDocument } from "../activity-plans";
+import { activityPlansRouter } from "../activity-plans";
 
 type MockTableName =
   | "activity_plans"
@@ -55,6 +63,7 @@ type MockTableName =
   | "follows"
   | "group_events"
   | "likes"
+  | "planned_sessions"
   | "profiles";
 type MockOperation = "select" | "insert" | "update" | "delete";
 
@@ -91,10 +100,30 @@ const sampleStructure: any = {
             {
               id: "44444444-4444-4444-8444-444444444444",
               name: "Ride",
+              purpose: "work",
               duration: { type: "time", seconds: 1800 },
               targets: [{ type: "%FTP", intensity: 75 }],
             },
           ],
+        },
+      ],
+    },
+  ],
+};
+
+const sampleAdaptation = {
+  controls: [
+    {
+      id: "55555555-5555-4555-8555-555555555555",
+      key: "repeat_count",
+      label: "Repeat count",
+      kind: "interval_repetitions" as const,
+      range: { minimum: 1, default: 1, maximum: 2, increment: 1 },
+      targets: [
+        {
+          type: "interval_repetitions" as const,
+          activitySegmentId: sampleStructure.segments[0].id,
+          intervalId: sampleStructure.segments[0].intervals[0].id,
         },
       ],
     },
@@ -122,25 +151,19 @@ function createCompositionStructure(activity_category: "bike" | "run", segmentCo
 }
 
 function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
-  const id =
-    typeof overrides.id === "string" ? overrides.id : "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-  const requestedStructure = overrides.structure ?? sampleStructure;
-  const parsedDocument = activityPlanDocumentSchema.safeParse(requestedStructure);
-  const document = parsedDocument.success
-    ? parsedDocument.data
-    : activityPlanStructureSchema.safeParse(requestedStructure).success
-      ? initializeActivityPlanDocument({ activityPlanId: id, structure: requestedStructure })
-      : requestedStructure;
-  const documentHash = activityPlanDocumentSchema.safeParse(document).success
-    ? activityPlanStructureHash(document)
-    : `v1:sha256:${"0".repeat(64)}`;
   return {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     created_at: new Date("2026-03-01T10:00:00.000Z"),
     updated_at: new Date("2026-03-01T10:00:00.000Z"),
     profile_id: USER_ID,
     name: "Tempo Builder",
     description: "Structured activity",
     notes: "Bring bottles",
+    training_intent: "general_maintenance",
+    structure: sampleStructure,
+    adaptation: null,
+    structure_hash: activityPlanStructureHash(sampleStructure),
+    semantic_hash: `v1:sha256:${"a".repeat(64)}`,
     revision: 1,
     gps_recording_enabled: true,
     content_visibility: "private",
@@ -149,10 +172,6 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
     system_content_version: null,
     system_content_hash: null,
     ...overrides,
-    id,
-    structure: document,
-    structure_hash:
-      typeof overrides.structure_hash === "string" ? overrides.structure_hash : documentHash,
   };
 }
 
@@ -187,6 +206,10 @@ function resolveTableName(table: unknown): MockTableName {
 
   if (table === profiles) {
     return "profiles";
+  }
+
+  if (table === plannedSessions) {
+    return "planned_sessions";
   }
 
   throw new Error(`Unsupported table in activity-plans test mock: ${String(table)}`);
@@ -257,11 +280,13 @@ function createDbMock(state: MockDbState = {}) {
       const tableName = resolveTableName(table);
       return {
         set: (payload: unknown) => {
-          callLog.push({ operation: "update", table: tableName, payload });
+          const call: DbCall = { operation: "update", table: tableName, payload };
+          callLog.push(call);
           return {
-            where: () => ({
-              returning: async () => nextRows("update", tableName),
-            }),
+            where: (condition: unknown) => {
+              call.where = condition;
+              return { returning: async () => nextRows("update", tableName) };
+            },
           };
         },
       };
@@ -321,22 +346,273 @@ function createProfileRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe("activityPlansRouter", () => {
+  it.each([
+    "adaptation",
+    "training_intent",
+  ] as const)("rejects stale revisions after a %s-only edit with the same structure hash", async (field) => {
+    const row = createActivityPlanRow({ revision: 8 });
+    const { caller, callLog } = createCaller({ state: { "select:activity_plans": [[row]] } });
+    await expect(
+      caller.update({
+        id: row.id,
+        expectedStructureHash: row.structure_hash,
+        expectedRevision: 7,
+        ...(field === "adaptation"
+          ? { adaptation: sampleAdaptation }
+          : { training_intent: "aerobic_base" as const }),
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT", message: "STALE_ACTIVITY_PLAN_REVISION" });
+    expect(callLog.some((call) => call.operation === "update")).toBe(false);
+  });
+
+  it("requires the client revision before reading or writing", async () => {
+    const { caller, callLog } = createCaller();
+    await expect(
+      caller.update({
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        expectedStructureHash: activityPlanStructureHash(sampleStructure),
+        name: "Missing revision",
+      } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(callLog).toEqual([]);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
-    estimationState.estimateActivityPlan.mockImplementation(
-      async (plan: Record<string, unknown>) => ({
-        ...plan,
-        prescriptionQuantification: null,
-      }),
-    );
-    estimationState.estimateActivityPlans.mockImplementation(
-      async (plans: Array<Record<string, unknown>>) =>
-        plans.map((plan) => ({
-          ...plan,
-          prescriptionQuantification: null,
-        })),
-    );
     plannedActivitySyncState.enqueueWahooPlannedActivityJobs.mockResolvedValue(null);
+  });
+
+  const invalidSteps = [
+    {
+      label: "missing purpose",
+      change: { purpose: undefined },
+      code: activityPlanAuthoringIssueCodes.purposeRequired,
+    },
+    {
+      label: "open ended",
+      change: { duration: { type: "untilFinished" } },
+      code: activityPlanAuthoringIssueCodes.durationNotPermitted,
+    },
+    {
+      label: "bike repetitions",
+      change: {
+        duration: { type: "repetitions", count: 5 },
+        targets: [{ type: "RPE", intensity: 5 }],
+      },
+      code: activityPlanAuthoringIssueCodes.durationNotPermitted,
+    },
+    {
+      label: "cadence alone",
+      change: { targets: [{ type: "cadence", intensity: 90 }] },
+      code: activityPlanAuthoringIssueCodes.missingIntensity,
+    },
+    {
+      label: "RPE quarter point",
+      change: { targets: [{ type: "RPE", intensity: 5.25 }] },
+      code: activityPlanAuthoringIssueCodes.invalidRpe,
+    },
+    {
+      label: "over max HR",
+      change: { targets: [{ type: "%MaxHR", intensity: 101 }] },
+      code: activityPlanAuthoringIssueCodes.maxHrExceeded,
+    },
+    {
+      label: "zero distance speed",
+      change: {
+        duration: { type: "distance", meters: 100 },
+        targets: [{ type: "speed", intensity: 0 }],
+      },
+      code: activityPlanAuthoringIssueCodes.distanceSpeedNotPositive,
+    },
+  ];
+  for (const operation of ["create", "update", "duplicate"] as const) {
+    it.each(
+      invalidSteps,
+    )(`${operation} rejects $label with field diagnostics and no write`, async ({
+      change,
+      code,
+    }) => {
+      const structure = structuredClone(sampleStructure);
+      Object.assign(structure.segments[0].intervals[0].steps[0], change);
+      if (structure.segments[0].intervals[0].steps[0].purpose === undefined)
+        delete structure.segments[0].intervals[0].steps[0].purpose;
+      if (code === activityPlanAuthoringIssueCodes.distanceSpeedNotPositive)
+        structure.activity_category = "run";
+      expect(activityPlanStructureSchema.safeParse(structure).success).toBe(true);
+      const row = createActivityPlanRow({
+        structure,
+        structure_hash: activityPlanStructureHash(structure),
+      });
+      const { caller, callLog } = createCaller({ state: { "select:activity_plans": [[row]] } });
+      const call =
+        operation === "create"
+          ? caller.create({ name: "Invalid new plan", structure })
+          : operation === "update"
+            ? caller.update({
+                id: row.id,
+                expectedStructureHash: row.structure_hash,
+                expectedRevision: row.revision,
+                name: "Metadata-only save",
+              })
+            : caller.duplicate({ id: row.id });
+      await expect(call).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        cause: {
+          issues: expect.arrayContaining([
+            expect.objectContaining({
+              path: expect.arrayContaining(["structure", "segments", "steps"]),
+              params: expect.objectContaining({ activityPlanIssueCode: code }),
+            }),
+          ]),
+        },
+      });
+      expect(
+        callLog.some((entry) => entry.operation === "insert" || entry.operation === "update"),
+      ).toBe(false);
+    });
+  }
+
+  it("retains historical reads of plans that cannot be newly authored or cloned", async () => {
+    const structure = structuredClone(sampleStructure);
+    delete structure.segments[0].intervals[0].steps[0].purpose;
+    structure.segments[0].intervals[0].steps[0].duration = { type: "untilFinished" };
+    const row = createActivityPlanRow({
+      structure,
+      structure_hash: activityPlanStructureHash(structure),
+    });
+    const { caller } = createCaller({ state: { "select:activity_plans": [[row]] } });
+    const result = await caller.getById({ id: row.id });
+    expect(result.edit?.structure).toEqual(structure);
+  });
+
+  it.each([
+    "create",
+    "update",
+    "duplicate",
+  ] as const)("%s validates invalid adapted states in the effective document", async (operation) => {
+    const adaptation = {
+      controls: [
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          label: "Heart rate",
+          key: "hr",
+          kind: "target_intensity" as const,
+          range: { minimum: 100, default: 100, maximum: 101, increment: 1 },
+          targets: [
+            {
+              type: "target_intensity" as const,
+              activitySegmentId: sampleStructure.segments[0].id,
+              intervalId: sampleStructure.segments[0].intervals[0].id,
+              stepId: sampleStructure.segments[0].intervals[0].steps[0].id,
+              targetType: "%MaxHR" as const,
+            },
+          ],
+        },
+      ],
+    };
+    const structure = structuredClone(sampleStructure);
+    structure.segments[0].intervals[0].steps[0].targets = [{ type: "%MaxHR", intensity: 100 }];
+    const row = createActivityPlanRow({
+      structure,
+      adaptation,
+      structure_hash: activityPlanStructureHash(structure),
+    });
+    const { caller, callLog } = createCaller({ state: { "select:activity_plans": [[row]] } });
+    const call =
+      operation === "create"
+        ? caller.create({ name: "Invalid surface", structure, adaptation })
+        : operation === "update"
+          ? caller.update({
+              id: row.id,
+              expectedStructureHash: row.structure_hash,
+              expectedRevision: row.revision,
+              training_intent: "general_maintenance",
+            })
+          : caller.duplicate({ id: row.id });
+    await expect(call).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      cause: {
+        issues: expect.arrayContaining([
+          expect.objectContaining({
+            params: expect.objectContaining({
+              activityPlanIssueCode: activityPlanAuthoringIssueCodes.maxHrExceeded,
+              adaptation_values: { hr: 101 },
+            }),
+          }),
+        ]),
+      },
+    });
+    expect(
+      callLog.some((entry) => entry.operation === "insert" || entry.operation === "update"),
+    ).toBe(false);
+  });
+
+  it("allows a complete repair of a historical document on update", async () => {
+    const historical = structuredClone(sampleStructure);
+    delete historical.segments[0].intervals[0].steps[0].purpose;
+    const row = createActivityPlanRow({
+      structure: historical,
+      structure_hash: activityPlanStructureHash(historical),
+    });
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[row]],
+        "update:activity_plans": [[createActivityPlanRow()]],
+      },
+    });
+    await caller.update({
+      id: row.id,
+      expectedStructureHash: row.structure_hash,
+      expectedRevision: row.revision,
+      structure: sampleStructure,
+    });
+    expect(callLog.find((entry) => entry.operation === "update")?.payload).toMatchObject({
+      structure: sampleStructure,
+    });
+  });
+  it("maps intent-only effective-document failures to the API training_intent field", async () => {
+    const row = createActivityPlanRow();
+    const { caller, callLog } = createCaller({ state: { "select:activity_plans": [[row]] } });
+    await expect(
+      caller.update({
+        id: row.id,
+        expectedStructureHash: row.structure_hash,
+        expectedRevision: row.revision,
+        training_intent: "vo2max",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      cause: {
+        issues: expect.arrayContaining([
+          expect.objectContaining({
+            path: ["training_intent"],
+            params: expect.objectContaining({
+              activityPlanIssueCode: activityPlanAuthoringIssueCodes.incompatibleIntent,
+            }),
+          }),
+        ]),
+      },
+    });
+    expect(callLog.some((call) => call.operation === "update")).toBe(false);
+  });
+
+  it("fences the validated semantic revision atomically without changing the client's hash token", async () => {
+    const row = createActivityPlanRow({ revision: 7 });
+    const { caller, callLog } = createCaller({
+      state: { "select:activity_plans": [[row]], "update:activity_plans": [[]] },
+    });
+    await expect(
+      caller.update({
+        id: row.id,
+        expectedStructureHash: row.structure_hash,
+        expectedRevision: row.revision,
+        training_intent: "aerobic_base",
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    const update = callLog.find((entry) => entry.operation === "update");
+    const query = pgDialect.sqlToQuery(update?.where as never);
+    expect(query.sql).toContain('"activity_plans"."revision" =');
+    expect(query.params).toContain(7);
+    expect(query.params).toContain(row.structure_hash);
   });
 
   it("list returns estimated items, liked state, and a next cursor", async () => {
@@ -448,7 +724,7 @@ describe("activityPlansRouter", () => {
         expect.objectContaining({ key: "common_load", provenance: "estimated" }),
       ]),
     );
-    expect(result.items[0]?.structure).toEqual(publicPlan.structure.variants[0].structure);
+    expect(result.items[0]?.structure).toEqual(publicPlan.structure);
     expect(result.items[0]).not.toHaveProperty("prescriptionQuantification");
     expect(JSON.stringify(result.items[0])).toMatch(/%FTP|targets|duration/i);
   });
@@ -518,6 +794,7 @@ describe("activityPlansRouter", () => {
     const runPlan = createActivityPlanRow({
       id: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       structure: runStructure,
+      structure_hash: activityPlanStructureHash(runStructure),
     });
     const { caller } = createCaller({
       state: {
@@ -575,7 +852,7 @@ describe("activityPlansRouter", () => {
         activity_category: index === 0 ? "run" : "bike",
       })),
     };
-    const structureHash = `v1:sha256:${"1".repeat(64)}`;
+    const structureHash = activityPlanStructureHash(structure);
     const legacyPlan = createActivityPlanRow({ structure, structure_hash: structureHash });
     const { caller, callLog } = createCaller({
       state: {
@@ -587,6 +864,7 @@ describe("activityPlansRouter", () => {
       caller.update({
         id: legacyPlan.id,
         expectedStructureHash: structureHash,
+        expectedRevision: 1,
         name: "Updated details",
       }),
     ).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR" });
@@ -649,9 +927,7 @@ describe("activityPlansRouter", () => {
 
     const query = getActivityPlanListQuery(callLog);
     expect(query.sql).toContain("@>");
-    expect(query.params).toContain(
-      JSON.stringify({ variants: [{ structure: { activity_category: "run" } }] }),
-    );
+    expect(query.params).toContain(JSON.stringify({ activity_category: "run" }));
   });
 
   it("getById rejects a private plan owned by another user", async () => {
@@ -704,7 +980,7 @@ describe("activityPlansRouter", () => {
     const result = await caller.getById({ id: publicPlan.id, personalize: true });
 
     expect(result.edit).toBeNull();
-    expect(result.detail.structure).toEqual(publicPlan.structure.variants[0].structure);
+    expect(result.detail.structure).toEqual(publicPlan.structure);
     expect(result.detail.metrics).toEqual([
       expect.objectContaining({ key: "distance", status: "unavailable", provenance: null }),
       expect.objectContaining({
@@ -745,6 +1021,63 @@ describe("activityPlansRouter", () => {
     );
   });
 
+  it("roundtrips adaptive controls and training intent through owner edit, create, and update", async () => {
+    const existing = createActivityPlanRow({
+      training_intent: "aerobic_base",
+      adaptation: sampleAdaptation,
+    });
+    const created = createActivityPlanRow({
+      id: "55555555-5555-4555-8555-555555555556",
+      training_intent: "aerobic_base",
+      adaptation: sampleAdaptation,
+    });
+    const updated = createActivityPlanRow({
+      id: existing.id,
+      name: "Retained adaptive plan",
+      training_intent: "aerobic_base",
+      adaptation: sampleAdaptation,
+    });
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[existing], [existing]],
+        "insert:activity_plans": [[created]],
+        "update:activity_plans": [[updated]],
+      },
+    });
+
+    const detail = await caller.getById({ id: existing.id });
+    expect(detail.edit).toMatchObject({
+      trainingIntent: "aerobic_base",
+      adaptation: sampleAdaptation,
+    });
+
+    await caller.create({
+      name: "Adaptive plan",
+      structure: sampleStructure,
+      training_intent: "aerobic_base",
+      adaptation: sampleAdaptation,
+    });
+    await caller.update({
+      id: existing.id,
+      expectedStructureHash: existing.structure_hash,
+      expectedRevision: existing.revision,
+      name: "Retained adaptive plan",
+      training_intent: "aerobic_base",
+      adaptation: sampleAdaptation,
+    });
+
+    const insert = callLog.find((call) => call.operation === "insert");
+    const update = callLog.find((call) => call.operation === "update");
+    expect(insert?.payload).toMatchObject({
+      training_intent: "aerobic_base",
+      adaptation: sampleAdaptation,
+    });
+    expect(update?.payload).toMatchObject({
+      training_intent: "aerobic_base",
+      adaptation: sampleAdaptation,
+    });
+  });
+
   it("passes an explicit default-off personalization choice to detail estimation", async () => {
     const plan = createActivityPlanRow();
     const state: MockDbState = {
@@ -769,96 +1102,6 @@ describe("activityPlansRouter", () => {
       expect.anything(),
       USER_ID,
       { personalize: true },
-    );
-  });
-
-  it("resolves the omitted default and an explicit nondefault variant for detail", async () => {
-    const defaultId = "77777777-7777-4777-8777-777777777777";
-    const explicitId = "88888888-8888-4888-8888-888888888888";
-    const explicitStructure = structuredClone(sampleStructure);
-    explicitStructure.segments[0].intervals[0].steps[0].duration.seconds = 2_400;
-    const plan = createActivityPlanRow({
-      structure: {
-        contractVersion: 1,
-        defaultVariantId: defaultId,
-        variants: [
-          { id: defaultId, name: "Default", structure: sampleStructure },
-          { id: explicitId, name: "Build", structure: explicitStructure },
-        ],
-      },
-    });
-    estimationState.estimateActivityPlan.mockImplementation(
-      async (
-        candidate: { structure: typeof plan.structure },
-        _db: unknown,
-        _user: unknown,
-        options: { variantId?: string } = {},
-      ) => {
-        const variant = candidate.structure.variants.find(
-          (entry: { id: string }) =>
-            entry.id === (options.variantId ?? candidate.structure.defaultVariantId),
-        );
-        if (!variant) throw new Error("Expected selected variant");
-        return {
-          ...candidate,
-          prescriptionQuantification: null,
-          planProjection: null,
-          resolvedActivityPlanVariant: {
-            selection: options.variantId === undefined ? "default" : "explicit",
-            variantId: variant.id,
-            variantName: variant.name,
-            structure: variant.structure,
-          },
-        };
-      },
-    );
-    const state: MockDbState = {
-      "select:activity_plans": [[plan]],
-      "select:likes": [[], []],
-      "select:profiles": [[createProfileRow()], [createProfileRow()]],
-    };
-
-    const { caller: defaultCaller } = createCaller({ state });
-    const defaultResult = await defaultCaller.getById({ id: plan.id });
-    const { caller: explicitCaller } = createCaller({ state });
-    const explicitResult = await explicitCaller.getById({ id: plan.id, variantId: explicitId });
-
-    expect(defaultResult.detail).toMatchObject({
-      resolvedVariant: { id: defaultId, name: "Default", selection: "default" },
-      structure: sampleStructure,
-    });
-    expect(explicitResult.detail).toMatchObject({
-      resolvedVariant: { id: explicitId, name: "Build", selection: "explicit" },
-      structure: explicitStructure,
-      variants: [
-        { id: defaultId, name: "Default" },
-        { id: explicitId, name: "Build" },
-      ],
-    });
-    expect(explicitResult.edit?.structure).toEqual(plan.structure);
-  });
-
-  it("rejects an explicit unknown detail variant without default fallback", async () => {
-    const plan = createActivityPlanRow();
-    const { caller } = createCaller({
-      state: { "select:activity_plans": [[plan]] },
-    });
-    const { ActivityPlanVariantResolutionError } = await import("@repo/core/activity-plan");
-    estimationState.estimateActivityPlan.mockRejectedValueOnce(
-      new ActivityPlanVariantResolutionError(
-        "ACTIVITY_PLAN_UNKNOWN_EXPLICIT_VARIANT",
-        "99999999-9999-4999-8999-999999999999",
-      ),
-    );
-
-    await expect(
-      caller.getById({ id: plan.id, variantId: "99999999-9999-4999-8999-999999999999" }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "Unknown activity plan variant" });
-    expect(estimationState.estimateActivityPlan).toHaveBeenCalledWith(
-      expect.objectContaining({ id: plan.id }),
-      expect.anything(),
-      USER_ID,
-      { personalize: false, variantId: "99999999-9999-4999-8999-999999999999" },
     );
   });
 
@@ -888,6 +1131,7 @@ describe("activityPlansRouter", () => {
       id: "22222222-2222-4222-8222-222222222222",
       profile_id: OTHER_USER_ID,
       gps_recording_enabled: true,
+      structure_hash: activityPlanStructureHash(sampleStructure),
       content_visibility: "public",
     });
     const { caller } = createCaller({
@@ -916,7 +1160,7 @@ describe("activityPlansRouter", () => {
     expect(result.items[1]?.owner?.id).toBe(OTHER_USER_ID);
     expect(result.items[0]).toHaveProperty("structure");
     expect(result.items[0]).toHaveProperty("prescriptionQuantification");
-    expect(result.items[1]?.structure).toEqual(publicPlan.structure.variants[0].structure);
+    expect(result.items[1]?.structure).toEqual(publicPlan.structure);
     expect(result.items[1]).not.toHaveProperty("prescriptionQuantification");
     expect(result.items[1]?.metrics).toEqual(
       expect.arrayContaining([
@@ -1043,6 +1287,7 @@ describe("activityPlansRouter", () => {
       id: "55555555-5555-4555-8555-555555555555",
       name: "Created Plan",
       content_visibility: "public",
+      structure_hash: activityPlanStructureHash(sampleStructure),
     });
     const { caller, callLog } = createCaller({
       state: {
@@ -1060,20 +1305,11 @@ describe("activityPlansRouter", () => {
     const insertCall = callLog.find((call) => call.operation === "insert");
     expect(insertCall?.payload).toMatchObject({
       name: "Created Plan",
-      description: null,
+      description: "Hydrate",
+      notes: null,
       profile_id: USER_ID,
       content_visibility: "public",
-      structure: {
-        contractVersion: 1,
-        variants: [{ name: "Base", structure: sampleStructure }],
-      },
     });
-    const inserted = insertCall?.payload as {
-      id: string;
-      structure: { defaultVariantId: string; variants: Array<{ id: string }> };
-    };
-    expect(inserted.structure.defaultVariantId).toBe(inserted.id);
-    expect(inserted.structure.variants[0]?.id).toBe(inserted.id);
     expect(result).toMatchObject({
       id: createdRow.id,
       content_type: "activity_plan",
@@ -1082,6 +1318,35 @@ describe("activityPlansRouter", () => {
     });
     expect(result).not.toHaveProperty("route");
     expect(result).not.toHaveProperty("route_id");
+  });
+
+  it("creates plans from the largest valid legacy text pair", async () => {
+    const createdRow = createActivityPlanRow();
+    const { caller, callLog } = createCaller({
+      state: { "insert:activity_plans": [[createdRow]] },
+    });
+    const description = "a".repeat(1_000);
+    const notes = "b".repeat(2_000);
+
+    await caller.create({ name: "Legacy text", description, notes, structure: sampleStructure });
+
+    expect(callLog.find((call) => call.operation === "insert")?.payload).toMatchObject({
+      description: `${description}\n\nNotes:\n${notes}`,
+      notes: null,
+    });
+  });
+
+  it("rejects new descriptions beyond the canonical plan limit", async () => {
+    const { caller, callLog } = createCaller();
+
+    await expect(
+      caller.create({
+        name: "Too long",
+        description: "a".repeat(3_010),
+        structure: sampleStructure,
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+    expect(callLog).toHaveLength(0);
   });
 
   it("create rejects route linkage and never persists it", async () => {
@@ -1129,9 +1394,10 @@ describe("activityPlansRouter", () => {
     const result = await caller.update({
       id: existingRow.id,
       expectedStructureHash: existingRow.structure_hash,
+      expectedRevision: existingRow.revision,
       name: "After Update",
       content_visibility: "public",
-      structure: existingRow.structure,
+      structure: sampleStructure,
     });
 
     const updateCall = callLog.find((call) => call.operation === "update");
@@ -1142,6 +1408,51 @@ describe("activityPlansRouter", () => {
     expect(result).toMatchObject({ id: existingRow.id, visibility: "public" });
   });
 
+  it("consolidates legacy plan and step text only when an update is saved", async () => {
+    const legacyStructure = structuredClone(sampleStructure);
+    legacyStructure.segments[0].intervals[0].steps[0].description = "Keep cadence smooth";
+    legacyStructure.segments[0].intervals[0].steps[0].notes = "Stay seated";
+    const existingRow = createActivityPlanRow({
+      description: "Tempo work",
+      notes: "Bring water",
+      structure: legacyStructure,
+      structure_hash: activityPlanStructureHash(legacyStructure),
+    });
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[existingRow]],
+        "update:activity_plans": [[existingRow]],
+      },
+    });
+
+    await caller.update({
+      id: existingRow.id,
+      expectedStructureHash: existingRow.structure_hash,
+      expectedRevision: existingRow.revision,
+      name: "Tempo work updated",
+    });
+
+    expect(callLog.find((call) => call.operation === "update")?.payload).toMatchObject({
+      description: "Tempo work\n\nNotes:\nBring water",
+      notes: null,
+      structure: {
+        segments: [
+          {
+            intervals: [
+              {
+                steps: [
+                  {
+                    notes: "Stay seated\n\nDescription:\nKeep cadence smooth",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+  });
+
   it("increments the plan revision only when the prescription structure changes", async () => {
     const existingRow = createActivityPlanRow({ revision: 4 });
     const changedStructure = activityPlanStructureSchema.parse(
@@ -1150,6 +1461,7 @@ describe("activityPlansRouter", () => {
     const changedRow = createActivityPlanRow({
       revision: 5,
       structure: changedStructure,
+      structure_hash: activityPlanStructureHash(changedStructure),
     });
     const metadataRow = createActivityPlanRow({ revision: 4, notes: "Updated notes" });
     const { caller, callLog } = createCaller({
@@ -1162,11 +1474,13 @@ describe("activityPlansRouter", () => {
     const changed = await caller.update({
       id: existingRow.id,
       expectedStructureHash: existingRow.structure_hash,
-      structure: changedRow.structure,
+      expectedRevision: existingRow.revision,
+      structure: changedStructure,
     });
     await caller.update({
       id: existingRow.id,
       expectedStructureHash: existingRow.structure_hash,
+      expectedRevision: existingRow.revision,
       notes: "Updated notes",
     });
 
@@ -1188,6 +1502,7 @@ describe("activityPlansRouter", () => {
       caller.update({
         id: existingRow.id,
         expectedStructureHash: existingRow.structure_hash,
+        expectedRevision: existingRow.revision,
         route_id: "99999999-9999-4999-8999-999999999999",
       } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
@@ -1204,6 +1519,7 @@ describe("activityPlansRouter", () => {
       caller.update({
         id: ownedByAnotherAthlete.id,
         expectedStructureHash: ownedByAnotherAthlete.structure_hash,
+        expectedRevision: ownedByAnotherAthlete.revision,
         name: "Attempted non-owner edit",
       }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" } as Partial<TRPCError>);
@@ -1216,7 +1532,7 @@ describe("activityPlansRouter", () => {
     );
   });
 
-  it("update republishes every owned future planned event after a material plan change", async () => {
+  it("update does not mutate frozen scheduled prescriptions after a material plan change", async () => {
     const existingRow = createActivityPlanRow({ name: "Before Update" });
     const updatedRow = createActivityPlanRow({ name: "After Update" });
     const futureEvents = [{ id: "event-1" }, { id: "event-2" }];
@@ -1237,15 +1553,12 @@ describe("activityPlansRouter", () => {
     const result = await caller.update({
       id: existingRow.id,
       expectedStructureHash: existingRow.structure_hash,
+      expectedRevision: existingRow.revision,
       name: "After Update",
     });
 
-    expect(plannedActivitySyncState.enqueueWahooPlannedActivityJobs).toHaveBeenCalledOnce();
-    expect(plannedActivitySyncState.enqueueWahooPlannedActivityJobs).toHaveBeenCalledWith(
-      expect.anything(),
-      { eventIds: ["event-1", "event-2"], operation: "publish" },
-    );
-    expect(result.plannedActivitySync).toMatchObject({ operation: "publish", success: true });
+    expect(plannedActivitySyncState.enqueueWahooPlannedActivityJobs).not.toHaveBeenCalled();
+    expect(result.name).toBe("After Update");
   });
 
   it("update does not republish for a nonmaterial or unchanged material update", async () => {
@@ -1261,11 +1574,13 @@ describe("activityPlansRouter", () => {
     await caller.update({
       id: existingRow.id,
       expectedStructureHash: existingRow.structure_hash,
+      expectedRevision: existingRow.revision,
       notes: "Updated notes",
     });
     await caller.update({
       id: existingRow.id,
       expectedStructureHash: existingRow.structure_hash,
+      expectedRevision: existingRow.revision,
       name: existingRow.name,
     });
 
@@ -1291,7 +1606,8 @@ describe("activityPlansRouter", () => {
     await expect(
       caller.update({
         id: "66666666-6666-4666-8666-666666666666",
-        expectedStructureHash: createActivityPlanRow().structure_hash,
+        expectedStructureHash: activityPlanStructureHash(sampleStructure),
+        expectedRevision: 1,
       }),
     ).rejects.toThrow("At least one activity plan update field is required");
 
@@ -1308,6 +1624,7 @@ describe("activityPlansRouter", () => {
       caller.update({
         id: existingRow.id,
         expectedStructureHash: `v1:sha256:${"f".repeat(64)}`,
+        expectedRevision: 1,
         name: "Stale write",
       }),
     ).rejects.toMatchObject({ code: "CONFLICT", message: "STALE_STRUCTURE_HASH" });
@@ -1319,8 +1636,8 @@ describe("activityPlansRouter", () => {
     const { caller, callLog } = createCaller({
       state: {
         "select:activity_plans": [[ownedPlan]],
-        "select:events": [[]],
         "select:group_events": [[]],
+        "select:planned_sessions": [[]],
         "delete:activity_plans": [[{ id: "77777777-7777-4777-8777-777777777777" }]],
       },
     });
@@ -1334,11 +1651,12 @@ describe("activityPlansRouter", () => {
 
   it("delete rejects every linked schedule without relying on a 100-item client page", async () => {
     const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
-    const eventRows = Array.from({ length: 101 }, (_, index) => ({ id: `event-${index + 1}` }));
+    const sessionRows = Array.from({ length: 101 }, (_, index) => ({ id: `session-${index + 1}` }));
     const { caller, callLog } = createCaller({
       state: {
         "select:activity_plans": [[ownedPlan]],
-        "select:events": [eventRows],
+        "select:group_events": [[]],
+        "select:planned_sessions": [sessionRows],
       },
     });
 
@@ -1346,29 +1664,34 @@ describe("activityPlansRouter", () => {
       caller.delete({ id: "77777777-7777-4777-8777-777777777777" }),
     ).rejects.toMatchObject({
       code: "CONFLICT",
-      message: "Remove all linked scheduled events before deleting this activity plan",
+      message: "Activity plans with planned-session history cannot be deleted",
     } as Partial<TRPCError>);
     expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(0);
     expect(plannedActivitySyncState.enqueueWahooPlannedActivityJobs).not.toHaveBeenCalled();
   });
 
-  it("delete rejects a cross-owner event reference without filtering by event owner", async () => {
+  it("delete rejects a cross-owner planned-session reference without filtering by session owner", async () => {
     const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
     const { caller, callLog } = createCaller({
       state: {
         "select:activity_plans": [[ownedPlan]],
-        "select:events": [[{ id: "event-1", profile_id: OTHER_USER_ID }]],
+        "select:group_events": [[]],
+        "select:planned_sessions": [[{ id: "session-1", profile_id: OTHER_USER_ID }]],
       },
     });
 
     await expect(caller.delete({ id: ownedPlan.id })).rejects.toMatchObject({
       code: "CONFLICT",
-      message: "Remove all linked scheduled events before deleting this activity plan",
+      message: "Activity plans with planned-session history cannot be deleted",
     } as Partial<TRPCError>);
 
-    const eventQuery = callLog.find((call) => call.table === "events" && call.where)?.where;
-    expect(eventQuery).toBeDefined();
-    expect(pgDialect.sqlToQuery(eventQuery as never).sql).not.toContain('"events"."profile_id"');
+    const sessionQuery = callLog.find(
+      (call) => call.table === "planned_sessions" && call.where,
+    )?.where;
+    expect(sessionQuery).toBeDefined();
+    expect(pgDialect.sqlToQuery(sessionQuery as never).sql).not.toContain(
+      '"planned_sessions"."profile_id"',
+    );
     expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(0);
   });
 
@@ -1377,17 +1700,34 @@ describe("activityPlansRouter", () => {
     const { caller, callLog } = createCaller({
       state: {
         "select:activity_plans": [[ownedPlan]],
-        "select:events": [[]],
         "select:group_events": [[{ id: "group-event-1" }]],
       },
     });
 
     await expect(caller.delete({ id: ownedPlan.id })).rejects.toMatchObject({
       code: "CONFLICT",
-      message: "Remove all linked scheduled events before deleting this activity plan",
+      message: "Activity plans with planned-session history cannot be deleted",
     } as Partial<TRPCError>);
 
     expect(callLog.some((call) => call.table === "group_events")).toBe(true);
+    expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(0);
+  });
+
+  it("delete rejects a linked planned-session reference before the FK can fail", async () => {
+    const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[ownedPlan]],
+        "select:group_events": [[]],
+        "select:planned_sessions": [[{ id: "planned-session-1" }]],
+      },
+    });
+
+    await expect(caller.delete({ id: ownedPlan.id })).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "Activity plans with planned-session history cannot be deleted",
+    } as Partial<TRPCError>);
+    expect(callLog.some((call) => call.table === "planned_sessions")).toBe(true);
     expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(0);
   });
 
@@ -1412,7 +1752,8 @@ describe("activityPlansRouter", () => {
     const { caller, callLog } = createCaller({
       state: {
         "select:activity_plans": [[ownedPlan]],
-        "select:events": [[{ id: "event-1" }]],
+        "select:group_events": [[]],
+        "select:planned_sessions": [[{ id: "session-1" }]],
       },
     });
 
@@ -1420,7 +1761,7 @@ describe("activityPlansRouter", () => {
       caller.delete({ id: "77777777-7777-4777-8777-777777777777" }),
     ).rejects.toMatchObject({
       code: "CONFLICT",
-      message: "Remove all linked scheduled events before deleting this activity plan",
+      message: "Activity plans with planned-session history cannot be deleted",
     } as Partial<TRPCError>);
 
     expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(0);
@@ -1431,7 +1772,8 @@ describe("activityPlansRouter", () => {
     const { caller, callLog } = createCaller({
       state: {
         "select:activity_plans": [[ownedPlan]],
-        "select:events": [[]],
+        "select:group_events": [[]],
+        "select:planned_sessions": [[]],
         "delete:activity_plans": [[]],
       },
     });
@@ -1440,9 +1782,7 @@ describe("activityPlansRouter", () => {
       "Activity plan changed during deletion",
     );
 
-    expect(
-      callLog.filter((call) => call.operation === "delete" && call.table === "activity_plans"),
-    ).toHaveLength(1);
+    expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(3);
   });
 
   it("delete rejects unexpected input fields", async () => {
@@ -1491,7 +1831,7 @@ describe("activityPlansRouter", () => {
       name: "Private Activity Copy",
       description: "Owner-only description",
       notes: "Owner-only notes and targets",
-      structure: expect.objectContaining({ contractVersion: 1 }),
+      structure: sampleStructure,
       profile_id: USER_ID,
       content_visibility: "private",
       is_system_template: false,
@@ -1502,7 +1842,7 @@ describe("activityPlansRouter", () => {
       updated_at: "2026-08-19T12:00:01.000Z",
       description: "Owner-only description",
       notes: "Owner-only notes and targets",
-      structure: expect.objectContaining({ contractVersion: 1 }),
+      structure: sampleStructure,
       profile_id: USER_ID,
       content_visibility: "private",
       visibility: "private",
@@ -1667,7 +2007,7 @@ describe("activityPlansRouter", () => {
 
     expect(callLog.find((call) => call.operation === "insert")?.payload).toMatchObject({
       notes: "Curated system instructions",
-      structure: expect.objectContaining({ contractVersion: 1 }),
+      structure: sampleStructure,
       profile_id: USER_ID,
       content_visibility: "private",
       is_system_template: false,
@@ -1675,7 +2015,7 @@ describe("activityPlansRouter", () => {
     expect(result).toMatchObject({
       id: duplicatedRow.id,
       notes: "Curated system instructions",
-      structure: expect.objectContaining({ contractVersion: 1 }),
+      structure: sampleStructure,
       profile_id: USER_ID,
       visibility: "private",
     });
@@ -1690,37 +2030,5 @@ describe("activityPlansRouter", () => {
         extra: true,
       } as any),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
-  });
-
-  it("duplicate remaps every variant identity and preserves the default relationship", () => {
-    const source = activityPlanDocumentSchema.parse({
-      contractVersion: 1,
-      defaultVariantId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      variants: [
-        {
-          id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-          name: "Short",
-          structure: sampleStructure,
-        },
-        {
-          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-          name: "Base",
-          structure: sampleStructure,
-        },
-      ],
-    });
-    const ids = ["cccccccc-cccc-4ccc-8ccc-cccccccccccc", "dddddddd-dddd-4ddd-8ddd-dddddddddddd"];
-
-    const duplicate = duplicateActivityPlanDocument(source, () => {
-      const id = ids.shift();
-      if (!id) throw new Error("Missing test ID");
-      return id;
-    });
-
-    expect(duplicate.variants.map(({ id, name }) => ({ id, name }))).toEqual([
-      { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", name: "Short" },
-      { id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", name: "Base" },
-    ]);
-    expect(duplicate.defaultVariantId).toBe("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
   });
 });

@@ -46,11 +46,11 @@
       "specs/plans-variations.spec.ts::activity-plans.library:narrow-card",
       "specs/plans-variations.spec.ts::activity-plans.library:keyboard-history"
     ],
-    "specs/activity-plans.spec.ts::athlete can duplicate a shared plan into an owned editable copy": [
+    "specs/activity-plans.spec.ts::athlete can duplicate an owned plan into an editable copy": [
       "specs/plans-variations.spec.ts::activity-plans.duplicate:cancel-edit",
       "specs/plans-variations.spec.ts::activity-plans.duplicate:source-history"
     ],
-    "specs/activity-plans.spec.ts::athlete can author, edit, schedule, comment on, and dependency-delete a plan": [
+    "specs/activity-plans.spec.ts::athlete can author, edit, schedule and comment while planned history protects deletion": [
       "specs/plans-variations.spec.ts::activity-plans.author:save-reopen",
       "specs/plans-variations.spec.ts::activity-plans.author:schedule-cancel-delete"
     ],

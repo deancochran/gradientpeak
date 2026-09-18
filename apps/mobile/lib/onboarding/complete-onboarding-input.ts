@@ -5,7 +5,7 @@ type BuildCompleteOnboardingInputResult =
   | { ok: true; input: CompleteOnboarding; profile: { full_name: string; username: string } }
   | { ok: false; error: string };
 
-/** Initial onboarding intentionally submits identity only; optional profile data is configured later. */
+/** Submit identity and the planning timezone; other optional profile data is configured later. */
 export function buildCompleteOnboardingInput(
   data: OnboardingData,
   _fieldSources: OnboardingFieldSources = {},
@@ -13,6 +13,7 @@ export function buildCompleteOnboardingInput(
   const result = completeOnboardingSchema.safeParse({
     full_name: data.full_name,
     username: data.username,
+    planning_timezone: data.planning_timezone,
   });
   if (!result.success) {
     return {

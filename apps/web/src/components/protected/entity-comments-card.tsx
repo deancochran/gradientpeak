@@ -128,6 +128,7 @@ export function EntityCommentsCard({
         <div className="space-y-2">
           <Textarea
             accessibilityLabel="Add a comment"
+            disabled={addCommentMutation.isPending}
             onChange={(event) => {
               const nextComment = event.currentTarget.value;
               setNewComment(nextComment);

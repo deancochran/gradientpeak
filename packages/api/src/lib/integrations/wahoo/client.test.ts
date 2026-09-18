@@ -56,6 +56,52 @@ describe("WahooClient", () => {
     vi.unstubAllGlobals();
     vi.useRealTimers();
   });
+  it.each([
+    null,
+    undefined,
+    0,
+  ])("omits unknown duration metadata and accepts provider minutes=%s", async (minutes) => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify(workout({ minutes })), { status: 200 }),
+    );
+    const client = new WahooClient({ accessToken: "access-token" });
+    const result = await client.createWorkout({
+      name: "Distance plan",
+      planId: 42,
+      scheduledDate: "2026-04-03T10:00:00.000Z",
+      externalId: "event-1",
+      workoutTypeId: 0,
+    });
+    expect(result.minutes).toBe(minutes);
+    const [, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(request.body)).workout).not.toHaveProperty("minutes");
+  });
+  it("sends known duration on updates and omits it when unavailable", async () => {
+    fetchMock.mockImplementation(async () => new Response("{}", { status: 200 }));
+    const client = new WahooClient({ accessToken: "access-token" });
+    await client.updateWorkout("456", { name: "Timed", durationMinutes: 5 });
+    await client.updateWorkout("456", { name: "Distance" });
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1].body)).workout).toEqual({
+      name: "Timed",
+      minutes: 5,
+    });
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1].body)).workout).toEqual({
+      name: "Distance",
+    });
+  });
+  it.each([
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    -1,
+    1.5,
+    null,
+  ])("rejects invalid metadata %s before sending", async (durationMinutes) => {
+    const client = new WahooClient({ accessToken: "access-token" });
+    await expect(client.updateWorkout("456", { durationMinutes } as never)).rejects.toThrow(
+      /nonnegative integer or omitted/,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 
   it("creates plans with multipart JSON file form data at the fetch boundary", async () => {
     fetchMock.mockResolvedValueOnce(

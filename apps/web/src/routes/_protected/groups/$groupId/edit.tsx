@@ -37,6 +37,8 @@ function EditGroupPage() {
                   await updateMutation.mutateAsync({ groupId, ...value });
                   await utils.groups.invalidate();
                   toast.success("Group updated");
+                }}
+                onSuccess={() => {
                   void navigate({ to: "/groups/$groupId", params: { groupId } });
                 }}
                 submitLabel="Save changes"

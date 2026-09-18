@@ -4,7 +4,7 @@ import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   ProviderProcessingState,
@@ -99,6 +99,8 @@ export function OnboardingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [pendingOAuthBlocked, setPendingOAuthBlocked] = useState(false);
+  const pendingActionRef = useRef(false);
+  const isBusy = isSubmitting || getAuthUrlMutation.isPending;
 
   useEffect(() => {
     if (status !== "processing") return;
@@ -155,7 +157,8 @@ export function OnboardingPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (isSubmitting) return;
+    if (pendingActionRef.current) return;
+    pendingActionRef.current = true;
     setSubmissionError(null);
     setIsSubmitting(true);
     try {
@@ -166,21 +169,30 @@ export function OnboardingPage() {
       }
     } finally {
       setIsSubmitting(false);
+      pendingActionRef.current = false;
     }
   };
 
   const connectProvider = async (provider: (typeof data.integrations)[number]["provider"]) => {
+    if (pendingActionRef.current) return;
+    pendingActionRef.current = true;
     setSubmissionError(null);
-    await startOnboardingProviderConnection({
-      provider,
-      redirectUri: `${window.location.origin}/onboarding`,
-      getAuthUrl: (request) => getAuthUrlMutation.mutateAsync(request),
-      navigate: (url) => window.location.assign(url),
-      onError: setSubmissionError,
-    });
+    try {
+      await startOnboardingProviderConnection({
+        provider,
+        redirectUri: `${window.location.origin}/onboarding`,
+        getAuthUrl: (request) => getAuthUrlMutation.mutateAsync(request),
+        navigate: (url) => window.location.assign(url),
+        onError: setSubmissionError,
+      });
+    } finally {
+      pendingActionRef.current = false;
+    }
   };
 
   const handleCancelPendingOAuth = async () => {
+    if (pendingActionRef.current) return;
+    pendingActionRef.current = true;
     setIsSubmitting(true);
     setSubmissionError(null);
     try {
@@ -195,10 +207,13 @@ export function OnboardingPage() {
       await refreshProviderState();
     } finally {
       setIsSubmitting(false);
+      pendingActionRef.current = false;
     }
   };
 
   const handleRetryProvider = async (provider: (typeof data.integrations)[number]["provider"]) => {
+    if (pendingActionRef.current) return;
+    pendingActionRef.current = true;
     setIsSubmitting(true);
     try {
       const result = await retryProvider({ data: { provider } });
@@ -210,10 +225,13 @@ export function OnboardingPage() {
       }
     } finally {
       setIsSubmitting(false);
+      pendingActionRef.current = false;
     }
   };
 
   const handleRestartProviderSelection = async () => {
+    if (pendingActionRef.current) return;
+    pendingActionRef.current = true;
     setIsSubmitting(true);
     try {
       const result = await restartProviderSelection();
@@ -225,6 +243,7 @@ export function OnboardingPage() {
       }
     } finally {
       setIsSubmitting(false);
+      pendingActionRef.current = false;
     }
   };
 
@@ -248,6 +267,7 @@ export function OnboardingPage() {
           {submissionError ? (
             <p
               className="rounded-md border border-destructive/40 p-3 text-sm text-destructive"
+              id="identity-submit-error"
               role="alert"
             >
               {submissionError}
@@ -282,6 +302,7 @@ export function OnboardingPage() {
                   <Label htmlFor="full_name">Full name</Label>
                   <Input
                     autoComplete="name"
+                    aria-describedby={submissionError ? "identity-submit-error" : undefined}
                     defaultValue={data.draft?.full_name}
                     id="full_name"
                     maxLength={120}
@@ -294,6 +315,7 @@ export function OnboardingPage() {
                   <Input
                     autoCapitalize="none"
                     autoComplete="username"
+                    aria-describedby={submissionError ? "identity-submit-error" : undefined}
                     defaultValue={data.draft?.username}
                     id="username"
                     maxLength={30}
@@ -316,7 +338,7 @@ export function OnboardingPage() {
                   <ProviderSelectionStep
                     integrations={data.integrations}
                     error={data.integrationsError}
-                    isBusy={isSubmitting || getAuthUrlMutation.isPending}
+                    isBusy={isBusy}
                     onConnect={(provider) => void connectProvider(provider)}
                     onRetry={() => void refreshProviderState()}
                   />
@@ -325,19 +347,19 @@ export function OnboardingPage() {
 
               <div className="space-y-3 border-t pt-6">
                 <Button
-                  aria-busy={isSubmitting}
+                  aria-busy={isBusy}
                   className="w-full sm:w-auto sm:min-w-48"
-                  disabled={isSubmitting}
+                  disabled={isBusy}
                   type="submit"
                 >
-                  {isSubmitting ? "Finishing…" : "Finish setup"}
+                  {isBusy ? "Finishing…" : "Finish setup"}
                 </Button>
                 <p className="text-sm text-muted-foreground">
                   You can set goals, preferences, metrics, and social choices after setup.
                 </p>
                 {pendingOAuthBlocked ? (
                   <Button
-                    disabled={isSubmitting}
+                    disabled={isBusy}
                     onClick={() => void handleCancelPendingOAuth()}
                     type="button"
                     variant="outline"

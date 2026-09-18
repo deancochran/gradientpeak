@@ -1,5 +1,5 @@
 import { type ContentVisibility, getCalendarDateInIanaZone } from "@repo/core";
-import { activities, activitySourceReferences } from "@repo/db";
+import { activities, activitySourceReferences, comments, likes } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import type { DrizzleTransactionClient, getRequiredDb } from "../../db";
@@ -59,16 +59,20 @@ export async function deleteCanonicalActivityWithProfileLockHeld(input: {
   const athleteRepository = createDrizzleAthleteDerivedStateRepository(tx);
   await deleteThresholdEvidence({ repository: athleteRepository, profileId, activityId });
   await deleteThresholdChainsForImpacts(tx, { profileId, impacts });
-  await tx.execute(
-    sql`delete from comments where entity_type = 'activity' and entity_id = ${activityId}::uuid`,
-  );
-  await tx.execute(
-    sql`delete from likes where entity_type = 'activity' and entity_id = ${activityId}::uuid`,
-  );
+  await tx
+    .delete(comments)
+    .where(and(eq(comments.entity_type, "activity"), eq(comments.entity_id, activityId)));
+  await tx
+    .delete(likes)
+    .where(and(eq(likes.entity_type, "activity"), eq(likes.entity_id, activityId)));
   const [deleted] = await tx
     .delete(activities)
     .where(and(eq(activities.id, activityId), eq(activities.profile_id, profileId)))
-    .returning({ id: activities.id, finishedAt: activities.finished_at });
+    .returning({
+      id: activities.id,
+      finishedAt: activities.finished_at,
+      diaryDate: activities.diary_date,
+    });
   if (!deleted) throw new Error("Activity deletion lost ownership before commit");
   for (const impact of impacts) {
     await rebuildThresholdChainWithProfileLockHeld(tx, {
@@ -78,12 +82,19 @@ export async function deleteCanonicalActivityWithProfileLockHeld(input: {
       now,
     });
   }
-  const effectiveAt = new Date(
-    Math.min(
-      deleted.finishedAt.getTime(),
-      ...impacts.map(({ effectiveAt }) => effectiveAt.getTime()),
-    ),
+  const impactEffectiveAt = impacts.reduce<Date | null>(
+    (earliest, impact) =>
+      earliest === null || impact.effectiveAt < earliest ? impact.effectiveAt : earliest,
+    null,
   );
+  // An all-day diary entry has no observed instant. Rebuild from the current
+  // fence while retaining its civil date as the planning-date invalidation key.
+  const effectiveAt =
+    deleted.finishedAt === null
+      ? (impactEffectiveAt ?? now)
+      : impactEffectiveAt && impactEffectiveAt < deleted.finishedAt
+        ? impactEffectiveAt
+        : deleted.finishedAt;
   const state = await athleteRepository.lockPublicationState({ profileId });
   if (!state) throw new Error("Athlete publication state is unavailable after activity deletion");
   await requestAthleteRecalculation({
@@ -92,10 +103,9 @@ export async function deleteCanonicalActivityWithProfileLockHeld(input: {
     request: buildAthleteRecalculationRequest({
       profileId,
       earliestAffectedAt: effectiveAt.toISOString(),
-      earliestAffectedPlanningDate: getCalendarDateInIanaZone(
-        effectiveAt.toISOString(),
-        state.planningTimezone,
-      ),
+      earliestAffectedPlanningDate:
+        deleted.diaryDate ??
+        getCalendarDateInIanaZone(effectiveAt.toISOString(), state.planningTimezone),
       sourceRevision: state.sourceRevision + 1,
       reasons: ["activity_deleted"],
       requestedAt: now.toISOString(),

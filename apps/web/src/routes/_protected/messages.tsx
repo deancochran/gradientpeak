@@ -146,7 +146,9 @@ function MessagesPage() {
   const [groupName, setGroupName] = useState(composeGroup ?? "");
   const [composeSearchValue, setComposeSearchValue] = useState(composeQuery ?? "");
   const [composeError, setComposeError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const lastMarkedConversationRef = useRef<string | null>(null);
+  const sendInFlightRef = useRef(false);
   const form = useForm<MessageComposerValues>({
     resolver: zodResolver(messageComposerSchema),
     defaultValues: {
@@ -156,7 +158,7 @@ function MessagesPage() {
   const sendMessageMutation = api.messaging.sendMessage.useMutation({
     onSuccess: async (_message, variables) => {
       await invalidateConversationQueries(utils, variables.conversation_id);
-      form.reset({ content: "" });
+      if (form.getValues("content") === variables.content) form.reset({ content: "" });
     },
   });
 
@@ -201,17 +203,21 @@ function MessagesPage() {
   }, [composeQuery]);
 
   const handleSend = form.handleSubmit(async (values) => {
-    if (!selectedId) {
+    if (!selectedId || sendInFlightRef.current) {
       return;
     }
 
+    sendInFlightRef.current = true;
+    setSendError(null);
     try {
       await sendMessageMutation.mutateAsync({
         content: values.content,
         conversation_id: selectedId,
       });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to send message");
+      setSendError(error instanceof Error ? error.message : "Unable to send message");
+    } finally {
+      sendInFlightRef.current = false;
     }
   });
 
@@ -559,6 +565,7 @@ function MessagesPage() {
                           <button
                             key={recipient.id}
                             type="button"
+                            aria-label={`Remove @${recipient.username ?? "user"} from recipients`}
                             onClick={() => toggleRecipient(recipient)}
                             className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary"
                           >
@@ -649,7 +656,9 @@ function MessagesPage() {
                   </div>
 
                   {composeError ? (
-                    <div className="text-sm text-destructive">{composeError}</div>
+                    <div className="text-sm text-destructive" role="alert">
+                      {composeError}
+                    </div>
                   ) : null}
 
                   <div className="flex justify-end">
@@ -736,6 +745,8 @@ function MessagesPage() {
                             <FormControl>
                               <Input
                                 {...field}
+                                aria-label="Message"
+                                disabled={sendMessageMutation.isPending}
                                 placeholder="Type a message..."
                                 onKeyDown={(event) => {
                                   if (event.key === "Enter" && !event.shiftKey) {
@@ -762,6 +773,11 @@ function MessagesPage() {
                         <Send className="h-4 w-4" />
                       </Button>
                     </div>
+                    {sendError ? (
+                      <p className="mt-2 text-sm text-destructive" role="alert">
+                        {sendError}. Your message is still in the field.
+                      </p>
+                    ) : null}
                   </form>
                 </Form>
               </div>

@@ -67,6 +67,24 @@ describe("AppFormModal", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("can scope one primary action to a centered header without a footer", async () => {
+    const { container, getByText } = await render(
+      <AppFormModal
+        actionPlacement="header"
+        onClose={jest.fn()}
+        primaryAction={<Text>Done</Text>}
+        title="Edit interval"
+      >
+        <View />
+      </AppFormModal>,
+    );
+
+    expect(getByText("Done")).toBeTruthy();
+    expect(
+      container.queryAll((node) => node.type === "View" && node.props.style?.paddingBottom === 50),
+    ).toHaveLength(0);
+  });
+
   it("marks a loading confirmation action busy and disables repeat presses", async () => {
     const onPress = jest.fn();
     const { getByTestId } = await render(

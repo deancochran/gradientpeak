@@ -1,6 +1,5 @@
-import { activityPlanDocumentSchema } from "@repo/core/activity-plan";
 import { getCalendarDateInIanaZone, scheduledDateTimeToIsoInstant } from "@repo/core/calendar";
-import { isGroupEventGoing } from "@repo/core/groups";
+import { prescriptionResolutionManifestSchema } from "@repo/core/plan";
 import { type DrizzleDbClient, schema } from "@repo/db";
 import {
   and,
@@ -25,7 +24,6 @@ import {
 } from "../../application/training-plan/current-planning-week";
 import { toActivityPlanExecutionDto } from "../../dto/activity-plan";
 import type { EventReadRepository } from "../../repositories";
-import { mapPlannedSessionRow } from "./drizzle-planned-session-repository";
 
 type EventReadDb = {
   execute: unknown;
@@ -102,17 +100,13 @@ function requireCurrentEventField<T>(value: T | null, field: string): T {
 }
 
 function serializeEventRow(row: {
-  activity_plan_id: string | null;
-  planned_session_id: string | null;
   route_id: string | null;
-  activity_plan: typeof schema.activityPlans.$inferSelect | null;
   activity_route: typeof schema.activityRoutes.$inferSelect | null;
-  planned_session: typeof schema.plannedSessions.$inferSelect | null;
   all_day: boolean | null;
   created_at: Date;
   description: string | null;
   ends_at: Date | null;
-  event_type: "planned" | "race_target" | "custom";
+  event_type: "race_target" | "custom";
   id: string;
   linked_activity_id: string | null;
   notes: string | null;
@@ -127,43 +121,9 @@ function serializeEventRow(row: {
   status: "scheduled" | "completed" | "cancelled" | null;
   timezone: string | null;
   title: string | null;
-  training_plan_id: string | null;
   updated_at: Date;
 }) {
-  const { activity_route: _activityRoute, planned_session: plannedSessionRow, ...event } = row;
-  const plannedSessionRecord = plannedSessionRow ? mapPlannedSessionRow(plannedSessionRow) : null;
-  const plannedSession = plannedSessionRecord
-    ? {
-        id: plannedSessionRecord.id,
-        sessionRevision: plannedSessionRecord.sessionRevision,
-        planningDate: plannedSessionRecord.planningDate,
-        source: plannedSessionRecord.source,
-        prescription: plannedSessionRecord.prescription,
-        lifecycle: plannedSessionRecord.lifecycle,
-      }
-    : null;
-  const activityPlan =
-    row.activity_plan && plannedSession
-      ? {
-          ...row.activity_plan,
-          name: row.title ?? row.activity_plan.name,
-          description: row.description ?? row.activity_plan.description,
-          revision: plannedSession.prescription.activityPlanRevision,
-          structure: activityPlanDocumentSchema.parse({
-            contractVersion: 1,
-            defaultVariantId: plannedSession.prescription.variantId,
-            variants: [
-              {
-                id: plannedSession.prescription.variantId,
-                name: plannedSession.prescription.variantName,
-                structure: plannedSession.prescription.structure,
-              },
-            ],
-          }),
-          structure_hash: plannedSession.prescription.structureHash,
-          updated_at: new Date(plannedSession.prescription.capturedAt),
-        }
-      : row.activity_plan;
+  const { activity_route: _activityRoute, ...event } = row;
   return {
     ...event,
     all_day: requireCurrentEventField(row.all_day, "all_day"),
@@ -175,67 +135,13 @@ function serializeEventRow(row: {
     status: requireCurrentEventField(row.status, "status"),
     timezone: requireCurrentEventField(row.timezone, "timezone"),
     title: requireCurrentEventField(row.title, "title"),
-    training_plan_id: row.training_plan_id,
     created_at: row.created_at.toISOString(),
     starts_at: row.starts_at.toISOString(),
     scheduled_date: row.scheduled_date,
     ends_at: row.ends_at?.toISOString() ?? null,
     original_starts_at: row.original_starts_at?.toISOString() ?? null,
     updated_at: row.updated_at.toISOString(),
-    activity_plan: serializeActivityPlanRow(activityPlan),
-    planned_session: plannedSession,
     route: serializeActivityRouteRow(row.activity_route),
-  };
-}
-
-function serializeGroupEventAsEffectivePlanEvent(
-  row: {
-    activity_plan: typeof schema.activityPlans.$inferSelect | null;
-    activity_plan_id: string | null;
-    created_at: Date;
-    description: string | null;
-    ends_at: Date | null;
-    id: string;
-    occurrence_key: string | null;
-    series_id: string | null;
-    starts_at: Date;
-    timezone: string;
-    title: string;
-    updated_at: Date;
-  },
-  profileId: string,
-  planningTimezone: string,
-) {
-  const accessibleActivityPlanId = row.activity_plan ? row.activity_plan_id : null;
-  return {
-    id: row.id,
-    // Effective-plan consumers need a profile-scoped DTO, not group or membership data.
-    profile_id: profileId,
-    event_type: "planned" as const,
-    title: row.title,
-    description: row.description,
-    all_day: false,
-    timezone: row.timezone,
-    activity_plan_id: accessibleActivityPlanId,
-    route_id: null,
-    training_plan_id: null,
-    planned_session_id: null,
-    recurrence_rule: null,
-    recurrence_timezone: null,
-    series_id: row.series_id,
-    occurrence_key: row.occurrence_key ?? "",
-    notes: null,
-    status: "scheduled" as const,
-    linked_activity_id: null,
-    created_at: row.created_at.toISOString(),
-    updated_at: row.updated_at.toISOString(),
-    starts_at: row.starts_at.toISOString(),
-    ends_at: row.ends_at?.toISOString() ?? null,
-    original_starts_at: null,
-    scheduled_date: getCalendarDateInIanaZone(row.starts_at.toISOString(), planningTimezone),
-    activity_plan: serializeActivityPlanRow(row.activity_plan),
-    planned_session: null,
-    route: null,
   };
 }
 
@@ -247,10 +153,7 @@ const eventColumns = {
   description: schema.events.description,
   all_day: schema.events.all_day,
   timezone: schema.events.timezone,
-  activity_plan_id: schema.events.activity_plan_id,
   route_id: schema.events.route_id,
-  training_plan_id: schema.events.training_plan_id,
-  planned_session_id: schema.events.planned_session_id,
   recurrence_rule: schema.events.recurrence_rule,
   recurrence_timezone: schema.events.recurrence_timezone,
   series_id: schema.events.series_id,
@@ -306,16 +209,15 @@ export function createEventReadRepository(
       if (!range || !planningTimezone) {
         return {
           activities: [],
-          events: [],
-          recommendationEvents: [],
+          plannedSessions: [],
+          recommendationPlannedSessions: [],
           recommendationSource: {
-            scheduleBatchId: null,
             status: "complete" as const,
             trainingPlanId: null,
           },
           planningTimezone,
           resolvedRange: { startDate: null, endDate: null },
-          sourceCounts: { activities: 0, events: 0 },
+          sourceCounts: { activities: 0, plannedSessions: 0 },
           sourceCoverage: { activities: null, scheduledItems: null },
         };
       }
@@ -332,159 +234,73 @@ export function createEventReadRepository(
         timezone: planningTimezone,
       }).endExclusiveInstant;
       const boundedLimit = 10_001;
-      const activePlanEvent = await db
+      const activePlanSession = await db
         .select({
-          schedule_batch_id: schema.events.schedule_batch_id,
-          training_plan_id: schema.events.training_plan_id,
+          training_plan_id: schema.plannedSessions.training_plan_id,
+          training_plan_revision: schema.plannedSessions.training_plan_revision,
         })
-        .from(schema.events)
+        .from(schema.plannedSessions)
         .where(
           and(
-            eq(schema.events.profile_id, profileId),
-            eq(schema.events.event_type, "planned"),
-            isNotNull(schema.events.training_plan_id),
-            gte(schema.events.scheduled_date, planningDate),
-            or(isNull(schema.events.status), ne(schema.events.status, "cancelled")),
+            eq(schema.plannedSessions.profile_id, profileId),
+            eq(schema.plannedSessions.status, "scheduled"),
+            isNotNull(schema.plannedSessions.training_plan_id),
+            gte(schema.plannedSessions.planning_date, planningDate),
           ),
         )
-        .orderBy(
-          asc(schema.events.scheduled_date),
-          asc(schema.events.starts_at),
-          asc(schema.events.id),
-        )
+        .orderBy(asc(schema.plannedSessions.planning_date), asc(schema.plannedSessions.id))
         .limit(1)
         .then((rows) => rows[0] ?? null);
-      const activeTrainingPlanId = activePlanEvent?.training_plan_id ?? null;
-      const activeScheduleBatchId = activePlanEvent?.schedule_batch_id ?? null;
-      const recommendationQuery = activeTrainingPlanId
-        ? db
-            .select({
-              ...eventColumns,
-              activity_plan: schema.activityPlans,
-              activity_route: schema.activityRoutes,
-              planned_session: schema.plannedSessions,
-            })
-            .from(schema.events)
-            .leftJoin(
-              schema.activityPlans,
-              eq(schema.events.activity_plan_id, schema.activityPlans.id),
-            )
-            .leftJoin(schema.activityRoutes, eq(schema.events.route_id, schema.activityRoutes.id))
-            .leftJoin(
-              schema.plannedSessions,
-              eq(schema.events.planned_session_id, schema.plannedSessions.id),
-            )
-            .where(
-              and(
-                eq(schema.events.profile_id, profileId),
-                eq(schema.events.event_type, "planned"),
-                eq(schema.events.training_plan_id, activeTrainingPlanId),
-                // Recommendation is the original applied prescription, not execution state.
-                // Keep moved/completed/cancelled items here; effective composition handles status.
-                activeScheduleBatchId
-                  ? eq(schema.events.schedule_batch_id, activeScheduleBatchId)
-                  : isNull(schema.events.schedule_batch_id),
-              ),
-            )
-            .orderBy(
-              asc(schema.events.scheduled_date),
-              asc(schema.events.starts_at),
-              asc(schema.events.id),
-            )
-            .limit(boundedLimit)
-        : Promise.resolve([]);
-      const [eventRows, groupEventRows, activityRows, recommendationRows] = await Promise.all([
+      const activeTrainingPlanId = activePlanSession?.training_plan_id ?? null;
+      const activeTrainingPlanRevision = activePlanSession?.training_plan_revision ?? null;
+      const recommendationQuery =
+        activeTrainingPlanId && activeTrainingPlanRevision !== null
+          ? db
+              .select({
+                id: schema.plannedSessions.id,
+                planning_date: schema.plannedSessions.planning_date,
+                original_target_date: schema.plannedSessions.original_target_date,
+                status: schema.plannedSessions.status,
+                completed_activity_id: schema.plannedSessions.completed_activity_id,
+                training_plan_id: schema.plannedSessions.training_plan_id,
+                training_plan_revision: schema.plannedSessions.training_plan_revision,
+                resolution_manifest: schema.plannedSessions.resolution_manifest,
+              })
+              .from(schema.plannedSessions)
+              .where(
+                and(
+                  eq(schema.plannedSessions.profile_id, profileId),
+                  eq(schema.plannedSessions.training_plan_id, activeTrainingPlanId),
+                  eq(schema.plannedSessions.training_plan_revision, activeTrainingPlanRevision),
+                ),
+              )
+              .orderBy(
+                asc(schema.plannedSessions.original_target_date),
+                asc(schema.plannedSessions.id),
+              )
+              .limit(boundedLimit)
+          : Promise.resolve([]);
+      const [plannedSessionRows, activityRows, recommendationRows] = await Promise.all([
         db
           .select({
-            ...eventColumns,
-            activity_plan: schema.activityPlans,
-            activity_route: schema.activityRoutes,
-            planned_session: schema.plannedSessions,
+            id: schema.plannedSessions.id,
+            planning_date: schema.plannedSessions.planning_date,
+            original_target_date: schema.plannedSessions.original_target_date,
+            status: schema.plannedSessions.status,
+            completed_activity_id: schema.plannedSessions.completed_activity_id,
+            training_plan_id: schema.plannedSessions.training_plan_id,
+            training_plan_revision: schema.plannedSessions.training_plan_revision,
+            resolution_manifest: schema.plannedSessions.resolution_manifest,
           })
-          .from(schema.events)
-          .leftJoin(
-            schema.activityPlans,
-            eq(schema.events.activity_plan_id, schema.activityPlans.id),
-          )
-          .leftJoin(schema.activityRoutes, eq(schema.events.route_id, schema.activityRoutes.id))
-          .leftJoin(
-            schema.plannedSessions,
-            eq(schema.events.planned_session_id, schema.plannedSessions.id),
-          )
+          .from(schema.plannedSessions)
           .where(
             and(
-              eq(schema.events.profile_id, profileId),
-              eq(schema.events.event_type, "planned"),
-              gte(schema.events.scheduled_date, startDate),
-              lte(schema.events.scheduled_date, endDate),
+              eq(schema.plannedSessions.profile_id, profileId),
+              gte(schema.plannedSessions.planning_date, startDate),
+              lte(schema.plannedSessions.planning_date, endDate),
             ),
           )
-          .orderBy(
-            asc(schema.events.scheduled_date),
-            asc(schema.events.starts_at),
-            asc(schema.events.id),
-          )
-          .limit(boundedLimit),
-        db
-          .select({
-            id: schema.groupEvents.id,
-            series_id: schema.groupEvents.series_id,
-            occurrence_key: schema.groupEvents.occurrence_key,
-            title: schema.groupEvents.title,
-            description: schema.groupEvents.description,
-            starts_at: schema.groupEvents.starts_at,
-            ends_at: schema.groupEvents.ends_at,
-            timezone: schema.groupEvents.timezone,
-            activity_plan_id: schema.groupEvents.activity_plan_id,
-            created_at: schema.groupEvents.created_at,
-            updated_at: schema.groupEvents.updated_at,
-            activity_plan: schema.activityPlans,
-            viewer_occurrence_rsvp_status: schema.groupEventRsvps.status,
-            viewer_series_rsvp_status: schema.groupEventSeriesRsvps.status,
-          })
-          .from(schema.groupMemberships)
-          .innerJoin(
-            schema.groupEvents,
-            eq(schema.groupEvents.group_id, schema.groupMemberships.group_id),
-          )
-          .innerJoin(schema.groups, eq(schema.groups.id, schema.groupMemberships.group_id))
-          .leftJoin(
-            schema.groupEventRsvps,
-            and(
-              eq(schema.groupEventRsvps.group_event_id, schema.groupEvents.id),
-              eq(schema.groupEventRsvps.profile_id, profileId),
-            ),
-          )
-          .leftJoin(
-            schema.groupEventSeriesRsvps,
-            and(
-              eq(schema.groupEventSeriesRsvps.group_event_series_id, schema.groupEvents.series_id),
-              eq(schema.groupEventSeriesRsvps.profile_id, profileId),
-            ),
-          )
-          .leftJoin(
-            schema.activityPlans,
-            and(
-              eq(schema.groupEvents.activity_plan_id, schema.activityPlans.id),
-              activityPlanViewerAccessCondition(profileId),
-            ),
-          )
-          .where(
-            and(
-              eq(schema.groupMemberships.profile_id, profileId),
-              eq(schema.groupMemberships.status, "active"),
-              isNull(schema.groups.deleted_at),
-              isNull(schema.groupEvents.cancelled_at),
-              or(
-                isNull(schema.groupEvents.recurrence_rule),
-                isNotNull(schema.groupEvents.series_id),
-              ),
-              sql`(${schema.groupEvents.starts_at} at time zone ${planningTimezone})::date >= ${startDate}::date`,
-              sql`(${schema.groupEvents.starts_at} at time zone ${planningTimezone})::date <= ${endDate}::date`,
-              sql`coalesce(${schema.groupEventRsvps.status}, ${schema.groupEventSeriesRsvps.status}, 'going') = 'going'`,
-            ),
-          )
-          .orderBy(asc(schema.groupEvents.starts_at), asc(schema.groupEvents.id))
+          .orderBy(asc(schema.plannedSessions.planning_date), asc(schema.plannedSessions.id))
           .limit(boundedLimit),
         db
           .select({
@@ -504,6 +320,7 @@ export function createEventReadRepository(
           .where(
             and(
               eq(schema.activities.profile_id, profileId),
+              isNull(schema.activities.superseded_by_activity_id),
               gte(schema.activities.started_at, envelopeStart),
               lt(schema.activities.started_at, envelopeEnd),
             ),
@@ -513,39 +330,29 @@ export function createEventReadRepository(
         recommendationQuery,
       ]);
       const activitiesStatus = activityRows.length === boundedLimit ? "partial" : "complete";
-      const selectedGroupEventRows = groupEventRows.filter((row) =>
-        isGroupEventGoing({
-          occurrenceStatus: row.viewer_occurrence_rsvp_status,
-          seriesStatus: row.viewer_series_rsvp_status,
-        }),
-      );
-      const serializedScheduledItems = [
-        ...eventRows.map((row) => serializeEventRow(row)),
-        ...selectedGroupEventRows.map((row) =>
-          serializeGroupEventAsEffectivePlanEvent(row, profileId, planningTimezone),
-        ),
-      ].sort(
-        (left, right) =>
-          left.scheduled_date.localeCompare(right.scheduled_date) ||
-          left.starts_at.localeCompare(right.starts_at) ||
-          left.id.localeCompare(right.id),
-      );
+      const serializePlannedSession = (row: (typeof plannedSessionRows)[number]) => ({
+        id: row.id,
+        planningDate: row.planning_date,
+        originalTargetDate: row.original_target_date,
+        lifecycleStatus: row.status,
+        completedActivityId: row.completed_activity_id,
+        source: {
+          trainingPlanId: row.training_plan_id,
+          trainingPlanRevision: row.training_plan_revision,
+        },
+        resolutionManifest: prescriptionResolutionManifestSchema.parse(row.resolution_manifest),
+      });
       const scheduledItemsStatus =
-        eventRows.length === boundedLimit ||
-        groupEventRows.length === boundedLimit ||
-        serializedScheduledItems.length >= boundedLimit
-          ? "partial"
-          : "complete";
+        plannedSessionRows.length === boundedLimit ? "partial" : "complete";
       const recommendationStatus =
         recommendationRows.length === boundedLimit ? "partial" : "complete";
       return {
         activities: activityRows.slice(0, boundedLimit - 1),
-        events: serializedScheduledItems.slice(0, boundedLimit - 1),
-        recommendationEvents: recommendationRows
+        plannedSessions: plannedSessionRows.slice(0, boundedLimit - 1).map(serializePlannedSession),
+        recommendationPlannedSessions: recommendationRows
           .slice(0, boundedLimit - 1)
-          .map((row) => serializeEventRow(row)),
+          .map(serializePlannedSession),
         recommendationSource: {
-          scheduleBatchId: activeScheduleBatchId,
           status: recommendationStatus,
           trainingPlanId: activeTrainingPlanId,
         },
@@ -553,7 +360,7 @@ export function createEventReadRepository(
         resolvedRange: { startDate, endDate },
         sourceCounts: {
           activities: Math.min(activityRows.length, boundedLimit - 1),
-          events: Math.min(serializedScheduledItems.length, boundedLimit - 1),
+          plannedSessions: Math.min(plannedSessionRows.length, boundedLimit - 1),
         },
         sourceCoverage: {
           activities: { startDate, endDate, status: activitiesStatus },
@@ -566,17 +373,10 @@ export function createEventReadRepository(
       const [row] = await db
         .select({
           ...eventColumns,
-          activity_plan: schema.activityPlans,
           activity_route: schema.activityRoutes,
-          planned_session: schema.plannedSessions,
         })
         .from(schema.events)
-        .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
         .leftJoin(schema.activityRoutes, eq(schema.events.route_id, schema.activityRoutes.id))
-        .leftJoin(
-          schema.plannedSessions,
-          eq(schema.events.planned_session_id, schema.plannedSessions.id),
-        )
         .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
         .limit(1);
 
@@ -609,24 +409,41 @@ export function createEventReadRepository(
         .where(
           and(
             eq(schema.activities.profile_id, profileId),
+            isNotNull(schema.activities.started_at),
             gte(schema.activities.started_at, new Date(startedAtGte)),
             lt(schema.activities.started_at, new Date(startedAtLt)),
           ),
         );
 
-      return rows.map((row) => ({
-        activity_plan_id: row.activity_plan_id,
-        id: row.id,
-        started_at: row.started_at.toISOString(),
-      }));
+      return rows.flatMap((row) => {
+        const startedAt = row.started_at;
+        return startedAt === null
+          ? []
+          : [
+              {
+                activity_plan_id: row.activity_plan_id,
+                id: row.id,
+                started_at: startedAt.toISOString(),
+              },
+            ];
+      });
     },
 
-    async listCalendarCompletedActivities({ limit, profileId, startedAtGte, startedAtLt }) {
+    async listCalendarCompletedActivities({
+      limit,
+      profileId,
+      startedAtGte,
+      startedAtLt,
+      diaryDateGte,
+      diaryDateLt,
+    }) {
       const rows = await db
         .select({
           active_ms: schema.activities.active_ms,
           content_visibility: schema.activities.content_visibility,
           distance_meters: schema.activities.distance_meters,
+          diary_date: schema.activities.diary_date,
+          diary_timezone: schema.activities.diary_timezone,
           elapsed_ms: schema.activities.elapsed_ms,
           finished_at: schema.activities.finished_at,
           id: schema.activities.id,
@@ -666,11 +483,28 @@ export function createEventReadRepository(
         .where(
           and(
             eq(schema.activities.profile_id, profileId),
-            gte(schema.activities.started_at, new Date(startedAtGte)),
-            lt(schema.activities.started_at, new Date(startedAtLt)),
+            isNull(schema.activities.superseded_by_activity_id),
+            or(
+              and(
+                isNotNull(schema.activities.started_at),
+                gte(schema.activities.started_at, new Date(startedAtGte)),
+                lt(schema.activities.started_at, new Date(startedAtLt)),
+              ),
+              and(
+                isNotNull(schema.activities.diary_date),
+                gte(schema.activities.diary_date, diaryDateGte),
+                lt(schema.activities.diary_date, diaryDateLt),
+              ),
+            ),
           ),
         )
-        .orderBy(asc(schema.activities.started_at), asc(schema.activities.id))
+        .orderBy(
+          asc(
+            sql`coalesce(${schema.activities.diary_date}, ${schema.activities.started_at}::date)`,
+          ),
+          asc(schema.activities.started_at),
+          asc(schema.activities.id),
+        )
         .limit(limit);
 
       return rows.map((row) => ({
@@ -679,6 +513,8 @@ export function createEventReadRepository(
         comments_count: Number(row.comments_count),
         content_visibility: row.content_visibility,
         distance_meters: row.distance_meters,
+        diary_date: row.diary_date,
+        diary_timezone: row.diary_timezone,
         elapsed_ms: row.elapsed_ms,
         finished_at: row.finished_at,
         has_liked: row.has_liked,
@@ -689,7 +525,7 @@ export function createEventReadRepository(
         polyline: row.polyline,
         profile: { avatar_url: row.profile_avatar_url, username: row.profile_username },
         profile_id: row.profile_id,
-        started_at: row.started_at.toISOString(),
+        started_at: row.started_at?.toISOString() ?? null,
       }));
     },
 
@@ -700,6 +536,8 @@ export function createEventReadRepository(
           active_ms: schema.activities.active_ms,
           content_visibility: schema.activities.content_visibility,
           distance_meters: schema.activities.distance_meters,
+          diary_date: schema.activities.diary_date,
+          diary_timezone: schema.activities.diary_timezone,
           elapsed_ms: schema.activities.elapsed_ms,
           finished_at: schema.activities.finished_at,
           id: schema.activities.id,
@@ -739,10 +577,17 @@ export function createEventReadRepository(
         .where(
           and(
             eq(schema.activities.profile_id, profileId),
+            isNull(schema.activities.superseded_by_activity_id),
             inArray(schema.activities.id, activityIds),
           ),
         )
-        .orderBy(asc(schema.activities.started_at), asc(schema.activities.id))
+        .orderBy(
+          asc(
+            sql`coalesce(${schema.activities.diary_date}, ${schema.activities.started_at}::date)`,
+          ),
+          asc(schema.activities.started_at),
+          asc(schema.activities.id),
+        )
         .limit(activityIds.length);
 
       return rows.map((row) => ({
@@ -751,6 +596,8 @@ export function createEventReadRepository(
         comments_count: Number(row.comments_count),
         content_visibility: row.content_visibility,
         distance_meters: row.distance_meters,
+        diary_date: row.diary_date,
+        diary_timezone: row.diary_timezone,
         elapsed_ms: row.elapsed_ms,
         finished_at: row.finished_at,
         has_liked: row.has_liked,
@@ -761,7 +608,7 @@ export function createEventReadRepository(
         polyline: row.polyline,
         profile: { avatar_url: row.profile_avatar_url, username: row.profile_username },
         profile_id: row.profile_id,
-        started_at: row.started_at.toISOString(),
+        started_at: row.started_at?.toISOString() ?? null,
       }));
     },
 
@@ -799,70 +646,6 @@ export function createEventReadRepository(
             activityPlanViewerAccessCondition(profileId),
           ),
         );
-    },
-
-    async listPlannedEventDatesInRange({ profileId, startsAtGte, startsAtLte }) {
-      const rows = await db
-        .select({ starts_at: schema.events.starts_at })
-        .from(schema.events)
-        .where(
-          and(
-            eq(schema.events.profile_id, profileId),
-            eq(schema.events.event_type, "planned"),
-            gte(schema.events.starts_at, new Date(startsAtGte)),
-            lte(schema.events.starts_at, new Date(startsAtLte)),
-          ),
-        )
-        .orderBy(asc(schema.events.starts_at));
-
-      return rows.map((row) => ({ starts_at: row.starts_at.toISOString() }));
-    },
-
-    async listOwnedPlannedEventsForDay({ date, limit, profileId }) {
-      const boundedEvents = db.$with("bounded_planned_day_events").as(
-        db
-          .select({
-            activity_plan_id: schema.events.activity_plan_id,
-            id: schema.events.id,
-            starts_at: schema.events.starts_at,
-          })
-          .from(schema.events)
-          .where(
-            and(
-              eq(schema.events.profile_id, profileId),
-              eq(schema.events.event_type, "planned"),
-              eq(schema.events.scheduled_date, date),
-              inArray(schema.events.status, ["scheduled", "completed"]),
-            ),
-          )
-          .orderBy(asc(schema.events.starts_at), asc(schema.events.id))
-          .limit(limit),
-      );
-      const rows = await db
-        .with(boundedEvents)
-        .select({
-          activity_plan_id: boundedEvents.activity_plan_id,
-          id: boundedEvents.id,
-          starts_at: boundedEvents.starts_at,
-          activity_plan: {
-            id: schema.activityPlans.id,
-            profile_id: schema.activityPlans.profile_id,
-            name: schema.activityPlans.name,
-            description: schema.activityPlans.description,
-            structure: schema.activityPlans.structure,
-            gps_recording_enabled: schema.activityPlans.gps_recording_enabled,
-            structure_hash: schema.activityPlans.structure_hash,
-            updated_at: schema.activityPlans.updated_at,
-          },
-        })
-        .from(boundedEvents)
-        .leftJoin(schema.activityPlans, eq(boundedEvents.activity_plan_id, schema.activityPlans.id))
-        .orderBy(asc(boundedEvents.starts_at), asc(boundedEvents.id));
-
-      return rows.map((row) => ({
-        ...row,
-        starts_at: row.starts_at.toISOString(),
-      }));
     },
 
     async getValidateConstraintsInputs({ activityPlanId, profileId, trainingPlanId }) {
@@ -962,23 +745,26 @@ export function createEventReadRepository(
             .then((rows) => rows[0] ?? null)
         : null;
 
-      const plannedEvents = await db
+      const plannedSessions = await db
         .select({
-          starts_at: schema.events.starts_at,
-          scheduled_date: schema.events.scheduled_date,
-          training_plan_id: schema.events.training_plan_id,
+          starts_at: schema.plannedSessions.planning_date,
+          scheduled_date: schema.plannedSessions.planning_date,
+          training_plan_id: schema.plannedSessions.training_plan_id,
           activity_plan: schema.activityPlans,
         })
-        .from(schema.events)
-
-        .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
+        .from(schema.plannedSessions)
+        .leftJoin(
+          schema.activityPlans,
+          eq(schema.plannedSessions.activity_plan_id, schema.activityPlans.id),
+        )
         .where(
           and(
-            eq(schema.events.profile_id, profileId),
-            eq(schema.events.event_type, "planned"),
-            gte(schema.events.starts_at, new Date(startDateIso)),
-            lt(schema.events.starts_at, new Date(endDateExclusiveIso)),
-            ...(trainingPlanId ? [eq(schema.events.training_plan_id, trainingPlanId)] : []),
+            eq(schema.plannedSessions.profile_id, profileId),
+            gte(schema.plannedSessions.planning_date, startDateIso.slice(0, 10)),
+            lt(schema.plannedSessions.planning_date, endDateExclusiveIso.slice(0, 10)),
+            ...(trainingPlanId
+              ? [eq(schema.plannedSessions.training_plan_id, trainingPlanId)]
+              : []),
           ),
         );
 
@@ -1004,43 +790,40 @@ export function createEventReadRepository(
         .where(
           and(
             eq(schema.activities.profile_id, profileId),
+            isNotNull(schema.activities.started_at),
+            isNotNull(schema.activities.finished_at),
             gte(schema.activities.started_at, new Date(startDateIso)),
             lt(schema.activities.started_at, new Date(endDateExclusiveIso)),
           ),
         );
       return {
         trainingPlan,
-        plannedActivities: plannedEvents.map((item) => ({
-          starts_at: item.starts_at.toISOString(),
+        plannedActivities: plannedSessions.map((item) => ({
+          starts_at: `${item.starts_at}T00:00:00.000Z`,
           scheduled_date: item.scheduled_date,
           training_plan_id: item.training_plan_id,
           activity_plan: item.activity_plan,
         })),
-        actualActivities: actualActivities.map((activity) => ({
-          ...activity,
-          started_at: activity.started_at.toISOString(),
-          finished_at: activity.finished_at.toISOString(),
-        })),
+        actualActivities: actualActivities.flatMap((activity) => {
+          const startedAt = activity.started_at;
+          const finishedAt = activity.finished_at;
+          return startedAt === null || finishedAt === null
+            ? []
+            : [
+                {
+                  ...activity,
+                  started_at: startedAt.toISOString(),
+                  finished_at: finishedAt.toISOString(),
+                },
+              ];
+        }),
       };
     },
 
     async listOwnedEvents(input) {
       const conditions = [eq(schema.events.profile_id, input.profileId)];
-      const trainingPlanId = schema.events.training_plan_id;
-      const activityPlanId = schema.events.activity_plan_id;
-
       if (input.eventTypes && input.eventTypes.length > 0) {
         conditions.push(inArray(schema.events.event_type, input.eventTypes));
-      }
-
-      if (input.trainingPlanId) {
-        conditions.push(eq(trainingPlanId, input.trainingPlanId));
-      } else if (!input.includeAdhoc) {
-        conditions.push(isNotNull(trainingPlanId));
-      }
-
-      if (input.activityPlanId) {
-        conditions.push(eq(activityPlanId, input.activityPlanId));
       }
 
       if (input.dateFrom) {
@@ -1098,29 +881,14 @@ export function createEventReadRepository(
         conditions.push(cursorCondition);
       }
 
-      if (input.activityCategory) {
-        conditions.push(
-          sql`${schema.activityPlans.structure} @> ${JSON.stringify({
-            variants: [{ structure: { activity_category: input.activityCategory } }],
-          })}::jsonb`,
-        );
-      }
-
       const rows = await db
         .select({
           ...eventColumns,
-          activity_plan: schema.activityPlans,
           activity_route: schema.activityRoutes,
-          planned_session: schema.plannedSessions,
         })
         .from(schema.events)
 
-        .leftJoin(schema.activityPlans, eq(activityPlanId, schema.activityPlans.id))
         .leftJoin(schema.activityRoutes, eq(schema.events.route_id, schema.activityRoutes.id))
-        .leftJoin(
-          schema.plannedSessions,
-          eq(schema.events.planned_session_id, schema.plannedSessions.id),
-        )
 
         .where(and(...conditions))
         .orderBy(asc(schema.events.starts_at), asc(schema.events.id))

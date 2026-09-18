@@ -21,10 +21,27 @@ import {
   activityPlans,
   activityRoutes,
   activitySourceReferences,
+  follows,
   profiles,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, desc, eq, gte, ilike, inArray, lt, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  exists,
+  gte,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { type getRequiredDb, withRepeatableReadSnapshot } from "../../db";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
 import {
@@ -82,7 +99,7 @@ function unavailableSharedActivityQuantification(
     activity.segments.find(
       (segment) => segment.role === "activity" && segment.activity_category !== null,
     )?.activity_category ?? "other";
-  const computedAsOf = activity.started_at.toISOString();
+  const computedAsOf = (activity.started_at ?? activity.created_at).toISOString();
   const commonLoad = commonLoadResultSchema.parse({
     status: "unavailable",
     model: COMMON_RELATIVE_LOAD_MODEL,
@@ -169,7 +186,7 @@ function unavailableSharedActivityQuantification(
       artifactIdentity: null,
       providerIdentity: null,
       segmentRevision: null,
-      observedAt: activity.finished_at.toISOString(),
+      observedAt: (activity.finished_at ?? activity.created_at).toISOString(),
       computedAt: computedAsOf,
       calculationVersion: "shared-activity-unavailable-v1",
     },
@@ -230,7 +247,9 @@ function compareMetricCandidates(
     return sortOrder === "asc" ? aValue - bValue : bValue - aValue;
   }
 
-  const startedAtDifference = b.activity.started_at.getTime() - a.activity.started_at.getTime();
+  const startedAtDifference =
+    (b.activity.started_at?.getTime() ?? Number.NEGATIVE_INFINITY) -
+    (a.activity.started_at?.getTime() ?? Number.NEGATIVE_INFINITY);
   return startedAtDifference || a.activity.id.localeCompare(b.activity.id);
 }
 
@@ -274,15 +293,24 @@ export async function listActivitiesForProfile({
   input: ActivityListQueryInput;
 }) {
   const offset = parseIndexCursor(input.cursor);
-  const conditions = [eq(activities.profile_id, profileId)];
+  const conditions = [
+    eq(activities.profile_id, profileId),
+    isNull(activities.superseded_by_activity_id),
+  ];
   if (input.importRunId)
     conditions.push(
-      sql`exists (
-        select 1 from ${activitySourceReferences} source_reference
-        where source_reference.activity_id = ${activities.id}
-          and source_reference.profile_id = ${profileId}
-          and source_reference.last_import_run_id = ${input.importRunId}
-      )`,
+      exists(
+        db
+          .select({ activityId: activitySourceReferences.activity_id })
+          .from(activitySourceReferences)
+          .where(
+            and(
+              eq(activitySourceReferences.activity_id, activities.id),
+              eq(activitySourceReferences.profile_id, profileId),
+              eq(activitySourceReferences.last_import_run_id, input.importRunId),
+            ),
+          ),
+      ),
     );
   const compositionCondition = buildActivityCompositionCondition({
     activityId: activities.id,
@@ -313,7 +341,11 @@ export async function listActivitiesForProfile({
       // Drizzle transactions expose the read APIs used below but intentionally omit the
       // root client's `$client` property from their type.
       const snapshotDb = tx as unknown as Db;
-      const totalRows = await tx.select({ total: count() }).from(activities).where(whereClause);
+      const measurementWhere = and(whereClause, isNotNull(activities.started_at));
+      const totalRows = await tx
+        .select({ total: count() })
+        .from(activities)
+        .where(measurementWhere);
       const total = Number(totalRows[0]?.total ?? 0);
       // Exact sorting by dynamically derived Common Load is necessarily O(N). The explicit ceiling
       // bounds request memory/CPU while keeping the existing index cursor and global ordering
@@ -332,11 +364,11 @@ export async function listActivitiesForProfile({
       // every internal batch has an indexable plan and cannot skip/duplicate rows. Evidence and
       // likes are loaded through the same transaction, preserving one repeatable-read snapshot.
       const candidates: ActivityMetricCandidate[] = [];
-      let scanCursor: Pick<ActivityRow, "id" | "started_at"> | undefined;
+      let scanCursor: { id: string; started_at: Date } | undefined;
       while (candidates.length < total) {
         const scanWhere = scanCursor
           ? and(
-              whereClause,
+              measurementWhere,
               or(
                 lt(activities.started_at, scanCursor.started_at),
                 and(
@@ -345,7 +377,7 @@ export async function listActivitiesForProfile({
                 ),
               ),
             )
-          : whereClause;
+          : measurementWhere;
         const batch = (await tx
           .select()
           .from(activities)
@@ -378,10 +410,8 @@ export async function listActivitiesForProfile({
         );
         const lastActivity = normalizedBatch.at(-1);
         if (!lastActivity || batch.length < commonLoadSortBatchSize) break;
-        scanCursor = {
-          id: lastActivity.id,
-          started_at: lastActivity.started_at,
-        };
+        if (lastActivity.started_at === null) break;
+        scanCursor = { id: lastActivity.id, started_at: lastActivity.started_at };
       }
 
       const analysisStore = createActivityAnalysisStore(snapshotDb);
@@ -464,7 +494,7 @@ export async function listActivitiesForProfile({
           .limit(input.limit)
           .offset(offset)
       : db
-          .select()
+          .select({ activity: activities })
           .from(activities)
           .where(whereClause)
           .orderBy(
@@ -477,9 +507,7 @@ export async function listActivitiesForProfile({
 
   const [totalRows, rawRows] = await Promise.all([totalRowsPromise, rowsPromise]);
   const total = Number(totalRows[0]?.total ?? 0);
-  const activityRows = rawRows.map((row) =>
-    row && typeof row === "object" && "activity" in row ? row.activity : row,
-  ) as Array<typeof activities.$inferSelect>;
+  const activityRows = rawRows.map((row) => row.activity);
   const normalized = activityRows.map(normalizeActivityLaps);
   const [ownerProfiles, segments] = await Promise.all([
     loadActivityOwnerProfiles(
@@ -566,22 +594,30 @@ export async function getActivityByIdForViewer({
     });
   }
   const visibility = access.content_visibility;
-  const followResult =
+  const isAcceptedFollower =
     visibility === "followers" && access?.profile_id !== viewerId
-      ? await db.execute(sql`
-          select 1 from follows
-          where follower_id = ${viewerId}::uuid
-            and following_id = ${access.profile_id}::uuid
-            and status = 'accepted'
-          limit 1
-        `)
-      : ({ rows: [] } as { rows: unknown[] });
+      ? Boolean(
+          (
+            await db
+              .select({ followerId: follows.follower_id })
+              .from(follows)
+              .where(
+                and(
+                  eq(follows.follower_id, viewerId),
+                  eq(follows.following_id, access.profile_id),
+                  eq(follows.status, "accepted"),
+                ),
+              )
+              .limit(1)
+          )[0],
+        )
+      : false;
   if (
     !canViewActivityVisibility({
       ownerId: access.profile_id,
       viewerId,
       visibility,
-      isAcceptedFollower: followResult.rows.length > 0,
+      isAcceptedFollower,
     })
   )
     throw new TRPCError({
@@ -665,7 +701,7 @@ export async function getActivityByIdForViewer({
       training_effect: null,
     },
     zones: { hr: [], power: [] },
-    computed_as_of: activity.started_at.toISOString(),
+    computed_as_of: (activity.started_at ?? activity.created_at).toISOString(),
     observationQuantification: sharedQuantification,
   };
   const ownedAnalysis =

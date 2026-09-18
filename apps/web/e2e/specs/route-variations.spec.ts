@@ -1,3 +1,5 @@
+import { events } from "@repo/db/schema";
+import { and, eq } from "drizzle-orm";
 import { deleteImportedActivity } from "../activities/fixture-files";
 import { expect, test } from "../fixtures";
 import { AuthPage, CalendarPage, RecordingPage, RoutesPage } from "../pages";
@@ -22,9 +24,13 @@ const routeFile = {
 async function detachEventRoute(eventId: string) {
   const database = new LocalE2EDatabase();
   try {
-    await database.query(
-      'update "events" set "route_id" = null where "id" = $1 and "profile_id" = $2',
-      [eventId, currentE2EActor("athlete").profileId],
+    await database.typedTransaction((transaction) =>
+      transaction
+        .update(events)
+        .set({ route_id: null })
+        .where(
+          and(eq(events.id, eventId), eq(events.profile_id, currentE2EActor("athlete").profileId)),
+        ),
     );
   } finally {
     await database.close();

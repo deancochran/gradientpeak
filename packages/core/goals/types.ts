@@ -30,13 +30,13 @@ export interface GoalEditorDraft {
 export interface GoalTargetForValidation {
   id: string;
   targetType: "race_performance" | "pace_threshold" | "power_threshold" | "hr_threshold";
-  activityCategory?: CanonicalGoalActivityCategory;
-  distanceKm?: string;
-  completionTimeHms?: string;
-  paceMmSs?: string;
-  testDurationHms?: string;
-  targetWatts?: number;
-  targetLthrBpm?: number;
+  activityCategory?: CanonicalGoalActivityCategory | undefined;
+  distanceKm?: string | undefined;
+  completionTimeHms?: string | undefined;
+  paceMmSs?: string | undefined;
+  testDurationHms?: string | undefined;
+  targetWatts?: number | undefined;
+  targetLthrBpm?: number | undefined;
 }
 
 export interface GoalForValidation {

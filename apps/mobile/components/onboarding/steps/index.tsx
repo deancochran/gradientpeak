@@ -7,7 +7,7 @@ import {
 import { estimateMaxHRFromDOB } from "@repo/core/estimators";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
-import { Form, FormTextField } from "@repo/ui/components/form";
+import { Form, FormTextField, FormTimezoneField } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
@@ -20,14 +20,8 @@ import {
   AthleteBaselineFields,
 } from "@/components/athlete-baseline";
 import { GoalEditorForm } from "@/components/goals";
-import { applyCompactTrainingPreferencesChange } from "@/components/settings/training-preferences/compactTrainingPreferences";
-import { TrainingPreferencesSurface } from "@/components/settings/training-preferences/TrainingPreferencesSurface";
 import { isValidOnboardingUsername } from "@/lib/onboarding/validation";
-import {
-  getCompactTrainingPreferencesValue,
-  getTrainingPreferencesSummary,
-  PRIMARY_ACTIVITY_CATEGORY_OPTIONS,
-} from "../onboarding-data";
+import { PRIMARY_ACTIVITY_CATEGORY_OPTIONS } from "../onboarding-data";
 import type { OnboardingData, StepProps } from "../types";
 
 export { GroupsAndPeopleStep } from "./GroupsAndPeopleStep";
@@ -83,9 +77,13 @@ function SectionHeading({ title, description }: { title: string; description?: s
   );
 }
 
-const identityStepSchema = completeOnboardingSchema.pick({ full_name: true, username: true });
+const identityStepSchema = completeOnboardingSchema.pick({
+  full_name: true,
+  username: true,
+  planning_timezone: true,
+});
 
-type IdentityStepForm = Pick<OnboardingData, "full_name" | "username">;
+type IdentityStepForm = Pick<OnboardingData, "full_name" | "username" | "planning_timezone">;
 
 export const IntroStep = () => (
   <View className="items-center justify-center flex-1 py-8">
@@ -99,35 +97,59 @@ export const IntroStep = () => (
   </View>
 );
 
-export const IdentityStep = ({ data, updateData, usernameAvailability }: StepProps) => {
+export const IdentityStep = ({
+  accountIdentity,
+  data,
+  updateData,
+  usernameAvailability,
+}: StepProps) => {
   const form = useZodForm({
     schema: identityStepSchema,
     defaultValues: {
       full_name: data.full_name,
       username: data.username,
+      planning_timezone: data.planning_timezone,
     },
     mode: "onChange",
   });
   const fullName = form.watch("full_name");
   const username = form.watch("username");
+  const planningTimezone = form.watch("planning_timezone") ?? null;
+  // Subscribe so keepDirtyValues preserves an edited timezone on profile refresh.
+  void form.formState.dirtyFields;
   const lastSyncedValues = useRef<IdentityStepForm>({
     full_name: data.full_name,
     username: data.username,
+    planning_timezone: data.planning_timezone,
   });
   const isSyncingFromParent = useRef(false);
+  const accountIdentityRef = useRef(accountIdentity);
 
   useEffect(() => {
-    const values = { full_name: data.full_name, username: data.username };
+    const values = {
+      full_name: data.full_name,
+      username: data.username,
+      planning_timezone: data.planning_timezone,
+    };
+    const accountChanged = accountIdentityRef.current !== accountIdentity;
+    accountIdentityRef.current = accountIdentity;
 
     if (
+      accountChanged ||
       values.full_name !== lastSyncedValues.current.full_name ||
-      values.username !== lastSyncedValues.current.username
+      values.username !== lastSyncedValues.current.username ||
+      values.planning_timezone !== lastSyncedValues.current.planning_timezone
     ) {
       isSyncingFromParent.current = true;
-      lastSyncedValues.current = values;
-      form.reset(values);
+      // Background profile refreshes may carry new untouched values, but must not
+      // overwrite identity the person is actively editing.
+      form.reset(values, accountChanged ? { keepDirtyValues: false } : { keepDirtyValues: true });
+      lastSyncedValues.current = {
+        ...form.getValues(),
+        planning_timezone: form.getValues("planning_timezone") ?? null,
+      };
     }
-  }, [data.full_name, data.username, form]);
+  }, [accountIdentity, data.full_name, data.username, data.planning_timezone, form]);
 
   useEffect(() => {
     if (isSyncingFromParent.current) {
@@ -135,16 +157,24 @@ export const IdentityStep = ({ data, updateData, usernameAvailability }: StepPro
       return;
     }
 
-    const values = { full_name: fullName, username };
+    const values = { full_name: fullName, username, planning_timezone: planningTimezone };
 
     if (
       values.full_name !== lastSyncedValues.current.full_name ||
-      values.username !== lastSyncedValues.current.username
+      values.username !== lastSyncedValues.current.username ||
+      values.planning_timezone !== lastSyncedValues.current.planning_timezone
     ) {
+      const previous = lastSyncedValues.current;
       lastSyncedValues.current = values;
-      updateData(values);
+      updateData({
+        ...(values.full_name !== previous.full_name ? { full_name: values.full_name } : {}),
+        ...(values.username !== previous.username ? { username: values.username } : {}),
+        ...(values.planning_timezone !== previous.planning_timezone
+          ? { planning_timezone: values.planning_timezone }
+          : {}),
+      });
     }
-  }, [fullName, updateData, username]);
+  }, [fullName, updateData, username, planningTimezone]);
 
   useEffect(() => {
     const trimmedUsername = username.trim();
@@ -207,6 +237,13 @@ export const IdentityStep = ({ data, updateData, usernameAvailability }: StepPro
               </Text>
             ) : null}
           </View>
+          <FormTimezoneField
+            control={form.control}
+            label="Planning timezone"
+            name="planning_timezone"
+            description="Defaults to your device timezone. Change it if you plan your training elsewhere."
+            testId="onboarding-timezone"
+          />
         </View>
       </Form>
     </View>
@@ -372,93 +409,28 @@ export const TrainingBaselineStep = ({ data, fieldSources, updateData }: StepPro
   );
 };
 
-export const GoalsPreferencesStep = ({ data, updateData }: StepProps) => {
+export const GoalsPreferencesStep = (props: StepProps) => (
+  <AccountGoalsPreferencesStep key={props.accountIdentity ?? "anonymous"} {...props} />
+);
+
+const AccountGoalsPreferencesStep = ({ data, updateData }: StepProps) => {
   const initialGoalDraftRef = useRef(data.goal_draft ?? createEmptyGoalDraft());
   const goalFeedback = data.goal_draft
     ? getGoalDraftQualityFeedback({ draft: data.goal_draft })
     : null;
 
-  const handlePreferencesChange = (
-    change: Parameters<typeof applyCompactTrainingPreferencesChange>[1],
-  ) => {
-    if (data.training_preferences_hydration_status !== "ready") {
-      return;
-    }
-
-    try {
-      const patch = { ...data.training_preferences_patch, ...change };
-      const trainingSettings = applyCompactTrainingPreferencesChange(data.training_settings, patch);
-      updateData({
-        compact_training_preferences: getCompactTrainingPreferencesValue(trainingSettings),
-        should_save_training_preferences: true,
-        training_settings: trainingSettings,
-        training_preferences_patch: patch,
-        training_preferences_error: null,
-      });
-    } catch (error) {
-      updateData({
-        training_preferences_error:
-          error instanceof Error ? error.message : "Review these optional training preferences.",
-      });
-    }
-  };
-
   const addGoal = useCallback(() => {
-    const goalDraft = createEmptyGoalDraft();
+    const goalDraft = data.goal_draft ?? createEmptyGoalDraft();
     initialGoalDraftRef.current = goalDraft;
     updateData({ goal_draft: goalDraft, should_create_goal: true });
-  }, [updateData]);
-
-  useEffect(() => {
-    if (!data.should_create_goal) addGoal();
-  }, [addGoal, data.should_create_goal]);
+  }, [data.goal_draft, updateData]);
 
   return (
     <View className="gap-8">
       <View className="gap-3">
         <SectionHeading
-          title="Training preferences"
-          description="Choose a starting approach and weekly dose. You can fine-tune advanced settings later."
-        />
-        <View
-          accessibilityState={{
-            disabled: data.training_preferences_hydration_status !== "ready",
-          }}
-          pointerEvents={data.training_preferences_hydration_status === "ready" ? "auto" : "none"}
-          testID="onboarding-training-preferences-controls"
-        >
-          <TrainingPreferencesSurface
-            presentation="compact"
-            value={data.compact_training_preferences}
-            onChange={handlePreferencesChange}
-          />
-        </View>
-        {data.training_preferences_hydration_status === "loading" ? (
-          <Text className="text-sm text-muted-foreground" testID="onboarding-preferences-loading">
-            Loading your current training preferences…
-          </Text>
-        ) : null}
-        {data.training_preferences_hydration_status === "error" ? (
-          <Text className="text-sm text-destructive" testID="onboarding-preferences-query-error">
-            Training preferences are unavailable and will be skipped. You can still add a goal and
-            continue.
-          </Text>
-        ) : null}
-        {data.training_preferences_error ? (
-          <Text
-            className="text-sm text-destructive"
-            testID="onboarding-training-preferences-feedback"
-          >
-            {data.training_preferences_error} That change was not applied. Skip keeps your existing
-            training preferences unchanged.
-          </Text>
-        ) : null}
-      </View>
-
-      <View className="gap-3">
-        <SectionHeading
-          title="Initial goal (required)"
-          description="Add one complete, plan-ready goal to finish setup."
+          title="Initial goal (optional)"
+          description="Add a goal now, or set one up later."
         />
         {!data.should_create_goal ? (
           <Button onPress={addGoal} testID="onboarding-add-goal" variant="outline">
@@ -473,9 +445,20 @@ export const GoalsPreferencesStep = ({ data, updateData }: StepProps) => {
               onSubmit={() => undefined}
               showSubmitAction={false}
             />
+            <Button
+              onPress={() => updateData({ should_create_goal: false })}
+              testID="onboarding-skip-goal"
+              variant="ghost"
+            >
+              <Text>Skip goal for now</Text>
+            </Button>
             {goalFeedback && !goalFeedback.canGuidePlan ? (
-              <Text className="text-sm text-muted-foreground" testID="onboarding-goal-feedback">
-                {goalFeedback.message} Complete this goal before finalizing setup.
+              <Text
+                accessibilityLiveRegion="polite"
+                className="text-sm text-muted-foreground"
+                testID="onboarding-goal-feedback"
+              >
+                {goalFeedback.message} You can keep editing or skip this goal for now.
               </Text>
             ) : null}
           </View>
@@ -516,16 +499,6 @@ export const SummaryStep = ({ data }: { data: OnboardingData }) => {
     },
     { label: "Max HR", value: data.max_hr ? `${data.max_hr} bpm` : null },
     { label: "Resting HR", value: data.resting_hr ? `${data.resting_hr} bpm` : null },
-    {
-      label: "Training preferences",
-      value:
-        data.training_preferences_hydration_status === "error"
-          ? "Unavailable — skipped"
-          : data.should_save_training_preferences
-            ? getTrainingPreferencesSummary(data.training_settings)
-            : "Skipped",
-      capitalize: true,
-    },
     {
       label: "Goal",
       value:

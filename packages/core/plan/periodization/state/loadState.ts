@@ -59,7 +59,7 @@ function getDailyLoadForActivityCategory(
 export function buildDailyLoadState(input: BuildDailyLoadStateInput): DailyLoadState {
   const systemic = calculateSystemicLoadMetrics({
     dailyActivityCategoryLoads: input.dailyActivityCategoryLoads,
-    history: input.history,
+    ...(input.history === undefined ? {} : { history: input.history }),
   });
   const nextLongTermLoad = applyLoadDecay(
     input.previousState?.longTermLoad ?? 0,
@@ -87,7 +87,9 @@ export function buildDailyLoadState(input: BuildDailyLoadStateInput): DailyLoadS
     activityCategoryLoadStates[activity_category] = advanceActivityCategoryLoadState({
       activity_category,
       dailyLoad,
-      previousState: previousActivityCategoryState,
+      ...(previousActivityCategoryState === undefined
+        ? {}
+        : { previousState: previousActivityCategoryState }),
       recentLoads,
     });
   }
@@ -95,7 +97,7 @@ export function buildDailyLoadState(input: BuildDailyLoadStateInput): DailyLoadS
   const loadBalance = nextLongTermLoad - nextRecentLoad;
   const mechanicalFatigueScore = calculateMechanicalFatigueScore({
     dailyActivityCategoryLoads: input.dailyActivityCategoryLoads,
-    history: input.history,
+    ...(input.history === undefined ? {} : { history: input.history }),
   });
   const readinessScore = clamp(0.5 + loadBalance / 50 - mechanicalFatigueScore / 250, 0, 1);
 

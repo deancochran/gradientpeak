@@ -1,6 +1,8 @@
 import type { APIRequestContext, TestInfo } from "@playwright/test";
+import { follows, groupJoinRequests, groupMemberships, groups, profiles } from "@repo/db/schema";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { currentE2EActor } from "../support/actors";
-import { type E2EQuery, LocalE2EDatabase } from "../support/database";
+import { LocalE2EDatabase } from "../support/database";
 import { e2eArtifactIdentity } from "../utils/testData";
 
 type OnboardingSocialFixture = {
@@ -15,18 +17,6 @@ type OnboardingSocialFixture = {
   readJoinRequest: (groupId: string) => Promise<string | null>;
 };
 
-async function profileId(client: E2EQuery, email: string) {
-  const result = await client.query<{ id: string }>(
-    `select p."id" from "profiles" p
-     inner join "users" u on u."id" = p."id"
-     where lower(u."email") = lower($1) limit 1`,
-    [email],
-  );
-  const id = result.rows[0]?.id;
-  if (!id) throw new Error(`The social fixture actor ${email} was not provisioned.`);
-  return id;
-}
-
 export async function withOnboardingSocialFixture(
   request: APIRequestContext,
   testInfo: TestInfo,
@@ -40,8 +30,7 @@ export async function withOnboardingSocialFixture(
   const closedGroupName = e2eArtifactIdentity(testInfo, "social closed group");
   const openSlug = `social-open-${openGroupName.split(" ").at(-1)}`;
   const closedSlug = `social-closed-${closedGroupName.split(" ").at(-1)}`;
-  const pool = new LocalE2EDatabase({ max: 1 });
-  const client = await pool.connect();
+  const database = new LocalE2EDatabase({ max: 1 });
   let ownerWasPublic = false;
   let ownerFullName: string | null = null;
   let ownerUsername: string | null = null;
@@ -52,46 +41,69 @@ export async function withOnboardingSocialFixture(
   let primaryError: unknown;
 
   try {
-    ownerId = await profileId(client, ownerActor.email);
-    athleteId = await profileId(client, athleteActor.email);
-    const owner = await client.query<{
-      full_name: string | null;
-      is_public: boolean;
-      username: string | null;
-    }>('select "full_name", "is_public", "username" from "profiles" where "id" = $1', [ownerId]);
-    ownerWasPublic = owner.rows[0]?.is_public ?? false;
-    ownerFullName = owner.rows[0]?.full_name ?? null;
-    ownerUsername = owner.rows[0]?.username ?? null;
+    ownerId = ownerActor.profileId;
+    athleteId = athleteActor.profileId;
+    const [owner] = await database.db
+      .select({
+        full_name: profiles.full_name,
+        is_public: profiles.is_public,
+        username: profiles.username,
+      })
+      .from(profiles)
+      .where(eq(profiles.id, ownerId))
+      .limit(1);
+    if (!owner)
+      throw new Error(`The social fixture actor ${ownerActor.email} was not provisioned.`);
+    ownerWasPublic = owner.is_public;
+    ownerFullName = owner.full_name;
+    ownerUsername = owner.username;
 
-    await client.query("begin");
-    await client.query('delete from "follows" where "follower_id" = $1 and "following_id" = $2', [
-      athleteId,
-      ownerId,
-    ]);
-    await client.query(
-      `update "profiles"
-       set "is_public" = true, "full_name" = $2, "username" = $3, "updated_at" = now()
-       where "id" = $1`,
-      [ownerId, "Social Trail Guide", ownerActor.username],
-    );
-    const groups = await client.query<{ id: string; join_policy: string }>(
-      `insert into "groups" (
-         "created_by_profile_id", "name", "slug", "description", "access_level", "join_policy"
-       ) values
-          ($1, $2, $3, 'An open social discovery fixture.', 'public', 'open'),
-          ($1, $4, $5, 'A request-only social discovery fixture.', 'public', 'request_to_join')
-       returning "id", "join_policy"`,
-      [ownerId, openGroupName, openSlug, closedGroupName, closedSlug],
-    );
-    openGroupId = groups.rows.find((row) => row.join_policy === "open")?.id ?? "";
-    closedGroupId = groups.rows.find((row) => row.join_policy === "request_to_join")?.id ?? "";
-    if (!openGroupId || !closedGroupId) throw new Error("Social fixture groups were not created.");
-    await client.query(
-      `insert into "group_memberships" ("group_id", "profile_id", "role", "status")
-       values ($1, $3, 'owner', 'active'), ($2, $3, 'owner', 'active')`,
-      [openGroupId, closedGroupId, ownerId],
-    );
-    await client.query("commit");
+    const createdGroups = await database.typedTransaction(async (transaction) => {
+      await transaction
+        .delete(follows)
+        .where(and(eq(follows.follower_id, athleteId), eq(follows.following_id, ownerId)));
+      await transaction
+        .update(profiles)
+        .set({
+          is_public: true,
+          full_name: "Social Trail Guide",
+          username: ownerActor.username,
+          updated_at: new Date(),
+        })
+        .where(eq(profiles.id, ownerId));
+      const created = await transaction
+        .insert(groups)
+        .values([
+          {
+            created_by_profile_id: ownerId,
+            name: openGroupName,
+            slug: openSlug,
+            description: "An open social discovery fixture.",
+            access_level: "public",
+            join_policy: "open",
+          },
+          {
+            created_by_profile_id: ownerId,
+            name: closedGroupName,
+            slug: closedSlug,
+            description: "A request-only social discovery fixture.",
+            access_level: "public",
+            join_policy: "request_to_join",
+          },
+        ])
+        .returning({ id: groups.id, join_policy: groups.join_policy });
+      const openGroupId = created.find((group) => group.join_policy === "open")?.id;
+      const closedGroupId = created.find((group) => group.join_policy === "request_to_join")?.id;
+      if (!openGroupId || !closedGroupId)
+        throw new Error("Social fixture groups were not created.");
+      await transaction.insert(groupMemberships).values([
+        { group_id: openGroupId, profile_id: ownerId, role: "owner", status: "active" },
+        { group_id: closedGroupId, profile_id: ownerId, role: "owner", status: "active" },
+      ]);
+      return { closedGroupId, openGroupId };
+    });
+    openGroupId = createdGroups.openGroupId;
+    closedGroupId = createdGroups.closedGroupId;
 
     await run({
       closedGroupId,
@@ -101,78 +113,89 @@ export async function withOnboardingSocialFixture(
       personId: ownerId,
       personName: "Social Trail Guide",
       readFollowStatus: async () => {
-        const result = await client.query<{ status: string }>(
-          'select "status" from "follows" where "follower_id" = $1 and "following_id" = $2',
-          [athleteId, ownerId],
-        );
-        return result.rows[0]?.status ?? null;
+        const [follow] = await database.db
+          .select({ status: follows.status })
+          .from(follows)
+          .where(and(eq(follows.follower_id, athleteId), eq(follows.following_id, ownerId)))
+          .limit(1);
+        return follow?.status ?? null;
       },
       readGroupMembership: async (groupId) => {
-        const result = await client.query<{ role: string }>(
-          `select "role" from "group_memberships"
-           where "group_id" = $1 and "profile_id" = $2 and "status" = 'active'`,
-          [groupId, athleteId],
-        );
-        return result.rows[0]?.role ?? null;
+        const [membership] = await database.db
+          .select({ role: groupMemberships.role })
+          .from(groupMemberships)
+          .where(
+            and(
+              eq(groupMemberships.group_id, groupId),
+              eq(groupMemberships.profile_id, athleteId),
+              eq(groupMemberships.status, "active"),
+            ),
+          )
+          .limit(1);
+        return membership?.role ?? null;
       },
       readJoinRequest: async (groupId) => {
-        const result = await client.query<{ status: string }>(
-          `select "status" from "group_join_requests"
-           where "group_id" = $1 and "profile_id" = $2
-           order by "created_at" desc limit 1`,
-          [groupId, athleteId],
-        );
-        return result.rows[0]?.status ?? null;
+        const [request] = await database.db
+          .select({ status: groupJoinRequests.status })
+          .from(groupJoinRequests)
+          .where(
+            and(
+              eq(groupJoinRequests.group_id, groupId),
+              eq(groupJoinRequests.profile_id, athleteId),
+            ),
+          )
+          .orderBy(desc(groupJoinRequests.created_at))
+          .limit(1);
+        return request?.status ?? null;
       },
     });
   } catch (error) {
-    await client.query("rollback").catch(() => undefined);
     primaryError = error;
   }
 
   let cleanupError: unknown;
   try {
-    await client.query("begin");
-    if (athleteId && ownerId) {
-      await client.query('delete from "follows" where "follower_id" = $1 and "following_id" = $2', [
-        athleteId,
-        ownerId,
-      ]);
-    }
-    if (openGroupId || closedGroupId) {
-      await client.query(
-        'delete from "groups" where "created_by_profile_id" = $1 and "id" = any($2::uuid[])',
-        [ownerId, [openGroupId, closedGroupId].filter(Boolean)],
-      );
-    } else if (ownerId) {
-      const recovered = await client.query<{ id: string }>(
-        `select "id" from "groups"
-         where "created_by_profile_id" = $1 and "slug" = any($2::text[])`,
-        [ownerId, [openSlug, closedSlug]],
-      );
-      const recoveredIds = recovered.rows.map((row) => row.id);
-      if (recoveredIds.length > 0) {
-        await client.query(
-          'delete from "groups" where "created_by_profile_id" = $1 and "id" = any($2::uuid[])',
-          [ownerId, recoveredIds],
-        );
+    await database.typedTransaction(async (transaction) => {
+      if (athleteId && ownerId) {
+        await transaction
+          .delete(follows)
+          .where(and(eq(follows.follower_id, athleteId), eq(follows.following_id, ownerId)));
       }
-    }
-    if (ownerId) {
-      await client.query(
-        `update "profiles"
-         set "is_public" = $2, "full_name" = $3, "username" = $4, "updated_at" = now()
-         where "id" = $1`,
-        [ownerId, ownerWasPublic, ownerFullName, ownerUsername],
-      );
-    }
-    await client.query("commit");
+      if (openGroupId || closedGroupId) {
+        await transaction
+          .delete(groups)
+          .where(
+            and(
+              eq(groups.created_by_profile_id, ownerId),
+              inArray(groups.id, [openGroupId, closedGroupId].filter(Boolean)),
+            ),
+          );
+      } else if (ownerId) {
+        await transaction
+          .delete(groups)
+          .where(
+            and(
+              eq(groups.created_by_profile_id, ownerId),
+              inArray(groups.slug, [openSlug, closedSlug]),
+            ),
+          );
+      }
+      if (ownerId) {
+        await transaction
+          .update(profiles)
+          .set({
+            is_public: ownerWasPublic,
+            full_name: ownerFullName,
+            username: ownerUsername,
+            updated_at: new Date(),
+          })
+          .where(eq(profiles.id, ownerId));
+      }
+    });
   } catch (error) {
-    await client.query("rollback").catch(() => undefined);
     cleanupError = error;
   } finally {
-    client.release();
-    await pool.close();
+    await database.close();
   }
 
   if (primaryError !== undefined) throw primaryError;

@@ -1,3 +1,4 @@
+import { ianaTimezoneSchema } from "@repo/core/athlete-intelligence";
 import { cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -21,8 +22,11 @@ import {
   FormTextareaField,
   FormTextField,
   FormTimeInputField,
+  FormTimezoneField,
   FormWeightInputField,
 } from "./index.web";
+import { filterTimezoneOptions, getTimezoneOptions, isValidIanaTimezone } from "./shared";
+import { BUNDLED_TIMEZONES } from "./timezones";
 
 if (typeof globalThis.ResizeObserver === "undefined") {
   globalThis.ResizeObserver = class ResizeObserver {
@@ -110,7 +114,19 @@ function FormFieldsHarness() {
           testId="profile-visibility-switch"
         />
         <FormBoundedNumberField control={methods.control} decimals={0} label="FTP" name="ftp" />
-        <FormNumberField control={methods.control} label="Target Power" name="target_power" />
+        <FormNumberField
+          clampOnBlur={false}
+          control={methods.control}
+          label="Target Power"
+          max={300}
+          name="target_power"
+        />
+        <FormNumberField
+          control={methods.control}
+          label="Clamped Target Power"
+          max={300}
+          name="target_power"
+        />
         <FormPaceField control={methods.control} label="Pace" name="pace" />
         <FormPercentSliderField
           control={methods.control}
@@ -248,7 +264,184 @@ function DraftSubmitHarness({ onSubmit }: { onSubmit: (values: { amount: number 
   );
 }
 
+function OptionalNumberSubmitHarness({
+  onSubmit,
+}: {
+  onSubmit: (values: { amount?: number }) => void;
+}) {
+  const methods = useZodForm({
+    schema: z.object({ amount: z.number().optional() }),
+    defaultValues: { amount: 10 },
+  });
+  const submit = useZodFormSubmit({ form: methods, onSubmit });
+
+  return (
+    <Form {...methods}>
+      <form onSubmit={submit.handleSubmit}>
+        <FormNumberField control={methods.control} label="Optional amount" name="amount" />
+        <button type="submit">Submit optional amount</button>
+      </form>
+    </Form>
+  );
+}
+
+function NullableNumberHarness() {
+  const methods = useZodForm({
+    schema: z.object({ amount: z.number().finite().nullable() }),
+    defaultValues: { amount: 0 },
+  });
+
+  return (
+    <Form {...methods}>
+      <FormNumberField
+        clampOnBlur={false}
+        control={methods.control}
+        emptyValue={null}
+        label="Nullable amount"
+        name="amount"
+      />
+      <button
+        type="button"
+        onClick={() => methods.setError("amount", { message: "Amount is invalid" })}
+      >
+        Set amount error
+      </button>
+      <output data-testid="nullable-values">{JSON.stringify(methods.watch())}</output>
+    </Form>
+  );
+}
+
+function TimezoneHarness() {
+  const methods = useZodForm({
+    schema: z.object({ timezone: z.string().nullable() }),
+    defaultValues: { timezone: "Pacific/Kiritimati" },
+  });
+
+  return (
+    <Form {...methods}>
+      <FormTimezoneField control={methods.control} label="Planning timezone" name="timezone" />
+      <output data-testid="timezone-values">{JSON.stringify(methods.watch())}</output>
+    </Form>
+  );
+}
+
 describe("Form fields web", () => {
+  it.each([
+    true,
+    false,
+  ])("rejects unsupported bundled timezones while preserving valid aliases (enumeration: %s)", (enumerationAvailable) => {
+    const descriptor = Object.getOwnPropertyDescriptor(Intl, "supportedValuesOf");
+    const OriginalDateTimeFormat = Intl.DateTimeFormat;
+    const formatter = vi
+      .spyOn(Intl, "DateTimeFormat")
+      // biome-ignore lint/complexity/useArrowFunction: Core invokes this mock with new, so it must be constructible.
+      .mockImplementation(function (locales, options) {
+        if (options?.timeZone === "America/Coyhaique")
+          throw new RangeError("Unsupported time zone");
+        return new OriginalDateTimeFormat(locales, options);
+      });
+    try {
+      Object.defineProperty(Intl, "supportedValuesOf", {
+        configurable: true,
+        value: enumerationAvailable ? () => ["America/Coyhaique", "America/New_York"] : undefined,
+      });
+      expect(BUNDLED_TIMEZONES).toContain("America/Coyhaique");
+      const options = getTimezoneOptions("US/Eastern", "America/Coyhaique");
+      expect(options.some((option) => option.value === "America/Coyhaique")).toBe(false);
+      expect(options).toContainEqual({ label: "US / Eastern", value: "US/Eastern" });
+      expect(options).toContainEqual({ label: "Asia / Kathmandu", value: "Asia/Kathmandu" });
+      expect(options).toContainEqual({ label: "Not set", value: "" });
+      expect(options.length).toBeGreaterThan(500);
+      for (const option of options) {
+        if (option.value) expect(ianaTimezoneSchema.safeParse(option.value).success).toBe(true);
+      }
+    } finally {
+      formatter.mockRestore();
+      if (descriptor) Object.defineProperty(Intl, "supportedValuesOf", descriptor);
+      else Reflect.deleteProperty(Intl, "supportedValuesOf");
+    }
+  });
+
+  it("keeps the comprehensive timezone catalog when native enumeration is absent or throws", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(Intl, "supportedValuesOf");
+    try {
+      Object.defineProperty(Intl, "supportedValuesOf", { configurable: true, value: undefined });
+      const options = getTimezoneOptions();
+      expect(options.length).toBeGreaterThan(550);
+      for (const value of [
+        "UTC",
+        "America/Coyhaique",
+        "America/Ciudad_Juarez",
+        "Asia/Kathmandu",
+        "Europe/Kyiv",
+        "Pacific/Chatham",
+        "Etc/GMT-14",
+        "US/Eastern",
+      ]) {
+        expect(options).toContainEqual(expect.objectContaining({ value }));
+      }
+      expect(filterTimezoneOptions(options, "new york").map((option) => option.value)).toEqual([
+        "America/New_York",
+      ]);
+      Object.defineProperty(Intl, "supportedValuesOf", {
+        configurable: true,
+        value: () => {
+          throw new RangeError("unsupported");
+        },
+      });
+      expect(getTimezoneOptions()).toEqual(options);
+    } finally {
+      if (descriptor) Object.defineProperty(Intl, "supportedValuesOf", descriptor);
+    }
+    expect(new Set(BUNDLED_TIMEZONES).size).toBe(BUNDLED_TIMEZONES.length);
+    for (const zone of Intl.supportedValuesOf("timeZone")) {
+      expect(BUNDLED_TIMEZONES).toContain(zone);
+    }
+  });
+
+  it("searches timezone choices and persists canonical values and explicit clearing", () => {
+    renderWeb(<TimezoneHarness />);
+    fireEvent.click(screen.getByRole("button", { name: "Planning timezone" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Search timezones" }), {
+      target: { value: "kathmandu" },
+    });
+    fireEvent.click(screen.getByRole("option", { name: "Asia / Kathmandu" }));
+    expect(screen.getByTestId("timezone-values")).toHaveTextContent('"timezone":"Asia/Kathmandu"');
+    fireEvent.click(screen.getByRole("button", { name: "Planning timezone" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Search timezones" }), {
+      target: { value: "not set" },
+    });
+    fireEvent.click(screen.getByRole("option", { name: "Not set" }));
+    expect(screen.getByTestId("timezone-values")).toHaveTextContent('"timezone":null');
+  });
+  it("discards same-value bounded and weight drafts on form reset", () => {
+    function ResetForm() {
+      const form = useZodForm({
+        schema: z.object({ quantity: z.number(), weight: z.number() }),
+        defaultValues: { quantity: 1, weight: 70 },
+      });
+      return (
+        <Form {...form}>
+          <FormBoundedNumberField control={form.control} name="quantity" label="Quantity" />
+          <FormWeightInputField control={form.control} name="weight" label="Weight" unit="kg" />
+          <button type="button" onClick={() => form.reset()}>
+            Reset drafts
+          </button>
+        </Form>
+      );
+    }
+    renderWeb(<ResetForm />);
+    const quantity = screen.getByRole("textbox", { name: "Quantity" });
+    const weight = screen.getByRole("textbox", { name: "Weight" });
+    fireEvent.change(quantity, { target: { value: "1.0" } });
+    fireEvent.change(weight, { target: { value: "70.0" } });
+    expect(quantity).toHaveValue("1.0");
+    expect(weight).toHaveValue("70.0");
+    fireEvent.click(screen.getByRole("button", { name: "Reset drafts" }));
+    expect(quantity).toHaveValue("1");
+    expect(weight).toHaveValue("70");
+  });
+
   afterEach(cleanup);
 
   it("binds shared controlled wrappers to react-hook-form", () => {
@@ -345,6 +538,64 @@ describe("Form fields web", () => {
 
     expect(input).toHaveValue("12");
     expect(screen.getByTestId("values").textContent).toContain('"target_power":12');
+  });
+
+  it("preserves opt-out out-of-range drafts while the default field clamps", () => {
+    renderWeb(<FormFieldsHarness />);
+    const preserved = screen.getByLabelText("Target Power");
+    const clamped = screen.getByLabelText("Clamped Target Power");
+
+    fireEvent.change(preserved, { target: { value: "500" } });
+    fireEvent.blur(preserved);
+    expect(preserved).toHaveValue("500");
+    expect(screen.getByTestId("values").textContent).toContain('"target_power":500');
+
+    fireEvent.change(clamped, { target: { value: "500" } });
+    fireEvent.blur(clamped);
+    expect(clamped).toHaveValue("300");
+    expect(screen.getByTestId("values").textContent).toContain('"target_power":300');
+  });
+
+  it("keeps invalid optional number drafts visible and rejects submission instead of clearing", async () => {
+    const onSubmit = vi.fn();
+    renderWeb(<OptionalNumberSubmitHarness onSubmit={onSubmit} />);
+    const input = screen.getByLabelText("Optional amount");
+
+    fireEvent.change(input, { target: { value: "invalid" } });
+    fireEvent.blur(input);
+    expect(input).toHaveValue("invalid");
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit optional amount" }));
+
+    await vi.waitFor(() => expect(onSubmit).not.toHaveBeenCalled());
+    expect(input).toHaveValue("invalid");
+  });
+
+  it("preserves zero, clears to null, and associates the announced numeric error", () => {
+    renderWeb(<NullableNumberHarness />);
+    const input = screen.getByLabelText("Nullable amount");
+
+    expect(input).toHaveValue("0");
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+    expect(screen.getByTestId("nullable-values")).toHaveTextContent('"amount":null');
+
+    fireEvent.click(screen.getByRole("button", { name: "Set amount error" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Amount is invalid");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(input.getAttribute("aria-describedby")).toContain("form-item-message");
+  });
+
+  it("preserves valid timezone values without selecting one automatically", () => {
+    expect(isValidIanaTimezone("Pacific/Kiritimati")).toBe(true);
+    const options = getTimezoneOptions("Pacific/Kiritimati", "UTC");
+    expect(options?.some((option) => option.value === "Pacific/Kiritimati")).toBe(true);
+    expect(options?.find((option) => option.value === "")?.label).toBe("Not set");
+
+    renderWeb(<TimezoneHarness />);
+    expect(screen.getByTestId("timezone-values")).toHaveTextContent(
+      '"timezone":"Pacific/Kiritimati"',
+    );
   });
 
   it("discards a focused number draft when reset restores the same value", async () => {

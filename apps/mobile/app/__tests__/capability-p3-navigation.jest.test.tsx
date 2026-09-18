@@ -139,20 +139,10 @@ jest.mock("@/lib/stores/theme-store", () => ({
   useTheme: () => ({ resolvedTheme: "light" }),
 }));
 
-jest.mock("@/lib/stores/trainingPreferencesSheetStore", () => ({
-  __esModule: true,
-  useTrainingPreferencesSheetStore: () => false,
-}));
-
 jest.mock("@/lib/theme", () => ({
   __esModule: true,
   getNavigationTheme: () => ({ colors: { card: "#fff", border: "#ddd", primary: "#000" } }),
   getResolvedThemeScale: () => ({ mutedForeground: "#666" }),
-}));
-
-jest.mock("@/components/settings/training-preferences/TrainingPreferencesEditor", () => ({
-  __esModule: true,
-  TrainingPreferencesEditor: createHost("TrainingPreferencesEditor"),
 }));
 
 const NotFoundScreen = require("../+not-found").default;

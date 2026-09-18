@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
+import type { MutableRefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FieldErrors, FieldValues, UseFormReturn } from "react-hook-form";
 import { flushPendingFormDrafts } from "./pending-form-drafts";
 
@@ -9,6 +10,7 @@ type UseZodFormSubmitParams<TFieldValues extends FieldValues> = {
   onValidationError?: (errors: FieldErrors) => void;
   shouldRethrow?: boolean;
   submittingLabel?: string;
+  resetKey?: unknown;
 };
 
 type SubmitButtonStateOptions = {
@@ -27,9 +29,11 @@ export function useZodFormSubmit<TFieldValues extends FieldValues>(
     onValidationError,
     shouldRethrow = true,
     submittingLabel,
+    resetKey,
   } = params;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<Error | null>(null);
+  const pendingRef = useRef(false);
   const defaultSubmittingLabel = submittingLabel ?? "Saving...";
 
   const handleSubmit = useMemoizedHandle({
@@ -39,13 +43,21 @@ export function useZodFormSubmit<TFieldValues extends FieldValues>(
     onValidationError,
     setIsSubmitting,
     setSubmitError,
+    pendingRef,
     shouldRethrow,
   });
 
   const resetSubmitState = useCallback(() => {
+    pendingRef.current = false;
     setIsSubmitting(false);
     setSubmitError(null);
   }, []);
+
+  useEffect(() => {
+    pendingRef.current = false;
+    setIsSubmitting(false);
+    setSubmitError(null);
+  }, [resetKey]);
 
   const getSubmitButtonState = useCallback(
     (options: SubmitButtonStateOptions) => ({
@@ -80,10 +92,12 @@ function useMemoizedHandle<TFieldValues extends FieldValues>({
   onValidationError,
   setIsSubmitting,
   setSubmitError,
+  pendingRef,
   shouldRethrow,
 }: UseZodFormSubmitParams<TFieldValues> & {
   setIsSubmitting: (value: boolean) => void;
   setSubmitError: (value: Error | null) => void;
+  pendingRef: MutableRefObject<boolean>;
 }) {
   return useMemo(() => {
     const submit = form.handleSubmit(
@@ -99,18 +113,31 @@ function useMemoizedHandle<TFieldValues extends FieldValues>({
             throw error;
           }
         } finally {
+          pendingRef.current = false;
           setIsSubmitting(false);
         }
       },
       (errors) => {
+        pendingRef.current = false;
         setSubmitError(null);
         onValidationError?.(errors);
       },
     );
 
     return (event?: Parameters<typeof submit>[0]) => {
+      if (pendingRef.current) return Promise.resolve();
+      pendingRef.current = true;
       flushPendingFormDrafts(form.control);
       return submit(event);
     };
-  }, [form, onError, onSubmit, onValidationError, setIsSubmitting, setSubmitError, shouldRethrow]);
+  }, [
+    form,
+    onError,
+    onSubmit,
+    onValidationError,
+    pendingRef,
+    setIsSubmitting,
+    setSubmitError,
+    shouldRethrow,
+  ]);
 }

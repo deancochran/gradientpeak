@@ -72,7 +72,7 @@ export function deriveBuilderPlanPresentation(
           state.athleteContext.evidence.metricCount > 0
             ? `${state.athleteContext.evidence.metricCount} metrics`
             : "Defaults",
-        detail: "Published athlete context plus explicit draft overrides.",
+        detail: "Published athlete context plus your entered values.",
       },
       {
         key: "goals",
@@ -84,7 +84,7 @@ export function deriveBuilderPlanPresentation(
         key: "planningConstraints",
         label: "Preferences",
         value: preferenceCount === 0 ? "Defaults" : `${preferenceCount} configured`,
-        detail: "Preferences submitted with the canonical draft.",
+        detail: "Preferences submitted with the plan.",
       },
       {
         key: "schedulePreview",

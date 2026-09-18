@@ -37,18 +37,53 @@ export class TrainingPlansPage {
     await this.page.getByRole("tab", { name: "Templates" }).click();
   }
 
-  async applyToSchedule(startDate: string) {
+  async reviewSchedule(startDate: string) {
     await this.page.getByLabel("Start date").fill(startDate);
-    await this.page.getByRole("button", { name: "Apply to schedule" }).click();
+    await this.page.getByRole("button", { name: "Review schedule" }).click();
+    await expect(this.page.getByRole("button", { name: "Confirm schedule" })).toBeVisible();
   }
 
-  async removeSchedule() {
-    await this.page.getByRole("button", { name: "Remove schedule" }).click();
+  async confirmSchedule() {
+    await this.page.getByRole("button", { name: "Confirm schedule" }).click();
+  }
+
+  async selectScheduleApplication(applicationId: string) {
+    await this.page.getByLabel("Scheduled application").selectOption(applicationId);
+  }
+
+  async reviewScheduleRemoval() {
+    await this.page.getByRole("button", { name: "Review schedule removal" }).click();
+    await expect(this.page.getByRole("button", { name: "Confirm remove schedule" })).toBeVisible();
+  }
+
+  async confirmScheduleRemoval() {
+    await this.page.getByRole("button", { name: "Confirm remove schedule" }).click();
   }
 }
 
 export class ActivityPlansPage {
   constructor(readonly page: Page) {}
+
+  step(interval = 1, step = 1) {
+    return this.page.getByRole("group", {
+      name: `Interval ${interval}, step ${step}`,
+      exact: true,
+    });
+  }
+
+  async openDuration(interval = 1, step = 1) {
+    const row = this.step(interval, step);
+    await row.getByRole("button", { name: /, duration:/ }).click();
+    return row;
+  }
+
+  async openTarget(target = 1, interval = 1, step = 1) {
+    const row = this.step(interval, step);
+    const trigger = row.getByRole("button", { name: new RegExp(`, target ${target}:`) });
+    if (!(await trigger.isVisible())) await row.getByRole("button", { name: /, details$/ }).click();
+    await trigger.click();
+    return row;
+  }
 
   searchInput() {
     return this.page.getByRole("searchbox", { name: /search activity plans/i });
@@ -90,11 +125,23 @@ export class ActivityPlansPage {
       await this.openLibrary();
       await this.startCreate(input.submit);
       await this.page.getByLabel("Plan name").fill(input.name);
-      if (input.description) await this.page.getByLabel("Description").fill(input.description);
+      if (input.description) {
+        await this.page.getByText("Plan details and settings", { exact: true }).click();
+        await this.page.getByLabel("Description", { exact: true }).fill(input.description);
+      }
       if (input.category)
-        await this.page.getByLabel("Plan activity category").selectOption(input.category);
-      if (input.firstStep)
-        await this.page.getByRole("textbox", { name: "Step 1" }).fill(input.firstStep);
+        await this.page
+          .getByLabel("Activity category", { exact: true })
+          .selectOption(input.category);
+      if (input.firstStep) {
+        await this.step()
+          .getByRole("button", { name: /, details$/ })
+          .click();
+        await this.step()
+          .getByRole("textbox", { name: /, name$/ })
+          .fill(input.firstStep);
+        await this.step().getByRole("button", { name: "Close editor" }).click();
+      }
       const submit = this.page.getByRole("button", { name: /create plan/i });
       if (input.submit === "keyboard") await submit.press("Enter");
       else await submit.click();

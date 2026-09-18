@@ -1,6 +1,5 @@
 import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import type {
-  AthleteTrainingSettings,
   ExecutableIntegrationProviderId,
   GoalEditorDraft,
   OnboardingIntent,
@@ -8,9 +7,6 @@ import type {
 } from "@repo/core";
 import type { ComponentType } from "react";
 import type { AthleteBaselineFieldSource } from "@/components/athlete-baseline";
-import type { CompactTrainingPreferencesValue } from "@/components/settings/training-preferences/compactTrainingPreferences";
-
-export type TrainingPreferencesHydrationStatus = "loading" | "ready" | "error";
 
 export type OnboardingSocialActionStatus = "pending" | "saved" | "failed" | "abandoned";
 
@@ -23,6 +19,7 @@ export type OnboardingGroupAction = {
 export interface OnboardingData {
   full_name: string;
   username: string;
+  planning_timezone: string | null;
   intent: OnboardingIntent[];
   experience_level: "beginner" | "intermediate" | "advanced" | "skip" | null;
   dob: string | null;
@@ -36,12 +33,6 @@ export interface OnboardingData {
   training_frequency: "1-2" | "3-4" | "5-6" | "7+" | null;
   equipment: string[];
   goals: string[];
-  training_settings: AthleteTrainingSettings;
-  compact_training_preferences: CompactTrainingPreferencesValue;
-  training_preferences_patch: Partial<CompactTrainingPreferencesValue>;
-  training_preferences_error: string | null;
-  training_preferences_hydration_status: TrainingPreferencesHydrationStatus;
-  should_save_training_preferences: boolean;
   goal_draft: GoalEditorDraft | null;
   should_create_goal: boolean;
   selected_invitation_ids: string[];
@@ -91,6 +82,7 @@ export interface StepConfig {
 }
 
 export interface StepProps {
+  accountIdentity?: string | null;
   data: OnboardingData;
   updateData: (
     updates: Partial<OnboardingData>,

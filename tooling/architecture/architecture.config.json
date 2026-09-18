@@ -33,11 +33,23 @@
             "packages/db/scripts/fixtures/**/*"
           ]
         },
-        "typecheck": {
-          "script": "check-types",
-          "tsconfig": "packages/db/tsconfig.json",
-          "patterns": ["packages/db/**/*.ts", "packages/db/**/*.tsx"]
-        },
+        "typecheck": [
+          {
+            "script": "check-types",
+            "tsconfig": "packages/db/tsconfig.json",
+            "patterns": ["packages/db/**/*.ts", "packages/db/**/*.tsx"]
+          },
+          {
+            "script": "check-types:supabase",
+            "tsconfig": "packages/db/supabase/tsconfig.json",
+            "patterns": [
+              "packages/db/supabase/functions/**/*.ts",
+              "packages/db/supabase/functions/**/*.tsx",
+              "packages/db/supabase/functions/**/*.js",
+              "packages/db/supabase/functions/**/*.jsx"
+            ]
+          }
+        ],
         "test": {
           "script": "test",
           "patterns": [
@@ -197,11 +209,15 @@
         "test": [
           {
             "script": "test",
-            "patterns": ["tooling/architecture/**/*.test.mjs", "tooling/testing/**/*.test.mjs"]
+            "patterns": [
+              "tests/parity/**/*.test.ts",
+              "tooling/architecture/**/*.test.mjs",
+              "tooling/testing/**/*.test.mjs"
+            ]
           },
           {
             "script": "test:architecture",
-            "patterns": ["tooling/qa/profiles.test.mjs"]
+            "patterns": ["tooling/e2e/**/*.test.mjs", "tooling/qa/profiles.test.mjs"]
           }
         ]
       }
@@ -220,7 +236,14 @@
     "root": ["core", "mobile", "web"]
   },
   "coverage": {
-    "lint": ["apps/**/*", "packages/**/*", "tooling/**/*", "tests/**/*", ".github/**/*"],
+    "lint": [
+      "apps/**/*",
+      "packages/**/*",
+      "tooling/**/*",
+      "tests/**/*",
+      ".github/**/*",
+      "vitest.parity.config.ts"
+    ],
     "lintExcludes": [
       "apps/web/src/routeTree.gen.ts",
       "tooling/architecture/architecture-baseline.json",
@@ -233,6 +256,7 @@
       "packages/**/*.ts",
       "packages/**/*.tsx",
       "tooling/**/*.ts",
+      "vitest.parity.config.ts",
       "packages/db/supabase/functions/**/*.js",
       "packages/db/supabase/functions/**/*.jsx"
     ],
@@ -240,9 +264,11 @@
       "apps/**/*",
       "packages/**/*",
       "tooling/architecture/**/*.test.mjs",
+      "tooling/e2e/**/*.test.mjs",
       "tooling/qa/profiles.test.mjs",
       "tooling/testing/**/*.test.mjs",
-      "tooling/typescript/**/*.test.mjs"
+      "tooling/typescript/**/*.test.mjs",
+      "tests/parity/**/*.test.ts"
     ],
     "categories": {
       "source": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs"],
@@ -252,6 +278,10 @@
       "templates": ["**/*.html", "**/*.xml", "**/*.svg"],
       "documentation": ["**/*.md"],
       "scripts": ["**/*.sh"],
+      "ui-platform-marker": [
+        "packages/ui/src/components/*/.native-only",
+        "packages/ui/src/components/*/.web-only"
+      ],
       "repository-metadata": [
         "Dockerfile",
         "**/Dockerfile",
@@ -278,6 +308,7 @@
       "templates": "pnpm check && pnpm verify:db",
       "documentation": "pnpm check",
       "scripts": "pnpm check",
+      "ui-platform-marker": "pnpm check:test-structure",
       "repository-metadata": "pnpm check",
       "test-fixture": "pnpm test"
     }
@@ -504,6 +535,97 @@
       ]
     }
   ],
+  "typedPersistence": {
+    "scopePatterns": [
+      "apps/mobile/**/*.ts",
+      "apps/mobile/**/*.tsx",
+      "apps/web/e2e/**/*.ts",
+      "apps/web/e2e/**/*.tsx",
+      "apps/web/src/**/*.ts",
+      "apps/web/src/**/*.tsx",
+      "packages/api/src/**/*.ts",
+      "packages/api/src/**/*.tsx"
+    ],
+    "lowLevelQueryAllowlist": [
+      {
+        "id": "api-profile-advisory-session-fence",
+        "path": "packages/api/src/db.ts",
+        "reason": "This helper must reserve and release a PostgreSQL session advisory lock on one physical connection before handing work to Drizzle.",
+        "validation": "packages/api/src/db.test.ts exercises lock release and failed handoff behavior."
+      },
+      {
+        "id": "web-readiness-probe",
+        "path": "apps/web/src/lib/readiness.ts",
+        "reason": "Readiness needs a bounded connection-level liveness probe rather than an application data read.",
+        "validation": "apps/web/src/lib/readiness.test.ts covers configured, unavailable, and timeout states."
+      }
+    ],
+    "rawSqlExecuteExceptions": [
+      {
+        "id": "messaging-conversation-aggregation",
+        "path": "packages/api/src/routers/messaging.ts",
+        "allowedKinds": ["complex-cte", "complex-query"],
+        "reason": "Conversation summaries require a reviewed multi-relation aggregation that the typed builder cannot express without duplicating window semantics.",
+        "validation": "packages/api/src/routers/__tests__/messaging.test.ts verifies ordering, visibility, and unread counts."
+      },
+      {
+        "id": "profile-access-revocation-cte",
+        "path": "packages/api/src/routers/account/profile-access.ts",
+        "allowedKinds": ["complex-cte", "complex-query"],
+        "reason": "Access revocation must coordinate related rows atomically in one reviewed CTE.",
+        "validation": "packages/api/src/routers/__tests__/delegated-profile-access.live-db.test.ts verifies authorization and revocation."
+      },
+      {
+        "id": "threshold-provenance-cte",
+        "path": "packages/api/src/repositories/threshold-repository.ts",
+        "allowedKinds": ["complex-cte", "complex-query"],
+        "reason": "Threshold provenance reconstruction uses reviewed recursive and aggregate SQL beyond the typed builder's query shape.",
+        "validation": "packages/api/src/repositories/threshold-repository.test.ts verifies threshold provenance results."
+      },
+      {
+        "id": "athlete-state-replay-cte",
+        "path": "packages/api/src/repositories/athlete-state-repository.ts",
+        "allowedKinds": ["complex-cte"],
+        "reason": "Athlete-state replay requires an atomic ordered CTE to preserve state progression.",
+        "validation": "packages/api/src/repositories/athlete-state-repository.test.ts verifies ordered state updates."
+      },
+      {
+        "id": "wahoo-sync-claim-cte",
+        "path": "packages/api/src/infrastructure/repositories/drizzle-wahoo-sync-repository.ts",
+        "allowedKinds": ["complex-cte"],
+        "reason": "Sync job claiming uses a reviewed locking CTE to atomically select and claim one queue item.",
+        "validation": "packages/api/src/infrastructure/repositories/drizzle-wahoo-sync-repository.test.ts verifies claim concurrency behavior."
+      },
+      {
+        "id": "athlete-read-access-function",
+        "path": "packages/api/src/repositories/athlete-read-access-repository.ts",
+        "allowedKinds": ["stored-function"],
+        "reason": "The authorization decision is intentionally delegated to a reviewed database function.",
+        "validation": "packages/api/src/repositories/athlete-read-access-repository.test.ts verifies the function-backed access decision."
+      },
+      {
+        "id": "artifact-lifecycle-functions",
+        "path": "packages/api/src/application/activity-file-ingestion/artifact-retention.ts",
+        "allowedKinds": ["stored-function"],
+        "reason": "Artifact lifecycle transitions use reviewed database functions so storage cleanup cannot bypass the durable state machine.",
+        "validation": "packages/api/src/application/activity-file-ingestion/artifact-retention.test.ts verifies retention state transitions."
+      },
+      {
+        "id": "artifact-promotion-cleanup-functions",
+        "path": "packages/api/src/application/activity-file-ingestion/finalize-activity-artifact-ingestion.ts",
+        "allowedKinds": ["stored-function"],
+        "reason": "Failed-promotion cleanup invokes reviewed lifecycle functions only after ownership is rechecked.",
+        "validation": "packages/api/src/application/activity-file-ingestion/finalize-activity-artifact-ingestion.test.ts verifies failed-promotion cleanup."
+      },
+      {
+        "id": "artifact-recreate-purge-function",
+        "path": "packages/api/src/application/activities/submit-activity.ts",
+        "allowedKinds": ["stored-function"],
+        "reason": "Recreating immutable artifact bytes requires the reviewed purge function while the artifact identity lock is held.",
+        "validation": "packages/api/src/application/activities/submit-activity.test.ts verifies retry-safe artifact submission."
+      }
+    ]
+  },
   "exceptions": [
     {
       "id": "phase0-core-fit-sdk-direction",

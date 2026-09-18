@@ -5,9 +5,11 @@ import {
   activityImportRuns,
   profileAthleteState,
   profilePerformanceEstimates,
+  profiles,
   thresholds,
 } from "@repo/db";
 import { and, asc, eq, gt, isNull, lte, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import {
   type DrizzleQueryExecutor,
@@ -18,14 +20,16 @@ import {
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
-const athleteStateClaimRowSchema = z.object({
-  profile_id: z.string().uuid(),
-  source_revision: z.coerce.number().int().nonnegative(),
-  planning_timezone: z.string().nullable(),
-  dirty_from_at: z.coerce.date().nullable(),
-  activity_analysis_cursor_started_at: z.coerce.date().nullable(),
-  activity_analysis_cursor_activity_id: z.string().uuid().nullable(),
-});
+const athleteStateClaimRowSchema = z
+  .object({
+    profile_id: z.string().uuid(),
+    source_revision: z.coerce.number().int().nonnegative(),
+    planning_timezone: z.string().nullable(),
+    dirty_from_at: z.coerce.date().nullable(),
+    activity_analysis_cursor_started_at: z.coerce.date().nullable(),
+    activity_analysis_cursor_activity_id: z.string().uuid().nullable(),
+  })
+  .strict();
 
 const publishedAthleteStateRowSchema = z
   .object({
@@ -33,6 +37,8 @@ const publishedAthleteStateRowSchema = z
     source_revision: z.coerce.number().int().nonnegative(),
     published_revision: z.coerce.number().int().nonnegative(),
     dirty_from_at: z.coerce.date().nullable(),
+    activity_analysis_cursor_started_at: z.coerce.date().nullable().optional(),
+    activity_analysis_cursor_activity_id: z.string().uuid().nullable().optional(),
     fitness: z.coerce.number().nonnegative(),
     fatigue: z.coerce.number().nonnegative(),
     evidence_confidence: z.coerce.number().min(0).max(1),
@@ -48,7 +54,7 @@ const publishedAthleteStateRowSchema = z
     last_failure_code: z.string().nullable(),
     updated_at: z.coerce.date(),
   })
-  .passthrough();
+  .strict();
 
 const publishedPerformanceEstimateRowSchema = z
   .object({
@@ -66,14 +72,24 @@ const publishedPerformanceEstimateRowSchema = z
     target_fact: z.unknown().nullable().optional(),
     computed_at: z.coerce.date(),
   })
-  .passthrough();
+  .strict();
 
-const publishedSnapshotReadRowSchema = z.object({
-  planning_timezone: z.string().nullable(),
-  state: z.unknown().nullable(),
-  estimates: z.array(z.unknown()),
-  blocking_import: z.enum(["active", "failed"]).nullable(),
-});
+const publishedSnapshotReadRowSchema = z
+  .object({
+    planning_timezone: z.string().nullable(),
+    state: z.unknown().nullable(),
+    estimates: z.array(z.unknown()),
+    blocking_import: z.enum(["active", "failed"]).nullable(),
+  })
+  .strict();
+
+const claimState = alias(profileAthleteState, "state");
+const claimProfile = alias(profiles, "profile");
+const claimImportRun = alias(activityImportRuns, "run");
+const snapshotProfile = alias(profiles, "profile");
+const snapshotState = alias(profileAthleteState, "state");
+const snapshotImportRun = alias(activityImportRuns, "run");
+const snapshotEstimate = alias(profilePerformanceEstimates, "estimate");
 
 export type AthleteStateClaim = {
   profileId: string;
@@ -385,44 +401,37 @@ export async function claimNextAthleteState(
   input: { now: Date; leaseMilliseconds: number; profileId?: string },
 ): Promise<AthleteStateClaim | null> {
   const leaseToken = crypto.randomUUID();
-  const result = await db.execute(sql<{
-    profile_id: string;
-    source_revision: number;
-    planning_timezone: string | null;
-    dirty_from_at: Date | string | null;
-    activity_analysis_cursor_started_at: Date | string | null;
-    activity_analysis_cursor_activity_id: string | null;
-  }>`
+  const result = await db.execute(sql`
     with candidate as (
-      select state.profile_id
-      from profile_athlete_state state
-       where state.source_revision > state.published_revision
-        and (${input.profileId ?? null}::uuid is null or state.profile_id = ${input.profileId ?? null}::uuid)
-        and (state.dirty_from_at is null or state.dirty_from_at <= ${input.now})
-        and (state.retry_after is null or state.retry_after <= clock_timestamp())
-        and (state.lease_token is null or state.lease_expires_at <= clock_timestamp())
-        and not exists (
-          select 1 from activity_import_runs run
-          where run.profile_id = state.profile_id
-            and run.kind in ('onboarding', 'history_sync', 'manual_sync')
-            and run.status in ('queued', 'running')
+      select ${claimState.profile_id}
+      from ${profileAthleteState} state
+       where ${claimState.source_revision} > ${claimState.published_revision}
+         and (${input.profileId ?? null}::uuid is null or ${claimState.profile_id} = ${input.profileId ?? null}::uuid)
+         and (${claimState.dirty_from_at} is null or ${claimState.dirty_from_at} <= ${input.now})
+         and (${claimState.retry_after} is null or ${claimState.retry_after} <= clock_timestamp())
+         and (${claimState.lease_token} is null or ${claimState.lease_expires_at} <= clock_timestamp())
+         and not exists (
+          select 1 from ${activityImportRuns} run
+          where ${claimImportRun.profile_id} = ${claimState.profile_id}
+            and ${claimImportRun.kind} in ('onboarding', 'history_sync', 'manual_sync')
+            and ${claimImportRun.status} in ('queued', 'running')
         )
-      order by state.dirty_from_at nulls first, state.updated_at, state.profile_id
+      order by ${claimState.dirty_from_at} nulls first, ${claimState.updated_at}, ${claimState.profile_id}
       limit 1
       for update skip locked
     )
-    update profile_athlete_state state
+    update ${profileAthleteState} state
     set lease_token = ${leaseToken},
         lease_expires_at = clock_timestamp() + (${input.leaseMilliseconds} * interval '1 millisecond'),
         updated_at = clock_timestamp()
-    from candidate, profiles profile
-    where state.profile_id = candidate.profile_id and profile.id = state.profile_id
-    returning state.profile_id,
-      state.source_revision,
-      profile.planning_timezone,
-      state.dirty_from_at,
-      state.activity_analysis_cursor_started_at,
-      state.activity_analysis_cursor_activity_id
+    from candidate, ${profiles} profile
+    where ${claimState.profile_id} = candidate.profile_id and ${claimProfile.id} = ${claimState.profile_id}
+    returning ${claimState.profile_id},
+      ${claimState.source_revision},
+      ${claimProfile.planning_timezone},
+      ${claimState.dirty_from_at},
+      ${claimState.activity_analysis_cursor_started_at},
+      ${claimState.activity_analysis_cursor_activity_id}
   `);
   const row = athleteStateClaimRowSchema.safeParse(result.rows[0]);
   if (!row.success) return null;
@@ -740,21 +749,16 @@ export async function readPublishedAthleteStateSnapshotData(
   db: DrizzleQueryExecutor,
   input: { profileId: string; lockStateForUpdate?: boolean },
 ): Promise<PublishedAthleteStateRead | null> {
-  const result = await db.execute(sql<{
-    planning_timezone: string | null;
-    state: unknown | null;
-    estimates: unknown[];
-    blocking_import: "active" | "failed" | null;
-  }>`
+  const result = await db.execute(sql`
     with selected_profile as materialized (
-      select profile.id, profile.planning_timezone
-      from profiles profile
-      where profile.id = ${input.profileId}
+      select ${snapshotProfile.id}, ${snapshotProfile.planning_timezone}
+      from ${profiles} profile
+      where ${snapshotProfile.id} = ${input.profileId}
     ),
     selected_state as materialized (
-      select state.*
-      from profile_athlete_state state
-      where state.profile_id = ${input.profileId}
+      select ${snapshotState.profile_id}, ${snapshotState.published_revision}, to_jsonb(state) as state
+      from ${profileAthleteState} state
+      where ${snapshotState.profile_id} = ${input.profileId}
       ${input.lockStateForUpdate ? sql`for update` : sql``}
     ),
     blocking_import as materialized (
@@ -763,14 +767,14 @@ export async function readPublishedAthleteStateSnapshotData(
         when bool_or(run.status in ('queued', 'running')) then 'active'
         else null
       end as status
-      from activity_import_runs run
-      where run.profile_id = ${input.profileId}
-        and run.kind in ('onboarding', 'history_sync', 'manual_sync')
-        and run.status in ('queued', 'running', 'failed')
-        and (run.status <> 'failed' or run.superseded_at is null)
+      from ${activityImportRuns} run
+      where ${snapshotImportRun.profile_id} = ${input.profileId}
+        and ${snapshotImportRun.kind} in ('onboarding', 'history_sync', 'manual_sync')
+        and ${snapshotImportRun.status} in ('queued', 'running', 'failed')
+        and (${snapshotImportRun.status} <> 'failed' or ${snapshotImportRun.superseded_at} is null)
     )
     select profile.planning_timezone,
-      case when state.profile_id is null then null else to_jsonb(state) end as state,
+      state.state,
       estimates.estimates,
       blocking_import.status as blocking_import
     from selected_profile profile
@@ -781,9 +785,9 @@ export async function readPublishedAthleteStateSnapshotData(
         jsonb_agg(to_jsonb(estimate) order by estimate.activity_category, estimate.capability_kind),
         '[]'::jsonb
       ) as estimates
-      from profile_performance_estimates estimate
-      where estimate.profile_id = profile.id
-        and estimate.source_revision = state.published_revision
+      from ${profilePerformanceEstimates} estimate
+      where ${snapshotEstimate.profile_id} = profile.id
+        and ${snapshotEstimate.source_revision} = state.published_revision
     ) estimates on true
   `);
   const row = publishedSnapshotReadRowSchema.safeParse(result.rows[0]);

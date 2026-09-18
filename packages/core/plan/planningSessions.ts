@@ -3,6 +3,7 @@ import { activityPlanTargetSchema } from "../activity-plan";
 import { activityPrescriptionQuantificationBundleSchema } from "../activity-quantification";
 import { activityPlanDurationEstimateSchema } from "../duration";
 import { commonLoadAggregateSchema, commonLoadResultSchema } from "../load";
+import { type SessionDemand, sessionDemandSchema } from "../schemas/training-plan-structure";
 import {
   type ActivityPlanPlanningEstimate,
   createUnavailableActivityPlanPlanningEstimate,
@@ -30,26 +31,12 @@ export const plannedTrainingEventOverridesSchema = z
   })
   .strict();
 
-export const plannedTrainingSessionIntentSchema = z
-  .object({
-    type: z.enum(["endurance", "recovery", "threshold", "general", "test"]),
-    driver: z.enum([
-      "consistency-frequency",
-      "completion-duration",
-      "completion-distance",
-      "preference-frequency",
-      "starter-frequency",
-    ]),
-    targetDurationSeconds: z.number().int().min(0).optional(),
-    targetLoad: z.number().min(0).optional(),
-  })
-  .strict();
-
 export const plannedTrainingSessionSchema = z
   .object({
+    id: uuidSchema,
     localId: z.string().min(1),
     offsetDays: z.number().int(),
-    intent: plannedTrainingSessionIntentSchema.optional(),
+    demand: sessionDemandSchema,
     activityPlan: plannedTrainingActivityPlanFactsSchema.nullable(),
     eventOverrides: plannedTrainingEventOverridesSchema.optional(),
   })
@@ -112,7 +99,7 @@ export type PlannedTrainingActivityPlanFacts = z.infer<
   typeof plannedTrainingActivityPlanFactsSchema
 >;
 export type PlannedTrainingEventOverrides = z.infer<typeof plannedTrainingEventOverridesSchema>;
-export type PlannedTrainingSessionIntent = z.infer<typeof plannedTrainingSessionIntentSchema>;
+export type { SessionDemand };
 export type PlannedTrainingSession = z.infer<typeof plannedTrainingSessionSchema>;
 export type EstimatedPlannedTrainingSession = z.infer<typeof estimatedPlannedTrainingSessionSchema>;
 

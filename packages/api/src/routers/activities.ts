@@ -8,6 +8,7 @@ import {
   executableIntegrationProviderIdSchema,
   ianaTimezoneSchema,
 } from "@repo/core";
+import { manualTrainingDiaryObservationSchema } from "@repo/core/calendar";
 import { commonLoadAggregateSchema } from "@repo/core/load";
 import {
   activityEfforts,
@@ -27,6 +28,10 @@ import {
   getActivityByIdForViewer,
   listActivitiesForProfile,
 } from "../application/activities/activity-reads";
+import {
+  createManualDiaryEntry,
+  ManualDiaryConflictError,
+} from "../application/activities/create-manual-diary-entry";
 import {
   DailyCommonLoadActivityLimitExceededError,
   getDailyCommonLoadObservations,
@@ -294,6 +299,40 @@ const recordSessionRpeInputSchema = z
     }
   });
 
+const createManualDiaryEntryInputSchema = z
+  .object({
+    observation: manualTrainingDiaryObservationSchema,
+    plannedSession: z
+      .object({
+        sessionId: z.string().uuid(),
+        expectedRevision: z.number().int().positive(),
+        outcome: z.enum(["full", "partial"]),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+const manualDiaryEntryOutputSchema = z
+  .object({
+    outcome: z.enum(["created", "unchanged"]),
+    activity: z
+      .object({
+        id: z.string().uuid(),
+        name: z.string(),
+        activityCategory: publicActivityCategorySchema,
+        diaryDate: z.iso.date(),
+        diaryTimezone: ianaTimezoneSchema,
+        startedAt: z.coerce.date().nullable(),
+        finishedAt: z.coerce.date().nullable(),
+        elapsedMs: z.number().nullable(),
+        distanceMeters: z.number().nullable(),
+        provenance: z.literal("manual"),
+      })
+      .strict(),
+  })
+  .strict();
+
 const sessionRpeEvidenceOutputSchema = z
   .object({
     id: z.string().uuid(),
@@ -444,6 +483,40 @@ export const activitiesRouter = createTRPCRouter({
       }
     }),
 
+  createManualDiaryEntry: protectedProcedure
+    .input(createManualDiaryEntryInputSchema)
+    .output(manualDiaryEntryOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const result = await createManualDiaryEntry({
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+          observation: input.observation,
+          ...(input.plannedSession ? { plannedSession: input.plannedSession } : {}),
+        });
+        return manualDiaryEntryOutputSchema.parse({
+          outcome: result.outcome,
+          activity: {
+            id: result.activity.id,
+            name: result.activity.name,
+            activityCategory: result.activity.manual_activity_category,
+            diaryDate: result.activity.diary_date,
+            diaryTimezone: result.activity.diary_timezone,
+            startedAt: result.activity.started_at,
+            finishedAt: result.activity.finished_at,
+            elapsedMs: result.activity.elapsed_ms,
+            distanceMeters: result.activity.distance_meters,
+            provenance: "manual",
+          },
+        });
+      } catch (error) {
+        if (error instanceof ManualDiaryConflictError) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message, cause: error });
+        }
+        throw error;
+      }
+    }),
+
   getById: protectedProcedure.input(getByIdInputSchema).query(async ({ input, ctx }) => {
     const db = getRequiredDb(ctx);
     const response = await getActivityByIdForViewer({
@@ -567,10 +640,12 @@ export const activitiesRouter = createTRPCRouter({
     .output(resolveImportedSourceOutputSchema)
     .mutation(async ({ ctx, input }) => {
       try {
+        const { targetActivityId, ...resolutionInput } = input;
         return await resolveImportedSourceForProfile({
-          ...input,
+          ...resolutionInput,
           db: getRequiredDb(ctx),
           profileId: ctx.session.user.id,
+          ...(targetActivityId === undefined ? {} : { targetActivityId }),
         });
       } catch (error) {
         if (error instanceof ImportedSourceNotFoundError) {

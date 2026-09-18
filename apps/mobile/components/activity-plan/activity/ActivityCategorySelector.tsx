@@ -1,7 +1,9 @@
 import { ACTIVITY_CATEGORY_CONFIG } from "@repo/core/constants/activity";
 import { Button } from "@repo/ui/components/button";
+import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import * as Haptics from "expo-haptics";
+import { ChevronDown } from "lucide-react-native";
 import { memo, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
@@ -12,6 +14,7 @@ interface ActivityCategorySelectorProps {
   compact?: boolean;
   accessibilityLabel?: string;
   accessibilityHint?: string;
+  disabled?: boolean;
 }
 
 export const ActivityCategorySelector = memo<ActivityCategorySelectorProps>(
@@ -21,10 +24,12 @@ export const ActivityCategorySelector = memo<ActivityCategorySelectorProps>(
     compact = false,
     accessibilityLabel,
     accessibilityHint,
+    disabled = false,
   }: ActivityCategorySelectorProps) {
     const [open, setOpen] = useState(false);
 
     const handleSelect = (key: string) => {
+      if (disabled) return;
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch((error) => {
         console.warn("Haptic feedback failed:", error);
       });
@@ -36,18 +41,21 @@ export const ActivityCategorySelector = memo<ActivityCategorySelectorProps>(
       ? ACTIVITY_CATEGORY_CONFIG[value as keyof typeof ACTIVITY_CATEGORY_CONFIG]
       : undefined;
 
-    // Compact icon-only dropdown
+    // The compact trigger remains identifiable and signals that it opens a category menu.
     if (compact) {
       return (
         <>
           <Pressable
+            disabled={disabled}
             accessibilityHint={accessibilityHint}
             accessibilityLabel={accessibilityLabel ?? "Activity category"}
             accessibilityRole="button"
+            accessibilityState={{ expanded: open, disabled }}
             onPress={() => setOpen(true)}
-            className="w-[60px] h-[48px] border border-border rounded-lg items-center justify-center bg-card active:bg-muted"
+            className="h-12 w-12 flex-row items-center justify-center gap-0.5 rounded-full bg-muted active:bg-muted/70"
           >
-            <Text className="text-2xl">{selectedConfig?.icon || "⚡"}</Text>
+            <Text className="text-lg">{selectedConfig?.icon || "⚡"}</Text>
+            <Icon as={ChevronDown} size={12} className="text-muted-foreground" />
           </Pressable>
 
           {open ? (
@@ -64,6 +72,7 @@ export const ActivityCategorySelector = memo<ActivityCategorySelectorProps>(
 
                     return (
                       <Pressable
+                        disabled={disabled}
                         key={key}
                         onPress={() => handleSelect(key)}
                         className={`flex-row items-center gap-3 rounded-lg border p-3 ${
@@ -105,6 +114,7 @@ export const ActivityCategorySelector = memo<ActivityCategorySelectorProps>(
 
           return (
             <Button
+              disabled={disabled}
               key={key}
               variant={isSelected ? "default" : "outline"}
               size="sm"

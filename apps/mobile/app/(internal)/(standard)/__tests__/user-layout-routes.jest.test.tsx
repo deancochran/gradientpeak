@@ -31,12 +31,12 @@ jest.mock("lucide-react-native", () => ({
 const StandardLayout = require("../_layout").default;
 
 describe("standard layout user route declarations", () => {
-  it("registers canonical user route and excludes settings route", async () => {
+  it("registers canonical user and settings routes", async () => {
     await renderNative(<StandardLayout />);
 
     expect(screen.getByTestId("stack-screen-user/[userId]")).toBeTruthy();
-    expect(screen.queryByTestId("stack-screen-settings")).toBeNull();
-    expect(screen.queryByTestId("stack-screen-me")).toBeNull();
+    expect(screen.getByTestId("stack-screen-settings")).toBeTruthy();
+    expect(screen.getByTestId("stack-screen-me")).toBeTruthy();
   });
 
   it("registers the nested notifications index route", async () => {

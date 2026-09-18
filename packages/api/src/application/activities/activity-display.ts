@@ -28,10 +28,10 @@ type ActivityDetailSegmentSource = {
 
 type ActivityDetailSource = {
   timing_coverage: "complete" | "partial" | "unavailable";
-  elapsed_ms: number;
+  elapsed_ms: number | null;
   active_ms: number | null;
   moving_ms: number | null;
-  distance_meters: number;
+  distance_meters: number | null;
   elevation_gain_meters: number | null;
   calories: number | null;
   avg_heart_rate: number | null;
@@ -70,8 +70,10 @@ type ActivityDisplaySource = {
   id: string;
   name?: string | null;
   profile_id: string;
-  started_at: Date | string;
+  started_at: Date | string | null;
   finished_at?: Date | string | null;
+  diary_date?: string | null;
+  diary_timezone?: string | null;
   activity_kind?: "single" | "multisport" | "unknown";
   activity_categories?: string[];
   type?: string | null;
@@ -245,7 +247,12 @@ export function toActivityDisplayModel(input: {
       username: activity.profile?.username ?? null,
       avatarUrl,
     },
-    time: { startedAt: toIso(activity.started_at), finishedAt: toIso(activity.finished_at) },
+    time: {
+      startedAt: toIso(activity.started_at),
+      finishedAt: toIso(activity.finished_at),
+      diaryDate: activity.diary_date ?? null,
+      diaryTimezone: activity.diary_timezone ?? null,
+    },
     activityComposition: {
       kind:
         activity.activity_kind ??
@@ -283,7 +290,7 @@ export function toActivityDetailDisplay(input: {
     summary: input.display,
     performance: {
       timingCoverage: activity.timing_coverage,
-      elapsedSeconds: activity.elapsed_ms / 1_000,
+      elapsedSeconds: activity.elapsed_ms === null ? null : activity.elapsed_ms / 1_000,
       activeSeconds: activity.active_ms === null ? null : activity.active_ms / 1_000,
       movingSeconds: activity.moving_ms === null ? null : activity.moving_ms / 1_000,
       distanceMeters: activity.distance_meters,

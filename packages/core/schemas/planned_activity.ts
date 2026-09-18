@@ -77,14 +77,13 @@ function isValidIcalRRule(value: string): boolean {
 /**
  * Event types used by the core event domain.
  *
- * - "planned": user/programmed planned activity
  * - "race_target": race/goal target marker
  * - "custom": user-authored non-activity event
  */
-export const eventTypeSchema = z.enum(["planned", "race_target", "custom"]);
+export const eventTypeSchema = z.enum(["race_target", "custom"]);
 export const eventTypeInputSchema = eventTypeSchema;
 
-export const editableEventTypeSchema = z.enum(["planned", "race_target", "custom"]);
+export const editableEventTypeSchema = z.enum(["race_target", "custom"]);
 export const editableEventTypeInputSchema = editableEventTypeSchema;
 
 export const eventMutationScopeSchema = z.enum(["single", "future", "series"]);
@@ -113,9 +112,7 @@ const eventDomainBaseSchema = z.object({
   timezone: z.string().min(1).max(120).default("UTC"),
   notes: z.string().max(2000).nullable().optional(),
   description: z.string().max(5000).nullable().optional(),
-  activity_plan_id: z.string().uuid().nullable().optional(),
   route_id: z.string().uuid().nullable().optional(),
-  training_plan_id: z.string().uuid().nullable().optional(),
   recurrence: eventRecurrenceSchema.optional(),
 });
 
@@ -123,19 +120,9 @@ const editableEventDomainBaseSchema = eventDomainBaseSchema.extend({
   event_type: editableEventTypeSchema,
 });
 
-export const editableEventDomainSchema = editableEventDomainBaseSchema
-  .extend({
-    event_type: editableEventTypeSchema.default("planned"),
-  })
-  .superRefine((event, ctx) => {
-    if (event.event_type === "planned" && !event.activity_plan_id && !event.route_id) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["activity_plan_id"],
-        message: "planned events require an activity_plan_id or route_id",
-      });
-    }
-  });
+export const editableEventDomainSchema = editableEventDomainBaseSchema.extend({
+  event_type: editableEventTypeSchema.default("custom"),
+});
 
 export const eventDomainSchema = editableEventDomainSchema;
 
@@ -144,7 +131,6 @@ const editableEventDetailsPatchSchema = z
     title: z.string().min(1).max(255).optional(),
     notes: z.string().max(2000).nullable().optional(),
     description: z.string().max(5000).nullable().optional(),
-    activity_plan_id: z.null().optional(),
     route_id: z.string().uuid().nullable().optional(),
   })
   .strict();
@@ -210,54 +196,18 @@ export const customEventCreateSchema = z
     timezone: z.string().min(1).max(120).default("UTC"),
     notes: z.string().max(2000).nullable().optional(),
     description: z.string().max(5000).nullable().optional(),
-    activity_plan_id: z.string().uuid().nullable().optional(),
     route_id: z.string().uuid().nullable().optional(),
     recurrence: eventRecurrenceSchema.nullable().optional(),
   })
   .strict();
 
-export const plannedActivityEventCreateSchema = z
-  .object({
-    event_type: z.literal("planned"),
-    activity_plan_id: z.string().uuid().nullable().optional(),
-    route_id: z.string().uuid().nullable().optional(),
-    title: z.string().min(1).max(255),
-    scheduled_date: scheduledDateSchema,
-    notes: z.string().max(2000).nullable().optional(),
-  })
-  .strict()
-  .superRefine((event, ctx) => {
-    if (!event.activity_plan_id && !event.route_id) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["activity_plan_id"],
-        message: "planned events require an activity_plan_id or route_id",
-      });
-    }
-  });
-
-export const eventCreateSchema = z.discriminatedUnion("event_type", [
-  customEventCreateSchema,
-  plannedActivityEventCreateSchema,
-]);
-
-export const plannedEventPatchSchema = requireNonEmptyPatch(
-  z
-    .object({
-      activity_plan_id: z.string().uuid("Invalid activity plan ID").nullable().optional(),
-      route_id: z.string().uuid("Invalid route ID").nullable().optional(),
-      scheduled_date: scheduledDateSchema.optional(),
-      notes: z.string().max(2000, "Notes are too long").nullable().optional(),
-      title: z.string().min(1).max(255).optional(),
-    })
-    .strict(),
-);
+export const eventCreateSchema = z.discriminatedUnion("event_type", [customEventCreateSchema]);
 
 export const eventUpdateSchema = z
   .object({
     id: z.string().uuid("Invalid event ID"),
     scope: eventMutationScopeSchema.default("single"),
-    patch: z.union([plannedEventPatchSchema, genericEventPatchSchema]),
+    patch: genericEventPatchSchema,
   })
   .strict();
 
@@ -265,7 +215,6 @@ export const eventUpdateSchema = z
  * TypeScript types exported for use throughout the application
  */
 export type CustomEventCreate = z.infer<typeof customEventCreateSchema>;
-export type PlannedActivityEventCreate = z.infer<typeof plannedActivityEventCreateSchema>;
 export type EventCreate = z.infer<typeof eventCreateSchema>;
 export type EventType = z.infer<typeof eventTypeSchema>;
 export type EventTypeInput = z.infer<typeof eventTypeInputSchema>;

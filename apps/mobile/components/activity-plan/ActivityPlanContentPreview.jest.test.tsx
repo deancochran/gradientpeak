@@ -242,7 +242,7 @@ describe("ActivityPlanContentPreview", () => {
 
     expect(screen.getByText("Keep the warm-up easy.")).toBeTruthy();
     expect(screen.getByText("Jog the recoveries.")).toBeTruthy();
-    expect(screen.getByText("Hold a controlled hard effort.")).toBeTruthy();
-    expect(screen.getByText("Relax your shoulders.")).toBeTruthy();
+    expect(screen.getByText(/Hold a controlled hard effort\./)).toBeTruthy();
+    expect(screen.getByText(/Relax your shoulders\./)).toBeTruthy();
   });
 });

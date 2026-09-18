@@ -8,7 +8,7 @@ function toCanonicalSource(activity: StravaDetailedActivity) {
   return {
     id: String(activity.id),
     name: activity.name,
-    sportType: activity.sport_type ?? activity.type,
+    rawType: activity.sport_type ?? activity.type,
     startedAt: activity.start_date,
     elapsedSeconds: activity.elapsed_time,
     movingSeconds: activity.moving_time,

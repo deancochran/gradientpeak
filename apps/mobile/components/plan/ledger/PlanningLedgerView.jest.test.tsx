@@ -4,7 +4,7 @@ import React from "react";
 import { createActivityDisplay } from "../../../test/activity-display-fixture";
 import { createHost, type HostProps } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
-import type { TrainingComposition } from "./planningLedgerPresentation";
+import type { MobileTrainingComposition } from "./planningLedgerPresentation";
 
 const openEntryMock = jest.fn();
 const complete = (value: number) => ({ status: "complete" as const, value });
@@ -174,7 +174,7 @@ const ledgerFixture: PlanningLedger = {
   },
 };
 
-const trainingCompositionFixture: TrainingComposition = {
+const trainingCompositionFixture: MobileTrainingComposition = {
   comparison: {
     actual: {
       activeDays: complete(1),

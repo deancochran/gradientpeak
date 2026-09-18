@@ -145,6 +145,57 @@ describe("extracted inputs native", () => {
     expect(onChange).toHaveBeenCalledWith(0.95);
   });
 
+  it("NumberSliderInput keeps invalid inline exact entry visible and commits precise valid entry", async () => {
+    const onChange = jest.fn();
+    const onExactValueInvalidChange = jest.fn();
+    const { getByTestId } = await renderNative(
+      <NumberSliderInput
+        inlineValueEditor
+        max={1}
+        min={0}
+        onChange={onChange}
+        onExactValueInvalidChange={onExactValueInvalidChange}
+        testId="intensity"
+        value={0.75}
+      />,
+    );
+
+    const currentValue = getByTestId("intensity-current-value");
+    expect(currentValue.props.accessibilityRole).toBe("button");
+    expect(currentValue.props.hitSlop).toBe(8);
+    await fireEvent.press(currentValue);
+    const input = getByTestId("intensity-inline-value");
+    await fireEvent(input, "changeText", "1.5");
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onExactValueInvalidChange).toHaveBeenLastCalledWith(true);
+    expect(getByTestId("intensity-inline-value").props.value).toBe("1.5");
+
+    await fireEvent(input, "changeText", "0.955");
+    await fireEvent(input, "submitEditing");
+    expect(onChange).toHaveBeenLastCalledWith(0.955);
+    expect(onExactValueInvalidChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("NumberSliderInput opens and closes exact entry without changing a precise canonical value", async () => {
+    const onChange = jest.fn();
+    const { getByTestId } = await renderNative(
+      <NumberSliderInput
+        decimals={2}
+        inlineValueEditor
+        max={1}
+        min={0}
+        onChange={onChange}
+        testId="precise"
+        value={0.123456789}
+      />,
+    );
+
+    await fireEvent.press(getByTestId("precise-current-value"));
+    expect(getByTestId("precise-inline-value").props.value).toBe("0.123456789");
+    await fireEvent(getByTestId("precise-inline-value"), "blur");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("PercentSliderInput commits numeric entry on blur", async () => {
     const onChange = jest.fn();
     const { getByDisplayValue } = await renderNative(

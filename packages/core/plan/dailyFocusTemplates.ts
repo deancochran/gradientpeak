@@ -171,8 +171,8 @@ export function resolveDailyFocusTemplate(
   const eventFocuses = applyEventAndRecoveryOverrides({
     days: input.selectedDays,
     focuses: baseFocuses,
-    eventDate: input.eventDate,
-    recoveryRanges: input.recoveryRanges,
+    ...(input.eventDate === undefined ? {} : { eventDate: input.eventDate }),
+    ...(input.recoveryRanges === undefined ? {} : { recoveryRanges: input.recoveryRanges }),
   });
 
   return applyHardSpacing({

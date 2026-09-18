@@ -219,9 +219,10 @@ test("[variation:planning.recurrence:single-delete] deleting one middle occurren
 });
 
 test("[variation:planning.day-agenda:deep-link-history] completed activity detail returns to the same arbitrary day after forward and back navigation", async ({
+  athleteActor,
   athletePage,
 }, testInfo) => {
-  await withDayAgendaFixture(testInfo, async (fixture) => {
+  await withDayAgendaFixture(testInfo, athleteActor, async (fixture) => {
     const dayUrl = `/calendar/day/${fixture.date}?month=2026-11&view=agenda`;
     await athletePage.goto(dayUrl);
     await athletePage.getByTestId(`activity-card-${fixture.activityId}-open`).click();

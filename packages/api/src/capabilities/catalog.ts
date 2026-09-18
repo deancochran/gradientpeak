@@ -115,7 +115,6 @@ export const apiDomainPolicy = {
   }),
   plannedSessions: policy("api/planned-sessions"),
   profileAccess: policy("api/profile-access"),
-  profileSettings: policy("api/profile-settings"),
   profiles: policy("api/profiles"),
   publicShare: policy("api/public-share", {
     access: "public_share_identifier",
@@ -178,7 +177,7 @@ export const apiOperationPolicyOverrides = {
   "routes.upload": { mutationSafety: "non_idempotent" },
   "social.addComment": { mutationSafety: "non_idempotent" },
   "storage.createSignedUploadUrl": { mutationSafety: "non_idempotent" },
-  "trainingPlans.applyTemplate": { mutationSafety: "transactional" },
+  "trainingPlans.applyApplication": { mutationSafety: "transactional" },
   "trainingPlans.commit": { mutationSafety: "transactional" },
   "trainingPlans.removeAppliedSchedule": { mutationSafety: "transactional" },
 } as const satisfies Record<string, z.input<typeof operationPolicyOverrideSchema>>;

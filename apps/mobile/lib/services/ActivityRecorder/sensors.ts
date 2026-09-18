@@ -151,7 +151,8 @@ export class SensorsManager {
   private dataCallbacks: Set<(reading: SensorReading) => void> = new Set();
   private connectionCallbacks: Set<(sensor: ConnectedSensor) => void> = new Set();
   private bleStateCallbacks: Set<(state: string) => void> = new Set();
-  private connectionMonitorTimer?: ReturnType<typeof setInterval>;
+  private bleStateSubscription?: { remove: () => void } | undefined;
+  private connectionMonitorTimer?: ReturnType<typeof setInterval> | undefined;
   private readonly DISCONNECT_TIMEOUT_MS = SENSOR_READING_STALE_AFTER_MS;
   private readonly HEALTH_CHECK_INTERVAL_MS = 15000; // 15 seconds (increased from 10s to reduce battery drain)
 
@@ -160,7 +161,7 @@ export class SensorsManager {
 
   private ftmsControllers: Map<string, FTMSController> = new Map();
   private ftmsCandidates: Map<string, FtmsDeviceSnapshot> = new Map();
-  private selectedFtmsDeviceId?: string;
+  private selectedFtmsDeviceId?: string | undefined;
   private trainerState: TrainerStateSnapshot = this.createEmptyTrainerState();
 
   // Enhanced reconnection with exponential backoff
@@ -172,6 +173,7 @@ export class SensorsManager {
 
   private knownSensorRegistry = new KnownSensorRegistry();
   private sensorSetupResetVersion = 0;
+  private disposed = false;
 
   // State transition debouncing
   private stateTransitionTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
@@ -230,7 +232,8 @@ export class SensorsManager {
 
   /** Initialize BLE manager */
   private initialize() {
-    this.bleManager.onStateChange((state) => {
+    this.bleStateSubscription = this.bleManager.onStateChange((state) => {
+      if (this.disposed) return;
       // Track BLE state for UI
       this.bleState = state;
       this.notifyBleStateChange();
@@ -271,7 +274,12 @@ export class SensorsManager {
           });
         }
         console.log(`[SensorsManager] BLE ${state}, disconnecting all sensors`);
-        void this.disconnectAll();
+        void this.disconnectAll().catch((error) => {
+          console.warn(
+            "[SensorsManager] Unable to fully disconnect after Bluetooth became unavailable",
+            error instanceof Error ? error.name : "unknown_error",
+          );
+        });
       }
     }, true);
   }
@@ -1153,6 +1161,11 @@ export class SensorsManager {
         console.log(`Successfully disconnected from ${sensor.name}`);
       } catch (error) {
         console.error(`Error disconnecting from ${sensor.name}:`, error);
+        this.recordServiceError(
+          "device_connect_error",
+          "Native Bluetooth disconnect did not complete before local teardown.",
+          { deviceId, recoverable: true },
+        );
       }
     }
 
@@ -1174,7 +1187,6 @@ export class SensorsManager {
       );
       await this.knownSensorRegistry.remove(deviceId);
     }
-
     if (this.trainerState.deviceId === deviceId) {
       if (shouldForgetPersisted) {
         this.trainerState = this.createEmptyTrainerState();
@@ -1208,12 +1220,18 @@ export class SensorsManager {
     // Cancel all ongoing reconnection attempts
     this.cancelReconnectionAttempts();
 
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       Array.from(this.connectedSensors.keys()).map((id) => this.disconnectSensor(id, options)),
     );
     this.cscParserStates.clear();
     this.cyclingPowerParserStates.clear();
     this.clearControllableTrainer();
+    const failure = results.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failure) {
+      throw failure.reason;
+    }
   }
 
   /**
@@ -2144,8 +2162,34 @@ export class SensorsManager {
   }
 
   public async cleanup(): Promise<void> {
+    if (this.disposed) return;
+    this.disposed = true;
     this.stopConnectionMonitoring();
-    await this.disconnectAll();
+    this.stopScan();
+    this.setAutoReconnectEnabled(false);
+    this.cancelReconnectionAttempts();
+    for (const timer of this.stateTransitionTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.stateTransitionTimers.clear();
+
+    let cleanupFailure: unknown;
+    try {
+      await this.disconnectAll({ suppressAutoReconnect: true });
+    } catch (error) {
+      cleanupFailure = error;
+    } finally {
+      this.bleStateSubscription?.remove();
+      this.bleStateSubscription = undefined;
+      this.dataCallbacks.clear();
+      this.connectionCallbacks.clear();
+      this.bleStateCallbacks.clear();
+      this.bleManager.destroy();
+    }
+
+    if (cleanupFailure) {
+      throw cleanupFailure;
+    }
   }
 
   /**

@@ -1,4 +1,3 @@
-import { initializeActivityPlanDocument } from "@repo/core/activity-plan";
 import { schema } from "@repo/db";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
@@ -110,7 +109,7 @@ describe("Wahoo repository activity persistence boundary", () => {
     ]);
   });
 
-  it("scopes planned-activity link update and delete predicates to owned Wahoo events", () => {
+  it("scopes planned-session link update and delete predicates to owned Wahoo planned sessions", () => {
     const query = new PgDialect().sqlToQuery(
       wahooEventResourceLinkOwnershipPredicate({
         expectedIntegrationGeneration: 4,
@@ -130,7 +129,7 @@ describe("Wahoo repository activity persistence boundary", () => {
       "00000000-0000-4000-8000-000000000001",
       "00000000-0000-4000-8000-000000000002",
       "wahoo",
-      "event",
+      "planned_session",
     ]);
   });
 
@@ -283,7 +282,6 @@ describe("Wahoo repository activity persistence boundary", () => {
       'coalesce("group_event_rsvps"."status", "group_event_series_rsvps"."status", \'going\') = \'going\'',
     );
     expect(query.sql).toContain('"group_events"."starts_at" > $2');
-    expect(query.sql).toContain("wahooEventRouteDeliveryEnabled");
     expect(query.sql).toContain('"activity_routes"."is_public" = $');
     expect(query.sql).toContain('"activity_routes"."is_system_template" = $');
   });
@@ -342,7 +340,6 @@ describe("Wahoo repository activity persistence boundary", () => {
     expect(query.sql).toContain(
       'coalesce("group_event_rsvps"."status", "group_event_series_rsvps"."status", \'going\') = \'going\'',
     );
-    expect(query.sql).toContain("wahooEventRouteDeliveryEnabled");
   });
 
   it("loads only a profile-owned non-template route for automatic library mirroring", async () => {
@@ -397,7 +394,7 @@ describe("Wahoo repository activity persistence boundary", () => {
     ]);
   });
 
-  it("derives planned activity category from the canonical structure", async () => {
+  it("loads a planned session for sync from its canonical resolution manifest", async () => {
     const structure = {
       version: 3,
       activity_category: "bike",
@@ -432,33 +429,27 @@ describe("Wahoo repository activity persistence boundary", () => {
       limit: async () => [
         {
           id: "event-1",
-          startsAt: new Date("2026-07-18T08:00:00.000Z"),
+          planningDate: "2026-07-18",
           timezone: "America/New_York",
-          routeId: "route-1",
-          activityPlan: {
-            id: "plan-1",
-            name: "Repeats",
-            description: null,
-            structure: initializeActivityPlanDocument({
-              activityPlanId: "11111111-1111-4111-8111-111111111111",
-              structure,
-            }),
-            updatedAt: new Date("2026-07-17T08:00:00.000Z"),
+          manifest: {
+            activity_plan_id: "plan-1",
+            resolved_structure: structure,
           },
+          capturedAt: new Date("2026-07-17T08:00:00.000Z"),
         },
       ],
     };
     const db = { select: vi.fn(() => builder) };
 
-    const result = await createWahooRepository({ db: db as never }).getPlannedEventForSync({
-      eventId: "event-1",
+    const result = await createWahooRepository({ db: db as never }).getPlannedSessionForSync({
+      plannedSessionId: "event-1",
       profileId: "profile-1",
     });
 
     expect(result?.activityPlan).not.toHaveProperty("activityCategory");
-    expect(result?.routeId).toBe("route-1");
+    expect(result?.plannedSessionId).toBe("event-1");
     expect(result?.timezone).toBe("America/New_York");
-    expect(result?.activityPlan).not.toHaveProperty("routeId");
+    expect(result?.activityPlan).toMatchObject({ id: "plan-1", structure });
   });
 
   it("preserves validated Wahoo projection metadata for reconciliation", async () => {

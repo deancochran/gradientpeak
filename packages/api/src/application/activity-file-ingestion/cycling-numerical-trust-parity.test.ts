@@ -1,7 +1,7 @@
 import {
   analyzeActivityDerivedMetrics,
   type CommonLoadResult,
-  getNormalizedIntensity,
+  getKnownNormalizedIntensity,
   quantifyCompletedActivityObservation,
 } from "@repo/core";
 import { selectCyclingNormalizedPowerWatts } from "@repo/core/calculations";
@@ -303,8 +303,8 @@ describe("cycling numerical trust import/live parity", () => {
       commonLoad: { status: "partial" },
     });
 
-    expect(getNormalizedIntensity(finalCommonLoad)).toBeCloseTo(expectedIntensity, 12);
-    expect(getNormalizedIntensity(live.commonLoad)).toBeCloseTo(expectedIntensity, 12);
+    expect(getKnownNormalizedIntensity(finalCommonLoad)).toBeCloseTo(expectedIntensity, 12);
+    expect(getKnownNormalizedIntensity(live.commonLoad)).toBeCloseTo(expectedIntensity, 12);
     expect(commonLoadCoverage(finalCommonLoad, source.activeSeconds)).toBeCloseTo(
       expectedCoverage,
       12,

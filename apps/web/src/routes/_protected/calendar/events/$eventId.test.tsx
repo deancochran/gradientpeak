@@ -1,16 +1,25 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EventDeleteForm, Route } from "./$eventId/index";
-
-const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 
 const mocks = vi.hoisted(() => ({
   deleteAction: vi.fn(),
   event: undefined as unknown,
   eventInputs: [] as unknown[],
-  readModelOptions: [] as unknown[],
+  eventOptions: [] as unknown[],
+  plannedSession: undefined as unknown,
+  plannedSessionInputs: [] as unknown[],
+  plannedSessionOptions: [] as unknown[],
+  search: { month: "2026-07", view: "month" } as Record<string, unknown>,
+  createManualDiaryEntry: vi.fn(),
+  completionCandidates: { canAssociate: true, items: [], nextCursor: null } as Record<
+    string,
+    unknown
+  >,
+  linkPlannedSessionCompletion: vi.fn(),
+  skipPlannedSession: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -18,7 +27,7 @@ vi.mock("@tanstack/react-router", () => ({
     ...options,
     useNavigate: () => vi.fn(),
     useParams: () => ({ eventId: "event-1" }),
-    useSearch: () => ({ month: "2026-07", view: "month" }),
+    useSearch: () => mocks.search,
   }),
   Link: ({ children }: { children: React.ReactNode }) => <a href="/calendar">{children}</a>,
 }));
@@ -33,146 +42,241 @@ vi.mock("../../../../lib/api/client", () => ({
   api: {
     events: {
       getById: {
-        useQuery: (input: unknown) => {
+        useQuery: (input: unknown, options: unknown) => {
           mocks.eventInputs.push(input);
+          mocks.eventOptions.push(options);
           return { data: mocks.event, isError: false, isLoading: false };
         },
       },
     },
-    athleteIntelligence: {
-      getReadModel: {
-        useQuery: (_input: unknown, options: unknown) => {
-          mocks.readModelOptions.push(options);
-          return { data: null };
+    plannedSessions: {
+      getById: {
+        useQuery: (input: unknown, options: unknown) => {
+          mocks.plannedSessionInputs.push(input);
+          mocks.plannedSessionOptions.push(options);
+          return { data: mocks.plannedSession, isError: false, isLoading: false, refetch: vi.fn() };
         },
       },
+      completionCandidates: {
+        useInfiniteQuery: () => ({
+          data: { pages: [mocks.completionCandidates] },
+          fetchNextPage: vi.fn(),
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          isLoading: false,
+          refetch: vi.fn(),
+        }),
+      },
+      linkCompletion: { useMutation: () => ({ mutateAsync: mocks.linkPlannedSessionCompletion }) },
+      skip: { useMutation: () => ({ mutateAsync: mocks.skipPlannedSession }) },
     },
+    profiles: { get: { useQuery: () => ({ data: { planning_timezone: "UTC" } }) } },
+    activityPlans: { getById: { useQuery: () => ({ data: null }) } },
+    activities: {
+      createManualDiaryEntry: {
+        useMutation: () => ({ mutateAsync: mocks.createManualDiaryEntry }),
+      },
+    },
+    useUtils: () => ({
+      activities: { invalidate: vi.fn() },
+      calendar: { invalidate: vi.fn() },
+      plannedSessions: {
+        completionCandidates: { invalidate: vi.fn() },
+        getById: { invalidate: vi.fn() },
+      },
+    }),
     routes: { get: { useQuery: () => ({ data: null }) } },
-    trainingPlans: {
-      get: { useQuery: () => ({ data: null }) },
-    },
   },
 }));
 
 afterEach(cleanup);
+afterEach(() => {
+  mocks.event = undefined;
+  mocks.eventInputs = [];
+  mocks.eventOptions = [];
+  mocks.plannedSession = undefined;
+  mocks.plannedSessionInputs = [];
+  mocks.plannedSessionOptions = [];
+  mocks.search = { month: "2026-07", view: "month" };
+  mocks.completionCandidates = { canAssociate: true, items: [], nextCursor: null };
+  vi.clearAllMocks();
+});
 
 describe("EventDetailPage", () => {
-  it("keeps an RPE event authored and explains why session-flow personalization is off", () => {
-    mocks.eventInputs = [];
-    mocks.readModelOptions = [];
-    mocks.event = {
-      activityPlanSummary: {
-        name: "Tempo run",
-        activityCategory: "run",
-        capabilities: { canEdit: true },
-        structure: {
-          activity_category: "run",
-          segments: [
-            {
-              id: id(1),
-              intervals: [
-                {
-                  id: id(2),
-                  name: "Tempo",
-                  repetitions: 1,
-                  steps: [
-                    {
-                      duration: { seconds: 60, type: "time" },
-                      id: id(3),
-                      name: "Work",
-                      targets: [{ intensity: 5, type: "RPE" }],
-                    },
-                  ],
-                },
-              ],
-              name: "Run",
-              role: "activity",
-            },
-          ],
-          version: 3,
-        },
-      },
-      all_day: true,
-      event_type: "activity",
-      id: "event-1",
-      scheduled_date: "2026-07-28",
-      status: null,
-      title: "Tempo run",
-      training_plan_id: null,
+  it("accepts only the explicit planned-session resource type", () => {
+    const route = Route as unknown as {
+      validateSearch: (search: Record<string, unknown>) => Record<string, unknown>;
     };
-    const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
 
-    render(<EventDetailPage />);
-
-    expect(screen.getAllByText("Run").length).toBeGreaterThanOrEqual(2);
-    expect(screen.queryByText("Bike")).toBeNull();
-    expect(screen.getByTestId("activity-plan-structure")).toBeTruthy();
-    const personalization = screen.getByRole("switch", { name: "Calculated targets" });
-    expect(personalization.getAttribute("aria-checked")).toBe("false");
-    expect(personalization.hasAttribute("disabled")).toBe(true);
-    expect(screen.getAllByText(/5 RPE/).length).toBeGreaterThan(0);
-    expect(mocks.eventInputs).toContainEqual({ id: "event-1", personalize: false });
-    expect(mocks.readModelOptions).toContainEqual({ enabled: true });
-    expect(mocks.eventInputs).not.toContainEqual({ id: "event-1", personalize: true });
+    expect(route.validateSearch({ resourceType: "planned_session" }).resourceType).toBe(
+      "planned_session",
+    );
+    expect(() => route.validateSearch({ resourceType: "planned" })).toThrow(
+      "Unsupported calendar resource type",
+    );
   });
 
-  it("renders the full authored plan timeline when the event viewer is not the plan owner", () => {
+  it("renders a custom event without planned-session or activity-plan branches", () => {
     mocks.eventInputs = [];
-    mocks.readModelOptions = [];
     mocks.event = {
-      activityPlanSummary: {
-        id: "plan-1",
-        name: "Shared tempo",
-        activityCategory: "run",
-        capabilities: { canEdit: false },
-        structure: {
-          activity_category: "run",
-          segments: [
-            {
-              id: id(11),
-              intervals: [
-                {
-                  id: id(12),
-                  name: "Tempo",
-                  repetitions: 1,
-                  steps: [
-                    {
-                      duration: { seconds: 600, type: "time" },
-                      id: id(13),
-                      name: "Work",
-                      targets: [{ intensity: 7, type: "RPE" }],
-                    },
-                  ],
-                },
-              ],
-              name: "Run",
-              role: "activity",
-            },
-          ],
-          version: 3,
-        },
-      },
       all_day: true,
-      event_type: "planned",
+      event_type: "custom",
       id: "event-1",
       scheduled_date: "2026-07-28",
       status: "scheduled",
-      title: "Shared tempo",
-      training_plan_id: null,
+      title: "Tempo run",
+      activityPlanSummary: null,
+      notes: "Bring water",
+      route_id: null,
     };
     const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
 
     render(<EventDetailPage />);
 
-    expect(screen.getByRole("img", { name: /Session flow.*authored duration/i })).toBeTruthy();
-    expect(
-      screen
-        .getByTestId("activity-plan-session-flow-timeline-bar-0")
-        .getAttribute("data-intensity"),
-    ).toBe("RPE 7");
-    expect(screen.getByTestId("activity-plan-structure")).toBeTruthy();
-    expect(screen.getAllByText(/7 RPE/).length).toBeGreaterThan(0);
-    expect(screen.queryByRole("switch", { name: "Calculated targets" })).toBeNull();
+    expect(screen.getByText("Bring water")).toBeTruthy();
+    expect(screen.queryByText("Activity plan")).toBeNull();
+    expect(screen.queryByText("Generated from training plan")).toBeNull();
+    expect(mocks.eventInputs).toContainEqual({ id: "event-1", personalize: false });
+    expect(mocks.eventOptions).toContainEqual({ enabled: true });
+    expect(mocks.plannedSessionOptions).toContainEqual({ enabled: false });
+  });
+
+  it("loads a planned session explicitly and retries the same manual completion request", async () => {
+    mocks.search = { month: "2026-07", resourceType: "planned_session", view: "month" };
+    mocks.plannedSession = {
+      id: "00000000-0000-4000-8000-000000000001",
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 1,
+      planningDate: "2000-01-01",
+      lifecycle: { status: "scheduled" },
+      prescription: {
+        resolutionManifest: {
+          activity_plan_id: "00000000-0000-4000-8000-000000000003",
+          resolved_structure: { activity_category: "run" },
+        },
+      },
+    };
+    mocks.createManualDiaryEntry.mockRejectedValueOnce(new Error("Request status is unknown"));
+    mocks.createManualDiaryEntry.mockResolvedValueOnce({ outcome: "unchanged" });
+    const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+
+    render(<EventDetailPage />);
+
+    expect(mocks.eventInputs).toContainEqual({ id: "event-1", personalize: false });
+    expect(mocks.eventOptions).toContainEqual({ enabled: false });
+    expect(mocks.plannedSessionInputs).toContainEqual({ id: "event-1" });
+    expect(mocks.plannedSessionOptions).toContainEqual({ enabled: true });
+    fireEvent.click(screen.getByRole("button", { name: "Actual details (optional)" }));
+    const duration = screen.getByLabelText("Actual duration (minutes, optional)");
+    fireEvent.change(duration, { target: { value: "30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Complete activity" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Request status is unknown");
+    fireEvent.click(screen.getByRole("button", { name: "Retry saved request" }));
+
+    await waitFor(() => expect(mocks.createManualDiaryEntry).toHaveBeenCalledTimes(2));
+    const [firstInput] = mocks.createManualDiaryEntry.mock.calls[0] ?? [];
+    const [retryInput] = mocks.createManualDiaryEntry.mock.calls[1] ?? [];
+    expect(firstInput).toEqual(retryInput);
+    expect(duration).toHaveProperty("value", "30");
+    expect(firstInput).toMatchObject({
+      observation: {
+        activityCategory: "run",
+        diaryDate: "2000-01-01",
+        diaryTimezone: "UTC",
+        name: "Completed activity",
+      },
+      plannedSession: {
+        expectedRevision: 1,
+        outcome: "full",
+        sessionId: "00000000-0000-4000-8000-000000000001",
+      },
+    });
+    expect(firstInput.observation.elapsedMs).toBe(1_800_000);
+    expect(firstInput.observation).not.toHaveProperty("distanceMeters");
+    expect(firstInput.observation).not.toHaveProperty("rpe");
+  });
+
+  it("keeps an invalid actual draft visible and does not capture a completion payload", async () => {
+    mocks.search = { month: "2026-07", resourceType: "planned_session", view: "month" };
+    mocks.plannedSession = {
+      id: "00000000-0000-4000-8000-000000000001",
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 1,
+      planningDate: "2000-01-01",
+      lifecycle: { status: "scheduled" },
+      prescription: {
+        resolutionManifest: {
+          activity_plan_id: "00000000-0000-4000-8000-000000000003",
+          resolved_structure: { activity_category: "run" },
+        },
+      },
+    };
+    const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<EventDetailPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Actual details (optional)" }));
+    const duration = screen.getByLabelText("Actual duration (minutes, optional)");
+    fireEvent.change(duration, { target: { value: "invalid" } });
+    fireEvent.click(screen.getByRole("button", { name: "Complete activity" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Correct the actual details before completing this session."),
+      ).toBeTruthy(),
+    );
+    expect(duration).toHaveProperty("value", "invalid");
+    expect(mocks.createManualDiaryEntry).not.toHaveBeenCalled();
+  });
+
+  it("associates only an explicitly selected recorded activity", async () => {
+    mocks.search = { month: "2026-07", resourceType: "planned_session", view: "month" };
+    mocks.plannedSession = {
+      id: "00000000-0000-4000-8000-000000000001",
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 3,
+      planningDate: "2000-01-01",
+      lifecycle: {
+        status: "completed",
+        completion: {
+          state: "linked",
+          activityId: "00000000-0000-4000-8000-000000000004",
+        },
+      },
+      prescription: {
+        resolutionManifest: {
+          activity_plan_id: "00000000-0000-4000-8000-000000000003",
+          resolved_structure: { activity_category: "run" },
+        },
+      },
+    };
+    mocks.completionCandidates = {
+      canAssociate: true,
+      items: [
+        {
+          id: "00000000-0000-4000-8000-000000000005",
+          name: "Imported run",
+          activityCategory: "run",
+          startedAt: "2026-08-10T08:00:00.000Z",
+          elapsedMs: 1800000,
+        },
+      ],
+      nextCursor: null,
+    };
+    const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<EventDetailPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Associate recorded activity" }));
+    expect(mocks.linkPlannedSessionCompletion).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("radio"));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm association" }));
+    await waitFor(() => expect(mocks.linkPlannedSessionCompletion).toHaveBeenCalledTimes(1));
+    expect(mocks.linkPlannedSessionCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activityId: "00000000-0000-4000-8000-000000000005",
+        expectedRevision: 3,
+        profileId: "00000000-0000-4000-8000-000000000002",
+        sessionId: "00000000-0000-4000-8000-000000000001",
+      }),
+    );
   });
 
   it("keeps a rejected delete dialog form open with its selected scope available for retry", async () => {

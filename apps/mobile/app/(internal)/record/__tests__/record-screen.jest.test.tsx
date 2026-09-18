@@ -33,6 +33,8 @@ const mockGetProfileQuery = jest.fn(() => ({ data: { weight_kg: 72 } }));
 let mockRecordingLifecycle: "idle" | "setup" | "active" = "idle";
 let mockActivityPlanQueryData: { detail: ReturnType<typeof createActivityPlanDetail> } | null =
   null;
+let mockPlanQueryError: Error | null = null;
+const mockRefetchPlan = jest.fn();
 
 type PlanValidation = {
   isValid: boolean;
@@ -107,7 +109,8 @@ jest.mock("@/components/recording/RecordingActivityQuickEdit", () => ({
 
 jest.mock("@/components/shared/resource-picker", () => ({
   __esModule: true,
-  ResourcePickerModal: createHost("ResourcePickerModal"),
+  ResourcePickerModal: (props: Record<string, unknown>) =>
+    React.createElement("ResourcePickerModal", props, props.footerAction as React.ReactNode),
 }));
 
 jest.mock("@/lib/hooks/useRouteUpload", () => ({
@@ -259,7 +262,13 @@ jest.mock("@/lib/api", () => ({
     }),
     activityPlans: {
       getById: {
-        useQuery: () => ({ data: mockActivityPlanQueryData, error: null }),
+        useQuery: () => ({
+          data: mockActivityPlanQueryData,
+          error: mockPlanQueryError,
+          isError: Boolean(mockPlanQueryError),
+          isLoading: false,
+          refetch: mockRefetchPlan,
+        }),
       },
     },
     athleteIntelligence: {
@@ -314,6 +323,7 @@ describe("record screen", () => {
     jest.clearAllMocks();
     mockRecordingLifecycle = "idle";
     mockActivityPlanQueryData = null;
+    mockPlanQueryError = null;
     service.attachRoute.mockResolvedValue(undefined);
     service.refreshAndCheckAllPermissions.mockResolvedValue(true);
     service.refreshAndCheckRecordingPermissions.mockResolvedValue(true);
@@ -361,12 +371,35 @@ describe("record screen", () => {
     await fireEvent(picker as never, "select", { id: "shared-plan-1" });
 
     await waitFor(() => {
-      expect(Alert.alert).toHaveBeenCalledWith(
-        "Plan Attachment Failed",
-        "Duplicate this plan into your library before attaching it to a recording.",
-      );
+      expect(
+        screen.getByText(
+          "Duplicate this plan into your library before attaching it to a recording.",
+        ),
+      ).toBeTruthy();
     });
     expect(service.selectPlan).not.toHaveBeenCalled();
+  });
+
+  it("retains the selected plan through query failure and offers explicit detail retry", async () => {
+    mockPlanQueryError = new Error("Offline");
+    const rendered = await renderNative(<RecordScreen />);
+    await fireEvent.press(screen.getByText("Open plan"));
+    let picker = rendered.container.queryAll((node) => node.type === "ResourcePickerModal")[0];
+    await fireEvent(picker as never, "select", { id: "plan-1" });
+    picker = rendered.container.queryAll((node) => node.type === "ResourcePickerModal")[0];
+    expect(picker?.props.selectedId).toBe("plan-1");
+    expect(screen.getByText("Unable to load this activity plan.")).toBeTruthy();
+    await fireEvent.press(screen.getByText("Retry selected plan"));
+    expect(mockRefetchPlan).toHaveBeenCalledTimes(1);
+    expect(service.selectPlan).not.toHaveBeenCalled();
+    mockPlanQueryError = null;
+    mockActivityPlanQueryData = {
+      detail: createActivityPlanDetail({ id: "plan-1", name: "Tempo" }),
+    };
+    await rendered.rerender(<RecordScreen />);
+    await waitFor(() =>
+      expect(service.selectPlan).toHaveBeenCalledWith(expect.objectContaining({ id: "plan-1" })),
+    );
   });
 
   it("hydrates owner-only performance targets at one explicit recording operation timestamp", async () => {
@@ -532,7 +565,7 @@ describe("record screen", () => {
     expect(activitySelectionStoreMock.consumeSelection).toHaveBeenCalled();
   });
 
-  it("keeps the close button available during active recording", async () => {
+  it("confirms before leaving an active recording", async () => {
     mockRecordingLifecycle = "active";
 
     await renderNative(<RecordScreen />);
@@ -543,7 +576,12 @@ describe("record screen", () => {
 
     await fireEvent.press(screen.getByTestId("record-close-button"));
 
-    expect(backMock).toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledWith(
+      "Keep recording?",
+      expect.stringContaining("continue"),
+      expect.arrayContaining([expect.objectContaining({ text: "Leave recording" })]),
+    );
+    expect(backMock).not.toHaveBeenCalled();
   });
 
   it("starts timer recording without treating Bluetooth as a prerequisite", async () => {

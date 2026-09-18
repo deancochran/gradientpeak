@@ -94,7 +94,7 @@ function buildSetupItem(
           ? "Activity structure attached."
           : "No structured activity.",
         section: "guidance",
-        title: "Activity",
+        title: "Activity plan",
         tone: action.disabled ? "locked" : contract?.guidance.hasPlan ? "active" : "idle",
       };
     case "route":

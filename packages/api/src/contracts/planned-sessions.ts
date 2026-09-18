@@ -1,12 +1,14 @@
 import { planningDayIdentitySchema } from "@repo/core/athlete-intelligence";
 import {
   type PlannedSession,
+  plannedSessionComparisonSchema,
   plannedSessionLifecycleSchema,
   plannedSessionOperationIdSchema,
   plannedSessionPrescriptionSnapshotSchema,
   plannedSessionSchema,
   plannedSessionSourceSchema,
 } from "@repo/core/calendar";
+import { sessionDemandSchema } from "@repo/core/schemas/training-plan-structure";
 import { z } from "zod";
 import { plannedSessionCacheTagsSchema } from "./cache-receipts";
 import { planningRangeRequestSchema } from "./planning-range";
@@ -15,6 +17,43 @@ const uuidSchema = z.string().uuid();
 
 export const readPlannedSessionsRangeRequestSchema = z
   .object({ profileId: uuidSchema, range: planningRangeRequestSchema })
+  .strict();
+
+const plannedSessionCompletionCandidateCursorSchema = z
+  .object({
+    startedAt: z.string().datetime({ offset: true }),
+    id: uuidSchema,
+  })
+  .strict();
+
+export const plannedSessionCompletionCandidatesRequestSchema = z
+  .object({
+    sessionId: uuidSchema,
+    cursor: plannedSessionCompletionCandidateCursorSchema.optional(),
+    // TanStack Query adds this when fetching an infinite-query page.
+    direction: z.enum(["forward", "backward"]).optional(),
+    limit: z.number().int().min(1).max(50).default(20),
+  })
+  .strict();
+
+export const plannedSessionCompletionCandidatesDtoSchema = z
+  .object({
+    canAssociate: z.boolean(),
+    reason: z.enum(["scheduled_in_future", "manual_completion_unavailable"]).nullable(),
+    currentActivityId: uuidSchema.nullable(),
+    items: z.array(
+      z
+        .object({
+          id: uuidSchema,
+          name: z.string(),
+          activityCategory: z.enum(["run", "bike", "swim", "strength", "other"]),
+          startedAt: z.string().datetime({ offset: true }),
+          elapsedMs: z.number().int().positive(),
+        })
+        .strict(),
+    ),
+    nextCursor: plannedSessionCompletionCandidateCursorSchema.nullable(),
+  })
   .strict();
 
 export const createPlannedSessionRequestSchema = z
@@ -53,6 +92,7 @@ export const plannedSessionMutationSchema = z.discriminatedUnion("action", [
       expectedRevision: z.number().int().positive(),
       activityId: uuidSchema,
       linkedAt: z.string().datetime({ offset: true }),
+      outcome: z.enum(["full", "partial"]).default("full"),
     })
     .strict(),
   z
@@ -63,6 +103,16 @@ export const plannedSessionMutationSchema = z.discriminatedUnion("action", [
       expectedRevision: z.number().int().positive(),
       activityId: uuidSchema,
       unlinkedAt: z.string().datetime({ offset: true }),
+    })
+    .strict(),
+  z
+    .object({
+      action: z.literal("skip"),
+      profileId: uuidSchema,
+      sessionId: uuidSchema,
+      expectedRevision: z.number().int().positive(),
+      skippedAt: z.string().datetime({ offset: true }),
+      operationId: uuidSchema,
     })
     .strict(),
   z
@@ -122,6 +172,10 @@ export const plannedSessionDtoSchema = z
   })
   .strict();
 
+export const plannedSessionDetailDtoSchema = plannedSessionDtoSchema
+  .extend({ comparison: plannedSessionComparisonSchema })
+  .strict();
+
 export const createPlannedSessionDtoRequestSchema = z
   .object({
     profileId: uuidSchema,
@@ -136,7 +190,7 @@ export const createPlannedSessionDtoRequestSchema = z
           .strict(),
         groupEventId: uuidSchema.nullable().optional(),
         activityPlanId: uuidSchema,
-        variantId: uuidSchema.optional(),
+        demand: sessionDemandSchema.optional(),
       })
       .strict(),
   })
@@ -160,7 +214,16 @@ export const cancelPlannedSessionDtoRequestSchema = z
   .strict();
 
 export const linkPlannedSessionCompletionDtoRequestSchema = z
-  .object({ ...revisionedSessionRequest, activityId: uuidSchema })
+  .object({
+    ...revisionedSessionRequest,
+    activityId: uuidSchema,
+    outcome: z.enum(["full", "partial"]).default("full"),
+    operationId: uuidSchema,
+  })
+  .strict();
+
+export const skipPlannedSessionDtoRequestSchema = z
+  .object({ ...revisionedSessionRequest, operationId: uuidSchema })
   .strict();
 
 export const linkPlannedSessionGroupEventDtoRequestSchema = z
@@ -184,6 +247,7 @@ export type CreatePlannedSessionRequest = z.infer<typeof createPlannedSessionReq
 export type PlannedSessionMutation = z.infer<typeof plannedSessionMutationSchema>;
 export type PlannedSessionMutationResult = z.infer<typeof plannedSessionMutationResultSchema>;
 export type PlannedSessionDto = z.infer<typeof plannedSessionDtoSchema>;
+export type PlannedSessionDetailDto = z.infer<typeof plannedSessionDetailDtoSchema>;
 export type CreatePlannedSessionDtoRequest = z.infer<typeof createPlannedSessionDtoRequestSchema>;
 export type PlannedSessionRangeDto = z.infer<typeof plannedSessionRangeDtoSchema>;
 export type PlannedSessionMutationReceipt = z.infer<typeof plannedSessionMutationReceiptSchema>;

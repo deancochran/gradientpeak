@@ -29,3 +29,15 @@ export const Playground: Story = {
     );
   },
 };
+
+export const Tactile: Story = {
+  args: { ...integerStepperFixtures.reps, presentation: "tactile" },
+  render: (args) => {
+    const [value, setValue] = React.useState(args.value);
+    return (
+      <View className="bg-background p-6">
+        <IntegerStepper {...args} value={value} onChange={setValue} />
+      </View>
+    );
+  },
+};

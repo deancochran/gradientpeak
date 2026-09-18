@@ -1,5 +1,7 @@
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import superjson from "superjson";
 import { describe, expect, it } from "vitest";
+import { createResolutionManifestFixture } from "../test/builders/planned-session";
 import { activityIngestionSafeStatusDtoSchema } from "./activity-ingestion";
 import { plannedSessionDtoSchema } from "./planned-sessions";
 import { thresholdEvidenceExplanationDtoSchema } from "./threshold-evidence";
@@ -8,7 +10,7 @@ import { trainingEffectDtoSchema } from "./training-effects";
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 const now = "2026-08-10T08:00:00.000Z";
 
-const structure = {
+const structure = activityPlanStructureSchema.parse({
   version: 3 as const,
   activity_category: "run" as const,
   segments: [
@@ -33,7 +35,7 @@ const structure = {
       ],
     },
   ],
-};
+});
 
 const plannedSession = (lifecycle: unknown) => ({
   id: id(10),
@@ -44,13 +46,17 @@ const plannedSession = (lifecycle: unknown) => ({
   source: { kind: "direct" as const, operationId: "a".repeat(32) },
   groupEventId: null,
   prescription: {
-    activityPlanId: id(12),
-    variantId: id(12),
-    variantName: "Base",
-    structureHash: `v1:sha256:${"0".repeat(64)}`,
-    activityPlanRevision: 1,
-    structure,
-    prescriptionQuantification: null,
+    resolutionManifest: createResolutionManifestFixture({
+      activityPlanId: id(12),
+      structure,
+      demand: {
+        activity_category: "run",
+        training_intent: "general_maintenance",
+        target_duration_minutes: 30,
+        target_common_load: null,
+        importance: "normal",
+      },
+    }),
     capturedAt: now,
   },
   lifecycle,

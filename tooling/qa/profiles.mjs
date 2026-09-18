@@ -67,8 +67,8 @@ const commands = {
   full: [["pnpm", ["quality:agent:db:static"]], dbCheck, webSmoke],
 };
 
-function command([executable, args, phase = "run", port]) {
-  return { command: executable, args, phase, ...(port ? { port } : {}) };
+function command([executable, args]) {
+  return { command: executable, args };
 }
 
 export function profileForPaths(paths) {
@@ -114,7 +114,6 @@ export function createProfilePlan({ profile, changedPaths = [], includeStatic = 
     commands: (includeStatic ? commands[selectedProfile] : commands[selectedProfile].slice(1)).map(
       command,
     ),
-    cleanup: [],
   };
 }
 
@@ -122,13 +121,7 @@ export function formatProfilePlan(plan) {
   return [
     `QA profile: ${plan.profile}`,
     `Changed paths: ${plan.changedPaths.length}`,
-    ...plan.commands.map(
-      ({ phase, command: executable, args, port }) =>
-        `  ${phase}${port ? ` (port ${port})` : ""}: ${[executable, ...args].join(" ")}`,
-    ),
-    ...plan.cleanup.map(
-      ({ command: executable, args }) => `  cleanup: ${[executable, ...args].join(" ")}`,
-    ),
+    ...plan.commands.map(({ command: executable, args }) => `  ${[executable, ...args].join(" ")}`),
     "",
   ].join("\n");
 }

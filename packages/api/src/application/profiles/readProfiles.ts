@@ -1,7 +1,7 @@
 import { formatDateOfBirth } from "@repo/core/profile";
 import { preferredUnitSystemSchema } from "@repo/core/units";
-import { type PublicProfilesRow, profileMetrics, profiles } from "@repo/db";
-import { and, desc, eq, lte, sql } from "drizzle-orm";
+import { follows, type PublicProfilesRow, profileMetrics, profiles } from "@repo/db";
+import { and, count, desc, eq, ilike, lte } from "drizzle-orm";
 import { z } from "zod";
 import type { getRequiredDb } from "../../db";
 import { buildIndexPageInfo, parseIndexCursor } from "../../utils/index-cursor";
@@ -210,37 +210,31 @@ export async function ensureProfileExists(db: DbClient, user: SessionUser) {
 }
 
 async function getFollowStatus(db: DbClient, followerId: string, followingId: string) {
-  const result = await db.execute(sql<{ status: string | null }>`
-    select status
-    from follows
-    where follower_id = ${followerId}
-      and following_id = ${followingId}
-    limit 1
-  `);
+  const [result] = await db
+    .select({ status: follows.status })
+    .from(follows)
+    .where(and(eq(follows.follower_id, followerId), eq(follows.following_id, followingId)))
+    .limit(1);
 
-  return nullableFollowStatusSchema.parse(result.rows[0]?.status ?? null);
+  return nullableFollowStatusSchema.parse(result?.status ?? null);
 }
 
 async function getFollowersCount(db: DbClient, profileId: string) {
-  const result = await db.execute(sql<{ value: number | string }>`
-    select count(*)::int as value
-    from follows
-    where following_id = ${profileId}
-      and status = 'accepted'
-  `);
+  const [result] = await db
+    .select({ value: count() })
+    .from(follows)
+    .where(and(eq(follows.following_id, profileId), eq(follows.status, "accepted")));
 
-  return Number(result.rows[0]?.value ?? 0);
+  return Number(result?.value ?? 0);
 }
 
 async function getFollowingCount(db: DbClient, profileId: string) {
-  const result = await db.execute(sql<{ value: number | string }>`
-    select count(*)::int as value
-    from follows
-    where follower_id = ${profileId}
-      and status = 'accepted'
-  `);
+  const [result] = await db
+    .select({ value: count() })
+    .from(follows)
+    .where(and(eq(follows.follower_id, profileId), eq(follows.status, "accepted")));
 
-  return Number(result.rows[0]?.value ?? 0);
+  return Number(result?.value ?? 0);
 }
 
 export async function getPublicProfileById(
@@ -307,9 +301,7 @@ export async function getPublicProfileById(
 
 export async function listProfiles(db: DbClient, input: ProfileListFilters) {
   const offset = parseIndexCursor(input.cursor);
-  const whereClause = input.username
-    ? sql`"profiles"."username" ilike ${`%${input.username}%`}`
-    : undefined;
+  const whereClause = input.username ? ilike(profiles.username, `%${input.username}%`) : undefined;
   const rows: ProfileBaseRow[] = whereClause
     ? await db
         .select(profileBaseSelect)
@@ -319,8 +311,8 @@ export async function listProfiles(db: DbClient, input: ProfileListFilters) {
         .offset(offset)
     : await db.select(profileBaseSelect).from(profiles).limit(input.limit).offset(offset);
   const totalRows = whereClause
-    ? await db.select({ total: sql<number>`count(*)::int` }).from(profiles).where(whereClause)
-    : await db.select({ total: sql<number>`count(*)::int` }).from(profiles);
+    ? await db.select({ total: count() }).from(profiles).where(whereClause)
+    : await db.select({ total: count() }).from(profiles);
   const total = Number(totalRows[0]?.total ?? 0);
 
   return {

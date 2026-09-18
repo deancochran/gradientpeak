@@ -1,4 +1,6 @@
 import type { Page } from "@playwright/test";
+import { events } from "@repo/db/schema";
+import { eq } from "drizzle-orm";
 
 import { expect, test } from "../fixtures";
 import { withCalendarEventFixture } from "../planning/data";
@@ -14,13 +16,16 @@ const validGpx = `<?xml version="1.0"?>
 </gpx>`;
 
 async function eventRouteId(eventId: string) {
-  return withLocalE2EDatabase(async (database) => {
-    const result = await database.query<{ route_id: string | null }>(
-      'select "route_id" from "events" where "id" = $1',
-      [eventId],
-    );
-    return result.rows[0]?.route_id ?? null;
-  });
+  return withLocalE2EDatabase((database) =>
+    database.typedTransaction(async (transaction) => {
+      const [event] = await transaction
+        .select({ routeId: events.route_id })
+        .from(events)
+        .where(eq(events.id, eventId))
+        .limit(1);
+      return event?.routeId ?? null;
+    }),
+  );
 }
 
 async function createEvent(page: Page, title: string) {

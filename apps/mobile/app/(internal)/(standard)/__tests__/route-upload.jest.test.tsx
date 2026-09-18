@@ -1,5 +1,6 @@
 import type React from "react";
 import { act } from "react";
+import { Alert } from "react-native";
 
 import {
   claimRouteUploadOperation,
@@ -15,6 +16,11 @@ const uploadRouteMock = jest.fn();
 const digestStringAsyncMock = jest.fn();
 const randomUuidMock = jest.fn();
 const mockRouteOperationStorage = new Map<string, string>();
+const preventRemoveMock = jest.fn();
+const dispatchMock = jest.fn();
+jest.mock("expo-router/react-navigation", () => ({
+  usePreventRemove: (...args: unknown[]) => preventRemoveMock(...args),
+}));
 
 const MAX_ROUTE_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
@@ -31,6 +37,7 @@ jest.mock("expo-router", () => ({
     Screen: ({ options }: { options: { headerRight?: () => React.ReactNode } }) =>
       options.headerRight?.() ?? null,
   },
+  useNavigation: () => ({ dispatch: dispatchMock }),
   useRouter: () => ({ back: backMock }),
 }));
 
@@ -84,11 +91,15 @@ describe("route upload screen", () => {
     digestStringAsyncMock.mockReset().mockResolvedValue("route-file-digest");
     randomUuidMock.mockReset().mockReturnValue("55555555-5555-4555-8555-555555555555");
     mockRouteOperationStorage.clear();
+    preventRemoveMock.mockReset();
+    dispatchMock.mockReset();
+    jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       text: jest.fn().mockResolvedValue("<TrainingCenterDatabase />"),
     });
   });
+  afterEach(() => jest.restoreAllMocks());
 
   async function renderScreen() {
     const UploadRouteScreen = (await import("../route-upload")).default;
@@ -103,6 +114,36 @@ describe("route upload screen", () => {
       await fireEvent.press(screen.getByTestId("route-upload-file-input"));
     });
   }
+
+  it("clears optional description before uploading instead of retaining old notes", async () => {
+    await renderScreen();
+    await pickFile();
+    await fireEvent.changeText(screen.getByLabelText("Description"), "Remove these notes");
+    await fireEvent.changeText(screen.getByLabelText("Description"), "");
+    await fireEvent.press(screen.getByTestId("route-upload-submit-button"));
+    await waitFor(() =>
+      expect(uploadRouteMock).toHaveBeenCalledWith(
+        expect.objectContaining({ description: undefined }),
+      ),
+    );
+  });
+
+  it("guards owner Back cancellation and preserves file and notes when discard is rejected", async () => {
+    await renderScreen();
+    await pickFile();
+    await fireEvent.changeText(screen.getByLabelText("Description"), "Keep route notes");
+    const [enabled, remove] = preventRemoveMock.mock.calls.at(-1) ?? [];
+    expect(enabled).toBe(true);
+    await act(() => remove({ data: { action: { type: "GO_BACK" } } }));
+    const buttons = jest.mocked(Alert.alert).mock.calls.at(-1)?.[2];
+    expect(buttons?.find((button) => button.text === "Keep editing")).toBeTruthy();
+    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Description").props.value).toBe("Keep route notes");
+    expect(screen.getByText(/ridge-loop\.tcx/)).toBeTruthy();
+    await act(() => buttons?.find((button) => button.text === "Discard")?.onPress?.());
+    expect(dispatchMock).toHaveBeenCalledWith({ type: "GO_BACK" });
+    expect(uploadRouteMock).not.toHaveBeenCalled();
+  });
 
   it("persists an operation id until the successful claim is cleared", async () => {
     const input = {

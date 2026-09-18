@@ -185,6 +185,45 @@ test("unsafe scan includes double casts and ts-expect-error", () => {
   assert(categories.has("unsafe-non-null-assertion"));
 });
 
+test("typed persistence policy rejects direct and aliased clients while accepting typed query APIs", () => {
+  const root = resolve(architectureRoot, "fixtures/typed-persistence");
+  const config = fixtureConfig(
+    {
+      web: { roots: ["apps/web"] },
+      api: { roots: ["packages/api"] },
+    },
+    {
+      typedPersistence: {
+        scopePatterns: ["apps/web/**/*.ts", "packages/api/src/**/*.ts"],
+        lowLevelQueryAllowlist: [],
+        rawSqlExecuteExceptions: [],
+      },
+    },
+  );
+  const { active } = analyzeProject(root, config, [
+    "apps/web/source.ts",
+    "apps/web/typed.ts",
+    "packages/api/src/raw.ts",
+  ]);
+
+  assert.equal(active.filter((finding) => finding.category === "direct-pg-import").length, 1);
+  assert.equal(active.filter((finding) => finding.category === "low-level-query-string").length, 2);
+  assert(
+    active.some(
+      (finding) =>
+        finding.category === "raw-sql-crud-execute" && finding.details.kind === "stored-function",
+    ),
+  );
+  assert(active.some((finding) => finding.category === "cast-only-sql-rows"));
+  assert.equal(
+    active.some(
+      (finding) =>
+        finding.path === "apps/web/typed.ts" && finding.category === "low-level-query-string",
+    ),
+    false,
+  );
+});
+
 test("forbidden first-party source patterns are rejected", () => {
   const root = resolve(architectureRoot, "fixtures/forbidden-pattern");
   const config = fixtureConfig(
@@ -514,6 +553,11 @@ test("merge-base canonical policy covers every enforcement surface", () => {
     ],
     reviewedIgnores: [],
     scanExcludes: [],
+    typedPersistence: {
+      scopePatterns: ["packages/api/src/**/*.ts"],
+      lowLevelQueryAllowlist: [],
+      rawSqlExecuteExceptions: [],
+    },
   };
   const mutations = [
     (next) => next.owners.core.roots.push("packages/shared-core"),
@@ -523,6 +567,15 @@ test("merge-base canonical policy covers every enforcement surface", () => {
     (next) => next.enumParity.splice(0, 1),
     (next) => next.forbiddenSourcePatterns.splice(0, 1),
     (next) => (next.generatedOwners[0].script = "generate"),
+    (next) => next.typedPersistence.scopePatterns.splice(0, 1),
+    (next) =>
+      next.typedPersistence.rawSqlExecuteExceptions.push({
+        id: "raw-sql",
+        path: "packages/api/src/example.ts",
+        allowedKinds: ["complex-cte"],
+        reason: "fixture",
+        validation: "fixture",
+      }),
     (next) =>
       next.reviewedIgnores.push({
         id: "ignore",

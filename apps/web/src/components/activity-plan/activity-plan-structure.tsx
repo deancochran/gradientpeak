@@ -1,5 +1,6 @@
 import {
   activityPlanStructureSchema,
+  consolidateActivityPlanText,
   orderActivityPlanTargetsForPresentation,
   resolveActivityPlanTargetPresentation,
 } from "@repo/core";
@@ -96,11 +97,18 @@ export function ActivityPlanStructure({ structure }: { structure: unknown }) {
                                   .join(", ")}
                               </span>
                             </div>
-                            {step.description ? (
-                              <p className="mt-1 text-muted-foreground">{step.description}</p>
-                            ) : null}
-                            {step.notes ? (
-                              <p className="mt-1 text-muted-foreground">{step.notes}</p>
+                            {consolidateActivityPlanText(
+                              step.notes,
+                              step.description,
+                              "Description",
+                            ) ? (
+                              <p className="mt-1 text-muted-foreground">
+                                {consolidateActivityPlanText(
+                                  step.notes,
+                                  step.description,
+                                  "Description",
+                                )}
+                              </p>
                             ) : null}
                           </li>
                         ))}

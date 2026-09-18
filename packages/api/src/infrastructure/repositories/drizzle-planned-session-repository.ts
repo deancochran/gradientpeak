@@ -1,4 +1,7 @@
-import { activityPlanDocumentSchema } from "@repo/core/activity-plan";
+import {
+  activityPlanAdaptationSchema,
+  activityPlanStructureSchema,
+} from "@repo/core/activity-plan";
 import { type PlannedSession, plannedSessionSchema } from "@repo/core/calendar";
 import {
   activities,
@@ -35,16 +38,13 @@ export function mapPlannedSessionRow(row: PlannedSessionRow): PlannedSession {
       case "training_plan":
         return {
           kind: row.source_kind,
+          applicationId: row.training_plan_application_id,
           trainingPlanId: row.training_plan_id,
           trainingPlanRevision: row.training_plan_revision,
-          sourceSessionKey: row.source_session_key,
+          sourceSessionId: row.source_session_id,
         };
-      case "recurrence":
-        return {
-          kind: row.source_kind,
-          seriesId: row.series_id,
-          occurrenceKey: row.occurrence_key,
-        };
+      default:
+        throw new Error("Unsupported planned-session source in persisted row");
     }
   })();
   const lifecycle = (() => {
@@ -66,15 +66,23 @@ export function mapPlannedSessionRow(row: PlannedSessionRow): PlannedSession {
                   state: row.completion_state,
                   activityId: row.completed_activity_id,
                   linkedAt: toInstant(row.linked_at as Date, "linked_at"),
+                  outcome: row.completion_outcome === "partial" ? "partial" : "full",
                 }
-              : {
-                  state: row.completion_state,
-                  linkedAt: toInstant(row.linked_at as Date, "linked_at"),
-                  unlinkedAt: toInstant(
-                    row.completion_unlinked_at as Date,
-                    "completion_unlinked_at",
-                  ),
-                },
+              : row.completion_outcome === "skipped"
+                ? {
+                    state: "skipped" as const,
+                    skippedAt: toInstant(row.linked_at as Date, "linked_at"),
+                    operationId: row.skip_operation_id,
+                  }
+                : {
+                    state: row.completion_state,
+                    linkedAt: toInstant(row.linked_at as Date, "linked_at"),
+                    unlinkedAt: toInstant(
+                      row.completion_unlinked_at as Date,
+                      "completion_unlinked_at",
+                    ),
+                    outcome: row.completion_outcome === "partial" ? "partial" : "full",
+                  },
         };
     }
   })();
@@ -90,13 +98,7 @@ export function mapPlannedSessionRow(row: PlannedSessionRow): PlannedSession {
     idempotencyKey: row.idempotency_key,
     groupEventId: row.group_event_id,
     prescription: {
-      activityPlanId: row.activity_plan_id,
-      activityPlanRevision: row.activity_plan_revision,
-      variantId: row.activity_plan_variant_id,
-      variantName: row.activity_plan_variant_name,
-      structure: row.prescription_structure,
-      structureHash: row.prescription_structure_hash,
-      prescriptionQuantification: row.prescription_quantification,
+      resolutionManifest: row.resolution_manifest,
       capturedAt: toInstant(row.prescription_captured_at, "prescription_captured_at"),
     },
     lifecycle,
@@ -111,29 +113,17 @@ function sessionValues(session: PlannedSession) {
           direct_operation_id: session.source.operationId,
           training_plan_id: null,
           training_plan_revision: null,
-          source_session_key: null,
-          series_id: null,
-          occurrence_key: null,
+          training_plan_application_id: null,
+          source_session_id: null,
         }
-      : session.source.kind === "training_plan"
-        ? {
-            source_kind: session.source.kind,
-            direct_operation_id: null,
-            training_plan_id: session.source.trainingPlanId,
-            training_plan_revision: session.source.trainingPlanRevision,
-            source_session_key: session.source.sourceSessionKey,
-            series_id: null,
-            occurrence_key: null,
-          }
-        : {
-            source_kind: session.source.kind,
-            direct_operation_id: null,
-            training_plan_id: null,
-            training_plan_revision: null,
-            source_session_key: null,
-            series_id: session.source.seriesId,
-            occurrence_key: session.source.occurrenceKey,
-          };
+      : {
+          source_kind: session.source.kind,
+          direct_operation_id: null,
+          training_plan_id: session.source.trainingPlanId,
+          training_plan_revision: session.source.trainingPlanRevision,
+          training_plan_application_id: session.source.applicationId,
+          source_session_id: session.source.sourceSessionId,
+        };
   const lifecycleValues =
     session.lifecycle.status === "scheduled"
       ? {
@@ -142,6 +132,7 @@ function sessionValues(session: PlannedSession) {
           cancelled_at: null,
           completed_activity_id: null,
           completion_state: null,
+          completion_outcome: null,
           linked_at: null,
           completion_unlinked_at: null,
         }
@@ -152,6 +143,7 @@ function sessionValues(session: PlannedSession) {
             cancelled_at: new Date(session.lifecycle.cancelledAt),
             completed_activity_id: null,
             completion_state: null,
+            completion_outcome: null,
             linked_at: null,
             completion_unlinked_at: null,
           }
@@ -162,18 +154,32 @@ function sessionValues(session: PlannedSession) {
               cancelled_at: null,
               completed_activity_id: session.lifecycle.completion.activityId,
               completion_state: session.lifecycle.completion.state,
+              completion_outcome: session.lifecycle.completion.outcome,
               linked_at: new Date(session.lifecycle.completion.linkedAt),
               completion_unlinked_at: null,
             }
-          : {
-              status: session.lifecycle.status,
-              cancellation_reason: null,
-              cancelled_at: null,
-              completed_activity_id: null,
-              completion_state: session.lifecycle.completion.state,
-              linked_at: new Date(session.lifecycle.completion.linkedAt),
-              completion_unlinked_at: new Date(session.lifecycle.completion.unlinkedAt),
-            };
+          : session.lifecycle.completion.state === "skipped"
+            ? {
+                status: session.lifecycle.status,
+                cancellation_reason: null,
+                cancelled_at: null,
+                completed_activity_id: null,
+                completion_state: null,
+                completion_outcome: "skipped",
+                skip_operation_id: session.lifecycle.completion.operationId,
+                linked_at: new Date(session.lifecycle.completion.skippedAt),
+                completion_unlinked_at: null,
+              }
+            : {
+                status: session.lifecycle.status,
+                cancellation_reason: null,
+                cancelled_at: null,
+                completed_activity_id: null,
+                completion_state: session.lifecycle.completion.state,
+                completion_outcome: session.lifecycle.completion.outcome,
+                linked_at: new Date(session.lifecycle.completion.linkedAt),
+                completion_unlinked_at: new Date(session.lifecycle.completion.unlinkedAt),
+              };
   return {
     id: session.id,
     profile_id: session.profileId,
@@ -183,13 +189,9 @@ function sessionValues(session: PlannedSession) {
     original_target_date: session.originalTargetDate,
     idempotency_key: session.idempotencyKey,
     group_event_id: session.groupEventId ?? null,
-    activity_plan_id: session.prescription.activityPlanId,
-    activity_plan_revision: session.prescription.activityPlanRevision,
-    activity_plan_variant_id: session.prescription.variantId,
-    activity_plan_variant_name: session.prescription.variantName,
-    prescription_structure: session.prescription.structure,
-    prescription_structure_hash: session.prescription.structureHash,
-    prescription_quantification: session.prescription.prescriptionQuantification,
+    activity_plan_id: session.prescription.resolutionManifest.activity_plan_id,
+    activity_plan_revision: session.prescription.resolutionManifest.activity_plan_revision,
+    resolution_manifest: session.prescription.resolutionManifest,
     prescription_captured_at: new Date(session.prescription.capturedAt),
     ...sourceValues,
     ...lifecycleValues,
@@ -205,12 +207,12 @@ export function immutableSessionMatches(existing: PlannedSession, replay: Planne
     existing.groupEventId === replay.groupEventId;
   if (!sharedIdentityMatches) return false;
 
-  // Direct request retries repeat client semantics while the server-derived
-  // capture time and quantification can differ from the first accepted write.
+  // Direct request retries may have a later server capture timestamp, but every
+  // normalized semantic resolver input and output must match the accepted write.
   if (existing.source.kind === "direct" && replay.source.kind === "direct") {
     return (
-      existing.prescription.activityPlanId === replay.prescription.activityPlanId &&
-      existing.prescription.variantId === replay.prescription.variantId
+      JSON.stringify(existing.prescription.resolutionManifest) ===
+      JSON.stringify(replay.prescription.resolutionManifest)
     );
   }
   return JSON.stringify(existing.prescription) === JSON.stringify(replay.prescription);
@@ -319,10 +321,14 @@ async function mutationMiss(
       return { status: "conflict", reason: "already_completed" };
     }
   }
+  if (mutation.action === "skip" && current.lifecycle.status === "completed") {
+    return { status: "conflict", reason: "already_completed" };
+  }
   if (
     (mutation.action === "move" ||
       mutation.action === "cancel" ||
-      mutation.action === "link_completion") &&
+      mutation.action === "link_completion" ||
+      mutation.action === "skip") &&
     current.lifecycle.status === "completed"
   ) {
     return { status: "conflict", reason: "already_completed" };
@@ -351,9 +357,16 @@ export function isConvergedGroupEventMutation(
   current: PlannedSession,
   mutation: PlannedSessionMutation,
 ): boolean {
-  if (mutation.action !== "associate_group_event" && mutation.action !== "clear_group_event") {
-    return false;
+  if (mutation.action === "skip") {
+    return (
+      current.sessionRevision === mutation.expectedRevision + 1 &&
+      current.lifecycle.status === "completed" &&
+      current.lifecycle.completion.state === "skipped" &&
+      current.lifecycle.completion.operationId === mutation.operationId
+    );
   }
+  if (mutation.action !== "associate_group_event" && mutation.action !== "clear_group_event")
+    return false;
   const revisionDelta = current.sessionRevision - mutation.expectedRevision;
   if (revisionDelta !== 0 && revisionDelta !== 1) return false;
   if (mutation.action === "associate_group_event") {
@@ -387,7 +400,7 @@ export function createDrizzlePlannedSessionRepository(
         if (
           !(await planExists(executor, activityPlans, {
             profileId: input.profileId,
-            planId: session.prescription.activityPlanId,
+            planId: session.prescription.resolutionManifest.activity_plan_id,
           }))
         ) {
           return { status: "identity_conflict" };
@@ -548,6 +561,7 @@ export function createDrizzlePlannedSessionRepository(
                       status: "completed",
                       completed_activity_id: mutation.activityId,
                       completion_state: "linked",
+                      completion_outcome: mutation.outcome,
                       linked_at: new Date(mutation.linkedAt),
                       completion_unlinked_at: null,
                       session_revision: sql`${plannedSessions.session_revision} + 1`,
@@ -561,17 +575,29 @@ export function createDrizzlePlannedSessionRepository(
                         session_revision: sql`${plannedSessions.session_revision} + 1`,
                         updated_at: new Date(mutation.unlinkedAt),
                       }
-                    : mutation.action === "associate_group_event"
+                    : mutation.action === "skip"
                       ? {
-                          group_event_id: mutation.groupEventId,
+                          status: "completed",
+                          completed_activity_id: null,
+                          completion_state: null,
+                          completion_outcome: "skipped",
+                          skip_operation_id: mutation.operationId,
+                          linked_at: new Date(mutation.skippedAt),
+                          completion_unlinked_at: null,
                           session_revision: sql`${plannedSessions.session_revision} + 1`,
-                          updated_at: new Date(),
+                          updated_at: new Date(mutation.skippedAt),
                         }
-                      : {
-                          group_event_id: null,
-                          session_revision: sql`${plannedSessions.session_revision} + 1`,
-                          updated_at: new Date(),
-                        },
+                      : mutation.action === "associate_group_event"
+                        ? {
+                            group_event_id: mutation.groupEventId,
+                            session_revision: sql`${plannedSessions.session_revision} + 1`,
+                            updated_at: new Date(),
+                          }
+                        : {
+                            group_event_id: null,
+                            session_revision: sql`${plannedSessions.session_revision} + 1`,
+                            updated_at: new Date(),
+                          },
           )
           .where(
             and(
@@ -579,6 +605,7 @@ export function createDrizzlePlannedSessionRepository(
               mutation.action === "move" ||
                 mutation.action === "cancel" ||
                 mutation.action === "link_completion" ||
+                mutation.action === "skip" ||
                 mutation.action === "associate_group_event"
                 ? eq(plannedSessions.status, "scheduled")
                 : undefined,
@@ -653,7 +680,10 @@ export function createDrizzlePlannedSessionRepository(
           description: activityPlans.description,
           revision: activityPlans.revision,
           structure: activityPlans.structure,
+          adaptation: activityPlans.adaptation,
+          trainingIntent: activityPlans.training_intent,
           structureHash: activityPlans.structure_hash,
+          semanticHash: activityPlans.semantic_hash,
           gpsRecordingEnabled: activityPlans.gps_recording_enabled,
           updatedAt: activityPlans.updated_at,
         })
@@ -671,7 +701,8 @@ export function createDrizzlePlannedSessionRepository(
       if (!row) return null;
       return {
         ...row,
-        structure: activityPlanDocumentSchema.parse(row.structure),
+        structure: activityPlanStructureSchema.parse(row.structure),
+        adaptation: activityPlanAdaptationSchema.nullish().parse(row.adaptation) ?? null,
         updatedAt: toInstant(row.updatedAt, "activity_plan.updated_at"),
       };
     },

@@ -2,15 +2,13 @@ import { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const captureException = vi.fn();
-const captureMessage = vi.fn();
 
-vi.mock("@sentry/node", () => ({ captureException, captureMessage }));
+vi.mock("@sentry/node", () => ({ captureException }));
 
 describe("API telemetry", () => {
   beforeEach(() => {
     vi.resetModules();
     captureException.mockClear();
-    captureMessage.mockClear();
   });
 
   it("suppresses expected tRPC control-flow failures", async () => {
@@ -46,6 +44,39 @@ describe("API telemetry", () => {
     expect(isExpectedApiError(new TRPCError({ code: "INTERNAL_SERVER_ERROR" }))).toBe(false);
     expect(captureApiError(authServerError, { surface: "auth" })).toBe(true);
     expect(captureException).toHaveBeenCalledOnce();
+  });
+
+  it("captures a recognized diagnostic with procedure context but never raw cause text", async () => {
+    const { captureApiError } = await import("./telemetry");
+    const databaseCause = Object.assign(
+      new Error("SELECT private_email FROM profiles WHERE id = $1"),
+      {
+        code: "42703",
+        params: ["550e8400-e29b-41d4-a716-446655440000"],
+      },
+    );
+
+    expect(
+      captureApiError(new Error("failed", { cause: databaseCause }), {
+        procedure: "profiles.get",
+        procedure_type: "query",
+        status: 207,
+        body: { health: 170 },
+      }),
+    ).toBe(true);
+
+    const [, options] = captureException.mock.calls.at(-1) as [unknown, { extra: unknown }];
+    expect(options.extra).toEqual({
+      procedure: "profiles.get",
+      procedure_type: "query",
+      status: 207,
+      diagnostic_category: "database",
+      diagnostic_reason: "missing_column",
+      error_class: "Error",
+      postgres_code: "42703",
+      safe_summary: "Database schema is missing a column.",
+    });
+    expect(JSON.stringify(options.extra)).not.toMatch(/SELECT|private_email|\$1|550e8400|health/);
   });
 
   it("retains authoritative 5xx wrappers with expected-looking causes", async () => {
@@ -121,11 +152,8 @@ describe("API telemetry", () => {
     });
   });
 
-  it("records only a sanitized non-fatal procedure metric", async () => {
+  it("does not create a Sentry event for a routine procedure outcome", async () => {
     const { captureApiProcedureMetric } = await import("./telemetry");
-    captureMessage.mockImplementationOnce(() => {
-      throw new Error("transport unavailable");
-    });
 
     expect(() =>
       captureApiProcedureMetric({
@@ -136,18 +164,10 @@ describe("API telemetry", () => {
         message: "person@example.test",
       }),
     ).not.toThrow();
-    expect(captureMessage).toHaveBeenCalledWith("api.procedure", {
-      level: "info",
-      extra: {
-        procedure_group: "activities",
-        procedure_type: "query",
-        outcome: "success",
-        error_code: "INTERNAL_SERVER_ERROR",
-      },
-    });
+    expect(captureException).not.toHaveBeenCalled();
   });
 
-  it("normalizes arbitrary error codes while denying raw error fields", async () => {
+  it("does not create a Sentry event for routine error metrics", async () => {
     const { captureApiProcedureMetric } = await import("./telemetry");
 
     captureApiProcedureMetric({
@@ -156,9 +176,6 @@ describe("API telemetry", () => {
       error_message: "Bearer synthetic-secret",
     });
 
-    expect(captureMessage).toHaveBeenCalledWith("api.procedure", {
-      level: "info",
-      extra: { error_code: "unknown" },
-    });
+    expect(captureException).not.toHaveBeenCalled();
   });
 });

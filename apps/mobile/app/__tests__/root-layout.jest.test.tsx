@@ -98,6 +98,7 @@ jest.mock("expo-router", () => ({
 
 jest.mock("nativewind", () => ({
   __esModule: true,
+  styled: <T,>(component: T) => component,
   vars: <T extends Record<string, string | number>>(value: T) => value,
   VariableContextProvider: ({ children }: React.PropsWithChildren) => children,
 }));
@@ -131,6 +132,11 @@ jest.mock("@/lib/theme", () => ({
   getNavigationTheme: () => ({ colors: {} }),
 }));
 
+jest.mock("@/components/social/EntityCommentsSheetProvider", () => ({
+  __esModule: true,
+  EntityCommentsSheetProvider: ({ children }: React.PropsWithChildren) => children,
+}));
+
 jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
   useAuth: () => authState,
@@ -148,8 +154,10 @@ jest.mock("@/lib/contract-epoch/contractEpoch", () => ({
 
 jest.mock("@/lib/server-config", () => ({
   __esModule: true,
-  getE2ERuntimeSentinel: () => "lane=e2e api=127.0.0.1:3100 supabase=127.0.0.1:55321",
+  getServerConfig: () => ({ apiUrl: "http://localhost:3000" }),
+  getE2ERuntimeSentinel: () => "lane=e2e api=127.0.0.1:3001 supabase=127.0.0.1:55321",
   initializeServerConfig: jest.fn(async () => undefined),
+  subscribeServerConfig: () => () => undefined,
   useServerConfig: () => ({ initialized: true }),
 }));
 
@@ -297,7 +305,7 @@ describe("root layout auth guard", () => {
 
     await waitFor(() =>
       expect(screen.getByTestId("e2e-runtime-sentinel").props.accessibilityLabel).toBe(
-        "lane=e2e api=127.0.0.1:3100 supabase=127.0.0.1:55321",
+        "lane=e2e api=127.0.0.1:3001 supabase=127.0.0.1:55321",
       ),
     );
   });

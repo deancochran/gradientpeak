@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/ca
 import { Input } from "@repo/ui/components/input";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Search } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { api } from "../../lib/api/client";
 import { ActivityPlanCard } from "../activity-plan/activity-plan-card";
@@ -47,9 +47,13 @@ type QueryState = {
 export function DiscoveryExplorer({
   initialQuery = "",
   initialScope = "activityPlans",
+  initialMinDistanceKm = "",
+  initialMaxDistanceKm = "",
 }: {
   initialQuery?: string;
   initialScope?: WebDiscoverScope;
+  initialMinDistanceKm?: string;
+  initialMaxDistanceKm?: string;
 }) {
   const navigate = useNavigate();
   const [scope, setScope] = useState<WebDiscoverScope>(initialScope);
@@ -62,8 +66,48 @@ export function DiscoveryExplorer({
   const [routeSort, setRouteSort] = useState("newest");
   const [profileSort, setProfileSort] = useState("newest");
   const [trainingSort, setTrainingSort] = useState("newest");
-  const [minDistance, setMinDistance] = useState("");
-  const [maxDistance, setMaxDistance] = useState("");
+  const [minDistance, setMinDistance] = useState(initialMinDistanceKm);
+  const [maxDistance, setMaxDistance] = useState(initialMaxDistanceKm);
+  const [appliedMinDistance, setAppliedMinDistance] = useState(initialMinDistanceKm);
+  const [appliedMaxDistance, setAppliedMaxDistance] = useState(initialMaxDistanceKm);
+  const [awaitingUrlSync, setAwaitingUrlSync] = useState(false);
+  const hasPendingDraft =
+    awaitingUrlSync ||
+    draftSearch.trim() !== search ||
+    minDistance !== appliedMinDistance ||
+    maxDistance !== appliedMaxDistance;
+  const numericError = getDistanceRangeError(minDistance, maxDistance);
+
+  useEffect(() => {
+    const urlMatchesAppliedState =
+      initialQuery.trim() === search &&
+      initialScope === scope &&
+      initialMinDistanceKm === appliedMinDistance &&
+      initialMaxDistanceKm === appliedMaxDistance;
+    if (awaitingUrlSync) {
+      if (urlMatchesAppliedState) setAwaitingUrlSync(false);
+      return;
+    }
+    if (hasPendingDraft) return;
+    setScope(initialScope);
+    setDraftSearch(initialQuery);
+    setSearch(initialQuery.trim());
+    setMinDistance(initialMinDistanceKm);
+    setMaxDistance(initialMaxDistanceKm);
+    setAppliedMinDistance(initialMinDistanceKm);
+    setAppliedMaxDistance(initialMaxDistanceKm);
+  }, [
+    appliedMaxDistance,
+    appliedMinDistance,
+    hasPendingDraft,
+    initialMaxDistanceKm,
+    initialMinDistanceKm,
+    initialQuery,
+    initialScope,
+    awaitingUrlSync,
+    scope,
+    search,
+  ]);
 
   const activityPlans = api.activityPlans.list.useInfiniteQuery(
     {
@@ -109,8 +153,8 @@ export function DiscoveryExplorer({
     {
       ownerScope: "all",
       search: search || undefined,
-      min_distance_m: minDistance ? Number(minDistance) * 1000 : undefined,
-      max_distance_m: maxDistance ? Number(maxDistance) * 1000 : undefined,
+      min_distance_m: appliedMinDistance ? Number(appliedMinDistance) * 1000 : undefined,
+      max_distance_m: appliedMaxDistance ? Number(appliedMaxDistance) * 1000 : undefined,
       sort_by: routeSort as "newest" | "oldest" | "distance_desc" | "distance_asc",
       limit: 20,
     },
@@ -151,6 +195,26 @@ export function DiscoveryExplorer({
     setTrainingSort("newest");
     setMinDistance("");
     setMaxDistance("");
+    setAppliedMinDistance("");
+    setAppliedMaxDistance("");
+  };
+  const applyDraft = () => {
+    if (numericError) return;
+    const nextSearch = draftSearch.trim();
+    setSearch(nextSearch);
+    setAppliedMinDistance(minDistance);
+    setAppliedMaxDistance(maxDistance);
+    setAwaitingUrlSync(true);
+    void navigate({
+      to: "/search",
+      search: {
+        scope,
+        ...(nextSearch ? { q: nextSearch } : {}),
+        ...(minDistance ? { minDistanceKm: minDistance } : {}),
+        ...(maxDistance ? { maxDistanceKm: maxDistance } : {}),
+      },
+      replace: true,
+    });
   };
 
   return (
@@ -159,7 +223,7 @@ export function DiscoveryExplorer({
         className="flex gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          setSearch(draftSearch.trim());
+          applyDraft();
         }}
       >
         <Input
@@ -186,9 +250,10 @@ export function DiscoveryExplorer({
             onClick={() => {
               setScope(option.id);
               resetScopeFilters();
+              setAwaitingUrlSync(true);
               void navigate({
                 to: "/search",
-                search: (previous) => ({ ...previous, scope: option.id }),
+                search: { scope: option.id, ...(search ? { q: search } : {}) },
                 replace: true,
               });
             }}
@@ -286,10 +351,31 @@ export function DiscoveryExplorer({
             allowAny={false}
           />
         ) : null}
-        <Button type="button" variant="ghost" onClick={resetScopeFilters}>
-          Reset filters
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => {
+            resetScopeFilters();
+            setAwaitingUrlSync(true);
+            void navigate({
+              to: "/search",
+              search: { scope, ...(search ? { q: search } : {}) },
+              replace: true,
+            });
+          }}
+        >
+          Clear filters
         </Button>
       </fieldset>
+      {hasPendingDraft ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          Discovery edits have not been applied.
+        </p>
+      ) : null}
+      {numericError ? <p role="alert">{numericError}</p> : null}
+      <Button type="button" onClick={applyDraft}>
+        Apply filters
+      </Button>
 
       {activeQuery.isLoading ? (
         <p role="status" className="py-8 text-muted-foreground">
@@ -317,6 +403,7 @@ export function DiscoveryExplorer({
                 setDraftSearch("");
                 setSearch("");
                 resetScopeFilters();
+                void navigate({ to: "/search", search: { scope }, replace: true });
               }}
             >
               Clear search and filters
@@ -424,14 +511,28 @@ function NumberFilter({
       <Input
         id={inputId}
         className="w-44"
-        type="number"
-        min="0"
-        step="0.1"
+        inputMode="decimal"
+        type="text"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
     </label>
   );
+}
+
+function getDistanceRangeError(minDistance: string, maxDistance: string) {
+  for (const [label, value] of [
+    ["Minimum distance", minDistance],
+    ["Maximum distance", maxDistance],
+  ] as Array<[string, string]>) {
+    if (value.trim() && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+      return `${label} must be a non-negative number.`;
+    }
+  }
+  if (minDistance && maxDistance && Number(minDistance) > Number(maxDistance)) {
+    return "Minimum distance cannot exceed maximum distance.";
+  }
+  return null;
 }
 
 function DiscoveryCard({ scope, item }: { scope: WebDiscoverScope; item: DiscoveryItem }) {

@@ -57,11 +57,7 @@ export function sanitizeTrainingPlanForViewer<
     return plan;
   }
 
-  const {
-    builder_planning_snapshot: _builderSnapshot,
-    metadata,
-    ...publicStructure
-  } = plan.structure as Record<string, unknown>;
+  const { metadata, ...publicStructure } = plan.structure as Record<string, unknown>;
   let publicMetadata = metadata;
   if (metadata && typeof metadata === "object") {
     const {

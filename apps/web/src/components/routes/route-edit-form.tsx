@@ -8,6 +8,8 @@ import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form
 import { LoadingButton } from "@repo/ui/components/loading";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 
+import { useUnsavedChangesGuard } from "../../lib/use-unsaved-changes-guard";
+
 type RouteEditFormProps = {
   defaultValues: RouteEditFormInput;
   onCancel: () => void;
@@ -33,6 +35,11 @@ export function RouteEditForm({
   });
   const isPending = pending || submit.isSubmitting;
   const submitError = form.formState.errors.root?.message ?? submit.submitError?.message;
+  const { guardedCancel } = useUnsavedChangesGuard({
+    draft: form.getValues(),
+    dirty: form.formState.isDirty,
+    pending: isPending,
+  });
 
   return (
     <Form {...form}>
@@ -63,7 +70,7 @@ export function RouteEditForm({
           <Button
             data-testid="route-edit-cancel"
             disabled={isPending}
-            onClick={onCancel}
+            onClick={() => guardedCancel(onCancel)}
             type="button"
             variant="outline"
           >

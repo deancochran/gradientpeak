@@ -18,7 +18,19 @@ export function CalendarProjectionCard({ item }: { item: CalendarProjectionItem 
   if (item.activity) {
     return <ActivityListCard activity={item.activity} href={item.navigation.href} />;
   }
-  if (item.kind === "planned_activity") return <PlannedActivityCard item={item} />;
+  if (item.kind === "planned_activity") {
+    return (
+      <PlannedActivityCard
+        item={{
+          ...item,
+          navigation: {
+            href: `/calendar/events/${item.id}?resourceType=planned_session`,
+            target: "event",
+          },
+        }}
+      />
+    );
+  }
   if (item.kind === "goal") {
     return (
       <GoalCard

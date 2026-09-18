@@ -135,7 +135,7 @@ export async function exchangeStravaOAuthCode(
 ): Promise<StravaOAuthTokenResponse> {
   const config = requireStravaOAuthConfig();
   return postToken({
-    fetchImpl,
+    ...(fetchImpl === undefined ? {} : { fetchImpl }),
     schema: stravaOAuthTokenResponseSchema,
     body: new URLSearchParams({
       client_id: config.clientId,
@@ -153,7 +153,7 @@ export async function refreshStravaAccessToken(
 ): Promise<StravaRefreshTokenResponse> {
   const config = requireStravaOAuthConfig();
   return postToken({
-    fetchImpl,
+    ...(fetchImpl === undefined ? {} : { fetchImpl }),
     schema: stravaRefreshTokenResponseSchema,
     body: new URLSearchParams({
       client_id: config.clientId,

@@ -115,7 +115,7 @@ const defaultDependencies: PlanningLedgerDependencies = {
                 ? event.scheduled_date
                 : getCalendarDateInIanaZone(event.starts_at, planningTimezone),
             startsAt: event.starts_at,
-            kind: event.event_type === "planned" ? ("planned" as const) : ("event" as const),
+            kind: "event" as const,
             title: event.title.trim() || "Calendar event",
             status: event.status,
             navigation: { target: "event" as const, id: event.id },

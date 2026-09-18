@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { activityPlanTrainingIntentSchema } from "../../activity-plan";
 import { canonicalActivityCategorySchema } from "../activity-category";
 import { dateOnlySchema } from "../date-only";
 import { canonicalGoalActivityCategorySchema } from "../goals/profile_goals";
@@ -115,27 +116,66 @@ export type TrainingPlanSessionEventOverrides = z.infer<
   typeof trainingPlanSessionEventOverridesSchema
 >;
 
-const trainingPlanStructureSessionShape = {
-  offset_days: z.number().int().min(0),
-  activity_plan_id: z.string().uuid(),
-  event_overrides: trainingPlanSessionEventOverridesSchema.optional(),
-};
+const weekdaySchema = z.number().int().min(0).max(6);
 
-export const trainingPlanStructureInputSessionSchema = z
+export const trainingPlanPreferencesSchema = z
   .object({
-    ...trainingPlanStructureSessionShape,
-    activity_plan_variant_id: z.string().uuid().optional(),
+    weekly_session_count: z.number().int().min(1).max(14).nullable(),
+    target_weekly_duration_minutes: z.number().int().min(1).max(10_080).nullable(),
+    maximum_session_duration_minutes: z.number().int().min(1).max(600).nullable(),
+    preferred_weekdays: z.array(weekdaySchema).max(7),
+    rest_days: z.array(weekdaySchema).max(7),
+    progression_style: z.enum(["conservative", "balanced", "ambitious"]).nullable(),
+    recovery_priority: z.enum(["low", "balanced", "high"]).nullable(),
+  })
+  .strict()
+  .superRefine((preferences, context) => {
+    const preferred = new Set(preferences.preferred_weekdays);
+    const rest = new Set(preferences.rest_days);
+    if (preferred.size !== preferences.preferred_weekdays.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["preferred_weekdays"],
+        message: "preferred_weekdays cannot contain duplicate weekdays",
+      });
+    }
+    if (rest.size !== preferences.rest_days.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["rest_days"],
+        message: "rest_days cannot contain duplicate weekdays",
+      });
+    }
+    if ([...preferred].some((weekday) => rest.has(weekday))) {
+      context.addIssue({
+        code: "custom",
+        path: ["rest_days"],
+        message: "preferred_weekdays and rest_days cannot overlap",
+      });
+    }
+  });
+
+export type TrainingPlanPreferences = z.infer<typeof trainingPlanPreferencesSchema>;
+
+export const sessionDemandSchema = z
+  .object({
+    activity_category: canonicalActivityCategorySchema,
+    training_intent: activityPlanTrainingIntentSchema,
+    target_duration_minutes: z.number().int().min(1).max(600).nullable(),
+    target_common_load: z.number().finite().min(0).max(10_000).nullable(),
+    importance: z.enum(["support", "normal", "key"]),
   })
   .strict();
 
-export type TrainingPlanStructureInputSession = z.infer<
-  typeof trainingPlanStructureInputSessionSchema
->;
+export type SessionDemand = z.infer<typeof sessionDemandSchema>;
 
 export const canonicalTrainingPlanStructureSessionSchema = z
   .object({
-    ...trainingPlanStructureSessionShape,
-    activity_plan_variant_id: z.string().uuid(),
+    id: z.string().uuid(),
+    offset_days: z.number().int().min(0),
+    demand: sessionDemandSchema,
+    activity_plan_id: z.string().uuid().nullable(),
+    event_overrides: trainingPlanSessionEventOverridesSchema.optional(),
   })
   .strict();
 
@@ -155,134 +195,46 @@ export const trainingPlanGoalBlueprintSchema = z
 
 export type TrainingPlanGoalBlueprint = z.infer<typeof trainingPlanGoalBlueprintSchema>;
 
-export const trainingPlanBuilderPlanningSnapshotSchema = z
-  .object({
-    version: z.literal(1),
-    plan_preferences: z
-      .object({
-        duration_weeks: z.number().int().min(1).max(104).nullable(),
-        weekly_session_count: z.number().int().min(1).max(14).nullable(),
-        target_weekly_hours: z.number().min(0).max(168).nullable(),
-        rest_days_per_week: z.number().int().min(0).max(7).nullable(),
-        max_single_session_duration_minutes: z
-          .number()
-          .int()
-          .min(20)
-          .max(600)
-          .nullable()
-          .optional(),
-        progression_pace: z.number().min(0).max(1).nullable().optional(),
-        recovery_priority: z.number().min(0).max(1).nullable().optional(),
-        week_pattern_preference: z.number().min(0).max(1).nullable().optional(),
-        strength_integration_priority: z.number().min(0).max(1).nullable().optional(),
-        double_day_tolerance: z.number().min(0).max(1).nullable().optional(),
-        long_session_fatigue_tolerance: z.number().min(0).max(1).nullable().optional(),
-        taper_style_preference: z.number().min(0).max(1).nullable().optional(),
-      })
-      .strict(),
-    scheduling: z
-      .object({
-        preferred_weekdays: z.array(z.number().int().min(0).max(6)).max(7),
-      })
-      .strict(),
-    goal_context: z
-      .object({
-        selected_goals: z
-          .array(
-            z
-              .object({
-                title: z.string(),
-                target_offset_days: z.number().int().min(0).nullable(),
-                target_date: dateOnlySchema.nullable().optional(),
-                priority: z.number().int().min(0).max(10),
-                activity_category: canonicalActivityCategorySchema.nullable(),
-                objective: z.unknown().nullable(),
-                source_profile_goal_id: z.string().min(1).nullable().optional(),
-              })
-              .strict(),
-          )
-          .default([]),
-      })
-      .strict(),
-  })
-  .strict();
-
-export type TrainingPlanBuilderPlanningSnapshot = z.infer<
-  typeof trainingPlanBuilderPlanningSnapshotSchema
->;
-
-const trainingPlanStructureShape = {
-  version: z.literal(1),
-  activity_category: z.array(canonicalActivityCategorySchema).optional(),
-  experienceLevel: z.array(z.enum(["beginner", "intermediate", "advanced"])).optional(),
-  durationWeeks: z
-    .object({
-      recommended: z.number().int().min(1).max(104),
-      minimum: z.number().int().min(1).max(104).optional(),
-      maximum: z.number().int().min(1).max(104).optional(),
-    })
-    .strict()
-    .optional(),
-  goal_blueprints: z.array(trainingPlanGoalBlueprintSchema).optional(),
-  builder_planning_snapshot: trainingPlanBuilderPlanningSnapshotSchema.optional(),
-};
-
-function rejectDuplicateTrainingPlanSessions(
-  structure: {
-    sessions: Array<{
-      offset_days: number;
-      activity_plan_id: string;
-      activity_plan_variant_id?: string;
-      event_overrides?: { start_time?: string };
-    }>;
-  },
-  ctx: z.RefinementCtx,
-) {
-  const seenSessionKeys = new Set<string>();
-
-  structure.sessions.forEach((session, index) => {
-    const sessionKey = [
-      session.offset_days,
-      session.activity_plan_id,
-      session.activity_plan_variant_id ?? "",
-      session.event_overrides?.start_time ?? "",
-    ].join("|");
-
-    if (seenSessionKeys.has(sessionKey)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["sessions", index],
-        message:
-          "Duplicate sessions cannot share activity_plan_id, activity_plan_variant_id, offset_days, and event_overrides.start_time",
-      });
-      return;
-    }
-
-    seenSessionKeys.add(sessionKey);
-  });
-}
-
-/** Client/server input before the server pins each omitted activity-plan variant. */
-export const trainingPlanCreateSchema = z
-  .object({
-    ...trainingPlanStructureShape,
-    sessions: z.array(trainingPlanStructureInputSessionSchema).min(1),
-  })
-  .strict()
-  .superRefine(rejectDuplicateTrainingPlanSessions);
-
-export type TrainingPlanCreate = z.infer<typeof trainingPlanCreateSchema>;
-
-/** Canonical structure accepted from persistence; every session has a stable variant identity. */
 export const canonicalTrainingPlanStructureSchema = z
   .object({
-    ...trainingPlanStructureShape,
-    sessions: z.array(canonicalTrainingPlanStructureSessionSchema).min(1),
+    version: z.literal(1),
+    plan_preferences: trainingPlanPreferencesSchema,
+    activity_category: z.array(canonicalActivityCategorySchema).optional(),
+    experienceLevel: z.array(z.enum(["beginner", "intermediate", "advanced"])).optional(),
+    durationWeeks: z
+      .object({
+        recommended: z.number().int().min(1).max(104),
+        minimum: z.number().int().min(1).max(104).optional(),
+        maximum: z.number().int().min(1).max(104).optional(),
+      })
+      .strict()
+      .optional(),
+    goal_blueprints: z.array(trainingPlanGoalBlueprintSchema).optional(),
+    sessions: z.array(canonicalTrainingPlanStructureSessionSchema).min(1).max(366),
   })
   .strict()
-  .superRefine(rejectDuplicateTrainingPlanSessions);
+  .superRefine((structure, ctx) => {
+    const seenSessionIds = new Set<string>();
+
+    structure.sessions.forEach((session, index) => {
+      if (seenSessionIds.has(session.id)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["sessions", index, "id"],
+          message: "Duplicate sessions cannot share an id",
+        });
+        return;
+      }
+
+      seenSessionIds.add(session.id);
+    });
+  });
 
 export type CanonicalTrainingPlanStructure = z.infer<typeof canonicalTrainingPlanStructureSchema>;
+
+export const trainingPlanCreateSchema = canonicalTrainingPlanStructureSchema;
+
+export type TrainingPlanCreate = z.infer<typeof trainingPlanCreateSchema>;
 
 export const trainingPlanSchema = canonicalTrainingPlanStructureSchema.safeExtend({
   id: z.string().uuid(),

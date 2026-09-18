@@ -1,7 +1,8 @@
 import type { ExecutableIntegrationProviderId, OnboardingStatus } from "@repo/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
+import { getDeviceTimeZone } from "@/lib/calendar/eventSchedule";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { buildCompleteOnboardingInput } from "@/lib/onboarding/complete-onboarding-input";
 import { isValidOnboardingUsername } from "@/lib/onboarding/validation";
@@ -25,7 +26,14 @@ function isPendingOAuthError(error: unknown) {
 }
 
 export function useOnboardingFlow() {
-  const [data, setData] = useState<OnboardingData>(INITIAL_ONBOARDING_DATA);
+  const [data, setData] = useState<OnboardingData>(() => ({
+    ...INITIAL_ONBOARDING_DATA,
+    planning_timezone: getDeviceTimeZone(),
+  }));
+  const activeUserIdRef = useRef<string | null>(null);
+  const dirtyFieldsRef = useRef<Set<keyof OnboardingData>>(new Set());
+  const submissionRef = useRef(0);
+  const isSubmittingRef = useRef(false);
   const [debouncedUsername, setDebouncedUsername] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusModal, setStatusModal] = useState<OnboardingStatusModal | null>(null);
@@ -36,7 +44,18 @@ export function useOnboardingFlow() {
     isFullyLoaded,
     onboardingStatus,
     refreshOnboardingStatus,
+    user,
   } = useAuth();
+  const activeUserId = isAuthenticated ? (user?.id ?? null) : null;
+
+  // Effects run after paint. Update the ownership ref during render so a response
+  // that settles between an account rerender and its effects is still rejected.
+  if (activeUserIdRef.current !== activeUserId) {
+    activeUserIdRef.current = activeUserId;
+    submissionRef.current += 1;
+    isSubmittingRef.current = false;
+  }
+
   const profileQueryEnabled = isFullyLoaded && isAuthenticated && hasSessionAuthCredentials();
   const lifecycleStatus = resolveOnboardingLifecycleStatus({
     overrideStatus: lifecycleOverride,
@@ -71,15 +90,40 @@ export function useOnboardingFlow() {
     return () => clearTimeout(timeout);
   }, [username]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Account changes intentionally reset the entire draft, even when reset values are identical.
+  useEffect(() => {
+    setData({ ...INITIAL_ONBOARDING_DATA, planning_timezone: getDeviceTimeZone() });
+    setDebouncedUsername("");
+    setIsSubmitting(false);
+    setStatusModal(null);
+    setLifecycleOverride(null);
+    dirtyFieldsRef.current.clear();
+  }, [activeUserId]);
+
   useEffect(() => {
     const profile = profileQuery.data;
-    if (!profile) return;
-    setData((current) => ({
-      ...current,
-      full_name: current.full_name || profile.full_name || "",
-      username: current.username || profile.username || "",
-    }));
-  }, [profileQuery.data]);
+    if (!profile || profile.id !== activeUserId) return;
+    setData((current) => {
+      const full_name = dirtyFieldsRef.current.has("full_name")
+        ? current.full_name
+        : current.full_name || profile.full_name || "";
+      const username = dirtyFieldsRef.current.has("username")
+        ? current.username
+        : current.username || profile.username || "";
+      const planning_timezone = dirtyFieldsRef.current.has("planning_timezone")
+        ? current.planning_timezone
+        : (profile.planning_timezone ?? current.planning_timezone ?? getDeviceTimeZone());
+
+      // Query objects may be recreated by callers; avoid a no-op state update loop.
+      if (
+        full_name === current.full_name &&
+        username === current.username &&
+        planning_timezone === current.planning_timezone
+      )
+        return current;
+      return { ...current, full_name, username, planning_timezone };
+    });
+  }, [activeUserId, profileQuery.data]);
 
   useEffect(() => {
     if (lifecycleOverride && onboardingStatus === lifecycleOverride) setLifecycleOverride(null);
@@ -93,9 +137,16 @@ export function useOnboardingFlow() {
     }
   }, [progressQuery.data?.status, refreshOnboardingStatus]);
 
-  const updateData = useCallback((updates: Partial<OnboardingData>) => {
-    setData((current) => ({ ...current, ...updates }));
-  }, []);
+  const updateData = useCallback(
+    (updates: Partial<OnboardingData>) => {
+      if (activeUserIdRef.current !== activeUserId) return;
+      for (const field of Object.keys(updates) as Array<keyof OnboardingData>) {
+        dirtyFieldsRef.current.add(field);
+      }
+      setData((current) => ({ ...current, ...updates }));
+    },
+    [activeUserId],
+  );
 
   const refreshIntegrationState = useCallback(
     () => syncOverviewQuery.refetch(),
@@ -111,9 +162,23 @@ export function useOnboardingFlow() {
 
   const handleComplete = async () => {
     if (
-      isSubmitting ||
+      activeUserIdRef.current !== activeUserId ||
+      profileQuery.isLoading ||
+      isSubmittingRef.current ||
       (lifecycleStatus !== "provider_selection" && lifecycleStatus !== "review")
     ) {
+      return;
+    }
+    if (profileQuery.isError) {
+      setStatusModal({
+        title: "Profile could not be loaded",
+        description:
+          "Retry loading your profile before finishing setup so your saved preferences are preserved.",
+        primaryLabel: "Retry",
+        onPrimary: async () => {
+          await profileQuery.refetch();
+        },
+      });
       return;
     }
     const result = buildCompleteOnboardingInput(data);
@@ -128,13 +193,24 @@ export function useOnboardingFlow() {
       });
       return;
     }
+    const submittingUserId = activeUserId;
+    if (!submittingUserId) return;
+    const submission = ++submissionRef.current;
+    const isCurrentSubmission = () =>
+      submissionRef.current === submission && activeUserIdRef.current === submittingUserId;
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
     try {
       await completeMutation.mutateAsync({ profile: result.input });
+      // A late response belongs only to the account that initiated it. It must
+      // never navigate or refresh state for a newly authenticated account.
+      if (!isCurrentSubmission()) return;
       setLifecycleOverride("completed");
       await Promise.allSettled([utils.profiles.get.invalidate(), refreshOnboardingStatus()]);
+      if (!isCurrentSubmission()) return;
       await completeOnboarding();
     } catch (error) {
+      if (!isCurrentSubmission()) return;
       if (isPendingOAuthError(error)) {
         setStatusModal({
           title: "Connection still pending",
@@ -151,7 +227,10 @@ export function useOnboardingFlow() {
         });
       }
     } finally {
-      setIsSubmitting(false);
+      if (isCurrentSubmission()) {
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+      }
     }
   };
 
@@ -185,13 +264,14 @@ export function useOnboardingFlow() {
   };
 
   const isBusy =
+    profileQuery.isLoading ||
     isSubmitting ||
-    completeMutation.isPending ||
     retryMutation.isPending ||
     restartMutation.isPending ||
     cancelPendingOAuthMutation.isPending;
 
   return {
+    accountIdentity: activeUserId,
     data,
     fieldSources: {},
     handleComplete,

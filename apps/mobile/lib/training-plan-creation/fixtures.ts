@@ -100,8 +100,16 @@ export function createTrainingPlanBuilderFixtures() {
     overrides: Partial<TrainingPlanBuilderSession> = {},
   ): TrainingPlanBuilderSession {
     return {
-      localId: "session-1",
+      id: "00000000-0000-4000-8000-000000000010",
+      localId: "00000000-0000-4000-8000-000000000010",
       offsetDays: 0,
+      demand: {
+        activity_category: "other",
+        training_intent: "general_maintenance",
+        target_duration_minutes: null,
+        target_common_load: null,
+        importance: "normal",
+      },
       activityPlan: null,
       ...overrides,
     };
@@ -111,8 +119,16 @@ export function createTrainingPlanBuilderFixtures() {
     overrides: Partial<TrainingPlanBuilderSession> = {},
   ): TrainingPlanBuilderSession {
     return {
-      localId: "session-1",
+      id: "00000000-0000-4000-8000-000000000010",
+      localId: "00000000-0000-4000-8000-000000000010",
       offsetDays: 0,
+      demand: {
+        activity_category: "other",
+        training_intent: "general_maintenance",
+        target_duration_minutes: null,
+        target_common_load: null,
+        importance: "normal",
+      },
       activityPlan: activityPlan(),
       ...overrides,
     };

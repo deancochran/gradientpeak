@@ -32,7 +32,7 @@ type DeleteEventUseCaseDependencies = {
     changedDate?: string | null;
     changeAt?: string;
   }) => unknown;
-  enqueueWahooPlannedActivityJobs: (
+  enqueueWahooPlannedActivityJobs?: (
     ctx: ProtectedContext,
     input: {
       eventIds: string[];
@@ -80,18 +80,6 @@ export async function deleteEventUseCase<
       beforeDelete: async ({ candidates, tx }) => {
         const rows = candidates as TEventRecord[];
         const transactionPermissions = dependencies.getContentPermissions(ctx, tx);
-        const plannedEventIds = rows
-          .filter((row) => row.event_type === "planned" && row.activity_plan_id)
-          .map((row) => row.id);
-        if (plannedEventIds.length > 0) {
-          const result = await dependencies.enqueueWahooPlannedActivityJobs(ctx, {
-            eventIds: plannedEventIds,
-            operation: "unsync",
-            transaction: tx,
-          });
-          if (result && !result.success)
-            throw new Error(result.error ?? "Failed to enqueue unsync jobs");
-        }
         if (transactionPermissions) {
           await Promise.all(rows.map((row) => transactionPermissions.revokeEventGrants(row.id)));
         }

@@ -31,7 +31,30 @@ export default function SignInScreen() {
   const { returnTo } = useLocalSearchParams<{ returnTo?: string | string[] }>();
   const postSignInDestination = parsePostSignInDestination(returnTo);
   const navigateTo = useAppNavigate();
-  const { loading: authLoading } = useAuth();
+  const { loading: authLoading, user } = useAuth();
+  const owner = React.useRef({
+    id: user?.id,
+    destination: postSignInDestination,
+    generation: 0,
+    active: true,
+  });
+  if (owner.current.id !== user?.id || owner.current.destination !== postSignInDestination) {
+    owner.current = {
+      id: user?.id,
+      destination: postSignInDestination,
+      generation: owner.current.generation + 1,
+      active: true,
+    };
+  }
+  const pending = React.useRef(false);
+  const renderOwner = owner.current;
+  React.useEffect(() => {
+    const current = renderOwner;
+    current.active = true;
+    return () => {
+      current.active = false;
+    };
+  }, [renderOwner]);
   const [isServerConfigExpanded, setIsServerConfigExpanded] = React.useState(false);
   const serverOverrideEnabled = isServerUrlOverrideEnabled();
   const serverConfig = useServerConfig();
@@ -52,11 +75,28 @@ export default function SignInScreen() {
   });
 
   const onSignIn = async (data: SignInFormValues) => {
+    if (owner.current !== renderOwner || !renderOwner.active) return;
+    const current = owner.current;
+    const draft = form.getValues();
+    let signedInUserId: string | undefined;
+    const isCurrent = () =>
+      owner.current.active &&
+      owner.current.destination === current.destination &&
+      ((current.active && owner.current === current) ||
+        (current.id === undefined &&
+          owner.current.generation === current.generation + 1 &&
+          signedInUserId !== undefined &&
+          owner.current.id === signedInUserId)) &&
+      form.getValues("email") === draft.email &&
+      form.getValues("password") === draft.password;
+    pending.current = true;
     try {
       await applyPendingAuthServerOverride({
         expanded: isServerConfigExpanded,
         serverUrlInput,
       });
+
+      if (!isCurrent()) return;
 
       logMobileAction("auth.signIn", "attempt", { email: data.email });
 
@@ -65,8 +105,11 @@ export default function SignInScreen() {
           email: data.email,
           password: data.password,
         }),
-      )) as { error?: { message: string } | null };
+      )) as { error?: { message: string } | null; data?: { user?: { id: string } } };
+      // The request's own successful session transition is still this form's completion.
+      if (!result.error) signedInUserId = result.data?.user?.id;
       const error = result.error;
+      if (!isCurrent()) return;
 
       if (error) {
         logMobileAction("auth.signIn", "failure", { email: data.email, error: error.message });
@@ -87,8 +130,10 @@ export default function SignInScreen() {
       logMobileAction("auth.signIn", "success", { email: data.email });
       await refreshMobileAuthSession();
       await useAuthStore.getState().refreshSession();
+      if (!isCurrent()) return;
       router.replace(postSignInDestination ?? "/(internal)/(tabs)");
     } catch (err) {
+      if (!isCurrent()) return;
       logMobileAction("auth.signIn", "failure", {
         email: data.email,
         error: err instanceof Error ? err.message : String(err),
@@ -97,14 +142,18 @@ export default function SignInScreen() {
         name: "root",
         message: getAuthFormUnexpectedErrorMessage(err),
       });
+    } finally {
+      pending.current = false;
     }
   };
 
   const handleSignUpPress = () => {
+    if (pending.current) return;
     router.replace("/(external)/sign-up");
   };
 
   const handleForgotPasswordPress = () => {
+    if (pending.current) return;
     navigateTo("/(external)/forgot-password");
   };
 
@@ -112,7 +161,7 @@ export default function SignInScreen() {
     form,
     onSubmit: onSignIn,
   });
-  const isLoading = authLoading || submitForm.isSubmitting;
+  const isLoading = authLoading || submitForm.isSubmitting || form.formState.isSubmitting;
 
   return (
     <KeyboardAvoidingView
@@ -143,6 +192,7 @@ export default function SignInScreen() {
                   keyboardType="email-address"
                   label="Email"
                   name="email"
+                  disabled={isLoading}
                   placeholder="Email address"
                   testId="email-input"
                 />
@@ -152,6 +202,7 @@ export default function SignInScreen() {
                   control={form.control}
                   label="Password"
                   name="password"
+                  disabled={isLoading}
                   placeholder="Password"
                   secureTextEntry
                   testId="password-input"
@@ -170,7 +221,13 @@ export default function SignInScreen() {
             <LoadingButton
               variant="default"
               size="lg"
-              onPress={submitForm.handleSubmit}
+              onPress={() => {
+                if (pending.current) return;
+                pending.current = true;
+                return submitForm.handleSubmit().finally(() => {
+                  pending.current = false;
+                });
+              }}
               disabled={isLoading}
               loading={isLoading}
               loadingLabel="Signing in..."
@@ -193,6 +250,7 @@ export default function SignInScreen() {
             <Button
               variant="link"
               onPress={handleForgotPasswordPress}
+              disabled={isLoading}
               testID="forgot-password-button"
               className="w-full"
             >
@@ -203,6 +261,7 @@ export default function SignInScreen() {
               <Button
                 variant="outline"
                 onPress={handleSignUpPress}
+                disabled={isLoading}
                 testID="sign-up-link-button"
                 className="w-full"
               >

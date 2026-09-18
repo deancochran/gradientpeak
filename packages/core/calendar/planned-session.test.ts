@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-
+import { stringifyCanonicalJson } from "../athlete-intelligence/canonical-json";
+import { sha256Hex } from "../utils/sha256";
 import {
   PLANNED_SESSION_CONTRACT_VERSION,
   plannedSessionCollectionSchema,
   plannedSessionIdempotencyKey,
+  plannedSessionLifecycleSchema,
   plannedSessionSchema,
   plannedSessionSourceSchema,
 } from "./planned-session";
@@ -36,6 +38,42 @@ const structure = {
     },
   ],
 };
+const structureHash = `v1:sha256:${sha256Hex(stringifyCanonicalJson(structure))}`;
+const resolutionManifest = {
+  resolver_version: "prescription-resolver-v1",
+  policy_version: "training-plan-policy-v1",
+  training_plan_id: null,
+  training_plan_revision: null,
+  training_plan_hash: null,
+  athlete_context_revision: null,
+  activity_plan_id: id(102),
+  activity_plan_revision: 1,
+  activity_plan_semantic_hash: `v1:sha256:${"a".repeat(64)}`,
+  effective_target_duration_minutes: null,
+  effective_target_common_load: null,
+  evidence_facts: [],
+  session_demand: {
+    activity_category: "run" as const,
+    training_intent: "aerobic_base" as const,
+    target_duration_minutes: 30,
+    target_common_load: null,
+    importance: "normal" as const,
+  },
+  adaptation_values: {},
+  fallback_level: "system_default_no_context" as const,
+  reason_codes: [],
+  resolved_structure: structure,
+  resolved_structure_hash: structureHash,
+  prescription_estimate: {
+    duration: { status: "exact" as const, value_seconds: 1800 },
+    common_load: { status: "unavailable" as const, value: null },
+    rest_seconds: 0,
+    has_open_completion: false,
+    warnings: [],
+    factors: ["canonical prescription quantification"],
+  },
+  fingerprint: `v1:sha256:${"b".repeat(64)}`,
+};
 
 const baseSession = (overrides: Record<string, unknown> = {}) => {
   const source = { kind: "direct" as const, operationId: "a".repeat(32) };
@@ -50,13 +88,7 @@ const baseSession = (overrides: Record<string, unknown> = {}) => {
     idempotencyKey: plannedSessionIdempotencyKey(source),
     groupEventId: null,
     prescription: {
-      activityPlanId: id(102),
-      activityPlanRevision: 1,
-      variantId: id(102),
-      variantName: "Base",
-      structureHash: `v1:sha256:${"0".repeat(64)}`,
-      structure,
-      prescriptionQuantification: null,
+      resolutionManifest,
       capturedAt: "2026-08-01T08:00:00.000Z",
     },
     lifecycle: { status: "scheduled" as const },
@@ -65,63 +97,33 @@ const baseSession = (overrides: Record<string, unknown> = {}) => {
 };
 
 describe("planned session contract", () => {
-  it("accepts only v2 snapshots with canonical variant provenance", () => {
-    const session = baseSession();
-
-    expect(PLANNED_SESSION_CONTRACT_VERSION).toBe("planned-session-v2");
-    expect(plannedSessionSchema.parse(session).prescription).toMatchObject({
-      variantId: id(102),
-      variantName: "Base",
-    });
+  it("represents a skip without an activity identity", () => {
     expect(
-      plannedSessionSchema.safeParse({ ...session, contractVersion: "planned-session-v1" }).success,
-    ).toBe(false);
-    expect(
-      plannedSessionSchema.safeParse({
-        ...session,
-        prescription: { ...session.prescription, variantId: undefined },
-      }).success,
-    ).toBe(false);
-    expect(
-      plannedSessionSchema.safeParse({
-        ...session,
-        prescription: { ...session.prescription, variantName: undefined },
-      }).success,
-    ).toBe(false);
-    expect(
-      plannedSessionSchema.safeParse({
-        ...session,
-        prescription: {
-          ...session.prescription,
-          variantId: "00000000-0000-0000-0000-000000000000",
+      plannedSessionLifecycleSchema.parse({
+        status: "completed",
+        completion: {
+          state: "skipped",
+          skippedAt: "2026-08-10T12:00:00.000Z",
+          operationId: id(999),
         },
-      }).success,
-    ).toBe(false);
-
-    for (const variantName of ["", " Base ", "x".repeat(101)]) {
-      expect(
-        plannedSessionSchema.safeParse({
-          ...session,
-          prescription: { ...session.prescription, variantName },
-        }).success,
-      ).toBe(false);
-    }
-
-    const uppercaseVariantId = id(102).toUpperCase();
-    expect(
-      plannedSessionSchema.parse({
-        ...session,
-        prescription: { ...session.prescription, variantId: uppercaseVariantId },
-      }).prescription.variantId,
-    ).toBe(id(102));
+      }),
+    ).toEqual({
+      status: "completed",
+      completion: {
+        state: "skipped",
+        skippedAt: "2026-08-10T12:00:00.000Z",
+        operationId: id(999),
+      },
+    });
   });
 
   it("retains target date when a training-plan session moves", () => {
     const source = {
       kind: "training_plan" as const,
+      applicationId: null,
       trainingPlanId: id(10),
       trainingPlanRevision: 4,
-      sourceSessionKey: "week-1-session-2",
+      sourceSessionId: id(14),
     };
     const session = {
       contractVersion: PLANNED_SESSION_CONTRACT_VERSION,
@@ -134,13 +136,11 @@ describe("planned session contract", () => {
       idempotencyKey: plannedSessionIdempotencyKey(source),
       groupEventId: null,
       prescription: {
-        activityPlanId: id(13),
-        activityPlanRevision: 3,
-        variantId: id(13),
-        variantName: "Base",
-        structureHash: `v1:sha256:${"0".repeat(64)}`,
-        structure,
-        prescriptionQuantification: null,
+        resolutionManifest: {
+          ...resolutionManifest,
+          activity_plan_id: id(13),
+          activity_plan_revision: 3,
+        },
         capturedAt: "2026-08-01T08:00:00.000Z",
       },
       lifecycle: { status: "scheduled" as const },
@@ -148,43 +148,6 @@ describe("planned session contract", () => {
     expect(plannedSessionSchema.parse(session)).toEqual(session);
     expect(
       plannedSessionSchema.safeParse({ ...session, idempotencyKey: "caller-controlled" }).success,
-    ).toBe(false);
-  });
-
-  it("keeps the original planning date as a recurring occurrence identity after a move", () => {
-    const source = {
-      kind: "recurrence" as const,
-      seriesId: id(20),
-      occurrenceKey: "2026-08-10",
-    };
-    const base = {
-      contractVersion: PLANNED_SESSION_CONTRACT_VERSION,
-      id: id(21),
-      profileId: id(22),
-      sessionRevision: 1,
-      planningDate: "2026-08-11",
-      originalTargetDate: "2026-08-10",
-      source,
-      idempotencyKey: plannedSessionIdempotencyKey(source),
-      groupEventId: null,
-      prescription: {
-        activityPlanId: id(23),
-        activityPlanRevision: 1,
-        variantId: id(23),
-        variantName: "Base",
-        structureHash: `v1:sha256:${"0".repeat(64)}`,
-        structure,
-        prescriptionQuantification: null,
-        capturedAt: "2026-08-01T08:00:00.000Z",
-      },
-      lifecycle: { status: "scheduled" as const },
-    };
-    expect(plannedSessionSchema.safeParse(base).success).toBe(true);
-    expect(
-      plannedSessionSchema.safeParse({
-        ...base,
-        originalTargetDate: "2026-08-09",
-      }).success,
     ).toBe(false);
   });
 
@@ -303,29 +266,32 @@ describe("planned session contract", () => {
       kind: "training_plan" as const,
       trainingPlanId: id(108),
       trainingPlanRevision: 2,
-      sourceSessionKey: "week-1-session-1",
-    };
-    const recurrenceSource = {
-      kind: "recurrence" as const,
-      seriesId: id(109),
-      occurrenceKey: "2026-08-10",
+      sourceSessionId: id(109),
     };
     expect(plannedSessionIdempotencyKey(session.source)).toBe(`direct:${"a".repeat(32)}`);
     expect(plannedSessionIdempotencyKey(trainingPlanSource)).toBe(
-      `training-plan:${id(108)}:2:week-1-session-1`,
+      `training-plan:${id(108)}:2:${id(109)}`,
     );
-    expect(plannedSessionIdempotencyKey(recurrenceSource)).toBe(`recurrence:${id(109)}:2026-08-10`);
     expect(plannedSessionSchema.safeParse({ ...session, sessionRevision: 0 }).success).toBe(false);
     expect(
       plannedSessionSchema.safeParse({
         ...session,
-        prescription: { ...session.prescription, activityPlanRevision: 0 },
+        prescription: {
+          ...session.prescription,
+          resolutionManifest: { ...resolutionManifest, activity_plan_revision: 0 },
+        },
       }).success,
     ).toBe(false);
     expect(
       plannedSessionSchema.safeParse({
         ...session,
-        prescription: { ...session.prescription, structure: { ...structure, unknown: true } },
+        prescription: {
+          ...session.prescription,
+          resolutionManifest: {
+            ...resolutionManifest,
+            resolved_structure: { ...structure, unknown: true },
+          },
+        },
       }).success,
     ).toBe(false);
     expect(
@@ -337,6 +303,19 @@ describe("planned session contract", () => {
     expect(
       plannedSessionSourceSchema.safeParse({ ...trainingPlanSource, trainingPlanRevision: 0 })
         .success,
+    ).toBe(false);
+    expect(
+      plannedSessionSourceSchema.safeParse({
+        kind: "recurrence",
+        seriesId: id(110),
+        occurrenceKey: "2026-08-10",
+      }).success,
+    ).toBe(false);
+    expect(
+      plannedSessionSchema.safeParse({
+        ...session,
+        prescription: { ...session.prescription, capturedAt: "not-an-instant" },
+      }).success,
     ).toBe(false);
   });
 
@@ -362,6 +341,14 @@ describe("planned session contract", () => {
       },
     });
 
-    expect(plannedSessionSchema.parse(unlinked).lifecycle).toEqual(unlinked.lifecycle);
+    expect(plannedSessionSchema.parse(unlinked).lifecycle).toEqual({
+      status: "completed",
+      completion: {
+        state: "activity_deleted",
+        linkedAt: "2026-08-10T12:00:00.000Z",
+        unlinkedAt: "2026-08-10T12:00:00.000Z",
+        outcome: "full",
+      },
+    });
   });
 });

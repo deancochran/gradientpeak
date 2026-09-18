@@ -1,5 +1,3 @@
-import { activityPlanDocumentSchema, resolveActivityPlanVariant } from "@repo/core";
-import type { PublishedAthletePerformanceTargetsRead } from "../../../application/athlete-intelligence/published-athlete-state";
 import type { WahooRepository, WahooSyncRepository } from "../../../repositories";
 import { hasWahooPlannedActivityScopes } from "../../integrations/wahoo/planned-activity-scopes";
 import { hashPlannedActivityPayload } from "./planned-activity-hash";
@@ -19,7 +17,7 @@ import type {
 } from "./wahoo-types";
 
 type WahooUnsyncJobPayload = {
-  eventId: string;
+  plannedSessionId: string;
   operation: "unsync";
   unsyncTarget?: { externalId: string; resourceLinkId: string };
 };
@@ -36,9 +34,8 @@ export class WahooPlannedActivityProvider implements WahooPlannedActivityAdapter
     private readonly deps: {
       providerSyncRepository: WahooSyncRepository;
       wahooRepository: WahooRepository;
-      getPerformanceTargets: (input: {
-        profileId: string;
-      }) => Promise<PublishedAthletePerformanceTargetsRead>;
+      /** @deprecated Planned-session publication uses the frozen manifest instead. */
+      getPerformanceTargets?: (input: { profileId: string }) => Promise<unknown>;
       enqueueJob?: WahooSyncRepository["enqueueJob"];
       now: () => Date;
     },
@@ -66,53 +63,30 @@ export class WahooPlannedActivityProvider implements WahooPlannedActivityAdapter
     return { jobId: job.id, queued: job.status === "queued" };
   }
 
-  async enqueuePublishEvent(input: {
-    eventId: string;
+  async enqueuePublishPlannedSession(input: {
+    plannedSessionId: string;
     profileId: string;
   }): Promise<WahooPlannedActivityProviderQueueResult> {
     const operationTime = this.deps.now();
     const integration = await this.integration(input.profileId);
-    const planned = await this.deps.wahooRepository.getPlannedEventForSync(input);
-    const existing = await this.deps.wahooRepository.getEventResourceLink({
-      eventId: input.eventId,
+    const planned = await this.deps.wahooRepository.getPlannedSessionForSync(input);
+    const existing = await this.deps.wahooRepository.getPlannedSessionResourceLink({
+      plannedSessionId: input.plannedSessionId,
       profileId: input.profileId,
       provider: "wahoo",
     });
     const rejectOrUnsync = (message: string) => {
       if (!existing) throw new Error(message);
-      return this.enqueueUnsyncEvent({
+      return this.enqueueUnsyncPlannedSession({
         ...input,
         unsyncTarget: { externalId: existing.externalId, resourceLinkId: existing.id },
       });
     };
-    if (!planned?.activityPlan) {
-      return rejectOrUnsync("Activity plan not found for this planned activity event");
-    }
-    if (planned.routeId) {
-      if (!existing) return { jobId: null, queued: false, skipped: true };
-      return rejectOrUnsync("Wahoo route-linked planned activities are not supported");
-    }
-    const parsed = activityPlanDocumentSchema.safeParse(planned.activityPlan.structure);
-    if (!parsed.success) {
-      return rejectOrUnsync("Wahoo sync requires a valid activity-plan document");
-    }
-    const resolved = resolveActivityPlanVariant(parsed.data);
-    const publishedTargets = await this.deps.getPerformanceTargets({ profileId: input.profileId });
-    if (publishedTargets.status === "unavailable") {
-      throw new Error(
-        "Wahoo planned-activity preflight failed: published performance targets unavailable",
-      );
-    }
-    if (publishedTargets.status === "stale") {
-      throw new Error(
-        "Wahoo planned-activity preflight failed: published performance targets stale",
-      );
-    }
+    if (!planned?.activityPlan) return rejectOrUnsync("Planned-session prescription not found");
     const projection = projectWahooPlannedActivity({
-      activityPlan: { ...planned.activityPlan, structure: resolved.structure },
-      eventId: input.eventId,
-      performanceTargets: publishedTargets.targets,
-      startsAt: planned.startsAt,
+      activityPlan: planned.activityPlan,
+      plannedSessionId: input.plannedSessionId,
+      planningDate: planned.planningDate,
       timezone: planned.timezone,
     });
     if (projection.disposition === "unsupported_sport") {
@@ -129,20 +103,20 @@ export class WahooPlannedActivityProvider implements WahooPlannedActivityAdapter
     return this.enqueuePublishProjection({
       integration,
       now: operationTime.toISOString(),
-      performanceModelAsOf: publishedTargets.targets.asOf,
+      performanceModelAsOf: planned.activityPlan.updatedAt,
       profileId: input.profileId,
       projection,
     });
   }
 
-  async enqueueUnsyncEvent(input: {
-    eventId: string;
+  async enqueueUnsyncPlannedSession(input: {
+    plannedSessionId: string;
     profileId: string;
     unsyncTarget?: { externalId: string; resourceLinkId: string };
   }): Promise<WahooPlannedActivityProviderQueueResult> {
     const integration = await this.integration(input.profileId);
     const payload: WahooJobPayload = {
-      eventId: input.eventId,
+      plannedSessionId: input.plannedSessionId,
       operation: "unsync",
       ...(input.unsyncTarget ? { unsyncTarget: input.unsyncTarget } : {}),
     };
@@ -150,10 +124,10 @@ export class WahooPlannedActivityProvider implements WahooPlannedActivityAdapter
       this.deps.enqueueJob ??
       this.deps.providerSyncRepository.enqueueJob.bind(this.deps.providerSyncRepository);
     const job = await enqueue({
-      dedupeKey: `wahoo:unsync:event:${input.eventId}`,
+      dedupeKey: `wahoo:unsync:planned_session:${input.plannedSessionId}`,
       integrationId: integration.id,
       integrationGeneration: integration.integrationGeneration,
-      internalResourceId: input.eventId,
+      internalResourceId: input.plannedSessionId,
       jobType: getWahooPlannedActivityJobType({ operation: "unsync" }),
       operation: "unsync",
       payload,
@@ -161,10 +135,10 @@ export class WahooPlannedActivityProvider implements WahooPlannedActivityAdapter
       priority: PLANNED_ACTIVITY_JOB_PRIORITY,
       profileId: input.profileId,
       provider: "wahoo",
-      resourceKind: "event",
+      resourceKind: "planned_session",
       runAt: new Date().toISOString(),
       syncLaneKey: getWahooPlannedActivitySyncLaneKey({
-        eventId: input.eventId,
+        plannedSessionId: input.plannedSessionId,
         integrationId: integration.id,
       }),
     });

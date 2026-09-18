@@ -57,8 +57,13 @@ export async function getFeedForViewer({
     buildFeedPage({
       rows: activities,
       limit: input.limit,
-      mapRow: (activity) =>
-        mapFeedActivity(activity, { commentCounts, derivedMap, likeStats, viewerId }),
+      mapRow: (activity) => {
+        const item = mapFeedActivity(activity, { commentCounts, derivedMap, likeStats, viewerId });
+        if (item.time.startedAt === null) {
+          throw new Error("Feed query returned an activity without an observed start time");
+        }
+        return { ...item, time: { ...item.time, startedAt: item.time.startedAt } };
+      },
     }),
   );
 }

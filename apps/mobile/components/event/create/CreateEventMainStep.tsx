@@ -6,6 +6,7 @@ import {
   FormTextareaField,
   FormTextField,
   FormTimeInputField,
+  FormTimezoneField,
 } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -35,6 +36,7 @@ export type EventFormValues = {
   plannedDate: string;
   recurrenceEndDate: string | null;
   title: string;
+  timezone: string | null;
 };
 
 function repeatLabel(frequency: EventRecurrenceFrequency, endDate: string | null) {
@@ -343,6 +345,13 @@ export function CreateEventMainStep({
               name="allDay"
               switchLabel="All day"
               testId={`${testIDPrefix}-all-day-switch`}
+            />
+            <FormTimezoneField
+              control={control}
+              deviceTimeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
+              label="Event time zone"
+              name="timezone"
+              testId={`${testIDPrefix}-timezone`}
             />
             {showRepeat ? (
               <SummaryRow

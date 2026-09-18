@@ -38,6 +38,7 @@ import type {
   integrationResourceLinks,
   integrations,
   likes,
+  manualTrainingDiaryOperations,
   messages,
   notifications,
   oauthStates,
@@ -51,7 +52,6 @@ import type {
   profileMetrics,
   profilePerformanceEstimates,
   profiles,
-  profileTrainingSettings,
   providerSyncJobs,
   providerSyncState,
   providerWebhookReceipts,
@@ -133,6 +133,12 @@ export type TrainingPlanInsert = InferInsertModel<typeof trainingPlans>;
 
 export type ActivityRow = InferSelectModel<typeof activities>;
 export type ActivityInsert = InferInsertModel<typeof activities>;
+export type ManualTrainingDiaryOperationRow = InferSelectModel<
+  typeof manualTrainingDiaryOperations
+>;
+export type ManualTrainingDiaryOperationInsert = InferInsertModel<
+  typeof manualTrainingDiaryOperations
+>;
 export type ActivityAnalysisRevisionRow = InferSelectModel<typeof activityAnalysisRevisions>;
 export type ActivityAnalysisRevisionInsert = InferInsertModel<typeof activityAnalysisRevisions>;
 export type ActivityImportRunRow = InferSelectModel<typeof activityImportRuns>;
@@ -208,9 +214,6 @@ export type ThresholdEvaluationEffortRow = InferSelectModel<typeof thresholdEval
 export type ThresholdEvaluationEffortInsert = InferInsertModel<typeof thresholdEvaluationEfforts>;
 export type ThresholdRow = InferSelectModel<typeof thresholds>;
 export type ThresholdInsert = InferInsertModel<typeof thresholds>;
-
-export type ProfileTrainingSettingsRow = InferSelectModel<typeof profileTrainingSettings>;
-export type ProfileTrainingSettingsInsert = InferInsertModel<typeof profileTrainingSettings>;
 
 export type ProfileGoalRow = InferSelectModel<typeof profileGoals>;
 export type ProfileGoalInsert = InferInsertModel<typeof profileGoals>;

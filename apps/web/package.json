@@ -12,6 +12,7 @@
     "dev:app": "pnpm exec dotenv -o -e .env.local -- sh -c 'VITE_CACHE_DIR=/tmp/gradientpeak-web-vite-manual NODE_OPTIONS=\"--import ./instrument.server.mjs\" vite dev --host 0.0.0.0 --port 3000 --strictPort'",
     "dev:app:e2e": "node scripts/start-e2e-web.mjs",
     "dev:app:tunnel": "pnpm exec dotenv -o -e .env.local -e .env.tunnel -- sh -c 'VITE_CACHE_DIR=/tmp/gradientpeak-web-vite-manual NODE_OPTIONS=\"--import ./instrument.server.mjs\" vite dev --host 0.0.0.0 --port 3000 --strictPort'",
+    "sentry:smoke": "pnpm exec dotenv -o -e .env.local -- sh -c 'NODE_OPTIONS=\"--import ./instrument.server.mjs\" tsx scripts/sentry-diagnostic-smoke.ts'",
     "dev:wahoo-drain": "pnpm exec dotenv -o -e .env.local -- node scripts/drain-wahoo-provider-sync.mjs",
     "dev:wahoo-drain:tunnel": "pnpm exec dotenv -o -e .env.local -e .env.tunnel -- node scripts/drain-wahoo-provider-sync.mjs",
     "dev:wahoo-drain:once": "pnpm exec dotenv -o -e .env.local -- node scripts/drain-wahoo-provider-sync.mjs --once",

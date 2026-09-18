@@ -21,6 +21,7 @@ Use this file when working anywhere inside the product repo.
 - Keep backend contract and orchestration changes in `packages/api`.
 - Keep relational schema and migration ownership in `packages/db`.
 - Keep auth contract ownership in `packages/auth`.
+- For form changes, follow `docs/form-ux-remediation.md`: reuse semantic shared fields, preserve invalid/optional drafts, and update the owning form's coverage only after relevant verification. Do not overwrite externally owned form edits.
 
 ## Placement Guide
 
@@ -34,6 +35,7 @@ Use this file when working anywhere inside the product repo.
 
 ## Validation
 
+- For development runtime errors, start with `pnpm dev:errors` and `docs/development-errors.md`; use the Sentry MCP development filter for captured issues. Empty local/Sentry results do not prove a clean runtime. Synthetic remote events require explicit approval.
 - Run the narrowest relevant checks while working.
 - Use repo-wide validation before final integration unless the task is intentionally scoped narrower.
 - Iteration checks are package-scoped typecheck, lint, and test commands.

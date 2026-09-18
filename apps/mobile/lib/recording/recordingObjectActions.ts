@@ -128,15 +128,27 @@ export function resolveRecordingObjectAction({
   if (lifecycle === "active") {
     if (candidate.objectKind === "activity_plan") {
       const selected = isSamePlan(service, candidate);
+      if (!selected) {
+        return {
+          primaryAction: "disabled",
+          secondaryActions: ["return"],
+          label: "Plan locked",
+          disabledReason: "The activity plan cannot change after recording starts.",
+          consequence: null,
+          command: null,
+          shouldNavigateToRecord: false,
+          confirmationCopy: null,
+        };
+      }
       return {
-        primaryAction: selected ? "selected" : "attach",
-        secondaryActions: selected ? ["return"] : ["return"],
-        label: selected ? "Already in Active Recording" : "Update Active Recording",
+        primaryAction: "selected",
+        secondaryActions: ["return"],
+        label: "Already in Active Recording",
         disabledReason: null,
-        consequence: "Updates the active recording session.",
-        command: selected ? null : "attach_plan",
+        consequence: null,
+        command: null,
         shouldNavigateToRecord: false,
-        confirmationCopy: selected ? null : "Active recording updated.",
+        confirmationCopy: null,
       };
     }
 
@@ -236,8 +248,8 @@ export async function handleRecordingObjectAction({
         ? await buildPlannedSessionRecordingLaunchPayload({
             plannedSession: candidate.plannedSession,
             ...(candidate.eventId === undefined ? {} : { eventId: candidate.eventId }),
-            name: candidate.label,
-            description: plan.description,
+            ...(candidate.label === undefined ? {} : { name: candidate.label }),
+            ...(plan.description === undefined ? {} : { description: plan.description }),
           })
         : {
             launchSource: "activity_plan",
@@ -285,8 +297,8 @@ export async function handleRecordingObjectAction({
         await buildPlannedSessionRecordingLaunchPayload({
           plannedSession: candidate.plannedSession,
           ...(candidate.eventId === undefined ? {} : { eventId: candidate.eventId }),
-          name: candidate.label,
-          description: plan.description,
+          ...(candidate.label === undefined ? {} : { name: candidate.label }),
+          ...(plan.description === undefined ? {} : { description: plan.description }),
         });
         service.selectPlan(plan, candidate.eventId, candidate.plannedSession);
       } else if (candidate.eventId !== undefined) {

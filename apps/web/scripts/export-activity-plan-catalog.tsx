@@ -117,12 +117,42 @@ async function preflightRenderedCatalog(
     }
     const contentPageCount = getActivityPlanCatalogContentPageCount(layout);
     for (let pageNumber = 2; pageNumber <= contentPageCount; pageNumber += 1) {
+      if (pageNumber === layout.trainingPlanSection?.alignmentBlankPageNumber) continue;
       const renderedPage = renderedPages[pageNumber - 1] ?? "";
       if (!renderedPage.includes("GRADIENTPEAK")) {
         throw new Error(`Catalog preflight found no standard logo header on page ${pageNumber}`);
       }
       if (!new RegExp(`(^|\\s)${pageNumber}(\\s|$)`, "mu").test(renderedPage)) {
         throw new Error(`Catalog preflight found no page number on page ${pageNumber}`);
+      }
+    }
+    if (layout.trainingPlanSection) {
+      const openerText = renderedPages[layout.trainingPlanSection.openerPageNumber - 1] ?? "";
+      if (!openerText.includes("TRAINING-PLAN-TEMPLATES-OPENER")) {
+        throw new Error("Catalog preflight could not identify the training-template opener");
+      }
+      for (const plan of layout.trainingPlanSection.plans) {
+        const overviewText = renderedPages[plan.overviewPageNumber - 1] ?? "";
+        const scheduleText = renderedPages[plan.schedulePageNumber - 1] ?? "";
+        if (!overviewText.includes(`TRAINING-PLAN-OVERVIEW-${plan.id}`)) {
+          throw new Error(`Catalog preflight could not identify the overview for ${plan.name}`);
+        }
+        if (!scheduleText.includes(`TRAINING-PLAN-SCHEDULE-${plan.id}`)) {
+          throw new Error(`Catalog preflight could not identify the schedule for ${plan.name}`);
+        }
+        if (!overviewText.includes("Weekly session distribution")) {
+          throw new Error(`Catalog preflight found no schedule visual for ${plan.name}`);
+        }
+        if (!scheduleText.includes("Linked activity plans")) {
+          throw new Error(`Catalog preflight found no linked activity key for ${plan.name}`);
+        }
+      }
+      if (layout.trainingPlanSection.alignmentBlankPageNumber) {
+        const blankPageText =
+          renderedPages[layout.trainingPlanSection.alignmentBlankPageNumber - 1] ?? "";
+        if (normalizeExtractedText(blankPageText).length > 0) {
+          throw new Error("Catalog preflight found content on the training-section alignment page");
+        }
       }
     }
     const backCoverText = renderedPages[expectedPageCount - 1] ?? "";
@@ -258,5 +288,5 @@ try {
 
 const twoUpPageCount = layout.planPages.filter((page) => page.entries.length === 2).length;
 console.log(
-  `Rendered ${entries.length} GradientPeak activity plans across ${expectedPageCount} duplex-ready 8.75 × 11.25 inch pages (${twoUpPageCount} two-up pages) to ${outputPath}`,
+  `Rendered ${entries.length} GradientPeak activity plans and ${layout.trainingPlanSection?.plans.length ?? 0} training templates across ${expectedPageCount} duplex-ready 8.75 × 11.25 inch pages (${twoUpPageCount} two-up pages) to ${outputPath}`,
 );

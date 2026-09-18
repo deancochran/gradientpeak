@@ -14,7 +14,11 @@ export async function readThresholdOverview(input: {
   now?: Date;
 }) {
   const [snapshot, history] = await Promise.all([
-    readPublishedAthleteStateSnapshot({ db: input.db, profileId: input.profileId, now: input.now }),
+    readPublishedAthleteStateSnapshot({
+      db: input.db,
+      profileId: input.profileId,
+      ...(input.now === undefined ? {} : { now: input.now }),
+    }),
     readPublishedThresholdHistory(input.db, {
       profileId: input.profileId,
       limit: input.historyLimit,

@@ -8,6 +8,7 @@ import {
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
+const setParamsMock = jest.fn();
 let localSearchParams: { q?: string; scope?: string } = {};
 type ResourceCardProps = {
   onPress?: () => void;
@@ -171,6 +172,26 @@ jest.mock("@gorhom/bottom-sheet", () => ({
       footerComponent?.({ animatedFooterPosition: { value: 0 } }),
     ),
   BottomSheetBackdrop: (props: HostProps) => React.createElement("BottomSheetBackdrop", props),
+  BottomSheetModal: React.forwardRef(
+    (
+      {
+        children,
+        footerComponent,
+        ...props
+      }: HostProps & {
+        footerComponent?: (props: { animatedFooterPosition: { value: number } }) => React.ReactNode;
+      },
+      ref,
+    ) => {
+      React.useImperativeHandle(ref, () => ({ dismiss: jest.fn(), present: jest.fn() }));
+      return React.createElement(
+        "BottomSheetModal",
+        props,
+        children,
+        footerComponent?.({ animatedFooterPosition: { value: 0 } }),
+      );
+    },
+  ),
   BottomSheetFooter: createHost("BottomSheetFooter"),
   BottomSheetScrollView: ({ children, ...props }: HostProps) =>
     React.createElement("BottomSheetScrollView", props, children),
@@ -186,7 +207,7 @@ jest.mock("react-native-safe-area-context", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   useLocalSearchParams: () => localSearchParams,
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: pushMock, setParams: setParamsMock }),
 }));
 
 jest.mock("expo-router/react-navigation", () => ({
@@ -596,6 +617,32 @@ describe("discover screen", () => {
     expect(screen.getByText("Duration: min cannot be greater than max.")).toBeTruthy();
   });
 
+  it("keeps malformed numeric filter drafts visible and does not change the applied route query", async () => {
+    await renderNative(<DiscoverScreen />);
+
+    await fireEvent.press(screen.getByTestId("discover-scope-routes"));
+    await fireEvent.press(screen.getByTestId("discover-filter-button"));
+    await fireEvent.changeText(screen.getByTestId("discover-filter-routes-distance-min"), "1x");
+
+    expect(screen.getByTestId("discover-filter-routes-distance-min").props.value).toBe("1x");
+    expect(screen.getByText("Enter a valid non-negative number.")).toBeTruthy();
+    expect(screen.getByTestId("discover-filter-apply").props.disabled).toBe(true);
+    await fireEvent.press(screen.getByTestId("discover-filter-apply"));
+    expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ min_distance_m: undefined }),
+      expect.anything(),
+    );
+
+    await fireEvent.changeText(screen.getByTestId("discover-filter-routes-distance-min"), "10");
+    await fireEvent.press(screen.getByTestId("discover-filter-apply"));
+    await waitFor(() =>
+      expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ min_distance_m: 10000 }),
+        expect.anything(),
+      ),
+    );
+  });
+
   it("passes training plan numeric filters and sort to the training plan query", async () => {
     await renderNative(<DiscoverScreen />);
 
@@ -649,5 +696,30 @@ describe("discover screen", () => {
       expect(screen.queryByTestId("discover-feed-item-routes-route-1")).toBeNull();
       expect(screen.getByText("Header:Community")).toBeTruthy();
     });
+  });
+
+  it("commits the debounced public query once and synchronizes scope with that query", async () => {
+    await renderNative(<DiscoverScreen />);
+    const input = screen.getByTestId("discover-search-input");
+
+    await fireEvent.changeText(input, "ridge");
+    expect(setParamsMock).not.toHaveBeenCalled();
+    await act(async () => {
+      jest.advanceTimersByTime(300);
+    });
+    expect(setParamsMock).toHaveBeenCalledWith({ q: "ridge", scope: "activityPlans" });
+
+    await fireEvent.press(screen.getByTestId("discover-scope-routes"));
+    expect(setParamsMock).toHaveBeenLastCalledWith({ q: "ridge", scope: "routes" });
+  });
+
+  it("preserves a typed pending draft when an external route query changes", async () => {
+    const view = await renderNative(<DiscoverScreen />);
+    await fireEvent.changeText(screen.getByTestId("discover-search-input"), "draft");
+
+    localSearchParams = { q: "linked", scope: "routes" };
+    view.rerender(<DiscoverScreen />);
+
+    expect(screen.getByTestId("discover-search-input").props.value).toBe("draft");
   });
 });

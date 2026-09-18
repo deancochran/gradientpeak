@@ -307,7 +307,7 @@ export class IndexedDbTimerDraftStorage implements WebRecordingStorage {
         })
       ) {
         transaction.abort();
-        throw new TimerDraftStorageInUseError("This timer draft is active in another tab.");
+        throw new TimerDraftStorageInUseError("This timer recording is active in another tab.");
       }
 
       const envelope: StoredTimerDraftEnvelope = {
@@ -354,7 +354,7 @@ export class IndexedDbTimerDraftStorage implements WebRecordingStorage {
   async save(draft: PortableTimerRecordingDraft): Promise<void> {
     const validatedDraft = portableTimerRecordingDraftSchema.parse(draft);
     if (validatedDraft.ownerId !== this.ownerId) {
-      throw new Error("Timer draft owner does not match storage owner.");
+      throw new Error("Timer recording owner does not match storage owner.");
     }
     const database = await this.openDatabase();
 
@@ -374,7 +374,7 @@ export class IndexedDbTimerDraftStorage implements WebRecordingStorage {
         })
       ) {
         transaction.abort();
-        throw new TimerDraftStorageInUseError("Timer draft ownership belongs to another tab.");
+        throw new TimerDraftStorageInUseError("Timer recording ownership belongs to another tab.");
       }
 
       store.put(
@@ -410,7 +410,7 @@ export class IndexedDbTimerDraftStorage implements WebRecordingStorage {
         })
       ) {
         transaction.abort();
-        throw new TimerDraftStorageInUseError("Timer draft ownership was lost.");
+        throw new TimerDraftStorageInUseError("Timer recording ownership was lost.");
       }
 
       store.put(
@@ -849,7 +849,7 @@ export class IndexedDbTimerDraftStorage implements WebRecordingStorage {
 
   private assertLease(stored: StoredTimerDraftEnvelope | undefined): void {
     if (stored?.leaseOwner !== this.instanceId) {
-      throw new TimerDraftStorageInUseError("Timer draft ownership belongs to another tab.");
+      throw new TimerDraftStorageInUseError("Timer recording ownership belongs to another tab.");
     }
   }
 
@@ -867,8 +867,8 @@ export class IndexedDbTimerDraftStorage implements WebRecordingStorage {
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () =>
-        reject(request.error ?? new Error("Could not open timer draft storage."));
-      request.onblocked = () => reject(new Error("Timer draft storage upgrade was blocked."));
+        reject(request.error ?? new Error("Could not open timer recording storage."));
+      request.onblocked = () => reject(new Error("Timer recording storage upgrade was blocked."));
     });
   }
 }
@@ -877,7 +877,7 @@ function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () =>
-      reject(request.error ?? new Error("Timer draft storage request failed."));
+      reject(request.error ?? new Error("Timer recording storage request failed."));
   });
 }
 
@@ -885,8 +885,8 @@ function transactionComplete(transaction: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     transaction.oncomplete = () => resolve();
     transaction.onerror = () =>
-      reject(transaction.error ?? new Error("Timer draft storage transaction failed."));
+      reject(transaction.error ?? new Error("Timer recording storage transaction failed."));
     transaction.onabort = () =>
-      reject(transaction.error ?? new Error("Timer draft storage transaction was aborted."));
+      reject(transaction.error ?? new Error("Timer recording storage transaction was aborted."));
   });
 }

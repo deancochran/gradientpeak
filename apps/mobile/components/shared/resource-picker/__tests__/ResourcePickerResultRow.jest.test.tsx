@@ -5,11 +5,36 @@ import {
 } from "../../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
+import { ResourcePickerModal } from "../ResourcePickerModal";
 import {
   mapActivityPlanToResourcePickerItem,
   mapRouteToResourcePickerItem,
   ResourcePickerResultRow,
 } from "../ResourcePickerResultRow";
+
+const refetchMock = jest.fn();
+let pickerError: Error | null = null;
+let pickerPlans: ReturnType<typeof createActivityPlanSummary>[] = [];
+jest.mock("@/lib/api", () => ({
+  api: {
+    routes: { list: { useInfiniteQuery: () => ({ data: { pages: [] } }) } },
+    activityPlans: {
+      list: {
+        useInfiniteQuery: () => ({
+          data: { pages: [{ items: pickerPlans }] },
+          error: pickerError,
+          isLoading: false,
+          isFetching: false,
+          isFetchingNextPage: false,
+          refetch: refetchMock,
+        }),
+      },
+    },
+  },
+}));
+jest.mock("@/components/shared/AppFormModal", () => ({ AppFormModal: createHost("AppFormModal") }));
+jest.mock("@/components/shared/SearchField", () => ({ SearchField: createHost("TextInput") }));
+jest.mock("@/lib/hooks/useDebouncedValue", () => ({ useDebouncedValue: (value: string) => value }));
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -67,6 +92,40 @@ const mockUsePreferredUnitSystem = jest.mocked(usePreferredUnitSystem);
 describe("ResourcePickerResultRow", () => {
   beforeEach(() => {
     mockUsePreferredUnitSystem.mockReturnValue("metric");
+    pickerError = null;
+    pickerPlans = [];
+    refetchMock.mockReset();
+  });
+
+  it("shows an empty-result query error, retries with its search, and restores canonical selected semantics", async () => {
+    pickerError = new Error("Offline");
+    const onSelect = jest.fn();
+    const props = {
+      visible: true,
+      scope: "activityPlans" as const,
+      title: "Attach Activity Plan",
+      selectedId: "plan-1",
+      searchTestID: "picker-search",
+      onClose: jest.fn(),
+      onSelect,
+    };
+    const view = await renderNative(<ResourcePickerModal {...props} />);
+    await fireEvent.changeText(screen.getByTestId("picker-search"), "Tempo");
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.queryByText("No activity plans match that search.")).toBeNull();
+    await fireEvent.press(screen.getByText("Try again"));
+    expect(refetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("picker-search").props.value).toBe("Tempo");
+    pickerError = null;
+    pickerPlans = [createActivityPlanSummary({ id: "plan-1", name: "Tempo Builder" })];
+    await view.rerender(<ResourcePickerModal {...props} />);
+    const row = screen.getByTestId("resource-picker-select-activity-plan");
+    expect(row.props.accessibilityState.selected).toBe(true);
+    expect(screen.getByTestId("resource-picker-activity-plan-card").props.plan.id).toBe("plan-1");
+    await fireEvent.press(row);
+    expect(onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "plan-1", presentation: "canonical" }),
+    );
   });
 
   it("renders an activity plan through the dense canonical card while preserving selection", async () => {

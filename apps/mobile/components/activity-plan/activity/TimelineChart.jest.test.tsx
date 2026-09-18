@@ -240,4 +240,41 @@ describe("TimelineChart", () => {
     expect(occurrence(3).props.style.height).toBe(120);
     expect(occurrence(2).props.style.height).toBeLessThan(occurrence(3).props.style.height);
   });
+
+  it("renders an open-ended occurrence as a neutral duration-unspecified preview", async () => {
+    await renderNative(
+      <TimelineChart
+        structure={{
+          version: 3,
+          activity_category: "run",
+          segments: [
+            {
+              id: id(30),
+              role: "activity",
+              name: "Main activity",
+              intervals: [
+                {
+                  id: id(31),
+                  name: "Main",
+                  repetitions: 1,
+                  steps: [
+                    {
+                      id: id(32),
+                      name: "Continue",
+                      duration: { type: "untilFinished" },
+                      targets: [{ type: "RPE", intensity: 5 }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(occurrence(0).props.accessibilityLabel).toContain("Duration not specified");
+    expect(occurrence(0).props.style.backgroundColor).toBeUndefined();
+    expect(occurrence(0).props.className).toContain("border-dashed");
+  });
 });

@@ -658,6 +658,9 @@ function ActivityDetailScreen() {
     );
   };
 
+  const comparisonDuration =
+    detail?.performance.activeSeconds ?? detail?.performance.elapsedSeconds;
+
   return (
     <View className="flex-1 bg-background" testID="activity-detail-screen">
       <Stack.Screen options={{ headerRight: renderHeaderActions }} />
@@ -833,7 +836,11 @@ function ActivityDetailScreen() {
             )
           ) : null}
 
-          {activeTab === "overview" && detail?.linkedPlan && linkedActivityPlan?.detail ? (
+          {activeTab === "overview" &&
+          detail?.linkedPlan &&
+          linkedActivityPlan?.detail &&
+          comparisonDuration !== null &&
+          comparisonDuration !== undefined ? (
             <ActivityPlanComparison
               activityPlan={{
                 id: linkedActivityPlan.detail.id,
@@ -842,7 +849,7 @@ function ActivityDetailScreen() {
                 metrics: linkedActivityPlan.detail.metrics,
               }}
               actualMetrics={{
-                duration: detail.performance.activeSeconds ?? detail.performance.elapsedSeconds,
+                duration: comparisonDuration,
                 ...(derived?.stress.common_load === undefined
                   ? {}
                   : { observationQuantification: derived.observationQuantification }),

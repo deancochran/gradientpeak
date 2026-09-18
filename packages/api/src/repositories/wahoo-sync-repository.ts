@@ -40,6 +40,7 @@ export type WahooSyncJobRecord = {
   queueSequence?: number;
   resourceKind:
     | "event"
+    | "planned_session"
     | "activity_plan"
     | "activity_route"
     | "group_event_route_delivery"

@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { createFileRoute } from "@tanstack/react-router";
+import { useRef } from "react";
 import { toast } from "sonner";
 import { GroupEventForm } from "../../../../../components/groups/group-event-form";
 import { QueryState } from "../../../../../components/groups/group-ui";
@@ -17,6 +18,7 @@ function CreateGroupEventPage() {
   const createMutation = api.groups.events.create.useMutation();
   const recurringMutation = api.groups.events.createRecurringEventSeries.useMutation();
   const isSubmitting = createMutation.isPending || recurringMutation.isPending;
+  const createdEventId = useRef<string | null>(null);
   return (
     <main className="container mx-auto max-w-3xl space-y-6 py-4">
       <div>
@@ -55,9 +57,13 @@ function CreateGroupEventPage() {
                     utils.calendar.invalidate(),
                   ]);
                   toast.success(value.recurrenceRule ? "Recurring event created" : "Event created");
+                  createdEventId.current = result.event.id;
+                }}
+                onSuccess={() => {
+                  if (!createdEventId.current) return;
                   void navigate({
                     to: "/groups/events/$groupEventId",
-                    params: { groupEventId: result.event.id },
+                    params: { groupEventId: createdEventId.current },
                   });
                 }}
                 submitLabel="Create event"

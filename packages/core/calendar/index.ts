@@ -36,4 +36,6 @@ export {
   parseDeviceCalendarDate,
   startOfDeviceCalendarDateToIsoInstant,
 } from "./device-calendar-date";
+export * from "./manual-training-diary";
 export * from "./planned-session";
+export * from "./planned-session-comparison";

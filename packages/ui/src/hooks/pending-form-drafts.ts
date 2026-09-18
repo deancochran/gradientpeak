@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 type DraftLifecycle = {
   commit: () => void;
@@ -57,4 +57,19 @@ function usePendingFormDraft(control: object | undefined, lifecycle: DraftLifecy
   }, [control]);
 }
 
-export { discardPendingFormDrafts, flushPendingFormDrafts, usePendingFormDraft };
+/** Same-value resets must also reset string drafts that contain formatting. */
+function useFormDraftResetKey(control: object) {
+  const [revision, setRevision] = useState(0);
+  usePendingFormDraft(control, {
+    commit: () => undefined,
+    discard: () => setRevision((value) => value + 1),
+  });
+  return revision;
+}
+
+export {
+  discardPendingFormDrafts,
+  flushPendingFormDrafts,
+  useFormDraftResetKey,
+  usePendingFormDraft,
+};

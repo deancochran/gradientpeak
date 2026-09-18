@@ -1,4 +1,8 @@
-import type { ActivityPlanDocument } from "@repo/core/activity-plan";
+import type {
+  ActivityPlanAdaptation,
+  ActivityPlanStructure,
+  ActivityPlanTrainingIntent,
+} from "@repo/core/activity-plan";
 import type { PlannedSession } from "@repo/core/calendar";
 import type {
   PlannedSessionMutation,
@@ -19,8 +23,11 @@ export type ActivityPlanPrescriptionSource = {
   name: string;
   description: string | null;
   revision: number;
-  structure: ActivityPlanDocument;
+  structure: ActivityPlanStructure;
+  adaptation: ActivityPlanAdaptation | null;
+  trainingIntent: ActivityPlanTrainingIntent;
   structureHash: string;
+  semanticHash: string;
   gpsRecordingEnabled: boolean;
   updatedAt: string;
 };

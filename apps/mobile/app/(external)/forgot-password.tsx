@@ -19,7 +19,18 @@ import { isServerUrlOverrideEnabled, useServerConfig } from "@/lib/server-config
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
-  const { loading: authLoading } = useAuth();
+  const { loading: authLoading, user } = useAuth();
+  const owner = React.useRef({ id: user?.id, active: true });
+  if (owner.current.id !== user?.id) owner.current = { id: user?.id, active: true };
+  const pending = React.useRef(false);
+  const renderOwner = owner.current;
+  React.useEffect(() => {
+    const current = renderOwner;
+    current.active = true;
+    return () => {
+      current.active = false;
+    };
+  }, [renderOwner]);
   const [emailSent, setEmailSent] = React.useState(false);
   const [isServerConfigExpanded, setIsServerConfigExpanded] = React.useState(false);
   const serverOverrideEnabled = isServerUrlOverrideEnabled();
@@ -40,11 +51,19 @@ export default function ForgotPasswordScreen() {
   });
 
   const onSendResetEmail = async (data: ForgotPasswordFormValues) => {
+    if (owner.current !== renderOwner || !renderOwner.active) return;
+    const current = owner.current;
+    const email = form.getValues("email");
+    const isCurrent = () =>
+      current.active && owner.current === current && form.getValues("email") === email;
+    pending.current = true;
     try {
       await applyPendingAuthServerOverride({
         expanded: isServerConfigExpanded,
         serverUrlInput,
       });
+
+      if (!isCurrent()) return;
 
       logMobileAction("auth.resetPasswordForEmail", "attempt", { email: data.email });
 
@@ -65,18 +84,21 @@ export default function ForgotPasswordScreen() {
       }
       // Better Auth may reject unknown identities. The visible acknowledgement is
       // deliberately identical so recovery cannot enumerate accounts.
-      setEmailSent(true);
+      if (isCurrent()) setEmailSent(true);
     } catch {
       logMobileAction("auth.resetPasswordForEmail", "failure", {
         error: "recovery request unavailable",
       });
       // Transport/provider failures must be indistinguishable from success
       // and unknown identities at this account-enumeration boundary.
-      setEmailSent(true);
+      if (isCurrent()) setEmailSent(true);
+    } finally {
+      pending.current = false;
     }
   };
 
   const handleBackToSignIn = () => {
+    if (pending.current) return;
     router.replace("/(external)/sign-in");
   };
 
@@ -88,7 +110,7 @@ export default function ForgotPasswordScreen() {
     form,
     onSubmit: onSendResetEmail,
   });
-  const isLoading = authLoading || submitForm.isSubmitting;
+  const isLoading = authLoading || submitForm.isSubmitting || form.formState.isSubmitting;
 
   if (emailSent) {
     return (
@@ -108,7 +130,12 @@ export default function ForgotPasswordScreen() {
                 <Text variant="h3" className="text-center mb-2">
                   Check your email
                 </Text>
-                <Text variant="muted" className="text-center">
+                <Text
+                  variant="muted"
+                  className="text-center"
+                  accessibilityRole="alert"
+                  accessibilityLiveRegion="polite"
+                >
                   {passwordRecoveryAcknowledgement}
                 </Text>
               </View>
@@ -172,6 +199,7 @@ export default function ForgotPasswordScreen() {
                   keyboardType="email-address"
                   label="Email"
                   name="email"
+                  disabled={isLoading}
                   placeholder="Email address"
                   testId="email-input"
                 />
@@ -181,7 +209,13 @@ export default function ForgotPasswordScreen() {
             <LoadingButton
               variant="default"
               size="lg"
-              onPress={submitForm.handleSubmit}
+              onPress={() => {
+                if (pending.current) return;
+                pending.current = true;
+                return submitForm.handleSubmit().finally(() => {
+                  pending.current = false;
+                });
+              }}
               disabled={isLoading}
               loading={isLoading}
               loadingLabel="Sending..."
@@ -205,6 +239,7 @@ export default function ForgotPasswordScreen() {
               <Button
                 variant="outline"
                 onPress={handleBackToSignIn}
+                disabled={isLoading}
                 testID="back-to-signin-link-button"
                 className="w-full"
               >

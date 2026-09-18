@@ -99,10 +99,12 @@ export function formatDateTime(
   },
 ): string {
   const dateStr = formatDate(date, {
-    relative: options?.relative,
-    includeYear: options?.includeYear,
+    ...(options?.relative === undefined ? {} : { relative: options.relative }),
+    ...(options?.includeYear === undefined ? {} : { includeYear: options.includeYear }),
   });
-  const timeStr = formatTime(date, { use24Hour: options?.use24Hour });
+  const timeStr = formatTime(date, {
+    ...(options?.use24Hour === undefined ? {} : { use24Hour: options.use24Hour }),
+  });
 
   return `${dateStr} at ${timeStr}`;
 }

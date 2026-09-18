@@ -1,15 +1,15 @@
-import { activityPlanDocumentSchema, resolveActivityPlanVariant } from "@repo/core/activity-plan";
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import type { ActivityPlanPrescriptionQuantificationBundle } from "@repo/core/activity-quantification";
 import type { CommonLoadAggregate, CommonLoadResult } from "@repo/core/load";
 import {
   type CanonicalActivityCategory,
   canonicalActivityCategorySchema,
 } from "@repo/core/schemas/activity-category";
-import { type SQLWrapper, sql } from "drizzle-orm";
+import { activityPlans } from "@repo/db";
+import type { DrizzleDbClient } from "@repo/db/client";
+import { asc, desc, eq } from "drizzle-orm";
 
-type ScheduleGapDbClient = {
-  execute: (query: string | SQLWrapper) => unknown;
-};
+type ScheduleGapDbClient = Pick<DrizzleDbClient, "select">;
 
 type ActivityPlanLike = {
   prescriptionQuantification?: ActivityPlanPrescriptionQuantificationBundle;
@@ -65,10 +65,6 @@ type ScheduleGapRecommendation = {
   target_load_delta: number | null;
 };
 
-function getSqlRows<T>(result: unknown) {
-  return ((result as { rows?: T[] }).rows ?? []) as T[];
-}
-
 function readFinitePlanNumber(...values: unknown[]) {
   for (const value of values) {
     const parsed = Number(value);
@@ -95,9 +91,9 @@ function clampDateOnOrAfter(value: string, minimum: string) {
 function readCanonicalPlanActivityCategory(
   plan: ActivityPlanLike,
 ): CanonicalActivityCategory | null {
-  const parsed = activityPlanDocumentSchema.safeParse(plan.structure);
+  const parsed = activityPlanStructureSchema.safeParse(plan.structure);
   if (!parsed.success) return null;
-  return resolveActivityPlanVariant(parsed.data).structure.activity_category;
+  return parsed.data.activity_category;
 }
 
 export function buildScheduleGapActivityPlanMatches(input: {
@@ -263,12 +259,15 @@ export async function loadOwnedActivityPlansForScheduleGap(input: {
   limit?: number;
 }) {
   const limit = input.limit ?? 25;
-  const result = await input.db.execute(sql<ActivityPlanLike>`
-    select activity_plans.*
-    from activity_plans
-    where activity_plans.profile_id = ${input.profileId}::uuid
-    order by activity_plans.created_at desc, activity_plans.id asc
-    limit ${limit}
-  `);
-  return getSqlRows<ActivityPlanLike>(result);
+  return input.db
+    .select({
+      created_at: activityPlans.created_at,
+      id: activityPlans.id,
+      name: activityPlans.name,
+      structure: activityPlans.structure,
+    })
+    .from(activityPlans)
+    .where(eq(activityPlans.profile_id, input.profileId))
+    .orderBy(desc(activityPlans.created_at), asc(activityPlans.id))
+    .limit(limit);
 }

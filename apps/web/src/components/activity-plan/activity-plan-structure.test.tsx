@@ -50,7 +50,7 @@ describe("ActivityPlanStructure", () => {
 
     expect(screen.getByText("Keep the warm-up smooth.")).toBeTruthy();
     expect(screen.getByText("Recover fully before the next round.")).toBeTruthy();
-    expect(screen.getByText("Settle into a sustainable rhythm.")).toBeTruthy();
-    expect(screen.getByText("Stay seated on the climbs.")).toBeTruthy();
+    expect(screen.getByText(/Settle into a sustainable rhythm\./)).toBeTruthy();
+    expect(screen.getByText(/Stay seated on the climbs\./)).toBeTruthy();
   });
 });

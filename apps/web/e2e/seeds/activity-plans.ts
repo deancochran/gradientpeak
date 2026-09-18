@@ -1,111 +1,123 @@
 import { createHash } from "node:crypto";
+import {
+  activityPlanAdaptationSchema,
+  activityPlanAuthoringContentSchema,
+  activityPlanSemanticHash,
+  activityPlanStructureSchema,
+  activityPlanTrainingIntentSchema,
+  getCanonicalActivityPlanStructureHashInput,
+} from "@repo/core/activity-plan";
+import { completedSegmentSummarySchema } from "@repo/core/activity-segments";
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
-import type { E2EQuery, LocalE2EDatabase } from "../support/database";
-
-function canonicalSeedJson(value: unknown): string {
-  if (value === null || typeof value === "boolean" || typeof value === "string")
-    return JSON.stringify(value);
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) throw new Error("Activity plan contains a non-finite number");
-    return JSON.stringify(value);
-  }
-  if (Array.isArray(value)) return `[${value.map(canonicalSeedJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .filter(([, nested]) => nested !== undefined)
-      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-      .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalSeedJson(nested)}`)
-      .join(",")}}`;
-  }
-  throw new Error(`Activity plan contains unsupported ${typeof value}`);
-}
+import {
+  thresholdCandidateSchema,
+  thresholdEvaluationDiagnosticsSchema,
+  thresholdEvaluationSchema,
+  thresholdSelectionResultSchema,
+} from "@repo/core/performance-calibration";
+import {
+  activities,
+  activityArtifactLinks,
+  activityArtifacts,
+  activityEfforts,
+  activityPlans,
+  activityRoutes,
+  activitySegments,
+  thresholdEvaluationEfforts,
+  thresholdEvaluations,
+  thresholds,
+} from "@repo/db/schema";
+import { and, eq } from "drizzle-orm";
+import type { LocalE2EDatabase } from "../support/database";
 
 function activityPlanSeedStructureHash(structure: unknown) {
-  return `v1:sha256:${createHash("sha256").update(canonicalSeedJson(structure)).digest("hex")}`;
+  return `v1:sha256:${createHash("sha256")
+    .update(getCanonicalActivityPlanStructureHashInput(structure))
+    .digest("hex")}`;
 }
 
 export async function seedOwnedActivityPlan(
-  pool: LocalE2EDatabase,
+  database: LocalE2EDatabase,
   profileId: string,
   isolatedNamespace: string,
   options: { primaryContentVisibility?: "private" | "followers" | "public" } = {},
 ) {
   const fixtureId = (label: string) => deterministicFixtureUuid(`${isolatedNamespace}|${label}`);
   const activityPlanId = fixtureId("primary");
-  const structure = {
-    version: 3,
-    activity_category: "bike",
-    segments: [
-      {
-        id: "e1000000-0000-4000-8000-000000000001",
-        role: "activity",
-        name: "Tempo ride",
-        intervals: [
-          {
-            id: "e2000000-0000-4000-8000-000000000001",
-            name: "Main set",
-            repetitions: 1,
-            steps: [
-              {
-                id: "e3000000-0000-4000-8000-000000000001",
-                name: "Tempo",
-                duration: { type: "time", seconds: 1_800 },
-                targets: [{ type: "%FTP", intensity: 75 }],
-              },
-            ],
-          },
-        ],
-      },
-    ],
-  };
-
-  await upsertActivityPlan(pool, {
+  await upsertActivityPlan(database, {
     description: "A deterministic tempo activity plan for browser journeys.",
     id: activityPlanId,
     name: "Playwright Tempo Builder",
     notes: "Bring bottles",
     profileId,
-    structure,
-    contentVisibility: options.primaryContentVisibility,
-  });
-  await seedEstablishedBikePowerThreshold(pool, profileId, fixtureId);
-
-  for (let index = 1; index <= 21; index += 1) {
-    const activity_category = index % 2 === 0 ? "run" : "bike";
-    const libraryStructure = {
+    structure: {
       version: 3,
-      activity_category,
+      activity_category: "bike",
       segments: [
         {
-          id: `f1000000-0000-4000-8000-${String(index * 10).padStart(12, "0")}`,
+          id: "e1000000-0000-4000-8000-000000000001",
           role: "activity",
-          name: `${activity_category} segment`,
+          name: "Tempo ride",
           intervals: [
             {
-              id: `f2000000-0000-4000-8000-${String(index * 10).padStart(12, "0")}`,
-              name: "Steady work",
+              id: "e2000000-0000-4000-8000-000000000001",
+              name: "Main set",
               repetitions: 1,
               steps: [
                 {
-                  id: `f3000000-0000-4000-8000-${String(index * 10).padStart(12, "0")}`,
-                  name: "Steady",
-                  duration: { type: "time", seconds: 600 },
-                  targets: [{ type: "RPE", intensity: 5 }],
+                  id: "e3000000-0000-4000-8000-000000000001",
+                  name: "Tempo",
+                  purpose: "work",
+                  duration: { type: "time", seconds: 1_800 },
+                  targets: [{ type: "%FTP", intensity: 75 }],
                 },
               ],
             },
           ],
         },
       ],
-    };
+    },
+    ...(options.primaryContentVisibility === undefined
+      ? {}
+      : { contentVisibility: options.primaryContentVisibility }),
+  });
+  await seedEstablishedBikePowerThreshold(database, profileId, fixtureId);
 
-    await upsertActivityPlan(pool, {
-      description: `Deterministic ${activity_category} library fixture ${index}.`,
+  for (let index = 1; index <= 21; index += 1) {
+    const activityCategory = index % 2 === 0 ? "run" : "bike";
+    await upsertActivityPlan(database, {
+      description: `Deterministic ${activityCategory} library fixture ${index}.`,
       id: fixtureId(`library-${index}`),
       name: `Playwright Library ${String(index).padStart(2, "0")}`,
       notes: null,
       profileId,
-      structure: libraryStructure,
+      structure: {
+        version: 3,
+        activity_category: activityCategory,
+        segments: [
+          {
+            id: `f1000000-0000-4000-8000-${String(index * 10).padStart(12, "0")}`,
+            role: "activity",
+            name: `${activityCategory} segment`,
+            intervals: [
+              {
+                id: `f2000000-0000-4000-8000-${String(index * 10).padStart(12, "0")}`,
+                name: "Steady work",
+                repetitions: 1,
+                steps: [
+                  {
+                    id: `f3000000-0000-4000-8000-${String(index * 10).padStart(12, "0")}`,
+                    name: "Steady",
+                    purpose: "work",
+                    duration: { type: "time", seconds: 600 },
+                    targets: [{ type: "RPE", intensity: 5 }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
     });
   }
   return { activityPlanId };
@@ -116,24 +128,16 @@ async function seedEstablishedBikePowerThreshold(
   profileId: string,
   fixtureId: (label: string) => string,
 ) {
-  const existingThreshold = await database.query(
-    `select 1 from "thresholds"
-     where "profile_id" = $1 and "activity_category" = 'bike' and "metric" = 'power'
-     limit 1`,
-    [profileId],
-  );
-  if (existingThreshold.rows.length > 0) return;
-
   const activityId = fixtureId("threshold-source-activity");
   const artifactId = fixtureId("threshold-source-artifact");
   const artifactLinkId = fixtureId("threshold-source-artifact-link");
   const segmentId = fixtureId("threshold-source-segment");
   const effortId = fixtureId("threshold-source-effort");
   const evaluationId = fixtureId("bike-power-threshold-evaluation");
-  const observedAt = "2026-08-01T12:00:00.000Z";
-  const finishedAt = "2026-08-01T12:30:00.000Z";
+  const observedAt = new Date("2026-08-01T12:00:00.000Z");
+  const finishedAt = new Date("2026-08-01T12:30:00.000Z");
   const artifactDigest = createHash("sha256").update(activityId).digest("hex");
-  const thresholdCandidate = {
+  const thresholdCandidate = thresholdCandidateSchema.parse({
     activityCategory: "bike",
     metric: "power",
     unit: "watts",
@@ -147,8 +151,8 @@ async function seedEstablishedBikePowerThreshold(
     conversionFactor: 0.95,
     policyVersion: "threshold-policy-v1",
     plausibilityVersion: "threshold-plausibility-v1",
-  } as const;
-  const evaluationDiagnostics = {
+  });
+  const evaluationDiagnostics = thresholdEvaluationDiagnosticsSchema.parse({
     policyVersion: "threshold-policy-v1",
     plausibilityVersion: "threshold-plausibility-v1",
     selectedSeriesId: effortId,
@@ -160,140 +164,238 @@ async function seedEstablishedBikePowerThreshold(
     maximumGapSeconds: 2,
     extractedValue: 300,
     thresholdValue: 285,
-  } as const;
-  const diagnostics = JSON.stringify({
-    selection: {
-      status: "qualified",
-      candidate: thresholdCandidate,
-      selectedRole: "preferred",
-      selectedEvidenceId: effortId,
-      selectedActivityId: activityId,
-      attempts: [
-        {
-          role: "preferred",
-          metric: "power",
-          evidenceIds: [effortId],
-          evaluation: {
-            status: "qualified",
-            candidate: thresholdCandidate,
-            diagnostics: evaluationDiagnostics,
-          },
-        },
-      ],
-    },
-    candidate: thresholdCandidate,
   });
-  const segmentSummary = JSON.stringify({
+  const evaluation = thresholdEvaluationSchema.parse({
+    status: "qualified",
+    candidate: thresholdCandidate,
+    diagnostics: evaluationDiagnostics,
+  });
+  const selection = thresholdSelectionResultSchema.parse({
+    status: "qualified",
+    candidate: thresholdCandidate,
+    selectedRole: "preferred",
+    selectedEvidenceId: effortId,
+    selectedActivityId: activityId,
+    attempts: [
+      {
+        role: "preferred",
+        metric: "power",
+        evidenceIds: [effortId],
+        evaluation,
+      },
+    ],
+  });
+  const segmentSummary = completedSegmentSummarySchema.parse({
     version: 1,
     timing: { timingCoverage: "complete", activeMs: 1_800_000, movingMs: 1_800_000 },
     averagePowerWatts: 285,
     normalizedPowerResult: calculateCyclingNormalizedPower({ samples: [] }),
   });
 
-  await database.transaction(async (pool) => {
-    await pool.query(
-      `insert into "activity_artifacts" (
-        "id", "profile_id", "digest", "byte_size", "bucket", "path", "media_type", "format", "original_name"
-      ) values ($1, $2, $3, 1, 'activity-files', $4, 'application/fit', 'fit', 'threshold-source.fit')
-      on conflict ("id") do nothing`,
-      [artifactId, profileId, artifactDigest, `artifacts/sha256/${profileId}/${artifactDigest}`],
-    );
-    await pool.query(
-      `insert into "activities" (
-        "id", "profile_id", "name", "started_at", "finished_at", "elapsed_ms", "active_ms", "moving_ms",
-        "timing_coverage", "parser_version", "decoded_contract_version", "materializer_version",
-        "canonical_evidence_tier", "segments_generated_at"
-      ) values ($1, $2, 'Playwright threshold source', $3, $4, 1800000, 1800000, 1800000,
-        'complete', 'e2e-fixture', 'e2e-fixture-v1', 'e2e-fixture', 'fit_artifact', $4)
-      on conflict ("id") do update set "profile_id" = excluded."profile_id", "updated_at" = now()`,
-      [activityId, profileId, observedAt, finishedAt],
-    );
-    await pool.query(
-      `insert into "activity_artifact_links" (
-        "id", "activity_id", "artifact_id", "profile_id", "role", "ordinal", "is_current"
-      ) values ($1, $2, $3, $4, 'source', 0, true)
-      on conflict ("id") do nothing`,
-      [artifactLinkId, activityId, artifactId, profileId],
-    );
-    await pool.query(
-      `insert into "activity_segments" (
-        "id", "activity_id", "profile_id", "ordinal", "role", "activity_category",
-        "start_offset_ms", "end_offset_ms", "source_artifact_id", "summary", "summary_version",
-        "timing_coverage", "active_ms", "moving_ms", "segment_revision", "parser_version", "materializer_version"
-      ) values ($1, $2, $3, 0, 'activity', 'bike', 0, 1800000, $4,
-        $5::jsonb,
-        1, 'complete', 1800000, 1800000, 1, 'e2e-fixture', 'e2e-fixture')
-      on conflict ("id") do nothing`,
-      [segmentId, activityId, profileId, artifactId, segmentSummary],
-    );
-    await pool.query(
-      `insert into "activity_efforts" (
-        "id", "created_at", "profile_id", "activity_id", "segment_id", "recorded_at",
-        "activity_category", "effort_type", "source_series", "duration_seconds", "source_artifact_id",
-        "source_revision", "start_offset_ms", "end_offset_ms", "window_coverage", "max_gap_seconds",
-        "unit", "value", "source", "method", "calculation_version", "quality_score", "provenance"
-      ) values ($1, $2, $3, $4, $5, $2, 'bike', 'power', 'power', 1800, $6, 1, 0, 1800000,
-        1, 1, 'watts', 285, 'imported', 'activity_file_best_effort', 'e2e-fixture-v1', 0.9,
-        '{"fixture":"activity-plan-card"}'::jsonb)
-      on conflict ("id") do nothing`,
-      [effortId, finishedAt, profileId, activityId, segmentId, artifactId],
-    );
-    await pool.query(
-      `insert into "threshold_evaluations" (
-        "id", "profile_id", "activity_category", "metric", "method", "outcome", "value", "unit",
-        "confidence", "observed_at", "rejection_reason", "policy_version", "diagnostics",
-        "source_activity_id", "source_revision", "created_at"
-      ) values ($1, $2, 'bike', 'power', 'bike_power_30m', 'qualified', 285, 'watts',
-        1, $3, null, 'threshold-policy-v1', $5::jsonb, $4, 1, now())
-      on conflict ("id") do nothing`,
-      [evaluationId, profileId, finishedAt, activityId, diagnostics],
-    );
-    await pool.query(
-      `insert into "threshold_evaluation_efforts" (
-        "evaluation_id", "effort_id", "profile_id", "activity_category", "activity_id",
-        "source_revision", "metric", "effort_type", "source_series", "role", "ordinal"
-      ) values ($1, $2, $3, 'bike', $4, 1, 'power', 'power', 'power', 'primary', 0)
-      on conflict ("evaluation_id", "effort_id") do nothing`,
-      [evaluationId, effortId, profileId, activityId],
-    );
-    await pool.query(
-      `insert into "thresholds" (
-        "profile_id", "activity_category", "metric", "evaluation_id", "evaluation_outcome", "value", "unit",
-        "confidence", "method", "effective_at", "policy_version", "created_at"
-      ) values ($1, 'bike', 'power', $2, 'qualified', 285, 'watts',
-        1, 'bike_power_30m', $3, 'threshold-policy-v1', now())
-      on conflict ("evaluation_id") do nothing`,
-      [profileId, evaluationId, finishedAt],
-    );
+  await database.typedTransaction(async (transaction) => {
+    const [existingThreshold] = await transaction
+      .select({ id: thresholds.id })
+      .from(thresholds)
+      .where(
+        and(
+          eq(thresholds.profile_id, profileId),
+          eq(thresholds.activity_category, "bike"),
+          eq(thresholds.metric, "power"),
+        ),
+      )
+      .limit(1);
+    if (existingThreshold) return;
+
+    await transaction
+      .insert(activityArtifacts)
+      .values({
+        id: artifactId,
+        profile_id: profileId,
+        digest: artifactDigest,
+        byte_size: 1,
+        bucket: "activity-files",
+        path: `artifacts/sha256/${profileId}/${artifactDigest}`,
+        media_type: "application/fit",
+        format: "fit",
+        original_name: "threshold-source.fit",
+      })
+      .onConflictDoNothing();
+    await transaction
+      .insert(activities)
+      .values({
+        id: activityId,
+        profile_id: profileId,
+        name: "Playwright threshold source",
+        started_at: observedAt,
+        finished_at: finishedAt,
+        elapsed_ms: 1_800_000,
+        active_ms: 1_800_000,
+        moving_ms: 1_800_000,
+        timing_coverage: "complete",
+        parser_version: "e2e-fixture",
+        decoded_contract_version: "e2e-fixture-v1",
+        materializer_version: "e2e-fixture",
+        canonical_evidence_tier: "fit_artifact",
+        segments_generated_at: finishedAt,
+        distance_meters: 0,
+      })
+      .onConflictDoUpdate({
+        target: activities.id,
+        set: { profile_id: profileId, updated_at: new Date() },
+      });
+    await transaction
+      .insert(activityArtifactLinks)
+      .values({
+        id: artifactLinkId,
+        activity_id: activityId,
+        artifact_id: artifactId,
+        profile_id: profileId,
+        role: "source",
+        ordinal: 0,
+        is_current: true,
+      })
+      .onConflictDoNothing();
+    await transaction
+      .insert(activitySegments)
+      .values({
+        id: segmentId,
+        activity_id: activityId,
+        profile_id: profileId,
+        ordinal: 0,
+        role: "activity",
+        activity_category: "bike",
+        start_offset_ms: 0,
+        end_offset_ms: 1_800_000,
+        source_artifact_id: artifactId,
+        summary: segmentSummary,
+        summary_version: 1,
+        timing_coverage: "complete",
+        active_ms: 1_800_000,
+        moving_ms: 1_800_000,
+        segment_revision: 1,
+        parser_version: "e2e-fixture",
+        materializer_version: "e2e-fixture",
+      })
+      .onConflictDoNothing();
+    await transaction
+      .insert(activityEfforts)
+      .values({
+        id: effortId,
+        created_at: finishedAt,
+        profile_id: profileId,
+        activity_id: activityId,
+        segment_id: segmentId,
+        recorded_at: finishedAt,
+        activity_category: "bike",
+        effort_type: "power",
+        source_series: "power",
+        duration_seconds: 1800,
+        source_artifact_id: artifactId,
+        source_revision: 1,
+        start_offset_ms: 0,
+        end_offset_ms: 1_800_000,
+        window_coverage: 1,
+        max_gap_seconds: 1,
+        unit: "watts",
+        value: 285,
+        source: "imported",
+        method: "activity_file_best_effort",
+        calculation_version: "e2e-fixture-v1",
+        quality_score: 0.9,
+        provenance: { fixture: "activity-plan-card" },
+      })
+      .onConflictDoNothing();
+    await transaction
+      .insert(thresholdEvaluations)
+      .values({
+        id: evaluationId,
+        profile_id: profileId,
+        activity_category: "bike",
+        metric: "power",
+        method: "bike_power_30m",
+        outcome: "qualified",
+        value: 285,
+        unit: "watts",
+        confidence: 1,
+        observed_at: finishedAt,
+        policy_version: "threshold-policy-v1",
+        diagnostics: { selection, candidate: thresholdCandidate },
+        source_activity_id: activityId,
+        source_revision: 1,
+      })
+      .onConflictDoNothing();
+    await transaction
+      .insert(thresholdEvaluationEfforts)
+      .values({
+        evaluation_id: evaluationId,
+        effort_id: effortId,
+        profile_id: profileId,
+        activity_category: "bike",
+        activity_id: activityId,
+        source_revision: 1,
+        metric: "power",
+        effort_type: "power",
+        source_series: "power",
+        role: "primary",
+        ordinal: 0,
+      })
+      .onConflictDoNothing();
+    await transaction
+      .insert(thresholds)
+      .values({
+        profile_id: profileId,
+        activity_category: "bike",
+        metric: "power",
+        evaluation_id: evaluationId,
+        evaluation_outcome: "qualified",
+        value: 285,
+        unit: "watts",
+        confidence: 1,
+        method: "bike_power_30m",
+        effective_at: finishedAt,
+        policy_version: "threshold-policy-v1",
+      })
+      .onConflictDoNothing();
   });
 }
 
 export async function seedOwnedActivityRoute(
-  pool: E2EQuery,
+  database: LocalE2EDatabase,
   profileId: string,
   isolatedNamespace: string,
 ) {
   const routeId = deterministicFixtureUuid(`${isolatedNamespace}|primary-route`);
-  await pool.query(
-    `insert into "activity_routes" (
-      "id", "profile_id", "name", "description", "file_path", "storage_state",
-      "total_distance", "total_ascent", "total_descent", "polyline", "is_public"
-    ) values ($1, $2, 'Playwright Discovery Route', 'Deterministic route for browser journeys.',
-      $3, 'ready', 1000, 25, 25, '_p~iF~ps|U_ulLnnqC_mqNvxq\`@', true)
-    on conflict ("id") do update set
-      "profile_id" = excluded."profile_id",
-      "name" = excluded."name",
-      "description" = excluded."description",
-      "file_path" = excluded."file_path",
-      "storage_state" = excluded."storage_state",
-      "total_distance" = excluded."total_distance",
-      "total_ascent" = excluded."total_ascent",
-      "total_descent" = excluded."total_descent",
-      "polyline" = excluded."polyline",
-      "is_public" = excluded."is_public",
-      "updated_at" = now()`,
-    [routeId, profileId, `e2e/${profileId}/${routeId}.gpx`],
-  );
+  await database.db
+    .insert(activityRoutes)
+    .values({
+      id: routeId,
+      profile_id: profileId,
+      name: "Playwright Discovery Route",
+      description: "Deterministic route for browser journeys.",
+      file_path: `e2e/${profileId}/${routeId}.gpx`,
+      storage_state: "ready",
+      total_distance: 1000,
+      total_ascent: 25,
+      total_descent: 25,
+      polyline: "_p~iF~ps|U_ulLnnqC_mqNvxq`@",
+      is_public: true,
+    })
+    .onConflictDoUpdate({
+      target: activityRoutes.id,
+      set: {
+        profile_id: profileId,
+        name: "Playwright Discovery Route",
+        description: "Deterministic route for browser journeys.",
+        file_path: `e2e/${profileId}/${routeId}.gpx`,
+        storage_state: "ready",
+        total_distance: 1000,
+        total_ascent: 25,
+        total_descent: 25,
+        polyline: "_p~iF~ps|U_ulLnnqC_mqNvxq`@",
+        is_public: true,
+        updated_at: new Date(),
+      },
+    });
   return { routeId };
 }
 
@@ -303,7 +405,7 @@ function deterministicFixtureUuid(value: string) {
 }
 
 async function upsertActivityPlan(
-  pool: E2EQuery,
+  database: LocalE2EDatabase,
   plan: {
     contentVisibility?: "private" | "followers" | "public";
     description: string;
@@ -312,31 +414,52 @@ async function upsertActivityPlan(
     notes: string | null;
     profileId: string;
     structure: unknown;
+    trainingIntent?: string;
   },
 ) {
-  await pool.query(
-    `insert into "activity_plans" (
-      "id", "profile_id", "name", "description", "notes", "structure", "structure_hash",
-      "gps_recording_enabled", "content_visibility", "is_system_template"
-    ) values ($1, $2, $3, $4, $5, $6::jsonb, $7, true, $8, false)
-    on conflict ("id") do update set
-      "profile_id" = excluded."profile_id",
-      "name" = excluded."name",
-      "description" = excluded."description",
-      "notes" = excluded."notes",
-      "structure" = excluded."structure",
-      "structure_hash" = excluded."structure_hash",
-      "content_visibility" = excluded."content_visibility",
-      "updated_at" = now()`,
-    [
-      plan.id,
-      plan.profileId,
-      plan.name,
-      plan.description,
-      plan.notes,
-      JSON.stringify(plan.structure),
-      activityPlanSeedStructureHash(plan.structure),
-      plan.contentVisibility ?? "private",
-    ],
+  const structure = activityPlanStructureSchema.parse(plan.structure);
+  const adaptation = activityPlanAdaptationSchema.nullable().parse(null);
+  const trainingIntent = activityPlanTrainingIntentSchema.parse(
+    plan.trainingIntent ?? "general_maintenance",
   );
+  // Seed writes must satisfy the authoring contract, not only the historical read shape.
+  activityPlanAuthoringContentSchema.parse({
+    structure,
+    adaptation,
+    intent: { training_intent: trainingIntent },
+  });
+  const semanticHash = activityPlanSemanticHash({ structure, adaptation, trainingIntent });
+  await database.db
+    .insert(activityPlans)
+    .values({
+      id: plan.id,
+      profile_id: plan.profileId,
+      name: plan.name,
+      description: plan.description,
+      notes: plan.notes,
+      structure,
+      adaptation,
+      structure_hash: activityPlanSeedStructureHash(structure),
+      semantic_hash: semanticHash,
+      training_intent: trainingIntent,
+      gps_recording_enabled: true,
+      content_visibility: plan.contentVisibility ?? "private",
+      is_system_template: false,
+    })
+    .onConflictDoUpdate({
+      target: activityPlans.id,
+      set: {
+        profile_id: plan.profileId,
+        name: plan.name,
+        description: plan.description,
+        notes: plan.notes,
+        structure,
+        adaptation,
+        structure_hash: activityPlanSeedStructureHash(structure),
+        semantic_hash: semanticHash,
+        training_intent: trainingIntent,
+        content_visibility: plan.contentVisibility ?? "private",
+        updated_at: new Date(),
+      },
+    });
 }

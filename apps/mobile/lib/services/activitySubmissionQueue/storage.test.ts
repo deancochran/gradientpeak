@@ -22,6 +22,13 @@ const executionManifest = {
   occurrences: [],
 };
 
+vi.mock("expo-file-system", () => ({
+  Paths: {
+    document: { uri: "file:///documents/" },
+    cache: { uri: "file:///cache/" },
+  },
+}));
+
 vi.mock("@react-native-async-storage/async-storage", () => ({
   default: {
     getItem: vi.fn(async (key: string) => storage.get(key) ?? null),

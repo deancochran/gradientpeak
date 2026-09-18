@@ -7,8 +7,14 @@ import {
   canonicalActivityCategorySchema,
 } from "@repo/core";
 import { parseActivityFile } from "@repo/core/server/activity-files";
-import { activities, activityArtifactLinks, activityArtifacts, activitySegments } from "@repo/db";
-import { and, asc, eq, sql } from "drizzle-orm";
+import {
+  activities,
+  activityArtifactLinks,
+  activityArtifacts,
+  activitySegments,
+  follows,
+} from "@repo/db";
+import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { getRequiredDb } from "../../db";
 import type { ActivityArtifactStorage } from "../activity-file-ingestion/artifact-storage";
@@ -339,23 +345,32 @@ export async function getPublicActivityEffortProfile(input: {
     .where(eq(activities.id, input.activityId))
     .limit(1);
   if (!activity) return null;
+  if (activity.startedAt === null) return null;
 
-  const followResult =
+  const isAcceptedFollower =
     activity.contentVisibility === "followers" && activity.profileId !== input.viewerId
-      ? await input.db.execute(sql`
-          select 1 from follows
-          where follower_id = ${input.viewerId}::uuid
-            and following_id = ${activity.profileId}::uuid
-            and status = 'accepted'
-          limit 1
-        `)
-      : ({ rows: [] } as { rows: unknown[] });
+      ? Boolean(
+          (
+            await input.db
+              .select({ followerId: follows.follower_id })
+              .from(follows)
+              .where(
+                and(
+                  eq(follows.follower_id, input.viewerId),
+                  eq(follows.following_id, activity.profileId),
+                  eq(follows.status, "accepted"),
+                ),
+              )
+              .limit(1)
+          )[0],
+        )
+      : false;
   if (
     !canViewActivityVisibility({
       ownerId: activity.profileId,
       viewerId: input.viewerId,
       visibility: activity.contentVisibility,
-      isAcceptedFollower: followResult.rows.length > 0,
+      isAcceptedFollower,
     })
   ) {
     return null;

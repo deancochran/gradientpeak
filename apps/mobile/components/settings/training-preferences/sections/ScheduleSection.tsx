@@ -1,4 +1,5 @@
 import type { AthleteTrainingSettingsFormInput } from "@repo/core/schemas/settings/profile_settings";
+import { numericUxPolicies } from "@repo/core/utils/numeric-ux-policy";
 import { Button } from "@repo/ui/components/button";
 import { FormIntegerStepperField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
@@ -79,6 +80,7 @@ export function ScheduleSection({
         label="Longest activity (minutes)"
         max={600}
         min={20}
+        step={numericUxPolicies.sessionBudgetMinutes.adjustmentStep}
         name="dose_limits.max_single_session_duration_minutes"
         testId="preferences-max-duration"
       />
@@ -92,6 +94,7 @@ export function ScheduleSection({
         label="Weekly time budget (minutes)"
         max={10080}
         min={30}
+        step={numericUxPolicies.weeklyBudgetMinutes.adjustmentStep}
         name="dose_limits.max_weekly_duration_minutes"
         testId="preferences-max-weekly-duration"
       />
@@ -164,6 +167,7 @@ export function ScheduleSection({
                       label="Max session duration"
                       max={600}
                       min={20}
+                      step={numericUxPolicies.sessionBudgetMinutes.adjustmentStep}
                       name={`dose_limits.activity_category_overrides.${activity_category.key}.max_single_session_duration_minutes`}
                       testId={`preferences-activity_category-override-${activity_category.key}-max-duration`}
                     />
@@ -172,6 +176,7 @@ export function ScheduleSection({
                       label="Max weekly duration"
                       max={10080}
                       min={30}
+                      step={numericUxPolicies.weeklyBudgetMinutes.adjustmentStep}
                       name={`dose_limits.activity_category_overrides.${activity_category.key}.max_weekly_duration_minutes`}
                       testId={`preferences-activity_category-override-${activity_category.key}-max-weekly-duration`}
                     />

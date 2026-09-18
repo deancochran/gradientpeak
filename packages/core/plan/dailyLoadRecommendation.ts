@@ -722,9 +722,13 @@ function buildPlannedSessionByDate(input: BuildDailyLoadDistributionRecommendati
 
     const existing = byDate.get(date) ?? {};
     const activityCategory = normalizeActivityCategory(session.activityCategory);
+    const resolvedActivityCategory = existing.activityCategory ?? activityCategory ?? undefined;
+    const resolvedPrimaryFocus = existing.primaryFocus ?? session.primaryFocus ?? undefined;
     byDate.set(date, {
-      activityCategory: existing.activityCategory ?? activityCategory ?? undefined,
-      primaryFocus: existing.primaryFocus ?? session.primaryFocus ?? undefined,
+      ...(resolvedActivityCategory === undefined
+        ? {}
+        : { activityCategory: resolvedActivityCategory }),
+      ...(resolvedPrimaryFocus === undefined ? {} : { primaryFocus: resolvedPrimaryFocus }),
       estimatedCommonLoad:
         (existing.estimatedCommonLoad ?? 0) + toFinitePositive(session.estimatedCommonLoad),
       estimatedDurationMinutes:
@@ -1219,13 +1223,13 @@ function buildDistributionPoints(
       plannedSessionByDate,
     });
     const templateFocuses = resolveDailyFocusTemplate({
-      phase: target?.phase,
       selectedDays: trainingDates.map((trainingDate) => ({
         date: trainingDate.date,
         dayOffset: trainingDate.dayOffset,
       })),
       eventDate: eventDateInWeek,
-      recoveryRanges: target?.recoveryRanges,
+      ...(target?.phase === undefined ? {} : { phase: target.phase }),
+      ...(target?.recoveryRanges === undefined ? {} : { recoveryRanges: target.recoveryRanges }),
     });
     const focuses = trainingDates.map((trainingDate, index) => {
       const plannedFocus = plannedSessionByDate.get(trainingDate.date)?.primaryFocus;

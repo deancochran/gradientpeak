@@ -122,6 +122,7 @@ describe("getProviderSyncOverview planned Wahoo delivery", () => {
         provider: "wahoo",
         remote_revoked_at: null,
         updated_at: new Date("2026-07-28T10:00:00.000Z"),
+        wahoo_event_route_delivery_enabled: false,
       },
     ]);
     mocks.findGrantByProfileIdAndProvider.mockResolvedValue({

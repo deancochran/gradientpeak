@@ -10,9 +10,9 @@ import {
 export interface RecordingActivityPlanInput {
   id?: string;
   name: string;
-  description?: string | null;
-  notes?: string | null;
-  gps_recording_enabled?: boolean;
+  description?: string | null | undefined;
+  notes?: string | null | undefined;
+  gps_recording_enabled?: boolean | undefined;
   /** Untrusted transport input; compileRecordingPlan performs strict parsing. */
   structure: unknown;
 }

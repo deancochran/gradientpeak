@@ -4,13 +4,15 @@ import {
   type CanonicalActivityCategory,
   canonicalActivityCategorySchema,
   getSystemActivityTemplateDefinitions,
+  type SystemActivityTemplateDefinition,
 } from "@repo/core";
-import { activityPlanDocumentSchema } from "@repo/core/activity-plan";
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { activityPlans } from "../src/schema/tables";
 import { deepEqual, prepareDbEnv } from "./_helpers";
+import { structureHash } from "./canonical-json";
 import { materializeSystemActivityTemplateSeedValues } from "./system-content-seed-values";
 
 const args = process.argv.slice(2);
@@ -25,25 +27,30 @@ const activity_category: CanonicalActivityCategory | undefined = categoryArg
 let pool: Pool | undefined;
 
 type ExistingActivityTemplate = typeof activityPlans.$inferSelect;
-type ActivityTemplateSeedValues = ReturnType<typeof materializeSystemActivityTemplateSeedValues>;
 
-function hasChanges(local: ActivityTemplateSeedValues, remote: ExistingActivityTemplate): boolean {
+function hasChanges(
+  definition: SystemActivityTemplateDefinition,
+  remote: ExistingActivityTemplate,
+): boolean {
+  const local = definition.content;
   if (local.name !== remote.name) return true;
   if (local.description !== (remote.description ?? null)) return true;
-  if (local.gps_recording_enabled !== remote.gps_recording_enabled) return true;
-  if (local.structure_hash !== remote.structure_hash) return true;
+  if ((local.gps_recording_enabled ?? true) !== remote.gps_recording_enabled) return true;
+  if (structureHash(local.structure) !== remote.structure_hash) return true;
   if ((local.notes ?? null) !== (remote.notes ?? null)) return true;
+  if (local.training_intent !== remote.training_intent) return true;
   if (remote.profile_id !== null) return true;
   if (remote.is_system_template !== true) return true;
   if (remote.content_visibility !== "public") return true;
-  if (remote.system_content_key !== local.system_content_key) return true;
-  if (remote.system_content_version !== local.system_content_version) return true;
-  if (remote.system_content_hash !== local.system_content_hash) return true;
+  if (remote.system_content_key !== definition.key) return true;
+  if (remote.system_content_version !== definition.version) return true;
+  if (remote.system_content_hash !== definition.contentHash) return true;
 
   const localStructure = JSON.parse(JSON.stringify(local.structure));
   const remoteStructure = remote.structure;
 
-  return !deepEqual(localStructure, remoteStructure);
+  if (!deepEqual(localStructure, remoteStructure)) return true;
+  return !deepEqual(local.adaptation ?? null, remote.adaptation);
 }
 
 async function seedTemplates() {
@@ -53,8 +60,7 @@ async function seedTemplates() {
       definition.content.structure.activity_category === activity_category,
   );
   for (const definition of definitions) {
-    const seedValues = materializeSystemActivityTemplateSeedValues(definition);
-    activityPlanDocumentSchema.parse(seedValues.structure);
+    activityPlanStructureSchema.parse(definition.content.structure);
   }
   if (isValidateOnly) {
     console.log(`Validated ${definitions.length} strict current system activity templates.`);
@@ -107,14 +113,13 @@ async function seedTemplates() {
     const existing = existingMap.get(template.id);
 
     try {
-      const materializedSeedValues = materializeSystemActivityTemplateSeedValues(definition);
-      const { id: _id, ...seedValues } = materializedSeedValues;
+      const { id: _id, ...seedValues } = materializeSystemActivityTemplateSeedValues(definition);
       if (existing) {
-        if (hasChanges(materializedSeedValues, existing)) {
+        if (hasChanges(definition, existing)) {
           console.log(`📝 Updating "${template.name}" (${template.id})...`);
 
           if (!isDryRun) {
-            const structureChanged = seedValues.structure_hash !== existing.structure_hash;
+            const structureChanged = seedValues.semantic_hash !== existing.semantic_hash;
             await db
               .update(activityPlans)
               .set({
@@ -136,7 +141,7 @@ async function seedTemplates() {
           const now = new Date();
 
           await db.insert(activityPlans).values({
-            ...materializedSeedValues,
+            ...materializeSystemActivityTemplateSeedValues(definition),
             created_at: now,
             updated_at: now,
           });

@@ -14,6 +14,7 @@ import { GoalEditorForm, type GoalEditorFormHandle } from "@/components/goals";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { markEstimated } from "@/lib/estimatedMetrics";
+import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
 type AgendaCreateType = "event" | "goal";
@@ -116,6 +117,8 @@ export default function AgendaCreateScreen() {
     ? requestedType
     : (planSuggestionDefaults?.targetType ?? "event");
   const [createType, setCreateType] = useState<AgendaCreateType>(initialType);
+  const [eventPending, setEventPending] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const initialGoalDraft = useMemo(
     () => ({
       ...createEmptyGoalDraft(),
@@ -126,9 +129,12 @@ export default function AgendaCreateScreen() {
   const createGoalMutation = api.goals.create.useMutation({
     onSuccess: async (goal) => {
       await invalidateGoalQueries(utils, { goalId: goal.id });
+      allowNavigationAfterSuccess();
       router.replace(ROUTES.GOALS.DETAIL(goal.id) as never);
     },
   });
+  const isPending = createType === "goal" ? createGoalMutation.isPending : eventPending;
+  const { allowNavigationAfterSuccess } = useDirtyNavigationGuard({ isDirty, isPending });
 
   const handleCreate = () => {
     if (createType === "goal") {
@@ -167,8 +173,8 @@ export default function AgendaCreateScreen() {
           title: "Create",
           headerRight: () => (
             <LoadingButton
-              disabled={createGoalMutation.isPending}
-              loading={createGoalMutation.isPending}
+              disabled={isPending}
+              loading={isPending}
               loadingLabel="Creating..."
               loadingTextClassName="text-primary"
               onPress={handleCreate}
@@ -221,6 +227,7 @@ export default function AgendaCreateScreen() {
             ref={goalFormRef}
             initialValue={initialGoalDraft}
             isSubmitting={createGoalMutation.isPending}
+            onDirtyChange={setIsDirty}
             onSubmit={handleCreateGoal}
             showSubmitAction={false}
             submitLabel="Create Goal"
@@ -235,7 +242,14 @@ export default function AgendaCreateScreen() {
               createEventType: "custom",
             }}
             onCancel={() => router.back()}
-            onCreated={(createdEvent) => router.replace(ROUTES.PLAN.EVENT_DETAIL(createdEvent.id))}
+            onDirtyChange={setIsDirty}
+            onPendingChange={setEventPending}
+            onCreated={(resource) => {
+              allowNavigationAfterSuccess();
+              resource.kind === "event"
+                ? router.replace(ROUTES.PLAN.EVENT_DETAIL(resource.id))
+                : router.replace(ROUTES.PLAN.CALENDAR);
+            }}
             showFooterActions={false}
             testIDPrefix="agenda-create-event"
           />

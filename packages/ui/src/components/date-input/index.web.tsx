@@ -3,6 +3,12 @@ import { Input } from "../input/index.web";
 import { Label } from "../label/index.web";
 import type { DateInputProps } from "./shared";
 
+function formatLocalDate(date: Date) {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
 function DateInput({
   clearable = false,
   disabled = false,
@@ -42,8 +48,8 @@ function DateInput({
           className="flex-1"
           disabled={disabled}
           id={inputId}
-          max={maximumDate ? maximumDate.toISOString().split("T")[0] : undefined}
-          min={minimumDate ? minimumDate.toISOString().split("T")[0] : undefined}
+          max={maximumDate ? formatLocalDate(maximumDate) : undefined}
+          min={minimumDate ? formatLocalDate(minimumDate) : undefined}
           name={name}
           onChange={(event) => {
             if (!disabled) {

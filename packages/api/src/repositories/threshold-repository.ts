@@ -24,6 +24,7 @@ import {
   thresholds,
 } from "@repo/db";
 import { and, asc, eq, gt, gte, inArray, lte, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import {
   type DrizzleQueryExecutor,
@@ -80,44 +81,64 @@ export type ThresholdAsOfFact = {
 export const THRESHOLD_AS_OF_BATCH_REQUEST_LIMIT = 525;
 const THRESHOLD_REBUILD_PAGE_SIZE = 128;
 
-const directThresholdRowSchema = z.object({
-  ordinal: z.coerce.number().int().nonnegative(),
-  id: z.string().uuid(),
-  activity_category: z.enum(["bike", "run", "swim"]),
-  metric: z.enum(["power", "speed", "lthr"]),
-  value: z.coerce.number().positive(),
-  unit: z.enum(["watts", "meters_per_second", "bpm"]),
-  confidence: z.coerce.number().min(0).max(1),
-  method: z.enum(["bike_power_30m", "run_speed_30m", "swim_speed_15m", "lthr_30m_final_20m"]),
-  effective_at: z.coerce.date(),
-  policy_version: z.string().min(1),
-  evaluation_id: z.string().uuid(),
-  state: z.enum(["provisional", "confirmed"]),
-});
+const provenanceSelectedEffort = alias(thresholdEvaluationEfforts, "selected");
+const provenancePublishedEvaluation = alias(thresholdEvaluations, "published_evaluation");
+const provenanceOriginEffort = alias(thresholdEvaluationEfforts, "origin");
+const provenanceOriginEvaluation = alias(thresholdEvaluations, "origin_evaluation");
+const lifecyclePublishedThreshold = alias(thresholds, "published");
+const lifecycleEvaluation = alias(thresholdEvaluations, "evaluation");
+const lifecycleSupersededThreshold = alias(thresholds, "superseded");
+const lifecycleHistoryThreshold = alias(thresholds, "history");
+const lifecycleSupportEffort = alias(thresholdEvaluationEfforts, "support");
+const batchCandidateThreshold = alias(thresholds, "published");
+const batchHistoryThreshold = alias(thresholds, "history");
+const batchSupportEffort = alias(thresholdEvaluationEfforts, "support");
+const batchSelectedEffort = alias(thresholdEvaluationEfforts, "selected");
 
-const directThresholdProvenanceRowSchema = z.object({
-  published_evaluation_id: z.string().uuid(),
-  origin_evaluation_id: z.string().uuid(),
-  effort_id: z.string().uuid(),
-  source_activity_id: z.string().uuid(),
-  role: z.enum(["primary", "supporting"]),
-  ordinal: z.coerce.number().int().nonnegative(),
-});
+const directThresholdRowSchema = z
+  .object({
+    ordinal: z.coerce.number().int().nonnegative(),
+    id: z.string().uuid(),
+    activity_category: z.enum(["bike", "run", "swim"]),
+    metric: z.enum(["power", "speed", "lthr"]),
+    value: z.coerce.number().positive(),
+    unit: z.enum(["watts", "meters_per_second", "bpm"]),
+    confidence: z.coerce.number().min(0).max(1),
+    method: z.enum(["bike_power_30m", "run_speed_30m", "swim_speed_15m", "lthr_30m_final_20m"]),
+    effective_at: z.coerce.date(),
+    policy_version: z.string().min(1),
+    evaluation_id: z.string().uuid(),
+    state: z.enum(["provisional", "confirmed"]),
+  })
+  .strict();
 
-const currentThresholdLifecycleRowSchema = z.object({
-  id: z.string().uuid(),
-  evaluation_id: z.string().uuid(),
-  value: z.coerce.number().positive(),
-  unit: z.enum(["watts", "meters_per_second", "bpm"]),
-  method: z.enum(["bike_power_30m", "run_speed_30m", "swim_speed_15m", "lthr_30m_final_20m"]),
-  effective_at: z.coerce.date(),
-  policy_version: z.string().min(1),
-  supersedes_id: z.string().uuid().nullable(),
-  superseded_value: z.coerce.number().positive().nullable(),
-  source_activity_id: z.string().uuid(),
-  observed_at: z.coerce.date(),
-  state: z.enum(["provisional", "confirmed"]),
-});
+const directThresholdProvenanceRowSchema = z
+  .object({
+    published_evaluation_id: z.string().uuid(),
+    origin_evaluation_id: z.string().uuid(),
+    effort_id: z.string().uuid(),
+    source_activity_id: z.string().uuid(),
+    role: z.enum(["primary", "supporting"]),
+    ordinal: z.coerce.number().int().nonnegative(),
+  })
+  .strict();
+
+const currentThresholdLifecycleRowSchema = z
+  .object({
+    id: z.string().uuid(),
+    evaluation_id: z.string().uuid(),
+    value: z.coerce.number().positive(),
+    unit: z.enum(["watts", "meters_per_second", "bpm"]),
+    method: z.enum(["bike_power_30m", "run_speed_30m", "swim_speed_15m", "lthr_30m_final_20m"]),
+    effective_at: z.coerce.date(),
+    policy_version: z.string().min(1),
+    supersedes_id: z.string().uuid().nullable(),
+    superseded_value: z.coerce.number().positive().nullable(),
+    source_activity_id: z.string().uuid(),
+    observed_at: z.coerce.date(),
+    state: z.enum(["provisional", "confirmed"]),
+  })
+  .strict();
 
 function deterministicUuid(identity: string): string {
   const bytes = createHash("sha256").update(identity).digest().subarray(0, 16);
@@ -165,31 +186,31 @@ async function readDirectThresholdProvenance(
       select value::uuid
       from jsonb_array_elements_text(${JSON.stringify(evaluationIds)}::jsonb)
     )
-    select selected.evaluation_id as published_evaluation_id,
-      origin.evaluation_id as origin_evaluation_id,
-      selected.effort_id,
-      origin_evaluation.source_activity_id,
-      selected.role,
-      selected.ordinal
+    select ${provenanceSelectedEffort.evaluation_id} as published_evaluation_id,
+      ${provenanceOriginEffort.evaluation_id} as origin_evaluation_id,
+      ${provenanceSelectedEffort.effort_id},
+      ${provenanceOriginEvaluation.source_activity_id},
+      ${provenanceSelectedEffort.role},
+      ${provenanceSelectedEffort.ordinal}
     from published
-    join threshold_evaluation_efforts selected
-      on selected.evaluation_id = published.evaluation_id
-    join threshold_evaluations published_evaluation
-      on published_evaluation.id = selected.evaluation_id
-    join threshold_evaluation_efforts origin
-      on origin.effort_id = selected.effort_id
-     and origin.role = 'primary'
-    join threshold_evaluations origin_evaluation
-      on origin_evaluation.id = origin.evaluation_id
-     and origin_evaluation.profile_id = published_evaluation.profile_id
-     and origin_evaluation.activity_category = published_evaluation.activity_category
-     and origin_evaluation.metric = published_evaluation.metric
-     and origin_evaluation.policy_version = published_evaluation.policy_version
-     and origin_evaluation.outcome = 'qualified'
-    order by selected.evaluation_id,
-      case selected.role when 'supporting' then 0 else 1 end,
-      selected.ordinal,
-      selected.effort_id
+    join ${thresholdEvaluationEfforts} selected
+      on ${provenanceSelectedEffort.evaluation_id} = published.evaluation_id
+    join ${thresholdEvaluations} published_evaluation
+      on ${provenancePublishedEvaluation.id} = ${provenanceSelectedEffort.evaluation_id}
+    join ${thresholdEvaluationEfforts} origin
+      on ${provenanceOriginEffort.effort_id} = ${provenanceSelectedEffort.effort_id}
+     and ${provenanceOriginEffort.role} = 'primary'
+    join ${thresholdEvaluations} origin_evaluation
+      on ${provenanceOriginEvaluation.id} = ${provenanceOriginEffort.evaluation_id}
+     and ${provenanceOriginEvaluation.profile_id} = ${provenancePublishedEvaluation.profile_id}
+     and ${provenanceOriginEvaluation.activity_category} = ${provenancePublishedEvaluation.activity_category}
+     and ${provenanceOriginEvaluation.metric} = ${provenancePublishedEvaluation.metric}
+     and ${provenanceOriginEvaluation.policy_version} = ${provenancePublishedEvaluation.policy_version}
+     and ${provenanceOriginEvaluation.outcome} = 'qualified'
+    order by ${provenanceSelectedEffort.evaluation_id},
+      case ${provenanceSelectedEffort.role} when 'supporting' then 0 else 1 end,
+      ${provenanceSelectedEffort.ordinal},
+      ${provenanceSelectedEffort.effort_id}
   `);
   const rows = provenanceResult.rows.map((row) => directThresholdProvenanceRowSchema.parse(row));
   const byEvaluation = new Map<string, typeof rows>();
@@ -589,42 +610,42 @@ async function readCurrentThresholdLifecycleState(
     input.identity.metric,
   );
   const result = await db.execute(sql`
-    select published.id,
-      published.evaluation_id,
-      published.value,
-      published.unit,
-      published.method,
-      published.effective_at,
-      published.policy_version,
-      published.supersedes_id,
-      superseded.value as superseded_value,
-      evaluation.source_activity_id,
-      evaluation.observed_at,
+    select ${lifecyclePublishedThreshold.id},
+      ${lifecyclePublishedThreshold.evaluation_id},
+      ${lifecyclePublishedThreshold.value},
+      ${lifecyclePublishedThreshold.unit},
+      ${lifecyclePublishedThreshold.method},
+      ${lifecyclePublishedThreshold.effective_at},
+      ${lifecyclePublishedThreshold.policy_version},
+      ${lifecyclePublishedThreshold.supersedes_id},
+      ${lifecycleSupersededThreshold.value} as superseded_value,
+      ${lifecycleEvaluation.source_activity_id},
+      ${lifecycleEvaluation.observed_at},
       case when exists (
         select 1
-        from thresholds history
-        join threshold_evaluation_efforts support
-          on support.evaluation_id = history.evaluation_id
-         and support.role = 'supporting'
-        where history.profile_id = published.profile_id
-          and history.activity_category = published.activity_category
-          and history.metric = published.metric
-          and history.policy_version = published.policy_version
-          and (history.effective_at, history.created_at, history.id)
-            <= (published.effective_at, published.created_at, published.id)
+        from ${thresholds} history
+        join ${thresholdEvaluationEfforts} support
+          on ${lifecycleSupportEffort.evaluation_id} = ${lifecycleHistoryThreshold.evaluation_id}
+         and ${lifecycleSupportEffort.role} = 'supporting'
+        where ${lifecycleHistoryThreshold.profile_id} = ${lifecyclePublishedThreshold.profile_id}
+          and ${lifecycleHistoryThreshold.activity_category} = ${lifecyclePublishedThreshold.activity_category}
+          and ${lifecycleHistoryThreshold.metric} = ${lifecyclePublishedThreshold.metric}
+          and ${lifecycleHistoryThreshold.policy_version} = ${lifecyclePublishedThreshold.policy_version}
+          and (${lifecycleHistoryThreshold.effective_at}, ${lifecycleHistoryThreshold.created_at}, ${lifecycleHistoryThreshold.id})
+            <= (${lifecyclePublishedThreshold.effective_at}, ${lifecyclePublishedThreshold.created_at}, ${lifecyclePublishedThreshold.id})
       ) then 'confirmed' else 'provisional' end as state
-    from thresholds published
-    join threshold_evaluations evaluation
-      on evaluation.id = published.evaluation_id
-    left join thresholds superseded
-      on superseded.id = published.supersedes_id
-    where published.profile_id = ${input.profileId}::uuid
-      and published.activity_category = ${input.identity.activityCategory}
-      and published.metric = ${input.identity.metric}
-      and published.policy_version = ${policy.policyVersion}
-      and (evaluation.observed_at, evaluation.id)
+    from ${thresholds} published
+    join ${thresholdEvaluations} evaluation
+      on ${lifecycleEvaluation.id} = ${lifecyclePublishedThreshold.evaluation_id}
+    left join ${thresholds} superseded
+      on ${lifecycleSupersededThreshold.id} = ${lifecyclePublishedThreshold.supersedes_id}
+    where ${lifecyclePublishedThreshold.profile_id} = ${input.profileId}::uuid
+      and ${lifecyclePublishedThreshold.activity_category} = ${input.identity.activityCategory}
+      and ${lifecyclePublishedThreshold.metric} = ${input.identity.metric}
+      and ${lifecyclePublishedThreshold.policy_version} = ${policy.policyVersion}
+      and (${lifecycleEvaluation.observed_at}, ${lifecycleEvaluation.id})
         <= (${input.observedAt}, ${input.evaluationId}::uuid)
-    order by published.effective_at desc, published.created_at desc, published.id desc
+    order by ${lifecyclePublishedThreshold.effective_at} desc, ${lifecyclePublishedThreshold.created_at} desc, ${lifecyclePublishedThreshold.id} desc
     limit 1
   `);
   const row = result.rows[0];
@@ -1197,39 +1218,50 @@ async function readThresholdsForRequestsInSnapshot(
       candidate.evaluation_id,
       case when exists (
         select 1
-        from thresholds history
-        join threshold_evaluation_efforts support
-          on support.evaluation_id = history.evaluation_id
-         and support.role = 'supporting'
-        where history.profile_id = candidate.profile_id
-          and history.activity_category = candidate.activity_category
-          and history.metric = candidate.metric
-          and history.policy_version = candidate.policy_version
-          and (history.effective_at, history.created_at, history.id)
+        from ${thresholds} history
+        join ${thresholdEvaluationEfforts} support
+          on ${batchSupportEffort.evaluation_id} = ${batchHistoryThreshold.evaluation_id}
+         and ${batchSupportEffort.role} = 'supporting'
+        where ${batchHistoryThreshold.profile_id} = candidate.profile_id
+          and ${batchHistoryThreshold.activity_category} = candidate.activity_category
+          and ${batchHistoryThreshold.metric} = candidate.metric
+          and ${batchHistoryThreshold.policy_version} = candidate.policy_version
+          and (${batchHistoryThreshold.effective_at}, ${batchHistoryThreshold.created_at}, ${batchHistoryThreshold.id})
             <= (candidate.effective_at, candidate.created_at, candidate.id)
       ) then 'confirmed' else 'provisional' end as state
     from requests request
     cross join identities identity
     cross join lateral (
-      select published.*
-      from thresholds published
-      where published.profile_id = request.profile_id
-        and published.activity_category::text = identity.activity_category
+      select ${batchCandidateThreshold.id},
+        ${batchCandidateThreshold.profile_id},
+        ${batchCandidateThreshold.activity_category},
+        ${batchCandidateThreshold.metric},
+        ${batchCandidateThreshold.value},
+        ${batchCandidateThreshold.unit},
+        ${batchCandidateThreshold.confidence},
+        ${batchCandidateThreshold.method},
+        ${batchCandidateThreshold.effective_at},
+        ${batchCandidateThreshold.policy_version},
+        ${batchCandidateThreshold.evaluation_id},
+        ${batchCandidateThreshold.created_at}
+      from ${thresholds} published
+      where ${batchCandidateThreshold.profile_id} = request.profile_id
+        and ${batchCandidateThreshold.activity_category}::text = identity.activity_category
         -- Keep this read compatible while the optional LTHR enum migration is
         -- pending: an older database has no LTHR enum literal, but simply
         -- returns no LTHR threshold rows.
-        and published.metric::text = identity.metric
-        and published.effective_at <= request.as_of
+        and ${batchCandidateThreshold.metric}::text = identity.metric
+        and ${batchCandidateThreshold.effective_at} <= request.as_of
         and (
           request.excluded_activity_id is null
           or not exists (
             select 1
-            from threshold_evaluation_efforts selected
-            where selected.evaluation_id = published.evaluation_id
-              and selected.activity_id = request.excluded_activity_id
+            from ${thresholdEvaluationEfforts} selected
+            where ${batchSelectedEffort.evaluation_id} = ${batchCandidateThreshold.evaluation_id}
+              and ${batchSelectedEffort.activity_id} = request.excluded_activity_id
           )
         )
-      order by published.effective_at desc, published.created_at desc, published.id desc
+      order by ${batchCandidateThreshold.effective_at} desc, ${batchCandidateThreshold.created_at} desc, ${batchCandidateThreshold.id} desc
       limit 1
     ) candidate
     order by request.ordinal, candidate.activity_category, candidate.metric

@@ -271,15 +271,18 @@ function simulatePoints(input: {
     })),
   });
 
-  return modelPoints.map((point, index) => ({
-    date: point.date,
-    readiness: readinessScores[index] ?? null,
-    load: round1(point.load),
-    confidence: input.confidenceByDate?.get(point.date),
-    provenance: input.provenance,
-    longTermLoad: point.longTermLoad,
-    recentLoad: point.recentLoad,
-  }));
+  return modelPoints.map((point, index) => {
+    const confidence = input.confidenceByDate?.get(point.date);
+    return {
+      date: point.date,
+      readiness: readinessScores[index] ?? null,
+      load: round1(point.load),
+      ...(confidence === undefined ? {} : { confidence }),
+      provenance: input.provenance,
+      longTermLoad: point.longTermLoad,
+      recentLoad: point.recentLoad,
+    };
+  });
 }
 
 function withUncertaintyRange(
@@ -744,15 +747,20 @@ function applyScheduleAdjustment(input: {
   const byDate = new Map<string, ScheduledReadinessDailyLoadInput>();
   for (const load of input.scheduledDailyLoad) {
     const existing = byDate.get(load.date);
+    const confidence = existing?.confidence ?? load.confidence;
     byDate.set(load.date, {
       date: load.date,
       load: (existing?.load ?? 0) + clampNonNegative(load.load),
-      confidence:
-        existing?.confidence && load.confidence
-          ? confidenceRank(existing.confidence) < confidenceRank(load.confidence)
-            ? existing.confidence
-            : load.confidence
-          : (existing?.confidence ?? load.confidence),
+      ...(confidence === undefined
+        ? {}
+        : {
+            confidence:
+              existing?.confidence && load.confidence
+                ? confidenceRank(existing.confidence) < confidenceRank(load.confidence)
+                  ? existing.confidence
+                  : load.confidence
+                : confidence,
+          }),
     });
   }
 

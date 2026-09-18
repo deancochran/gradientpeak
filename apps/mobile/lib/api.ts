@@ -1,15 +1,18 @@
 import { CONTRACT_EPOCH_HEADER, CURRENT_CONTRACT_EPOCH } from "@repo/api/client";
 import {
+  type AppRouter,
   api,
   createApiBatchLink,
   createApiUrl,
   createVanillaApiClient,
-  loggerLink,
+  type TRPCLink,
 } from "@repo/api/react";
+import { observable } from "@trpc/server/observable";
 import { Platform } from "react-native";
 import { getSessionAuthHeaders } from "@/lib/auth/auth-headers";
 import { getMobileDeviceKind, logMobileAction } from "@/lib/logging/mobile-action-log";
 import { getServerConfig } from "@/lib/server-config";
+import { captureException } from "@/lib/services/sentry";
 
 export { api };
 
@@ -141,6 +144,103 @@ export async function createMobileHeaders() {
 let vanillaApiClient: ReturnType<typeof createVanillaApiClient> | null = null;
 let vanillaApiUrl = "";
 
+const SAFE_TRPC_ERROR_CODES = new Set([
+  "BAD_REQUEST",
+  "UNAUTHORIZED",
+  "FORBIDDEN",
+  "NOT_FOUND",
+  "CONFLICT",
+  "TOO_MANY_REQUESTS",
+  "INTERNAL_SERVER_ERROR",
+]);
+const SAFE_APPLICATION_ERROR_CODES = new Set([
+  "ONBOARDING_PENDING_OAUTH",
+  "ACTIVITY_PLAN_INTEGRITY_FAILED",
+]);
+const SAFE_ERROR_CLASSES = new Set([
+  "TRPCClientError",
+  "ApiRequestTimeoutError",
+  "AbortError",
+  "TypeError",
+]);
+
+export type SafeApiErrorDiagnostic = {
+  applicationErrorCode: string | null;
+  errorClass: string;
+  httpStatus: number | null;
+  trpcCode: string | null;
+};
+
+/** Returns only finite transport metadata; never use an error message as diagnostics. */
+export function getSafeApiErrorDiagnostic(error: unknown): SafeApiErrorDiagnostic {
+  const candidate = error && typeof error === "object" ? error : null;
+  const data = candidate && "data" in candidate ? candidate.data : null;
+  const errorData = data && typeof data === "object" ? data : null;
+  const code = errorData && "code" in errorData ? errorData.code : null;
+  const applicationErrorCode =
+    errorData && "applicationErrorCode" in errorData ? errorData.applicationErrorCode : null;
+  const httpStatus = errorData && "httpStatus" in errorData ? errorData.httpStatus : null;
+  const errorName = candidate && "name" in candidate ? candidate.name : null;
+
+  return {
+    applicationErrorCode:
+      typeof applicationErrorCode === "string" &&
+      SAFE_APPLICATION_ERROR_CODES.has(applicationErrorCode)
+        ? applicationErrorCode
+        : null,
+    errorClass:
+      typeof errorName === "string" && SAFE_ERROR_CLASSES.has(errorName)
+        ? errorName
+        : "UnknownError",
+    httpStatus:
+      typeof httpStatus === "number" &&
+      Number.isInteger(httpStatus) &&
+      httpStatus >= 400 &&
+      httpStatus <= 599
+        ? httpStatus
+        : null,
+    trpcCode: typeof code === "string" && SAFE_TRPC_ERROR_CODES.has(code) ? code : null,
+  };
+}
+
+function isExpectedApiError(diagnostic: SafeApiErrorDiagnostic) {
+  return (
+    (diagnostic.httpStatus !== null &&
+      diagnostic.httpStatus >= 400 &&
+      diagnostic.httpStatus < 500) ||
+    (diagnostic.trpcCode !== null && diagnostic.trpcCode !== "INTERNAL_SERVER_ERROR")
+  );
+}
+
+export function reportMobileApiError(procedure: string, error: unknown) {
+  const diagnostic = getSafeApiErrorDiagnostic(error);
+  const expected = isExpectedApiError(diagnostic);
+  // Expected user-action outcomes are handled in UI rather than reported as operational failures.
+  if (!expected && diagnostic.httpStatus !== 500) {
+    captureException(error instanceof Error ? error : new Error("API client failure"), {
+      procedure,
+    });
+  }
+  if (__DEV__) {
+    const log = expected ? console.warn : console.error;
+    log("[api]", procedure, diagnostic);
+  }
+}
+
+const mobileErrorLoggerLink: TRPCLink<AppRouter> = () => {
+  return ({ op, next }) =>
+    observable((observer) =>
+      next(op).subscribe({
+        next: (result) => observer.next(result),
+        complete: () => observer.complete(),
+        error: (error) => {
+          reportMobileApiError(op.path, error);
+          observer.error(error);
+        },
+      }),
+    );
+};
+
 export function getVanillaApiClient() {
   const currentUrl = getApiUrl();
   if (!vanillaApiClient || vanillaApiUrl !== currentUrl) {
@@ -158,10 +258,7 @@ export function getVanillaApiClient() {
 export function createApiClient() {
   return api.createClient({
     links: [
-      loggerLink({
-        enabled: (opts) => __DEV__ || (opts.direction === "down" && opts.result instanceof Error),
-        colorMode: "none",
-      }),
+      mobileErrorLoggerLink,
       createApiBatchLink({
         url: getApiUrl(),
         fetch: fetchWithTimeout,

@@ -4,6 +4,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RouteEditForm } from "./route-edit-form";
 
+vi.mock("../../lib/use-unsaved-changes-guard", () => ({
+  useUnsavedChangesGuard: () => ({
+    guardedCancel: (fn: () => void) => fn(),
+    markSaveFailed: vi.fn(),
+    markSaved: vi.fn(),
+  }),
+}));
+
 afterEach(cleanup);
 
 function renderForm(onSubmit = vi.fn().mockResolvedValue(undefined)) {

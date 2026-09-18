@@ -1,9 +1,10 @@
+import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Slider } from "@repo/ui/components/slider";
 import { Text } from "@repo/ui/components/text";
 import { useQueryClient } from "@tanstack/react-query";
 import { randomUUID } from "expo-crypto";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { api } from "@/lib/api";
 
@@ -35,46 +36,66 @@ export function SessionRpeCard({
 }) {
   const utils = api.useUtils();
   const queryClient = useQueryClient();
-  const [selectedRpe, setSelectedRpe] = useState(0);
+  const [selectedRpe, setSelectedRpe] = useState<number | null>(effectiveSessionRpe?.rpe ?? null);
   const [savedEvidenceId, setSavedEvidenceId] = useState<string | null>(null);
-  const [hasPendingChange, setHasPendingChange] = useState(false);
+  const [savedRpe, setSavedRpe] = useState<number | null>(effectiveSessionRpe?.rpe ?? null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const operationIdRef = useRef<string | null>(null);
+  const saveInFlightRef = useRef(false);
   const evidenceId = effectiveSessionRpe?.id ?? savedEvidenceId;
   const isCorrection = evidenceId !== null;
+  const currentRpe = effectiveSessionRpe?.rpe ?? savedRpe;
+  const hasPendingChange = selectedRpe !== null && selectedRpe !== currentRpe;
 
   useEffect(() => {
-    if (effectiveSessionRpe) {
-      setSelectedRpe(effectiveSessionRpe.rpe);
-      setSavedEvidenceId(effectiveSessionRpe.id);
-      setHasPendingChange(false);
-    }
+    setSelectedRpe(effectiveSessionRpe?.rpe ?? null);
+    setSavedEvidenceId(effectiveSessionRpe?.id ?? null);
+    setSavedRpe(effectiveSessionRpe?.rpe ?? null);
+    setErrorMessage(null);
+    operationIdRef.current = null;
+    saveInFlightRef.current = false;
   }, [effectiveSessionRpe]);
 
   const recordSessionRpe = api.activities.recordSessionRpe.useMutation({
-    onSuccess: async (evidence) => {
+    onError: (error) => {
+      saveInFlightRef.current = false;
+      setErrorMessage(error.message || "RPE could not be saved. Try again.");
+    },
+    onSuccess: async (evidence, variables) => {
       setSavedEvidenceId(evidence.id);
+      setSavedRpe(variables.rpe);
       await Promise.all([
         utils.activities.getById.invalidate({ id: activityId }),
         utils.activities.dailyCommonLoadObservations.invalidate(),
         invalidatePostActivityIngestionQueries(queryClient),
         utils.trainingPlans.preview.invalidate(),
       ]);
-      setHasPendingChange(false);
+      setErrorMessage(null);
+      operationIdRef.current = null;
+      saveInFlightRef.current = false;
     },
   });
 
-  useEffect(() => {
-    if (!hasPendingChange || selectedRpe === 0 || recordSessionRpe.isPending) return;
-    const timeout = setTimeout(() => {
-      recordSessionRpe.mutate({
-        activity_id: activityId,
-        operation_id: randomUUID(),
-        rpe: selectedRpe,
-        source: isCorrection ? "manual" : "user",
-        ...(isCorrection ? { correction_of_id: evidenceId } : {}),
-      });
-    }, 500);
-    return () => clearTimeout(timeout);
-  }, [activityId, evidenceId, hasPendingChange, isCorrection, recordSessionRpe, selectedRpe]);
+  const saveRpe = () => {
+    if (
+      recordSessionRpe.isPending ||
+      saveInFlightRef.current ||
+      !hasPendingChange ||
+      selectedRpe === null
+    ) {
+      return;
+    }
+    saveInFlightRef.current = true;
+    const operationId = operationIdRef.current ?? randomUUID();
+    operationIdRef.current = operationId;
+    recordSessionRpe.mutate({
+      activity_id: activityId,
+      operation_id: operationId,
+      rpe: selectedRpe,
+      source: isCorrection ? "manual" : "user",
+      ...(isCorrection ? { correction_of_id: evidenceId } : {}),
+    });
+  };
 
   return (
     <Card testID="activity-session-rpe-card">
@@ -87,27 +108,41 @@ export function SessionRpeCard({
             accessibilityLiveRegion="polite"
             className="text-center text-sm font-medium text-foreground"
           >
-            {selectedRpe === 0 ? "0/10 · No value found" : `${selectedRpe}/10`}
+            {currentRpe === null ? "No RPE recorded" : `Current RPE ${currentRpe}/10`}
           </Text>
           <Text
             accessibilityLiveRegion="polite"
             className="text-center text-xs text-muted-foreground"
           >
-            {RPE_DESCRIPTIONS[selectedRpe]}
+            {RPE_DESCRIPTIONS[selectedRpe ?? 0]}
           </Text>
           <Slider
             accessibilityLabel="Session RPE"
             maximumValue={10}
             minimumValue={0}
             onValueChange={(nextRpe) => {
-              if (nextRpe === 0 && isCorrection) return;
-              setSelectedRpe(nextRpe);
-              setHasPendingChange(nextRpe !== 0);
+              setSelectedRpe(nextRpe === 0 ? null : nextRpe);
+              setErrorMessage(null);
+              operationIdRef.current = null;
             }}
             step={1}
             testId="activity-session-rpe"
-            value={selectedRpe}
+            value={selectedRpe ?? 0}
           />
+          {errorMessage ? (
+            <Text accessibilityLiveRegion="polite" className="text-sm text-destructive">
+              {errorMessage}
+            </Text>
+          ) : null}
+          <Button
+            disabled={!hasPendingChange || recordSessionRpe.isPending}
+            onPress={saveRpe}
+            testID="activity-session-rpe-save"
+          >
+            <Text className="text-sm font-semibold text-primary-foreground">
+              {recordSessionRpe.isPending ? "Saving RPE..." : "Save RPE"}
+            </Text>
+          </Button>
         </View>
       </CardContent>
     </Card>

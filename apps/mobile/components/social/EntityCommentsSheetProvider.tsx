@@ -22,8 +22,8 @@ export function useEntityCommentsSheet() {
 export function EntityCommentsSheetProvider({ children }: { children: React.ReactNode }) {
   const [target, setTarget] = useState<EntityCommentsTarget | null>(null);
   const comments = useEntityCommentsController({
-    entityId: target?.entityId,
     entityType: target?.entityType ?? "activity_plan",
+    ...(target ? { entityId: target.entityId } : {}),
   });
   const closeEntityComments = useCallback(() => setTarget(null), []);
   const openEntityComments = useCallback((nextTarget: EntityCommentsTarget) => {
@@ -38,7 +38,7 @@ export function EntityCommentsSheetProvider({ children }: { children: React.Reac
     <EntityCommentsSheetContext.Provider value={value}>
       {children}
       <AppBottomSheet
-        contentKey={target ? `${target.entityType}-${target.entityId}` : undefined}
+        {...(target ? { contentKey: `${target.entityType}-${target.entityId}` } : {})}
         initialSnapIndex={APP_BOTTOM_SHEET_PRESENTATIONS.inspector.initialSnapIndex}
         onClose={closeEntityComments}
         showCloseAction

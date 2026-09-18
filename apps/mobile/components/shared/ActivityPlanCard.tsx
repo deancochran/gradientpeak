@@ -4,7 +4,6 @@ import type {
   ScheduledActivityPlanSummary,
 } from "@repo/core";
 import { deriveActivityPlanPresentation } from "@repo/core/activity-plan";
-import type { ActivityPrescriptionQuantificationBundle } from "@repo/core/activity-quantification";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
@@ -17,7 +16,6 @@ import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
 import { getPublicShareUrl } from "@/lib/share/public-share-url";
 import { ActivityPlanSummary } from "./ActivityPlanSummary";
-import type { EntityOwner } from "./EntityOwnerRow";
 import {
   ResourceCardActionButton,
   ResourceCardShell,
@@ -25,57 +23,6 @@ import {
   ResourceLikeButton,
   ResourceOwnerActionRow,
 } from "./ResourceCardPrimitives";
-
-/** Legacy authoring/query source retained outside the card prop boundary during caller migration. */
-export type ActivityPlan = {
-  id: string;
-  name: string;
-  activity_category?: string | null;
-  structure_hash?: string;
-  description?: string | null;
-  structure?: unknown;
-  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
-  notes?: string | null;
-  profile_id?: string | null;
-  content_visibility?: string | null;
-  is_system_template?: boolean | null;
-  created_at?: string | Date;
-  updated_at?: string | Date;
-  likes_count?: number | null;
-  has_liked?: boolean;
-  owner?: EntityOwner | null;
-};
-
-export type PlannedActivity = {
-  id: string;
-  activity_plan_id: string;
-  activity_plan?: ActivityPlan;
-  scheduled_date: string;
-  notes?: string | null;
-  completed_activity_id?: string | null;
-  profile_id?: string;
-  created_at?: string;
-  updated_at?: string;
-};
-
-export type ActivityPlanCardData = {
-  id: string;
-  name: string;
-  activity_category: string;
-  description?: string;
-  structure?: unknown;
-  estimatedDuration?: number;
-  prescriptionQuantification?: ActivityPrescriptionQuantificationBundle | null;
-  estimatedDistance?: number;
-  notes?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  scheduledDate?: string;
-  isCompleted?: boolean;
-  likes_count?: number | null;
-  has_liked?: boolean;
-  owner?: EntityOwner | null;
-};
 
 interface ActivityPlanCardProps {
   plan: ActivityPlanSummaryProjection | ActivityPlanDetail | ScheduledActivityPlanSummary;

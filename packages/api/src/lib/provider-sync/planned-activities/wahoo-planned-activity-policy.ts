@@ -22,17 +22,17 @@ export function getWahooPlannedActivitySyncPolicy(): WahooPlannedActivitySyncPol
 }
 
 export function getWahooPlannedActivitySyncLaneKey(input: {
-  eventId: string;
+  plannedSessionId: string;
   integrationId: string;
 }): string {
   // Wahoo plans may be shared by multiple dated events. Keep every planned-activity
   // mutation for one Wahoo account in a durable queue lane so the final unlink cannot
   // race another event that is creating, replacing, or removing the same remote plan.
-  return `wahoo:${input.integrationId}:planned_activity`;
+  return `wahoo:${input.integrationId}:planned_session`;
 }
 
 export function getWahooPlannedActivityJobType(input: { operation: "publish" | "unsync" }): string {
-  return `wahoo.${input.operation}_event`;
+  return `wahoo.${input.operation}_planned_session`;
 }
 
 export function getEarliestPlannedActivityRunAt(input: {

@@ -24,18 +24,21 @@ export const EASY_SWIM: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Easy Warm-up",
+      purpose: "warmup",
       duration: Duration.meters(400),
       targets: [Target.thresholdHR(60)],
       notes: "Mix of easy freestyle and backstroke, focus on feel for the water",
     })
     .step({
       name: "Steady Swim",
+      purpose: "work",
       duration: Duration.meters(1400),
       targets: [Target.thresholdHR(70)],
       notes: "Maintain steady rhythm, focus on stroke technique and breathing pattern",
     })
     .step({
       name: "Easy Cool-down",
+      purpose: "cooldown",
       duration: Duration.meters(200),
       targets: [Target.thresholdHR(60)],
       notes: "Mix of strokes, very relaxed pace",
@@ -56,6 +59,7 @@ export const SPRINT_INTERVALS_SWIM: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Progressive Warm-up",
+      purpose: "warmup",
       duration: Duration.meters(500),
       targets: [Target.thresholdHR(65)],
       notes: "Start easy, include some faster swimming in final 100m",
@@ -65,12 +69,14 @@ export const SPRINT_INTERVALS_SWIM: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Sprint",
+          purpose: "work",
           duration: Duration.meters(25),
           targets: [Target.thresholdHR(95)],
           notes: "Maximum effort sprint",
         },
         {
           name: "Recovery",
+          purpose: "recovery",
           duration: Duration.meters(50),
           targets: [Target.thresholdHR(60)],
           notes: "Very easy swimming or backstroke to recover",
@@ -82,12 +88,14 @@ export const SPRINT_INTERVALS_SWIM: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Longer Sprint",
+          purpose: "work",
           duration: Duration.meters(50),
           targets: [Target.thresholdHR(90)],
           notes: "Fast but controlled effort",
         },
         {
           name: "Active Recovery",
+          purpose: "recovery",
           duration: Duration.meters(100),
           targets: [Target.thresholdHR(60)],
           notes: "Easy backstroke or freestyle",
@@ -96,6 +104,7 @@ export const SPRINT_INTERVALS_SWIM: RecordingServiceActivityPlan = {
     })
     .step({
       name: "Cool-down",
+      purpose: "cooldown",
       duration: Duration.meters(400),
       targets: [Target.thresholdHR(55)],
       notes: "Very easy mixed strokes",
@@ -116,6 +125,7 @@ export const THRESHOLD_SWIM: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Warm-up",
+      purpose: "warmup",
       duration: Duration.meters(600),
       targets: [Target.thresholdHR(65)],
       notes: "Include drill work and build swimming to prepare for threshold",
@@ -125,12 +135,14 @@ export const THRESHOLD_SWIM: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Threshold Interval",
+          purpose: "work",
           duration: Duration.meters(400),
           targets: [Target.thresholdHR(85)],
           notes: "Steady hard effort - should feel comfortably hard but sustainable",
         },
         {
           name: "Recovery",
+          purpose: "recovery",
           duration: Duration.meters(100),
           targets: [Target.thresholdHR(65)],
           notes: "Easy backstroke or freestyle to recover",
@@ -139,6 +151,7 @@ export const THRESHOLD_SWIM: RecordingServiceActivityPlan = {
     })
     .step({
       name: "Cool-down",
+      purpose: "cooldown",
       duration: Duration.meters(400),
       targets: [Target.thresholdHR(55)],
       notes: "Very easy mixed strokes, include some floating/stretching",
@@ -159,6 +172,7 @@ export const TECHNIQUE_SWIM: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Easy Warm-up",
+      purpose: "warmup",
       duration: Duration.meters(300),
       targets: [Target.thresholdHR(60)],
       notes: "Easy freestyle and backstroke, focus on feel",
@@ -168,18 +182,21 @@ export const TECHNIQUE_SWIM: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Freestyle Drills",
+          purpose: "technique",
           duration: Duration.meters(200),
           targets: [Target.thresholdHR(65)],
           notes: "Catch-up, fingertip drag, single-arm swimming",
         },
         {
           name: "Build Swimming",
+          purpose: "technique",
           duration: Duration.meters(150),
           targets: [Target.thresholdHR(75)],
           notes: "Start easy, build speed while maintaining technique",
         },
         {
           name: "Easy Recovery",
+          purpose: "recovery",
           duration: Duration.meters(100),
           targets: [Target.thresholdHR(60)],
           notes: "Backstroke or easy freestyle",
@@ -188,12 +205,14 @@ export const TECHNIQUE_SWIM: RecordingServiceActivityPlan = {
     })
     .step({
       name: "Mixed Strokes",
+      purpose: "technique",
       duration: Duration.meters(300),
       targets: [Target.thresholdHR(70)],
       notes: "Include backstroke, breaststroke, and freestyle",
     })
     .step({
       name: "Cool-down",
+      purpose: "cooldown",
       duration: Duration.meters(200),
       targets: [Target.thresholdHR(55)],
       notes: "Very easy mixed swimming",
@@ -214,36 +233,42 @@ export const ENDURANCE_SWIM: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Extended Warm-up",
+      purpose: "warmup",
       duration: Duration.meters(600),
       targets: [Target.thresholdHR(60)],
       notes: "Start very easy, include some drill work and building",
     })
     .step({
       name: "Endurance Block 1",
+      purpose: "work",
       duration: Duration.meters(1200),
       targets: [Target.thresholdHR(72)],
       notes: "Steady aerobic pace - should feel sustainable and controlled",
     })
     .step({
       name: "Easy Recovery",
+      purpose: "recovery",
       duration: Duration.meters(200),
       targets: [Target.thresholdHR(60)],
       notes: "Easy backstroke or very easy freestyle",
     })
     .step({
       name: "Endurance Block 2",
+      purpose: "work",
       duration: Duration.meters(1200),
       targets: [Target.thresholdHR(75)],
       notes: "Slightly higher intensity than first block - still aerobic",
     })
     .step({
       name: "Variable Pace",
+      purpose: "work",
       duration: Duration.meters(200),
       targets: [Target.thresholdHR(70)],
       notes: "Vary pace every 50m - keep it interesting",
     })
     .step({
       name: "Cool-down",
+      purpose: "cooldown",
       duration: Duration.meters(100),
       targets: [Target.thresholdHR(55)],
       notes: "Very easy mixed strokes and floating",
@@ -263,6 +288,7 @@ export const OPTION_1_FAVORITE_SWIM: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Easy Warm-up",
+      purpose: "warmup",
       duration: Duration.meters(400),
       targets: [Target.thresholdHR(60)],
       notes: "400 m easy swimming to settle into the session.",
@@ -272,6 +298,7 @@ export const OPTION_1_FAVORITE_SWIM: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Drill/Swim",
+          purpose: "technique",
           duration: Duration.meters(50),
           targets: [Target.thresholdHR(65)],
           notes: "Alternate drill and swim repetitions for 400 m total.",
@@ -283,12 +310,14 @@ export const OPTION_1_FAVORITE_SWIM: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Zone 3",
+          purpose: "work",
           duration: Duration.meters(400),
           targets: [Target.thresholdHR(75)],
           notes: "Controlled Zone 3 swimming.",
         },
         {
           name: "Rest",
+          purpose: "recovery",
           duration: Duration.seconds(30),
           targets: [Target.thresholdHR(55)],
           notes: "30 seconds rest.",
@@ -300,12 +329,14 @@ export const OPTION_1_FAVORITE_SWIM: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Threshold",
+          purpose: "work",
           duration: Duration.meters(100),
           targets: [Target.thresholdHR(85)],
           notes: "Threshold effort.",
         },
         {
           name: "Easy",
+          purpose: "recovery",
           duration: Duration.meters(100),
           targets: [Target.thresholdHR(60)],
           notes: "Easy swimming recovery.",
@@ -314,6 +345,7 @@ export const OPTION_1_FAVORITE_SWIM: RecordingServiceActivityPlan = {
     })
     .step({
       name: "Easy Cool-down",
+      purpose: "cooldown",
       duration: Duration.meters(400),
       targets: [Target.thresholdHR(55)],
       notes: "400 m easy swimming to finish.",

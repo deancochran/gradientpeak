@@ -5,6 +5,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CalendarEventForm } from "./calendar-event-form";
 
+vi.mock("../../lib/use-unsaved-changes-guard", () => ({
+  useUnsavedChangesGuard: () => ({
+    guardedCancel: (fn: () => void) => fn(),
+    markSaveFailed: vi.fn(),
+    markSaved: vi.fn(),
+  }),
+}));
+
 const mocks = vi.hoisted(() => ({ action: vi.fn() }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -75,5 +83,42 @@ describe("CalendarEventForm", () => {
         (screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement).disabled,
       ).toBe(false),
     );
+  });
+
+  it("blocks date/time changes from expanding to future or series scope and keeps single valid", async () => {
+    const recurringEvent = { ...event, recurrence_rule: "FREQ=WEEKLY;COUNT=4" };
+    render(<CalendarEventForm event={recurringEvent} month="2026-10" view="month" />);
+    const scope = screen.getByLabelText("Apply changes to") as HTMLSelectElement;
+
+    fireEvent.change(screen.getByLabelText("Time"), { target: { value: "10:00" } });
+
+    await waitFor(() => expect(scope.value).toBe("single"));
+    expect(
+      (screen.getByRole("option", { name: /this and future events/i }) as HTMLOptionElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("option", { name: /entire series/i }) as HTMLOptionElement).disabled,
+    ).toBe(true);
+    expect(
+      screen.getByText(/Date, time, and all-day changes apply only to this event/i),
+    ).toBeTruthy();
+
+    fireEvent.change(scope, { target: { value: "future" } });
+    await waitFor(() => expect(scope.value).toBe("single"));
+
+    fireEvent.submit(getForm());
+    await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
+    const formData = mocks.action.mock.calls[0]?.[0]?.data as FormData;
+    expect(formData.get("scope")).toBe("single");
+  });
+
+  it("does not request an update for an invalid civil date", async () => {
+    render(<CalendarEventForm event={event} month="2026-10" view="month" />);
+    fireEvent.change(screen.getByLabelText("Date"), { target: { value: "not-a-date" } });
+    fireEvent.submit(getForm());
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Enter a valid event date.");
+    expect(mocks.action).not.toHaveBeenCalled();
   });
 });

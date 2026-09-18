@@ -16,18 +16,31 @@ const DISCOVERY_SCOPES = new Set<WebDiscoverScope>([
 ]);
 
 export const Route = createFileRoute("/_protected/search")({
-  validateSearch: (search: Record<string, unknown>): { q?: string; scope?: WebDiscoverScope } => ({
-    q: typeof search.q === "string" ? search.q.slice(0, 80) : undefined,
-    scope:
-      typeof search.scope === "string" && DISCOVERY_SCOPES.has(search.scope as WebDiscoverScope)
-        ? (search.scope as WebDiscoverScope)
-        : undefined,
-  }),
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { q?: string; scope?: WebDiscoverScope; minDistanceKm?: string; maxDistanceKm?: string } => {
+    const minDistanceKm = optionalNonnegativeNumber(search.minDistanceKm);
+    const maxDistanceKm = optionalNonnegativeNumber(search.maxDistanceKm);
+    return {
+      ...(typeof search.q === "string" ? { q: search.q.slice(0, 80) } : {}),
+      ...(typeof search.scope === "string" && DISCOVERY_SCOPES.has(search.scope as WebDiscoverScope)
+        ? { scope: search.scope as WebDiscoverScope }
+        : {}),
+      ...(minDistanceKm !== undefined &&
+      maxDistanceKm !== undefined &&
+      minDistanceKm > maxDistanceKm
+        ? {}
+        : {
+            ...(minDistanceKm !== undefined ? { minDistanceKm: String(minDistanceKm) } : {}),
+            ...(maxDistanceKm !== undefined ? { maxDistanceKm: String(maxDistanceKm) } : {}),
+          }),
+    };
+  },
   component: SearchPage,
 });
 
 function SearchPage() {
-  const { q, scope } = Route.useSearch();
+  const { maxDistanceKm, minDistanceKm, q, scope } = Route.useSearch();
   return (
     <div className="space-y-6">
       <header>
@@ -42,7 +55,18 @@ function SearchPage() {
           Search persisted activity plans, training plans, routes, profiles, and groups.
         </p>
       </header>
-      <DiscoveryExplorer initialQuery={q ?? ""} initialScope={scope} />
+      <DiscoveryExplorer
+        initialMaxDistanceKm={maxDistanceKm ?? ""}
+        initialMinDistanceKm={minDistanceKm ?? ""}
+        initialQuery={q ?? ""}
+        {...(scope ? { initialScope: scope } : {})}
+      />
     </div>
   );
+}
+
+function optionalNonnegativeNumber(value: unknown) {
+  if (typeof value !== "string" || value.trim() === "") return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
 }

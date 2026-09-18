@@ -40,7 +40,7 @@ const work = {
   historyJobType: "wahoo.activity_history_reconcile",
   profileJobType: "wahoo.profile_enrichment",
 } as const;
-const plannedJobTypes = new Set(["wahoo.publish_event", "wahoo.unsync_event"]);
+const plannedJobTypes = new Set(["wahoo.publish_planned_session", "wahoo.unsync_planned_session"]);
 const resources = {
   activities: "historical_activities",
   profile: "profile_enrichment",

@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { activityPlanStructureSchema } from "../activity-plan";
-import { plannedSessionPrescriptionSnapshotSchema } from "../calendar/planned-session";
+import {
+  plannedSessionPrescriptionSnapshotSchema,
+  plannedSessionSourceSchema,
+} from "../calendar/planned-session";
 import {
   type CanonicalActivityCategory,
   canonicalActivityCategorySchema,
@@ -29,7 +32,7 @@ export {
 export const activityPlanInputSchema = z
   .object({
     name: z.string().min(1, "Plan name is required"),
-    description: z.string().max(1000).nullable().optional(),
+    description: z.string().max(3009).nullable().optional(),
     notes: z.string().max(2000).nullable().optional(),
     structure: activityPlanStructureSchema,
   })
@@ -45,7 +48,7 @@ export type ActivityPlan = z.infer<typeof activityPlanSchema>;
 export const recordingServiceActivityPlanSchema = z
   .object({
     name: z.string().min(1, "Plan name is required"),
-    description: z.string().max(1000).nullable().optional(),
+    description: z.string().max(3009).nullable().optional(),
     notes: z.string().max(2000).nullable().optional(),
     structure: activityPlanStructureSchema,
   })
@@ -64,6 +67,7 @@ export const recordingPlannedSessionLaunchSchema = z
   .object({
     id: z.string().uuid(),
     sessionRevision: z.number().int().positive(),
+    source: plannedSessionSourceSchema,
     prescription: plannedSessionPrescriptionSnapshotSchema,
   })
   .strict();
@@ -218,21 +222,27 @@ export const ActivityPayloadSchema = z
       });
       return;
     }
-    if (payload.plan.id !== prescription.activityPlanId) {
+    if (payload.plan.id !== prescription.resolutionManifest.activity_plan_id) {
       context.addIssue({
         code: "custom",
         path: ["plan", "id"],
         message: "The launch plan must match the planned-session activity plan",
       });
     }
-    if (payload.activity_category !== prescription.structure.activity_category) {
+    if (
+      payload.activity_category !==
+      prescription.resolutionManifest.resolved_structure.activity_category
+    ) {
       context.addIssue({
         code: "custom",
         path: ["activity_category"],
         message: "The launch category must match the planned-session prescription",
       });
     }
-    if (JSON.stringify(payload.plan.structure) !== JSON.stringify(prescription.structure)) {
+    if (
+      JSON.stringify(payload.plan.structure) !==
+      JSON.stringify(prescription.resolutionManifest.resolved_structure)
+    ) {
       context.addIssue({
         code: "custom",
         path: ["plan", "structure"],

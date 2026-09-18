@@ -21,6 +21,7 @@ export default function OnboardingScreen() {
   if (flow.lifecycleStatus === "completed") return null;
 
   const shared: StepProps = {
+    accountIdentity: flow.accountIdentity,
     data: flow.data,
     fieldSources: flow.fieldSources,
     ...(flow.integrationOverview !== undefined
@@ -64,7 +65,7 @@ export default function OnboardingScreen() {
                   Add your name and username. Everything else can be set up later.
                 </Text>
               </View>
-              <IdentityStep {...shared} />
+              <IdentityStep key={flow.accountIdentity ?? "anonymous"} {...shared} />
               {flow.lifecycleStatus === "provider_selection" ? (
                 <View className="gap-3" testID="onboarding-provider-selection">
                   <Text className="text-lg font-semibold">Optional training account</Text>
@@ -121,11 +122,14 @@ export default function OnboardingScreen() {
         {flow.lifecycleStatus === "provider_selection" || flow.lifecycleStatus === "review" ? (
           <View className="gap-2 border-t border-border bg-background p-4">
             <Button
+              accessibilityState={{ busy: flow.isBusy, disabled: flow.isBusy }}
               disabled={flow.isBusy}
               onPress={() => void flow.handleComplete()}
               testID="onboarding-finish-button"
             >
-              <Text className="font-semibold text-primary-foreground">Finish setup</Text>
+              <Text className="font-semibold text-primary-foreground">
+                {flow.isBusy ? "Finishing setup..." : "Finish setup"}
+              </Text>
             </Button>
             <Text className="text-center text-sm text-muted-foreground">
               Goals, preferences, metrics, groups, and people are available after setup.

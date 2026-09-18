@@ -1,14 +1,17 @@
+import { activityPlanSemanticHash, activityPlanStructureSchema } from "@repo/core/activity-plan";
 import {
   applySqlFile,
   bootstrapSupabaseSchemas,
   withDisposableDatabase,
 } from "./_disposable-target";
 import { requireFreshBaseline } from "./baseline-workflow";
+import { structureHash } from "./canonical-json";
 
 const ownerId = "00000000-0000-4000-8000-000000000001";
 const otherId = "00000000-0000-4000-8000-000000000002";
+const activityPlanId = "00000000-0000-4000-8000-000000000003";
 const targetDate = "2026-07-27";
-const indexName = "idx_events_planned_day_summary";
+const indexName = "planned_sessions_profile_date_idx";
 const summaryLimit = 1_001;
 
 type ExplainNode = {
@@ -45,11 +48,11 @@ function planMetrics(plan: ExplainNode) {
 
 function assertBoundedIndexedPlan(name: string, explain: Explain) {
   const nodes = flatten(explain.Plan);
-  const eventNodes = nodes.filter((node) => node["Relation Name"] === "events");
+  const sessionNodes = nodes.filter((node) => node["Relation Name"] === "planned_sessions");
   const indexNode = nodes.find((node) => node["Index Name"] === indexName);
   if (!indexNode) throw new Error(`${name} did not use ${indexName}`);
-  if (eventNodes.some((node) => node["Node Type"] === "Seq Scan"))
-    throw new Error(`${name} scanned event history sequentially`);
+  if (sessionNodes.some((node) => node["Node Type"] === "Seq Scan"))
+    throw new Error(`${name} scanned planned-session history sequentially`);
   if (nodes.some((node) => node["Node Type"] === "Sort"))
     throw new Error(`${name} did not preserve starts_at, id index order`);
   if ((indexNode["Actual Rows"] ?? 0) > summaryLimit)
@@ -71,56 +74,117 @@ await withDisposableDatabase(process.argv.slice(2), "planned_day_summary_benchma
     "insert into auth.users (id, email, raw_user_meta_data) values ($1, 'owner@example.test', '{}'::jsonb), ($2, 'other@example.test', '{}'::jsonb)",
     [ownerId, otherId],
   );
-  // 50,000 non-target rows span history and future dates, types, statuses, and owners.
+  const prescription = activityPlanStructureSchema.parse({
+    version: 3,
+    activity_category: "run",
+    segments: [
+      {
+        id: "10000000-0000-4000-8000-000000000001",
+        role: "activity",
+        name: "Run",
+        intervals: [
+          {
+            id: "10000000-0000-4000-8000-000000000002",
+            name: "Main",
+            repetitions: 1,
+            steps: [
+              {
+                id: "10000000-0000-4000-8000-000000000003",
+                name: "Steady",
+                purpose: "work",
+                duration: { type: "time", seconds: 60 },
+                targets: [{ type: "RPE", intensity: 4 }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  const prescriptionHash = structureHash(prescription);
+  const semanticHash = activityPlanSemanticHash({
+    structure: prescription,
+    adaptation: null,
+    trainingIntent: "general_maintenance",
+  });
   await db.query(
-    `insert into public.events (id, profile_id, event_type, status, title, starts_at, scheduled_date)
+    `insert into public.activity_plans
+       (id, profile_id, name, training_intent, structure, structure_hash, semantic_hash)
+     values ($1, $2, 'Benchmark plan', 'general_maintenance', $3::jsonb, $4, $5)`,
+    [activityPlanId, ownerId, JSON.stringify(prescription), prescriptionHash, semanticHash],
+  );
+  const manifest = `jsonb_build_object(
+    'resolver_version', 'benchmark-v1', 'policy_version', 'benchmark-v1',
+    'activity_plan_id', '${activityPlanId}', 'activity_plan_revision', 1,
+    'activity_plan_semantic_hash', 'v1:sha256:${"1".repeat(64)}',
+    'session_demand', '{}'::jsonb, 'adaptation_values', '{}'::jsonb,
+    'effective_target_duration_minutes', null, 'effective_target_common_load', null,
+    'evidence_facts', '[]'::jsonb, 'reason_codes', '[]'::jsonb,
+    'resolved_structure', '{}'::jsonb,
+    'resolved_structure_hash', 'v1:sha256:${"0".repeat(64)}',
+    'prescription_estimate', '{}'::jsonb, 'fingerprint', 'v1:sha256:${"2".repeat(64)}'
+  )`;
+  // 50,000 non-target rows span history/future dates, lifecycle states, and owners.
+  await db.query(
+    `insert into public.planned_sessions
+       (id, profile_id, planning_date, original_target_date, source_kind, direct_operation_id,
+        idempotency_key, activity_plan_id, activity_plan_revision, resolution_manifest,
+        prescription_captured_at, status, cancellation_reason, cancelled_at)
        select ('30000000-0000-4000-8000-' || lpad(i::text, 12, '0'))::uuid,
-         case when i % 5 = 0 then $2::uuid else $1::uuid end,
-          (case when i % 3 = 0 then 'custom' when i % 3 = 1 then 'planned' else 'race_target' end)::public.event_type,
-         (case when i % 3 = 0 then 'cancelled' when i % 3 = 1 then 'scheduled' else 'completed' end)::public.event_status,
-         'history-or-future-' || i,
-         case when i <= 25000 then timestamp '2010-01-01 06:00:00+00' + (i || ' days')::interval else timestamp '2040-01-01 06:00:00+00' + ((i - 25000) || ' days')::interval end,
-         (case when i <= 25000 then date '2010-01-01' + i else date '2040-01-01' + (i - 25000) end)::text
+          case when i % 5 = 0 then $2::uuid else $1::uuid end,
+          case when i <= 25000 then date '2010-01-01' + i else date '2040-01-01' + (i - 25000) end,
+          case when i <= 25000 then date '2010-01-01' + i else date '2040-01-01' + (i - 25000) end,
+          'direct'::public.planned_session_source_kind, 'benchmark-history-' || lpad(i::text, 16, '0'),
+          'direct:benchmark-history-' || lpad(i::text, 16, '0'), $3::uuid, 1, ${manifest}, now(),
+          case when i % 3 = 0 then 'cancelled' else 'scheduled' end::public.planned_session_status,
+          case when i % 3 = 0 then 'user_requested'::public.planned_session_cancellation_reason else null end,
+          case when i % 3 = 0 then now() else null end
        from generate_series(1, 50000) as i`,
-    [ownerId, otherId],
+    [ownerId, otherId, activityPlanId],
   );
   // Cancelled rows sort before the 1,001 eligible rows. They must not consume the cap.
   await db.query(
-    `insert into public.events (id, profile_id, event_type, status, title, starts_at, scheduled_date)
-       select ('40000000-0000-4000-8000-' || lpad(i::text, 12, '0'))::uuid, $1::uuid,
-         'planned'::public.event_type, 'cancelled'::public.event_status, 'cancelled-' || i,
-         timestamp '2026-07-27 06:00:00+00' + (i || ' seconds')::interval, $2
+    `insert into public.planned_sessions
+       (id, profile_id, planning_date, original_target_date, source_kind, direct_operation_id,
+        idempotency_key, activity_plan_id, activity_plan_revision, resolution_manifest,
+        prescription_captured_at, status, cancellation_reason, cancelled_at)
+       select ('40000000-0000-4000-8000-' || lpad(i::text, 12, '0'))::uuid, $1::uuid, $2::date, $2::date,
+          'direct', 'benchmark-cancelled-' || lpad(i::text, 16, '0'),
+          'direct:benchmark-cancelled-' || lpad(i::text, 16, '0'), $3::uuid, 1, ${manifest}, now(),
+          'cancelled', 'user_requested', now()
        from generate_series(1, 200) as i`,
-    [ownerId, targetDate],
+    [ownerId, targetDate, activityPlanId],
   );
   await db.query(
-    `insert into public.events (id, profile_id, event_type, status, title, starts_at, scheduled_date)
-       select ('50000000-0000-4000-8000-' || lpad(i::text, 12, '0'))::uuid, $1::uuid,
-         'planned'::public.event_type, (case when i % 2 = 0 then 'completed' else 'scheduled' end)::public.event_status, 'eligible-' || i,
-         timestamp '2026-07-27 06:00:00+00' + ((200 + i) || ' seconds')::interval, $2
+    `insert into public.planned_sessions
+       (id, profile_id, planning_date, original_target_date, source_kind, direct_operation_id,
+        idempotency_key, activity_plan_id, activity_plan_revision, resolution_manifest,
+        prescription_captured_at, status)
+       select ('50000000-0000-4000-8000-' || lpad(i::text, 12, '0'))::uuid, $1::uuid, $2::date, $2::date,
+          'direct', 'benchmark-eligible-' || lpad(i::text, 16, '0'),
+          'direct:benchmark-eligible-' || lpad(i::text, 16, '0'), $3::uuid, 1, ${manifest}, now(), 'scheduled'
        from generate_series(1, 50000) as i`,
-    [ownerId, targetDate],
+    [ownerId, targetDate, activityPlanId],
   );
-  await db.query("analyze public.events");
+  await db.query("analyze public.planned_sessions");
 
-  const query = (date: string) => `select activity_plan_id, id, starts_at from public.events
+  const query = (
+    date: string,
+  ) => `select activity_plan_id, id, planning_date from public.planned_sessions
       where profile_id = '${ownerId}'::uuid
-        and event_type = 'planned'
-        and scheduled_date = '${date}'
-        and status in ('scheduled', 'completed')
-      order by starts_at asc, id asc
+        and planning_date >= '${date}'::date
+        and planning_date < '${date}'::date + 1
+      order by planning_date asc, id asc
       limit ${summaryLimit}`;
-  const populatedRows = await db.query<{ status: "scheduled" | "completed" | "cancelled" }>(
-    `select status from (${query(targetDate)}) bounded join public.events using (id)`,
+  const populatedRows = await db.query<{ status: "scheduled" | "cancelled" }>(
+    `select status from (${query(targetDate)}) bounded join public.planned_sessions using (id)`,
   );
   if (populatedRows.rowCount !== summaryLimit)
     throw new Error("eligible planned-day rows did not reach the max+1 cap");
-  if (populatedRows.rows.some((row) => row.status === "cancelled"))
-    throw new Error("cancelled planned-day rows were included before the max+1 cap");
+  if (!populatedRows.rows.some((row) => row.status === "cancelled"))
+    throw new Error("cancelled planned-day lifecycle rows were not included");
   if (!populatedRows.rows.some((row) => row.status === "scheduled"))
     throw new Error("scheduled planned-day rows were not included");
-  if (!populatedRows.rows.some((row) => row.status === "completed"))
-    throw new Error("completed planned-day rows were not included");
 
   const normalExplainResult = await db.query<{ "QUERY PLAN": Explain[] }>(
     `explain (analyze, buffers, format json) ${query(targetDate)}`,
@@ -129,7 +193,7 @@ await withDisposableDatabase(process.argv.slice(2), "planned_day_summary_benchma
   if (!normalExplain) throw new Error("normal planner explain output was empty");
   const normalMetrics = assertBoundedIndexedPlan("normal populated target day", normalExplain);
   console.log(
-    `[db:benchmark:planned-day-summary] normal planner selected ${indexName}: eligible_rows=${populatedRows.rowCount} cancelled_rows=0 execution=${normalExplain["Execution Time"]}ms shared_hit=${normalMetrics.sharedHitBlocks} shared_read=${normalMetrics.sharedReadBlocks}`,
+    `[db:benchmark:planned-day-summary] normal planner selected ${indexName}: bounded_rows=${populatedRows.rowCount} execution=${normalExplain["Execution Time"]}ms shared_hit=${normalMetrics.sharedHitBlocks} shared_read=${normalMetrics.sharedReadBlocks}`,
   );
 
   const explain = async (name: string, date: string) => {
@@ -145,6 +209,6 @@ await withDisposableDatabase(process.argv.slice(2), "planned_day_summary_benchma
   };
   await explain("empty target day", "2026-07-28");
   console.log(
-    "[db:benchmark:planned-day-summary] methodology: normal planner, 50,000 mixed historical/future rows plus 200 early cancelled and 50,000 eligible target-day rows; JSON EXPLAIN requires the covering partial index, no Sort/temp spill, zero post-index filtering, and at most the 1,001 max+1 rows.",
+    "[db:benchmark:planned-day-summary] methodology: normal planner, 50,000 mixed historical/future planned sessions plus 200 cancelled and 50,000 scheduled target-day rows; JSON EXPLAIN requires the profile/date index, no Sort/temp spill, zero post-index filtering, and at most the 1,001 max+1 rows.",
   );
 });

@@ -1,4 +1,6 @@
-import { activities, activityEfforts, profileMetrics, profiles } from "@repo/db";
+import { activities, activityEfforts, follows, profileMetrics, profiles } from "@repo/db";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 
 const analysisMocks = vi.hoisted(() => ({
@@ -22,7 +24,7 @@ vi.mock("../../infrastructure/repositories", () => ({
 
 import { profilesRouter } from "../profiles";
 
-type TableName = "activities" | "activityEfforts" | "profileMetrics" | "profiles";
+type TableName = "activities" | "activityEfforts" | "follows" | "profileMetrics" | "profiles";
 
 type SelectPlan = Partial<Record<TableName, Array<unknown[]>>>;
 
@@ -38,6 +40,7 @@ const OTHER_USER_ID = "22222222-2222-4222-8222-222222222222";
 function getTableName(table: unknown): TableName {
   if (table === profiles) return "profiles";
   if (table === profileMetrics) return "profileMetrics";
+  if (table === follows) return "follows";
   if (table === activityEfforts) return "activityEfforts";
   if (table === activities) return "activities";
   throw new Error(`Unhandled table: ${String(table)}`);
@@ -68,6 +71,7 @@ function createProfileRow(overrides: Partial<Record<string, unknown>> = {}) {
 function createDbMock(plan: DbPlan = {}) {
   const selectQueues = {
     profiles: [...(plan.select?.profiles ?? [])],
+    follows: [...(plan.select?.follows ?? [])],
     profileMetrics: [...(plan.select?.profileMetrics ?? [])],
     activityEfforts: [...(plan.select?.activityEfforts ?? [])],
     activities: [...(plan.select?.activities ?? [])],
@@ -77,6 +81,7 @@ function createDbMock(plan: DbPlan = {}) {
   const calls = {
     selects: [] as Array<{ table: TableName; limitArgs: unknown[]; offsetArgs: unknown[] }>,
     updates: [] as Array<{ table: TableName; values: Record<string, unknown> }>,
+    updatePredicates: [] as SQL[],
     inserts: [] as Array<{ table: TableName; values: Record<string, unknown> }>,
     deletes: [] as TableName[],
     executes: [] as unknown[],
@@ -126,8 +131,9 @@ function createDbMock(plan: DbPlan = {}) {
       const tableName = getTableName(table);
       return {
         set: (values: Record<string, unknown>) => ({
-          where: () => {
+          where: (predicate: SQL) => {
             calls.updates.push({ table: tableName, values });
+            calls.updatePredicates.push(predicate);
             return {
               returning: () => Promise.resolve([{ id: SESSION_USER_ID }]),
             };
@@ -189,6 +195,33 @@ function createCaller(
 }
 
 describe("profilesRouter", () => {
+  it("initializes only an owned missing timezone and returns the saved winner", async () => {
+    const { caller, calls } = createCaller({
+      select: { profiles: [[createProfileRow({ planning_timezone: "Pacific/Auckland" })]] },
+    });
+    const result = await caller.initializePlanningTimezone({ timezone: "America/New_York" });
+    expect(result.planning_timezone).toBe("Pacific/Auckland");
+    expect(calls.updates[0]?.values.planning_timezone).toBe("America/New_York");
+    const updatePredicate = calls.updatePredicates[0];
+    if (!updatePredicate) throw new Error("Expected an owner-scoped initialization predicate");
+    const predicate = new PgDialect().sqlToQuery(updatePredicate);
+    expect(predicate.sql).toContain('"profiles"."id" = $1');
+    expect(predicate.sql).toContain('"profiles"."planning_timezone" is null');
+    expect(predicate.params).toEqual([SESSION_USER_ID]);
+  });
+
+  it("rejects invalid timezone defaults and unauthenticated initialization before writing", async () => {
+    const { caller, calls } = createCaller();
+    await expect(caller.initializePlanningTimezone({ timezone: "PST" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    expect(calls.updates).toHaveLength(0);
+    const anonymous = createCaller({}, null);
+    await expect(
+      anonymous.caller.initializePlanningTimezone({ timezone: "UTC" }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(anonymous.calls.updates).toHaveLength(0);
+  });
   it("rejects new relative profile media values", async () => {
     const { caller } = createCaller();
 
@@ -297,8 +330,8 @@ describe("profilesRouter", () => {
     const { caller } = createCaller({
       select: {
         profiles: [[createProfileRow({ id: OTHER_USER_ID, bio: "Private bio", is_public: false })]],
+        follows: [[{ status: "pending" }], [{ value: 7 }], [{ value: 3 }]],
       },
-      execute: [[{ status: "pending" }], [{ value: 7 }], [{ value: 3 }]],
     });
 
     const result = await caller.getPublicById({ id: OTHER_USER_ID });

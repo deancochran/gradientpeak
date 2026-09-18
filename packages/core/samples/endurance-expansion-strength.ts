@@ -1,206 +1,184 @@
 import { Duration, Target } from "../schemas/activity_payload";
-import { createSystemActivityPlanBuilder } from "./activity-plan-builder";
+import {
+  createSystemActivityPlanAdaptationBuilder,
+  createSystemActivityPlanBuilder,
+  requiredSampleItem,
+} from "./activity-plan-builder";
 import type {
   ActivityPlanIntensityBand,
   ActivityPlanPortfolioMetadata,
 } from "./activity-plan-portfolio";
 import type { SystemActivityPlanTemplate } from "./types";
 
-const levels = [
-  { difficulty: "foundation", label: "Foundation", sets: 2, triathlonContext: false },
-  { difficulty: "development", label: "Build", sets: 3, triathlonContext: false },
-  { difficulty: "advanced", label: "Advanced", sets: 4, triathlonContext: false },
-  { difficulty: "race-specific", label: "Race Prep", sets: 5, triathlonContext: false },
-] as const;
-
 type StrengthFamily = {
-  description: string;
-  exercises: readonly [string, string];
-  ids: readonly [string, string, string, string];
-  intensity: ActivityPlanIntensityBand;
+  id: string;
   key: string;
   name: string;
-  notes: readonly [string, string];
+  description: string;
   purpose: string;
-  reps: readonly [number, number, number, number];
+  intensity: ActivityPlanIntensityBand;
+  exercises: readonly [string, string];
+  notes: readonly [string, string];
+  reps: number;
   restSeconds: number;
   workRpe: 5 | 6 | 7 | 8;
 };
-
 const families: readonly StrengthFamily[] = [
   {
-    description: "Full-range squat and hinge practice builds durable foundational strength.",
-    exercises: ["Goblet Squat", "Romanian Deadlift"],
-    ids: [
-      "e2a00000-0001-4000-8001-000000000001",
-      "e2a00000-0001-4000-8002-000000000002",
-      "e2a00000-0001-4000-8003-000000000003",
-      "e2a00000-0001-4000-8004-000000000004",
-    ],
-    intensity: "endurance",
+    id: "e2a00000-0001-4000-8001-000000000001",
     key: "movement-capacity",
     name: "Movement Capacity Strength",
+    description: "Full-range squat and hinge practice builds durable foundational strength.",
+    purpose: "movement-capacity",
+    intensity: "endurance",
+    exercises: ["Goblet Squat", "Romanian Deadlift"],
     notes: [
       "Use a load that permits a controlled descent and stable foot pressure.",
       "Keep ribs stacked and stop a set if range or balance changes.",
     ],
-    purpose: "movement-capacity",
-    reps: [10, 10, 12, 12],
-    restSeconds: 60,
+    reps: 10,
+    restSeconds: 45,
     workRpe: 5,
   },
   {
-    description:
-      "Lower-repetition compound lifting develops high-force strength with deliberate rest.",
-    exercises: ["Front Squat", "Trap-Bar Deadlift"],
-    ids: [
-      "e2a00000-0002-4000-8001-000000000005",
-      "e2a00000-0002-4000-8002-000000000006",
-      "e2a00000-0002-4000-8003-000000000007",
-      "e2a00000-0002-4000-8004-000000000008",
-    ],
-    intensity: "threshold",
+    id: "e2a00000-0002-4000-8001-000000000005",
     key: "compound-strength",
     name: "Compound Strength",
+    description:
+      "Lower-repetition compound lifting develops high-force strength with deliberate rest.",
+    purpose: "max-strength",
+    intensity: "threshold",
+    exercises: ["Front Squat", "Trap-Bar Deadlift"],
     notes: [
       "Leave one or two repetitions in reserve; do not grind the final rep.",
       "Reset between repetitions and maintain a neutral, braced trunk.",
     ],
-    purpose: "max-strength",
-    reps: [6, 5, 5, 4],
-    restSeconds: 150,
+    reps: 5,
+    restSeconds: 135,
     workRpe: 7,
   },
   {
-    description: "Unilateral leg work and anti-rotation control develop stable single-leg force.",
-    exercises: ["Rear-Foot Elevated Split Squat", "Single-Leg Romanian Deadlift"],
-    ids: [
-      "e2a00000-0003-4000-8001-000000000009",
-      "e2a00000-0003-4000-8002-000000000010",
-      "e2a00000-0003-4000-8003-000000000011",
-      "e2a00000-0003-4000-8004-000000000012",
-    ],
-    intensity: "tempo",
+    id: "e2a00000-0003-4000-8001-000000000009",
     key: "single-leg-control",
     name: "Single-Leg Control",
+    description: "Unilateral leg work and anti-rotation control develop stable single-leg force.",
+    purpose: "single-leg-stability",
+    intensity: "tempo",
+    exercises: ["Rear-Foot Elevated Split Squat", "Single-Leg Romanian Deadlift"],
     notes: [
       "Use support if needed; keep the working knee tracking over the middle toes.",
       "Move slowly enough to keep the pelvis level on every repetition.",
     ],
-    purpose: "single-leg-stability",
-    reps: [8, 8, 10, 10],
-    restSeconds: 90,
+    reps: 8,
+    restSeconds: 75,
     workRpe: 6,
   },
   {
-    description:
-      "Low-repetition explosive movements develop force production while protecting landing quality.",
-    exercises: ["Kettlebell Swing", "Low Box Step-Up Drive"],
-    ids: [
-      "e2a00000-0004-4000-8001-000000000013",
-      "e2a00000-0004-4000-8002-000000000014",
-      "e2a00000-0004-4000-8003-000000000015",
-      "e2a00000-0004-4000-8004-000000000016",
-    ],
-    intensity: "vo2max",
+    id: "e2a00000-0004-4000-8001-000000000013",
     key: "power-production",
     name: "Power Production",
+    description:
+      "Low-repetition explosive movements develop force production while protecting landing quality.",
+    purpose: "power-development",
+    intensity: "vo2max",
+    exercises: ["Kettlebell Swing", "Low Box Step-Up Drive"],
     notes: [
       "Use a light, familiar load and end the set before speed declines.",
       "Step down under control; replace the drive with a low step-up if landing is noisy.",
     ],
-    purpose: "power-development",
-    reps: [5, 6, 6, 6],
-    restSeconds: 120,
+    reps: 6,
+    restSeconds: 105,
     workRpe: 8,
   },
   {
-    description:
-      "Carries and trunk bracing develop posture and force transfer under controlled load.",
-    exercises: ["Farmer Carry", "Half-Kneeling Pallof Press"],
-    ids: [
-      "e2a00000-0005-4000-8001-000000000017",
-      "e2a00000-0005-4000-8002-000000000018",
-      "e2a00000-0005-4000-8003-000000000019",
-      "e2a00000-0005-4000-8004-000000000020",
-    ],
-    intensity: "tempo",
+    id: "e2a00000-0005-4000-8001-000000000017",
     key: "trunk-and-carry",
     name: "Trunk and Carry Strength",
+    description:
+      "Carries and trunk bracing develop posture and force transfer under controlled load.",
+    purpose: "trunk-stability",
+    intensity: "tempo",
+    exercises: ["Farmer Carry", "Half-Kneeling Pallof Press"],
     notes: [
       "Walk tall with quiet steps; reduce load before grip or posture fails.",
       "Keep hips and ribs square rather than twisting toward the band.",
     ],
-    purpose: "trunk-stability",
-    reps: [8, 10, 12, 12],
-    restSeconds: 75,
+    reps: 10,
+    restSeconds: 60,
     workRpe: 6,
   },
 ];
-
-function buildPlan(family: StrengthFamily, levelIndex: number): SystemActivityPlanTemplate {
-  const level = levels[levelIndex];
-  const reps = family.reps[levelIndex];
-  if (!level || !reps) throw new Error("Missing strength progression level");
-  const builder = createSystemActivityPlanBuilder(
-    "strength",
-    `expanded-strength:${family.key}:${level.label}`,
-  );
+function buildPlan(family: StrengthFamily): SystemActivityPlanTemplate {
+  const identity = `expanded-strength:${family.key}`;
+  const builder = createSystemActivityPlanBuilder("strength", identity);
   builder.warmup({
-    duration: Duration.minutes(6 + levelIndex),
+    duration: Duration.minutes(7),
     targets: [Target.rpe(3)],
     notes: "Use joint circles, bodyweight rehearsal, and one lighter practice set before loading.",
   });
-  for (let exerciseIndex = 0; exerciseIndex < family.exercises.length; exerciseIndex += 1) {
-    const exercise = family.exercises[exerciseIndex];
-    const note = family.notes[exerciseIndex];
-    if (!exercise || !note) throw new Error("Incomplete strength-family prescription");
+  for (let index = 0; index < family.exercises.length; index += 1)
     builder.interval({
-      name: exercise,
-      repeat: level.sets,
+      name: requiredSampleItem(family.exercises, index, "strength exercise"),
+      repeat: 3,
       steps: [
         {
-          duration: Duration.reps(reps),
-          name: exercise,
-          notes: note,
+          duration: Duration.reps(family.reps),
+          name: requiredSampleItem(family.exercises, index, "strength exercise"),
+          purpose: "work",
+          notes: requiredSampleItem(family.notes, index, "strength exercise note"),
           targets: [Target.rpe(family.workRpe)],
         },
         {
-          duration: Duration.seconds(Math.max(45, family.restSeconds - levelIndex * 15)),
+          duration: Duration.seconds(family.restSeconds),
           name: "Rest",
+          purpose: "recovery",
           notes: "Recover fully enough to repeat precise movement.",
           targets: [Target.rpe(2)],
         },
       ],
     });
-  }
-  builder.cooldown({
-    duration: Duration.minutes(5),
-    targets: [Target.rpe(2)],
-    notes: "Walk briefly, then use comfortable range-of-motion work for the trained areas.",
-  });
+  const structure = builder
+    .cooldown({
+      duration: Duration.minutes(5),
+      targets: [Target.rpe(2)],
+      notes: "Walk briefly, then use comfortable range-of-motion work for the trained areas.",
+    })
+    .build();
+  const segment = requiredSampleItem(structure.segments, 0, "strength activity segment");
+  if (segment.role !== "activity") throw new Error("Expected strength activity segment");
+  const adaptation = createSystemActivityPlanAdaptationBuilder(identity);
   return {
-    description: `${family.description} ${level.label} progression${level.triathlonContext ? " for triathlon race preparation, using familiar loads rather than introducing new exercises." : "."}`,
+    id: family.id,
+    name: family.name,
+    description: family.description,
     gps_recording_enabled: false,
-    id: family.ids[levelIndex] as string,
-    name: `${family.name} — ${level.label}`,
-    structure: builder.build(),
+    structure,
+    adaptation: {
+      controls: [
+        adaptation.control({
+          key: "set_count",
+          label: "Set count",
+          kind: "interval_repetitions",
+          range: { minimum: 2, default: 3, maximum: 5, increment: 1 },
+          targets: segment.intervals.slice(1, 3).map((interval) => ({
+            type: "interval_repetitions",
+            activitySegmentId: segment.id,
+            intervalId: interval.id,
+          })),
+        }),
+      ],
+    },
   };
 }
-
-export const EXPANDED_ENDURANCE_STRENGTH_ACTIVITIES = families.flatMap((family) =>
-  levels.map((_, levelIndex) => buildPlan(family, levelIndex)),
+export const EXPANDED_ENDURANCE_STRENGTH_ACTIVITIES = families.map(buildPlan);
+export const EXPANDED_ENDURANCE_STRENGTH_METADATA: ActivityPlanPortfolioMetadata[] = families.map(
+  (family) => ({
+    difficulty: "development",
+    durationClass: "short",
+    family: `strength:${family.key}`,
+    primaryIntensity: family.intensity,
+    primaryPurpose: family.purpose,
+    templateId: family.id,
+    triathlonContext: false,
+  }),
 );
-
-export const EXPANDED_ENDURANCE_STRENGTH_METADATA: ActivityPlanPortfolioMetadata[] =
-  families.flatMap((family) =>
-    levels.map((level, levelIndex) => ({
-      difficulty: level.difficulty,
-      durationClass: "short",
-      family: `strength:${family.key}`,
-      primaryIntensity: family.intensity,
-      primaryPurpose: family.purpose,
-      templateId: family.ids[levelIndex] as string,
-      triathlonContext: level.triathlonContext,
-    })),
-  );

@@ -13,6 +13,12 @@ export class PlannedSessionStaleRevisionError extends Error {
   }
 }
 
+export class PlannedSessionFutureDateError extends Error {
+  constructor() {
+    super("Future planned sessions cannot be skipped");
+  }
+}
+
 export type PlannedSessionConflictReason = Extract<
   PlannedSessionMutationResult,
   { status: "conflict" }
@@ -44,8 +50,6 @@ export function sourceDescription(source: PlannedSessionSource): string {
     case "direct":
       return source.operationId;
     case "training_plan":
-      return `${source.trainingPlanId}:${source.trainingPlanRevision}:${source.sourceSessionKey}`;
-    case "recurrence":
-      return `${source.seriesId}:${source.occurrenceKey}`;
+      return `${source.trainingPlanId}:${source.trainingPlanRevision}:${source.sourceSessionId}`;
   }
 }

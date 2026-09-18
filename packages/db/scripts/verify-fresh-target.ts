@@ -2,6 +2,7 @@
 
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { activityPlanSemanticHash, activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { Pool } from "pg";
 import {
   applySqlFile,
@@ -10,8 +11,45 @@ import {
 } from "./_disposable-target";
 import { dbPackageRoot, runSupabaseCli } from "./_helpers";
 import { requireFreshBaseline } from "./baseline-workflow";
+import { structureHash } from "./canonical-json";
 
 const activityCategoryValues = ["run", "bike", "swim", "strength", "other"] as const;
+const planningHardCutMigration = "20260913090000_freeze_planned_session_prescriptions.sql";
+
+async function seedPlanningHardCutUpgradeFixture(target: Pool) {
+  const profileId = "06000000-0000-4000-8000-000000000001";
+  await target.query(
+    "insert into auth.users (id, email, raw_user_meta_data) values ($1, 'planning-hard-cut@example.test', '{}'::jsonb)",
+    [profileId],
+  );
+  await target.query(
+    `insert into public.events (id, profile_id, event_type, title, starts_at, scheduled_date)
+     values
+       ('06000000-0000-4000-8000-000000000002', $1, 'planned', 'Legacy mirror', '2026-09-13T08:00:00Z', '2026-09-13'),
+       ('06000000-0000-4000-8000-000000000003', $1, 'custom', 'Retained custom event', '2026-09-13T09:00:00Z', '2026-09-13'),
+       ('06000000-0000-4000-8000-000000000004', $1, 'race_target', 'Retained race', '2026-09-13T10:00:00Z', '2026-09-13')`,
+    [profileId],
+  );
+}
+
+async function assertPlanningHardCutUpgradeFixture(target: Pool) {
+  const result = await target.query<{ event_type: string }>(
+    `select event_type::text as event_type
+     from public.events
+     where id in (
+       '06000000-0000-4000-8000-000000000002',
+       '06000000-0000-4000-8000-000000000003',
+       '06000000-0000-4000-8000-000000000004'
+     )
+     order by event_type::text`,
+  );
+  if (
+    JSON.stringify(result.rows) !==
+    JSON.stringify([{ event_type: "custom" }, { event_type: "race_target" }])
+  )
+    throw new Error("planning hard cut did not remove only the legacy planned-event mirror");
+  console.log("[db:planning-hard-cut] legacy planned mirror removed and generic events retained");
+}
 
 async function assertCanonicalActivityCategories(target: {
   query: <Row extends Record<string, unknown>>(
@@ -1673,6 +1711,7 @@ async function assertPrelaunchSchemaHardening(target: VerificationTarget) {
               {
                 id: "80000000-0000-4000-8000-000000000013",
                 name: "Step",
+                purpose: "work",
                 duration: { type: "time", seconds: 60 },
                 targets: [{ type: "RPE", intensity: 5 }],
               },
@@ -1682,28 +1721,48 @@ async function assertPrelaunchSchemaHardening(target: VerificationTarget) {
       },
     ],
   };
-  const activityPlanDocument = {
-    contractVersion: 1,
-    defaultVariantId: activityPlanId,
-    variants: [{ id: activityPlanId, name: "Base", structure: prescription }],
-  };
-  const revisionActivityPlanDocument = {
-    contractVersion: 1,
-    defaultVariantId: revisionActivityPlanId,
-    variants: [{ id: revisionActivityPlanId, name: "Base", structure: prescription }],
+  const resolutionManifest = {
+    resolver_version: "fixture-v1",
+    policy_version: "fixture-v1",
+    activity_plan_id: activityPlanId,
+    activity_plan_revision: 1,
+    activity_plan_semantic_hash:
+      "v1:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    effective_target_duration_minutes: null,
+    effective_target_common_load: null,
+    evidence_facts: [],
+    session_demand: {},
+    adaptation_values: {},
+    reason_codes: [],
+    resolved_structure: prescription,
+    resolved_structure_hash:
+      "v1:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    prescription_estimate: {},
+    fingerprint: "v1:sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
   };
 
+  const prescriptionHash = structureHash(prescription);
+  const semanticHash = activityPlanSemanticHash({
+    structure: activityPlanStructureSchema.parse(prescription),
+    adaptation: null,
+    trainingIntent: "general_maintenance",
+  });
+
   await target.query(
-    `insert into public.activity_plans (id, profile_id, name, structure, structure_hash)
-     values ($1::uuid, $2::uuid, 'planned-session hardening', $3::jsonb,
-       'v1:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')`,
-    [activityPlanId, profileId, JSON.stringify(activityPlanDocument)],
+    `insert into public.activity_plans (id, profile_id, name, structure, structure_hash, semantic_hash)
+     values ($1::uuid, $2::uuid, 'planned-session hardening', $3::jsonb, $4, $5)`,
+    [activityPlanId, profileId, JSON.stringify(prescription), prescriptionHash, semanticHash],
   );
   await target.query(
-    `insert into public.activity_plans (id, profile_id, name, structure, structure_hash)
-     values ($1::uuid, $2::uuid, 'revision contract', $3::jsonb,
-       'v1:sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')`,
-    [revisionActivityPlanId, profileId, JSON.stringify(revisionActivityPlanDocument)],
+    `insert into public.activity_plans (id, profile_id, name, structure, structure_hash, semantic_hash)
+     values ($1::uuid, $2::uuid, 'revision contract', $3::jsonb, $4, $5)`,
+    [
+      revisionActivityPlanId,
+      profileId,
+      JSON.stringify(prescription),
+      prescriptionHash,
+      semanticHash,
+    ],
   );
   await target.query(
     `update public.activity_plans set name = 'metadata only', revision = 99 where id = $1::uuid`,
@@ -1716,16 +1775,24 @@ async function assertPrelaunchSchemaHardening(target: VerificationTarget) {
   if (metadataRevision.rows[0]?.revision !== "1") {
     throw new Error("activity plan revision changed without a prescription structure change");
   }
+  const changedPrescription = structuredClone(prescription);
+  const firstSegment = changedPrescription.segments[0];
+  if (!firstSegment) throw new Error("Missing fixture segment");
+  firstSegment.name = "Changed run";
   await target.query(
     `update public.activity_plans
-     set structure = jsonb_set(
-           structure,
-           '{variants,0,structure,segments,0,name}',
-           '"Changed run"'::jsonb
-         ),
-         revision = 99
+     set structure = $2::jsonb, structure_hash=$3, semantic_hash=$4, revision = 99
      where id = $1::uuid`,
-    [revisionActivityPlanId],
+    [
+      revisionActivityPlanId,
+      JSON.stringify(changedPrescription),
+      structureHash(changedPrescription),
+      activityPlanSemanticHash({
+        structure: activityPlanStructureSchema.parse(changedPrescription),
+        adaptation: null,
+        trainingIntent: "general_maintenance",
+      }),
+    ],
   );
   await target.query(
     `update public.activity_plans set notes = 'metadata after change', revision = 99 where id = $1::uuid`,
@@ -1777,41 +1844,37 @@ async function assertPrelaunchSchemaHardening(target: VerificationTarget) {
   `);
   await target.query(
     `insert into public.planned_sessions (
-       id, profile_id, planning_date, original_target_date, source_kind, idempotency_key,
-       direct_operation_id, group_event_id, activity_plan_id, activity_plan_revision,
-       activity_plan_variant_id, activity_plan_variant_name, prescription_structure,
-       prescription_structure_hash, prescription_captured_at, status, completed_activity_id,
+        id, profile_id, planning_date, original_target_date, source_kind, idempotency_key,
+        direct_operation_id, group_event_id, activity_plan_id, activity_plan_revision,
+        resolution_manifest, prescription_captured_at, status, completed_activity_id,
        completion_state, linked_at
      ) values (
        $1::uuid, $2::uuid, current_date, current_date, 'direct',
-       'direct:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-         $3::uuid, $4::uuid, 1, $4::uuid, 'Base', $5::jsonb,
-         'v1:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
-         now(), 'completed', $6::uuid, 'linked', now()
+        'direct:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        $3::uuid, $4::uuid, 1, $5::jsonb,
+        now(), 'completed', $6::uuid, 'linked', now()
      )`,
     [
       plannedSessionId,
       profileId,
       groupEventId,
       activityPlanId,
-      JSON.stringify(prescription),
+      JSON.stringify(resolutionManifest),
       completedActivityId,
     ],
   );
   await expectDatabaseError(
     target,
     `insert into public.planned_sessions (
-       id, profile_id, planning_date, original_target_date, source_kind, idempotency_key,
-       direct_operation_id, group_event_id, activity_plan_id, activity_plan_revision,
-       activity_plan_variant_id, activity_plan_variant_name, prescription_structure,
-       prescription_structure_hash, prescription_captured_at
+        id, profile_id, planning_date, original_target_date, source_kind, idempotency_key,
+        direct_operation_id, group_event_id, activity_plan_id, activity_plan_revision,
+        resolution_manifest, prescription_captured_at
      ) values (
        '80000000-0000-4000-8000-000000000015', '${profileId}', current_date, current_date,
-       'direct', 'direct:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        'direct', 'direct:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
         'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', '${groupEventId}', '${activityPlanId}', 1,
-         '${activityPlanId}', 'Base',
-       '${JSON.stringify(prescription)}'::jsonb,
-       'v1:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', now()
+        '${JSON.stringify(resolutionManifest)}'::jsonb,
+        now()
      )`,
     { code: "23505", constraint: "planned_sessions_profile_group_event_unique" },
   );
@@ -1819,6 +1882,13 @@ async function assertPrelaunchSchemaHardening(target: VerificationTarget) {
     target,
     `delete from public.activities where id = '${completedActivityId}'`,
     { code: "23503", constraint: "planned_sessions_completed_activity_owner_fkey" },
+  );
+  await expectDatabaseError(
+    target,
+    `update public.planned_sessions
+     set prescription_captured_at = prescription_captured_at + interval '1 second'
+     where id = '${plannedSessionId}'`,
+    { code: "23514" },
   );
   await target.query(`
     begin;
@@ -1995,8 +2065,11 @@ async function main() {
     await bootstrapSupabaseSchemas(target);
     const baseline = requireFreshBaseline();
     for (const migrationPath of baseline.migrationPaths) {
+      if (migrationPath.endsWith(planningHardCutMigration))
+        await seedPlanningHardCutUpgradeFixture(target);
       await applySqlFile(target, migrationPath);
     }
+    await assertPlanningHardCutUpgradeFixture(target);
     await assertCanonicalActivityCategories(target);
     await assertActivityAnalysisRevisionContract(target);
     await assertActivitySourceIdentityContract(target);

@@ -27,19 +27,19 @@ export function createActivityPlanWriteRepository(db: DrizzleDbClient) {
         // The plan row lock fences concurrent FK references. Existence reads
         // handle any number of linked schedules without a UI page limit and
         // leave every dependency intact on conflict.
-        const [linkedEvent] = await tx
-          .select({ id: schema.events.id })
-          .from(schema.events)
-          .where(eq(schema.events.activity_plan_id, input.planId))
-          .limit(1);
-        if (linkedEvent) return "linked_events";
-
         const [linkedGroupEvent] = await tx
           .select({ id: schema.groupEvents.id })
           .from(schema.groupEvents)
           .where(eq(schema.groupEvents.activity_plan_id, input.planId))
           .limit(1);
         if (linkedGroupEvent) return "linked_events";
+
+        const [linkedPlannedSession] = await tx
+          .select({ id: schema.plannedSessions.id })
+          .from(schema.plannedSessions)
+          .where(eq(schema.plannedSessions.activity_plan_id, input.planId))
+          .limit(1);
+        if (linkedPlannedSession) return "linked_events";
 
         // Comments and likes use polymorphic entity IDs, so PostgreSQL cannot
         // cascade them from the activity-plan row. Keep their cleanup atomic

@@ -89,7 +89,7 @@ function normalizeAvatarUploadInput(data: unknown) {
     throw new Error("Avatar file is required");
   }
 
-  return { _native: true as const, avatar, field };
+  return { async: data.get("__async") === "true", avatar, field };
 }
 
 function getAvatarFileExtension(fileName: string) {
@@ -193,6 +193,13 @@ export const uploadProfileAvatarAction = createServerFn({ method: "POST" })
         removeObject: removeProfileMediaObject,
       });
     } catch (error) {
+      if (data.async) {
+        throw new Error(
+          error instanceof ProfileMediaConflictError
+            ? error.message
+            : "Profile image could not be updated. Please try again.",
+        );
+      }
       throw redirect({
         href: buildFlashHref(
           "/settings",
@@ -205,6 +212,10 @@ export const uploadProfileAvatarAction = createServerFn({ method: "POST" })
       });
     }
 
+    if (data.async) {
+      return { field: data.field, url: getProfileMediaPublicUrl(filePath) };
+    }
+
     throw redirect({
       href: `/settings?flash=${data.field === "avatar_url" ? "Avatar" : "Cover"}%20updated%20successfully&flashType=success`,
       statusCode: 303,
@@ -214,6 +225,7 @@ export const uploadProfileAvatarAction = createServerFn({ method: "POST" })
 function normalizeRemoveProfileImageInput(data: unknown) {
   const source = data instanceof FormData ? Object.fromEntries(data.entries()) : data;
   return {
+    async: data instanceof FormData && data.get("__async") === "true",
     field: profileImageFieldSchema.parse(z.object({ field: z.unknown() }).parse(source).field),
   };
 }
@@ -240,6 +252,9 @@ export const removeProfileImageAction = createServerFn({ method: "POST" })
         removeObject: removeProfileMediaObject,
       });
     } catch {
+      if (data.async) {
+        throw new Error("Profile image could not be removed. Please try again.");
+      }
       throw redirect({
         href: buildFlashHref(
           "/settings",
@@ -248,6 +263,10 @@ export const removeProfileImageAction = createServerFn({ method: "POST" })
         ),
         statusCode: 303,
       });
+    }
+
+    if (data.async) {
+      return { field: data.field };
     }
 
     throw redirect({

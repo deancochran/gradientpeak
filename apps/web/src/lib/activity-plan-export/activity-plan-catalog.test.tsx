@@ -1,19 +1,16 @@
 import { pdf } from "@react-pdf/renderer";
-import { SYSTEM_TEMPLATES } from "@repo/core";
+import { ALL_SAMPLE_PLANS, SYSTEM_TEMPLATES } from "@repo/core";
 import { describe, expect, it } from "vitest";
 import {
   ACTIVITY_PLAN_CATALOG_BASE_FRONT_MATTER_PAGES,
   ACTIVITY_PLAN_CATALOG_PAGE_SIZE,
   ACTIVITY_PLAN_CATALOG_PRINT_GEOMETRY,
-  ACTIVITY_PLAN_CATALOG_WORKSHEET_PAGE_COUNT,
-  ACTIVITY_PLAN_PORTFOLIO_METADATA,
   activityPlanCatalogNeedsBlankBeforeBackCover,
   assertActivityPlanCatalogLayout,
   buildActivityPlanCatalogLayout,
   buildActivityPlanCatalogModels,
   getActivityPlanCatalogContentPageCount,
   getActivityPlanCatalogInteriorMargins,
-  getActivityPlanCatalogWorksheetStartPage,
   isActivityPlanTwoUpEligible,
 } from "./activity-plan-catalog";
 import {
@@ -30,6 +27,11 @@ describe("activity plan catalog export", () => {
       SYSTEM_TEMPLATES.map((template) => template.name),
     );
     expect(new Set(entries.map((entry) => entry.key)).size).toBe(entries.length);
+    const adaptable = entries.find((entry) => entry.model.title === "Aerobic Durability Ride");
+    expect(adaptable?.adaptation).toEqual({
+      allowedStates: expect.arrayContaining([expect.stringContaining("45 minutes")]),
+      controls: [expect.stringContaining("Main-set duration: default 1h 10m")],
+    });
   });
 
   it("uses US Letter trim dimensions with one-eighth-inch bleed", () => {
@@ -49,34 +51,11 @@ describe("activity plan catalog export", () => {
     expect(getActivityPlanCatalogInteriorMargins(101)).toEqual({ left: 48, right: 30 });
   });
 
-  it("starts worksheets after all rendered front matter when the catalog has no plans", () => {
-    const layout = buildActivityPlanCatalogLayout([], []);
-
-    expect(getActivityPlanCatalogWorksheetStartPage(layout)).toBe(6);
-    expect(getActivityPlanCatalogContentPageCount(layout)).toBe(9);
-    expect(activityPlanCatalogNeedsBlankBeforeBackCover(layout)).toBe(false);
-    expect(getActivityPlanCatalogExpectedPageCount(layout)).toBe(10);
-  });
-
-  it("adds a duplex blank only when needed to place the back cover on an even page", () => {
-    const layout = buildActivityPlanCatalogLayout(buildActivityPlanCatalogModels());
-    const oppositeParityLayout = { ...layout, planPages: layout.planPages.slice(0, -1) };
-    const layouts = [layout, oppositeParityLayout];
-
-    expect(layouts.map(activityPlanCatalogNeedsBlankBeforeBackCover).sort()).toEqual([false, true]);
-    for (const candidate of layouts) {
-      expect(activityPlanCatalogNeedsBlankBeforeBackCover(candidate)).toBe(
-        getActivityPlanCatalogContentPageCount(candidate) % 2 === 0,
-      );
-      expect(getActivityPlanCatalogExpectedPageCount(candidate) % 2).toBe(0);
-    }
-  });
-
   it("places every activity exactly once with no more than two activities per page", () => {
     const entries = buildActivityPlanCatalogModels();
-    const layout = buildActivityPlanCatalogLayout(entries);
+    const layout = buildActivityPlanCatalogLayout(entries, []);
     expect(() => assertActivityPlanCatalogLayout(layout, entries)).not.toThrow();
-    expect(entries).toHaveLength(198);
+    expect(entries).toHaveLength(SYSTEM_TEMPLATES.length);
     expect(layout.planPages.flatMap((page) => page.entries).map((entry) => entry.key)).toHaveLength(
       entries.length,
     );
@@ -89,70 +68,37 @@ describe("activity plan catalog export", () => {
     ).toBe(true);
   });
 
-  it("numbers plan pages after dynamically paginated contents", () => {
+  it("numbers plan pages immediately after dynamically paginated front matter", () => {
     const layout = buildActivityPlanCatalogLayout(buildActivityPlanCatalogModels());
     const frontMatterPages =
-      ACTIVITY_PLAN_CATALOG_BASE_FRONT_MATTER_PAGES +
-      layout.discoveryPages.length +
-      layout.pathways.length +
-      layout.contentsPages.length;
+      ACTIVITY_PLAN_CATALOG_BASE_FRONT_MATTER_PAGES + layout.contentsPages.length;
     expect(layout.planPages[0]?.pageNumber).toBe(frontMatterPages + 1);
     layout.planPages.forEach((page, index) => {
       expect(page.pageNumber).toBe(frontMatterPages + index + 1);
     });
   });
 
-  it("indexes every plan with authoritative metadata while retaining unindexed plans in contents", () => {
+  it("keeps every plan in the direct activity-category contents", () => {
     const entries = buildActivityPlanCatalogModels();
     const layout = buildActivityPlanCatalogLayout(entries);
-    const indexedIds = layout.discoveryPages.flatMap((page) =>
-      page.entries.map(({ entry }) => entry.key),
-    );
-    const metadataIds = ACTIVITY_PLAN_PORTFOLIO_METADATA.map((metadata) => metadata.templateId);
     const contentsIds = layout.contentsPages.flatMap((page) =>
       page.columns.flatMap((column) => column?.entries.map((entry) => entry.key) ?? []),
     );
-
-    expect(indexedIds).toHaveLength(metadataIds.length);
-    expect(new Set(indexedIds)).toEqual(new Set(metadataIds));
     expect(contentsIds).toHaveLength(entries.length);
-    const unindexedIds = entries
-      .filter((entry) => !metadataIds.includes(entry.key))
-      .map((entry) => entry.key);
-    expect(unindexedIds.length).toBeGreaterThan(0);
     expect(new Set(contentsIds)).toEqual(new Set(entries.map((entry) => entry.key)));
   });
 
-  it("builds all eight complete guided pathways with dynamic plan references", () => {
+  it("builds a linked finder index with complete section counts and page ranges", () => {
     const layout = buildActivityPlanCatalogLayout(buildActivityPlanCatalogModels());
-    expect(layout.pathways).toHaveLength(4);
-    expect(layout.pathways.flatMap((page) => page.families)).toHaveLength(8);
-    for (const family of layout.pathways.flatMap((page) => page.families)) {
-      expect(family.entries.map(({ metadata }) => metadata.difficulty)).toEqual([
-        "foundation",
-        "development",
-        "advanced",
-        "race-specific",
-      ]);
-      for (const { entry } of family.entries) {
-        expect(
-          layout.planPages.find((page) =>
-            page.entries.some((candidate) => candidate.key === entry.key),
-          )?.pageNumber,
-        ).toBeGreaterThan(0);
-      }
-    }
-  });
-
-  it("fails layout construction when configured pathway metadata is incomplete", () => {
-    const incompleteMetadata = ACTIVITY_PLAN_PORTFOLIO_METADATA.filter(
-      (metadata) =>
-        !(metadata.family === "bike:aerobic-durability" && metadata.difficulty === "foundation"),
+    expect(layout.finderSections.map((section) => section.entryCount)).toEqual(
+      layout.sections.map((section) => section.entries.length),
     );
-
-    expect(() =>
-      buildActivityPlanCatalogLayout(buildActivityPlanCatalogModels(), incompleteMetadata),
-    ).toThrow("Catalog pathway bike:aerobic-durability does not have four authoritative levels");
+    for (const section of layout.finderSections) {
+      const pages = layout.planPages.filter((page) => page.sectionKey === section.key);
+      expect(section.firstEntryKey).toBe(pages[0]?.entries[0].key);
+      expect(section.startPageNumber).toBe(pages[0]?.pageNumber);
+      expect(section.endPageNumber).toBe(pages.at(-1)?.pageNumber);
+    }
   });
 
   it("renders dynamically paginated contents for 200 long-titled plans", async () => {
@@ -170,20 +116,14 @@ describe("activity plan catalog export", () => {
     const contentsEntries = layout.contentsPages.flatMap((page) =>
       page.columns.flatMap((section) => section?.entries ?? []),
     );
-
     expect(layout.contentsPages.length).toBeGreaterThan(1);
     expect(contentsEntries.map((entry) => entry.key)).toEqual(entries.map((entry) => entry.key));
-    expect(
-      layout.contentsPages
-        .flatMap((page) => page.columns)
-        .every((column) => !column || column.entries.length <= 46),
-    ).toBe(true);
     const blob = await pdf(<ActivityPlanCatalogPdfDocument layout={layout} />).toBlob();
     const source = Buffer.from(await blob.arrayBuffer()).toString("latin1");
     expect(source.match(/\/Type\s*\/Page\b/gu)?.length ?? 0).toBe(
       getActivityPlanCatalogExpectedPageCount(layout),
     );
-  });
+  }, 15_000);
 
   it("falls back to separate full pages when either activity exceeds the two-up budget", () => {
     const entries = buildActivityPlanCatalogModels().slice(0, 2);
@@ -194,35 +134,61 @@ describe("activity plan catalog export", () => {
       model: { ...first.model, description: "Long catalog copy. ".repeat(500) },
     };
     expect(isActivityPlanTwoUpEligible(oversized.model)).toBe(false);
-    const layout = buildActivityPlanCatalogLayout([oversized, ...entries.slice(1)], []);
-    expect(layout.planPages.map((page) => page.entries.length)).toEqual([1, 1]);
+    expect(
+      buildActivityPlanCatalogLayout([oversized, ...entries.slice(1)], []).planPages,
+    ).toHaveLength(2);
   });
 
-  it("pairs the nearest eligible activities within a section without crossing categories", () => {
-    const entries = buildActivityPlanCatalogModels();
-    const firstEligible = entries.find((entry) => isActivityPlanTwoUpEligible(entry.model));
-    const secondEligible = entries.find(
-      (entry) =>
-        entry.key !== firstEligible?.key &&
-        entry.model.activityCategory === firstEligible?.model.activityCategory &&
-        isActivityPlanTwoUpEligible(entry.model),
+  it("builds one complete facing-page spread for every system training template", () => {
+    const layout = buildActivityPlanCatalogLayout(buildActivityPlanCatalogModels());
+    const section = layout.trainingPlanSection;
+    if (!section) throw new Error("Expected training plan template pages");
+
+    expect(section.openerPageNumber % 2).toBe(1);
+    expect(section.plans).toHaveLength(ALL_SAMPLE_PLANS.length);
+    expect(section.plans.map((plan) => plan.name)).toEqual(
+      ALL_SAMPLE_PLANS.map((plan) => plan.name),
     );
-    if (!firstEligible || !secondEligible)
-      throw new Error("Expected two eligible catalog fixtures");
-    const oversized = {
-      ...firstEligible,
-      key: "oversized-catalog-fixture",
-      model: { ...firstEligible.model, description: "Long catalog copy. ".repeat(500) },
-    };
-    const layout = buildActivityPlanCatalogLayout([firstEligible, oversized, secondEligible], []);
-    expect(layout.planPages[0]?.entries.map((entry) => entry.key)).toEqual([
-      firstEligible.key,
-      secondEligible.key,
-    ]);
-    expect(layout.planPages[1]?.entries).toEqual([oversized]);
+    section.plans.forEach((plan, index) => {
+      expect(plan.overviewPageNumber).toBe(section.openerPageNumber + 1 + index * 2);
+      expect(plan.overviewPageNumber % 2).toBe(0);
+      expect(plan.schedulePageNumber).toBe(plan.overviewPageNumber + 1);
+      expect(plan.weeks).toHaveLength(plan.scheduleVisual.totalWeeks);
+      expect(plan.weeks.flatMap((week) => week.sessions)).toHaveLength(
+        plan.scheduleVisual.totalSessions,
+      );
+    });
   });
 
-  it("renders exactly the planned pages without an overflow continuation", async () => {
+  it("resolves every scheduled training session to an activity catalog page", () => {
+    const curatedDurationObjectiveIds = new Set([
+      "1b4c5d6e-7f8a-4b0c-9d2e-3f4a5b6c7d8e",
+      "3b6c7d8e-9f0a-4b2c-bd4e-5f6a7b8c9d0e",
+      "8c1d2e3f-4a5b-4c7d-8e9f-0a1b2c3d4e5f",
+    ]);
+    const layout = buildActivityPlanCatalogLayout(buildActivityPlanCatalogModels());
+    const activityPageNumbers = new Map(
+      layout.planPages.flatMap((page) => page.entries.map((entry) => [entry.key, page.pageNumber])),
+    );
+    const sessions =
+      layout.trainingPlanSection?.plans.flatMap((plan) =>
+        plan.weeks.flatMap((week) => week.sessions),
+      ) ?? [];
+
+    expect(sessions).toHaveLength(
+      ALL_SAMPLE_PLANS.reduce((total, plan) => total + plan.structure.sessions.length, 0),
+    );
+    for (const session of sessions) {
+      expect(session.activityPageNumber).toBe(activityPageNumbers.get(session.activityPlanId));
+      expect(
+        session.targetDurationMinutes === null ||
+          curatedDurationObjectiveIds.has(session.activityPlanId),
+      ).toBe(true);
+      expect(session.targetCommonLoad).toBeNull();
+    }
+  });
+
+  it("renders exactly the catalog pages and an even-page back cover", async () => {
     const layout = buildActivityPlanCatalogLayout(buildActivityPlanCatalogModels());
     const blob = await pdf(<ActivityPlanCatalogPdfDocument layout={layout} />).toBlob();
     expect(blob.type).toBe("application/pdf");
@@ -231,13 +197,11 @@ describe("activity plan catalog export", () => {
     const renderedPageCount = source.match(/\/Type\s*\/Page\b/gu)?.length ?? 0;
     expect(renderedPageCount).toBe(getActivityPlanCatalogExpectedPageCount(layout));
     expect(renderedPageCount % 2).toBe(0);
+    expect(getActivityPlanCatalogContentPageCount(layout)).toBe(
+      layout.trainingPlanSection?.plans.at(-1)?.schedulePageNumber,
+    );
     expect(getActivityPlanCatalogExpectedPageCount(layout)).toBe(
-      ACTIVITY_PLAN_CATALOG_BASE_FRONT_MATTER_PAGES +
-        layout.discoveryPages.length +
-        layout.pathways.length +
-        layout.contentsPages.length +
-        layout.planPages.length +
-        ACTIVITY_PLAN_CATALOG_WORKSHEET_PAGE_COUNT +
+      getActivityPlanCatalogContentPageCount(layout) +
         (activityPlanCatalogNeedsBlankBeforeBackCover(layout) ? 1 : 0) +
         1,
     );

@@ -100,7 +100,6 @@ describe("training timeline", () => {
           recommended_common_load: 100,
           scheduled_common_load: 80,
           completed_common_load: 20,
-          completed_common_load_status: "partial",
         },
       ],
     });
@@ -114,7 +113,7 @@ describe("training timeline", () => {
       remaining: "60 Common Load",
       delta: "-60 Common Load",
     });
-    expect(window.days[0]?.load.completedLoadStatus).toBe("partial");
+    expect(window.days[0]?.load.completedLoadStatus).toBe("complete");
   });
 
   it("preserves explicit unavailable scheduled values and genuine known zero", () => {

@@ -7,14 +7,14 @@ export class WahooPlannedActivitySyncService {
 
   async enqueue(input: {
     connectedProviders: readonly string[];
-    eventIds: string[];
+    plannedSessionIds: string[];
     operation: "publish" | "unsync";
     profileId: string;
     unsyncTargets?: ReadonlyMap<string, { externalId: string; resourceLinkId: string }>;
   }): Promise<WahooPlannedActivityQueueResult | null> {
-    const eventIds = [...new Set(input.eventIds)];
+    const plannedSessionIds = [...new Set(input.plannedSessionIds)];
     if (
-      eventIds.length === 0 ||
+      plannedSessionIds.length === 0 ||
       !input.connectedProviders.includes("wahoo") ||
       !providerHasCapability("wahoo", "planned_activity_push")
     )
@@ -25,14 +25,17 @@ export class WahooPlannedActivitySyncService {
     let failedCount = 0;
     let skippedCount = 0;
     const errors: string[] = [];
-    for (const eventId of eventIds) {
+    for (const plannedSessionId of plannedSessionIds) {
       try {
-        const unsyncTarget = input.unsyncTargets?.get(eventId);
+        const unsyncTarget = input.unsyncTargets?.get(plannedSessionId);
         const result =
           input.operation === "publish"
-            ? await this.adapter.enqueuePublishEvent({ eventId, profileId: input.profileId })
-            : await this.adapter.enqueueUnsyncEvent({
-                eventId,
+            ? await this.adapter.enqueuePublishPlannedSession({
+                plannedSessionId,
+                profileId: input.profileId,
+              })
+            : await this.adapter.enqueueUnsyncPlannedSession({
+                plannedSessionId,
                 profileId: input.profileId,
                 ...(unsyncTarget === undefined ? {} : { unsyncTarget }),
               });
@@ -42,12 +45,12 @@ export class WahooPlannedActivitySyncService {
       } catch (error) {
         failedCount += 1;
         errors.push(
-          `${eventId}: ${error instanceof Error ? error.message : "Unknown enqueue failure"}`,
+          `${plannedSessionId}: ${error instanceof Error ? error.message : "Unknown enqueue failure"}`,
         );
       }
     }
     return {
-      affectedCount: eventIds.length,
+      affectedCount: plannedSessionIds.length,
       ...(errors.length > 0 ? { error: errors.slice(0, 3).join("; "), failedCount } : {}),
       jobId: firstJobId,
       operation: input.operation,

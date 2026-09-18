@@ -49,7 +49,7 @@
       "project": "apps/mobile/tsconfig.json"
     }
   ],
-  "total": 1201,
+  "total": 1200,
   "buckets": [
     {
       "flag": "exactOptionalPropertyTypes",
@@ -603,13 +603,6 @@
       "path": "apps/mobile/components/shared/ActivityCard.tsx",
       "code": 2375,
       "count": 2
-    },
-    {
-      "flag": "exactOptionalPropertyTypes",
-      "project": "apps/mobile/tsconfig.json",
-      "path": "apps/mobile/components/shared/ActivityPlanAttributionRow.tsx",
-      "code": 2375,
-      "count": 1
     },
     {
       "flag": "exactOptionalPropertyTypes",

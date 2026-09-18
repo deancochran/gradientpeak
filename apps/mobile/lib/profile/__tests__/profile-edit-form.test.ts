@@ -51,4 +51,18 @@ describe("profile edit form defaults", () => {
       planning_timezone: null,
     });
   });
+
+  it("preserves a valid timezone, permits explicit unset, and rejects invalid custom identifiers", () => {
+    const defaults = getProfileEditFormDefaults({
+      full_name: "Riley Chen",
+      planning_timezone: "Pacific/Kiritimati",
+    });
+    expect(defaults.planning_timezone).toBe("Pacific/Kiritimati");
+    expect(profileEditFormSchema.safeParse({ ...defaults, planning_timezone: null }).success).toBe(
+      true,
+    );
+    expect(
+      profileEditFormSchema.safeParse({ ...defaults, planning_timezone: "Not/A_Zone" }).success,
+    ).toBe(false);
+  });
 });

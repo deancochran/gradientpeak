@@ -84,7 +84,11 @@ export async function runCleanupFixture(
         cleanupError instanceof Error
           ? cleanupError.stack || cleanupError.message
           : String(cleanupError);
-      testInfo.annotations.push({ type: "cleanup-error", description: detail.split("\n", 1)[0] });
+      const description = detail.split("\n", 1)[0];
+      testInfo.annotations.push({
+        type: "cleanup-error",
+        ...(description === undefined ? {} : { description }),
+      });
       await testInfo
         .attach("e2e-cleanup-error.txt", {
           body: Buffer.from(detail),

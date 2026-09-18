@@ -67,6 +67,7 @@ import { TouchableOpacity } from "react-native";
  * - integrations - Connected services
  * - notifications - Notification preferences
  * - profile-edit - Edit user profile
+ * - settings - Account settings entry point
  *
  * OTHER:
  * (none currently)
@@ -380,9 +381,9 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
-        name="training-preferences"
+        name="settings"
         options={{
-          title: "Training Preferences",
+          title: "Settings",
         }}
       />
     </Stack>

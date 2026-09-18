@@ -1,4 +1,8 @@
-import type { ActivityPlanStructure } from "../activity-plan";
+import type {
+  ActivityPlanAdaptation,
+  ActivityPlanStructure,
+  ActivityPlanTrainingIntent,
+} from "../activity-plan";
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
 
 export interface SystemActivityPlanTemplate {
@@ -11,6 +15,8 @@ export interface SystemActivityPlanTemplate {
   name: string;
   notes?: string | null;
   structure: ActivityPlanStructure;
+  adaptation?: ActivityPlanAdaptation | null;
+  training_intent?: ActivityPlanTrainingIntent;
 }
 
 /** Reads the sole root activity_category from a validated canonical ActivityPlan structure. */

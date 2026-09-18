@@ -1,4 +1,6 @@
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { describe, expect, it } from "vitest";
+import { createResolutionManifestFixture } from "../test/builders/planned-session";
 import {
   beginMobileRecordingUploadInputSchema,
   recordingSummarySubmissionInputSchema,
@@ -42,7 +44,7 @@ const baseSubmission = {
   },
   summary: { distanceMeters: 10_000 },
 };
-const prescribedStructure = {
+const prescribedStructure = activityPlanStructureSchema.parse({
   version: 3 as const,
   activity_category: "run" as const,
   segments: [
@@ -67,6 +69,21 @@ const prescribedStructure = {
       ],
     },
   ],
+});
+const plannedSessionPrescription = {
+  resolutionManifest: createResolutionManifestFixture({
+    activityPlanId: "77777777-7777-4777-8777-777777777777",
+    activityPlanRevision: 3,
+    structure: prescribedStructure,
+    demand: {
+      activity_category: "run",
+      training_intent: "general_maintenance",
+      target_duration_minutes: 10,
+      target_common_load: null,
+      importance: "normal",
+    },
+  }),
+  capturedAt: "2026-07-23T08:00:00.000Z",
 };
 const planExecution = {
   manifestVersion: 1 as const,
@@ -76,21 +93,13 @@ const planExecution = {
   name: "Hard",
   description: null,
   activityPlanRevision: 3,
-  structureHash: `v1:sha256:${"b".repeat(64)}`,
+  structureHash: plannedSessionPrescription.resolutionManifest.resolved_structure_hash,
   structure: prescribedStructure,
   plannedSession: {
     id: "99999999-9999-4999-8999-999999999999",
     sessionRevision: 5,
-    prescription: {
-      activityPlanId: "77777777-7777-4777-8777-777777777777",
-      activityPlanRevision: 3,
-      variantId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      variantName: "Hard",
-      structure: prescribedStructure,
-      structureHash: `v1:sha256:${"b".repeat(64)}`,
-      prescriptionQuantification: null,
-      capturedAt: "2026-07-23T08:00:00.000Z",
-    },
+    source: { kind: "direct" as const, operationId: "api-recording-contract-test-operation" },
+    prescription: plannedSessionPrescription,
   },
   personalizationEnabled: false,
   targetPresentations: [],

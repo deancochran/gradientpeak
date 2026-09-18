@@ -1,12 +1,12 @@
 import { providerHasCapability } from "@repo/core";
 import { type DrizzleDbClient, schema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, eq, gte, isNotNull, lte } from "drizzle-orm";
+import { and, asc, eq, gte, lte } from "drizzle-orm";
 import type { DrizzleTransactionClient } from "../../db";
 import { createWahooSyncRepository } from "../../infrastructure/repositories";
 import { hasWahooPlannedActivityScopes } from "../../lib/integrations/wahoo/planned-activity-scopes";
 import {
-  enqueueWahooPlannedActivitySyncAfterCalendarMutation,
+  enqueueWahooPlannedSessionSyncAfterMutation,
   type WahooPlannedActivityQueueResult,
 } from "../../lib/provider-sync/planned-activities";
 import type { ProviderSyncJobQueue } from "../../repositories/provider-sync-repository";
@@ -140,24 +140,22 @@ export async function syncIntegrationNow(input: {
         const windowEnd = new Date(windowStart);
         windowEnd.setUTCDate(windowEnd.getUTCDate() + 7);
         windowEnd.setUTCMilliseconds(windowEnd.getUTCMilliseconds() - 1);
-        const events = await tx
-          .select({ id: schema.events.id })
-          .from(schema.events)
+        const sessions = await tx
+          .select({ id: schema.plannedSessions.id })
+          .from(schema.plannedSessions)
           .where(
             and(
-              eq(schema.events.profile_id, input.profileId),
-              eq(schema.events.event_type, "planned"),
-              eq(schema.events.status, "scheduled"),
-              isNotNull(schema.events.activity_plan_id),
-              gte(schema.events.starts_at, windowStart),
-              lte(schema.events.starts_at, windowEnd),
+              eq(schema.plannedSessions.profile_id, input.profileId),
+              eq(schema.plannedSessions.status, "scheduled"),
+              gte(schema.plannedSessions.planning_date, windowStart.toISOString().slice(0, 10)),
+              lte(schema.plannedSessions.planning_date, windowEnd.toISOString().slice(0, 10)),
             ),
           )
-          .orderBy(asc(schema.events.starts_at), asc(schema.events.id))
+          .orderBy(asc(schema.plannedSessions.planning_date), asc(schema.plannedSessions.id))
           .limit(100);
-        plannedActivitySync = await enqueueWahooPlannedActivitySyncAfterCalendarMutation({
+        plannedActivitySync = await enqueueWahooPlannedSessionSyncAfterMutation({
           db: input.db,
-          eventIds: events.map((event) => event.id),
+          plannedSessionIds: sessions.map((session) => session.id),
           operation: "publish",
           profileId: input.profileId,
           transaction: tx,

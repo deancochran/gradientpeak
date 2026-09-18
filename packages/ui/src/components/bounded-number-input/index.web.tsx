@@ -1,5 +1,10 @@
-import { formatNumberForInput, parseBoundedNumber } from "@repo/core/utils/fitness-inputs";
-import { useEffect, useState } from "react";
+import {
+  formatNumberForInput,
+  parseBoundedNumber,
+  parseNumberOrUndefined,
+} from "@repo/core/utils/fitness-inputs";
+import { nudgeNumberByStep } from "@repo/core/utils/numeric-ux-policy";
+import { useInputDraft } from "../../hooks/use-input-draft";
 import { Button } from "../button/index.web";
 import { Input } from "../input/index.web";
 import { Label } from "../label/index.web";
@@ -7,6 +12,8 @@ import type { BoundedNumberInputProps } from "./shared";
 
 function BoundedNumberInput({
   accessibilityHint,
+  adjustmentStep,
+  clampProjection = true,
   decimals = 2,
   disabled = false,
   error,
@@ -17,23 +24,34 @@ function BoundedNumberInput({
   min = 0,
   name,
   onChange,
+  onInvalidChange,
   onBlur,
   onNumberChange,
   placeholder,
   presets,
   required = false,
+  resetKey,
+  showAdjustmentButtons = false,
+  stepAnchor = 0,
   testID,
   testId,
   unitLabel,
   value,
 }: BoundedNumberInputProps) {
-  const [draftValue, setDraftValue] = useState(value);
+  const [draftValue, setDraftValue] = useInputDraft(value, resetKey);
   const descriptionId = `${id}-description`;
   const errorId = `${id}-error`;
-
-  useEffect(() => {
-    setDraftValue(value);
-  }, [value]);
+  const parseProjection = (nextValue: string) => {
+    const parsed = clampProjection
+      ? parseBoundedNumber(nextValue, { min, max, decimals })
+      : parseNumberOrUndefined(nextValue);
+    return parsed === undefined ||
+      (!clampProjection &&
+        (parsed < min || parsed > max || (decimals === 0 && !Number.isInteger(parsed))))
+      ? undefined
+      : parsed;
+  };
+  const parsedValue = parseProjection(draftValue);
 
   const commitValue = (nextValue: string) => {
     if (disabled) {
@@ -45,18 +63,34 @@ function BoundedNumberInput({
       setDraftValue("");
       onChange("");
       onNumberChange?.(undefined);
+      onInvalidChange?.(false);
       return;
     }
 
-    const parsed = parseBoundedNumber(trimmed, { min, max, decimals });
+    const parsed = parseProjection(trimmed);
     if (parsed === undefined) {
+      onInvalidChange?.(true);
       return;
     }
 
-    const normalized = formatNumberForInput(parsed, decimals);
+    const normalized = clampProjection ? formatNumberForInput(parsed, decimals) : String(parsed);
     setDraftValue(normalized);
     onChange(normalized);
     onNumberChange?.(parsed);
+    onInvalidChange?.(false);
+  };
+  const adjust = (direction: -1 | 1) => {
+    if (disabled || adjustmentStep === undefined || parsedValue === undefined) return;
+    commitValue(
+      String(
+        nudgeNumberByStep(parsedValue, direction, {
+          min,
+          max,
+          step: adjustmentStep,
+          anchor: stepAnchor,
+        }),
+      ),
+    );
   };
 
   return (
@@ -68,6 +102,23 @@ function BoundedNumberInput({
         </Label>
       ) : null}
       <div className="flex items-center gap-2">
+        {showAdjustmentButtons ? (
+          <Button
+            aria-label={`Decrease ${label ?? "value"}`}
+            disabled={
+              disabled ||
+              adjustmentStep === undefined ||
+              parsedValue === undefined ||
+              parsedValue <= min
+            }
+            onClick={() => adjust(-1)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            -
+          </Button>
+        ) : null}
         <Input
           accessibilityLabel={label}
           aria-describedby={
@@ -91,23 +142,38 @@ function BoundedNumberInput({
               return;
             }
 
-            setDraftValue(event.currentTarget.value);
-            onChange(event.currentTarget.value);
-            onNumberChange?.(
-              parseBoundedNumber(event.currentTarget.value, {
-                min,
-                max,
-                decimals,
-              }),
-            );
+            const nextValue = event.currentTarget.value;
+            const parsed = parseProjection(nextValue);
+            setDraftValue(nextValue, [parsed === undefined ? "" : String(parsed)]);
+            onChange(nextValue);
+            onNumberChange?.(parsed);
+            onInvalidChange?.(nextValue.trim() !== "" && parsed === undefined);
           }}
           placeholder={placeholder}
           required={required}
           testId={testID ?? testId}
           type="text"
+          inputMode={decimals > 0 ? "decimal" : "numeric"}
           value={draftValue}
         />
         {unitLabel ? <span className="text-xs text-muted-foreground">{unitLabel}</span> : null}
+        {showAdjustmentButtons ? (
+          <Button
+            aria-label={`Increase ${label ?? "value"}`}
+            disabled={
+              disabled ||
+              adjustmentStep === undefined ||
+              parsedValue === undefined ||
+              parsedValue >= max
+            }
+            onClick={() => adjust(1)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            +
+          </Button>
+        ) : null}
       </div>
       {presets?.length ? (
         <div className="flex flex-wrap gap-2">

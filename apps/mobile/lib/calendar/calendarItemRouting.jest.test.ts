@@ -19,6 +19,11 @@ describe("buildCalendarItemRoute", () => {
       { pathname: "/group-event-detail", params: { groupEventId: "group-1" } },
     ],
     ["event", "event-1", "/event-detail?id=event-1"],
+    [
+      "planned_activity",
+      "planned-1",
+      { pathname: "/event-detail", params: { id: "planned-1", resourceType: "planned_session" } },
+    ],
   ])("routes %s items consistently", (kind, id, expected) => {
     expect(buildCalendarItemRoute(item(kind, id))).toEqual(expected);
   });

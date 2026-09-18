@@ -20,6 +20,7 @@ export type EnqueueProviderSyncJobInput<TProvider extends string = PersistentInt
     provider: TProvider;
     resourceKind?:
       | "event"
+      | "planned_session"
       | "activity_plan"
       | "activity_route"
       | "group_event_route_delivery"

@@ -1,289 +1,455 @@
 import { Duration, Target } from "../schemas/activity_payload";
-import { createSystemActivityPlanBuilder } from "./activity-plan-builder";
+import {
+  createSystemActivityPlanAdaptationBuilder,
+  createSystemActivityPlanBuilder,
+  requiredSampleItem,
+} from "./activity-plan-builder";
 import type { ActivityPlanPortfolioMetadata } from "./activity-plan-portfolio";
 import type { SystemActivityPlanTemplate } from "./types";
 
-const levels = [
-  { difficulty: "foundation", label: "Foundation" },
-  { difficulty: "development", label: "Development" },
-  { difficulty: "advanced", label: "Advanced" },
-  { difficulty: "race-specific", label: "Race" },
-] as const;
-
-const ids = {
-  "norwegian-4x4": [
-    "a4e10000-0001-4000-8001-000000000001",
-    "a4e10000-0001-4000-8002-000000000002",
-    "a4e10000-0001-4000-8003-000000000003",
-    "a4e10000-0001-4000-8004-000000000004",
-  ],
-  "norwegian-controlled-threshold": [
-    "a4e20000-0001-4000-8001-000000000005",
-    "a4e20000-0001-4000-8002-000000000006",
-    "a4e20000-0001-4000-8003-000000000007",
-    "a4e20000-0001-4000-8004-000000000008",
-  ],
-  "ronnestad-30-15": [
-    "a4e30000-0001-4000-8001-000000000009",
-    "a4e30000-0001-4000-8002-000000000010",
-    "a4e30000-0001-4000-8003-000000000011",
-    "a4e30000-0001-4000-8004-000000000012",
-  ],
-  "css-swim": [
-    "a4e40000-0001-4000-8001-000000000013",
-    "a4e40000-0001-4000-8002-000000000014",
-    "a4e40000-0001-4000-8003-000000000015",
-    "a4e40000-0001-4000-8004-000000000016",
-  ],
-} as const;
-
 const sourceNotes = {
-  "norwegian-4x4":
-    "Source: Helgerud et al. (2007), DOI 10.1249/mss.0b013e3180304570. The study protocol is evidence for this format, not proof that it is superior for every athlete.",
-  "norwegian-controlled-threshold":
+  norwegian:
     "Source: Marius Bakken (2022/2026), https://www.mariusbakken.com/the-norwegian-model.html and https://www.mariusbakken.com/double-threshold-training.html. Practitioner examples require individual calibration, not a universal lactate target.",
-  "ronnestad-30-15":
+  ronnestad:
     "Source: Rønnestad et al. (2021), DOI 10.1123/ijspp.2020-0647. This is a bounded single session; do not copy the study's five-session shock microcycle without coaching supervision.",
-  "css-swim":
-    "Source: Wakayoshi et al. (1992), DOI 10.1055/s-2007-1021282. CSS is used here as an endurance/fatigue-threshold index; the paper did not test these exact repeat sets.",
+  css: "Source: Wakayoshi et al. (1992), DOI 10.1055/s-2007-1021282. CSS is used here as an endurance/fatigue-threshold index; the paper did not test these exact repeat sets.",
 } as const;
-
-function iconicId(family: keyof typeof ids, levelIndex: number): string {
-  const id = ids[family][levelIndex];
-  if (!id) throw new Error("Missing iconic endurance plan identity");
-  return id;
+function activitySegment(
+  structure: ReturnType<ReturnType<typeof createSystemActivityPlanBuilder>["build"]>,
+) {
+  const segment = structure.segments[0];
+  if (segment?.role !== "activity") throw new Error("Expected iconic activity segment");
+  return segment;
 }
 
-function planBase(
-  category: "bike" | "run" | "swim",
-  family: keyof typeof ids,
-  levelIndex: number,
-  name: string,
-  description: string,
-  build: (builder: ReturnType<typeof createSystemActivityPlanBuilder>) => void,
-): SystemActivityPlanTemplate {
-  const level = levels[levelIndex];
-  if (!level) throw new Error("Missing iconic endurance plan level");
-  const builder = createSystemActivityPlanBuilder(category, `iconic:${family}:${level.label}`);
-  build(builder);
+function norwegian4x4(): SystemActivityPlanTemplate {
+  const identity = "iconic:norwegian-4x4";
+  const builder = createSystemActivityPlanBuilder("run", identity);
+  builder.warmup({ duration: Duration.minutes(12), targets: [Target.maxHR(70)] });
+  builder.interval({
+    name: "4×4 Aerobic Power",
+    repeat: 4,
+    steps: [
+      {
+        duration: Duration.seconds(240),
+        name: "Work",
+        purpose: "work",
+        notes: "Build into 90–95% HRmax without sprinting the first minute.",
+        targets: [Target.maxHR(92)],
+      },
+      {
+        duration: Duration.seconds(180),
+        name: "Active Recovery",
+        purpose: "recovery",
+        notes: "Jog easily at about 70% HRmax; recover actively rather than standing still.",
+        targets: [Target.maxHR(70)],
+      },
+    ],
+  });
+  const structure = builder
+    .cooldown({ duration: Duration.minutes(10), targets: [Target.maxHR(65)] })
+    .build();
+  const segment = activitySegment(structure);
+  const interval = requiredSampleItem(segment.intervals, 1, "Norwegian 4x4 work interval");
+  const recovery = requiredSampleItem(interval.steps, 1, "Norwegian 4x4 recovery step");
+  const adaptation = createSystemActivityPlanAdaptationBuilder(identity);
   return {
-    description,
-    gps_recording_enabled: category !== "swim",
-    id: iconicId(family, levelIndex),
-    name: `${name} — ${level.label}`,
-    notes: sourceNotes[family],
-    structure: builder.build(),
-  };
-}
-
-const norwegian4x4 = levels.map((_, levelIndex) => {
-  const repetitions = [3, 4, 5, 4][levelIndex];
-  const workSeconds = 240;
-  return planBase(
-    "run",
-    "norwegian-4x4",
-    levelIndex,
-    "Norwegian 4×4 Run",
-    `A progressive Norwegian-style aerobic-power session. Scale by starting with fewer repetitions and keep the same controlled work and active-recovery targets; stop if form or heart-rate response becomes abnormal.${levelIndex === 3 ? " This race prep variant deliberately tapers volume while retaining the protocol." : ""}`,
-    (builder) => {
-      builder.warmup({ duration: Duration.minutes(12), targets: [Target.maxHR(70)] });
-      builder.interval({
-        name: "4×4 Aerobic Power",
-        repeat: repetitions ?? 3,
-        steps: [
-          {
-            duration: Duration.seconds(workSeconds),
-            name: "Work",
-            notes: "Build into 90–95% HRmax without sprinting the first minute.",
-            targets: [Target.maxHR(92)],
-          },
-          {
-            duration: Duration.seconds(levelIndex === 3 ? 210 : 180),
-            name: "Active Recovery",
-            notes:
-              levelIndex === 3
-                ? "Jog easily at about 70% HRmax for a slightly longer active recovery during this taper variant."
-                : "Jog easily at about 70% HRmax; recover actively rather than standing still.",
-            targets: [Target.maxHR(70)],
-          },
-        ],
-      });
-      builder.cooldown({ duration: Duration.minutes(10), targets: [Target.maxHR(65)] });
-    },
-  );
-});
-
-const thresholdFormats = [
-  { meters: 2_000, repetitions: 3, recovery: 75 },
-  { meters: 2_000, repetitions: 4, recovery: 60 },
-  { meters: 2_000, repetitions: 5, recovery: 60 },
-  { meters: 400, repetitions: 25, recovery: 30 },
-] as const;
-const norwegianThreshold = levels.map((_, levelIndex) => {
-  const format = thresholdFormats[levelIndex];
-  if (!format) throw new Error("Missing Norwegian threshold format");
-  return planBase(
-    "run",
-    "norwegian-controlled-threshold",
-    levelIndex,
-    "Norwegian Controlled Threshold Run",
-    "A single controlled sub-threshold session, progressed by repeat volume. Use an individually calibrated pace, heart-rate trend, and RPE 6–7—not a universal lactate number. Same-day pairing is an advanced coaching decision, not a routine prescription.",
-    (builder) => {
-      builder.warmup({ duration: Duration.minutes(15), targets: [Target.rpe(3)] });
-      builder.interval({
-        name: "Controlled Threshold Repeats",
-        repeat: format.repetitions,
-        steps: [
-          {
-            duration: Duration.meters(format.meters),
-            name: "Controlled Work",
-            notes:
-              "Hold a repeatable sub-threshold effort at RPE 6–7; slow down if the individual calibration is no longer controlled.",
-            targets: [Target.rpe(7)],
-          },
-          {
-            duration: Duration.seconds(format.recovery),
-            name: "Float Recovery",
-            notes: "Use an easy jog float; do not turn the recovery into a full stop.",
-            targets: [Target.rpe(2)],
-          },
-        ],
-      });
-      builder.cooldown({ duration: Duration.minutes(10), targets: [Target.rpe(2)] });
-    },
-  );
-});
-
-const ronnestadFormats = [
-  { blocks: 2, repeats: 8 },
-  { blocks: 3, repeats: 8 },
-  { blocks: 3, repeats: 10 },
-  { blocks: 5, repeats: 12 },
-] as const;
-const ronnestad = levels.map((_, levelIndex) => {
-  const format = ronnestadFormats[levelIndex];
-  if (!format) throw new Error("Missing Rønnestad format");
-  return planBase(
-    "bike",
-    "ronnestad-30-15",
-    levelIndex,
-    "Rønnestad 30/15 Cycling",
-    "A bounded Rønnestad-style short-interval session. Begin with fewer blocks than this progression when new to the format, and end the session if power or pedaling quality falls materially.",
-    (builder) => {
-      builder.warmup({ duration: Duration.minutes(15), targets: [Target.ftp(55)] });
-      for (let block = 1; block <= format.blocks; block += 1) {
-        builder.interval({
-          name: `30/15 Block ${block}`,
-          repeat: format.repeats,
-          steps: [
+    id: "a4e10000-0001-4000-8001-000000000001",
+    name: "Norwegian 4×4 Run",
+    description:
+      "A controlled Norwegian-style aerobic-power session with bounded repeat and active-recovery states.",
+    notes:
+      "Source: Helgerud et al. (2007), DOI 10.1249/mss.0b013e3180304570. The study protocol is evidence for this format, not proof that it is superior for every athlete.",
+    gps_recording_enabled: true,
+    structure,
+    adaptation: {
+      controls: [
+        adaptation.control({
+          key: "work_repetitions",
+          label: "Work repetitions",
+          kind: "interval_repetitions",
+          range: { minimum: 3, default: 4, maximum: 5, increment: 1 },
+          targets: [
             {
-              duration: Duration.seconds(30),
-              name: "30-second Work",
-              notes:
-                "Use a hard but repeatable aerobic-power effort; do not sprint the first repetitions.",
-              targets: [Target.ftp(105)],
-            },
-            {
-              duration: Duration.seconds(15),
-              name: "15-second Recovery",
-              notes: "Keep pedaling very easily through the short recovery.",
-              targets: [Target.ftp(45)],
+              type: "interval_repetitions",
+              activitySegmentId: segment.id,
+              intervalId: interval.id,
             },
           ],
-        });
-        if (block < format.blocks) {
-          builder.step({
-            duration: Duration.minutes(3),
-            intervalName: "Between-set Recovery",
-            name: "Between-set Recovery",
-            notes: "Pedal easily for three minutes before the next 30/15 block.",
-            targets: [Target.ftp(45)],
-          });
-        }
-      }
-      builder.cooldown({ duration: Duration.minutes(10), targets: [Target.ftp(50)] });
+        }),
+        adaptation.control({
+          key: "recovery_seconds",
+          label: "Active recovery",
+          kind: "recovery_quantity",
+          range: { minimum: 180, default: 180, maximum: 210, increment: 30 },
+          targets: [
+            {
+              type: "recovery_step",
+              activitySegmentId: segment.id,
+              intervalId: interval.id,
+              stepId: recovery.id,
+              quantityType: "time",
+            },
+          ],
+        }),
+      ],
+      allowedStates: [
+        adaptation.state({
+          label: "Foundation",
+          values: { work_repetitions: 3, recovery_seconds: 180 },
+        }),
+        adaptation.state({
+          label: "Development",
+          values: { work_repetitions: 4, recovery_seconds: 180 },
+        }),
+        adaptation.state({
+          label: "Advanced",
+          values: { work_repetitions: 5, recovery_seconds: 180 },
+        }),
+        adaptation.state({
+          label: "Race taper",
+          values: { work_repetitions: 4, recovery_seconds: 210 },
+        }),
+      ],
     },
-  );
-});
-
-const cssRepeats = [6, 8, 10, 12] as const;
-const css = levels.map((_, levelIndex) => {
-  const repetitions = cssRepeats[levelIndex];
-  return planBase(
-    "swim",
-    "css-swim",
-    levelIndex,
-    "Critical Swim Speed (CSS)",
-    "A CSS-style repeat set with short rests. Start with fewer repeats or a slower calibrated CSS pace if stroke length or breathing deteriorates, and build only while the RPE 7 effort stays repeatable.",
-    (builder) => {
-      builder.warmup({ duration: Duration.meters(400), targets: [Target.rpe(3)] });
-      builder.interval({
-        name: "CSS Repeats",
-        repeat: repetitions ?? 6,
-        steps: [
-          {
-            duration: Duration.meters(100),
-            name: "CSS Work",
-            notes:
-              "Swim at individually estimated CSS pace at RPE 7 with a long, repeatable stroke.",
-            targets: [Target.rpe(7)],
-          },
-          {
-            duration: Duration.seconds(15),
-            name: "Short Rest",
-            notes:
-              "Take a short wall rest, then leave on the planned interval without rushing technique.",
-            targets: [Target.rpe(1)],
-          },
-        ],
+  };
+}
+function norwegianLongRepeats(): SystemActivityPlanTemplate {
+  const identity = "iconic:norwegian-controlled-threshold";
+  const builder = createSystemActivityPlanBuilder("run", identity);
+  builder.warmup({ duration: Duration.minutes(15), targets: [Target.rpe(3)] });
+  builder.interval({
+    name: "Controlled Threshold Repeats",
+    repeat: 4,
+    steps: [
+      {
+        duration: Duration.meters(2_000),
+        name: "Controlled Work",
+        purpose: "work",
+        notes:
+          "Hold a repeatable sub-threshold effort at RPE 6–7; slow down if the individual calibration is no longer controlled.",
+        targets: [Target.rpe(7)],
+      },
+      {
+        duration: Duration.seconds(60),
+        name: "Float Recovery",
+        purpose: "recovery",
+        notes: "Use an easy jog float; do not turn the recovery into a full stop.",
+        targets: [Target.rpe(2)],
+      },
+    ],
+  });
+  const structure = builder
+    .cooldown({ duration: Duration.minutes(10), targets: [Target.rpe(2)] })
+    .build();
+  const segment = activitySegment(structure);
+  const interval = requiredSampleItem(segment.intervals, 1, "Norwegian threshold interval");
+  const recovery = requiredSampleItem(interval.steps, 1, "Norwegian threshold recovery step");
+  const adaptation = createSystemActivityPlanAdaptationBuilder(identity);
+  return {
+    id: "a4e20000-0001-4000-8001-000000000005",
+    name: "Norwegian Controlled Threshold Long Repeats",
+    description:
+      "A controlled sub-threshold long-repeat session with coordinated volume and float-recovery states.",
+    notes: sourceNotes.norwegian,
+    gps_recording_enabled: true,
+    structure,
+    adaptation: {
+      controls: [
+        adaptation.control({
+          key: "work_repetitions",
+          label: "Long-repeat count",
+          kind: "interval_repetitions",
+          range: { minimum: 3, default: 4, maximum: 5, increment: 1 },
+          targets: [
+            {
+              type: "interval_repetitions",
+              activitySegmentId: segment.id,
+              intervalId: interval.id,
+            },
+          ],
+        }),
+        adaptation.control({
+          key: "recovery_seconds",
+          label: "Float recovery",
+          kind: "recovery_quantity",
+          range: { minimum: 60, default: 60, maximum: 75, increment: 15 },
+          targets: [
+            {
+              type: "recovery_step",
+              activitySegmentId: segment.id,
+              intervalId: interval.id,
+              stepId: recovery.id,
+              quantityType: "time",
+            },
+          ],
+        }),
+      ],
+      allowedStates: [
+        adaptation.state({
+          label: "Foundation",
+          values: { work_repetitions: 3, recovery_seconds: 75 },
+        }),
+        adaptation.state({
+          label: "Development",
+          values: { work_repetitions: 4, recovery_seconds: 60 },
+        }),
+        adaptation.state({
+          label: "Advanced",
+          values: { work_repetitions: 5, recovery_seconds: 60 },
+        }),
+      ],
+    },
+  };
+}
+function norwegian25x400(): SystemActivityPlanTemplate {
+  const identity = "iconic:norwegian-25x400";
+  const builder = createSystemActivityPlanBuilder("run", identity);
+  builder.warmup({ duration: Duration.minutes(15), targets: [Target.rpe(3)] });
+  builder.interval({
+    name: "25×400 Controlled Threshold",
+    repeat: 25,
+    steps: [
+      {
+        duration: Duration.meters(400),
+        name: "Controlled Work",
+        purpose: "work",
+        notes:
+          "Hold a repeatable sub-threshold RPE 6–7; this distinct short-repeat protocol is not a long-repeat dose state.",
+        targets: [Target.rpe(7)],
+      },
+      {
+        duration: Duration.seconds(30),
+        name: "Float Recovery",
+        purpose: "recovery",
+        notes: "Use an easy jog float between controlled repeats.",
+        targets: [Target.rpe(2)],
+      },
+    ],
+  });
+  const structure = builder
+    .cooldown({ duration: Duration.minutes(10), targets: [Target.rpe(2)] })
+    .build();
+  const segment = activitySegment(structure);
+  const interval = requiredSampleItem(segment.intervals, 1, "Norwegian 25x400 interval");
+  const recovery = requiredSampleItem(interval.steps, 1, "Norwegian 25x400 recovery step");
+  const adaptation = createSystemActivityPlanAdaptationBuilder(identity);
+  return {
+    id: "a4e20000-0001-4000-8004-000000000008",
+    name: "Norwegian 25×400 Controlled Threshold",
+    description: "A separately identified 25-by-400-metre Norwegian controlled-threshold protocol.",
+    notes: sourceNotes.norwegian,
+    gps_recording_enabled: true,
+    structure,
+    adaptation: {
+      controls: [
+        adaptation.control({
+          key: "float_recovery_seconds",
+          label: "Float recovery",
+          kind: "recovery_quantity",
+          range: { minimum: 20, default: 30, maximum: 40, increment: 10 },
+          targets: [
+            {
+              type: "recovery_step",
+              activitySegmentId: segment.id,
+              intervalId: interval.id,
+              stepId: recovery.id,
+              quantityType: "time",
+            },
+          ],
+        }),
+      ],
+    },
+  };
+}
+function ronnestad(): SystemActivityPlanTemplate {
+  const identity = "iconic:ronnestad-30-15";
+  const builder = createSystemActivityPlanBuilder("bike", identity);
+  builder.warmup({ duration: Duration.minutes(15), targets: [Target.ftp(55)] });
+  for (let block = 1; block <= 5; block += 1) {
+    builder.interval({
+      name: `30/15 Block ${block}`,
+      repeat: block <= 3 ? 10 : 1,
+      steps: [
+        {
+          duration: Duration.seconds(30),
+          name: "30-second Work",
+          purpose: "work",
+          notes:
+            "Use a hard but repeatable aerobic-power effort; do not sprint the first repetitions.",
+          targets: [Target.ftp(105)],
+        },
+        {
+          duration: Duration.seconds(15),
+          name: "15-second Recovery",
+          purpose: "recovery",
+          notes: "Keep pedaling very easily through the short recovery.",
+          targets: [Target.ftp(45)],
+        },
+      ],
+    });
+    if (block < 5)
+      builder.rest({
+        duration: Duration.minutes(3),
+        name: "Between-set Recovery",
+        notes: "Pedal easily for three minutes before the next 30/15 block.",
       });
-      builder.cooldown({ duration: Duration.meters(200), targets: [Target.rpe(2)] });
-    },
+  }
+  const structure = builder
+    .cooldown({ duration: Duration.minutes(10), targets: [Target.ftp(50)] })
+    .build();
+  const segment = activitySegment(structure);
+  const blocks = [
+    requiredSampleItem(segment.intervals, 1, "Rønnestad work interval 1"),
+    requiredSampleItem(segment.intervals, 3, "Rønnestad work interval 2"),
+    requiredSampleItem(segment.intervals, 5, "Rønnestad work interval 3"),
+    requiredSampleItem(segment.intervals, 7, "Rønnestad work interval 4"),
+    requiredSampleItem(segment.intervals, 9, "Rønnestad work interval 5"),
+  ];
+  const adaptation = createSystemActivityPlanAdaptationBuilder(identity);
+  const controls = blocks.map((interval, index) =>
+    adaptation.control({
+      key: `block_${index + 1}_repetitions`,
+      label: `Block ${index + 1} repetitions`,
+      kind: "interval_repetitions",
+      range: { minimum: 1, default: interval.repetitions, maximum: 12, increment: 1 },
+      targets: [
+        { type: "interval_repetitions", activitySegmentId: segment.id, intervalId: interval.id },
+      ],
+    }),
   );
-});
-
+  const values = (counts: readonly number[]) =>
+    Object.fromEntries(counts.map((count, index) => [`block_${index + 1}_repetitions`, count]));
+  return {
+    id: "a4e30000-0001-4000-8001-000000000009",
+    name: "Rønnestad 30/15 Cycling",
+    description:
+      "A bounded Rønnestad-style short-interval session with coordinated block and repetition states.",
+    notes: sourceNotes.ronnestad,
+    gps_recording_enabled: true,
+    structure,
+    adaptation: {
+      controls,
+      allowedStates: [
+        adaptation.state({ label: "Foundation", values: values([8, 8, 1, 1, 1]) }),
+        adaptation.state({ label: "Development", values: values([8, 8, 8, 1, 1]) }),
+        adaptation.state({ label: "Advanced", values: values([10, 10, 10, 1, 1]) }),
+        adaptation.state({ label: "Race", values: values([12, 12, 12, 12, 12]) }),
+      ],
+    },
+  };
+}
+function css(): SystemActivityPlanTemplate {
+  const identity = "iconic:css-swim";
+  const builder = createSystemActivityPlanBuilder("swim", identity);
+  builder.warmup({ duration: Duration.meters(400), targets: [Target.rpe(3)] });
+  builder.interval({
+    name: "CSS Repeats",
+    repeat: 8,
+    steps: [
+      {
+        duration: Duration.meters(100),
+        name: "CSS Work",
+        purpose: "work",
+        notes: "Swim at individually estimated CSS pace at RPE 7 with a long, repeatable stroke.",
+        targets: [Target.rpe(7)],
+      },
+      {
+        duration: Duration.seconds(15),
+        name: "Short Rest",
+        purpose: "recovery",
+        notes:
+          "Take a short wall rest, then leave on the planned interval without rushing technique.",
+        targets: [Target.rpe(1)],
+      },
+    ],
+  });
+  const structure = builder
+    .cooldown({ duration: Duration.meters(200), targets: [Target.rpe(2)] })
+    .build();
+  const segment = activitySegment(structure);
+  const interval = requiredSampleItem(segment.intervals, 1, "CSS work interval");
+  const adaptation = createSystemActivityPlanAdaptationBuilder(identity);
+  return {
+    id: "a4e40000-0001-4000-8001-000000000013",
+    name: "Critical Swim Speed (CSS)",
+    description: "A CSS-style repeat set with bounded repeat-volume states.",
+    notes: sourceNotes.css,
+    gps_recording_enabled: false,
+    structure,
+    adaptation: {
+      controls: [
+        adaptation.control({
+          key: "work_repetitions",
+          label: "CSS repeat count",
+          kind: "interval_repetitions",
+          range: { minimum: 6, default: 8, maximum: 12, increment: 1 },
+          targets: [
+            {
+              type: "interval_repetitions",
+              activitySegmentId: segment.id,
+              intervalId: interval.id,
+            },
+          ],
+        }),
+      ],
+      allowedStates: [6, 8, 10, 12].map((value) =>
+        adaptation.state({ label: `${value} repeats`, values: { work_repetitions: value } }),
+      ),
+    },
+  };
+}
 export const ICONIC_ENDURANCE_ACTIVITIES: SystemActivityPlanTemplate[] = [
-  ...norwegian4x4,
-  ...norwegianThreshold,
-  ...ronnestad,
-  ...css,
+  norwegian4x4(),
+  norwegianLongRepeats(),
+  norwegian25x400(),
+  ronnestad(),
+  css(),
 ];
-
 export const ICONIC_ENDURANCE_METADATA: ActivityPlanPortfolioMetadata[] = [
-  ...levels.map((level, index) => ({
-    difficulty: level.difficulty,
-    durationClass: "short" as const,
+  {
+    difficulty: "development",
+    durationClass: "short",
     family: "run:norwegian-4x4",
-    primaryIntensity: "vo2max" as const,
+    primaryIntensity: "vo2max",
     primaryPurpose: "aerobic-power",
-    templateId: iconicId("norwegian-4x4", index),
+    templateId: "a4e10000-0001-4000-8001-000000000001",
     triathlonContext: false,
-  })),
-  ...levels.map((level, index) => ({
-    difficulty: level.difficulty,
-    durationClass: index >= 2 ? ("medium" as const) : ("short" as const),
+  },
+  {
+    difficulty: "development",
+    durationClass: "short",
     family: "run:norwegian-controlled-threshold",
-    primaryIntensity: "threshold" as const,
+    primaryIntensity: "threshold",
     primaryPurpose: "controlled-sub-threshold",
-    templateId: iconicId("norwegian-controlled-threshold", index),
+    templateId: "a4e20000-0001-4000-8001-000000000005",
     triathlonContext: false,
-  })),
-  ...levels.map((level, index) => ({
-    difficulty: level.difficulty,
-    durationClass: index === 3 ? ("medium" as const) : ("short" as const),
+  },
+  {
+    difficulty: "race-specific",
+    durationClass: "medium",
+    family: "run:norwegian-25x400",
+    primaryIntensity: "threshold",
+    primaryPurpose: "controlled-sub-threshold",
+    templateId: "a4e20000-0001-4000-8004-000000000008",
+    triathlonContext: false,
+  },
+  {
+    difficulty: "development",
+    durationClass: "medium",
     family: "bike:ronnestad-30-15",
-    primaryIntensity: "vo2max" as const,
+    primaryIntensity: "vo2max",
     primaryPurpose: "aerobic-power",
-    templateId: iconicId("ronnestad-30-15", index),
+    templateId: "a4e30000-0001-4000-8001-000000000009",
     triathlonContext: false,
-  })),
-  ...levels.map((level, index) => ({
-    difficulty: level.difficulty,
-    durationClass: index >= 2 ? ("medium" as const) : ("short" as const),
+  },
+  {
+    difficulty: "development",
+    durationClass: "short",
     family: "swim:css-swim",
-    primaryIntensity: "threshold" as const,
+    primaryIntensity: "threshold",
     primaryPurpose: "critical-swim-speed",
-    templateId: iconicId("css-swim", index),
+    templateId: "a4e40000-0001-4000-8001-000000000013",
     triathlonContext: false,
-  })),
+  },
 ];

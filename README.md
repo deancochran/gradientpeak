@@ -58,6 +58,8 @@ verification progression, and specialist lanes.
 See [docs/local-environments.md](./docs/local-environments.md) for the isolated manual and E2E
 ports, database lifecycle, emulator routing, cache namespaces, and targeted shutdown command.
 
+See [docs/development-errors.md](./docs/development-errors.md) for sanitized local API error diagnostics and the agent-friendly `pnpm dev:errors` command.
+
 Run the narrowest relevant check while iterating. Before integration, run the repository gate:
 
 ```bash

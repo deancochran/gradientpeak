@@ -5,6 +5,12 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Pool } from "pg";
 import { dbPackageRoot, defaultLocalDatabaseUrl } from "./_local-database-config";
+import {
+  activityPlanSqlArtifacts,
+  installActivityPlanSqlFunctions,
+  pinnedActivityPlanFunctionNames,
+  pinnedActivityPlanTriggerNames,
+} from "./activity-plan-sql-artifacts";
 
 const materializedDatabase = "gradientpeak_schema_materialization";
 
@@ -29,21 +35,27 @@ async function materialize() {
   let triggerDefinitions: string[] = [];
   try {
     const [functions, triggers] = await Promise.all([
-      adminPool.query<{ definition: string }>(`
+      adminPool.query<{ definition: string }>(
+        `
         select pg_get_functiondef(procedure_record.oid) as definition
         from pg_proc procedure_record
         join pg_namespace namespace on namespace.oid = procedure_record.pronamespace
-        where namespace.nspname = 'public'
-        order by procedure_record.oid
-      `),
-      adminPool.query<{ definition: string }>(`
+         where namespace.nspname = 'public' and procedure_record.proname <> all($1::text[])
+         order by procedure_record.oid
+       `,
+        [pinnedActivityPlanFunctionNames],
+      ),
+      adminPool.query<{ definition: string }>(
+        `
         select pg_get_triggerdef(trigger_record.oid, true) as definition
         from pg_trigger trigger_record
         join pg_class relation on relation.oid = trigger_record.tgrelid
         join pg_namespace namespace on namespace.oid = relation.relnamespace
-        where namespace.nspname = 'public' and not trigger_record.tgisinternal
-        order by trigger_record.oid
-      `),
+         where namespace.nspname = 'public' and not trigger_record.tgisinternal and trigger_record.tgname <> all($1::text[])
+         order by trigger_record.oid
+       `,
+        [pinnedActivityPlanTriggerNames],
+      ),
     ]);
     functionDefinitions = functions.rows.map(({ definition }) => definition);
     triggerDefinitions = triggers.rows.map(({ definition }) => definition);
@@ -79,22 +91,12 @@ async function materialize() {
       create function public.activity_artifact_content_path(target_profile_id uuid, target_digest text)
         returns text language sql immutable strict set search_path = pg_catalog
         as $$ select 'artifacts/sha256/' || target_profile_id::text || '/' || target_digest $$;
-      create function public.activity_plan_structure_is_canonical(input jsonb)
-        returns boolean language sql immutable set search_path = pg_catalog as $$ select true $$;
-      create function public.activity_plan_document_is_canonical(input jsonb)
-        returns boolean language sql immutable set search_path = pg_catalog as $$ select true $$;
-      create function public.activity_plan_jsonb_has_exact_keys(input jsonb, required_keys text[], optional_keys text[] default '{}'::text[])
-        returns boolean language sql immutable set search_path = pg_catalog as $$ select true $$;
-      create function public.activity_plan_jsonb_is_uuid(input jsonb) returns boolean language sql immutable set search_path = pg_catalog as $$ select true $$;
-      create function public.activity_plan_jsonb_is_string(input jsonb, minimum integer, maximum integer) returns boolean language sql immutable set search_path = pg_catalog as $$ select true $$;
-      create function public.activity_plan_jsonb_is_integer_between(input jsonb, minimum numeric, maximum numeric) returns boolean language sql immutable set search_path = pg_catalog as $$ select true $$;
-      create function public.activity_plan_target_is_canonical(input jsonb, activity_category text) returns boolean language sql immutable set search_path = pg_catalog as $$ select true $$;
-      create function public.activity_plan_duration_is_canonical(input jsonb, rest_only boolean default false) returns boolean language sql immutable set search_path = pg_catalog as $$ select true $$;
-      create function public.activity_plan_segment_is_canonical(input jsonb) returns boolean language sql immutable set search_path = pg_catalog as $$ select true $$;
     `);
+    await installActivityPlanSqlFunctions(targetPool);
     await targetPool.query(exported.stdout);
     for (const definition of functionDefinitions) await targetPool.query(definition);
     for (const definition of triggerDefinitions) await targetPool.query(definition);
+    await targetPool.query(activityPlanSqlArtifacts().triggers);
     await targetPool.query(`
       do $block$
       declare relation record;

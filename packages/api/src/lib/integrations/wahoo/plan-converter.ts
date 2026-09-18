@@ -144,34 +144,42 @@ export interface ConvertOptions {
   threshold_hr?: number;
 }
 
-/**
- * Calculate total activity-plan duration in seconds from structure
- */
-export function calculateWorkoutDuration(structure: ActivityPlanStructure): number {
-  return compileActivityPlan(structure).occurrences.reduce(
-    (seconds, occurrence) => seconds + parseDuration(occurrence.duration),
-    0,
-  );
+export class WahooPlanConversionError extends Error {
+  constructor(
+    readonly code: "unsupported_duration" | "unsupported_segment",
+    message: string,
+  ) {
+    super(message);
+    this.name = "WahooPlanConversionError";
+  }
 }
 
-/**
- * Parse duration to seconds
+function compileWahooOccurrences(
+  structure: ActivityPlanStructure,
+): CompiledActivityStepOccurrence[] {
+  return compileActivityPlan(structure).occurrences.map((occurrence) => {
+    if (occurrence.role !== "activity") {
+      throw new WahooPlanConversionError(
+        "unsupported_segment",
+        "Wahoo cannot preserve rest boundaries.",
+      );
+    }
+    convertDuration(occurrence.duration);
+    return occurrence;
+  });
+}
+
+/** Exact authored seconds, or null when any distance completion makes the total unknown.
+ * A speed target is not an exact completion time. Unsupported completion types throw.
  */
-function parseDuration(duration: ActivityPlanDuration): number {
-  if (duration.type === "time") {
-    return duration.seconds;
-  } else if (duration.type === "distance") {
-    // For distance-based steps, estimate ~4 seconds per 100m (reasonable pace)
-    // This is a rough estimate - ideally we'd use pace/speed from user profile
-    return Math.ceil((duration.meters / 100) * 4);
-  } else if (duration.type === "untilFinished") {
-    // Open-ended steps, estimate 60 seconds as fallback
-    return 60;
-  } else if (duration.type === "repetitions") {
-    // Repetitions should be expanded before reaching here, but estimate 10 seconds per rep
-    return duration.count * 10;
+export function calculateWorkoutDuration(structure: ActivityPlanStructure): number | null {
+  let seconds = 0;
+  let unknown = false;
+  for (const occurrence of compileWahooOccurrences(structure)) {
+    if (occurrence.duration.type === "time") seconds += occurrence.duration.seconds;
+    else unknown = true;
   }
-  return 0;
+  return unknown ? null : seconds;
 }
 
 /**
@@ -192,10 +200,7 @@ export function convertToWahooPlan(
   }
 
   const { workout_type_family, workout_type_location } = activityTypeMapping;
-  const compiled = compileActivityPlan(structure);
-  const activityOccurrences = compiled.occurrences.filter(
-    (occurrence): occurrence is CompiledActivityStepOccurrence => occurrence.role === "activity",
-  );
+  const activityOccurrences = compileWahooOccurrences(structure);
   const requiresFtpHeader = Boolean(
     options.activityType !== "run" &&
       activityOccurrences.some((occurrence) => {
@@ -269,17 +274,13 @@ function convertOccurrence(
   name: string,
   options: ConvertOptions,
 ): WahooInterval {
+  const { type, value } = convertDuration(occurrence.duration);
   const interval: WahooInterval = {
     name,
-    exit_trigger_type: "time",
-    exit_trigger_value: 300, // Default 5 minutes
+    exit_trigger_type: type,
+    exit_trigger_value: value,
     intensity_type: "active",
   };
-
-  // Convert duration
-  const { type, value } = convertDuration(occurrence.duration);
-  interval.exit_trigger_type = type;
-  interval.exit_trigger_value = value;
 
   const targets = occurrence.targets;
   if (targets.length === 0) {
@@ -385,7 +386,7 @@ function selectWahooTarget(
 }
 
 /**
- * Convert GradientPeak V2 duration to Wahoo format
+ * Preserve supported completion units; never invent a clock-time substitute.
  */
 function convertDuration(duration: ActivityPlanDuration): {
   type: "time" | "distance";
@@ -401,14 +402,16 @@ function convertDuration(duration: ActivityPlanDuration): {
       return { type: "distance", value: duration.meters };
 
     case "repetitions":
-      // Wahoo doesn't support reps as duration, use time estimate
-      return { type: "time", value: duration.count * 30 }; // 30 seconds per rep
-
     case "untilFinished":
-      return { type: "time", value: 300 }; // Default 5 minutes
-
+      throw new WahooPlanConversionError(
+        "unsupported_duration",
+        `${duration.type} completion cannot be converted to Wahoo without changing activity semantics.`,
+      );
     default:
-      return { type: "time", value: 300 };
+      throw new WahooPlanConversionError(
+        "unsupported_duration",
+        "Unsupported Wahoo completion type.",
+      );
   }
 }
 

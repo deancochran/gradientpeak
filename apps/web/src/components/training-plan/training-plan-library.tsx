@@ -4,7 +4,7 @@ import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { api } from "../../lib/api/client";
 import { summarizeTrainingPlan } from "./training-plan-model";
@@ -24,16 +24,32 @@ function QueryState({
 }: {
   error: { message: string } | null;
   loading: boolean;
-  onRetry: () => void;
+  onRetry: () => Promise<unknown>;
 }) {
+  const retryGuard = useRef(false);
+  const [retrying, setRetrying] = useState(false);
+  const retry = async () => {
+    if (retryGuard.current) return;
+    retryGuard.current = true;
+    setRetrying(true);
+    try {
+      await onRetry();
+    } catch {
+      /* Query error remains visible for an explicit retry. */
+    } finally {
+      retryGuard.current = false;
+      setRetrying(false);
+    }
+  };
   if (loading) return <p aria-live="polite">Loading training plans…</p>;
   if (!error) return null;
   return (
     <div className="space-y-3 rounded-lg border border-destructive/40 p-4" role="alert">
       <p>Unable to load training plans: {error.message}</p>
-      <Button onClick={onRetry} type="button" variant="outline">
-        Retry
+      <Button disabled={retrying} onClick={() => void retry()} type="button" variant="outline">
+        {retrying ? "Retrying…" : "Retry"}
       </Button>
+      {retrying ? <p role="status">Retrying training plans…</p> : null}
     </div>
   );
 }
@@ -111,6 +127,12 @@ export function TrainingPlanLibrary({
 }: TrainingPlanLibraryProps) {
   const [localSearch, setLocalSearch] = useState("");
   const search = searchValue ?? localSearch;
+  const pageFlights = useRef(new Set<string>());
+  const [pageState, setPageState] = useState<{
+    key: string;
+    pending: boolean;
+    error: string | null;
+  } | null>(null);
   const owned = api.trainingPlans.list.useInfiniteQuery(
     {
       ownerScope: "own",
@@ -125,6 +147,36 @@ export function TrainingPlanLibrary({
   );
   const ownedPlans = owned.data?.pages.flatMap((page) => page.items) ?? [];
   const templatePlans = templates.data?.pages.flatMap((page) => page.items) ?? [];
+  const loadMore = async (kind: "owned" | "templates") => {
+    const query = kind === "owned" ? owned : templates;
+    const key = JSON.stringify([kind, search.trim()]);
+    if (!query.hasNextPage || query.isFetchingNextPage || pageFlights.current.has(key)) return;
+    pageFlights.current.add(key);
+    setPageState({ key, pending: true, error: null });
+    try {
+      await query.fetchNextPage();
+    } catch (error) {
+      setPageState((current) =>
+        current?.key === key
+          ? {
+              key,
+              pending: false,
+              error:
+                error instanceof Error ? error.message : "Unable to load more plans. Try again.",
+            }
+          : current,
+      );
+      return;
+    } finally {
+      pageFlights.current.delete(key);
+    }
+    setPageState((current) =>
+      current?.key === key ? { key, pending: false, error: null } : current,
+    );
+  };
+  const ownedPage = pageState?.key === JSON.stringify(["owned", search.trim()]) ? pageState : null;
+  const templatePage =
+    pageState?.key === JSON.stringify(["templates", search.trim()]) ? pageState : null;
 
   return (
     <div className="space-y-6">
@@ -158,19 +210,20 @@ export function TrainingPlanLibrary({
           <QueryState
             error={owned.error}
             loading={owned.isLoading}
-            onRetry={() => void owned.refetch()}
+            onRetry={() => owned.refetch()}
           />
-          {!owned.isLoading && !owned.error ? (
+          {ownedPage?.error ? <p role="alert">{ownedPage.error}</p> : null}
+          {!owned.isLoading && (!owned.error || ownedPlans.length > 0) ? (
             <PlanGrid onOpen={onOpen} plans={ownedPlans} />
           ) : null}
           {owned.hasNextPage ? (
             <Button
-              disabled={owned.isFetchingNextPage}
-              onClick={() => void owned.fetchNextPage()}
+              disabled={owned.isFetchingNextPage || ownedPage?.pending}
+              onClick={() => void loadMore("owned")}
               type="button"
               variant="outline"
             >
-              {owned.isFetchingNextPage ? "Loading…" : "Load more"}
+              {owned.isFetchingNextPage || ownedPage?.pending ? "Loading…" : "Load more"}
             </Button>
           ) : null}
         </TabsContent>
@@ -178,19 +231,20 @@ export function TrainingPlanLibrary({
           <QueryState
             error={templates.error}
             loading={templates.isLoading}
-            onRetry={() => void templates.refetch()}
+            onRetry={() => templates.refetch()}
           />
-          {!templates.isLoading && !templates.error ? (
+          {templatePage?.error ? <p role="alert">{templatePage.error}</p> : null}
+          {!templates.isLoading && (!templates.error || templatePlans.length > 0) ? (
             <PlanGrid onOpen={onOpen} plans={templatePlans} />
           ) : null}
           {templates.hasNextPage ? (
             <Button
-              disabled={templates.isFetchingNextPage}
-              onClick={() => void templates.fetchNextPage()}
+              disabled={templates.isFetchingNextPage || templatePage?.pending}
+              onClick={() => void loadMore("templates")}
               type="button"
               variant="outline"
             >
-              {templates.isFetchingNextPage ? "Loading…" : "Load more"}
+              {templates.isFetchingNextPage || templatePage?.pending ? "Loading…" : "Load more"}
             </Button>
           ) : null}
         </TabsContent>

@@ -8,6 +8,18 @@ import "@storybook/addon-ondevice-actions/register";
 const normalizedStories = [
   {
     titlePrefix: "",
+    directory: "./components/dev",
+    files: "**/*.native.stories.@(ts|tsx)",
+    importPathMatcher:
+      /^\.(?:(?:^|\/|(?:(?:(?!(?:^|\/)\.).)*?)\/)(?!\.)(?=.)[^/]*?\.native\.stories\.(ts|tsx))$/,
+    req: require.context(
+      "../components/dev",
+      true,
+      /^\.(?:(?:^|\/|(?:(?:(?!(?:^|\/)\.).)*?)\/)(?!\.)(?=.)[^/]*?\.native\.stories\.(ts|tsx))$/,
+    ),
+  },
+  {
+    titlePrefix: "",
     directory: "../../packages/ui/src/components",
     files: "**/*.native.stories.@(ts|tsx)",
     importPathMatcher:

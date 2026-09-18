@@ -18,5 +18,3 @@ export const stravaUploadStatusSchema = z
     status: z.string().max(2_048),
   })
   .passthrough();
-
-export type StravaUploadFileFormat = "fit" | "gpx" | "tcx";

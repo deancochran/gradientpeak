@@ -1,3 +1,4 @@
+import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { AlertTriangle, ChevronLeft, Upload } from "lucide-react-native";
@@ -62,7 +63,9 @@ function RecordScreen() {
       <ResourcePickerModal
         visible={!!controller.resourcePickerScope}
         scope={controller.resourcePickerScope ?? "routes"}
-        selectedId={null}
+        selectedId={
+          controller.resourcePickerScope === "activityPlans" ? controller.selectedPlanId : null
+        }
         title={
           controller.resourcePickerScope === "activityPlans"
             ? "Attach Activity Plan"
@@ -88,7 +91,21 @@ function RecordScreen() {
                 {routeUpload.isUploadingRoute ? "Uploading route..." : "Upload New Route"}
               </Text>
             </Pressable>
-          ) : undefined
+          ) : (
+            <View>
+              {controller.planSelectionPending ? (
+                <Text accessibilityLiveRegion="polite">Loading selected plan...</Text>
+              ) : null}
+              {controller.planSelectionError ? (
+                <View accessibilityRole="alert">
+                  <Text>{controller.planSelectionError}</Text>
+                  <Button onPress={controller.retrySelectedPlan}>
+                    <Text>Retry selected plan</Text>
+                  </Button>
+                </View>
+              ) : null}
+            </View>
+          )
         }
       />
 

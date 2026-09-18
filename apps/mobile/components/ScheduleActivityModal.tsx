@@ -62,11 +62,10 @@
  */
 
 import { buildDirectPlannedSessionCreateInput } from "@repo/api/client";
-import { usePlannedSessionMutations } from "@repo/api/react";
 import type { ActivityPlanDetail, ActivityPlanSummary } from "@repo/core";
 import { THEME } from "@repo/tailwindcss/native";
 import { Button } from "@repo/ui/components/button";
-import { Form, FormDateInputField, FormTextareaField } from "@repo/ui/components/form";
+import { Form, FormDateInputField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
@@ -79,22 +78,20 @@ import { z } from "zod";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppFormModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
+import { useDirtyCloseGuard } from "@/lib/hooks/useDirtyCloseGuard";
 import { refreshScheduleWithCallbacks } from "@/lib/scheduling/refreshScheduleViews";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
 import { applyServerFormErrors, getErrorMessage } from "@/lib/utils/formErrors";
-import { isExistingEventActivityPlanEditable } from "./event/create/eventEditability";
 
 const scheduleActivityModalFormSchema = z.object({
   activityPlanId: z.string().uuid("Please select an activity plan"),
   scheduledDate: z
     .string()
     .refine((value) => !Number.isNaN(Date.parse(value)), "Invalid date format"),
-  notes: z.string().nullable().optional(),
 });
 type ScheduleActivityModalFormInput = z.input<typeof scheduleActivityModalFormSchema>;
 type ScheduleActivityModalFormOutput = z.output<typeof scheduleActivityModalFormSchema>;
-type EditScope = "single";
 
 interface ScheduleActivityModalProps {
   visible: boolean;
@@ -104,7 +101,6 @@ interface ScheduleActivityModalProps {
   // Either provide activityPlanId (database ID), activityPlan (template object), or eventId (edit)
   activityPlanId?: string;
   activityPlan?: ActivityPlanSummary | ActivityPlanDetail;
-  variantId?: string;
   eventId?: string;
 
   // Optional pre-selected date
@@ -142,16 +138,15 @@ function clearRootFormError(
   form.clearErrors?.("root");
 }
 
-async function runMutation<TInput>(
+async function runMutation<TInput, TResult>(
   mutation: {
-    mutateAsync?: (input: TInput) => Promise<unknown>;
+    mutateAsync?: (input: TInput) => Promise<TResult>;
     mutate?: (input: TInput) => void;
   },
   input: TInput,
-) {
+): Promise<TResult | undefined> {
   if (mutation.mutateAsync) {
-    await mutation.mutateAsync(input);
-    return;
+    return await mutation.mutateAsync(input);
   }
 
   if (mutation.mutate) {
@@ -162,29 +157,12 @@ async function runMutation<TInput>(
   throw new Error("Mutation is unavailable");
 }
 
-function toScheduleUpdatePayload(input: {
-  data: ScheduleActivityModalFormOutput;
-  eventId: string;
-  scope: EditScope;
-}) {
-  return {
-    id: input.eventId,
-    scope: input.scope,
-    patch: {
-      activity_plan_id: input.data.activityPlanId,
-      notes: input.data.notes || null,
-      scheduled_date: input.data.scheduledDate,
-    },
-  };
-}
-
 export function ScheduleActivityModal({
   visible,
   onClose,
   onSuccess,
   activityPlanId,
   activityPlan,
-  variantId,
   eventId,
   preselectedDate,
 }: ScheduleActivityModalProps) {
@@ -203,29 +181,22 @@ export function ScheduleActivityModal({
     schema: scheduleActivityModalFormSchema,
     defaultValues: {
       scheduledDate: preselectedDate || toDateOnlyString(new Date()),
-      notes: null,
       activityPlanId: resolvedActivityPlanId,
     },
   });
 
   const currentActivityPlanId = form.watch("activityPlanId");
 
-  // Fetch existing activity if editing
-  const { data: existingActivity, isLoading: loadingExistingActivity } =
-    api.events.getById.useQuery({ id: eventId ?? "" }, { enabled: isEditMode && visible });
-
   // Fetch plan details (only if we have an ID, not a template)
   const { data: planDetails, isLoading: loadingPlan } = api.activityPlans.getById.useQuery(
-    { id: currentActivityPlanId, ...(variantId === undefined ? {} : { variantId }) },
+    { id: currentActivityPlanId },
     { enabled: !!currentActivityPlanId && visible && !isTemplate },
   );
 
   // Use template if provided, otherwise use fetched plan.
   const displayPlan = isTemplate ? activityPlan : planDetails?.detail;
   const selectedPlanIsExecutable = Boolean(displayPlan?.capabilities.canSchedule);
-  const preservesExistingPlan =
-    isEditMode && existingActivity?.activityPlanSummary?.id === currentActivityPlanId;
-  const existingPlanReadOnly = isEditMode && !isExistingEventActivityPlanEditable(existingActivity);
+  const existingPlanReadOnly = isEditMode;
 
   // Reset form when modal opens/closes
   useEffect(() => {
@@ -242,26 +213,9 @@ export function ScheduleActivityModal({
     }
   }, [isEditMode, resolvedActivityPlanId, form]);
 
-  // Load existing activity data (edit mode)
-  useEffect(() => {
-    if (existingActivity?.activityPlanSummary) {
-      form.setValue("activityPlanId", existingActivity.activityPlanSummary.id);
-      form.setValue("scheduledDate", existingActivity.scheduled_date);
-      form.setValue("notes", existingActivity.notes || null);
-    }
-  }, [existingActivity, form]);
-
   const queryClient = useQueryClient();
 
-  const updateMutation = api.events.update.useMutation();
-
-  const plannedSessionMutations = usePlannedSessionMutations({
-    onConflict: async () => undefined,
-    onReceipt: async () => {
-      onClose();
-      await onSuccess?.();
-    },
-  });
+  const createMutation = api.plannedSessions.create.useMutation();
 
   const handleMutationSuccess = async () => {
     await refreshScheduleWithCallbacks({
@@ -272,39 +226,20 @@ export function ScheduleActivityModal({
     await onSuccess?.();
   };
 
-  const submitEditWithScope = async (data: ScheduleActivityModalFormOutput, scope: EditScope) => {
-    if (existingPlanReadOnly) return;
-    if (!eventId) {
-      setRootFormError(form, new Error("Missing event ID"), "Failed to update activity.");
-      return;
-    }
-    clearRootFormError(form);
-
-    try {
-      await runMutation(updateMutation, toScheduleUpdatePayload({ data, eventId, scope }));
-
-      await handleMutationSuccess();
-    } catch (error) {
-      setRootFormError(form, error, "Failed to update activity. Please try again.");
-    }
-  };
-
   const onSubmit = async (data: ScheduleActivityModalFormOutput) => {
-    if (isEditMode) {
-      if (existingPlanReadOnly) return;
-      await submitEditWithScope(data, "single");
+    if (!profileId) {
+      setRootFormError(form, new Error("Profile is still loading"), "Failed to schedule activity.");
       return;
     }
-
-    if (!displayPlan || !profileId) {
+    if (!displayPlan) {
       setRootFormError(
         form,
-        new Error("Activity plan or profile is unavailable"),
+        new Error("Activity plan is unavailable"),
         "Failed to schedule activity.",
       );
       return;
     }
-    if (!selectedPlanIsExecutable && !preservesExistingPlan) {
+    if (!selectedPlanIsExecutable) {
       setRootFormError(
         form,
         new Error("Only executable single-activity-category plans can be scheduled."),
@@ -317,23 +252,16 @@ export function ScheduleActivityModal({
 
     try {
       await runMutation(
-        plannedSessionMutations.create,
-        (() => {
-          const input = buildDirectPlannedSessionCreateInput({
-            profileId,
-            planningDate: data.scheduledDate,
-            operationId: operationId.current,
-            activityPlanId: data.activityPlanId,
-          });
-          return {
-            ...input,
-            session: {
-              ...input.session,
-              ...(variantId === undefined ? {} : { variantId }),
-            },
-          };
-        })(),
+        createMutation,
+        buildDirectPlannedSessionCreateInput({
+          profileId,
+          planningDate: data.scheduledDate,
+          operationId: operationId.current,
+          activityPlanId: data.activityPlanId,
+        }),
       );
+
+      await handleMutationSuccess();
     } catch (error) {
       setRootFormError(form, error, "Failed to schedule activity. Please try again.");
     }
@@ -344,18 +272,21 @@ export function ScheduleActivityModal({
     onSubmit,
   });
 
-  const isSubmitting =
-    submitForm.isSubmitting || plannedSessionMutations.create.isPending || updateMutation.isPending;
+  const isSubmitting = submitForm.isSubmitting || createMutation.isPending;
+  const requestClose = useDirtyCloseGuard({
+    isDirty: form.formState.isDirty,
+    isPending: isSubmitting,
+  });
   const rootErrorMessage = form.formState?.errors.root?.message;
-  const isLoading = (loadingPlan && !isTemplate) || loadingExistingActivity;
+  const isLoading = loadingPlan && !isTemplate;
   const canSchedule =
     !isLoading &&
     displayPlan &&
-    (isEditMode || !!profileId) &&
     !!currentActivityPlanId &&
     !isSubmitting &&
     !existingPlanReadOnly &&
-    (selectedPlanIsExecutable || preservesExistingPlan);
+    Boolean(profileId) &&
+    selectedPlanIsExecutable;
 
   const minimumScheduleDate = isEditMode ? undefined : new Date();
   const minimumScheduleDateProps = minimumScheduleDate ? { minimumDate: minimumScheduleDate } : {};
@@ -373,8 +304,7 @@ export function ScheduleActivityModal({
         >
           <Text className="font-semibold text-foreground">This event is read-only on mobile</Text>
           <Text className="text-sm text-muted-foreground">
-            Its linked plan is legacy or unavailable. Close to view the event, or remove it through
-            the event removal action.
+            Executable event records are no longer editable. Use the planned session from Calendar.
           </Text>
         </View>
       </AppFormModal>
@@ -395,7 +325,7 @@ export function ScheduleActivityModal({
           <View className="flex-row gap-3">
             <Button
               variant="outline"
-              onPress={onClose}
+              onPress={() => requestClose(onClose)}
               disabled={isSubmitting}
               className="flex-1"
               testID="schedule-cancel-button"
@@ -422,7 +352,7 @@ export function ScheduleActivityModal({
           </View>
         </View>
       }
-      onClose={onClose}
+      onClose={() => requestClose(onClose)}
       testID="schedule-modal"
       title={isEditMode ? "Update Schedule" : "Schedule Activity"}
       {...(!isLoading && displayPlan ? { description: displayPlan.name } : {})}
@@ -448,7 +378,7 @@ export function ScheduleActivityModal({
               <Text className="text-sm text-muted-foreground">
                 Review the session shape before you save the activity.
               </Text>
-              {!selectedPlanIsExecutable && !preservesExistingPlan ? (
+              {!selectedPlanIsExecutable ? (
                 <View
                   accessibilityRole="alert"
                   className="rounded-lg border border-destructive/20 bg-destructive/10 p-3"
@@ -477,24 +407,6 @@ export function ScheduleActivityModal({
                 />
               </View>
             </Form>
-
-            {isEditMode ? (
-              <Form {...form}>
-                <FormTextareaField
-                  control={form.control}
-                  disabled={isSubmitting}
-                  formatValue={(value) => value ?? ""}
-                  label="Notes"
-                  name="notes"
-                  numberOfLines={5}
-                  parseValue={(value) => value || null}
-                  placeholder="Add any notes about this activity..."
-                  description="Optional details to help you remember context when you review this activity later."
-                  className="min-h-[100px]"
-                  testId="schedule-notes-field"
-                />
-              </Form>
-            ) : null}
 
             {/* Error Messages */}
             {!currentActivityPlanId ? (

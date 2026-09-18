@@ -1,54 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { E2E_CLEANUP_SQL } from "../../e2e/utils/testData";
+const mocks = vi.hoisted(() => ({
+  withLocalE2EDatabase: vi.fn(),
+}));
 
-const compact = (sql: string) => sql.replaceAll(/\s+/g, " ").trim();
+vi.mock("../../e2e/support/database", () => mocks);
 
-describe("web E2E cleanup query scoping", () => {
-  it("resolves the local actor through the configured auth email", () => {
-    const sql = compact(E2E_CLEANUP_SQL.resolveActor);
+import { cleanupOwnedActivityPlans, cleanupOwnedGroups } from "../../e2e/utils/testData";
 
-    expect(sql).toContain('inner join "users" u on u."id" = p."id"');
-    expect(sql).toContain('where lower(u."email") = lower($1)');
+describe("web E2E cleanup identities", () => {
+  it("requires at least one exact group name", async () => {
+    await expect(cleanupOwnedGroups([])).rejects.toThrow(/named group identity/);
+    expect(mocks.withLocalE2EDatabase).not.toHaveBeenCalled();
   });
 
-  it("limits group cleanup to exact names owned by the resolved actor", () => {
-    for (const sqlText of [E2E_CLEANUP_SQL.groupComments, E2E_CLEANUP_SQL.groups]) {
-      const sql = compact(sqlText);
-      expect(sql).toContain('"created_by_profile_id" = $1');
-      expect(sql).toContain('"name" = any($2::text[])');
-    }
-  });
-
-  it("limits plan, scheduled-event, and route cleanup to exact actor-owned identities", () => {
-    for (const sqlText of [
-      E2E_CLEANUP_SQL.activityPlanEventComments,
-      E2E_CLEANUP_SQL.activityPlanEvents,
-    ]) {
-      const sql = compact(sqlText);
-      expect(sql).toContain('e."profile_id" = $1');
-      expect(sql).toContain('ap."profile_id" = $1 and ap."name" = any($2::text[])');
-      expect(sql).toContain('ar."profile_id" = $1 and ar."name" = any($3::text[])');
-    }
-
-    for (const sqlText of [
-      E2E_CLEANUP_SQL.activityPlanComments,
-      E2E_CLEANUP_SQL.activityPlanLikes,
-      E2E_CLEANUP_SQL.activityPlans,
-    ]) {
-      const sql = compact(sqlText);
-      expect(sql).toContain('"profile_id" = $1');
-      expect(sql).toContain('"name" = any($2::text[])');
-    }
-
-    for (const sqlText of [
-      E2E_CLEANUP_SQL.activityRouteComments,
-      E2E_CLEANUP_SQL.activityRouteLikes,
-      E2E_CLEANUP_SQL.activityRoutes,
-    ]) {
-      const sql = compact(sqlText);
-      expect(sql).toContain('"profile_id" = $1');
-      expect(sql).toContain('"name" = any($2::text[])');
-    }
+  it("requires at least one exact activity-plan name", async () => {
+    await expect(cleanupOwnedActivityPlans({ planNames: [] })).rejects.toThrow(
+      /named activity plan identity/,
+    );
+    expect(mocks.withLocalE2EDatabase).not.toHaveBeenCalled();
   });
 });

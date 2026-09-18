@@ -6,7 +6,7 @@ import {
   buildRecurrenceFromFrequency,
   type EventRecurrenceFrequency,
 } from "@/components/event/EventEditorCard";
-import { buildScheduledInstant, getDeviceTimeZone } from "@/lib/calendar/eventSchedule";
+import { buildScheduledInstant } from "@/lib/calendar/eventSchedule";
 
 export type CreateEventMode = "custom" | "planned";
 
@@ -18,7 +18,7 @@ export type CreateEventDraft =
       startsAt: Date;
       allDay: boolean;
       scheduledDate: string;
-      timezone: string;
+      timezone: string | null;
       recurrenceFrequency: EventRecurrenceFrequency;
       recurrenceEndDate: string | null;
       notes: string;
@@ -65,7 +65,7 @@ export function createDefaultEventDraft(input: {
     title,
     startsAt,
     scheduledDate: format(startsAt, "yyyy-MM-dd"),
-    timezone: getDeviceTimeZone(),
+    timezone: null,
     allDay: false,
     recurrenceFrequency: "none",
     recurrenceEndDate: null,
@@ -79,22 +79,10 @@ export function buildCreateEventInput(draft: CreateEventDraft): z.input<typeof e
   const notes = draft.notes.trim() ? draft.notes.trim() : null;
 
   if (draft.mode === "planned") {
-    if (!draft.activityPlanId && !draft.routeId) {
-      throw new Error("Choose an activity plan, a route, or both before saving.");
-    }
-
-    return {
-      notes,
-      event_type: "planned",
-      activity_plan_id: draft.activityPlanId,
-      route_id: draft.routeId,
-      scheduled_date: draft.scheduledDate,
-      title:
-        draft.title.trim() ||
-        draft.activityPlanName?.trim() ||
-        draft.routeName?.trim() ||
-        "Planned Activity",
-    };
+    throw new Error("Executable sessions must be created through plannedSessions.create.");
+  }
+  if (!draft.timezone) {
+    throw new Error("Choose the event time zone before saving.");
   }
 
   const recurrence = buildRecurrenceFromFrequency(
@@ -122,21 +110,13 @@ export function buildUpdatePatch(draft: CreateEventDraft) {
   const notes = draft.notes.trim() ? draft.notes.trim() : null;
 
   if (draft.mode === "planned") {
-    return {
-      activity_plan_id: draft.activityPlanId,
-      notes,
-      route_id: draft.routeId,
-      scheduled_date: draft.scheduledDate,
-      title:
-        draft.title.trim() ||
-        draft.activityPlanName?.trim() ||
-        draft.routeName?.trim() ||
-        "Planned Activity",
-    };
+    throw new Error("Executable sessions must be changed through plannedSessions mutations.");
+  }
+  if (!draft.timezone) {
+    throw new Error("Choose the event time zone before saving.");
   }
 
   return {
-    activity_plan_id: null,
     all_day: draft.allDay,
     notes,
     route_id: draft.routeId,

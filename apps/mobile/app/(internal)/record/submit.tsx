@@ -11,11 +11,13 @@ import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useRouter } from "expo-router";
 import { Save, Trash2 } from "lucide-react-native";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { RecordingReviewSummary } from "@/components/recording/RecordingReviewSummary";
 import { useActivitySubmission } from "@/lib/hooks/useActivitySubmission";
+import { useAuth } from "@/lib/hooks/useAuth";
+import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
 import { useActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
 
 function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
@@ -23,7 +25,26 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
   const [discardError, setDiscardError] = useState<string | null>(null);
 
   const { service } = useActivityRecorderService();
-  const submission = useActivitySubmission(service);
+  const loadedSubmission = useActivitySubmission(service);
+  const { profile } = useAuth();
+  const wrongOwner = Boolean(
+    loadedSubmission.artifact && loadedSubmission.artifact.profileId !== profile?.id,
+  );
+  const submission = wrongOwner ? { ...loadedSubmission, activity: null } : loadedSubmission;
+  const identity = `${profile?.id ?? ""}:${submission.artifact?.sessionId ?? ""}`;
+  const owner = useRef({ identity, active: true });
+  if (owner.current.identity !== identity) owner.current = { identity, active: true };
+  const draftIdentity = useRef<string | null>(null);
+  const busy = useRef(false);
+  const [isBusy, setIsBusy] = useState(false);
+  const renderOwner = owner.current;
+  useEffect(() => {
+    const current = renderOwner;
+    current.active = true;
+    return () => {
+      current.active = false;
+    };
+  }, [renderOwner]);
 
   const form = useZodForm<typeof activitySubmissionFormSchema>({
     schema: activitySubmissionFormSchema,
@@ -33,70 +54,124 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
       content_visibility: undefined,
     } as ActivitySubmissionFormData,
   });
+  // RHF needs the dirty-field subscription to retain edited values during refresh.
+  const { dirtyFields, isDirty } = form.formState;
+  void dirtyFields;
+  const navigationGuard = useDirtyNavigationGuard({
+    isDirty,
+    isPending: isBusy || submission.isSubmitting || form.formState.isSubmitting,
+  });
 
   useEffect(() => {
-    if (!submission.activity) {
-      return;
-    }
-
-    form.reset({
-      name: "Activity",
-      notes: submission.activity.notes ?? null,
-      content_visibility: submission.activity.content_visibility,
-    });
-  }, [form, submission.activity]);
+    const sameIdentity = draftIdentity.current === identity;
+    if (!submission.activity && sameIdentity) return;
+    form.reset(
+      {
+        name: "Activity",
+        notes: submission.activity?.notes ?? null,
+        content_visibility: submission.activity?.content_visibility,
+      },
+      { keepDirtyValues: sameIdentity },
+    );
+    draftIdentity.current = identity;
+  }, [form, identity, submission.activity]);
 
   // Memoize handlers to prevent re-renders
   const handleSubmit = useCallback(
     async (data: ActivitySubmissionFormData) => {
-      // Pass all form data to submission.update
-      submission.update({
-        name: submission.activity?.name || "Activity",
-        notes: data.notes ?? null,
-        content_visibility: data.content_visibility,
-      });
-      const success = await submission.submit({
-        name: submission.activity?.name || "Activity",
-        notes: data.notes ?? null,
-        content_visibility: data.content_visibility,
-      });
-      if (!success) {
+      if (
+        busy.current ||
+        submission.isSubmitting ||
+        wrongOwner ||
+        owner.current !== renderOwner ||
+        !renderOwner.active
+      )
         return;
+      busy.current = true;
+      setIsBusy(true);
+      const current = owner.current;
+      try {
+        // Pass all form data to submission.update
+        submission.update({
+          name: submission.activity?.name || "Activity",
+          notes: data.notes ?? null,
+          content_visibility: data.content_visibility,
+        });
+        const success = await submission.submit({
+          name: submission.activity?.name || "Activity",
+          notes: data.notes ?? null,
+          content_visibility: data.content_visibility,
+        });
+        if (!success || !current.active || owner.current !== current) {
+          return;
+        }
+        if (service) {
+          await service.cleanup();
+        }
+        if (!current.active || owner.current !== current) return;
+        navigationGuard.allowNavigationAfterSuccess();
+        router.replace("/(internal)/(tabs)");
+      } finally {
+        busy.current = false;
+        setIsBusy(false);
       }
-      if (service) {
-        await service.cleanup();
-      }
-      router.replace("/(internal)/(tabs)");
     },
-    [submission, service, router],
+    [submission, service, router, navigationGuard, wrongOwner, renderOwner],
   );
 
   const handleDiscard = useCallback(() => {
+    if (
+      busy.current ||
+      submission.isSubmitting ||
+      wrongOwner ||
+      owner.current !== renderOwner ||
+      !renderOwner.active
+    )
+      return;
+    const current = owner.current;
     Alert.alert("Discard Activity", "Are you sure you want to delete this activity?", [
       { text: "Cancel", style: "cancel" },
       {
         text: "Delete",
         style: "destructive",
         onPress: async () => {
+          if (
+            busy.current ||
+            submission.isSubmitting ||
+            !current.active ||
+            owner.current !== current
+          )
+            return;
+          busy.current = true;
+          setIsBusy(true);
           try {
             setDiscardError(null);
             if (service) {
               await service.discardFinalizedArtifact();
               await service.cleanup();
             }
+            if (!current.active || owner.current !== current) return;
+            navigationGuard.allowNavigationAfterSuccess();
             router.replace("/(internal)/(tabs)");
           } catch {
+            if (!current.active || owner.current !== current) return;
             setDiscardError("Unable to discard this activity. Please try again.");
+          } finally {
+            busy.current = false;
+            setIsBusy(false);
           }
         },
       },
     ]);
-  }, [service, router]);
+  }, [service, router, submission.isSubmitting, navigationGuard, wrongOwner, renderOwner]);
 
   const retryAllowed =
     !submission.isError || !submission.ingestionId || submission.canRetryIngestion;
   const canSubmit =
-    Boolean(submission.artifact && submission.activity) && !submission.isSubmitting && retryAllowed;
+    Boolean(submission.artifact && submission.activity) &&
+    !submission.isSubmitting &&
+    !isBusy &&
+    retryAllowed;
 
   const submitForm = useZodFormSubmit<ActivitySubmissionFormData>({
     form,
@@ -148,6 +223,8 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
                       : "text-sm text-muted-foreground"
                   }
                   testID="activity-submit-status"
+                  accessibilityRole="alert"
+                  accessibilityLiveRegion="polite"
                 >
                   {discardError || submission.statusMessage}
                 </Text>
@@ -156,7 +233,7 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
               <FormTextareaField
                 control={form.control}
                 description="Add notes about how the activity felt (optional)"
-                disabled={submission.isSubmitting}
+                disabled={submission.isSubmitting || isBusy}
                 formatValue={(value) => value ?? ""}
                 label="Description"
                 name="notes"
@@ -170,7 +247,7 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
               <FormSegmentedSelectField
                 control={form.control}
                 description="Use Default to inherit your profile setting, or choose an explicit visibility."
-                disabled={submission.isSubmitting}
+                disabled={submission.isSubmitting || isBusy}
                 formatValue={(value) => value ?? "default"}
                 label="Visibility"
                 name="content_visibility"
@@ -190,7 +267,7 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
               <Button
                 variant="destructive"
                 onPress={handleDiscard}
-                disabled={submission.isSubmitting}
+                disabled={submission.isSubmitting || isBusy}
                 className="w-full mt-8"
               >
                 <View className="flex-row items-center gap-2">
@@ -207,7 +284,10 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
             <Text className="text-base text-muted-foreground">
               {submission.isLoading
                 ? "Loading finalized activity..."
-                : discardError || "No finalized activity found."}
+                : discardError ||
+                  (wrongOwner
+                    ? "This recording belongs to another account. Sign in to that account to continue recovery."
+                    : "No finalized activity found.")}
             </Text>
             {!submission.isLoading ? (
               <>
@@ -216,6 +296,7 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
                 </Button>
                 <Button
                   onPress={handleDiscard}
+                  disabled={wrongOwner || isBusy || submission.isSubmitting}
                   variant="destructive"
                   testID="activity-submit-discard-exit"
                 >
@@ -227,24 +308,29 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
         )}
       </ScrollView>
 
-      {/* Sticky Save Button at Bottom */}
-      <View className="absolute bottom-0 left-0 right-0 bg-background border-t border-border px-6 py-4 pb-8">
-        <LoadingButton
-          onPress={submitForm.handleSubmit}
-          disabled={submitButtonState.disabled}
-          loading={submission.isSubmitting || submitButtonState.loading}
-          loadingLabel={submitButtonState.loadingLabel}
-          className="w-full"
-          size="lg"
+      {submission.activity && submission.artifact ? (
+        <View
+          className="absolute bottom-0 left-0 right-0 bg-background border-t border-border px-6 py-4 pb-8"
+          testID="activity-submit-save-bar"
         >
-          <View className="flex-row items-center gap-2">
-            <Icon as={Save} size={20} className="text-primary-foreground" />
-            <Text className="text-base font-semibold text-primary-foreground">
-              {submitButtonState.label}
-            </Text>
-          </View>
-        </LoadingButton>
-      </View>
+          <LoadingButton
+            testID="activity-submit-save-button"
+            onPress={submitForm.handleSubmit}
+            disabled={submitButtonState.disabled}
+            loading={submission.isSubmitting || submitButtonState.loading}
+            loadingLabel={submitButtonState.loadingLabel}
+            className="w-full"
+            size="lg"
+          >
+            <View className="flex-row items-center gap-2">
+              <Icon as={Save} size={20} className="text-primary-foreground" />
+              <Text className="text-base font-semibold text-primary-foreground">
+                {submitButtonState.label}
+              </Text>
+            </View>
+          </LoadingButton>
+        </View>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }

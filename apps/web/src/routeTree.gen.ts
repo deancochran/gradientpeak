@@ -23,7 +23,6 @@ import { Route as ProtectedRecordRouteImport } from './routes/_protected/record'
 import { Route as ProtectedSearchRouteImport } from './routes/_protected/search'
 import { Route as ProtectedSettingsRouteImport } from './routes/_protected/settings'
 import { Route as ProtectedThresholdsRouteImport } from './routes/_protected/thresholds'
-import { Route as ProtectedTrainingPreferencesRouteImport } from './routes/_protected/training-preferences'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiReadyRouteImport } from './routes/api/ready'
 import { Route as AuthConfirmRouteImport } from './routes/auth/confirm'
@@ -159,12 +158,6 @@ const ProtectedThresholdsRoute = ProtectedThresholdsRouteImport.update({
   path: '/thresholds',
   getParentRoute: () => ProtectedRoute,
 } as any)
-const ProtectedTrainingPreferencesRoute =
-  ProtectedTrainingPreferencesRouteImport.update({
-    id: '/training-preferences',
-    path: '/training-preferences',
-    getParentRoute: () => ProtectedRoute,
-  } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
@@ -548,7 +541,6 @@ export interface FileRoutesByFullPath {
   '/search': typeof ProtectedSearchRoute
   '/settings': typeof ProtectedSettingsRoute
   '/thresholds': typeof ProtectedThresholdsRoute
-  '/training-preferences': typeof ProtectedTrainingPreferencesRoute
   '/api/health': typeof ApiHealthRoute
   '/api/ready': typeof ApiReadyRoute
   '/auth/confirm': typeof AuthConfirmRoute
@@ -626,7 +618,6 @@ export interface FileRoutesByTo {
   '/search': typeof ProtectedSearchRoute
   '/settings': typeof ProtectedSettingsRoute
   '/thresholds': typeof ProtectedThresholdsRoute
-  '/training-preferences': typeof ProtectedTrainingPreferencesRoute
   '/api/health': typeof ApiHealthRoute
   '/api/ready': typeof ApiReadyRoute
   '/auth/confirm': typeof AuthConfirmRoute
@@ -708,7 +699,6 @@ export interface FileRoutesById {
   '/_protected/search': typeof ProtectedSearchRoute
   '/_protected/settings': typeof ProtectedSettingsRoute
   '/_protected/thresholds': typeof ProtectedThresholdsRoute
-  '/_protected/training-preferences': typeof ProtectedTrainingPreferencesRoute
   '/api/health': typeof ApiHealthRoute
   '/api/ready': typeof ApiReadyRoute
   '/auth/confirm': typeof AuthConfirmRoute
@@ -792,7 +782,6 @@ export interface FileRouteTypes {
     | '/search'
     | '/settings'
     | '/thresholds'
-    | '/training-preferences'
     | '/api/health'
     | '/api/ready'
     | '/auth/confirm'
@@ -870,7 +859,6 @@ export interface FileRouteTypes {
     | '/search'
     | '/settings'
     | '/thresholds'
-    | '/training-preferences'
     | '/api/health'
     | '/api/ready'
     | '/auth/confirm'
@@ -951,7 +939,6 @@ export interface FileRouteTypes {
     | '/_protected/search'
     | '/_protected/settings'
     | '/_protected/thresholds'
-    | '/_protected/training-preferences'
     | '/api/health'
     | '/api/ready'
     | '/auth/confirm'
@@ -1149,13 +1136,6 @@ declare module '@tanstack/react-router' {
       path: '/thresholds'
       fullPath: '/thresholds'
       preLoaderRoute: typeof ProtectedThresholdsRouteImport
-      parentRoute: typeof ProtectedRoute
-    }
-    '/_protected/training-preferences': {
-      id: '/_protected/training-preferences'
-      path: '/training-preferences'
-      fullPath: '/training-preferences'
-      preLoaderRoute: typeof ProtectedTrainingPreferencesRouteImport
       parentRoute: typeof ProtectedRoute
     }
     '/api/health': {
@@ -1727,7 +1707,6 @@ interface ProtectedRouteChildren {
   ProtectedSearchRoute: typeof ProtectedSearchRoute
   ProtectedSettingsRoute: typeof ProtectedSettingsRoute
   ProtectedThresholdsRoute: typeof ProtectedThresholdsRoute
-  ProtectedTrainingPreferencesRoute: typeof ProtectedTrainingPreferencesRoute
   ProtectedIndexRoute: typeof ProtectedIndexRoute
   ProtectedActivitiesImportRoute: typeof ProtectedActivitiesImportRoute
   ProtectedActivityPlansActivityPlanIdRoute: typeof ProtectedActivityPlansActivityPlanIdRoute
@@ -1766,7 +1745,6 @@ const ProtectedRouteChildren: ProtectedRouteChildren = {
   ProtectedSearchRoute: ProtectedSearchRoute,
   ProtectedSettingsRoute: ProtectedSettingsRoute,
   ProtectedThresholdsRoute: ProtectedThresholdsRoute,
-  ProtectedTrainingPreferencesRoute: ProtectedTrainingPreferencesRoute,
   ProtectedIndexRoute: ProtectedIndexRoute,
   ProtectedActivitiesImportRoute: ProtectedActivitiesImportRoute,
   ProtectedActivityPlansActivityPlanIdRoute:

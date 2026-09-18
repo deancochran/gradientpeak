@@ -38,7 +38,6 @@ export const ROUTES = {
       CREATE: "/training-plan-create" as const,
       EDIT: "/training-plan-edit" as const,
     },
-    TRAINING_PREFERENCES: "/training-preferences" as const,
 
     // Create Activity Plan Routes
     CREATE_ACTIVITY_PLAN: {
@@ -96,6 +95,7 @@ export const ROUTES = {
   INBOX: "/inbox" as const,
   USER_DETAIL: (userId: string) => `/user/${userId}` as const,
   PROFILE_EDIT: "/profile-edit" as const,
+  SETTINGS: "/settings" as const,
   INTEGRATIONS: "/integrations" as const,
   NOTIFICATIONS: "/notifications" as const,
   MESSAGES: "/messages" as const,

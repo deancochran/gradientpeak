@@ -14,7 +14,9 @@ await withDisposableDatabase(
   "planned_sessions",
   async (target, connectionString) => {
     await bootstrapSupabaseSchemas(target);
-    await applySqlFile(target, requireFreshBaseline().sourcePath);
+    for (const migrationPath of requireFreshBaseline().migrationPaths) {
+      await applySqlFile(target, migrationPath);
+    }
     const packageDirectory = fileURLToPath(new URL("..", import.meta.url));
     const result = spawnSync(
       "pnpm",

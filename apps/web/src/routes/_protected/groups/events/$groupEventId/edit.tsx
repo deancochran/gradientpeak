@@ -75,6 +75,8 @@ function EditGroupEventPage() {
                     utils.calendar.invalidate(),
                   ]);
                   toast.success("Event updated");
+                }}
+                onSuccess={() => {
                   void navigate({ to: "/groups/events/$groupEventId", params: { groupEventId } });
                 }}
                 submitLabel="Save changes"

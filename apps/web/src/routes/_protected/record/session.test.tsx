@@ -262,6 +262,70 @@ describe("recording session UI", () => {
     expect(screen.getByText("Manual calories (optional)")).toBeTruthy();
   });
 
+  it("does not invoke save for invalid review measurements and preserves the finalized artifact", () => {
+    const recording = baseRecording();
+    const artifact = {
+      elapsedMs: 120_000,
+      movingMs: 100_000,
+      snapshot,
+      review: {
+        name: "Indoor intervals",
+        notes: null,
+        perceivedEffort: null,
+        distanceMeters: 345,
+        calories: null,
+      },
+    };
+    mocks.recording = {
+      ...recording,
+      state: { ...recording.state, reducer: { lifecycle: "finished", snapshot } },
+      planStatus: null,
+      artifact,
+    };
+    render(<RecordSessionPage />);
+    fireEvent.change(screen.getByLabelText(/Manual distance/), { target: { value: "-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save activity" }));
+    expect(recording.save).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("non-negative manual distance");
+    expect(artifact.review.distanceMeters).toBe(345);
+  });
+
+  it("rejects invalid trainer power and dispatches explicit zero only with supported control", () => {
+    const recording = baseRecording();
+    mocks.recording = {
+      ...recording,
+      sensors: {
+        ...recording.sensors,
+        state: { ...recording.sensors.state, controlGranted: true },
+      },
+    };
+    render(<RecordSessionPage />);
+    const power = screen.getByLabelText("Target power (W)");
+    fireEvent.change(power, { target: { value: "NaN" } });
+    fireEvent.click(screen.getByRole("button", { name: "Set power" }));
+    expect(recording.sensors.setTargetPower).not.toHaveBeenCalled();
+    fireEvent.change(power, { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: "Set power" }));
+    expect(recording.sensors.setTargetPower).toHaveBeenCalledWith(0);
+  });
+
+  it("offers safe five-watt adjustments without dispatching device commands", () => {
+    const recording = baseRecording();
+    mocks.recording = {
+      ...recording,
+      sensors: {
+        ...recording.sensors,
+        state: { ...recording.sensors.state, controlGranted: true },
+      },
+    };
+    render(<RecordSessionPage />);
+    const power = screen.getByLabelText("Target power (W)");
+    fireEvent.change(power, { target: { value: "153" } });
+    fireEvent.click(screen.getByRole("button", { name: "Increase trainer target power" }));
+    expect((power as HTMLInputElement).value).toBe("155");
+    expect(recording.sensors.setTargetPower).not.toHaveBeenCalled();
+  });
+
   it("fences recorder controls and offers local-save recovery after a failed write", () => {
     const recording = baseRecording();
     mocks.recording = {
@@ -280,6 +344,19 @@ describe("recording session UI", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Retry local saving" }));
     expect(recording.retryDurableStorage).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires an explicit confirmation before discarding a live recording", () => {
+    const recording = baseRecording();
+    mocks.recording = recording;
+    render(<RecordSessionPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel recording" }));
+    expect(screen.getByText("Discard this recording?")).toBeTruthy();
+    expect(recording.cancel).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Keep recording" }));
+    expect(screen.queryByText("Discard this recording?")).toBeNull();
   });
 });
 

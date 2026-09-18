@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -15,6 +15,9 @@ const mocks = vi.hoisted(() => ({
     resolutionStatus: "confirmed" | "review";
   }>,
   resolveImportedSource: vi.fn(),
+  ownedActivities: [] as Array<{ id: string; title: string }>,
+  activitiesError: false,
+  refetchActivities: vi.fn(),
   keepImportedSourceSeparate: vi.fn(),
   sendCompletedActivity: vi.fn(),
   completedActivityProviders: [] as Array<{
@@ -98,7 +101,14 @@ vi.mock("../../../../lib/api/client", () => ({
       getCompletedActivityProviderEligibility: {
         useQuery: () => ({ data: mocks.completedActivityProviders }),
       },
-      listPaginated: { useQuery: () => ({ data: { items: [] } }) },
+      listPaginated: {
+        useQuery: () => ({
+          data: { items: mocks.ownedActivities },
+          isError: mocks.activitiesError,
+          isLoading: false,
+          refetch: mocks.refetchActivities,
+        }),
+      },
       update: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
       delete: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
       resolveImportedSource: {
@@ -126,6 +136,9 @@ vi.mock("sonner", () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.f
 beforeEach(() => {
   mocks.importedSources = [];
   mocks.resolveImportedSource.mockReset();
+  mocks.ownedActivities = [];
+  mocks.activitiesError = false;
+  mocks.refetchActivities.mockReset();
   mocks.keepImportedSourceSeparate.mockReset();
   mocks.sendCompletedActivity.mockReset();
   mocks.completedActivityProviders = [];
@@ -223,6 +236,67 @@ describe("ActivityDetailPage plan execution summary", () => {
 });
 
 describe("ActivityDetailPage imported sources", () => {
+  it("requires explicit confirmation, freezes pending selection, and retains a failed move draft", () => {
+    const sourceId = "11111111-1111-4111-8111-111111111111";
+    const targetId = "22222222-2222-4222-8222-222222222222";
+    mocks.importedSources = [{ id: sourceId, provider: "strava", resolutionStatus: "review" }];
+    mocks.ownedActivities = [{ id: targetId, title: "Morning run" }];
+    const ActivityDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<ActivityDetailPage />);
+    const selection = screen.getByLabelText("Move to an activity") as HTMLSelectElement;
+    fireEvent.change(selection, { target: { value: targetId } });
+    expect(mocks.resolveImportedSource).not.toHaveBeenCalled();
+    expect(screen.getByTestId("imported-sources").textContent).toContain("strava");
+    expect(screen.getByTestId("imported-sources").textContent).not.toContain(targetId);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm move" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm move" }));
+    expect(mocks.resolveImportedSource).toHaveBeenCalledTimes(1);
+    expect(mocks.resolveImportedSource).toHaveBeenCalledWith(
+      { action: "move", sourceReferenceId: sourceId, targetActivityId: targetId },
+      expect.any(Object),
+    );
+    expect(selection.disabled).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: "Keep separate" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    const callbacks = mocks.resolveImportedSource.mock.calls[0]?.[1];
+    act(() => {
+      callbacks.onError();
+      callbacks.onSettled();
+    });
+    expect(screen.getByRole("alert").textContent).toContain("could not be confirmed");
+    expect(selection.value).toBe(targetId);
+    expect(selection.disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm move" }));
+    const retryCallbacks = mocks.resolveImportedSource.mock.calls[1]?.[1];
+    act(() => {
+      retryCallbacks.onSuccess();
+      retryCallbacks.onSettled();
+    });
+    expect(selection.value).toBe("");
+    expect(screen.getByRole("status").textContent).toContain("Source moved");
+    expect(
+      (screen.getByRole("button", { name: "Confirm move" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("announces a candidate query failure and retries without resolving a source", () => {
+    mocks.importedSources = [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        provider: "strava",
+        resolutionStatus: "review",
+      },
+    ];
+    mocks.activitiesError = true;
+    const ActivityDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<ActivityDetailPage />);
+    expect(screen.getByRole("alert").textContent).toContain("Activities could not be loaded");
+    fireEvent.click(screen.getByRole("button", { name: "Retry activities" }));
+    expect(mocks.refetchActivities).toHaveBeenCalledTimes(1);
+    expect(mocks.resolveImportedSource).not.toHaveBeenCalled();
+  });
+
   it("shows compact owner controls for a source awaiting review", () => {
     mocks.importedSources = [
       {

@@ -63,7 +63,9 @@ export function ForgotPasswordForm({ className, ...props }: ForgotPasswordFormPr
               />
 
               {form.formState.errors.root ? (
-                <p className="text-destructive text-sm">{form.formState.errors.root.message}</p>
+                <p className="text-destructive text-sm" role="alert">
+                  {form.formState.errors.root.message}
+                </p>
               ) : null}
 
               <LoadingButton

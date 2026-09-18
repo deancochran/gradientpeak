@@ -1,11 +1,9 @@
 import { activityPlanStructureSchema } from "@repo/core/activity-plan";
-import {
-  PLANNED_SESSION_CONTRACT_VERSION,
-  plannedSessionIdempotencyKey,
-} from "@repo/core/calendar";
+import { plannedSessionIdempotencyKey } from "@repo/core/calendar";
 import type { PlannedSessionRow } from "@repo/db";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
+import { createResolutionManifestFixture } from "../../test/builders/planned-session";
 import {
   createDrizzlePlannedSessionRepository,
   immutableSessionMatches,
@@ -44,7 +42,7 @@ const prescriptionStructure = activityPlanStructureSchema.parse({
 const row = {
   id: "11111111-1111-4111-8111-111111111111",
   profile_id: "22222222-2222-4222-8222-222222222222",
-  contract_version: PLANNED_SESSION_CONTRACT_VERSION,
+  contract_version: "planned-session-v1",
   session_revision: 3,
   planning_date: "2026-08-03",
   original_target_date: "2026-08-01",
@@ -53,23 +51,30 @@ const row = {
   direct_operation_id: "direct_planned_session_operation_1",
   training_plan_id: null,
   training_plan_revision: null,
-  source_session_key: null,
-  series_id: null,
-  occurrence_key: null,
+  training_plan_application_id: null,
+  source_session_id: null,
   group_event_id: null,
   activity_plan_id: "33333333-3333-4333-8333-333333333333",
   activity_plan_revision: 1,
-  activity_plan_variant_id: "33333333-3333-4333-8333-333333333333",
-  activity_plan_variant_name: "Base",
-  prescription_structure_hash: `v1:sha256:${"0".repeat(64)}`,
-  prescription_structure: prescriptionStructure,
-  prescription_quantification: null,
+  resolution_manifest: createResolutionManifestFixture({
+    activityPlanId: "33333333-3333-4333-8333-333333333333",
+    structure: prescriptionStructure,
+    demand: {
+      activity_category: "bike",
+      training_intent: "general_maintenance",
+      target_duration_minutes: 30,
+      target_common_load: null,
+      importance: "normal",
+    },
+  }),
   prescription_captured_at: linkedAt,
   status: "completed",
   cancellation_reason: null,
   cancelled_at: null,
   completed_activity_id: null,
   completion_state: "activity_deleted",
+  completion_outcome: "full",
+  skip_operation_id: null,
   linked_at: linkedAt,
   completion_unlinked_at: unlinkedAt,
   created_at: linkedAt,
@@ -85,10 +90,6 @@ describe("planned-session Drizzle mapper", () => {
       planningDate: "2026-08-03",
       originalTargetDate: "2026-08-01",
       source: { kind: "direct", operationId: row.direct_operation_id },
-      prescription: {
-        variantId: row.activity_plan_variant_id,
-        variantName: row.activity_plan_variant_name,
-      },
       lifecycle: {
         status: "completed",
         completion: {
@@ -134,15 +135,21 @@ describe("planned-session Drizzle mapper", () => {
     ).toBe(true);
   });
 
-  it("rejects a direct-operation replay selecting a different variant", () => {
+  it("rejects a direct-operation replay whose semantic demand changed", () => {
     const existing = mapPlannedSessionRow(row);
     expect(
       immutableSessionMatches(existing, {
         ...existing,
         prescription: {
           ...existing.prescription,
-          variantId: "77777777-7777-4777-8777-777777777777",
-          variantName: "Build",
+          capturedAt: "2026-08-03T12:00:00.000Z",
+          resolutionManifest: {
+            ...existing.prescription.resolutionManifest,
+            session_demand: {
+              ...existing.prescription.resolutionManifest.session_demand,
+              target_duration_minutes: 75,
+            },
+          },
         },
       }),
     ).toBe(false);
@@ -254,12 +261,12 @@ describe("planned-session Drizzle mapper", () => {
       direct_operation_id: null,
       training_plan_id: "99999999-9999-4999-8999-999999999999",
       training_plan_revision: 1,
-      source_session_key: "2026-08-01:sessions.0",
+      source_session_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       idempotency_key: plannedSessionIdempotencyKey({
         kind: "training_plan",
         trainingPlanId: "99999999-9999-4999-8999-999999999999",
         trainingPlanRevision: 1,
-        sourceSessionKey: "2026-08-01:sessions.0",
+        sourceSessionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       }),
       status: "cancelled" as const,
       cancellation_reason: "user_requested" as const,

@@ -1122,10 +1122,10 @@ export function analyzeActivityDerivedMetrics(
           })();
 
   const trimp = resolveTrimp({
-    avgHeartRate: activity.avg_heart_rate,
     durationSeconds: activity.duration_seconds,
-    maxHr,
-    restingHr,
+    ...(activity.avg_heart_rate === undefined ? {} : { avgHeartRate: activity.avg_heart_rate }),
+    ...(maxHr === undefined ? {} : { maxHr }),
+    ...(restingHr === undefined ? {} : { restingHr }),
   });
 
   const heartRateZoneDuration = calculateHRZoneDistribution(streams?.heart_rate ?? undefined, lthr);

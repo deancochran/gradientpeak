@@ -6,7 +6,7 @@ import {
   compareCalendarProjectionItems,
   type SemanticMetric,
 } from "@repo/core";
-import { plannedSessionProjectionSchema } from "@repo/core/calendar";
+import { buildPlannedSessionComparison, plannedSessionSchema } from "@repo/core/calendar";
 import { groupEventRsvpStatusSchema, resolveGroupEventRsvpStatus } from "@repo/core/groups";
 import { z } from "zod";
 
@@ -14,7 +14,7 @@ import { toScheduledActivityPlanSummary } from "../activity-plans/read-projectio
 
 const eventSourceSchema = z.looseObject({
   id: z.string(),
-  event_type: z.string(),
+  event_type: z.enum(["custom", "race_target"]),
   title: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
@@ -25,18 +25,22 @@ const eventSourceSchema = z.looseObject({
   status: z.enum(["scheduled", "completed", "cancelled", "expired"]),
   linked_activity_id: z.string().nullable(),
   linkedActivityDisplay: activityDisplayModelSchema.nullable().optional(),
-  training_plan_id: z.string().nullable().optional(),
-  activity_plan: z.unknown().nullable(),
-  planned_session: plannedSessionProjectionSchema.nullable().optional(),
 });
 
 const completedActivitySourceSchema = z.looseObject({
   id: z.string(),
   name: z.string().nullable().optional(),
   scheduled_date: z.string(),
-  started_at: z.string(),
+  started_at: z.string().nullable(),
   display: activityDisplayModelSchema,
 });
+
+const plannedSessionSourceSchema = z
+  .object({
+    session: plannedSessionSchema,
+    linkedActivityDisplay: activityDisplayModelSchema.nullable(),
+  })
+  .strict();
 
 const groupEventSourceSchema = z.looseObject({
   id: z.string(),
@@ -79,17 +83,28 @@ function eventDurationSeconds(event: z.infer<typeof eventSourceSchema>): number 
   return Number.isFinite(duration) && duration >= 0 ? duration : null;
 }
 
+function observationFromDisplay(display: z.infer<typeof activityDisplayModelSchema> | null) {
+  const metric = (key: "distance" | "elapsed_duration") =>
+    display?.metrics.find((item) => item.key === key)?.value ?? null;
+  return {
+    durationSeconds: metric("elapsed_duration"),
+    distanceMeters: metric("distance"),
+  };
+}
+
 export function assembleCalendarProjectionRange(input: {
   viewerId: string;
   startDate: string;
   endDateExclusive: string;
   timezone: string;
   events: unknown[];
+  plannedSessions: unknown[];
   completedActivities: unknown[];
   goals: unknown[];
   groupEvents: unknown[];
   truncation: {
     events: boolean;
+    plannedSessions: boolean;
     completedActivities: boolean;
     groupEvents: boolean;
     goals: boolean;
@@ -98,37 +113,33 @@ export function assembleCalendarProjectionRange(input: {
   const items: CalendarProjectionItem[] = [];
   const isInRange = (calendarDate: string) =>
     calendarDate >= input.startDate && calendarDate < input.endDateExclusive;
+  const plannedSessionSources = plannedSessionSourceSchema
+    .array()
+    .parse(input.plannedSessions)
+    .filter((item) => isInRange(item.session.planningDate));
+  const linkedCompletionIds = new Set(
+    plannedSessionSources.flatMap((source) =>
+      source.session.lifecycle.status === "completed" &&
+      source.session.lifecycle.completion.state === "linked"
+        ? [source.session.lifecycle.completion.activityId]
+        : [],
+    ),
+  );
 
   for (const event of eventSourceSchema
     .array()
     .parse(input.events)
     .filter((item) => isInRange(item.scheduled_date))) {
-    const isPlanned = event.event_type === "planned" && event.activity_plan !== null;
-    const plan = isPlanned
-      ? toScheduledActivityPlanSummary({
-          plan: event.activity_plan,
-          viewerId: input.viewerId,
-          eventId: event.id,
-          calendarDate: event.scheduled_date,
-          startsAt: event.starts_at,
-          endsAt: event.ends_at,
-          allDay: event.all_day,
-          status: event.status,
-          trainingPlanId: event.training_plan_id ?? null,
-        })
-      : null;
     const duration = metric(
       "elapsed_duration",
       "Duration",
       eventDurationSeconds(event),
       "seconds",
-      isPlanned,
+      false,
     );
     const isCompleted = event.status === "completed";
     const completionMetrics = event.linkedActivityDisplay?.metrics ?? [];
-    const projectedMetrics = isCompleted
-      ? completionMetrics
-      : (plan?.metrics ?? (duration ? [duration] : []));
+    const projectedMetrics = isCompleted ? completionMetrics : duration ? [duration] : [];
     items.push({
       id: event.id,
       calendarDate: event.scheduled_date,
@@ -138,33 +149,90 @@ export function assembleCalendarProjectionRange(input: {
         allDay: event.all_day,
         timezone: input.timezone,
       },
-      kind: isPlanned ? "planned_activity" : "event",
-      title: plan?.name ?? event.title?.trim() ?? "Event",
+      kind: "event",
+      title: event.title?.trim() ?? "Event",
       subtitle: event.description?.trim() || event.notes?.trim() || null,
       status: event.status,
       navigation: { target: "event", href: `/calendar/events/${event.id}` },
       metrics: projectedMetrics,
       // A linked completion carries observations. If its activity projection is
       // unavailable, leave metrics unknown rather than rebranding the plan estimate.
-      estimated: isPlanned && !isCompleted,
+      estimated: false,
       partial:
         (isCompleted && !event.linkedActivityDisplay) ||
         projectedMetrics.some((item) => item.status !== "available"),
-      plan,
-      plannedSession: event.planned_session
-        ? {
-            id: event.planned_session.id,
-            planningDate: event.planned_session.planningDate,
-            source: event.planned_session.source,
-            prescription: event.planned_session.prescription,
-            lifecycle: event.planned_session.lifecycle,
-          }
-        : null,
+      plan: null,
+      plannedSession: null,
+      plannedActual: null,
       activity: isCompleted ? (event.linkedActivityDisplay ?? null) : null,
       event: {
-        type: z.enum(["planned", "race_target", "custom"]).parse(event.event_type),
-        trainingPlanId: event.training_plan_id ?? null,
+        type: event.event_type,
+        trainingPlanId: null,
       },
+      groupEvent: null,
+      goal: null,
+    });
+  }
+
+  for (const source of plannedSessionSources) {
+    const session = source.session;
+    const manifest = session.prescription.resolutionManifest;
+    const prescriptionMetrics = [
+      metric(
+        "elapsed_duration",
+        "Duration",
+        manifest.prescription_estimate.duration.value_seconds,
+        "seconds",
+        manifest.prescription_estimate.duration.status !== "exact",
+      ),
+      metric(
+        "common_load",
+        "Load",
+        manifest.prescription_estimate.common_load.value,
+        "load",
+        manifest.prescription_estimate.common_load.status !== "complete",
+      ),
+    ].filter((item): item is SemanticMetric => item !== null);
+    const metrics =
+      source.linkedActivityDisplay?.metrics ??
+      (session.lifecycle.status === "completed" ? [] : prescriptionMetrics);
+    const plannedActual = buildPlannedSessionComparison({
+      session: {
+        prescription: session.prescription,
+        lifecycle: session.lifecycle,
+      },
+      actual: observationFromDisplay(source.linkedActivityDisplay),
+    });
+    items.push({
+      id: session.id,
+      calendarDate: session.planningDate,
+      timing: { startsAt: null, endsAt: null, allDay: true, timezone: input.timezone },
+      kind: "planned_activity",
+      title: `${manifest.resolved_structure.activity_category} session`,
+      subtitle: null,
+      status: session.lifecycle.status,
+      navigation: { target: "activity_plan", href: "/record" },
+      metrics,
+      estimated:
+        session.lifecycle.status === "scheduled" &&
+        source.linkedActivityDisplay === null &&
+        metrics.length > 0,
+      partial:
+        (session.lifecycle.status === "completed" && source.linkedActivityDisplay === null) ||
+        metrics.some((item) => item.status !== "available"),
+      plan: null,
+      plannedSession: {
+        id: session.id,
+        profileId: session.profileId,
+        sessionRevision: session.sessionRevision,
+        planningDate: session.planningDate,
+        source: session.source,
+        prescription: session.prescription,
+        lifecycle: session.lifecycle,
+      },
+      plannedActual,
+      activity: source.linkedActivityDisplay,
+      event: null,
       groupEvent: null,
       goal: null,
     });
@@ -173,7 +241,7 @@ export function assembleCalendarProjectionRange(input: {
   for (const activity of completedActivitySourceSchema
     .array()
     .parse(input.completedActivities)
-    .filter((item) => isInRange(item.scheduled_date))) {
+    .filter((item) => isInRange(item.scheduled_date) && !linkedCompletionIds.has(item.id))) {
     const metrics = activity.display.metrics;
     items.push({
       id: activity.id,
@@ -181,7 +249,7 @@ export function assembleCalendarProjectionRange(input: {
       timing: {
         startsAt: activity.started_at,
         endsAt: null,
-        allDay: false,
+        allDay: activity.started_at === null,
         timezone: input.timezone,
       },
       kind: "completed_activity",
@@ -194,6 +262,7 @@ export function assembleCalendarProjectionRange(input: {
       partial: metrics.some((item) => item.status !== "available"),
       plan: null,
       plannedSession: null,
+      plannedActual: null,
       activity: activity.display,
       event: null,
       groupEvent: null,
@@ -237,6 +306,7 @@ export function assembleCalendarProjectionRange(input: {
       partial: plan?.metrics.some((item) => item.status !== "available") ?? false,
       plan,
       plannedSession: null,
+      plannedActual: null,
       activity: null,
       event: null,
       groupEvent: {
@@ -268,6 +338,7 @@ export function assembleCalendarProjectionRange(input: {
       partial: false,
       plan: null,
       plannedSession: null,
+      plannedActual: null,
       activity: null,
       event: null,
       groupEvent: null,

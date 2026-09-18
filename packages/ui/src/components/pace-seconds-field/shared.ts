@@ -11,4 +11,5 @@ export interface PaceSecondsFieldProps extends TestProps {
   placeholder?: string;
   unitLabel?: string;
   required?: boolean;
+  showAdjustmentButtons?: boolean;
 }

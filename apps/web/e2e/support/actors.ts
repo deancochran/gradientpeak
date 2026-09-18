@@ -10,10 +10,19 @@ import type {
   TestInfo,
   WorkerInfo,
 } from "@playwright/test";
+import {
+  activities,
+  activityArtifacts,
+  groups,
+  organizationMemberships,
+  profiles,
+  users,
+} from "@repo/db/schema";
+import { and, eq, ilike, sql } from "drizzle-orm";
 import { seedOwnedActivityPlan, seedOwnedActivityRoute } from "../seeds/activity-plans";
 import { currentContractEpochHeaders } from "../utils/contractEpoch";
 import type { E2ECleanupRegistry } from "./cleanup";
-import type { LocalE2EDatabase } from "./database";
+import type { E2EDrizzleTransaction, LocalE2EDatabase } from "./database";
 import { installHydrationAwareNavigation } from "./hydration";
 import type { E2EExecutionIdentity } from "./identity";
 
@@ -143,7 +152,6 @@ export class E2EActorPool {
         ...currentContractEpochHeaders,
         "x-forwarded-for": identity.loopbackIp,
       },
-      storageState: undefined,
     });
 
     let userId = "";
@@ -164,31 +172,39 @@ export class E2EActorPool {
         );
       }
 
-      const result = await this.database.query<{ id: string }>(
-        `update "users" set "email_verified" = true, "updated_at" = now()
-         where lower("email") = lower($1) returning "id"`,
-        [identity.email],
-      );
-      userId = result.rows[0]?.id ?? "";
+      const [user] = await this.database.db
+        .update(users)
+        .set({ emailVerified: true, updatedAt: new Date() })
+        .where(ilike(users.email, identity.email))
+        .returning({ id: users.id });
+      userId = user?.id ?? "";
       if (!userId) throw new Error(`The isolated ${role} actor has no Better Auth user row.`);
 
-      await this.database.query(
-        `insert into "profiles" (
-           "id", "email", "onboarding_status", "username", "full_name", "is_public",
-           "default_content_visibility"
-         ) values ($1, $2, $3, $4, $5, false, 'private')
-         on conflict ("id") do update set
-           "email" = excluded."email", "onboarding_status" = excluded."onboarding_status",
-           "username" = excluded."username", "full_name" = excluded."full_name",
-           "updated_at" = now()`,
-        [
-          userId,
-          identity.email,
-          role === "onboarding" || role === "unverified" ? "provider_selection" : "completed",
-          role === "onboarding" || role === "unverified" ? null : username,
-          role === "onboarding" || role === "unverified" ? null : fullName,
-        ],
-      );
+      const onboardingStatus =
+        role === "onboarding" || role === "unverified" ? "provider_selection" : "completed";
+      const profileUsername = role === "onboarding" || role === "unverified" ? null : username;
+      const profileFullName = role === "onboarding" || role === "unverified" ? null : fullName;
+      await this.database.db
+        .insert(profiles)
+        .values({
+          id: userId,
+          email: identity.email,
+          onboarding_status: onboardingStatus,
+          username: profileUsername,
+          full_name: profileFullName,
+          is_public: false,
+          default_content_visibility: "private",
+        })
+        .onConflictDoUpdate({
+          target: profiles.id,
+          set: {
+            email: identity.email,
+            onboarding_status: onboardingStatus,
+            username: profileUsername,
+            full_name: profileFullName,
+            updated_at: new Date(),
+          },
+        });
 
       if (role === "athlete" || role === "profile") {
         activityPlanId = (await seedOwnedActivityPlan(this.database, userId, identity.digest))
@@ -203,10 +219,10 @@ export class E2EActorPool {
         throw new Error(`Unable to authenticate isolated ${role} actor (HTTP ${signIn.status()}).`);
       }
       if (role === "unverified") {
-        await this.database.query(
-          'update "users" set "email_verified" = false, "updated_at" = now() where "id" = $1',
-          [userId],
-        );
+        await this.database.db
+          .update(users)
+          .set({ emailVerified: false, updatedAt: new Date() })
+          .where(eq(users.id, userId));
       }
 
       const storageState = await secureStorageStatePath(
@@ -235,44 +251,45 @@ export class E2EActorPool {
         kind: "isolated-actor",
         id: userId,
         cleanup: async (database) => {
-          const retainedMembership = await database.query(
-            'select 1 from "organization_memberships" where "profile_id" = $1 limit 1',
-            [userId],
-          );
-          if (retainedMembership.rowCount) return;
-          await database.transaction(async (query) => {
-            await query.query('delete from "activities" where "profile_id" = $1', [userId]);
-            await query.query(
-              `select set_config('gradientpeak.artifact_lifecycle_authorized', 'on', true)`,
-            );
-            await query.query(
-              `update "activity_artifacts"
-               set "availability" = 'deletion_pending', "deletion_requested_at" = now()
-               where "profile_id" = $1 and "availability" = 'accepted'`,
-              [userId],
-            );
-            await query.query(
-              `update "activity_artifacts"
-               set "availability" = 'deleted', "deleted_at" = now()
-               where "profile_id" = $1 and "availability" = 'deletion_pending'`,
-              [userId],
-            );
-            await query.query(
-              `select set_config('gradientpeak.artifact_hard_delete_authorized', 'on', true)`,
-            );
-            await query.query('delete from "activity_artifacts" where "profile_id" = $1', [userId]);
+          const retainedMembership = await database.db
+            .select({ id: organizationMemberships.id })
+            .from(organizationMemberships)
+            .where(eq(organizationMemberships.profile_id, userId))
+            .limit(1);
+          if (retainedMembership.length) return;
+          await database.typedTransaction(async (transaction) => {
+            await transaction.delete(activities).where(eq(activities.profile_id, userId));
+            await authorizeArtifactLifecycle(transaction);
+            await transaction
+              .update(activityArtifacts)
+              .set({ availability: "deletion_pending", deletion_requested_at: new Date() })
+              .where(
+                and(
+                  eq(activityArtifacts.profile_id, userId),
+                  eq(activityArtifacts.availability, "accepted"),
+                ),
+              );
+            await transaction
+              .update(activityArtifacts)
+              .set({ availability: "deleted", deleted_at: new Date() })
+              .where(
+                and(
+                  eq(activityArtifacts.profile_id, userId),
+                  eq(activityArtifacts.availability, "deletion_pending"),
+                ),
+              );
+            await authorizeArtifactLifecycle(transaction, true);
+            await transaction
+              .delete(activityArtifacts)
+              .where(eq(activityArtifacts.profile_id, userId));
           });
-          await database.query('delete from "organization_memberships" where "profile_id" = $1', [
-            userId,
-          ]);
-          await database.query('delete from "profile_training_settings" where "profile_id" = $1', [
-            userId,
-          ]);
-          await database.query('delete from "groups" where "created_by_profile_id" = $1', [userId]);
-          await database.query('delete from "users" where "id" = $1 and "email" = $2', [
-            userId,
-            identity.email,
-          ]);
+          await database.db
+            .delete(organizationMemberships)
+            .where(eq(organizationMemberships.profile_id, userId));
+          await database.db.delete(groups).where(eq(groups.created_by_profile_id, userId));
+          await database.db
+            .delete(users)
+            .where(and(eq(users.id, userId), eq(users.email, identity.email)));
         },
       });
       const authenticatedActor = actor as AuthenticatedE2EActor;
@@ -283,8 +300,9 @@ export class E2EActorPool {
     } catch (error) {
       await request.dispose().catch(() => undefined);
       if (userId) {
-        await this.database
-          .query('delete from "users" where "id" = $1 and "email" = $2', [userId, identity.email])
+        await this.database.db
+          .delete(users)
+          .where(and(eq(users.id, userId), eq(users.email, identity.email)))
           .catch(() => undefined);
       }
       throw error;
@@ -296,7 +314,6 @@ export class E2EActorPool {
     const request = await this.apiRequest.newContext({
       baseURL: this.baseURL,
       extraHTTPHeaders: { "x-forwarded-for": identity.loopbackIp },
-      storageState: undefined,
     });
     const storageState = await secureStorageStatePath(
       request,
@@ -513,4 +530,16 @@ function actorUsername(role: AuthenticatedE2EActorRole, suffix: string) {
 
 function octet(digest: string, offset: number) {
   return (Number.parseInt(digest.slice(offset, offset + 2), 16) % 254) + 1;
+}
+
+async function authorizeArtifactLifecycle(transaction: E2EDrizzleTransaction, hardDelete = false) {
+  if (hardDelete) {
+    await transaction.execute(
+      sql`select set_config('gradientpeak.artifact_hard_delete_authorized', 'on', true)`,
+    );
+    return;
+  }
+  await transaction.execute(
+    sql`select set_config('gradientpeak.artifact_lifecycle_authorized', 'on', true)`,
+  );
 }

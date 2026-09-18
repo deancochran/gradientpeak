@@ -29,7 +29,7 @@ describe("activity plan authoring", () => {
     ]);
   });
 
-  it("preserves compatible targets and explicitly resets incompatible ones on activity_category change", () => {
+  it("preserves every target and quantity on activity_category change", () => {
     const structure = createActivityPlanStructure("run");
     const segment = structure.segments[0];
     if (!segment || segment.role !== "activity") throw new Error("missing activity segment");
@@ -46,10 +46,9 @@ describe("activity plan authoring", () => {
       activity_category: "bike",
       segments: [{ intervals: [{ steps: [{ targets: [{ type: "speed", intensity: 3 }] }] }] }],
     });
-    expect(applyActivityPlanActivityCategory(structure, "bike", true)).toMatchObject({
-      activity_category: "bike",
-      segments: [{ intervals: [{ steps: [{ targets: [{ type: "RPE", intensity: 5 }] }] }] }],
-    });
+    expect(applyActivityPlanActivityCategory(structure, "strength").segments).toEqual(
+      structure.segments,
+    );
   });
 
   it("immutably updates nested step content", () => {

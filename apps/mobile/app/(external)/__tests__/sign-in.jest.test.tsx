@@ -1,12 +1,12 @@
 import React from "react";
-import type { ZodFormSubmitProps } from "../../../test/mock-components";
-import { fireEvent, renderNative, screen, waitFor } from "../../../test/render-native";
+import { act, fireEvent, renderNative, screen, waitFor } from "../../../test/render-native";
 
 const replaceMock = jest.fn();
 const navigateToMock = jest.fn();
 const signInMock = jest.fn();
 const refreshSessionMock = jest.fn(async () => undefined);
 let searchParamsValue: { returnTo?: string | string[] } = {};
+const authState: { loading: boolean; user?: { id: string } } = { loading: false };
 
 (globalThis as typeof globalThis & { __DEV__?: boolean }).__DEV__ = false;
 
@@ -45,7 +45,7 @@ jest.mock("@/lib/auth/request-timeout", () => ({
 
 jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
-  useAuth: () => ({ loading: false }),
+  useAuth: () => authState,
 }));
 
 jest.mock("@/lib/logging/mobile-action-log", () => ({
@@ -96,53 +96,9 @@ jest.mock("@repo/ui/components/card", () => {
   };
 });
 
-jest.mock("@repo/ui/components/form", () => {
-  const { createFormTextField } = require("../../../test/mock-components");
-  return {
-    __esModule: true,
-    Form: ({ children }: { children?: React.ReactNode }) => children,
-    FormTextField: createFormTextField(),
-  };
-});
-
 jest.mock("@repo/ui/components/text", () => {
   const { createHostComponent } = require("../../../test/mock-components");
   return { __esModule: true, Text: createHostComponent("Text") };
-});
-
-jest.mock("@repo/ui/hooks", () => {
-  const React = require("react");
-  return {
-    __esModule: true,
-    useZodForm: () => {
-      const [values, setValues] = React.useState({ email: "", password: "" });
-      const [errors, setErrors] = React.useState({} as Record<string, { message: string }>);
-      return {
-        control: {
-          errors,
-          values,
-          setValue: (name: string, value: string) =>
-            setValues((current: typeof values) => ({ ...current, [name]: value })),
-        },
-        formState: { errors },
-        clearErrors: jest.fn(),
-        setError: (name: string, error: { message: string }) => {
-          setErrors((current: Record<string, { message: string }>) => ({
-            ...current,
-            [name]: error,
-          }));
-        },
-        handleSubmit: (onSubmit: (data: typeof values) => unknown) => () => onSubmit(values),
-      };
-    },
-    useZodFormSubmit: ({
-      form,
-      onSubmit,
-    }: ZodFormSubmitProps<{ email: string; password: string }>) => ({
-      handleSubmit: form.handleSubmit(onSubmit),
-      isSubmitting: false,
-    }),
-  };
 });
 
 jest.mock("lucide-react-native", () => ({
@@ -153,9 +109,54 @@ jest.mock("lucide-react-native", () => ({
 const SignInScreen = require("../sign-in").default;
 
 describe("sign-in screen", () => {
+  it("single-flights rapid presses and retains credentials after rejection", async () => {
+    let finish!: (value: unknown) => void;
+    signInMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await renderNative(<SignInScreen />);
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    const press = screen.getByTestId("sign-in-button").props.onPress;
+    await act(async () => {
+      void press();
+      void press();
+    });
+    expect(signInMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("password-input").props.editable).toBe(false);
+    await fireEvent.press(screen.getByTestId("forgot-password-button"));
+    expect(navigateToMock).not.toHaveBeenCalled();
+    await act(async () => finish({ error: { message: "Invalid login credentials" } }));
+    expect(screen.getByTestId("password-input").props.value).toBe("Password123");
+    expect(screen.getByTestId("password-input").props.editable).not.toBe(false);
+  });
+
+  it("ignores a completion after the screen unmounts", async () => {
+    let finish!: (value: unknown) => void;
+    signInMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const view = await renderNative(<SignInScreen />);
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await act(async () => {
+      void screen.getByTestId("sign-in-button").props.onPress();
+    });
+    await view.unmount();
+    await act(async () => finish({ error: null }));
+    expect(replaceMock).not.toHaveBeenCalled();
+    expect(refreshSessionMock).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     jest.clearAllMocks();
     searchParamsValue = {};
+    delete authState.user;
     signInMock.mockResolvedValue({ error: null });
   });
 
@@ -176,10 +177,8 @@ describe("sign-in screen", () => {
     });
   });
 
-  it.each([
-    "/integrations",
-    "/training-preferences",
-  ])("returns to the allowlisted %s destination after successful sign in", async (returnTo) => {
+  it("returns to the allowlisted integrations destination after successful sign in", async () => {
+    const returnTo = "/integrations";
     searchParamsValue = { returnTo };
     await renderNative(<SignInScreen />);
 
@@ -264,5 +263,55 @@ describe("sign-in screen", () => {
         params: { email: "athlete@example.com" },
       });
     });
+  });
+
+  it.each([
+    "account",
+    "account round-trip",
+    "destination",
+  ])("ignores an old sign-in completion after %s changes", async (change) => {
+    let finish!: (value: unknown) => void;
+    signInMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const view = await renderNative(<SignInScreen />);
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await act(async () => {
+      void screen.getByTestId("sign-in-button").props.onPress();
+    });
+    if (change.startsWith("account")) authState.user = { id: "another-account" };
+    else searchParamsValue = { returnTo: "/integrations" };
+    await view.rerender(<SignInScreen />);
+    if (change === "account round-trip") {
+      authState.user = { id: "signed-in-account" };
+      await view.rerender(<SignInScreen />);
+    }
+    await act(async () => finish({ error: null, data: { user: { id: "signed-in-account" } } }));
+    expect(replaceMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("password-input").props.value).toBe("Password123");
+  });
+
+  it("allows the request's own authenticated account transition to finish navigation", async () => {
+    let finish!: (value: unknown) => void;
+    signInMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const view = await renderNative(<SignInScreen />);
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    await fireEvent.changeText(screen.getByTestId("password-input"), "Password123");
+    await act(async () => {
+      void screen.getByTestId("sign-in-button").props.onPress();
+    });
+    authState.user = { id: "signed-in-account" };
+    await view.rerender(<SignInScreen />);
+    await act(async () => finish({ error: null, data: { user: { id: "signed-in-account" } } }));
+    expect(replaceMock).toHaveBeenCalledWith("/(internal)/(tabs)");
   });
 });

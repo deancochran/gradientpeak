@@ -1377,9 +1377,9 @@ describe("recording cockpit", () => {
     expect(screen.queryByTestId("recording-gps-toggle")).toBeNull();
     expect(screen.queryByText("GPS")).toBeNull();
     expect(screen.queryByTestId("recording-session-mode-button")).toBeNull();
-    expect(screen.queryByText("Guidance")).toBeNull();
+    expect(screen.getByText("Guidance")).toBeTruthy();
 
-    expect(screen.getByText("Activity")).toBeTruthy();
+    expect(screen.getByText("Activity plan")).toBeTruthy();
     expect(screen.getAllByText("Add")).toHaveLength(2);
 
     const disabledActions = findHostNodes(result, "Pressable").filter(

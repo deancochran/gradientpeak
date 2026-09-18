@@ -1,34 +1,19 @@
 import { randomUUID } from "node:crypto";
-import { activityPlanDocumentSchema } from "@repo/core";
 import { type DrizzleDbClient, schema } from "@repo/db";
 import { and, asc, eq, gte, inArray, or } from "drizzle-orm";
 import type { EventDeleteScope, EventWriteRepository } from "../../repositories";
 
-export class EventPlanReplacementCompletionConflict extends Error {
-  constructor() {
-    super("Unlink the completed activity before replacing an activity plan");
-  }
-}
-
-export class EventCurrentPlanUpdateConflict extends Error {
-  constructor() {
-    super("Events linked to unavailable or non-executable activity plans cannot be updated");
-  }
-}
-
 function serializeCreatedEvent(row: {
-  activity_plan_id: string | null;
   all_day: boolean | null;
   created_at: Date;
   description: string | null;
   ends_at: Date | null;
-  event_type: "planned" | "race_target" | "custom";
+  event_type: "race_target" | "custom";
   id: string;
   linked_activity_id: string | null;
   notes: string | null;
   occurrence_key: string | null;
   original_starts_at: Date | null;
-  planned_session_id: string | null;
   profile_id: string;
   recurrence_rule: string | null;
   recurrence_timezone: string | null;
@@ -39,7 +24,6 @@ function serializeCreatedEvent(row: {
   status: "scheduled" | "completed" | "cancelled" | null;
   timezone: string | null;
   title: string | null;
-  training_plan_id: string | null;
   updated_at: Date;
 }) {
   return {
@@ -61,18 +45,16 @@ function serializeCreatedEvent(row: {
 }
 
 function serializeSplitEventRow(row: {
-  activity_plan_id: string | null;
   all_day: boolean | null;
   created_at: Date;
   description: string | null;
   ends_at: Date | null;
-  event_type: "planned" | "race_target" | "custom";
+  event_type: "race_target" | "custom";
   id: string;
   linked_activity_id: string | null;
   notes: string | null;
   occurrence_key: string | null;
   original_starts_at: Date | null;
-  planned_session_id: string | null;
   profile_id: string;
   recurrence_rule: string | null;
   recurrence_timezone: string | null;
@@ -83,7 +65,6 @@ function serializeSplitEventRow(row: {
   status: "scheduled" | "completed" | "cancelled" | null;
   timezone: string | null;
   title: string | null;
-  training_plan_id: string | null;
   updated_at: Date;
 }) {
   return serializeCreatedEvent(row);
@@ -125,10 +106,7 @@ const splitEventReturningColumns = {
   updated_at: schema.events.updated_at,
   starts_at: schema.events.starts_at,
   ends_at: schema.events.ends_at,
-  activity_plan_id: schema.events.activity_plan_id,
   route_id: schema.events.route_id,
-  training_plan_id: schema.events.training_plan_id,
-  planned_session_id: schema.events.planned_session_id,
   linked_activity_id: schema.events.linked_activity_id,
   recurrence_rule: schema.events.recurrence_rule,
   recurrence_timezone: schema.events.recurrence_timezone,
@@ -191,9 +169,7 @@ async function insertOwnedEvent(
       status: input.status,
       notes: input.notes,
       description: input.description,
-      activity_plan_id: input.activityPlanId,
       route_id: input.routeId,
-      training_plan_id: input.trainingPlanId,
       scheduled_date: input.scheduledDate,
       recurrence_rule: input.recurrenceRule,
       recurrence_timezone: input.recurrenceTimezone,
@@ -212,42 +188,6 @@ async function insertOwnedEvent(
 
 export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepository {
   return {
-    async getAccessibleActivityPlan({ activityPlanId, profileId }) {
-      const [row] = await db
-        .select({
-          id: schema.activityPlans.id,
-          name: schema.activityPlans.name,
-          structure: schema.activityPlans.structure,
-        })
-        .from(schema.activityPlans)
-        .where(
-          and(
-            eq(schema.activityPlans.id, activityPlanId),
-            or(
-              eq(schema.activityPlans.profile_id, profileId),
-              eq(schema.activityPlans.is_system_template, true),
-            ),
-          ),
-        )
-        .limit(1);
-
-      return row ?? null;
-    },
-
-    async getActivityPlanById({ activityPlanId }) {
-      const [row] = await db
-        .select({
-          id: schema.activityPlans.id,
-          name: schema.activityPlans.name,
-          structure: schema.activityPlans.structure,
-        })
-        .from(schema.activityPlans)
-        .where(eq(schema.activityPlans.id, activityPlanId))
-        .limit(1);
-
-      return row ?? null;
-    },
-
     async getAccessibleActivityRoute({ profileId, routeId }) {
       const [row] = await db
         .select({ id: schema.activityRoutes.id })
@@ -260,21 +200,6 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
               eq(schema.activityRoutes.is_public, true),
               eq(schema.activityRoutes.is_system_template, true),
             ),
-          ),
-        )
-        .limit(1);
-
-      return row ?? null;
-    },
-
-    async getOwnedTrainingPlan({ profileId, trainingPlanId }) {
-      const [row] = await db
-        .select({ id: schema.trainingPlans.id })
-        .from(schema.trainingPlans)
-        .where(
-          and(
-            eq(schema.trainingPlans.id, trainingPlanId),
-            eq(schema.trainingPlans.profile_id, profileId),
           ),
         )
         .limit(1);
@@ -319,13 +244,7 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
       return rows.map(serializeSplitEventRow);
     },
 
-    async updateOwnedEventsForScope({
-      anchorEvent,
-      eventUpdates,
-      profileId,
-      rejectPlanReplacementWithCompletion,
-      scope,
-    }) {
+    async updateOwnedEventsForScope({ anchorEvent, eventUpdates, profileId, scope }) {
       const now = new Date();
       const eventType = eventUpdates["event_type"];
       const notes = eventUpdates["notes"];
@@ -337,9 +256,7 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
       const startsAt = eventUpdates["starts_at"];
       const endsAt = eventUpdates["ends_at"];
       const scheduledDate = eventUpdates["scheduled_date"];
-      const activityPlanId = eventUpdates["activity_plan_id"] as string | null | undefined;
       const routeId = eventUpdates["route_id"] as string | null | undefined;
-      const trainingPlanId = eventUpdates["training_plan_id"] as string | null | undefined;
       const linkedActivityId = eventUpdates["linked_activity_id"] as string | null | undefined;
       const recurrenceRule = eventUpdates["recurrence_rule"] as string | null | undefined;
       const recurrenceTimezone = eventUpdates["recurrence_timezone"] as string | null | undefined;
@@ -358,9 +275,7 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
         ...(startsAt ? { starts_at: new Date(startsAt as string) } : {}),
         ...(scheduledDate !== undefined ? { scheduled_date: scheduledDate as string } : {}),
         ...(endsAt !== undefined ? { ends_at: endsAt ? new Date(endsAt as string) : null } : {}),
-        ...(activityPlanId !== undefined ? { activity_plan_id: activityPlanId } : {}),
         ...(routeId !== undefined ? { route_id: routeId } : {}),
-        ...(trainingPlanId !== undefined ? { training_plan_id: trainingPlanId } : {}),
         ...(linkedActivityId !== undefined ? { linked_activity_id: linkedActivityId } : {}),
         ...(recurrenceRule !== undefined ? { recurrence_rule: recurrenceRule } : {}),
         ...(recurrenceTimezone !== undefined ? { recurrence_timezone: recurrenceTimezone } : {}),
@@ -368,15 +283,9 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
       };
 
       const rows = await db.transaction(async (tx) => {
-        // Lock the exact mutation scope before examining its current plan links. The
-        // plan structures are intentionally read without a plan-row lock: the event
-        // lock serializes the FK ON DELETE SET NULL action and any plan-id mutation.
-        // Plan structures are canonical, so this avoids an Event -> Plan lock inversion with plan
-        // deletion's Plan -> Event FK lock without weakening this invariant.
         const candidateQuery = tx
           .select({
             id: schema.events.id,
-            activity_plan_id: schema.events.activity_plan_id,
             linked_activity_id: schema.events.linked_activity_id,
             status: schema.events.status,
           })
@@ -390,38 +299,6 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
           ? lockableCandidateQuery.for("update")
           : candidateQuery);
 
-        const currentPlanIds = candidates.flatMap((candidate) =>
-          candidate.activity_plan_id ? [candidate.activity_plan_id] : [],
-        );
-        if (currentPlanIds.length > 0) {
-          const planQuery = tx
-            .select({ id: schema.activityPlans.id, structure: schema.activityPlans.structure })
-            .from(schema.activityPlans)
-            .where(inArray(schema.activityPlans.id, [...new Set(currentPlanIds)]));
-          const currentPlans = await planQuery;
-          const plansById = new Map(currentPlans.map((plan) => [plan.id, plan]));
-
-          if (
-            currentPlanIds.some((planId) => {
-              const plan = plansById.get(planId);
-              return !plan || !activityPlanDocumentSchema.safeParse(plan.structure).success;
-            })
-          ) {
-            throw new EventCurrentPlanUpdateConflict();
-          }
-        }
-
-        if (rejectPlanReplacementWithCompletion) {
-          if (
-            candidates.some(
-              (candidate) =>
-                candidate.activity_plan_id !== activityPlanId &&
-                (candidate.linked_activity_id !== null || candidate.status === "completed"),
-            )
-          ) {
-            throw new EventPlanReplacementCompletionConflict();
-          }
-        }
         await tx
           .update(schema.events)
           .set(eventUpdateValues)

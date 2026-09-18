@@ -1,4 +1,6 @@
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import type { z } from "zod";
+import { createResolutionManifestFixture } from "../test/builders/planned-session";
 import type { activityIngestionSafeStatusDtoSchema } from "./activity-ingestion";
 import type { athleteRecalculationRepairReceiptSchema } from "./athlete-load-range";
 import type {
@@ -210,39 +212,46 @@ export const ACTIVITY_INGESTION_STATUS_V1_FIXTURES = [
   },
 ] satisfies z.input<typeof activityIngestionSafeStatusDtoSchema>[];
 
+const prescriptionStructure = activityPlanStructureSchema.parse({
+  version: 3,
+  activity_category: "run",
+  segments: [
+    {
+      id: "00000000-0000-4000-8000-000000000031",
+      role: "activity",
+      name: "Run",
+      intervals: [
+        {
+          id: "00000000-0000-4000-8000-000000000032",
+          name: "Steady",
+          repetitions: 1,
+          steps: [
+            {
+              id: "00000000-0000-4000-8000-000000000033",
+              name: "Work",
+              duration: { type: "time", seconds: 1_800 },
+              targets: [{ type: "RPE", intensity: 5 }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
 const prescription: PlannedSessionFixture["prescription"] = {
-  activityPlanId: "00000000-0000-4000-8000-000000000030",
-  activityPlanRevision: 7,
-  variantId: "00000000-0000-4000-8000-000000000030",
-  variantName: "Base",
-  structureHash: `v1:sha256:${"0".repeat(64)}`,
-  structure: {
-    version: 3,
-    activity_category: "run",
-    segments: [
-      {
-        id: "00000000-0000-4000-8000-000000000031",
-        role: "activity",
-        name: "Run",
-        intervals: [
-          {
-            id: "00000000-0000-4000-8000-000000000032",
-            name: "Steady",
-            repetitions: 1,
-            steps: [
-              {
-                id: "00000000-0000-4000-8000-000000000033",
-                name: "Work",
-                duration: { type: "time", seconds: 1_800 },
-                targets: [{ type: "RPE", intensity: 5 }],
-              },
-            ],
-          },
-        ],
-      },
-    ],
-  },
-  prescriptionQuantification: null,
+  resolutionManifest: createResolutionManifestFixture({
+    activityPlanId: "00000000-0000-4000-8000-000000000030",
+    activityPlanRevision: 7,
+    structure: prescriptionStructure,
+    demand: {
+      activity_category: "run",
+      training_intent: "general_maintenance",
+      target_duration_minutes: 30,
+      target_common_load: null,
+      importance: "normal",
+    },
+  }),
   capturedAt: NOW,
 };
 
@@ -277,18 +286,10 @@ export const PLANNED_SESSION_V1_FIXTURES = tuple([
       kind: "training_plan",
       trainingPlanId: "00000000-0000-4000-8000-000000000050",
       trainingPlanRevision: 3,
-      sourceSessionKey: "week-1-day-1",
+      sourceSessionId: "00000000-0000-4000-8000-000000000051",
+      applicationId: null,
     },
     lifecycle: { status: "cancelled", reason: "user_requested", cancelledAt: NOW },
-  }),
-  plannedSessionFixture({
-    sequence: 42,
-    source: {
-      kind: "recurrence",
-      seriesId: "00000000-0000-4000-8000-000000000051",
-      occurrenceKey: "2026-08-10",
-    },
-    lifecycle: { status: "cancelled", reason: "plan_replaced", cancelledAt: NOW },
   }),
   plannedSessionFixture({
     sequence: 43,
@@ -304,6 +305,7 @@ export const PLANNED_SESSION_V1_FIXTURES = tuple([
         state: "linked",
         activityId: "00000000-0000-4000-8000-000000000052",
         linkedAt: NOW,
+        outcome: "full",
       },
     },
   }),
@@ -316,6 +318,7 @@ export const PLANNED_SESSION_V1_FIXTURES = tuple([
         state: "activity_deleted",
         linkedAt: "2026-08-09T08:00:00.000Z",
         unlinkedAt: NOW,
+        outcome: "full",
       },
     },
   }),

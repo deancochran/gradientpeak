@@ -6,7 +6,6 @@ import { Route } from "./$activityPlanId";
 
 const mocks = vi.hoisted(() => ({
   loaderData: undefined as unknown,
-  loadPublicActivityPlan: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -18,32 +17,12 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("../../../lib/public-share", () => ({
-  loadPublicActivityPlan: mocks.loadPublicActivityPlan,
+  loadPublicActivityPlan: vi.fn(),
 }));
 
-afterEach(() => {
-  cleanup();
-  vi.clearAllMocks();
-});
+afterEach(cleanup);
 
 describe("PublicActivityPlanPage", () => {
-  it("loads only the public default without accepting a variant selection", async () => {
-    const publicResult = { activityPlan: { id: "public-plan" } };
-    mocks.loadPublicActivityPlan.mockResolvedValue(publicResult);
-    const loader = (
-      Route as unknown as {
-        loader: (input: { params: { activityPlanId: string } }) => Promise<unknown>;
-      }
-    ).loader;
-
-    await expect(
-      loader({ params: { activityPlanId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" } }),
-    ).resolves.toBe(publicResult);
-    expect(mocks.loadPublicActivityPlan).toHaveBeenCalledWith({
-      data: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" },
-    });
-  });
-
   it("uses the compiled canonical activity category as its badge and overview value", () => {
     mocks.loaderData = {
       activityPlan: {
@@ -131,7 +110,9 @@ describe("PublicActivityPlanPage", () => {
     expect(screen.queryByRole("button", { name: /print|save as pdf/i })).toBeNull();
     expect(screen.getByText("Session Flow")).toBeTruthy();
     expect(
-      screen.getByRole("img", { name: /Session flow.*normalized and capped.*authored intensity/i }),
+      screen.getByRole("figure", {
+        name: /Session flow.*normalized and capped.*authored intensity/i,
+      }),
     ).toBeTruthy();
     expect(
       screen
@@ -148,8 +129,8 @@ describe("PublicActivityPlanPage", () => {
     expect(screen.queryByText("Personalized")).toBeNull();
     expect(screen.getAllByText("Start controlled.").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Jog the recovery.").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Hold a steady hard effort.").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Stay relaxed.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Hold a steady hard effort\./).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Stay relaxed\./).length).toBeGreaterThan(0);
     expect(screen.queryByText(/240 W/)).toBeNull();
   });
 });

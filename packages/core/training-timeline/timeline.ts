@@ -328,18 +328,22 @@ export function buildTrainingTimelineWindow(
   const completedSourceStatus =
     input.completedSourceStatus ??
     (input.completedItems === undefined ? "unavailable" : "complete");
-  const days = dateKeyRange(input.startDate, input.endDate).map((date) =>
-    buildTrainingDaySummary({
+  const days = dateKeyRange(input.startDate, input.endDate).map((date) => {
+    const metadata = input.dayMetadata?.[date];
+    const loadPoint = loadByDate.get(date);
+    const scheduledItems = scheduledByDate.get(date);
+    const completedItems = completedByDate.get(date);
+    return buildTrainingDaySummary({
       date,
-      loadPoint: loadByDate.get(date),
-      scheduledItems: scheduledByDate.get(date),
+      ...(loadPoint === undefined ? {} : { loadPoint }),
+      ...(scheduledItems === undefined ? {} : { scheduledItems }),
       scheduledSourceStatus,
-      completedItems: completedByDate.get(date),
+      ...(completedItems === undefined ? {} : { completedItems }),
       completedSourceStatus,
-      annotations: input.dayMetadata?.[date]?.annotations,
-      confidence: input.dayMetadata?.[date]?.confidence,
-    }),
-  );
+      ...(metadata?.annotations === undefined ? {} : { annotations: metadata.annotations }),
+      ...(metadata?.confidence === undefined ? {} : { confidence: metadata.confidence }),
+    });
+  });
   return trainingTimelineWindowSchema.parse({
     startDate: input.startDate,
     endDate: input.endDate,

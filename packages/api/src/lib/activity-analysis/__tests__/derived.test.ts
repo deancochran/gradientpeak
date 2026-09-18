@@ -19,6 +19,7 @@ import {
   buildActivitySegmentDerivedSummaries,
   buildCompletedSegmentAnalysisActivity,
   buildDynamicStressSeries,
+  deriveActivityDurations,
   deriveActivityParentClassification,
 } from "../derived";
 
@@ -407,6 +408,23 @@ function criticalPowerStore() {
 }
 
 describe("segment-derived activity analysis", () => {
+  it("skips manual activities without a measured start time", async () => {
+    const input = {
+      ...activity([segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 1_800_000)]),
+      started_at: null,
+      elapsed_ms: null,
+    };
+
+    await expect(
+      buildActivitySegmentDerivedSummaries({
+        store: store(),
+        profileId: PROFILE_ID,
+        activities: [input],
+      }),
+    ).resolves.toEqual([]);
+    expect(deriveActivityDurations(input).elapsed_seconds).toBeNull();
+  });
+
   it("preserves ordered and repeated parent categories", () => {
     const segments = [
       segment("11111111-1111-4111-8111-111111111111", 0, "run", 0, 600_000),

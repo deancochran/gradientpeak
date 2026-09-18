@@ -7,7 +7,6 @@ import {
   activityPlanSummarySchema,
   compileActivityPlan,
 } from "@repo/core";
-import type { PlannedSessionProjection } from "@repo/core/calendar";
 import { useMemo } from "react";
 import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 
@@ -15,7 +14,6 @@ type ActivityPlanProjection = ActivityPlanSummary | ActivityPlanDetail;
 
 type PlannedActivityLike = {
   activityPlanSummary?: ActivityPlanSummary | null;
-  plannedSession?: (PlannedSessionProjection & { sessionRevision: number }) | null;
 };
 
 type ProfileLike = {
@@ -97,6 +95,5 @@ export function useActivityPlanDetailViewModel({
     steps,
     durationLabel: durationMinutes === null ? "—" : formatDuration(durationMinutes * 60),
     durationMinutes,
-    plannedSession: plannedActivity?.plannedSession ?? null,
   };
 }

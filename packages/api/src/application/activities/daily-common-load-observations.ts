@@ -9,7 +9,7 @@ import {
   type DailyCommonLoadObservation,
 } from "@repo/core/load";
 import { activities } from "@repo/db";
-import { and, asc, eq, gte, lt } from "drizzle-orm";
+import { and, asc, eq, gte, isNotNull, lt } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
 import {
@@ -133,6 +133,7 @@ export async function getDailyCommonLoadObservations(input: {
     .where(
       and(
         eq(activities.profile_id, input.profileId),
+        isNotNull(activities.started_at),
         gte(activities.started_at, envelopeStart),
         lt(activities.started_at, envelopeEnd),
       ),
@@ -142,14 +143,17 @@ export async function getDailyCommonLoadObservations(input: {
   if (activityRows.length > dailyCommonLoadActivityLimit) {
     throw new DailyCommonLoadActivityLimitExceededError();
   }
+  const measuredActivityRows = activityRows.filter(
+    (activity): activity is typeof activity & { started_at: Date } => activity.started_at !== null,
+  );
   const segments = await loadActivitySegmentsByActivityId(
     input.db,
-    activityRows.map((activity) => activity.id),
+    measuredActivityRows.map((activity) => activity.id),
   );
   const segmentSummaries = await buildActivitySegmentDerivedSummaries({
     store: createActivityAnalysisStore(input.db),
     profileId: input.profileId,
-    activities: activityRows.map((activity) => ({
+    activities: measuredActivityRows.map((activity) => ({
       ...activity,
       segments: segments.get(activity.id) ?? [],
     })),
@@ -160,7 +164,7 @@ export async function getDailyCommonLoadObservations(input: {
     canonical_history_eligible: false as const,
     day_policy: "activity_started_at_in_viewer_timezone" as const,
     observations: aggregateDailyCommonLoadObservations({
-      activities: activityRows,
+      activities: measuredActivityRows,
       segmentSummaries,
       startDate: input.range.start_date,
       endDate: input.range.end_date,

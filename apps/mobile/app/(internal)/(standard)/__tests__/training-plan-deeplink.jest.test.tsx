@@ -1,6 +1,7 @@
 import { act, waitFor } from "@testing-library/react-native";
 import React from "react";
 import { ROUTES } from "@/lib/constants/routes";
+import { createActivityPlanSummary } from "../../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
 
@@ -11,6 +12,21 @@ var mockAlert = jest.fn<void, Parameters<NativeAlert>>();
 var mockApplyTemplateMutate = jest.fn();
 var mockDuplicateMutate = jest.fn();
 var mockRemoveAppliedScheduleMutate = jest.fn();
+var mockTemplateError: Error | null = null;
+var mockRefetchTemplate = jest.fn();
+var mockLinkedPlans: ReturnType<typeof createActivityPlanSummary>[] = [];
+var removalMutationOptions: {
+  onError: (error: { message: string; data?: { code: string } }) => void;
+};
+var mockPreviewRemoveAppliedSchedule = jest.fn(async () => ({
+  status: "available" as const,
+  applicationId: "33333333-3333-4333-8333-333333333333",
+  applicationRevision: 1,
+  affected: [{ id: "44444444-4444-4444-8444-444444444444", sessionRevision: 1 }],
+  protected: [],
+  cutoffDate: "2026-09-14",
+  previewFingerprint: `v1:sha256:${"d".repeat(64)}`,
+}));
 type TrainingPlanFixture = {
   id: string;
   name: string;
@@ -27,14 +43,14 @@ type TrainingPlanFixture = {
   experienceLevel?: string[];
 };
 type AppliedScheduleFixture = {
+  application_id?: string;
   training_plan_id: string;
   schedule_batch_id?: string;
   starts_at?: string;
 };
 type ApplyTemplateResult = {
-  applied_plan_id: string;
-  scheduled_sessions_created: number;
-  scheduled_sessions_replaced: number;
+  status: "applied";
+  created: number;
 };
 type InsightTimelineFixture = {
   timeline: Array<{
@@ -147,7 +163,28 @@ jest.mock("@/lib/api", () => ({
         },
       },
       trainingPlans: {
-        getAppliedSchedule: { invalidate: jest.fn() },
+        listAppliedSchedules: { invalidate: jest.fn() },
+        preview: {
+          fetch: jest.fn(async () => ({
+            basePublishedRevision: 3,
+            previewFingerprint: "fixture-duplicate-preview",
+            status: "available",
+          })),
+        },
+        previewApplication: {
+          fetch: jest.fn(async () => ({
+            applicable: true,
+            basePublishedRevision: 3,
+            planHash: "fixture-hash",
+            planRevision: 1,
+            previewFingerprint: "fixture-preview",
+            replacement: null,
+            sessions: [],
+            status: "available",
+            unresolved: [],
+          })),
+        },
+        previewRemoveAppliedSchedule: { fetch: mockPreviewRemoveAppliedSchedule },
         invalidate: jest.fn(),
       },
       events: {
@@ -165,18 +202,42 @@ jest.mock("@/lib/api", () => ({
         }),
       },
       getTemplate: {
-        useQuery: () => ({ data: null, isLoading: false }),
-      },
-      getAppliedSchedule: {
-        useQuery: () => ({ data: mockAppliedScheduleData }),
-      },
-      removeAppliedSchedule: {
-        useMutation: () => ({
-          mutate: mockRemoveAppliedScheduleMutate,
-          isPending: false,
+        useQuery: () => ({
+          data: null,
+          isLoading: false,
+          error: mockTemplateError,
+          refetch: mockRefetchTemplate,
         }),
       },
-      applyTemplate: {
+      listAppliedSchedules: {
+        useQuery: () => ({
+          data: {
+            items: mockAppliedScheduleData
+              ? [
+                  {
+                    ...mockAppliedScheduleData,
+                    application_revision: 1,
+                    eligible_future_count: 1,
+                    protected_count: 0,
+                    source_revision: 1,
+                    start_date: "2026-09-01",
+                    next_planning_date: "2026-09-15",
+                  },
+                ]
+              : [],
+          },
+        }),
+      },
+      removeAppliedSchedule: {
+        useMutation: (options: typeof removalMutationOptions) => {
+          removalMutationOptions = options;
+          return {
+            mutate: mockRemoveAppliedScheduleMutate,
+            isPending: false,
+          };
+        },
+      },
+      applyApplication: {
         useMutation: (options?: { onSuccess?: (data: ApplyTemplateResult) => void }) => ({
           mutateAsync: jest.fn(),
           mutate: (input: unknown) => {
@@ -227,7 +288,7 @@ jest.mock("@/lib/api", () => ({
       },
       getManyByIds: {
         useQuery: () => ({
-          data: { items: [] },
+          data: { items: mockLinkedPlans },
           isLoading: false,
         }),
       },
@@ -271,6 +332,9 @@ jest.mock("react-native", () => ({
 jest.mock("@/components/training-plan/TrainingPlanKpiRow", () => ({
   __esModule: true,
   TrainingPlanKpiRow: createHost("TrainingPlanKpiRow"),
+}));
+jest.mock("@/components/shared/ActivityPlanCard", () => ({
+  ActivityPlanCard: createHost("ActivityPlanCard"),
 }));
 jest.mock("@/components/training-plan/TrainingPlanSummaryHeader", () => ({
   __esModule: true,
@@ -521,6 +585,10 @@ const resetTestState = () => {
   mockApplyTemplateMutate.mockReset();
   mockDuplicateMutate.mockReset();
   mockRemoveAppliedScheduleMutate.mockReset();
+  mockTemplateError = null;
+  mockLinkedPlans = [];
+  mockRefetchTemplate.mockReset();
+  mockPreviewRemoveAppliedSchedule.mockClear();
   mockAppliedScheduleData = null;
   mockApplyTemplateResult = null;
   mockSnapshotState.plan = null;
@@ -551,6 +619,76 @@ const resetTestState = () => {
 describe("TrainingPlanOverview deep-link routing", () => {
   beforeEach(() => {
     resetTestState();
+  });
+
+  it("opens linked activity read detail and the canonical editor without committing definitions", async () => {
+    const activityId = "11111111-1111-4111-8111-111111111111";
+    mockLinkedPlans = [createActivityPlanSummary({ id: activityId, name: "Linked ride" })];
+    mockSnapshotState.plan = {
+      id: "plan-read",
+      name: "Read plan",
+      profile_id: "test-profile-id",
+      content_visibility: "private",
+      created_at: "2026-01-01T00:00:00.000Z",
+      structure_hash: "hash",
+      structure: {
+        version: 1,
+        activity_category: ["bike"],
+        plan_preferences: {
+          weekly_session_count: null,
+          target_weekly_duration_minutes: null,
+          maximum_session_duration_minutes: null,
+          preferred_weekdays: [],
+          rest_days: [],
+          progression_style: null,
+          recovery_priority: null,
+        },
+        sessions: [
+          {
+            id: "22222222-2222-4222-8222-222222222222",
+            offset_days: 0,
+            activity_plan_id: activityId,
+            demand: {
+              activity_category: "bike",
+              training_intent: "aerobic_base",
+              target_duration_minutes: 60,
+              target_common_load: null,
+              importance: "normal",
+            },
+          },
+        ],
+      },
+    };
+    mockLocalSearchParams.id = "plan-read";
+    await renderPlan();
+    const card = getAllByTypeOrEmpty("ActivityPlanCard")[0];
+    expect(card).toBeDefined();
+    await act(() => card?.props.onPress());
+    expect(mockRouterPush).toHaveBeenCalledWith(ROUTES.PLAN.PLAN_DETAIL(activityId));
+    await act(() => findNodeByTestId("training-plan-options-edit").props.onPress());
+    expect(mockRouterPush).toHaveBeenLastCalledWith({
+      pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
+      params: { id: "plan-read", initialTab: "plan" },
+    });
+    expect(screen.queryByText("Change")).toBeNull();
+    expect(screen.queryByText("Remove")).toBeNull();
+    expect(screen.queryByTestId("training-plan-change-visibility-button")).toBeNull();
+    expect(screen.queryByTestId("training-plan-activity-picker-modal")).toBeNull();
+    expect(mockDuplicateMutate).not.toHaveBeenCalled();
+  });
+
+  it("shows template transport failure as a retryable error rather than a missing plan", async () => {
+    mockLocalSearchParams.id = "00000000-0000-0000-0000-000000000001";
+    mockTemplateError = new Error("Offline");
+    await renderPlan();
+    expect(screen.getByText("Training plan unavailable")).toBeTruthy();
+    expect(screen.queryByText("No Training Plan")).toBeNull();
+    const retry = getAllByTypeOrEmpty("Button").find(
+      (node) => getNodeText(node.props.children) === "Try again",
+    );
+    if (!retry) throw new Error("Missing template retry action");
+    await act(() => retry.props.onPress());
+    expect(mockRefetchTemplate).toHaveBeenCalledTimes(1);
   });
 
   it("redirects to create when no selected plan id exists", async () => {
@@ -587,7 +725,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     expect(hasTextContaining("Manage Plan")).toBe(true);
 
     await act(() => {
-      findTouchableByText("Manage Plan").props.onPress();
+      findTouchableByText("Edit plan").props.onPress();
     });
 
     expect(mockRouterPush).toHaveBeenCalledWith({
@@ -614,7 +752,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     expect(hasTextContaining("Edit Plan Structure")).toBe(true);
 
     await act(() => {
-      findTouchableByText("Structure").props.onPress();
+      findTouchableByText("Edit plan").props.onPress();
     });
 
     expect(mockRouterPush).toHaveBeenCalledWith({
@@ -653,12 +791,43 @@ describe("TrainingPlanOverview deep-link routing", () => {
       structure_hash: "fixture-structure-hash",
       structure: {
         version: 1,
+        plan_preferences: {
+          weekly_session_count: 2,
+          target_weekly_duration_minutes: 120,
+          maximum_session_duration_minutes: 90,
+          preferred_weekdays: [1, 4],
+          rest_days: [0, 2, 3, 5, 6],
+          progression_style: "balanced",
+          recovery_priority: "balanced",
+        },
         activity_category: ["run"],
         durationWeeks: { recommended: 8 },
         experienceLevel: ["beginner"],
         sessions: [
-          { offset_days: 0, activity_plan_id: "11111111-1111-4111-8111-111111111111" },
-          { offset_days: 49, activity_plan_id: "11111111-1111-4111-8111-111111111111" },
+          {
+            id: "22222222-2222-4222-8222-222222222222",
+            offset_days: 0,
+            activity_plan_id: "11111111-1111-4111-8111-111111111111",
+            demand: {
+              activity_category: "run",
+              training_intent: "aerobic_base",
+              target_duration_minutes: 60,
+              target_common_load: 40,
+              importance: "normal",
+            },
+          },
+          {
+            id: "33333333-3333-4333-8333-333333333333",
+            offset_days: 49,
+            activity_plan_id: "11111111-1111-4111-8111-111111111111",
+            demand: {
+              activity_category: "run",
+              training_intent: "aerobic_base",
+              target_duration_minutes: 60,
+              target_common_load: 40,
+              importance: "normal",
+            },
+          },
         ],
       },
     };
@@ -732,12 +901,15 @@ describe("TrainingPlanOverview deep-link routing", () => {
       findButtonByTestId("training-plan-schedule-confirm").props.onPress();
     });
 
+    await act(() => {
+      findButtonByTestId("training-plan-schedule-confirm").props.onPress();
+    });
+
     expect(mockApplyTemplateMutate).toHaveBeenCalledWith(
       expect.objectContaining({
-        template_type: "training_plan",
-        template_id: "plan-owned-anchor-2",
-        start_date: undefined,
-        target_date: "2026-04-30",
+        trainingPlanId: "plan-owned-anchor-2",
+        startDate: undefined,
+        targetDate: "2026-04-30",
       }),
     );
   });
@@ -799,13 +971,18 @@ describe("TrainingPlanOverview deep-link routing", () => {
       findButtonByTestId("training-plan-schedule-confirm").props.onPress();
     });
 
-    expect(mockApplyTemplateMutate).toHaveBeenCalledWith({
-      application_mode: "full",
-      template_type: "training_plan",
-      template_id: "plan-owned-anchor-4",
-      start_date: undefined,
-      target_date: undefined,
+    await act(async () => {
+      findButtonByTestId("training-plan-schedule-confirm").props.onPress();
     });
+
+    expect(mockApplyTemplateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        applicationMode: "full",
+        trainingPlanId: "plan-owned-anchor-4",
+        startDate: undefined,
+        targetDate: undefined,
+      }),
+    );
     expect(hasTextContaining("Replace Scheduled Plan")).toBe(false);
   });
 
@@ -821,15 +998,19 @@ describe("TrainingPlanOverview deep-link routing", () => {
     };
     mockLocalSearchParams.id = "plan-owned-anchor-6";
     mockApplyTemplateResult = {
-      applied_plan_id: "scheduled-plan-1",
-      scheduled_sessions_created: 3,
-      scheduled_sessions_replaced: 0,
+      status: "applied",
+      created: 3,
     };
 
     await renderPlan();
 
     await act(async () => {
       findNodeByTestId("training-plan-options-schedule").props.onPress();
+    });
+
+    await act(async () => {
+      findButtonByTestId("training-plan-schedule-confirm").props.onPress();
+      await Promise.resolve();
     });
 
     await act(async () => {
@@ -850,7 +1031,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     });
 
     expect(mockRouterReplace).toHaveBeenCalledWith(
-      ROUTES.PLAN.TRAINING_PLAN.DETAIL("scheduled-plan-1"),
+      ROUTES.PLAN.TRAINING_PLAN.DETAIL("plan-owned-anchor-6"),
     );
   });
 
@@ -866,11 +1047,24 @@ describe("TrainingPlanOverview deep-link routing", () => {
     };
     mockLocalSearchParams.id = "active-plan-1";
     mockAppliedScheduleData = {
+      application_id: "33333333-3333-4333-8333-333333333333",
       training_plan_id: "active-plan-1",
       schedule_batch_id: "33333333-3333-4333-8333-333333333333",
     };
 
     await renderPlan();
+
+    await act(() => {
+      findNodeByTestId("training-plan-options-schedule").props.onPress();
+    });
+    await act(() => {
+      findNodeByTestId(
+        "training-plan-application-33333333-3333-4333-8333-333333333333",
+      ).props.onPress();
+    });
+    await act(() => {
+      findButtonByTestId("training-plan-schedule-cancel").props.onPress();
+    });
 
     expect(hasTextContaining("future sessions on your calendar")).toBe(true);
     expect(hasTextContaining("Remove Scheduled Sessions")).toBe(true);
@@ -888,6 +1082,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     };
     mockLocalSearchParams.id = "active-plan-2";
     mockAppliedScheduleData = {
+      application_id: "33333333-3333-4333-8333-333333333333",
       training_plan_id: "active-plan-2",
       schedule_batch_id: "33333333-3333-4333-8333-333333333333",
     };
@@ -895,17 +1090,92 @@ describe("TrainingPlanOverview deep-link routing", () => {
     await renderPlan();
 
     await act(() => {
-      findNodeByTestId("training-plan-options-remove-scheduled").props.onPress();
+      findNodeByTestId("training-plan-options-schedule").props.onPress();
     });
+    await act(() => {
+      findNodeByTestId(
+        "training-plan-application-33333333-3333-4333-8333-333333333333",
+      ).props.onPress();
+    });
+    await act(() => {
+      findButtonByTestId("training-plan-schedule-cancel").props.onPress();
+    });
+
+    await act(async () => {
+      findNodeByTestId("training-plan-options-remove-scheduled").props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(hasTextContaining("This removes 1 future scheduled session after 2026-09-14")).toBe(
+      true,
+    );
 
     await act(async () => {
       findButtonByTestId("training-plan-remove-scheduled-confirm").props.onPress();
     });
 
     expect(mockRemoveAppliedScheduleMutate).toHaveBeenCalledWith({
-      training_plan_id: "active-plan-2",
-      schedule_batch_id: "33333333-3333-4333-8333-333333333333",
+      applicationId: "33333333-3333-4333-8333-333333333333",
+      operationId: "33333333-3333-4333-8333-333333333333",
+      previewFingerprint: `v1:sha256:${"d".repeat(64)}`,
     });
+    const frozen = mockRemoveAppliedScheduleMutate.mock.calls[0]?.[0];
+    await act(async () => removalMutationOptions.onError({ message: "Response lost" }));
+    mockSnapshotState.plan.structure_hash = "new-source-hash";
+    await renderedPlan?.rerender(<TrainingPlanOverview />);
+    await act(async () =>
+      findButtonByTestId("training-plan-remove-scheduled-confirm").props.onPress(),
+    );
+    expect(mockRemoveAppliedScheduleMutate.mock.calls[1]?.[0]).toEqual(frozen);
+  });
+
+  it("discards a late removal preview after the route changes and guards double review", async () => {
+    mockSnapshotState.plan = {
+      id: "plan-a",
+      name: "Plan A",
+      profile_id: "test-profile-id",
+      content_visibility: "private",
+      created_at: "2026-01-01T00:00:00.000Z",
+      structure_hash: "hash-a",
+      structure: {},
+    };
+    mockLocalSearchParams.id = "plan-a";
+    mockAppliedScheduleData = {
+      application_id: "33333333-3333-4333-8333-333333333333",
+      training_plan_id: "plan-a",
+    };
+    await renderPlan();
+    await act(() => findNodeByTestId("training-plan-options-schedule").props.onPress());
+    await act(() =>
+      findNodeByTestId(
+        "training-plan-application-33333333-3333-4333-8333-333333333333",
+      ).props.onPress(),
+    );
+    await act(() => findButtonByTestId("training-plan-schedule-cancel").props.onPress());
+    const result = await mockPreviewRemoveAppliedSchedule();
+    mockPreviewRemoveAppliedSchedule.mockClear();
+    let resolve!: (value: typeof result) => void;
+    mockPreviewRemoveAppliedSchedule.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    await act(() => {
+      const review = findNodeByTestId("training-plan-options-remove-scheduled").props.onPress;
+      review();
+      review();
+    });
+    expect(mockPreviewRemoveAppliedSchedule).toHaveBeenCalledTimes(1);
+    mockLocalSearchParams.id = "plan-b";
+    mockSnapshotState.plan = { ...mockSnapshotState.plan, id: "plan-b", name: "Plan B" };
+    await renderedPlan?.rerender(<TrainingPlanOverview />);
+    await act(async () => resolve(result));
+    expect(
+      getAllByTypeOrEmpty("Button").some(
+        (node) => node.props.testID === "training-plan-remove-scheduled-confirm",
+      ),
+    ).toBe(false);
+    expect(mockRemoveAppliedScheduleMutate).not.toHaveBeenCalled();
   });
 
   it("routes review-activity intent CTA to activity detail", async () => {
@@ -964,10 +1234,32 @@ describe("TrainingPlanOverview deep-link routing", () => {
       structure: {
         id: "11111111-1111-4111-8111-111111111111",
         version: 1,
+        plan_preferences: {
+          weekly_session_count: 1,
+          target_weekly_duration_minutes: 60,
+          maximum_session_duration_minutes: 90,
+          preferred_weekdays: [1],
+          rest_days: [0, 2, 3, 4, 5, 6],
+          progression_style: "balanced",
+          recovery_priority: "balanced",
+        },
         activity_category: ["run"],
         durationWeeks: { recommended: 8 },
         experienceLevel: ["beginner"],
-        sessions: [{ offset_days: 0, activity_plan_id: "22222222-2222-4222-8222-222222222222" }],
+        sessions: [
+          {
+            id: "33333333-3333-4333-8333-333333333333",
+            offset_days: 0,
+            activity_plan_id: "22222222-2222-4222-8222-222222222222",
+            demand: {
+              activity_category: "run",
+              training_intent: "aerobic_base",
+              target_duration_minutes: 60,
+              target_common_load: 40,
+              importance: "normal",
+            },
+          },
+        ],
       },
     };
     mockLocalSearchParams.id = "plan-shared-1";

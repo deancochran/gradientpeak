@@ -21,8 +21,9 @@ export async function assertRecordingPlanExecutionStructureHashes(
   }
   const prescription = execution.plannedSession?.prescription;
   if (!prescription) return;
-  const prescriptionHash = `v1:sha256:${await hashRecordingPlan(prescription.structure)}`;
-  if (prescriptionHash !== prescription.structureHash) {
+  const manifest = prescription.resolutionManifest;
+  const prescriptionHash = `v1:sha256:${await hashRecordingPlan(manifest.resolved_structure)}`;
+  if (prescriptionHash !== manifest.resolved_structure_hash) {
     throw new Error("Invalid planned-session prescription structure hash");
   }
 }

@@ -265,7 +265,10 @@ export const resetPasswordAction = createServerFn({ method: "POST" })
   });
 
 export const sendVerificationEmailAction = createServerFn({ method: "POST" })
-  .validator((data) => normalizeVerifyEmailServerActionInput(data))
+  .validator((data) => ({
+    ...normalizeVerifyEmailServerActionInput(data),
+    enhanced: data instanceof FormData && data.get("__async") === "true",
+  }))
   .handler(async ({ data }) => {
     const auth = getGradientPeakAuth();
 
@@ -276,19 +279,11 @@ export const sendVerificationEmailAction = createServerFn({ method: "POST" })
           callbackURL: getEmailVerificationCallbackUrl(),
         },
       });
-    } catch (_error) {
-      const message = "Unable to resend verification email";
-
-      if (data._native) {
-        throw redirect({
-          href: buildVerifyEmailRedirectHref(data.email, data.source, message, "error"),
-          statusCode: 303,
-        });
-      }
-
-      throw new Error(message);
+    } catch {
+      // Acknowledging every request uniformly avoids exposing account or delivery state.
     }
 
+    if (data.enhanced) return { ok: true as const };
     throw redirect({
       href: buildVerifyEmailRedirectHref(
         data.email,

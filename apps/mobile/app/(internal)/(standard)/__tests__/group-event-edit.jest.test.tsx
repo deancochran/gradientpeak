@@ -36,6 +36,7 @@ jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: { Screen: mockCreateHost("StackScreen") },
   useLocalSearchParams: () => ({ groupEventId: "occurrence-1" }),
+  useNavigation: () => ({ dispatch: jest.fn() }),
   useRouter: () => ({ replace: replaceMock }),
 }));
 

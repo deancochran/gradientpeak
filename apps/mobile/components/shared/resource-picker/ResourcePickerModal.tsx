@@ -194,7 +194,13 @@ export function ResourcePickerModal({
         <LoadingState />
       ) : query.error ? (
         <View className="gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-4">
-          <Text className="text-sm font-medium text-destructive">Could not load resources.</Text>
+          <Text
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+            className="text-sm font-medium text-destructive"
+          >
+            Could not load resources.
+          </Text>
           <Pressable
             accessibilityRole="button"
             className="self-start rounded-md border border-border bg-background px-3 py-2"

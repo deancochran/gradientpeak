@@ -10,4 +10,5 @@ export interface IntegerStepperProps extends TestProps {
   helperText?: string;
   error?: string;
   accessibilityHint?: string;
+  disabled?: boolean;
 }

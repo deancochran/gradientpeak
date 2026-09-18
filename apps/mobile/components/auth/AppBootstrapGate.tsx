@@ -8,6 +8,16 @@ import { parsePostSignInDestination } from "@/lib/navigation/postSignInDestinati
 import { useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
+function isDeveloperRouteAllowed(segments: readonly string[]) {
+  return (
+    segments[0] === "(external)" &&
+    segments[1] === "storybook" &&
+    __DEV__ &&
+    (process.env.EXPO_PUBLIC_MAESTRO_E2E === "1" ||
+      process.env.EXPO_PUBLIC_STORYBOOK_ENABLED === "1")
+  );
+}
+
 export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
   const { initialized } = useServerConfig();
   const {
@@ -38,6 +48,10 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
   const guardDecision = React.useMemo(() => {
     if (!initialized || !isFullyLoaded) {
       return { type: "loading" as const };
+    }
+
+    if (isDeveloperRouteAllowed(segments)) {
+      return { type: "allow" as const };
     }
 
     if (authState === "anonymous") {
@@ -104,6 +118,7 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
     profileError,
     profileLoading,
     user,
+    segments,
   ]);
 
   if (guardDecision.type === "loading") {

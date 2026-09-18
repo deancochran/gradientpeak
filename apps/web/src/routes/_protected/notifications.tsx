@@ -40,9 +40,10 @@ export const Route = createFileRoute("/_protected/notifications")({
 function NotificationsPage() {
   const navigate = Route.useNavigate();
   const { flash, flashType, view } = Route.useSearch();
-  const { data: notifications = [], isLoading } = api.notifications.getRecent.useQuery({
+  const notificationsQuery = api.notifications.getRecent.useQuery({
     limit: 50,
   });
+  const notifications = notificationsQuery.data ?? [];
   const normalizedNotifications = notifications
     .map((notification) => normalizeNotificationListItem(notification))
     .filter(
@@ -119,8 +120,19 @@ function NotificationsPage() {
             </Button>
           </div>
           <ScrollArea className="h-[calc(100vh-22rem)]">
-            {isLoading ? (
+            {notificationsQuery.isLoading ? (
               <div className="p-8 text-center text-muted-foreground">Loading...</div>
+            ) : notificationsQuery.isError ? (
+              <div className="space-y-3 p-8 text-center" role="alert">
+                <p>Notifications could not be loaded.</p>
+                <Button
+                  onClick={() => void notificationsQuery.refetch()}
+                  type="button"
+                  variant="outline"
+                >
+                  Retry
+                </Button>
+              </div>
             ) : visibleNotifications.length > 0 ? (
               visibleNotifications.map((notification) => (
                 <NotificationItem

@@ -1,3 +1,4 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import type { ActivityPlanSummary } from "@repo/core";
 import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import type { GroupListItem } from "@/lib/groups";
@@ -81,15 +82,8 @@ export type SortState<TField extends string> = {
 
 export type DiscoverActivityPlanItem = ActivityPlanSummary;
 
-export type DiscoverTrainingPlanItem = {
-  id: string;
-  name: string;
-  description?: string | null;
-  activity_category?: string[] | string | null;
-  experienceLevel?: string[] | string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-};
+export type DiscoverTrainingPlanItem =
+  inferRouterOutputs<AppRouter>["trainingPlans"]["listTemplates"]["items"][number];
 
 export type DiscoverRouteItem = {
   id: string;
@@ -227,16 +221,15 @@ export function sanitizeSearchInput(value: string) {
 }
 
 export function parseNumericInput(value: string, options?: { allowDecimal?: boolean }) {
-  const sanitized = options?.allowDecimal
-    ? value.replace(/[^0-9.]/g, "")
-    : value.replace(/[^0-9]/g, "");
-  if (!sanitized) {
+  const trimmed = value.trim();
+  if (!trimmed) {
     return null;
   }
 
-  const parsed = options?.allowDecimal
-    ? Number.parseFloat(sanitized)
-    : Number.parseInt(sanitized, 10);
+  const isValid = options?.allowDecimal ? /^\d+(?:\.\d+)?$/.test(trimmed) : /^\d+$/.test(trimmed);
+  if (!isValid) return null;
+
+  const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
@@ -314,18 +307,9 @@ function scoreActivityPlanSearch(query: string, item: DiscoverActivityPlanItem) 
 }
 
 function scoreTrainingPlanSearch(query: string, item: DiscoverTrainingPlanItem) {
-  const activityCategoryText = Array.isArray(item.activity_category)
-    ? item.activity_category.join(" ")
-    : item.activity_category;
-  const experienceText = Array.isArray(item.experienceLevel)
-    ? item.experienceLevel.join(" ")
-    : item.experienceLevel;
-
   return (
     scoreSearchTextMatch(query, item.name) +
     scoreSearchTextMatch(query, item.description) * 0.65 +
-    scoreSearchTextMatch(query, activityCategoryText) * 0.4 +
-    scoreSearchTextMatch(query, experienceText) * 0.25 +
     TYPE_WEIGHT.trainingPlans
   );
 }

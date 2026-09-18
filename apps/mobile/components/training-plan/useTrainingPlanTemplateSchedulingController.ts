@@ -1,6 +1,10 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
+import { useReadOnlyPreview } from "@repo/ui/hooks";
 import { skipToken } from "@tanstack/react-query";
+import type { inferRouterInputs } from "@trpc/server";
+import { randomUUID } from "expo-crypto";
 import type { ImperativeRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
@@ -9,10 +13,24 @@ import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 
 type ScheduleAnchorMode = "start" | "finish";
 type ScheduleApplicationMode = "full" | "remaining";
+type ApplicationRequest = inferRouterInputs<AppRouter>["trainingPlans"]["previewApplication"];
+type ApplicationPreview = Extract<
+  inferRouterOutputs<AppRouter>["trainingPlans"]["previewApplication"],
+  { status: "available" }
+>;
+
+type ScheduleReview = {
+  operationId: string;
+  preview: ApplicationPreview;
+  request: ApplicationRequest;
+};
 
 interface UseTrainingPlanTemplateSchedulingControllerParams {
   handleOpenCalendar: () => void;
   planId?: string;
+  profileId?: string;
+  sourceRevision?: string;
+  routePlanId?: string;
   queryClient: ReturnType<typeof import("@tanstack/react-query").useQueryClient>;
   router: Pick<ImperativeRouter, "navigate" | "replace">;
   utils: ReturnType<typeof api.useUtils>;
@@ -20,6 +38,9 @@ interface UseTrainingPlanTemplateSchedulingControllerParams {
 
 export function useTrainingPlanTemplateSchedulingController({
   planId,
+  profileId,
+  sourceRevision,
+  routePlanId,
   queryClient,
   router,
   utils,
@@ -27,48 +48,124 @@ export function useTrainingPlanTemplateSchedulingController({
   const [scheduleAnchorMode, setScheduleAnchorMode] = useState<ScheduleAnchorMode>("start");
   const [scheduleApplicationMode, setScheduleApplicationMode] =
     useState<ScheduleApplicationMode>("full");
-  const [templateAnchorDate, setTemplateAnchorDate] = useState("");
+  const [templateAnchorDate, updateTemplateAnchorDate] = useState("");
   const [showApplyModal, setShowApplyModal] = useState(false);
-
-  const handleCloseScheduleFlow = useCallback(() => {
-    setShowApplyModal(false);
-  }, []);
-
-  const { data: appliedSchedule } = api.trainingPlans.getAppliedSchedule.useQuery(
+  const appliedSchedulesQuery = api.trainingPlans.listAppliedSchedules.useQuery(
     planId ? { training_plan_id: planId } : skipToken,
     scheduleAwareReadQueryOptions,
   );
+  const appliedSchedules = appliedSchedulesQuery.data;
+  const [selectedApplicationId, updateSelectedApplicationId] = useState("");
+  const selectedApplication = appliedSchedules?.items.find(
+    (item) => item.application_id === selectedApplicationId,
+  );
 
-  const applyTemplateMutation = api.trainingPlans.applyTemplate.useMutation({
+  const contextKey = JSON.stringify([profileId, routePlanId ?? planId, planId]);
+  const contextRef = useRef(contextKey);
+  contextRef.current = contextKey;
+  const preview = useReadOnlyPreview<ScheduleReview>(
+    JSON.stringify([
+      contextKey,
+      sourceRevision,
+      selectedApplicationId,
+      appliedSchedules?.items,
+      appliedSchedulesQuery.error?.message,
+      scheduleAnchorMode,
+      scheduleApplicationMode,
+      templateAnchorDate,
+    ]),
+  );
+  const [retained, setRetained] = useState<{ context: string; review: ScheduleReview } | null>(
+    null,
+  );
+  const dispatched = useRef<{
+    context: string;
+    planId: string | undefined;
+    review: ScheduleReview;
+  } | null>(null);
+  const mutationGuard = useRef(false);
+  const [applyPending, setApplyPending] = useState(false);
+  const [errorState, setErrorState] = useState<{ context: string; message: string | null } | null>(
+    null,
+  );
+  const applyError = errorState?.context === contextKey ? errorState.message : null;
+  const setApplyError = useCallback(
+    (message: string | null) => setErrorState({ context: contextKey, message }),
+    [contextKey],
+  );
+  const scheduleReview = retained?.context === contextKey ? retained.review : preview.data;
+  const inputsLocked = applyPending || retained?.context === contextKey;
+  const setTemplateAnchorDate = (value: string) => {
+    if (inputsLocked) return;
+    preview.clear();
+    updateTemplateAnchorDate(value);
+  };
+  const setSelectedApplicationId = (value: string) => {
+    if (inputsLocked) return;
+    preview.clear();
+    updateSelectedApplicationId(value);
+  };
+  const handleCloseScheduleFlow = () => {
+    if (applyPending) return;
+    setShowApplyModal(false);
+    preview.clear();
+  };
+
+  const applyTemplateMutation = api.trainingPlans.applyApplication.useMutation({
     onSuccess: (result) => {
+      mutationGuard.current = false;
+      setApplyPending(false);
+      if (dispatched.current && dispatched.current.context !== contextRef.current) return;
+      setRetained(null);
+      setApplyError(null);
+      if (result.status === "stale") {
+        preview.clear();
+        setApplyError("The plan or schedule changed. Review again before confirming.");
+        Alert.alert(
+          "Schedule review expired",
+          "The plan or schedule changed. Your date choices are still available; review again before confirming.",
+        );
+        return;
+      }
+      if (result.status === "operation_conflict") {
+        preview.clear();
+        setApplyError("Review the schedule again before confirming.");
+        Alert.alert("Schedule review expired", "Review the schedule again before confirming.");
+        return;
+      }
       setShowApplyModal(false);
-      void Promise.all([
+      preview.clear();
+      void Promise.allSettled([
         refreshScheduleViews(queryClient, "trainingPlanSchedulingMutation"),
         planId
-          ? utils.trainingPlans.getAppliedSchedule.invalidate({ training_plan_id: planId })
+          ? utils.trainingPlans.listAppliedSchedules.invalidate({ training_plan_id: planId })
           : Promise.resolve(),
       ]);
       const successActions: Array<{ text: string; onPress: () => void }> = [];
 
-      if (typeof result.applied_plan_id === "string") {
+      if (planId) {
         successActions.push({
           text: "Open Scheduled Plan",
-          onPress: () => router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(result.applied_plan_id)),
+          onPress: () => router.replace(ROUTES.PLAN.TRAINING_PLAN.DETAIL(planId)),
         });
       }
 
       Alert.alert(
         "Plan scheduled",
-        `Scheduled ${result.scheduled_sessions_created} session${result.scheduled_sessions_created === 1 ? "" : "s"}.`,
+        `Scheduled ${result.created} session${result.created === 1 ? "" : "s"}.`,
         successActions,
       );
     },
     onError: (error) => {
+      mutationGuard.current = false;
+      setApplyPending(false);
+      if (dispatched.current?.context !== contextRef.current) return;
+      setApplyError(error.message || "Could not confirm scheduling. Retry the same request.");
       Alert.alert("Schedule failed", error.message || "Could not schedule this training plan");
     },
   });
 
-  const executeApplyTemplate = useCallback(
+  const reviewSchedule = useCallback(
     (
       normalizedAnchorDate: string,
       anchorMode: ScheduleAnchorMode,
@@ -78,20 +175,48 @@ export function useTrainingPlanTemplateSchedulingController({
         Alert.alert("Schedule failed", "This training plan is unavailable.");
         return;
       }
-      applyTemplateMutation.mutate({
-        application_mode: applicationMode,
-        template_type: "training_plan",
-        template_id: planId,
-        start_date:
+      const application = {
+        applicationMode,
+        trainingPlanId: planId,
+        startDate:
           anchorMode === "start" && normalizedAnchorDate && applicationMode === "full"
             ? normalizedAnchorDate
             : undefined,
-        target_date:
+        targetDate:
           anchorMode === "finish" && normalizedAnchorDate ? normalizedAnchorDate : undefined,
+        ...(selectedApplication
+          ? { replacesApplicationId: selectedApplication.application_id }
+          : {}),
+      };
+      void preview.run(async () => {
+        const result = await utils.trainingPlans.previewApplication.fetch(application);
+        if (result.status !== "available") {
+          if (result.reason === "plan_unavailable")
+            throw new Error("This training plan is no longer available.");
+          throw new Error("The plan changed before it could be reviewed. Try again.");
+        }
+        return { operationId: randomUUID(), preview: result, request: application };
       });
     },
-    [applyTemplateMutation, planId],
+    [planId, selectedApplication, utils.trainingPlans.previewApplication, preview],
   );
+
+  const confirmSchedule = useCallback(() => {
+    if (!scheduleReview || mutationGuard.current) return;
+    mutationGuard.current = true;
+    setApplyPending(true);
+    setApplyError(null);
+    setRetained({ context: contextKey, review: scheduleReview });
+    dispatched.current = { context: contextKey, planId, review: scheduleReview };
+    applyTemplateMutation.mutate({
+      ...scheduleReview.request,
+      operationId: scheduleReview.operationId,
+      expectedPlanRevision: scheduleReview.preview.planRevision,
+      expectedPlanHash: scheduleReview.preview.planHash,
+      basePublishedRevision: scheduleReview.preview.basePublishedRevision,
+      previewFingerprint: scheduleReview.preview.previewFingerprint,
+    });
+  }, [applyTemplateMutation, scheduleReview, contextKey, planId, setApplyError]);
 
   const scheduleAnchorContent = useMemo(() => {
     if (scheduleApplicationMode === "remaining") {
@@ -136,26 +261,42 @@ export function useTrainingPlanTemplateSchedulingController({
     };
   }, [scheduleAnchorMode, scheduleApplicationMode, templateAnchorDate]);
 
-  const handleSelectScheduleApplicationMode = useCallback((mode: ScheduleApplicationMode) => {
-    setScheduleApplicationMode(mode);
-    setTemplateAnchorDate("");
-    setScheduleAnchorMode(mode === "remaining" ? "finish" : "start");
-  }, []);
+  const handleSelectScheduleApplicationMode = useCallback(
+    (mode: ScheduleApplicationMode) => {
+      if (inputsLocked) return;
+      preview.clear();
+      setScheduleApplicationMode(mode);
+      updateTemplateAnchorDate("");
+      setScheduleAnchorMode(mode === "remaining" ? "finish" : "start");
+    },
+    [inputsLocked, preview],
+  );
 
   const handleSelectScheduleAnchorMode = useCallback(
     (mode: ScheduleAnchorMode) => {
+      if (inputsLocked) return;
+      preview.clear();
       if (scheduleApplicationMode === "remaining") {
         setScheduleAnchorMode("finish");
         return;
       }
 
       setScheduleAnchorMode(mode);
-      setTemplateAnchorDate("");
+      updateTemplateAnchorDate("");
     },
-    [scheduleApplicationMode],
+    [scheduleApplicationMode, inputsLocked, preview],
   );
 
   const handleApplyTemplate = useCallback(() => {
+    if (routePlanId && routePlanId !== planId) return;
+    if (applyPending) return;
+    if (
+      !scheduleReview &&
+      (appliedSchedulesQuery.isLoading ||
+        appliedSchedulesQuery.error ||
+        (selectedApplicationId && !selectedApplication))
+    )
+      return;
     if (!planId) {
       Alert.alert("Schedule failed", "No plan ID was found.");
       return;
@@ -179,20 +320,38 @@ export function useTrainingPlanTemplateSchedulingController({
       return;
     }
 
-    executeApplyTemplate(normalizedAnchorDate, scheduleAnchorMode, scheduleApplicationMode);
+    if (scheduleReview) {
+      confirmSchedule();
+      return;
+    }
+
+    reviewSchedule(normalizedAnchorDate, scheduleAnchorMode, scheduleApplicationMode);
   }, [
-    executeApplyTemplate,
+    confirmSchedule,
     planId,
     scheduleAnchorContent.emptyDateMessage,
     scheduleAnchorContent.emptyDateTitle,
     scheduleAnchorContent.invalidDateTitle,
     scheduleApplicationMode,
     scheduleAnchorMode,
+    scheduleReview,
     templateAnchorDate,
+    reviewSchedule,
+    applyPending,
+    appliedSchedulesQuery.isLoading,
+    appliedSchedulesQuery.error,
+    selectedApplicationId,
+    selectedApplication,
+    routePlanId,
   ]);
 
   return {
-    appliedSchedule,
+    appliedSchedules,
+    appliedSchedulesQuery,
+    applyPending,
+    inputsLocked,
+    previewPending: preview.isPending,
+    scheduleError: applyError ?? preview.error,
     applyTemplateMutation,
     handleApplyTemplate,
     handleCloseScheduleFlow,
@@ -201,6 +360,10 @@ export function useTrainingPlanTemplateSchedulingController({
     scheduleApplicationMode,
     scheduleAnchorContent,
     scheduleAnchorMode,
+    scheduleReview,
+    selectedApplication,
+    selectedApplicationId,
+    setSelectedApplicationId,
     setShowApplyModal,
     setTemplateAnchorDate,
     showApplyModal,

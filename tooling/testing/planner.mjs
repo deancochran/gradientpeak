@@ -516,6 +516,9 @@ function commandIdentity(test) {
     return { owner, script: "node:test", runner: "node:test" };
   }
   if (owner.filter === "@repo/db") {
+    if (/^packages\/db\/src\/validation\/[^/]+\.test\.ts$/.test(test.path)) {
+      return { owner, script: "exec", runner: "db-validation-vitest" };
+    }
     if (!/^packages\/db\/scripts\/[^/]+\.test\.ts$/.test(test.path)) {
       throw new Error(
         `Unsupported focused DB test "${test.path}"; only self-running packages/db/scripts/*.test.ts files are safe.`,
@@ -569,6 +572,13 @@ export function commandsForTests(tests, { runtime = false } = {}) {
         return {
           command: "pnpm",
           args: ["--filter", "@repo/db", "exec", "tsx", testPaths[0]],
+          tests: group.paths,
+        };
+      }
+      if (group.runner === "db-validation-vitest") {
+        return {
+          command: "pnpm",
+          args: ["exec", "vitest", "run", ...group.paths.sort()],
           tests: group.paths,
         };
       }

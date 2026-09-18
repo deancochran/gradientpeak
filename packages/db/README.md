@@ -31,6 +31,7 @@ or running database-specific verification.
 pnpm --filter @repo/db self-host:up
 pnpm --filter @repo/db db:verify:static
 pnpm --filter @repo/db db:verify
+pnpm --filter @repo/db db:activity-plan-authoring:test
 pnpm --filter @repo/db db:baseline:check
 pnpm --filter @repo/db db:e2e:start
 pnpm --filter @repo/db db:e2e:migrate
@@ -62,6 +63,18 @@ The dedicated `gradientpeak_e2e` project uses ports 55320–55329 and durable da
 The checked-in fingerprint covers every public relation and sequence (including unmanaged extras), managed columns/defaults/indexes/constraints/enums, RLS and ACL state, default privileges for policy-declared owners, policy-declared extensions, public/auth functions and triggers, and owned storage buckets/policies. Supabase platform extensions and platform-role default privileges are intentionally outside repository ownership and are not serialized as environment noise. Update the fingerprint only with `db:fresh:verify -- --write-fingerprint`; direct edits and unguarded writers are unsupported.
 
 `db:verify:static` needs no database. `db:verify` builds fresh disposable targets twice, fingerprints all owned surfaces, checks storage/security, lints them, verifies empty diffs, and rejects zero, multiple, stale, or mismatched active baseline artifacts.
+
+### Activity-plan authoring and revision ownership
+
+`20260916000000_activity_plan_authoring_policy.sql` adds a distinct authoring validator and guard. Inserts and changes to `structure`, `adaptation`, or `training_intent` require current authoring validity across every permitted adaptation state (up to 10,000). Each field has one control owner. PostgreSQL owns the revision increment for those three fields; a caller-supplied revision cannot suppress or multiply it.
+
+Existing rows are not backfilled. Metadata-only updates deliberately retain historical compatibility and do not increment the semantic revision; the API's stricter edit boundary still requires a valid effective document. The historical SQL validator and frozen manifests are unchanged. The widened table shape check is installed `NOT VALID`, so adding the guard does not scan or retrofit old rows.
+
+New inserts, semantic edits, and hash-field changes must supply matching Core structure and semantic SHA-256 hashes. The guard rejects stale/forged values with `23514 / activity_plans_hash_guard / ACTIVITY_PLAN_HASH_MISMATCH`; it does not silently regenerate them. Semantic hashing applies Core's adaptation normalization before hashing (ECMAScript trim on control keys/labels and allowed-state labels/value keys). SQL JSON serialization follows Core's UTF-16 key order, integer-index property ordering, and finite JavaScript-number formatting. Adaptation label/key limits count UTF-16 units; structure text retains Core's separate Unicode-code-point bounds. Existing rows and frozen manifests are not backfilled. Metadata-only writes that leave semantic/hash fields untouched retain the deliberate legacy behavior.
+
+`scripts/activity-plan-sql-artifacts.ts` pins activity-plan function and trigger definitions to migration SQL for local materialization. It replaces the former always-true bootstrap validators and excludes these functions from developer-database introspection. `db:activity-plan-authoring:test` applies the actual migration chain in guarded disposable databases, compares SQL with Core, verifies frozen/legacy behavior, tests a blocked stale-revision writer, and independently tests the materializer's pinned functions in an empty target. It never resets the persistent materialization or development database.
+
+The API-owned consumer regression runs with `pnpm --filter @repo/api test:activity-plan-authoring:disposable`. It uses the exported guarded disposable harness and passes actual saved rows through the API resolver after repairs and semantic updates. DB parity tests depend on Core contracts only; they do not import API implementation code.
 
 ## Access model
 

@@ -203,7 +203,7 @@ export function RootNotFoundPage() {
             <Link to="/">Go to dashboard</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link to="/search" search={{ q: undefined }}>
+            <Link to="/search" search={{}}>
               Search GradientPeak
             </Link>
           </Button>

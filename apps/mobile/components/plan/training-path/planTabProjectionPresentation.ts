@@ -5,10 +5,10 @@ import { normalizeDailyTrainingAdjustmentPoints } from "@/lib/training-path/dail
 import type { TrainingPathWeekWindow } from "./trainingPathTypes";
 import { buildTrainingPathViewModel } from "./trainingPathUtils";
 
-export type PlanTabProjection =
+export type MobilePlanTabProjection =
   inferRouterOutputs<AppRouter>["trainingPlans"]["getPlanTabProjection"];
 
-function historicalFitnessNotice(projection: PlanTabProjection | undefined): string | null {
+function historicalFitnessNotice(projection: MobilePlanTabProjection | undefined): string | null {
   const freshness = projection?.fitnessHistory;
   if (freshness?.status === "unavailable") {
     return "Fitness, fatigue, and form use the available baseline and assume zero on days where no Load can be established. Incomplete Load bars remain marked unavailable.";
@@ -32,7 +32,7 @@ function historicalFitnessNotice(projection: PlanTabProjection | undefined): str
 }
 
 type CompletedLoadStatus = NonNullable<
-  PlanTabProjection["timeline"]
+  MobilePlanTabProjection["timeline"]
 >["days"][number]["load"]["completedLoadStatus"];
 
 function completedObservationState(status: CompletedLoadStatus): CompletedObservationState {
@@ -42,7 +42,7 @@ function completedObservationState(status: CompletedLoadStatus): CompletedObserv
 }
 
 export function buildPlanTabProjectionPresentation(input: {
-  projection: PlanTabProjection | undefined;
+  projection: MobilePlanTabProjection | undefined;
   selectedWeekStart: string | null;
   weekWindow: TrainingPathWeekWindow;
   todayKey: string;

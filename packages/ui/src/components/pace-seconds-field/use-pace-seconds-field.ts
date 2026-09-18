@@ -104,6 +104,13 @@ function usePaceSecondsField({
         onChangeSeconds(seconds);
       }
     },
+    adjust: (direction: -1 | 1) => {
+      const seconds = parseMmSsToSeconds(draftValueRef.current) ?? valueSecondsRef.current;
+      if (seconds == null) return;
+      const next = Math.max(1, seconds + direction * 5);
+      updateDraftValue(formatSecondsToMmSs(next), false);
+      onChangeSeconds(next);
+    },
   };
 }
 

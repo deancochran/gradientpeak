@@ -1,8 +1,4 @@
-import {
-  type ActivityPlanStructure,
-  type AthletePerformanceTargetFacts,
-  compileActivityPlan,
-} from "@repo/core";
+import { type ActivityPlanStructure, compileActivityPlan } from "@repo/core";
 import type { WahooIntegrationRecord } from "../../../repositories/wahoo-repository";
 import type { EnqueueWahooSyncJobInput } from "../../../repositories/wahoo-sync-repository";
 import {
@@ -16,10 +12,7 @@ import {
   type WahooCompatibilityResult,
   type WahooProjectionSnapshot,
 } from "../../integrations/wahoo/plan-converter";
-import {
-  resolveWahooSyncMetrics,
-  serializeWahooScheduledStart,
-} from "../../integrations/wahoo/sync-service";
+import { serializeWahooScheduledStart } from "../../integrations/wahoo/sync-service";
 import { hashPlannedActivityPayload } from "./planned-activity-hash";
 import {
   getEarliestPlannedActivityRunAt,
@@ -31,7 +24,7 @@ import {
 
 type WahooPublishJobPayload = {
   performanceModelAsOf: string;
-  eventId: string;
+  plannedSessionId: string;
   operation: "publish";
   projectionHash: string;
   projectionSnapshot: WahooProjectionSnapshot;
@@ -62,16 +55,20 @@ export function projectWahooPlannedActivity(input: {
     name: string;
     structure: ActivityPlanStructure;
   };
-  eventId: string;
-  performanceTargets: AthletePerformanceTargetFacts;
-  startsAt: string;
+  plannedSessionId?: string;
+  planningDate?: string;
+  /** @deprecated Generic-event projection compatibility. */
+  eventId?: string;
+  /** @deprecated Generic-event projection compatibility. */
+  startsAt?: string;
+  /** @deprecated Snapshot structure already contains resolved targets. */
+  performanceTargets?: unknown;
   timezone: string;
 }): WahooPlannedActivityProjection {
   const compiled = compileActivityPlan(input.activityPlan.structure);
   const providerActivityType = toActivityType(compiled.activity_category);
   if (!isWahooSupported(providerActivityType)) return { disposition: "unsupported_sport" };
 
-  const metrics = resolveWahooSyncMetrics(input.performanceTargets, compiled.activity_category);
   const options = {
     ...getWahooProjectionCategoryOption(providerActivityType),
     name: input.activityPlan.name,
@@ -79,9 +76,6 @@ export function projectWahooPlannedActivity(input: {
       ? { description: input.activityPlan.description }
       : {}),
     hasRoute: false,
-    ...(metrics.ftp !== null ? { ftp: metrics.ftp } : {}),
-    ...(metrics.maxHr !== null ? { max_hr: metrics.maxHr } : {}),
-    ...(metrics.thresholdHr !== null ? { threshold_hr: metrics.thresholdHr } : {}),
   };
   const compatibility = validateWahooCompatibility(input.activityPlan.structure, options);
   if (!compatibility.compatible) return { compatibility, disposition: "incompatible" };
@@ -93,11 +87,14 @@ export function projectWahooPlannedActivity(input: {
     sourceRouteId: null,
   });
   const desiredPayload: WahooPublishDesiredPayload = {
-    eventId: input.eventId,
+    plannedSessionId: input.plannedSessionId ?? input.eventId ?? "legacy",
     operation: "publish",
     projectionHash,
     projectionSnapshot,
-    startsAt: serializeWahooScheduledStart(input.startsAt, input.timezone),
+    startsAt: serializeWahooScheduledStart(
+      input.startsAt ?? `${input.planningDate ?? "1970-01-01"}T12:00:00.000Z`,
+      input.timezone,
+    ),
     timezone: input.timezone,
   };
   return {
@@ -121,10 +118,10 @@ export function buildWahooPlannedActivityPublishJob(input: {
     startsAt: input.projection.desiredPayload.startsAt,
   });
   return {
-    dedupeKey: `wahoo:publish:event:${input.projection.desiredPayload.eventId}`,
+    dedupeKey: `wahoo:publish:planned_session:${input.projection.desiredPayload.plannedSessionId}`,
     integrationId: input.integration.id,
     integrationGeneration: input.integration.integrationGeneration,
-    internalResourceId: input.projection.desiredPayload.eventId,
+    internalResourceId: input.projection.desiredPayload.plannedSessionId,
     jobType: getWahooPlannedActivityJobType({ operation: "publish" }),
     operation: "publish",
     payload: {
@@ -136,10 +133,10 @@ export function buildWahooPlannedActivityPublishJob(input: {
     priority: PLANNED_ACTIVITY_JOB_PRIORITY,
     profileId: input.profileId,
     provider: "wahoo",
-    resourceKind: "event",
+    resourceKind: "planned_session",
     runAt,
     syncLaneKey: getWahooPlannedActivitySyncLaneKey({
-      eventId: input.projection.desiredPayload.eventId,
+      plannedSessionId: input.projection.desiredPayload.plannedSessionId,
       integrationId: input.integration.id,
     }),
   };

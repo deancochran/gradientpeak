@@ -245,10 +245,13 @@ describe("recording checkpoint recovery", () => {
     const prescription = {
       activityPlanId: "10000000-0000-4000-8000-000000000010",
       activityPlanRevision: 2,
-      variantId: "10000000-0000-4000-8000-000000000011",
-      variantName: "Tempo",
       structure: value.planSnapshot,
       structureHash: `v1:sha256:${"f".repeat(64)}`,
+      resolution: {
+        mode: "default" as const,
+        trainingIntent: "general_maintenance" as const,
+        parameterValues: {},
+      },
       prescriptionQuantification: null,
       capturedAt: "2026-01-01T09:00:00.000Z",
     };
@@ -261,7 +264,7 @@ describe("recording checkpoint recovery", () => {
           compilerVersion: 1,
           activityPlanId: prescription.activityPlanId,
           scheduledEventId: null,
-          name: prescription.variantName,
+          name: "Tempo",
           description: null,
           activityPlanRevision: prescription.activityPlanRevision,
           structureHash: prescription.structureHash,
@@ -269,6 +272,7 @@ describe("recording checkpoint recovery", () => {
           plannedSession: {
             id: "10000000-0000-4000-8000-000000000012",
             sessionRevision: 1,
+            source: { kind: "direct", operationId: "checkpoint-storage-test-operation-01" },
             prescription,
           },
           personalizationEnabled: false,

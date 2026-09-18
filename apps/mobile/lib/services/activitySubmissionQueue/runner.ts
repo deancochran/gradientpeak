@@ -192,7 +192,25 @@ async function runActivitySubmissionQueueJobOnce(
   deps: ActivitySubmissionQueueRunnerDeps,
 ): Promise<ActivitySubmissionQueueJob> {
   const now = deps.now ?? defaultNow;
-  const initial = activitySubmissionQueueJobSchema.parse(initialJob);
+  const parsedInitial = activitySubmissionQueueJobSchema.safeParse(initialJob);
+  if (!parsedInitial.success) {
+    // A malformed immutable execution snapshot cannot be retried or submitted.
+    return activitySubmissionQueueJobSchema.parse({
+      ...initialJob,
+      planExecution: null,
+      status: "failed",
+      attempts: initialJob.attempts + 1,
+      lastError: "validation",
+      errorCategory: "validation",
+      retryClass: "validation",
+      nextAttemptAt: null,
+      leaseOwner: null,
+      leaseToken: null,
+      leaseExpiresAt: null,
+      updatedAt: now(),
+    });
+  }
+  const initial = parsedInitial.data;
   const nowMs = Date.parse(now());
   const owner = leaseValue("mobile-runner");
   const token = leaseValue("lease");

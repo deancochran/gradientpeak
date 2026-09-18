@@ -1,12 +1,7 @@
 import { pgEnum } from "drizzle-orm/pg-core";
+import { canonicalActivityCategoryDbValues } from "./canonical-activity-categories";
 
-export const activityCategoryEnum = pgEnum("activity_category", [
-  "run",
-  "bike",
-  "swim",
-  "strength",
-  "other",
-]);
+export const activityCategoryEnum = pgEnum("activity_category", canonicalActivityCategoryDbValues);
 
 export const activityFileIngestionSourceEnum = pgEnum("activity_file_ingestion_source", [
   "mobile_recording",
@@ -62,7 +57,6 @@ export const thresholdEvidenceStatusEnum = pgEnum("threshold_evidence_status", [
 export const plannedSessionSourceKindEnum = pgEnum("planned_session_source_kind", [
   "direct",
   "training_plan",
-  "recurrence",
 ]);
 
 export const plannedSessionStatusEnum = pgEnum("planned_session_status", [
@@ -137,6 +131,7 @@ export const integrationProviderEnum = pgEnum("integration_provider", [
 
 export const integrationResourceKindEnum = pgEnum("integration_resource_kind", [
   "event",
+  "planned_session",
   "activity_plan",
   "activity_route",
   "group_event_route_delivery",
@@ -152,7 +147,7 @@ export const likeEntityTypeEnum = pgEnum("like_entity_type", [
 
 export const eventStatusEnum = pgEnum("event_status", ["scheduled", "completed", "cancelled"]);
 
-export const eventTypeEnum = pgEnum("event_type", ["planned", "race_target", "custom"]);
+export const eventTypeEnum = pgEnum("event_type", ["race_target", "custom"]);
 
 export const genderEnum = pgEnum("gender", ["male", "female", "other"]);
 

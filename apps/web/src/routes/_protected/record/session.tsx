@@ -8,6 +8,7 @@ import {
   type CompiledActivityPlanOccurrence,
   compileActivityPlan,
 } from "@repo/core";
+import { nudgeNumberByStep, numericUxPolicies } from "@repo/core/utils/numeric-ux-policy";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -39,6 +40,10 @@ import { api } from "../../../lib/api/client";
 import { buildUploadedRecordingSummaryInput } from "../../../lib/recording/finalized-artifact";
 import { useTimerOnlyRecording } from "../../../lib/recording/provider";
 import {
+  parseManualReviewValues,
+  parseTrainerTargetPower,
+} from "../../../lib/recording/review-inputs";
+import {
   type SubmitWebRecording,
   submitWebRecordingArtifact,
 } from "../../../lib/recording/submission-queue";
@@ -60,7 +65,10 @@ export function RecordSessionPage() {
   const [perceivedEffort, setPerceivedEffort] = useState("");
   const [distanceMeters, setDistanceMeters] = useState("");
   const [calories, setCalories] = useState("");
+  const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
   const [targetPower, setTargetPower] = useState("150");
+  const [targetPowerError, setTargetPowerError] = useState<string | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   const [ingestionId, setIngestionId] = useState<string | null>(null);
   const profileQuery = api.profiles.get.useQuery();
   const ingestionStatusQuery = api.activityFiles.getIngestionStatus.useQuery(
@@ -71,6 +79,47 @@ export function RecordSessionPage() {
     },
   );
   const hasSavedActivity = isReviewFrozen(recording.submissionJob);
+  const setTrainerTargetPower = () => {
+    const value = parseTrainerTargetPower(targetPower);
+    if (value === null) {
+      setTargetPowerError("Enter a supported non-negative target power.");
+      return;
+    }
+    setTargetPowerError(null);
+    void recording.sensors.setTargetPower(value);
+  };
+  const adjustTrainerTargetPower = (direction: -1 | 1) => {
+    const value = parseTrainerTargetPower(targetPower);
+    if (value === null) return;
+    setTargetPower(
+      String(
+        nudgeNumberByStep(value, direction, {
+          min: 0,
+          max: Number.MAX_SAFE_INTEGER,
+          step: numericUxPolicies.plannedPowerWatts.adjustmentStep,
+        }),
+      ),
+    );
+    setTargetPowerError(null);
+  };
+  const saveReview = () => {
+    const values = parseManualReviewValues({
+      artifactDistanceMeters: recording.artifact?.review.distanceMeters ?? 0,
+      calories,
+      distanceMeters,
+    });
+    if (!values) {
+      setReviewError("Enter non-negative manual distance and calories, or leave them blank.");
+      return;
+    }
+    setReviewError(null);
+    void recording.save({
+      name: activityPersistenceName,
+      notes: notes.trim() || null,
+      perceivedEffort: perceivedEffort ? Number(perceivedEffort) : null,
+      ...values,
+    });
+  };
   const activityPersistenceName = recording.artifact?.review.name ?? "Activity";
   const planStatus = recording.planStatus;
   const planSnapshot = snapshot?.planExecution;
@@ -171,7 +220,7 @@ export function RecordSessionPage() {
           <CardHeader>
             <CardTitle>Checking for a saved timer</CardTitle>
             <CardDescription>
-              The timer will remain stopped while this browser checks for a recoverable draft.
+              The timer will remain stopped while this browser checks for a recoverable recording.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -229,7 +278,7 @@ export function RecordSessionPage() {
           </CardTitle>
           <CardDescription>
             Keep this page open in the foreground. This browser periodically saves a bounded timer
-            draft for paused recovery after an interruption.
+            recording for paused recovery after an interruption.
           </CardDescription>
           <p className="text-sm text-muted-foreground">
             {(snapshot?.activity.activityPlanId ?? configuration.activityPlanId)
@@ -243,7 +292,7 @@ export function RecordSessionPage() {
               <div>
                 <p className="font-medium">Recovered safely in paused state</p>
                 <p className="text-sm text-muted-foreground">
-                  Review the restored times, then resume explicitly or discard this draft.
+                  Review the restored times, then resume explicitly or discard this recording.
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">
@@ -305,7 +354,10 @@ export function RecordSessionPage() {
             </div>
             {recording.sensors.state.status === "connected" ? (
               <>
-                <fieldset className="m-0 grid grid-cols-2 gap-2 border-0 p-0 text-sm sm:grid-cols-3">
+                <fieldset
+                  aria-label="Live sensor metrics"
+                  className="m-0 grid grid-cols-2 gap-2 border-0 p-0 text-sm sm:grid-cols-3"
+                >
                   <legend className="sr-only">Live sensor metrics</legend>
                   <Metric
                     label="Heart rate"
@@ -350,19 +402,56 @@ export function RecordSessionPage() {
                       </Button>
                     ) : recording.sensors.state.targetPowerSupported ? (
                       <>
+                        <Button
+                          aria-label="Decrease trainer target power"
+                          disabled={
+                            parseTrainerTargetPower(targetPower) === null ||
+                            Number(targetPower) <= 0
+                          }
+                          onClick={() => adjustTrainerTargetPower(-1)}
+                          type="button"
+                          variant="outline"
+                        >
+                          -5 W
+                        </Button>
                         <label className="grid gap-1 text-sm" htmlFor="trainer-target-power">
                           <span>Target power (W)</span>
                           <Input
+                            aria-describedby={
+                              targetPowerError ? "trainer-target-power-error" : undefined
+                            }
+                            aria-invalid={Boolean(targetPowerError)}
                             id="trainer-target-power"
                             min={0}
                             type="number"
                             value={targetPower}
-                            onChange={(event) => setTargetPower(event.target.value)}
+                            onChange={(event) => {
+                              setTargetPower(event.target.value);
+                              setTargetPowerError(null);
+                            }}
                           />
+                          {targetPowerError ? (
+                            <span
+                              className="text-sm text-destructive"
+                              id="trainer-target-power-error"
+                              role="alert"
+                            >
+                              {targetPowerError}
+                            </span>
+                          ) : null}
                         </label>
                         <Button
-                          disabled={!targetPower}
-                          onClick={() => void recording.sensors.setTargetPower(Number(targetPower))}
+                          aria-label="Increase trainer target power"
+                          disabled={parseTrainerTargetPower(targetPower) === null}
+                          onClick={() => adjustTrainerTargetPower(1)}
+                          type="button"
+                          variant="outline"
+                        >
+                          +5 W
+                        </Button>
+                        <Button
+                          disabled={targetPower.trim() === ""}
+                          onClick={setTrainerTargetPower}
                         >
                           Set power
                         </Button>
@@ -517,12 +606,38 @@ export function RecordSessionPage() {
                 size="lg"
                 variant="ghost"
                 disabled={recording.busy || recording.savingCommand}
-                onClick={() => void recording.cancel()}
+                onClick={() => setIsConfirmingCancel(true)}
               >
                 Cancel recording
               </Button>
             ) : null}
           </div>
+
+          {isConfirmingCancel && (lifecycle === "recording" || lifecycle === "paused") ? (
+            <div
+              className="space-y-3 rounded-lg border border-destructive/40 p-4 text-left"
+              role="alert"
+            >
+              <div>
+                <p className="font-medium">Discard this recording?</p>
+                <p className="text-sm text-muted-foreground">
+                  This removes the locally saved timer and any unsaved recording progress.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Button variant="outline" onClick={() => setIsConfirmingCancel(false)}>
+                  Keep recording
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={recording.busy || recording.savingCommand}
+                  onClick={() => void recording.cancel()}
+                >
+                  Discard recording
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           {recording.savingCommand ? (
             <p className="text-center text-sm text-muted-foreground">
@@ -746,20 +861,15 @@ export function RecordSessionPage() {
                     recording.submissionJob?.status === "submitting" ||
                     hasSavedActivity
                   }
-                  onClick={() =>
-                    void recording.save({
-                      name: activityPersistenceName,
-                      notes: notes.trim() || null,
-                      perceivedEffort: perceivedEffort ? Number(perceivedEffort) : null,
-                      distanceMeters: Number(distanceMeters || 0),
-                      calories: calories ? Number(calories) : null,
-                      distanceEnteredManually: distanceMeters.trim().length > 0,
-                      caloriesEnteredManually: calories.trim().length > 0,
-                    })
-                  }
+                  onClick={saveReview}
                 >
                   <Save className="h-4 w-4" /> Save activity
                 </Button>
+                {reviewError ? (
+                  <p className="basis-full text-sm text-destructive" role="alert">
+                    {reviewError}
+                  </p>
+                ) : null}
                 {hasSavedActivity ? (
                   <p className="basis-full text-sm text-muted-foreground">
                     This activity is saved. Edit activity details or correct Session RPE on its
@@ -814,7 +924,8 @@ export function RecordSessionPage() {
 
           <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
             This indoor recorder captures foreground elapsed and active time. It pauses active time
-            and timed steps whenever the tab moves to the background. It does not infer movement.
+            and timed steps whenever the tab moves to the background. Attached routes are reference
+            only; the browser does not record GPS, route progress, or inferred movement.
           </div>
         </CardContent>
       </Card>

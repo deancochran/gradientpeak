@@ -10,6 +10,7 @@ import { useZodForm } from "@repo/ui/hooks";
 import { Upload } from "lucide-react";
 import { useEffect, useRef } from "react";
 import type { z } from "zod";
+import { useUnsavedChangesGuard } from "../../lib/use-unsaved-changes-guard";
 
 export type ActivityImportPhase = "idle" | "signing" | "uploading" | "processing" | "success";
 
@@ -22,9 +23,10 @@ export type BrowserActivityImportValues = BrowserActivityImportOutput & {
   file: File;
 };
 
-type ActivityImportFormProps = {
+type ActivityImportFormProps<TResult> = {
   onCancel: () => void;
-  onSubmit: (values: BrowserActivityImportValues) => Promise<unknown> | unknown;
+  onSubmit: (values: BrowserActivityImportValues) => Promise<TResult> | TResult;
+  onSuccess?: (result: TResult) => Promise<void> | void;
   phase: ActivityImportPhase;
 };
 
@@ -44,7 +46,12 @@ function getBrowserFile(value: unknown): File | null {
   return value;
 }
 
-export function ActivityImportForm({ onCancel, onSubmit, phase }: ActivityImportFormProps) {
+export function ActivityImportForm<TResult = unknown>({
+  onCancel,
+  onSubmit,
+  onSuccess,
+  phase,
+}: ActivityImportFormProps<TResult>) {
   const form = useZodForm<BrowserActivityImportInput, undefined, BrowserActivityImportOutput>({
     defaultValues: {
       files: [],
@@ -54,9 +61,17 @@ export function ActivityImportForm({ onCancel, onSubmit, phase }: ActivityImport
     schema: browserActivityImportFormSchema,
   });
   const files = form.watch("files");
+  const name = form.watch("name");
   const notes = form.watch("notes");
   const previousFileSelection = useRef<unknown>(null);
+  const submitGuard = useRef(false);
   const disabled = phase !== "idle";
+  const { guardedCancel, markSaved } = useUnsavedChangesGuard({
+    draft: { files, name, notes },
+    dirty: form.formState.isDirty && phase !== "success",
+    message: "Discard this activity import?",
+    pending: phase !== "idle" && phase !== "success",
+  });
 
   useEffect(() => {
     const selectedFile = files[0] ?? null;
@@ -83,31 +98,60 @@ export function ActivityImportForm({ onCancel, onSubmit, phase }: ActivityImport
     }
   }, [form, notes]);
 
-  const submit = form.handleSubmit(async (values) => {
-    const selected = values.files[0] as (typeof values.files)[number] & { file?: unknown };
-    const file = getBrowserFile(selected?.file);
+  const submit = form.handleSubmit(
+    async (values) => {
+      const selected = values.files[0] as (typeof values.files)[number] & { file?: unknown };
+      const file = getBrowserFile(selected?.file);
 
-    if (!file) {
-      form.setError("files", { message: "Choose a browser file before importing." });
-      return;
-    }
-    if (!getSupportedActivityFileExtension(file.name)) {
-      form.setError("files", { message: "Only FIT, GPX, and TCX files are supported." });
-      return;
-    }
+      if (!file) {
+        form.setError("files", { message: "Choose a browser file before importing." });
+        submitGuard.current = false;
+        return;
+      }
+      if (!getSupportedActivityFileExtension(file.name)) {
+        form.setError("files", { message: "Only FIT, GPX, and TCX files are supported." });
+        submitGuard.current = false;
+        return;
+      }
 
-    try {
-      await onSubmit({ ...values, file });
-    } catch {
-      form.setError("root", {
-        message: "The activity file could not be imported. Check the file and try again.",
-      });
-    }
-  });
+      let result: TResult;
+      try {
+        form.clearErrors("root" as never);
+        result = await onSubmit({ ...values, file });
+      } catch {
+        form.setError("root", {
+          message: "The activity file could not be imported. Check the file and try again.",
+        });
+        submitGuard.current = false;
+        return;
+      }
+
+      // The API has committed. Keep the guard and terminal phase even if follow-up work fails.
+      markSaved();
+      try {
+        await onSuccess?.(result);
+      } catch {
+        // Navigation failures must never make the committed import retryable.
+      }
+    },
+    () => {
+      submitGuard.current = false;
+    },
+  );
 
   return (
     <Form {...form}>
-      <form className="space-y-4" onSubmit={(event) => void submit(event)}>
+      <form
+        className="space-y-4"
+        onSubmit={(event) => {
+          if (submitGuard.current) {
+            event.preventDefault();
+            return;
+          }
+          submitGuard.current = true;
+          void submit(event);
+        }}
+      >
         <FormFileField
           accept=".fit,.gpx,.tcx,application/gpx+xml,application/vnd.garmin.tcx+xml,application/xml,text/xml,application/octet-stream"
           control={form.control}
@@ -139,7 +183,14 @@ export function ActivityImportForm({ onCancel, onSubmit, phase }: ActivityImport
           </p>
         ) : null}
         <div className="flex flex-wrap justify-end gap-3">
-          <Button disabled={disabled} onClick={onCancel} type="button" variant="outline">
+          <Button
+            disabled={disabled}
+            onClick={() => {
+              guardedCancel(onCancel);
+            }}
+            type="button"
+            variant="outline"
+          >
             Cancel
           </Button>
           <LoadingButton

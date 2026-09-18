@@ -1,33 +1,21 @@
 import type { APIRequestContext } from "@playwright/test";
+import { follows, notifications, profiles } from "@repo/db/schema";
+import { and, eq, type InferSelectModel, or } from "drizzle-orm";
 import { currentE2EActor } from "../../support/actors";
 import { LocalE2EDatabase } from "../../support/database";
 
-type FollowSnapshot = {
-  created_at: Date;
-  follower_id: string;
-  following_id: string;
-  status: "accepted" | "pending";
-  updated_at: Date;
-};
-
-type NotificationSnapshot = {
-  actor_id: string;
-  created_at: Date;
-  entity_id: string | null;
-  id: string;
-  read_at: Date | null;
-  type: "follow_request";
-  user_id: string;
-};
-
-type ProfileSnapshot = {
-  bio: string | null;
-  full_name: string | null;
-  id: string;
-  is_public: boolean;
-  username: string | null;
-  updated_at: Date;
-};
+type FollowSnapshot = Pick<
+  InferSelectModel<typeof follows>,
+  "created_at" | "follower_id" | "following_id" | "status" | "updated_at"
+>;
+type NotificationSnapshot = Pick<
+  InferSelectModel<typeof notifications>,
+  "actor_id" | "created_at" | "entity_id" | "id" | "read_at" | "type" | "user_id"
+>;
+type ProfileSnapshot = Pick<
+  InferSelectModel<typeof profiles>,
+  "bio" | "full_name" | "id" | "is_public" | "updated_at" | "username"
+>;
 
 export type SeededSocialState = {
   athleteId: string;
@@ -40,141 +28,155 @@ export async function seedSocialState(request: APIRequestContext): Promise<Seede
   const athleteActor = currentE2EActor("athlete");
   const coachActor = currentE2EActor("coach");
 
-  const pool = new LocalE2EDatabase({
+  const database = new LocalE2EDatabase({
     connectionTimeoutMillis: 10_000,
     queryTimeout: 10_000,
   });
-  const client = await pool.connect();
   let athlete: ProfileSnapshot | undefined;
   let coach: ProfileSnapshot | undefined;
-  let follows: FollowSnapshot[] = [];
-  let notifications: NotificationSnapshot[] = [];
+  let followsSnapshot: FollowSnapshot[] = [];
+  let notificationsSnapshot: NotificationSnapshot[] = [];
 
   try {
-    await client.query("begin");
-    const profiles = await client.query<ProfileSnapshot>(
-      `select p."id", p."username", p."full_name", p."bio", p."is_public", p."updated_at"
-       from "profiles" p
-       join "users" u on u."id" = p."id"
-       where p."id" = any($1::uuid[])`,
-      [[athleteActor.profileId, coachActor.profileId]],
-    );
-    athlete = profiles.rows.find((profile) => profile.id === athleteActor.profileId);
-    coach = profiles.rows.find((profile) => profile.id === coachActor.profileId);
-    if (!athlete || !coach) {
-      throw new Error("Area 4 requires local athlete and coach E2E profiles.");
-    }
+    await database.typedTransaction(async (transaction) => {
+      const profileRows = await transaction
+        .select({
+          bio: profiles.bio,
+          full_name: profiles.full_name,
+          id: profiles.id,
+          is_public: profiles.is_public,
+          updated_at: profiles.updated_at,
+          username: profiles.username,
+        })
+        .from(profiles)
+        .where(or(eq(profiles.id, athleteActor.profileId), eq(profiles.id, coachActor.profileId)));
+      athlete = profileRows.find((profile) => profile.id === athleteActor.profileId);
+      coach = profileRows.find((profile) => profile.id === coachActor.profileId);
+      if (!athlete || !coach)
+        throw new Error("Area 4 requires local athlete and coach E2E profiles.");
 
-    const relationshipRows = await client.query<FollowSnapshot>(
-      `select "follower_id", "following_id", "status", "created_at", "updated_at"
-       from "follows"
-       where ("follower_id" = $1 and "following_id" = $2)
-          or ("follower_id" = $2 and "following_id" = $1)`,
-      [athlete.id, coach.id],
-    );
-    follows = relationshipRows.rows;
-    const notificationRows = await client.query<NotificationSnapshot>(
-      `select "id", "user_id", "actor_id", "type", "entity_id", "read_at", "created_at"
-       from "notifications"
-       where "user_id" = $1 and "actor_id" = $2 and "type" = 'follow_request'`,
-      [coach.id, athlete.id],
-    );
-    notifications = notificationRows.rows;
+      followsSnapshot = await transaction
+        .select({
+          created_at: follows.created_at,
+          follower_id: follows.follower_id,
+          following_id: follows.following_id,
+          status: follows.status,
+          updated_at: follows.updated_at,
+        })
+        .from(follows)
+        .where(
+          or(
+            and(eq(follows.follower_id, athlete.id), eq(follows.following_id, coach.id)),
+            and(eq(follows.follower_id, coach.id), eq(follows.following_id, athlete.id)),
+          ),
+        );
+      notificationsSnapshot = await transaction
+        .select({
+          actor_id: notifications.actor_id,
+          created_at: notifications.created_at,
+          entity_id: notifications.entity_id,
+          id: notifications.id,
+          read_at: notifications.read_at,
+          type: notifications.type,
+          user_id: notifications.user_id,
+        })
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.user_id, coach.id),
+            eq(notifications.actor_id, athlete.id),
+            eq(notifications.type, "follow_request"),
+          ),
+        );
 
-    await client.query(
-      `delete from "follows"
-       where ("follower_id" = $1 and "following_id" = $2)
-          or ("follower_id" = $2 and "following_id" = $1)`,
-      [athlete.id, coach.id],
-    );
-    await client.query(
-      `update "profiles"
-       set "full_name" = 'Coach User', "bio" = 'Area 4 private coach biography', "is_public" = false,
-           "updated_at" = now()
-       where "id" = $1`,
-      [coach.id],
-    );
-    await client.query(
-      `insert into "follows" ("follower_id", "following_id", "status", "created_at", "updated_at")
-       values ($1, $2, 'accepted', now(), now())`,
-      [coach.id, athlete.id],
-    );
-    await client.query("commit");
+      await transaction
+        .delete(follows)
+        .where(
+          or(
+            and(eq(follows.follower_id, athlete.id), eq(follows.following_id, coach.id)),
+            and(eq(follows.follower_id, coach.id), eq(follows.following_id, athlete.id)),
+          ),
+        );
+      await transaction
+        .update(profiles)
+        .set({
+          full_name: "Coach User",
+          bio: "Area 4 private coach biography",
+          is_public: false,
+          updated_at: new Date(),
+        })
+        .where(eq(profiles.id, coach.id));
+      const now = new Date();
+      await transaction.insert(follows).values({
+        follower_id: coach.id,
+        following_id: athlete.id,
+        status: "accepted",
+        created_at: now,
+        updated_at: now,
+      });
+    });
   } catch (error) {
-    await client.query("rollback").catch(() => undefined);
+    await database.close();
     throw error;
-  } finally {
-    client.release();
-    await pool.close();
   }
 
   if (!athlete || !coach) {
+    await database.close();
     throw new Error("Area 4 social actor setup did not complete.");
   }
+  const seededAthlete = athlete;
+  const seededCoach = coach;
+  await database.close();
 
   return {
-    athleteId: athlete.id,
-    coachId: coach.id,
+    athleteId: seededAthlete.id,
+    coachId: seededCoach.id,
     cleanup: async () => {
-      const cleanupPool = new LocalE2EDatabase({
+      const cleanupDatabase = new LocalE2EDatabase({
         connectionTimeoutMillis: 10_000,
         queryTimeout: 10_000,
       });
-      const cleanupClient = await cleanupPool.connect();
       try {
-        await cleanupClient.query("begin");
-        await cleanupClient.query(
-          `delete from "follows"
-           where ("follower_id" = $1 and "following_id" = $2)
-              or ("follower_id" = $2 and "following_id" = $1)`,
-          [athlete.id, coach.id],
-        );
-        await cleanupClient.query(
-          `delete from "notifications"
-           where "user_id" = $1 and "actor_id" = $2 and "type" = 'follow_request'`,
-          [coach.id, athlete.id],
-        );
-        for (const follow of follows) {
-          await cleanupClient.query(
-            `insert into "follows" ("follower_id", "following_id", "status", "created_at", "updated_at")
-             values ($1, $2, $3, $4, $5)`,
-            [
-              follow.follower_id,
-              follow.following_id,
-              follow.status,
-              follow.created_at,
-              follow.updated_at,
-            ],
-          );
-        }
-        for (const notification of notifications) {
-          await cleanupClient.query(
-            `insert into "notifications" ("id", "user_id", "actor_id", "type", "entity_id", "read_at", "created_at")
-             values ($1, $2, $3, $4, $5, $6, $7)`,
-            [
-              notification.id,
-              notification.user_id,
-              notification.actor_id,
-              notification.type,
-              notification.entity_id,
-              notification.read_at,
-              notification.created_at,
-            ],
-          );
-        }
-        await cleanupClient.query(
-          `update "profiles"
-           set "username" = $2, "full_name" = $3, "bio" = $4, "is_public" = $5, "updated_at" = $6
-           where "id" = $1`,
-          [coach.id, coach.username, coach.full_name, coach.bio, coach.is_public, coach.updated_at],
-        );
-        await cleanupClient.query("commit");
-      } catch (error) {
-        await cleanupClient.query("rollback").catch(() => undefined);
-        throw error;
+        await cleanupDatabase.typedTransaction(async (transaction) => {
+          await transaction
+            .delete(follows)
+            .where(
+              or(
+                and(
+                  eq(follows.follower_id, seededAthlete.id),
+                  eq(follows.following_id, seededCoach.id),
+                ),
+                and(
+                  eq(follows.follower_id, seededCoach.id),
+                  eq(follows.following_id, seededAthlete.id),
+                ),
+              ),
+            );
+          await transaction
+            .delete(notifications)
+            .where(
+              and(
+                eq(notifications.user_id, seededCoach.id),
+                eq(notifications.actor_id, seededAthlete.id),
+                eq(notifications.type, "follow_request"),
+              ),
+            );
+          if (followsSnapshot.length) await transaction.insert(follows).values(followsSnapshot);
+          if (notificationsSnapshot.length)
+            await transaction.insert(notifications).values(notificationsSnapshot);
+          await transaction
+            .update(profiles)
+            .set({
+              username: seededCoach.username,
+              full_name: seededCoach.full_name,
+              bio: seededCoach.bio,
+              is_public: seededCoach.is_public,
+              updated_at: seededCoach.updated_at,
+            })
+            .where(eq(profiles.id, seededCoach.id));
+        });
       } finally {
-        cleanupClient.release();
-        await cleanupPool.close();
+        await cleanupDatabase.close();
       }
     },
   };

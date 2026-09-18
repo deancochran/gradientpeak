@@ -55,7 +55,6 @@ export * from "./bluetooth"; // Canonical BLE parsers
 export * from "./calculations/duration";
 export * from "./calculations/training-quality";
 export * from "./calculations/workload";
-export * from "./coaching"; // Shared coaching roster adapters
 export * from "./contracts"; // Shared API contracts
 export * from "./cycling-performance"; // Evidence-first cycling duration-performance model
 // Heart rate test detection
@@ -122,7 +121,6 @@ export * as ActivityCategories from "./activity-categories";
 export * as AthleteInputs from "./athlete-inputs";
 export * as Bluetooth from "./bluetooth";
 export * as Calculations from "./calculations";
-export * as Coaching from "./coaching";
 export * as Duration from "./duration";
 export * as Estimators from "./estimators/index";
 export * as Load from "./load";

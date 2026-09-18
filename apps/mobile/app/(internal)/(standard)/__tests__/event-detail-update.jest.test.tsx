@@ -39,6 +39,7 @@ const eventDetailData: {
   event_type: string;
   title: string;
   starts_at: string;
+  timezone: string;
   ends_at: string | null;
   all_day: boolean;
   notes: string;
@@ -55,6 +56,7 @@ const eventDetailData: {
   event_type: "custom" as string,
   title: "Tempo Builder",
   starts_at: "2026-03-23T09:00:00.000Z",
+  timezone: "UTC",
   ends_at: null as string | null,
   all_day: false,
   notes: "Bring gels",
@@ -93,6 +95,7 @@ jest.mock("expo-router", () => ({
       ),
   },
   useLocalSearchParams: () => ({ id: "event-1" }),
+  useNavigation: () => ({ dispatch: jest.fn() }),
   useRouter: () => ({
     back: jest.fn(),
     dismissTo: dismissToMock,
@@ -249,6 +252,9 @@ jest.mock("@/lib/api", () => ({
         }),
       },
     },
+    plannedSessions: {
+      create: { useMutation: () => ({ isPending: false, mutate: createEventMutateMock }) },
+    },
     activityPlans: {
       list: {
         useQuery: () => mockActivityPlansListUseQuery(),
@@ -386,6 +392,29 @@ describe("event detail update screen", () => {
     await completion;
   });
 
+  it.each([
+    "future",
+    "series",
+  ])("does not drop a changed start time when saving scope %s", async (scope) => {
+    eventDetailData.recurrence_rule = "FREQ=WEEKLY";
+    await renderNative(<EventDetailUpdateScreen />);
+    await fireEvent(screen.getByTestId("event-detail-update-start-time-button"), "change", "10:30");
+    await fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
+    await fireEvent.press(screen.getByTestId(`event-detail-update-scope-${scope}`));
+    expect(updateEventMutateMock).not.toHaveBeenCalled();
+    expect(screen.getByText(/Save schedule or route changes to this event only/)).toBeTruthy();
+
+    // The same draft remains editable and can be saved to the supported scope.
+    await fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
+    await fireEvent.press(screen.getByTestId("event-detail-update-scope-single"));
+    expect(updateEventMutateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: "single",
+        patch: expect.objectContaining({ starts_at: expect.stringContaining("10:30") }),
+      }),
+    );
+  });
+
   it("edits a materialized occurrence override with single-occurrence scope", async () => {
     eventDetailData.series_id = "series-1";
     eventDetailData.occurrence_key = "2026-03-23";
@@ -418,7 +447,7 @@ describe("event detail update screen", () => {
     });
   });
 
-  it("attaches and detaches activity plans through the same update editor", async () => {
+  it("does not attach executable activity plans through a generic event update", async () => {
     mockActivityPlansListUseQuery.mockReturnValue({
       data: {
         items: [
@@ -448,19 +477,10 @@ describe("event detail update screen", () => {
       await fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
     });
 
-    await waitFor(() => {
-      expect(updateEventMutateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          patch: expect.objectContaining({
-            activity_plan_id: "11111111-1111-4111-8111-111111111111",
-          }),
-        }),
-      );
-    });
-    expect(updateEventMutateMock.mock.calls[0]?.[0]?.patch).not.toHaveProperty("event_type");
+    expect(updateEventMutateMock).not.toHaveBeenCalled();
   });
 
-  it("detaches an activity plan without rewriting the event type", async () => {
+  it("does not detach executable activity plans through a generic event update", async () => {
     eventDetailData.event_type = "planned";
     eventDetailData.activity_plan_id = "11111111-1111-4111-8111-111111111111";
     eventDetailData.route_id = "route-1";
@@ -477,15 +497,6 @@ describe("event detail update screen", () => {
       await fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
     });
 
-    await waitFor(() => {
-      expect(updateEventMutateMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          patch: expect.objectContaining({
-            activity_plan_id: null,
-          }),
-        }),
-      );
-    });
-    expect(updateEventMutateMock.mock.calls[0]?.[0]?.patch).not.toHaveProperty("event_type");
+    expect(updateEventMutateMock).not.toHaveBeenCalled();
   });
 });

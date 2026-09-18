@@ -1,4 +1,4 @@
-import { compileActivityPlan, initializeActivityPlanDocument, SYSTEM_TEMPLATES } from "@repo/core";
+import { compileActivityPlan, SYSTEM_TEMPLATES } from "@repo/core";
 import { describe, expect, it } from "vitest";
 import { buildUpcomingActivityImpact } from "../upcomingActivityImpact";
 
@@ -42,10 +42,7 @@ function structureForActivityCategory(activity_category: "bike") {
     (candidate) => compileActivityPlan(candidate.structure).activity_category === activity_category,
   );
   if (!template) throw new Error(`Missing ${activity_category} system template`);
-  return initializeActivityPlanDocument({
-    activityPlanId: "22222222-2222-4222-8222-222222222222",
-    structure: template.structure,
-  });
+  return template.structure;
 }
 
 describe("buildUpcomingActivityImpact", () => {

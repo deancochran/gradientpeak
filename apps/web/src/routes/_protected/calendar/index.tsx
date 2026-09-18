@@ -1,6 +1,10 @@
 import { usePlannedSessionMutations } from "@repo/api/react";
-import type { CalendarProjectionItem } from "@repo/core";
-import { deriveCalendarDayVisualState, describeCalendarDayVisualState } from "@repo/core/calendar";
+import { type CalendarProjectionItem, compareCalendarProjectionItems } from "@repo/core";
+import {
+  deriveCalendarDayVisualState,
+  describeCalendarDayVisualState,
+  summarizePlannedSessionComparisons,
+} from "@repo/core/calendar";
 import { Button } from "@repo/ui/components/button";
 import {
   Card,
@@ -39,7 +43,6 @@ export const Route = createFileRoute("/_protected/calendar/")({
     search: Record<string, unknown>,
   ): {
     date?: string;
-    scheduled?: true;
     flash?: string;
     flashType?: RouteFlashType;
     month: string;
@@ -57,9 +60,6 @@ export const Route = createFileRoute("/_protected/calendar/")({
         : getMonthKey(new Date()),
     ...(typeof search.date === "string" && isValidDateKey(search.date)
       ? { date: search.date }
-      : {}),
-    ...(search.scheduled === true || search.scheduled === "true"
-      ? { scheduled: true as const }
       : {}),
     view: search.view === "agenda" || search.view === "week" ? search.view : "month",
   }),
@@ -81,22 +81,25 @@ function CalendarIndexPage() {
     startDate: startKey,
     endDateExclusive: shiftDateKey(endKey, 1),
     includeAdhoc: true,
-    ...(search.scheduled ? { eventTypes: ["planned" as const] } : {}),
     limit: 500,
   });
-  const profileQuery = api.profiles.get.useQuery();
-  const plannedSessionsQuery = api.plannedSessions.range.useQuery(
-    {
-      profileId: profileQuery.data?.id ?? "",
-      range: { startDate: startKey, endDate: endKey },
-    },
-    { enabled: Boolean(profileQuery.data?.id) },
-  );
   const plannedSessionMutations = usePlannedSessionMutations({
-    onConflict: () => plannedSessionsQuery.refetch(),
+    onConflict: () => eventsQuery.refetch(),
   });
 
-  const projectionItems = eventsQuery.data?.items ?? [];
+  const projectionItems = useMemo(() => {
+    return [...(eventsQuery.data?.items ?? [])].sort(compareCalendarProjectionItems);
+  }, [eventsQuery.data?.items]);
+  const plannedSessions = projectionItems.flatMap((item) =>
+    item.plannedSession ? [item.plannedSession] : [],
+  );
+  const weekComparison = useMemo(
+    () =>
+      summarizePlannedSessionComparisons(
+        projectionItems.flatMap((item) => (item.plannedActual ? [item.plannedActual] : [])),
+      ),
+    [projectionItems],
+  );
   const projectionItemsByDate = useMemo(() => {
     const grouped = new Map<string, CalendarProjectionItem[]>();
     for (const item of projectionItems) {
@@ -107,6 +110,12 @@ function CalendarIndexPage() {
     return grouped;
   }, [projectionItems]);
   const gridDays = useMemo(() => getCalendarGrid(month), [month]);
+  const formatDistance = (value: number | null) =>
+    value === null
+      ? null
+      : value >= 1_000
+        ? `${(value / 1_000).toFixed(1)} km`
+        : `${Math.round(value)} m`;
   return (
     <div className="space-y-6">
       <RouteFlashToast
@@ -208,35 +217,25 @@ function CalendarIndexPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {plannedSessionsQuery.data?.truncated ? (
+          {eventsQuery.data?.truncation.plannedSessions ? (
             <p role="alert" className="text-sm text-destructive">
               This range is too large to show completely. Narrow the calendar period before making
               decisions from this list.
             </p>
           ) : null}
-          {plannedSessionsQuery.isError ? (
-            <div role="alert" className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm">Personal planned sessions could not be loaded.</p>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => void plannedSessionsQuery.refetch()}
-              >
-                Retry
-              </Button>
-            </div>
-          ) : plannedSessionsQuery.isLoading ? (
+          {eventsQuery.isLoading ? (
             <p className="text-sm text-muted-foreground">Loading personal planned sessions...</p>
-          ) : (plannedSessionsQuery.data?.items.length ?? 0) > 0 ? (
+          ) : plannedSessions.length > 0 ? (
             <div className="space-y-2">
-              {plannedSessionsQuery.data?.items.map((session) => (
+              {plannedSessions.map((session) => (
                 <div
                   className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"
                   key={session.id}
                 >
                   <div>
                     <p className="font-medium capitalize">
-                      {session.prescription.structure.activity_category} session
+                      {session.prescription.resolutionManifest.resolved_structure.activity_category}{" "}
+                      session
                     </p>
                     <p className="text-sm text-muted-foreground">
                       {session.planningDate} · {session.lifecycle.status}
@@ -349,6 +348,18 @@ function CalendarIndexPage() {
               <h2 className="leading-none font-semibold">Week view</h2>
             </CardHeader>
             <CardContent className="space-y-3">
+              {weekComparison.planned.durationSeconds.value !== null ? (
+                <p className="text-sm text-muted-foreground">
+                  Planned duration: {Math.round(weekComparison.planned.durationSeconds.value / 60)}{" "}
+                  min · Actual duration:{" "}
+                  {weekComparison.actual.durationSeconds.value === null
+                    ? "Unknown"
+                    : `${Math.round(weekComparison.actual.durationSeconds.value / 60)} min${weekComparison.actual.durationSeconds.missingCount ? " (partial)" : ""}`}
+                  {formatDistance(weekComparison.actual.distanceMeters.value)
+                    ? ` · Actual distance: ${formatDistance(weekComparison.actual.distanceMeters.value)}${weekComparison.actual.distanceMeters.missingCount ? " (partial)" : ""}`
+                    : ""}
+                </p>
+              ) : null}
               <div className="grid grid-cols-7 gap-1 text-center text-xs text-muted-foreground">
                 {weekWindow.days.map((dateKey) => (
                   <div key={`week-label-${dateKey}`}>{formatShortDayLabel(dateKey)}</div>

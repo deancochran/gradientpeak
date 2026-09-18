@@ -3,10 +3,7 @@ import {
   ACTIVITY_FILE_INGESTION_CONTRACT_VERSION,
   activityFileIngestionOperationSchema,
 } from "@repo/core/activity-files";
-import {
-  activityPlanStructureSchema,
-  initializeActivityPlanDocument,
-} from "@repo/core/activity-plan";
+import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import {
   ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,
   athleteRecalculationIdempotencyKey,
@@ -30,6 +27,7 @@ import {
 } from "@repo/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { createResolutionManifestFixture } from "../../test/builders/planned-session";
 import { createDrizzleActivityIngestionRepository } from "./drizzle-activity-ingestion-repository";
 import { createDrizzleAthleteDerivedStateRepository } from "./drizzle-athlete-derived-state-repository";
 import { createDrizzlePlannedSessionRepository } from "./drizzle-planned-session-repository";
@@ -434,13 +432,13 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
         },
       ],
     });
-    const document = initializeActivityPlanDocument({ activityPlanId, structure });
     await db.insert(activityPlans).values({
       id: activityPlanId,
       profile_id: profileId,
       name: "Phase 1 activity plan",
-      structure: document,
+      structure,
       structure_hash: `v1:sha256:${"0".repeat(64)}`,
+      semantic_hash: `v1:sha256:${"2".repeat(64)}`,
     });
     await db.insert(trainingPlans).values({
       id: trainingPlanId,
@@ -462,12 +460,17 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
         idempotencyKey: plannedSessionIdempotencyKey({ kind: "direct", operationId }),
         groupEventId: null,
         prescription: {
-          activityPlanId,
-          activityPlanRevision: 1,
-          variantId: document.defaultVariantId,
-          variantName: "Base",
-          structure,
-          prescriptionQuantification: null,
+          resolutionManifest: createResolutionManifestFixture({
+            activityPlanId,
+            structure,
+            demand: {
+              activity_category: "bike",
+              training_intent: "general_maintenance",
+              target_duration_minutes: 30,
+              target_common_load: null,
+              importance: "normal",
+            },
+          }),
           capturedAt: "2026-08-01T12:00:00.000Z",
         },
         lifecycle: { status: "scheduled" },
@@ -485,7 +488,7 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
       kind: "training_plan" as const,
       trainingPlanId,
       trainingPlanRevision: 1,
-      sourceSessionKey: "week-1-ride",
+      sourceSessionId: randomUUID(),
     };
     const trainingSession = plannedSessionSchema.parse({
       ...first,
@@ -498,25 +501,6 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
     ).resolves.toMatchObject({ status: "created" });
     await expect(
       repository.createOwned({ profileId, session: trainingSession }),
-    ).resolves.toMatchObject({ status: "unchanged" });
-    const recurrenceSource = {
-      kind: "recurrence" as const,
-      seriesId: first.id,
-      occurrenceKey: "2026-08-22",
-    };
-    const recurrenceSession = plannedSessionSchema.parse({
-      ...first,
-      id: randomUUID(),
-      planningDate: "2026-08-22",
-      originalTargetDate: "2026-08-22",
-      source: recurrenceSource,
-      idempotencyKey: plannedSessionIdempotencyKey(recurrenceSource),
-    });
-    await expect(
-      repository.createOwned({ profileId, session: recurrenceSession }),
-    ).resolves.toMatchObject({ status: "created" });
-    await expect(
-      repository.createOwned({ profileId, session: recurrenceSession }),
     ).resolves.toMatchObject({ status: "unchanged" });
     await expect(
       repository.getOwned({ profileId: otherProfileId, sessionId: first.id }),
@@ -588,6 +572,7 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
       sessionId: second.id,
       expectedRevision: 1,
       activityId,
+      outcome: "full",
       linkedAt: "2026-08-20T12:31:00.000Z",
     });
     expect(linked).toMatchObject({ status: "updated", session: { sessionRevision: 2 } });

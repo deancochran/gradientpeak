@@ -4,6 +4,7 @@ import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { randomUUID } from "expo-crypto";
 import {
   forwardRef,
   useCallback,
@@ -19,8 +20,9 @@ import { z } from "zod";
 import { AppFormModal } from "@/components/shared/AppFormModal";
 import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
 import { api } from "@/lib/api";
-import { getDeviceTimeZone, getEventScheduledDate } from "@/lib/calendar/eventSchedule";
+import { getDetectedDeviceTimeZone, getEventScheduledDate } from "@/lib/calendar/eventSchedule";
 import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import {
   type ActivityPlanListItem,
   parseEventDateForEditor,
@@ -54,6 +56,7 @@ const createEventMainFormSchema = z.object({
   plannedDate: z.string(),
   recurrenceEndDate: z.string().nullable(),
   title: z.string(),
+  timezone: z.string().nullable(),
 });
 
 export type CreateEventDefaults = {
@@ -68,6 +71,15 @@ function withPreselectedRoute(
   route: EventRouteSummary | null | undefined,
 ): CreateEventDraft {
   return route ? { ...draft, routeId: route.id, routeName: route.name } : draft;
+}
+
+function draftKey(draft: CreateEventDraft) {
+  const { routeName: _routeName, ...values } = draft;
+  if (values.mode === "planned") {
+    const { activityPlanName: _activityPlanName, ...editable } = values;
+    return JSON.stringify(editable);
+  }
+  return JSON.stringify({ ...values, startsAt: format(values.startsAt, "HH:mm") });
 }
 
 export type CreateEventFlowHandle = {
@@ -103,7 +115,7 @@ function toDateOnly(value: Date) {
 function buildDraftFromEvent(event: EditableEvent): CreateEventDraft {
   const startsAt = parseEventDateForEditor(event);
   const scheduledDate = getEventScheduledDate(event) ?? toDateOnly(startsAt);
-  const timezone = event.timezone || getDeviceTimeZone();
+  const timezone = event.timezone ?? null;
   const recurrenceFrequency = parseRecurrenceFrequency(event);
   const recurrenceEndDate = parseRecurrenceEndDate(event);
 
@@ -162,6 +174,7 @@ function toMainFormValues(draft: CreateEventDraft): EventFormValues {
       plannedDate: draft.scheduledDate,
       recurrenceEndDate: null,
       title: draft.title,
+      timezone: null,
     };
   }
 
@@ -173,6 +186,7 @@ function toMainFormValues(draft: CreateEventDraft): EventFormValues {
     plannedDate: draft.scheduledDate,
     recurrenceEndDate: draft.recurrenceEndDate,
     title: draft.title,
+    timezone: draft.timezone,
   };
 }
 
@@ -202,6 +216,7 @@ function applyMainFormValues(draft: CreateEventDraft, values: EventFormValues): 
     scheduledDate: values.customDate || draft.scheduledDate,
     startsAt,
     title: values.title,
+    timezone: values.timezone,
   };
 }
 
@@ -213,7 +228,8 @@ function areMainFormValuesEqual(left: EventFormValues, right: EventFormValues) {
     left.notes === right.notes &&
     left.plannedDate === right.plannedDate &&
     left.recurrenceEndDate === right.recurrenceEndDate &&
-    left.title === right.title
+    left.title === right.title &&
+    left.timezone === right.timezone
   );
 }
 
@@ -223,7 +239,9 @@ export const CreateEventFlow = forwardRef<
     createDate?: string;
     defaults?: CreateEventDefaults | null;
     onCancel: () => void;
-    onCreated: (event: { id: string }) => void;
+    onCreated: (resource: { id: string; kind: "event" | "planned_session" }) => void;
+    onDirtyChange?: (isDirty: boolean) => void;
+    onPendingChange?: (isPending: boolean) => void;
     onUpdated?: (event: { id: string }) => void;
     preselectedActivityPlanId?: string;
     preselectedRoute?: EventRouteSummary | null;
@@ -238,6 +256,8 @@ export const CreateEventFlow = forwardRef<
     defaults,
     onCancel,
     onCreated,
+    onDirtyChange,
+    onPendingChange,
     onUpdated,
     preselectedActivityPlanId,
     preselectedRoute,
@@ -249,6 +269,8 @@ export const CreateEventFlow = forwardRef<
   ref,
 ) {
   const queryClient = useQueryClient();
+  const profileId = useAuthStore((state) => state.profile?.id ?? null);
+  const directOperationId = useRef(randomUUID());
   const initialMode = updateEvent
     ? buildDraftFromEvent(updateEvent).mode
     : preselectedActivityPlanId
@@ -284,12 +306,25 @@ export const CreateEventFlow = forwardRef<
     defaultValues: toMainFormValues(draft),
   });
   const watchedFormValues = useWatch({ control: form.control }) as EventFormValues;
+  const initialDraftKeyRef = useRef(draftKey(draft));
+  const customDraftBeforePlannedRef = useRef<Extract<CreateEventDraft, { mode: "custom" }> | null>(
+    draft.mode === "custom" ? draft : null,
+  );
+  const isDraftDirty = draftKey(draft) !== initialDraftKeyRef.current || form.formState.isDirty;
+  const isDraftDirtyRef = useRef(isDraftDirty);
+  isDraftDirtyRef.current = isDraftDirty;
   const syncingFormFromDraftRef = useRef(false);
 
   const createMutation = api.events.create.useMutation({
     onSuccess: async (createdEvent) => {
       await refreshScheduleViews(queryClient, "eventMutation");
-      onCreated(createdEvent);
+      onCreated({ id: createdEvent.id, kind: "event" });
+    },
+  });
+  const createPlannedSessionMutation = api.plannedSessions.create.useMutation({
+    onSuccess: async (receipt) => {
+      await refreshScheduleViews(queryClient, "eventMutation");
+      onCreated({ id: receipt.session.id, kind: "planned_session" });
     },
   });
   const updateMutation = api.events.update.useMutation({
@@ -376,6 +411,14 @@ export const CreateEventFlow = forwardRef<
 
     const selectedPlan = knownActivityPlans.find((plan) => plan.id === preselectedActivityPlanId);
     if (!selectedPlan) return;
+    if (!isDraftDirtyRef.current) {
+      initialDraftKeyRef.current = draftKey({
+        ...draft,
+        activityPlanId: selectedPlan.id,
+        activityPlanName: selectedPlan.name,
+        title: selectedPlan.name,
+      });
+    }
     handleSelectPlan(selectedPlan);
   }, [draft, knownActivityPlans, preselectedActivityPlanId, handleSelectPlan]);
 
@@ -409,7 +452,10 @@ export const CreateEventFlow = forwardRef<
 
   useEffect(() => {
     if (!updateEvent) return;
-    setDraft(buildDraftFromEvent(updateEvent));
+    if (isDraftDirtyRef.current) return;
+    const nextDraft = buildDraftFromEvent(updateEvent);
+    initialDraftKeyRef.current = draftKey(nextDraft);
+    setDraft(nextDraft);
     setStep("main");
     setFormErrorMessage(null);
     setTitleErrorMessage(null);
@@ -418,17 +464,18 @@ export const CreateEventFlow = forwardRef<
 
   useEffect(() => {
     if (updateEvent) return;
-    setDraft(
-      withPreselectedRoute(
-        createDefaultEventDraft({
-          createDate,
-          mode: initialMode,
-          notes: initialNotes,
-          title: defaults?.title,
-        }),
-        preselectedRoute,
-      ),
+    if (isDraftDirtyRef.current) return;
+    const nextDraft = withPreselectedRoute(
+      createDefaultEventDraft({
+        createDate,
+        mode: initialMode,
+        notes: initialNotes,
+        title: defaults?.title,
+      }),
+      preselectedRoute,
     );
+    initialDraftKeyRef.current = draftKey(nextDraft);
+    setDraft(nextDraft);
     setStep("main");
     setFormErrorMessage(null);
     setTitleErrorMessage(null);
@@ -465,6 +512,8 @@ export const CreateEventFlow = forwardRef<
 
     setDraft(nextDraft);
     setFormErrorMessage(null);
+    form.clearErrors("title");
+    form.clearErrors("timezone");
     setTitleErrorMessage(null);
   }, [draft, form, watchedFormValues]);
 
@@ -476,6 +525,9 @@ export const CreateEventFlow = forwardRef<
     setDraft((current) => {
       if (current.mode === mode) return current;
       if (mode === "planned") {
+        if (current.mode === "custom") {
+          customDraftBeforePlannedRef.current = current;
+        }
         const scheduledDate = current.scheduledDate;
         return {
           mode: "planned",
@@ -493,13 +545,16 @@ export const CreateEventFlow = forwardRef<
         current.mode === "planned"
           ? buildStartsAtFromDateOnly(current.scheduledDate)
           : current.startsAt;
+      if (customDraftBeforePlannedRef.current) {
+        return customDraftBeforePlannedRef.current;
+      }
       return {
         mode: "custom",
         eventType: "custom",
         title: current.title,
         startsAt,
         scheduledDate: current.scheduledDate,
-        timezone: current.mode === "planned" ? getDeviceTimeZone() : current.timezone,
+        timezone: current.mode === "planned" ? null : current.timezone,
         allDay: current.mode === "planned" ? true : current.allDay,
         recurrenceFrequency: current.mode === "planned" ? "none" : current.recurrenceFrequency,
         recurrenceEndDate: current.mode === "planned" ? null : current.recurrenceEndDate,
@@ -541,13 +596,17 @@ export const CreateEventFlow = forwardRef<
   };
 
   const validateDraft = (nextDraft: CreateEventDraft) => {
-    if (nextDraft.mode === "planned" && !nextDraft.activityPlanId && !nextDraft.routeId) {
-      setFormErrorMessage("Choose an activity plan, a route, or both before saving.");
+    if (nextDraft.mode === "planned" && !nextDraft.activityPlanId) {
+      setFormErrorMessage("Choose an activity plan before saving.");
       return false;
     }
 
     if (nextDraft.mode === "custom" && !nextDraft.title.trim()) {
-      setTitleErrorMessage("Please add a title for this event.");
+      form.setError("title", { message: "Please add a title for this event." });
+      return false;
+    }
+    if (nextDraft.mode === "custom" && !nextDraft.timezone) {
+      form.setError("timezone", { message: "Choose the event time zone." });
       return false;
     }
 
@@ -567,6 +626,15 @@ export const CreateEventFlow = forwardRef<
       setStep("repeat");
       return false;
     }
+    if (
+      nextDraft.mode === "custom" &&
+      nextDraft.recurrenceEndDate &&
+      nextDraft.recurrenceEndDate < nextDraft.scheduledDate
+    ) {
+      setRecurrenceErrorMessage("Repeat end date must be on or after the event start date.");
+      setStep("repeat");
+      return false;
+    }
 
     setFormErrorMessage(null);
     setTitleErrorMessage(null);
@@ -574,9 +642,30 @@ export const CreateEventFlow = forwardRef<
     return true;
   };
 
+  const hasUnsupportedSeriesChanges = (nextDraft: CreateEventDraft) => {
+    if (!updateEvent || nextDraft.mode !== "custom") return false;
+    const current = buildDraftFromEvent(updateEvent);
+    if (current.mode !== "custom") return true;
+    return (
+      current.allDay !== nextDraft.allDay ||
+      current.scheduledDate !== nextDraft.scheduledDate ||
+      (!nextDraft.allDay &&
+        (current.startsAt.getHours() !== nextDraft.startsAt.getHours() ||
+          current.startsAt.getMinutes() !== nextDraft.startsAt.getMinutes())) ||
+      current.routeId !== nextDraft.routeId ||
+      current.timezone !== nextDraft.timezone
+    );
+  };
+
   const submitUpdateWithScope = (nextDraft: CreateEventDraft, scope: EventMutationScope) => {
     if (existingEventReadOnly) return;
     if (!updateEvent?.id || !validateDraft(nextDraft)) return;
+    if (scope !== "single" && hasUnsupportedSeriesChanges(nextDraft)) {
+      setFormErrorMessage(
+        "This and future events and the entire series can only change title and notes. Save schedule or route changes to this event only.",
+      );
+      return;
+    }
     try {
       const fullPatch = buildUpdatePatch(nextDraft);
       updateMutation.mutate({
@@ -626,7 +715,22 @@ export const CreateEventFlow = forwardRef<
 
     if (!validateDraft(draft)) return;
     try {
-      createMutation.mutate(buildCreateEventInput(draft));
+      if (draft.mode === "planned") {
+        if (!profileId || !draft.activityPlanId) {
+          setFormErrorMessage("Wait for your profile and choose an activity plan before saving.");
+          return;
+        }
+        createPlannedSessionMutation.mutate(
+          buildDirectPlannedSessionCreateInput({
+            profileId,
+            planningDate: draft.scheduledDate,
+            operationId: directOperationId.current,
+            activityPlanId: draft.activityPlanId,
+          }),
+        );
+      } else {
+        createMutation.mutate(buildCreateEventInput(draft));
+      }
     } catch (error) {
       setFormErrorMessage(
         error instanceof Error
@@ -636,7 +740,11 @@ export const CreateEventFlow = forwardRef<
     }
   };
 
-  const pending = createMutation.isPending || updateMutation.isPending;
+  const pending =
+    createMutation.isPending || updateMutation.isPending || createPlannedSessionMutation.isPending;
+  useEffect(() => onPendingChange?.(pending), [onPendingChange, pending]);
+  const isDirty = isDraftDirty;
+  useEffect(() => onDirtyChange?.(isDirty), [isDirty, onDirtyChange]);
   const submitCreateRef = useRef(submitCreate);
   submitCreateRef.current = submitCreate;
 
@@ -738,6 +846,12 @@ export const CreateEventFlow = forwardRef<
           title="Recurring Event"
         >
           <View className="gap-3">
+            {hasUnsupportedSeriesChanges(pendingUpdateDraft) ? (
+              <Text accessibilityRole="alert" className="text-sm text-muted-foreground">
+                Schedule, all-day, time zone, and route changes apply only to this event. Future and
+                series scopes support title and notes only.
+              </Text>
+            ) : null}
             <Button
               onPress={() => handleSelectUpdateScope("single")}
               testID={`${testIDPrefix}-scope-single`}
@@ -746,6 +860,7 @@ export const CreateEventFlow = forwardRef<
               <Text className="text-foreground font-medium">This event only</Text>
             </Button>
             <Button
+              disabled={hasUnsupportedSeriesChanges(pendingUpdateDraft)}
               onPress={() => handleSelectUpdateScope("future")}
               testID={`${testIDPrefix}-scope-future`}
               variant="outline"
@@ -753,6 +868,7 @@ export const CreateEventFlow = forwardRef<
               <Text className="text-foreground font-medium">This and future events</Text>
             </Button>
             <Button
+              disabled={hasUnsupportedSeriesChanges(pendingUpdateDraft)}
               onPress={() => handleSelectUpdateScope("series")}
               testID={`${testIDPrefix}-scope-series`}
               variant="outline"
@@ -783,3 +899,5 @@ export const CreateEventFlow = forwardRef<
     </>
   );
 });
+
+import { buildDirectPlannedSessionCreateInput } from "@repo/api/client";

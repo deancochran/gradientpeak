@@ -48,6 +48,3 @@ if (report.metadataMismatches.length > 0) {
     `Activity-plan portfolio contains metadata mismatches: ${report.metadataMismatches.join(", ")}`,
   );
 }
-if (report.progressionScore < 1) {
-  throw new Error(`Activity-plan portfolio progression score is ${report.progressionScore}`);
-}

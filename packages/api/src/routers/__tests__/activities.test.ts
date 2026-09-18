@@ -476,7 +476,12 @@ function buildActivityRow(overrides: Record<string, unknown> = {}) {
     updated_at: new Date("2026-01-01T00:00:00.000Z"),
     profile_id: OWNER_ID,
     activity_plan_id: null,
+    route_id: null,
     name: "Morning Run",
+    entry_provenance: null,
+    manual_activity_category: null,
+    diary_date: null,
+    diary_timezone: null,
     started_at: new Date("2026-01-10T08:00:00.000Z"),
     finished_at: new Date("2026-01-10T08:45:00.000Z"),
     elapsed_ms: 2_700_000,
@@ -505,6 +510,10 @@ function buildActivityRow(overrides: Record<string, unknown> = {}) {
     avg_swolf: null,
     pool_length_meters: null,
     total_strokes: null,
+    superseded_by_activity_id: null,
+    superseded_at: null,
+    reconciliation_operation_id: null,
+    reconciled_planned_session_id: null,
     device_manufacturer: null,
     device_product: null,
     notes: null,
@@ -734,6 +743,7 @@ function createDbMock(options: {
   joinedRows?: any[];
   activitySummaryRows?: any[];
   activityImportRows?: any[];
+  activitySourceReferenceRows?: any[];
   activityFileIngestionRows?: any[];
   activityGeometryRows?: any[];
   activityLapRows?: any[];
@@ -819,6 +829,8 @@ function createDbMock(options: {
     if (tableName === "activity_efforts") return options.activityEffortRows ?? [];
     if (tableName === "activity_plans") return options.activityPlanRows ?? [];
     if (tableName === "activity_imports") return options.activityImportRows ?? [];
+    if (tableName === "activity_source_references")
+      return options.activitySourceReferenceRows ?? [];
     if (tableName === "activity_file_ingestions") return options.activityFileIngestionRows ?? [];
     if (tableName === "activity_geometry") return options.activityGeometryRows ?? [];
     if (tableName === "activity_laps") return options.activityLapRows ?? [];
@@ -859,18 +871,48 @@ function createDbMock(options: {
         };
       }
 
+      if (fields && "resolutionStatus" in fields) {
+        return {
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              orderBy: vi.fn(() => Promise.resolve(options.activitySourceReferenceRows ?? [])),
+            })),
+          })),
+        };
+      }
+
       if (fields && "activity" in fields) {
-        const where = vi.fn(() => ({
-          orderBy,
-          limit: vi.fn(() => Promise.resolve(options.joinedRows ?? options.activityRows ?? [])),
-        }));
+        const rows =
+          options.joinedRows ?? (options.activityRows ?? []).map((activity) => ({ activity }));
+        const where = vi.fn((condition: unknown) => {
+          selectWhere(condition);
+          return {
+            orderBy: (...args: unknown[]) => {
+              orderBy(...args);
+              return {
+                limit: (limitValue: number) => {
+                  limit(limitValue);
+                  return {
+                    offset: (offsetValue: number) => {
+                      offset(offsetValue);
+                      return Promise.resolve(rows.slice(offsetValue, offsetValue + limitValue));
+                    },
+                  };
+                },
+              };
+            },
+            limit: vi.fn(() => Promise.resolve(rows)),
+          };
+        });
         return {
           from: vi.fn(() => ({
             where,
             leftJoin: vi.fn(() => {
               const joinedBuilder = {
+                leftJoin: vi.fn(),
                 where,
               };
+              joinedBuilder.leftJoin.mockReturnValue(joinedBuilder);
               return joinedBuilder;
             }),
           })),
@@ -952,7 +994,7 @@ function createDbMock(options: {
         })),
       })),
     })),
-    delete: vi.fn(() => ({
+    delete: vi.fn((_table: unknown) => ({
       where: deleteWhere,
     })),
     query: {
@@ -1501,7 +1543,11 @@ describe("activitiesRouter", () => {
       const orderSql = db.__spies.orderBy.mock.calls[0]?.map(toSql).join(" ") ?? "";
       expect(orderSql).toContain('"activities"."started_at" desc');
       expect(orderSql).toContain('"activities"."id" desc');
-      const keysetWhereSql = toSql(db.__spies.selectWhere.mock.calls[1]?.[0]);
+      const keysetWhereSql = db.__spies.selectWhere.mock.calls
+        .map(([condition]) => toSql(condition))
+        .find((sql) => sql.includes('"activities"."started_at" <'));
+      expect(keysetWhereSql).toBeDefined();
+      if (!keysetWhereSql) throw new Error("Expected a keyset boundary query");
       expect(keysetWhereSql).toContain('"activities"."started_at" <');
       expect(keysetWhereSql).toContain('"activities"."id" <');
     }
@@ -2357,7 +2403,12 @@ describe("activitiesRouter", () => {
     const result = await caller.delete({ id: ACTIVITY_ID });
 
     expect(result).toEqual({ success: true, deletedActivityId: ACTIVITY_ID });
-    expect(db.__spies.deleteWhere).toHaveBeenCalledTimes(1);
+    expect(db.delete.mock.calls.map(([table]) => getTableName(table))).toEqual([
+      "comments",
+      "likes",
+      "activities",
+    ]);
+    expect(db.__spies.deleteWhere).toHaveBeenCalledTimes(3);
   });
 
   it("rejects non-ISO paginated list date filters at the router boundary", async () => {

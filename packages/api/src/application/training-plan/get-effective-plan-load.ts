@@ -1,13 +1,7 @@
 import {
   type ActivityObservationQuantificationBundle,
-  type ActivityPlanPrescriptionQuantificationBundle,
   activityObservationQuantificationBundleSchema,
-  activityPlanPrescriptionQuantificationBundleSchema,
-  activityPrescriptionQuantificationBundleSchema,
-  bindPrescriptionQuantificationToScheduledEvent,
   createObservationQuantificationBundle,
-  createPrescriptionQuantificationBundle,
-  createUnavailableActivityPlanPlanningEstimate,
   dateOnlySchema,
 } from "@repo/core";
 import { diffDateOnlyUtcDays, getCalendarDateInIanaZone } from "@repo/core/calendar";
@@ -16,6 +10,7 @@ import {
   buildCommonLoadRecommendation,
   COMMON_RELATIVE_LOAD_MODEL,
   COMMON_RELATIVE_LOAD_VERSION,
+  type CommonLoadAggregate,
   type CommonLoadResult,
   commonLoadAggregateSchema,
   commonLoadRecommendationSchema,
@@ -29,7 +24,6 @@ import {
   loadActivitySegmentsByActivityId,
 } from "../../lib/activity-analysis";
 import type { EventReadRepository } from "../../repositories";
-import { estimateActivityPlans } from "../activity-plans/estimate-activity-plans";
 import {
   composeEffectivePlanDto,
   effectivePlanCompositionDtoSchema,
@@ -40,7 +34,10 @@ type Db = ReturnType<typeof getRequiredDb>;
 const dateSchema = dateOnlySchema;
 export const MAX_EFFECTIVE_PLAN_LOAD_RANGE_DAYS = 366;
 const sourceCountsSchema = z
-  .object({ activities: z.number().int().nonnegative(), events: z.number().int().nonnegative() })
+  .object({
+    activities: z.number().int().nonnegative(),
+    plannedSessions: z.number().int().nonnegative(),
+  })
   .strict();
 const resolvedRangeSchema = z
   .object({
@@ -69,21 +66,11 @@ const sourceCoverageSchema = z
       .nullable(),
   })
   .strict();
-const quantificationIdentityProbeSchema = z
-  .object({
-    summary: z
-      .object({
-        commonLoad: z.object({ model: z.string(), version: z.string() }).passthrough(),
-      })
-      .passthrough(),
-  })
-  .passthrough();
 const unavailableReasonSchema = z.enum([
   "planning_timezone_missing",
   "planning_timezone_invalid",
   "missing_quantification",
   "invalid_quantification",
-  "incompatible_common_load_identity",
 ]);
 
 export const getEffectivePlanLoadInputSchema = z
@@ -125,7 +112,6 @@ const availableSchema = z
     completed: commonLoadAggregateSchema,
     remaining: commonLoadAggregateSchema,
     completedObservationQuantification: activityObservationQuantificationBundleSchema.nullable(),
-    remainingPrescriptionQuantification: activityPrescriptionQuantificationBundleSchema.nullable(),
     effective: effectivePlanCompositionDtoSchema,
     model: z.literal(COMMON_RELATIVE_LOAD_MODEL),
     version: z.literal(COMMON_RELATIVE_LOAD_VERSION),
@@ -171,10 +157,7 @@ function unavailableActivityLoad(asOf: string): CommonLoadResult {
   });
 }
 
-type QuantificationUnavailableReason =
-  | "missing_quantification"
-  | "invalid_quantification"
-  | "incompatible_common_load_identity";
+type QuantificationUnavailableReason = "missing_quantification" | "invalid_quantification";
 type ParsedQuantification<T> =
   | { status: "available"; value: T }
   | { status: "unavailable"; reason: QuantificationUnavailableReason };
@@ -186,18 +169,59 @@ function parseQuantificationBundle<TSchema extends z.ZodType>(
   if (value === null || value === undefined) {
     return { status: "unavailable", reason: "missing_quantification" };
   }
-  const identity = quantificationIdentityProbeSchema.safeParse(value);
-  if (
-    identity.success &&
-    (identity.data.summary.commonLoad.model !== COMMON_RELATIVE_LOAD_MODEL ||
-      identity.data.summary.commonLoad.version !== COMMON_RELATIVE_LOAD_VERSION)
-  ) {
-    return { status: "unavailable", reason: "incompatible_common_load_identity" };
-  }
   const parsed = schema.safeParse(value);
   return parsed.success
     ? { status: "available", value: parsed.data }
     : { status: "unavailable", reason: "invalid_quantification" };
+}
+
+/** Converts the immutable manifest estimate into one validated scheduled-load aggregate. */
+function manifestCommonLoad(estimate: {
+  common_load: { status: "complete" | "partial" | "unavailable"; value: number | null };
+  duration: { value_seconds: number | null };
+}): CommonLoadAggregate {
+  const durationSeconds = estimate.duration.value_seconds;
+  if (
+    estimate.common_load.status === "complete" &&
+    estimate.common_load.value !== null &&
+    durationSeconds !== null &&
+    durationSeconds > 0
+  ) {
+    const intensity = Math.sqrt((estimate.common_load.value * 3600) / (durationSeconds * 100));
+    if (Number.isFinite(intensity) && intensity <= 1.5) {
+      return commonLoadAggregateSchema.parse({
+        status: "complete",
+        model: COMMON_RELATIVE_LOAD_MODEL,
+        version: COMMON_RELATIVE_LOAD_VERSION,
+        load: estimate.common_load.value,
+        intensity,
+        contributingDurationSeconds: durationSeconds,
+        knownDurationSeconds: durationSeconds,
+        contributingActivityCount: 1,
+        partialActivityCount: 0,
+        unavailableActivityCount: 0,
+        totalActivityCount: 1,
+        activityCountCoverage: 1,
+        knownDurationCoverage: 1,
+        unknownDurationActivityCount: 0,
+      });
+    }
+  }
+  return commonLoadAggregateSchema.parse({
+    status: "unavailable",
+    model: COMMON_RELATIVE_LOAD_MODEL,
+    version: COMMON_RELATIVE_LOAD_VERSION,
+    reason: durationSeconds === null ? "duration_missing" : "no_load_data",
+    contributingDurationSeconds: 0,
+    knownDurationSeconds: durationSeconds,
+    contributingActivityCount: 0,
+    partialActivityCount: 0,
+    unavailableActivityCount: 1,
+    totalActivityCount: 1,
+    activityCountCoverage: 0,
+    knownDurationCoverage: durationSeconds === null ? null : 0,
+    unknownDurationActivityCount: durationSeconds === null ? 1 : 0,
+  });
 }
 
 /**
@@ -243,15 +267,9 @@ export async function getEffectivePlanLoad(input: {
   if (!startDate || !endDate) {
     return unavailable("planning_timezone_invalid");
   }
-  const recommendationEvents = facts.recommendationEvents.filter((event) => {
-    if (!event.original_starts_at) {
-      return event.scheduled_date >= startDate && event.scheduled_date <= endDate;
-    }
-    const originalInstant = new Date(event.original_starts_at);
-    if (Number.isNaN(originalInstant.getTime())) return false;
-    const recommendationDate = localDate(originalInstant, planningTimezone);
-    return recommendationDate >= startDate && recommendationDate <= endDate;
-  });
+  const recommendationSessions = facts.recommendationPlannedSessions.filter(
+    (session) => session.originalTargetDate >= startDate && session.originalTargetDate <= endDate,
+  );
 
   const segments = await loadActivitySegmentsByActivityId(
     input.db,
@@ -278,30 +296,13 @@ export async function getEffectivePlanLoad(input: {
     }
     completedQuantificationById.set(activityId, parsed.value);
   }
-  const activityPlansById = new Map(
-    [...facts.events, ...recommendationEvents].flatMap((event) =>
-      event.activity_plan ? [[event.activity_plan.id, event.activity_plan] as const] : [],
-    ),
+  const activitiesInRange = facts.activities.filter(
+    (activity): activity is typeof activity & { started_at: Date } => {
+      if (activity.started_at === null) return false;
+      const date = localDate(activity.started_at, planningTimezone);
+      return date >= startDate && date <= endDate;
+    },
   );
-  const plans = await estimateActivityPlans(
-    [...activityPlansById.values()],
-    input.db,
-    input.profileId,
-    { asOf },
-  );
-  const plannedQuantificationById = new Map<string, ActivityPlanPrescriptionQuantificationBundle>();
-  for (const plan of plans) {
-    const parsed = parseQuantificationBundle(
-      plan.prescriptionQuantification,
-      activityPlanPrescriptionQuantificationBundleSchema,
-    );
-    if (parsed.status === "unavailable") return unavailable(parsed.reason);
-    plannedQuantificationById.set(plan.id, parsed.value);
-  }
-  const activitiesInRange = facts.activities.filter((activity) => {
-    const date = localDate(activity.started_at, planningTimezone);
-    return date >= startDate && date <= endDate;
-  });
   completedQuantificationIncomplete ||= activitiesInRange.some(
     (activity) => !completedQuantificationById.has(activity.id),
   );
@@ -316,29 +317,18 @@ export async function getEffectivePlanLoad(input: {
       },
     ];
   });
-  const scheduledItems = facts.events.map((event) => {
-    const planned = plannedQuantificationById.get(event.activity_plan_id ?? "");
-    const source =
-      planned === undefined
-        ? createUnavailableActivityPlanPlanningEstimate({
-            asOf: asOf.toISOString(),
-            stage: "scheduled",
-            ...(event.activity_plan_id ? { planId: event.activity_plan_id } : {}),
-            scheduledEventId: event.id,
-          }).prescriptionQuantification
-        : bindPrescriptionQuantificationToScheduledEvent({
-            prescriptionQuantification: planned,
-            eventId: event.id,
-          });
+  const scheduledItems = facts.plannedSessions.map((session) => {
     return {
-      scheduledItemId: event.id,
-      scheduledDate: event.scheduled_date,
+      scheduledItemId: session.id,
+      scheduledDate: session.planningDate,
       status:
-        event.status === "cancelled" || (event.status === "completed" && !event.linked_activity_id)
+        session.lifecycleStatus === "cancelled" ||
+        (session.lifecycleStatus === "completed" && !session.completedActivityId)
           ? ("cancelled" as const)
           : ("active" as const),
-      linkedCompletedActivityId: event.linked_activity_id,
-      prescriptionQuantification: source,
+      linkedCompletedActivityId: session.completedActivityId,
+      commonLoad: manifestCommonLoad(session.resolutionManifest.prescription_estimate),
+      resolutionManifest: session.resolutionManifest,
     };
   });
   const composition = composeEffectivePlanDto({
@@ -400,22 +390,10 @@ export async function getEffectivePlanLoad(input: {
           item.kind === "completed" ? item.observationQuantification.members : [],
         )
       : [];
-  const remainingMembers =
-    composition.status === "available"
-      ? composition.firmItems.flatMap((item) =>
-          item.kind === "scheduled" && item.date >= composition.planningDate
-            ? item.prescriptionQuantification.members
-            : [],
-        )
-      : [];
   const completedObservationQuantification =
     completedMembers.length === 0
       ? null
       : createObservationQuantificationBundle({ members: completedMembers });
-  const remainingPrescriptionQuantification =
-    remainingMembers.length === 0
-      ? null
-      : createPrescriptionQuantificationBundle({ members: remainingMembers });
   const recommendation = buildCommonLoadRecommendation({
     computedAsOf: asOf.toISOString(),
     planningTimezone,
@@ -424,15 +402,11 @@ export async function getEffectivePlanLoad(input: {
     endDate,
     sourceStatus: facts.recommendationSource.status,
     trainingPlanId: facts.recommendationSource.trainingPlanId,
-    scheduleBatchId: facts.recommendationSource.scheduleBatchId,
-    items: recommendationEvents.map((event) => ({
-      scheduledItemId: event.id,
-      recommendationDate: event.original_starts_at
-        ? localDate(new Date(event.original_starts_at), planningTimezone)
-        : event.scheduled_date,
-      commonLoad:
-        plannedQuantificationById.get(event.activity_plan_id ?? "")?.summary.commonLoad ??
-        unavailableActivityLoad(asOf.toISOString()),
+    scheduleBatchId: null,
+    items: recommendationSessions.map((session) => ({
+      scheduledItemId: session.id,
+      recommendationDate: session.originalTargetDate,
+      commonLoad: manifestCommonLoad(session.resolutionManifest.prescription_estimate),
     })),
   });
   return effectivePlanLoadDtoSchema.parse({
@@ -440,7 +414,6 @@ export async function getEffectivePlanLoad(input: {
     completed,
     remaining,
     completedObservationQuantification,
-    remainingPrescriptionQuantification,
     recommendation,
     effective: composition,
     model: COMMON_RELATIVE_LOAD_MODEL,

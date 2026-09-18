@@ -1,8 +1,10 @@
 import type { Page } from "@playwright/test";
+import { conversationParticipants, conversations, follows, notifications } from "@repo/db/schema";
+import { and, eq, inArray, or } from "drizzle-orm";
 
 import { expect, test as sharedTest } from "../fixtures";
 import type { AuthenticatedE2EActor } from "../support/actors";
-import type { E2EQuery } from "../support/database";
+import type { LocalE2EDatabase } from "../support/database";
 
 const actorNames = {
   a: { name: "Messaging Alpha", username: "messaging_alpha" },
@@ -34,7 +36,11 @@ export const test = sharedTest.extend<{ messaging: MessagingHarness }>({
         return [key, Object.assign(actor, { page, username: actor.username })] as const;
       }),
     );
-    const actors = Object.fromEntries(entries) as Record<ActorKey, Actor>;
+    const actors: Record<ActorKey, Actor> = {
+      a: entries.find(([key]) => key === "a")?.[1] ?? failMissingActor("a"),
+      b: entries.find(([key]) => key === "b")?.[1] ?? failMissingActor("b"),
+      c: entries.find(([key]) => key === "c")?.[1] ?? failMissingActor("c"),
+    };
     const actorIds = entries.map(([, actor]) => actor.profileId);
     await clearActorState(e2eDatabase, actorIds);
     e2eCleanup.registerExactId({
@@ -48,50 +54,82 @@ export const test = sharedTest.extend<{ messaging: MessagingHarness }>({
       seedFollowRequest: async (from, to) => {
         const follower = actors[from].profileId;
         const following = actors[to].profileId;
-        await e2eDatabase.query(
-          `insert into "follows" ("follower_id", "following_id", "status", "created_at", "updated_at")
-           values ($1, $2, 'pending', now(), now())
-           on conflict ("follower_id", "following_id") do update
-           set "status" = 'pending', "updated_at" = now()`,
-          [follower, following],
-        );
-        await e2eDatabase.query(
-          `delete from "notifications"
-           where "user_id" = $2 and "actor_id" = $1 and "type" = 'follow_request'`,
-          [follower, following],
-        );
-        await e2eDatabase.query(
-          `insert into "notifications" ("id", "user_id", "actor_id", "type", "created_at")
-           values (gen_random_uuid(), $2, $1, 'follow_request', now())`,
-          [follower, following],
-        );
+        const now = new Date();
+        await e2eDatabase.typedTransaction(async (transaction) => {
+          await transaction
+            .insert(follows)
+            .values({
+              follower_id: follower,
+              following_id: following,
+              status: "pending",
+              created_at: now,
+              updated_at: now,
+            })
+            .onConflictDoUpdate({
+              target: [follows.follower_id, follows.following_id],
+              set: { status: "pending", updated_at: now },
+            });
+          await transaction
+            .delete(notifications)
+            .where(
+              and(
+                eq(notifications.user_id, following),
+                eq(notifications.actor_id, follower),
+                eq(notifications.type, "follow_request"),
+              ),
+            );
+          await transaction.insert(notifications).values({
+            id: crypto.randomUUID(),
+            user_id: following,
+            actor_id: follower,
+            type: "follow_request",
+            created_at: now,
+          });
+        });
       },
       readFollowStatus: async (from, to) => {
-        const result = await e2eDatabase.query<{ status: string }>(
-          'select "status" from "follows" where "follower_id" = $1 and "following_id" = $2',
-          [actors[from].profileId, actors[to].profileId],
-        );
-        return result.rows[0]?.status ?? null;
+        const [follow] = await e2eDatabase.db
+          .select({ status: follows.status })
+          .from(follows)
+          .where(
+            and(
+              eq(follows.follower_id, actors[from].profileId),
+              eq(follows.following_id, actors[to].profileId),
+            ),
+          )
+          .limit(1);
+        return follow?.status ?? null;
       },
     });
   },
 });
 
-async function clearActorState(database: E2EQuery, actorIds: string[]) {
-  await database.query(
-    `delete from "conversations" where "id" in (
-       select "conversation_id" from "conversation_participants" where "user_id" = any($1::uuid[])
-     )`,
-    [actorIds],
-  );
-  await database.query(
-    `delete from "notifications" where "user_id" = any($1::uuid[]) or "actor_id" = any($1::uuid[])`,
-    [actorIds],
-  );
-  await database.query(
-    `delete from "follows" where "follower_id" = any($1::uuid[]) or "following_id" = any($1::uuid[])`,
-    [actorIds],
-  );
+function failMissingActor(key: ActorKey): never {
+  throw new Error(`Messaging actor ${key} was not created.`);
+}
+
+async function clearActorState(database: LocalE2EDatabase, actorIds: string[]) {
+  await database.typedTransaction(async (transaction) => {
+    const actorConversations = await transaction
+      .select({ conversation_id: conversationParticipants.conversation_id })
+      .from(conversationParticipants)
+      .where(inArray(conversationParticipants.user_id, actorIds));
+    if (actorConversations.length)
+      await transaction.delete(conversations).where(
+        inArray(
+          conversations.id,
+          actorConversations.map((row) => row.conversation_id),
+        ),
+      );
+    await transaction
+      .delete(notifications)
+      .where(
+        or(inArray(notifications.user_id, actorIds), inArray(notifications.actor_id, actorIds)),
+      );
+    await transaction
+      .delete(follows)
+      .where(or(inArray(follows.follower_id, actorIds), inArray(follows.following_id, actorIds)));
+  });
 }
 
 export { expect };

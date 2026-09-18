@@ -20,7 +20,18 @@ jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
     useUtils: () => ({
-      trainingPlans: { invalidate: jest.fn() },
+      trainingPlans: {
+        invalidate: jest.fn(),
+        preview: {
+          fetch: jest.fn(async () => ({
+            applicable: true,
+            basePublishedRevision: 4,
+            explanations: [],
+            previewFingerprint: "fixture-preview",
+            status: "available",
+          })),
+        },
+      },
     }),
     trainingPlans: {
       preview: { useQuery: () => mockPreviewQuery },
@@ -261,7 +272,7 @@ describe("useTrainingPlanCreationService authoritative projection", () => {
     );
     expect(hook.result.current.state.details.name).toBe("Draft retained");
     expect(hook.result.current.state.structure.sessions).toHaveLength(1);
-    expect(hook.result.current.derived.projectionConflict).toContain("draft was preserved");
+    expect(hook.result.current.derived.projectionConflict).toContain("changes were preserved");
     expect(mockQueries.publishedStateQuery.refetch).toHaveBeenCalled();
     expect(onCreated).not.toHaveBeenCalled();
 
@@ -281,6 +292,40 @@ describe("useTrainingPlanCreationService authoritative projection", () => {
         expect(projection.simulation.baseStateRevision).toBe(5);
     });
     expect(hook.result.current.state.details.name).toBe("Draft retained");
+  });
+
+  it("retries an unknown save outcome with the exact committed payload without another preview", async () => {
+    mockQueries.commitPlanMutation.mutateAsync
+      .mockRejectedValueOnce(new Error("Network request failed"))
+      .mockResolvedValueOnce({
+        status: "saved",
+        planId: "55555555-5555-4555-8555-555555555555",
+      });
+    const onCreated = jest.fn();
+    const hook = await renderHook(() => useTrainingPlanCreationService({ onCreated }));
+
+    await act(() => {
+      hook.result.current.actions.updateDetails({ name: "Retry retained" });
+      const session = hook.result.current.actions.addSession(1);
+      hook.result.current.actions.assignActivityPlan(session.localId, projectedActivityPlan());
+    });
+    await waitFor(() => expect(hook.result.current.derived.savePlan.canSave).toBe(true));
+
+    await act(async () => hook.result.current.derived.savePlan.execute());
+    const firstCommit = mockQueries.commitPlanMutation.mutateAsync.mock.calls[0]?.[0];
+    expect(firstCommit).toBeDefined();
+    expect(hook.result.current.derived.projectionConflict).toContain("outcome is unknown");
+
+    await act(async () => hook.result.current.derived.savePlan.execute());
+
+    expect(mockQueries.commitPlanMutation.mutateAsync).toHaveBeenCalledTimes(2);
+    expect(mockQueries.commitPlanMutation.mutateAsync.mock.calls[1]?.[0]).toBe(firstCommit);
+    expect(mockQueries.commitPlanMutation.mutateAsync.mock.calls[1]?.[0]).toMatchObject({
+      operationId: expect.any(String),
+    });
+    expect(onCreated).toHaveBeenCalledWith({
+      id: "55555555-5555-4555-8555-555555555555",
+    });
   });
 });
 

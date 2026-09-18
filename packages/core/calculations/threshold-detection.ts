@@ -109,15 +109,3 @@ export function detectLactateThresholdHeartRate(input: {
     },
   });
 }
-
-/**
- * @deprecated Use detectLactateThresholdHeartRate. The samples argument is
- * required for the canonical calculation; calls without it fail closed.
- */
-export function detectLactateThresholdHeartRateFromBestEfforts(
-  extraction: BestEffortExtractionResult,
-  samples?: readonly BestEffortSample[],
-): DetectedLactateThresholdHeartRate | null {
-  if (samples === undefined) return null;
-  return detectLactateThresholdHeartRate({ extraction, samples });
-}

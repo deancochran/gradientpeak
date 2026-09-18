@@ -17,10 +17,14 @@ export function buildTrainingTimelineWindowFromLoadTimeline(input: {
     startDate: input.startDate,
     endDate: input.endDate,
     loadPoints: input.timeline,
-    scheduledItems: input.scheduledItems,
-    scheduledSourceStatus: input.scheduledSourceStatus,
-    completedItems: input.completedItems,
-    completedSourceStatus: input.completedSourceStatus,
+    ...(input.scheduledItems === undefined ? {} : { scheduledItems: input.scheduledItems }),
+    ...(input.scheduledSourceStatus === undefined
+      ? {}
+      : { scheduledSourceStatus: input.scheduledSourceStatus }),
+    ...(input.completedItems === undefined ? {} : { completedItems: input.completedItems }),
+    ...(input.completedSourceStatus === undefined
+      ? {}
+      : { completedSourceStatus: input.completedSourceStatus }),
   });
 }
 
@@ -37,9 +41,13 @@ export function buildTrainingTimelineWindowFromProjection(input: {
     startDate: input.projection.start_date,
     endDate: input.projection.end_date,
     loadPoints: input.projection.daily_load_points ?? [],
-    scheduledItems: input.scheduledItems,
-    scheduledSourceStatus: input.scheduledSourceStatus,
-    completedItems: input.completedItems,
-    completedSourceStatus: input.completedSourceStatus,
+    ...(input.scheduledItems === undefined ? {} : { scheduledItems: input.scheduledItems }),
+    ...(input.scheduledSourceStatus === undefined
+      ? {}
+      : { scheduledSourceStatus: input.scheduledSourceStatus }),
+    ...(input.completedItems === undefined ? {} : { completedItems: input.completedItems }),
+    ...(input.completedSourceStatus === undefined
+      ? {}
+      : { completedSourceStatus: input.completedSourceStatus }),
   });
 }

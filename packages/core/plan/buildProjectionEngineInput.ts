@@ -66,12 +66,14 @@ function buildSchedulingConstraintsFromCreationConfig(
       availabilityConfig?.days.map((day) => ({
         day: day.day,
         windows: day.windows,
-        maxSessions: day.max_sessions,
+        ...(day.max_sessions === undefined ? {} : { maxSessions: day.max_sessions }),
       })),
     ),
-    hardRestDays: constraints?.hard_rest_days,
-    minSessionsPerWeek: constraints?.min_sessions_per_week,
-    maxSessionsPerWeek: constraints?.max_sessions_per_week,
+    ...(constraints?.hard_rest_days === undefined
+      ? {}
+      : { hardRestDays: constraints.hard_rest_days }),
+    ...optionalProperty("minSessionsPerWeek", constraints?.min_sessions_per_week),
+    ...optionalProperty("maxSessionsPerWeek", constraints?.max_sessions_per_week),
   };
 }
 

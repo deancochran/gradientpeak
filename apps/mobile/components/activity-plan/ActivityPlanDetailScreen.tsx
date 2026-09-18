@@ -1,11 +1,13 @@
 import { invalidateActivityPlanQueries } from "@repo/api/react";
 import {
   buildActivityPlanPrintModel,
+  consolidateActivityPlanText,
   deriveActivityPlanPresentation,
   getActivityPlanPrintFormatLabel,
   getActivityPlanPrintFormats,
   resolveActivityPlanSessionFlow,
 } from "@repo/core/activity-plan";
+import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useQueryClient } from "@tanstack/react-query";
@@ -13,7 +15,6 @@ import { format } from "date-fns";
 import { MessageCircle, Share2 } from "lucide-react-native";
 import React from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, Share, View } from "react-native";
-import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
 import { ActivityPlanSummary } from "@/components/shared/ActivityPlanSummary";
 import {
   DetailDeleteConfirmModal,
@@ -47,7 +48,6 @@ import {
 } from "@/lib/recording/recordingObjectActions";
 import { getPublicShareUrl } from "@/lib/share/public-share-url";
 import { ActivityPlanContentPreview } from "./ActivityPlanContentPreview";
-import { ActivityPlanVariantSelector } from "./ActivityPlanVariantSelector";
 import { useActivityPlanDetailViewModel } from "./useActivityPlanDetailViewModel";
 import { useActivityPlanSchedulingActions } from "./useActivityPlanSchedulingActions";
 
@@ -76,21 +76,8 @@ export function ActivityPlanDetailScreen({
   const recorderService = useOptionalActivityRecorderService();
   const sessionView = useSessionView(recorderService);
   const recordingLifecycle = recorderService?.recordingLifecycle ?? (sessionView ? "idle" : "idle");
-  const detailSelectionScope = `${planId ?? "none"}:${eventId ?? "none"}`;
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
-  const [showScheduleModal, setShowScheduleModal] = React.useState(false);
-  const [variantSelection, setVariantSelection] = React.useState<{
-    scope: string;
-    variantId: string | undefined;
-  }>({ scope: detailSelectionScope, variantId: undefined });
-  const [personalizationSelection, setPersonalizationSelection] = React.useState<{
-    scope: string;
-    value: boolean | null;
-  }>({ scope: detailSelectionScope, value: null });
-  const selectedVariantId =
-    variantSelection.scope === detailSelectionScope ? variantSelection.variantId : undefined;
-  const personalizationChoice =
-    personalizationSelection.scope === detailSelectionScope ? personalizationSelection.value : null;
+  const [personalizationChoice, setPersonalizationChoice] = React.useState<boolean | null>(null);
   const entityCommentsSheet = useEntityCommentsSheet();
 
   const utils = api.useUtils();
@@ -98,13 +85,14 @@ export function ActivityPlanDetailScreen({
     onRedirect: () => router.navigate(ROUTES.PLAN.CALENDAR),
   });
 
-  const { data: fetchedPlan, isLoading: loadingPlan } = api.activityPlans.getById.useQuery(
-    {
-      id: planId ?? "",
-      personalize: false,
-      ...(selectedVariantId === undefined ? {} : { variantId: selectedVariantId }),
-    },
-    { enabled: !!planId && !eventId },
+  const {
+    data: fetchedPlan,
+    isLoading: loadingPlan,
+    error: planError,
+    refetch: refetchPlan,
+  } = api.activityPlans.getById.useQuery(
+    { id: planId ?? "", personalize: false },
+    { enabled: !!planId },
   );
 
   const {
@@ -132,13 +120,13 @@ export function ActivityPlanDetailScreen({
   const isScheduled = !!activePlannedActivity?.scheduled_date;
 
   const vm = useActivityPlanDetailViewModel({
-    activityPlanParam,
     fetchedPlan: fetchedPlan?.detail,
     formatDuration,
     isScheduled,
     plannedActivity: activePlannedActivity,
     profile,
-    template,
+    ...(activityPlanParam ? { activityPlanParam } : {}),
+    ...(template ? { template } : {}),
   });
   const { data: viewerReadModel, isLoading: viewerReadModelLoading } =
     api.athleteIntelligence.getReadModel.useQuery(
@@ -147,6 +135,8 @@ export function ActivityPlanDetailScreen({
     );
 
   const activityPlan = vm.activityPlan;
+  const activityPlanNotes =
+    activityPlan?.contractVersion === "activity-plan-detail-v1" ? activityPlan.notes : null;
   const performanceTargets = viewerReadModel?.publishedState?.performanceTargets;
   const personalizationEligibility = React.useMemo(
     () =>
@@ -162,19 +152,20 @@ export function ActivityPlanDetailScreen({
   );
   const printModel = activityPlan
     ? buildActivityPlanPrintModel({
-        description: activityPlan.description,
         format: "full-page",
-        notes:
-          activityPlan.contractVersion === "activity-plan-detail-v1" ? activityPlan.notes : null,
+        ...(activityPlan.description !== undefined
+          ? { description: activityPlan.description }
+          : {}),
+        ...(activityPlanNotes !== null ? { notes: activityPlanNotes } : {}),
         ...(performanceTargets ? { performanceTargets } : {}),
         personalizeTargets,
         structure: activityPlan.structure,
         title: activityPlan.name,
       })
     : null;
-  const variantMetadata = eventId ? undefined : fetchedPlan?.detail;
-  const resolvedVariant = variantMetadata?.resolvedVariant;
-  const variantOptions = variantMetadata?.variants ?? [];
+  React.useEffect(() => {
+    setPersonalizationChoice(null);
+  }, [eventId, planId]);
 
   const presentation = React.useMemo(
     () => deriveActivityPlanPresentation(activityPlan?.structure),
@@ -190,33 +181,22 @@ export function ActivityPlanDetailScreen({
   }));
 
   const recordingCandidate = React.useMemo<RecordingObjectActionCandidate | null>(() => {
-    const plannedSession = vm.plannedSession;
-    const recordingStructure = plannedSession?.prescription.structure ?? presentation?.structure;
-    if (!activityPlan || !recordingStructure || !activityPlan.capabilities.canRecord) {
+    if (!activityPlan || !presentation?.structure || !activityPlan.capabilities.canRecord) {
       return null;
     }
     return {
       objectKind: "activity_plan",
       objectId: activityPlan.id,
       label: activityPlan.name,
-      activity_category: recordingStructure.activity_category,
-      ...(eventId === undefined ? {} : { eventId }),
-      ...(plannedSession
-        ? {
-            plannedSession: {
-              id: plannedSession.id,
-              sessionRevision: plannedSession.sessionRevision,
-              prescription: plannedSession.prescription,
-            },
-          }
-        : {}),
+      activity_category: planCategory,
       plan: {
-        id: plannedSession?.prescription.activityPlanId ?? activityPlan.id,
+        id: activityPlan.id,
         name: activityPlan.name,
-        structure: recordingStructure,
+        activity_category: activityPlan.activityCategory,
+        structure: presentation.structure,
       },
     };
-  }, [activityPlan, eventId, presentation, vm.plannedSession]);
+  }, [activityPlan, planCategory, presentation]);
 
   const recordingAction = recordingCandidate
     ? resolveRecordingObjectAction({
@@ -235,12 +215,9 @@ export function ActivityPlanDetailScreen({
       service: recorderService,
     });
   };
-  const openScheduleModal = React.useCallback(() => setShowScheduleModal(true), []);
   const scheduling = useActivityPlanSchedulingActions({
-    action,
     activityPlan,
     beginRedirect,
-    eventId,
     plannedActivity,
     planId,
     queryClient,
@@ -248,7 +225,8 @@ export function ActivityPlanDetailScreen({
     utils,
     canDuplicatePlan: Boolean(activityPlan?.capabilities.canDuplicate),
     canSchedulePlan: Boolean(activityPlan?.capabilities.canSchedule),
-    onSchedule: openScheduleModal,
+    ...(action ? { action } : {}),
+    ...(eventId ? { eventId } : {}),
   });
 
   const handleEdit = () => {
@@ -311,8 +289,12 @@ export function ActivityPlanDetailScreen({
   } = useResourceLike({
     entityId: activityPlan?.id ?? "",
     entityType: "activity_plan",
-    initialCount: activityPlan?.engagement.likes,
-    initialLiked: activityPlan?.engagement.viewerHasLiked,
+    ...(activityPlan?.engagement.likes !== undefined
+      ? { initialCount: activityPlan.engagement.likes }
+      : {}),
+    ...(activityPlan?.engagement.viewerHasLiked !== undefined
+      ? { initialLiked: activityPlan.engagement.viewerHasLiked }
+      : {}),
   });
   const handleShare = async () => {
     if (!activityPlan || activityPlan.visibility !== "public") {
@@ -341,14 +323,14 @@ export function ActivityPlanDetailScreen({
           text: "Share PDF",
           onPress: () =>
             void shareActivityPlanPdf(selectedModel).catch(() =>
-              Alert.alert("Share failed", "The workout PDF could not be shared."),
+              Alert.alert("Share failed", "The activity-plan PDF could not be shared."),
             ),
         },
         {
           text: "Print",
           onPress: () =>
             void printActivityPlanPdf(selectedModel).catch(() =>
-              Alert.alert("Print failed", "The workout PDF could not be printed."),
+              Alert.alert("Print failed", "The activity-plan PDF could not be printed."),
             ),
         },
       ]);
@@ -358,7 +340,7 @@ export function ActivityPlanDetailScreen({
       chooseAction(formats[0] ?? "full-page");
       return;
     }
-    Alert.alert("Export workout PDF", "Choose a printable format.", [
+    Alert.alert("Export activity-plan PDF", "Choose a printable format.", [
       { text: "Cancel", style: "cancel" },
       ...formats.map((format) => ({
         text: getActivityPlanPrintFormatLabel(format),
@@ -380,7 +362,14 @@ export function ActivityPlanDetailScreen({
   if (!activityPlan) {
     return (
       <View className="flex-1 bg-background items-center justify-center">
-        <Text className="text-muted-foreground">Activity plan not found</Text>
+        <Text accessibilityRole={planError ? "alert" : undefined} className="text-muted-foreground">
+          {planError ? "Activity plan could not be loaded." : "Activity plan not found"}
+        </Text>
+        {planError ? (
+          <Button onPress={() => void refetchPlan()}>
+            <Text>Retry plan</Text>
+          </Button>
+        ) : null}
       </View>
     );
   }
@@ -412,7 +401,7 @@ export function ActivityPlanDetailScreen({
 
     if (printModel) {
       actions.push({
-        label: "Export Workout PDF",
+        label: "Export Activity Plan PDF",
         onPress: handleExportPdf,
         testID: "activity-plan-options-export-pdf",
       });
@@ -489,7 +478,11 @@ export function ActivityPlanDetailScreen({
             />
 
             <ActivityPlanSummary
-              description={activityPlan.description}
+              description={consolidateActivityPlanText(
+                activityPlan.description,
+                activityPlanNotes,
+                "Notes",
+              )}
               presentation={presentation}
               projectionMetrics={activityPlan.metrics}
               structure={activityPlan.structure}
@@ -497,19 +490,6 @@ export function ActivityPlanDetailScreen({
               variant="standalone"
               showAttribution={false}
             />
-            {!isEventContext && resolvedVariant && variantOptions.length > 1 ? (
-              <View className="mt-4 border-t border-border pt-4">
-                <ActivityPlanVariantSelector
-                  defaultVariantId={variantMetadata.defaultVariantId}
-                  onSelect={(variantId) =>
-                    setVariantSelection({ scope: detailSelectionScope, variantId })
-                  }
-                  selectedVariantId={resolvedVariant.id}
-                  selection={resolvedVariant.selection}
-                  variants={variantOptions}
-                />
-              </View>
-            ) : null}
             <View className="mt-4 flex-row items-center gap-2">
               <ResourceLikeButton
                 disabled={isLikePending}
@@ -561,22 +541,13 @@ export function ActivityPlanDetailScreen({
                 </Text>
               </Pressable>
             ) : null}
-            {activityPlan.contractVersion === "activity-plan-detail-v1" && activityPlan.notes ? (
-              <View className="mt-4 rounded-2xl bg-muted/30 px-4 py-3">
-                <Text className="text-sm leading-5 text-muted-foreground">
-                  {activityPlan.notes}
-                </Text>
-              </View>
-            ) : null}
           </View>
           {presentation?.structure ? (
             <ActivityPlanContentPreview
               personalizeTargets={personalizeTargets}
               personalizationFactsLoading={viewerReadModelLoading}
               performanceTargets={performanceTargets ?? null}
-              onPersonalizeTargetsChange={(value) =>
-                setPersonalizationSelection({ scope: detailSelectionScope, value })
-              }
+              onPersonalizeTargetsChange={setPersonalizationChoice}
               showPersonalizationControl={Boolean(profile)}
               size="large"
               plan={activityPlan}
@@ -594,16 +565,6 @@ export function ActivityPlanDetailScreen({
           onConfirm={handleConfirmDelete}
           pending={deleteMutation.isPending}
           testIDPrefix="activity-plan"
-        />
-      ) : null}
-      {showScheduleModal ? (
-        <ScheduleActivityModal
-          activityPlan={activityPlan}
-          activityPlanId={activityPlan.id}
-          onClose={() => setShowScheduleModal(false)}
-          onSuccess={() => router.navigate(ROUTES.PLAN.CALENDAR)}
-          variantId={resolvedVariant?.id}
-          visible
         />
       ) : null}
     </View>

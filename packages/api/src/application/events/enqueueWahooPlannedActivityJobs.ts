@@ -1,9 +1,6 @@
 import type { Context } from "../../context";
-import { type DrizzleTransactionClient, getRequiredDb } from "../../db";
-import {
-  enqueueWahooPlannedActivitySyncAfterCalendarMutation,
-  type WahooPlannedActivityQueueResult,
-} from "../../lib/provider-sync/planned-activities";
+import type { DrizzleTransactionClient } from "../../db";
+import type { WahooPlannedActivityQueueResult } from "../../lib/provider-sync/planned-activities";
 
 type ProtectedContext = Context & {
   session: NonNullable<Context["session"]> & {
@@ -20,11 +17,8 @@ export async function enqueueWahooPlannedActivityJobs(
     transaction?: DrizzleTransactionClient;
   },
 ): Promise<WahooPlannedActivityQueueResult | null> {
-  return enqueueWahooPlannedActivitySyncAfterCalendarMutation({
-    db: getRequiredDb(ctx),
-    eventIds: input.eventIds,
-    operation: input.operation,
-    profileId: input.profileId ?? ctx.session.user.id,
-    ...(input.transaction === undefined ? {} : { transaction: input.transaction }),
-  });
+  // Executable activities are planned sessions. Generic events never enter the Wahoo queue.
+  void ctx;
+  void input;
+  return null;
 }

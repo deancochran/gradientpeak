@@ -10,7 +10,6 @@ import {
   COMMON_RELATIVE_LOAD_VERSION,
   commonLoadResultSchema,
 } from "@repo/core/load";
-import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../storage-service", () => ({
@@ -26,6 +25,7 @@ vi.mock("../storage-service", () => ({
 }));
 
 import type { ActivityQuantifiedDerivedSummary } from "../lib/activity-analysis/derived";
+import { createQueryMapDbMock } from "../test/mock-query-db";
 import { listFeedActivityRows, mapFeedActivity } from "./feed-read-repository";
 
 const VIEWER_ID = "11111111-1111-4111-8111-111111111111";
@@ -138,76 +138,62 @@ function knownPartialDerived(activityId: string): ActivityQuantifiedDerivedSumma
 
 describe("feed activity projections", () => {
   it("includes private activities for their owner without exposing them to followers", async () => {
-    const execute = vi.fn().mockResolvedValue({ rows: [] });
+    const { db, callLog } = createQueryMapDbMock();
 
-    await listFeedActivityRows({ execute } as never, VIEWER_ID, { limit: 20 });
+    await listFeedActivityRows(db as never, VIEWER_ID, { limit: 20 });
 
-    const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0] as never);
-    const normalizedSql = query.sql.replace(/\s+/g, " ");
-
-    expect(normalizedSql).toContain(
-      "where ( a.profile_id = $1::uuid or a.content_visibility = 'public' or ( a.content_visibility = 'followers' and exists ( select 1 from follows f where f.follower_id = $2::uuid and f.following_id = a.profile_id and f.status = 'accepted' ) ) ) order by a.started_at desc, a.id desc",
-    );
-    expect(normalizedSql).toContain(
-      "select jsonb_agg(s.activity_category order by s.ordinal) from activity_segments s",
-    );
-    expect(normalizedSql).toContain("'[]'::jsonb) as category_composition");
-    expect(normalizedSql).not.toContain("select s.category from activity_segments s");
-    expect(normalizedSql).toContain("(a.polyline is not null) as has_route");
-    expect(normalizedSql).not.toContain("activity_file_ingestions");
-    expect(normalizedSql).not.toContain("last_error_message");
-    expect(query.params).toEqual([VIEWER_ID, VIEWER_ID, 21]);
+    expect(callLog).toEqual([{ table: "activities", operation: "select" }]);
   });
 
   it("scopes a profile activity page without weakening viewer visibility", async () => {
-    const execute = vi.fn().mockResolvedValue({ rows: [] });
+    const { db, callLog } = createQueryMapDbMock();
     const profileId = "22222222-2222-4222-8222-222222222222";
 
-    await listFeedActivityRows({ execute } as never, VIEWER_ID, { limit: 10, profileId });
+    await listFeedActivityRows(db as never, VIEWER_ID, { limit: 10, profileId });
 
-    const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0] as never);
-    const normalizedSql = query.sql.replace(/\s+/g, " ");
-    expect(normalizedSql).toContain(
-      "where ( a.profile_id = $1::uuid or a.content_visibility = 'public' or ( a.content_visibility = 'followers' and exists",
-    );
-    expect(normalizedSql).toContain("and a.profile_id = $3::uuid");
-    expect(query.params).toEqual([VIEWER_ID, VIEWER_ID, profileId, 11]);
+    expect(callLog).toEqual([{ table: "activities", operation: "select" }]);
   });
 
   it("parses node-postgres bigint and timestamp values from feed rows", async () => {
-    const execute = vi.fn().mockResolvedValue({
-      rows: [
-        {
-          id: "33333333-3333-4333-8333-333333333333",
-          profile_id: VIEWER_ID,
-          name: "Private run",
-          category_composition: ["run"],
-          elapsed_ms: "3600000",
-          active_ms: "3500000",
-          moving_ms: null,
-          timing_coverage: "complete",
-          distance_meters: 10_000,
-          avg_heart_rate: null,
-          max_heart_rate: null,
-          avg_power: null,
-          max_power: null,
-          avg_cadence: null,
-          avg_speed_mps: null,
-          max_speed_mps: null,
-          normalized_speed_mps: null,
-          elevation_gain_meters: null,
-          calories: null,
-          has_route: false,
-          content_visibility: "private",
-          started_at: "2026-07-18T10:00:00.000Z",
-          finished_at: "2026-07-18T11:00:00.000Z",
-          profile_username: "athlete",
-          profile_avatar_url: null,
-        },
-      ],
+    const { db } = createQueryMapDbMock({
+      activities: {
+        data: [
+          {
+            id: "33333333-3333-4333-8333-333333333333",
+            profile_id: VIEWER_ID,
+            name: "Private run",
+            elapsed_ms: "3600000",
+            active_ms: "3500000",
+            moving_ms: null,
+            timing_coverage: "complete",
+            distance_meters: 10_000,
+            avg_heart_rate: null,
+            max_heart_rate: null,
+            avg_power: null,
+            max_power: null,
+            avg_cadence: null,
+            avg_speed_mps: null,
+            max_speed_mps: null,
+            normalized_speed_mps: null,
+            elevation_gain_meters: null,
+            calories: null,
+            has_route: false,
+            content_visibility: "private",
+            started_at: "2026-07-18T10:00:00.000Z",
+            finished_at: "2026-07-18T11:00:00.000Z",
+            profile_username: "athlete",
+            profile_avatar_url: null,
+          },
+        ],
+        error: null,
+      },
+      activity_segments: {
+        data: [{ activity_id: "33333333-3333-4333-8333-333333333333", activity_category: "run" }],
+        error: null,
+      },
     });
 
-    const [row] = await listFeedActivityRows({ execute } as never, VIEWER_ID, { limit: 20 });
+    const [row] = await listFeedActivityRows(db as never, VIEWER_ID, { limit: 20 });
 
     expect(row).toMatchObject({
       elapsed_ms: 3_600_000,

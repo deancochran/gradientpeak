@@ -78,6 +78,37 @@ export async function materializeActivityAthleteStateEvidence(
     .where(and(eq(activities.id, input.activityId), eq(activities.profile_id, input.profileId)))
     .limit(1);
   if (!activity) throw new Error("Athlete state activity evidence is unavailable");
+  if (activity.finished_at === null) {
+    const hasPersistedEvidence =
+      activity.athlete_state_common_load !== null ||
+      activity.athlete_state_activity_category !== null ||
+      activity.athlete_state_evidence_confidence !== null ||
+      activity.athlete_state_capability_distance_meters !== null ||
+      activity.athlete_state_capability_duration_minutes !== null ||
+      activity.athlete_state_input_version !== null ||
+      activity.athlete_state_computed_at !== null;
+    if (hasPersistedEvidence) {
+      await tx
+        .update(activities)
+        .set({
+          athlete_state_common_load: null,
+          athlete_state_activity_category: null,
+          athlete_state_evidence_confidence: null,
+          athlete_state_capability_distance_meters: null,
+          athlete_state_capability_duration_minutes: null,
+          athlete_state_input_version: null,
+          athlete_state_computed_at: null,
+        })
+        .where(
+          and(eq(activities.id, input.activityId), eq(activities.profile_id, input.profileId)),
+        );
+    }
+    await createDrizzleAthleteDerivedStateRepository(tx).deleteActivityTrainingEffects({
+      profileId: input.profileId,
+      activityId: input.activityId,
+    });
+    return { commonLoad: null, confidence: null, effectiveAt: null, materialChanged: false };
+  }
   const segments = await tx
     .select()
     .from(activitySegments)

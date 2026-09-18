@@ -67,6 +67,13 @@ jest.mock("expo-linking", () => ({
   createURL: jest.fn((path = "") => `gradientpeak-dev://${String(path).replace(/^\//, "")}`),
 }));
 
+jest.mock("expo-crypto", () => ({
+  __esModule: true,
+  CryptoDigestAlgorithm: { SHA256: "SHA-256" },
+  digestStringAsync: jest.fn(async () => "test-digest"),
+  randomUUID: jest.fn(() => "00000000-0000-4000-8000-000000000000"),
+}));
+
 jest.mock("expo-file-system", () => ({
   __esModule: true,
   File: class MockExpoFile {

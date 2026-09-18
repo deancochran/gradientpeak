@@ -46,7 +46,7 @@ describe("server-config", () => {
 
   it("uses configurable Maestro E2E server defaults", async () => {
     process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
-    process.env.EXPO_PUBLIC_MAESTRO_E2E_API_URL = "http://127.0.0.1:3100/";
+    process.env.EXPO_PUBLIC_MAESTRO_E2E_API_URL = "http://127.0.0.1:3001/";
     process.env.EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL = "http://127.0.0.1:55321/";
     const { module } = await loadServerConfigModule();
 
@@ -54,18 +54,18 @@ describe("server-config", () => {
 
     expect(module.getServerConfig()).toMatchObject({
       initialized: true,
-      apiUrl: "http://127.0.0.1:3100",
+      apiUrl: "http://127.0.0.1:3001",
       supabaseUrl: "http://127.0.0.1:55321",
       overrideUrl: null,
     });
     expect(module.getE2ERuntimeSentinel()).toBe(
-      "lane=e2e api=127.0.0.1:3100 supabase=127.0.0.1:55321",
+      "lane=e2e api=127.0.0.1:3001 supabase=127.0.0.1:55321",
     );
   });
 
   it("ignores a persisted server override in Maestro E2E mode", async () => {
     process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
-    process.env.EXPO_PUBLIC_MAESTRO_E2E_API_URL = "http://127.0.0.1:3100";
+    process.env.EXPO_PUBLIC_MAESTRO_E2E_API_URL = "http://127.0.0.1:3001";
     process.env.EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL = "http://127.0.0.1:55321";
     const { module, secureStore } = await loadServerConfigModule();
     await secureStore.setItemAsync("server_url_override", "http://127.0.0.1:3000");
@@ -75,7 +75,7 @@ describe("server-config", () => {
     expect(module.isServerUrlOverrideEnabled()).toBe(false);
     expect(module.getServerConfig()).toMatchObject({
       initialized: true,
-      apiUrl: "http://127.0.0.1:3100",
+      apiUrl: "http://127.0.0.1:3001",
       supabaseUrl: "http://127.0.0.1:55321",
       overrideUrl: null,
     });
@@ -96,18 +96,18 @@ describe("server-config", () => {
     });
   });
 
-  it("maps the local 3100 API override to local Supabase", async () => {
+  it("maps the local 3001 API override to local Supabase", async () => {
     const { module } = await loadServerConfigModule();
 
     await module.initializeServerConfig();
-    const result = await module.setServerUrlOverride("http://127.0.0.1:3100/");
+    const result = await module.setServerUrlOverride("http://127.0.0.1:3001/");
 
     expect(result.changed).toBe(true);
 
     expect(module.getServerConfig()).toMatchObject({
-      apiUrl: "http://127.0.0.1:3100",
+      apiUrl: "http://127.0.0.1:3001",
       supabaseUrl: "http://127.0.0.1:55321",
-      overrideUrl: "http://127.0.0.1:3100",
+      overrideUrl: "http://127.0.0.1:3001",
     });
   });
 

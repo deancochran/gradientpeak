@@ -1,4 +1,9 @@
-import type { ActivityPlanDuration, ActivityPlanIntervalStep, ActivityTarget } from "@repo/core";
+import {
+  type ActivityPlanDuration,
+  type ActivityPlanIntervalStep,
+  type ActivityTarget,
+  consolidateActivityPlanText,
+} from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import {
   Form,
@@ -40,8 +45,7 @@ export function StepEditSheet({
   const stepEditSchema = z
     .object({
       name: z.string().trim().min(1, "Please enter a step name"),
-      description: z.string(),
-      notes: z.string(),
+      instructions: z.string().max(1000),
       durationType: z.enum(["time", "distance", "repetitions", "untilFinished"]),
       durationValue: z.string(),
       durationUnit: z.enum(["seconds", "minutes", "hours", "meters", "km", "reps"]),
@@ -87,8 +91,7 @@ export function StepEditSheet({
     schema: stepEditSchema,
     defaultValues: {
       name: "",
-      description: "",
-      notes: "",
+      instructions: "",
       durationType: "time",
       durationValue: "",
       durationUnit: "minutes",
@@ -104,8 +107,8 @@ export function StepEditSheet({
     if (step) {
       const nextValues: StepEditFormValues = {
         name: step.name || "",
-        description: step.description || "",
-        notes: step.notes || "",
+        instructions:
+          consolidateActivityPlanText(step.notes, step.description, "Description") ?? "",
         durationType: step.duration.type,
         durationValue: "",
         durationUnit: "minutes",
@@ -151,8 +154,7 @@ export function StepEditSheet({
     } else {
       form.reset({
         name: "",
-        description: "",
-        notes: "",
+        instructions: "",
         durationType: "time",
         durationValue: "",
         durationUnit: "minutes",
@@ -210,8 +212,7 @@ export function StepEditSheet({
     const updatedStep: ActivityPlanIntervalStep = {
       id: step?.id ?? crypto.randomUUID(),
       name: values.name.trim(),
-      description: values.description.trim() || undefined,
-      notes: values.notes.trim() || undefined,
+      notes: values.instructions.trim() || undefined,
       duration,
       targets,
     };
@@ -276,10 +277,11 @@ export function StepEditSheet({
 
               <FormTextareaField
                 control={form.control}
-                label="Description"
-                name="description"
-                placeholder="Brief description of this step"
-                numberOfLines={2}
+                label="Instructions"
+                maxLength={1000}
+                name="instructions"
+                numberOfLines={3}
+                placeholder="Add step instructions"
               />
 
               <View className="gap-3">
@@ -365,14 +367,6 @@ export function StepEditSheet({
                   placeholder="e.g., 85"
                 />
               </View>
-
-              <FormTextareaField
-                control={form.control}
-                label="Notes"
-                name="notes"
-                placeholder="Additional notes or instructions"
-                numberOfLines={3}
-              />
             </View>
           </Form>
         </ScrollView>

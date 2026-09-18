@@ -1,7 +1,8 @@
 import { MAX_ACTIVITY_FILE_SIZE_BYTES } from "@repo/core/activity-files";
+import type { ActivityFileType } from "@repo/core/server/activity-files";
 import { z } from "zod";
 import { logger } from "../../logger";
-import { type StravaUploadFileFormat, stravaUploadStatusSchema } from "./upload-contract";
+import { stravaUploadStatusSchema } from "./upload-contract";
 
 const STRAVA_API_BASE_URL = "https://www.strava.com/api/v3";
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -245,7 +246,10 @@ export class StravaClient {
         throw new StravaClientError(kind, {
           status: response.status,
           rateLimit,
-          ...(kind === "rate_limited" ? { retryAfterSeconds: retryAfterSeconds(response) } : {}),
+          ...(() => {
+            const retryAfter = kind === "rate_limited" ? retryAfterSeconds(response) : undefined;
+            return retryAfter === undefined ? {} : { retryAfterSeconds: retryAfter };
+          })(),
         });
       }
       let value: unknown;
@@ -276,7 +280,7 @@ export class StravaClient {
       path: "/athlete",
       operation: "read_athlete",
       schema: stravaAthleteSchema,
-      signal,
+      ...(signal === undefined ? {} : { signal }),
     });
   }
 
@@ -297,7 +301,7 @@ export class StravaClient {
       path: `/athlete/activities?${params.toString()}`,
       operation: "list_activities",
       schema: z.array(stravaActivitySchema).max(200),
-      signal: input.signal,
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
     });
   }
 
@@ -306,7 +310,7 @@ export class StravaClient {
       path: `/activities/${encodeURIComponent(activityId)}?include_all_efforts=false`,
       operation: "read_activity",
       schema: stravaDetailedActivitySchema,
-      signal,
+      ...(signal === undefined ? {} : { signal }),
       activityScoped: true,
     });
   }
@@ -328,7 +332,7 @@ export class StravaClient {
       path: `/activities/${encodeURIComponent(activityId)}/streams?keys=${keys}&key_by_type=true`,
       operation: "read_streams",
       schema: stravaStreamsSchema,
-      signal,
+      ...(signal === undefined ? {} : { signal }),
       activityScoped: true,
     });
   }
@@ -336,7 +340,7 @@ export class StravaClient {
   async uploadActivity(input: {
     bytes: Uint8Array;
     externalId: string;
-    format: StravaUploadFileFormat;
+    format: ActivityFileType;
     signal?: AbortSignal;
   }) {
     if (input.bytes.byteLength < 1 || input.bytes.byteLength > MAX_ACTIVITY_FILE_SIZE_BYTES) {
@@ -379,7 +383,10 @@ export class StravaClient {
         throw new StravaClientError(kind, {
           status: response.status,
           rateLimit,
-          ...(kind === "rate_limited" ? { retryAfterSeconds: retryAfterSeconds(response) } : {}),
+          ...(() => {
+            const retryAfter = kind === "rate_limited" ? retryAfterSeconds(response) : undefined;
+            return retryAfter === undefined ? {} : { retryAfterSeconds: retryAfter };
+          })(),
         });
       }
       let value: unknown;
@@ -414,7 +421,7 @@ export class StravaClient {
       path: `/uploads/${encodeURIComponent(id)}`,
       operation: "read_upload",
       schema: stravaUploadStatusSchema,
-      signal,
+      ...(signal === undefined ? {} : { signal }),
     });
   }
 }

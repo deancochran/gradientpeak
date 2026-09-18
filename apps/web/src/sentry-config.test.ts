@@ -16,6 +16,7 @@ describe("web Sentry configuration", () => {
     expect(options).toMatchObject({
       enableLogs: false,
       includeLocalVariables: false,
+      sampleRate: 1,
       sendDefaultPii: false,
       tracesSampleRate: 0,
       dataCollection: {
@@ -34,6 +35,7 @@ describe("web Sentry configuration", () => {
   it("uses privacy-safe browser defaults", () => {
     expect(createBrowserSentryOptions({})).toMatchObject({
       enableLogs: false,
+      sampleRate: 1,
       sendDefaultPii: false,
       tracesSampleRate: 0,
       replaysOnErrorSampleRate: 0,
@@ -199,6 +201,22 @@ describe("web Sentry configuration", () => {
       },
     });
     expect(serialized).not.toMatch(/example\.test|person@example\.test|synthetic-secret|token=/);
+  });
+
+  it("uses the shared canonical diagnostic summary instead of raw database error text", () => {
+    const cause = Object.assign(new Error("SELECT secret FROM profiles WHERE id = $1"), {
+      code: "42703",
+    });
+    const prepared = prepareSentryEvent(
+      { exception: { values: [{ type: "PostgresError", value: "private@example.test" }] } },
+      { originalException: new Error("failed", { cause }) },
+    );
+
+    expect(prepared).toEqual({
+      exception: {
+        values: [{ type: "PostgresError", value: "Database schema is missing a column." }],
+      },
+    });
   });
 
   it("rebuilds events from a top-level allowlist and normalizes breadcrumb categories", () => {

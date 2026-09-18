@@ -94,9 +94,9 @@ export function LedgerEntries({
             const typeLabel = entry.kind === "group_event" ? "Group event" : "Calendar event";
             return (
               <ResourceCardShell
-                accessibilityLabel={
-                  navigation ? `Open ${typeLabel.toLowerCase()} ${entry.title}` : undefined
-                }
+                {...(navigation
+                  ? { accessibilityLabel: `Open ${typeLabel.toLowerCase()} ${entry.title}` }
+                  : {})}
                 compact
                 key={`${entry.kind}-${entry.id}`}
                 {...(navigation ? { onPress: () => onOpenEntry(navigation) } : {})}
@@ -124,7 +124,9 @@ export function LedgerEntries({
             />
           ) : (
             <ResourceCardShell
-              accessibilityLabel={navigation ? `Open completed activity ${entry.title}` : undefined}
+              {...(navigation
+                ? { accessibilityLabel: `Open completed activity ${entry.title}` }
+                : {})}
               compact
               key={`${entry.kind}-${entry.id}`}
               {...(navigation ? { onPress: () => onOpenEntry(navigation) } : {})}

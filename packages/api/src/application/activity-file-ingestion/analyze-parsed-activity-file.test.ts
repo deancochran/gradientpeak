@@ -1,6 +1,7 @@
 import {
   activityArtifactSemanticsSchema,
   analyzeActivityDerivedMetrics,
+  getKnownNormalizedIntensity,
   getNormalizedIntensity,
 } from "@repo/core";
 import { selectCyclingNormalizedPowerWatts } from "@repo/core/calculations";
@@ -393,7 +394,7 @@ describe("analyzeParsedActivityFile", () => {
     );
 
     const importedIntensity = getNormalizedIntensity(importedCommonLoad);
-    const liveIntensity = getNormalizedIntensity(live.commonLoad);
+    const liveIntensity = getKnownNormalizedIntensity(live.commonLoad);
     expect(importedIntensity).not.toBeNull();
     expect(liveIntensity).not.toBeNull();
     if (importedIntensity === null || liveIntensity === null) {

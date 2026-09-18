@@ -423,6 +423,12 @@ async function canAccessActivityStreams(
   if (!activity) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
   }
+  if (activity.parentStartedAt === null) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Activity stream access requires a measured activity start time",
+    });
+  }
 
   if (activity.profile_id === userId) {
     return {

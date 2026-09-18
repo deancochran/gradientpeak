@@ -1,7 +1,7 @@
 // packages/api/src/trpc.ts
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
-import z, { ZodError } from "zod";
+import { ZodError } from "zod";
 import type { Context } from "./context";
 import { hasCurrentContractEpoch } from "./contract-epoch";
 import { checkApiRateLimit } from "./lib/rate-limit";
@@ -28,7 +28,6 @@ const TELEMETRY_PROCEDURE_GROUPS = new Set([
   "storage",
   "home",
   "feed",
-  "profileSettings",
   "groups",
   "publicShare",
   "organizations",
@@ -82,6 +81,13 @@ export function normalizeTelemetryOutcome(error: unknown) {
   return EXPECTED_ERROR_CODES.has(code) ? "expected_error" : "unexpected_error";
 }
 
+export function applicationErrorCodeForCause(cause: unknown) {
+  if (!(cause instanceof Error)) return null;
+  if (cause.name === "OnboardingPendingOAuthError") return "ONBOARDING_PENDING_OAUTH";
+  if (cause.name === "ActivityPlanIntegrityError") return "ACTIVITY_PLAN_INTEGRITY_FAILED";
+  return null;
+}
+
 const t = initTRPC.context<Context>().create({
   sse: {
     maxDurationMs: 5_000,
@@ -92,19 +98,56 @@ const t = initTRPC.context<Context>().create({
   allowOutsideOfServer: false,
   errorFormatter: ({ shape, error }) => ({
     ...shape,
+    ...(error.code === "INTERNAL_SERVER_ERROR"
+      ? { message: "An unexpected server error occurred." }
+      : {}),
     data: {
       ...shape.data,
       zodError:
         error.cause instanceof ZodError
-          ? z.flattenError(error.cause as ZodError<Record<string, unknown>>)
+          ? sanitizeZodError(error.cause as ZodError<Record<string, unknown>>)
           : null,
-      applicationErrorCode:
-        error.cause instanceof Error && error.cause.name === "OnboardingPendingOAuthError"
-          ? "ONBOARDING_PENDING_OAUTH"
-          : null,
+      applicationErrorCode: applicationErrorCodeForCause(error.cause),
     },
   }),
 });
+
+function safeZodMessage(code: string) {
+  switch (code) {
+    case "invalid_type":
+      return "Enter a value of the expected type.";
+    case "too_small":
+      return "Value is below the minimum allowed.";
+    case "too_big":
+      return "Value exceeds the maximum allowed.";
+    case "invalid_format":
+      return "Value has an invalid format.";
+    case "invalid_value":
+      return "Value is not supported.";
+    default:
+      return "Invalid input.";
+  }
+}
+
+function sanitizeZodError(error: ZodError<Record<string, unknown>>) {
+  const formErrors: string[] = [];
+  const fieldErrors: Record<string, string[]> = {};
+  for (const issue of error.issues) {
+    const message = safeZodMessage(issue.code);
+    const path = issue.path.map(String).join(".");
+    if (!path) {
+      formErrors.push(message);
+      continue;
+    }
+    const messages = fieldErrors[path] ?? [];
+    messages.push(message);
+    fieldErrors[path] = messages;
+  }
+  return {
+    formErrors,
+    fieldErrors,
+  };
+}
 
 export const createTRPCRouter = t.router;
 const telemetryProcedure = t.procedure.use(async ({ path, type, next }) => {

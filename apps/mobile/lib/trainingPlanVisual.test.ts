@@ -16,11 +16,53 @@ describe("training plan summary presentation", () => {
   it("prefers an explicit session target and otherwise identifies the authored average", () => {
     const structure = {
       version: 1,
+      plan_preferences: {
+        weekly_session_count: null,
+        target_weekly_duration_minutes: null,
+        maximum_session_duration_minutes: null,
+        preferred_weekdays: [],
+        rest_days: [],
+        progression_style: null,
+        recovery_priority: null,
+      },
       durationWeeks: { recommended: 2 },
       sessions: [
-        { offset_days: 0, activity_plan_id: "11111111-1111-4111-8111-111111111111" },
-        { offset_days: 2, activity_plan_id: "22222222-2222-4222-8222-222222222222" },
-        { offset_days: 8, activity_plan_id: "33333333-3333-4333-8333-333333333333" },
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          offset_days: 0,
+          activity_plan_id: "11111111-1111-4111-8111-111111111112",
+          demand: {
+            activity_category: "run",
+            training_intent: "aerobic_base",
+            target_duration_minutes: null,
+            target_common_load: null,
+            importance: "normal",
+          },
+        },
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          offset_days: 2,
+          activity_plan_id: "22222222-2222-4222-8222-222222222223",
+          demand: {
+            activity_category: "run",
+            training_intent: "aerobic_base",
+            target_duration_minutes: null,
+            target_common_load: null,
+            importance: "normal",
+          },
+        },
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          offset_days: 8,
+          activity_plan_id: "33333333-3333-4333-8333-333333333334",
+          demand: {
+            activity_category: "run",
+            training_intent: "aerobic_base",
+            target_duration_minutes: null,
+            target_common_load: null,
+            importance: "normal",
+          },
+        },
       ],
     };
 

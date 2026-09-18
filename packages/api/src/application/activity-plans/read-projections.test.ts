@@ -4,7 +4,6 @@ import {
   createUnavailableAthletePerformanceTargetFacts,
   ENDURANCE_SWIM,
   estimateActivityPlanForTrainingContext,
-  initializeActivityPlanDocument,
   OPTION_1_FAVORITE_SWIM,
   SAMPLE_RECOVERY_WORKOUT,
 } from "@repo/core";
@@ -158,10 +157,7 @@ function planRow(planStructure: unknown) {
     id: PLAN_ID,
     profile_id: PROFILE_ID,
     name: "Bike plan",
-    structure: initializeActivityPlanDocument({
-      activityPlanId: PLAN_ID,
-      structure: planStructure,
-    }),
+    structure: planStructure,
     structure_hash: `v1:sha256:${"a".repeat(64)}`,
     revision: 1,
     gps_recording_enabled: true,
@@ -190,11 +186,6 @@ describe("toActivityPlanSummary", () => {
       avatarUrl: `https://storage.example.test/profile-avatars/${PROFILE_ID}/legacy-avatar.png`,
     });
     expect(result.structure).toEqual(structure);
-    expect(result).toMatchObject({
-      defaultVariantId: PLAN_ID,
-      defaultVariantName: "Base",
-      variantCount: 1,
-    });
     expect(Object.hasOwn(result, "prescriptionQuantification")).toBe(true);
   });
 
@@ -392,7 +383,7 @@ describe("toActivityPlanSummary", () => {
   it("includes only objective intensity in the canonical projection metric array", () => {
     const metrics = createActivityPlanProjectionMetrics({
       id: PLAN_ID,
-      document: initializeActivityPlanDocument({ activityPlanId: PLAN_ID, structure }),
+      structure,
       updatedAt: "2026-07-17T08:00:00.000Z",
     });
 
@@ -439,8 +430,6 @@ describe("toActivityPlanSummary", () => {
     );
 
     expect(detail.structure).toEqual(structure);
-    expect(detail.variants).toEqual([{ id: PLAN_ID, name: "Base" }]);
-    expect(detail.resolvedVariant).toEqual({ id: PLAN_ID, name: "Base", selection: "default" });
     expect(detail.notes).toBe("Owner instructions");
     expect(detail.structureHash).toMatch(/^v1:sha256:/);
     expect(detail.gpsRecordingEnabled).toBe(true);
@@ -448,45 +437,6 @@ describe("toActivityPlanSummary", () => {
     expect(detail.metrics.map((metric) => metric.key)).toContain("objective_intensity");
     expect(detail).not.toHaveProperty("prescribedIntensity");
     expect(JSON.stringify(detail)).toMatch(/%FTP|"duration"|"targets"/);
-  });
-
-  it("keeps the complete document for editing while projecting an explicit variant", () => {
-    const buildId = "80000000-0000-4000-8000-000000000002";
-    const buildStructure = structuredClone(structure);
-    const segment = buildStructure.segments[0];
-    if (!segment || segment.role !== "activity") throw new Error("Expected activity segment");
-    const step = segment.intervals[0]?.steps[0];
-    if (!step || step.duration.type !== "time") throw new Error("Expected timed step");
-    step.duration.seconds = 2_400;
-    const document = {
-      contractVersion: 1 as const,
-      defaultVariantId: PLAN_ID,
-      variants: [
-        { id: PLAN_ID, name: "Base", structure },
-        { id: buildId, name: "Build", structure: buildStructure },
-      ],
-    };
-
-    const detail = toActivityPlanDetail(
-      {
-        ...planRow(structure),
-        structure: document,
-        resolvedActivityPlanVariant: {
-          selection: "explicit" as const,
-          variantId: buildId,
-          variantName: "Build",
-          structure: buildStructure,
-        },
-      },
-      PROFILE_ID,
-    );
-
-    expect(detail.structure).toEqual(buildStructure);
-    expect(detail.resolvedVariant).toEqual({ id: buildId, name: "Build", selection: "explicit" });
-    expect(detail.variants).toEqual([
-      { id: PLAN_ID, name: "Base" },
-      { id: buildId, name: "Build" },
-    ]);
   });
 
   it("accepts fresh personalized evidence for the owner", () => {

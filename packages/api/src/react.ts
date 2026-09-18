@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { createTRPCProxyClient, httpBatchLink } from "@trpc/client";
+import { createTRPCProxyClient, httpBatchLink, type TRPCLink } from "@trpc/client";
 import { createTRPCReact } from "@trpc/react-query";
 
 export { loggerLink } from "@trpc/client";
@@ -167,5 +167,5 @@ export async function invalidateTrainingPlanQueries(utils: ApiReactUtils) {
   await utils.trainingPlans.invalidate();
 }
 
-export type { AppRouter };
+export type { AppRouter, TRPCLink };
 export { createQueryClient };

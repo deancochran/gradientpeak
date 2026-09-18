@@ -1,7 +1,7 @@
 import React from "react";
 import { Alert } from "react-native";
 import { createButtonComponent, createHost } from "../../../../test/mock-components";
-import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
+import { cleanup, fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
 const navigateToMock = jest.fn();
 const clearSessionMock = jest.fn(async () => undefined);
@@ -28,6 +28,16 @@ let publicProfileState: typeof defaultPublicProfile | null | undefined = default
 let publicProfileIsError = false;
 let publicProfileIsLoading = false;
 let authState = defaultAuthState;
+
+function deferred<T>() {
+  let reject!: (reason?: unknown) => void;
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
 
 const ButtonHost = createButtonComponent();
 
@@ -271,6 +281,10 @@ jest.mock("@/lib/stores/productAnalyticsConsentStore", () => ({
 const ProfileTabScreen = require("@/components/profile/MeScreen").default;
 
 describe("ProfileTabScreen", () => {
+  afterEach(() => {
+    void cleanup();
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     publicProfileState = defaultPublicProfile;
@@ -390,7 +404,8 @@ describe("ProfileTabScreen", () => {
       await fireEvent.press(screen.getByTestId("profile-tab-email-submit-button"));
     });
 
-    expect(Alert.alert).toHaveBeenCalledWith("Error", "Please enter a valid email address");
+    expect(screen.getByTestId("profile-tab-email-error")).toBeTruthy();
+    expect(screen.getByText("Review the email address and try again.")).toBeTruthy();
     expect(updateEmailMock).not.toHaveBeenCalled();
   });
 
@@ -418,7 +433,8 @@ describe("ProfileTabScreen", () => {
       await fireEvent.press(screen.getByTestId("profile-tab-password-submit-button"));
     });
 
-    expect(Alert.alert).toHaveBeenCalledWith("Error", "New passwords do not match");
+    expect(screen.getByTestId("profile-tab-password-error")).toBeTruthy();
+    expect(screen.getByText("Review the password fields and try again.")).toBeTruthy();
     expect(updatePasswordMock).not.toHaveBeenCalled();
 
     jest.clearAllMocks();
@@ -440,11 +456,97 @@ describe("ProfileTabScreen", () => {
       await fireEvent.press(screen.getByTestId("profile-tab-password-submit-button"));
     });
 
-    expect(Alert.alert).toHaveBeenCalledWith(
-      "Error",
-      "New password must be different from current password",
-    );
+    expect(screen.getByTestId("profile-tab-password-error")).toBeTruthy();
     expect(updatePasswordMock).not.toHaveBeenCalled();
+  });
+
+  it("retains entered credentials and exposes an inline retry error after a rejected password change", async () => {
+    updatePasswordMock.mockRejectedValueOnce(new Error("Unable to update password"));
+    await renderNative(<ProfileTabScreen />);
+
+    await fireEvent.press(screen.getByTestId("profile-tab-change-password"));
+    await fireEvent.changeText(
+      screen.getByTestId("profile-tab-current-password-input"),
+      "old-pass",
+    );
+    await fireEvent.changeText(screen.getByTestId("profile-tab-new-password-input"), "new-pass");
+    await fireEvent.changeText(
+      screen.getByTestId("profile-tab-confirm-password-input"),
+      "new-pass",
+    );
+    await fireEvent.press(screen.getByTestId("profile-tab-password-submit-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("profile-tab-password-error")).toBeTruthy();
+    });
+    expect(screen.getByDisplayValue("old-pass")).toBeTruthy();
+    expect(screen.getAllByDisplayValue("new-pass")).toHaveLength(2);
+  });
+
+  it("resets password credentials for a new account and ignores the prior account's completion", async () => {
+    const request = deferred<undefined>();
+    updatePasswordMock.mockReturnValueOnce(request.promise);
+    const rendered = await renderNative(<ProfileTabScreen />);
+
+    await fireEvent.press(screen.getByTestId("profile-tab-change-password"));
+    await fireEvent.changeText(
+      screen.getByTestId("profile-tab-current-password-input"),
+      "old-pass",
+    );
+    await fireEvent.changeText(screen.getByTestId("profile-tab-new-password-input"), "new-pass");
+    await fireEvent.changeText(
+      screen.getByTestId("profile-tab-confirm-password-input"),
+      "new-pass",
+    );
+    await React.act(async () => {
+      void screen.getByTestId("profile-tab-password-submit-button").props.onPress();
+      void screen.getByTestId("profile-tab-password-submit-button").props.onPress();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(updatePasswordMock).toHaveBeenCalledTimes(1));
+
+    authState = {
+      ...defaultAuthState,
+      user: { id: "user-2", email: "other@example.com" },
+    };
+    await React.act(async () => {
+      rendered.rerender(<ProfileTabScreen />);
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId("profile-tab-current-password-input")).toBeNull(),
+    );
+    expect(screen.queryByTestId("profile-tab-password-error")).toBeNull();
+
+    await React.act(async () => {
+      request.resolve(undefined);
+      await Promise.resolve();
+    });
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(navigateToMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts one email request in a frame and clears only the current account's credentials after success", async () => {
+    const request = deferred<undefined>();
+    updateEmailMock.mockReturnValueOnce(request.promise);
+    await renderNative(<ProfileTabScreen />);
+
+    await fireEvent.press(screen.getByTestId("profile-tab-update-email"));
+    await fireEvent.changeText(screen.getByTestId("profile-tab-email-input"), "new@example.com");
+    await React.act(async () => {
+      void screen.getByTestId("profile-tab-email-submit-button").props.onPress();
+      void screen.getByTestId("profile-tab-email-submit-button").props.onPress();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(updateEmailMock).toHaveBeenCalledTimes(1));
+
+    await React.act(async () => {
+      request.resolve(undefined);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(screen.queryByTestId("profile-tab-email-input")).toBeNull());
+    await fireEvent.press(screen.getByTestId("profile-tab-update-email"));
+    expect(screen.getByDisplayValue("")).toBeTruthy();
   });
 
   it("shows social counts as loading while public profile stats load", async () => {

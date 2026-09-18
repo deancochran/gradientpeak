@@ -752,10 +752,10 @@ export function resolveTrainingPrescription(input: {
       category,
       weight,
       role,
-      signal,
+      ...(signal === undefined ? {} : { signal }),
       demand,
-      preferences: input.preferences,
-      maxWeeklyDurationMinutes,
+      ...(input.preferences === undefined ? {} : { preferences: input.preferences }),
+      ...(maxWeeklyDurationMinutes === undefined ? {} : { maxWeeklyDurationMinutes }),
     });
   }
   const primaryActivityCategories = normalized

@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { createFileRoute } from "@tanstack/react-router";
+import { useRef } from "react";
 import { toast } from "sonner";
 import { GroupForm } from "../../../components/groups/group-form";
 import { api } from "../../../lib/api/client";
@@ -10,6 +11,7 @@ function CreateGroupPage() {
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
   const createMutation = api.groups.create.useMutation();
+  const createdGroupId = useRef<string | null>(null);
   return (
     <main className="container mx-auto max-w-3xl space-y-6 py-4">
       <div>
@@ -30,7 +32,15 @@ function CreateGroupPage() {
               const result = await createMutation.mutateAsync(value);
               await utils.groups.invalidate();
               toast.success("Group created");
-              void navigate({ to: "/groups/$groupId", params: { groupId: result.group.id } });
+              createdGroupId.current = result.group.id;
+            }}
+            onSuccess={() => {
+              if (createdGroupId.current) {
+                void navigate({
+                  to: "/groups/$groupId",
+                  params: { groupId: createdGroupId.current },
+                });
+              }
             }}
             submitLabel="Create group"
           />

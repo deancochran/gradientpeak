@@ -162,9 +162,9 @@ export function resolveMetricSources(
 ): MetricSourceSelection[] {
   return metricFamilies.map((metricFamily) =>
     resolveMetricSource(metricFamily, candidates, {
-      isIndoor: context.isIndoor,
       preferredSourceId: context.preferredSourceIds?.[metricFamily] ?? null,
-      selectedAt: context.selectedAt,
+      ...(context.isIndoor === undefined ? {} : { isIndoor: context.isIndoor }),
+      ...(context.selectedAt === undefined ? {} : { selectedAt: context.selectedAt }),
     }),
   );
 }

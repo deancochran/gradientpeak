@@ -186,5 +186,6 @@ export function createFormComponentMocks() {
     FormTextField: createControlledField("FormTextField"),
     FormTextareaField: createControlledField("FormTextareaField"),
     FormTimeInputField: createControlledField("FormTimeInputField"),
+    FormTimezoneField: createControlledField("FormTimezoneField"),
   };
 }

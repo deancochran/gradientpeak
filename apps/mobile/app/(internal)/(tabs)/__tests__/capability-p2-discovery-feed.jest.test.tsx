@@ -45,6 +45,7 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   useLocalSearchParams: () => routeParams,
+  useRouter: () => ({ setParams: jest.fn() }),
 }));
 jest.mock("@/lib/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: "me" } }) }));
 jest.mock("@/lib/navigation/useAppNavigate", () => ({ useAppNavigate: () => navigateTo }));

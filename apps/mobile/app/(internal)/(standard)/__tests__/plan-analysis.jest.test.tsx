@@ -8,6 +8,9 @@ const replace = jest.fn();
 const navigate = jest.fn();
 const trainingInsightProps = jest.fn();
 const captureProductAnalytics = jest.fn();
+let planningTimezoneState = "ready";
+let timezoneSetupError: string | null = null;
+const retryTimezoneInitialization = jest.fn();
 const getGoalProgressQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
   data: undefined,
   isError: false,
@@ -59,6 +62,9 @@ jest.mock("@/lib/api", () => ({
 }));
 jest.mock("@/components/plan/training-path/usePlanTrainingPathData", () => ({
   usePlanTrainingPathData: () => ({
+    planningTimezoneState,
+    timezoneSetupError,
+    retryTimezoneInitialization,
     dailyTrainingPathPoints: [
       { date: "2026-03-01", fitnessCtl: 38 },
       { date: "2026-04-15", fitnessCtl: 42 },
@@ -95,6 +101,8 @@ const PlanAnalysis = require("../plan-analysis").default;
 
 beforeEach(() => {
   jest.clearAllMocks();
+  planningTimezoneState = "ready";
+  timezoneSetupError = null;
   mockParams = {
     anchorDate: "2026-04-15",
     goalId: "55555555-5555-4555-8555-555555555555",
@@ -102,6 +110,25 @@ beforeEach(() => {
     range: "1y",
     view: "training",
   };
+});
+
+it("waits for automatic initialization before enabling analysis reads", async () => {
+  planningTimezoneState = "initializing";
+  await renderNative(<PlanAnalysis />);
+  expect(screen.getByTestId("plan-analysis-initializing")).toBeTruthy();
+  expect(screen.getByText("Preparing your plan…")).toBeTruthy();
+  expect(screen.queryByTestId("training-insight")).toBeNull();
+  expect(getGoalProgressQuery).toHaveBeenLastCalledWith(expect.anything(), { enabled: false });
+  expect(getThresholdOverviewQuery).toHaveBeenLastCalledWith(expect.anything(), { enabled: false });
+  expect(navigate).not.toHaveBeenCalled();
+});
+
+it("retries initialization failures without asking for a timezone", async () => {
+  planningTimezoneState = "initializing";
+  timezoneSetupError = "Plan setup could not be completed.";
+  await renderNative(<PlanAnalysis />);
+  await fireEvent.press(screen.getByText("Retry"));
+  expect(retryTimezoneInitialization).toHaveBeenCalledTimes(1);
 });
 
 it("keeps semantic view, metric, range, goal, and anchor state in the route", async () => {

@@ -5,11 +5,11 @@ import {
   ACTIVITY_PLAN_CATALOG_TWO_UP_GEOMETRY,
   type ActivityPlanCatalogEntry,
   type ActivityPlanCatalogLayout,
-  type ActivityPlanCatalogPathwayPage,
+  type ActivityPlanCatalogTrainingPlan,
+  type ActivityPlanCatalogTrainingWeek,
   activityPlanCatalogNeedsBlankBeforeBackCover,
   getActivityPlanCatalogContentPageCount,
   getActivityPlanCatalogInteriorMargins,
-  getActivityPlanCatalogWorksheetStartPage,
   isActivityPlanTwoUpEligible,
 } from "./activity-plan-catalog";
 import { GradientPeakPdfBrand } from "./activity-plan-pdf-document";
@@ -104,44 +104,19 @@ const styles = StyleSheet.create({
   },
   contentsName: { paddingRight: 5, width: "88%" },
   contentsNumber: { textAlign: "right", width: "12%" },
-  finderGrid: { display: "flex", flexDirection: "row", flexWrap: "wrap" },
+  finderIndex: { display: "flex", flexDirection: "row", flexWrap: "wrap", marginTop: 8 },
   finderItem: {
     borderBottomColor: "#e2e8f0",
     borderBottomWidth: 0.7,
-    marginBottom: 14,
-    paddingBottom: 10,
-    paddingRight: 12,
+    marginBottom: 10,
+    paddingBottom: 8,
+    paddingRight: 14,
+    textDecoration: "none",
     width: "50%",
   },
-  finderLabel: { color: "#0369a1", fontSize: 11, fontWeight: 700, marginBottom: 3 },
-  discoveryColumns: { display: "flex", flexDirection: "row" },
-  discoveryColumn: { width: "50%" },
-  discoveryEntry: {
-    borderBottomColor: "#f1f5f9",
-    borderBottomWidth: 0.5,
-    marginBottom: 3,
-    paddingBottom: 3,
-  },
-  discoveryMeta: { color: "#64748b", fontSize: 7.2, lineHeight: 1.2 },
-  discoveryName: { color: "#334155", fontSize: 8.1, lineHeight: 1.15 },
-  pathwayFamily: {
-    borderBottomColor: "#e2e8f0",
-    borderBottomWidth: 0.8,
-    marginBottom: 18,
-    paddingBottom: 12,
-  },
-  pathwayLevel: { alignItems: "baseline", display: "flex", flexDirection: "row", marginTop: 5 },
-  pathwayLevelName: { color: "#334155", fontSize: 9, width: "80%" },
-  pathwayLevelTag: { color: "#64748b", fontSize: 8, textTransform: "uppercase", width: "20%" },
-  worksheetLine: {
-    borderBottomColor: "#94a3b8",
-    borderBottomWidth: 0.7,
-    height: 25,
-    marginBottom: 9,
-  },
-  worksheetLabel: { color: "#475569", fontSize: 9, marginBottom: 3 },
-  worksheetTable: { borderColor: "#cbd5e1", borderWidth: 0.7, marginTop: 10 },
-  worksheetRow: { borderBottomColor: "#e2e8f0", borderBottomWidth: 0.6, height: 25 },
+  finderTitle: { color: "#0369a1", fontSize: 11.5, fontWeight: 700, marginBottom: 3 },
+  finderMeta: { color: "#475569", fontSize: 9, lineHeight: 1.3 },
+  finderTraining: { marginTop: 4, width: "100%" },
   slot: {
     borderColor: "#dbe3ec",
     borderRadius: 6,
@@ -151,14 +126,14 @@ const styles = StyleSheet.create({
   },
   secondSlot: { marginTop: ACTIVITY_PLAN_CATALOG_TWO_UP_GEOMETRY.slotGap },
   fullCard: { paddingHorizontal: 2 },
-  planHeadingRow: {
-    alignItems: "flex-start",
-    display: "flex",
-    flexDirection: "row",
-    justifyContent: "space-between",
+  planTitle: { fontSize: 16, fontWeight: 700, lineHeight: 1.1 },
+  planMeta: {
+    color: "#475569",
+    fontSize: 8.2,
+    lineHeight: 1.2,
+    marginTop: 4,
+    textTransform: "uppercase",
   },
-  planTitle: { fontSize: 17, fontWeight: 700, lineHeight: 1.1, paddingRight: 8, width: "72%" },
-  planMeta: { color: "#475569", fontSize: 9, marginTop: 2, textAlign: "right", width: "28%" },
   planDescription: { color: "#334155", fontSize: 9.5, lineHeight: 1.3, marginTop: 5 },
   profile: {
     backgroundColor: "#f8fafc",
@@ -206,60 +181,132 @@ const styles = StyleSheet.create({
   note: { color: "#64748b", fontSize: 9, lineHeight: 1.3, marginTop: 1.5 },
   compactNote: { color: "#64748b", fontSize: 8.2, lineHeight: 1.18, marginTop: 1 },
   compactInlineNote: { color: "#64748b", fontSize: 8.2, fontWeight: 400 },
+  adaptation: {
+    backgroundColor: "#eff6ff",
+    borderLeftColor: "#38bdf8",
+    borderLeftWidth: 2,
+    marginTop: 5,
+    paddingLeft: 6,
+  },
+  adaptationLabel: { color: "#075985", fontSize: 7.8, fontWeight: 700 },
+  adaptationText: { color: "#334155", fontSize: 7.6, lineHeight: 1.2, marginTop: 1 },
+  trainingPlanList: { marginTop: 14 },
+  trainingPlanListRow: {
+    alignItems: "baseline",
+    borderBottomColor: "#e2e8f0",
+    borderBottomWidth: 0.7,
+    color: "#334155",
+    display: "flex",
+    flexDirection: "row",
+    fontSize: 10,
+    justifyContent: "space-between",
+    paddingVertical: 8,
+    textDecoration: "none",
+  },
+  trainingPlanListName: { fontWeight: 700, paddingRight: 8, width: "68%" },
+  trainingPlanListMeta: { color: "#64748b", textAlign: "right", width: "32%" },
+  trainingMetaRow: { display: "flex", flexDirection: "row", flexWrap: "wrap", marginBottom: 9 },
+  trainingMetaPill: {
+    backgroundColor: "#e0f2fe",
+    borderRadius: 8,
+    color: "#075985",
+    fontSize: 7.5,
+    marginBottom: 4,
+    marginRight: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    textTransform: "uppercase",
+  },
+  trainingFacts: { display: "flex", flexDirection: "row", marginBottom: 12 },
+  trainingFact: {
+    borderLeftColor: "#38bdf8",
+    borderLeftWidth: 2,
+    marginRight: 18,
+    paddingLeft: 7,
+  },
+  trainingFactValue: { fontSize: 15, fontWeight: 700 },
+  trainingFactLabel: { color: "#64748b", fontSize: 7.5, marginTop: 1 },
+  trainingChart: {
+    alignItems: "flex-end",
+    backgroundColor: "#f8fafc",
+    borderColor: "#e2e8f0",
+    borderRadius: 5,
+    borderWidth: 0.7,
+    display: "flex",
+    flexDirection: "row",
+    height: 82,
+    marginBottom: 14,
+    paddingHorizontal: 5,
+    paddingTop: 8,
+  },
+  trainingChartColumn: {
+    alignItems: "center",
+    display: "flex",
+    flexDirection: "column",
+    height: "100%",
+    justifyContent: "flex-end",
+    paddingHorizontal: 2,
+  },
+  trainingChartCount: { color: "#475569", fontSize: 6, marginBottom: 2 },
+  trainingChartBar: { backgroundColor: "#38bdf8", borderRadius: 2, minHeight: 2, width: "72%" },
+  trainingChartWeek: { color: "#64748b", fontSize: 6.5, marginTop: 2 },
+  scheduleTitle: { color: "#0369a1", fontSize: 11, fontWeight: 700, marginBottom: 5 },
+  scheduleTable: { borderColor: "#94a3b8", borderWidth: 0.7, marginBottom: 10 },
+  scheduleRow: { display: "flex", flexDirection: "row" },
+  scheduleHeader: { backgroundColor: "#f1f5f9", minHeight: 18 },
+  scheduleWeekCell: {
+    borderRightColor: "#cbd5e1",
+    borderRightWidth: 0.5,
+    color: "#475569",
+    fontSize: 7.2,
+    fontWeight: 700,
+    padding: 3,
+    width: "8%",
+  },
+  scheduleDayCell: {
+    borderRightColor: "#cbd5e1",
+    borderRightWidth: 0.5,
+    padding: 3,
+    width: "13.14%",
+  },
+  scheduleDayHeader: { color: "#475569", fontSize: 7.2, fontWeight: 700, textAlign: "center" },
+  scheduleWeekRow: { borderTopColor: "#cbd5e1", borderTopWidth: 0.5, minHeight: 49 },
+  scheduleSession: {
+    borderBottomColor: "#e2e8f0",
+    borderBottomWidth: 0.4,
+    color: "#0f172a",
+    marginBottom: 1,
+    paddingBottom: 1,
+    textDecoration: "none",
+  },
+  scheduleSessionTitle: { fontSize: 7.5, fontWeight: 700, lineHeight: 1.1 },
+  scheduleSessionDetails: {
+    alignItems: "baseline",
+    display: "flex",
+    flexDirection: "row",
+    marginTop: 0.5,
+  },
+  scheduleSessionMetrics: { color: "#475569", fontSize: 7, lineHeight: 1.15 },
+  scheduleSessionReference: {
+    color: "#0369a1",
+    fontSize: 6.8,
+    lineHeight: 1.15,
+    textAlign: "right",
+  },
+  scheduleDemandNote: { color: "#64748b", fontSize: 7.5, lineHeight: 1.3, marginBottom: 8 },
+  activityKey: { display: "flex", flexDirection: "row", flexWrap: "wrap", marginTop: 6 },
+  activityKeyItem: { marginBottom: 6, paddingRight: 12, width: "50%" },
+  activityKeyName: { color: "#0f172a", fontSize: 7.2, fontWeight: 700 },
+  activityKeyPage: { color: "#64748b", fontSize: 6.5, marginTop: 1 },
   preflightMarker: { color: "#ffffff", fontSize: 1, lineHeight: 1 },
 });
-
-const WORKSHEETS = [
-  [
-    "Weekly plan worksheet",
-    [
-      "Week of",
-      "Primary objective",
-      "Planned sessions",
-      "What changed",
-      "Review and next decision",
-    ],
-  ],
-  [
-    "Endurance session log",
-    [
-      "Date and plan",
-      "Conditions and route/pool",
-      "Completed work",
-      "Observed response",
-      "Next-session note",
-    ],
-  ],
-  [
-    "Strength session log",
-    [
-      "Date and plan",
-      "Movement and load",
-      "Completed sets and repetitions",
-      "Observed response",
-      "Next-session note",
-    ],
-  ],
-  [
-    "Test & race results",
-    [
-      "Date and test/race",
-      "Protocol or event",
-      "Result",
-      "Conditions",
-      "Comparison and next decision",
-    ],
-  ],
-] as const satisfies readonly (readonly [string, readonly string[]])[];
-const WORKSHEET_TABLE_ROWS = ["one", "two", "three", "four", "five", "six", "seven"] as const;
 
 function isRecto(pageNumber: number): boolean {
   return pageNumber % 2 === 1;
 }
 
 function interiorPageStyle(pageNumber: number) {
-  const margins = getActivityPlanCatalogInteriorMargins(pageNumber);
-  return [styles.page, isRecto(pageNumber) ? styles.recto : styles.verso, margins];
+  return [styles.page, isRecto(pageNumber) ? styles.recto : styles.verso];
 }
 
 function InteriorHeader({ pageNumber, section }: { pageNumber: number; section: string }) {
@@ -281,7 +328,7 @@ function InteriorFooter({ pageNumber }: { pageNumber: number }) {
   const bindingInset = getActivityPlanCatalogInteriorMargins(pageNumber);
   return (
     <Text fixed style={[styles.footer, bindingInset]}>
-      GradientPeak Activity Plan Catalog
+      GradientPeak Activity & Training Plan Catalog
     </Text>
   );
 }
@@ -362,12 +409,10 @@ function PlanCard({ compact, entry }: { compact: boolean; entry: ActivityPlanCat
   const { model } = entry;
   return (
     <View id={`plan-${entry.key}`} style={compact ? {} : styles.fullCard} wrap={false}>
-      <View style={styles.planHeadingRow} wrap={false}>
-        <Text style={styles.planTitle}>{model.title}</Text>
-        <Text style={styles.planMeta}>
-          {[model.activityCategory.toUpperCase(), ...model.totals].join(" · ")}
-        </Text>
-      </View>
+      <Text style={styles.planTitle}>{model.title}</Text>
+      <Text style={styles.planMeta}>
+        {[model.activityCategory.toUpperCase(), ...model.totals].join(" · ")}
+      </Text>
       {model.description ? <Text style={styles.planDescription}>{model.description}</Text> : null}
       <Profile compact={compact} model={model} />
       {model.sections.map((section) => (
@@ -390,6 +435,25 @@ function PlanCard({ compact, entry }: { compact: boolean; entry: ActivityPlanCat
       ))}
       {model.notes ? (
         <Text style={compact ? styles.compactNote : styles.note}>{model.notes}</Text>
+      ) : null}
+      {entry.adaptation ? (
+        <View style={styles.adaptation} wrap={false}>
+          <Text style={styles.adaptationLabel}>AUTHORED ADAPTATION</Text>
+          {entry.adaptation.controls.map((control) => (
+            <Text key={control} style={styles.adaptationText}>
+              {control}
+            </Text>
+          ))}
+          {entry.adaptation.allowedStates ? (
+            <Text style={styles.adaptationText}>
+              Allowed states: {entry.adaptation.allowedStates.join(" | ")}
+            </Text>
+          ) : (
+            <Text style={styles.adaptationText}>
+              All increment-aligned values in the range are allowed.
+            </Text>
+          )}
+        </View>
       ) : null}
       <Text style={styles.preflightMarker}>{`CATALOG-END-${entry.key}`}</Text>
     </View>
@@ -425,125 +489,179 @@ function getEntryPageNumbers(layout: ActivityPlanCatalogLayout): Map<string, num
   );
 }
 
-function DiscoveryIndexPage({
-  layout,
-  page,
-  pageNumber,
-}: {
-  layout: ActivityPlanCatalogLayout;
-  page: ActivityPlanCatalogLayout["discoveryPages"][number];
-  pageNumber: number;
-}) {
-  const entryPageNumbers = getEntryPageNumbers(layout);
-  const midpoint = Math.ceil(page.entries.length / 2);
-  const columns = [page.entries.slice(0, midpoint), page.entries.slice(midpoint)];
+const TRAINING_WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+
+function TrainingScheduleChart({ plan }: { plan: ActivityPlanCatalogTrainingPlan }) {
   return (
-    <FrontMatterPage pageNumber={pageNumber} section="Metadata discovery index">
-      <Text style={styles.frontTitle}>Metadata discovery index</Text>
-      <Text style={styles.frontBody}>
-        This index includes every plan with authoritative portfolio metadata. Plans without
-        portfolio metadata remain available in the main contents by activity category.
-      </Text>
-      <View style={styles.discoveryColumns}>
-        {columns.map((entries, columnIndex) => (
+    <View style={styles.trainingChart} wrap={false}>
+      {plan.scheduleVisual.weeks.map((week) => (
+        <View
+          key={`chart-${plan.id}-${week.weekIndex}`}
+          style={[
+            styles.trainingChartColumn,
+            { width: `${100 / plan.scheduleVisual.totalWeeks}%` },
+          ]}
+        >
+          <Text style={styles.trainingChartCount}>{week.plannedSessionCount}</Text>
           <View
-            key={columnIndex === 0 ? "metadata-left" : "metadata-right"}
             style={[
-              styles.discoveryColumn,
-              columnIndex === 0 ? styles.contentsColumnLeft : styles.contentsColumnRight,
+              styles.trainingChartBar,
+              { height: `${Math.max(4, week.relativeSessionVolume * 78)}%` },
             ]}
-          >
-            {entries.map(({ entry, metadata }) => (
-              <Link key={entry.key} src={`#plan-${entry.key}`} style={styles.discoveryEntry}>
-                <Text style={styles.discoveryName}>
-                  {entry.model.title} · {entryPageNumbers.get(entry.key)}
-                </Text>
-                <Text style={styles.discoveryMeta}>
-                  {metadata.family} · {metadata.primaryPurpose} · {metadata.primaryIntensity} ·{" "}
-                  {metadata.durationClass} · {metadata.difficulty}
-                  {metadata.triathlonContext ? " · triathlon" : ""}
-                </Text>
-              </Link>
-            ))}
+          />
+          <Text style={styles.trainingChartWeek}>W{week.weekIndex + 1}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function TrainingScheduleTable({ weeks }: { weeks: readonly ActivityPlanCatalogTrainingWeek[] }) {
+  if (weeks.length === 0) return null;
+  return (
+    <View style={styles.scheduleTable} wrap={false}>
+      <View style={[styles.scheduleRow, styles.scheduleHeader]}>
+        <View style={styles.scheduleWeekCell}>
+          <Text>Week</Text>
+        </View>
+        {TRAINING_WEEKDAY_LABELS.map((day) => (
+          <View key={day} style={styles.scheduleDayCell}>
+            <Text style={styles.scheduleDayHeader}>{day}</Text>
           </View>
         ))}
       </View>
-    </FrontMatterPage>
-  );
-}
-
-function PathwayPage({
-  layout,
-  page,
-  pageNumber,
-}: {
-  layout: ActivityPlanCatalogLayout;
-  page: ActivityPlanCatalogPathwayPage;
-  pageNumber: number;
-}) {
-  const entryPageNumbers = getEntryPageNumbers(layout);
-  return (
-    <FrontMatterPage pageNumber={pageNumber} section={page.title}>
-      <Text style={styles.frontTitle}>{page.title}</Text>
-      <Text style={styles.frontBody}>
-        Each family groups plans by its validated ordered difficulty metadata: foundation,
-        development, advanced, and race-specific.
-      </Text>
-      {page.families.map((family) => (
-        <View key={family.family} style={styles.pathwayFamily}>
-          <Text style={styles.frontHeading}>{family.label}</Text>
-          {family.entries.map(({ entry, metadata }) => (
-            <Link key={entry.key} src={`#plan-${entry.key}`} style={styles.pathwayLevel}>
-              <Text style={styles.pathwayLevelName}>
-                {entry.model.title} · p. {entryPageNumbers.get(entry.key)}
-              </Text>
-              <Text style={styles.pathwayLevelTag}>{metadata.difficulty}</Text>
-            </Link>
+      {weeks.map((week) => (
+        <View
+          key={`schedule-week-${week.weekIndex}`}
+          style={[styles.scheduleRow, styles.scheduleWeekRow]}
+        >
+          <View style={styles.scheduleWeekCell}>
+            <Text>{week.weekIndex + 1}</Text>
+          </View>
+          {TRAINING_WEEKDAY_LABELS.map((day, dayIndex) => (
+            <View key={`${week.weekIndex}-${day}`} style={styles.scheduleDayCell}>
+              {week.sessions
+                .filter((session) => session.dayIndex === dayIndex)
+                .map((session) => (
+                  <Link
+                    key={session.key}
+                    src={`#plan-${session.activityPlanId}`}
+                    style={styles.scheduleSession}
+                  >
+                    <Text style={styles.scheduleSessionTitle}>{session.title}</Text>
+                    <View style={styles.scheduleSessionDetails}>
+                      <Text style={[styles.scheduleSessionMetrics, { width: "72%" }]}>
+                        {session.targetDurationMinutes ?? "—"} min ·{" "}
+                        {session.targetCommonLoad ?? "—"} CL
+                      </Text>
+                      <Text style={[styles.scheduleSessionReference, { width: "28%" }]}>
+                        p. {session.activityPageNumber}
+                      </Text>
+                    </View>
+                  </Link>
+                ))}
+            </View>
           ))}
         </View>
       ))}
+    </View>
+  );
+}
+
+function TrainingPlanOverviewPage({ plan }: { plan: ActivityPlanCatalogTrainingPlan }) {
+  const splitIndex = Math.ceil(plan.weeks.length / 2);
+  const firstWeeks = plan.weeks.slice(0, splitIndex);
+  return (
+    <FrontMatterPage pageNumber={plan.overviewPageNumber} section="Training plan templates">
+      <View id={`training-plan-${plan.id}`}>
+        <Text style={styles.preflightMarker}>{`TRAINING-PLAN-OVERVIEW-${plan.id}`}</Text>
+        <Text style={styles.frontTitle}>{plan.name}</Text>
+        <View style={styles.trainingMetaRow}>
+          {[...plan.activityCategories, ...plan.experienceLevels].map((label) => (
+            <Text key={label} style={styles.trainingMetaPill}>
+              {label}
+            </Text>
+          ))}
+        </View>
+        <Text style={styles.frontBody}>{plan.description}</Text>
+        <View style={styles.trainingFacts}>
+          <View style={styles.trainingFact}>
+            <Text style={styles.trainingFactValue}>{plan.scheduleVisual.totalWeeks}</Text>
+            <Text style={styles.trainingFactLabel}>AUTHORED WEEKS</Text>
+          </View>
+          <View style={styles.trainingFact}>
+            <Text style={styles.trainingFactValue}>{plan.scheduleVisual.totalSessions}</Text>
+            <Text style={styles.trainingFactLabel}>SCHEDULED SESSIONS</Text>
+          </View>
+          <View style={styles.trainingFact}>
+            <Text style={styles.trainingFactValue}>{plan.sessionsPerWeekTarget}</Text>
+            <Text style={styles.trainingFactLabel}>TARGET SESSIONS / WEEK</Text>
+          </View>
+        </View>
+        <Text style={styles.scheduleTitle}>Weekly session distribution</Text>
+        <TrainingScheduleChart plan={plan} />
+        <Text style={styles.scheduleTitle}>
+          Weeks {firstWeeks[0]?.weekIndex === undefined ? "" : firstWeeks[0].weekIndex + 1}–
+          {(firstWeeks.at(-1)?.weekIndex ?? 0) + 1}
+        </Text>
+        <Text style={styles.scheduleDemandNote}>
+          Each entry lists its authored session objective as minutes / Common Load. An em dash means
+          that no objective is authored; these are not athlete-specific resolved prescriptions.
+        </Text>
+        <TrainingScheduleTable weeks={firstWeeks} />
+      </View>
     </FrontMatterPage>
   );
 }
 
-function WorksheetPage({
-  pageNumber,
-  title,
-  prompts,
-}: {
-  pageNumber: number;
-  title: string;
-  prompts: readonly string[];
-}) {
+function TrainingPlanSchedulePage({ plan }: { plan: ActivityPlanCatalogTrainingPlan }) {
+  const splitIndex = Math.ceil(plan.weeks.length / 2);
+  const remainingWeeks = plan.weeks.slice(splitIndex);
+  const distinctActivities = Array.from(
+    new Map(
+      plan.weeks
+        .flatMap((week) => week.sessions)
+        .map((session) => [session.activityPlanId, session]),
+    ).values(),
+  );
   return (
-    <FrontMatterPage pageNumber={pageNumber} section={title}>
-      <Text style={styles.frontTitle}>{title}</Text>
-      <Text style={styles.frontBody}>
-        Record the plan as completed; retain the written session prescription as the source of
-        truth.
+    <FrontMatterPage pageNumber={plan.schedulePageNumber} section="Training plan templates">
+      <Text style={styles.preflightMarker}>{`TRAINING-PLAN-SCHEDULE-${plan.id}`}</Text>
+      <Text style={styles.frontTitle}>{plan.name}</Text>
+      <Text style={styles.scheduleTitle}>
+        Weeks {(remainingWeeks[0]?.weekIndex ?? 0) + 1}–
+        {(remainingWeeks.at(-1)?.weekIndex ?? 0) + 1}
       </Text>
-      {prompts.map((prompt) => (
-        <View key={prompt}>
-          <Text style={styles.worksheetLabel}>{prompt}</Text>
-          <View style={styles.worksheetLine} />
-        </View>
-      ))}
-      <View style={styles.worksheetTable}>
-        {WORKSHEET_TABLE_ROWS.map((row) => (
-          <View key={row} style={styles.worksheetRow} />
+      <Text style={styles.scheduleDemandNote}>
+        Each entry lists its authored session objective as minutes / Common Load. An em dash means
+        that no objective is authored; these are not athlete-specific resolved prescriptions.
+      </Text>
+      <TrainingScheduleTable weeks={remainingWeeks} />
+      <Text style={styles.scheduleTitle}>Linked activity plans</Text>
+      <View style={styles.activityKey}>
+        {distinctActivities.map((activity) => (
+          <View key={activity.activityPlanId} style={styles.activityKeyItem} wrap={false}>
+            <Link src={`#plan-${activity.activityPlanId}`} style={styles.activityKeyName}>
+              {activity.activityTitle}
+            </Link>
+            <Text style={styles.activityKeyPage}>
+              Activity catalog · p. {activity.activityPageNumber}
+            </Text>
+          </View>
         ))}
       </View>
+      <Text style={styles.note}>
+        Session placement is relative to the selected plan start date. Bars show scheduled session
+        count—not athlete-specific load, intensity, or progression.
+      </Text>
     </FrontMatterPage>
   );
 }
 
 export function ActivityPlanCatalogPdfDocument({ layout }: { layout: ActivityPlanCatalogLayout }) {
   const entryPageNumbers = getEntryPageNumbers(layout);
-  const discoveryStartPage = 4;
-  const pathwayStartPage = discoveryStartPage + layout.discoveryPages.length;
-  const referenceStartPage = pathwayStartPage + layout.pathways.length;
+  const referenceStartPage = 4;
   const contentsStartPage = referenceStartPage + 2;
-  const worksheetStartPage = getActivityPlanCatalogWorksheetStartPage(layout);
 
   return (
     <Document
@@ -551,8 +669,8 @@ export function ActivityPlanCatalogPdfDocument({ layout }: { layout: ActivityPla
       keywords="activity plans, cycling, running, swimming, strength, training"
       language="en"
       pageMode="useOutlines"
-      subject="Structured activity plan catalog"
-      title="GradientPeak Activity Plan Catalog"
+      subject="Structured activity and training plan catalog"
+      title="GradientPeak Activity & Training Plan Catalog"
     >
       <Page bookmark="Front cover" size={ACTIVITY_PLAN_CATALOG_PAGE_SIZE} style={styles.cover} wrap>
         <View>
@@ -560,7 +678,7 @@ export function ActivityPlanCatalogPdfDocument({ layout }: { layout: ActivityPla
             <GradientPeakPdfBrand color="#ffffff" size={28} />
           </View>
           <View style={{ marginTop: 130 }}>
-            <Text style={styles.coverKicker}>ACTIVITY PLAN CATALOG</Text>
+            <Text style={styles.coverKicker}>ACTIVITY & TRAINING PLAN CATALOG</Text>
             <Text style={styles.coverTitle}>Train with purpose.</Text>
             <Text style={styles.coverSubtitle}>
               Structured cycling, running, swimming, strength, cross-training, and multisport
@@ -570,7 +688,8 @@ export function ActivityPlanCatalogPdfDocument({ layout }: { layout: ActivityPla
         </View>
         <Text style={styles.coverMeta}>
           {layout.sections.reduce((total, section) => total + section.entries.length, 0)} authored
-          activity plans{"\n"}gradientpeak.app
+          activity plans · {layout.trainingPlanSection?.plans.length ?? 0} training templates
+          {"\n"}gradientpeak.app
         </Text>
       </Page>
 
@@ -606,61 +725,37 @@ export function ActivityPlanCatalogPdfDocument({ layout }: { layout: ActivityPla
         </Text>
       </FrontMatterPage>
 
-      <FrontMatterPage pageNumber={3} section="Quick workout finder">
-        <Text style={styles.frontTitle}>Quick workout finder</Text>
+      <FrontMatterPage pageNumber={3} section="Quick activity-plan finder">
+        <Text style={styles.frontTitle}>Quick activity-plan finder</Text>
         <Text style={styles.frontBody}>
-          Begin with the session purpose and available time, then confirm the full written sequence
-          and totals on its catalog page.
+          Start with an activity family, then use its linked first page to scan complete written
+          prescriptions, calculated totals, and intensity profiles.
         </Text>
-        <View style={styles.finderGrid}>
-          <View style={styles.finderItem}>
-            <Text style={styles.finderLabel}>Choose an activity</Text>
-            <Text style={styles.frontBody}>
-              Use the main contents for cycling, running, swimming, strength, cross-training,
-              recovery, and multisport programmes.
-            </Text>
-          </View>
-          <View style={styles.finderItem}>
-            <Text style={styles.finderLabel}>Filter authored metadata</Text>
-            <Text style={styles.frontBody}>
-              Use the discovery index for family, primary purpose, intensity, duration class,
-              difficulty, and triathlon context where supplied.
-            </Text>
-          </View>
-          <View style={styles.finderItem}>
-            <Text style={styles.finderLabel}>Browse ordered families</Text>
-            <Text style={styles.frontBody}>
-              Use the guided pathways for {layout.pathways.flatMap((page) => page.families).length}{" "}
-              configured families with ordered difficulty metadata.
-            </Text>
-          </View>
-          <View style={styles.finderItem}>
-            <Text style={styles.finderLabel}>Check the prescription</Text>
-            <Text style={styles.frontBody}>
-              The plan page—not this finder—contains the authoritative work, recovery, targets, and
-              notes.
-            </Text>
-          </View>
+        <View style={styles.finderIndex}>
+          {layout.finderSections.map((section) => (
+            <Link
+              key={section.key}
+              src={`#plan-${section.firstEntryKey}`}
+              style={styles.finderItem}
+            >
+              <Text style={styles.finderTitle}>{section.title}</Text>
+              <Text style={styles.finderMeta}>
+                {section.entryCount} activity plans · pp. {section.startPageNumber}–
+                {section.endPageNumber}
+              </Text>
+            </Link>
+          ))}
+          {layout.trainingPlanSection ? (
+            <Link src="#training-plan-templates" style={[styles.finderItem, styles.finderTraining]}>
+              <Text style={styles.finderTitle}>Training plan templates</Text>
+              <Text style={styles.finderMeta}>
+                {layout.trainingPlanSection.plans.length} complete programmes · p.{" "}
+                {layout.trainingPlanSection.openerPageNumber}
+              </Text>
+            </Link>
+          ) : null}
         </View>
       </FrontMatterPage>
-
-      {layout.discoveryPages.map((page, index) => (
-        <DiscoveryIndexPage
-          key={page.key}
-          layout={layout}
-          page={page}
-          pageNumber={discoveryStartPage + index}
-        />
-      ))}
-
-      {layout.pathways.map((page, index) => (
-        <PathwayPage
-          key={page.key}
-          layout={layout}
-          page={page}
-          pageNumber={pathwayStartPage + index}
-        />
-      ))}
 
       <FrontMatterPage pageNumber={referenceStartPage} section="Intensity language">
         <Text style={styles.frontTitle}>Intensity language</Text>
@@ -696,8 +791,8 @@ export function ActivityPlanCatalogPdfDocument({ layout }: { layout: ActivityPla
         </Text>
         <Text style={styles.frontHeading}>Record the decision</Text>
         <Text style={styles.frontBody}>
-          Use the worksheets to note what changed and how the session felt before selecting the next
-          workout.
+          Note what changed and how the session felt in your preferred training record before
+          selecting the next activity plan.
         </Text>
       </FrontMatterPage>
 
@@ -733,12 +828,26 @@ export function ActivityPlanCatalogPdfDocument({ layout }: { layout: ActivityPla
               </View>
             ))}
           </View>
+          {contentsPageIndex === layout.contentsPages.length - 1 && layout.trainingPlanSection ? (
+            <Link
+              src="#training-plan-templates"
+              style={[styles.trainingPlanListRow, { marginTop: 14 }]}
+            >
+              <Text style={styles.trainingPlanListName}>Training plan templates</Text>
+              <Text style={styles.trainingPlanListMeta}>
+                p. {layout.trainingPlanSection.openerPageNumber}
+              </Text>
+            </Link>
+          ) : null}
         </FrontMatterPage>
       ))}
 
       {layout.planPages.map((catalogPage) => (
         <Page
-          bookmark={catalogPage.sectionTitle}
+          {...(layout.finderSections.find((section) => section.key === catalogPage.sectionKey)
+            ?.startPageNumber === catalogPage.pageNumber
+            ? { bookmark: catalogPage.sectionTitle }
+            : {})}
           key={`${catalogPage.sectionKey}-${catalogPage.pageNumber}`}
           size={ACTIVITY_PLAN_CATALOG_PAGE_SIZE}
           style={interiorPageStyle(catalogPage.pageNumber)}
@@ -765,14 +874,50 @@ export function ActivityPlanCatalogPdfDocument({ layout }: { layout: ActivityPla
         </Page>
       ))}
 
-      {WORKSHEETS.map(([title, prompts], index) => (
-        <WorksheetPage
-          key={title}
-          pageNumber={worksheetStartPage + index}
-          prompts={prompts}
-          title={title}
-        />
-      ))}
+      {layout.trainingPlanSection?.alignmentBlankPageNumber ? (
+        <Page size={ACTIVITY_PLAN_CATALOG_PAGE_SIZE} style={styles.blankPage} />
+      ) : null}
+
+      {layout.trainingPlanSection ? (
+        <FrontMatterPage
+          pageNumber={layout.trainingPlanSection.openerPageNumber}
+          section="Training plan templates"
+        >
+          <View id="training-plan-templates">
+            <Text style={styles.preflightMarker}>TRAINING-PLAN-TEMPLATES-OPENER</Text>
+            <Text style={styles.frontTitle}>Training plan templates</Text>
+            <Text style={styles.frontBody}>
+              Six authored schedules connect the activity plans in this catalog into complete
+              multi-week programmes. Each spread shows the exact relative session placement and
+              links every scheduled session back to its activity prescription.
+            </Text>
+            <Text style={styles.frontBody}>
+              Weekly bars represent scheduled session counts only. They do not claim training load,
+              intensity, periodization phase, or athlete-specific progression.
+            </Text>
+            <View style={styles.trainingPlanList}>
+              {layout.trainingPlanSection.plans.map((plan) => (
+                <Link
+                  key={plan.id}
+                  src={`#training-plan-${plan.id}`}
+                  style={styles.trainingPlanListRow}
+                >
+                  <Text style={styles.trainingPlanListName}>{plan.name}</Text>
+                  <Text style={styles.trainingPlanListMeta}>
+                    {plan.scheduleVisual.totalWeeks} weeks · {plan.scheduleVisual.totalSessions}{" "}
+                    sessions · p. {plan.overviewPageNumber}
+                  </Text>
+                </Link>
+              ))}
+            </View>
+          </View>
+        </FrontMatterPage>
+      ) : null}
+
+      {layout.trainingPlanSection?.plans.flatMap((plan) => [
+        <TrainingPlanOverviewPage key={`${plan.id}-overview`} plan={plan} />,
+        <TrainingPlanSchedulePage key={`${plan.id}-schedule`} plan={plan} />,
+      ])}
 
       {activityPlanCatalogNeedsBlankBeforeBackCover(layout) ? (
         <Page size={ACTIVITY_PLAN_CATALOG_PAGE_SIZE} style={styles.blankPage} />

@@ -1,5 +1,7 @@
-import { schema } from "@repo/db";
-import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { publicProviderSyncJobsRowSchema, schema } from "@repo/db";
+import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
+import { z } from "zod";
 import { isWahooIntegrationEnabled } from "../../lib/integrations/oauth-config";
 import { decryptProviderToken } from "../../lib/provider-token-crypto";
 import { lockOnboardingProfile } from "../../repositories/onboarding-lifecycle-repository";
@@ -14,9 +16,66 @@ function toIsoString(value: Date | null): string | null {
   return value ? value.toISOString() : null;
 }
 
-function getSqlRows<T>(result: unknown) {
-  return ((result as { rows?: T[] }).rows ?? []) as T[];
-}
+const sqlRowsResultSchema = z.object({ rows: z.array(z.unknown()) }).passthrough();
+
+const queueTelemetryRowSchema = z
+  .object({
+    deadLetterDepth: z.coerce.number().finite().int().nonnegative(),
+    oldestDueAt: z.coerce.date().nullable(),
+    queueDepth: z.coerce.number().finite().int().nonnegative(),
+  })
+  .strict();
+
+const requiredQueueSequenceSchema = z.preprocess(
+  (value) =>
+    typeof value === "number" || (typeof value === "string" && value.trim().length > 0)
+      ? value
+      : undefined,
+  z.coerce.number().finite().int().nonnegative(),
+);
+const requiredRunAtSchema = z.preprocess(
+  (value) =>
+    value instanceof Date || (typeof value === "string" && value.trim().length > 0)
+      ? value
+      : undefined,
+  z.coerce.date(),
+);
+
+const claimedWahooSyncJobRowSchema = publicProviderSyncJobsRowSchema
+  .pick({
+    attempt: true,
+    dedupe_key: true,
+    id: true,
+    import_run_id: true,
+    integration_generation: true,
+    integration_id: true,
+    internal_resource_id: true,
+    job_type: true,
+    last_error: true,
+    max_attempts: true,
+    operation: true,
+    payload: true,
+    payload_hash: true,
+    profile_id: true,
+    provider: true,
+    queue_sequence: true,
+    resource_kind: true,
+    run_at: true,
+    status: true,
+    supersedes_job_id: true,
+    sync_lane_key: true,
+  })
+  .extend({
+    provider: z.literal("wahoo"),
+    queue_sequence: requiredQueueSequenceSchema,
+    run_at: requiredRunAtSchema,
+    stale_lock_recovered: z.boolean(),
+  })
+  .strict();
+
+const claimCandidateJob = alias(schema.providerSyncJobs, "candidate_provider_sync_jobs");
+const earlierLaneJob = alias(schema.providerSyncJobs, "earlier_provider_sync_jobs");
+const runningLaneJob = alias(schema.providerSyncJobs, "running_provider_sync_jobs");
 
 export class OnboardingProviderWorkConflictError extends Error {
   constructor() {
@@ -162,13 +221,67 @@ function toBoundedWahooSyncError(value: string): string {
   return "provider_sync_failed";
 }
 
-type WahooSyncJobSqlRow = {
+type ClaimedWahooSyncJobRow = z.output<typeof claimedWahooSyncJobRowSchema>;
+
+function toWahooSyncJobStatus(status: string): WahooSyncJobRecord["status"] {
+  if (
+    status === "queued" ||
+    status === "running" ||
+    status === "completed" ||
+    status === "failed" ||
+    status === "dead_lettered"
+  ) {
+    return status;
+  }
+  throw new Error(`Invalid provider sync job status: ${status}`);
+}
+
+function mapClaimedWahooSyncJobRow(row: ClaimedWahooSyncJobRow): WahooSyncJobRecord {
+  return {
+    attempt: row.attempt,
+    dedupeKey: row.dedupe_key,
+    id: row.id,
+    importRunId: row.import_run_id,
+    integrationGeneration: row.integration_generation,
+    integrationId: row.integration_id,
+    internalResourceId: row.internal_resource_id,
+    jobType: row.job_type,
+    lastError: row.last_error,
+    maxAttempts: row.max_attempts,
+    operation: row.operation,
+    payload: row.payload,
+    payloadHash: row.payload_hash,
+    profileId: row.profile_id,
+    provider: "wahoo",
+    queueSequence: row.queue_sequence,
+    resourceKind: row.resource_kind,
+    runAt: row.run_at.toISOString(),
+    staleLockRecovered: row.stale_lock_recovered,
+    status: toWahooSyncJobStatus(row.status),
+    supersedesJobId: row.supersedes_job_id,
+    syncLaneKey: row.sync_lane_key,
+  };
+}
+
+export function parseQueueTelemetryRow(row: unknown) {
+  const parsed = queueTelemetryRowSchema.parse(row);
+  return {
+    deadLetterDepth: parsed.deadLetterDepth,
+    oldestDueAt: parsed.oldestDueAt?.toISOString() ?? null,
+    queueDepth: parsed.queueDepth,
+  };
+}
+
+export function parseClaimedWahooSyncJobRows(rows: unknown): WahooSyncJobRecord[] {
+  return claimedWahooSyncJobRowSchema.array().parse(rows).map(mapClaimedWahooSyncJobRow);
+}
+
+function mapWahooSyncJobRow(row: {
   attempt: number;
   dedupeKey: string | null;
   id: string;
-  integrationId: string;
   integrationGeneration: number;
-  importRunId?: string | null;
+  integrationId: string;
   internalResourceId: string | null;
   jobType: string;
   lastError: string | null;
@@ -178,23 +291,21 @@ type WahooSyncJobSqlRow = {
   payloadHash: string | null;
   profileId: string;
   provider: string;
-  queueSequence?: number;
+  queueSequence: number;
   resourceKind: WahooSyncJobRecord["resourceKind"];
-  runAt: Date | string;
-  staleLockRecovered?: boolean;
+  runAt: Date;
   status: string;
   supersedesJobId: string | null;
   syncLaneKey: string | null;
-  updatedAt?: Date | string;
-};
-
-function mapWahooSyncJobRow(row: WahooSyncJobSqlRow): WahooSyncJobRecord {
+  updatedAt: Date;
+}): WahooSyncJobRecord {
+  if (row.provider !== "wahoo") throw new Error("Expected a Wahoo provider sync job");
   return {
     ...row,
     provider: "wahoo",
-    runAt: row.runAt instanceof Date ? row.runAt.toISOString() : row.runAt,
-    status: row.status as WahooSyncJobRecord["status"],
-    updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt,
+    runAt: row.runAt.toISOString(),
+    status: toWahooSyncJobStatus(row.status),
+    updatedAt: row.updatedAt.toISOString(),
   };
 }
 
@@ -428,44 +539,35 @@ export function createWahooSyncRepository({
     },
 
     async getQueueTelemetry({ jobTypes, now, provider }) {
-      const result = await db.execute(sql<{
-        deadLetterDepth: number | string;
-        oldestDueAt: Date | string | null;
-        queueDepth: number | string;
-      }>`
-        select
-          count(*) filter (
-            where status in ('queued', 'failed', 'running')
-              and run_at <= ${new Date(now)}
-              and (lock_expires_at is null or lock_expires_at <= ${new Date(now)})
-          ) as "queueDepth",
-          min(run_at) filter (
-            where status in ('queued', 'failed', 'running')
-              and run_at <= ${new Date(now)}
-              and (lock_expires_at is null or lock_expires_at <= ${new Date(now)})
-          ) as "oldestDueAt",
-          count(*) filter (where status = 'dead_lettered') as "deadLetterDepth"
-        from provider_sync_jobs
-        where (${provider ?? null}::text is null or provider = ${provider ?? null}::integration_provider)
-          and ${
-            jobTypes?.length
-              ? sql`job_type = any(array[${sql.join(jobTypes, sql`, `)}]::text[])`
-              : sql`true`
-          }
-      `);
-      const row = getSqlRows<{
-        deadLetterDepth: number | string;
-        oldestDueAt: Date | string | null;
-        queueDepth: number | string;
-      }>(result)[0];
-      return {
-        deadLetterDepth: Number(row?.deadLetterDepth ?? 0),
-        oldestDueAt:
-          row?.oldestDueAt instanceof Date
-            ? row.oldestDueAt.toISOString()
-            : (row?.oldestDueAt ?? null),
-        queueDepth: Number(row?.queueDepth ?? 0),
-      };
+      const at = new Date(now);
+      const due = and(
+        inArray(schema.providerSyncJobs.status, ["queued", "failed", "running"]),
+        lte(schema.providerSyncJobs.run_at, at),
+        or(
+          isNull(schema.providerSyncJobs.lock_expires_at),
+          lte(schema.providerSyncJobs.lock_expires_at, at),
+        ),
+      );
+      const [row] = await db
+        .select({
+          deadLetterDepth: sql<number>`count(*) filter (where ${eq(schema.providerSyncJobs.status, "dead_lettered")})`,
+          oldestDueAt: sql<Date | null>`min(${schema.providerSyncJobs.run_at}) filter (where ${due})`,
+          queueDepth: sql<number>`count(*) filter (where ${due})`,
+        })
+        .from(schema.providerSyncJobs)
+        .where(
+          and(
+            provider ? eq(schema.providerSyncJobs.provider, provider) : undefined,
+            jobTypes?.length ? inArray(schema.providerSyncJobs.job_type, jobTypes) : undefined,
+          ),
+        );
+      return parseQueueTelemetryRow(
+        row ?? {
+          deadLetterDepth: 0,
+          oldestDueAt: null,
+          queueDepth: 0,
+        },
+      );
     },
     async enqueueJob(input) {
       if (!isWahooIntegrationEnabled()) throw new Error("Provider integration is disabled");
@@ -642,7 +744,7 @@ export function createWahooSyncRepository({
 
             return {
               id: existing.id,
-              status: existing.status as WahooSyncJobRecord["status"],
+              status: toWahooSyncJobStatus(existing.status),
             };
           }
         }
@@ -658,7 +760,7 @@ export function createWahooSyncRepository({
 
         return {
           id: created.id,
-          status: created.status as WahooSyncJobRecord["status"],
+          status: toWahooSyncJobStatus(created.status),
         };
       })();
     },
@@ -666,41 +768,44 @@ export function createWahooSyncRepository({
     async claimDueJobs({ jobTypes, limit, now, workerId, lockExpiresAt, profileId }) {
       if (!isWahooIntegrationEnabled()) return [];
       return db.transaction(async (tx) => {
-        const result = await tx.execute(sql<WahooSyncJobSqlRow>`
+        const result = await tx.execute(sql`
           with candidate_rows as (
-            select provider_sync_jobs.*
-            from provider_sync_jobs
-            where provider = 'wahoo'::integration_provider
-              and (${profileId ?? null}::uuid is null or profile_id = ${profileId ?? null}::uuid)
-              and ${
-                jobTypes?.length
-                  ? sql`job_type = any(array[${sql.join(jobTypes, sql`, `)}]::text[])`
-                  : sql`true`
-              }
-              and status in ('queued', 'failed', 'running')
-              and run_at <= ${new Date(now)}
-              and (lock_expires_at is null or lock_expires_at <= ${new Date(now)})
+            select
+              ${claimCandidateJob.id} as id,
+              ${claimCandidateJob.queue_sequence} as queue_sequence,
+              ${claimCandidateJob.status} as status,
+              ${claimCandidateJob.sync_lane_key} as sync_lane_key
+            from ${schema.providerSyncJobs} as ${sql.identifier("candidate_provider_sync_jobs")}
+            where ${eq(claimCandidateJob.provider, "wahoo")}
+              and ${profileId ? eq(claimCandidateJob.profile_id, profileId) : sql`true`}
+              and ${jobTypes?.length ? inArray(claimCandidateJob.job_type, jobTypes) : sql`true`}
+              and ${inArray(claimCandidateJob.status, ["queued", "failed", "running"])}
+              and ${lte(claimCandidateJob.run_at, new Date(now))}
               and (
-                sync_lane_key is null
+                ${isNull(claimCandidateJob.lock_expires_at)}
+                or ${lte(claimCandidateJob.lock_expires_at, new Date(now))}
+              )
+              and (
+                ${isNull(claimCandidateJob.sync_lane_key)}
                 or not exists (
                   select 1
-                  from provider_sync_jobs earlier_provider_sync_jobs
-                  where earlier_provider_sync_jobs.sync_lane_key = provider_sync_jobs.sync_lane_key
-                    and earlier_provider_sync_jobs.status in ('queued', 'failed', 'running')
-                    and earlier_provider_sync_jobs.queue_sequence < provider_sync_jobs.queue_sequence
+                  from ${schema.providerSyncJobs} as ${sql.identifier("earlier_provider_sync_jobs")}
+                  where ${eq(earlierLaneJob.sync_lane_key, claimCandidateJob.sync_lane_key)}
+                    and ${inArray(earlierLaneJob.status, ["queued", "failed", "running"])}
+                    and ${sql`${earlierLaneJob.queue_sequence} < ${claimCandidateJob.queue_sequence}`}
                 )
               )
               and (
-                sync_lane_key is null
+                ${isNull(claimCandidateJob.sync_lane_key)}
                 or not exists (
                   select 1
-                  from provider_sync_jobs running_provider_sync_jobs
-                  where running_provider_sync_jobs.sync_lane_key = provider_sync_jobs.sync_lane_key
-                    and running_provider_sync_jobs.status = 'running'
-                    and running_provider_sync_jobs.lock_expires_at > ${new Date(now)}
+                  from ${schema.providerSyncJobs} as ${sql.identifier("running_provider_sync_jobs")}
+                  where ${eq(runningLaneJob.sync_lane_key, claimCandidateJob.sync_lane_key)}
+                    and ${eq(runningLaneJob.status, "running")}
+                    and ${gt(runningLaneJob.lock_expires_at, new Date(now))}
                 )
               )
-            order by priority asc, run_at asc
+            order by ${asc(claimCandidateJob.priority)}, ${asc(claimCandidateJob.run_at)}
             limit ${Math.max(limit * 4, limit)}
             for update skip locked
           ), ranked_rows as (
@@ -719,42 +824,42 @@ export function createWahooSyncRepository({
             where lane_rank = 1
             limit ${limit}
           )
-          update provider_sync_jobs
+          update ${schema.providerSyncJobs}
           set
-            attempt = provider_sync_jobs.attempt + 1,
+            attempt = ${schema.providerSyncJobs.attempt} + 1,
             lock_expires_at = ${new Date(lockExpiresAt)},
             locked_at = ${new Date(now)},
             locked_by = ${workerId},
             status = 'running',
             updated_at = ${new Date(now)}
           from selected_rows
-          where provider_sync_jobs.id = selected_rows.id
+          where ${schema.providerSyncJobs.id} = selected_rows.id
           returning
-            provider_sync_jobs.attempt,
-            provider_sync_jobs.dedupe_key as "dedupeKey",
-            provider_sync_jobs.id,
-            provider_sync_jobs.integration_id as "integrationId",
-            provider_sync_jobs.integration_generation as "integrationGeneration",
-            provider_sync_jobs.import_run_id as "importRunId",
-            provider_sync_jobs.internal_resource_id as "internalResourceId",
-            provider_sync_jobs.job_type as "jobType",
-            provider_sync_jobs.last_error as "lastError",
-            provider_sync_jobs.max_attempts as "maxAttempts",
-            provider_sync_jobs.operation,
-            provider_sync_jobs.payload,
-            provider_sync_jobs.payload_hash as "payloadHash",
-            provider_sync_jobs.profile_id as "profileId",
-            provider_sync_jobs.provider,
-            selected_rows.queue_sequence as "queueSequence",
-            provider_sync_jobs.resource_kind as "resourceKind",
-            provider_sync_jobs.run_at as "runAt",
-            selected_rows.stale_lock_recovered as "staleLockRecovered",
-            provider_sync_jobs.status,
-            provider_sync_jobs.supersedes_job_id as "supersedesJobId",
-            provider_sync_jobs.sync_lane_key as "syncLaneKey"
+            ${schema.providerSyncJobs.attempt},
+            ${schema.providerSyncJobs.dedupe_key},
+            ${schema.providerSyncJobs.id},
+            ${schema.providerSyncJobs.integration_id},
+            ${schema.providerSyncJobs.integration_generation},
+            ${schema.providerSyncJobs.import_run_id},
+            ${schema.providerSyncJobs.internal_resource_id},
+            ${schema.providerSyncJobs.job_type},
+            ${schema.providerSyncJobs.last_error},
+            ${schema.providerSyncJobs.max_attempts},
+            ${schema.providerSyncJobs.operation},
+            ${schema.providerSyncJobs.payload},
+            ${schema.providerSyncJobs.payload_hash},
+            ${schema.providerSyncJobs.profile_id},
+            ${schema.providerSyncJobs.provider},
+            selected_rows.queue_sequence,
+            ${schema.providerSyncJobs.resource_kind},
+            ${schema.providerSyncJobs.run_at},
+            selected_rows.stale_lock_recovered,
+            ${schema.providerSyncJobs.status},
+            ${schema.providerSyncJobs.supersedes_job_id},
+            ${schema.providerSyncJobs.sync_lane_key}
         `);
 
-        return getSqlRows<WahooSyncJobSqlRow>(result).map(mapWahooSyncJobRow);
+        return parseClaimedWahooSyncJobRows(sqlRowsResultSchema.parse(result).rows);
       });
     },
 

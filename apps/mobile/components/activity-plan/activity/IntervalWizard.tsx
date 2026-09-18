@@ -116,6 +116,7 @@ export function IntervalWizard({
     steps.push({
       id: require("expo-crypto").randomUUID(),
       name: nextConfig.workName,
+      purpose: "work",
       duration: convertUIToActivityPlanDuration({
         type: "time",
         value: nextConfig.workDuration,
@@ -132,6 +133,7 @@ export function IntervalWizard({
     steps.push({
       id: require("expo-crypto").randomUUID(),
       name: nextConfig.restName,
+      purpose: "recovery",
       duration: convertUIToActivityPlanDuration({
         type: "time",
         value: nextConfig.restDuration,
@@ -185,20 +187,16 @@ export function IntervalWizard({
 
   return (
     <AppFormModal
+      actionPlacement="header"
       description="Configure the interval pattern, work/rest durations, and intensity before adding it to the activity."
       onClose={() => onOpenChange(false)}
       primaryAction={
-        <Button onPress={submitForm.handleSubmit} testID="interval-wizard-save-button">
-          <Text className="text-primary-foreground font-semibold">Create Intervals</Text>
-        </Button>
-      }
-      secondaryAction={
         <Button
-          onPress={() => onOpenChange(false)}
-          variant="outline"
-          testID="interval-wizard-cancel-button"
+          className="min-h-12"
+          onPress={submitForm.handleSubmit}
+          testID="interval-wizard-save-button"
         >
-          <Text className="text-foreground font-medium">Cancel</Text>
+          <Text className="text-primary-foreground font-semibold">Create Intervals</Text>
         </Button>
       }
       testID="interval-wizard-modal"

@@ -25,6 +25,7 @@ const localArtifactMetadataMock = jest.fn(async (_filePath: string) => ({
   byteSize: 1234,
 }));
 const atomicHandoffMock = jest.fn();
+let profileId: string | null = "profile-1";
 const getIngestionStatusUseQueryMock = jest.fn((_input: unknown, _options: unknown) => ({
   data: undefined,
 }));
@@ -77,7 +78,7 @@ jest.mock("@/lib/services/fit/ActivityFileUploader", () => ({
 
 jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
-  useAuth: () => ({ profile: { id: "profile-1" } }),
+  useAuth: () => ({ profile: profileId ? { id: profileId } : null }),
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -168,6 +169,13 @@ const service = {
   addListener: jest.fn(() => ({ remove: jest.fn() })),
 };
 
+const noPendingRecordingService = {
+  state: "idle",
+  recordingMetadata: { profileId: "profile-1" },
+  getFinalizedArtifact: () => null,
+  addListener: jest.fn(() => ({ remove: jest.fn() })),
+};
+
 const { useActivitySubmission } = require("../useActivitySubmission");
 const queueStorage = jest.requireActual(
   "@/lib/services/activitySubmissionQueue/storage",
@@ -176,6 +184,7 @@ const queueStorage = jest.requireActual(
 describe("useActivitySubmission", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    profileId = "profile-1";
     queueStorage.setActivitySubmissionQueueJobsForTests(new Map());
     atomicHandoffMock.mockImplementation(async (job) => {
       const existing = await queueStorage.loadActivitySubmissionQueueJobByArtifactId(
@@ -244,6 +253,62 @@ describe("useActivitySubmission", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 
+  it.each([
+    ["no recorder", null],
+    ["no finalized artifact", noPendingRecordingService],
+  ])("treats a mount with %s as idle without queue effects", async (_state, recorder) => {
+    const { result } = await renderHook(() =>
+      useActivitySubmission(recorder as ActivityRecorderService | null),
+    );
+
+    await waitFor(() => expect(result.current.isReady).toBe(true));
+
+    expect(result.current).toMatchObject({ artifact: null, activity: null, error: null });
+    expect(atomicHandoffMock).not.toHaveBeenCalled();
+    expect(createFromRecordingSummaryMock).not.toHaveBeenCalled();
+    expect(beginMobileRecordingUploadMock).not.toHaveBeenCalled();
+    await expect(queueStorage.loadActivitySubmissionQueueJobs()).resolves.toEqual([]);
+  });
+
+  it("waits for authentication before processing a finalized artifact", async () => {
+    profileId = null;
+    const { result } = await renderHook(() =>
+      useActivitySubmission(service as unknown as ActivityRecorderService),
+    );
+
+    await waitFor(() => expect(result.current.isReady).toBe(true));
+
+    expect(result.current).toMatchObject({ artifact: null, activity: null, error: null });
+    expect(atomicHandoffMock).not.toHaveBeenCalled();
+    await expect(queueStorage.loadActivitySubmissionQueueJobs()).resolves.toEqual([]);
+  });
+
+  it("reports a missing FIT once and preserves the finalized artifact for retry", async () => {
+    const missingFitService = {
+      ...service,
+      getFinalizedArtifact: () => ({ ...artifact, activityFilePath: null }),
+    };
+    const { Alert } = require("react-native") as typeof import("react-native");
+    const { result } = await renderHook(() =>
+      useActivitySubmission(missingFitService as unknown as ActivityRecorderService),
+    );
+
+    await waitFor(() => expect(result.current.isReady).toBe(true));
+    await act(async () => {
+      await expect(result.current.submit()).resolves.toBe(false);
+    });
+
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    expect(result.current).toMatchObject({
+      artifact: expect.objectContaining({ sessionId: "session-1", activityFilePath: null }),
+      isError: true,
+    });
+    expect(atomicHandoffMock).not.toHaveBeenCalled();
+    expect(createFromRecordingSummaryMock).not.toHaveBeenCalled();
+    expect(beginMobileRecordingUploadMock).not.toHaveBeenCalled();
+    await expect(queueStorage.loadActivitySubmissionQueueJobs()).resolves.toEqual([]);
+  });
+
   it("restores ingestion identity and continues a persisted job without rebuilding progress", async () => {
     await queueStorage.upsertActivitySubmissionQueueJob({
       schemaVersion: 3,
@@ -277,10 +342,20 @@ describe("useActivitySubmission", () => {
       updatedAt: "2026-01-01T11:05:00.000Z",
     });
 
-    const { result } = await renderHook(() =>
+    const { result, rerender } = await renderHook(() =>
       useActivitySubmission(service as unknown as ActivityRecorderService),
     );
     await waitFor(() => expect(result.current.ingestionId).toBe("ingestion-existing"));
+    const beforeRefresh = await queueStorage.loadActivitySubmissionQueueJobByArtifactId(
+      "session-1",
+      "profile-1",
+    );
+    await rerender({});
+    expect(
+      await queueStorage.loadActivitySubmissionQueueJobByArtifactId("session-1", "profile-1"),
+    ).toEqual(beforeRefresh);
+    expect(atomicHandoffMock).not.toHaveBeenCalled();
+    expect(uploadToSignedUrlMock).not.toHaveBeenCalled();
     expect(result.current.isError).toBe(true);
     expect(getIngestionStatusUseQueryMock).toHaveBeenLastCalledWith(
       { profileId: "profile-1", ingestionId: "ingestion-existing" },
@@ -295,6 +370,14 @@ describe("useActivitySubmission", () => {
     expect(beginMobileRecordingUploadMock).not.toHaveBeenCalled();
     expect(uploadToSignedUrlMock).not.toHaveBeenCalled();
     expect(markUploadedAndProcessMock).not.toHaveBeenCalled();
+    expect(
+      await queueStorage.loadActivitySubmissionQueueJobByArtifactId("session-1", "profile-1"),
+    ).toMatchObject({
+      id: "session-1",
+      ingestionId: "ingestion-existing",
+      localActivityFilePath: "file:///activity.fit",
+      draft: expect.objectContaining({ name: "Persisted ride", recordingSessionId: "session-1" }),
+    });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 

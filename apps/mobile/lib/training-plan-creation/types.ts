@@ -6,25 +6,22 @@ import type {
   ContentVisibility,
   PlannedTrainingActivityPlanFacts,
   PlannedTrainingEventOverrides,
-  PlannedTrainingSessionIntent,
   PlanningGoal,
-  PlanningPreferences,
   PlanningSchedule,
+  SessionDemand,
+  TrainingPlanPreferences,
 } from "@repo/core";
 
 export type TrainingPlanActivityPlanFacts = PlannedTrainingActivityPlanFacts;
 export type TrainingPlanBuilderEventOverrides = PlannedTrainingEventOverrides;
 export type TrainingPlanBuilderGoalBlueprint = PlanningGoal;
 export type TrainingPlanBuilderGoalContext = { selectedGoals: TrainingPlanBuilderGoalBlueprint[] };
-export type TrainingPlanBuilderPlanPreferences = PlanningPreferences;
-export type TrainingPlanBuilderSessionIntent = PlannedTrainingSessionIntent;
 export type TrainingPlanBuilderSession = {
+  id: string;
   localId: string;
   offsetDays: number;
-  intent?: TrainingPlanBuilderSessionIntent;
+  demand: SessionDemand;
   activityPlan: TrainingPlanActivityPlanFacts | null;
-  /** Omission intentionally asks the server to pin the activity plan's current default. */
-  activityPlanVariantId?: string;
   eventOverrides?: TrainingPlanBuilderEventOverrides;
 };
 export type TrainingPlanBuilderScheduling = PlanningSchedule;
@@ -43,7 +40,7 @@ export type TrainingPlanBuilderState = {
   };
   anchorDate: string;
   athleteContext: AthletePlanningContext;
-  planPreferences: TrainingPlanBuilderPlanPreferences;
+  planPreferences: TrainingPlanPreferences;
   goalContext: TrainingPlanBuilderGoalContext;
   structure: { sessions: TrainingPlanBuilderSession[] };
   scheduling: TrainingPlanBuilderScheduling;
@@ -59,7 +56,7 @@ export type TrainingPlanBuilderAction =
   | { type: "athleteContext.fieldRemove"; fieldKey: AthletePlanningContextEditableFieldKey }
   | { type: "athleteContext.effortAdd"; effort: AthletePlanningContextEffortInput }
   | { type: "athleteContext.effortRemove"; effortIndex: number }
-  | { type: "planPreferences.update"; patch: Partial<TrainingPlanBuilderPlanPreferences> }
+  | { type: "planPreferences.update"; patch: Partial<TrainingPlanPreferences> }
   | { type: "goalContext.replaceSelectedGoals"; goals: TrainingPlanBuilderGoalBlueprint[] }
   | { type: "goalContext.addLocalGoal"; goal: TrainingPlanBuilderGoalBlueprint }
   | { type: "goalContext.removeLocalGoal"; goalId: string }
@@ -72,7 +69,6 @@ export type TrainingPlanBuilderAction =
       sessionId: string;
       activityPlan: TrainingPlanActivityPlanFacts | null;
     }
-  | { type: "session.selectActivityPlanVariant"; sessionId: string; variantId?: string }
   | { type: "scheduling.startDateUpdate"; startDate: string }
   | {
       type: "session.updateEventOverrides";

@@ -9,7 +9,7 @@ import { api } from "../../lib/api/client";
 
 export function ActivityCommentsCard({ activityId }: { activityId: string }) {
   const [comment, setComment] = useState("");
-  const [failedComment, setFailedComment] = useState<string | null>(null);
+  const [failedComment, setFailedComment] = useState(false);
   const commentsQuery = api.social.getComments.useInfiniteQuery(
     { entity_id: activityId, entity_type: "activity", limit: 25 },
     { getNextPageParam: (lastPage) => lastPage.nextCursor },
@@ -17,11 +17,11 @@ export function ActivityCommentsCard({ activityId }: { activityId: string }) {
   const addComment = api.social.addComment.useMutation({
     onSuccess: async () => {
       setComment("");
-      setFailedComment(null);
+      setFailedComment(false);
       await commentsQuery.refetch();
     },
-    onError: (_error, variables) => {
-      setFailedComment(variables.content);
+    onError: () => {
+      setFailedComment(true);
     },
   });
   const comments = commentsQuery.data?.pages.flatMap((page) => page.comments) ?? [];
@@ -29,7 +29,7 @@ export function ActivityCommentsCard({ activityId }: { activityId: string }) {
   const submit = (value: string) => {
     const content = value.trim();
     if (!content || addComment.isPending) return;
-    setFailedComment(null);
+    setFailedComment(false);
     addComment.mutate({ content, entity_id: activityId, entity_type: "activity" });
   };
 
@@ -105,6 +105,7 @@ export function ActivityCommentsCard({ activityId }: { activityId: string }) {
           </label>
           <Textarea
             id="activity-comment"
+            disabled={addComment.isPending}
             onChange={(event) => setComment(event.currentTarget.value)}
             rows={4}
             value={comment}
@@ -112,17 +113,9 @@ export function ActivityCommentsCard({ activityId }: { activityId: string }) {
           {failedComment ? (
             <div className="flex flex-wrap items-center justify-between gap-2" role="alert">
               <p className="text-sm text-destructive">
-                Comment was not posted. Your text is preserved.
+                Comment status is unknown. Your text is preserved; review the activity before
+                posting it again.
               </p>
-              <Button
-                disabled={addComment.isPending}
-                onClick={() => submit(failedComment)}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                Retry comment
-              </Button>
             </div>
           ) : null}
           <div className="flex justify-end">

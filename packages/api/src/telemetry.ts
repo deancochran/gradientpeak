@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/node";
-import { sanitizeTelemetryContext } from "./telemetry-sanitizer.mjs";
+import { writeLocalErrorEvent } from "./local-error-log";
+import { extractSafeErrorDiagnostic, sanitizeTelemetryContext } from "./telemetry-sanitizer.mjs";
 
 const EXPECTED_TRPC_CODES = new Set([
   "BAD_REQUEST",
@@ -67,22 +68,35 @@ export function isExpectedApiError(error: unknown): boolean {
   return false;
 }
 
-export function captureApiError(error: unknown, context?: Record<string, unknown>): boolean {
+export function captureApiErrorWithEventId(error: unknown, context?: Record<string, unknown>) {
   if (isExpectedApiError(error)) {
-    return false;
+    return { captured: false as const };
   }
 
-  Sentry.captureException(error, { extra: sanitizeTelemetryContext(context) });
-  return true;
+  const diagnostic = extractSafeErrorDiagnostic(error);
+  const extra = sanitizeTelemetryContext({ ...context, ...diagnostic });
+  writeLocalErrorEvent(extra);
+  try {
+    return { captured: true as const, eventId: Sentry.captureException(error, { extra }) };
+  } catch {
+    // Sentry transport configuration must not affect the HTTP error boundary.
+    return { captured: false as const };
+  }
+}
+
+export function captureApiError(error: unknown, context?: Record<string, unknown>): boolean {
+  return captureApiErrorWithEventId(error, context).captured;
 }
 
 export function captureApiProcedureMetric(context: Record<string, unknown>) {
-  try {
-    Sentry.captureMessage("api.procedure", {
-      level: "info",
-      extra: sanitizeTelemetryContext(context),
-    });
-  } catch {
-    // Observability transport must not affect a procedure result or error.
-  }
+  // Routine API outcomes must not create Sentry events or issues.
+  void context;
+}
+
+export function flushApiTelemetry(timeout?: number) {
+  return Sentry.flush(timeout);
+}
+
+export function getApiTelemetryOptions() {
+  return Sentry.getClient()?.getOptions();
 }

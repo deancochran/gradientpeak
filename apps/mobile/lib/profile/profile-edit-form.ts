@@ -55,17 +55,20 @@ export function toProfilePatchInput(
   };
 }
 
-export function getProfileEditFormDefaults(profile?: {
-  full_name?: string | null;
-  username?: string | null;
-  bio?: string | null;
-  dob?: string | null;
-  default_content_visibility?: ContentVisibility | null;
-  preferred_units?: unknown;
-  language?: string | null;
-  is_public?: boolean | null;
-  planning_timezone?: string | null;
-}): ProfileEditFormDefaults {
+export function getProfileEditFormDefaults(
+  profile?: {
+    full_name?: string | null;
+    username?: string | null;
+    bio?: string | null;
+    dob?: string | null;
+    default_content_visibility?: ContentVisibility | null;
+    preferred_units?: unknown;
+    language?: string | null;
+    is_public?: boolean | null;
+    planning_timezone?: string | null;
+  },
+  deviceTimezone: string | null = null,
+): ProfileEditFormDefaults {
   return {
     full_name: profile?.full_name || "",
     username: profile?.username || null,
@@ -77,6 +80,6 @@ export function getProfileEditFormDefaults(profile?: {
       : defaultPreferredUnitSystem,
     language: profile?.language || "en",
     is_public: profile?.is_public ?? true,
-    planning_timezone: profile?.planning_timezone ?? null,
+    planning_timezone: profile?.planning_timezone ?? deviceTimezone,
   };
 }

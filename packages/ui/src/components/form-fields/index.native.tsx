@@ -6,14 +6,16 @@ import {
   type FieldPathValue,
   type FieldValues,
   useFormState,
+  useWatch,
 } from "react-hook-form";
-import { View } from "react-native";
-import { usePendingFormDraft } from "../../hooks/pending-form-drafts";
+import { FlatList, View } from "react-native";
+import { useFormDraftResetKey, usePendingFormDraft } from "../../hooks/pending-form-drafts";
 
 import { cn } from "../../lib/cn";
 import { BoundedNumberInput } from "../bounded-number-input/index.native";
 import { Button } from "../button/index.native";
 import { DateInput } from "../date-input/index.native";
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "../dialog/index.native";
 import { DurationInput } from "../duration-input/index.native";
 import { FileInput } from "../file-input/index.native";
 import type { SelectedFile } from "../file-input/shared";
@@ -58,7 +60,10 @@ import {
   type FormTextareaFieldProps,
   type FormTextFieldProps,
   type FormTimeInputFieldProps,
+  type FormTimezoneFieldProps,
   type FormWeightInputFieldProps,
+  filterTimezoneOptions,
+  getTimezoneOptions,
 } from "./shared";
 
 function FormFileField<TFieldValues extends FieldValues, TName extends FieldPath<TFieldValues>>({
@@ -126,38 +131,45 @@ function FormTextField<TFieldValues extends FieldValues, TName extends FieldPath
   testId,
   ...inputProps
 }: FormTextFieldProps<TFieldValues, TName>) {
+  const { isSubmitting } = useFormState({ control });
+
   return (
     <FormField
       control={control}
       name={name}
       rules={rules}
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel>
-            {label}
-            {required ? " *" : null}
-          </FormLabel>
-          <FormControl>
-            <Input
-              {...inputProps}
-              accessibilityLabel={label}
-              editable={!disabled}
-              onBlur={field.onBlur}
-              onChangeText={(nextValue) => {
-                field.onChange(
-                  parseValue
-                    ? parseValue(nextValue)
-                    : (nextValue as FieldPathValue<TFieldValues, TName>),
-                );
-              }}
-              testId={testId}
-              value={formatValue(field.value)}
-            />
-          </FormControl>
-          {description ? <FormDescription>{description}</FormDescription> : null}
-          <FormMessage />
-        </FormItem>
-      )}
+      render={({ field }) => {
+        const isDisabled = disabled || field.disabled || isSubmitting;
+
+        return (
+          <FormItem>
+            <FormLabel>
+              {label}
+              {required ? " *" : null}
+            </FormLabel>
+            <FormControl>
+              <Input
+                {...inputProps}
+                accessibilityLabel={label}
+                editable={!isDisabled}
+                onBlur={field.onBlur}
+                onChangeText={(nextValue) => {
+                  field.onChange(
+                    parseValue
+                      ? parseValue(nextValue)
+                      : (nextValue as FieldPathValue<TFieldValues, TName>),
+                  );
+                }}
+                inputRef={field.ref}
+                testId={testId}
+                value={formatValue(field.value)}
+              />
+            </FormControl>
+            {description ? <FormDescription>{description}</FormDescription> : null}
+            <FormMessage />
+          </FormItem>
+        );
+      }}
     />
   );
 }
@@ -176,6 +188,7 @@ function NumberFieldControl<
   TName extends FieldPath<TFieldValues>,
 >({
   allowDecimal = true,
+  clampOnBlur = true,
   control,
   description,
   disabled,
@@ -191,6 +204,7 @@ function NumberFieldControl<
   required,
   testId,
 }: NumberFieldControlProps<TFieldValues, TName>) {
+  const { isSubmitting } = useFormState({ control });
   const [draftValue, setDraftValue] = useState(() => formatValue(field.value));
   const draftValueRef = useRef(draftValue);
   const isDraftPendingRef = useRef(false);
@@ -202,6 +216,10 @@ function NumberFieldControl<
   };
 
   useEffect(() => {
+    if (isDraftPendingRef.current) {
+      return;
+    }
+
     const nextValue = formatValue(field.value);
     draftValueRef.current = nextValue;
     isDraftPendingRef.current = false;
@@ -220,20 +238,18 @@ function NumberFieldControl<
     } else {
       const parsed = allowDecimal ? Number(raw) : Number.parseInt(raw, 10);
       if (!Number.isFinite(parsed)) {
+        // NaN is rejected by numeric schemas, unlike undefined for optional fields.
+        isDraftPendingRef.current = true;
+        field.onChange(Number.NaN as FieldPathValue<TFieldValues, TName>);
         if (markTouched) {
-          updateDraftValue(formatValue(field.value), false);
           field.onBlur();
-        } else {
-          isDraftPendingRef.current = false;
-          field.onChange(undefined as FieldPathValue<TFieldValues, TName>);
         }
         return;
       }
 
-      nextValue = Math.min(max ?? parsed, Math.max(min ?? parsed, parsed)) as FieldPathValue<
-        TFieldValues,
-        TName
-      >;
+      nextValue = (
+        clampOnBlur ? Math.min(max ?? parsed, Math.max(min ?? parsed, parsed)) : parsed
+      ) as FieldPathValue<TFieldValues, TName>;
     }
 
     field.onChange(nextValue);
@@ -242,6 +258,7 @@ function NumberFieldControl<
       field.onBlur();
     }
   };
+  const isDisabled = disabled || field.disabled || isSubmitting;
 
   usePendingFormDraft(control, {
     commit: () => {
@@ -270,12 +287,13 @@ function NumberFieldControl<
         <Input
           accessibilityHint={accessibilityHint || undefined}
           accessibilityLabel={label}
-          accessibilityState={{ disabled }}
-          editable={!disabled}
+          accessibilityState={{ disabled: isDisabled }}
+          editable={!isDisabled}
           keyboardType={allowDecimal ? "decimal-pad" : "numeric"}
           onBlur={() => commitDraft()}
           onChangeText={updateDraftValue}
           placeholder={placeholder}
+          inputRef={field.ref}
           testId={testId}
           value={draftValue}
         />
@@ -366,6 +384,7 @@ function FormBoundedNumberField<
   unitLabel,
   required,
 }: FormBoundedNumberFieldProps<TFieldValues, TName>) {
+  const resetKey = useFormDraftResetKey(control);
   return (
     <FormField
       control={control}
@@ -373,6 +392,7 @@ function FormBoundedNumberField<
       rules={rules}
       render={({ field, fieldState }) => (
         <BoundedNumberInput
+          resetKey={resetKey}
           decimals={decimals}
           disabled={disabled}
           error={fieldState.error?.message}
@@ -404,6 +424,7 @@ function FormIntegerStepperField<
 >({
   control,
   description,
+  disabled,
   label,
   max,
   min,
@@ -412,6 +433,8 @@ function FormIntegerStepperField<
   step,
   testId,
 }: FormIntegerStepperFieldProps<TFieldValues, TName>) {
+  const { isSubmitting } = useFormState({ control });
+
   return (
     <FormField
       control={control}
@@ -419,6 +442,7 @@ function FormIntegerStepperField<
       rules={rules}
       render={({ field, fieldState }) => (
         <IntegerStepper
+          disabled={disabled || field.disabled || isSubmitting}
           error={fieldState.error?.message}
           helperText={description}
           id={String(name)}
@@ -453,40 +477,47 @@ function FormTextareaField<
   testId,
   ...textareaProps
 }: FormTextareaFieldProps<TFieldValues, TName>) {
+  const { isSubmitting } = useFormState({ control });
+
   return (
     <FormField
       control={control}
       name={name}
       rules={rules}
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel>
-            {label}
-            {required ? " *" : null}
-          </FormLabel>
-          <FormControl>
-            <Textarea
-              {...textareaProps}
-              accessibilityLabel={label}
-              editable={!disabled}
-              numberOfLines={numberOfLines}
-              onBlur={field.onBlur}
-              onChangeText={(nextValue) => {
-                field.onChange(
-                  parseValue
-                    ? parseValue(nextValue)
-                    : (nextValue as FieldPathValue<TFieldValues, TName>),
-                );
-              }}
-              placeholder={placeholder}
-              testId={testId}
-              value={formatValue(field.value)}
-            />
-          </FormControl>
-          {description ? <FormDescription>{description}</FormDescription> : null}
-          <FormMessage />
-        </FormItem>
-      )}
+      render={({ field }) => {
+        const isDisabled = disabled || field.disabled || isSubmitting;
+
+        return (
+          <FormItem>
+            <FormLabel>
+              {label}
+              {required ? " *" : null}
+            </FormLabel>
+            <FormControl>
+              <Textarea
+                {...textareaProps}
+                accessibilityLabel={label}
+                editable={!isDisabled}
+                numberOfLines={numberOfLines}
+                onBlur={field.onBlur}
+                onChangeText={(nextValue) => {
+                  field.onChange(
+                    parseValue
+                      ? parseValue(nextValue)
+                      : (nextValue as FieldPathValue<TFieldValues, TName>),
+                  );
+                }}
+                placeholder={placeholder}
+                inputRef={field.ref}
+                testId={testId}
+                value={formatValue(field.value)}
+              />
+            </FormControl>
+            {description ? <FormDescription>{description}</FormDescription> : null}
+            <FormMessage />
+          </FormItem>
+        );
+      }}
     />
   );
 }
@@ -717,7 +748,9 @@ function combineDateTimeValue(date: string | undefined, time: string | undefined
     return null;
   }
 
-  return `${date ?? new Date().toISOString().slice(0, 10)}T${time ?? "00:00"}`;
+  const localDate = new Date();
+  const fallbackDate = `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, "0")}-${String(localDate.getDate()).padStart(2, "0")}`;
+  return `${date ?? fallbackDate}T${time ?? "00:00"}`;
 }
 
 function FormDateTimeField<
@@ -818,6 +851,121 @@ function FormTimeInputField<
           value={typeof field.value === "string" ? field.value : undefined}
         />
       )}
+    />
+  );
+}
+
+function FormTimezoneField<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+>({
+  control,
+  deviceTimeZone,
+  description,
+  disabled,
+  label,
+  name,
+  placeholder = "Select a timezone",
+  required,
+  rules,
+  testId,
+}: FormTimezoneFieldProps<TFieldValues, TName>) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const { isSubmitting } = useFormState({ control });
+  useEffect(() => {
+    if (disabled || isSubmitting) {
+      setOpen(false);
+      setSearch("");
+    }
+  }, [disabled, isSubmitting]);
+  const currentValue = useWatch({ control, name });
+  const options = getTimezoneOptions(
+    typeof currentValue === "string" ? currentValue : null,
+    deviceTimeZone,
+  );
+  return (
+    <FormField
+      control={control}
+      name={name}
+      {...(rules ? { rules } : {})}
+      render={({ field }) => {
+        const isDisabled = disabled || field.disabled || isSubmitting;
+        return (
+          <FormItem>
+            <FormLabel>
+              {label}
+              {required ? " *" : null}
+            </FormLabel>
+            <Dialog
+              open={open && !isDisabled}
+              onOpenChange={(next) => {
+                setOpen(next);
+                setSearch("");
+                if (!next) field.onBlur();
+              }}
+            >
+              <DialogTrigger asChild>
+                <FormControl>
+                  <Button
+                    ref={field.ref}
+                    variant="outline"
+                    disabled={isDisabled}
+                    accessibilityLabel={label}
+                    accessibilityState={{ expanded: open && !isDisabled, disabled: isDisabled }}
+                    {...(testId === undefined ? {} : { testId })}
+                  >
+                    <Text>
+                      {options.find((option) => option.value === currentValue)?.label ??
+                        currentValue ??
+                        placeholder}
+                    </Text>
+                  </Button>
+                </FormControl>
+              </DialogTrigger>
+              <DialogContent className="w-80 gap-2">
+                <DialogTitle>{label}</DialogTitle>
+                <Input
+                  accessibilityLabel="Search timezones"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholder="Search timezones"
+                  value={search}
+                  onChangeText={setSearch}
+                />
+                <FlatList
+                  style={{ height: 240 }}
+                  data={filterTimezoneOptions(options, search)}
+                  extraData={currentValue}
+                  keyboardShouldPersistTaps="handled"
+                  keyExtractor={(item) => item.value}
+                  ListEmptyComponent={<Text>No timezones found</Text>}
+                  renderItem={({ item }) => (
+                    <Button
+                      variant="ghost"
+                      className="justify-start"
+                      disabled={isDisabled}
+                      accessibilityLabel={item.label}
+                      accessibilityState={{ selected: (currentValue ?? "") === item.value }}
+                      onPress={() => {
+                        if (isDisabled) return;
+                        field.onChange(item.value || null);
+                        field.onBlur();
+                        setOpen(false);
+                        setSearch("");
+                      }}
+                    >
+                      <Text>{item.label}</Text>
+                    </Button>
+                  )}
+                />
+              </DialogContent>
+            </Dialog>
+            {description ? <FormDescription>{description}</FormDescription> : null}
+            <FormMessage />
+          </FormItem>
+        );
+      }}
     />
   );
 }
@@ -966,6 +1114,7 @@ function FormWeightInputField<
   testId,
   ...weightProps
 }: FormWeightInputFieldProps<TFieldValues, TName>) {
+  const resetKey = useFormDraftResetKey(control);
   return (
     <FormField
       control={control}
@@ -974,6 +1123,7 @@ function FormWeightInputField<
       render={({ field, fieldState }) => (
         <WeightInputField
           {...weightProps}
+          resetKey={`${weightProps.resetKey ?? ""}:${resetKey}`}
           error={fieldState.error?.message}
           helperText={description}
           id={String(name)}
@@ -1004,5 +1154,6 @@ export {
   FormTextareaField,
   FormTextField,
   FormTimeInputField,
+  FormTimezoneField,
   FormWeightInputField,
 };

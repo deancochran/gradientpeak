@@ -28,9 +28,9 @@ function handleTrpcRequest(request: Request) {
         },
         db,
       }),
-    onError: ({ error }) => {
+    onError: ({ error, path, type }) => {
       // Procedure middleware emits a coarse metric; HTTP errors capture exceptions once.
-      captureApiError(error, { category: "unknown" });
+      captureApiError(error, { procedure: path, procedure_type: type });
     },
   });
 }

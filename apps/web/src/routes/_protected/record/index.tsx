@@ -35,41 +35,24 @@ function RecordPage() {
     setEpochRecoveryNotice(readContractEpochRecordingRecoveryNotice());
   }, []);
   const snapshot = recording.state.reducer.snapshot;
-  const eventId = snapshot?.activity.eventId ?? launcher.eventId;
-  const selectedEvent = api.events.getById.useQuery(
-    { id: eventId ?? "", personalize: false },
-    { enabled: Boolean(eventId) },
+  const plannedSessionQuery = api.calendar.day.useQuery(
+    { date: launcher.plannedSessionDate ?? "" },
+    { enabled: Boolean(launcher.plannedSessionId && launcher.plannedSessionDate), retry: false },
   );
+  const selectedPlannedSession = plannedSessionQuery.data?.projection?.items
+    .flatMap((item) => (item.plannedSession ? [item.plannedSession] : []))
+    .find((session) => session.id === launcher.plannedSessionId);
+  const plannedPrescription = selectedPlannedSession?.prescription.resolutionManifest;
   const activityPlanId =
     snapshot?.activity.activityPlanId ??
-    launcher.activityPlanId ??
-    selectedEvent.data?.planned_session?.prescription.activityPlanId ??
-    selectedEvent.data?.activityPlanSummary?.id;
-  const scheduledPrescription = selectedEvent.data?.planned_session?.prescription ?? null;
+    plannedPrescription?.activity_plan_id ??
+    launcher.activityPlanId;
   const routeId = snapshot?.activity.routeId ?? launcher.routeId;
   const selectedPlanQuery = api.activityPlans.getById.useQuery(
-    {
-      id: activityPlanId ?? "",
-      personalize: false,
-      ...(launcher.variantId === undefined ? {} : { variantId: launcher.variantId }),
-    },
-    { enabled: Boolean(activityPlanId) && !scheduledPrescription, retry: false },
+    { id: activityPlanId ?? "", personalize: false },
+    { enabled: Boolean(activityPlanId && !plannedPrescription), retry: false },
   );
-  const selectedPlan = scheduledPrescription
-    ? {
-        id: scheduledPrescription.activityPlanId,
-        name:
-          selectedEvent.data?.title?.trim() ||
-          selectedEvent.data?.activityPlanSummary?.name ||
-          scheduledPrescription.variantName,
-        description: selectedEvent.data?.description ?? null,
-        activityCategory: scheduledPrescription.structure.activity_category,
-        activityPlanRevision: scheduledPrescription.activityPlanRevision,
-        structureHash: scheduledPrescription.structureHash,
-        structure: scheduledPrescription.structure,
-        capabilities: { canRecord: true },
-      }
-    : selectedPlanQuery.data?.detail;
+  const selectedPlan = selectedPlanQuery.data?.detail;
   const selectedRouteQuery = api.routes.get.useQuery(
     { id: routeId ?? "" },
     { enabled: Boolean(routeId), retry: false },
@@ -81,22 +64,26 @@ function RecordPage() {
   );
   const activityCategory =
     snapshot?.activity.activity_category ??
+    plannedPrescription?.resolved_structure.activity_category ??
     selectedPlan?.activityCategory ??
     launcher.activity_category;
   const active =
     recording.state.reducer.lifecycle === "recording" ||
     recording.state.reducer.lifecycle === "paused";
   const planUnavailable = Boolean(
-    activityPlanId &&
-      !selectedEvent.isLoading &&
-      !selectedPlanQuery.isLoading &&
-      ((!scheduledPrescription && selectedPlanQuery.isError) ||
-        !selectedPlan?.capabilities.canRecord ||
-        !selectedPlan.structure),
+    (launcher.plannedSessionId &&
+      !plannedSessionQuery.isLoading &&
+      (plannedSessionQuery.isError || !selectedPlannedSession)) ||
+      (activityPlanId &&
+        !plannedPrescription &&
+        !selectedPlanQuery.isLoading &&
+        (selectedPlanQuery.isError ||
+          !selectedPlan?.capabilities.canRecord ||
+          !selectedPlan.structure)),
   );
 
   const chooseActivity = (category: typeof launcher.activity_category) => {
-    if (snapshot || activityPlanId) return;
+    if (snapshot || activityPlanId || launcher.plannedSessionId) return;
     void navigate({
       to: "/record",
       search: { ...launcher, activity_category: category, gps: "off" },
@@ -108,32 +95,50 @@ function RecordPage() {
     if (!active && !recording.artifact) {
       const configured = recording.configure({
         activity_category: activityCategory,
-        ...(eventId ? { eventId } : {}),
         ...(activityPlanId ? { activityPlanId } : {}),
         ...(routeId ? { routeId } : {}),
-        ...(selectedPlan?.capabilities.canRecord &&
-        selectedPlan.structure &&
-        selectedPlan.structureHash
+        ...(plannedPrescription && selectedPlannedSession
           ? {
               plan: {
-                activityPlanId: selectedPlan.id,
-                scheduledEventId: eventId ?? null,
-                name: selectedPlan.name,
-                description: selectedPlan.description,
-                activityPlanRevision: selectedPlan.activityPlanRevision,
-                structureHash: selectedPlan.structureHash,
-                structure: selectedPlan.structure,
+                activityPlanId: plannedPrescription.activity_plan_id,
+                scheduledEventId: null,
+                name: `Scheduled ${plannedPrescription.resolved_structure.activity_category} session`,
+                description: null,
+                activityPlanRevision: plannedPrescription.activity_plan_revision,
+                structureHash: plannedPrescription.resolved_structure_hash,
+                structure: plannedPrescription.resolved_structure,
+                plannedSession: {
+                  id: selectedPlannedSession.id,
+                  sessionRevision: selectedPlannedSession.sessionRevision,
+                  source: selectedPlannedSession.source,
+                  prescription: selectedPlannedSession.prescription,
+                },
               },
             }
-          : {}),
+          : selectedPlan?.capabilities.canRecord &&
+              selectedPlan.structure &&
+              selectedPlan.structureHash
+            ? {
+                plan: {
+                  activityPlanId: selectedPlan.id,
+                  scheduledEventId: null,
+                  name: selectedPlan.name,
+                  description: selectedPlan.description,
+                  activityPlanRevision: selectedPlan.activityPlanRevision,
+                  structureHash: selectedPlan.structureHash,
+                  structure: selectedPlan.structure,
+                },
+              }
+            : {}),
       });
       if (!configured) return;
     }
     void navigate({ to: "/record/session" });
   };
 
-  const occurrenceCount = selectedPlan?.structure
-    ? compileActivityPlan(selectedPlan.structure).occurrences.length
+  const selectedStructure = plannedPrescription?.resolved_structure ?? selectedPlan?.structure;
+  const occurrenceCount = selectedStructure
+    ? compileActivityPlan(selectedStructure).occurrences.length
     : 0;
 
   return (
@@ -158,8 +163,8 @@ function RecordPage() {
             Start an indoor activity
           </CardTitle>
           <CardDescription>
-            Keep this tab open. The recorder tracks time and plan progress, not GPS. Supported
-            Bluetooth sensors can provide foreground-only live metrics.
+            Keep this tab open. The recorder tracks timer and plan evidence, not GPS or movement.
+            Supported Bluetooth sensors can provide foreground-only live metrics.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -213,6 +218,17 @@ function RecordPage() {
             </div>
           </div>
 
+          <div className="grid gap-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground sm:grid-cols-2">
+            <p>
+              <span className="font-medium text-foreground">Captured:</span> elapsed time, active
+              time, laps, and plan progress.
+            </p>
+            <p>
+              <span className="font-medium text-foreground">Not captured:</span> GPS, movement, and
+              target adherence without compatible sensor data.
+            </p>
+          </div>
+
           <div className="space-y-3 rounded-lg border p-4 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -234,7 +250,17 @@ function RecordPage() {
                 </Button>
               )}
             </div>
-            {selectedPlan ? (
+            {plannedPrescription ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <p>
+                  Category: <span className="font-medium">{activityCategory}</span>
+                </p>
+                <p>
+                  Steps: <span className="font-medium">{occurrenceCount}</span>
+                </p>
+                <p className="sm:col-span-2">Frozen planned-session prescription</p>
+              </div>
+            ) : selectedPlan ? (
               <div className="grid gap-2 sm:grid-cols-2">
                 <p>
                   Category: <span className="font-medium">{selectedPlan.activityCategory}</span>
@@ -245,7 +271,7 @@ function RecordPage() {
                 <p className="sm:col-span-2">Target display: authored values</p>
               </div>
             ) : null}
-            {activityPlanId && !snapshot ? (
+            {activityPlanId && !snapshot && !launcher.plannedSessionId ? (
               <Button
                 variant="ghost"
                 className="px-0 text-destructive"
@@ -271,8 +297,8 @@ function RecordPage() {
               <div>
                 <p className="font-medium">Route context</p>
                 <p className="text-muted-foreground">
-                  Attach a saved route for activity context. The browser recorder does not record
-                  GPS.
+                  Attach a saved route as reference context. The browser recorder does not record
+                  GPS or route progress.
                 </p>
               </div>
               {routeId && !snapshot ? (
@@ -286,8 +312,12 @@ function RecordPage() {
                         activity_category: launcher.activity_category,
                         gps: "off",
                         ...(activityPlanId ? { activityPlanId } : {}),
-                        ...(launcher.variantId ? { variantId: launcher.variantId } : {}),
-                        ...(eventId ? { eventId } : {}),
+                        ...(launcher.plannedSessionId
+                          ? {
+                              plannedSessionId: launcher.plannedSessionId,
+                              plannedSessionDate: launcher.plannedSessionDate,
+                            }
+                          : {}),
                       },
                       replace: true,
                     })
@@ -316,8 +346,12 @@ function RecordPage() {
                           activity_category: launcher.activity_category,
                           gps: "off",
                           ...(activityPlanId ? { activityPlanId } : {}),
-                          ...(launcher.variantId ? { variantId: launcher.variantId } : {}),
-                          ...(eventId ? { eventId } : {}),
+                          ...(launcher.plannedSessionId
+                            ? {
+                                plannedSessionId: launcher.plannedSessionId,
+                                plannedSessionDate: launcher.plannedSessionDate,
+                              }
+                            : {}),
                           routeId: route.id,
                         },
                         replace: true,
@@ -336,8 +370,9 @@ function RecordPage() {
 
           {planUnavailable ? (
             <p className="rounded-lg border border-destructive/40 p-3 text-sm" role="alert">
-              This plan cannot be recorded because its private step structure is unavailable. Choose
-              one of your own plans or record without a plan.
+              {launcher.plannedSessionId
+                ? "This planned session is unavailable. Return to the plan picker and choose another session."
+                : "This plan cannot be recorded because its private step structure is unavailable. Choose one of your own plans or record without a plan."}
             </p>
           ) : null}
           {recording.hasRecoveredDraft ? (
@@ -353,7 +388,10 @@ function RecordPage() {
             disabled={
               recording.hydrationStatus !== "ready" ||
               planUnavailable ||
-              Boolean(activityPlanId && (selectedEvent.isLoading || selectedPlanQuery.isLoading))
+              Boolean(
+                (launcher.plannedSessionId && plannedSessionQuery.isLoading) ||
+                  (activityPlanId && !plannedPrescription && selectedPlanQuery.isLoading),
+              )
             }
             onClick={openSession}
           >

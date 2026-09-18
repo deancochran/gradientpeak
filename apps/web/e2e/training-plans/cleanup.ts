@@ -1,3 +1,10 @@
+import {
+  plannedSessions,
+  trainingPlanApplicationCommandReceipts,
+  trainingPlanApplications,
+  trainingPlans,
+} from "@repo/db/schema";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { E2ECleanupRegistry } from "../support/cleanup";
 
 type TrainingPlanCleanupIdentity = {
@@ -25,27 +32,63 @@ export function registerTrainingPlanCleanup(
     kind: "training-plan",
     id,
     cleanup: (database) =>
-      database.transaction(async (query) => {
-        await query.query(
-          'delete from "planned_sessions" where "training_plan_id" = $1 and "profile_id" = $2',
-          [id, scheduledByProfileId],
-        );
-        await query.query(
-          'delete from "events" where "training_plan_id" = $1 and "profile_id" = $2',
-          [id, scheduledByProfileId],
-        );
+      database.typedTransaction(async (transaction) => {
+        const applications = await transaction
+          .select({ id: trainingPlanApplications.id })
+          .from(trainingPlanApplications)
+          .where(
+            and(
+              eq(trainingPlanApplications.training_plan_id, id),
+              eq(trainingPlanApplications.profile_id, scheduledByProfileId),
+            ),
+          );
+        if (applications.length) {
+          await transaction.delete(trainingPlanApplicationCommandReceipts).where(
+            and(
+              eq(trainingPlanApplicationCommandReceipts.profile_id, scheduledByProfileId),
+              inArray(
+                trainingPlanApplicationCommandReceipts.application_id,
+                applications.map((application) => application.id),
+              ),
+            ),
+          );
+        }
+        await transaction
+          .delete(plannedSessions)
+          .where(
+            and(
+              eq(plannedSessions.training_plan_id, id),
+              eq(plannedSessions.profile_id, scheduledByProfileId),
+            ),
+          );
+        await transaction
+          .delete(trainingPlanApplications)
+          .where(
+            and(
+              eq(trainingPlanApplications.training_plan_id, id),
+              eq(trainingPlanApplications.profile_id, scheduledByProfileId),
+            ),
+          );
         if (ownerProfileId) {
-          await query.query(
-            `delete from "training_plans"
-             where "id" = $1 and "profile_id" = $2 and "is_system_template" = false`,
-            [id, ownerProfileId],
-          );
+          await transaction
+            .delete(trainingPlans)
+            .where(
+              and(
+                eq(trainingPlans.id, id),
+                eq(trainingPlans.profile_id, ownerProfileId),
+                eq(trainingPlans.is_system_template, false),
+              ),
+            );
         } else {
-          await query.query(
-            `delete from "training_plans"
-             where "id" = $1 and "profile_id" is null and "is_system_template" = true`,
-            [id],
-          );
+          await transaction
+            .delete(trainingPlans)
+            .where(
+              and(
+                eq(trainingPlans.id, id),
+                isNull(trainingPlans.profile_id),
+                eq(trainingPlans.is_system_template, true),
+              ),
+            );
         }
       }),
   });

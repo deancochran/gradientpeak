@@ -6,7 +6,7 @@ import {
   createActivityPlanDetail,
   createActivityPlanSummary,
 } from "../../../../test/activity-plan-projection-fixture";
-import { createHost } from "../../../../test/mock-components";
+import { createFormComponentMocks, createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 import EventDetailScreen from "../event-detail";
 
@@ -81,6 +81,7 @@ jest.mock("expo-router", () => ({
       ),
   },
   useLocalSearchParams: () => paramsState,
+  useNavigation: () => ({ dispatch: jest.fn() }),
   useRouter: () => ({
     back: jest.fn(),
     navigate: jest.fn(),
@@ -92,6 +93,12 @@ jest.mock("expo-router", () => ({
 jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
   useAppNavigate: () => jest.fn(),
+}));
+
+jest.mock("@/lib/stores/auth-store", () => ({
+  __esModule: true,
+  useAuthStore: (selector: (state: { profile: { id: string } }) => unknown) =>
+    selector({ profile: { id: "11111111-1111-4111-8111-111111111111" } }),
 }));
 
 jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
@@ -157,6 +164,7 @@ jest.mock("@repo/ui/components/card", () => ({
 }));
 jest.mock("@repo/ui/components/form", () => ({
   __esModule: true,
+  FormTimezoneField: createFormComponentMocks().FormTimezoneField,
   Form: ({ children }: React.PropsWithChildren) => children,
   FormDateInputField: ({
     accessibilityHint,
@@ -230,7 +238,7 @@ jest.mock("@repo/ui/components/form", () => ({
       control,
       name,
       render: ({ field }: { field: MockControllerField }) =>
-        React.createElement("Text", { testID: testId }, field.value),
+        React.createElement("Text", { testID: testId, onChange: field.onChange }, field.value),
     });
   },
 }));
@@ -313,6 +321,33 @@ jest.mock("@/lib/api", () => ({
         useMutation: () => ({ isPending: false, mutate: jest.fn() }),
       },
     },
+    activities: {
+      createManualDiaryEntry: {
+        useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }),
+      },
+    },
+    plannedSessions: {
+      create: { useMutation: () => ({ isPending: false, mutate: createEventMutateMock }) },
+      getById: {
+        useQuery: () => ({ data: null, error: null, isLoading: false }),
+      },
+      skip: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
+      linkCompletion: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
+      completionCandidates: {
+        useInfiniteQuery: () => ({
+          data: { pages: [{ items: [], nextCursor: null }] },
+          fetchNextPage: jest.fn(),
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          isLoading: false,
+        }),
+      },
+    },
+    profiles: {
+      get: {
+        useQuery: () => ({ data: null, error: null, isLoading: false }),
+      },
+    },
     activityPlans: {
       list: {
         useQuery: () => mockActivityPlansListUseQuery(),
@@ -354,6 +389,11 @@ jest.mock("@/lib/api", () => ({
   },
 }));
 
+async function chooseCustomSchedule() {
+  await fireEvent(screen.getByTestId("event-detail-timezone"), "change", "UTC");
+  await fireEvent(screen.getByTestId("event-detail-start-time-button"), "change", "09:00");
+}
+
 describe("event detail create mode", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -383,6 +423,9 @@ describe("event detail create mode", () => {
 
     await fireEvent.press(screen.getByTestId("event-detail-type-custom"));
     await fireEvent(screen.getByTestId("event-detail-title-input"), "changeText", "Swim test");
+    await fireEvent.press(screen.getByTestId("event-detail-save-button"));
+    expect(createEventMutateMock).not.toHaveBeenCalled();
+    await chooseCustomSchedule();
 
     await act(async () => {
       await fireEvent.press(screen.getByTestId("event-detail-save-button"));
@@ -404,7 +447,7 @@ describe("event detail create mode", () => {
       data: {
         items: [
           createActivityPlanSummary({
-            id: "plan-1",
+            id: "22222222-2222-4222-8222-222222222222",
             name: "Tempo Run",
             activityCategory: "run",
           }),
@@ -426,7 +469,9 @@ describe("event detail create mode", () => {
       "changeText",
       "tempo",
     );
-    await fireEvent.press(screen.getByTestId("event-detail-activity-plan-option-plan-1"));
+    await fireEvent.press(
+      screen.getByTestId("event-detail-activity-plan-option-22222222-2222-4222-8222-222222222222"),
+    );
 
     await act(async () => {
       await fireEvent.press(screen.getByTestId("event-detail-save-button"));
@@ -435,10 +480,12 @@ describe("event detail create mode", () => {
     await waitFor(() => {
       expect(createEventMutateMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          event_type: "planned",
-          activity_plan_id: "plan-1",
-          title: "Tempo Run",
-          scheduled_date: "2026-03-24",
+          profileId: "11111111-1111-4111-8111-111111111111",
+          session: expect.objectContaining({
+            activityPlanId: "22222222-2222-4222-8222-222222222222",
+            planningDate: "2026-03-24",
+            source: expect.objectContaining({ kind: "direct" }),
+          }),
         }),
       );
     });
@@ -449,6 +496,7 @@ describe("event detail create mode", () => {
 
     await fireEvent.press(screen.getByTestId("event-detail-type-custom"));
     await fireEvent(screen.getByTestId("event-detail-title-input"), "changeText", "Swim test");
+    await chooseCustomSchedule();
     await fireEvent.press(screen.getByTestId("event-detail-repeat-row"));
     await fireEvent.press(screen.getByTestId("event-detail-recurrence-weekly"));
 
@@ -487,12 +535,12 @@ describe("event detail create mode", () => {
       data: {
         items: [
           createActivityPlanSummary({
-            id: "plan-1",
+            id: "22222222-2222-4222-8222-222222222222",
             name: "Tempo Run",
             activityCategory: "run",
           }),
           createActivityPlanSummary({
-            id: "plan-2",
+            id: "33333333-3333-4333-8333-333333333333",
             name: "Recovery Ride",
             activityCategory: "bike",
           }),
@@ -507,9 +555,13 @@ describe("event detail create mode", () => {
 
     await fireEvent.press(screen.getByTestId("event-detail-type-planned"));
     await fireEvent.press(screen.getByTestId("event-detail-change-activity-plan-button"));
-    await fireEvent.press(screen.getByTestId("event-detail-activity-plan-option-plan-1"));
+    await fireEvent.press(
+      screen.getByTestId("event-detail-activity-plan-option-22222222-2222-4222-8222-222222222222"),
+    );
     await fireEvent.press(screen.getByTestId("event-detail-change-activity-plan-button"));
-    await fireEvent.press(screen.getByTestId("event-detail-activity-plan-option-plan-2"));
+    await fireEvent.press(
+      screen.getByTestId("event-detail-activity-plan-option-33333333-3333-4333-8333-333333333333"),
+    );
 
     expect(screen.getByTestId("event-detail-title-input").props.value).toBe("Recovery Ride");
 
@@ -520,10 +572,12 @@ describe("event detail create mode", () => {
     await waitFor(() => {
       expect(createEventMutateMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          event_type: "planned",
-          activity_plan_id: "plan-2",
-          title: "Recovery Ride",
-          scheduled_date: "2026-03-24",
+          profileId: "11111111-1111-4111-8111-111111111111",
+          session: expect.objectContaining({
+            activityPlanId: "33333333-3333-4333-8333-333333333333",
+            planningDate: "2026-03-24",
+            source: expect.objectContaining({ kind: "direct" }),
+          }),
         }),
       );
     });
@@ -534,13 +588,13 @@ describe("event detail create mode", () => {
       mode: "create",
       date: "2026-03-24",
       trainingPlanId: "00000000-0000-4000-8000-000000000123",
-      activityPlanId: "plan-tempo",
+      activityPlanId: "44444444-4444-4444-8444-444444444444",
       scheduleGapLoadDelta: "80",
     };
     mockActivityPlanGetByIdUseQuery.mockReturnValue({
       data: {
         detail: createActivityPlanDetail({
-          id: "plan-tempo",
+          id: "44444444-4444-4444-8444-444444444444",
           name: "Tempo Run",
           activityCategory: "run",
         }),
@@ -564,11 +618,12 @@ describe("event detail create mode", () => {
     await waitFor(() => {
       expect(createEventMutateMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          event_type: "planned",
-          activity_plan_id: "plan-tempo",
-          title: "Tempo Run",
-          notes: expect.stringContaining("Schedule gap:"),
-          scheduled_date: "2026-03-24",
+          profileId: "11111111-1111-4111-8111-111111111111",
+          session: expect.objectContaining({
+            activityPlanId: "44444444-4444-4444-8444-444444444444",
+            planningDate: "2026-03-24",
+            source: expect.objectContaining({ kind: "direct" }),
+          }),
         }),
       );
     });
@@ -586,6 +641,7 @@ describe("event detail create mode", () => {
 
     await fireEvent.press(screen.getByTestId("event-detail-type-custom"));
     await fireEvent(screen.getByTestId("event-detail-title-input"), "changeText", "Route session");
+    await chooseCustomSchedule();
     await act(async () => {
       await fireEvent.press(screen.getByTestId("event-detail-save-button"));
     });
@@ -651,6 +707,7 @@ describe("event detail create mode", () => {
     };
 
     await renderNative(<EventDetailScreen />);
+    await chooseCustomSchedule();
 
     await act(async () => {
       await fireEvent.press(screen.getByTestId("event-detail-save-button"));

@@ -15,6 +15,7 @@ import {
   claimRouteUploadOperation,
   clearRouteUploadOperation,
 } from "../../lib/route-upload-operation";
+import { useUnsavedChangesGuard } from "../../lib/use-unsaved-changes-guard";
 
 export type RouteUploadPhase = "idle" | "reading" | "uploading" | "success";
 
@@ -55,6 +56,31 @@ export function RouteUploadForm<TResult = unknown>({
   onSuccess,
 }: RouteUploadFormProps<TResult>) {
   const [phase, setPhase] = useState<RouteUploadPhase>("idle");
+  const [navigationFailed, setNavigationFailed] = useState(false);
+  const [navigationPending, setNavigationPending] = useState(false);
+  const navigationGuard = useRef(false);
+  const committed = useRef<{ result: TResult; followUp: typeof onSuccess } | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const openSavedRoute = async (saved: NonNullable<typeof committed.current>) => {
+    if (navigationGuard.current || !mounted.current) return;
+    navigationGuard.current = true;
+    setNavigationPending(true);
+    try {
+      await saved.followUp?.(saved.result);
+      if (mounted.current) setNavigationFailed(false);
+    } catch {
+      if (mounted.current) setNavigationFailed(true);
+    } finally {
+      navigationGuard.current = false;
+      if (mounted.current) setNavigationPending(false);
+    }
+  };
   const form = useZodForm<RouteUploadFormInput, undefined, RouteUploadFormValues>({
     defaultValues: {
       description: null,
@@ -70,6 +96,11 @@ export function RouteUploadForm<TResult = unknown>({
   const autoDerivedName = useRef<string | null>(null);
   const submitGuard = useRef(false);
   const disabled = phase !== "idle";
+  const { guardedCancel, markSaved } = useUnsavedChangesGuard({
+    draft: { description, files, name },
+    dirty: form.formState.isDirty && phase !== "success",
+    pending: phase === "reading" || phase === "uploading",
+  });
 
   useEffect(() => {
     const selectedFile = files[0] ?? null;
@@ -122,10 +153,12 @@ export function RouteUploadForm<TResult = unknown>({
       }
 
       let result: TResult;
+      let operationStorageKey: string | null = null;
       try {
         form.clearErrors("root" as never);
         setPhase("reading");
         const fileContent = await file.text();
+        if (!mounted.current) return;
         setPhase("uploading");
         const operation = await claimRouteUploadOperation({
           description: values.description,
@@ -134,13 +167,14 @@ export function RouteUploadForm<TResult = unknown>({
           name: values.name,
           profileId: idempotencyScope,
         });
+        operationStorageKey = operation.storageKey;
+        if (!mounted.current) return;
         result = await onSubmit({
           ...values,
           file,
           fileContent,
           idempotencyKey: operation.idempotencyKey,
         });
-        clearRouteUploadOperation(operation.storageKey);
       } catch (error) {
         setPhase("idle");
         submitGuard.current = false;
@@ -152,12 +186,17 @@ export function RouteUploadForm<TResult = unknown>({
       }
 
       // The API has committed. Keep the guard and terminal phase even if follow-up work fails.
-      setPhase("success");
+      committed.current = { result, followUp: onSuccess };
+      // A local receipt-cleanup failure cannot turn a committed upload back into a write retry.
       try {
-        await onSuccess?.(result);
+        if (operationStorageKey) clearRouteUploadOperation(operationStorageKey);
       } catch {
-        // Cache invalidation/navigation failures must never make the committed upload retryable.
+        /* Keep the server-accepted operation terminal. */
       }
+      if (!mounted.current) return;
+      setPhase("success");
+      markSaved();
+      await openSavedRoute(committed.current);
     },
     () => {
       submitGuard.current = false;
@@ -216,11 +255,28 @@ export function RouteUploadForm<TResult = unknown>({
             {form.formState.errors.root.message}
           </p>
         ) : null}
+        {navigationFailed ? (
+          <div className="space-y-2">
+            <p role="alert">
+              Route saved, but it could not be opened. You do not need to upload it again.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={navigationPending}
+              onClick={() => {
+                if (committed.current) void openSavedRoute(committed.current);
+              }}
+            >
+              {navigationPending ? "Opening route..." : "Open route"}
+            </Button>
+          </div>
+        ) : null}
         <div className="flex flex-wrap justify-end gap-3">
           <Button
             data-testid="route-upload-cancel"
             disabled={disabled}
-            onClick={onCancel}
+            onClick={() => guardedCancel(onCancel)}
             type="button"
             variant="outline"
           >

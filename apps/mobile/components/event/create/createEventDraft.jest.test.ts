@@ -16,8 +16,8 @@ import {
 } from "./createEventDraft";
 
 describe("buildCreateEventInput", () => {
-  it("builds a plan-only planned event payload", () => {
-    expect(
+  it("rejects executable planned sessions at the legacy events boundary", () => {
+    expect(() =>
       buildCreateEventInput({
         activityPlanId: "11111111-1111-4111-8111-111111111111",
         activityPlanName: "Tempo Builder",
@@ -28,21 +28,14 @@ describe("buildCreateEventInput", () => {
         scheduledDate: "2026-06-02",
         title: "Tempo Builder",
       }),
-    ).toEqual({
-      activity_plan_id: "11111111-1111-4111-8111-111111111111",
-      event_type: "planned",
-      notes: "Threshold work",
-      route_id: null,
-      scheduled_date: "2026-06-02",
-      title: "Tempo Builder",
-    });
+    ).toThrow("Executable sessions must be created through plannedSessions.create.");
   });
 
   it.each([
     ["route-only", null, "route-1", "River Loop"],
     ["both", "plan-1", "route-1", "River Loop"],
-  ])("builds a %s planned event payload", (_label, activityPlanId, routeId, routeName) => {
-    expect(
+  ])("rejects a %s planned event payload", (_label, activityPlanId, routeId, routeName) => {
+    expect(() =>
       buildCreateEventInput({
         activityPlanId,
         activityPlanName: activityPlanId ? "Tempo Builder" : null,
@@ -53,13 +46,7 @@ describe("buildCreateEventInput", () => {
         scheduledDate: "2026-06-02",
         title: "",
       }),
-    ).toEqual(
-      expect.objectContaining({
-        activity_plan_id: activityPlanId,
-        event_type: "planned",
-        route_id: routeId,
-      }),
-    );
+    ).toThrow("Executable sessions must be created through plannedSessions.create.");
   });
 
   it("rejects a planned event without either linked resource", () => {
@@ -74,25 +61,37 @@ describe("buildCreateEventInput", () => {
         scheduledDate: "2026-06-02",
         title: "",
       }),
-    ).toThrow("Choose an activity plan, a route, or both");
+    ).toThrow("Executable sessions must be created through plannedSessions.create.");
   });
 
   it("keeps an initialized custom route payload", () => {
     const draft = createDefaultEventDraft({ mode: "custom" });
-    expect(buildCreateEventInput({ ...draft, routeId: "route-2", routeName: "Park Loop" })).toEqual(
-      expect.objectContaining({ event_type: "custom", route_id: "route-2" }),
-    );
+    if (draft.mode !== "custom") throw new Error("Expected a custom event draft");
+    expect(
+      buildCreateEventInput({
+        ...draft,
+        timezone: "UTC",
+        routeId: "route-2",
+        routeName: "Park Loop",
+      }),
+    ).toEqual(expect.objectContaining({ event_type: "custom", route_id: "route-2" }));
   });
 
   it("keeps immutable event type out of custom update patches", () => {
     const draft = createDefaultEventDraft({ mode: "custom" });
-    const patch = buildUpdatePatch({ ...draft, routeId: "route-2", routeName: "Park Loop" });
+    if (draft.mode !== "custom") throw new Error("Expected a custom event draft");
+    const patch = buildUpdatePatch({
+      ...draft,
+      timezone: "UTC",
+      routeId: "route-2",
+      routeName: "Park Loop",
+    });
 
     expect(patch).toEqual(expect.objectContaining({ route_id: "route-2" }));
     expect(patch).not.toHaveProperty("event_type");
   });
 
-  it("sends route attachment and explicit route clearing in update patches", () => {
+  it("rejects planned-session updates at the legacy events boundary", () => {
     const routeOnly = {
       activityPlanId: null,
       activityPlanName: null,
@@ -103,11 +102,8 @@ describe("buildCreateEventInput", () => {
       scheduledDate: "2026-06-02",
       title: "Hill Loop",
     };
-    expect(buildUpdatePatch(routeOnly)).toEqual(
-      expect.objectContaining({ activity_plan_id: null, route_id: "route-3" }),
-    );
-    expect(buildUpdatePatch({ ...routeOnly, routeId: null, routeName: null })).toEqual(
-      expect.objectContaining({ activity_plan_id: null, route_id: null }),
+    expect(() => buildUpdatePatch(routeOnly)).toThrow(
+      "Executable sessions must be changed through plannedSessions mutations.",
     );
   });
 
@@ -125,11 +121,8 @@ describe("buildCreateEventInput", () => {
     const routeOnly = removeActivityPlanFromDraft(combined);
 
     expect(routeOnly).toEqual(expect.objectContaining({ mode: "planned", routeId: "route-1" }));
-    expect(buildUpdatePatch(routeOnly)).toEqual(
-      expect.objectContaining({
-        activity_plan_id: null,
-        route_id: "route-1",
-      }),
+    expect(() => buildUpdatePatch(routeOnly)).toThrow(
+      "Executable sessions must be changed through plannedSessions mutations.",
     );
   });
 
@@ -146,8 +139,8 @@ describe("buildCreateEventInput", () => {
     });
 
     expect(planOnly).toEqual(expect.objectContaining({ mode: "planned", routeId: null }));
-    expect(buildUpdatePatch(planOnly)).toEqual(
-      expect.objectContaining({ activity_plan_id: "plan-1", route_id: null }),
+    expect(() => buildUpdatePatch(planOnly)).toThrow(
+      "Executable sessions must be changed through plannedSessions mutations.",
     );
   });
 });

@@ -86,4 +86,46 @@ describe("useTrainingPlanBuilderController chart selection", () => {
     expect(mockBuilder.actions.removeSession).toHaveBeenCalledWith("session-1");
     alert.mockRestore();
   });
+
+  it("blocks the parent save after a prior valid value becomes an invalid numeric draft", async () => {
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(jest.fn());
+    const { result } = await renderHook(() => useTrainingPlanBuilderController({ mode: "create" }));
+
+    await act(() =>
+      result.current.numericDrafts.setError("session:one:planned-duration", "Invalid"),
+    );
+    expect(result.current.header.primaryDisabled).toBe(true);
+    await act(() => result.current.actions.handleSave());
+    expect(mockBuilder.derived.savePlan.execute).not.toHaveBeenCalled();
+
+    await act(() => result.current.numericDrafts.setError("session:one:planned-duration", null));
+    expect(result.current.header.primaryDisabled).toBe(false);
+    await act(() => result.current.actions.handleSave());
+    expect(mockBuilder.derived.savePlan.execute).toHaveBeenCalledTimes(1);
+    alert.mockRestore();
+  });
+
+  it("treats invalid numeric drafts as dirty and only clears the discarded session scope", async () => {
+    const onDirtyChange = jest.fn();
+    const { result } = await renderHook(() =>
+      useTrainingPlanBuilderController({ mode: "create", onDirtyChange }),
+    );
+
+    await act(() =>
+      result.current.numericDrafts.setError("session:one:planned-duration", "Invalid"),
+    );
+    await act(() =>
+      result.current.numericDrafts.setError("session:two:planned-duration", "Invalid"),
+    );
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    expect(result.current.numericDrafts.hasInvalidFor("session:one:")).toBe(true);
+
+    await act(() => result.current.numericDrafts.clearErrors("session:one:"));
+    expect(result.current.numericDrafts.hasInvalidFor("session:one:")).toBe(false);
+    expect(result.current.numericDrafts.hasInvalidFor("session:two:")).toBe(true);
+    expect(result.current.header.primaryDisabled).toBe(true);
+
+    await act(() => result.current.numericDrafts.clearErrors("session:two:"));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
 });

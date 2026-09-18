@@ -1,3 +1,5 @@
+import { activityRoutes } from "@repo/db/schema";
+import { eq } from "drizzle-orm";
 import { expect, test } from "../fixtures";
 import { withLocalE2EDatabase } from "../support/database";
 import type { DomainFixtureBuilders } from "../support/domain";
@@ -108,9 +110,12 @@ test("public route links render anonymous readers and private routes fail closed
   await expect(page.getByText("10.0 km", { exact: true })).toBeVisible();
 
   await withLocalE2EDatabase((database) =>
-    database.query('update "activity_routes" set "is_public" = false where "id" = $1', [
-      publicRoute.id,
-    ]),
+    database.typedTransaction((transaction) =>
+      transaction
+        .update(activityRoutes)
+        .set({ is_public: false })
+        .where(eq(activityRoutes.id, publicRoute.id)),
+    ),
   );
   await page.reload();
   await expect(page.getByRole("heading", { name: "Page not found", exact: true })).toBeVisible();

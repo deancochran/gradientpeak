@@ -8,18 +8,19 @@ export function fromUIValue(
   type: StepDurationValue["type"],
   value: number,
   unit: string,
-): StepDurationValue {
+): StepDurationValue | null {
+  if (!Number.isFinite(value) || value <= 0) return null;
   if (type === "time") {
-    if (unit === "hours") return { type, seconds: Math.round(value * 3600) };
-    if (unit === "minutes") return { type, seconds: Math.round(value * 60) };
-    return { type, seconds: Math.round(value) };
+    const seconds = unit === "hours" ? value * 3600 : unit === "minutes" ? value * 60 : value;
+    return Number.isInteger(seconds) ? { type, seconds } : null;
   }
 
   if (type === "distance") {
-    return { type, meters: Math.round(unit === "km" ? value * 1000 : value) };
+    const meters = unit === "km" ? value * 1000 : value;
+    return Number.isInteger(meters) ? { type, meters } : null;
   }
 
-  if (type === "repetitions") return { type, count: Math.round(value) };
+  if (type === "repetitions") return Number.isInteger(value) ? { type, count: value } : null;
   return { type: "untilFinished" };
 }
 

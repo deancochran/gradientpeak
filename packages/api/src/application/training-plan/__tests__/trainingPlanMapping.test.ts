@@ -53,19 +53,21 @@ describe("training plan response mapping", () => {
     ).toMatchObject({ owner: null });
   });
 
-  it("removes private builder and creation metadata for non-owner reads", () => {
+  it("preserves the canonical share-safe training-plan structure for non-owner reads", () => {
     const plan = {
       id: "plan-1",
       profile_id: "owner-1",
       content_visibility: "public",
       structure: {
         version: 1,
-        builder_planning_snapshot: { version: 1, private: true },
-        metadata: {
-          creation_config_snapshot: { private: true },
-          creation_form_snapshot: { private: true },
-          creation_calibration: { private: true },
-          safe_summary: "retained",
+        plan_preferences: {
+          weekly_session_count: null,
+          target_weekly_duration_minutes: null,
+          maximum_session_duration_minutes: null,
+          preferred_weekdays: [],
+          rest_days: [],
+          progression_style: null,
+          recovery_priority: null,
         },
         sessions: [],
       },
@@ -73,17 +75,25 @@ describe("training plan response mapping", () => {
 
     expect(sanitizeTrainingPlanForViewer(plan, "viewer-2").structure).toEqual({
       version: 1,
-      metadata: { safe_summary: "retained" },
+      plan_preferences: {
+        weekly_session_count: null,
+        target_weekly_duration_minutes: null,
+        maximum_session_duration_minutes: null,
+        preferred_weekdays: [],
+        rest_days: [],
+        progression_style: null,
+        recovery_priority: null,
+      },
       sessions: [],
     });
   });
 
-  it("preserves private planning context for the owner after publication", () => {
+  it("preserves the canonical structure for the owner after publication", () => {
     const plan = {
       id: "plan-1",
       profile_id: "owner-1",
       content_visibility: "public",
-      structure: { builder_planning_snapshot: { version: 1 } },
+      structure: { version: 1, plan_preferences: {}, sessions: [] },
     };
 
     expect(sanitizeTrainingPlanForViewer(plan, "owner-1")).toBe(plan);
@@ -93,17 +103,39 @@ describe("training plan response mapping", () => {
     const result = mapTrainingPlanPlannedSchedulePreview({
       structure: {
         version: 1,
-        durationWeeks: { recommended: 2 },
+        plan_preferences: {
+          weekly_session_count: null,
+          target_weekly_duration_minutes: null,
+          maximum_session_duration_minutes: null,
+          preferred_weekdays: [],
+          rest_days: [],
+          progression_style: null,
+          recovery_priority: null,
+        },
         sessions: [
           {
+            id: "11111111-1111-4111-8111-111111111111",
             offset_days: 0,
             activity_plan_id: "11111111-1111-4111-8111-111111111111",
-            activity_plan_variant_id: "11111111-1111-4111-8111-111111111111",
+            demand: {
+              activity_category: "bike",
+              training_intent: "general_maintenance",
+              target_duration_minutes: 30,
+              target_common_load: null,
+              importance: "normal",
+            },
           },
           {
+            id: "22222222-2222-4222-8222-222222222222",
             offset_days: 8,
             activity_plan_id: "22222222-2222-4222-8222-222222222222",
-            activity_plan_variant_id: "22222222-2222-4222-8222-222222222222",
+            demand: {
+              activity_category: "bike",
+              training_intent: "general_maintenance",
+              target_duration_minutes: 30,
+              target_common_load: null,
+              importance: "normal",
+            },
           },
         ],
       },

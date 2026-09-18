@@ -2,7 +2,14 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("expo-file-system", () => ({
+  Paths: {
+    document: { uri: "file:///documents/" },
+    cache: { uri: "file:///cache/" },
+  },
+}));
 
 import {
   initializeRecordingEvidenceDatabase,

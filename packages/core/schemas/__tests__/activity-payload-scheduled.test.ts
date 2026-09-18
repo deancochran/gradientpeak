@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { stringifyCanonicalJson } from "../../athlete-intelligence/canonical-json";
+import { sha256Hex } from "../../utils/sha256";
 import { ActivityPayloadSchema } from "../activity_payload";
 
 const planId = "11111111-1111-4111-8111-111111111111";
 const plannedSessionId = "22222222-2222-4222-8222-222222222222";
-const variantId = "33333333-3333-4333-8333-333333333333";
-const structureHash = `v1:sha256:${"a".repeat(64)}`;
 const structure = {
   version: 3 as const,
   activity_category: "bike" as const,
@@ -31,18 +31,48 @@ const structure = {
     },
   ],
 };
+const structureHash = `v1:sha256:${sha256Hex(stringifyCanonicalJson(structure))}`;
 
 const plannedSession = {
   id: plannedSessionId,
   sessionRevision: 3,
+  source: { kind: "direct" as const, operationId: "core-activity-payload-test-operation-01" },
   prescription: {
-    activityPlanId: planId,
-    activityPlanRevision: 7,
-    variantId,
-    variantName: "Long",
-    structure,
-    structureHash,
-    prescriptionQuantification: null,
+    resolutionManifest: {
+      resolver_version: "prescription-resolver-v1",
+      policy_version: "training-plan-policy-v1",
+      training_plan_id: null,
+      training_plan_revision: null,
+      training_plan_hash: null,
+      athlete_context_revision: null,
+      activity_plan_id: planId,
+      activity_plan_revision: 7,
+      activity_plan_semantic_hash: `v1:sha256:${"a".repeat(64)}`,
+      effective_target_duration_minutes: null,
+      effective_target_common_load: null,
+      evidence_facts: [],
+      session_demand: {
+        activity_category: "bike" as const,
+        training_intent: "aerobic_base" as const,
+        target_duration_minutes: 15,
+        target_common_load: null,
+        importance: "normal" as const,
+      },
+      adaptation_values: {},
+      fallback_level: "system_default_no_context" as const,
+      reason_codes: [],
+      resolved_structure: structure,
+      resolved_structure_hash: structureHash,
+      prescription_estimate: {
+        duration: { status: "exact" as const, value_seconds: 900 },
+        common_load: { status: "unavailable" as const, value: null },
+        rest_seconds: 0,
+        has_open_completion: false,
+        warnings: [],
+        factors: ["canonical prescription quantification"],
+      },
+      fingerprint: `v1:sha256:${"b".repeat(64)}`,
+    },
     capturedAt: "2026-09-01T10:00:00.000Z",
   },
 };

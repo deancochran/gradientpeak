@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { initializeActivityPlanDocument } from "@repo/core/activity-plan";
 import { db, pool } from "@repo/db/client";
 import {
   activities,
@@ -103,11 +102,9 @@ async function seedPublicShareEntities(): Promise<SeedState> {
       id: publicActivityPlanId,
       profile_id: profileId,
       name: "Public Activity Plan",
-      structure: initializeActivityPlanDocument({
-        activityPlanId: publicActivityPlanId,
-        structure: activityPlanStructure,
-      }),
+      structure: activityPlanStructure,
       structure_hash: structureHash,
+      semantic_hash: structureHash,
       content_visibility: "public",
       created_at: createdAt,
       updated_at: createdAt,
@@ -116,11 +113,9 @@ async function seedPublicShareEntities(): Promise<SeedState> {
       id: privateActivityPlanId,
       profile_id: profileId,
       name: "Private Activity Plan",
-      structure: initializeActivityPlanDocument({
-        activityPlanId: privateActivityPlanId,
-        structure: activityPlanStructure,
-      }),
+      structure: activityPlanStructure,
       structure_hash: structureHash,
+      semantic_hash: structureHash,
       content_visibility: "private",
       created_at: createdAt,
       updated_at: createdAt,
@@ -132,7 +127,29 @@ async function seedPublicShareEntities(): Promise<SeedState> {
   const trainingStructure = (id: string, activityPlanId: string) => ({
     id,
     version: 1 as const,
-    sessions: [{ offset_days: 0, activity_plan_id: activityPlanId }],
+    plan_preferences: {
+      weekly_session_count: 1,
+      target_weekly_duration_minutes: null,
+      maximum_session_duration_minutes: null,
+      preferred_weekdays: [3],
+      rest_days: [],
+      progression_style: null,
+      recovery_priority: null,
+    },
+    sessions: [
+      {
+        id: randomUUID(),
+        offset_days: 0,
+        activity_plan_id: activityPlanId,
+        demand: {
+          activity_category: "bike" as const,
+          training_intent: "aerobic_base" as const,
+          target_duration_minutes: null,
+          target_common_load: null,
+          importance: "normal" as const,
+        },
+      },
+    ],
   });
   await db.insert(trainingPlans).values([
     {

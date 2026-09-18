@@ -72,11 +72,15 @@ export default function NewMessageScreen() {
     }
 
     if (selectedRecipients.length === 1) {
-      const conversation = await getOrCreateDMMutation.mutateAsync({
-        target_user_id: selectedRecipients[0].id,
-      });
+      try {
+        const conversation = await getOrCreateDMMutation.mutateAsync({
+          target_user_id: selectedRecipients[0].id,
+        });
 
-      navigateTo(`/messages/${conversation.id}`);
+        navigateTo(`/messages/${conversation.id}`);
+      } catch {
+        // The mutation error remains rendered below; avoid an unhandled header-action rejection.
+      }
       return;
     }
 
@@ -131,6 +135,7 @@ export default function NewMessageScreen() {
                       <Pressable
                         key={recipient.id}
                         onPress={() => toggleRecipient(recipient)}
+                        accessibilityLabel={`Remove @${recipient.username ?? "user"} from recipients`}
                         className="rounded-full bg-primary/10 px-2.5 py-1"
                         testID={`messages-new-selected-${recipient.id}`}
                       >
@@ -220,6 +225,7 @@ export default function NewMessageScreen() {
           <View className="rounded-3xl border border-border bg-card p-4">
             <Text className="mb-2 text-sm font-medium text-muted-foreground">Group Name</Text>
             <Input
+              accessibilityLabel="Group name"
               value={groupName}
               onChangeText={setGroupName}
               placeholder="Optional group name"
@@ -229,7 +235,11 @@ export default function NewMessageScreen() {
         ) : null}
 
         {submitError ? (
-          <View className="rounded-2xl border border-destructive/30 bg-destructive/10 p-3">
+          <View
+            accessibilityLiveRegion="polite"
+            accessibilityRole="alert"
+            className="rounded-2xl border border-destructive/30 bg-destructive/10 p-3"
+          >
             <Text className="text-sm font-medium text-destructive">
               {submitError.message || "Unable to start this conversation."}
             </Text>

@@ -1,30 +1,26 @@
 import {
-  ActivityPlanVariantResolutionError,
-  activityPlanDocumentSchema,
-  canonicalTrainingPlanStructureSchema,
+  activityPlanStructureSchema,
+  buildSystemActivityTemplateCatalog,
   normalizeActivityTemplateStructureForAudit,
-  resolveActivityPlanVariant,
   SYSTEM_TEMPLATES,
   type trainingPlanCreateInputSchema,
   trainingPlanCreateSchema,
   trainingPlanSchema,
   type trainingPlanUpdateInputSchema,
 } from "@repo/core";
-import type { TrainingPlanRow } from "@repo/db";
+import { plannedSessions, profiles, type TrainingPlanRow, trainingPlans } from "@repo/db";
 import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { z } from "zod";
+import { logger } from "../../lib/logger";
 import type {
   LockedPlanningTemplateRow,
   PlanningTemplateRepository,
   TrainingPlanRepository,
   TrainingPlanTransactionClient,
 } from "../../repositories";
-import {
-  activityPlanDocumentHash,
-  activityPlanStructureHash,
-} from "../activity-plans/structure-hash";
+import { activityPlanStructureHash } from "../activity-plans/structure-hash";
 import { mapTrainingPlanContentIdentity } from "./trainingPlanMapping";
 
 type TrainingPlanCreateInput = z.infer<typeof trainingPlanCreateInputSchema>;
@@ -33,10 +29,6 @@ type TrainingPlanUpdateInput = z.infer<typeof trainingPlanUpdateInputSchema> & {
   expectedStructureHash: string;
   content_visibility?: "private" | "followers" | "public";
 };
-
-function getSqlRows<T>(result: unknown) {
-  return ((result as { rows?: T[] }).rows ?? []) as T[];
-}
 
 function parseTrainingPlanStructureOrThrow(input: {
   value: unknown;
@@ -68,41 +60,41 @@ function parseTrainingPlanCreateStructureOrThrow(input: {
   });
 }
 
-export function materializeTrainingPlanActivityPlanVariants(input: {
+export function requirePublishedLinkedActivityPlans(input: {
   rows: LockedPlanningTemplateRow[];
-  structure: z.infer<typeof trainingPlanCreateSchema> & { id?: string };
-}): z.infer<typeof trainingPlanSchema> | z.infer<typeof canonicalTrainingPlanStructureSchema> {
-  const activityPlanIds = Array.from(
-    new Set(input.structure.sessions.map((session) => session.activity_plan_id)),
-  );
+  structure: z.infer<typeof trainingPlanSchema>;
+}) {
+  const activityPlanIds = linkedActivityPlanIds(input.structure);
   const catalogSignatures = new Map(
-    SYSTEM_TEMPLATES.map(
-      (source) =>
-        [
-          source.id,
-          JSON.stringify(normalizeActivityTemplateStructureForAudit(source.structure)),
-        ] as const,
-    ),
+    buildSystemActivityTemplateCatalog().flatMap((candidate) => {
+      const source = SYSTEM_TEMPLATES.find((template) => template.id === candidate.template_id);
+      const parsed = activityPlanStructureSchema.safeParse(source?.structure);
+      return parsed.success
+        ? [
+            [
+              candidate.template_id,
+              JSON.stringify(normalizeActivityTemplateStructureForAudit(parsed.data)),
+            ] as const,
+          ]
+        : [];
+    }),
   );
   const publishedIds = new Set(
     input.rows
       .filter((row) => {
-        const parsed = activityPlanDocumentSchema.safeParse(row.structure);
+        const parsed = activityPlanStructureSchema.safeParse(row.structure);
         if (
           !parsed.success ||
           typeof row.gpsRecordingEnabled !== "boolean" ||
-          activityPlanDocumentHash(parsed.data) !== row.structureHash
+          activityPlanStructureHash(parsed.data) !== row.structureHash
         ) {
           return false;
         }
         if (!row.isSystemTemplate) return true;
         const expectedSignature = catalogSignatures.get(row.id);
-        const resolved = resolveActivityPlanVariant(parsed.data);
         return (
           expectedSignature !== undefined &&
-          resolved.variantId === row.id &&
-          resolved.variantName === "Base" &&
-          JSON.stringify(normalizeActivityTemplateStructureForAudit(resolved.structure)) ===
+          JSON.stringify(normalizeActivityTemplateStructureForAudit(parsed.data)) ===
             expectedSignature
         );
       })
@@ -116,38 +108,16 @@ export function materializeTrainingPlanActivityPlanVariants(input: {
       message: `Training plan contains missing, inaccessible, or unpublished activity plans: ${rejectedIds.join(", ")}`,
     });
   }
+}
 
-  const rowById = new Map(input.rows.map((row) => [row.id, row]));
-  const sessions = input.structure.sessions.map((session) => {
-    const row = rowById.get(session.activity_plan_id);
-    if (!row) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `Training plan contains an unavailable activity plan: ${session.activity_plan_id}`,
-      });
-    }
-    const document = activityPlanDocumentSchema.parse(row.structure);
-    try {
-      const resolved = resolveActivityPlanVariant(
-        document,
-        session.activity_plan_variant_id === undefined
-          ? undefined
-          : { variantId: session.activity_plan_variant_id },
-      );
-      return { ...session, activity_plan_variant_id: resolved.variantId };
-    } catch (error) {
-      if (!(error instanceof ActivityPlanVariantResolutionError)) throw error;
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: `Training plan contains an unknown activity-plan variant: ${error.variantId}`,
-        cause: error,
-      });
-    }
-  });
-  const materialized = { ...input.structure, sessions };
-  return "id" in materialized && materialized.id !== undefined
-    ? trainingPlanSchema.parse(materialized)
-    : canonicalTrainingPlanStructureSchema.parse(materialized);
+function linkedActivityPlanIds(input: z.infer<typeof trainingPlanSchema>): string[] {
+  return Array.from(
+    new Set(
+      input.sessions.flatMap((session) =>
+        session.activity_plan_id === null ? [] : [session.activity_plan_id],
+      ),
+    ),
+  );
 }
 
 async function insertTrainingPlan(input: {
@@ -155,34 +125,23 @@ async function insertTrainingPlan(input: {
   values: {
     name: string;
     description: string | null;
-    structure: Record<string, unknown>;
+    structure: z.infer<typeof trainingPlanSchema>;
     profileId: string;
     contentVisibility?: "private" | "followers" | "public";
   };
 }): Promise<TrainingPlanRow> {
-  const result = await input.db.execute(sql<TrainingPlanRow>`
-    insert into training_plans (
-      id,
-      name,
-      description,
-      structure,
-      structure_hash,
-      profile_id,
-      content_visibility
-    )
-    values (
-      ${(input.values.structure as { id: string }).id}::uuid,
-      ${input.values.name},
-      ${input.values.description},
-      ${JSON.stringify(input.values.structure)}::jsonb,
-      ${activityPlanStructureHash(input.values.structure)},
-      ${input.values.profileId}::uuid,
-      ${input.values.contentVisibility ?? "private"}
-    )
-    returning *
-  `);
-
-  const row = getSqlRows<TrainingPlanRow>(result)[0];
+  const [row] = await input.db
+    .insert(trainingPlans)
+    .values({
+      id: input.values.structure.id,
+      name: input.values.name,
+      description: input.values.description,
+      structure: input.values.structure,
+      structure_hash: activityPlanStructureHash(input.values.structure),
+      profile_id: input.values.profileId,
+      content_visibility: input.values.contentVisibility ?? "private",
+    })
+    .returning();
   if (!row) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Failed to save training plan" });
   }
@@ -191,18 +150,12 @@ async function insertTrainingPlan(input: {
 }
 
 async function getProfileDefaultContentVisibility(db: DrizzleDbClient, profileId: string) {
-  const result = await db.execute(sql<{
-    default_content_visibility: "private" | "followers" | "public";
-  }>`
-    select default_content_visibility
-    from profiles
-    where id = ${profileId}::uuid
-    limit 1
-  `);
-  return (
-    getSqlRows<{ default_content_visibility: "private" | "followers" | "public" }>(result)[0]
-      ?.default_content_visibility ?? "private"
-  );
+  const [profile] = await db
+    .select({ defaultContentVisibility: profiles.default_content_visibility })
+    .from(profiles)
+    .where(eq(profiles.id, profileId))
+    .limit(1);
+  return profile?.defaultContentVisibility ?? "private";
 }
 
 async function updateOwnedTrainingPlanRow(input: {
@@ -211,35 +164,40 @@ async function updateOwnedTrainingPlanRow(input: {
   profileId: string;
   name?: string;
   description?: string | null;
-  structure?: Record<string, unknown>;
+  structure?: z.infer<typeof trainingPlanSchema>;
   expectedStructureHash: string;
   contentVisibility?: "private" | "followers" | "public";
 }): Promise<TrainingPlanRow | null> {
-  const updates = [sql`updated_at = now()`, sql`revision = revision + 1`];
+  const [row] = await input.db
+    .update(trainingPlans)
+    .set({
+      updated_at: sql`now()`,
+      revision: sql`${trainingPlans.revision} + 1`,
+      ...(input.name === undefined ? {} : { name: input.name }),
+      ...(input.description === undefined ? {} : { description: input.description }),
+      ...(input.structure === undefined
+        ? {}
+        : {
+            structure: input.structure,
+            structure_hash: activityPlanStructureHash(input.structure),
+            validated_state_revision: null,
+            validated_at: null,
+            projection_algorithm_version: null,
+          }),
+      ...(input.contentVisibility === undefined
+        ? {}
+        : { content_visibility: input.contentVisibility }),
+    })
+    .where(
+      and(
+        eq(trainingPlans.id, input.id),
+        eq(trainingPlans.profile_id, input.profileId),
+        eq(trainingPlans.structure_hash, input.expectedStructureHash),
+      ),
+    )
+    .returning();
 
-  if (input.name !== undefined) updates.push(sql`name = ${input.name}`);
-  if (input.description !== undefined) updates.push(sql`description = ${input.description}`);
-  if (input.structure !== undefined) {
-    updates.push(sql`structure = ${JSON.stringify(input.structure)}::jsonb`);
-    updates.push(sql`structure_hash = ${activityPlanStructureHash(input.structure)}`);
-    updates.push(sql`validated_state_revision = null`);
-    updates.push(sql`validated_at = null`);
-    updates.push(sql`projection_algorithm_version = null`);
-  }
-  if (input.contentVisibility !== undefined) {
-    updates.push(sql`content_visibility = ${input.contentVisibility}`);
-  }
-
-  const result = await input.db.execute(sql<TrainingPlanRow>`
-    update training_plans
-    set ${sql.join(updates, sql`, `)}
-    where id = ${input.id}::uuid
-      and profile_id = ${input.profileId}::uuid
-      and structure_hash = ${input.expectedStructureHash}
-    returning *
-  `);
-
-  return getSqlRows<TrainingPlanRow>(result)[0] ?? null;
+  return row ?? null;
 }
 
 export async function createTrainingPlanUseCase(input: {
@@ -249,29 +207,68 @@ export async function createTrainingPlanUseCase(input: {
   values: TrainingPlanCreateInput;
 }) {
   const planId = crypto.randomUUID();
-  const parsedStructure = parseTrainingPlanCreateStructureOrThrow({
-    value: input.values.structure,
+  const structureWithId = {
+    ...input.values.structure,
+    id: planId,
+  };
+
+  try {
+    trainingPlanSchema.parse(structureWithId);
+  } catch (validationError) {
+    logger.error("Training plan validation error", {
+      error:
+        validationError instanceof Error ? validationError.message : "Unknown validation error",
+    });
+
+    let errorMessage = "Invalid training plan structure";
+    const errorDetails: string[] = [];
+
+    if (validationError && typeof validationError === "object") {
+      const zodError = validationError as {
+        errors?: Array<{ path?: string[]; message?: string }>;
+        message?: string;
+      };
+      if (Array.isArray(zodError.errors)) {
+        for (const err of zodError.errors) {
+          const path = err.path ? err.path.join(".") : "unknown";
+          const message = err.message || "validation failed";
+          errorDetails.push(`${path}: ${message}`);
+        }
+
+        if (errorDetails.length > 0) {
+          errorMessage = `Training plan validation failed:\n${errorDetails.join("\n")}`;
+        }
+      } else if (zodError.message) {
+        errorMessage = zodError.message;
+      }
+    }
+
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: errorMessage,
+      cause: validationError,
+    });
+  }
+
+  const parsedStructure = parseTrainingPlanStructureOrThrow({
+    value: structureWithId,
     message: "Invalid training plan structure",
   });
   const defaultContentVisibility = await getProfileDefaultContentVisibility(
     input.db,
     input.profileId,
   );
-  const templateIds = parsedStructure.sessions.map((session) => session.activity_plan_id);
+  const templateIds = linkedActivityPlanIds(parsedStructure);
   return input.planningTemplateRepository.withLockedPublishedTemplates(
-    input.profileId,
     templateIds,
     async ({ db, rows }) => {
-      const materializedStructure = materializeTrainingPlanActivityPlanVariants({
-        rows,
-        structure: { ...parsedStructure, id: planId },
-      });
+      requirePublishedLinkedActivityPlans({ rows, structure: parsedStructure });
       return insertTrainingPlan({
         db,
         values: {
           name: input.values.name,
           description: input.values.description ?? null,
-          structure: materializedStructure,
+          structure: parsedStructure,
           profileId: input.profileId,
           contentVisibility: input.values.content_visibility ?? defaultContentVisibility,
         },
@@ -316,22 +313,20 @@ export async function updateTrainingPlanUseCase(input: {
     });
   }
 
-  const structure = submittedStructure ? { ...submittedStructure, id } : undefined;
+  const structure = submittedStructure
+    ? trainingPlanSchema.parse({ ...submittedStructure, id })
+    : undefined;
   const effectiveStructure =
     structure ??
     parseTrainingPlanStructureOrThrow({
       value: existing.structure,
       message: "Existing training plan structure is invalid",
     });
-  const templateIds = effectiveStructure.sessions.map((session) => session.activity_plan_id);
+  const templateIds = linkedActivityPlanIds(effectiveStructure);
   const data = await input.planningTemplateRepository.withLockedPublishedTemplates(
-    input.profileId,
     templateIds,
     async ({ db, rows }) => {
-      const materializedStructure = materializeTrainingPlanActivityPlanVariants({
-        rows,
-        structure: effectiveStructure,
-      });
+      requirePublishedLinkedActivityPlans({ rows, structure: effectiveStructure });
       return updateOwnedTrainingPlanRow({
         db,
         id,
@@ -339,7 +334,7 @@ export async function updateTrainingPlanUseCase(input: {
         name: updates.name,
         description: updates.description,
         expectedStructureHash,
-        structure: structure === undefined ? undefined : materializedStructure,
+        structure,
         contentVisibility: content_visibility,
       });
     },
@@ -374,11 +369,22 @@ export async function deleteTrainingPlanUseCase(input: {
     });
   }
 
-  await input.db.execute(sql`
-    delete from training_plans
-    where id = ${input.id}::uuid
-      and profile_id = ${input.profileId}::uuid
-  `);
+  await input.db.transaction(async (tx) => {
+    const [history] = await tx
+      .select({ id: plannedSessions.id })
+      .from(plannedSessions)
+      .where(eq(plannedSessions.training_plan_id, input.id))
+      .limit(1);
+    if (history) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "Training plans with planned-session history cannot be deleted",
+      });
+    }
+    await tx
+      .delete(trainingPlans)
+      .where(and(eq(trainingPlans.id, input.id), eq(trainingPlans.profile_id, input.profileId)));
+  });
 
   return { success: true };
 }
@@ -416,19 +422,15 @@ export async function duplicateTrainingPlanUseCase(input: {
   });
 
   const data = await input.planningTemplateRepository.withLockedPublishedTemplates(
-    input.profileId,
-    duplicatedStructure.sessions.map((session) => session.activity_plan_id),
+    linkedActivityPlanIds(duplicatedStructure),
     async ({ db, rows }) => {
-      const materializedStructure = materializeTrainingPlanActivityPlanVariants({
-        rows,
-        structure: duplicatedStructure,
-      });
+      requirePublishedLinkedActivityPlans({ rows, structure: duplicatedStructure });
       return insertTrainingPlan({
         db,
         values: {
           name: input.newName?.trim() || `${sourcePlan.name} (Copy)`,
           description: sourcePlan.description ?? null,
-          structure: materializedStructure,
+          structure: duplicatedStructure,
           profileId: input.profileId,
           contentVisibility: "private",
         },

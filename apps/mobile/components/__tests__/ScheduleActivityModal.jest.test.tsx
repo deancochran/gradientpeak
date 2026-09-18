@@ -1,15 +1,13 @@
-import React, { act } from "react";
+import React from "react";
 import type { TestInstance as ReactTestInstance } from "test-renderer";
 import { createActivityPlanDetail } from "../../test/activity-plan-projection-fixture";
 import { createHost, type HostProps } from "../../test/mock-components";
-import { fireEvent, renderNative, screen } from "../../test/render-native";
+import { fireEvent, renderNative, screen, waitFor } from "../../test/render-native";
 
 const alertMock = jest.fn();
-const plannedSessionCreateMock = jest.fn(async () => undefined);
+const createMutateMock = jest.fn();
 const updateMutateMock = jest.fn();
-const profileId = "11111111-1111-4111-8111-111111111111";
-const activityPlanId = "22222222-2222-4222-8222-222222222222";
-const variantId = "33333333-3333-4333-8333-333333333333";
+const activityPlanId = "11111111-1111-4111-8111-111111111111";
 
 type ExistingActivityData = {
   id: string;
@@ -29,30 +27,6 @@ let existingActivityData: ExistingActivityData | null = null;
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
   useQueryClient: () => ({ invalidateQueries: jest.fn() }),
-}));
-
-jest.mock("expo-crypto", () => ({
-  __esModule: true,
-  randomUUID: () => "44444444-4444-4444-8444-444444444444",
-}));
-
-jest.mock("@repo/api/client", () => ({
-  __esModule: true,
-  buildDirectPlannedSessionCreateInput: (input: Record<string, string>) => ({
-    profileId: input.profileId,
-    session: {
-      planningDate: input.planningDate,
-      source: { kind: "direct", operationId: input.operationId },
-      activityPlanId: input.activityPlanId,
-    },
-  }),
-}));
-
-jest.mock("@repo/api/react", () => ({
-  __esModule: true,
-  usePlannedSessionMutations: () => ({
-    create: { isPending: false, mutateAsync: plannedSessionCreateMock },
-  }),
 }));
 
 jest.mock("react-native", () => ({
@@ -83,6 +57,7 @@ jest.mock("@repo/ui/hooks", () => {
       return React.useMemo(
         () => ({
           control: {},
+          formState: { errors: {}, isDirty: false },
           getValues: () => valuesRef.current,
           reset: () => setValues(initialDefaultsRef.current),
           setValue: (name: string, value: unknown) =>
@@ -177,7 +152,8 @@ jest.mock("@/lib/scheduling/refreshScheduleViews", () => ({
 
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
-  useAuthStore: (selector: (state: unknown) => unknown) => selector({ profile: { id: profileId } }),
+  useAuthStore: (selector: (state: { profile: { id: string } }) => unknown) =>
+    selector({ profile: { id: "22222222-2222-4222-8222-222222222222" } }),
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -185,14 +161,18 @@ jest.mock("@/lib/api", () => ({
   api: {
     events: {
       getById: { useQuery: () => ({ data: existingActivityData, isLoading: false }) },
+      create: { useMutation: () => ({ isPending: false, error: null, mutate: createMutateMock }) },
       update: { useMutation: () => ({ isPending: false, error: null, mutate: updateMutateMock }) },
+    },
+    plannedSessions: {
+      create: { useMutation: () => ({ isPending: false, error: null, mutate: createMutateMock }) },
     },
     activityPlans: {
       getById: {
         useQuery: () => ({
           data: {
             detail: createActivityPlanDetail({
-              id: activityPlanId,
+              id: "plan-1",
               name: "Tempo Builder",
               description: "Progressive tempo session with structured intervals.",
             }),
@@ -231,34 +211,33 @@ describe("ScheduleActivityModal", () => {
     ).toBe("compact");
   });
 
-  it("submits the selected variant through the typed planned-session API", async () => {
+  it("submits a date-key-only planned activity", async () => {
     await renderNative(
       <ScheduleActivityModal
         visible
         onClose={jest.fn()}
         activityPlanId={activityPlanId}
         preselectedDate="2026-06-02"
-        variantId={variantId}
       />,
     );
 
     await fireEvent.press(screen.getByTestId("schedule-submit-button"));
 
-    expect(plannedSessionCreateMock).toHaveBeenCalledWith({
-      profileId,
-      session: {
-        planningDate: "2026-06-02",
-        source: {
-          kind: "direct",
-          operationId: "44444444-4444-4444-8444-444444444444",
-        },
-        activityPlanId,
-        variantId,
-      },
+    await waitFor(() => {
+      expect(createMutateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          profileId: "22222222-2222-4222-8222-222222222222",
+          session: expect.objectContaining({
+            activityPlanId,
+            planningDate: "2026-06-02",
+            source: expect.objectContaining({ kind: "direct" }),
+          }),
+        }),
+      );
     });
   });
 
-  it("submits edits for an existing planned event", async () => {
+  it("shows existing executable events as read-only", async () => {
     existingActivityData = {
       id: "event-1",
       scheduled_date: "2026-03-23",
@@ -270,29 +249,9 @@ describe("ScheduleActivityModal", () => {
 
     await renderNative(<ScheduleActivityModal visible onClose={jest.fn()} eventId="event-1" />);
 
-    expect(screen.getByTestId("scheduled-date-button")).toBeTruthy();
-
-    const buttons = screen.container.queryAll(
-      (node: ReactTestInstance) => String(node.type) === "Button",
-    );
-    const submitButton = buttons.at(-1);
-    if (!submitButton) {
-      throw new Error("Expected the schedule submit button");
-    }
-
-    await act(() => {
-      submitButton.props.onPress();
-    });
-
-    expect(updateMutateMock).toHaveBeenCalledWith({
-      id: "event-1",
-      scope: "single",
-      patch: expect.objectContaining({
-        activity_plan_id: "plan-1",
-        notes: "Bring gels",
-        scheduled_date: "2026-03-23",
-      }),
-    });
+    expect(screen.getByText("This event is read-only on mobile")).toBeTruthy();
+    expect(screen.queryByTestId("schedule-submit-button")).toBeNull();
+    expect(updateMutateMock).not.toHaveBeenCalled();
   });
 
   it("does not expose update controls or mutate for a top-level plan ID with a null relation", async () => {

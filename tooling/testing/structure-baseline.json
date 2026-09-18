@@ -3,20 +3,15 @@
   "findings": [
     "ui-component:alert:missing-native-only-marker",
     "ui-component:aspect-ratio:missing-native-only-marker",
-    "ui-component:bounded-number-input:missing-web-test",
     "ui-component:chart:missing-native-test",
     "ui-component:collapsible:missing-native-only-marker",
     "ui-component:command:missing-web-only-marker",
     "ui-component:context-menu:missing-native-only-marker",
-    "ui-component:date-input:missing-web-test",
     "ui-component:hover-card:missing-native-only-marker",
-    "ui-component:integer-stepper:missing-web-test",
     "ui-component:loading:missing-web-test",
     "ui-component:menubar:missing-native-only-marker",
     "ui-component:native-only-animated-view:missing-native-only-marker",
     "ui-component:navigation-menu:missing-web-only-marker",
-    "ui-component:number-slider-input:missing-native-test",
-    "ui-component:number-slider-input:missing-web-test",
     "ui-component:percent-slider-input:missing-native-test",
     "ui-component:percent-slider-input:missing-web-test",
     "ui-component:popover:missing-native-only-marker",
@@ -31,8 +26,6 @@
     "ui-component:time-input:missing-native-test",
     "ui-component:time-input:missing-web-test",
     "ui-component:training-preferences-summary-card:missing-native-test",
-    "ui-component:training-preferences-summary-card:missing-web-test",
-    "ui-component:weight-input-field:missing-native-test",
-    "ui-component:weight-input-field:missing-web-test"
+    "ui-component:training-preferences-summary-card:missing-web-test"
   ]
 }

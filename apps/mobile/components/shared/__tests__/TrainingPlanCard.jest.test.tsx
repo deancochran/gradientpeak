@@ -9,12 +9,43 @@ const mockAlert = jest.mocked(TestAlert.alert);
 const getPublicShareUrlMock = jest.fn((path: string) => `https://share.gradientpeak.test${path}`);
 const canonicalStructure = {
   version: 1,
+  plan_preferences: {
+    weekly_session_count: 2,
+    target_weekly_duration_minutes: 120,
+    maximum_session_duration_minutes: 90,
+    preferred_weekdays: [1, 4],
+    rest_days: [0, 2, 3, 5, 6],
+    progression_style: "balanced" as const,
+    recovery_priority: "balanced" as const,
+  },
   activity_category: ["run"],
   durationWeeks: { recommended: 10 },
   experienceLevel: ["intermediate"],
   sessions: [
-    { offset_days: 0, activity_plan_id: "11111111-1111-4111-8111-111111111111" },
-    { offset_days: 63, activity_plan_id: "11111111-1111-4111-8111-111111111111" },
+    {
+      id: "22222222-2222-4222-8222-222222222222",
+      offset_days: 0,
+      activity_plan_id: "11111111-1111-4111-8111-111111111111",
+      demand: {
+        activity_category: "run",
+        training_intent: "aerobic_base",
+        target_duration_minutes: 60,
+        target_common_load: 40,
+        importance: "normal" as const,
+      },
+    },
+    {
+      id: "33333333-3333-4333-8333-333333333333",
+      offset_days: 63,
+      activity_plan_id: "11111111-1111-4111-8111-111111111111",
+      demand: {
+        activity_category: "run",
+        training_intent: "aerobic_base",
+        target_duration_minutes: 60,
+        target_common_load: 40,
+        importance: "normal" as const,
+      },
+    },
   ],
 };
 
@@ -243,7 +274,7 @@ describe("TrainingPlanCard", () => {
           id: "training-plan-social",
           name: "Public Build",
           likes_count: 3,
-          visibility: "public",
+          content_visibility: "public",
         }}
       />,
     );

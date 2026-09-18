@@ -64,7 +64,7 @@ export function ActivityImportPage() {
 
   const importActivity = async (values: BrowserActivityImportValues) => {
     if (importInFlight.current || importedActivityRef.current) {
-      return;
+      return importedActivityRef.current ?? { id: "" };
     }
     importInFlight.current = true;
 
@@ -102,8 +102,8 @@ export function ActivityImportPage() {
       Promise.resolve().then(() => invalidatePostActivityIngestionQueries(queryClient)),
       Promise.resolve().then(() => utils.activities.invalidate()),
     ]);
-    await openImportedActivity(activity);
     importInFlight.current = false;
+    return activity;
   };
 
   return (
@@ -132,6 +132,7 @@ export function ActivityImportPage() {
               }
               void navigate({ to: "/activities" });
             }}
+            onSuccess={openImportedActivity}
             onSubmit={importActivity}
             phase={phase}
           />

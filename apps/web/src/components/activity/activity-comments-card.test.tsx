@@ -49,7 +49,7 @@ afterEach(() => {
 });
 
 describe("ActivityCommentsCard recovery", () => {
-  it("preserves failed comment text and offers an explicit retry", () => {
+  it("preserves failed comment text and requires manual review without a duplicate retry", () => {
     render(<ActivityCommentsCard activityId="11111111-1111-4111-8111-111111111111" />);
     fireEvent.change(screen.getByLabelText("Add a comment"), {
       target: { value: "Keep this coaching note" },
@@ -60,8 +60,8 @@ describe("ActivityCommentsCard recovery", () => {
     expect((screen.getByLabelText("Add a comment") as HTMLTextAreaElement).value).toBe(
       "Keep this coaching note",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Retry comment" }));
-    expect(mocks.addComment).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("button", { name: "Retry comment" })).toBeNull();
+    expect(mocks.addComment).toHaveBeenCalledTimes(1);
   });
 
   it("distinguishes load failure from an empty comments list and retries", () => {

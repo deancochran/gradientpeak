@@ -12,17 +12,20 @@ import {
   FormTextareaField,
   FormTextField,
   FormTimeInputField,
+  FormTimezoneField,
 } from "@repo/ui/components/form";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import { z } from "zod";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { ClearFieldAction } from "@/components/shared/ClearFieldAction";
 import { InlineNotice, ScreenSection } from "@/components/shared/LayoutPrimitives";
 import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
 import { api } from "@/lib/api";
+import { formatRecurrenceUntil, recurrenceEndDate } from "@/lib/calendar/recurrenceInput";
 import type { GroupEventDetail } from "@/lib/groups";
 
 type RecurrenceFrequency = "none" | "daily" | "weekly" | "monthly";
@@ -37,6 +40,7 @@ const groupEventFormSchema = z.object({
   routeId: z.string().nullable(),
   startsTime: z.string(),
   title: z.string(),
+  timezone: z.string().nullable(),
 });
 
 type GroupEventFormValues = z.infer<typeof groupEventFormSchema>;
@@ -51,6 +55,7 @@ type GroupEventFormProps = {
   groupId: string;
   isSubmitting?: boolean;
   onCancel?: () => void;
+  onDirtyChange?: (isDirty: boolean) => void;
   onSubmit: (
     values:
       | CreateOneOffGroupEventInput
@@ -74,37 +79,30 @@ function parseRecurrenceFrequency(rule?: string | null): RecurrenceFrequency {
   return "none";
 }
 
-function parseRecurrenceEndDate(rule?: string | null) {
-  const untilMatch = rule?.toUpperCase().match(/(?:^|;)UNTIL=(\d{8})(?:T\d{6}Z)?(?:;|$)/);
-  if (!untilMatch?.[1]) return "";
-  return `${untilMatch[1].slice(0, 4)}-${untilMatch[1].slice(4, 6)}-${untilMatch[1].slice(6, 8)}`;
-}
-
-function buildRecurrenceRule(frequency: RecurrenceFrequency, endDate: string) {
+function buildRecurrenceRule(frequency: RecurrenceFrequency, endDate: string, timezone: string) {
   if (frequency === "none") return null;
-  return `FREQ=${frequency.toUpperCase()};UNTIL=${endDate.replace(/-/g, "")}T235959Z`;
+  const until = formatRecurrenceUntil(endDate, timezone);
+  return `FREQ=${frequency.toUpperCase()};UNTIL=${until}`;
 }
 
 function toFormValues(
   event: GroupEventDetail | null | undefined,
   timezone: string,
 ): GroupEventFormValues {
-  const startsAt = formatIsoInstantInIanaZone(
-    event?.starts_at ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-    timezone,
-  );
+  const startsAt = event?.starts_at ? formatIsoInstantInIanaZone(event.starts_at, timezone) : "";
   const endsAt = event?.ends_at ? formatIsoInstantInIanaZone(event.ends_at, timezone) : null;
 
   return {
-    date: startsAt.slice(0, 10),
+    date: event ? startsAt.slice(0, 10) : "",
     description: event?.description ?? "",
     endsTime: endsAt?.slice(11, 16) ?? null,
     locationName: event?.location_name ?? "",
-    recurrenceEndDate: parseRecurrenceEndDate(event?.recurrence_rule) || null,
+    recurrenceEndDate: recurrenceEndDate(event?.recurrence_rule, timezone),
     recurrenceFrequency: parseRecurrenceFrequency(event?.recurrence_rule),
     routeId: event?.route_id ?? null,
-    startsTime: startsAt.slice(11, 16),
+    startsTime: event ? startsAt.slice(11, 16) : "",
     title: event?.title ?? "",
+    timezone: event?.timezone ?? null,
   };
 }
 
@@ -128,16 +126,17 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
       groupId,
       isSubmitting = false,
       onCancel,
+      onDirtyChange,
       onSubmit,
       showFooterActions = true,
       submitLabel,
     },
     ref,
   ) {
-    const timezone = event?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const displayTimezone = event?.timezone ?? "UTC";
     const form = useZodForm({
       schema: groupEventFormSchema,
-      defaultValues: toFormValues(event, timezone),
+      defaultValues: toFormValues(event, displayTimezone),
     });
     const [recurrenceFrequency, routeId] = form.watch(["recurrenceFrequency", "routeId"]);
     const [selectedActivityPlan, setSelectedActivityPlan] =
@@ -145,15 +144,27 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [isRecurringCreate, setIsRecurringCreate] = useState(false);
     const [pickerScope, setPickerScope] = useState<"route" | "activityPlans" | null>(null);
+    const [isLocallySubmitting, setIsLocallySubmitting] = useState(false);
+    const submitInFlightRef = useRef(false);
     const { data: selectedRoute } = api.routes.get.useQuery(
       { id: routeId ?? "" },
       { enabled: Boolean(routeId) },
     );
+    const selectedActivityPlanQuery = api.activityPlans.getManyByIds.useQuery(
+      { ids: selectedActivityPlan ? [selectedActivityPlan.activityPlanId] : [] },
+      { enabled: Boolean(selectedActivityPlan) },
+    );
+    const selectedActivityPlanDetail = selectedActivityPlanQuery.data?.items[0] ?? null;
 
     useEffect(() => {
-      form.reset(toFormValues(event, timezone));
+      form.reset(toFormValues(event, displayTimezone));
       setSelectedActivityPlan(toSelectedActivityPlan(event));
-    }, [event, form, timezone]);
+    }, [displayTimezone, event, form]);
+    const isDirty =
+      form.formState.isDirty ||
+      (selectedActivityPlan?.activityPlanId ?? null) !== (event?.activity_plan_id ?? null) ||
+      (!event && isRecurringCreate);
+    useEffect(() => onDirtyChange?.(isDirty), [isDirty, onDirtyChange]);
 
     const selectRoute = (item: ResourcePickerItem) => {
       form.setValue("routeId", item.id, { shouldDirty: true });
@@ -169,12 +180,17 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
     const submitForm = useCallback(
       async (values: GroupEventFormValues) => {
         const title = values.title.trim();
+        if (isSubmitting || submitInFlightRef.current) return;
         if (!title) {
           setErrorMessage("Add a title for this event.");
           return;
         }
         if (!values.date || !values.startsTime) {
           setErrorMessage("Choose a start date and time.");
+          return;
+        }
+        if (!values.timezone) {
+          form.setError("timezone", { message: "Choose an event time zone." });
           return;
         }
 
@@ -184,64 +200,90 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
           startsAt = scheduledDateTimeToIsoInstant({
             scheduledDate: values.date,
             time: values.startsTime,
-            timeZone: timezone,
+            timeZone: values.timezone,
           });
           endsAt = values.endsTime
             ? scheduledDateTimeToIsoInstant({
                 scheduledDate: values.date,
                 time: values.endsTime,
-                timeZone: timezone,
+                timeZone: values.timezone,
               })
             : null;
         } catch (error) {
-          setErrorMessage(error instanceof Error ? error.message : "Choose valid event times.");
+          const message = error instanceof Error ? error.message : "Choose valid event times.";
+          form.setError("date", { message });
+          form.setError("startsTime", { message });
+          setErrorMessage(message);
           return;
         }
         if (endsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
-          setErrorMessage("End time must be after start time.");
+          const message = "End time must be after start time.";
+          form.setError("endsTime", { message });
+          setErrorMessage(message);
+          return;
+        }
+        if (
+          isRecurringCreate &&
+          (!values.recurrenceEndDate || values.recurrenceEndDate < values.date)
+        ) {
+          const message = "Repeat end date must be on or after the event start date.";
+          form.setError("recurrenceEndDate", { message });
+          setErrorMessage(message);
           return;
         }
 
         setErrorMessage(null);
+        submitInFlightRef.current = true;
+        setIsLocallySubmitting(true);
         const payload = {
           title,
           description: values.description.trim() || null,
           startsAt,
           endsAt,
-          timezone,
+          timezone: values.timezone,
           locationName: values.locationName.trim() || null,
           routeId: values.routeId,
           activityPlanId: selectedActivityPlan?.activityPlanId ?? null,
         };
 
-        if (event) {
-          await onSubmit({ groupEventId: event.id, ...payload });
-          return;
-        }
-
-        if (isRecurringCreate) {
-          const recurrenceRule = buildRecurrenceRule(
-            values.recurrenceFrequency,
-            values.recurrenceEndDate ?? "",
-          );
-          if (!recurrenceRule) {
-            setErrorMessage("Choose how often this event repeats and when the series ends.");
+        try {
+          if (event) {
+            await onSubmit({ groupEventId: event.id, ...payload });
             return;
           }
 
-          await onSubmit({
-            groupId,
-            ...payload,
-            recurrenceRule,
-            recurrenceTimezone: payload.timezone || "UTC",
-            timezone: payload.timezone || "UTC",
-          });
-          return;
-        }
+          if (isRecurringCreate) {
+            const recurrenceRule = buildRecurrenceRule(
+              values.recurrenceFrequency,
+              values.recurrenceEndDate ?? "",
+              values.timezone,
+            );
+            if (!recurrenceRule) {
+              setErrorMessage("Choose how often this event repeats and when the series ends.");
+              return;
+            }
 
-        await onSubmit({ groupId, ...payload });
+            await onSubmit({
+              groupId,
+              ...payload,
+              recurrenceRule,
+              recurrenceTimezone: values.timezone,
+              timezone: values.timezone,
+            });
+            return;
+          }
+
+          await onSubmit({ groupId, ...payload });
+        } catch (error) {
+          setErrorMessage(
+            error instanceof Error ? error.message : "Unable to save this event. Try again.",
+          );
+        } finally {
+          submitInFlightRef.current = false;
+          setIsLocallySubmitting(false);
+        }
       },
-      [event, groupId, isRecurringCreate, onSubmit, selectedActivityPlan, timezone],
+      [event, form, groupId, isRecurringCreate, isSubmitting, onSubmit, selectedActivityPlan],
     );
 
     const handleSubmit = form.handleSubmit(submitForm);
@@ -250,12 +292,12 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
       ref,
       () => ({
         submit: () => {
-          if (!isSubmitting) {
+          if (!isSubmitting && !isLocallySubmitting) {
             void handleSubmit();
           }
         },
       }),
-      [handleSubmit, isSubmitting],
+      [handleSubmit, isLocallySubmitting, isSubmitting],
     );
 
     return (
@@ -276,6 +318,8 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
               >
                 <View className="flex-row gap-2">
                   <Button
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: !isRecurringCreate }}
                     className="flex-1"
                     onPress={() => setIsRecurringCreate(false)}
                     variant={isRecurringCreate ? "outline" : "default"}
@@ -291,6 +335,8 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
                     </Text>
                   </Button>
                   <Button
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isRecurringCreate }}
                     className="flex-1"
                     onPress={() => {
                       setIsRecurringCreate(true);
@@ -358,7 +404,7 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
                       accessibilityHint="Choose when this repeating group event should end"
                       control={form.control}
                       label="Repeat until"
-                      minimumDate={new Date()}
+                      minimumDate={new Date(`${form.getValues("date")}T12:00:00`)}
                       name="recurrenceEndDate"
                       pickerPresentation="modal"
                       testId="group-event-recurrence-end-date-button"
@@ -383,6 +429,14 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
               required
               testId="group-event-date-button"
             />
+            <FormTimezoneField
+              control={form.control}
+              deviceTimeZone={Intl.DateTimeFormat().resolvedOptions().timeZone}
+              label="Event time zone"
+              name="timezone"
+              required
+              testId="group-event-timezone"
+            />
             <View className="flex-row gap-3">
               <View className="flex-1">
                 <FormTimeInputField
@@ -406,7 +460,6 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
                 />
               </View>
             </View>
-            <Text className="text-xs text-muted-foreground">Times use {timezone}.</Text>
             <FormTextField
               control={form.control}
               label="Location"
@@ -439,20 +492,23 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
               </Button>
               {selectedActivityPlan ? (
                 <View className="gap-2">
-                  <View className="rounded-2xl border border-border bg-card p-3">
-                    <View className="flex-row items-start justify-between gap-3">
-                      <View className="min-w-0 flex-1">
-                        <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
-                          {selectedActivityPlan.name}
-                        </Text>
-                      </View>
+                  {selectedActivityPlanQuery.isLoading ? (
+                    <Text className="text-sm text-muted-foreground">Loading activity plan...</Text>
+                  ) : null}
+                  {selectedActivityPlanDetail ? (
+                    <View className="gap-2">
+                      <ActivityPlanCard plan={selectedActivityPlanDetail} variant="compact" />
                       <ClearFieldAction
                         accessibilityLabel={`Remove ${selectedActivityPlan.name}`}
                         onPress={() => setSelectedActivityPlan(null)}
                         variant="icon"
                       />
                     </View>
-                  </View>
+                  ) : !selectedActivityPlanQuery.isLoading ? (
+                    <Text className="text-sm text-destructive">
+                      Activity plan is unavailable. Choose another plan or remove this selection.
+                    </Text>
+                  ) : null}
                 </View>
               ) : null}
             </View>
@@ -466,7 +522,7 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
             {onCancel ? (
               <Button
                 className="flex-1"
-                disabled={isSubmitting}
+                disabled={isSubmitting || isLocallySubmitting}
                 onPress={onCancel}
                 variant="outline"
               >
@@ -475,8 +531,8 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
             ) : null}
             <LoadingButton
               className="flex-1"
-              disabled={isSubmitting}
-              loading={isSubmitting}
+              disabled={isSubmitting || isLocallySubmitting}
+              loading={isSubmitting || isLocallySubmitting}
               loadingLabel="Saving..."
               onPress={handleSubmit}
             >

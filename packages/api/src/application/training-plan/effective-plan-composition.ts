@@ -1,17 +1,14 @@
 import {
   type ActivityObservationQuantification,
   type ActivityObservationQuantificationBundle,
-  type ActivityPlanPrescriptionQuantificationBundle,
-  type ActivityPrescriptionQuantification,
   activityObservationQuantificationBundleSchema,
-  activityPlanPrescriptionQuantificationBundleSchema,
   activityPrescriptionQuantificationBundleSchema,
-  comparePlannedToCompleted,
   createObservationQuantificationBundle,
-  createPrescriptionQuantificationBundle,
   plannedVsCompletedComparisonSchema,
+  type ResolutionManifest,
 } from "@repo/core";
 import { commonLoadAggregateSchema, commonLoadResultSchema } from "@repo/core/load";
+import { prescriptionResolutionManifestSchema } from "@repo/core/plan";
 import {
   composeEffectivePlanLoad,
   type EffectiveCompositionInput,
@@ -36,7 +33,7 @@ const quantifiedCompositionItemSchema = z.discriminatedUnion("kind", [
       scheduledItemId: identitySchema,
       date: dateSchema,
       commonLoad: commonLoadEnvelopeSchema,
-      prescriptionQuantification: activityPlanPrescriptionQuantificationBundleSchema,
+      resolutionManifest: prescriptionResolutionManifestSchema,
     })
     .strict(),
   z
@@ -57,7 +54,8 @@ export type QuantifiedEffectiveCompositionInput = Omit<
 > & {
   scheduledItems: Array<
     Omit<EffectiveCompositionInput["scheduledItems"][number], "commonLoad"> & {
-      prescriptionQuantification: ActivityPlanPrescriptionQuantificationBundle;
+      commonLoad: z.infer<typeof commonLoadEnvelopeSchema>;
+      resolutionManifest: ResolutionManifest;
     }
   >;
   completedActivities: Array<
@@ -106,9 +104,7 @@ export function composeEffectivePlanDto(
 ): EffectivePlanCompositionDto {
   const normalizedScheduledItems = input.scheduledItems.map((item) => ({
     ...item,
-    prescriptionQuantification: activityPlanPrescriptionQuantificationBundleSchema.parse(
-      item.prescriptionQuantification,
-    ),
+    resolutionManifest: prescriptionResolutionManifestSchema.parse(item.resolutionManifest),
   }));
   const normalizedCompletedActivities = input.completedActivities.map((item) => ({
     ...item,
@@ -124,10 +120,9 @@ export function composeEffectivePlanDto(
   );
   const composition = composeEffectivePlanLoad({
     ...input,
-    scheduledItems: normalizedScheduledItems.map(({ prescriptionQuantification, ...item }) => ({
-      ...item,
-      commonLoad: prescriptionQuantification.summary.commonLoad,
-    })),
+    scheduledItems: normalizedScheduledItems.map(
+      ({ resolutionManifest: _manifest, ...item }) => item,
+    ),
     completedActivities: normalizedCompletedActivities.map(
       ({ observationQuantification, ...item }) => ({
         ...item,
@@ -150,47 +145,39 @@ export function composeEffectivePlanDto(
     if (item.kind === "scheduled") {
       const source = scheduledById.get(item.scheduledItemId);
       if (!source) throw new Error("Effective composition item lost its prescription source");
-      return { ...publicItem, prescriptionQuantification: source.prescriptionQuantification };
+      return { ...publicItem, resolutionManifest: source.resolutionManifest };
     }
     const source = completedById.get(item.completedActivityId);
     if (!source) throw new Error("Effective composition item lost its observation source");
     return { ...publicItem, observationQuantification: source.observationQuantification };
   };
   const lifecycleMembers = (items: typeof composition.items) => {
-    const prescriptions: ActivityPrescriptionQuantification[] = [];
     const observations: ActivityObservationQuantification[] = [];
     for (const item of items) {
       if (item.kind === "scheduled") {
-        const source = scheduledById.get(item.scheduledItemId);
-        if (!source) throw new Error("Effective composition item lost its prescription source");
-        prescriptions.push(...source.prescriptionQuantification.members);
+        // A manifest is an immutable aggregate prescription, not a synthetic
+        // quantification member. Do not invent lifecycle members here.
       } else {
         const source = completedById.get(item.completedActivityId);
         if (!source) throw new Error("Effective composition item lost its observation source");
         observations.push(...source.observationQuantification.members);
       }
       if (item.kind === "completed" && item.replacedScheduledItemId !== null) {
-        const replaced = scheduledById.get(item.replacedScheduledItemId);
-        if (!replaced) continue;
-        prescriptions.push(...replaced.prescriptionQuantification.members);
+        // The replaced scheduled manifest remains available on the item but
+        // does not create a fabricated prescription lifecycle member.
       }
     }
-    return { prescriptions, observations };
+    return { observations };
   };
   const summarizeLifecycles = (members: ReturnType<typeof lifecycleMembers>) => {
-    const prescriptions =
-      members.prescriptions.length === 0
-        ? null
-        : createPrescriptionQuantificationBundle({ members: members.prescriptions });
     const observations =
       members.observations.length === 0
         ? null
         : createObservationQuantificationBundle({ members: members.observations });
     return {
-      prescriptions,
+      prescriptions: null,
       observations,
-      comparison:
-        prescriptions === null && observations === null ? null : comparePlannedToCompleted(members),
+      comparison: null,
     };
   };
   const lifecycleQuantifications = summarizeLifecycles(lifecycleMembers(composition.items));

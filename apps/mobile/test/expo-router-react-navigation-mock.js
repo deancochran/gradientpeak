@@ -15,4 +15,5 @@ module.exports = {
   DefaultTheme: { dark: false, colors: baseColors },
   ThemeProvider: ({ children }) => children,
   useFocusEffect: () => undefined,
+  usePreventRemove: () => undefined,
 };

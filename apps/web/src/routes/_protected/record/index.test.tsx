@@ -7,12 +7,9 @@ import { Route } from "./index";
 
 const mocks = vi.hoisted(() => ({
   configure: vi.fn(() => true),
+  launcher: { activity_category: "bike", gps: "off" } as Record<string, string>,
+  plannedDay: undefined as unknown,
   navigate: vi.fn(),
-  event: undefined as unknown,
-  plan: undefined as unknown,
-  planInputs: [] as unknown[],
-  planOptions: [] as unknown[],
-  search: { activity_category: "bike", gps: "off" } as Record<string, unknown>,
   recording: {
     artifact: null as null | {
       recordingSessionId: string;
@@ -30,26 +27,21 @@ vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
     useNavigate: () => mocks.navigate,
-    useSearch: () => mocks.search,
+    useSearch: () => mocks.launcher,
   }),
   Link: ({ children }: { children: React.ReactNode }) => <a href="/record/plan">{children}</a>,
 }));
 
 vi.mock("../../../lib/api/client", () => ({
   api: {
-    events: {
-      getById: {
-        useQuery: () => ({ data: mocks.event, isLoading: false, isError: false }),
+    calendar: {
+      day: {
+        useQuery: () => ({ data: mocks.plannedDay, isLoading: false, isError: false }),
       },
     },
+    events: { getById: { useQuery: () => ({ data: undefined }) } },
     activityPlans: {
-      getById: {
-        useQuery: (input: unknown, options: unknown) => {
-          mocks.planInputs.push(input);
-          mocks.planOptions.push(options);
-          return { data: mocks.plan, isLoading: false, isError: false };
-        },
-      },
+      getById: { useQuery: () => ({ data: undefined, isLoading: false, isError: false }) },
     },
     routes: {
       get: { useQuery: () => ({ data: undefined }) },
@@ -70,11 +62,8 @@ afterEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
   mocks.recording.artifact = null;
-  mocks.event = undefined;
-  mocks.plan = undefined;
-  mocks.planInputs = [];
-  mocks.planOptions = [];
-  mocks.search = { activity_category: "bike", gps: "off" };
+  mocks.launcher = { activity_category: "bike", gps: "off" };
+  mocks.plannedDay = undefined;
 });
 
 describe("RecordPage", () => {
@@ -84,7 +73,9 @@ describe("RecordPage", () => {
 
     expect(screen.getByText("Indoor recording")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Choose plan" })).toBeTruthy();
-    expect(screen.getByText(/not GPS/i)).toBeTruthy();
+    expect(screen.getByText(/not GPS or movement/i)).toBeTruthy();
+    expect(screen.getByText(/Captured:/)).toBeTruthy();
+    expect(screen.getByText(/Not captured:/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Open recorder" }));
     expect(mocks.configure).toHaveBeenCalledWith({ activity_category: "bike" });
     expect(mocks.navigate).toHaveBeenCalledWith({ to: "/record/session" });
@@ -104,85 +95,28 @@ describe("RecordPage", () => {
     expect(mocks.navigate).toHaveBeenCalledWith({ to: "/record/session" });
   });
 
-  it("requests the selected variant and gives recording only its resolved V3 structure", () => {
-    const activityPlanId = "11111111-1111-4111-8111-111111111111";
-    const variantId = "22222222-2222-4222-8222-222222222222";
-    const structure = {
-      version: 3,
-      activity_category: "bike",
-      segments: [
-        {
-          id: "33333333-3333-4333-8333-333333333333",
-          role: "activity",
-          name: "Ride",
-          intervals: [
-            {
-              id: "44444444-4444-4444-8444-444444444444",
-              name: "Work",
-              repetitions: 1,
-              steps: [
-                {
-                  id: "55555555-5555-4555-8555-555555555555",
-                  name: "Tempo",
-                  duration: { type: "time", seconds: 300 },
-                  targets: [{ type: "RPE", intensity: 6 }],
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    };
-    mocks.search = { activity_category: "bike", gps: "off", activityPlanId, variantId };
-    mocks.plan = {
-      detail: {
-        id: activityPlanId,
-        name: "Build ride",
-        description: null,
-        activityCategory: "bike",
-        activityPlanRevision: 3,
-        structure,
-        structureHash: `v1:sha256:${"a".repeat(64)}`,
-        capabilities: { canRecord: true },
-      },
-    };
-    const Page = (Route as unknown as { component: React.ComponentType }).component;
-    render(<Page />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Open recorder" }));
-
-    expect(mocks.planInputs).toContainEqual({ id: activityPlanId, personalize: false, variantId });
-    expect(mocks.configure).toHaveBeenCalledWith(
-      expect.objectContaining({
-        activityPlanId,
-        plan: expect.objectContaining({ structure }),
-      }),
-    );
-  });
-
-  it("records a scheduled event from its immutable prescription instead of reloading the current plan", () => {
-    const activityPlanId = "11111111-1111-4111-8111-111111111111";
-    const eventId = "22222222-2222-4222-8222-222222222222";
-    const variantId = "33333333-3333-4333-8333-333333333333";
+  it("launches a selected planned session with its frozen prescription", () => {
+    const sessionId = "00000000-0000-4000-8000-000000000020";
+    const planId = "00000000-0000-4000-8000-000000000010";
     const structure = {
       version: 3,
       activity_category: "run",
       segments: [
         {
-          id: "44444444-4444-4444-8444-444444444444",
+          id: "00000000-0000-4000-8000-000000000101",
+          name: "Main",
           role: "activity",
-          name: "Run",
           intervals: [
             {
-              id: "55555555-5555-4555-8555-555555555555",
-              name: "Work",
+              id: "00000000-0000-4000-8000-000000000102",
+              name: "Set",
               repetitions: 1,
               steps: [
                 {
-                  id: "66666666-6666-4666-8666-666666666666",
-                  name: "Threshold",
-                  duration: { type: "time", seconds: 600 },
-                  targets: [{ type: "RPE", intensity: 8 }],
+                  id: "00000000-0000-4000-8000-000000000103",
+                  name: "Tempo",
+                  duration: { type: "time", seconds: 60 },
+                  targets: [{ type: "RPE", intensity: 5 }],
                 },
               ],
             },
@@ -190,38 +124,46 @@ describe("RecordPage", () => {
         },
       ],
     };
-    mocks.search = { activity_category: "bike", gps: "off", eventId };
-    mocks.event = {
-      id: eventId,
-      title: "Pinned threshold run",
-      description: null,
-      planned_session: {
-        prescription: {
-          activityPlanId,
-          activityPlanRevision: 7,
-          variantId,
-          variantName: "Threshold",
-          structure,
-          structureHash: `v1:sha256:${"b".repeat(64)}`,
-        },
-      },
-      activityPlanSummary: null,
+    mocks.launcher = {
+      activity_category: "run",
+      gps: "off",
+      plannedSessionId: sessionId,
+      plannedSessionDate: "2026-08-19",
     };
-
+    mocks.plannedDay = {
+      projection: {
+        items: [
+          {
+            plannedSession: {
+              id: sessionId,
+              sessionRevision: 4,
+              prescription: {
+                capturedAt: "2026-08-01T00:00:00.000Z",
+                resolutionManifest: {
+                  activity_plan_id: planId,
+                  activity_plan_revision: 2,
+                  resolved_structure: structure,
+                  resolved_structure_hash: `v1:sha256:${"a".repeat(64)}`,
+                },
+              },
+            },
+          },
+        ],
+      },
+    };
     const Page = (Route as unknown as { component: React.ComponentType }).component;
     render(<Page />);
+
     fireEvent.click(screen.getByRole("button", { name: "Open recorder" }));
 
-    expect(mocks.planOptions).toContainEqual(expect.objectContaining({ enabled: false }));
     expect(mocks.configure).toHaveBeenCalledWith(
       expect.objectContaining({
         activity_category: "run",
-        eventId,
+        activityPlanId: planId,
         plan: expect.objectContaining({
-          activityPlanId,
-          activityPlanRevision: 7,
+          activityPlanId: planId,
           structure,
-          structureHash: `v1:sha256:${"b".repeat(64)}`,
+          plannedSession: expect.objectContaining({ id: sessionId, sessionRevision: 4 }),
         }),
       }),
     );

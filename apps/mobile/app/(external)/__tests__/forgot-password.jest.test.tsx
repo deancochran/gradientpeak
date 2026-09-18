@@ -1,6 +1,4 @@
-import type React from "react";
-import type { ZodFormSubmitProps } from "../../../test/mock-components";
-import { fireEvent, renderNative, screen, waitFor } from "../../../test/render-native";
+import { act, fireEvent, renderNative, screen, waitFor } from "../../../test/render-native";
 
 const replaceMock = jest.fn();
 const resetMock = jest.fn();
@@ -71,56 +69,37 @@ jest.mock("@repo/ui/components/card", () => {
   };
 });
 
-jest.mock("@repo/ui/components/form", () => {
-  const { createFormTextField } = require("../../../test/mock-components");
-  return {
-    __esModule: true,
-    Form: ({ children }: { children?: React.ReactNode }) => children,
-    FormTextField: createFormTextField(),
-  };
-});
-
 jest.mock("@repo/ui/components/text", () => {
   const { createHostComponent } = require("../../../test/mock-components");
   return { __esModule: true, Text: createHostComponent("Text") };
 });
 
-jest.mock("@repo/ui/hooks", () => {
-  const React = require("react");
-  return {
-    __esModule: true,
-    useZodForm: () => {
-      const [values, setValues] = React.useState({ email: "" });
-      const [errors, setErrors] = React.useState({} as Record<string, { message: string }>);
-      return {
-        control: {
-          errors,
-          values,
-          setValue: (name: string, value: string) =>
-            setValues((current: typeof values) => ({ ...current, [name]: value })),
-        },
-        formState: { errors },
-        clearErrors: jest.fn(),
-        getValues: (name: string) => values[name as keyof typeof values],
-        setError: (name: string, error: { message: string }) => {
-          setErrors((current: Record<string, { message: string }>) => ({
-            ...current,
-            [name]: error,
-          }));
-        },
-        handleSubmit: (onSubmit: (data: typeof values) => unknown) => () => onSubmit(values),
-      };
-    },
-    useZodFormSubmit: ({ form, onSubmit }: ZodFormSubmitProps<{ email: string }>) => ({
-      handleSubmit: form.handleSubmit(onSubmit),
-      isSubmitting: false,
-    }),
-  };
-});
-
 const ForgotPasswordScreen = require("../forgot-password").default;
 
 describe("forgot-password screen", () => {
+  it("single-flights recovery and ignores late completion after recipient changes", async () => {
+    let finish!: (value: unknown) => void;
+    resetMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await renderNative(<ForgotPasswordScreen />);
+    await fireEvent.changeText(screen.getByTestId("email-input"), "athlete@example.com");
+    const change = screen.getByTestId("email-input").props.onChangeText;
+    const press = screen.getByTestId("send-reset-button").props.onPress;
+    await act(async () => {
+      void press();
+      void press();
+    });
+    expect(resetMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("email-input").props.editable).toBe(false);
+    await act(async () => change("other@example.com"));
+    await act(async () => finish({ error: null }));
+    expect(screen.queryByText("Check your email")).toBeNull();
+    expect(screen.getByTestId("email-input").props.value).toBe("other@example.com");
+  });
   beforeEach(() => {
     jest.clearAllMocks();
     resetMock.mockResolvedValue({ error: null });

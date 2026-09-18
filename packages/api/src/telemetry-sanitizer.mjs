@@ -22,7 +22,6 @@ const PROCEDURE_GROUPS = new Set([
   "storage",
   "home",
   "feed",
-  "profileSettings",
   "groups",
   "publicShare",
   "organizations",
@@ -111,6 +110,35 @@ const SAFE_ERROR_CLASSES = new Set([
   "ZodError",
   "unknown",
 ]);
+const SAFE_DIAGNOSTIC_CATEGORIES = new Set([
+  "database",
+  "validation",
+  "transport",
+  "runtime",
+  "unknown",
+]);
+const SAFE_DIAGNOSTIC_REASONS = new Set([
+  "missing_column",
+  "missing_table",
+  "unique_conflict",
+  "foreign_key_conflict",
+  "invalid_input",
+  "database_failure",
+  "validation_failure",
+  "transport_failure",
+  "unexpected",
+]);
+const SAFE_SUMMARIES = new Set([
+  "Database schema is missing a column.",
+  "Database schema is missing a table.",
+  "A database uniqueness constraint was violated.",
+  "A database relationship constraint was violated.",
+  "The database rejected invalid input.",
+  "The database operation failed.",
+  "Data validation failed.",
+  "The network request failed.",
+  "An unexpected error occurred.",
+]);
 const SAFE_POSTGRES_CONSTRAINTS = new Set([
   "activities_active_ms_check",
   "activities_distance_meters_check",
@@ -149,6 +177,90 @@ export const TELEMETRY_LIMITS = Object.freeze({
   maxEntries: MAX_ENTRY_COUNT,
   maxStringLength: MAX_STRING_LENGTH,
 });
+
+function readField(value, field) {
+  try {
+    return value && typeof value === "object" ? value[field] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function safeErrorClass(value) {
+  return typeof value === "string" && SAFE_ERROR_CLASSES.has(value) ? value : "unknown";
+}
+
+function safeStack(error) {
+  if (!(error instanceof Error) || typeof error.stack !== "string") return [];
+
+  return error.stack
+    .split("\n")
+    .slice(1, 9)
+    .flatMap((line) => {
+      const match = line.match(/([A-Za-z0-9._-]+\.(?:[cm]?[jt]sx?|mjs)):(\d+)(?::(\d+))?/);
+      if (!match || SENSITIVE_VALUE.test(match[1])) return [];
+      return [match.slice(1).filter(Boolean).join(":")];
+    })
+    .slice(0, 5);
+}
+
+/**
+ * Extracts a finite operational diagnosis without reading arbitrary error messages,
+ * SQL text, parameters, request bodies, or other untrusted values.
+ */
+export function extractSafeErrorDiagnostic(error) {
+  let current = error;
+  const seen = new Set();
+  let errorClass = "unknown";
+  let postgresCode = "unknown";
+
+  for (
+    let depth = 0;
+    depth < 5 && current && typeof current === "object" && !seen.has(current);
+    depth += 1
+  ) {
+    seen.add(current);
+    if (errorClass === "unknown") errorClass = safeErrorClass(readField(current, "name"));
+
+    const code = readField(current, "code");
+    if (typeof code === "string" && /^[0-9A-Z]{5}$/.test(code)) postgresCode = code;
+    current = readField(current, "cause");
+  }
+
+  const databaseReasons = {
+    42703: ["missing_column", "Database schema is missing a column."],
+    "42P01": ["missing_table", "Database schema is missing a table."],
+    23505: ["unique_conflict", "A database uniqueness constraint was violated."],
+    23503: ["foreign_key_conflict", "A database relationship constraint was violated."],
+    "22P02": ["invalid_input", "The database rejected invalid input."],
+  };
+  const recognized = databaseReasons[postgresCode];
+  const category =
+    postgresCode !== "unknown" ? "database" : errorClass === "ZodError" ? "validation" : "unknown";
+  const reason =
+    recognized?.[0] ??
+    (category === "database"
+      ? "database_failure"
+      : category === "validation"
+        ? "validation_failure"
+        : "unexpected");
+  const summary =
+    recognized?.[1] ??
+    (category === "database"
+      ? "The database operation failed."
+      : category === "validation"
+        ? "Data validation failed."
+        : "An unexpected error occurred.");
+
+  return {
+    diagnostic_category: category,
+    diagnostic_reason: reason,
+    error_class: errorClass,
+    postgres_code: postgresCode,
+    safe_summary: summary,
+    stack: safeStack(error),
+  };
+}
 
 function safeString(value) {
   if (
@@ -194,6 +306,21 @@ export function sanitizeTelemetryContext(context) {
       result[key] = allowedEnum(value, SAFE_ERROR_CLASSES);
       continue;
     }
+    if (key === "diagnostic_category") {
+      result[key] = allowedEnum(value, SAFE_DIAGNOSTIC_CATEGORIES);
+      continue;
+    }
+    if (key === "diagnostic_reason") {
+      result[key] = allowedEnum(value, SAFE_DIAGNOSTIC_REASONS);
+      continue;
+    }
+    if (key === "safe_summary") {
+      result[key] =
+        typeof value === "string" && SAFE_SUMMARIES.has(value)
+          ? value
+          : "An unexpected error occurred.";
+      continue;
+    }
     if (key === "postgres_code") {
       result[key] = typeof value === "string" && /^[0-9A-Z]{5}$/.test(value) ? value : "unknown";
       continue;
@@ -209,6 +336,14 @@ export function sanitizeTelemetryContext(context) {
         break;
       case "operation":
         result[key] = safeString(value);
+        break;
+      case "procedure":
+        if (
+          typeof value === "string" &&
+          /^[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9]*){1,4}$/.test(value)
+        ) {
+          result[key] = value;
+        }
         break;
       case "procedure_type":
         result[key] = allowedEnum(value, PROCEDURE_TYPES);
@@ -231,6 +366,11 @@ export function sanitizeTelemetryContext(context) {
         }
         break;
       case "count":
+        if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 10_000) {
+          result[key] = value;
+        }
+        break;
+      case "dropped_count":
         if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 10_000) {
           result[key] = value;
         }

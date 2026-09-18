@@ -14,11 +14,27 @@ const activityPlanId = "11111111-1111-4111-8111-111111111111";
 
 const canonicalStructure = {
   version: 1,
+  plan_preferences: {
+    weekly_session_count: 3,
+    target_weekly_duration_minutes: 180,
+    maximum_session_duration_minutes: 90,
+    preferred_weekdays: [1, 3, 5],
+    rest_days: [0, 2, 4, 6],
+    progression_style: "balanced" as const,
+    recovery_priority: "balanced" as const,
+  },
   sessions: [
     {
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       offset_days: 0,
       activity_plan_id: activityPlanId,
-      activity_plan_variant_id: activityPlanId,
+      demand: {
+        activity_category: "bike",
+        training_intent: "aerobic_base",
+        target_duration_minutes: 60,
+        target_common_load: 50,
+        importance: "normal",
+      },
       event_overrides: {
         title: "Opening aerobic ride",
         description: "Keep this one controlled.",
@@ -26,9 +42,16 @@ const canonicalStructure = {
       },
     },
     {
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       offset_days: 2,
       activity_plan_id: "22222222-2222-4222-8222-222222222222",
-      activity_plan_variant_id: "22222222-2222-4222-8222-222222222222",
+      demand: {
+        activity_category: "bike",
+        training_intent: "threshold_development",
+        target_duration_minutes: 60,
+        target_common_load: 70,
+        importance: "key",
+      },
     },
   ],
 };
@@ -56,22 +79,6 @@ describe("canonical training plan structure", () => {
     });
 
     expect(parsed.structure).toEqual(canonicalStructure);
-  });
-
-  it("allows variant omission only in pre-materialization input", () => {
-    const inputStructure = {
-      version: 1 as const,
-      sessions: [{ offset_days: 0, activity_plan_id: activityPlanId }],
-    };
-
-    expect(trainingPlanCreateSchema.parse(inputStructure)).toEqual(inputStructure);
-    expect(canonicalTrainingPlanStructureSchema.safeParse(inputStructure).success).toBe(false);
-    expect(
-      persistedTrainingPlanStructureSchema.safeParse({
-        id: "33333333-3333-4333-8333-333333333333",
-        ...inputStructure,
-      }).success,
-    ).toBe(false);
   });
 
   it("accepts date-agnostic goal blueprints with target offsets", () => {
@@ -115,22 +122,19 @@ describe("canonical training plan structure", () => {
     ).toBe(false);
   });
 
-  it("rejects invalid date-only values across planning snapshots and blueprints", () => {
+  it("rejects removed builder snapshots and legacy preference keys", () => {
     expect(
       canonicalTrainingPlanStructureSchema.safeParse({
         ...canonicalStructure,
-        goal_blueprints: [{ title: "Event", target_offset_days: 7, activity_category: "run" }],
         builder_planning_snapshot: {
           version: 1,
-          plan_preferences: {
-            duration_weeks: null,
-            weekly_session_count: null,
-            target_weekly_hours: null,
-            rest_days_per_week: null,
-          },
-          scheduling: { start_date: "2026-02-29", preferred_weekdays: [] },
-          goal_context: { selected_goals: [] },
         },
+      }).success,
+    ).toBe(false);
+    expect(
+      canonicalTrainingPlanStructureSchema.safeParse({
+        ...canonicalStructure,
+        plan_preferences: { ...canonicalStructure.plan_preferences, durationWeeks: 8 },
       }).success,
     ).toBe(false);
   });
@@ -176,14 +180,75 @@ describe("canonical training plan structure", () => {
   it("rejects calendar, periodization, and provider fields in canonical session structure", () => {
     const result = canonicalTrainingPlanStructureSessionSchema.safeParse({
       offset_days: 0,
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       activity_plan_id: activityPlanId,
-      activity_plan_variant_id: activityPlanId,
+      demand: canonicalStructure.sessions[0]!.demand,
       scheduled_date: "2026-06-01",
       session_type: "planned_activity",
       provider_metadata: { provider: "wahoo" },
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it("requires plan preferences and session demand while allowing an unresolved activity plan", () => {
+    expect(
+      canonicalTrainingPlanStructureSchema.safeParse({
+        version: 1,
+        sessions: canonicalStructure.sessions,
+      }).success,
+    ).toBe(false);
+    expect(
+      canonicalTrainingPlanStructureSessionSchema.parse({
+        offset_days: 0,
+        id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        activity_plan_id: null,
+        demand: canonicalStructure.sessions[0]!.demand,
+      }).activity_plan_id,
+    ).toBeNull();
+    expect(
+      canonicalTrainingPlanStructureSessionSchema.safeParse({
+        offset_days: 0,
+        activity_plan_id: null,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("allows semantically identical sessions with distinct stable ids", () => {
+    expect(
+      canonicalTrainingPlanStructureSchema.safeParse({
+        ...canonicalStructure,
+        sessions: [
+          canonicalStructure.sessions[0],
+          { ...canonicalStructure.sessions[0]!, id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd" },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects duplicate canonical session ids", () => {
+    expect(
+      canonicalTrainingPlanStructureSchema.safeParse({
+        ...canonicalStructure,
+        sessions: [canonicalStructure.sessions[0], canonicalStructure.sessions[0]],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("caps canonical plans at 366 sessions", () => {
+    const sessions = Array.from({ length: 366 }, (_, index) => ({
+      ...canonicalStructure.sessions[0]!,
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    }));
+    expect(
+      canonicalTrainingPlanStructureSchema.safeParse({ ...canonicalStructure, sessions }).success,
+    ).toBe(true);
+    expect(
+      canonicalTrainingPlanStructureSchema.safeParse({
+        ...canonicalStructure,
+        sessions: [...sessions, { ...sessions[0]!, id: "ffffffff-ffff-4fff-8fff-ffffffffffff" }],
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects old periodized and maintenance structures in the normal create path", () => {

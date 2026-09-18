@@ -95,12 +95,23 @@ export default function ActivitySelectionScreen() {
         {/* Category Section */}
         <View className="mb-6">
           <Text className="text-sm font-medium text-muted-foreground mb-3">Activity Category</Text>
-          <View className="gap-3">
+          <View accessibilityRole="radiogroup" className="gap-3">
             {ACTIVITY_CATEGORIES.map((cat) => (
               <Pressable
                 key={cat.value}
                 onPress={() => canEditActivity && setSelectedCategory(cat.value)}
                 disabled={!canEditActivity}
+                accessibilityRole="radio"
+                accessibilityLabel={cat.label}
+                accessibilityHint={
+                  canEditActivity
+                    ? "Sets the activity category for this recording."
+                    : "Activity category is locked for this recording."
+                }
+                accessibilityState={{
+                  disabled: !canEditActivity,
+                  selected: selectedCategory === cat.value,
+                }}
                 testID={`record-activity-option-${cat.value}`}
                 className="bg-card p-4 rounded-lg border border-border"
                 style={{

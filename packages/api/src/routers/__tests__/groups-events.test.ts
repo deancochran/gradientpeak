@@ -1,4 +1,4 @@
-import { initializeActivityPlanDocument, SYSTEM_TEMPLATES } from "@repo/core";
+import { SYSTEM_TEMPLATES } from "@repo/core";
 import {
   groupEventRsvps,
   groupEventSeriesRsvps,
@@ -35,10 +35,7 @@ function buildActivityPlanRow(overrides: Record<string, unknown> = {}) {
     description: null,
     notes: null,
     activity_category: "ride",
-    structure: initializeActivityPlanDocument({
-      activityPlanId: ACTIVITY_PLAN_ID,
-      structure: SYSTEM_TEMPLATES[0]?.structure,
-    }),
+    structure: SYSTEM_TEMPLATES[0]?.structure,
     version: "1.0",
     content_visibility: "private",
     is_system_template: false,

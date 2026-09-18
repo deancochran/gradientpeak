@@ -3,7 +3,7 @@ import { Form, FormTextField } from "@repo/ui/components/form";
 import { SettingItem, SettingsGroup } from "@repo/ui/components/settings-group";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { ProfileGroupsSection } from "@/components/profile/ProfileGroupsSection";
@@ -93,19 +93,6 @@ const updatePasswordSchema = z
 type UpdateEmailFormData = z.infer<typeof updateEmailSchema>;
 type UpdatePasswordFormData = z.infer<typeof updatePasswordSchema>;
 
-function getValidationErrorMessage(error: unknown, fallback: string) {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "message" in error &&
-    typeof error.message === "string"
-  ) {
-    return error.message;
-  }
-
-  return fallback;
-}
-
 export default function MeScreen({ showHeader = true }: { showHeader?: boolean } = {}) {
   const navigateTo = useAppNavigate();
   usePerformanceScreenReady("route-profile");
@@ -123,6 +110,10 @@ export default function MeScreen({ showHeader = true }: { showHeader?: boolean }
     useProductAnalyticsConsent();
   const [emailFormVisible, setEmailFormVisible] = useState(false);
   const [passwordFormVisible, setPasswordFormVisible] = useState(false);
+  const [emailSubmissionError, setEmailSubmissionError] = useState<string | null>(null);
+  const [passwordSubmissionError, setPasswordSubmissionError] = useState<string | null>(null);
+  const activeUserId = user?.id ?? null;
+  const activeUserIdRef = useRef(activeUserId);
   const emailForm = useZodForm({
     schema: updateEmailSchema,
     defaultValues: { email: "" },
@@ -135,6 +126,16 @@ export default function MeScreen({ showHeader = true }: { showHeader?: boolean }
       newPassword: "",
     },
   });
+  if (activeUserIdRef.current !== activeUserId) activeUserIdRef.current = activeUserId;
+
+  useEffect(() => {
+    setEmailFormVisible(false);
+    setPasswordFormVisible(false);
+    setEmailSubmissionError(null);
+    setPasswordSubmissionError(null);
+    emailForm.reset();
+    passwordForm.reset();
+  }, [activeUserId, emailForm, passwordForm]);
   const { data: publicProfile, isLoading: publicProfileLoading } =
     api.profiles.getPublicById.useQuery({ id: user?.id ?? "" }, { enabled: Boolean(user?.id) });
   const socialCountsStatus = publicProfile
@@ -158,10 +159,14 @@ export default function MeScreen({ showHeader = true }: { showHeader?: boolean }
 
   const emailSubmitForm = useZodFormSubmit<UpdateEmailFormData>({
     form: emailForm,
+    resetKey: activeUserId,
     shouldRethrow: false,
     onSubmit: async ({ email }) => {
+      const submittingUserId = activeUserId;
+      setEmailSubmissionError(null);
       try {
         await updateEmail({ newEmail: email });
+        if (!submittingUserId || activeUserIdRef.current !== submittingUserId) return;
         Alert.alert(
           "Verification Sent",
           `We sent email change instructions for ${email}. Follow the link in your inbox to complete the update.`,
@@ -169,42 +174,37 @@ export default function MeScreen({ showHeader = true }: { showHeader?: boolean }
         setEmailFormVisible(false);
         emailForm.reset();
       } catch (error) {
-        Alert.alert("Error", error instanceof Error ? error.message : "Failed to update email");
+        if (!submittingUserId || activeUserIdRef.current !== submittingUserId) return;
+        setEmailSubmissionError(
+          error instanceof Error ? error.message : "Email change could not be started. Try again.",
+        );
       }
     },
-    onValidationError: (errors) => {
-      Alert.alert(
-        "Error",
-        getValidationErrorMessage(errors.email, "Please enter a valid email address"),
-      );
-    },
+    onValidationError: () => setEmailSubmissionError("Review the email address and try again."),
   });
 
   const passwordSubmitForm = useZodFormSubmit<UpdatePasswordFormData>({
     form: passwordForm,
+    resetKey: activeUserId,
     shouldRethrow: false,
     onSubmit: async ({ currentPassword, newPassword }) => {
+      const submittingUserId = activeUserId;
+      setPasswordSubmissionError(null);
       try {
         await updatePassword({ currentPassword, newPassword });
+        if (!submittingUserId || activeUserIdRef.current !== submittingUserId) return;
         Alert.alert("Password Updated", "Your password has been successfully changed.");
         setPasswordFormVisible(false);
         passwordForm.reset();
       } catch (error) {
-        Alert.alert("Error", error instanceof Error ? error.message : "Failed to update password");
+        if (!submittingUserId || activeUserIdRef.current !== submittingUserId) return;
+        setPasswordSubmissionError(
+          error instanceof Error ? error.message : "Password could not be updated. Try again.",
+        );
       }
     },
-    onValidationError: (errors) => {
-      Alert.alert(
-        "Error",
-        getValidationErrorMessage(
-          errors.currentPassword,
-          getValidationErrorMessage(
-            errors.newPassword,
-            getValidationErrorMessage(errors.confirmPassword, "Please check your password details"),
-          ),
-        ),
-      );
-    },
+    onValidationError: () =>
+      setPasswordSubmissionError("Review the password fields and try again."),
   });
 
   return (
@@ -212,16 +212,20 @@ export default function MeScreen({ showHeader = true }: { showHeader?: boolean }
       {showHeader ? <AppHeader title="Me" /> : null}
       <ScrollView contentContainerClassName="gap-6 p-6 pb-10" showsVerticalScrollIndicator={false}>
         <ProfileSummaryCard
-          emailFallback={user?.email}
+          {...(user?.email === undefined ? {} : { emailFallback: user.email })}
           isOwnProfile
           onEdit={() => navigateTo(ROUTES.PROFILE_EDIT)}
-          onFollowersPress={user?.id ? () => navigateTo(`/followers?userId=${user.id}`) : undefined}
-          onFollowingPress={user?.id ? () => navigateTo(`/following?userId=${user.id}`) : undefined}
+          {...(user?.id
+            ? { onFollowersPress: () => navigateTo(`/followers?userId=${user.id}`) }
+            : {})}
+          {...(user?.id
+            ? { onFollowingPress: () => navigateTo(`/following?userId=${user.id}`) }
+            : {})}
           onProfilePress={() => navigateTo(ROUTES.ME)}
           profile={{
             ...profile,
-            followers_count: publicProfile?.followers_count,
-            following_count: publicProfile?.following_count,
+            followers_count: publicProfile?.followers_count ?? null,
+            following_count: publicProfile?.following_count ?? null,
           }}
           socialCountsStatus={socialCountsStatus}
           supportingText="Manage your account, content library, and profile settings."
@@ -321,6 +325,15 @@ export default function MeScreen({ showHeader = true }: { showHeader?: boolean }
                   testId="profile-tab-email-input"
                 />
               </Form>
+              {emailSubmissionError ? (
+                <Text
+                  accessibilityLiveRegion="polite"
+                  accessibilityRole="alert"
+                  testID="profile-tab-email-error"
+                >
+                  {emailSubmissionError}
+                </Text>
+              ) : null}
               <Button
                 disabled={emailSubmitForm.isSubmitting}
                 onPress={emailSubmitForm.handleSubmit}
@@ -375,6 +388,15 @@ export default function MeScreen({ showHeader = true }: { showHeader?: boolean }
                   />
                 </View>
               </Form>
+              {passwordSubmissionError ? (
+                <Text
+                  accessibilityLiveRegion="polite"
+                  accessibilityRole="alert"
+                  testID="profile-tab-password-error"
+                >
+                  {passwordSubmissionError}
+                </Text>
+              ) : null}
               <Button
                 disabled={passwordSubmitForm.isSubmitting}
                 onPress={passwordSubmitForm.handleSubmit}

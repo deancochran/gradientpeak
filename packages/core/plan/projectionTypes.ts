@@ -268,13 +268,14 @@ export function buildProjectionChartPayloadFromDeterministicProjection(input: {
       prediction_uncertainty?: ProjectionChartPayload["prediction_uncertainty"];
       goal_target_distributions?: ProjectionChartPayload["goal_target_distributions"];
     };
+  const noHistory = toNoHistoryMetadataOrUndefined(deterministicProjection.no_history);
 
   return {
     start_date: expandedPlan.start_date,
     end_date: expandedPlan.end_date,
-    points: deterministicProjection.points,
-    daily_load_points: deterministicProjection.daily_load_points,
-    goal_markers: deterministicProjection.goal_markers,
+    points: deterministicProjection.points ?? [],
+    daily_load_points: deterministicProjection.daily_load_points ?? [],
+    goal_markers: deterministicProjection.goal_markers ?? [],
     periodization_phases: expandedPlan.blocks.map((block, index) => ({
       id: deterministicUuidFromSeed(
         `projection-phase|${expandedPlan.start_date}|${expandedPlan.end_date}|${index}|${block.name}|${block.start_date}|${block.end_date}`,
@@ -293,33 +294,85 @@ export function buildProjectionChartPayloadFromDeterministicProjection(input: {
     })),
     recovery_segments: deterministicProjection.recovery_segments,
     constraint_summary: deterministicProjection.constraint_summary,
-    inferred_current_state: deterministicProjection.inferred_current_state,
-    no_history: toNoHistoryMetadataOrUndefined(deterministicProjection.no_history),
-    readiness_score: deterministicProjection.readiness_score,
-    physiological_readiness_score: deterministicProjection.physiological_readiness_score,
-    readiness_confidence: deterministicProjection.readiness_confidence,
-    planning_confidence: deterministicProjection.planning_confidence,
-    planning_confidence_reasons: deterministicProjection.planning_confidence_reasons,
-    readiness_rationale_codes: deterministicProjection.readiness_rationale_codes,
-    capacity_envelope: deterministicProjection.capacity_envelope,
-    feasibility_band: deterministicProjection.feasibility_band,
-    risk_score: deterministicProjection.risk_score,
-    risk_level: deterministicProjection.risk_level,
-    risk_flags: deterministicProjection.risk_flags,
-    caps_applied: deterministicProjection.caps_applied,
-    load_resolution_summary: deterministicProjection.load_resolution_summary,
-    projection_diagnostics: deterministicProjection.projection_diagnostics,
-    prediction_uncertainty: deterministicProjectionCompat.prediction_uncertainty,
-    goal_target_distributions: deterministicProjectionCompat.goal_target_distributions,
-    optimization_tradeoff_summary: deterministicProjection.optimization_tradeoff_summary,
-    training_prescription: deterministicProjection.training_prescription,
-    weekly_allocation: deterministicProjection.weekly_allocation,
-    reference_trajectory: deterministicProjection.reference_trajectory,
-    trajectory_mode: deterministicProjection.trajectory_mode,
-    feasibility_assessment: deterministicProjection.feasibility_assessment,
-    activity_category_load_states: deterministicProjection.activity_category_load_states,
-    dose_recommendation: deterministicProjection.dose_recommendation,
-    goal_assessments: deterministicProjection.goal_assessments,
+    ...(deterministicProjection.inferred_current_state === undefined
+      ? {}
+      : { inferred_current_state: deterministicProjection.inferred_current_state }),
+    ...(noHistory === undefined ? {} : { no_history: noHistory }),
+    ...(deterministicProjection.readiness_score === undefined
+      ? {}
+      : { readiness_score: deterministicProjection.readiness_score }),
+    ...(deterministicProjection.physiological_readiness_score === undefined
+      ? {}
+      : { physiological_readiness_score: deterministicProjection.physiological_readiness_score }),
+    ...(deterministicProjection.readiness_confidence === undefined
+      ? {}
+      : { readiness_confidence: deterministicProjection.readiness_confidence }),
+    ...(deterministicProjection.planning_confidence === undefined
+      ? {}
+      : { planning_confidence: deterministicProjection.planning_confidence }),
+    ...(deterministicProjection.planning_confidence_reasons === undefined
+      ? {}
+      : { planning_confidence_reasons: deterministicProjection.planning_confidence_reasons }),
+    ...(deterministicProjection.readiness_rationale_codes === undefined
+      ? {}
+      : { readiness_rationale_codes: deterministicProjection.readiness_rationale_codes }),
+    ...(deterministicProjection.capacity_envelope === undefined
+      ? {}
+      : { capacity_envelope: deterministicProjection.capacity_envelope }),
+    ...(deterministicProjection.feasibility_band === undefined
+      ? {}
+      : { feasibility_band: deterministicProjection.feasibility_band }),
+    ...(deterministicProjection.risk_score === undefined
+      ? {}
+      : { risk_score: deterministicProjection.risk_score }),
+    ...(deterministicProjection.risk_level === undefined
+      ? {}
+      : { risk_level: deterministicProjection.risk_level }),
+    ...(deterministicProjection.risk_flags === undefined
+      ? {}
+      : { risk_flags: deterministicProjection.risk_flags }),
+    ...(deterministicProjection.caps_applied === undefined
+      ? {}
+      : { caps_applied: deterministicProjection.caps_applied }),
+    ...(deterministicProjection.load_resolution_summary === undefined
+      ? {}
+      : { load_resolution_summary: deterministicProjection.load_resolution_summary }),
+    ...(deterministicProjection.projection_diagnostics === undefined
+      ? {}
+      : { projection_diagnostics: deterministicProjection.projection_diagnostics }),
+    ...(deterministicProjectionCompat.prediction_uncertainty === undefined
+      ? {}
+      : { prediction_uncertainty: deterministicProjectionCompat.prediction_uncertainty }),
+    ...(deterministicProjectionCompat.goal_target_distributions === undefined
+      ? {}
+      : { goal_target_distributions: deterministicProjectionCompat.goal_target_distributions }),
+    ...(deterministicProjection.optimization_tradeoff_summary === undefined
+      ? {}
+      : { optimization_tradeoff_summary: deterministicProjection.optimization_tradeoff_summary }),
+    ...(deterministicProjection.training_prescription === undefined
+      ? {}
+      : { training_prescription: deterministicProjection.training_prescription }),
+    ...(deterministicProjection.weekly_allocation === undefined
+      ? {}
+      : { weekly_allocation: deterministicProjection.weekly_allocation }),
+    ...(deterministicProjection.reference_trajectory === undefined
+      ? {}
+      : { reference_trajectory: deterministicProjection.reference_trajectory }),
+    ...(deterministicProjection.trajectory_mode === undefined
+      ? {}
+      : { trajectory_mode: deterministicProjection.trajectory_mode }),
+    ...(deterministicProjection.feasibility_assessment === undefined
+      ? {}
+      : { feasibility_assessment: deterministicProjection.feasibility_assessment }),
+    ...(deterministicProjection.activity_category_load_states === undefined
+      ? {}
+      : { activity_category_load_states: deterministicProjection.activity_category_load_states }),
+    ...(deterministicProjection.dose_recommendation === undefined
+      ? {}
+      : { dose_recommendation: deterministicProjection.dose_recommendation }),
+    ...(deterministicProjection.goal_assessments === undefined
+      ? {}
+      : { goal_assessments: deterministicProjection.goal_assessments }),
   };
 }
 

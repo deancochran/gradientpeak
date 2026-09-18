@@ -3,7 +3,7 @@
 import { execFile } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
-export const E2E_SERVER_PORTS = Object.freeze([3100, 8082]);
+export const E2E_SERVER_PORTS = Object.freeze([3001, 8082]);
 
 function run(command, args) {
   return new Promise((resolve, reject) => {
@@ -67,7 +67,7 @@ export async function stopE2EServers({
 
 async function main() {
   await stopE2EServers();
-  console.log("[dev-e2e-stop] ports 3100 and 8082 are idle.");
+  console.log("[dev-e2e-stop] ports 3001 and 8082 are idle.");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

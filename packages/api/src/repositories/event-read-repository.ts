@@ -1,3 +1,4 @@
+import type { ResolutionManifest } from "@repo/core";
 import type {
   ActivityPlanRow,
   ActivityRow,
@@ -23,13 +24,15 @@ export interface EventListOwnedInput {
 
 type SerializedProfileDob = { dob: string | null };
 type SerializedActivityTime = Pick<ActivityRow, "activity_plan_id" | "id"> & {
-  started_at: string;
+  started_at: string | null;
 };
 export type CalendarCompletedActivityRecord = Pick<
   ActivityRow,
   | "active_ms"
   | "content_visibility"
   | "distance_meters"
+  | "diary_date"
+  | "diary_timezone"
   | "elapsed_ms"
   | "finished_at"
   | "id"
@@ -43,7 +46,7 @@ export type CalendarCompletedActivityRecord = Pick<
   has_liked: boolean;
   likes_count: number;
   profile: { avatar_url: string | null; username: string | null };
-  started_at: string;
+  started_at: string | null;
 };
 export type CalendarGoalRecord = {
   activity_category: string;
@@ -73,8 +76,17 @@ export type EffectivePlanLoadActivityRecord = Pick<
  * Effective-plan scheduled items are calendar-date anchored records. This is
  * intentionally narrower than the general event-completion record contract.
  */
-export type EffectivePlanLoadEventRecord = EventCompletionEventRecord & {
-  scheduled_date: string;
+export type EffectivePlanLoadPlannedSessionRecord = {
+  completedActivityId: string | null;
+  id: string;
+  lifecycleStatus: "scheduled" | "completed" | "cancelled";
+  originalTargetDate: string;
+  planningDate: string;
+  resolutionManifest: ResolutionManifest;
+  source: {
+    trainingPlanId: string | null;
+    trainingPlanRevision: number | null;
+  };
 };
 /** A bounded, owner-scoped calendar-day read used by the derived day summary. */
 export type PlannedDaySummaryActivityPlanRecord = Pick<
@@ -128,7 +140,8 @@ type ProjectionActivity = Pick<
   | "moving_ms"
   | "normalized_speed_mps"
 > & { started_at: string; finished_at: string };
-type ProjectionPlannedActivity = Pick<EventRow, "training_plan_id"> & {
+type ProjectionPlannedActivity = {
+  training_plan_id: string | null;
   activity_plan: ActivityPlanRow | null;
   scheduled_date: string;
   starts_at: string;
@@ -136,7 +149,10 @@ type ProjectionPlannedActivity = Pick<EventRow, "training_plan_id"> & {
 type ProjectionTrainingPlan = Pick<TrainingPlanRow, "id" | "structure">;
 
 export interface EventReadRepository {
-  /** Profile-owned and active-membership facts for the server-side effective Plan Load projection. */
+  /**
+   * Profile-owned planned-session and completion facts for effective Plan Load.
+   * This transitional EventReadRepository method is deliberately planned-session-backed.
+   */
   getEffectivePlanLoadInputs(input: {
     asOf: Date;
     endDate?: string;
@@ -144,16 +160,15 @@ export interface EventReadRepository {
     startDate?: string;
   }): Promise<{
     activities: EffectivePlanLoadActivityRecord[];
-    events: EffectivePlanLoadEventRecord[];
-    recommendationEvents: EffectivePlanLoadEventRecord[];
+    plannedSessions: EffectivePlanLoadPlannedSessionRecord[];
+    recommendationPlannedSessions: EffectivePlanLoadPlannedSessionRecord[];
     recommendationSource: {
-      scheduleBatchId: string | null;
       status: "complete" | "partial";
       trainingPlanId: string | null;
     };
     planningTimezone: string | null;
     resolvedRange: { endDate: string | null; startDate: string | null };
-    sourceCounts: { activities: number; events: number };
+    sourceCounts: { activities: number; plannedSessions: number };
     sourceCoverage: {
       activities: { endDate: string; startDate: string; status: "complete" | "partial" } | null;
       scheduledItems: { endDate: string; startDate: string; status: "complete" | "partial" } | null;
@@ -176,6 +191,8 @@ export interface EventReadRepository {
   listCalendarCompletedActivities(input: {
     limit: number;
     profileId: string;
+    diaryDateGte: string;
+    diaryDateLt: string;
     startedAtGte: string;
     startedAtLt: string;
   }): Promise<CalendarCompletedActivityRecord[]>;
@@ -193,14 +210,6 @@ export interface EventReadRepository {
     activityPlanIds: string[];
     profileId: string;
   }): Promise<ActivityPlanRow[]>;
-  listPlannedEventDatesInRange(input: {
-    profileId: string;
-    startsAtGte: string;
-    startsAtLte: string;
-  }): Promise<SerializedEventDate[]>;
-  listOwnedPlannedEventsForDay(
-    input: PlannedDaySummaryReadInput,
-  ): Promise<PlannedDaySummaryEventRecord[]>;
   getValidateConstraintsInputs(input: {
     activityPlanId: string;
     asOf: Date;

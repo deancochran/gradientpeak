@@ -1,5 +1,7 @@
+import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";
+import { useEffect, useState } from "react";
 
 export const routeSortValues = [
   "newest",
@@ -38,10 +40,53 @@ export function RouteLibraryControls({
   onChange: (filters: RouteLibraryFilters) => void;
   onClear: () => void;
 }) {
+  const [numberDrafts, setNumberDrafts] = useState({
+    maxAscentM: filters.maxAscentM,
+    maxDistanceKm: filters.maxDistanceKm,
+    minAscentM: filters.minAscentM,
+    minDistanceKm: filters.minDistanceKm,
+  });
+  const [hasPendingNumberDrafts, setHasPendingNumberDrafts] = useState(false);
+  const numberErrors = getRouteNumberErrors(numberDrafts);
+
+  useEffect(() => {
+    const appliedMatchesDraft =
+      filters.maxAscentM === numberDrafts.maxAscentM &&
+      filters.maxDistanceKm === numberDrafts.maxDistanceKm &&
+      filters.minAscentM === numberDrafts.minAscentM &&
+      filters.minDistanceKm === numberDrafts.minDistanceKm;
+    if (hasPendingNumberDrafts && appliedMatchesDraft) {
+      setHasPendingNumberDrafts(false);
+      return;
+    }
+    if (!hasPendingNumberDrafts && !appliedMatchesDraft) {
+      setNumberDrafts({
+        maxAscentM: filters.maxAscentM,
+        maxDistanceKm: filters.maxDistanceKm,
+        minAscentM: filters.minAscentM,
+        minDistanceKm: filters.minDistanceKm,
+      });
+    }
+  }, [
+    filters.maxAscentM,
+    filters.maxDistanceKm,
+    filters.minAscentM,
+    filters.minDistanceKm,
+    hasPendingNumberDrafts,
+  ]);
+
   const update = <TKey extends keyof RouteLibraryFilters>(
     key: TKey,
     value: RouteLibraryFilters[TKey],
   ) => onChange({ ...filters, [key]: value });
+  const updateNumberDraft = (key: keyof typeof numberDrafts, value: string) => {
+    setHasPendingNumberDrafts(true);
+    setNumberDrafts((drafts) => ({ ...drafts, [key]: value }));
+  };
+  const applyNumberDrafts = () => {
+    if (numberErrors.length > 0) return;
+    onChange({ ...filters, ...numberDrafts });
+  };
 
   return (
     <fieldset className="min-w-0 space-y-4 border-0 p-0">
@@ -93,30 +138,60 @@ export function RouteLibraryControls({
         <NumberFilter
           id="route-min-distance"
           label="Minimum distance (km)"
-          value={filters.minDistanceKm}
-          onChange={(value) => update("minDistanceKm", value)}
+          value={numberDrafts.minDistanceKm}
+          onChange={(value) => updateNumberDraft("minDistanceKm", value)}
+          adjustmentStep={0.1}
+          decimals={3}
         />
         <NumberFilter
           id="route-max-distance"
           label="Maximum distance (km)"
-          value={filters.maxDistanceKm}
-          onChange={(value) => update("maxDistanceKm", value)}
+          value={numberDrafts.maxDistanceKm}
+          onChange={(value) => updateNumberDraft("maxDistanceKm", value)}
+          adjustmentStep={0.1}
+          decimals={3}
         />
         <NumberFilter
           id="route-min-ascent"
           label="Minimum ascent (m)"
-          value={filters.minAscentM}
-          onChange={(value) => update("minAscentM", value)}
+          value={numberDrafts.minAscentM}
+          onChange={(value) => updateNumberDraft("minAscentM", value)}
+          adjustmentStep={10}
+          decimals={0}
         />
         <NumberFilter
           id="route-max-ascent"
           label="Maximum ascent (m)"
-          value={filters.maxAscentM}
-          onChange={(value) => update("maxAscentM", value)}
+          value={numberDrafts.maxAscentM}
+          onChange={(value) => updateNumberDraft("maxAscentM", value)}
+          adjustmentStep={10}
+          decimals={0}
         />
       </div>
-      <div className="flex justify-end">
-        <Button onClick={onClear} type="button" variant="ghost">
+      {hasPendingNumberDrafts ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          Numeric filter edits have not been applied.
+        </p>
+      ) : null}
+      {numberErrors.length > 0 ? <p role="alert">{numberErrors[0]}</p> : null}
+      <div className="flex justify-end gap-3">
+        <Button onClick={applyNumberDrafts} type="button">
+          Apply filters
+        </Button>
+        <Button
+          onClick={() => {
+            setHasPendingNumberDrafts(false);
+            setNumberDrafts({
+              maxAscentM: "",
+              maxDistanceKm: "",
+              minAscentM: "",
+              minDistanceKm: "",
+            });
+            onClear();
+          }}
+          type="button"
+          variant="ghost"
+        >
           Clear filters
         </Button>
       </div>
@@ -124,29 +199,70 @@ export function RouteLibraryControls({
   );
 }
 
+function getRouteNumberErrors(drafts: {
+  minDistanceKm: string;
+  maxDistanceKm: string;
+  minAscentM: string;
+  maxAscentM: string;
+}) {
+  const values = Object.entries(drafts).map(([key, value]) => [key, value.trim()] as const);
+  for (const [key, value] of values) {
+    if (value && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+      return [
+        `${routeNumberLabels[key as keyof typeof routeNumberLabels]} must be a non-negative number.`,
+      ];
+    }
+  }
+  if (
+    drafts.minDistanceKm &&
+    drafts.maxDistanceKm &&
+    Number(drafts.minDistanceKm) > Number(drafts.maxDistanceKm)
+  ) {
+    return ["Minimum distance cannot exceed maximum distance."];
+  }
+  if (
+    drafts.minAscentM &&
+    drafts.maxAscentM &&
+    Number(drafts.minAscentM) > Number(drafts.maxAscentM)
+  ) {
+    return ["Minimum ascent cannot exceed maximum ascent."];
+  }
+  return [];
+}
+
+const routeNumberLabels = {
+  maxAscentM: "Maximum ascent",
+  maxDistanceKm: "Maximum distance",
+  minAscentM: "Minimum ascent",
+  minDistanceKm: "Minimum distance",
+};
+
 function NumberFilter({
   id,
   label,
   onChange,
+  adjustmentStep,
+  decimals,
   value,
 }: {
   id: string;
   label: string;
   onChange: (value: string) => void;
   value: string;
+  adjustmentStep: number;
+  decimals: number;
 }) {
   return (
-    <label className="space-y-2 text-sm font-medium" htmlFor={id}>
-      <span>{label}</span>
-      <Input
-        aria-label={label}
-        id={id}
-        min="0"
-        onChange={(event) => onChange(event.target.value)}
-        step="any"
-        type="number"
-        value={value}
-      />
-    </label>
+    <BoundedNumberInput
+      adjustmentStep={adjustmentStep}
+      decimals={decimals}
+      id={id}
+      label={label}
+      max={Number.MAX_SAFE_INTEGER}
+      min={0}
+      onChange={onChange}
+      showAdjustmentButtons
+      value={value}
+    />
   );
 }

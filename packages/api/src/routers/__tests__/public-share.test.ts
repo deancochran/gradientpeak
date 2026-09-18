@@ -1,5 +1,6 @@
-import { activityPlanStructureSchema, initializeActivityPlanDocument } from "@repo/core";
+import { activityPlanStructureSchema } from "@repo/core";
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
+import { activities, activityArtifactLinks, activitySegments, likes } from "@repo/db";
 import { describe, expect, it } from "vitest";
 
 import { publicShareRouter } from "../public-share";
@@ -7,11 +8,42 @@ import { publicShareRouter } from "../public-share";
 const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
 
 function createCaller(rows: unknown[]) {
-  const executeCalls: unknown[] = [];
+  const selectCalls: unknown[] = [];
+  const activity = rows[0] as Record<string, unknown> | undefined;
   const db = {
-    execute: async (query: unknown) => {
-      executeCalls.push(query);
-      return { rows };
+    select: () => {
+      let table: unknown;
+      const builder = {
+        from: (value: unknown) => {
+          table = value;
+          return builder;
+        },
+        leftJoin: () => builder,
+        innerJoin: () => builder,
+        where: () => builder,
+        orderBy: () => builder,
+        limit: () => builder,
+        then: (onFulfilled: (value: unknown[]) => unknown) => {
+          selectCalls.push(table);
+          if (table === activitySegments) {
+            return Promise.resolve(
+              (activity?.activity_categories as string[] | undefined)?.map((category) => ({
+                category,
+              })) ?? [],
+            ).then(onFulfilled);
+          }
+          if (table === activityArtifactLinks) {
+            return Promise.resolve(
+              activity?.current_artifact ? [activity.current_artifact] : [],
+            ).then(onFulfilled);
+          }
+          if (table === likes) {
+            return Promise.resolve([{ value: activity?.likes_count ?? 0 }]).then(onFulfilled);
+          }
+          return Promise.resolve(table === activities ? rows : rows).then(onFulfilled);
+        },
+      };
+      return builder;
     },
   };
 
@@ -28,7 +60,7 @@ function createCaller(rows: unknown[]) {
     },
   } as never);
 
-  return { caller, executeCalls };
+  return { caller, selectCalls };
 }
 
 describe("publicShareRouter", () => {
@@ -168,7 +200,7 @@ describe("publicShareRouter", () => {
         name: "Public brick",
         description: null,
         notes: "Private instruction: hold RPE 8 for 20 minutes",
-        structure: initializeActivityPlanDocument({ activityPlanId: id, structure }),
+        structure,
         structure_hash: `v1:sha256:${"a".repeat(64)}`,
         gps_recording_enabled: true,
         content_visibility: "public",
@@ -227,8 +259,6 @@ describe("publicShareRouter", () => {
     });
     expect(Object.keys(activityPlan ?? {}).sort()).toEqual([
       "activity_category",
-      "defaultVariantId",
-      "defaultVariantName",
       "description",
       "id",
       "is_system_template",
@@ -238,8 +268,6 @@ describe("publicShareRouter", () => {
       "structure",
       "structure_summary",
       "structure_version",
-      "variantCount",
-      "variants",
     ]);
     expect(activityPlan).not.toHaveProperty("structure_hash");
     expect(activityPlan).not.toHaveProperty("gps_recording_enabled");
@@ -312,48 +340,43 @@ describe("publicShareRouter", () => {
     });
   });
 
-  it("redacts builder snapshots, arbitrary goal objectives, and internal IDs at direct public tRPC", async () => {
+  it("returns a canonical training-plan share without internal IDs at direct public tRPC", async () => {
     const id = "00000000-0000-4000-8000-000000000020";
     const secretActivityPlanId = "00000000-0000-4000-8000-000000000021";
-    const secretProfileGoalId = "private-profile-goal-id";
     const structure = {
       id,
       version: 1 as const,
+      plan_preferences: {
+        weekly_session_count: null,
+        target_weekly_duration_minutes: null,
+        maximum_session_duration_minutes: null,
+        preferred_weekdays: [],
+        rest_days: [],
+        progression_style: null,
+        recovery_priority: null,
+      },
       sessions: [
         {
+          id: "00000000-0000-4000-8000-000000000023",
           activity_plan_id: secretActivityPlanId,
-          activity_plan_variant_id: secretActivityPlanId,
           offset_days: 0,
+          demand: {
+            activity_category: "run" as const,
+            training_intent: "general_maintenance" as const,
+            target_duration_minutes: 30,
+            target_common_load: null,
+            importance: "normal" as const,
+          },
         },
       ],
       goal_blueprints: [
         {
-          title: "Private race objective",
-          objective: { privateTarget: "do-not-return" },
+          title: "Race objective",
+          priority: 10,
+          activity_category: "run" as const,
+          target_offset_days: 40,
         },
       ],
-      builder_planning_snapshot: {
-        version: 1 as const,
-        plan_preferences: {
-          duration_weeks: 8,
-          weekly_session_count: 4,
-          target_weekly_hours: 6,
-          rest_days_per_week: 2,
-        },
-        scheduling: { preferred_weekdays: [1, 3, 6] },
-        goal_context: {
-          selected_goals: [
-            {
-              title: "Private goal",
-              target_offset_days: 40,
-              priority: 10,
-              activity_category: "run" as const,
-              objective: { raw: "sensitive-objective" },
-              source_profile_goal_id: secretProfileGoalId,
-            },
-          ],
-        },
-      },
     };
     const { caller } = createCaller([
       {
@@ -388,10 +411,8 @@ describe("publicShareRouter", () => {
       is_system_template: false,
       owner: { name: "Alex Athlete", username: "alex" },
     });
-    expect(serialized).not.toContain("builder_planning_snapshot");
-    expect(serialized).not.toContain("objective");
+    expect(serialized).not.toContain("plan_preferences");
     expect(serialized).not.toContain(secretActivityPlanId);
-    expect(serialized).not.toContain(secretProfileGoalId);
     expect(trainingPlan).not.toHaveProperty("structure_hash");
     expect(trainingPlan).not.toHaveProperty("content_visibility");
     expect(trainingPlan).not.toHaveProperty("created_at");

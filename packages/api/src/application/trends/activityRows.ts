@@ -44,8 +44,10 @@ export type NormalizedTrendActivityRow = z.infer<typeof trendActivityRowSchema>;
 /** One category-safe trend row per ordered activity segment. */
 export function normalizeTrendActivityRows(rows: TrendActivityRow[]): NormalizedTrendActivityRow[] {
   return trendActivityRowSchema.array().parse(
-    rows.flatMap((activity) =>
-      orderedActivitySegments(activity.segments).map((segment) => {
+    rows.flatMap((activity) => {
+      const startedAt = activity.started_at;
+      if (startedAt === null) return [];
+      return orderedActivitySegments(activity.segments).map((segment) => {
         const summary = completedSegmentSummarySchema.parse(segment.summary);
         const timing = summary.timing;
         const activeMs =
@@ -60,7 +62,7 @@ export function normalizeTrendActivityRows(rows: TrendActivityRow[]): Normalized
           id: segment.id,
           name: activity.name,
           type: segment.activity_category,
-          started_at: new Date(activity.started_at.getTime() + segment.start_offset_ms),
+          started_at: new Date(startedAt.getTime() + segment.start_offset_ms),
           distance_meters: summary.distanceMeters ?? null,
           moving_seconds: movingMs === null ? null : movingMs / 1_000,
           duration_seconds:
@@ -71,7 +73,7 @@ export function normalizeTrendActivityRows(rows: TrendActivityRow[]): Normalized
           avg_power: summary.averagePowerWatts ?? null,
           avg_heart_rate: summary.averageHeartRateBpm ?? null,
         };
-      }),
-    ),
+      });
+    }),
   );
 }

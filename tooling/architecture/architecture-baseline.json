@@ -351,12 +351,6 @@
           "fingerprints": [
             "d8434f5b7b408c3d7fda"
           ]
-        },
-        "packages/core/utils/date-grouping.ts": {
-          "count": 1,
-          "fingerprints": [
-            "1afdac26cbe67c0ee63a"
-          ]
         }
       }
     },
@@ -683,13 +677,6 @@
             "21cbe9b76d44a77f3752",
             "4d4a0f295cb919991775",
             "f9541e437b42294477e6"
-          ]
-        },
-        "packages/core/utils/date-grouping.ts": {
-          "count": 2,
-          "fingerprints": [
-            "19e850bc07036d9ad4d1",
-            "68745b2f71d921fcd215"
           ]
         },
         "packages/ui/src/components/icon/shared.ts": {

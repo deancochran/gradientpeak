@@ -46,11 +46,27 @@ export const planZeroCorrectnessFixture = {
     notBefore: "2026-06-01T00:00:00.000Z",
     structure: {
       version: 1 as const,
+      plan_preferences: {
+        weekly_session_count: 1,
+        target_weekly_duration_minutes: null,
+        maximum_session_duration_minutes: null,
+        preferred_weekdays: [3],
+        rest_days: [],
+        progression_style: null,
+        recovery_priority: null,
+      },
       sessions: [
         {
+          id: "33333333-3333-4333-8333-333333333333",
           activity_plan_id: "22222222-2222-4222-8222-222222222222",
-          activity_plan_variant_id: "22222222-2222-4222-8222-222222222222",
           offset_days: 2,
+          demand: {
+            activity_category: "run" as const,
+            training_intent: "aerobic_base" as const,
+            target_duration_minutes: null,
+            target_common_load: null,
+            importance: "normal" as const,
+          },
         },
       ],
       goal_blueprints: [
@@ -67,22 +83,10 @@ export const planZeroCorrectnessFixture = {
           },
         },
       ],
-      builder_planning_snapshot: {
-        version: 1 as const,
-        plan_preferences: {
-          duration_weeks: 1,
-          weekly_session_count: 1,
-          target_weekly_hours: null,
-          rest_days_per_week: 6,
-        },
-        scheduling: { preferred_weekdays: [3] },
-        goal_context: { selected_goals: [] },
-      },
     },
     activityPlans: [
       {
         activityPlanId: "22222222-2222-4222-8222-222222222222",
-        activityPlanVariantId: "22222222-2222-4222-8222-222222222222",
         activityCategory: "run" as const,
         commonLoad: 80,
       },

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import { getTableColumns, getTableName } from "drizzle-orm";
 import { getTableConfig, type PgTable } from "drizzle-orm/pg-core";
+import { plannedSessionSourceKindEnum } from "../src/schema/enums";
 import * as schemaTables from "../src/schema/tables";
 import {
   activityFileIngestions,
@@ -227,13 +228,6 @@ assert.deepEqual(
   },
 );
 
-assert.deepEqual(foreignKey(plannedSessions, "planned_sessions_series_owner_fkey"), {
-  columns: ["series_id", "profile_id"],
-  foreignTable: "planned_sessions",
-  foreignColumns: ["id", "profile_id"],
-  onDelete: "restrict",
-});
-
 assert.deepEqual(foreignKey(plannedSessions, "planned_sessions_completed_activity_owner_fkey"), {
   columns: ["completed_activity_id", "profile_id"],
   foreignTable: "activities",
@@ -298,6 +292,40 @@ assert.ok(
 );
 
 const plannedConfig = getTableConfig(plannedSessions);
+const plannedSessionColumns = getTableColumns(plannedSessions);
+assert.deepEqual(plannedSessionSourceKindEnum.enumValues, ["direct", "training_plan"]);
+for (const column of [
+  "source_session_id",
+  "resolution_manifest",
+  "prescription_captured_at",
+] as const) {
+  assert.ok(plannedSessionColumns[column], `planned_sessions must own ${column}`);
+}
+for (const removedColumn of [
+  "source_session_key",
+  "series_id",
+  "occurrence_key",
+  "prescription_structure",
+  "prescription_structure_hash",
+  "adaptation_resolution",
+  "prescription_quantification",
+] as const) {
+  assert.equal(
+    removedColumn in plannedSessionColumns,
+    false,
+    `planned_sessions must not retain ${removedColumn}`,
+  );
+}
+assert.ok(
+  plannedConfig.checks.some((constraint) => constraint.name === "planned_sessions_source_check"),
+  "planned sessions must constrain source provenance to direct or training-plan identity",
+);
+assert.ok(
+  plannedConfig.checks.some(
+    (constraint) => constraint.name === "planned_sessions_prescription_check",
+  ),
+  "planned sessions must bind the resolution manifest to its activity-plan identity",
+);
 assert.ok(
   plannedConfig.uniqueConstraints.some(
     (constraint) => constraint.name === "planned_sessions_profile_idempotency_unique",

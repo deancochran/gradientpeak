@@ -4,11 +4,16 @@ import {
   type AthleteReadScope,
   athleteReadAccessDecisionSchema,
 } from "@repo/core/organizations";
-import { sql } from "drizzle-orm";
+import { coachingEngagements, organizationMemberships } from "@repo/db";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { DrizzleQueryExecutor } from "../db";
 
 const athleteReadDatabaseDecisionSchema = z.enum(["allow", ...ATHLETE_READ_ACCESS_DENIAL_REASONS]);
+const athleteReadDecisionRowSchema = z
+  .object({ decision: athleteReadDatabaseDecisionSchema })
+  .strict();
+const athleteReadOrganizationRowSchema = z.object({ organizationId: z.string().uuid() }).strict();
 
 export type AthleteReadAccessRepository = {
   evaluate(input: {
@@ -24,8 +29,6 @@ export type AthleteReadAccessRepository = {
   }): Promise<string | null>;
 };
 
-const uuidSchema = z.string().uuid();
-
 /**
  * Reads only the authority decision. It never selects athlete-owned data.
  *
@@ -37,7 +40,7 @@ export function createAthleteReadAccessRepository(
 ): AthleteReadAccessRepository {
   return {
     async evaluate(input) {
-      const result = await executor.execute(sql<{ decision: string }>`
+      const result = await executor.execute(sql`
         select public.coaching_athlete_read_access_decision(
           ${input.actorProfileId}::uuid,
           ${input.organizationId}::uuid,
@@ -45,7 +48,7 @@ export function createAthleteReadAccessRepository(
           ${input.scope}
         ) as decision
       `);
-      const rawDecision = athleteReadDatabaseDecisionSchema.parse(result.rows[0]?.decision);
+      const rawDecision = athleteReadDecisionRowSchema.parse(result.rows[0]).decision;
       return athleteReadAccessDecisionSchema.parse(
         rawDecision === "allow"
           ? { outcome: "allow", scope: input.scope }
@@ -53,27 +56,28 @@ export function createAthleteReadAccessRepository(
       );
     },
     async findAuthorizedOrganizationId(input) {
-      const result = await executor.execute(sql<{ organization_id: string }>`
-        select candidate.organization_id
-        from (
-          select distinct membership.organization_id
-          from public.organization_memberships as membership
-          inner join public.coaching_engagements as engagement
-            on engagement.organization_id = membership.organization_id
-          where membership.profile_id = ${input.actorProfileId}::uuid
-            and engagement.athlete_profile_id = ${input.athleteProfileId}::uuid
-        ) as candidate
-        where public.coaching_athlete_read_access_decision(
-          ${input.actorProfileId}::uuid,
-          candidate.organization_id,
-          ${input.athleteProfileId}::uuid,
-          ${input.scope}
-        ) = 'allow'
-        order by candidate.organization_id
-        limit 1
-      `);
-      const organizationId = result.rows[0]?.organization_id;
-      return organizationId === undefined ? null : uuidSchema.parse(organizationId);
+      const [row] = await executor
+        .selectDistinct({ organizationId: organizationMemberships.organization_id })
+        .from(organizationMemberships)
+        .innerJoin(
+          coachingEngagements,
+          eq(coachingEngagements.organization_id, organizationMemberships.organization_id),
+        )
+        .where(
+          and(
+            eq(organizationMemberships.profile_id, input.actorProfileId),
+            eq(coachingEngagements.athlete_profile_id, input.athleteProfileId),
+            sql`public.coaching_athlete_read_access_decision(
+              ${input.actorProfileId}::uuid,
+              ${organizationMemberships.organization_id},
+              ${input.athleteProfileId}::uuid,
+              ${input.scope}
+            ) = 'allow'`,
+          ),
+        )
+        .orderBy(asc(organizationMemberships.organization_id))
+        .limit(1);
+      return row === undefined ? null : athleteReadOrganizationRowSchema.parse(row).organizationId;
     },
   };
 }

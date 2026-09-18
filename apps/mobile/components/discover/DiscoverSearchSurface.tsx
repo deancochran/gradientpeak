@@ -5,9 +5,9 @@ import { SearchField } from "@repo/ui/components/search-field";
 import { Text } from "@repo/ui/components/text";
 import { keepPreviousData } from "@tanstack/react-query";
 import type { Href } from "expo-router";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { ChevronRight, Search, SlidersHorizontal } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, TouchableOpacity, View } from "react-native";
 import { DiscoverFilterSheet } from "@/components/discover/DiscoverFilterSheet";
 import { GroupCard } from "@/components/groups";
@@ -119,6 +119,7 @@ export type DiscoverSearchSurfaceProps = {
 export default function DiscoverSearchSurface({ surface }: DiscoverSearchSurfaceProps) {
   const surfaceConfig = SEARCH_SURFACES[surface];
   const { user: signedInUser } = useAuth();
+  const router = useRouter();
   const navigateTo = useAppNavigate();
   usePerformanceScreenReady(surfaceConfig.performanceKey);
   const params = useLocalSearchParams<{
@@ -131,13 +132,24 @@ export default function DiscoverSearchSurface({ surface }: DiscoverSearchSurface
     requestedScope ?? surfaceConfig.defaultScope,
   );
   const [searchQuery, setSearchQuery] = useState(requestedQuery);
+  const [appliedSearchQuery, setAppliedSearchQuery] = useState(requestedQuery);
+  const lastExternalQueryRef = useRef(requestedQuery);
   useEffect(() => {
     setActiveScope(requestedScope ?? surfaceConfig.defaultScope);
   }, [requestedScope, surfaceConfig.defaultScope]);
   useEffect(() => {
-    setSearchQuery(requestedQuery);
-  }, [requestedQuery]);
+    if (lastExternalQueryRef.current === requestedQuery) return;
+    lastExternalQueryRef.current = requestedQuery;
+    if (searchQuery === appliedSearchQuery) setSearchQuery(requestedQuery);
+    setAppliedSearchQuery(requestedQuery);
+  }, [appliedSearchQuery, requestedQuery, searchQuery]);
   const debouncedSearch = useDebounce(searchQuery, 300);
+  useEffect(() => {
+    const nextQuery = sanitizeSearchInput(debouncedSearch);
+    if (nextQuery === appliedSearchQuery) return;
+    setAppliedSearchQuery(nextQuery);
+    router.setParams({ ...(nextQuery ? { q: nextQuery } : { q: undefined }), scope: activeScope });
+  }, [activeScope, appliedSearchQuery, debouncedSearch, router]);
   const [activityPlanSort, setActivityPlanSort] = useState<SortState<ActivityPlanSortField>>(
     DEFAULT_ACTIVITY_PLAN_SORT,
   );
@@ -173,7 +185,7 @@ export default function DiscoverSearchSurface({ surface }: DiscoverSearchSurface
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const scopeOptions = surfaceConfig.scopes;
 
-  const validatedSearchQuery = debouncedSearch.trim();
+  const validatedSearchQuery = appliedSearchQuery.trim();
   const hasSearchQuery = validatedSearchQuery.length > 0;
   const normalizedSearchQuery = normalizeSearchValue(validatedSearchQuery);
   const safeActivityPlanSort = sanitizeSortState(
@@ -212,7 +224,7 @@ export default function DiscoverSearchSurface({ surface }: DiscoverSearchSurface
     },
     {
       enabled: shouldLoadActivityPlans,
-      getNextPageParam: (lastPage: InfinitePageWithCursor) => lastPage.nextCursor,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
       placeholderData: keepPreviousData,
     },
   );
@@ -231,7 +243,7 @@ export default function DiscoverSearchSurface({ surface }: DiscoverSearchSurface
     },
     {
       enabled: shouldLoadTrainingPlans,
-      getNextPageParam: (lastPage: InfinitePageWithCursor) => lastPage.nextCursor,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
       placeholderData: keepPreviousData,
     },
   );
@@ -254,7 +266,7 @@ export default function DiscoverSearchSurface({ surface }: DiscoverSearchSurface
     },
     {
       enabled: shouldLoadRoutes,
-      getNextPageParam: (lastPage: InfinitePageWithCursor) => lastPage.nextCursor,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
       placeholderData: keepPreviousData,
     },
   );
@@ -267,7 +279,7 @@ export default function DiscoverSearchSurface({ surface }: DiscoverSearchSurface
     },
     {
       enabled: shouldLoadUsers,
-      getNextPageParam: (lastPage: InfinitePageWithCursor) => lastPage.nextCursor,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
       placeholderData: keepPreviousData,
     },
   );
@@ -600,6 +612,11 @@ export default function DiscoverSearchSurface({ surface }: DiscoverSearchSurface
               className="h-12 rounded-2xl bg-card"
             />
           </View>
+          {searchQuery !== appliedSearchQuery ? (
+            <Text accessibilityLiveRegion="polite" className="mt-2 text-xs text-muted-foreground">
+              Search changes pending.
+            </Text>
+          ) : null}
 
           {showFilterButton ? (
             <TouchableOpacity
@@ -648,7 +665,14 @@ export default function DiscoverSearchSurface({ surface }: DiscoverSearchSurface
             return (
               <TouchableOpacity
                 key={option.id}
-                onPress={() => setActiveScope(option.id)}
+                onPress={() => {
+                  if (option.id === activeScope) return;
+                  setActiveScope(option.id);
+                  router.setParams({
+                    ...(appliedSearchQuery ? { q: appliedSearchQuery } : { q: undefined }),
+                    scope: option.id,
+                  });
+                }}
                 activeOpacity={0.85}
                 testID={`discover-scope-${option.id}`}
                 className={`items-center justify-center rounded-xl px-3 py-2 ${
@@ -702,8 +726,7 @@ export default function DiscoverSearchSurface({ surface }: DiscoverSearchSurface
           icon={Search}
           title={title}
           description={description}
-          actionLabel={actionLabel}
-          onAction={actionLabel ? handleEmptyStateAction : undefined}
+          {...(actionLabel ? { actionLabel, onAction: handleEmptyStateAction } : {})}
         />
       </View>
     );

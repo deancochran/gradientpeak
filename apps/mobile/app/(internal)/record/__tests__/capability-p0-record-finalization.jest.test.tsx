@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
 import type React from "react";
 import { createHost, createPressableHost } from "../../../../test/mock-components";
-import { renderNative, screen } from "../../../../test/render-native";
+import { act, renderNative, screen } from "../../../../test/render-native";
 
 const submit = jest.fn();
 let submissionState: Record<string, unknown>;
@@ -13,29 +13,15 @@ jest.mock("react-native", () => ({
   ScrollView: createHost("ScrollView"),
   View: createHost("View"),
 }));
-jest.mock("expo-router", () => ({ useRouter: () => ({ replace: jest.fn() }) }));
-jest.mock("@repo/ui/components/button", () => ({ Button: createHost("Pressable") }));
-jest.mock("@repo/ui/components/form", () => ({
-  Form: createHost("Form"),
-  FormTextField: createHost("FormTextField"),
-  FormTextareaField: createHost("FormTextareaField"),
-  FormSegmentedSelectField: createHost("FormSegmentedSelectField"),
+jest.mock("expo-router", () => ({
+  useRouter: () => ({ replace: jest.fn() }),
+  useNavigation: () => ({ dispatch: jest.fn() }),
 }));
+jest.mock("@/lib/hooks/useAuth", () => ({ useAuth: () => ({ profile: { id: "profile-1" } }) }));
+jest.mock("@repo/ui/components/button", () => ({ Button: createHost("Pressable") }));
 jest.mock("@repo/ui/components/icon", () => ({ Icon: createHost("Icon") }));
 jest.mock("@repo/ui/components/loading", () => ({ LoadingButton: createPressableHost() }));
 jest.mock("@repo/ui/components/text", () => ({ Text: createHost("Text") }));
-jest.mock("@repo/ui/hooks", () => ({
-  useZodForm: () => ({ watch: () => "", reset: jest.fn(), control: {} }),
-  useZodFormSubmit: ({ onSubmit }: { onSubmit: (data: unknown) => unknown }) => ({
-    handleSubmit: () => onSubmit({ notes: null, content_visibility: undefined }),
-    getSubmitButtonState: (options: { disabled: boolean; label: string }) => ({
-      disabled: options.disabled,
-      loading: false,
-      label: options.label,
-      loadingLabel: "Saving...",
-    }),
-  }),
-}));
 jest.mock("@/components/ErrorBoundary", () => ({
   ErrorBoundary: ({ children }: { children: React.ReactNode }) => children,
   ScreenErrorFallback: createHost("Fallback"),
@@ -69,7 +55,11 @@ describe("record finalized screen outcomes", () => {
         movingSeconds: 1_180,
         notes: null,
       },
-      artifact: { sessionId: "artifact-1", finalStats: { manualLapsMs: [] } },
+      artifact: {
+        sessionId: "artifact-1",
+        profileId: "profile-1",
+        finalStats: { manualLapsMs: [] },
+      },
       canRetryIngestion: false,
       ingestionId: null,
       isError: true,
@@ -93,9 +83,11 @@ describe("record finalized screen outcomes", () => {
     expect(action).toBeTruthy();
     expect(actionHost.props.disabled).toBe(false);
 
-    await (actionHost.props.onPress as () => unknown)();
+    await act(async () => {
+      await (actionHost.props.onPress as () => unknown)();
+    });
     expect(submit).toHaveBeenCalledWith({
-      content_visibility: undefined,
+      content_visibility: "private",
       name: "Activity",
       notes: null,
     });

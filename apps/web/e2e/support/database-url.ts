@@ -3,7 +3,7 @@ const LOCAL_DATABASE_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 // biome-ignore lint/security/noSecrets: Supabase's documented disposable local database URL.
 export const DEFAULT_LOCAL_DATABASE_URL = "postgresql://postgres:***@127.0.0.1:55322/postgres";
 
-export type E2EDatabaseEnvironment = {
+export type WebE2EDatabaseEnvironment = {
   DATABASE_URL?: string;
   POSTGRES_URL?: string;
 };
@@ -16,12 +16,12 @@ export function applyE2EFileEnvironment(
 ) {
   for (const [key, value] of Object.entries(fileEnvironment)) {
     environment[key] ??= E2E_DATABASE_VARIABLES.has(key)
-      ? e2eDatabaseUrlFromFile(key as keyof E2EDatabaseEnvironment, value)
+      ? e2eDatabaseUrlFromFile(key as keyof WebE2EDatabaseEnvironment, value)
       : value;
   }
 }
 
-function e2eDatabaseUrlFromFile(variable: keyof E2EDatabaseEnvironment, value: string) {
+function e2eDatabaseUrlFromFile(variable: keyof WebE2EDatabaseEnvironment, value: string) {
   let url: URL;
   try {
     url = new URL(value);
@@ -41,7 +41,7 @@ function e2eDatabaseUrlFromFile(variable: keyof E2EDatabaseEnvironment, value: s
   return url.toString();
 }
 
-export function localE2EDatabaseEnvironment(environment: E2EDatabaseEnvironment = process.env) {
+export function localE2EDatabaseEnvironment(environment: WebE2EDatabaseEnvironment = process.env) {
   const databaseUrl =
     environment.DATABASE_URL !== undefined
       ? validateLocalPostgresUrl("DATABASE_URL", environment.DATABASE_URL)
@@ -58,11 +58,11 @@ export function localE2EDatabaseEnvironment(environment: E2EDatabaseEnvironment 
   } as const;
 }
 
-export function localE2EDatabaseUrl(environment: E2EDatabaseEnvironment = process.env) {
+export function localE2EDatabaseUrl(environment: WebE2EDatabaseEnvironment = process.env) {
   return localE2EDatabaseEnvironment(environment).DATABASE_URL;
 }
 
-function validateLocalPostgresUrl(variable: keyof E2EDatabaseEnvironment, value: string) {
+function validateLocalPostgresUrl(variable: keyof WebE2EDatabaseEnvironment, value: string) {
   let url: URL;
   try {
     url = new URL(value);

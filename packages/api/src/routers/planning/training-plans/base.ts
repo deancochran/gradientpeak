@@ -2,24 +2,34 @@ import {
   canonicalActivityCategorySchema,
   planningLedgerRequestSchema,
   planPeriodReviewRequestSchema,
-  templateApplyInputSchema,
 } from "@repo/core";
 import { z } from "zod";
 import {
-  applyTrainingPlanTemplateUseCase,
+  appliedScheduleRemovalInputSchema,
+  appliedScheduleRemovalPreviewInputSchema,
+  applyTrainingPlanApplication,
   deleteTrainingPlanUseCase,
   getAppliedScheduleUseCase,
   getTrainingPlanTemplateUseCase,
   getTrainingPlanUseCase,
+  listAppliedSchedulesUseCase,
   listTrainingPlansUseCase,
   listTrainingPlanTemplatesUseCase,
   planPeriodReviewResponseSchema,
   planTabProjectionInputSchema,
   planTabProjectionSchema,
+  previewRemoveAppliedScheduleUseCase,
   readPlanPeriodReview,
   readPlanTabProjection,
   removeAppliedScheduleUseCase,
 } from "../../../application/training-plan";
+import {
+  previewTrainingPlanApplication,
+  trainingPlanApplicationApplyInputSchema,
+  trainingPlanApplicationApplyResultSchema,
+  trainingPlanApplicationPreviewInputSchema,
+  trainingPlanApplicationPreviewResultSchema,
+} from "../../../application/training-plan/applyTemplateUseCase";
 import {
   planningLedgerResponseSchema,
   readPlanningLedger,
@@ -34,18 +44,10 @@ import {
 } from "../../../application/training-plan/projection-planning";
 import { getRequiredDb } from "../../../db";
 import { createTrainingPlanRepository } from "../../../infrastructure";
-import { createContentAccessPermissions } from "../../../permissions/content-access";
 import { protectedProcedure } from "../../../trpc";
 import { indexCursorSchema } from "../../../utils/index-cursor";
 
 const trainingPlanContentVisibilitySchema = z.enum(["private", "followers", "public"]);
-
-const applicationScopedScheduleInputSchema = z
-  .object({
-    schedule_batch_id: z.string().uuid(),
-    training_plan_id: z.string().uuid(),
-  })
-  .strict();
 
 const planScopedScheduleInputSchema = z
   .object({
@@ -55,39 +57,37 @@ const planScopedScheduleInputSchema = z
 
 const appliedScheduleSchema = z
   .object({
-    schedule_batch_id: z.string().uuid(),
-    starts_at: z.iso.datetime(),
+    application_receipt: z.string().min(1),
+    application_id: z.string().uuid(),
+    planning_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     training_plan_id: z.string().uuid(),
   })
   .strict();
-
-const revisionFencedApplicationInputSchema = z
+const listAppliedSchedulesInputSchema = planScopedScheduleInputSchema.extend({
+  cursor: z.string().uuid().optional(),
+  limit: z.number().int().min(1).max(100).default(100),
+});
+const appliedScheduleListSchema = z
   .object({
-    template_type: z.literal("training_plan"),
-    template_id: z.string().uuid(),
-    application_mode: z.enum(["full", "remaining"]).default("full"),
-    start_date: z.iso.date().optional(),
-    target_date: z.iso.date().optional(),
-    replace_existing: z.boolean().optional(),
-    basePublishedRevision: z.number().int().positive(),
+    items: z.array(
+      z
+        .object({
+          application_id: z.string().uuid(),
+          application_revision: z.number().int().positive(),
+          eligible_future_count: z.number().int().nonnegative(),
+          next_planning_date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .nullable(),
+          protected_count: z.number().int().nonnegative(),
+          source_revision: z.number().int().positive(),
+          start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        })
+        .strict(),
+    ),
+    nextCursor: z.string().uuid().nullable(),
   })
-  .strict()
-  .superRefine((data, context) => {
-    if (data.start_date && data.target_date) {
-      context.addIssue({
-        code: "custom",
-        message: "Cannot provide both start_date and target_date",
-        path: ["target_date"],
-      });
-    }
-    if (data.application_mode === "remaining" && !data.target_date) {
-      context.addIssue({
-        code: "custom",
-        message: "Remaining application requires a target_date",
-        path: ["target_date"],
-      });
-    }
-  });
+  .strict();
 
 export const trainingPlansProcedures = {
   getPlanningLedger: protectedProcedure
@@ -175,7 +175,14 @@ export const trainingPlansProcedures = {
       return listTrainingPlansUseCase({
         db,
         profileId: ctx.session.user.id,
-        query: input,
+        query: {
+          ownerScope: input.ownerScope,
+          limit: input.limit,
+          ...(input.visibility !== undefined ? { visibility: input.visibility } : {}),
+          ...(input.search !== undefined ? { search: input.search } : {}),
+          ...(input.cursor !== undefined ? { cursor: input.cursor } : {}),
+          ...(input.direction !== undefined ? { direction: input.direction } : {}),
+        },
         repository: createTrainingPlanRepository(db),
       });
     }),
@@ -224,7 +231,27 @@ export const trainingPlansProcedures = {
       return listTrainingPlanTemplatesUseCase({
         db,
         profileId: ctx.session.user.id,
-        query: input,
+        query: {
+          limit: input.limit,
+          ...(input.activity_category !== undefined
+            ? { activity_category: input.activity_category }
+            : {}),
+          ...(input.experience_level !== undefined
+            ? { experience_level: input.experience_level }
+            : {}),
+          ...(input.min_weeks !== undefined ? { min_weeks: input.min_weeks } : {}),
+          ...(input.max_weeks !== undefined ? { max_weeks: input.max_weeks } : {}),
+          ...(input.min_sessions_per_week !== undefined
+            ? { min_sessions_per_week: input.min_sessions_per_week }
+            : {}),
+          ...(input.max_sessions_per_week !== undefined
+            ? { max_sessions_per_week: input.max_sessions_per_week }
+            : {}),
+          ...(input.search !== undefined ? { search: input.search } : {}),
+          ...(input.sort_by !== undefined ? { sort_by: input.sort_by } : {}),
+          ...(input.cursor !== undefined ? { cursor: input.cursor } : {}),
+          ...(input.direction !== undefined ? { direction: input.direction } : {}),
+        },
         repository: createTrainingPlanRepository(db),
       });
     }),
@@ -239,39 +266,27 @@ export const trainingPlansProcedures = {
       }),
     ),
 
-  applyTemplate: protectedProcedure
-    .input(templateApplyInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const profileId = ctx.session.user.id;
-      const db = getRequiredDb(ctx);
-      return applyTrainingPlanTemplateUseCase({
-        db,
-        permissions: createContentAccessPermissions(db),
-        permissionsFactory: createContentAccessPermissions,
-        profileId,
-        repository: createTrainingPlanRepository(db),
-        repositoryFactory: createTrainingPlanRepository,
+  previewApplication: protectedProcedure
+    .input(trainingPlanApplicationPreviewInputSchema)
+    .output(trainingPlanApplicationPreviewResultSchema)
+    .query(({ ctx, input }) =>
+      previewTrainingPlanApplication({
+        db: getRequiredDb(ctx),
+        profileId: ctx.session.user.id,
         values: input,
-      });
-    }),
+      }),
+    ),
 
-  applyRevisioned: protectedProcedure
-    .input(revisionFencedApplicationInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const { basePublishedRevision, ...values } = input;
-      const profileId = ctx.session.user.id;
-      const db = getRequiredDb(ctx);
-      return applyTrainingPlanTemplateUseCase({
-        db,
-        permissions: createContentAccessPermissions(db),
-        permissionsFactory: createContentAccessPermissions,
-        profileId,
-        repository: createTrainingPlanRepository(db),
-        repositoryFactory: createTrainingPlanRepository,
-        basePublishedRevision,
-        values,
-      });
-    }),
+  applyApplication: protectedProcedure
+    .input(trainingPlanApplicationApplyInputSchema)
+    .output(trainingPlanApplicationApplyResultSchema)
+    .mutation(({ ctx, input }) =>
+      applyTrainingPlanApplication({
+        db: getRequiredDb(ctx),
+        profileId: ctx.session.user.id,
+        values: input,
+      }),
+    ),
 
   getAppliedSchedule: protectedProcedure
     .input(planScopedScheduleInputSchema)
@@ -284,17 +299,38 @@ export const trainingPlansProcedures = {
       }),
     ),
 
+  listAppliedSchedules: protectedProcedure
+    .input(listAppliedSchedulesInputSchema)
+    .output(appliedScheduleListSchema)
+    .query(({ ctx, input }) =>
+      listAppliedSchedulesUseCase({
+        db: getRequiredDb(ctx),
+        limit: input.limit,
+        profileId: ctx.session.user.id,
+        trainingPlanId: input.training_plan_id,
+        ...(input.cursor !== undefined ? { cursor: input.cursor } : {}),
+      }),
+    ),
+
   removeAppliedSchedule: protectedProcedure
-    .input(applicationScopedScheduleInputSchema)
+    .input(appliedScheduleRemovalInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       return removeAppliedScheduleUseCase({
         db,
-        permissions: createContentAccessPermissions(db),
-        permissionsFactory: createContentAccessPermissions,
         profileId: ctx.session.user.id,
-        scheduleBatchId: input.schedule_batch_id,
-        trainingPlanId: input.training_plan_id,
+        applicationId: input.applicationId,
+        operationId: input.operationId,
+        previewFingerprint: input.previewFingerprint,
       });
     }),
+  previewRemoveAppliedSchedule: protectedProcedure
+    .input(appliedScheduleRemovalPreviewInputSchema)
+    .query(({ ctx, input }) =>
+      previewRemoveAppliedScheduleUseCase({
+        db: getRequiredDb(ctx),
+        profileId: ctx.session.user.id,
+        applicationId: input.applicationId,
+      }),
+    ),
 };

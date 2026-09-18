@@ -3,7 +3,6 @@ import { extractBestEfforts } from "../best-efforts";
 import {
   ACTIVITY_FILE_LTHR_CALCULATION_VERSION,
   detectLactateThresholdHeartRate,
-  detectLactateThresholdHeartRateFromBestEfforts,
 } from "../threshold-detection";
 
 describe("detectLactateThresholdHeartRate", () => {
@@ -59,22 +58,5 @@ describe("detectLactateThresholdHeartRate", () => {
 
     expect(detectLactateThresholdHeartRate({ extraction: twentyMinuteOnly, samples })).toBeNull();
     expect(detectLactateThresholdHeartRate({ extraction: power, samples })).toBeNull();
-  });
-
-  it("keeps the prior entrypoint as a compatibility wrapper around the canonical detector", () => {
-    const samples = Array.from({ length: 1_801 }, (_, timestampSeconds) => ({
-      timestampSeconds,
-      value: timestampSeconds <= 600 ? 120 : 170,
-    }));
-    const extraction = extractBestEfforts({
-      metric: "heart_rate",
-      samples,
-      config: { durationsSeconds: [1_800] },
-    });
-
-    expect(detectLactateThresholdHeartRateFromBestEfforts(extraction, samples)).toEqual(
-      detectLactateThresholdHeartRate({ extraction, samples }),
-    );
-    expect(detectLactateThresholdHeartRateFromBestEfforts(extraction)).toBeNull();
   });
 });

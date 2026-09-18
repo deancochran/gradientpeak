@@ -1,4 +1,7 @@
 import { createEmptyGoalDraft, type GoalEditorDraft } from "@repo/core";
+import { act } from "@testing-library/react-native";
+import { createRef } from "react";
+import { Alert } from "react-native";
 import { createHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 
@@ -7,60 +10,9 @@ jest.mock("react-native", () => ({
   ...jest.requireActual("@repo/ui/test/react-native"),
   Pressable: createHost("Pressable"),
   View: createHost("View"),
+  Alert: { alert: jest.fn() },
 }));
 
-jest.mock("@repo/ui/hooks", () => ({
-  __esModule: true,
-  useZodForm: ({ defaultValues }: { defaultValues: Record<string, unknown> }) => {
-    const React = jest.requireActual<typeof import("react")>("react");
-    const valuesRef = React.useRef({ ...defaultValues });
-    const subscribersRef = React.useRef(new Set<(value: Record<string, unknown>) => void>());
-    const formRef = React.useRef<{
-      control: Record<string, never>;
-      getValues: () => Record<string, unknown>;
-      reset: (value: Record<string, unknown>) => void;
-      setValue: (key: string, value: unknown) => void;
-      watch: (
-        callback?: (value: Record<string, unknown>) => void,
-      ) => Record<string, unknown> | { unsubscribe: () => void };
-    } | null>(null);
-
-    formRef.current ??= {
-      control: {},
-      getValues: () => valuesRef.current,
-      reset: (value) => {
-        valuesRef.current = { ...value };
-        for (const subscriber of subscribersRef.current) {
-          subscriber(valuesRef.current);
-        }
-      },
-      setValue: (key, value) => {
-        valuesRef.current = { ...valuesRef.current, [key]: value };
-        for (const subscriber of subscribersRef.current) {
-          subscriber(valuesRef.current);
-        }
-      },
-      watch: (callback) => {
-        if (!callback) {
-          return valuesRef.current;
-        }
-
-        subscribersRef.current.add(callback);
-        return { unsubscribe: () => subscribersRef.current.delete(callback) };
-      },
-    };
-
-    return formRef.current;
-  },
-}));
-
-jest.mock("@repo/ui/components/form", () => ({
-  __esModule: true,
-  Form: createHost("Form"),
-  FormDateInputField: createHost("FormDateInputField"),
-  FormIntegerStepperField: createHost("FormIntegerStepperField"),
-  FormTextField: createHost("FormTextField"),
-}));
 jest.mock("@repo/ui/components/bounded-number-input", () => ({
   __esModule: true,
   BoundedNumberInput: createHost("BoundedNumberInput"),
@@ -159,6 +111,7 @@ describe("GoalEditorForm draft observation", () => {
     expect(onDraftChange).toHaveBeenLastCalledWith(expect.objectContaining(initialValue));
 
     await fireEvent.press(screen.getByLabelText("Use 10K Race preset"));
+    await act(() => confirmation("Replace")?.onPress?.());
 
     expect(onDraftChange).toHaveBeenCalledTimes(2);
     const currentDraft = onDraftChange.mock.calls[1]?.[0];
@@ -198,5 +151,126 @@ describe("GoalEditorForm draft observation", () => {
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining(initialValue));
+  });
+
+  it("announces why an invalid header-style submission cannot continue", async () => {
+    const onSubmit = jest.fn<void, [GoalEditorDraft]>();
+    await renderNative(
+      <GoalEditorForm initialValue={createEmptyGoalDraft()} onSubmit={onSubmit} />,
+    );
+
+    await fireEvent.press(screen.getByText("Save Goal"));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByTestId("goal-submit-feedback").props.accessibilityRole).toBe("alert");
+  });
+});
+
+function confirmation(text: string) {
+  const buttons = jest.mocked(Alert.alert).mock.calls.at(-1)?.[2];
+  return buttons?.find((button) => button.text === text);
+}
+
+describe("GoalEditorForm real draft lifecycle", () => {
+  const initialValue = {
+    ...createEmptyGoalDraft(),
+    title: "Existing goal",
+    targetDate: "2026-10-20",
+    goalType: "completion" as const,
+    raceDistanceKm: 10,
+  };
+
+  it("hydrates the current goal even when mounted pending", async () => {
+    await renderNative(
+      <GoalEditorForm initialValue={initialValue} isSubmitting onSubmit={jest.fn()} />,
+    );
+    expect(screen.getByTestId("goal-editor-title-input").props.value).toBe("Existing goal");
+  });
+
+  it("keeps a dirty goal during parent refresh and resets only when the owner changes its key", async () => {
+    const onDirtyChange = jest.fn();
+    const onSubmit = jest.fn();
+    const view = await renderNative(
+      <GoalEditorForm
+        key="goal-a"
+        initialValue={initialValue}
+        onDirtyChange={onDirtyChange}
+        onSubmit={onSubmit}
+      />,
+    );
+    await fireEvent.changeText(screen.getByTestId("goal-editor-title-input"), "Local goal title");
+    await view.rerender(
+      <GoalEditorForm
+        key="goal-a"
+        initialValue={{ ...initialValue, title: "Refreshed title" }}
+        onDirtyChange={onDirtyChange}
+        onSubmit={onSubmit}
+      />,
+    );
+    expect(screen.getByTestId("goal-editor-title-input").props.value).toBe("Local goal title");
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    await view.rerender(
+      <GoalEditorForm
+        key="goal-b"
+        initialValue={{ ...initialValue, title: "Another goal" }}
+        onSubmit={onSubmit}
+      />,
+    );
+    expect(screen.getByTestId("goal-editor-title-input").props.value).toBe("Another goal");
+  });
+
+  it("requires preset confirmation, preserves a canceled draft, and keeps an accepted preset dirty", async () => {
+    const dirty = jest.fn();
+    await renderNative(
+      <GoalEditorForm initialValue={initialValue} onDirtyChange={dirty} onSubmit={jest.fn()} />,
+    );
+    await fireEvent.changeText(screen.getByTestId("goal-editor-title-input"), "Keep me");
+    await fireEvent.press(screen.getByLabelText("Use 10K Race preset"));
+    expect(confirmation("Keep editing")).toBeTruthy();
+    expect(screen.getByTestId("goal-editor-title-input").props.value).toBe("Keep me");
+    await act(() => confirmation("Keep editing")?.onPress?.());
+    expect(screen.getByTestId("goal-editor-title-input").props.value).toBe("Keep me");
+    await fireEvent.press(screen.getByLabelText("Use 10K Race preset"));
+    await act(() => confirmation("Replace")?.onPress?.());
+    expect(screen.getByTestId("goal-editor-title-input").props.value).toBe("10K Race");
+    expect(dirty).toHaveBeenLastCalledWith(true);
+  });
+
+  it("freezes options, suppresses duplicate commits and preserves failed edits for retry", async () => {
+    let reject!: (error: Error) => void;
+    const onSubmit = jest
+      .fn()
+      .mockReturnValueOnce(
+        new Promise<void>((_done, fail) => {
+          reject = fail;
+        }),
+      )
+      .mockResolvedValue(undefined);
+    const ref = createRef<{ submit: () => void }>();
+    const view = await renderNative(
+      <GoalEditorForm ref={ref} initialValue={initialValue} onSubmit={onSubmit} />,
+    );
+    await fireEvent.changeText(screen.getByTestId("goal-editor-title-input"), "Local goal");
+    await act(() => {
+      ref.current?.submit();
+      ref.current?.submit();
+    });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("goal-editor-title-input").props.editable).toBe(false);
+    expect(screen.getByTestId("goal-type-select-trigger").props.disabled).toBe(true);
+    expect(screen.getByLabelText("Use 10K Race preset").props.disabled).toBe(true);
+    await view.rerender(
+      <GoalEditorForm
+        ref={ref}
+        initialValue={{ ...initialValue, title: "Server refresh" }}
+        onSubmit={onSubmit}
+      />,
+    );
+    await act(async () => reject(new Error("Save unavailable")));
+    expect(screen.getByTestId("goal-submit-feedback").props.children).toBe("Save unavailable");
+    expect(screen.getByTestId("goal-editor-title-input").props.value).toBe("Local goal");
+    await act(async () => ref.current?.submit());
+    expect(onSubmit).toHaveBeenCalledTimes(2);
+    expect(onSubmit.mock.calls[1]?.[0]).toEqual(onSubmit.mock.calls[0]?.[0]);
   });
 });

@@ -1,6 +1,6 @@
-import { publicNotificationsRowSchema } from "@repo/db";
+import { notifications, publicNotificationsRowSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { getRequiredDb } from "../../db";
 
@@ -59,22 +59,22 @@ export function createNotificationOperations(db: Database) {
   return {
     async getRecent(input: { recipientProfileId: string; limit: number }) {
       try {
-        const result = await db.execute(sql<NotificationRow>`
-          select
-            "id",
-            "user_id",
-            "actor_id",
-            "type",
-            "entity_id",
-            "read_at",
-            "created_at"
-          from "notifications"
-          where "user_id" = ${input.recipientProfileId}::uuid
-          order by "created_at" desc
-          limit ${input.limit}
-        `);
+        const rows = await db
+          .select({
+            id: notifications.id,
+            user_id: notifications.user_id,
+            actor_id: notifications.actor_id,
+            type: notifications.type,
+            entity_id: notifications.entity_id,
+            read_at: notifications.read_at,
+            created_at: notifications.created_at,
+          })
+          .from(notifications)
+          .where(eq(notifications.user_id, input.recipientProfileId))
+          .orderBy(desc(notifications.created_at))
+          .limit(input.limit);
 
-        return notificationRowSchema.array().parse(result.rows).map(normalizeNotificationRow);
+        return notificationRowSchema.array().parse(rows).map(normalizeNotificationRow);
       } catch (error) {
         throw databaseError(error);
       }
@@ -82,14 +82,14 @@ export function createNotificationOperations(db: Database) {
 
     async getUnreadCount(input: { recipientProfileId: string }) {
       try {
-        const result = await db.execute(sql<{ count: number | string }>`
-          select count(*)::int as "count"
-          from "notifications"
-          where "user_id" = ${input.recipientProfileId}::uuid
-            and "read_at" is null
-        `);
+        const [result] = await db
+          .select({ count: count() })
+          .from(notifications)
+          .where(
+            and(eq(notifications.user_id, input.recipientProfileId), isNull(notifications.read_at)),
+          );
 
-        return Number(result.rows[0]?.count ?? 0);
+        return result?.count ?? 0;
       } catch (error) {
         throw databaseError(error);
       }
@@ -101,15 +101,15 @@ export function createNotificationOperations(db: Database) {
       }
 
       try {
-        await db.execute(sql`
-          update "notifications"
-          set "read_at" = coalesce("read_at", now())
-          where "user_id" = ${input.recipientProfileId}::uuid
-            and "id" in (${sql.join(
-              input.notificationIds.map((notificationId) => sql`${notificationId}::uuid`),
-              sql`, `,
-            )})
-        `);
+        await db
+          .update(notifications)
+          .set({ read_at: sql`coalesce(${notifications.read_at}, now())` })
+          .where(
+            and(
+              eq(notifications.user_id, input.recipientProfileId),
+              inArray(notifications.id, input.notificationIds),
+            ),
+          );
 
         return { success: true };
       } catch (error) {

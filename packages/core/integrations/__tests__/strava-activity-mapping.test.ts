@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { mapStravaActivityToCanonical, mapStravaSportType } from "../strava-activity-mapping";
+import {
+  mapStravaActivityCategory,
+  mapStravaActivityToCanonical,
+} from "../strava-activity-mapping";
 
 const segmentId = "00000000-0000-4000-8000-000000000001";
 const activity = {
   id: "123",
   name: "Morning Ride",
-  sportType: "Ride",
+  rawType: "Ride",
   startedAt: "2026-09-01T08:00:00Z",
   elapsedSeconds: 180,
   movingSeconds: 170,
@@ -24,8 +27,8 @@ describe("Strava canonical activity mapping", () => {
     ["Swim", "swim"],
     ["WeightTraining", "strength"],
     ["Kayaking", "other"],
-  ] as const)("maps %s to %s", (sportType, expected) => {
-    expect(mapStravaSportType(sportType)).toBe(expected);
+  ] as const)("maps %s to %s", (rawType, expected) => {
+    expect(mapStravaActivityCategory(rawType)).toBe(expected);
   });
 
   it("maps provider summary evidence privately without fabricating an artifact", () => {

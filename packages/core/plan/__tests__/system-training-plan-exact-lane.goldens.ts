@@ -33,7 +33,7 @@ export interface ExactLaneGoldenArtifact {
 
 export const EXACT_LANE_GOLDENS: Record<string, ExactLaneGoldenArtifact> = {
   exact_5k_speed_block: {
-    weeklyLoad: [110.2, 140.9, 114.2, 122.9, 140.9, 140.9, 114.2, 122.9],
+    weeklyLoad: [117.9, 148.6, 114.2, 130.6, 148.6, 148.6, 114.2, 130.6],
     weeklyStatus: [
       "partial",
       "complete",
@@ -47,10 +47,10 @@ export const EXACT_LANE_GOLDENS: Record<string, ExactLaneGoldenArtifact> = {
     summary: {
       weeks: 8,
       sessionCount: 30,
-      totalLoad: 1007.1,
-      meanLoad: 125.9,
-      minLoad: 110.2,
-      maxLoad: 140.9,
+      totalLoad: 1053.2,
+      meanLoad: 131.7,
+      minLoad: 114.2,
+      maxLoad: 148.6,
       feasibilityMode: "target_seeking",
       blockStatus: "partial",
       blockGatePass: null,

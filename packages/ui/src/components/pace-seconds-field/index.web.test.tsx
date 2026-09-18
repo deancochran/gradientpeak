@@ -41,6 +41,22 @@ function FormHarness({ onSubmit }: { onSubmit: (value: { pace: number }) => void
 describe("PaceSecondsField web", () => {
   afterEach(cleanup);
 
+  it("adjusts canonical pace by five seconds without changing mm:ss entry semantics", () => {
+    const onChangeSeconds = vi.fn();
+    render(
+      <PaceSecondsField
+        id="pace"
+        label="Pace"
+        onChangeSeconds={onChangeSeconds}
+        valueSeconds={270}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Increase Pace" }));
+    fireEvent.click(screen.getByRole("button", { name: "Decrease Pace" }));
+    expect(onChangeSeconds).toHaveBeenNthCalledWith(1, 275);
+    expect(onChangeSeconds).toHaveBeenNthCalledWith(2, 270);
+  });
+
   it("retains an incomplete draft and emits a corrected valid value before blur", () => {
     const onBlur = vi.fn();
     const onChangeSeconds = vi.fn();

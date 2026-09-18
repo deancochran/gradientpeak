@@ -3,7 +3,6 @@ import { Button } from "@repo/ui/components/button";
 import { useServerFn } from "@tanstack/react-start";
 import { UserCheck, UserMinus, UserPlus } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
 
 import { api } from "../../lib/api/client";
 import { contractEpochFormInputProps } from "../../lib/contract-epoch";
@@ -26,11 +25,13 @@ export function FollowActionForm({
   const unfollowUser = useServerFn(unfollowUserAction);
   const utils = api.useUtils();
   const [isPendingSubmit, setIsPendingSubmit] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const action = isFollowing || isPending ? unfollowUserAction : followUserAction;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     setIsPendingSubmit(true);
+    setSubmitError(null);
 
     try {
       event.preventDefault();
@@ -42,7 +43,7 @@ export function FollowActionForm({
 
       await followUser({ data: { redirectTo, target_user_id: targetUserId } });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to update follow state");
+      setSubmitError(error instanceof Error ? error.message : "Unable to update follow state");
     } finally {
       setIsPendingSubmit(false);
       // Server actions change the profile query's relationship status. Refresh the
@@ -80,6 +81,11 @@ export function FollowActionForm({
           </>
         )}
       </Button>
+      {submitError ? (
+        <p className="mt-2 text-sm text-destructive" role="alert">
+          {submitError}
+        </p>
+      ) : null}
     </form>
   );
 }

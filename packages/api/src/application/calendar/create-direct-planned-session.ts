@@ -4,10 +4,11 @@ import {
   plannedSessionIdempotencyKey,
   plannedSessionSchema,
 } from "@repo/core/calendar";
+import { resolvePrescription, type SessionDemand } from "@repo/core/plan";
 import type { DrizzleQueryExecutor } from "../../db";
 import type { PlannedSessionRepositoryPort } from "../../repositories/planned-session-repository-port";
-import { estimateActivityPlan } from "../activity-plans/estimate-activity-plans";
-import { activityPlanStructureHash } from "../activity-plans/structure-hash";
+import { toVerifiedResolverCandidate } from "../activity-plans/resolver-candidate";
+import { loadPlanningBaseline } from "../athlete-intelligence/load-planning-baseline";
 import { createPlannedSession } from "./create-planned-session";
 import { PlannedSessionAccessError } from "./planned-session-errors";
 
@@ -22,7 +23,7 @@ export async function createDirectPlannedSession(input: {
   planningDate: string;
   source: DirectPlannedSessionSource;
   activityPlanId: string;
-  variantId?: string;
+  demand?: SessionDemand;
   groupEventId: string | null;
   capturedAt: Date;
 }) {
@@ -38,26 +39,46 @@ export async function createDirectPlannedSession(input: {
       "The prescribed activity plan is not owned or system-provided",
     );
   }
-
-  const estimated = await estimateActivityPlan(
-    {
-      id: plan.id,
-      profile_id: plan.profileId,
-      name: plan.name,
-      description: plan.description,
-      structure: plan.structure,
-      structure_hash: plan.structureHash,
-      gps_recording_enabled: plan.gpsRecordingEnabled,
-      updated_at: plan.updatedAt,
+  const candidate = toVerifiedResolverCandidate({
+    id: plan.id,
+    revision: plan.revision,
+    structure: plan.structure,
+    structureHash: plan.structureHash,
+    semanticHash: plan.semanticHash,
+    adaptation: plan.adaptation,
+    trainingIntent: plan.trainingIntent,
+  });
+  const resolution = resolvePrescription({
+    demand: input.demand ?? {
+      activity_category: candidate.activity_category,
+      training_intent: candidate.training_intent,
+      target_duration_minutes: null,
+      target_common_load: null,
+      importance: "normal",
     },
-    input.db,
-    input.profileId,
-    {
-      asOf: input.capturedAt,
-      ...(input.variantId === undefined ? {} : { variantId: input.variantId }),
+    activity_plan_id: candidate.id,
+    preferences: {
+      weekly_session_count: null,
+      target_weekly_duration_minutes: null,
+      maximum_session_duration_minutes: null,
+      preferred_weekdays: [],
+      rest_days: [],
+      progression_style: null,
+      recovery_priority: null,
     },
-  );
-  const selectedVariant = estimated.resolvedActivityPlanVariant;
+    baseline: await loadPlanningBaseline({
+      db: input.db,
+      profileId: input.profileId,
+      now: input.capturedAt,
+    }),
+    planning_weekday: new Date(`${input.planningDate}T00:00:00.000Z`).getUTCDay(),
+    candidates: [candidate],
+  });
+  if (resolution.status !== "resolved") {
+    throw new PlannedSessionAccessError(
+      "The selected activity plan cannot satisfy this session demand",
+    );
+  }
   const session = plannedSessionSchema.parse({
     contractVersion: PLANNED_SESSION_CONTRACT_VERSION,
     id: input.sessionId,
@@ -69,13 +90,7 @@ export async function createDirectPlannedSession(input: {
     idempotencyKey: plannedSessionIdempotencyKey(input.source),
     groupEventId: input.groupEventId,
     prescription: {
-      activityPlanId: plan.id,
-      activityPlanRevision: plan.revision,
-      variantId: selectedVariant.variantId,
-      variantName: selectedVariant.variantName,
-      structure: selectedVariant.structure,
-      structureHash: activityPlanStructureHash(selectedVariant.structure),
-      prescriptionQuantification: estimated.prescriptionQuantification,
+      resolutionManifest: resolution.manifest,
       capturedAt: input.capturedAt.toISOString(),
     },
     lifecycle: { status: "scheduled" },

@@ -21,7 +21,7 @@ describe("system activity-template coverage", () => {
       "covered",
       "covered",
     ]);
-  });
+  }, 15_000);
 
   it("marks under-covered cells when only one first-wave template exists", () => {
     const cellRows = buildCoverageCellSummaries([

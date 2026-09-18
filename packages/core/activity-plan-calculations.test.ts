@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compileActivityPlan } from "./activity-plan";
+import { compileActivityPlan, summarizeCompiledActivityPlanInterval } from "./activity-plan";
 import {
   calculateActivityPlanStats,
   extractActivityProfile,
@@ -150,6 +150,50 @@ describe("activity plan calculations", () => {
     });
     expect(dose).not.toHaveProperty("cyclingPower");
     expect(dose).not.toHaveProperty("estimatedCommonLoad");
+  });
+
+  it("summarizes repeated mixed quantities without inventing elapsed time", () => {
+    const intervalId = "70000000-0000-4000-8000-000000000042";
+    const plan = compileActivityPlan({
+      version: 3,
+      activity_category: "run",
+      segments: [
+        {
+          role: "activity",
+          id: "70000000-0000-4000-8000-000000000041",
+          name: "Run",
+          intervals: [
+            {
+              id: intervalId,
+              name: "Mixed set",
+              repetitions: 3,
+              steps: [
+                {
+                  id: "70000000-0000-4000-8000-000000000043",
+                  name: "Timed",
+                  duration: { type: "time", seconds: 120 },
+                  targets: [{ type: "RPE", intensity: 5 }],
+                },
+                {
+                  id: "70000000-0000-4000-8000-000000000044",
+                  name: "Distance",
+                  duration: { type: "distance", meters: 400 },
+                  targets: [{ type: "RPE", intensity: 6 }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(summarizeCompiledActivityPlanInterval(plan, intervalId)).toEqual({
+      hasOpenDuration: false,
+      hasPartialQuantities: true,
+      perRepeat: { distanceMeters: 400, repetitionCount: 0, timedSeconds: 120 },
+      repetitions: 3,
+      total: { distanceMeters: 1200, repetitionCount: 0, timedSeconds: 360 },
+    });
   });
 
   it("keeps target coverage out of the structural statistics helper", () => {

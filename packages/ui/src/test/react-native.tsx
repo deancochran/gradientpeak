@@ -114,6 +114,7 @@ export const Text = createHost("Text");
 export const TextInput = createHost("TextInput");
 export const TouchableOpacity = createHost("TouchableOpacity");
 export const View = createHost("View");
+export const Image = createHost("Image");
 
 export const useColorScheme = () => "light";
 export const useWindowDimensions = () => ({ width: 390, height: 844 });
@@ -126,6 +127,19 @@ export const Appearance = {
 
 export const Alert = {
   alert: jest.fn(),
+};
+
+export const Keyboard = { dismiss: jest.fn() };
+
+export const AppState = {
+  currentState: "active",
+  addEventListener: jest.fn((_event: string, _handler: (state: string) => void) => ({
+    remove: jest.fn(),
+  })),
+};
+
+export const BackHandler = {
+  addEventListener: jest.fn((_event: string, _handler: () => boolean) => ({ remove: jest.fn() })),
 };
 
 export const Platform = {

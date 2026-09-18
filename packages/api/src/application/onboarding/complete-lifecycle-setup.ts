@@ -1,7 +1,7 @@
 import type { CompleteOnboarding } from "@repo/core/schemas/onboarding";
 import { schema } from "@repo/db";
 import { eq } from "drizzle-orm";
-import { z } from "zod";
+import type { z } from "zod";
 import type { getRequiredDb } from "../../db";
 import {
   completedOnboardingReplayMatches,
@@ -14,10 +14,8 @@ import {
   OnboardingReadinessBarrierError,
   OnboardingStatusConflictError,
   onboardingGoalMatches,
-  onboardingSettingsSatisfyRequest,
   readLockedFinalOnboardingState,
   readOnboardingReadinessSnapshot,
-  saveChangedOnboardingSettings,
   saveIdempotentOnboardingGoal,
 } from "../../repositories/onboarding-lifecycle-repository";
 import { batchInsertProfileMetrics } from "../../utils/onboarding-helpers";
@@ -30,42 +28,16 @@ import { deriveOnboardingReadiness } from "./readiness";
 
 type Db = ReturnType<typeof getRequiredDb>;
 
-export const lifecycleSettingsPatchSchema = z
-  .object({
-    preset: z.enum(["safer", "balanced", "push_harder"]).optional(),
-    minSessionsPerWeek: z.number().int().min(0).max(21).optional(),
-    maxSessionsPerWeek: z.number().int().min(0).max(21).optional(),
-    maxSingleSessionMinutes: z.number().int().min(20).max(600).optional(),
-    maxWeeklyMinutes: z.number().int().min(30).max(10080).optional(),
-  })
-  .strict()
-  .superRefine((patch, ctx) => {
-    if (
-      patch.minSessionsPerWeek !== undefined &&
-      patch.maxSessionsPerWeek !== undefined &&
-      patch.minSessionsPerWeek > patch.maxSessionsPerWeek
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["minSessionsPerWeek"],
-        message: "Minimum sessions per week cannot exceed maximum sessions",
-      });
-    }
-  });
-
-/** Finalization is one transaction. Provider data, goals, metrics, and settings are optional. */
+/** Finalization is one transaction. Provider data, goals, and metrics are optional. */
 export async function completeLifecycleSetup(input: {
   db: Db;
   profileId: string;
   profile: CompleteOnboarding;
   goal?: z.infer<typeof profileGoalWriteDataSchema>;
-  settings_patch?: z.infer<typeof lifecycleSettingsPatchSchema>;
 }) {
-  const settingsPatch = normalizeLifecycleSettingsPatch(input.settings_patch);
   const goalWrite = input.goal
     ? parseOwnedProfileGoalWrite({ profileId: input.profileId, data: input.goal })
     : undefined;
-  const settingsRequested = input.settings_patch !== undefined || input.profile.intents.length > 0;
   const preparedMetrics = await prepareFinalOnboardingProfile({
     db: input.db,
     profileId: input.profileId,
@@ -81,24 +53,11 @@ export async function completeLifecycleSetup(input: {
           Boolean(finalState.goal && onboardingGoalMatches(finalState.goal, goalWrite)),
         metricsMatch: finalOnboardingMetricsMatch(finalState.metrics, preparedMetrics),
         profileMatches: lifecycleProfileMatches(finalState.profile, input.profile),
-        settingsMatch:
-          !settingsRequested ||
-          Boolean(
-            finalState.settings &&
-              onboardingSettingsSatisfyRequest({
-                stored: finalState.settings,
-                patch: settingsPatch,
-                onboardingIntents: input.profile.intents,
-              }),
-          ),
       };
       if (completedOnboardingReplayMatches(proof)) {
         return {
           status: "already_completed" as const,
           goal: { status: goalWrite ? ("unchanged" as const) : ("skipped" as const) },
-          settings: {
-            status: settingsRequested ? ("unchanged" as const) : ("skipped" as const),
-          },
           created: { profile_metrics: 0 },
         };
       }
@@ -131,14 +90,6 @@ export async function completeLifecycleSetup(input: {
         throw new Error("Optional onboarding goal could not be persisted", { cause: error });
       }
     }
-    const settings = settingsRequested
-      ? await saveChangedOnboardingSettings({
-          db: tx,
-          profileId: input.profileId,
-          patch: settingsPatch,
-          onboardingIntents: input.profile.intents,
-        })
-      : ("skipped" as const);
     const profileMetrics = await persistLifecycleProfile({
       tx,
       profileId: input.profileId,
@@ -148,7 +99,6 @@ export async function completeLifecycleSetup(input: {
     return {
       status: "completed" as const,
       goal: { status: goalWrite ? ("saved" as const) : ("skipped" as const) },
-      settings: { status: settings },
       created: { profile_metrics: profileMetrics },
     };
   });
@@ -211,26 +161,4 @@ function lifecycleProfileMatches(
     (requested.planning_timezone === undefined ||
       persisted.planning_timezone === requested.planning_timezone)
   );
-}
-
-function normalizeLifecycleSettingsPatch(
-  input: z.infer<typeof lifecycleSettingsPatchSchema> | undefined,
-) {
-  const settingsPatch: {
-    preset?: "safer" | "balanced" | "push_harder";
-    minSessionsPerWeek?: number;
-    maxSessionsPerWeek?: number;
-    maxSingleSessionMinutes?: number;
-    maxWeeklyMinutes?: number;
-  } = {};
-  if (input?.preset !== undefined) settingsPatch.preset = input.preset;
-  if (input?.minSessionsPerWeek !== undefined)
-    settingsPatch.minSessionsPerWeek = input.minSessionsPerWeek;
-  if (input?.maxSessionsPerWeek !== undefined)
-    settingsPatch.maxSessionsPerWeek = input.maxSessionsPerWeek;
-  if (input?.maxSingleSessionMinutes !== undefined)
-    settingsPatch.maxSingleSessionMinutes = input.maxSingleSessionMinutes;
-  if (input?.maxWeeklyMinutes !== undefined)
-    settingsPatch.maxWeeklyMinutes = input.maxWeeklyMinutes;
-  return settingsPatch;
 }

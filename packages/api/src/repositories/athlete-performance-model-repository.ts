@@ -14,7 +14,7 @@ import {
   activitySegments,
   profileMetrics,
 } from "@repo/db";
-import { and, desc, eq, gte, inArray, lte, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lte, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { DrizzleQueryExecutor, getRequiredDb } from "../db";
 
@@ -565,6 +565,7 @@ export function createAthletePerformanceModelRepository(
           eq(activityEfforts.method, "activity_file_best_effort"),
           eq(activityEfforts.calculation_version, BEST_EFFORT_CALCULATION_VERSION),
           eq(activitySegments.segment_revision, activities.segments_revision),
+          isNotNull(activities.finished_at),
           lte(activities.finished_at, input.asOf),
           gte(activityEfforts.recorded_at, cutoff),
           lte(activityEfforts.recorded_at, input.asOf),
@@ -619,6 +620,7 @@ export function createAthletePerformanceModelRepository(
           eq(profileMetrics.source, "derived"),
           eq(profileMetrics.method, method),
           eq(profileMetrics.calculation_version, calculationVersion),
+          isNotNull(activities.finished_at),
           lte(profileMetrics.recorded_at, input.asOf),
           lte(activities.finished_at, input.asOf),
           input.excludedActivityId === undefined
@@ -654,10 +656,13 @@ export function createAthletePerformanceModelRepository(
       .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.id))
       .limit(ATHLETE_PERFORMANCE_HEART_RATE_QUERY_LIMIT);
     return {
-      rows: rows.slice(0, ATHLETE_PERFORMANCE_HEART_RATE_QUERY_LIMIT - 1).map((row) => ({
-        ...row,
-        activity_category: activityCategory,
-      })),
+      rows: rows
+        .slice(0, ATHLETE_PERFORMANCE_HEART_RATE_QUERY_LIMIT - 1)
+        .flatMap(({ reference_activity_finished_at, ...row }) =>
+          reference_activity_finished_at === null
+            ? []
+            : [{ ...row, reference_activity_finished_at, activity_category: activityCategory }],
+        ),
       truncated: rows.length === ATHLETE_PERFORMANCE_HEART_RATE_QUERY_LIMIT,
     };
   };
@@ -758,6 +763,7 @@ export function createAthletePerformanceModelRepository(
           eq(activityEfforts.method, "activity_file_best_effort"),
           eq(activityEfforts.calculation_version, BEST_EFFORT_CALCULATION_VERSION),
           eq(activitySegments.segment_revision, activities.segments_revision),
+          isNotNull(activities.finished_at),
           gte(activityEfforts.recorded_at, earliestCutoff),
           lte(activityEfforts.recorded_at, latestAsOf),
           lte(activities.finished_at, latestAsOf),
@@ -811,6 +817,7 @@ export function createAthletePerformanceModelRepository(
           eq(profileMetrics.source, "derived"),
           eq(profileMetrics.method, method),
           eq(profileMetrics.calculation_version, calculationVersion),
+          isNotNull(activities.finished_at),
           lte(profileMetrics.recorded_at, latestAsOf),
           lte(activities.finished_at, latestAsOf),
           sql`exists (
@@ -843,10 +850,13 @@ export function createAthletePerformanceModelRepository(
       .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.id))
       .limit(ATHLETE_PERFORMANCE_BATCH_ROW_LIMIT + 1);
     return {
-      rows: rows.slice(0, ATHLETE_PERFORMANCE_BATCH_ROW_LIMIT).map((row) => ({
-        ...row,
-        activity_category: activityCategory,
-      })),
+      rows: rows
+        .slice(0, ATHLETE_PERFORMANCE_BATCH_ROW_LIMIT)
+        .flatMap(({ reference_activity_finished_at, ...row }) =>
+          reference_activity_finished_at === null
+            ? []
+            : [{ ...row, reference_activity_finished_at, activity_category: activityCategory }],
+        ),
       truncated: rows.length > ATHLETE_PERFORMANCE_BATCH_ROW_LIMIT,
     };
   };
@@ -859,7 +869,7 @@ export function createAthletePerformanceModelRepository(
       (row) =>
         row.profile_id === input.athleteId &&
         row.recorded_at.getTime() <= input.asOf.getTime() &&
-        row.reference_activity_finished_at !== undefined &&
+        row.reference_activity_finished_at !== null &&
         row.reference_activity_finished_at.getTime() <= input.asOf.getTime() &&
         (input.excludedActivityId === undefined ||
           row.reference_activity_id !== input.excludedActivityId),
@@ -937,7 +947,8 @@ export function createAthletePerformanceModelRepository(
             const cutoff =
               input.asOf.getTime() - DURATION_PERFORMANCE_FRESHNESS_WINDOW_DAYS * 86_400_000;
             const matches = batch.rows.filter(
-              (row) =>
+              (row): row is typeof row & { activity_finished_at: Date } =>
+                row.activity_finished_at !== null &&
                 row.profile_id === input.athleteId &&
                 row.recorded_at.getTime() >= cutoff &&
                 row.recorded_at.getTime() <= input.asOf.getTime() &&

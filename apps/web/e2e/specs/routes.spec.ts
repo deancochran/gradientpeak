@@ -1,4 +1,6 @@
 import type { Page } from "@playwright/test";
+import { activityRoutes } from "@repo/db/schema";
+import { eq } from "drizzle-orm";
 import { expect, test } from "../fixtures";
 import { RoutesPage } from "../pages";
 import { withLocalE2EDatabase } from "../support/database";
@@ -15,13 +17,12 @@ const validGpx = `<?xml version="1.0"?>
 
 async function setRouteStorageState(routeId: string, state: "deletion_pending" | "ready") {
   return withLocalE2EDatabase(async (database) => {
-    const result = await database.query(
-      `update public.activity_routes
-       set storage_state = $2, updated_at = now()
-       where id = $1::uuid`,
-      [routeId, state],
-    );
-    return result.rowCount ?? 0;
+    const result = await database.db
+      .update(activityRoutes)
+      .set({ storage_state: state, updated_at: new Date() })
+      .where(eq(activityRoutes.id, routeId))
+      .returning({ id: activityRoutes.id });
+    return result.length;
   });
 }
 

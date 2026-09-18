@@ -13,10 +13,27 @@ const queries = {
       structure: {
         id: "11111111-1111-4111-8111-111111111111",
         version: 1,
+        plan_preferences: {
+          weekly_session_count: 1,
+          target_weekly_duration_minutes: 60,
+          maximum_session_duration_minutes: 90,
+          preferred_weekdays: [1],
+          rest_days: [0, 2, 3, 4, 5, 6],
+          progression_style: "balanced",
+          recovery_priority: "balanced",
+        },
         sessions: [
           {
+            id: "33333333-3333-4333-8333-333333333333",
             offset_days: 0,
             activity_plan_id: "22222222-2222-4222-8222-222222222222",
+            demand: {
+              activity_category: "run",
+              training_intent: "aerobic_base",
+              target_duration_minutes: 60,
+              target_common_load: 40,
+              importance: "normal",
+            },
           },
         ],
       },
@@ -130,17 +147,14 @@ jest.mock("../useProfileGoals", () => ({
   useProfileGoals: () => ({ goals: [] }),
 }));
 
-jest.mock("../useProfileSettings", () => ({
-  __esModule: true,
-  useProfileSettings: () => ({ settings: {}, refetch }),
-}));
-
 import { useTrainingPlanSnapshot } from "../useTrainingPlanSnapshot";
 
 describe("useTrainingPlanSnapshot", () => {
   beforeEach(() => {
     refetch.mockClear();
-    Object.values(queries).forEach((query) => query.mockClear());
+    Object.values(queries).forEach((query) => {
+      query.mockClear();
+    });
   });
 
   it("adapts canonical history and authoritative projection data", async () => {

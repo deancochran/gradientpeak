@@ -407,8 +407,8 @@ export interface RecordingMetadata {
   gpsRecordingEnabled: boolean;
   profileId: string;
   profile: RecorderProfileRef;
-  eventId?: string;
-  activityPlan?: RecordingActivityPlanInput;
+  eventId?: string | undefined;
+  activityPlan?: RecordingActivityPlanInput | undefined;
   activityFilePath?: string;
 }
 
@@ -430,13 +430,13 @@ export type RecordingSessionOverrideState = CoreRecordingSessionOverrideState;
 
 export interface RecordingPlanView {
   hasPlan: boolean;
-  name?: string;
-  description?: string | null;
-  activityCategory?: RecordingActivityCategory | null;
+  name?: string | undefined;
+  description?: string | null | undefined;
+  activityCategory?: RecordingActivityCategory | null | undefined;
   stepIndex: number;
   stepCount: number;
-  currentStep?: RecordingPlanOccurrence;
-  nextStep?: RecordingPlanOccurrence;
+  currentStep?: RecordingPlanOccurrence | undefined;
+  nextStep?: RecordingPlanOccurrence | undefined;
   currentSegment: {
     id: string;
     role: CompiledActivityPlanOccurrence["role"];

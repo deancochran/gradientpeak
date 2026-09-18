@@ -56,7 +56,7 @@ export async function deleteImportedActivitySource(input: {
     return deleteRemoteActivitySourceWithCanonicalCleanup(tx, input, ({ activityId, profileId }) =>
       deleteCanonicalActivityWithProfileLockHeld({
         activityId,
-        now: input.now,
+        ...(input.now === undefined ? {} : { now: input.now }),
         profileId,
         tx,
       }),

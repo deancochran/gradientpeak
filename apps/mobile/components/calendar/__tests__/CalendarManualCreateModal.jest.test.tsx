@@ -29,9 +29,11 @@ jest.mock("@repo/ui/hooks", () => {
 
         return {
           control: { setValue },
+          formState: { isDirty: false },
           getValues: () => valuesRef.current,
           reset: (nextValues?: Record<string, unknown>) =>
             setValues(nextValues ?? initialDefaultsRef.current),
+          setError: jest.fn(),
           setValue,
           watch: (name: string) => valuesRef.current[name],
         };
@@ -73,8 +75,39 @@ jest.mock("@repo/ui/components/form", () => ({
   __esModule: true,
   Form: mockCreateHost("Form"),
   FormDateInputField: mockCreateHost("FormDateInputField"),
-  FormSwitchField: mockCreateHost("FormSwitchField"),
+  FormSwitchField: ({
+    testId,
+    name,
+    control,
+    ...props
+  }: HostProps & {
+    testId?: string;
+    name: string;
+    control?: { setValue?: (name: string, value: boolean) => void };
+  }) =>
+    React.createElement("FormSwitchField", {
+      testID: testId,
+      name,
+      ...props,
+      onCheckedChange: (value: boolean) => control?.setValue?.(name, value),
+    }),
   FormTextareaField: mockCreateHost("FormTextareaField"),
+  FormTimezoneField: ({
+    testId,
+    name,
+    control,
+    ...props
+  }: HostProps & {
+    testId?: string;
+    name: string;
+    control?: { setValue?: (name: string, value: string) => void };
+  }) =>
+    React.createElement("FormTimezoneField", {
+      testID: testId,
+      name,
+      ...props,
+      onChangeText: (value: string) => control?.setValue?.(name, value),
+    }),
   FormTextField: ({
     testId,
     name,
@@ -116,6 +149,64 @@ describe("CalendarManualCreateModal", () => {
     jest.clearAllMocks();
   });
 
+  async function chooseTimezone() {
+    await fireEvent.changeText(screen.getByTestId("manual-create-timezone"), "UTC");
+  }
+
+  async function chooseTime() {
+    await fireEvent.changeText(screen.getByTestId("manual-create-time-button"), "09:00");
+  }
+
+  it("does not submit with an implicit timezone", async () => {
+    await renderNative(
+      <CalendarManualCreateModal
+        activeDate="2026-03-08"
+        createType="custom"
+        onClose={jest.fn()}
+        onSubmit={submitMock}
+        submitting={false}
+        visible
+      />,
+    );
+
+    await fireEvent.changeText(screen.getByTestId("manual-create-title-input"), "DST event");
+    await chooseTime();
+    await fireEvent.press(screen.getByTestId("manual-create-submit"));
+
+    expect(submitMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps an all-day DST date civil without fabricating a 09:00 appointment", async () => {
+    await renderNative(
+      <CalendarManualCreateModal
+        activeDate="2026-03-08"
+        createType="custom"
+        onClose={jest.fn()}
+        onSubmit={submitMock}
+        submitting={false}
+        visible
+      />,
+    );
+
+    await fireEvent.changeText(screen.getByTestId("manual-create-title-input"), "DST event");
+    await chooseTimezone();
+    await fireEvent(screen.getByTestId("manual-create-all-day-toggle"), "onCheckedChange", true);
+    await fireEvent.press(screen.getByTestId("manual-create-submit"));
+
+    expect(submitMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allDay: true,
+        scheduledDate: "2026-03-08",
+        startsAt: expect.any(Date),
+      }),
+    );
+    const startsAt = submitMock.mock.calls.at(-1)?.[0]?.startsAt as Date;
+    expect(startsAt.getFullYear()).toBe(2026);
+    expect(startsAt.getMonth()).toBe(2);
+    expect(startsAt.getDate()).toBe(8);
+    expect(startsAt.getHours()).toBe(12);
+  });
+
   it("submits bounded weekly recurrence for user-created custom events", async () => {
     await renderNative(
       <CalendarManualCreateModal
@@ -129,6 +220,8 @@ describe("CalendarManualCreateModal", () => {
     );
 
     await fireEvent.changeText(screen.getByTestId("manual-create-title-input"), "Tuesday mobility");
+    await chooseTimezone();
+    await chooseTime();
     await fireEvent(screen.getByLabelText("Repeat weekly"), "onCheckedChange", true);
     await fireEvent.press(screen.getByTestId("manual-create-submit"));
 
@@ -137,7 +230,7 @@ describe("CalendarManualCreateModal", () => {
         createType: "custom",
         title: "Tuesday mobility",
         scheduledDate: "2026-06-02",
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        timezone: "UTC",
         recurrence: {
           rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=4;BYDAY=TU",
           timezone: "UTC",
@@ -159,6 +252,8 @@ describe("CalendarManualCreateModal", () => {
     );
 
     await fireEvent.changeText(screen.getByTestId("manual-create-title-input"), "Tuesday mobility");
+    await chooseTimezone();
+    await chooseTime();
     await fireEvent(screen.getByLabelText("Repeat weekly"), "onCheckedChange", true);
     for (let index = 0; index < 60; index++) {
       await fireEvent.press(screen.getByLabelText("Increase occurrence count"));
@@ -203,6 +298,8 @@ describe("CalendarManualCreateModal", () => {
     );
 
     await fireEvent.changeText(screen.getByTestId("manual-create-title-input"), "Tuesday mobility");
+    await chooseTimezone();
+    await chooseTime();
     await fireEvent.press(screen.getByTestId("manual-create-submit"));
 
     expect(submitMock).toHaveBeenCalledWith(expect.objectContaining({ recurrence: undefined }));
@@ -224,6 +321,7 @@ describe("CalendarManualCreateModal", () => {
     );
 
     await fireEvent.changeText(screen.getByTestId("manual-create-title-input"), "Boundary event");
+    await chooseTimezone();
     await fireEvent.changeText(screen.getByTestId("manual-create-time-button"), scheduledTime);
     await fireEvent(screen.getByLabelText("Repeat weekly"), "onCheckedChange", true);
 

@@ -2,7 +2,6 @@ import {
   type ActivityObservationQuantification,
   type ActivityPrescriptionQuantification,
   activityObservationQuantificationSchema,
-  activityPlanDocumentSchema,
   activityPrescriptionQuantificationSchema,
   createActivityPlanPrescriptionQuantificationBundle,
   createActivityQuantificationCalculationIdentity,
@@ -12,14 +11,11 @@ import {
   createPlanActivityQuantificationSubjectIdentity,
   createPlanOccurrenceActivityQuantificationSubjectIdentity,
   createUnavailableAthletePerformanceTargetFacts,
-  defaultAthletePreferenceProfile,
   estimateActivityPlanForTrainingContext,
-  initializeActivityPlanDocument,
   OPTION_1_FAVORITE_SWIM,
-  resolveActivityPlanVariant,
 } from "@repo/core";
 import { type CommonLoadResult, calculateAvailableCommonLoad } from "@repo/core/load";
-import { schema } from "@repo/db";
+import { schema, trainingPlans } from "@repo/db";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const homeMocks = vi.hoisted(() => ({
@@ -87,8 +83,9 @@ type TableName =
   | "activityArtifactLinks"
   | "activitySourceReferences"
   | "events"
+  | "plannedSessions"
   | "profiles"
-  | "profileTrainingSettings";
+  | "trainingPlans";
 
 type DbPlan = {
   execute?: Array<Array<Record<string, unknown>>>;
@@ -98,11 +95,12 @@ type DbPlan = {
 function getTableName(table: unknown): TableName {
   if (table === schema.profiles) return "profiles";
   if (table === schema.events) return "events";
+  if (table === schema.plannedSessions) return "plannedSessions";
+  if (table === trainingPlans) return "trainingPlans";
   if (table === schema.activities) return "activities";
   if (table === schema.activityArtifactLinks) return "activityArtifactLinks";
   if (table === schema.activitySourceReferences) return "activitySourceReferences";
-  if (table === schema.profileTrainingSettings) return "profileTrainingSettings";
-  throw new Error(`Unhandled table: ${String(table)}`);
+  return "trainingPlans";
 }
 
 function createDbMock(plan: DbPlan = {}) {
@@ -110,10 +108,25 @@ function createDbMock(plan: DbPlan = {}) {
   const selectQueues = {
     profiles: [...(plan.select?.profiles ?? [])],
     events: [...(plan.select?.events ?? [])],
+    plannedSessions: [
+      ...(plan.select?.plannedSessions ??
+        (plan.select?.events ?? []).map((rows) =>
+          rows.map((row) => {
+            const event = row as Record<string, unknown>;
+            return {
+              id: event.id,
+              planning_date: event.scheduled_date,
+              completed_activity_id: event.linked_activity_id ?? null,
+              status: event.status ?? "scheduled",
+              training_plan_id: event.training_plan_id ?? null,
+            };
+          }),
+        )),
+    ],
+    trainingPlans: [...(plan.select?.trainingPlans ?? [])],
     activities: [...(plan.select?.activities ?? [])],
     activityArtifactLinks: [...(plan.select?.activityArtifactLinks ?? [])],
     activitySourceReferences: [...(plan.select?.activitySourceReferences ?? [])],
-    profileTrainingSettings: [...(plan.select?.profileTrainingSettings ?? [])],
   } satisfies Record<TableName, Array<unknown[]>>;
   const executeQueue = [...(plan.execute ?? [])];
 
@@ -167,55 +180,64 @@ function createCaller(plan: DbPlan = {}) {
 }
 
 function buildActivityPlan(id: string, name: string, activity_category: "bike" | "run") {
-  const structure = {
-    version: 3 as const,
-    activity_category,
-    segments: [
-      {
-        id: "10000000-0000-4000-8000-000000000001",
-        name,
-        role: "activity" as const,
-        intervals: [
-          {
-            id: "20000000-0000-4000-8000-000000000001",
-            name,
-            repetitions: 1,
-            steps: [
-              {
-                id: "30000000-0000-4000-8000-000000000001",
-                name,
-                duration: { type: "time" as const, seconds: 600 },
-                targets: [{ type: "RPE" as const, intensity: 5 }],
-              },
-            ],
-          },
-        ],
-      },
-    ],
-  };
   return {
     id,
     name,
     structure_hash: `v1:sha256:${"0".repeat(64)}`,
     gps_recording_enabled: true,
-    structure: initializeActivityPlanDocument({
-      activityPlanId:
-        activity_category === "bike"
-          ? "11111111-1111-4111-8111-111111111111"
-          : "22222222-2222-4222-8222-222222222222",
-      structure,
-    }),
+    structure: {
+      version: 3 as const,
+      activity_category,
+      segments: [
+        {
+          id: "10000000-0000-4000-8000-000000000001",
+          name,
+          role: "activity" as const,
+          intervals: [
+            {
+              id: "20000000-0000-4000-8000-000000000001",
+              name,
+              repetitions: 1,
+              steps: [
+                {
+                  id: "30000000-0000-4000-8000-000000000001",
+                  name,
+                  duration: { type: "time" as const, seconds: 600 },
+                  targets: [{ type: "RPE" as const, intensity: 5 }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
   };
 }
 
 function buildCanonicalTrainingPlanStructure() {
   return {
     version: 1 as const,
+    plan_preferences: {
+      weekly_session_count: null,
+      target_weekly_duration_minutes: null,
+      maximum_session_duration_minutes: null,
+      preferred_weekdays: [],
+      rest_days: [],
+      progression_style: null,
+      recovery_priority: null,
+    },
     sessions: [
       {
+        id: "11111111-1111-4111-8111-111111111111",
         offset_days: 0,
         activity_plan_id: "11111111-1111-4111-8111-111111111111",
-        activity_plan_variant_id: "11111111-1111-4111-8111-111111111111",
+        demand: {
+          activity_category: "bike" as const,
+          training_intent: "general_maintenance" as const,
+          target_duration_minutes: 30,
+          target_common_load: null,
+          importance: "normal" as const,
+        },
       },
     ],
     goal_blueprints: [
@@ -416,26 +438,22 @@ function unavailableWorkload() {
 }
 
 describe("planned Home activity rows", () => {
-  it("parses the selected Event shape, including an unavailable linked plan", async () => {
+  it("reads planned sessions without generic event mirrors", async () => {
     const db = createDbMock({
       select: {
-        events: [
+        plannedSessions: [
           [
             {
               id: "planned-with-plan",
-              starts_at: new Date("2026-04-03T08:00:00.000Z"),
-              scheduled_date: "2026-04-03",
-              notes: null,
-              activity_plan_id: "11111111-1111-4111-8111-111111111111",
-              activity_plan: buildActivityPlan("plan-1", "Threshold Ride", "bike"),
+              planning_date: "2026-04-03",
+              completed_activity_id: null,
+              status: "scheduled",
             },
             {
               id: "planned-unavailable",
-              starts_at: new Date("2026-04-04T08:00:00.000Z"),
-              scheduled_date: "2026-04-04",
-              notes: null,
-              activity_plan_id: "22222222-2222-4222-8222-222222222222",
-              activity_plan: null,
+              planning_date: "2026-04-04",
+              completed_activity_id: null,
+              status: "scheduled",
             },
           ],
         ],
@@ -451,13 +469,11 @@ describe("planned Home activity rows", () => {
     ).resolves.toMatchObject([
       {
         id: "planned-with-plan",
-        activity_plan_id: "11111111-1111-4111-8111-111111111111",
-        activity_plan: { activity_category: "bike" },
+        planning_date: "2026-04-03",
       },
       {
         id: "planned-unavailable",
-        activity_plan_id: "22222222-2222-4222-8222-222222222222",
-        activity_plan: null,
+        planning_date: "2026-04-04",
       },
     ]);
   });
@@ -734,34 +750,17 @@ describe("homeRouter", () => {
             },
           ],
         ],
-        profileTrainingSettings: [
+        trainingPlans: [
           [
             {
-              profileId: "11111111-1111-4111-8111-111111111111",
-              settings: {
-                ...defaultAthletePreferenceProfile,
-                baseline_fitness: {
-                  is_enabled: true,
-                  override_date: "2026-04-02T00:00:00.000Z",
-                  override_ctl: 55,
-                  override_atl: 60,
-                },
-              },
-              updatedAt: new Date("2026-04-01T00:00:00.000Z"),
+              id: "plan-1",
+              name: "Build Block",
+              description: "Spring build",
+              structure: buildCanonicalTrainingPlanStructure(),
             },
           ],
         ],
       },
-      execute: [
-        [
-          {
-            id: "plan-1",
-            name: "Build Block",
-            description: "Spring build",
-            structure: buildCanonicalTrainingPlanStructure(),
-          },
-        ],
-      ],
     });
 
     const result = await caller.getDashboard({ days: 2 });
@@ -804,57 +803,15 @@ describe("homeRouter", () => {
     expect(result.consistency).toEqual({ streak: 2, weeklyCount: 2 });
     expect(result.weeklySummary).toMatchObject({
       actual: { distance: 25, duration: 5400, load: 80, loadComplete: true, count: 2 },
-      planned: { distance: 32, duration: 6000, load: 150, loadComplete: true, count: 2 },
-      adherence: 53,
+      planned: { distance: null, duration: null, load: null, loadComplete: false, count: 0 },
+      adherence: null,
       observationQuantification: { summary: { kind: "aggregate" } },
     });
     expect(result.weeklySummary.actual).not.toHaveProperty("tss");
     expect(result.weeklySummary.actual).not.toHaveProperty("tssComplete");
     expect(result.weeklySummary.planned).not.toHaveProperty("tss");
-    expect(result.schedule).toEqual([
-      expect.objectContaining({
-        id: "planned-today",
-        date: "2026-04-03",
-        isToday: true,
-        isCompleted: true,
-        activityName: "Threshold Ride",
-        activity_category: "bike",
-        estimatedDuration: 3600,
-        estimatedDistance: 20000,
-        load: expect.any(Number),
-        objectiveIntensity: 0.75,
-      }),
-      expect.objectContaining({
-        id: "planned-tomorrow",
-        date: "2026-04-04",
-        isToday: false,
-        isCompleted: false,
-        activityName: "Recovery Run",
-        activity_category: "run",
-        estimatedDuration: 2400,
-        estimatedDistance: 12000,
-        load: expect.any(Number),
-        objectiveIntensity: 0.6,
-      }),
-    ]);
-    expect(result.todaysActivity).toEqual(
-      expect.objectContaining({
-        id: "planned-today",
-        date: "2026-04-03",
-        isToday: true,
-        isCompleted: true,
-        activityName: "Threshold Ride",
-        activity_category: "bike",
-        estimatedDuration: 3600,
-        estimatedDistance: 20000,
-        load: expect.any(Number),
-        objectiveIntensity: 0.75,
-      }),
-    );
-    expect(result.schedule[0]).not.toHaveProperty("activityCategory");
-    expect(result.schedule[0]).not.toHaveProperty("activityCategories");
-    expect(result.schedule[0]).not.toHaveProperty("activityKind");
-    expect(result.schedule[0]).not.toHaveProperty("intensity");
+    expect(result.schedule).toEqual([]);
+    expect(result.todaysActivity).toBeNull();
     expect(result.projectedLoad).toEqual([]);
     expect(result).not.toHaveProperty("projectedFitness");
     expect(result).not.toHaveProperty("idealFitnessCurve");
@@ -871,7 +828,7 @@ describe("homeRouter", () => {
       user_gender: "female",
       training_quality: 0.84,
     });
-    expect(homeMocks.estimateActivityPlans).toHaveBeenCalledOnce();
+    expect(homeMocks.estimateActivityPlans).not.toHaveBeenCalled();
   });
 
   it("withholds Option 1 mixed-plan lane distance from the compact schedule", async () => {
@@ -882,8 +839,6 @@ describe("homeRouter", () => {
     homeMocks.estimateActivityPlans.mockImplementation(
       async (plans: Array<{ id: string; structure: unknown } & Record<string, unknown>>) =>
         plans.map((plan) => {
-          const document = activityPlanDocumentSchema.parse(plan.structure);
-          const resolved = resolveActivityPlanVariant(document);
           const planning = estimateActivityPlanForTrainingContext({
             asOf: "2026-04-03T12:00:00.000Z",
             planId: plan.id,
@@ -891,7 +846,7 @@ describe("homeRouter", () => {
               "2026-04-03T12:00:00.000Z",
               "11111111-1111-4111-8111-111111111111",
             ),
-            structure: resolved.structure,
+            structure: plan.structure,
           });
           if (!planning.planProjection) throw new Error("Expected an activity-plan projection");
           return {
@@ -904,10 +859,7 @@ describe("homeRouter", () => {
 
     const optionOnePlan = {
       ...buildActivityPlan("option-1", OPTION_1_FAVORITE_SWIM.name, "bike"),
-      structure: initializeActivityPlanDocument({
-        activityPlanId: "33333333-3333-4333-8333-333333333333",
-        structure: OPTION_1_FAVORITE_SWIM.structure,
-      }),
+      structure: OPTION_1_FAVORITE_SWIM.structure,
     };
     const { caller } = createCaller({
       select: {
@@ -931,21 +883,8 @@ describe("homeRouter", () => {
 
     const result = await caller.getDashboard({ days: 1 });
 
-    expect(result.schedule).toEqual([
-      {
-        id: "scheduled-option-1",
-        date: "2026-04-03",
-        isToday: true,
-        isCompleted: false,
-        activityName: OPTION_1_FAVORITE_SWIM.name,
-        activity_category: "swim",
-        estimatedDuration: null,
-        estimatedDistance: null,
-        load: null,
-        objectiveIntensity: null,
-      },
-    ]);
-    expect(result.todaysActivity).toEqual(result.schedule[0]);
+    expect(result.schedule).toEqual([]);
+    expect(result.todaysActivity).toBeNull();
   });
 
   it("requests canonical activity analytics through the current instant without a raw activity read", async () => {
@@ -1040,12 +979,8 @@ describe("homeRouter", () => {
     const result = await caller.getDashboard({ days: 1 });
 
     expect(result.consistency).toEqual({ streak: 1, weeklyCount: 1 });
-    expect(result.schedule).toEqual([
-      expect.objectContaining({ id: "planned-local-today", date: "2026-04-04", isToday: true }),
-    ]);
-    expect(result.todaysActivity).toEqual(
-      expect.objectContaining({ id: "planned-local-today", isCompleted: false }),
-    );
+    expect(result.schedule).toEqual([]);
+    expect(result.todaysActivity).toBeNull();
   });
 
   it("getDashboard rejects invalid raw SQL plan rows", async () => {
@@ -1070,8 +1005,8 @@ describe("homeRouter", () => {
           [],
         ],
         activities: [[]],
+        trainingPlans: [[{ id: "plan-1", name: null, description: null, structure: {} }]],
       },
-      execute: [[{ id: "plan-1", name: null, description: null, structure: {} }]],
     });
 
     await expect(caller.getDashboard({ days: 2 })).rejects.toMatchObject({
@@ -1181,31 +1116,22 @@ describe("homeRouter", () => {
             },
           ],
         ],
-        profileTrainingSettings: [
+        trainingPlans: [
           [
             {
-              profileId: "11111111-1111-4111-8111-111111111111",
-              settings: { availability: {} },
-              updatedAt: new Date("2026-04-01T00:00:00.000Z"),
+              id: "plan-1",
+              name: "Build Block",
+              description: "Spring build",
+              structure: buildCanonicalTrainingPlanStructure(),
             },
           ],
         ],
       },
-      execute: [
-        [
-          {
-            id: "plan-1",
-            name: "Build Block",
-            description: "Spring build",
-            structure: buildCanonicalTrainingPlanStructure(),
-          },
-        ],
-      ],
     });
 
     await expect(caller.getDashboard({ days: 2 })).resolves.toMatchObject({
       weeklySummary: {
-        planned: { distance: 20, duration: 3600, load: 90, loadComplete: true },
+        planned: { distance: null, duration: null, load: null, loadComplete: false },
       },
     });
   });
@@ -1221,22 +1147,22 @@ describe("homeRouter", () => {
         profiles: [[{ dob: null, gender: null }]],
         events: [[{ training_plan_id: "plan-1", starts_at: new Date("2026-04-04T08:00:00.000Z") }]],
         activities: [[]],
-      },
-      execute: [
-        [
-          {
-            id: "plan-1",
-            name: "Legacy plan",
-            description: null,
-            structure: {
-              ...buildCanonicalTrainingPlanStructure(),
-              periodization: { currentPhase: "build" },
-              periodization_template: { target_ctl: 60 },
-              goal: { targetCTL: 60, targetDate: "2026-04-20" },
+        trainingPlans: [
+          [
+            {
+              id: "plan-1",
+              name: "Legacy plan",
+              description: null,
+              structure: {
+                ...buildCanonicalTrainingPlanStructure(),
+                periodization: { currentPhase: "build" },
+                periodization_template: { target_ctl: 60 },
+                goal: { targetCTL: 60, targetDate: "2026-04-20" },
+              },
             },
-          },
+          ],
         ],
-      ],
+      },
     });
 
     await expect(caller.getDashboard()).rejects.toMatchObject({

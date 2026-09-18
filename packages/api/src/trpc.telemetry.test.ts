@@ -7,6 +7,7 @@ const { captureApiProcedureMetric } = vi.hoisted(() => ({ captureApiProcedureMet
 vi.mock("./telemetry", () => ({ captureApiProcedureMetric }));
 
 import {
+  applicationErrorCodeForCause,
   bucketTelemetryDuration,
   createTRPCRouter,
   normalizeTelemetryOutcome,
@@ -48,6 +49,15 @@ describe("tRPC telemetry normalization", () => {
     expect(normalizeTelemetryOutcome(new Error("private database detail"))).toBe(
       "unexpected_error",
     );
+  });
+
+  it("maps only registered application failures to a transport-safe code", () => {
+    expect(
+      applicationErrorCodeForCause(
+        Object.assign(new Error("private structure hash"), { name: "ActivityPlanIntegrityError" }),
+      ),
+    ).toBe("ACTIVITY_PLAN_INTEGRITY_FAILED");
+    expect(applicationErrorCodeForCause(new Error("private database detail"))).toBeNull();
   });
 
   it("records one coarse metric without changing a procedure result or error", async () => {

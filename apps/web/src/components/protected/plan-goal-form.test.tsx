@@ -5,8 +5,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PlanGoalForm } from "./plan-goal-form";
 
+vi.mock("../../lib/use-unsaved-changes-guard", () => ({
+  useUnsavedChangesGuard: () => ({
+    guardedCancel: mocks.guardedCancel,
+    markSaveFailed: vi.fn(),
+    markSaved: vi.fn(),
+  }),
+}));
+
 const mocks = vi.hoisted(() => ({
   action: vi.fn(),
+  guardedCancel: vi.fn(),
   invalidateGoals: vi.fn(),
   invalidateIntelligence: vi.fn(),
 }));
@@ -28,6 +37,7 @@ vi.mock("../../lib/planning/server-actions", () => ({
 afterEach(() => {
   cleanup();
   mocks.action.mockReset();
+  mocks.guardedCancel.mockReset();
   mocks.invalidateGoals.mockReset();
   mocks.invalidateIntelligence.mockReset();
 });
@@ -39,6 +49,15 @@ function form() {
 }
 
 describe("PlanGoalForm", () => {
+  it("offers Cancel through the existing discard guard without submitting or clearing the draft", () => {
+    render(<PlanGoalForm profileId="11111111-1111-4111-8111-111111111111" />);
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Keep my draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(mocks.guardedCancel).toHaveBeenCalledWith(expect.any(Function));
+    expect(mocks.action).not.toHaveBeenCalled();
+    expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("Keep my draft");
+  });
+
   it("uses FormData transport, keeps a rejected draft, and announces the local error", async () => {
     mocks.action.mockResolvedValueOnce({ status: "error", message: "Goal could not be saved" });
     render(
@@ -72,11 +91,29 @@ describe("PlanGoalForm", () => {
     fireEvent.submit(form());
 
     await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
+    for (const label of [
+      "Title",
+      "Target date",
+      "Activity",
+      "Priority",
+      "Sessions / week",
+      "Weeks",
+    ]) {
+      expect((screen.getByLabelText(label) as HTMLInputElement).disabled).toBe(true);
+    }
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Too late" } });
+    expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("One request");
+    expect((mocks.action.mock.calls[0]?.[0].data as FormData).get("title")).toBe("One request");
+    expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
     expect((screen.getByRole("button", { name: "Saving..." }) as HTMLButtonElement).disabled).toBe(
       true,
     );
     resolve({ status: "error", message: "Retry" });
     await screen.findByRole("alert");
+    expect((screen.getByLabelText("Title") as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("One request");
   });
 
   it("marks every required value and prevents invalid date or numeric submissions", () => {

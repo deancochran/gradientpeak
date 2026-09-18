@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DiscoveryExplorer } from "./discovery-explorer";
 
-const mocks = vi.hoisted(() => ({ navigate: vi.fn() }));
+const mocks = vi.hoisted(() => ({ navigate: vi.fn(), routeError: false, routeQuery: vi.fn() }));
 
 const emptyQuery = {
   data: { pages: [{ items: [] }] },
@@ -105,13 +105,25 @@ vi.mock("../../lib/api/client", () => ({
         }),
       },
     },
-    routes: { list: { useInfiniteQuery: () => emptyQuery } },
+    routes: {
+      list: {
+        useInfiniteQuery: (input: unknown) => {
+          mocks.routeQuery(input);
+          return { ...emptyQuery, isError: mocks.routeError };
+        },
+      },
+    },
     social: { searchUsers: { useInfiniteQuery: () => emptyQuery } },
     trainingPlans: { listTemplates: { useInfiniteQuery: () => emptyQuery } },
   },
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  mocks.navigate.mockClear();
+  mocks.routeQuery.mockClear();
+  mocks.routeError = false;
+});
 
 describe("DiscoveryExplorer", () => {
   it("renders discovered activity plans with their timeline and opens detail", () => {
@@ -135,5 +147,66 @@ describe("DiscoveryExplorer", () => {
     expect(screen.getByRole("link", { name: "View group" }).getAttribute("href")).toBe(
       "/groups/group-1",
     );
+  });
+
+  it("commits a public discovery query once on apply", () => {
+    render(<DiscoveryExplorer />);
+
+    fireEvent.change(screen.getByLabelText("Search activity plans"), {
+      target: { value: "tempo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+
+    expect(mocks.navigate).toHaveBeenCalledTimes(1);
+    expect(mocks.navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ search: { q: "tempo", scope: "activityPlans" } }),
+    );
+  });
+
+  it("keeps invalid route-distance drafts out of the applied query and clears bounds", () => {
+    render(<DiscoveryExplorer initialScope="routes" />);
+    mocks.navigate.mockClear();
+    mocks.routeQuery.mockClear();
+
+    fireEvent.change(screen.getByLabelText("Minimum distance (km)"), {
+      target: { value: "not-a-number" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+
+    expect(screen.getByRole("alert").textContent).toContain("Minimum distance");
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(mocks.routeQuery).toHaveBeenLastCalledWith(
+      expect.objectContaining({ min_distance_m: undefined, max_distance_m: undefined }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(mocks.navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ search: { scope: "routes" } }),
+    );
+  });
+
+  it("resynchronizes clean controls from route props", () => {
+    const view = render(<DiscoveryExplorer initialQuery="first" initialScope="routes" />);
+    view.rerender(
+      <DiscoveryExplorer
+        initialMaxDistanceKm="20"
+        initialMinDistanceKm="10"
+        initialQuery="second"
+        initialScope="routes"
+      />,
+    );
+
+    expect((screen.getByLabelText("Search routes") as HTMLInputElement).value).toBe("second");
+    expect((screen.getByLabelText("Minimum distance (km)") as HTMLInputElement).value).toBe("10");
+  });
+
+  it("keeps an unapplied discovery draft when route loading fails and is retried", () => {
+    mocks.routeError = true;
+    render(<DiscoveryExplorer initialScope="routes" />);
+    fireEvent.change(screen.getByLabelText("Search routes"), { target: { value: "ridge" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry routes" }));
+
+    expect((screen.getByLabelText("Search routes") as HTMLInputElement).value).toBe("ridge");
   });
 });

@@ -3,6 +3,22 @@ import { describe, expect, it } from "vitest";
 import { deriveTrainingPlanScheduleVisual } from "../training-plan-schedule-visual";
 
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
+const plan_preferences = {
+  weekly_session_count: null,
+  target_weekly_duration_minutes: null,
+  maximum_session_duration_minutes: null,
+  preferred_weekdays: [],
+  rest_days: [],
+  progression_style: null,
+  recovery_priority: null,
+};
+const demand = {
+  activity_category: "run",
+  training_intent: "aerobic_base",
+  target_duration_minutes: null,
+  target_common_load: null,
+  importance: "normal",
+};
 
 describe("training plan schedule visual", () => {
   it("derives weekly session distribution and only authored goal markers", () => {
@@ -11,13 +27,14 @@ describe("training plan schedule visual", () => {
         version: 1,
         activity_category: ["run", "strength"],
         durationWeeks: { recommended: 3 },
+        plan_preferences,
         goal_blueprints: [
           { title: "Race day", priority: 10, activity_category: "run", target_offset_days: 15 },
         ],
         sessions: [
-          { offset_days: 0, activity_plan_id: id(1), activity_plan_variant_id: id(1) },
-          { offset_days: 2, activity_plan_id: id(2), activity_plan_variant_id: id(2) },
-          { offset_days: 8, activity_plan_id: id(3), activity_plan_variant_id: id(3) },
+          { id: id(101), offset_days: 0, activity_plan_id: id(1), demand },
+          { id: id(102), offset_days: 2, activity_plan_id: id(2), demand },
+          { id: id(103), offset_days: 8, activity_plan_id: id(3), demand },
         ],
       },
     });
@@ -67,7 +84,8 @@ describe("training plan schedule visual", () => {
       structure: {
         version: 1,
         activity_category: ["bike"],
-        sessions: [{ offset_days: 0, activity_plan_id: id(4), activity_plan_variant_id: id(4) }],
+        plan_preferences,
+        sessions: [{ id: id(104), offset_days: 0, activity_plan_id: id(4), demand }],
       },
     });
 
@@ -89,13 +107,8 @@ describe("training plan schedule visual", () => {
       deriveTrainingPlanScheduleVisual({
         structure: {
           version: 1,
-          sessions: [
-            {
-              offset_days: 104 * 7,
-              activity_plan_id: id(5),
-              activity_plan_variant_id: id(5),
-            },
-          ],
+          plan_preferences,
+          sessions: [{ id: id(105), offset_days: 104 * 7, activity_plan_id: id(5), demand }],
         },
       }),
     ).toBeNull();

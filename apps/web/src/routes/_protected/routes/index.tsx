@@ -22,6 +22,10 @@ const ownerScopes: RouteOwnerScope[] = ["own", "public", "system", "all"];
 export function validateRouteLibrarySearch(search: Record<string, unknown>) {
   const page = Number(search.page);
   const maxPage = Math.floor(MAX_ROUTE_LIST_OFFSET / PAGE_SIZE) + 1;
+  const minDistanceKm = parseOptionalNonnegativeNumber(search.minDistanceKm);
+  const maxDistanceKm = parseOptionalNonnegativeNumber(search.maxDistanceKm);
+  const minAscentM = parseOptionalNonnegativeNumber(search.minAscentM);
+  const maxAscentM = parseOptionalNonnegativeNumber(search.maxAscentM);
   return {
     search: typeof search.search === "string" ? search.search : "",
     ownerScope: ownerScopes.includes(search.ownerScope as RouteOwnerScope)
@@ -30,10 +34,18 @@ export function validateRouteLibrarySearch(search: Record<string, unknown>) {
     sort: routeSortValues.includes(search.sort as RouteSort)
       ? (search.sort as RouteSort)
       : "newest",
-    minDistanceKm: parseOptionalNonnegativeNumber(search.minDistanceKm),
-    maxDistanceKm: parseOptionalNonnegativeNumber(search.maxDistanceKm),
-    minAscentM: parseOptionalNonnegativeNumber(search.minAscentM),
-    maxAscentM: parseOptionalNonnegativeNumber(search.maxAscentM),
+    minDistanceKm:
+      minDistanceKm && maxDistanceKm && Number(minDistanceKm) > Number(maxDistanceKm)
+        ? ""
+        : minDistanceKm,
+    maxDistanceKm:
+      minDistanceKm && maxDistanceKm && Number(minDistanceKm) > Number(maxDistanceKm)
+        ? ""
+        : maxDistanceKm,
+    minAscentM:
+      minAscentM && maxAscentM && Number(minAscentM) > Number(maxAscentM) ? "" : minAscentM,
+    maxAscentM:
+      minAscentM && maxAscentM && Number(minAscentM) > Number(maxAscentM) ? "" : maxAscentM,
     page: Number.isInteger(page) && page > 0 && page <= maxPage ? page : 1,
   };
 }

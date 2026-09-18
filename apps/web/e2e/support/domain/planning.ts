@@ -1,3 +1,5 @@
+import { comments, events, plannedSessions, trainingPlans } from "@repo/db/schema";
+import { and, eq, inArray, or } from "drizzle-orm";
 import type { E2ECleanupRegistry } from "../cleanup";
 import type { LocalE2EDatabase } from "../database";
 import type { E2EExecutionIdentity } from "../identity";
@@ -24,13 +26,18 @@ export class CalendarFixtureBuilder {
     const name = input.title ?? this.identity.name(`Playwright ${label}`);
     const date = input.date ?? this.identity.calendarDate(label);
     const actor = await this.database.requireActorByEmail(input.actorEmail);
-    await this.database.query(
-      `insert into "events" (
-         "id", "profile_id", "event_type", "status", "title", "all_day", "timezone",
-         "starts_at", "ends_at", "scheduled_date"
-       ) values ($1, $2, 'custom', 'scheduled', $3, false, 'UTC', $4::timestamptz, $5::timestamptz, $6)`,
-      [id, actor.profileId, name, utcDateTime(date), utcDateTime(date, "10:00:00"), date],
-    );
+    await this.database.db.insert(events).values({
+      id,
+      profile_id: actor.profileId,
+      event_type: "custom",
+      status: "scheduled",
+      title: name,
+      all_day: false,
+      timezone: "UTC",
+      starts_at: new Date(utcDateTime(date)),
+      ends_at: new Date(utcDateTime(date, "10:00:00")),
+      scheduled_date: date,
+    });
     this.registerEvent(id, actor.profileId);
     return { date, id, name, url: `/calendar/events/${id}` };
   }
@@ -40,17 +47,29 @@ export class CalendarFixtureBuilder {
       kind: "calendar-event",
       id,
       cleanup: async (database) => {
-        await database.transaction(async (query) => {
-          await query.query(
-            `delete from "comments" where "entity_type" = 'event' and "entity_id" in
-              (select "id" from "events" where "id" = $1 or "series_id" = $1)`,
-            [id],
-          );
-          await query.query(
-            `delete from "events" where ("id" = $1 or "series_id" = $1)
-              and ($2::uuid is null or "profile_id" = $2)`,
-            [id, profileId ?? null],
-          );
+        await database.typedTransaction(async (transaction) => {
+          const matchingEvents = await transaction
+            .select({ id: events.id })
+            .from(events)
+            .where(or(eq(events.id, id), eq(events.series_id, id)));
+          if (matchingEvents.length)
+            await transaction.delete(comments).where(
+              and(
+                eq(comments.entity_type, "event"),
+                inArray(
+                  comments.entity_id,
+                  matchingEvents.map((event) => event.id),
+                ),
+              ),
+            );
+          await transaction
+            .delete(events)
+            .where(
+              and(
+                or(eq(events.id, id), eq(events.series_id, id)),
+                ...(profileId ? [eq(events.profile_id, profileId)] : []),
+              ),
+            );
         });
       },
     });
@@ -86,20 +105,16 @@ export class TrainingPlanFixtureBuilder {
         },
       ],
     };
-    await this.database.query(
-      `insert into "training_plans" (
-         "id", "profile_id", "name", "description", "structure", "structure_hash",
-         "content_visibility", "is_system_template"
-       ) values ($1, $2, $3, 'Exact-ID browser fixture.', $4::jsonb, $5, $6, false)`,
-      [
-        id,
-        actor.profileId,
-        name,
-        JSON.stringify(structure),
-        fixtureStructureHash(structure),
-        input.visibility ?? "private",
-      ],
-    );
+    await this.database.db.insert(trainingPlans).values({
+      id,
+      profile_id: actor.profileId,
+      name,
+      description: "Exact-ID browser fixture.",
+      structure,
+      structure_hash: fixtureStructureHash(structure),
+      content_visibility: input.visibility ?? "private",
+      is_system_template: false,
+    });
     this.register(id, actor.profileId);
     return { id, name, url: `/training-plans/${id}` };
   }
@@ -109,16 +124,24 @@ export class TrainingPlanFixtureBuilder {
       kind: "training-plan",
       id,
       cleanup: async (database) => {
-        await database.transaction(async (query) => {
-          await query.query(
-            'delete from "events" where "training_plan_id" = $1 and "profile_id" = $2',
-            [id, profileId],
-          );
-          await query.query(
-            `delete from "training_plans"
-             where "id" = $1 and "profile_id" = $2 and "is_system_template" = false`,
-            [id, profileId],
-          );
+        await database.typedTransaction(async (transaction) => {
+          await transaction
+            .delete(plannedSessions)
+            .where(
+              and(
+                eq(plannedSessions.training_plan_id, id),
+                eq(plannedSessions.profile_id, profileId),
+              ),
+            );
+          await transaction
+            .delete(trainingPlans)
+            .where(
+              and(
+                eq(trainingPlans.id, id),
+                eq(trainingPlans.profile_id, profileId),
+                eq(trainingPlans.is_system_template, false),
+              ),
+            );
         });
       },
     });

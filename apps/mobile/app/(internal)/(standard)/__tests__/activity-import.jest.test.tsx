@@ -1,4 +1,5 @@
 import React, { act } from "react";
+import { Alert } from "react-native";
 
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
@@ -10,6 +11,13 @@ const getSignedUrlMock = jest.fn();
 const processActivityFileMock = jest.fn();
 const uploadToSignedUrlMock = jest.fn();
 const getDocumentAsyncMock = jest.fn();
+const useDirtyNavigationGuardMock = jest.fn();
+const preventRemoveMock = jest.fn();
+const dispatchMock = jest.fn();
+jest.mock("expo-router", () => ({ useNavigation: () => ({ dispatch: dispatchMock }) }));
+jest.mock("expo-router/react-navigation", () => ({
+  usePreventRemove: (...args: unknown[]) => preventRemoveMock(...args),
+}));
 
 const defaultPickedFitFile = {
   name: "morning-ride.fit",
@@ -65,6 +73,22 @@ jest.mock("expo-document-picker", () => ({
 jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
   useAppNavigate: () => pushMock,
+}));
+
+jest.mock("@/lib/hooks/useDirtyNavigationGuard", () => ({
+  __esModule: true,
+  useDirtyNavigationGuard: (
+    options: Parameters<
+      typeof import("@/lib/hooks/useDirtyNavigationGuard").useDirtyNavigationGuard
+    >[0],
+  ) => {
+    useDirtyNavigationGuardMock(options);
+    return jest
+      .requireActual<typeof import("@/lib/hooks/useDirtyNavigationGuard")>(
+        "@/lib/hooks/useDirtyNavigationGuard",
+      )
+      .useDirtyNavigationGuard(options);
+  },
 }));
 
 jest.mock("@/lib/services/fit/ActivityFileUploader", () => ({
@@ -303,6 +327,59 @@ describe("activity import screen", () => {
 
     expect(screen.getByText("morning-ride.fit")).toBeTruthy();
     expect(screen.queryByTestId("activity-import-name-input")).toBeNull();
+  });
+
+  it("keeps notes when the selected file is explicitly cleared and guards the dirty draft", async () => {
+    await renderNative(<ActivityImportScreen />);
+    await chooseFile();
+    await fireEvent.changeText(screen.getByTestId("activity-import-notes-input"), "Keep notes");
+
+    await fireEvent.press(screen.getByTestId("activity-import-file-input-clear"));
+
+    expect(screen.queryByText("morning-ride.fit")).toBeNull();
+    expect(screen.getByTestId("activity-import-notes-input").props.value).toBe("Keep notes");
+    await waitFor(() =>
+      expect(useDirtyNavigationGuardMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ isDirty: true, isPending: false }),
+      ),
+    );
+  });
+
+  it("clears optional notes before import and sends the existing unset transport value", async () => {
+    await renderNative(<ActivityImportScreen />);
+    await chooseFile();
+    await fireEvent.changeText(
+      screen.getByTestId("activity-import-notes-input"),
+      "Temporary notes",
+    );
+    await fireEvent.changeText(screen.getByTestId("activity-import-notes-input"), "");
+    await fireEvent.press(screen.getByTestId("activity-import-submit-button"));
+    await waitFor(() =>
+      expect(processActivityFileMock).toHaveBeenCalledWith(
+        expect.objectContaining({ notes: undefined }),
+      ),
+    );
+  });
+
+  it("runs the actual owner navigation guard and keeps import notes after canceled discard", async () => {
+    dispatchMock.mockClear();
+    await renderNative(<ActivityImportScreen />);
+    await chooseFile();
+    await fireEvent.changeText(
+      screen.getByTestId("activity-import-notes-input"),
+      "Keep import notes",
+    );
+    const [enabled, remove] = preventRemoveMock.mock.calls.at(-1) ?? [];
+    expect(enabled).toBe(true);
+    await act(() => remove({ data: { action: { type: "GO_BACK" } } }));
+    const buttons = jest.mocked(Alert.alert).mock.calls.at(-1)?.[2];
+    expect(buttons?.find((button) => button.text === "Keep editing")).toBeTruthy();
+    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(screen.getByTestId("activity-import-notes-input").props.value).toBe("Keep import notes");
+    expect(screen.getByText("morning-ride.fit")).toBeTruthy();
+    await act(() => buttons?.find((button) => button.text === "Discard")?.onPress?.());
+    expect(dispatchMock).toHaveBeenCalledWith({ type: "GO_BACK" });
+    expect(getSignedUrlMock).not.toHaveBeenCalled();
   });
 
   it("updates the hidden derived persistence name when replacing a file", async () => {

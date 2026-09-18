@@ -1,32 +1,34 @@
 import { createHash } from "node:crypto";
 import type { TestInfo } from "@playwright/test";
-import { activityPlanStructureSchema, defaultAthletePreferenceProfile } from "@repo/core";
-import { currentE2EActor } from "../support/actors";
+import {
+  activityPlanStructureSchema,
+  canonicalTrainingPlanStructureSchema,
+  persistedTrainingPlanStructureSchema,
+} from "@repo/core";
+import { activityPlans, profileAthleteState, profiles, trainingPlans } from "@repo/db/schema";
+import { eq } from "drizzle-orm";
+import type { AuthenticatedE2EActor } from "../support/actors";
 import { currentE2ECleanupRegistry } from "../support/cleanup";
-import { type E2EQuery, LocalE2EDatabase } from "../support/database";
+import { LocalE2EDatabase } from "../support/database";
 import { createE2EExecutionIdentity } from "../support/identity";
 import { registerTrainingPlanCleanup } from "./cleanup";
 
-type TrainingPlanFixture = {
-  ownedName: string;
-  templateName: string;
-};
+type TrainingPlanNames = { ownedName: string; templateName: string };
+type TrainingPlanFixture = TrainingPlanNames & { ownedId: string };
 
 function canonicalJson(value: unknown): string {
-  if (value === null || typeof value === "boolean" || typeof value === "string") {
+  if (value === null || typeof value === "boolean" || typeof value === "string")
     return JSON.stringify(value);
-  }
   if (typeof value === "number") {
     if (!Number.isFinite(value)) throw new Error("Fixture contains a non-finite number.");
     return JSON.stringify(value);
   }
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value as Record<string, unknown>)
+  if (value && typeof value === "object")
+    return `{${Object.entries(value)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalJson(nested)}`)
       .join(",")}}`;
-  }
   throw new Error(`Fixture contains unsupported ${typeof value}.`);
 }
 
@@ -34,7 +36,7 @@ function structureHash(structure: unknown) {
   return `v1:sha256:${createHash("sha256").update(canonicalJson(structure)).digest("hex")}`;
 }
 
-function fixtureNames(testInfo: TestInfo): TrainingPlanFixture {
+function fixtureNames(testInfo: TestInfo): TrainingPlanNames {
   const identity = createE2EExecutionIdentity(testInfo);
   return {
     ownedName: identity.name("Playwright Training Plan"),
@@ -42,222 +44,272 @@ function fixtureNames(testInfo: TestInfo): TrainingPlanFixture {
   };
 }
 
-async function actorProfileId(client: E2EQuery) {
-  void client;
-  return currentE2EActor("athlete").profileId;
-}
-
-function actorActivityPlanId() {
-  const id = currentE2EActor("athlete").activityPlanId;
+function actorActivityPlanId(actor: AuthenticatedE2EActor) {
+  const id = actor.activityPlanId;
   if (!id) throw new Error("The isolated athlete activity plan was not provisioned.");
   return id;
 }
 
-async function normalizeSeededActivityPlanHash(client: E2EQuery) {
-  const result = await client.query<{
-    content_visibility: string;
-    structure: unknown;
-    structure_hash: string;
-  }>(
-    `select "structure", "structure_hash", "content_visibility"
-     from "activity_plans" where "id" = $1 limit 1`,
-    [actorActivityPlanId()],
-  );
-  const original = result.rows[0];
-  const parsed = activityPlanStructureSchema.safeParse(result.rows[0]?.structure);
-  if (!parsed.success || !original) {
+async function normalizeSeededActivityPlanHash(database: LocalE2EDatabase, activityPlanId: string) {
+  const [original] = await database.db
+    .select({
+      contentVisibility: activityPlans.content_visibility,
+      structure: activityPlans.structure,
+      structureHash: activityPlans.structure_hash,
+    })
+    .from(activityPlans)
+    .where(eq(activityPlans.id, activityPlanId))
+    .limit(1);
+  const parsed = activityPlanStructureSchema.safeParse(original?.structure);
+  if (!parsed.success || !original)
     throw new Error(
       "The local training-plan activity fixture is not a current activity-plan structure.",
     );
-  }
-  await client.query(
-    `update "activity_plans"
-     set "structure_hash" = $2, "content_visibility" = 'public'
-     where "id" = $1`,
-    [actorActivityPlanId(), structureHash(parsed.data)],
+  await database.typedTransaction((transaction) =>
+    transaction
+      .update(activityPlans)
+      .set({ structure_hash: structureHash(parsed.data), content_visibility: "public" })
+      .where(eq(activityPlans.id, activityPlanId)),
   );
   return original;
 }
 
-export async function prepareTrainingPlanPrerequisites() {
-  const pool = new LocalE2EDatabase();
-  const client = await pool.connect();
-  let original: Awaited<ReturnType<typeof normalizeSeededActivityPlanHash>> | undefined;
-  const activityPlanId = actorActivityPlanId();
-  let profileId: string | undefined;
+export async function prepareTrainingPlanPrerequisites(actor: AuthenticatedE2EActor) {
+  const database = new LocalE2EDatabase();
+  const activityPlanId = actorActivityPlanId(actor);
+  let originalActivityPlan: Awaited<ReturnType<typeof normalizeSeededActivityPlanHash>> | undefined;
   let planningTimezone: string | null | undefined;
-  let originalSettings: { settings: unknown; updated_at: string | Date } | undefined;
+  let athleteState: typeof profileAthleteState.$inferSelect | undefined;
   try {
-    original = await normalizeSeededActivityPlanHash(client);
-    profileId = await actorProfileId(client);
-    const profile = await client.query<{ planning_timezone: string | null }>(
-      'select "planning_timezone" from "profiles" where "id" = $1 limit 1',
-      [profileId],
-    );
-    planningTimezone = profile.rows[0]?.planning_timezone;
-    originalSettings = (
-      await client.query<{ settings: unknown; updated_at: string | Date }>(
-        'select "settings", "updated_at" from "profile_training_settings" where "profile_id" = $1',
-        [profileId],
-      )
-    ).rows[0];
-    await client.query(
-      `insert into "profile_training_settings" ("profile_id", "settings", "updated_at")
-       values ($1, $2::jsonb, now())
-       on conflict ("profile_id") do update
-       set "settings" = excluded."settings", "updated_at" = excluded."updated_at"`,
-      [profileId, JSON.stringify(defaultAthletePreferenceProfile)],
-    );
-    await client.query(
-      `insert into "profile_athlete_state" (
-         "profile_id", "source_revision", "published_revision", "fitness", "fatigue",
-         "evidence_confidence", "computed_at", "updated_at"
-       ) values ($1, 1, 1, 0, 0, 0, now(), now())
-       on conflict ("profile_id") do update set
-         "source_revision" = 1, "published_revision" = 1, "dirty_from_at" = null,
-         "fitness" = 0, "fatigue" = 0, "evidence_confidence" = 0,
-         "computed_at" = now(), "updated_at" = now()`,
-      [profileId],
-    );
-    await client.query('update "profiles" set "planning_timezone" = $2 where "id" = $1', [
-      profileId,
-      "UTC",
+    originalActivityPlan = await normalizeSeededActivityPlanHash(database, activityPlanId);
+    const [[profile], [existingAthleteState]] = await Promise.all([
+      database.db
+        .select({ planningTimezone: profiles.planning_timezone })
+        .from(profiles)
+        .where(eq(profiles.id, actor.profileId))
+        .limit(1),
+      database.db
+        .select()
+        .from(profileAthleteState)
+        .where(eq(profileAthleteState.profile_id, actor.profileId))
+        .limit(1),
     ]);
-  } finally {
-    client.release();
-    await pool.close();
+    planningTimezone = profile?.planningTimezone;
+    athleteState = existingAthleteState;
+    const now = new Date();
+    await database.typedTransaction(async (transaction) => {
+      await transaction
+        .insert(profileAthleteState)
+        .values({
+          profile_id: actor.profileId,
+          source_revision: 1,
+          published_revision: 1,
+          fitness: 0,
+          fatigue: 0,
+          evidence_confidence: 0,
+          computed_at: now,
+          updated_at: now,
+        })
+        .onConflictDoUpdate({
+          target: profileAthleteState.profile_id,
+          set: {
+            source_revision: 1,
+            published_revision: 1,
+            dirty_from_at: null,
+            fitness: 0,
+            fatigue: 0,
+            evidence_confidence: 0,
+            computed_at: now,
+            updated_at: now,
+          },
+        });
+      await transaction
+        .update(profiles)
+        .set({ planning_timezone: "UTC" })
+        .where(eq(profiles.id, actor.profileId));
+    });
+  } catch (error) {
+    await database.close();
+    throw error;
   }
   return async () => {
-    const restorePool = new LocalE2EDatabase();
     try {
-      await restorePool.query(
-        `update "activity_plans"
-         set "structure_hash" = $2, "content_visibility" = $3
-         where "id" = $1`,
-        [activityPlanId, original.structure_hash, original.content_visibility],
-      );
-      await restorePool.query('update "profiles" set "planning_timezone" = $2 where "id" = $1', [
-        profileId,
-        planningTimezone,
-      ]);
-      if (originalSettings) {
-        await restorePool.query(
-          `insert into "profile_training_settings" ("profile_id", "settings", "updated_at")
-           values ($1, $2::jsonb, $3)
-           on conflict ("profile_id") do update
-           set "settings" = excluded."settings", "updated_at" = excluded."updated_at"`,
-          [profileId, JSON.stringify(originalSettings.settings), originalSettings.updated_at],
-        );
-      } else {
-        await restorePool.query('delete from "profile_training_settings" where "profile_id" = $1', [
-          profileId,
-        ]);
-      }
-      await restorePool.query('delete from "profile_athlete_state" where "profile_id" = $1', [
-        profileId,
-      ]);
+      await database.typedTransaction(async (transaction) => {
+        if (originalActivityPlan)
+          await transaction
+            .update(activityPlans)
+            .set({
+              structure_hash: originalActivityPlan.structureHash,
+              content_visibility: originalActivityPlan.contentVisibility,
+            })
+            .where(eq(activityPlans.id, activityPlanId));
+        if (planningTimezone !== undefined)
+          await transaction
+            .update(profiles)
+            .set({ planning_timezone: planningTimezone })
+            .where(eq(profiles.id, actor.profileId));
+        await transaction
+          .delete(profileAthleteState)
+          .where(eq(profileAthleteState.profile_id, actor.profileId));
+        if (athleteState) await transaction.insert(profileAthleteState).values(athleteState);
+      });
     } finally {
-      await restorePool.close();
+      await database.close();
     }
   };
 }
 
 export async function withTrainingPlanLibraryFixture(
   testInfo: TestInfo,
+  actor: AuthenticatedE2EActor,
   run: (fixture: TrainingPlanFixture) => Promise<void>,
 ) {
   const identity = createE2EExecutionIdentity(testInfo);
   const names = fixtureNames(testInfo);
-  const pool = new LocalE2EDatabase();
-  const client = await pool.connect();
+  const database = new LocalE2EDatabase();
+  const activityPlanId = actorActivityPlanId(actor);
   let originalActivityPlan: Awaited<ReturnType<typeof normalizeSeededActivityPlanHash>> | undefined;
-  let profileId: string | undefined;
   let planningTimezone: string | null | undefined;
   try {
-    profileId = await actorProfileId(client);
-    const profile = await client.query<{ planning_timezone: string | null }>(
-      'select "planning_timezone" from "profiles" where "id" = $1 limit 1',
-      [profileId],
-    );
-    planningTimezone = profile.rows[0]?.planning_timezone;
-    await client.query('update "profiles" set "planning_timezone" = $2 where "id" = $1', [
-      profileId,
-      "UTC",
-    ]);
-    originalActivityPlan = await normalizeSeededActivityPlanHash(client);
+    const [profile] = await database.db
+      .select({ planningTimezone: profiles.planning_timezone })
+      .from(profiles)
+      .where(eq(profiles.id, actor.profileId))
+      .limit(1);
+    planningTimezone = profile?.planningTimezone;
+    originalActivityPlan = await normalizeSeededActivityPlanHash(database, activityPlanId);
     const structureBase = {
       version: 1,
+      plan_preferences: {
+        weekly_session_count: 3,
+        target_weekly_duration_minutes: 180,
+        maximum_session_duration_minutes: 90,
+        preferred_weekdays: [1, 3, 6],
+        rest_days: [0],
+        progression_style: "balanced",
+        recovery_priority: "balanced",
+      },
       sessions: [
         {
-          activity_plan_id: actorActivityPlanId(),
+          id: identity.uuid("training-plan-session"),
+          activity_plan_id: activityPlanId,
           offset_days: 0,
+          demand: {
+            activity_category: "bike",
+            training_intent: "general_maintenance",
+            target_duration_minutes: null,
+            target_common_load: null,
+            importance: "normal",
+          },
           event_overrides: { title: "Playwright tempo" },
         },
       ],
     };
     const ownedId = identity.uuid("training-plan-owned");
     const templateId = identity.uuid("training-plan-template");
-    const ownedStructure = { id: ownedId, ...structureBase };
-    const templateStructure = { id: templateId, ...structureBase };
-    const inserted = await client.query<{
-      id: string;
-      is_system_template: boolean;
-      profile_id: string | null;
-    }>(
-      `insert into "training_plans" (
-        "id", "profile_id", "name", "description", "structure", "structure_hash",
-        "content_visibility", "is_system_template", "system_content_key",
-        "system_content_version", "system_content_hash"
-      ) values
-        ($4::uuid, $1, $2, 'Owned browser-library fixture', $6::jsonb, $7, 'private', false, null, null, null),
-        ($5::uuid, null, $3, 'System browser-library fixture', $8::jsonb, $9, 'public', true, $10, 1, $9)
-       returning "id", "profile_id", "is_system_template"`,
-      [
-        profileId,
-        names.ownedName,
-        names.templateName,
-        ownedId,
-        templateId,
-        JSON.stringify(ownedStructure),
-        structureHash(ownedStructure),
-        JSON.stringify(templateStructure),
-        structureHash(templateStructure),
-        `e2e:${names.templateName}`,
-      ],
-    );
+    const ownedStructure = {
+      id: ownedId,
+      ...canonicalTrainingPlanStructureSchema.parse(structureBase),
+    };
+    const templateStructure = {
+      id: templateId,
+      ...canonicalTrainingPlanStructureSchema.parse({
+        ...structureBase,
+        sessions: structureBase.sessions.map((session) => ({
+          ...session,
+          id: identity.uuid("training-plan-template-session"),
+        })),
+      }),
+    };
+    const inserted = await database.typedTransaction(async (transaction) => {
+      await transaction
+        .update(profiles)
+        .set({ planning_timezone: "UTC" })
+        .where(eq(profiles.id, actor.profileId));
+      return transaction
+        .insert(trainingPlans)
+        .values([
+          {
+            id: ownedId,
+            profile_id: actor.profileId,
+            name: names.ownedName,
+            description: "Owned browser-library fixture",
+            structure: ownedStructure,
+            structure_hash: structureHash(ownedStructure),
+            content_visibility: "private",
+            is_system_template: false,
+            system_content_key: null,
+            system_content_version: null,
+            system_content_hash: null,
+          },
+          {
+            id: templateId,
+            profile_id: null,
+            name: names.templateName,
+            description: "System browser-library fixture",
+            structure: templateStructure,
+            structure_hash: structureHash(templateStructure),
+            content_visibility: "public",
+            is_system_template: true,
+            system_content_key: `e2e:${names.templateName}`,
+            system_content_version: 1,
+            system_content_hash: structureHash(templateStructure),
+          },
+        ])
+        .returning({
+          id: trainingPlans.id,
+          isSystemTemplate: trainingPlans.is_system_template,
+          profileId: trainingPlans.profile_id,
+        });
+    });
     const registry = currentE2ECleanupRegistry();
-    for (const plan of inserted.rows) {
+    for (const plan of inserted)
       registerTrainingPlanCleanup(registry, {
         id: plan.id,
-        ownerProfileId: plan.profile_id,
-        scheduledByProfileId: profileId,
-        systemTemplate: plan.is_system_template,
+        ownerProfileId: plan.profileId,
+        scheduledByProfileId: actor.profileId,
+        systemTemplate: plan.isSystemTemplate,
       });
-    }
-    await run(names);
+    await run({ ...names, ownedId });
   } finally {
     try {
-      if (originalActivityPlan) {
-        await client.query(
-          `update "activity_plans"
-           set "structure_hash" = $2, "content_visibility" = $3
-           where "id" = $1`,
-          [
-            actorActivityPlanId(),
-            originalActivityPlan.structure_hash,
-            originalActivityPlan.content_visibility,
-          ],
-        );
-      }
-      if (profileId) {
-        await client.query('update "profiles" set "planning_timezone" = $2 where "id" = $1', [
-          profileId,
-          planningTimezone,
-        ]);
-      }
+      await database.typedTransaction(async (transaction) => {
+        if (originalActivityPlan)
+          await transaction
+            .update(activityPlans)
+            .set({
+              structure_hash: originalActivityPlan.structureHash,
+              content_visibility: originalActivityPlan.contentVisibility,
+            })
+            .where(eq(activityPlans.id, activityPlanId));
+        if (planningTimezone !== undefined)
+          await transaction
+            .update(profiles)
+            .set({ planning_timezone: planningTimezone })
+            .where(eq(profiles.id, actor.profileId));
+      });
     } finally {
-      client.release();
-      await pool.close();
+      await database.close();
     }
+  }
+}
+
+export async function expectPlanOwnedPreferences(planId: string) {
+  const database = new LocalE2EDatabase();
+  try {
+    const [plan] = await database.db
+      .select({ structure: trainingPlans.structure })
+      .from(trainingPlans)
+      .where(eq(trainingPlans.id, planId))
+      .limit(1);
+    const structure = persistedTrainingPlanStructureSchema.parse(plan?.structure);
+    if (
+      structure.plan_preferences.weekly_session_count !== 3 ||
+      structure.plan_preferences.target_weekly_duration_minutes !== 180 ||
+      structure.plan_preferences.maximum_session_duration_minutes !== 90
+    )
+      throw new Error("The seeded training plan did not retain its plan-owned preferences.");
+  } finally {
+    await database.close();
   }
 }

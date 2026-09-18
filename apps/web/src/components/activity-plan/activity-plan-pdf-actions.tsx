@@ -6,7 +6,7 @@ import {
 } from "@repo/core/activity-plan";
 import { Button } from "@repo/ui/components/button";
 import { Download, Printer, Share2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   downloadActivityPlanPdf,
@@ -17,16 +17,24 @@ import {
 export function ActivityPlanPdfActions({ model }: { model: ActivityPlanPrintModel }) {
   const [format, setFormat] = useState<ActivityPlanPrintFormat>(model.format);
   const [busy, setBusy] = useState(false);
-  const selectedModel = { ...model, format };
+  const pendingRef = useRef(false);
+  const [error, setError] = useState(false);
   const formats = getActivityPlanPrintFormats(model.activityCategory);
+  const selectedFormat = formats.includes(format) ? format : model.format;
+  const selectedModel = { ...model, format: selectedFormat };
 
   const run = async (operation: () => Promise<void>) => {
+    if (pendingRef.current) return;
+    pendingRef.current = true;
     setBusy(true);
+    setError(false);
     try {
       await operation();
     } catch {
+      setError(true);
       toast.error("The PDF could not be created");
     } finally {
+      pendingRef.current = false;
       setBusy(false);
     }
   };
@@ -37,10 +45,11 @@ export function ActivityPlanPdfActions({ model }: { model: ActivityPlanPrintMode
         PDF format
       </label>
       <select
+        disabled={busy}
         className="h-9 rounded-md border bg-background px-3 text-sm"
         id="activity-plan-pdf-format"
         onChange={(event) => setFormat(event.target.value as ActivityPlanPrintFormat)}
-        value={format}
+        value={selectedFormat}
       >
         {formats.map((candidate) => (
           <option key={candidate} value={candidate}>
@@ -80,6 +89,10 @@ export function ActivityPlanPdfActions({ model }: { model: ActivityPlanPrintMode
       >
         <Share2 className="mr-2 h-4 w-4" /> Share PDF
       </Button>
+      {busy ? <p role="status">Preparing PDF...</p> : null}
+      {error ? (
+        <p role="alert">The PDF could not be created. Your format is kept; try again.</p>
+      ) : null}
     </div>
   );
 }

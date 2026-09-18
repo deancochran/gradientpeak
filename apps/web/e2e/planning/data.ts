@@ -1,8 +1,20 @@
 import type { TestInfo } from "@playwright/test";
+import {
+  activities,
+  activityPlans,
+  activitySegments,
+  comments,
+  events,
+  plannedSessions,
+  profileGoals,
+  profiles,
+} from "@repo/db/schema";
+import { and, asc, eq, inArray, or } from "drizzle-orm";
 import { currentE2EActor } from "../support/actors";
 import { currentE2ECleanupRegistry } from "../support/cleanup";
-import { type E2EQuery, LocalE2EDatabase } from "../support/database";
+import { LocalE2EDatabase } from "../support/database";
 import { createE2EExecutionIdentity } from "../support/identity";
+import { createDirectPlannedSessionFixture } from "./planned-session";
 
 type PlanningFixture = {
   date: string;
@@ -47,26 +59,10 @@ function addDays(value: Date, days: number) {
   return next;
 }
 
-async function athleteProfileId(client: E2EQuery) {
-  void client;
-  return currentE2EActor("athlete").profileId;
-}
-
 function athleteActivityPlanId() {
   const id = currentE2EActor("athlete").activityPlanId;
   if (!id) throw new Error("The isolated athlete activity-plan fixture was not provisioned.");
   return id;
-}
-
-async function deletePlanningPerformanceEvidence(
-  client: E2EQuery,
-  profileId: string,
-  activityIds: readonly string[],
-) {
-  await client.query(
-    'delete from "activities" where "profile_id" = $1 and "id" = any($2::uuid[])',
-    [profileId, activityIds],
-  );
 }
 
 export async function withPlanningPathFixture(
@@ -74,7 +70,8 @@ export async function withPlanningPathFixture(
   run: (fixture: PlanningFixture) => Promise<void>,
 ) {
   const identity = createE2EExecutionIdentity(testInfo);
-  const eventId = identity.uuid("planning-event");
+  const actor = currentE2EActor("athlete");
+  const activityPlanId = athleteActivityPlanId();
   const performanceActivities = [0, 1].map((index) => {
     const completedAt = new Date(Date.now() - (30 + index) * 86_400_000);
     return {
@@ -90,286 +87,254 @@ export async function withPlanningPathFixture(
     Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
   );
   const weekStart = addDays(currentDate, -today.getUTCDay());
-  // Keep the seeded work in the server-resolved week and not in its past portion.
   const scheduled = addDays(weekStart, 6);
   const fixture = {
     date: dateKey(scheduled),
     endDate: dateKey(addDays(currentDate, 89)),
-    eventId,
+    eventId: "",
     startDate: dateKey(currentDate),
     title,
   };
-  const pool = new LocalE2EDatabase();
-  const client = await pool.connect();
-  let profileId: string | undefined;
+  const database = new LocalE2EDatabase();
   let planningTimezone: string | null | undefined;
-  let setupTransactionOpen = false;
   try {
-    profileId = await athleteProfileId(client);
-    const plan = await client.query('select "id" from "activity_plans" where "id" = $1 limit 1', [
-      athleteActivityPlanId(),
-    ]);
-    if (!plan.rows[0]) throw new Error("The canonical Area 8 activity-plan fixture is absent.");
-    planningTimezone = (
-      await client.query<{ planning_timezone: string | null }>(
-        'select "planning_timezone" from "profiles" where "id" = $1',
-        [profileId],
-      )
-    ).rows[0]?.planning_timezone;
-    await client.query("begin");
-    setupTransactionOpen = true;
-    await client.query('delete from "events" where "id" = $1 and "profile_id" = $2', [
-      eventId,
-      profileId,
-    ]);
-    await deletePlanningPerformanceEvidence(
-      client,
-      profileId,
-      performanceActivities.map(({ activityId }) => activityId),
-    );
-    await client.query('update "profiles" set "planning_timezone" = $2 where "id" = $1', [
-      profileId,
-      "UTC",
-    ]);
-    for (const [index, activity] of performanceActivities.entries()) {
-      await client.query(
-        `insert into "activities" (
-          "id", "profile_id", "name", "started_at", "finished_at", "elapsed_ms",
-          "active_ms", "moving_ms", "timing_coverage", "parser_version",
-          "decoded_contract_version", "materializer_version", "segments_generated_at"
-        ) values (
-          $1::uuid, $2::uuid, $3, $4::timestamptz, $5::timestamptz, 3600000,
-          3600000, 3600000, 'complete', 'e2e-planning-v1',
-          'e2e-planning-v1', 'e2e-planning-v1', $5::timestamptz
-        )`,
-        [
-          activity.activityId,
-          profileId,
-          `Playwright planning performance evidence ${index + 1}`,
-          activity.startedAt.toISOString(),
-          activity.completedAt.toISOString(),
-        ],
+    const [plan] = await database.db
+      .select({ id: activityPlans.id })
+      .from(activityPlans)
+      .where(eq(activityPlans.id, activityPlanId))
+      .limit(1);
+    if (!plan) throw new Error("The canonical Area 8 activity-plan fixture is absent.");
+    const [profile] = await database.db
+      .select({ planningTimezone: profiles.planning_timezone })
+      .from(profiles)
+      .where(eq(profiles.id, actor.profileId))
+      .limit(1);
+    planningTimezone = profile?.planningTimezone;
+    await database.typedTransaction(async (transaction) => {
+      await transaction.delete(activities).where(
+        and(
+          eq(activities.profile_id, actor.profileId),
+          inArray(
+            activities.id,
+            performanceActivities.map(({ activityId }) => activityId),
+          ),
+        ),
       );
-      await client.query(
-        `insert into "activity_segments" (
-          "id", "activity_id", "profile_id", "ordinal", "role", "activity_category",
-          "start_offset_ms", "end_offset_ms", "summary", "summary_version",
-          "timing_coverage", "active_ms", "moving_ms", "segment_revision",
-          "parser_version", "materializer_version"
-        ) values (
-          $1::uuid, $2::uuid, $3::uuid, 0, 'activity', 'bike',
-          0, 3600000, $4::jsonb, 1,
-          'complete', 3600000, 3600000, 1,
-          'e2e-planning-v1', 'e2e-planning-v1'
-        )`,
-        [
-          activity.segmentId,
-          activity.activityId,
-          profileId,
-          JSON.stringify({
+      await transaction
+        .update(profiles)
+        .set({ planning_timezone: "UTC" })
+        .where(eq(profiles.id, actor.profileId));
+      for (const [index, activity] of performanceActivities.entries()) {
+        await transaction.insert(activities).values({
+          id: activity.activityId,
+          profile_id: actor.profileId,
+          name: `Playwright planning performance evidence ${index + 1}`,
+          started_at: activity.startedAt,
+          finished_at: activity.completedAt,
+          elapsed_ms: 3_600_000,
+          active_ms: 3_600_000,
+          moving_ms: 3_600_000,
+          timing_coverage: "complete",
+          parser_version: "e2e-planning-v1",
+          decoded_contract_version: "e2e-planning-v1",
+          materializer_version: "e2e-planning-v1",
+          segments_generated_at: activity.completedAt,
+        });
+        await transaction.insert(activitySegments).values({
+          id: activity.segmentId,
+          activity_id: activity.activityId,
+          profile_id: actor.profileId,
+          ordinal: 0,
+          role: "activity",
+          activity_category: "bike",
+          start_offset_ms: 0,
+          end_offset_ms: 3_600_000,
+          summary: {
             version: 1,
             timing: { timingCoverage: "complete", activeMs: 3_600_000, movingMs: 3_600_000 },
-          }),
-        ],
-      );
-    }
-    const insertedEvent = await client.query<{ id: string }>(
-      `insert into "events" ("id", "profile_id", "event_type", "status", "title", "all_day", "timezone", "starts_at", "ends_at", "scheduled_date", "activity_plan_id")
-        values ($1, $2, 'planned', 'scheduled', $3, false, 'UTC', $4::timestamptz, $5::timestamptz, $6, $7)
-        returning "id"`,
-      [
-        eventId,
-        profileId,
-        title,
-        `${fixture.date}T12:00:00.000Z`,
-        `${fixture.date}T12:30:00.000Z`,
-        fixture.date,
-        athleteActivityPlanId(),
-      ],
-    );
-    const insertedEventId = insertedEvent.rows[0]?.id;
-    if (!insertedEventId) throw new Error("The Area 8 firm-event fixture was not created.");
-    if (insertedEventId !== fixture.eventId) {
-      throw new Error("The Area 8 firm-event fixture returned an unexpected ID.");
-    }
-    await client.query("commit");
-    setupTransactionOpen = false;
+          },
+          summary_version: 1,
+          timing_coverage: "complete",
+          active_ms: 3_600_000,
+          moving_ms: 3_600_000,
+          segment_revision: 1,
+          parser_version: "e2e-planning-v1",
+          materializer_version: "e2e-planning-v1",
+        });
+      }
+    });
+    fixture.eventId = await createDirectPlannedSessionFixture({
+      actor,
+      operationId: identity.suffix("planning-planned-session", 32),
+      planningDate: fixture.date,
+    });
     await run(fixture);
   } finally {
-    if (setupTransactionOpen) {
-      await client.query("rollback");
-      setupTransactionOpen = false;
-    }
     try {
-      if (profileId) {
-        await client.query('delete from "events" where "id" = $1 and "profile_id" = $2', [
-          eventId,
-          profileId,
-        ]);
-        await deletePlanningPerformanceEvidence(
-          client,
-          profileId,
-          performanceActivities.map(({ activityId }) => activityId),
+      await database.typedTransaction(async (transaction) => {
+        if (fixture.eventId)
+          await transaction
+            .delete(plannedSessions)
+            .where(
+              and(
+                eq(plannedSessions.id, fixture.eventId),
+                eq(plannedSessions.profile_id, actor.profileId),
+              ),
+            );
+        await transaction.delete(activities).where(
+          and(
+            eq(activities.profile_id, actor.profileId),
+            inArray(
+              activities.id,
+              performanceActivities.map(({ activityId }) => activityId),
+            ),
+          ),
         );
-        await client.query('update "profiles" set "planning_timezone" = $2 where "id" = $1', [
-          profileId,
-          planningTimezone,
-        ]);
-      }
+        if (planningTimezone !== undefined)
+          await transaction
+            .update(profiles)
+            .set({ planning_timezone: planningTimezone })
+            .where(eq(profiles.id, actor.profileId));
+      });
     } finally {
-      client.release();
-      await pool.close();
+      await database.close();
     }
   }
 }
 
-/**
- * Browser journeys register only IDs they receive from the product. Cleanup never
- * searches by title, so a failed or concurrent test cannot remove another row.
- */
+/** Browser journeys register only IDs they receive from the product. Cleanup never searches by title, so a failed or concurrent test cannot remove another row. */
 export async function withCalendarEventFixture(
   run: (fixture: CalendarEventFixture) => Promise<void>,
 ) {
-  const pool = new LocalE2EDatabase();
-  const client = await pool.connect();
-  let profileId: string;
-  try {
-    profileId = await athleteProfileId(client);
-  } finally {
-    client.release();
-  }
+  const database = new LocalE2EDatabase();
+  const profileId = currentE2EActor("athlete").profileId;
   const cleanup = currentE2ECleanupRegistry();
   try {
     await run({
-      rememberSeries: (anchorId) => {
+      rememberSeries: (anchorId) =>
         cleanup.registerExactId({
           kind: "calendar-event-series",
           id: anchorId,
-          cleanup: (database) =>
-            database.transaction(async (query) => {
-              await query.query(
-                `delete from "comments" where "entity_type" = 'event' and "entity_id" in
-                  (select "id" from "events" where "id" = $1 or "series_id" = $1)`,
-                [anchorId],
-              );
-              await query.query(
-                `delete from "events" where "profile_id" = $1 and ("id" = $2 or "series_id" = $2)`,
-                [profileId, anchorId],
-              );
+          cleanup: (cleanupDatabase) =>
+            cleanupDatabase.typedTransaction(async (transaction) => {
+              const matchingEvents = await transaction
+                .select({ id: events.id })
+                .from(events)
+                .where(
+                  and(
+                    eq(events.profile_id, profileId),
+                    or(eq(events.id, anchorId), eq(events.series_id, anchorId)),
+                  ),
+                );
+              if (matchingEvents.length)
+                await transaction.delete(comments).where(
+                  and(
+                    eq(comments.entity_type, "event"),
+                    inArray(
+                      comments.entity_id,
+                      matchingEvents.map((event) => event.id),
+                    ),
+                  ),
+                );
+              await transaction
+                .delete(events)
+                .where(
+                  and(
+                    eq(events.profile_id, profileId),
+                    or(eq(events.id, anchorId), eq(events.series_id, anchorId)),
+                  ),
+                );
             }),
-        });
-      },
+        }),
       getSeries: async (anchorId) => {
-        const result = await pool.query<{
-          id: string;
-          scheduled_date: string;
-          series_id: string | null;
-          notes: string | null;
-          title: string;
-        }>(
-          `select "id", "scheduled_date", "series_id", "notes", "title"
-           from "events"
-           where "profile_id" = $1 and ("id" = $2 or "series_id" = $2)
-           order by "starts_at", "id"`,
-          [profileId, anchorId],
-        );
-        return result.rows.map((row) => {
+        const rows = await database.db
+          .select({
+            id: events.id,
+            scheduledDate: events.scheduled_date,
+            seriesId: events.series_id,
+            notes: events.notes,
+            title: events.title,
+          })
+          .from(events)
+          .where(
+            and(
+              eq(events.profile_id, profileId),
+              or(eq(events.id, anchorId), eq(events.series_id, anchorId)),
+            ),
+          )
+          .orderBy(asc(events.starts_at), asc(events.id));
+        for (const row of rows)
           cleanup.registerExactId({
             kind: "calendar-event",
             id: row.id,
-            cleanup: (database) =>
-              database
-                .query('delete from "events" where "profile_id" = $1 and "id" = $2', [
-                  profileId,
-                  row.id,
-                ])
+            cleanup: (cleanupDatabase) =>
+              cleanupDatabase.db
+                .delete(events)
+                .where(and(eq(events.profile_id, profileId), eq(events.id, row.id)))
                 .then(() => undefined),
           });
-          return {
-            id: row.id,
-            notes: row.notes,
-            scheduledDate: row.scheduled_date,
-            seriesId: row.series_id,
-            title: row.title,
-          };
-        });
+        return rows;
       },
     });
   } finally {
-    await pool.close();
+    await database.close();
   }
 }
 
 /** Browser-created goal IDs and exact unique titles are registered before inspection. */
 export async function withGoalFixture(run: (fixture: GoalFixture) => Promise<void>) {
-  const pool = new LocalE2EDatabase();
-  const client = await pool.connect();
-  let profileId: string | undefined;
+  const database = new LocalE2EDatabase();
+  const profileId = currentE2EActor("athlete").profileId;
   const goalIds = new Set<string>();
   const goalTitles = new Set<string>();
   const cleanup = currentE2ECleanupRegistry();
   const rememberGoal = (id: string) => {
-    if (!profileId) throw new Error("The goal cleanup owner is unavailable.");
     goalIds.add(id);
     cleanup.registerExactId({
       kind: "profile-goal",
       id,
-      cleanup: (database) =>
-        database
-          .query('delete from "profile_goals" where "profile_id" = $1 and "id" = $2', [
-            profileId,
-            id,
-          ])
+      cleanup: (cleanupDatabase) =>
+        cleanupDatabase.db
+          .delete(profileGoals)
+          .where(and(eq(profileGoals.profile_id, profileId), eq(profileGoals.id, id)))
           .then(() => undefined),
     });
   };
   try {
-    profileId = await athleteProfileId(client);
     await run({
       rememberGoal,
       rememberGoalTitle: (title) => goalTitles.add(title),
       getGoal: async (id) => {
-        if (!profileId || !goalIds.has(id))
-          throw new Error("Only registered local goal IDs may be read.");
-        const result = await client.query<{
-          activity_category: string;
-          priority: number;
-          target_date: Date | string;
-          target_payload: unknown;
-          title: string;
-        }>(
-          `select "activity_category", "priority", "target_date", "target_payload", "title"
-           from "profile_goals" where "id" = $1 and "profile_id" = $2`,
-          [id, profileId],
-        );
-        const row = result.rows[0];
-        return row
-          ? {
-              activityCategory: row.activity_category,
-              priority: row.priority,
-              targetDate:
-                row.target_date instanceof Date
-                  ? dateKey(row.target_date)
-                  : row.target_date.slice(0, 10),
-              targetPayload: row.target_payload,
-              title: row.title,
-            }
-          : null;
+        if (!goalIds.has(id)) throw new Error("Only registered local goal IDs may be read.");
+        const [goal] = await database.db
+          .select({
+            activityCategory: profileGoals.activity_category,
+            priority: profileGoals.priority,
+            targetDate: profileGoals.target_date,
+            targetPayload: profileGoals.target_payload,
+            title: profileGoals.title,
+          })
+          .from(profileGoals)
+          .where(and(eq(profileGoals.id, id), eq(profileGoals.profile_id, profileId)));
+        return goal ?? null;
       },
     });
   } finally {
     try {
-      if (profileId && goalTitles.size) {
-        const unresolved = await client.query<{ id: string }>(
-          `select "id" from "profile_goals"
-           where "profile_id" = $1 and "title" = any($2::text[])`,
-          [profileId, [...goalTitles]],
-        );
-        for (const row of unresolved.rows) rememberGoal(row.id);
+      if (goalTitles.size) {
+        const unresolved = await database.db
+          .select({ id: profileGoals.id })
+          .from(profileGoals)
+          .where(
+            and(
+              eq(profileGoals.profile_id, profileId),
+              inArray(profileGoals.title, [...goalTitles]),
+            ),
+          );
+        for (const goal of unresolved) rememberGoal(goal.id);
       }
     } finally {
-      client.release();
-      await pool.close();
+      await database.close();
     }
   }
 }

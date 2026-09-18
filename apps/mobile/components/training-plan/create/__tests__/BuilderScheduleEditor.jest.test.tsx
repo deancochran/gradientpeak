@@ -145,6 +145,14 @@ describe("BuilderScheduleEditor selected day planning", () => {
     expect(props.onAddSessionAtOffset).toHaveBeenCalledWith(14);
   });
 
+  it("copies the selected week through the schedule controller action", async () => {
+    const props = await renderEditor(1, { onCopyWeek: jest.fn() });
+
+    await fireEvent.press(screen.getByTestId("builder-copy-week"));
+
+    expect(props.onCopyWeek).toHaveBeenCalledWith(1, 2);
+  });
+
   it("adds a activity at the selected day offset when the chart has a selected day", async () => {
     const props = await renderEditor(1, {
       chartReview: {

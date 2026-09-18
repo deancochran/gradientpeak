@@ -7,7 +7,7 @@ import {
   ResourceMetricsRow,
 } from "./ResourceCardPrimitives";
 
-export type GoalCardData = {
+export type MobileGoalCardData = {
   compactReadiness?: { status: "ready" | "watch" | "not_ready"; value: number } | null;
   compactSignals?: ReadonlyArray<{ label: string; value: string }>;
   id: string;
@@ -18,7 +18,7 @@ export type GoalCardData = {
 };
 
 type GoalCardProps = {
-  goal: GoalCardData;
+  goal: MobileGoalCardData;
   onPress?: () => void;
   testID?: string;
   variant?: "default" | "compact";

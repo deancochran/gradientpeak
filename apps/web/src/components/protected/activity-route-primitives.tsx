@@ -1,3 +1,4 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
@@ -31,6 +32,10 @@ type DetailMetricItem = {
   label: string;
   value: string;
 };
+
+type RouterOutputs = inferRouterOutputs<AppRouter>;
+type RouteListItem = RouterOutputs["routes"]["list"]["items"][number];
+type ActivityEffort = RouterOutputs["activities"]["getEfforts"][number];
 
 export function DetailPageIntro({
   actions,
@@ -312,7 +317,7 @@ export function ActivityListCard({
               <ActivityCategoryBadges categories={activity.activityComposition.categories} />
             </div>
             <p className="text-sm text-muted-foreground">
-              {formatDateTime(activity.time.startedAt)}
+              {activity.time.startedAt ? formatDateTime(activity.time.startedAt) : "—"}
             </p>
             {activity.notes ? (
               <p className="line-clamp-2 text-sm text-muted-foreground">{activity.notes}</p>
@@ -390,7 +395,7 @@ export function ActivityListCard({
   );
 }
 
-export function RouteListCard({ onOpen, route }: { onOpen: () => void; route: any }) {
+export function RouteListCard({ onOpen, route }: { onOpen: () => void; route: RouteListItem }) {
   const { unitSystem } = useViewingUserPreferredUnitSystem();
 
   return (
@@ -432,7 +437,13 @@ export function RouteListCard({ onOpen, route }: { onOpen: () => void; route: an
   );
 }
 
-export function ActivityEffortListCard({ effort, onOpen }: { effort: any; onOpen: () => void }) {
+export function ActivityEffortListCard({
+  effort,
+  onOpen,
+}: {
+  effort: ActivityEffort;
+  onOpen: () => void;
+}) {
   return (
     <Card
       className="transition-colors hover:border-primary/30"
@@ -465,7 +476,7 @@ export function ActivityEffortListCard({ effort, onOpen }: { effort: any; onOpen
           <MetricPill label="Duration" value={formatDuration(effort.duration_seconds)} />
           <MetricPill
             label="Start offset"
-            value={effort.start_offset != null ? formatCompactDuration(effort.start_offset) : "-"}
+            value={formatCompactDuration(effort.start_offset_ms / 1_000)}
           />
         </div>
       </CardContent>

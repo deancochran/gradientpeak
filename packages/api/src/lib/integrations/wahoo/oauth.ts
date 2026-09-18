@@ -214,12 +214,12 @@ export function classifyWahooOAuthFailure(error: unknown) {
         code: "wahoo_token_limit_exceeded",
         message:
           "This account has too many active GradientPeak authorizations. Revoke an older authorization with the provider, then try again.",
-        reason: detail,
+        ...(detail === undefined ? {} : { reason: detail }),
       }
     : {
         kind: "exchange" as const,
         code: "token_exchange_failed",
         message: "Integration connection failed",
-        reason: detail,
+        ...(detail === undefined ? {} : { reason: detail }),
       };
 }

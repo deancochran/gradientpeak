@@ -28,7 +28,10 @@ export const feedRouter = createTRPCRouter({
         return await getFeedForViewer({
           db: getRequiredDb(ctx),
           viewerId: ctx.session.user.id,
-          input: { cursor: input.cursor, limit: input.limit },
+          input: {
+            limit: input.limit,
+            ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+          },
         });
       } catch (error) {
         if (error instanceof TRPCError) throw error;
@@ -44,9 +47,9 @@ export const feedRouter = createTRPCRouter({
           db: getRequiredDb(ctx),
           viewerId: ctx.session.user.id,
           input: {
-            cursor: input.cursor,
             limit: input.limit,
             profileId: input.profileId,
+            ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
           },
         });
       } catch (error) {
