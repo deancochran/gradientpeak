@@ -1,10 +1,18 @@
-import { describe, expect, it, vi } from "vitest";
+import { existsSync } from "node:fs";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertRepositoryManagedLocalReanalysisEndpoints,
   parseReanalyzeProfileActivityArtifactsArgs,
   prepareReanalysisEnvironment,
   runReanalyzeProfileActivityArtifactsCli,
 } from "../../../scripts/reanalyze-profile-activity-artifacts";
+
+// Environment discovery must not depend on ignored files in a developer checkout.
+vi.mock("node:fs", () => ({ existsSync: vi.fn(() => false) }));
+
+afterEach(() => {
+  vi.mocked(existsSync).mockReset().mockReturnValue(false);
+});
 
 const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 const localEnvironment = {
@@ -26,6 +34,10 @@ describe("reanalyze profile activity artifacts CLI", () => {
     const env: Record<string, string | undefined> = {};
     const loadedFiles: string[] = [];
 
+    vi.mocked(existsSync).mockImplementation((filePath) =>
+      String(filePath).endsWith("apps/web/.env.local"),
+    );
+
     prepareReanalysisEnvironment(env, (filePath) => {
       loadedFiles.push(filePath);
       if (filePath.endsWith("apps/web/.env.local")) {
@@ -39,6 +51,20 @@ describe("reanalyze profile activity artifacts CLI", () => {
     expect(env.POSTGRES_URL).toBe(env.DATABASE_URL);
     expect(env.NEXT_PRIVATE_SUPABASE_URL).toBe("http://127.0.0.1:54321");
     expect(env.NEXT_PRIVATE_SUPABASE_SECRET_KEY).toBe("local-test-key");
+    expect(loadedFiles).toHaveLength(1);
+  });
+
+  it("does not load missing env files or fabricate storage credentials", () => {
+    const env: Record<string, string | undefined> = {};
+    const loadEnvFile = vi.fn();
+
+    prepareReanalysisEnvironment(env, loadEnvFile);
+
+    expect(loadEnvFile).not.toHaveBeenCalled();
+    expect(env.DATABASE_URL).toBe("postgresql://postgres:postgres@127.0.0.1:54322/postgres");
+    expect(env.POSTGRES_URL).toBe(env.DATABASE_URL);
+    expect(env.NEXT_PRIVATE_SUPABASE_URL).toBeUndefined();
+    expect(env.NEXT_PRIVATE_SUPABASE_SECRET_KEY).toBeUndefined();
   });
 
   it("defaults to dry-run and requires exact profile confirmation for apply", () => {
