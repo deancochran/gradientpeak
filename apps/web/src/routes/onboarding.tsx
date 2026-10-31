@@ -163,7 +163,7 @@ export function OnboardingPage() {
     setIsSubmitting(true);
     try {
       const result = await completeOnboarding({ data: new FormData(event.currentTarget) });
-      if ("status" in result && result.status === "error") {
+      if (result && "status" in result && result.status === "error") {
         setPendingOAuthBlocked("code" in result && result.code === "pending_oauth");
         setSubmissionError(result.message);
       }

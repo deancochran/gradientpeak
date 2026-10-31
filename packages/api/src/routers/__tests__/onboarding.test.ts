@@ -73,11 +73,10 @@ function createCaller(input?: {
         if (table === profiles) {
           return {
             where: () => ({
-              limit: () => ({
-                for: async () => [{ id: PROFILE_ID, onboarding_status: status }],
-                then: (resolve: (rows: unknown[]) => void) =>
-                  resolve([{ id: PROFILE_ID, onboarding_status: status }]),
-              }),
+              limit: () =>
+                Object.assign(Promise.resolve([{ id: PROFILE_ID, onboarding_status: status }]), {
+                  for: async () => [{ id: PROFILE_ID, onboarding_status: status }],
+                }),
             }),
           };
         }
@@ -94,10 +93,10 @@ function createCaller(input?: {
             : [];
           return {
             innerJoin: () => ({
-              where: () => ({
-                for: async () => rows,
-                then: (resolve: (value: typeof rows) => void) => resolve(rows),
-              }),
+              where: () =>
+                Object.assign(Promise.resolve(rows), {
+                  for: async () => rows,
+                }),
             }),
           };
         }
@@ -174,14 +173,14 @@ function createCaller(input?: {
     insert: (table: unknown) => {
       insertedTables.push(table);
       return {
-        values: (values: unknown) => ({
-          onConflictDoNothing: async () => {
-            if (table === profileGoals) storedGoal = values as Record<string, unknown>;
-            return [];
-          },
-          onConflictDoUpdate: async () => [],
-          then: (resolve: (rows: unknown[]) => void) => resolve([]),
-        }),
+        values: (values: unknown) =>
+          Object.assign(Promise.resolve([]), {
+            onConflictDoNothing: async () => {
+              if (table === profileGoals) storedGoal = values as Record<string, unknown>;
+              return [];
+            },
+            onConflictDoUpdate: async () => [],
+          }),
       };
     },
   };

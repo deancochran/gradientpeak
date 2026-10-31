@@ -4,6 +4,7 @@ import React from "react";
 import { useColorScheme, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CartesianChart, Line } from "victory-native";
+import { omitUndefined } from "@/lib/omitUndefined";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 
 interface RouteElevationBackdropProps {
@@ -159,7 +160,7 @@ export function RouteElevationProfile({
       };
 
   return (
-    <View className={className} testID="route-profile-card-content">
+    <View {...omitUndefined({ className })} testID="route-profile-card-content">
       {!isCompact && showHeader ? (
         <View className="mb-3 flex-row items-start justify-between gap-4">
           <View className="flex-1">

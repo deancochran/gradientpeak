@@ -24,6 +24,11 @@ export function isTrpcProcedure(url: URL, procedure: string) {
   return trpcProcedures(url).includes(procedure);
 }
 
+/** Count operations, not HTTP batches, when proving duplicate-submit behavior. */
+export function trpcProcedureCount(url: URL, procedure: string) {
+  return trpcProcedures(url).filter((name) => name === procedure).length;
+}
+
 async function withTrpcHandler<T>(
   page: Page,
   procedure: string,

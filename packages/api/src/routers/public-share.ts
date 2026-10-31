@@ -33,39 +33,27 @@ const profileSummarySchema = z.strictObject({
 });
 
 const publicActivityPlanDisplayStepSchema = z.strictObject({
-  name: z.string(),
-  description: z.string().optional(),
-  notes: z.string().optional(),
+  type: z.literal("step"),
+  id: z.string().uuid(),
+  name: z.string().optional(),
+  instructions: z.string().optional(),
   duration: activityPlanDurationSchema,
   targets: z.array(activityPlanTargetSchema),
 });
 
-const publicActivityPlanDisplaySegmentSchema = z.discriminatedUnion("role", [
-  z.strictObject({
-    role: z.literal("activity"),
-    name: z.string(),
-    notes: z.string().optional(),
-    intervals: z.array(
-      z.strictObject({
-        name: z.string(),
-        notes: z.string().optional(),
-        repetitions: z.number().int().positive(),
-        steps: z.array(publicActivityPlanDisplayStepSchema),
-      }),
-    ),
-  }),
-  z.strictObject({
-    role: z.literal("rest"),
-    name: z.string(),
-    notes: z.string().optional(),
-    duration: activityPlanDurationSchema,
-  }),
-]);
+const publicActivityPlanDisplayRepeatSchema = z.strictObject({
+  type: z.literal("repeat"),
+  id: z.string().uuid(),
+  count: z.number().int().min(2).max(50),
+  steps: z.array(publicActivityPlanDisplayStepSchema),
+});
 
 export const publicActivityPlanDisplayStructureSchema = z.strictObject({
-  version: z.literal(3),
+  version: z.literal(5),
   activity_category: canonicalActivityCategorySchema,
-  segments: z.array(publicActivityPlanDisplaySegmentSchema),
+  items: z.array(
+    z.union([publicActivityPlanDisplayStepSchema, publicActivityPlanDisplayRepeatSchema]),
+  ),
 });
 
 const publicActivityArtifactRowSchema = z.looseObject({
@@ -155,29 +143,27 @@ function toPublicActivityPlanDisplayStructure(structure: unknown) {
   return publicActivityPlanDisplayStructureSchema.parse({
     version: parsed.version,
     activity_category: parsed.activity_category,
-    segments: parsed.segments.map((segment) =>
-      segment.role === "rest"
+    items: parsed.items.map((item) =>
+      item.type === "step"
         ? {
-            role: segment.role,
-            name: segment.name,
-            ...(segment.notes ? { notes: segment.notes } : {}),
-            duration: segment.duration,
+            type: "step" as const,
+            id: item.id,
+            ...(item.name ? { name: item.name } : {}),
+            ...(item.instructions ? { instructions: item.instructions } : {}),
+            duration: item.duration,
+            targets: item.targets,
           }
         : {
-            role: segment.role,
-            name: segment.name,
-            ...(segment.notes ? { notes: segment.notes } : {}),
-            intervals: segment.intervals.map((interval) => ({
-              name: interval.name,
-              ...(interval.notes ? { notes: interval.notes } : {}),
-              repetitions: interval.repetitions,
-              steps: interval.steps.map((step) => ({
-                name: step.name,
-                ...(step.description ? { description: step.description } : {}),
-                ...(step.notes ? { notes: step.notes } : {}),
-                duration: step.duration,
-                targets: step.targets,
-              })),
+            type: "repeat" as const,
+            id: item.id,
+            count: item.count,
+            steps: item.steps.map((step) => ({
+              type: "step" as const,
+              id: step.id,
+              ...(step.name ? { name: step.name } : {}),
+              ...(step.instructions ? { instructions: step.instructions } : {}),
+              duration: step.duration,
+              targets: step.targets,
             })),
           },
     ),

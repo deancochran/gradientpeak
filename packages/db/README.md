@@ -15,8 +15,8 @@ The semantic usage contract for athlete observations and effort curves is docume
 ## Source of truth
 
 - Drizzle schema in `src/schema/**` is the relational source of truth.
-- `supabase/migrations/` begins with exactly one transactional MVP baseline followed by ordered forward-only migrations.
-- Applied migrations are immutable. Corrective work uses a new migration and breaking work follows expand-migrate-contract.
+- `supabase/migrations/` contains exactly one transactional fresh-only MVP baseline.
+- This development baseline is replaced as one artifact; there is no migration ledger, forward path, or data backfill.
 - Drizzle has no deploy command. Its config points at the Supabase authority, while Studio remains available for inspection.
 
 ## Common commands
@@ -48,12 +48,12 @@ pnpm --filter @repo/db seed-training-plans
 pnpm --filter @repo/db self-host:down
 ```
 
-## Baseline and forward migration workflow
+## Fresh-only baseline workflow
 
-`supabase/migrations/` begins with one transactional MVP baseline. New changes are ordered, forward-only migration files.
+`supabase/migrations/` contains one transactional MVP baseline. A fresh disposable database is the only supported installation target.
 
-1. Never edit an applied migration. Add a corrective migration and use expand-migrate-contract for breaking changes.
-2. Run `db:baseline:check` to require one leading transactional MVP baseline plus unique ordered forward migrations and reject reintroduced Drizzle mirror, policy, or active-ledger artifacts.
+1. Consolidate existing baseline and forward SQL into the one baseline, preserving unrelated DDL, policies, functions, grants, and storage assets. Strip only outer migration `BEGIN`/`COMMIT` wrappers; procedural blocks remain intact.
+2. Run `db:baseline:check` to require one transactional MVP baseline and reject reintroduced Drizzle mirror, policy, or active-ledger artifacts.
 3. Run `db:fresh:verify` or `db:verify` only against guarded disposable local targets. They apply the ordered migration set, then verify parity, fingerprint, storage, security, lint, and an empty schema diff.
 4. `db:diff` builds that same disposable target and requires an empty public-schema shadow diff.
 5. `db:reset:mvp` is the only reset command. It accepts no flags, validates the one baseline first, refuses any configured database other than the repository-managed local target, runs `supabase db reset --local`, then seeds the Core-owned activity and training-plan catalogues. It discards that local target's data and restores each system row's Core key, version, and content hash; it never accepts linked or URL targets.
@@ -66,13 +66,11 @@ The checked-in fingerprint covers every public relation and sequence (including 
 
 ### Activity-plan authoring and revision ownership
 
-`20260916000000_activity_plan_authoring_policy.sql` adds a distinct authoring validator and guard. Inserts and changes to `structure`, `adaptation`, or `training_intent` require current authoring validity across every permitted adaptation state (up to 10,000). Each field has one control owner. PostgreSQL owns the revision increment for those three fields; a caller-supplied revision cannot suppress or multiply it.
+`20260929000000_fixed_v4_activity_plan_contract.sql` is a hard V4 cutover: the fixed V4 `blocks` structure replaces V3/adaptive prescriptions, the `adaptation` column is removed, and semantic hashes use the V2 contract. It fails closed with SQLSTATE `55000` if `activity_plans` or `planned_sessions` contains rows, before any destructive DDL. Repository-managed local targets must therefore be reset and reseeded; the migration chain remains valid for a fresh target.
 
-Existing rows are not backfilled. Metadata-only updates deliberately retain historical compatibility and do not increment the semantic revision; the API's stricter edit boundary still requires a valid effective document. The historical SQL validator and frozen manifests are unchanged. The widened table shape check is installed `NOT VALID`, so adding the guard does not scan or retrofit old rows.
+New inserts and semantic edits must supply matching Core structure and semantic SHA-256 hashes. The guard rejects stale or forged values with `23514 / activity_plans_hash_guard / ACTIVITY_PLAN_HASH_MISMATCH`; it does not silently regenerate them. PostgreSQL owns the revision increment for `structure` and `training_intent`, so a caller-supplied revision cannot suppress or multiply it. Metadata-only writes retain the revision. The V4 validator permits optional step text, explicit trimmed block `name` overrides, and untargeted steps while bounding the fixed structure, expansion, and explicit duration. A block `name` is persisted only when explicitly supplied, participates in both hashes and a structure revision, and is not a stored automatic/derived label; clearing it omits it from JSON.
 
-New inserts, semantic edits, and hash-field changes must supply matching Core structure and semantic SHA-256 hashes. The guard rejects stale/forged values with `23514 / activity_plans_hash_guard / ACTIVITY_PLAN_HASH_MISMATCH`; it does not silently regenerate them. Semantic hashing applies Core's adaptation normalization before hashing (ECMAScript trim on control keys/labels and allowed-state labels/value keys). SQL JSON serialization follows Core's UTF-16 key order, integer-index property ordering, and finite JavaScript-number formatting. Adaptation label/key limits count UTF-16 units; structure text retains Core's separate Unicode-code-point bounds. Existing rows and frozen manifests are not backfilled. Metadata-only writes that leave semantic/hash fields untouched retain the deliberate legacy behavior.
-
-`scripts/activity-plan-sql-artifacts.ts` pins activity-plan function and trigger definitions to migration SQL for local materialization. It replaces the former always-true bootstrap validators and excludes these functions from developer-database introspection. `db:activity-plan-authoring:test` applies the actual migration chain in guarded disposable databases, compares SQL with Core, verifies frozen/legacy behavior, tests a blocked stale-revision writer, and independently tests the materializer's pinned functions in an empty target. It never resets the persistent materialization or development database.
+`scripts/activity-plan-sql-artifacts.ts` pins activity-plan function definitions to migration SQL for local materialization and excludes them from developer-database introspection. `db:activity-plan-authoring:test` applies the actual migration chain in guarded disposable databases, verifies V4 shape, hash guarding, and revision ownership, then independently tests the pinned V4 validator in an empty target. It never resets the persistent materialization or development database.
 
 The API-owned consumer regression runs with `pnpm --filter @repo/api test:activity-plan-authoring:disposable`. It uses the exported guarded disposable harness and passes actual saved rows through the API resolver after repairs and semantic updates. DB parity tests depend on Core contracts only; they do not import API implementation code.
 

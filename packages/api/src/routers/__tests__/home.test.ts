@@ -12,7 +12,7 @@ import {
   createPlanOccurrenceActivityQuantificationSubjectIdentity,
   createUnavailableAthletePerformanceTargetFacts,
   estimateActivityPlanForTrainingContext,
-  OPTION_1_FAVORITE_SWIM,
+  SAMPLE_TESTING_WORKOUT,
 } from "@repo/core";
 import { type CommonLoadResult, calculateAvailableCommonLoad } from "@repo/core/load";
 import { schema, trainingPlans } from "@repo/db";
@@ -27,7 +27,6 @@ const homeMocks = vi.hoisted(() => ({
   getEffectivePlanLoad: vi.fn(),
   readAthleteReadModel: vi.fn(),
 }));
-
 vi.mock("@repo/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@repo/core")>();
   return {
@@ -36,19 +35,15 @@ vi.mock("@repo/core", async (importOriginal) => {
     getLoadBalanceStatus: homeMocks.getLoadBalanceStatus,
   };
 });
-
 vi.mock("../../application/athlete-intelligence/athlete-read-model", () => ({
   readAthleteReadModel: homeMocks.readAthleteReadModel,
 }));
-
 vi.mock("../../application/training-plan", () => ({
   getEffectivePlanLoad: homeMocks.getEffectivePlanLoad,
 }));
-
 vi.mock("../../infrastructure/repositories", () => ({
   createEventReadRepository: homeMocks.createEventReadRepository,
 }));
-
 vi.mock("../../lib/features", () => ({
   featureFlags: {
     personalizationAgeConstants: true,
@@ -57,25 +52,23 @@ vi.mock("../../lib/features", () => ({
     personalizationRampLearning: false,
   },
 }));
-
 vi.mock("../../application/activity-plans/estimate-activity-plans", async (importOriginal) => {
   const actual =
     await importOriginal<
       typeof import("../../application/activity-plans/estimate-activity-plans")
     >();
-
   return {
     ...actual,
     estimateActivityPlans: homeMocks.estimateActivityPlans,
   };
 });
-
 vi.mock("../../utils/workload", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../utils/workload")>()),
   buildWorkloadEnvelopes: homeMocks.buildWorkloadEnvelopes,
 }));
 
 import { listPlannedActivitiesInRange } from "../../application/home/plannedActivities";
+import { createRouterCaller } from "../../test/router";
 import { homeRouter } from "../home";
 
 type TableName =
@@ -86,12 +79,10 @@ type TableName =
   | "plannedSessions"
   | "profiles"
   | "trainingPlans";
-
 type DbPlan = {
   execute?: Array<Array<Record<string, unknown>>>;
   select?: Partial<Record<TableName, Array<unknown[]>>>;
 };
-
 function getTableName(table: unknown): TableName {
   if (table === schema.profiles) return "profiles";
   if (table === schema.events) return "events";
@@ -102,9 +93,11 @@ function getTableName(table: unknown): TableName {
   if (table === schema.activitySourceReferences) return "activitySourceReferences";
   return "trainingPlans";
 }
-
 function createDbMock(plan: DbPlan = {}) {
-  const whereCalls: Array<{ table: TableName; where: unknown }> = [];
+  const whereCalls: Array<{
+    table: TableName;
+    where: unknown;
+  }> = [];
   const selectQueues = {
     profiles: [...(plan.select?.profiles ?? [])],
     events: [...(plan.select?.events ?? [])],
@@ -129,56 +122,54 @@ function createDbMock(plan: DbPlan = {}) {
     activitySourceReferences: [...(plan.select?.activitySourceReferences ?? [])],
   } satisfies Record<TableName, Array<unknown[]>>;
   const executeQueue = [...(plan.execute ?? [])];
-
   const db = {
     execute: vi.fn(async () => ({ rows: executeQueue.shift() ?? [] })),
     select: vi.fn(() => {
       let tableName: TableName | null = null;
-
-      const builder: any = {
-        from: (table: unknown) => {
-          tableName = getTableName(table);
-          return builder;
-        },
-        innerJoin: () => builder,
-        leftJoin: () => builder,
-        where: (where: unknown) => {
-          if (tableName) whereCalls.push({ table: tableName, where });
-          return builder;
-        },
-        orderBy: () => builder,
-        limit: () => builder,
-        then: (onFulfilled: (rows: unknown[]) => unknown) => {
+      const builder = Object.assign(
+        Promise.resolve().then(() => {
           if (!tableName) {
             throw new Error("Select called without table");
           }
-
-          return Promise.resolve(selectQueues[tableName].shift() ?? []).then(onFulfilled);
+          return selectQueues[tableName].shift() ?? [];
+        }),
+        {
+          from: (table: unknown) => {
+            tableName = getTableName(table);
+            return builder;
+          },
+          innerJoin: () => builder,
+          leftJoin: () => builder,
+          where: (where: unknown) => {
+            if (tableName) whereCalls.push({ table: tableName, where });
+            return builder;
+          },
+          orderBy: () => builder,
+          limit: () => builder,
         },
-      };
-
+      );
       return builder;
     }),
   };
-
   return { ...db, whereCalls };
 }
-
 function createCaller(plan: DbPlan = {}) {
   const db = createDbMock(plan);
-
   return {
-    caller: homeRouter.createCaller({
-      db: db as any,
-      session: { user: { id: "11111111-1111-4111-8111-111111111111" } },
-      headers: new Headers(),
-      clientType: "test",
-      trpcSource: "vitest",
-    } as any),
+    caller: createRouterCaller(homeRouter, { db, userId: "11111111-1111-4111-8111-111111111111" }),
     db,
   };
 }
-
+function requirePlanWithId(plan: unknown): Record<string, unknown> & {
+  id: string;
+} {
+  if (!plan || typeof plan !== "object") {
+    throw new Error("Expected activity-plan fixture with an id");
+  }
+  const id = Reflect.get(plan, "id");
+  if (typeof id !== "string") throw new Error("Expected activity-plan fixture with an id");
+  return { ...plan, id };
+}
 function buildActivityPlan(id: string, name: string, activity_category: "bike" | "run") {
   return {
     id,
@@ -200,6 +191,7 @@ function buildActivityPlan(id: string, name: string, activity_category: "bike" |
               repetitions: 1,
               steps: [
                 {
+                  type: "step",
                   id: "30000000-0000-4000-8000-000000000001",
                   name,
                   duration: { type: "time" as const, seconds: 600 },
@@ -213,7 +205,6 @@ function buildActivityPlan(id: string, name: string, activity_category: "bike" |
     },
   };
 }
-
 function buildCanonicalTrainingPlanStructure() {
   return {
     version: 1 as const,
@@ -250,7 +241,6 @@ function buildCanonicalTrainingPlanStructure() {
     ],
   };
 }
-
 function availableCommonLoad(
   load: number,
   contributingDurationSeconds: number,
@@ -287,7 +277,6 @@ function availableCommonLoad(
     estimated: false,
   });
 }
-
 function testQuantification(input: {
   activityCategory?: "bike" | "run";
   distanceMeters?: number;
@@ -368,7 +357,7 @@ function testQuantification(input: {
     distance: {
       status: "available",
       evidenceRole,
-      value: input.distanceMeters ?? 10_000,
+      value: input.distanceMeters ?? 10000,
       unit: "meters",
     },
     commonLoad: input.load,
@@ -415,7 +404,6 @@ function testQuantification(input: {
         },
       });
 }
-
 function unavailableWorkload() {
   return {
     acwr: {
@@ -436,7 +424,6 @@ function unavailableWorkload() {
     },
   };
 }
-
 describe("planned Home activity rows", () => {
   it("reads planned sessions without generic event mirrors", async () => {
     const db = createDbMock({
@@ -459,7 +446,6 @@ describe("planned Home activity rows", () => {
         ],
       },
     });
-
     await expect(
       listPlannedActivitiesInRange(db as never, {
         profileId: "11111111-1111-4111-8111-111111111111",
@@ -478,7 +464,6 @@ describe("planned Home activity rows", () => {
     ]);
   });
 });
-
 describe("homeRouter", () => {
   beforeEach(() => {
     homeMocks.readAthleteReadModel.mockResolvedValue({
@@ -518,16 +503,13 @@ describe("homeRouter", () => {
     });
     homeMocks.getLoadBalanceStatus.mockReturnValue("negative_balance");
   });
-
   afterEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
   });
-
   it("getDashboard returns active plan, weekly summary, schedule, and telemetry", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
-
     homeMocks.calculateRollingTrainingQuality.mockReturnValue(0.84);
     homeMocks.getLoadBalanceStatus.mockReturnValue("negative_balance");
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
@@ -536,7 +518,7 @@ describe("homeRouter", () => {
       kind: "observation",
       load: availableCommonLoad(30, 1800),
       durationSeconds: 1800,
-      distanceMeters: 10_000,
+      distanceMeters: 10000,
       providerExternalId: "wahoo-yesterday",
     });
     const todayQuantifications = [
@@ -553,7 +535,7 @@ describe("homeRouter", () => {
         kind: "observation",
         load: availableCommonLoad(30, 1800),
         durationSeconds: 1800,
-        distanceMeters: 10_000,
+        distanceMeters: 10000,
         providerExternalId: "wahoo-today",
       }),
     ];
@@ -610,10 +592,11 @@ describe("homeRouter", () => {
         },
       },
     });
-    homeMocks.estimateActivityPlans.mockImplementation(async (plans: Array<any>) =>
-      plans.map((plan) => {
+    homeMocks.estimateActivityPlans.mockImplementation(async (plans: unknown[]) =>
+      plans.map((rawPlan) => {
+        const plan = requirePlanWithId(rawPlan);
         const durationSeconds = plan.id === "plan-1" ? 3600 : 2400;
-        const distanceMeters = plan.id === "plan-1" ? 20_000 : 12_000;
+        const distanceMeters = plan.id === "plan-1" ? 20000 : 12000;
         const loadValue = plan.id === "plan-1" ? 90 : 60;
         const activityCategory = plan.id === "plan-1" ? "bike" : "run";
         const quantification = testQuantification({
@@ -640,7 +623,6 @@ describe("homeRouter", () => {
       }),
     );
     homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
-
     const { caller, db } = createCaller({
       select: {
         profiles: [[{ dob: new Date("1990-06-15T00:00:00.000Z"), gender: "female" }]],
@@ -703,9 +685,9 @@ describe("homeRouter", () => {
               profile_id: "11111111-1111-4111-8111-111111111111",
               started_at: new Date("2026-04-02T07:00:00.000Z"),
               finished_at: new Date("2026-04-02T08:00:00.000Z"),
-              elapsed_ms: 3_600_000,
-              active_ms: 1_800_000,
-              moving_ms: 1_700_000,
+              elapsed_ms: 3600000,
+              active_ms: 1800000,
+              moving_ms: 1700000,
               timing_coverage: "complete",
               distance_meters: 10000,
               avg_heart_rate: 140,
@@ -721,9 +703,9 @@ describe("homeRouter", () => {
               profile_id: "11111111-1111-4111-8111-111111111111",
               started_at: new Date("2026-04-03T07:00:00.000Z"),
               finished_at: new Date("2026-04-03T08:00:00.000Z"),
-              elapsed_ms: 3_600_000,
-              active_ms: 3_600_000,
-              moving_ms: 3_500_000,
+              elapsed_ms: 3600000,
+              active_ms: 3600000,
+              moving_ms: 3500000,
               timing_coverage: "complete",
               distance_meters: 15000,
               avg_heart_rate: 145,
@@ -762,9 +744,7 @@ describe("homeRouter", () => {
         ],
       },
     });
-
     const result = await caller.getDashboard({ days: 2 });
-
     expect(homeMocks.readAthleteReadModel).toHaveBeenCalledWith(
       expect.objectContaining({
         sections: expect.objectContaining({
@@ -789,11 +769,9 @@ describe("homeRouter", () => {
       expect.any(Date),
       { planningTimezone: "UTC" },
     );
-
     expect(homeMocks.getEffectivePlanLoad).toHaveBeenCalledWith(
       expect.objectContaining({ request: { startDate: "2026-04-03", endDate: "2026-05-15" } }),
     );
-
     expect(result.activePlan).toEqual({
       id: "plan-1",
       name: "Build Block",
@@ -830,14 +808,20 @@ describe("homeRouter", () => {
     });
     expect(homeMocks.estimateActivityPlans).not.toHaveBeenCalled();
   });
-
-  it("withholds Option 1 mixed-plan lane distance from the compact schedule", async () => {
+  it("withholds a current fixture without compact schedule metrics", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
     homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
     homeMocks.estimateActivityPlans.mockImplementation(
-      async (plans: Array<{ id: string; structure: unknown } & Record<string, unknown>>) =>
+      async (
+        plans: Array<
+          {
+            id: string;
+            structure: unknown;
+          } & Record<string, unknown>
+        >,
+      ) =>
         plans.map((plan) => {
           const planning = estimateActivityPlanForTrainingContext({
             asOf: "2026-04-03T12:00:00.000Z",
@@ -856,10 +840,9 @@ describe("homeRouter", () => {
           };
         }),
     );
-
-    const optionOnePlan = {
-      ...buildActivityPlan("option-1", OPTION_1_FAVORITE_SWIM.name, "bike"),
-      structure: OPTION_1_FAVORITE_SWIM.structure,
+    const unavailableMetricsPlan = {
+      ...buildActivityPlan("unavailable-metrics", SAMPLE_TESTING_WORKOUT.name, "bike"),
+      structure: SAMPLE_TESTING_WORKOUT.structure,
     };
     const { caller } = createCaller({
       select: {
@@ -867,40 +850,34 @@ describe("homeRouter", () => {
           [],
           [
             {
-              id: "scheduled-option-1",
-              activity_plan_id: optionOnePlan.id,
+              id: "scheduled-unavailable-metrics",
+              activity_plan_id: unavailableMetricsPlan.id,
               starts_at: new Date("2026-04-03T13:00:00.000Z"),
               linked_activity_id: null,
               notes: null,
               scheduled_date: "2026-04-03",
               status: "scheduled",
-              activity_plan: optionOnePlan,
+              activity_plan: unavailableMetricsPlan,
             },
           ],
         ],
       },
     });
-
     const result = await caller.getDashboard({ days: 1 });
-
     expect(result.schedule).toEqual([]);
     expect(result.todaysActivity).toBeNull();
   });
-
   it("requests canonical activity analytics through the current instant without a raw activity read", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T18:00:00.000Z"));
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
     homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
-
     const { caller, db } = createCaller({
       select: {
         events: [[], [], []],
       },
     });
-
     await caller.getDashboard({ days: 1 });
-
     expect(homeMocks.readAthleteReadModel).toHaveBeenCalledWith(
       expect.objectContaining({
         sections: expect.objectContaining({
@@ -912,7 +889,6 @@ describe("homeRouter", () => {
     );
     expect(db.whereCalls.some((call) => call.table === "activities")).toBe(false);
   });
-
   it("does not complete a planned session from an unrelated same-day activity", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T15:30:00.000Z"));
@@ -922,7 +898,7 @@ describe("homeRouter", () => {
       kind: "observation",
       load: availableCommonLoad(50, 3600),
       durationSeconds: 3600,
-      distanceMeters: 15_000,
+      distanceMeters: 15000,
     });
     homeMocks.readAthleteReadModel.mockResolvedValue({
       contractVersion: "athlete-read-model-v1",
@@ -954,8 +930,7 @@ describe("homeRouter", () => {
       },
     });
     homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
-    homeMocks.estimateActivityPlans.mockImplementation(async (plans: Array<any>) => plans);
-
+    homeMocks.estimateActivityPlans.mockImplementation(async (plans: unknown[]) => plans);
     const { caller } = createCaller({
       select: {
         events: [
@@ -975,22 +950,17 @@ describe("homeRouter", () => {
         ],
       },
     });
-
     const result = await caller.getDashboard({ days: 1 });
-
     expect(result.consistency).toEqual({ streak: 1, weeklyCount: 1 });
     expect(result.schedule).toEqual([]);
     expect(result.todaysActivity).toBeNull();
   });
-
   it("getDashboard rejects invalid raw SQL plan rows", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
-
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
     homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
     homeMocks.estimateActivityPlans.mockResolvedValue([]);
-
     const { caller } = createCaller({
       select: {
         profiles: [[{ dob: new Date("1990-06-15T00:00:00.000Z"), gender: "female" }]],
@@ -1008,12 +978,10 @@ describe("homeRouter", () => {
         trainingPlans: [[{ id: "plan-1", name: null, description: null, structure: {} }]],
       },
     });
-
     await expect(caller.getDashboard({ days: 2 })).rejects.toMatchObject({
       code: "INTERNAL_SERVER_ERROR",
     });
   });
-
   it("rejects legacy workload envelope aliases", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
@@ -1022,7 +990,6 @@ describe("homeRouter", () => {
       acwr: { current: 1.1, previous: 0.9 },
       monotony: { current: 1.4 },
     });
-
     const { caller } = createCaller({
       select: {
         profiles: [[{ dob: null, gender: null }]],
@@ -1030,27 +997,25 @@ describe("homeRouter", () => {
         activities: [[]],
       },
     });
-
     await expect(caller.getDashboard()).rejects.toMatchObject({
       code: "INTERNAL_SERVER_ERROR",
     });
   });
-
   it("getDashboard safely ignores malformed settings before validating assembled schedule", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
-
     homeMocks.calculateRollingTrainingQuality.mockReturnValue(0.84);
     homeMocks.getLoadBalanceStatus.mockReturnValue("near_balance");
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
-    homeMocks.estimateActivityPlans.mockImplementation(async (plans: Array<any>) =>
-      plans.map((plan) => {
+    homeMocks.estimateActivityPlans.mockImplementation(async (plans: unknown[]) =>
+      plans.map((rawPlan) => {
+        const plan = requirePlanWithId(rawPlan);
         const quantification = testQuantification({
           id: plan.id,
           kind: "prescription",
           load: availableCommonLoad(90, 3600),
           durationSeconds: 3600,
-          distanceMeters: 20_000,
+          distanceMeters: 20000,
         });
         return {
           ...plan,
@@ -1062,7 +1027,6 @@ describe("homeRouter", () => {
       }),
     );
     homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
-
     const { caller } = createCaller({
       select: {
         profiles: [[{ dob: new Date("1990-06-15T00:00:00.000Z"), gender: "female" }]],
@@ -1101,9 +1065,9 @@ describe("homeRouter", () => {
               profile_id: "11111111-1111-4111-8111-111111111111",
               started_at: new Date("2026-04-03T07:00:00.000Z"),
               finished_at: new Date("2026-04-03T08:00:00.000Z"),
-              elapsed_ms: 3_600_000,
-              active_ms: 3_600_000,
-              moving_ms: 3_500_000,
+              elapsed_ms: 3600000,
+              active_ms: 3600000,
+              moving_ms: 3500000,
               timing_coverage: "complete",
               distance_meters: 15000,
               avg_heart_rate: 145,
@@ -1128,20 +1092,17 @@ describe("homeRouter", () => {
         ],
       },
     });
-
     await expect(caller.getDashboard({ days: 2 })).resolves.toMatchObject({
       weeklySummary: {
         planned: { distance: null, duration: null, load: null, loadComplete: false },
       },
     });
   });
-
   it("rejects legacy periodization and singular goal fields instead of translating them", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
     homeMocks.buildWorkloadEnvelopes.mockReturnValue(unavailableWorkload());
-
     const { caller } = createCaller({
       select: {
         profiles: [[{ dob: null, gender: null }]],
@@ -1164,7 +1125,6 @@ describe("homeRouter", () => {
         ],
       },
     });
-
     await expect(caller.getDashboard()).rejects.toMatchObject({
       code: "INTERNAL_SERVER_ERROR",
     });

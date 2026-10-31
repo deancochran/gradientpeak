@@ -25,6 +25,7 @@ await withDisposableDatabase(
         "vitest",
         "run",
         "src/application/calendar/planned-session-services.live-db.test.ts",
+        "src/lib/provider-sync/planned-activities/wahoo-plan-refresh.live-db.test.ts",
         "--config",
         "vitest.live-db.config.ts",
       ],

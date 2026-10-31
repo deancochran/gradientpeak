@@ -18,7 +18,6 @@ const ids = Array.from(
   { length: 8 },
   (_, index) => `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
 );
-
 const asOf = "2026-07-12T12:00:00.000Z";
 const unavailableTargets = createUnavailableAthletePerformanceTargetFacts(asOf);
 const runPerformanceTargets = materializeAthletePerformanceTargetFacts({
@@ -32,7 +31,7 @@ const runPerformanceTargets = materializeAthletePerformanceTargetFacts({
       metric: "speed",
       unit: "meters_per_second",
       method: "run_speed_30m",
-      value: 1_000 / 300,
+      value: 1000 / 300,
       effectiveAt: "2026-07-10T12:00:00.000Z",
       policyVersion: "threshold-policy-v1",
       state: "confirmed",
@@ -43,45 +42,56 @@ const runPerformanceTargets = materializeAthletePerformanceTargetFacts({
     },
   ],
 });
-
 function singleStepPlan(input: {
   activityCategory: "bike" | "run" | "strength";
   duration:
-    | { type: "distance"; meters: number }
-    | { type: "repetitions"; count: number }
-    | { type: "untilFinished" };
+    | {
+        type: "distance";
+        meters: number;
+      }
+    | {
+        type: "repetitions";
+        count: number;
+      }
+    | {
+        type: "untilFinished";
+      };
   intervalRepetitions?: number;
 }) {
   return compileActivityPlan(
     activityPlanStructureSchema.parse({
-      version: 3,
+      version: 5,
       activity_category: input.activityCategory,
-      segments: [
-        {
-          role: "activity",
-          id: "30000000-0000-4000-8000-000000000001",
-          name: "Activity",
-          intervals: [
-            {
-              id: "30000000-0000-4000-8000-000000000002",
-              name: "Set",
-              repetitions: input.intervalRepetitions ?? 1,
-              steps: [
-                {
-                  id: "30000000-0000-4000-8000-000000000003",
-                  name: "Step",
-                  duration: input.duration,
-                  targets: [{ type: "RPE", intensity: 5 }],
-                },
-              ],
-            },
-          ],
-        },
-      ],
+      items:
+        input.intervalRepetitions === undefined || input.intervalRepetitions === 1
+          ? [
+              {
+                type: "step",
+                id: "30000000-0000-4000-8000-000000000003",
+                name: "Step",
+                duration: input.duration,
+                targets: [{ type: "RPE", intensity: 5 }],
+              },
+            ]
+          : [
+              {
+                type: "repeat",
+                id: "30000000-0000-4000-8000-000000000001",
+                count: input.intervalRepetitions,
+                steps: [
+                  {
+                    type: "step",
+                    id: "30000000-0000-4000-8000-000000000003",
+                    name: "Step",
+                    duration: input.duration,
+                    targets: [{ type: "RPE", intensity: 5 }],
+                  },
+                ],
+              },
+            ],
     }),
   );
 }
-
 describe("duration module", () => {
   it("never assigns exact elapsed time to distance, repetitions, or open completion", () => {
     expect(getExactDurationSeconds({ type: "distance", meters: 1000 })).toBeNull();
@@ -94,85 +104,69 @@ describe("duration module", () => {
       open: true,
     });
   });
-
   it("formats authored duration semantics", () => {
     expect(formatDuration({ type: "time", seconds: 90 })).toBe("1m 30s");
     expect(formatDuration({ type: "distance", meters: 1500 })).toBe("1.50km");
     expect(formatDuration({ type: "repetitions", count: 8 })).toBe("8 reps");
   });
-
   it("preserves seconds-based elapsed-duration formatting", () => {
     expect(formatElapsedDuration(59)).toBe("0:59");
-    expect(formatElapsedDuration(3_661)).toBe("1:01:01");
+    expect(formatElapsedDuration(3661)).toBe("1:01:01");
     expect(formatDurationCompact(59)).toBe("59s");
-    expect(formatDurationCompact(3_661)).toBe("1h 1m");
+    expect(formatDurationCompact(3661)).toBe("1h 1m");
   });
-
   it("separates active, rest, distance, and open semantics", () => {
     const compiled = compileActivityPlan({
-      version: 3,
+      version: 5,
       activity_category: "run",
-      segments: [
+      items: [
         {
-          role: "activity",
-          id: ids[0],
-          name: "Run",
-          intervals: [
-            {
-              id: ids[1],
-              name: "Set",
-              repetitions: 1,
-              steps: [
-                {
-                  id: ids[2],
-                  name: "Timed",
-                  duration: { type: "time", seconds: 300 },
-                  targets: [{ type: "speed", intensity: 12 }],
-                },
-                {
-                  id: ids[3],
-                  name: "Distance",
-                  duration: { type: "distance", meters: 1000 },
-                  targets: [{ type: "RPE", intensity: 5 }],
-                },
-                {
-                  id: ids[4],
-                  name: "Open",
-                  duration: { type: "untilFinished" },
-                  targets: [{ type: "RPE", intensity: 4 }],
-                },
-              ],
-            },
-          ],
+          type: "step",
+          id: ids[2],
+          name: "Timed",
+          duration: { type: "time", seconds: 300 },
+          targets: [{ type: "speed", intensity: 12 }],
         },
         {
-          role: "rest",
-          id: ids[5],
-          name: "Rest",
+          type: "step",
+          id: ids[3],
+          name: "Distance",
+          duration: { type: "distance", meters: 1000 },
+          targets: [{ type: "RPE", intensity: 5 }],
+        },
+        {
+          type: "step",
+          id: ids[4],
+          name: "Open",
+          duration: { type: "untilFinished" },
+          targets: [{ type: "RPE", intensity: 4 }],
+        },
+        {
+          type: "step",
+          id: ids[6],
+          name: "Recovery",
           duration: { type: "time", seconds: 30 },
+          targets: [],
         },
       ],
     });
-
     expect(summarizeActivityPlanDuration(compiled)).toMatchObject({
       exactElapsedSeconds: null,
-      timedActiveSeconds: 300,
-      restSeconds: 30,
+      timedActiveSeconds: 330,
+      restSeconds: 0,
       distanceMeters: 1000,
       openOccurrenceCount: 1,
     });
   });
-
   it("estimates distance only from a category-matched performance target", () => {
     const run = singleStepPlan({
       activityCategory: "run",
-      duration: { type: "distance", meters: 5_000 },
+      duration: { type: "distance", meters: 5000 },
     });
     const bike = singleStepPlan({
       activityCategory: "bike",
-      duration: { type: "distance", meters: 5_000 },
+      duration: { type: "distance", meters: 5000 },
     });
-
     expect(
       estimateActivityPlanDuration({
         compiledPlan: run,
@@ -180,7 +174,7 @@ describe("duration module", () => {
         asOf,
       }),
     ).toEqual({
-      valueSeconds: 1_500,
+      valueSeconds: 1500,
       status: "estimated",
       basis: "distance_and_pace",
       confidence: "medium",
@@ -198,14 +192,12 @@ describe("duration module", () => {
       confidence: null,
     });
   });
-
   it("uses the bounded strength repetition policy", () => {
     const repetitions = singleStepPlan({
       activityCategory: "strength",
       duration: { type: "repetitions", count: 12 },
       intervalRepetitions: 3,
     });
-
     expect(estimateActivityPlanDuration({ compiledPlan: repetitions })).toEqual({
       valueSeconds: 360,
       status: "estimated",
@@ -213,13 +205,11 @@ describe("duration module", () => {
       confidence: "low",
     });
   });
-
   it("keeps open completion unavailable", () => {
     const open = singleStepPlan({
       activityCategory: "run",
       duration: { type: "untilFinished" },
     });
-
     expect(
       estimateActivityPlanDuration({
         compiledPlan: open,
@@ -233,11 +223,10 @@ describe("duration module", () => {
       confidence: null,
     });
   });
-
   it("rejects provenance combinations that cannot exist", () => {
     expect(
       activityPlanDurationEstimateSchema.safeParse({
-        valueSeconds: 1_500,
+        valueSeconds: 1500,
         status: "exact",
         basis: "distance_and_pace",
         confidence: "high",

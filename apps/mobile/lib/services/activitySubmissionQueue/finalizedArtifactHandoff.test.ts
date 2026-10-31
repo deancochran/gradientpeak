@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  activityPlanSemanticHash,
   activityPlanStructureSchema,
   getCanonicalActivityPlanStructureHashInput,
   type RecordingSessionArtifact,
@@ -11,7 +12,6 @@ const mocks = vi.hoisted(() => ({
   handoff: vi.fn(async () => mocks.result),
   clearCheckpoint: vi.fn(async () => undefined),
 }));
-
 vi.mock("../ActivityRecorder/recordingEvidenceJournal", () => ({
   createFinalizedArtifactQueueHandoff: mocks.handoff,
 }));
@@ -42,13 +42,14 @@ const artifact = {
   completedAt: "2026-01-01T10:01:00.000Z",
   executionManifest: {
     version: 1,
-    compilerVersion: 1,
+    compilerVersion: 3,
     planHash: "0".repeat(64),
     occurrences: [
       {
-        occurrenceId: "activity:one",
+        occurrenceId: "activity:freeform",
         globalOrdinal: 0,
-        segmentId: "00000000-0000-4000-8000-000000000001",
+        stepId: null,
+        repeatIteration: 0,
         role: "activity",
         activity_category: "run",
         startedAt: "2026-01-01T10:00:00.000Z",
@@ -68,30 +69,16 @@ const artifact = {
     normalizedIntensity: { status: "partial", value: 0.8 },
   },
 } as unknown as RecordingSessionArtifact;
-
 const plannedStructure = activityPlanStructureSchema.parse({
-  version: 3 as const,
+  version: 5 as const,
   activity_category: "run" as const,
-  segments: [
+  items: [
     {
-      id: "10000000-0000-4000-8000-000000000001",
-      role: "activity" as const,
-      name: "Run",
-      intervals: [
-        {
-          id: "10000000-0000-4000-8000-000000000002",
-          name: "Work",
-          repetitions: 1,
-          steps: [
-            {
-              id: "10000000-0000-4000-8000-000000000003",
-              name: "Steady",
-              duration: { type: "time" as const, seconds: 60 },
-              targets: [{ type: "RPE" as const, intensity: 7 }],
-            },
-          ],
-        },
-      ],
+      type: "step",
+      id: "10000000-0000-4000-8000-000000000003",
+      name: "Steady",
+      duration: { type: "time" as const, seconds: 60 },
+      targets: [{ type: "RPE" as const, intensity: 7 }],
     },
   ],
 });
@@ -99,8 +86,8 @@ const plannedStructureHash = `v1:sha256:${createHash("sha256")
   .update(getCanonicalActivityPlanStructureHashInput(plannedStructure))
   .digest("hex")}`;
 const plannedExecution = {
-  manifestVersion: 1 as const,
-  compilerVersion: 1 as const,
+  manifestVersion: 2 as const,
+  compilerVersion: 3 as const,
   activityPlanId: "10000000-0000-4000-8000-000000000004",
   scheduledEventId: "10000000-0000-4000-8000-000000000005",
   name: "Hard",
@@ -114,15 +101,18 @@ const plannedExecution = {
     source: { kind: "direct" as const, operationId: "artifact-handoff-test-operation-01" },
     prescription: {
       resolutionManifest: {
-        resolver_version: "prescription-resolver-v1",
-        policy_version: "training-plan-policy-v1",
+        resolver_version: "prescription-resolver-v2",
+        policy_version: "training-plan-policy-v2",
         training_plan_id: null,
         training_plan_revision: null,
         training_plan_hash: null,
         athlete_context_revision: null,
         activity_plan_id: "10000000-0000-4000-8000-000000000004",
         activity_plan_revision: 3,
-        activity_plan_semantic_hash: `v1:sha256:${"a".repeat(64)}`,
+        activity_plan_semantic_hash: activityPlanSemanticHash({
+          structure: plannedStructure,
+          trainingIntent: "aerobic_base",
+        }),
         effective_target_duration_minutes: null,
         effective_target_common_load: null,
         evidence_facts: [],
@@ -133,7 +123,6 @@ const plannedExecution = {
           target_common_load: null,
           importance: "normal" as const,
         },
-        adaptation_values: {},
         fallback_level: "system_default_no_context" as const,
         reason_codes: [],
         resolved_structure: plannedStructure,
@@ -154,13 +143,11 @@ const plannedExecution = {
   personalizationEnabled: false,
   targetPresentations: [],
 };
-
 describe("finalized artifact queue handoff", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.result = "created";
   });
-
   it("coalesces duplicate handoffs and clears the checkpoint only after queue persistence", async () => {
     const [first, second] = await Promise.all([
       ensureFinalizedArtifactQueueHandoff(artifact),
@@ -184,7 +171,6 @@ describe("finalized artifact queue handoff", () => {
     }
     expect(upsertOrder).toBeLessThan(clearOrder);
   });
-
   it("reuses a persisted job after process death without creating a duplicate", async () => {
     const first = await ensureFinalizedArtifactQueueHandoff(artifact);
     if (!first) throw new Error("handoff setup failed");
@@ -195,11 +181,9 @@ describe("finalized artifact queue handoff", () => {
     expect(mocks.handoff).toHaveBeenCalledTimes(1);
     expect(mocks.clearCheckpoint).toHaveBeenCalledWith(artifact.sessionId);
   });
-
   it("persists only recording source facts and never promotes provisional live output", async () => {
     const handoff = await ensureFinalizedArtifactQueueHandoff(artifact);
     if (!handoff) throw new Error("Expected a durable queue handoff");
-
     expect(handoff.draft).toEqual({
       recordingSessionId: artifact.sessionId,
       profileId: artifact.profileId,
@@ -218,7 +202,6 @@ describe("finalized artifact queue handoff", () => {
     expect(handoff.draft).not.toHaveProperty("normalizedIntensity");
     expect(JSON.stringify(handoff)).not.toMatch(/trainingStressScore|intensityFactor|"tss"/i);
   });
-
   it("retains immutable planned-session provenance in the durable queue handoff", async () => {
     const plannedArtifact = {
       ...artifact,
@@ -232,15 +215,12 @@ describe("finalized artifact queue handoff", () => {
         planExecution: plannedExecution,
       },
     } as unknown as RecordingSessionArtifact;
-
     const handoff = await ensureFinalizedArtifactQueueHandoff(plannedArtifact);
-
     expect(handoff).toMatchObject({
       planExecution: plannedExecution,
       draft: { activityPlanId: plannedExecution.activityPlanId },
     });
   });
-
   it("rejects corrupted planned-session provenance before durable queue handoff", async () => {
     const plannedArtifact = {
       ...artifact,
@@ -268,14 +248,12 @@ describe("finalized artifact queue handoff", () => {
         },
       },
     } as unknown as RecordingSessionArtifact;
-
     await expect(ensureFinalizedArtifactQueueHandoff(plannedArtifact)).rejects.toThrow(
       "Invalid recording prescription structure hash",
     );
     expect(mocks.handoff).not.toHaveBeenCalled();
     expect(mocks.clearCheckpoint).not.toHaveBeenCalled();
   });
-
   it.each([
     "created",
     "existing",
@@ -285,7 +263,6 @@ describe("finalized artifact queue handoff", () => {
     expect(handoff).toMatchObject({ id: artifact.sessionId, status: "queued" });
     expect(mocks.clearCheckpoint).toHaveBeenCalledWith(artifact.sessionId);
   });
-
   it("returns a terminal non-claimable shape and clears the checkpoint for explicit discard", async () => {
     mocks.result = "discarded";
     const handoff = await ensureFinalizedArtifactQueueHandoff(artifact);
@@ -297,7 +274,6 @@ describe("finalized artifact queue handoff", () => {
     });
     expect(mocks.clearCheckpoint).toHaveBeenCalledWith(artifact.sessionId);
   });
-
   it.each([
     "absent",
     "rejected",
@@ -306,7 +282,6 @@ describe("finalized artifact queue handoff", () => {
     await expect(ensureFinalizedArtifactQueueHandoff(artifact)).resolves.toBeNull();
     expect(mocks.clearCheckpoint).not.toHaveBeenCalled();
   });
-
   it("refuses to hand off an artifact for a different authenticated profile", async () => {
     await expect(ensureFinalizedArtifactQueueHandoff(artifact, "profile-2")).rejects.toThrow(
       "different profile",

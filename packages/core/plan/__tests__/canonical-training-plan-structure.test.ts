@@ -9,6 +9,7 @@ import {
   trainingPlanCreateSchema,
   trainingPlanSchema,
 } from "../../schemas";
+import { requireFixtureValue } from "../../testing/requireFixtureValue";
 
 const activityPlanId = "11111111-1111-4111-8111-111111111111";
 
@@ -182,7 +183,8 @@ describe("canonical training plan structure", () => {
       offset_days: 0,
       id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       activity_plan_id: activityPlanId,
-      demand: canonicalStructure.sessions[0]!.demand,
+      demand: requireFixtureValue(canonicalStructure.sessions[0], "expected canonical session")
+        .demand,
       scheduled_date: "2026-06-01",
       session_type: "planned_activity",
       provider_metadata: { provider: "wahoo" },
@@ -203,7 +205,8 @@ describe("canonical training plan structure", () => {
         offset_days: 0,
         id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
         activity_plan_id: null,
-        demand: canonicalStructure.sessions[0]!.demand,
+        demand: requireFixtureValue(canonicalStructure.sessions[0], "expected canonical session")
+          .demand,
       }).activity_plan_id,
     ).toBeNull();
     expect(
@@ -220,7 +223,10 @@ describe("canonical training plan structure", () => {
         ...canonicalStructure,
         sessions: [
           canonicalStructure.sessions[0],
-          { ...canonicalStructure.sessions[0]!, id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd" },
+          {
+            ...requireFixtureValue(canonicalStructure.sessions[0], "expected canonical session"),
+            id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+          },
         ],
       }).success,
     ).toBe(true);
@@ -237,7 +243,7 @@ describe("canonical training plan structure", () => {
 
   it("caps canonical plans at 366 sessions", () => {
     const sessions = Array.from({ length: 366 }, (_, index) => ({
-      ...canonicalStructure.sessions[0]!,
+      ...requireFixtureValue(canonicalStructure.sessions[0], "expected canonical session"),
       id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
     }));
     expect(
@@ -246,7 +252,13 @@ describe("canonical training plan structure", () => {
     expect(
       canonicalTrainingPlanStructureSchema.safeParse({
         ...canonicalStructure,
-        sessions: [...sessions, { ...sessions[0]!, id: "ffffffff-ffff-4fff-8fff-ffffffffffff" }],
+        sessions: [
+          ...sessions,
+          {
+            ...requireFixtureValue(sessions[0], "expected generated canonical session"),
+            id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+          },
+        ],
       }).success,
     ).toBe(false);
   });

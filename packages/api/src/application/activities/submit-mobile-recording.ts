@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import {
   activityPlanStructureSchema,
+  compileActivityPlan,
   getCanonicalActivityPlanStructureHashInput,
 } from "@repo/core/activity-plan";
 import {
@@ -8,6 +10,11 @@ import {
 } from "@repo/core/activity-segments";
 import { stringifyCanonicalJson } from "@repo/core/athlete-intelligence";
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
+import { plannedSessionActivityPlanId } from "@repo/core/calendar";
+import {
+  recordingGuidanceFromTcx,
+  recordingGuidanceWasModified,
+} from "@repo/core/recording/guidance";
 import { parseActivityFile } from "@repo/core/server/activity-files";
 import { safeDecodeFitFile } from "@repo/core/server/fit-sdk-parser";
 import { activities, activityPlans, activityRoutes, profiles } from "@repo/db";
@@ -20,6 +27,7 @@ import {
 } from "../../infrastructure/repositories";
 import { createContentAccessPermissions } from "../../permissions/content-access";
 import type { PlannedSessionRepositoryPort } from "../../repositories/planned-session-repository-port";
+import { analyzeAcceptedRecordingArtifactStreams } from "../activity-file-ingestion/analyze-parsed-activity-file";
 import type { ActivityArtifactStorage } from "../activity-file-ingestion/artifact-storage";
 import {
   completeActivityIngestionCleanup,
@@ -35,14 +43,14 @@ import {
   retryMobileRecordingStagingCleanup,
 } from "../activity-file-ingestion/mobile-recording-upload";
 import {
+  activityPlanCanonicalStructureHash,
   activityPlanStructureHash,
-  activityPlanV3StructureHash,
 } from "../activity-plans/structure-hash";
 import {
   ManualCompletionReconciliationConflictError,
   reconcileManualPlannedSessionCompletion,
 } from "../calendar/reconcile-manual-planned-session-completion";
-import { recordingSessionActivityId, submitActivity } from "./submit-activity";
+import { activityArtifactId, recordingSessionActivityId, submitActivity } from "./submit-activity";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
@@ -89,29 +97,94 @@ function segmentSetFromExecutionManifest(input: MobileRecordingSubmissionInput) 
   const parentStartMs = new Date(input.startedAt).getTime();
   const elapsedMs =
     input.sessionTiming?.elapsedMs ?? new Date(input.finishedAt).getTime() - parentStartMs;
-  const grouped = new Map<string, (typeof input.executionManifest.occurrences)[number][]>();
+  const grouped: (typeof input.executionManifest.occurrences)[] = [];
   for (const occurrence of input.executionManifest.occurrences) {
-    const entries = grouped.get(occurrence.segmentId) ?? [];
-    entries.push(occurrence);
-    grouped.set(occurrence.segmentId, entries);
+    const entries = grouped.at(-1);
+    // Execution evidence identifies prescribed steps, not recorded source legs.
+    // A mobile FIT recording has one session unless its observed role/category
+    // changes; splitting equal-category steps fabricates multisport legs.
+    if (
+      entries &&
+      entries[0]?.role === occurrence.role &&
+      entries[0]?.activity_category === occurrence.activity_category
+    )
+      entries.push(occurrence);
+    else grouped.push([occurrence]);
   }
-  const segments = [...grouped.values()].map((occurrences, ordinal) => {
+  // The manifest (and durable artifact journal) includes instantaneous control
+  // events. Timeline rows represent elapsed ranges, so no-work groups need no row.
+  const timedGroups = grouped.filter((occurrences) => {
     const first = occurrences[0];
     const last = occurrences.at(-1);
     if (!first || !last) throw new Error("Execution manifest segment group must not be empty");
-    const classifiedOccurrences = occurrences.flatMap((occurrence) =>
-      occurrence.completion
-        ? [
-            {
-              occurrenceId: occurrence.occurrenceId,
-              globalOrdinal: occurrence.globalOrdinal,
-              completion: occurrence.completion,
-            },
-          ]
-        : [],
-    );
+    const start =
+      first.timingEvidence?.startOffsetMs ?? Date.parse(first.startedAt) - parentStartMs;
+    const end = last.timingEvidence?.endOffsetMs ?? Date.parse(last.completedAt) - parentStartMs;
+    if (start !== end) return true;
+    if (
+      start < 0 ||
+      end > elapsedMs ||
+      occurrences.some(
+        (entry) =>
+          entry.activeSeconds !== 0 ||
+          entry.movingSeconds !== 0 ||
+          entry.distanceMeters !== 0 ||
+          (entry.timingEvidence?.startOffsetMs ?? Date.parse(entry.startedAt) - parentStartMs) !==
+            start ||
+          (entry.timingEvidence?.endOffsetMs ?? Date.parse(entry.completedAt) - parentStartMs) !==
+            end,
+      )
+    ) {
+      throw new Error(
+        "Zero-duration execution evidence cannot contain recorded work or exceed the session.",
+      );
+    }
+    return false;
+  });
+  const timelineGroups: (typeof input.executionManifest.occurrences)[] = [];
+  for (const group of timedGroups) {
+    const previous = timelineGroups.at(-1);
+    const last = previous?.at(-1);
+    const first = group[0];
+    // Removing a no-work activity can make two real rest ranges adjacent. The
+    // timeline has one continuous rest range; its distinct occurrence evidence remains.
+    if (
+      previous &&
+      last?.role === "rest" &&
+      first?.role === "rest" &&
+      (last.timingEvidence?.endOffsetMs ?? Date.parse(last.completedAt) - parentStartMs) ===
+        (first.timingEvidence?.startOffsetMs ?? Date.parse(first.startedAt) - parentStartMs)
+    ) {
+      previous.push(...group);
+    } else {
+      timelineGroups.push(group);
+    }
+  }
+  const segments = timelineGroups.map((occurrences, ordinal) => {
+    const first = occurrences[0];
+    const last = occurrences.at(-1);
+    if (!first || !last) throw new Error("Execution manifest segment group must not be empty");
+    const latest = new Map(occurrences.map((occurrence) => [occurrence.occurrenceId, occurrence]));
+    const classifiedOccurrences = [...latest.values()]
+      .sort((left, right) => left.globalOrdinal - right.globalOrdinal)
+      .flatMap((occurrence) =>
+        occurrence.completion
+          ? [
+              {
+                occurrenceId: occurrence.occurrenceId,
+                globalOrdinal: occurrence.globalOrdinal,
+                completion: occurrence.completion,
+              },
+            ]
+          : [],
+      );
+    // Completed segments are chronological artifact ranges, not prescription
+    // containers. V5 occurrence IDs are not database UUIDs, so derive a stable
+    // recording-owned segment ID while retaining the exact occurrence evidence
+    // in recordingExecution below.
+    const id = recordingSegmentVisitId(input, first.occurrenceId, ordinal);
     const base = {
-      id: first.segmentId,
+      id,
       ordinal,
       role: first.role,
       startOffsetMs:
@@ -162,6 +235,58 @@ function segmentSetFromExecutionManifest(input: MobileRecordingSubmissionInput) 
   return completedActivitySegmentSetSchema.parse({ version: 1, elapsedMs, segments });
 }
 
+function recordingPauseRangesBySegment(
+  input: MobileRecordingSubmissionInput,
+  segmentSet: CompletedActivitySegmentSet,
+) {
+  const events = input.executionManifest.occurrences
+    .flatMap((occurrence) => occurrence.timerEvents)
+    .map((event) => ({
+      ...event,
+      offsetMs: Date.parse(event.timestamp) - Date.parse(input.startedAt),
+    }))
+    .filter((event) => Number.isFinite(event.offsetMs))
+    .sort((left, right) => left.offsetMs - right.offsetMs);
+  const ranges: Array<{ startOffsetMs: number; endOffsetMs: number }> = [];
+  let pausedAt: number | null = null;
+  for (const event of events) {
+    if (event.type === "pause") pausedAt ??= event.offsetMs;
+    if (event.type === "resume" && pausedAt !== null && event.offsetMs > pausedAt) {
+      ranges.push({ startOffsetMs: pausedAt, endOffsetMs: event.offsetMs });
+      pausedAt = null;
+    }
+  }
+  return new Map(
+    segmentSet.segments.map((segment) => [
+      segment.id,
+      ranges.flatMap((range) => {
+        const startOffsetMs = Math.max(range.startOffsetMs, segment.startOffsetMs);
+        const endOffsetMs = Math.min(range.endOffsetMs, segment.endOffsetMs);
+        return startOffsetMs < endOffsetMs ? [{ startOffsetMs, endOffsetMs }] : [];
+      }),
+    ]),
+  );
+}
+
+function recordingSegmentVisitId(
+  input: MobileRecordingSubmissionInput,
+  segmentId: string,
+  ordinal: number,
+): string {
+  const hash = createHash("sha256")
+    .update(
+      JSON.stringify([
+        "recording-segment-visit",
+        input.profileId,
+        input.recordingSessionId,
+        segmentId,
+        ordinal,
+      ]),
+    )
+    .digest("hex");
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+}
+
 async function loadDefaultContentVisibility(db: DbClient, profileId: string) {
   const [profile] = await db
     .select({ defaultContentVisibility: profiles.default_content_visibility })
@@ -194,13 +319,6 @@ async function resolveRecordingActivityPlanId(
       "Activity plan is not available for mobile recording",
     );
   }
-  if (plan.ownerProfileId !== input.profileId) {
-    throw new MobileRecordingSubmissionError(
-      "forbidden",
-      "Activity plan is not available for mobile recording",
-    );
-  }
-
   const access = await createContentAccessPermissions(db).canReadForRow({
     actorProfileId: input.profileId,
     resource: { type: "activity_plan", id: plan.id },
@@ -291,7 +409,7 @@ function submissionReplayIdentity(submission: MobileRecordingSubmissionInput) {
 function assertDeclaredPrescriptionHashes(submission: MobileRecordingSubmissionInput): void {
   const execution = submission.planExecution;
   if (!execution) return;
-  if (activityPlanV3StructureHash(execution.structure) !== execution.structureHash) {
+  if (activityPlanCanonicalStructureHash(execution.structure) !== execution.structureHash) {
     throw new MobileRecordingSubmissionError(
       "manifest_invalid",
       "Recording prescription structure hash does not match its V3 structure",
@@ -323,6 +441,7 @@ async function verifyScheduledRecordingProvenance(input: {
   activityId: string;
   linkedAt: Date;
   allowLink: boolean;
+  validateOnly?: boolean;
   reconciliationOperationId?: string;
   tx?: DrizzleTransactionClient;
 }): Promise<void> {
@@ -341,36 +460,25 @@ async function verifyScheduledRecordingProvenance(input: {
   }
 
   const submitted = submittedSession.prescription;
-  const expected = authoritative.prescription;
   const fieldsMatch =
     stringifyCanonicalJson(submittedSession.source) ===
       stringifyCanonicalJson(authoritative.source) &&
-    execution.activityPlanId === expected.resolutionManifest.activity_plan_id &&
-    input.submission.activityPlanId === expected.resolutionManifest.activity_plan_id &&
-    execution.activityPlanRevision === expected.resolutionManifest.activity_plan_revision &&
-    execution.structureHash === expected.resolutionManifest.resolved_structure_hash &&
-    submitted.resolutionManifest.activity_plan_id ===
-      expected.resolutionManifest.activity_plan_id &&
-    submitted.resolutionManifest.activity_plan_revision ===
-      expected.resolutionManifest.activity_plan_revision &&
-    submitted.resolutionManifest.resolved_structure_hash ===
-      expected.resolutionManifest.resolved_structure_hash &&
-    stringifyCanonicalJson(submitted.resolutionManifest) ===
-      stringifyCanonicalJson(expected.resolutionManifest) &&
-    submitted.capturedAt === expected.capturedAt &&
-    sameCanonicalStructure(execution.structure, expected.resolutionManifest.resolved_structure) &&
-    sameCanonicalStructure(
-      submitted.resolutionManifest.resolved_structure,
-      expected.resolutionManifest.resolved_structure,
-    ) &&
-    activityPlanStructureHash(expected.resolutionManifest.resolved_structure) ===
-      expected.resolutionManifest.resolved_structure_hash;
+    execution.activityPlanId === plannedSessionActivityPlanId(authoritative) &&
+    input.submission.activityPlanId === execution.activityPlanId &&
+    execution.activityPlanId === submitted.resolutionManifest.activity_plan_id &&
+    execution.activityPlanRevision === submitted.resolutionManifest.activity_plan_revision &&
+    execution.structureHash === submitted.resolutionManifest.resolved_structure_hash &&
+    sameCanonicalStructure(execution.structure, submitted.resolutionManifest.resolved_structure) &&
+    sameCanonicalStructure(submitted.resolutionManifest.resolved_structure, execution.structure) &&
+    activityPlanStructureHash(execution.structure) === execution.structureHash;
   if (!fieldsMatch) {
     throw new MobileRecordingSubmissionError(
       "conflict",
-      "Recording provenance does not match the authoritative planned-session prescription",
+      "Recording provenance does not match its planned-session association",
     );
   }
+  if (input.validateOnly) return;
+  const outcome = scheduledRecordingOutcome(input.submission);
 
   if (authoritative.lifecycle.status === "completed") {
     const exactReplay =
@@ -393,10 +501,12 @@ async function verifyScheduledRecordingProvenance(input: {
           activityId: input.activityId,
           operationId: input.reconciliationOperationId,
           reconciledAt: input.linkedAt,
+          outcome,
         });
         if (
           reconciled.session.lifecycle.status === "completed" &&
-          reconciled.session.lifecycle.completion.state === "linked"
+          reconciled.session.lifecycle.completion.state === "linked" &&
+          reconciled.session.lifecycle.completion.outcome === outcome
         )
           return;
       } catch (error) {
@@ -426,20 +536,59 @@ async function verifyScheduledRecordingProvenance(input: {
     sessionId: submittedSession.id,
     expectedRevision: submittedSession.sessionRevision,
     activityId: input.activityId,
-    outcome: "full",
+    outcome,
     linkedAt: input.linkedAt.toISOString(),
   });
   if (
     linked.status !== "updated" ||
     linked.session.lifecycle.status !== "completed" ||
     linked.session.lifecycle.completion.state !== "linked" ||
-    linked.session.lifecycle.completion.activityId !== input.activityId
+    linked.session.lifecycle.completion.activityId !== input.activityId ||
+    linked.session.lifecycle.completion.outcome !== outcome
   ) {
     throw new MobileRecordingSubmissionError(
       "conflict",
       "Planned-session completion could not be linked atomically",
     );
   }
+}
+
+function scheduledRecordingOutcome(submission: MobileRecordingSubmissionInput): "full" | "partial" {
+  if (recordingGuidanceWasModified(submission.guidance)) return "partial";
+  const execution = submission.planExecution;
+  if (!execution) return "partial";
+  // Legacy mobile results record skip, advance, and early finish identically.
+  // Neither ID coverage nor measured duration can recover their terminal intent.
+  // Preserve the historical calendar policy for wholly unclassified legacy
+  // payloads (including queued artifacts), WITHOUT synthesizing step evidence.
+  // Explicit null is unfinished evidence, not legacy absence. Web timer payloads
+  // and mixed recovered legacy/new results always use the conservative path below.
+  if (
+    submission.sessionTiming === undefined &&
+    submission.executionManifest.occurrences.length > 0 &&
+    submission.executionManifest.occurrences.every((entry) => entry.completion === undefined)
+  )
+    return "full";
+  const prescribed = compileActivityPlan(execution.structure).occurrences;
+  // A later unclassified visit supersedes an earlier completion just as a later
+  // skip does. Session-local continuation cannot complete a prescribed step.
+  const latest = new Map(
+    submission.executionManifest.occurrences.map((entry) => [entry.occurrenceId, entry]),
+  );
+  return prescribed.length > 0 &&
+    prescribed.every((occurrence) => {
+      const final = latest.get(occurrence.occurrenceId);
+      return (
+        final?.completion?.status === "completed" &&
+        final.stepId === occurrence.stepId &&
+        final.repeatId === occurrence.repeatId &&
+        final.repeatIteration === occurrence.repeatIteration &&
+        final.role === occurrence.role &&
+        final.activity_category === occurrence.activity_category
+      );
+    })
+    ? "full"
+    : "partial";
 }
 
 async function verifyAcceptedScheduledRecording(
@@ -569,18 +718,46 @@ export async function submitMobileRecording(
       "Scheduled recording identifiers require an immutable planned-session snapshot",
     );
   }
-  // Scheduled recordings execute the frozen resolver snapshot. Mutable plans may
-  // legitimately have changed or become unavailable after launch.
+  // A scheduled execution has already captured its plan at launch. The durable
+  // planned-session reference (validated during composition) authorizes this
+  // activity-plan association without re-reading a mutable plan at submission.
   const resolvedActivityPlanId = scheduledPrescription
-    ? scheduledPrescription.resolutionManifest.activity_plan_id
+    ? (submission.planExecution?.activityPlanId ?? null)
     : await resolveRecordingActivityPlanId(db, {
         activityPlanId: submission.activityPlanId,
         profileId: submission.profileId,
       });
+  if (submission.planExecution?.plannedSession) {
+    await verifyScheduledRecordingProvenance({
+      repository: createDrizzlePlannedSessionRepository(db),
+      submission,
+      activityId: recordingSessionActivityId(submission.profileId, replayIdentity),
+      linkedAt: new Date(),
+      allowLink: false,
+      validateOnly: true,
+    });
+  }
   const resolvedRouteId = await resolveRecordingRouteId(db, {
     profileId: submission.profileId,
     routeId: submission.routeId,
   });
+  if (submission.guidance) {
+    const planIds = new Set<string>();
+    const routeIds = new Set<string>();
+    for (const revision of submission.guidance.revisions) {
+      if (revision.plan) {
+        assertDeclaredPrescriptionHashes({ ...submission, planExecution: revision.plan });
+        planIds.add(revision.plan.activityPlanId);
+      }
+      if (revision.routeId) routeIds.add(revision.routeId);
+    }
+    for (const activityPlanId of planIds) {
+      await resolveRecordingActivityPlanId(db, { profileId: submission.profileId, activityPlanId });
+    }
+    for (const routeId of routeIds) {
+      await resolveRecordingRouteId(db, { profileId: submission.profileId, routeId });
+    }
+  }
   let segmentSet: CompletedActivitySegmentSet;
   try {
     segmentSet = segmentSetFromExecutionManifest(submission);
@@ -641,11 +818,42 @@ export async function submitMobileRecording(
       ...(prepared.ingestion.expectedSha256
         ? { expectedSha256: prepared.ingestion.expectedSha256 }
         : {}),
-      parse: () =>
+      parse: () => {
+        const recorded =
+          prepared.staging.format === "tcx"
+            ? recordingGuidanceFromTcx(new TextDecoder().decode(prepared.staging.bytes))
+            : undefined;
+        if (recorded || submission.guidance) {
+          // TCX is JSON-serialized, whereas SuperJSON retains explicitly undefined
+          // optional fields. Compare the validated JSON representations, not the
+          // transport-specific presence of optional undefined properties.
+          if (
+            stringifyCanonicalJson(JSON.parse(JSON.stringify(recorded ?? null))) !==
+            stringifyCanonicalJson(JSON.parse(JSON.stringify(submission.guidance ?? null)))
+          ) {
+            throw new MobileRecordingSubmissionError(
+              "manifest_invalid",
+              "Guidance metadata must match the accepted recording artifact.",
+            );
+          }
+        }
         assertMobileRecordingArtifactHasNoPosition({
           bytes: prepared.staging.bytes,
           format: prepared.staging.format,
-        }),
+        });
+        try {
+          return parseActivityFile({
+            data: prepared.staging.bytes,
+            fileType: prepared.staging.format,
+          });
+        } catch (error) {
+          throw new MobileRecordingSubmissionError(
+            "artifact_invalid",
+            "Recording artifact is invalid",
+            { cause: error },
+          );
+        }
+      },
       onFailure: async (stage) => {
         await failActivityIngestion(db, {
           profileId: submission.profileId,
@@ -674,34 +882,68 @@ export async function submitMobileRecording(
           });
         }
       },
-      submit: async ({ artifact }) =>
-        submitActivity(db, {
+      submit: async ({ artifact, parsedData }) => {
+        const acceptedArtifactId = activityArtifactId(
+          submission.profileId,
+          artifact.sha256,
+          artifact.byteSize,
+        );
+        // Execution boundaries remain recorder-owned, but derived sensor evidence
+        // must be bound to the immutable accepted artifact before reconciliation.
+        const acceptedSegments = completedActivitySegmentSetSchema.parse({
+          ...segmentSet,
+          segments: segmentSet.segments.map((segment) => ({
+            ...segment,
+            source: {
+              kind: "artifact",
+              artifactId: acceptedArtifactId,
+              source: { standard: artifact.format, format: artifact.format },
+            },
+          })),
+        });
+        const analysis = analyzeAcceptedRecordingArtifactStreams({
+          activityId,
+          profileId: submission.profileId,
+          startedAt: new Date(submission.startedAt),
+          segmentSet: acceptedSegments,
+          records: parsedData.records,
+          artifactId: acceptedArtifactId,
+          pauseRangesBySegment: recordingPauseRangesBySegment(submission, segmentSet),
+        });
+        return submitActivity(db, {
           requestedActivityId: activityId,
           profileId: submission.profileId,
           activityPlanId: resolvedActivityPlanId,
           routeId: resolvedRouteId,
           name: submission.name,
+          nameStrategy: "provided",
           notes: submission.notes ?? null,
           contentVisibility,
           startedAt: new Date(submission.startedAt),
           finishedAt: new Date(submission.finishedAt),
           elapsedMs: segmentSet.elapsedMs,
+          // The aggregate persistence contract requires paired active/moving evidence.
+          // Known manual active time remains in each segment's partial timing summary.
           activeMs: timing.activeMs,
           movingMs: timing.movingMs,
           timingCoverage: timing.timingCoverage,
-          segmentSet,
+          segmentSet: analysis.segmentSet,
+          // A TCX lap total can be manually entered and this no-GPS recording
+          // flow has no accepted cumulative-distance stream contract. Preserve
+          // the explicit manual-distance provenance rather than mislabeling a
+          // parsed total as measured sensor evidence.
           distanceMeters: submission.summary.distanceMeters,
           calories: submission.summary.calories ?? null,
           elevationGainMeters: submission.summary.elevationGainMeters ?? null,
-          avgHeartRate: null,
-          maxHeartRate: null,
-          avgPower: null,
-          maxPower: null,
-          avgCadence: null,
-          maxCadence: null,
-          avgSpeedMps: null,
-          maxSpeedMps: null,
-          normalizedSpeedMps: null,
+          avgHeartRate: analysis.summary.avgHeartRate,
+          maxHeartRate: analysis.summary.maxHeartRate,
+          avgPower: analysis.summary.avgPower,
+          maxPower: analysis.summary.maxPower,
+          avgCadence: analysis.summary.avgCadence,
+          maxCadence: analysis.summary.maxCadence,
+          avgSpeedMps: analysis.summary.avgSpeedMps,
+          maxSpeedMps: analysis.summary.maxSpeedMps,
+          normalizedSpeedMps: analysis.summary.normalizedSpeedMps,
           avgTemperature: submission.summary.avgTemperature ?? null,
           poolLengthMeters: submission.summary.poolLengthMeters ?? null,
           deviceManufacturer: null,
@@ -726,8 +968,8 @@ export async function submitMobileRecording(
               }
             : {}),
           analysis: {
-            efforts: [],
-            detectedLTHR: null,
+            efforts: analysis.efforts,
+            detectedLTHR: analysis.detectedLTHR,
             ingestion: {
               source: submission.source,
               operationId,
@@ -745,7 +987,8 @@ export async function submitMobileRecording(
               stagingCleanupPending: true,
             },
           },
-        }),
+        });
+      },
     });
   } catch (error) {
     const accepted = await loadAcceptedSubmission(db, replayInput);

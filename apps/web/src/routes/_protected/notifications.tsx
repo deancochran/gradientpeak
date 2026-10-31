@@ -61,8 +61,8 @@ function NotificationsPage() {
   return (
     <div className="flex h-full flex-1 flex-col space-y-8">
       <RouteFlashToast
-        message={flash}
-        type={flashType}
+        {...(flash === undefined ? {} : { message: flash })}
+        {...(flashType === undefined ? {} : { type: flashType })}
         clear={() =>
           void navigate({
             to: "/notifications",

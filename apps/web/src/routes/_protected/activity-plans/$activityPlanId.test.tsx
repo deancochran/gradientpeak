@@ -1,7 +1,4 @@
 // @vitest-environment jsdom
-
-import type { AthletePerformanceTargetFacts } from "@repo/core/performance-model";
-import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Route } from "./$activityPlanId";
@@ -15,13 +12,10 @@ const mocks = vi.hoisted(() => ({
   scheduleError: false,
   refetchSchedule: vi.fn(),
   eventListInput: undefined as unknown,
-  performanceTargets: undefined as AthletePerformanceTargetFacts | undefined,
   plan: undefined as unknown,
   planInputs: [] as unknown[],
-  readModelOptions: [] as unknown[],
   activityPlanId: "invalid-plan",
 }));
-
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
@@ -61,19 +55,6 @@ vi.mock("../../../lib/api/client", () => ({
       update: { useMutation: () => ({ isPending: false, mutateAsync: vi.fn() }) },
       duplicate: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) },
       delete: { useMutation: () => ({ isPending: false, mutate: vi.fn(), mutateAsync: vi.fn() }) },
-    },
-    athleteIntelligence: {
-      getReadModel: {
-        useQuery: (_input: unknown, options: unknown) => {
-          mocks.readModelOptions.push(options);
-          return {
-            data:
-              (options as { enabled?: boolean }).enabled === true
-                ? { publishedState: { performanceTargets: mocks.performanceTargets } }
-                : undefined,
-          };
-        },
-      },
     },
     calendar: {
       range: {
@@ -138,19 +119,13 @@ vi.mock("../../../lib/api/client", () => ({
   },
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
-
 beforeEach(() => {
   mocks.createEvent.mockReset();
   mocks.scheduleError = false;
   mocks.refetchSchedule.mockReset();
   mocks.eventListInput = undefined;
   mocks.planInputs = [];
-  mocks.readModelOptions = [];
   mocks.activityPlanId = "invalid-plan";
-  mocks.performanceTargets = buildPerformanceTargetFactsFixture({
-    asOf: "2026-07-01T00:00:00.000Z",
-    bikeThresholdWatts: 300,
-  });
   mocks.plan = {
     content_visibility: "private",
     created_at: "2026-07-01T00:00:00.000Z",
@@ -169,21 +144,21 @@ beforeEach(() => {
   };
 });
 afterEach(cleanup);
-
 describe("ActivityPlanDetailPage invalid plan", () => {
   it("treats a noncanonical structure as an unavailable API result", () => {
-    const ActivityPlanDetailPage = (Route as unknown as { component: React.ComponentType })
-      .component;
+    const ActivityPlanDetailPage = (
+      Route as unknown as {
+        component: React.ComponentType;
+      }
+    ).component;
     render(<ActivityPlanDetailPage />);
-
     expect(screen.getByText("Activity plan unavailable")).toBeTruthy();
     expect(screen.queryByText("Read-only structure")).toBeNull();
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
   });
 });
-
 describe("ActivityPlanDetailPage print", () => {
-  it("automatically personalizes an eligible owner session flow and prints the selected structure", () => {
+  it("renders the fixed authored relative prescription and print actions for an owner", () => {
     mocks.plan = {
       detail: {
         id: "invalid-plan",
@@ -202,7 +177,7 @@ describe("ActivityPlanDetailPage print", () => {
             key: "distance",
             label: "Distance",
             status: "available",
-            value: 10_000,
+            value: 10000,
             unit: "meters",
             reason: null,
             provenance: "authored",
@@ -211,7 +186,7 @@ describe("ActivityPlanDetailPage print", () => {
             key: "elapsed_duration",
             label: "Duration",
             status: "available",
-            value: 3_600,
+            value: 3600,
             unit: "seconds",
             reason: null,
             provenance: "authored",
@@ -236,54 +211,42 @@ describe("ActivityPlanDetailPage print", () => {
           },
         ],
         structure: {
-          version: 3,
+          version: 5,
           activity_category: "bike",
-          segments: [
+          items: [
             {
-              id: "00000000-0000-4000-8000-000000000001",
-              role: "activity",
-              name: "Ride",
-              intervals: [
-                {
-                  id: "00000000-0000-4000-8000-000000000002",
-                  name: "Work",
-                  repetitions: 1,
-                  steps: [
-                    {
-                      id: "00000000-0000-4000-8000-000000000003",
-                      name: "Tempo",
-                      duration: { type: "time", seconds: 60 },
-                      targets: [{ type: "%FTP", intensity: 80 }],
-                    },
-                  ],
-                },
-              ],
+              type: "step",
+              id: "00000000-0000-4000-8000-000000000002",
+              name: "Work",
+              instructions: "Keep it smooth.",
+              duration: { type: "time", seconds: 60 },
+              targets: [{ type: "%FTP", intensity: 80 }],
             },
           ],
         },
       },
       edit: null,
     };
-    const ActivityPlanDetailPage = (Route as unknown as { component: React.ComponentType })
-      .component;
-    const view = render(<ActivityPlanDetailPage />);
-
+    const ActivityPlanDetailPage = (
+      Route as unknown as {
+        component: React.ComponentType;
+      }
+    ).component;
+    render(<ActivityPlanDetailPage />);
     expect(mocks.planInputs).toContainEqual({ id: "invalid-plan", personalize: false });
-    expect(mocks.readModelOptions).toContainEqual({ enabled: true });
     expect(screen.getByText("Session Flow")).toBeTruthy();
-    expect(screen.getByRole("figure", { name: /Session flow with 1 work block/ })).toBeTruthy();
+    expect(screen.getByRole("figure", { name: /Session flow with 1 work step/ })).toBeTruthy();
     expect(
       screen.getByTestId("activity-plan-session-flow-timeline-bar-0").getAttribute("data-kind"),
     ).toBe("work");
-    expect(screen.getByText("Work")).toBeTruthy();
-    expect(screen.getByText(/1m at 240 W/)).toBeTruthy();
-    expect(screen.getByText(/240 W/)).toBeTruthy();
-    const authoredTimelineIntensity = screen
-      .getByTestId("activity-plan-session-flow-timeline-bar-0")
-      .getAttribute("data-intensity");
+    expect(screen.getAllByText("Step 1").length).toBeGreaterThan(0);
+    expect(screen.getByText(/60 sec · 80% FTP/)).toBeTruthy();
     expect(
-      screen.getByRole("switch", { name: "Calculated targets" }).getAttribute("aria-checked"),
-    ).toBe("true");
+      screen
+        .getByTestId("activity-plan-session-flow-timeline-bar-0")
+        .getAttribute("data-intensity"),
+    ).toBe("%FTP 80");
+    expect(screen.queryByRole("switch", { name: "Calculated targets" })).toBeNull();
     expect(screen.getByText("Distance")).toBeTruthy();
     expect(screen.getByText("Duration")).toBeTruthy();
     expect(screen.getByText("Load")).toBeTruthy();
@@ -294,28 +257,7 @@ describe("ActivityPlanDetailPage print", () => {
     expect(screen.getByLabelText("Intensity, ~0.80, Estimated")).toBeTruthy();
     expect(screen.queryByText(/~1h|approximately 1h/i)).toBeNull();
     expect(screen.queryByText(/recorded signal pattern|effort profile/i)).toBeNull();
-    fireEvent.click(screen.getByRole("switch", { name: "Calculated targets" }));
-    expect(
-      screen.getByRole("switch", { name: "Calculated targets" }).getAttribute("aria-checked"),
-    ).toBe("false");
-    expect(screen.queryByText(/240 W/)).toBeNull();
-    expect(screen.getByText(/80% FTP/)).toBeTruthy();
-    expect(
-      screen
-        .getByTestId("activity-plan-session-flow-timeline-bar-0")
-        .getAttribute("data-intensity"),
-    ).toBe(authoredTimelineIntensity);
     expect(mocks.planInputs).not.toContainEqual({ id: "invalid-plan", personalize: true });
-
-    fireEvent.click(screen.getByRole("switch", { name: "Calculated targets" }));
-    expect(screen.getByText(/240 W/)).toBeTruthy();
-
-    mocks.activityPlanId = "another-plan";
-    view.rerender(<ActivityPlanDetailPage />);
-    expect(
-      screen.getByRole("switch", { name: "Calculated targets" }).getAttribute("aria-checked"),
-    ).toBe("true");
-
     expect((screen.getByRole("combobox", { name: "PDF format" }) as HTMLSelectElement).value).toBe(
       "full-page",
     );
@@ -323,15 +265,11 @@ describe("ActivityPlanDetailPage print", () => {
     expect(screen.getByRole("button", { name: "Download PDF" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Open / Print" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Share PDF" })).toBeTruthy();
-    expect(screen.getByText("Read-only structure")).toBeTruthy();
-    expect(screen.getByText("Read-only structure").parentElement?.className).toContain(
-      "print:hidden",
-    );
+    expect(screen.getAllByText("Session Flow")).toHaveLength(1);
     expect(screen.getByTestId("activity-plan-session-flow").className).not.toContain(
       "print:hidden",
     );
   });
-
   it("schedules a selected system catalog activity plan without an owned plan", () => {
     mocks.plan = {
       detail: {
@@ -400,6 +338,7 @@ describe("ActivityPlanDetailPage print", () => {
                   repetitions: 1,
                   steps: [
                     {
+                      type: "step",
                       id: "00000000-0000-4000-8000-000000000003",
                       name: "Tempo",
                       duration: { type: "time", seconds: 60 },
@@ -414,16 +353,21 @@ describe("ActivityPlanDetailPage print", () => {
       },
       edit: null,
     };
-    const ActivityPlanDetailPage = (Route as unknown as { component: React.ComponentType })
-      .component;
+    const ActivityPlanDetailPage = (
+      Route as unknown as {
+        component: React.ComponentType;
+      }
+    ).component;
     const view = render(<ActivityPlanDetailPage />);
-
-    const { range } = mocks.eventListInput as { range: { startDate: string; endDate: string } };
-    expect((Date.parse(range.endDate) - Date.parse(range.startDate)) / 86_400_000 + 1).toBe(366);
-
+    const { range } = mocks.eventListInput as {
+      range: {
+        startDate: string;
+        endDate: string;
+      };
+    };
+    expect((Date.parse(range.endDate) - Date.parse(range.startDate)) / 86400000 + 1).toBe(366);
     fireEvent.change(screen.getByLabelText("Schedule date"), { target: { value: "2026-10-26" } });
     fireEvent.click(screen.getByRole("button", { name: "Schedule" }));
-
     expect(mocks.createEvent).toHaveBeenCalledWith({
       profileId: "owner-1",
       session: expect.objectContaining({
@@ -449,8 +393,7 @@ describe("ActivityPlanDetailPage print", () => {
     expect(mocks.refetchSchedule).toHaveBeenCalledTimes(1);
     expect((screen.getByLabelText("Schedule date") as HTMLInputElement).value).toBe("2026-10-26");
   });
-
-  it("personalizes an eligible non-owner session flow using the viewer's performance targets", () => {
+  it("renders a fixed authored relative prescription for a non-owner", () => {
     mocks.plan = {
       detail: {
         id: "invalid-plan",
@@ -501,55 +444,41 @@ describe("ActivityPlanDetailPage print", () => {
           },
         ],
         structure: {
-          version: 3,
+          version: 5,
           activity_category: "bike",
-          segments: [
+          items: [
             {
-              id: "00000000-0000-4000-8000-000000000011",
-              role: "activity",
-              name: "Ride",
-              intervals: [
-                {
-                  id: "00000000-0000-4000-8000-000000000012",
-                  name: "Threshold",
-                  repetitions: 1,
-                  steps: [
-                    {
-                      id: "00000000-0000-4000-8000-000000000013",
-                      name: "Work",
-                      duration: { type: "time", seconds: 300 },
-                      targets: [{ type: "%FTP", intensity: 90 }],
-                    },
-                  ],
-                },
-              ],
+              type: "step",
+              id: "00000000-0000-4000-8000-000000000012",
+              name: "Threshold",
+              duration: { type: "time", seconds: 300 },
+              targets: [{ type: "%FTP", intensity: 90 }],
             },
           ],
         },
       },
       edit: null,
     };
-    const ActivityPlanDetailPage = (Route as unknown as { component: React.ComponentType })
-      .component;
+    const ActivityPlanDetailPage = (
+      Route as unknown as {
+        component: React.ComponentType;
+      }
+    ).component;
     render(<ActivityPlanDetailPage />);
-
     expect(screen.getByText("Session Flow")).toBeTruthy();
     expect(screen.getByTestId("activity-plan-session-flow")).toBeTruthy();
-    expect(screen.getByText(/270 W/)).toBeTruthy();
-    expect(screen.getByText("Read-only structure")).toBeTruthy();
-    expect(
-      screen.getByRole("switch", { name: "Calculated targets" }).getAttribute("aria-checked"),
-    ).toBe("true");
+    expect(screen.getByText(/300 sec · 90% FTP/)).toBeTruthy();
+    expect(screen.queryByText("Read-only structure")).toBeNull();
+    expect(screen.queryByRole("switch", { name: "Calculated targets" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Duplicate" })).toBeNull();
     expect(screen.queryByText(/Duplicate .* editable copy/)).toBeNull();
     expect(screen.getByTestId("activity-plan-schedule")).toBeTruthy();
     expect(screen.getByTestId("activity-plan-estimates")).toBeTruthy();
-    expect(screen.getByLabelText("Distance, Unavailable, Unavailable")).toBeTruthy();
     expect(screen.getByLabelText("Duration, 5m, Authored")).toBeTruthy();
-    expect(screen.getAllByLabelText("Load, Unavailable, Unavailable")).toHaveLength(1);
-    expect(screen.getAllByLabelText("Intensity, Unavailable, Unavailable")).toHaveLength(1);
+    expect(screen.queryByLabelText("Distance, Unavailable, Unavailable")).toBeNull();
+    expect(screen.getByText("Estimate details")).toBeTruthy();
     expect(screen.queryByText("Plan intent")).toBeNull();
     expect(screen.queryByText("Personalized")).toBeNull();
-    expect(mocks.readModelOptions).toContainEqual({ enabled: true });
+    expect(mocks.planInputs).not.toContainEqual({ id: "invalid-plan", personalize: true });
   });
 });

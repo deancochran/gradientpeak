@@ -201,9 +201,15 @@ export function BuilderGoalEditorContent({
 export function BuilderLocalGoalCreateContent({
   onSave,
   planStartDate,
+  draft,
+  onDraftChange,
+  onDirtyChange,
 }: {
   onSave: (goal: Omit<TrainingPlanBuilderGoalBlueprint, "localId">) => void;
   planStartDate: string;
+  draft?: GoalEditorDraft | undefined;
+  onDraftChange?: (draft: GoalEditorDraft) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const initialDraft = useMemo(
     () => ({
@@ -239,7 +245,9 @@ export function BuilderLocalGoalCreateContent({
     <View className="gap-4" testID="builder-local-goal-create-form">
       <GoalEditorForm
         contentSizing="intrinsic"
-        initialValue={initialDraft}
+        initialValue={draft ?? initialDraft}
+        {...(onDraftChange ? { onDraftChange } : {})}
+        {...(onDirtyChange ? { onDirtyChange } : {})}
         submitLabel="Add to plan"
         onSubmit={save}
       />

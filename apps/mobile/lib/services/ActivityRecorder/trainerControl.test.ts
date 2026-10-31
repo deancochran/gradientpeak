@@ -266,6 +266,29 @@ describe("TrainerControl QA regressions", () => {
     );
   });
 
+  it("marks control failed and reports a rejected boundary reset", async () => {
+    const trainer = createFtmsCandidate({ isControllable: true });
+    const onError = vi.fn();
+    const sensorsManager = {
+      getControllableTrainer: vi.fn(() => trainer),
+      getSelectedFTMSTrainer: vi.fn(() => trainer),
+      getConnectedSensors: vi.fn(() => []),
+      getLastTrainerCommandStatus: vi.fn(() => null),
+      resetTrainerControl: vi.fn(async () => false),
+    };
+    const control = new TrainerControl({
+      sensorsManager: sensorsManager as never,
+      getCurrentReadings: () => ({}) as never,
+      getSessionOverrideState: () => ({ trainerMode: "auto" }) as never,
+      getSessionSnapshot: () => null,
+      onError,
+    });
+
+    await expect(control.neutralizeForBoundary()).resolves.toBe(false);
+    expect(control.getControlState()).toBe("failed");
+    expect(onError).toHaveBeenCalledWith("Failed to reset trainer control at activity boundary.");
+  });
+
   it("keeps feature eligibility separate from granted control until a command succeeds", async () => {
     let granted = false;
     const status = {

@@ -4,6 +4,20 @@ import { sliderFixtures } from "./fixtures";
 import { Slider } from "./index.native";
 
 describe("Slider native", () => {
+  it("defaults to normalized units and rejects expired callbacks", async () => {
+    const change = jest.fn();
+    const view = await renderNative(<Slider testId="normalized" onValueChange={change} />);
+    const slider = view.getByTestId("normalized");
+    expect(slider.props).toMatchObject({ minimumValue: 0, maximumValue: 1, step: 0.01, value: 0 });
+    const previousChange = slider.props.onValueChange;
+    await view.rerender(<Slider testId="normalized" onValueChange={change} disabled />);
+    previousChange(0.5);
+    await view.rerender(<Slider testId="normalized" onValueChange={change} />);
+    previousChange(0.75);
+    expect(change).not.toHaveBeenCalled();
+    await fireEvent(view.getByTestId("normalized"), "onValueChange", 0.25);
+    expect(change).toHaveBeenCalledWith(0.25);
+  });
   it("forwards value change events", async () => {
     const onValueChange = jest.fn();
 

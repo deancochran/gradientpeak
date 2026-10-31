@@ -20,16 +20,26 @@ const mocks = vi.hoisted(() => ({
   >,
   linkPlannedSessionCompletion: vi.fn(),
   skipPlannedSession: vi.fn(),
+  changePlanOnly: vi.fn(),
+  navigate: vi.fn(),
+  plannedSessionMutationOptions: undefined as unknown,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
-    useNavigate: () => vi.fn(),
+    useNavigate: () => mocks.navigate,
     useParams: () => ({ eventId: "event-1" }),
     useSearch: () => mocks.search,
   }),
   Link: ({ children }: { children: React.ReactNode }) => <a href="/calendar">{children}</a>,
+}));
+
+vi.mock("@repo/api/react", () => ({
+  usePlannedSessionMutations: (options: unknown) => {
+    mocks.plannedSessionMutationOptions = options;
+    return { changePlanOnly: { isPending: false, mutateAsync: mocks.changePlanOnly } };
+  },
 }));
 
 vi.mock("@tanstack/react-start", () => ({ useServerFn: () => mocks.deleteAction }));
@@ -71,7 +81,11 @@ vi.mock("../../../../lib/api/client", () => ({
       skip: { useMutation: () => ({ mutateAsync: mocks.skipPlannedSession }) },
     },
     profiles: { get: { useQuery: () => ({ data: { planning_timezone: "UTC" } }) } },
-    activityPlans: { getById: { useQuery: () => ({ data: null }) } },
+    activityPlans: {
+      getById: {
+        useQuery: () => ({ data: { detail: { activityCategory: "run" } }, refetch: vi.fn() }),
+      },
+    },
     activities: {
       createManualDiaryEntry: {
         useMutation: () => ({ mutateAsync: mocks.createManualDiaryEntry }),
@@ -99,6 +113,7 @@ afterEach(() => {
   mocks.plannedSessionOptions = [];
   mocks.search = { month: "2026-07", view: "month" };
   mocks.completionCandidates = { canAssociate: true, items: [], nextCursor: null };
+  mocks.plannedSessionMutationOptions = undefined;
   vi.clearAllMocks();
 });
 
@@ -149,12 +164,7 @@ describe("EventDetailPage", () => {
       sessionRevision: 1,
       planningDate: "2000-01-01",
       lifecycle: { status: "scheduled" },
-      prescription: {
-        resolutionManifest: {
-          activity_plan_id: "00000000-0000-4000-8000-000000000003",
-          resolved_structure: { activity_category: "run" },
-        },
-      },
+      activityPlanId: "00000000-0000-4000-8000-000000000003",
     };
     mocks.createManualDiaryEntry.mockRejectedValueOnce(new Error("Request status is unknown"));
     mocks.createManualDiaryEntry.mockResolvedValueOnce({ outcome: "unchanged" });
@@ -196,6 +206,108 @@ describe("EventDetailPage", () => {
     expect(firstInput.observation).not.toHaveProperty("rpe");
   });
 
+  it("duplicates and edits only a reference-based scheduled session before opening its returned copy", async () => {
+    mocks.search = { month: "2026-07", resourceType: "planned_session", view: "month" };
+    mocks.plannedSession = {
+      id: "00000000-0000-4000-8000-000000000001",
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 4,
+      planningDate: "2099-01-01",
+      lifecycle: { status: "scheduled" },
+      activityPlanId: "00000000-0000-4000-8000-000000000003",
+      prescription: null,
+    };
+    mocks.changePlanOnly.mockResolvedValueOnce({
+      outcome: "updated",
+      session: {
+        activityPlanId: "00000000-0000-4000-8000-000000000004",
+      },
+    });
+    const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+
+    render(<EventDetailPage />);
+
+    expect(screen.getByRole("button", { name: "Edit this session only" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Edit plan for all sessions" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Edit this session only" }));
+
+    await waitFor(() =>
+      expect(mocks.changePlanOnly).toHaveBeenCalledWith({
+        expectedRevision: 4,
+        profileId: "00000000-0000-4000-8000-000000000002",
+        sessionId: "00000000-0000-4000-8000-000000000001",
+      }),
+    );
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      params: { activityPlanId: "00000000-0000-4000-8000-000000000004" },
+      search: { edit: true },
+      to: "/activity-plans/$activityPlanId",
+    });
+    expect(mocks.plannedSessionMutationOptions).toMatchObject({ onConflict: expect.any(Function) });
+  });
+
+  it("keeps a failed single-session edit on the planned-session detail", async () => {
+    mocks.search = { month: "2026-07", resourceType: "planned_session", view: "month" };
+    mocks.plannedSession = {
+      id: "00000000-0000-4000-8000-000000000001",
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 4,
+      planningDate: "2099-01-01",
+      lifecycle: { status: "scheduled" },
+      activityPlanId: "00000000-0000-4000-8000-000000000003",
+      prescription: null,
+    };
+    mocks.changePlanOnly.mockRejectedValueOnce(new Error("Session was changed elsewhere"));
+    const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+
+    render(<EventDetailPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit this session only" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Session was changed elsewhere",
+    );
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "completed",
+      {
+        status: "completed",
+        completion: {
+          state: "skipped",
+          skippedAt: "2026-07-01T00:00:00.000Z",
+          operationId: "00000000-0000-4000-8000-000000000005",
+        },
+      },
+    ],
+    [
+      "cancelled",
+      {
+        status: "cancelled",
+        cancelledAt: "2026-07-01T00:00:00.000Z",
+        reason: "user_requested",
+      },
+    ],
+  ])("does not offer a single-session edit for a %s session", (_status, lifecycle) => {
+    mocks.search = { month: "2026-07", resourceType: "planned_session", view: "month" };
+    mocks.plannedSession = {
+      id: "00000000-0000-4000-8000-000000000001",
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 4,
+      planningDate: "2099-01-01",
+      lifecycle,
+      activityPlanId: "00000000-0000-4000-8000-000000000003",
+      prescription: null,
+    };
+    const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+
+    render(<EventDetailPage />);
+
+    expect(screen.queryByRole("button", { name: "Edit this session only" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Edit plan for all sessions" })).toBeNull();
+  });
+
   it("keeps an invalid actual draft visible and does not capture a completion payload", async () => {
     mocks.search = { month: "2026-07", resourceType: "planned_session", view: "month" };
     mocks.plannedSession = {
@@ -204,12 +316,7 @@ describe("EventDetailPage", () => {
       sessionRevision: 1,
       planningDate: "2000-01-01",
       lifecycle: { status: "scheduled" },
-      prescription: {
-        resolutionManifest: {
-          activity_plan_id: "00000000-0000-4000-8000-000000000003",
-          resolved_structure: { activity_category: "run" },
-        },
-      },
+      activityPlanId: "00000000-0000-4000-8000-000000000003",
     };
     const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
     render(<EventDetailPage />);
@@ -242,12 +349,7 @@ describe("EventDetailPage", () => {
           activityId: "00000000-0000-4000-8000-000000000004",
         },
       },
-      prescription: {
-        resolutionManifest: {
-          activity_plan_id: "00000000-0000-4000-8000-000000000003",
-          resolved_structure: { activity_category: "run" },
-        },
-      },
+      activityPlanId: "00000000-0000-4000-8000-000000000003",
     };
     mocks.completionCandidates = {
       canAssociate: true,

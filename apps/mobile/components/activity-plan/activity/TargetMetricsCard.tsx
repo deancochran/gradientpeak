@@ -81,12 +81,14 @@ const TargetMetricsCard = memo<TargetMetricsCardProps>(function TargetMetricsCar
 
   // Format target display
   const getTargetDisplay = () => {
+    if (target.type === "rest") return "Rest";
     const [min, max] = getTargetRange(target);
     return `${Math.round(target.intensity)} (${Math.round(min)}-${Math.round(max)})`;
   };
 
   // Check if current is in range
   const checkIsInRange = () => {
+    if (target.type === "rest") return null;
     if (current === undefined) return null;
     return isInTargetRange(current, target);
   };

@@ -315,8 +315,8 @@ function MessagesPage() {
   return (
     <div className="h-[calc(100vh-8rem)] w-full overflow-hidden rounded-lg border bg-background">
       <RouteFlashToast
-        message={flash}
-        type={flashType}
+        {...(flash === undefined ? {} : { message: flash })}
+        {...(flashType === undefined ? {} : { type: flashType })}
         clear={() =>
           void navigate({
             to: "/messages",

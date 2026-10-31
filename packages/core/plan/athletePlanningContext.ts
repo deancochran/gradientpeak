@@ -281,12 +281,47 @@ export interface AthletePlanningContextFieldDescriptor {
   category: "demographics" | "body" | "physiology" | "wellness";
   inputKind: "number" | "derived";
   defaultUnit: string | null;
+  /** Presentation precision only; persisted historical values remain lossless. */
+  decimals: number;
   value: z.infer<typeof athleteContextEvidenceValueSchema>;
   visible: boolean;
   required: boolean;
   reason: string | null;
   canOverride: boolean;
   canRemove: boolean;
+}
+
+/** Deliberate authoring precision for editable context metrics, not a schema constraint. */
+export function getAthletePlanningContextAuthoringDecimals(
+  key: AthletePlanningContextFieldKey,
+): number {
+  switch (key) {
+    case "ageYears":
+    case "restingHeartRateBpm":
+    case "maxHeartRateBpm":
+      return 0;
+    case "heightCm":
+    case "bodyFatPercentage":
+    case "hrvRmssdMs":
+    case "currentFitnessLongTermLoad":
+    case "currentFatigueRecentLoad":
+    case "currentFormLoadBalance":
+    case "hydrationLevel":
+    case "stressScore":
+    case "sorenessLevel":
+    case "wellnessScore":
+      return 1;
+    case "weightKg":
+    case "vo2Max":
+    case "sleepHours":
+      return 2;
+    case "bmi":
+    case "planningThresholdPowerWatts":
+    case "planningThresholdPaceSecondsPerKm":
+    case "swimThresholdPaceSecondsPer100m":
+    case "thresholdHeartRateBpm":
+      return 0;
+  }
 }
 
 export interface AthletePlanningContextFieldOverride {
@@ -1036,6 +1071,7 @@ export function selectAthletePlanningContextFields(
         category: definition.category,
         inputKind: definition.inputKind,
         defaultUnit: definition.defaultUnit,
+        decimals: getAthletePlanningContextAuthoringDecimals(key),
         value,
         visible: hasValue || required,
         required,

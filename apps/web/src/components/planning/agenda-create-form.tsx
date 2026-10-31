@@ -81,6 +81,7 @@ export function AgendaCreateForm({ initialDate }: { initialDate?: string }) {
         <div className="space-y-2">
           <Label htmlFor="agenda-title">Title</Label>
           <Input
+            autoFocus
             id="agenda-title"
             name="title"
             required

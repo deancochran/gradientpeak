@@ -22,6 +22,7 @@ import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsContro
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
 import { returnToRecordScreen } from "@/lib/navigation/recordingNavigation";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { useOptionalActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
 import {
   handleRecordingObjectAction,
@@ -144,13 +145,13 @@ export default function RouteDetailScreen() {
     },
   });
 
-  const comments = useEntityCommentsController({ entityId: route?.id, entityType: "route" });
+  const comments = useEntityCommentsController({ entityId: route?.id ?? "", entityType: "route" });
   const entityCommentsSheet = useEntityCommentsSheet();
   const routeLike = useResourceLike({
     entityId: route?.id ?? "",
     entityType: "route",
-    initialCount: route?.likes_count,
-    initialLiked: route?.has_liked,
+    ...(route?.likes_count === undefined ? {} : { initialCount: route.likes_count }),
+    ...(route?.has_liked === undefined ? {} : { initialLiked: route.has_liked }),
   });
 
   const handleToggleLike = () => {
@@ -168,7 +169,7 @@ export default function RouteDetailScreen() {
   const isDeletionPending = route?.storage_state === "deletion_pending";
 
   const elevationStreams = useMemo(
-    () => buildRouteStreams(routeFull?.coordinates),
+    () => buildRouteStreams(routeFull?.coordinates?.map((coordinate) => omitUndefined(coordinate))),
     [routeFull?.coordinates],
   );
 
@@ -179,7 +180,9 @@ export default function RouteDetailScreen() {
       objectId: route.id,
       label: route.name,
       category: (route as { activity_category?: string | null }).activity_category,
-      canReadGeometry: routeFull ? Boolean(routeFull.coordinates?.length) : undefined,
+      ...(routeFull === undefined
+        ? {}
+        : { canReadGeometry: Boolean(routeFull.coordinates?.length) }),
     };
   }, [route, routeFull]);
 
@@ -329,8 +332,8 @@ export default function RouteDetailScreen() {
       screenTestID="route-detail-screen"
     >
       <RouteCard
-        headerAccessory={
-          canShare ? (
+        {...omitUndefined({
+          headerAccessory: canShare ? (
             <ResourceCardActionButton
               accessibilityLabel="Share route"
               onPress={() => void handleShare()}
@@ -338,10 +341,19 @@ export default function RouteDetailScreen() {
             >
               <Icon as={Share2} size={20} className="text-foreground" />
             </ResourceCardActionButton>
-          ) : undefined
-        }
-        route={route}
-        routeFull={isDeletionPending ? undefined : routeFull}
+          ) : undefined,
+        })}
+        route={omitUndefined(route)}
+        {...omitUndefined({
+          routeFull:
+            isDeletionPending || routeFull === undefined
+              ? undefined
+              : omitUndefined({
+                  coordinates: routeFull.coordinates?.map((coordinate) =>
+                    omitUndefined(coordinate),
+                  ),
+                }),
+        })}
         isLiked={routeLike.isLiked}
         likeCount={routeLike.likeCount}
         likePending={routeLike.isPending}

@@ -11,7 +11,7 @@ import {
 import { cn } from "@repo/ui/lib/cn";
 import { Link, useLocation } from "@tanstack/react-router";
 import { Menu } from "lucide-react";
-
+import { ChatbotLauncher } from "../chatbot/chatbot-panel";
 import { useAuth } from "../providers/auth-provider";
 import { MessagesButton } from "./messages-button";
 import { NotificationsButton } from "./notifications-button";
@@ -65,6 +65,7 @@ export function ProtectedHeader() {
         </nav>
         <div className="ml-auto flex items-center gap-1 sm:gap-2">
           <SearchLauncher />
+          <ChatbotLauncher />
           <MessagesButton />
           <NotificationsButton />
           {user?.id ? (

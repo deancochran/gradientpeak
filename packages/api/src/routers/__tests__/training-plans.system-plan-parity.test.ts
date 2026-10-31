@@ -68,12 +68,12 @@ function createCaller(rows: SystemTrainingPlanRow[]) {
   });
 
   return trainingPlansRouter.createCaller({
-    db: db as any,
+    db,
     session: { user: { id: "profile-123" } },
     headers: new Headers(),
     clientType: "test",
     trpcSource: "vitest",
-  } as any);
+  } as never);
 }
 
 describe("system training-plan router parity", () => {
@@ -90,18 +90,13 @@ describe("system training-plan router parity", () => {
     });
   });
 
-  it("getTemplate preserves a canonical plan artifact", async () => {
+  it("does not expose retired system-plan artifacts", async () => {
     const caller = createCaller(rows);
-    const canonicalPlan = ALL_SAMPLE_PLANS.find(
-      (plan: SamplePlan) => plan.name === "Half Marathon Build (10 weeks)",
-    );
 
-    if (!canonicalPlan) {
-      throw new Error("Missing canonical system plan fixture");
-    }
-
-    const expectedTemplate = toExpectedTemplateResponse(canonicalPlan);
-
-    await expect(caller.getTemplate({ id: canonicalPlan.id })).resolves.toEqual(expectedTemplate);
+    await expect(
+      caller.getTemplate({ id: "00000000-0000-4000-8000-000000000001" }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
   });
 });

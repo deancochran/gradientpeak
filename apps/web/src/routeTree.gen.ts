@@ -23,6 +23,7 @@ import { Route as ProtectedRecordRouteImport } from './routes/_protected/record'
 import { Route as ProtectedSearchRouteImport } from './routes/_protected/search'
 import { Route as ProtectedSettingsRouteImport } from './routes/_protected/settings'
 import { Route as ProtectedThresholdsRouteImport } from './routes/_protected/thresholds'
+import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiReadyRouteImport } from './routes/api/ready'
 import { Route as AuthConfirmRouteImport } from './routes/auth/confirm'
@@ -49,6 +50,7 @@ import { Route as ProtectedGroupsNewRouteImport } from './routes/_protected/grou
 import { Route as ProtectedRecordIndexRouteImport } from './routes/_protected/record/index'
 import { Route as ProtectedRecordPlanRouteImport } from './routes/_protected/record/plan'
 import { Route as ProtectedRecordSessionRouteImport } from './routes/_protected/record/session'
+import { Route as ProtectedRecordSimulateRouteImport } from './routes/_protected/record/simulate'
 import { Route as ProtectedRoutesIndexRouteImport } from './routes/_protected/routes/index'
 import { Route as ProtectedRoutesUploadRouteImport } from './routes/_protected/routes/upload'
 import { Route as ProtectedTrainingPlansIndexRouteImport } from './routes/_protected/training-plans/index'
@@ -85,6 +87,7 @@ import { Route as ProtectedCalendarEventsEventIdEditRouteImport } from './routes
 import { Route as ProtectedGroupsGroupIdEventsNewRouteImport } from './routes/_protected/groups/$groupId/events/new'
 import { Route as ProtectedGroupsEventsGroupEventIdIndexRouteImport } from './routes/_protected/groups/events/$groupEventId/index'
 import { Route as ProtectedGroupsEventsGroupEventIdEditRouteImport } from './routes/_protected/groups/events/$groupEventId/edit'
+import { Route as ApiInternalProviderSyncGarminTrainingDrainRouteImport } from './routes/api/internal/provider-sync/garmin/training-drain'
 import { Route as ApiInternalProviderSyncStravaDrainRouteImport } from './routes/api/internal/provider-sync/strava/drain'
 import { Route as ApiInternalProviderSyncWahooDrainRouteImport } from './routes/api/internal/provider-sync/wahoo/drain'
 import { Route as ApiInternalProviderSyncWahooRetryRouteImport } from './routes/api/internal/provider-sync/wahoo/retry'
@@ -157,6 +160,11 @@ const ProtectedThresholdsRoute = ProtectedThresholdsRouteImport.update({
   id: '/thresholds',
   path: '/thresholds',
   getParentRoute: () => ProtectedRoute,
+} as any)
+const ApiChatRoute = ApiChatRouteImport.update({
+  id: '/api/chat',
+  path: '/api/chat',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
@@ -292,6 +300,11 @@ const ProtectedRecordPlanRoute = ProtectedRecordPlanRouteImport.update({
 const ProtectedRecordSessionRoute = ProtectedRecordSessionRouteImport.update({
   id: '/session',
   path: '/session',
+  getParentRoute: () => ProtectedRecordRoute,
+} as any)
+const ProtectedRecordSimulateRoute = ProtectedRecordSimulateRouteImport.update({
+  id: '/simulate',
+  path: '/simulate',
   getParentRoute: () => ProtectedRecordRoute,
 } as any)
 const ProtectedRoutesIndexRoute = ProtectedRoutesIndexRouteImport.update({
@@ -503,6 +516,12 @@ const ProtectedGroupsEventsGroupEventIdEditRoute =
     path: '/groups/events/$groupEventId/edit',
     getParentRoute: () => ProtectedRoute,
   } as any)
+const ApiInternalProviderSyncGarminTrainingDrainRoute =
+  ApiInternalProviderSyncGarminTrainingDrainRouteImport.update({
+    id: '/api/internal/provider-sync/garmin/training-drain',
+    path: '/api/internal/provider-sync/garmin/training-drain',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiInternalProviderSyncStravaDrainRoute =
   ApiInternalProviderSyncStravaDrainRouteImport.update({
     id: '/api/internal/provider-sync/strava/drain',
@@ -541,6 +560,7 @@ export interface FileRoutesByFullPath {
   '/search': typeof ProtectedSearchRoute
   '/settings': typeof ProtectedSettingsRoute
   '/thresholds': typeof ProtectedThresholdsRoute
+  '/api/chat': typeof ApiChatRoute
   '/api/health': typeof ApiHealthRoute
   '/api/ready': typeof ApiReadyRoute
   '/auth/confirm': typeof AuthConfirmRoute
@@ -560,6 +580,7 @@ export interface FileRoutesByFullPath {
   '/groups/new': typeof ProtectedGroupsNewRoute
   '/record/plan': typeof ProtectedRecordPlanRoute
   '/record/session': typeof ProtectedRecordSessionRoute
+  '/record/simulate': typeof ProtectedRecordSimulateRoute
   '/routes/upload': typeof ProtectedRoutesUploadRoute
   '/training-plans/create': typeof ProtectedTrainingPlansCreateRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -601,6 +622,7 @@ export interface FileRoutesByFullPath {
   '/calendar/events/$eventId/edit': typeof ProtectedCalendarEventsEventIdEditRoute
   '/groups/$groupId/events/new': typeof ProtectedGroupsGroupIdEventsNewRoute
   '/groups/events/$groupEventId/edit': typeof ProtectedGroupsEventsGroupEventIdEditRoute
+  '/api/internal/provider-sync/garmin/training-drain': typeof ApiInternalProviderSyncGarminTrainingDrainRoute
   '/api/internal/provider-sync/strava/drain': typeof ApiInternalProviderSyncStravaDrainRoute
   '/api/internal/provider-sync/wahoo/drain': typeof ApiInternalProviderSyncWahooDrainRoute
   '/api/internal/provider-sync/wahoo/retry': typeof ApiInternalProviderSyncWahooRetryRoute
@@ -618,6 +640,7 @@ export interface FileRoutesByTo {
   '/search': typeof ProtectedSearchRoute
   '/settings': typeof ProtectedSettingsRoute
   '/thresholds': typeof ProtectedThresholdsRoute
+  '/api/chat': typeof ApiChatRoute
   '/api/health': typeof ApiHealthRoute
   '/api/ready': typeof ApiReadyRoute
   '/auth/confirm': typeof AuthConfirmRoute
@@ -636,6 +659,7 @@ export interface FileRoutesByTo {
   '/groups/new': typeof ProtectedGroupsNewRoute
   '/record/plan': typeof ProtectedRecordPlanRoute
   '/record/session': typeof ProtectedRecordSessionRoute
+  '/record/simulate': typeof ProtectedRecordSimulateRoute
   '/routes/upload': typeof ProtectedRoutesUploadRoute
   '/training-plans/create': typeof ProtectedTrainingPlansCreateRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -677,6 +701,7 @@ export interface FileRoutesByTo {
   '/calendar/events/$eventId/edit': typeof ProtectedCalendarEventsEventIdEditRoute
   '/groups/$groupId/events/new': typeof ProtectedGroupsGroupIdEventsNewRoute
   '/groups/events/$groupEventId/edit': typeof ProtectedGroupsEventsGroupEventIdEditRoute
+  '/api/internal/provider-sync/garmin/training-drain': typeof ApiInternalProviderSyncGarminTrainingDrainRoute
   '/api/internal/provider-sync/strava/drain': typeof ApiInternalProviderSyncStravaDrainRoute
   '/api/internal/provider-sync/wahoo/drain': typeof ApiInternalProviderSyncWahooDrainRoute
   '/api/internal/provider-sync/wahoo/retry': typeof ApiInternalProviderSyncWahooRetryRoute
@@ -699,6 +724,7 @@ export interface FileRoutesById {
   '/_protected/search': typeof ProtectedSearchRoute
   '/_protected/settings': typeof ProtectedSettingsRoute
   '/_protected/thresholds': typeof ProtectedThresholdsRoute
+  '/api/chat': typeof ApiChatRoute
   '/api/health': typeof ApiHealthRoute
   '/api/ready': typeof ApiReadyRoute
   '/auth/confirm': typeof AuthConfirmRoute
@@ -719,6 +745,7 @@ export interface FileRoutesById {
   '/_protected/groups/new': typeof ProtectedGroupsNewRoute
   '/_protected/record/plan': typeof ProtectedRecordPlanRoute
   '/_protected/record/session': typeof ProtectedRecordSessionRoute
+  '/_protected/record/simulate': typeof ProtectedRecordSimulateRoute
   '/_protected/routes/upload': typeof ProtectedRoutesUploadRoute
   '/_protected/training-plans/create': typeof ProtectedTrainingPlansCreateRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -760,6 +787,7 @@ export interface FileRoutesById {
   '/_protected/calendar/events/$eventId/edit': typeof ProtectedCalendarEventsEventIdEditRoute
   '/_protected/groups/$groupId/events/new': typeof ProtectedGroupsGroupIdEventsNewRoute
   '/_protected/groups/events/$groupEventId/edit': typeof ProtectedGroupsEventsGroupEventIdEditRoute
+  '/api/internal/provider-sync/garmin/training-drain': typeof ApiInternalProviderSyncGarminTrainingDrainRoute
   '/api/internal/provider-sync/strava/drain': typeof ApiInternalProviderSyncStravaDrainRoute
   '/api/internal/provider-sync/wahoo/drain': typeof ApiInternalProviderSyncWahooDrainRoute
   '/api/internal/provider-sync/wahoo/retry': typeof ApiInternalProviderSyncWahooRetryRoute
@@ -782,6 +810,7 @@ export interface FileRouteTypes {
     | '/search'
     | '/settings'
     | '/thresholds'
+    | '/api/chat'
     | '/api/health'
     | '/api/ready'
     | '/auth/confirm'
@@ -801,6 +830,7 @@ export interface FileRouteTypes {
     | '/groups/new'
     | '/record/plan'
     | '/record/session'
+    | '/record/simulate'
     | '/routes/upload'
     | '/training-plans/create'
     | '/api/auth/$'
@@ -842,6 +872,7 @@ export interface FileRouteTypes {
     | '/calendar/events/$eventId/edit'
     | '/groups/$groupId/events/new'
     | '/groups/events/$groupEventId/edit'
+    | '/api/internal/provider-sync/garmin/training-drain'
     | '/api/internal/provider-sync/strava/drain'
     | '/api/internal/provider-sync/wahoo/drain'
     | '/api/internal/provider-sync/wahoo/retry'
@@ -859,6 +890,7 @@ export interface FileRouteTypes {
     | '/search'
     | '/settings'
     | '/thresholds'
+    | '/api/chat'
     | '/api/health'
     | '/api/ready'
     | '/auth/confirm'
@@ -877,6 +909,7 @@ export interface FileRouteTypes {
     | '/groups/new'
     | '/record/plan'
     | '/record/session'
+    | '/record/simulate'
     | '/routes/upload'
     | '/training-plans/create'
     | '/api/auth/$'
@@ -918,6 +951,7 @@ export interface FileRouteTypes {
     | '/calendar/events/$eventId/edit'
     | '/groups/$groupId/events/new'
     | '/groups/events/$groupEventId/edit'
+    | '/api/internal/provider-sync/garmin/training-drain'
     | '/api/internal/provider-sync/strava/drain'
     | '/api/internal/provider-sync/wahoo/drain'
     | '/api/internal/provider-sync/wahoo/retry'
@@ -939,6 +973,7 @@ export interface FileRouteTypes {
     | '/_protected/search'
     | '/_protected/settings'
     | '/_protected/thresholds'
+    | '/api/chat'
     | '/api/health'
     | '/api/ready'
     | '/auth/confirm'
@@ -959,6 +994,7 @@ export interface FileRouteTypes {
     | '/_protected/groups/new'
     | '/_protected/record/plan'
     | '/_protected/record/session'
+    | '/_protected/record/simulate'
     | '/_protected/routes/upload'
     | '/_protected/training-plans/create'
     | '/api/auth/$'
@@ -1000,6 +1036,7 @@ export interface FileRouteTypes {
     | '/_protected/calendar/events/$eventId/edit'
     | '/_protected/groups/$groupId/events/new'
     | '/_protected/groups/events/$groupEventId/edit'
+    | '/api/internal/provider-sync/garmin/training-drain'
     | '/api/internal/provider-sync/strava/drain'
     | '/api/internal/provider-sync/wahoo/drain'
     | '/api/internal/provider-sync/wahoo/retry'
@@ -1012,6 +1049,7 @@ export interface RootRouteChildren {
   CoachingRoute: typeof CoachingRouteWithChildren
   ProtectedRoute: typeof ProtectedRouteWithChildren
   OnboardingRoute: typeof OnboardingRoute
+  ApiChatRoute: typeof ApiChatRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiReadyRoute: typeof ApiReadyRoute
   AuthConfirmRoute: typeof AuthConfirmRoute
@@ -1032,6 +1070,7 @@ export interface RootRouteChildren {
   ShareRoutesRouteIdRoute: typeof ShareRoutesRouteIdRoute
   ShareTrainingPlansTrainingPlanIdRoute: typeof ShareTrainingPlansTrainingPlanIdRoute
   ApiIntegrationsCallbackProviderRoute: typeof ApiIntegrationsCallbackProviderRoute
+  ApiInternalProviderSyncGarminTrainingDrainRoute: typeof ApiInternalProviderSyncGarminTrainingDrainRoute
   ApiInternalProviderSyncStravaDrainRoute: typeof ApiInternalProviderSyncStravaDrainRoute
   ApiInternalProviderSyncWahooDrainRoute: typeof ApiInternalProviderSyncWahooDrainRoute
   ApiInternalProviderSyncWahooRetryRoute: typeof ApiInternalProviderSyncWahooRetryRoute
@@ -1137,6 +1176,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/thresholds'
       preLoaderRoute: typeof ProtectedThresholdsRouteImport
       parentRoute: typeof ProtectedRoute
+    }
+    '/api/chat': {
+      id: '/api/chat'
+      path: '/api/chat'
+      fullPath: '/api/chat'
+      preLoaderRoute: typeof ApiChatRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/health': {
       id: '/api/health'
@@ -1318,6 +1364,13 @@ declare module '@tanstack/react-router' {
       path: '/session'
       fullPath: '/record/session'
       preLoaderRoute: typeof ProtectedRecordSessionRouteImport
+      parentRoute: typeof ProtectedRecordRoute
+    }
+    '/_protected/record/simulate': {
+      id: '/_protected/record/simulate'
+      path: '/simulate'
+      fullPath: '/record/simulate'
+      preLoaderRoute: typeof ProtectedRecordSimulateRouteImport
       parentRoute: typeof ProtectedRecordRoute
     }
     '/_protected/routes/': {
@@ -1572,6 +1625,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedGroupsEventsGroupEventIdEditRouteImport
       parentRoute: typeof ProtectedRoute
     }
+    '/api/internal/provider-sync/garmin/training-drain': {
+      id: '/api/internal/provider-sync/garmin/training-drain'
+      path: '/api/internal/provider-sync/garmin/training-drain'
+      fullPath: '/api/internal/provider-sync/garmin/training-drain'
+      preLoaderRoute: typeof ApiInternalProviderSyncGarminTrainingDrainRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/internal/provider-sync/strava/drain': {
       id: '/api/internal/provider-sync/strava/drain'
       path: '/api/internal/provider-sync/strava/drain'
@@ -1678,6 +1738,7 @@ const ProtectedGoalsRouteWithChildren = ProtectedGoalsRoute._addFileChildren(
 interface ProtectedRecordRouteChildren {
   ProtectedRecordPlanRoute: typeof ProtectedRecordPlanRoute
   ProtectedRecordSessionRoute: typeof ProtectedRecordSessionRoute
+  ProtectedRecordSimulateRoute: typeof ProtectedRecordSimulateRoute
   ProtectedRecordIndexRoute: typeof ProtectedRecordIndexRoute
   ProtectedRecordRoutePreviewRouteIdRoute: typeof ProtectedRecordRoutePreviewRouteIdRoute
   ProtectedRecordRouteIndexRoute: typeof ProtectedRecordRouteIndexRoute
@@ -1686,6 +1747,7 @@ interface ProtectedRecordRouteChildren {
 const ProtectedRecordRouteChildren: ProtectedRecordRouteChildren = {
   ProtectedRecordPlanRoute: ProtectedRecordPlanRoute,
   ProtectedRecordSessionRoute: ProtectedRecordSessionRoute,
+  ProtectedRecordSimulateRoute: ProtectedRecordSimulateRoute,
   ProtectedRecordIndexRoute: ProtectedRecordIndexRoute,
   ProtectedRecordRoutePreviewRouteIdRoute:
     ProtectedRecordRoutePreviewRouteIdRoute,
@@ -1785,6 +1847,7 @@ const rootRouteChildren: RootRouteChildren = {
   CoachingRoute: CoachingRouteWithChildren,
   ProtectedRoute: ProtectedRouteWithChildren,
   OnboardingRoute: OnboardingRoute,
+  ApiChatRoute: ApiChatRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiReadyRoute: ApiReadyRoute,
   AuthConfirmRoute: AuthConfirmRoute,
@@ -1805,6 +1868,8 @@ const rootRouteChildren: RootRouteChildren = {
   ShareRoutesRouteIdRoute: ShareRoutesRouteIdRoute,
   ShareTrainingPlansTrainingPlanIdRoute: ShareTrainingPlansTrainingPlanIdRoute,
   ApiIntegrationsCallbackProviderRoute: ApiIntegrationsCallbackProviderRoute,
+  ApiInternalProviderSyncGarminTrainingDrainRoute:
+    ApiInternalProviderSyncGarminTrainingDrainRoute,
   ApiInternalProviderSyncStravaDrainRoute:
     ApiInternalProviderSyncStravaDrainRoute,
   ApiInternalProviderSyncWahooDrainRoute:

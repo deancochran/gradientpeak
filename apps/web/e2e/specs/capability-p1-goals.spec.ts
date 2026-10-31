@@ -1,15 +1,17 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "../fixtures";
+import { GoalsPage } from "../pages";
+import { chooseAuthoringOption } from "../pages/authoring";
 import { type GoalFixture, withGoalFixture } from "../planning/data";
 import { createE2EExecutionIdentity } from "../support/identity";
 
 async function createGoal(page: Page, fixture: GoalFixture) {
   const title = createE2EExecutionIdentity(test.info()).name("Confirmation goal");
-  await page.goto("/goals/new?date=2026-09-20");
+  await new GoalsPage(page).startCreate("2026-09-20");
   const form = page.getByTestId("goal-form");
   await form.getByLabel("Title").fill(title);
-  await form.getByLabel("Activity", { exact: true }).selectOption("run");
-  await form.getByLabel("Priority").fill("6");
+  await chooseAuthoringOption(page, "Activity", "Run");
+  await chooseAuthoringOption(page, "Priority", "6");
   await form.getByLabel("Sessions / week").fill("3");
   await form.getByLabel("Weeks").fill("8");
   fixture.rememberGoalTitle(title);

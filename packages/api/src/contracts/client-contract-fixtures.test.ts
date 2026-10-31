@@ -34,6 +34,7 @@ const RESPONSE_SCHEMA_BY_PROCEDURE = {
   "plannedSessions.range": plannedSessionRangeDtoSchema,
   "plannedSessions.create": plannedSessionMutationReceiptSchema,
   "plannedSessions.move": plannedSessionMutationReceiptSchema,
+  "plannedSessions.changePlanOnly": plannedSessionMutationReceiptSchema,
   "plannedSessions.cancel": plannedSessionMutationReceiptSchema,
   "plannedSessions.linkCompletion": plannedSessionMutationReceiptSchema,
   "plannedSessions.linkGroupEvent": plannedSessionMutationReceiptSchema,

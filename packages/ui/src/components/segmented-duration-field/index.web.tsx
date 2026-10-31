@@ -1,12 +1,9 @@
-import { type Ref, useEffect, useId, useImperativeHandle, useRef, useState } from "react";
+import { splitDurationSeconds } from "@repo/core/utils/fitness-inputs";
+import { type Ref, useId, useImperativeHandle, useRef } from "react";
 import { Button } from "../button/index.web";
 import { Input } from "../input/index.web";
-import {
-  type DurationSegments,
-  parseDurationSegments,
-  type SegmentedDurationValueProps,
-  splitDurationSeconds,
-} from "./shared";
+import type { SegmentedDurationValueProps } from "./shared";
+import { useDurationSegments } from "./use-duration-segments";
 
 export {
   type DurationSegments,
@@ -15,122 +12,88 @@ export {
   splitDurationSeconds,
 } from "./shared";
 export interface SegmentedDurationFieldProps extends SegmentedDurationValueProps {
-  ref?: Ref<{ focus: () => void }>;
+  ref?: Ref<{ focus: () => void }> | undefined;
 }
-
-export function SegmentedDurationField({
-  ref,
-  valueSeconds,
-  onChangeSeconds,
-  onInvalidChange,
-  segments,
-  onSegmentsChange,
-  label = "Duration",
-  id,
-  disabled = false,
-}: SegmentedDurationFieldProps) {
+export function SegmentedDurationField(props: SegmentedDurationFieldProps) {
   const generatedId = useId();
-  const baseId = id ?? generatedId;
-  const lastEmitted = useRef(valueSeconds);
-  const [local, setLocal] = useState(() => splitDurationSeconds(valueSeconds));
-  const draft =
-    segments ?? (valueSeconds !== lastEmitted.current ? splitDurationSeconds(valueSeconds) : local);
-  const [hoursRequested, setHoursRequested] = useState(false);
-  const showHours = hoursRequested || draft.hours !== "0";
+  const id = props.id ?? generatedId;
+  const label = props.label ?? "Duration";
   const inputs = useRef(new Map<string, HTMLInputElement>());
-  const lastEdited = useRef<keyof DurationSegments>("minutes");
-  const invalid = parseDurationSegments(draft) === null;
-  const reportedInvalid = useRef<boolean | undefined>(undefined);
-  useEffect(() => {
-    if (reportedInvalid.current === invalid) return;
-    reportedInvalid.current = invalid;
-    onInvalidChange(invalid);
-  }, [invalid, onInvalidChange]);
-  useEffect(() => {
-    if (valueSeconds !== lastEmitted.current) {
-      setLocal(splitDurationSeconds(valueSeconds));
-      lastEmitted.current = valueSeconds;
-    }
-  }, [valueSeconds]);
-  useImperativeHandle(ref, () => ({
-    focus: () => {
-      const bad = (Object.keys(draft) as (keyof DurationSegments)[]).find(
-        (part) => !/^\d+$/.test(draft[part]) || (part !== "hours" && Number(draft[part]) > 59),
-      );
-      inputs.current
-        .get(bad ?? (invalid ? lastEdited.current : "minutes"))
-        ?.focus({ preventScroll: true });
-    },
-  }));
-  const change = (next: DurationSegments) => {
-    setLocal(next);
-    onSegmentsChange?.(next);
-    const seconds = parseDurationSegments(next);
-    if (seconds !== null) {
-      lastEmitted.current = seconds;
-      onChangeSeconds(seconds);
-    }
-  };
+  const focus = () => inputs.current.get(input.firstInvalid)?.focus({ preventScroll: true });
+  const input = useDurationSegments(props, focus);
+  useImperativeHandle(props.ref, () => ({ focus }));
+  const error =
+    input.precisionError ??
+    props.error ??
+    (input.invalid
+      ? props.maxSeconds === 86400
+        ? "Enter whole time segments totaling 1 second to 24 hours."
+        : `Enter a valid ${label.toLowerCase()}. ${input.hint}`
+      : undefined);
   return (
     <div className="space-y-2">
       <div className="flex items-end gap-2">
-        {(["hours", "minutes", "seconds"] as const)
-          .filter((part) => part !== "hours" || showHours)
-          .map((part) => (
-            <div key={part} className="min-w-0 flex-1 space-y-1">
-              <label htmlFor={`${baseId}-${part}`} className="block text-sm font-medium">
-                {part[0]?.toUpperCase()}
-                {part.slice(1)}
-              </label>
-              <Input
-                id={`${baseId}-${part}`}
-                ref={(input) => {
-                  if (input) inputs.current.set(part, input);
-                  else inputs.current.delete(part);
-                }}
-                aria-label={`${label} ${part}`}
-                aria-invalid={invalid}
-                aria-describedby={invalid ? `${baseId}-error` : undefined}
-                className="h-12 min-w-0"
-                type="text"
-                inputMode="numeric"
-                disabled={disabled}
-                value={draft[part]}
-                onChange={(event) => {
-                  lastEdited.current = part;
-                  change({ ...draft, [part]: event.currentTarget.value });
-                }}
-                onKeyDown={(event) => {
-                  if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-                  const seconds = parseDurationSegments(draft);
-                  if (seconds === null) return;
-                  event.preventDefault();
-                  const next =
-                    seconds +
-                    (event.key === "ArrowUp" ? 1 : -1) *
-                      (part === "hours" ? 3600 : part === "minutes" ? 60 : 1);
-                  if (next >= 1 && next <= 86400) {
-                    lastEdited.current = part;
-                    change(splitDurationSeconds(next));
-                  }
-                }}
-              />
-            </div>
-          ))}
+        {input.keys.map((part) => (
+          <div key={part} className="min-w-0 flex-1 space-y-1">
+            <label htmlFor={`${id}-${part}`} className="block text-sm font-medium">
+              {part === "hours" ? "Hours" : part === "minutes" ? "Minutes" : "Seconds"}
+            </label>
+            <Input
+              id={`${id}-${part}`}
+              ref={(handle) => {
+                if (handle) inputs.current.set(part, handle);
+                else inputs.current.delete(part);
+              }}
+              aria-label={`${label} ${part}`}
+              aria-invalid={Boolean(error)}
+              aria-describedby={error ? `${id}-error` : undefined}
+              className="h-12 min-w-0"
+              type="text"
+              inputMode="numeric"
+              disabled={props.disabled || props.active === false}
+              value={input.draft[part]}
+              onBlur={input.blur}
+              onChange={(event) => input.change(part, event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (
+                  (event.key !== "ArrowUp" && event.key !== "ArrowDown") ||
+                  input.result.status !== "valid"
+                )
+                  return;
+                event.preventDefault();
+                const next =
+                  input.result.value +
+                  (event.key === "ArrowUp" ? 1 : -1) *
+                    (part === "hours" ? 3600 : part === "minutes" ? 60 : 1);
+                if (
+                  next < (props.minSeconds ?? 1) ||
+                  next > (props.maxSeconds ?? Number.MAX_SAFE_INTEGER)
+                )
+                  return;
+                const parts = splitDurationSeconds(next, props.layout);
+                input.replace(parts);
+              }}
+            />
+          </div>
+        ))}
       </div>
-      {!showHours ? (
+      {!(props.required ?? true) && input.result.status === "empty" ? (
+        <p className="text-xs text-muted-foreground">Not set</p>
+      ) : null}
+      {!(props.required ?? true) && input.result.status !== "empty" ? (
         <Button
           type="button"
           variant="ghost"
-          disabled={disabled}
-          onClick={() => setHoursRequested(true)}
+          disabled={props.disabled}
+          onClick={input.clear}
+          aria-label={`Clear ${label}`}
         >
-          Add hours
+          Clear
         </Button>
       ) : null}
-      {invalid ? (
-        <p id={`${baseId}-error`} role="alert" className="text-sm text-destructive">
-          Enter whole time segments totaling 1 second to 24 hours.
+      {error ? (
+        <p id={`${id}-error`} role="alert" className="text-sm text-destructive">
+          {error}
         </p>
       ) : null}
     </div>

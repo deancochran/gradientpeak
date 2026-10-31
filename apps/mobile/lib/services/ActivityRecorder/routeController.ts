@@ -1,3 +1,5 @@
+import { omitUndefined } from "@/lib/omitUndefined";
+
 export type RecordingRouteAttachmentSource = "none" | "plan_route" | "explicit_route";
 
 export interface RecordingRouteAttachmentView {
@@ -79,12 +81,21 @@ export class RouteController {
 
     while (
       segmentIndex < maxSegmentIndex &&
-      this.currentRouteDistanceValue >= profile[segmentIndex + 1]?.distance
+      (() => {
+        const nextSegment = profile.at(segmentIndex + 1);
+        return nextSegment !== undefined && this.currentRouteDistanceValue >= nextSegment.distance;
+      })()
     ) {
       segmentIndex += 1;
     }
 
-    while (segmentIndex > 0 && this.currentRouteDistanceValue < profile[segmentIndex]?.distance) {
+    while (
+      segmentIndex > 0 &&
+      (() => {
+        const segment = profile.at(segmentIndex);
+        return segment !== undefined && this.currentRouteDistanceValue < segment.distance;
+      })()
+    ) {
       segmentIndex -= 1;
     }
 
@@ -92,6 +103,7 @@ export class RouteController {
 
     const current = profile[segmentIndex];
     const next = profile[Math.min(segmentIndex + 1, profile.length - 1)];
+    if (current === undefined || next === undefined) return 0;
     const elevationChange = next.elevation - current.elevation;
     const distanceChange = next.distance - current.distance;
 
@@ -121,11 +133,11 @@ export class RouteController {
       };
     }
 
-    return {
+    return omitUndefined({
       routeId: null,
       source: "none",
       suppressedPlanRouteId: this.suppressedPlanRouteId,
-    };
+    });
   }
 
   beginExplicitRouteAttachment(routeId: string): {
@@ -217,6 +229,7 @@ export class RouteController {
     for (let i = 1; i < coordinates.length; i++) {
       const prev = coordinates[i - 1];
       const curr = coordinates[i];
+      if (prev === undefined || curr === undefined) continue;
       const segmentDistance = this.calculateDistance(
         prev.latitude,
         prev.longitude,
@@ -232,21 +245,28 @@ export class RouteController {
   }
 
   private normalizeLoadedRoute(route: LoadedRoute): LoadedRoute {
-    const coordinates = route.coordinates.map((coordinate) => ({
-      ...coordinate,
-      elevation: coordinate.elevation ?? coordinate.altitude,
-    }));
+    const coordinates = route.coordinates.map((coordinate) => {
+      const elevation = coordinate.elevation ?? coordinate.altitude;
+      return {
+        ...coordinate,
+        ...(elevation === undefined ? {} : { elevation }),
+      };
+    });
     const distanceIndex = this.buildRouteDistanceIndex(coordinates);
 
-    return {
-      ...route,
+    const elevationProfile =
+      route.elevation_profile && route.elevation_profile.length > 1
+        ? route.elevation_profile
+        : this.buildElevationProfile(coordinates, distanceIndex.cumulativeDistances);
+
+    return omitUndefined({
+      id: route.id,
+      name: route.name,
       coordinates,
       distanceIndex,
-      elevation_profile:
-        route.elevation_profile && route.elevation_profile.length > 1
-          ? route.elevation_profile
-          : this.buildElevationProfile(coordinates, distanceIndex.cumulativeDistances),
-    };
+      elevation_profile: elevationProfile,
+      polyline: route.polyline,
+    });
   }
 
   private buildElevationProfile(

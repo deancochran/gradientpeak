@@ -5,27 +5,25 @@ import { Text } from "../text/index.native";
 import type { PaceSecondsFieldProps } from "./shared";
 import { usePaceSecondsField } from "./use-pace-seconds-field";
 
-function PaceSecondsField({
-  error,
-  formControl,
-  helperText,
-  id,
-  label,
-  onBlur,
-  onChangeSeconds,
-  placeholder,
-  required = false,
-  showAdjustmentButtons = true,
-  testId,
-  unitLabel,
-  valueSeconds,
-}: PaceSecondsFieldProps) {
-  const draft = usePaceSecondsField({ formControl, onBlur, onChangeSeconds, valueSeconds });
+function PaceSecondsField(props: PaceSecondsFieldProps) {
+  const {
+    error,
+    helperText,
+    id,
+    label,
+    placeholder,
+    required = false,
+    showAdjustmentButtons = true,
+    testId,
+    unitLabel,
+  } = props;
+  const draft = usePaceSecondsField(props);
 
   return (
     <View className="flex-row items-end gap-2">
       {showAdjustmentButtons ? (
         <Button
+          disabled={props.disabled}
           accessibilityLabel={`Decrease ${label}`}
           onPress={() => draft.adjust(-1)}
           size="sm"
@@ -36,6 +34,10 @@ function PaceSecondsField({
       ) : null}
       <View className="flex-1">
         <PaceInput
+          formControl={props.formControl}
+          ref={props.ref}
+          disabled={props.disabled}
+          resetKey={props.resetKey}
           error={error}
           helperText={helperText}
           id={id}
@@ -51,6 +53,7 @@ function PaceSecondsField({
       </View>
       {showAdjustmentButtons ? (
         <Button
+          disabled={props.disabled}
           accessibilityLabel={`Increase ${label}`}
           onPress={() => draft.adjust(1)}
           size="sm"

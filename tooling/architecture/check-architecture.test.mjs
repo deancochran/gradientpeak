@@ -142,6 +142,20 @@ test("only imported schema composition is exempt from contract collision detecti
   );
 });
 
+test("empty exported collections are not structural contracts", () => {
+  const root = resolve(architectureRoot, "fixtures/empty-collections");
+  const config = fixtureConfig({
+    core: { roots: ["core.ts"] },
+    web: { roots: ["web.ts"] },
+  });
+  const { active } = analyzeProject(root, config, ["core.ts", "web.ts"]);
+
+  assert.equal(
+    active.some((finding) => finding.category === "contract-structural-collision"),
+    false,
+  );
+});
+
 test("discriminated-union fingerprints distinguish core and API status contracts", () => {
   const root = resolve(architectureRoot, "../..");
   const config = fixtureConfig({

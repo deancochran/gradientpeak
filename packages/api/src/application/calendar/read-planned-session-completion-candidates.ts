@@ -8,6 +8,7 @@ import {
 import type { PlannedSessionRepositoryPort } from "../../repositories/planned-session-repository-port";
 import { getCurrentAthletePlanningDate } from "../training-plan/appliedScheduleUseCases";
 import { PlannedSessionNotFoundError } from "./planned-session-errors";
+import { resolveCurrentPlannedSessionPlan } from "./resolve-current-planned-session-plan";
 
 export type PlannedSessionCompletionCandidatesResult = {
   canAssociate: boolean;
@@ -71,8 +72,13 @@ export async function readPlannedSessionCompletionCandidates(input: {
     };
   }
 
-  const activityCategory =
-    session.prescription.resolutionManifest.resolved_structure.activity_category;
+  const currentPlan = await resolveCurrentPlannedSessionPlan({
+    repository: input.repository,
+    profileId: input.profileId,
+    session,
+  });
+  if (!currentPlan) throw new PlannedSessionNotFoundError();
+  const activityCategory = currentPlan.structure.activity_category;
   const page = await listPlannedSessionCompletionCandidates(input.db, {
     profileId: input.profileId,
     sessionId: input.sessionId,

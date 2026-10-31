@@ -82,7 +82,7 @@ function nativeAdapter(path: string): NativeAdapter {
 const baseTime = Date.parse("2026-01-01T11:00:00.000Z");
 const executionManifest = {
   version: 1 as const,
-  compilerVersion: 1,
+  compilerVersion: 3 as const,
   planHash: "0".repeat(64),
   occurrences: [],
 };

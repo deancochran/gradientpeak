@@ -26,6 +26,7 @@ import {
   useGroupDetailViewModel,
   useGroupEventListViewModel,
 } from "@/lib/groups";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 
 function singleParam(value: string | string[] | undefined) {
@@ -303,11 +304,12 @@ export default function GroupDetailScreen() {
 
   return (
     <DetailScaffold
-      headerRight={
-        headerActions.length > 0
-          ? () => <DetailOverflowMenu actions={headerActions} testID="group-detail-overflow" />
-          : undefined
-      }
+      {...omitUndefined({
+        headerRight:
+          headerActions.length > 0
+            ? () => <DetailOverflowMenu actions={headerActions} testID="group-detail-overflow" />
+            : undefined,
+      })}
       isLoading={detailVm.isLoading}
       loadingLabel="Loading group..."
       notFound={detailVm.isError || !group}
@@ -378,9 +380,11 @@ export default function GroupDetailScreen() {
 
           {!viewer?.canViewMembers && group.access_level === "members_only" ? (
             <GroupMembersOnlyLockedState
-              onRequestAccess={
-                viewer?.canRequestToJoin ? () => groupActions.requestToJoin(group.id) : undefined
-              }
+              {...omitUndefined({
+                onRequestAccess: viewer?.canRequestToJoin
+                  ? () => groupActions.requestToJoin(group.id)
+                  : undefined,
+              })}
             />
           ) : null}
 

@@ -1,31 +1,6 @@
 import type { CanonicalGoalActivityCategory, ProfileGoal } from "../schemas";
 
-export type GoalEditorGoalType =
-  | "race_performance"
-  | "completion"
-  | "pace_threshold"
-  | "power_threshold"
-  | "hr_threshold"
-  | "consistency";
-
-export type GoalEditorRaceTargetMode = "time" | "pace";
-
-export interface GoalEditorDraft {
-  title: string;
-  targetDate: string;
-  importance: number;
-  goalType: GoalEditorGoalType;
-  activityCategory: CanonicalGoalActivityCategory;
-  raceDistanceKm?: number | null;
-  raceTargetMode?: GoalEditorRaceTargetMode;
-  targetDuration?: string;
-  targetPace?: string;
-  targetWatts?: number | null;
-  targetBpm?: number | null;
-  thresholdTestDuration?: string;
-  consistencySessionsPerWeek?: number | null;
-  consistencyWeeks?: number | null;
-}
+export type { GoalEditorDraft, GoalEditorGoalType, GoalEditorRaceTargetMode } from "./draft";
 
 export interface GoalTargetForValidation {
   id: string;

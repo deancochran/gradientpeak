@@ -14,11 +14,13 @@ import {
   activities,
   activityArtifacts,
   groups,
+  manualTrainingDiaryOperations,
   organizationMemberships,
+  plannedSessions,
   profiles,
   users,
 } from "@repo/db/schema";
-import { and, eq, ilike, sql } from "drizzle-orm";
+import { and, eq, ilike, isNotNull, sql } from "drizzle-orm";
 import { seedOwnedActivityPlan, seedOwnedActivityRoute } from "../seeds/activity-plans";
 import { currentContractEpochHeaders } from "../utils/contractEpoch";
 import type { E2ECleanupRegistry } from "./cleanup";
@@ -258,7 +260,31 @@ export class E2EActorPool {
             .limit(1);
           if (retainedMembership.length) return;
           await database.typedTransaction(async (transaction) => {
+            await transaction
+              .delete(manualTrainingDiaryOperations)
+              .where(eq(manualTrainingDiaryOperations.profile_id, userId));
+            const now = new Date();
+            // The accepted journey can create a completion/reconciliation cycle:
+            // sessions own completed activities and manual activities retain their
+            // reconciled session. Apply the production deletion transition before
+            // clearing synthetic actor rows so both foreign keys remain valid.
+            await transaction
+              .update(plannedSessions)
+              .set({
+                completed_activity_id: null,
+                completion_state: "activity_deleted",
+                completion_unlinked_at: now,
+                session_revision: sql`${plannedSessions.session_revision} + 1`,
+                updated_at: now,
+              })
+              .where(
+                and(
+                  eq(plannedSessions.profile_id, userId),
+                  isNotNull(plannedSessions.completed_activity_id),
+                ),
+              );
             await transaction.delete(activities).where(eq(activities.profile_id, userId));
+            await transaction.delete(plannedSessions).where(eq(plannedSessions.profile_id, userId));
             await authorizeArtifactLifecycle(transaction);
             await transaction
               .update(activityArtifacts)

@@ -25,7 +25,9 @@ export function createApiBatchLink(options: {
 }) {
   return httpBatchLink<AppRouter>({
     transformer: superjson,
-    ...options,
+    url: options.url,
+    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+    ...(options.headers === undefined ? {} : { headers: options.headers }),
   });
 }
 
@@ -75,6 +77,7 @@ export function usePlannedSessionMutations(options: {
   return {
     create: api.plannedSessions.create.useMutation(mutationOptions),
     move: api.plannedSessions.move.useMutation(mutationOptions),
+    changePlanOnly: api.plannedSessions.changePlanOnly.useMutation(mutationOptions),
     cancel: api.plannedSessions.cancel.useMutation(mutationOptions),
     linkCompletion: api.plannedSessions.linkCompletion.useMutation(mutationOptions),
     linkGroupEvent: api.plannedSessions.linkGroupEvent.useMutation(mutationOptions),

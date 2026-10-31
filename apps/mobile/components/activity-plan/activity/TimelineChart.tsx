@@ -12,8 +12,9 @@ interface TimelineChartProps {
   structure?: unknown;
   height?: number;
   compact?: boolean;
-  selectedIntervalId?: string | null;
-  onIntervalPress?: (intervalId: string) => void;
+  selectedRepeatId?: string | null;
+  selectedStepId?: string | null;
+  onStepPress?: (stepId: string, repeatId?: string) => void;
 }
 
 function intensityHeight(visualIntensity: number | null, chartHeight: number): number {
@@ -62,8 +63,9 @@ export function TimelineChart({
   presentation,
   height = 120,
   compact = false,
-  selectedIntervalId,
-  onIntervalPress,
+  selectedRepeatId,
+  selectedStepId,
+  onStepPress,
 }: TimelineChartProps) {
   const model = useMemo(
     () => presentation ?? deriveActivityPlanPresentation(structure),
@@ -89,7 +91,8 @@ export function TimelineChart({
         {timeline.map((occurrence, index) => {
           const isBoundary = occurrence.role !== "activity";
           const hasOpenDuration = occurrence.duration.type === "untilFinished";
-          const selected = occurrence.intervalId === selectedIntervalId;
+          const selected =
+            occurrence.stepId === selectedStepId && occurrence.repeatId === selectedRepeatId;
           const label = [
             `${occurrence.role} segment ${occurrence.globalOrdinal + 1}`,
             occurrence.activity_category,
@@ -102,10 +105,10 @@ export function TimelineChart({
             <Pressable
               key={occurrence.occurrenceId}
               testID={`timeline-occurrence-${index}`}
-              onPress={() => occurrence.intervalId && onIntervalPress?.(occurrence.intervalId)}
-              disabled={!occurrence.intervalId || !onIntervalPress}
+              onPress={() => onStepPress?.(occurrence.stepId, occurrence.repeatId)}
+              disabled={!onStepPress}
               accessibilityLabel={label}
-              accessibilityRole={occurrence.intervalId && onIntervalPress ? "button" : undefined}
+              accessibilityRole={onStepPress ? "button" : undefined}
               accessibilityState={selected ? { selected: true } : undefined}
               className={`justify-end rounded-md border ${selected ? "border-primary" : "border-border"} ${isBoundary || occurrence.visualIntensity === null || hasOpenDuration ? "bg-muted/30" : ""} ${hasOpenDuration ? "border-dashed" : ""}`}
               style={{

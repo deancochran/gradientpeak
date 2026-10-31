@@ -49,9 +49,10 @@ const prescriptionQuantification = estimateActivityPlanForTrainingContext({
             repetitions: 1,
             steps: [
               {
+                type: "step",
                 id: "44444444-4444-4444-8444-444444444444",
                 name: "Ride",
-                duration: { type: "time", seconds: 3_600 },
+                duration: { type: "time", seconds: 3600 },
                 targets: [{ type: "%FTP", intensity: Math.sqrt(0.48) * 100 }],
               },
             ],
@@ -61,13 +62,11 @@ const prescriptionQuantification = estimateActivityPlanForTrainingContext({
     ],
   },
 }).prescriptionQuantification;
-
 export function createTrainingPlanBuilderFixtures() {
   const emptyState: TrainingPlanBuilderState = {
     ...createDefaultTrainingPlanBuilderState(),
     anchorDate: "2026-01-01",
   };
-
   function activityPlan(
     overrides: Partial<TrainingPlanActivityPlanFacts> = {},
   ): TrainingPlanActivityPlanFacts {
@@ -80,9 +79,10 @@ export function createTrainingPlanBuilderFixtures() {
       ...overrides,
     };
   }
-
   function localGoal(
-    overrides: Partial<TrainingPlanBuilderGoalBlueprint> & { priority?: number | undefined } = {},
+    overrides: Partial<TrainingPlanBuilderGoalBlueprint> & {
+      priority?: number | undefined;
+    } = {},
   ): TrainingPlanBuilderGoalBlueprint {
     const { priority = 10, ...rest } = overrides;
     return {
@@ -95,7 +95,6 @@ export function createTrainingPlanBuilderFixtures() {
       ...rest,
     };
   }
-
   function unresolvedSession(
     overrides: Partial<TrainingPlanBuilderSession> = {},
   ): TrainingPlanBuilderSession {
@@ -114,7 +113,6 @@ export function createTrainingPlanBuilderFixtures() {
       ...overrides,
     };
   }
-
   function assignedSession(
     overrides: Partial<TrainingPlanBuilderSession> = {},
   ): TrainingPlanBuilderSession {
@@ -133,7 +131,6 @@ export function createTrainingPlanBuilderFixtures() {
       ...overrides,
     };
   }
-
   const readyState: TrainingPlanBuilderState = {
     ...emptyState,
     details: {
@@ -151,7 +148,6 @@ export function createTrainingPlanBuilderFixtures() {
       ],
     },
   };
-
   return {
     activityPlanId,
     anchorDate: emptyState.anchorDate,

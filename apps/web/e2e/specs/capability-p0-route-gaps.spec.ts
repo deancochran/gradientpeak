@@ -44,7 +44,7 @@ test.describe("P0 route attachment boundary", () => {
 
       await athletePage.goto(`/record/route-preview/${routeId}`);
       const recordingUrl = new URL(athletePage.url());
-      expect(recordingUrl.pathname).toBe("/record");
+      expect(recordingUrl.pathname).toBe("/record/session");
       expect(recordingUrl.searchParams.get("routeId")).toBe(routeId);
     } finally {
       await deleteOwnedRouteIfPresent(athletePage, routeName);
@@ -73,13 +73,16 @@ test.describe("P0 route attachment boundary", () => {
       if (!routeId) throw new Error("Uploaded recording route URL did not include a route ID.");
 
       await athletePage.goto(`/record/route-preview/${routeId}`);
-      await expect(athletePage).toHaveURL(new RegExp(`/record\\?.*routeId=${routeId}`));
+      await expect(athletePage).toHaveURL(new RegExp(`/record/session\\?.*routeId=${routeId}`));
       await expect(athletePage.getByText("Route", { exact: true })).toBeVisible();
-      await expect(athletePage.getByText(routeName, { exact: true })).toBeVisible();
+      await expect(
+        athletePage.getByRole("heading", { name: routeName, exact: true }),
+      ).toBeVisible();
       await athletePage.reload();
-      await expect(athletePage.getByText(routeName, { exact: true })).toBeVisible();
+      await expect(
+        athletePage.getByRole("heading", { name: routeName, exact: true }),
+      ).toBeVisible();
 
-      await athletePage.getByRole("button", { name: /^open recorder$/i }).click();
       await athletePage.getByRole("button", { name: /^start$/i }).click();
       await waitForActiveRecordingDraft(athletePage);
       await athletePage.getByRole("button", { name: /^finish$/i }).click();

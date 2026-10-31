@@ -1,14 +1,23 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TrainingPlanEditor } from "./training-plan-editor";
 import { buildTrainingPlanStructure } from "./training-plan-model";
 
 vi.mock("@tanstack/react-router", () => ({ useBlocker: vi.fn() }));
+vi.mock("../providers/auth-provider", () => ({
+  useAuth: () => ({ user: mocks.accountId ? { id: mocks.accountId } : null, isLoading: false }),
+}));
+async function renderReady(element: React.ReactElement) {
+  const view = render(element);
+  await act(async () => {});
+  return view;
+}
 
 const planId = "22222222-2222-4222-8222-222222222222";
 const mocks = vi.hoisted(() => ({
+  accountId: "11111111-1111-4111-8111-111111111111" as string | null,
   baselineQuery: {} as Record<string, unknown>,
   create: vi.fn(),
   invalidate: vi.fn(),
@@ -16,6 +25,12 @@ const mocks = vi.hoisted(() => ({
   previewState: "available" as "available" | "error" | "loading" | "unavailable",
   refetchBaseline: vi.fn(),
   plan: undefined as undefined | Record<string, unknown>,
+  activitySearch: vi.fn(),
+  fetchNextPage: vi.fn(),
+  hasNextPage: false,
+  extraPages: [] as {
+    items: { id: string; name: string; activityCategory: string; metrics: [] }[];
+  }[],
 }));
 
 vi.mock("../../lib/api/client", () => ({
@@ -81,36 +96,51 @@ vi.mock("../../lib/api/client", () => ({
     },
     activityPlans: {
       list: {
-        useQuery: () => ({
-          data: {
-            items: [
-              {
-                id: "11111111-1111-4111-8111-111111111111",
-                name: "Aerobic ride",
-                activityCategory: "bike",
-                metrics: [
-                  {
-                    key: "common_load",
-                    status: "available",
-                    value: 80,
-                  },
-                ],
-              },
-            ],
-          },
-          error: null,
-          isLoading: false,
-        }),
+        useInfiniteQuery: (input: unknown) => {
+          mocks.activitySearch(input);
+          return {
+            data: {
+              pages: [
+                {
+                  items: [
+                    {
+                      id: "11111111-1111-4111-8111-111111111111",
+                      name: "Aerobic ride",
+                      activityCategory: "bike",
+                      metrics: [
+                        {
+                          key: "common_load",
+                          status: "available",
+                          value: 80,
+                        },
+                      ],
+                    },
+                  ],
+                },
+                ...mocks.extraPages,
+              ],
+            },
+            error: null,
+            isLoading: false,
+            hasNextPage: mocks.hasNextPage,
+            isFetchingNextPage: false,
+            fetchNextPage: mocks.fetchNextPage,
+          };
+        },
       },
     },
   },
 }));
 
 beforeEach(() => {
+  mocks.accountId = "11111111-1111-4111-8111-111111111111";
+  mocks.invalidate.mockReset().mockResolvedValue(undefined);
+  mocks.hasNextPage = false;
+  mocks.extraPages = [];
   mocks.plan = undefined;
   mocks.baselineQuery = baselineQuery(4, 40, 30);
   mocks.previewState = "available";
-  mocks.preview.mockResolvedValue({
+  mocks.preview.mockReset().mockResolvedValue({
     status: "available" as const,
     applicable: true,
     explanations: [],
@@ -121,7 +151,7 @@ beforeEach(() => {
       goalAssessment: null,
     },
   });
-  mocks.create.mockResolvedValue({ status: "saved", planId });
+  mocks.create.mockReset().mockResolvedValue({ status: "saved", planId });
 });
 
 afterEach(() => {
@@ -130,12 +160,280 @@ afterEach(() => {
 });
 
 describe("TrainingPlanEditor", () => {
+  it("retains an open form during backgrounding but drops it on page exit and browser cached return", async () => {
+    await renderReady(<TrainingPlanEditor onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "Temporary training plan" },
+    });
+    fireEvent(document, new Event("visibilitychange"));
+    expect(screen.getByLabelText("Name")).toHaveProperty("value", "Temporary training plan");
+    fireEvent(window, new Event("pagehide"));
+    expect(screen.getByLabelText("Name")).toHaveProperty("value", "");
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Discard on return" } });
+    fireEvent(window, new PageTransitionEvent("pageshow", { persisted: true }));
+    expect(screen.getByLabelText("Name")).toHaveProperty("value", "");
+    expect(screen.queryByRole("button", { name: /resume|stored save|recovery/i })).toBeNull();
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it("allows Cancel during preview, forgets that attempt and never commits its late preview", async () => {
+    let finish!: (value: object) => void;
+    mocks.preview.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const saved = vi.fn();
+    const cancel = vi.fn();
+    await renderReady(<TrainingPlanEditor onSaved={saved} onCancel={cancel} />);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Old intent" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add activity" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel changes" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Fresh intent" } });
+    await act(async () =>
+      finish({
+        status: "available",
+        applicable: true,
+        basePublishedRevision: 4,
+        previewFingerprint: `v1:sha256:${"a".repeat(64)}`,
+        explanations: [],
+      }),
+    );
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(saved).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Name")).toHaveProperty("value", "Fresh intent");
+  });
+  it("locks preview/save settlement against duplicate submits and editing, while allowing Cancel", async () => {
+    let finishPreview!: (value: object) => void;
+    let finishSave!: (value: object) => void;
+    mocks.preview.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishPreview = resolve;
+      }),
+    );
+    mocks.create.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishSave = resolve;
+      }),
+    );
+    const onSaved = vi.fn();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    await renderReady(<TrainingPlanEditor onSaved={onSaved} />);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Frozen intent" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add activity" }));
+    const form = screen.getByLabelText("Name").closest("form");
+    if (!form) throw new Error("Missing plan form");
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Late edit" } });
+    expect(screen.getByRole("button", { name: "Cancel changes" })).toHaveProperty(
+      "disabled",
+      false,
+    );
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Name")).toHaveProperty("value", "Frozen intent");
+    expect(screen.getByRole("button", { name: "Saving…" })).toHaveProperty("disabled", true);
+    expect(mocks.preview).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      finishPreview({
+        status: "available",
+        applicable: true,
+        basePublishedRevision: 4,
+        previewFingerprint: `v1:sha256:${"a".repeat(64)}`,
+        explanations: [],
+      }),
+    );
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    fireEvent.submit(form);
+    await act(async () => finishSave({ status: "saved", planId }));
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(mocks.create.mock.calls[0]?.[0].draft.name).toBe("Frozen intent");
+    confirm.mockRestore();
+  });
+
+  it("keeps preview errors editable and does not report an unsent commit as uncertain", async () => {
+    mocks.preview.mockRejectedValueOnce(new Error("Preview offline"));
+    await renderReady(<TrainingPlanEditor onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Retry preview" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add activity" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("No commit was sent");
+    expect(mocks.create).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Repaired" } });
+    expect(screen.getByLabelText("Name")).toHaveProperty("value", "Repaired");
+  });
+
+  it("pins the hydrated revision even when the server refetches a newer revision", async () => {
+    mocks.plan = {
+      id: planId,
+      name: "Saved",
+      description: "",
+      content_visibility: "private",
+      editor: { revision: 1, structureHash: `v1:sha256:${"a".repeat(64)}` },
+      structure: buildTrainingPlanStructure([
+        {
+          draftId: "11111111-1111-4111-8111-111111111111",
+          activityPlanId: null,
+          activityCategory: "bike",
+          offsetDays: 0,
+          title: "Ride",
+        },
+      ]),
+    };
+    mocks.create.mockResolvedValue({ status: "stale", reason: "plan_revision" });
+    const view = await renderReady(<TrainingPlanEditor planId={planId} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Local draft" } });
+    mocks.plan = {
+      ...mocks.plan,
+      name: "Remote change",
+      editor: { revision: 2, structureHash: "new-hash" },
+    };
+    view.rerender(<TrainingPlanEditor planId={planId} onSaved={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await screen.findByRole("alert");
+    expect(mocks.create.mock.calls[0]?.[0].draft).toMatchObject({
+      expectedRevision: 1,
+      expectedStructureHash: `v1:sha256:${"a".repeat(64)}`,
+      name: "Local draft",
+    });
+    expect(screen.getByRole("button", { name: "Reload saved plan" })).toBeTruthy();
+  });
+
+  it("does not settle an old owner's save into a different plan", async () => {
+    let finishSave!: (value: object) => void;
+    mocks.create.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishSave = resolve;
+      }),
+    );
+    const onSaved = vi.fn();
+    const view = await renderReady(<TrainingPlanEditor onSaved={onSaved} />);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Old owner" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add activity" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    mocks.plan = {
+      id: planId,
+      name: "New owner",
+      description: "",
+      content_visibility: "private",
+      structure: buildTrainingPlanStructure([
+        {
+          draftId: "11111111-1111-4111-8111-111111111111",
+          activityPlanId: null,
+          activityCategory: "bike",
+          offsetDays: 0,
+          title: "New ride",
+        },
+      ]),
+      editor: { revision: 1, structureHash: "hash" },
+    };
+    view.rerender(<TrainingPlanEditor planId={planId} onSaved={onSaved} />);
+    await act(async () =>
+      finishSave({ status: "saved", planId: "99999999-9999-4999-8999-999999999999" }),
+    );
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Name")).toHaveProperty("value", "New owner");
+  });
+
+  it("searches bounded activity pages and exposes the existing cursor continuation", async () => {
+    mocks.hasNextPage = true;
+    await renderReady(<TrainingPlanEditor onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Search owned activity plans"), {
+      target: { value: "Long ride" },
+    });
+    expect(mocks.activitySearch).toHaveBeenLastCalledWith({
+      ownerScope: "own",
+      search: "Long ride",
+      limit: 25,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Load more activity plans" }));
+    expect(mocks.fetchNextPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("can select an activity from a later cursor page", async () => {
+    mocks.hasNextPage = true;
+    const earlierItems = Array.from(
+      { length: 99 },
+      (_, index): { id: string; name: string; activityCategory: string; metrics: [] } => ({
+        id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+        name: `Owned activity ${index + 2}`,
+        activityCategory: "bike",
+        metrics: [],
+      }),
+    );
+    mocks.extraPages = [
+      earlierItems.slice(0, 24),
+      earlierItems.slice(24, 49),
+      earlierItems.slice(49, 74),
+      earlierItems.slice(74),
+    ].map((items) => ({ items }));
+    const view = await renderReady(<TrainingPlanEditor onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Paged plan" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add activity" }));
+    fireEvent.click(screen.getByRole("button", { name: "Load more activity plans" }));
+    const id = "99999999-9999-4999-8999-999999999999";
+    mocks.extraPages = [
+      ...mocks.extraPages,
+      {
+        items: [
+          { id, name: "Activity beyond the first 100", activityCategory: "run", metrics: [] },
+        ],
+      },
+    ];
+    view.rerender(<TrainingPlanEditor onSaved={vi.fn()} />);
+    expect(screen.getByLabelText("Activity plan").querySelectorAll("option")).toHaveLength(102);
+    fireEvent.change(screen.getByLabelText("Activity plan"), { target: { value: id } });
+    mocks.extraPages = [];
+    fireEvent.change(screen.getByLabelText("Search owned activity plans"), {
+      target: { value: "Another search" },
+    });
+    expect(screen.getByLabelText("Activity plan")).toHaveProperty("value", id);
+    fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(mocks.create.mock.calls[0]?.[0].draft.structure.sessions[0].activity_plan_id).toBe(id);
+  });
+
+  it("allows correction after a definitive server rejection instead of retaining an uncertain intent", async () => {
+    mocks.create
+      .mockRejectedValueOnce(
+        Object.assign(new Error("Rejected"), { data: { code: "BAD_REQUEST" } }),
+      )
+      .mockResolvedValueOnce({ status: "saved", planId });
+    await renderReady(<TrainingPlanEditor onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Rejected draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add activity" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("save was rejected");
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Corrected" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
+    expect(mocks.create.mock.calls[1]?.[0].draft.name).toBe("Corrected");
+    expect(mocks.create.mock.calls[1]?.[0].operationId).not.toBe(
+      mocks.create.mock.calls[0]?.[0].operationId,
+    );
+  });
+  it.each([
+    0, 23,
+  ])("uses the local calendar day for today's start date at hour %s", async (hour) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(2026, 2, 8, hour, 30));
+      await renderReady(<TrainingPlanEditor onSaved={vi.fn()} />);
+      expect(screen.getByLabelText("Start date")).toHaveProperty("value", "2026-03-08");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each([
     "private",
     "followers",
     "public",
   ])("round-trips %s visibility through create and the same edit owner", async (visibility) => {
-    const view = render(<TrainingPlanEditor onSaved={vi.fn()} />);
+    const view = await renderReady(<TrainingPlanEditor onSaved={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Visibility plan" } });
     fireEvent.click(screen.getByRole("button", { name: "Add activity" }));
     fireEvent.change(screen.getByLabelText("Visibility"), { target: { value: visibility } });
@@ -151,7 +449,7 @@ describe("TrainingPlanEditor", () => {
       content_visibility: saved.contentVisibility,
       editor: { revision: 1, structureHash: `v1:sha256:${"a".repeat(64)}` },
     };
-    render(<TrainingPlanEditor planId={planId} onSaved={vi.fn()} />);
+    await renderReady(<TrainingPlanEditor planId={planId} onSaved={vi.fn()} />);
     expect((screen.getByLabelText("Visibility") as HTMLSelectElement).value).toBe(visibility);
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
@@ -161,22 +459,19 @@ describe("TrainingPlanEditor", () => {
     });
   });
 
-  it("guards Cancel and discards only confirmed unsaved create changes", () => {
+  it("discards unsaved create values immediately on Cancel", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-    render(<TrainingPlanEditor onSaved={vi.fn()} />);
+    await renderReady(<TrainingPlanEditor onSaved={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Keep changes" } });
     fireEvent.change(screen.getByLabelText("Visibility"), { target: { value: "public" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel changes" }));
-    expect(confirm).toHaveBeenCalledWith("Discard unsaved changes?");
-    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Keep changes");
-    confirm.mockReturnValue(true);
-    fireEvent.click(screen.getByRole("button", { name: "Cancel changes" }));
+    expect(confirm).not.toHaveBeenCalled();
     expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("");
     expect((screen.getByLabelText("Visibility") as HTMLSelectElement).value).toBe("private");
     expect(mocks.create).not.toHaveBeenCalled();
     confirm.mockRestore();
   });
-  it("restores hydrated edit values only after confirmed Cancel", () => {
+  it("discards unsaved edit values on Cancel without modifying the persisted entity", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     mocks.plan = {
       id: planId,
@@ -194,14 +489,11 @@ describe("TrainingPlanEditor", () => {
       ]),
       editor: { revision: 1, structureHash: `v1:sha256:${"a".repeat(64)}` },
     };
-    render(<TrainingPlanEditor planId={planId} onSaved={vi.fn()} />);
+    await renderReady(<TrainingPlanEditor planId={planId} onSaved={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("Visibility"), { target: { value: "public" } });
     fireEvent.change(screen.getByLabelText("Day offset"), { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: "Cancel changes" }));
-    expect((screen.getByLabelText("Visibility") as HTMLSelectElement).value).toBe("public");
-    expect(screen.getByRole("alert")).toBeTruthy();
-    confirm.mockReturnValue(true);
-    fireEvent.click(screen.getByRole("button", { name: "Cancel changes" }));
+    expect(confirm).not.toHaveBeenCalled();
     expect((screen.getByLabelText("Visibility") as HTMLSelectElement).value).toBe("followers");
     expect((screen.getByLabelText("Day offset") as HTMLInputElement).value).toBe("0");
     expect(screen.queryByRole("alert")).toBeNull();
@@ -211,7 +503,7 @@ describe("TrainingPlanEditor", () => {
 
   it("requests the authoritative draft projection and saves only persisted identity", async () => {
     const onSaved = vi.fn();
-    render(<TrainingPlanEditor onSaved={onSaved} />);
+    await renderReady(<TrainingPlanEditor onSaved={onSaved} />);
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Base plan" } });
     fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-08-02" } });
@@ -234,7 +526,7 @@ describe("TrainingPlanEditor", () => {
   });
 
   it("keeps the selected category when automatic selection is chosen and allows changing it", async () => {
-    render(<TrainingPlanEditor onSaved={vi.fn()} />);
+    await renderReady(<TrainingPlanEditor onSaved={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Automatic plan" } });
     fireEvent.click(screen.getByRole("button", { name: "Add activity" }));
     fireEvent.change(screen.getByLabelText("Activity plan"), { target: { value: "" } });
@@ -254,8 +546,8 @@ describe("TrainingPlanEditor", () => {
     });
   });
 
-  it("does not turn a blank day offset into zero or submit the prior valid draft", () => {
-    render(<TrainingPlanEditor onSaved={vi.fn()} />);
+  it("does not turn a blank day offset into zero or submit the prior valid draft", async () => {
+    await renderReady(<TrainingPlanEditor onSaved={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Offset plan" } });
     fireEvent.click(screen.getByRole("button", { name: "Add activity" }));
     fireEvent.change(screen.getByLabelText("Day offset"), { target: { value: "" } });
@@ -268,9 +560,14 @@ describe("TrainingPlanEditor", () => {
   it("retries a lost save response with the same payload and no new preview", async () => {
     mocks.create
       .mockRejectedValueOnce(new Error("Network request failed"))
+      .mockRejectedValueOnce(
+        Object.assign(new Error("Authentication expired on replay"), {
+          data: { code: "UNAUTHORIZED" },
+        }),
+      )
       .mockResolvedValueOnce({ status: "saved", planId });
     const onSaved = vi.fn();
-    render(<TrainingPlanEditor onSaved={onSaved} />);
+    await renderReady(<TrainingPlanEditor onSaved={onSaved} />);
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Retry plan" } });
     fireEvent.click(screen.getByRole("button", { name: "Add activity" }));
 
@@ -283,17 +580,39 @@ describe("TrainingPlanEditor", () => {
     expect(mocks.preview).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
+    await screen.findByText(/Authentication expired on replay/);
+    expect(screen.getByLabelText("Name")).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(planId));
     expect(mocks.create.mock.calls[1]?.[0]).toBe(firstPayload);
+    expect(mocks.create.mock.calls[2]?.[0]).toBe(firstPayload);
+    expect(mocks.preview).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains an acknowledged request when refreshing reads fails", async () => {
+    mocks.invalidate.mockRejectedValueOnce(
+      Object.assign(new Error("Refresh rejected"), { data: { code: "BAD_REQUEST" } }),
+    );
+    const onSaved = vi.fn();
+    await renderReady(<TrainingPlanEditor onSaved={onSaved} />);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Saved intent" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add activity" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create plan" }));
+    await screen.findByText(/plan was saved/);
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Name")).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(mocks.create).toHaveBeenCalledTimes(1);
     expect(mocks.preview).toHaveBeenCalledTimes(1);
   });
 
   it("preserves the draft, refreshes, re-simulates, and visibly retries a stale conflict", async () => {
     mocks.create
-      .mockResolvedValueOnce({ status: "stale", reason: "plan_revision" })
+      .mockResolvedValueOnce({ status: "stale", reason: "state_revision" })
       .mockResolvedValueOnce({ status: "saved", planId });
     const onSaved = vi.fn();
-    const view = render(<TrainingPlanEditor onSaved={onSaved} />);
+    const view = await renderReady(<TrainingPlanEditor onSaved={onSaved} />);
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Retained draft" } });
     fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-08-02" } });
     fireEvent.click(screen.getByRole("button", { name: "Add activity" }));
@@ -305,7 +624,7 @@ describe("TrainingPlanEditor", () => {
 
     mocks.baselineQuery = baselineQuery(5, 55, 45);
     view.rerender(<TrainingPlanEditor onSaved={onSaved} />);
-    fireEvent.click(screen.getByRole("button", { name: "Rebase and retry validation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Retry validation" }));
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(planId));
     expect(mocks.create).toHaveBeenLastCalledWith(
@@ -314,9 +633,9 @@ describe("TrainingPlanEditor", () => {
     expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Retained draft");
   });
 
-  it("announces loading, error, and unavailable authoritative preview states", () => {
+  it("announces loading, error, and unavailable authoritative preview states", async () => {
     mocks.previewState = "loading";
-    const view = render(<TrainingPlanEditor onSaved={vi.fn()} />);
+    const view = await renderReady(<TrainingPlanEditor onSaved={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Base plan" } });
     fireEvent.click(screen.getByRole("button", { name: "Add activity" }));
     expect(screen.getByRole("status").textContent).toContain("Validating this plan");
@@ -331,7 +650,7 @@ describe("TrainingPlanEditor", () => {
     expect(screen.getByRole("status").textContent).toContain("Projection unavailable");
   });
 
-  it("explains stale projection state when the snapshot import failed", () => {
+  it("explains stale projection state when the snapshot import failed", async () => {
     const baseline = baselineQuery(4, 40, 30);
     mocks.baselineQuery = {
       ...baseline,
@@ -341,7 +660,7 @@ describe("TrainingPlanEditor", () => {
       },
     };
 
-    render(<TrainingPlanEditor onSaved={vi.fn()} />);
+    await renderReady(<TrainingPlanEditor onSaved={vi.fn()} />);
 
     expect(screen.getByRole("status").textContent).toContain("activity history import failed");
   });

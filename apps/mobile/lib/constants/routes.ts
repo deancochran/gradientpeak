@@ -93,6 +93,7 @@ export const ROUTES = {
   ME: "/me" as const,
   PROFILE_TAB: "/me" as const,
   INBOX: "/inbox" as const,
+  CHAT: "/chat" as const,
   USER_DETAIL: (userId: string) => `/user/${userId}` as const,
   PROFILE_EDIT: "/profile-edit" as const,
   SETTINGS: "/settings" as const,

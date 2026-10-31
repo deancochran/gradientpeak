@@ -140,7 +140,7 @@ export function calculateLongTermLoadProjection(
   points.push({
     week: 0,
     longTermLoad: startingLongTermLoad,
-    date: startDate.toISOString().split("T")[0]!,
+    date: startDate.toISOString().slice(0, 10),
   });
 
   for (const mesocycle of mesocycles) {
@@ -163,7 +163,7 @@ export function calculateLongTermLoadProjection(
       points.push({
         week: weekCounter,
         longTermLoad: Math.round(currentLongTermLoad * 10) / 10,
-        date: weekDate.toISOString().split("T")[0]!,
+        date: weekDate.toISOString().slice(0, 10),
       });
     }
   }

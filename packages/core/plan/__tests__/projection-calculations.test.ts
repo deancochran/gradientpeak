@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { calculateLongTermLoad } from "../../load/progression";
 import { defaultAthletePreferenceProfile } from "../../schemas/settings/profile_settings";
+import { requireFixtureValue } from "../../testing/requireFixtureValue";
 import { buildDeterministicProjectionPayload } from "../projection/engine";
 import {
   clampNoHistoryFloorByAvailability,
@@ -1673,8 +1674,14 @@ describe("no-history anchor orchestration", () => {
       },
     });
 
-    const lenientFeasibility = lenient.no_history.projection_feasibility!;
-    const constrainedFeasibility = constrained.no_history.projection_feasibility!;
+    const lenientFeasibility = requireFixtureValue(
+      lenient.no_history.projection_feasibility,
+      "expected lenient feasibility",
+    );
+    const constrainedFeasibility = requireFixtureValue(
+      constrained.no_history.projection_feasibility,
+      "expected constrained feasibility",
+    );
 
     expect(constrainedFeasibility.demand_gap.unmet_weekly_load).toBeGreaterThanOrEqual(
       lenientFeasibility.demand_gap.unmet_weekly_load,
@@ -1682,7 +1689,9 @@ describe("no-history anchor orchestration", () => {
     expect(
       constrained.microcycles.every(
         (week, index) =>
-          week.planned_weekly_load <= lenient.microcycles[index]!.planned_weekly_load,
+          week.planned_weekly_load <=
+          requireFixtureValue(lenient.microcycles[index], "expected matching lenient week")
+            .planned_weekly_load,
       ),
     ).toBe(true);
     expect(constrainedFeasibility.readiness_score).toBeGreaterThanOrEqual(0);
@@ -1856,8 +1865,14 @@ describe("no-history anchor orchestration", () => {
       },
     });
 
-    const high = highConfidence.no_history.projection_feasibility!;
-    const low = lowConfidence.no_history.projection_feasibility!;
+    const high = requireFixtureValue(
+      highConfidence.no_history.projection_feasibility,
+      "expected high-confidence feasibility",
+    );
+    const low = requireFixtureValue(
+      lowConfidence.no_history.projection_feasibility,
+      "expected low-confidence feasibility",
+    );
     const highWidth =
       (high.projection_uncertainty?.load_high ?? 0) - (high.projection_uncertainty?.load_low ?? 0);
     const lowWidth =
@@ -1898,8 +1913,8 @@ describe("no-history anchor orchestration", () => {
       },
     });
 
-    const week1 = projection.microcycles[0]!;
-    const week2 = projection.microcycles[1]!;
+    const week1 = requireFixtureValue(projection.microcycles[0], "expected first projected week");
+    const week2 = requireFixtureValue(projection.microcycles[1], "expected second projected week");
 
     expect(week1.metadata.load_ramp.seed_source).toBe("starting_longTermLoad");
     expect(week1.metadata.load_ramp.seed_weekly_load).toBe(210);

@@ -7,7 +7,14 @@ import {
   activityPlanStructureSchema,
   type CompiledActivityPlanOccurrence,
   compileActivityPlan,
+  decodePolyline,
+  orderActivityPlanTargetsForPresentation,
+  resolveActivityPlanTargetPresentation,
 } from "@repo/core";
+import {
+  primaryRecordingGuidancePlan,
+  primaryRecordingGuidanceRoute,
+} from "@repo/core/recording/guidance";
 import { nudgeNumberByStep, numericUxPolicies } from "@repo/core/utils/numeric-ux-policy";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
@@ -19,6 +26,7 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
+import { SearchField } from "@repo/ui/components/search-field";
 import { Textarea } from "@repo/ui/components/textarea";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
@@ -33,8 +41,9 @@ import {
   Timer,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import { RecordingCockpit } from "../../../components/recording/recording-cockpit";
 import { uploadFileToSignedUrl } from "../../../lib/activity-route-upload";
 import { api } from "../../../lib/api/client";
 import { buildUploadedRecordingSummaryInput } from "../../../lib/recording/finalized-artifact";
@@ -47,15 +56,54 @@ import {
   type SubmitWebRecording,
   submitWebRecordingArtifact,
 } from "../../../lib/recording/submission-queue";
+import { recordingActivityOptions, validateRecordingSearch } from "../../../lib/recording-web";
 
 export const Route = createFileRoute("/_protected/record/session")({
+  validateSearch: (search: Record<string, unknown>) => validateRecordingSearch(search),
   component: RecordSessionPage,
 });
 
 export function RecordSessionPage() {
+  const search = Route.useSearch();
   const recording = useTimerOnlyRecording();
   const { lifecycle, snapshot } = recording.state.reducer;
   const configuration = recording.state.configuration;
+  const [planChoiceId, setPlanChoiceId] = useState<string | null>(null);
+  const [planSearch, setPlanSearch] = useState("");
+  const [intensityDraft, setIntensityDraft] = useState("100");
+  const selectedPlanId = planChoiceId ?? search.activityPlanId ?? null;
+  const plansQuery = api.activityPlans.list.useInfiniteQuery(
+    { ownerScope: "all", limit: 12, ...(planSearch.trim() ? { search: planSearch.trim() } : {}) },
+    { getNextPageParam: (last) => last.nextCursor },
+  );
+  const chosenPlanQuery = api.activityPlans.getById.useQuery(
+    { id: selectedPlanId ?? "", personalize: false },
+    { enabled: Boolean(selectedPlanId), retry: false },
+  );
+  const plannedSessionQuery = api.calendar.day.useQuery(
+    { date: search.plannedSessionDate ?? "" },
+    { enabled: Boolean(search.plannedSessionId && search.plannedSessionDate), retry: false },
+  );
+  const plannedSession = plannedSessionQuery.data?.projection.items
+    .flatMap((item) => (item.plannedSession ? [item.plannedSession] : []))
+    .find((session) => session.id === search.plannedSessionId);
+  const recordingLaunch = api.plannedSessions.recordingLaunch.useMutation({ retry: false });
+  const plannedLaunchAttempt = useRef<string | null>(null);
+  const routesQuery = api.routes.list.useInfiniteQuery(
+    { limit: 12, ownerScope: "own", sort_by: "newest" },
+    { getNextPageParam: (last) => last.nextCursor, retry: false },
+  );
+  const visiblePlans = plansQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const visibleRoutes = routesQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const currentGuidance = recording.state.guidance?.revisions.at(-1);
+  // A revision explicitly records null for a detached plan or route. Do not fall
+  // back to the start snapshot in that case, or detached guidance reappears.
+  const currentPlan = currentGuidance
+    ? currentGuidance.plan
+    : (snapshot?.planExecution ?? configuration?.plan ?? null);
+  const currentRouteId = currentGuidance
+    ? currentGuidance.routeId
+    : (snapshot?.activity.routeId ?? configuration?.routeId ?? null);
   const beginRecordingUpload = api.activityFiles.beginMobileRecordingUpload.useMutation(
     IDEMPOTENT_INGESTION_MUTATION_RETRY_OPTIONS,
   );
@@ -65,9 +113,20 @@ export function RecordSessionPage() {
   const [perceivedEffort, setPerceivedEffort] = useState("");
   const [distanceMeters, setDistanceMeters] = useState("");
   const [calories, setCalories] = useState("");
+  const loadedReview = useRef<{
+    state: typeof recording.state;
+    sessionId: string;
+    notes: string;
+    perceivedEffort: string;
+    distanceMeters: string;
+    calories: string;
+  } | null>(null);
   const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
   const [targetPower, setTargetPower] = useState("150");
   const [targetPowerError, setTargetPowerError] = useState<string | null>(null);
+  const [guidanceError, setGuidanceError] = useState<string | null>(null);
+  const [guidanceOpen, setGuidanceOpen] = useState(false);
+  const [devicesOpen, setDevicesOpen] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [ingestionId, setIngestionId] = useState<string | null>(null);
   const profileQuery = api.profiles.get.useQuery();
@@ -79,6 +138,12 @@ export function RecordSessionPage() {
     },
   );
   const hasSavedActivity = isReviewFrozen(recording.submissionJob);
+  const reviewPrimaryPlan = recording.artifact?.guidance
+    ? primaryRecordingGuidancePlan(recording.artifact.guidance)
+    : (recording.artifact?.snapshot.planExecution ?? null);
+  const reviewPrimaryRouteId = recording.artifact?.guidance
+    ? primaryRecordingGuidanceRoute(recording.artifact.guidance)
+    : (recording.artifact?.snapshot.activity.routeId ?? null);
   const setTrainerTargetPower = () => {
     const value = parseTrainerTargetPower(targetPower);
     if (value === null) {
@@ -122,32 +187,309 @@ export function RecordSessionPage() {
   };
   const activityPersistenceName = recording.artifact?.review.name ?? "Activity";
   const planStatus = recording.planStatus;
-  const planSnapshot = snapshot?.planExecution;
-  const routeId =
-    recording.artifact?.snapshot.activity.routeId ?? snapshot?.activity.routeId ?? null;
+  const effectiveIntensity = planStatus?.intensityScale ?? configuration?.intensityScale ?? 1;
+  const supportsIntensity = Boolean(
+    currentPlan &&
+      compileActivityPlan(
+        activityPlanStructureSchema.parse(currentPlan.structure),
+      ).occurrences.some(
+        (occurrence) =>
+          occurrence.role === "activity" &&
+          occurrence.targets.some((target) => target.type === "%FTP"),
+      ),
+  );
+  useEffect(() => {
+    setIntensityDraft(
+      currentPlan?.activityPlanId ? String(Math.round(effectiveIntensity * 100)) : "100",
+    );
+  }, [effectiveIntensity, currentPlan?.activityPlanId]);
+  const planSnapshot = currentPlan;
+  const routeId = recording.artifact ? reviewPrimaryRouteId : currentRouteId;
+  const trainerCommandsAllowed =
+    lifecycle !== "finishing" &&
+    lifecycle !== "finished" &&
+    !recording.savingCommand &&
+    !recording.durabilityFenced;
   const selectedRouteQuery = api.routes.get.useQuery(
     { id: routeId ?? "" },
     { enabled: Boolean(routeId), retry: false },
   );
+  // The review route is intentionally queried above from the finalized artifact's
+  // primary guidance. The cockpit always follows only current live guidance.
+  const liveRouteFullQuery = api.routes.loadFull.useQuery(
+    { id: currentRouteId ?? "" },
+    { enabled: lifecycle !== "finished" && Boolean(currentRouteId), retry: false },
+  );
   const currentOccurrence = planStatus?.currentOccurrence ?? null;
-  const currentTargetLabels = currentOccurrence
-    ? (planSnapshot?.targetPresentations.find(
-        (presentation) => presentation.occurrenceId === currentOccurrence.occurrenceId,
-      )?.labels ?? [])
+  const compiledPreview = planSnapshot
+    ? compileActivityPlan(activityPlanStructureSchema.parse(planSnapshot.structure)).occurrences
     : [];
+  const cockpitOccurrence =
+    lifecycle === "pending" ? (compiledPreview[0] ?? null) : currentOccurrence;
+  const nextPreviewOccurrence =
+    lifecycle === "pending" ? (compiledPreview[1] ?? null) : (planStatus?.nextOccurrence ?? null);
+  const targetPresentations =
+    planSnapshot && "targetPresentations" in planSnapshot ? planSnapshot.targetPresentations : [];
+  const currentTargetLabels =
+    planStatus?.targetLabels ??
+    (cockpitOccurrence
+      ? (targetPresentations.find(
+          (presentation) => presentation.occurrenceId === cockpitOccurrence.occurrenceId,
+        )?.labels ??
+        orderActivityPlanTargetsForPresentation(cockpitOccurrence.targets).map(
+          (target) =>
+            resolveActivityPlanTargetPresentation({
+              target,
+              activityCategory: configuration?.activity_category ?? search.activity_category,
+              asOf: new Date().toISOString(),
+            }).label,
+        ))
+      : []);
+  const previewRouteCoordinates =
+    selectedRouteQuery.data?.polyline && !liveRouteFullQuery.data?.coordinates.length
+      ? decodePolyline(selectedRouteQuery.data.polyline)
+      : [];
+  const recordingControls = (
+    <fieldset className="flex flex-wrap gap-3" aria-label="Recording controls">
+      {lifecycle === "pending" ? (
+        <Button
+          size="lg"
+          disabled={recording.busy || recording.savingCommand || recording.durabilityFenced}
+          onClick={recording.start}
+        >
+          <Play className="h-5 w-5" /> Start
+        </Button>
+      ) : null}
+      {lifecycle === "recording" ? (
+        <Button
+          size="lg"
+          variant="outline"
+          disabled={recording.busy || recording.savingCommand || recording.durabilityFenced}
+          onClick={recording.pause}
+        >
+          <Pause className="h-5 w-5" /> Pause
+        </Button>
+      ) : null}
+      {lifecycle === "paused" && !recording.hasRecoveredDraft ? (
+        <Button
+          size="lg"
+          disabled={
+            recording.hydrationStatus !== "ready" ||
+            recording.busy ||
+            recording.savingCommand ||
+            recording.durabilityFenced
+          }
+          onClick={recording.resume}
+        >
+          <Play className="h-5 w-5" /> Resume
+        </Button>
+      ) : null}
+      {lifecycle === "recording" || lifecycle === "paused" ? (
+        <>
+          <Button
+            size="lg"
+            variant="outline"
+            disabled={recording.busy || recording.savingCommand || recording.durabilityFenced}
+            onClick={recording.lap}
+          >
+            <Flag className="h-5 w-5" /> Lap
+          </Button>
+          <Button
+            size="lg"
+            variant="destructive"
+            disabled={recording.busy || recording.savingCommand || recording.durabilityFenced}
+            onClick={recording.finish}
+          >
+            <Square className="h-5 w-5" /> {recording.busy ? "Finishing…" : "Finish"}
+          </Button>
+          <Button
+            size="lg"
+            variant="ghost"
+            disabled={recording.busy || recording.savingCommand}
+            onClick={() => setIsConfirmingCancel(true)}
+          >
+            Cancel recording
+          </Button>
+        </>
+      ) : null}
+    </fieldset>
+  );
+  const stepCommands =
+    lifecycle === "recording" || lifecycle === "paused" ? (
+      <div className="mt-3 flex flex-wrap gap-2">
+        {currentOccurrence ? (
+          <Button
+            size="sm"
+            aria-label="Complete / Next"
+            disabled={recording.busy || recording.durabilityFenced || recording.savingCommand}
+            onClick={recording.completeStep}
+          >
+            <SkipForward className="h-4 w-4" /> Next
+          </Button>
+        ) : null}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={
+            recording.durabilityFenced ||
+            recording.busy ||
+            recording.savingCommand ||
+            (planStatus?.currentOccurrenceIndex ?? planStatus?.totalOccurrences ?? 0) <= 0
+          }
+          onClick={recording.previousStep}
+        >
+          <StepBack className="h-4 w-4" /> Previous
+        </Button>
+        {currentOccurrence ? (
+          <Button
+            size="sm"
+            aria-label="Skip step"
+            variant="outline"
+            disabled={recording.busy || recording.durabilityFenced || recording.savingCommand}
+            onClick={recording.skipStep}
+          >
+            Skip
+          </Button>
+        ) : null}
+      </div>
+    ) : null;
 
   useEffect(() => {
-    if (!recording.artifact) return;
-    setNotes(recording.artifact.review.notes ?? "");
-    setPerceivedEffort(recording.artifact.review.perceivedEffort?.toString() ?? "");
-    setDistanceMeters(
-      (recording.artifact.review.distanceEnteredManually ??
-        recording.artifact.review.distanceMeters > 0)
-        ? recording.artifact.review.distanceMeters.toString()
-        : "",
+    if (
+      recording.hydrationStatus !== "ready" ||
+      configuration ||
+      snapshot ||
+      lifecycle !== "pending"
+    )
+      return;
+    const detail = chosenPlanQuery.data?.detail;
+    if (search.plannedSessionId) {
+      if (!plannedSession || plannedLaunchAttempt.current === plannedSession.id) return;
+      plannedLaunchAttempt.current = plannedSession.id;
+      void recordingLaunch
+        .mutateAsync({ id: plannedSession.id })
+        .then((launch) => {
+          if (recording.state.configuration || recording.state.reducer.snapshot) return;
+          const manifest = launch.prescription.resolutionManifest;
+          recording.configure({
+            activity_category: manifest.resolved_structure.activity_category,
+            activityPlanId: manifest.activity_plan_id,
+            plan: {
+              activityPlanId: manifest.activity_plan_id,
+              scheduledEventId: null,
+              name: `Scheduled ${manifest.resolved_structure.activity_category} session`,
+              description: null,
+              activityPlanRevision: manifest.activity_plan_revision,
+              structureHash: manifest.resolved_structure_hash,
+              structure: manifest.resolved_structure,
+              plannedSession: launch,
+            },
+            ...(search.routeId ? { routeId: search.routeId } : {}),
+          });
+        })
+        .catch(() => {
+          plannedLaunchAttempt.current = null;
+          setGuidanceError("The current activity plan could not be captured for recording. Retry.");
+        });
+      return;
+    }
+    if (
+      search.activityPlanId &&
+      (!detail || !detail.capabilities.canRecord || !detail.structure || !detail.structureHash)
+    )
+      return;
+    recording.configure({
+      activity_category: detail?.activityCategory ?? search.activity_category,
+      ...(detail?.capabilities.canRecord && detail.structure && detail.structureHash
+        ? {
+            activityPlanId: detail.id,
+            plan: {
+              activityPlanId: detail.id,
+              scheduledEventId: null,
+              name: detail.name,
+              description: detail.description,
+              activityPlanRevision: detail.activityPlanRevision,
+              structureHash: detail.structureHash,
+              structure: detail.structure,
+            },
+          }
+        : {}),
+      ...(search.routeId ? { routeId: search.routeId } : {}),
+    });
+  }, [
+    chosenPlanQuery.data?.detail,
+    configuration,
+    lifecycle,
+    plannedSession,
+    recording,
+    recordingLaunch,
+    search,
+    snapshot,
+  ]);
+
+  const applyPlan = async () => {
+    const detail = chosenPlanQuery.data?.detail;
+    if (
+      !planChoiceId ||
+      detail?.id !== planChoiceId ||
+      !detail.capabilities.canRecord ||
+      !detail.structure ||
+      !detail.structureHash
+    ) {
+      setGuidanceError("Choose a recordable plan after its details finish loading.");
+      return;
+    }
+    setGuidanceError(null);
+    const changed = await recording.changePlan({
+      activityPlanId: detail.id,
+      scheduledEventId: null,
+      name: detail.name,
+      description: detail.description,
+      activityPlanRevision: detail.activityPlanRevision,
+      structureHash: detail.structureHash,
+      structure: detail.structure,
+    });
+    if (changed) setPlanChoiceId(null);
+    else setGuidanceError("The plan was not saved. It remains selected so you can retry.");
+  };
+
+  const applyGuidanceChange = async (change: () => Promise<boolean>, failureMessage: string) => {
+    setGuidanceError(null);
+    if (!(await change())) setGuidanceError(failureMessage);
+  };
+
+  useEffect(() => {
+    if (!recording.artifact) {
+      loadedReview.current = null;
+      return;
+    }
+    const { review, recordingSessionId } = recording.artifact;
+    const previous = loadedReview.current;
+    const next = {
+      state: recording.state,
+      sessionId: recordingSessionId,
+      notes: review.notes ?? "",
+      perceivedEffort: review.perceivedEffort?.toString() ?? "",
+      distanceMeters:
+        (review.distanceEnteredManually ?? review.distanceMeters > 0)
+          ? review.distanceMeters.toString()
+          : "",
+      calories: review.calories?.toString() ?? "",
+    };
+    // Queue refreshes replace artifacts, but only an explicit load replaces the
+    // finished runtime state. Preserve edits until that load or a different session.
+    const reset = previous?.sessionId !== next.sessionId || previous?.state !== next.state;
+    setNotes((value) => (reset || value === previous?.notes ? next.notes : value));
+    setPerceivedEffort((value) =>
+      reset || value === previous?.perceivedEffort ? next.perceivedEffort : value,
     );
-    setCalories(recording.artifact.review.calories?.toString() ?? "");
-  }, [recording.artifact]);
+    setDistanceMeters((value) =>
+      reset || value === previous?.distanceMeters ? next.distanceMeters : value,
+    );
+    setCalories((value) => (reset || value === previous?.calories ? next.calories : value));
+    if (reset) setReviewError(null);
+    loadedReview.current = next;
+  }, [recording.artifact, recording.state]);
 
   useEffect(() => {
     setIngestionId(recording.submissionJob?.ingestionId ?? null);
@@ -233,10 +575,8 @@ export function RecordSessionPage() {
       <div className="mx-auto max-w-2xl py-4">
         <Card>
           <CardHeader>
-            <CardTitle>No recording session</CardTitle>
-            <CardDescription>
-              Configure a timer-only session from the recording launcher first.
-            </CardDescription>
+            <CardTitle>Preparing your recorder</CardTitle>
+            <CardDescription>Setting up a free timer session locally.</CardDescription>
           </CardHeader>
           <CardContent>
             {recording.error ? (
@@ -250,14 +590,9 @@ export function RecordSessionPage() {
                 variant="destructive"
                 onClick={() => void recording.takeOver()}
               >
-                Take over this recording
+                Take over recording
               </Button>
             ) : null}
-            <Button asChild>
-              <Link to="/record" search={{ activity_category: "run", gps: "off" }}>
-                Return to recorder
-              </Link>
-            </Button>
           </CardContent>
         </Card>
       </div>
@@ -265,28 +600,53 @@ export function RecordSessionPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 py-4">
+    <div
+      className={`mx-auto flex w-full flex-col gap-4 py-4 ${lifecycle === "finished" ? "max-w-3xl" : "max-w-7xl"}`}
+    >
       <Card>
-        <CardHeader className="space-y-4 text-center">
-          <div className="flex flex-wrap justify-center gap-2">
-            <Badge variant="outline">Timer only</Badge>
-            <Badge>{lifecycleLabel(lifecycle)}</Badge>
+        <CardHeader className="gap-2 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle role="heading" aria-level={1} className="flex items-center gap-2 text-xl">
+              <Timer className="h-5 w-5" />
+              {snapshot?.activity.activity_category ?? configuration.activity_category} session
+            </CardTitle>
+            <div className="flex gap-2">
+              <Badge variant="outline">Indoor recording</Badge>
+              <Badge>{lifecycleLabel(lifecycle)}</Badge>
+            </div>
           </div>
-          <CardTitle className="flex items-center justify-center gap-2 text-3xl">
-            <Timer className="h-7 w-7" />
-            {snapshot?.activity.activity_category ?? configuration.activity_category} session
-          </CardTitle>
-          <CardDescription>
-            Keep this page open in the foreground. This browser periodically saves a bounded timer
-            recording for paused recovery after an interruption.
+          <CardDescription className="hidden sm:block">
+            Foreground recording · Changes save locally · No live GPS
           </CardDescription>
-          <p className="text-sm text-muted-foreground">
-            {(snapshot?.activity.activityPlanId ?? configuration.activityPlanId)
-              ? "Planned activity attached"
-              : "Free indoor activity"}
-          </p>
+          {lifecycle === "pending" ? (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <Link
+                className="font-medium underline underline-offset-4"
+                to="/record/simulate"
+                search={{
+                  activity_category: configuration.activity_category,
+                  gps: "off",
+                  ...(configuration.activityPlanId
+                    ? { activityPlanId: configuration.activityPlanId }
+                    : {}),
+                  ...(currentRouteId ? { routeId: currentRouteId } : {}),
+                  ...(configuration.plan?.plannedSession
+                    ? {
+                        plannedSessionId: configuration.plan.plannedSession.id,
+                        plannedSessionDate: search.plannedSessionDate,
+                      }
+                    : {}),
+                }}
+              >
+                Try simulation
+              </Link>
+              <span className="text-muted-foreground">
+                Generated guidance only; never saves an activity.
+              </span>
+            </div>
+          ) : null}
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-4 px-3 sm:px-6">
           {recording.hasRecoveredDraft ? (
             <div className="space-y-3 rounded-lg border border-primary/40 p-4 text-left">
               <div>
@@ -297,17 +657,94 @@ export function RecordSessionPage() {
               </div>
               <div className="flex flex-wrap gap-3">
                 <Button
-                  disabled={recording.hydrationStatus !== "ready" || recording.durabilityFenced}
+                  disabled={
+                    recording.hydrationStatus !== "ready" ||
+                    recording.busy ||
+                    recording.durabilityFenced
+                  }
                   onClick={recording.resume}
                 >
                   <Play className="h-4 w-4" /> Resume
                 </Button>
-                <Button variant="outline" onClick={() => void recording.cancel()}>
+                <Button variant="outline" onClick={() => setIsConfirmingCancel(true)}>
                   <Trash2 className="h-4 w-4" /> Cancel recording
                 </Button>
               </div>
             </div>
           ) : null}
+          {lifecycle !== "finished" ? (
+            <RecordingCockpit
+              key={planSnapshot?.activityPlanId ?? "free"}
+              controls={recordingControls}
+              currentOccurrenceId={cockpitOccurrence?.occurrenceId ?? null}
+              currentStep={
+                cockpitOccurrence
+                  ? occurrenceLabel(planSnapshot?.structure, cockpitOccurrence)
+                  : planSnapshot
+                    ? "Plan preview unavailable"
+                    : "Free activity"
+              }
+              elapsedSeconds={recording.elapsedSeconds}
+              lifecycle={lifecycleLabel(lifecycle)}
+              nextStep={
+                nextPreviewOccurrence
+                  ? occurrenceLabel(planSnapshot?.structure, nextPreviewOccurrence)
+                  : null
+              }
+              onOpenDevices={() => setDevicesOpen(true)}
+              onOpenGuidance={() => setGuidanceOpen(true)}
+              plan={
+                planSnapshot ? { name: planSnapshot.name, structure: planSnapshot.structure } : null
+              }
+              route={
+                currentRouteId
+                  ? {
+                      name: selectedRouteQuery.data?.name ?? "Attached route",
+                      totalDistance:
+                        liveRouteFullQuery.data?.totalDistance ??
+                        selectedRouteQuery.data?.total_distance ??
+                        null,
+                      totalAscent:
+                        liveRouteFullQuery.data?.totalAscent ??
+                        selectedRouteQuery.data?.total_ascent ??
+                        null,
+                      coordinates: liveRouteFullQuery.data?.coordinates ?? previewRouteCoordinates,
+                      source: liveRouteFullQuery.data
+                        ? "full"
+                        : previewRouteCoordinates.length
+                          ? "preview"
+                          : "none",
+                      loading: liveRouteFullQuery.isLoading && !previewRouteCoordinates.length,
+                      error: liveRouteFullQuery.isError,
+                      onRetry: () => void liveRouteFullQuery.refetch(),
+                    }
+                  : null
+              }
+              stepCommands={stepCommands}
+              stepElapsed={currentOccurrence ? (planStatus?.currentStepElapsedSeconds ?? 0) : null}
+              stepPosition={
+                planStatus
+                  ? currentOccurrence && planStatus.currentOccurrenceIndex !== null
+                    ? `Step ${planStatus.currentOccurrenceIndex + 1} of ${planStatus.totalOccurrences}`
+                    : `${planStatus.processedCount} of ${planStatus.totalOccurrences} processed`
+                  : "Ready"
+              }
+              stepRemaining={
+                currentOccurrence ? (planStatus?.currentStepRemainingSeconds ?? null) : null
+              }
+              telemetry={{
+                status: recording.sensors.state.status,
+                metrics: {
+                  heartRateBpm: recording.sensors.state.metrics.heartRateBpm,
+                  powerWatts: recording.sensors.state.metrics.powerWatts,
+                  cadenceRpm: recording.sensors.state.metrics.cadenceRpm,
+                  speedKph: recording.sensors.state.metrics.speedKph,
+                },
+              }}
+              targetLabels={currentTargetLabels}
+            />
+          ) : null}
+
           <div className="grid grid-cols-2 gap-4 text-center">
             <TimeStat label="Elapsed" seconds={recording.elapsedSeconds} />
             <TimeStat label="Active time" seconds={recording.activeSeconds} />
@@ -319,160 +756,409 @@ export function RecordSessionPage() {
             ) : null}
           </div>
 
-          <section
-            className="space-y-3 rounded-xl border p-4 text-left"
-            aria-labelledby="sensor-heading"
-          >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 id="sensor-heading" className="flex items-center gap-2 font-semibold">
-                  <Bluetooth className="h-4 w-4" /> Bluetooth sensors
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  {sensorStatusLabel(recording.sensors.state)} Foreground use only; this tab
-                  disconnects sensors when hidden.
-                </p>
-              </div>
-              {recording.sensors.state.supported ? (
-                recording.sensors.state.status === "connected" ? (
-                  <Button variant="outline" onClick={recording.sensors.disconnect}>
-                    Disconnect
-                  </Button>
-                ) : (
-                  <Button
-                    disabled={
-                      recording.sensors.state.status === "connecting" || lifecycle === "finished"
-                    }
-                    onClick={() => void recording.sensors.connect()}
-                  >
-                    {recording.sensors.state.status === "connecting"
-                      ? "Connecting…"
-                      : "Choose compatible device"}
-                  </Button>
-                )
-              ) : null}
-            </div>
-            {recording.sensors.state.status === "connected" ? (
-              <>
-                <fieldset
-                  aria-label="Live sensor metrics"
-                  className="m-0 grid grid-cols-2 gap-2 border-0 p-0 text-sm sm:grid-cols-3"
-                >
-                  <legend className="sr-only">Live sensor metrics</legend>
-                  <Metric
-                    label="Heart rate"
-                    value={recording.sensors.state.metrics.heartRateBpm}
-                    unit="bpm"
-                  />
-                  <Metric
-                    label="Cadence"
-                    value={recording.sensors.state.metrics.cadenceRpm}
-                    unit="rpm"
-                  />
-                  <Metric
-                    label="Power"
-                    value={recording.sensors.state.metrics.powerWatts}
-                    unit="W"
-                  />
-                  <Metric
-                    label="Speed"
-                    value={recording.sensors.state.metrics.speedKph}
-                    unit="km/h"
-                  />
-                  <Metric
-                    label="Distance"
-                    value={recording.sensors.state.metrics.distanceMeters}
-                    unit="m"
-                  />
-                  <Metric
-                    label="Calories"
-                    value={recording.sensors.state.metrics.calories}
-                    unit="kcal"
-                  />
-                </fieldset>
-                {recording.sensors.state.controlEligible ? (
-                  <div className="flex flex-wrap items-end gap-3 rounded-lg bg-muted/30 p-3">
-                    <p className="basis-full text-sm font-medium">Trainer control</p>
-                    {!recording.sensors.state.controlGranted ? (
+          {lifecycle !== "finished" ? (
+            <details
+              className="rounded-xl border p-4 text-left"
+              onToggle={(event) => setGuidanceOpen(event.currentTarget.open)}
+              open={guidanceOpen}
+            >
+              <summary className="cursor-pointer font-semibold">Plan & route setup</summary>
+              <section className="mt-4 space-y-3" aria-labelledby="guidance-heading">
+                <div>
+                  <h2 id="guidance-heading" className="font-semibold">
+                    Live guidance
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    Plans, routes, and session intensity can change without resetting the timer,
+                    laps, or measured samples.
+                  </p>
+                </div>
+                {lifecycle === "pending" ? (
+                  <fieldset className="flex flex-wrap gap-2" aria-label="Activity category">
+                    {recordingActivityOptions.map((option) => (
                       <Button
-                        variant="outline"
-                        onClick={() => void recording.sensors.requestControl()}
+                        key={option.value}
+                        size="sm"
+                        type="button"
+                        variant={
+                          configuration.activity_category === option.value ? "default" : "outline"
+                        }
+                        onClick={() =>
+                          recording.configure({
+                            activity_category: option.value,
+                            ...(configuration.routeId ? { routeId: configuration.routeId } : {}),
+                          })
+                        }
                       >
-                        Enable trainer control
+                        {option.label}
                       </Button>
-                    ) : recording.sensors.state.targetPowerSupported ? (
-                      <>
-                        <Button
-                          aria-label="Decrease trainer target power"
-                          disabled={
-                            parseTrainerTargetPower(targetPower) === null ||
-                            Number(targetPower) <= 0
-                          }
-                          onClick={() => adjustTrainerTargetPower(-1)}
-                          type="button"
-                          variant="outline"
-                        >
-                          -5 W
-                        </Button>
-                        <label className="grid gap-1 text-sm" htmlFor="trainer-target-power">
-                          <span>Target power (W)</span>
-                          <Input
-                            aria-describedby={
-                              targetPowerError ? "trainer-target-power-error" : undefined
-                            }
-                            aria-invalid={Boolean(targetPowerError)}
-                            id="trainer-target-power"
-                            min={0}
-                            type="number"
-                            value={targetPower}
-                            onChange={(event) => {
-                              setTargetPower(event.target.value);
-                              setTargetPowerError(null);
-                            }}
-                          />
-                          {targetPowerError ? (
-                            <span
-                              className="text-sm text-destructive"
-                              id="trainer-target-power-error"
-                              role="alert"
-                            >
-                              {targetPowerError}
-                            </span>
-                          ) : null}
-                        </label>
-                        <Button
-                          aria-label="Increase trainer target power"
-                          disabled={parseTrainerTargetPower(targetPower) === null}
-                          onClick={() => adjustTrainerTargetPower(1)}
-                          type="button"
-                          variant="outline"
-                        >
-                          +5 W
-                        </Button>
-                        <Button
-                          disabled={targetPower.trim() === ""}
-                          onClick={setTrainerTargetPower}
-                        >
-                          Set power
-                        </Button>
-                      </>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        This trainer does not advertise FTMS target-power support.
-                      </p>
-                    )}
+                    ))}
+                  </fieldset>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Activity category is fixed after starting.
+                  </p>
+                )}
+                <p className="text-sm">
+                  {currentPlan ? `Current plan: ${currentPlan.name}` : "No plan guidance attached."}
+                </p>
+                <SearchField
+                  accessibilityLabel="Search activity plans"
+                  name="recording-plan-search"
+                  value={planSearch}
+                  onValueChange={setPlanSearch}
+                  placeholder="Find an activity plan"
+                  maxLength={80}
+                  loading={plansQuery.isFetching}
+                  loadingLabel="Loading activity plans"
+                />
+                {plansQuery.isError ? (
+                  <div className="text-sm text-destructive" role="alert">
+                    Plans could not load. You can still start a free session and retry this list.
+                    <Button size="sm" variant="outline" onClick={() => void plansQuery.refetch()}>
+                      Retry plans
+                    </Button>
                   </div>
                 ) : null}
-              </>
-            ) : null}
-            {recording.sensors.state.error ? (
-              <p className="text-sm text-destructive" role="alert">
-                {recording.sensors.state.error}
-              </p>
-            ) : null}
-          </section>
+                <div className="flex flex-wrap gap-2">
+                  {visiblePlans.map((plan) => (
+                    <Button
+                      key={plan.id}
+                      className="max-w-full h-auto whitespace-normal break-words text-left"
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                      disabled={
+                        !plan.capabilities.canRecord ||
+                        recording.savingCommand ||
+                        lifecycle === "finishing"
+                      }
+                      onClick={() => setPlanChoiceId(plan.id)}
+                    >
+                      {plan.name}
+                    </Button>
+                  ))}
+                  {plansQuery.hasNextPage ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={plansQuery.isFetchingNextPage}
+                      onClick={() => void plansQuery.fetchNextPage()}
+                    >
+                      {plansQuery.isFetchingNextPage ? "Loading…" : "More plans"}
+                    </Button>
+                  ) : null}
+                </div>
+                {planChoiceId ? (
+                  <div
+                    className="flex flex-wrap items-center gap-2 rounded-md bg-muted/40 p-2"
+                    aria-live="polite"
+                  >
+                    <span className="text-sm">
+                      {chosenPlanQuery.isLoading
+                        ? "Loading plan…"
+                        : chosenPlanQuery.isError
+                          ? "Could not load this plan."
+                          : chosenPlanQuery.data?.detail?.id === planChoiceId
+                            ? chosenPlanQuery.data.detail.name
+                            : "Plan unavailable"}
+                    </span>
+                    <Button
+                      size="sm"
+                      disabled={
+                        chosenPlanQuery.isLoading ||
+                        chosenPlanQuery.data?.detail?.id !== planChoiceId ||
+                        !chosenPlanQuery.data?.detail?.capabilities.canRecord ||
+                        recording.savingCommand
+                      }
+                      onClick={() => void applyPlan()}
+                    >
+                      Attach / replace
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setPlanChoiceId(null)}>
+                      Cancel
+                    </Button>
+                  </div>
+                ) : null}
+                {currentPlan ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={recording.savingCommand || lifecycle === "finishing"}
+                    onClick={() =>
+                      void applyGuidanceChange(
+                        () => recording.changePlan(null),
+                        "The plan was not saved. Try again.",
+                      )
+                    }
+                  >
+                    Detach plan
+                  </Button>
+                ) : null}
+                <fieldset className="flex flex-wrap gap-2" aria-label="Route guidance">
+                  <Button
+                    size="sm"
+                    variant={currentRouteId ? "outline" : "default"}
+                    disabled={recording.savingCommand || lifecycle === "finishing"}
+                    onClick={() =>
+                      void applyGuidanceChange(
+                        () => recording.changeRoute(null),
+                        "The route was not saved. Try again.",
+                      )
+                    }
+                  >
+                    No route
+                  </Button>
+                  {visibleRoutes.map((route) => (
+                    <Button
+                      key={route.id}
+                      className="max-w-full h-auto whitespace-normal break-words text-left"
+                      size="sm"
+                      variant={route.id === currentRouteId ? "default" : "outline"}
+                      disabled={recording.savingCommand || lifecycle === "finishing"}
+                      onClick={() =>
+                        void applyGuidanceChange(
+                          () => recording.changeRoute(route.id),
+                          "The route was not saved. Try again.",
+                        )
+                      }
+                    >
+                      {route.name}
+                    </Button>
+                  ))}
+                  {routesQuery.hasNextPage ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={routesQuery.isFetchingNextPage}
+                      onClick={() => void routesQuery.fetchNextPage()}
+                    >
+                      {routesQuery.isFetchingNextPage ? "Loading…" : "More routes"}
+                    </Button>
+                  ) : null}
+                </fieldset>
+                {currentPlan ? (
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="text-sm" htmlFor="session-intensity">
+                        Intensity %
+                      </label>
+                      <Input
+                        id="session-intensity"
+                        className="w-20"
+                        min="50"
+                        max="150"
+                        step="5"
+                        type="number"
+                        value={intensityDraft}
+                        disabled={
+                          !supportsIntensity || recording.savingCommand || lifecycle === "finishing"
+                        }
+                        onChange={(event) => setIntensityDraft(event.target.value)}
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={
+                          !supportsIntensity ||
+                          recording.savingCommand ||
+                          lifecycle === "finishing" ||
+                          !intensityDraft.trim() ||
+                          !Number.isFinite(Number(intensityDraft)) ||
+                          Number(intensityDraft) < 50 ||
+                          Number(intensityDraft) > 150
+                        }
+                        onClick={() =>
+                          void applyGuidanceChange(
+                            () => recording.adjustIntensity(Number(intensityDraft) / 100),
+                            "The intensity was not saved. Enter a value from 50% to 150% and try again.",
+                          )
+                        }
+                      >
+                        Apply intensity
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {supportsIntensity
+                        ? "50–150% of authored relative-power guidance. This does not change measured performance or send a trainer command."
+                        : "Intensity scaling is available for relative cycling-power targets; other authored targets stay unchanged."}
+                    </p>
+                  </div>
+                ) : null}
+                {guidanceError ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    {guidanceError}
+                  </p>
+                ) : null}
+                {recording.savingCommand ? (
+                  <p role="status" className="text-sm text-muted-foreground">
+                    Saving guidance locally…
+                  </p>
+                ) : null}
+              </section>
+            </details>
+          ) : null}
 
-          {planSnapshot && planStatus ? (
+          {lifecycle !== "finished" ? (
+            <details
+              className="rounded-xl border p-4 text-left"
+              onToggle={(event) => setDevicesOpen(event.currentTarget.open)}
+              open={devicesOpen}
+            >
+              <summary className="cursor-pointer font-semibold">Devices & trainer</summary>
+              <section className="mt-4 space-y-3" aria-labelledby="sensor-heading">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 id="sensor-heading" className="flex items-center gap-2 font-semibold">
+                      <Bluetooth className="h-4 w-4" /> Bluetooth sensors
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      {sensorStatusLabel(recording.sensors.state)} Foreground use only; this tab
+                      disconnects sensors when hidden.
+                    </p>
+                  </div>
+                  {recording.sensors.state.supported ? (
+                    recording.sensors.state.status === "connected" ? (
+                      <Button variant="outline" onClick={recording.sensors.disconnect}>
+                        Disconnect
+                      </Button>
+                    ) : (
+                      <Button
+                        disabled={
+                          recording.sensors.state.status === "connecting" || !trainerCommandsAllowed
+                        }
+                        onClick={() => void recording.sensors.connect()}
+                      >
+                        {recording.sensors.state.status === "connecting"
+                          ? "Connecting…"
+                          : "Choose compatible device"}
+                      </Button>
+                    )
+                  ) : null}
+                </div>
+                {recording.sensors.state.status === "connected" ? (
+                  <>
+                    <fieldset
+                      aria-label="Live sensor metrics"
+                      className="m-0 grid grid-cols-2 gap-2 border-0 p-0 text-sm sm:grid-cols-3"
+                    >
+                      <legend className="sr-only">Live sensor metrics</legend>
+                      <Metric
+                        label="Heart rate"
+                        value={recording.sensors.state.metrics.heartRateBpm}
+                        unit="bpm"
+                      />
+                      <Metric
+                        label="Cadence"
+                        value={recording.sensors.state.metrics.cadenceRpm}
+                        unit="rpm"
+                      />
+                      <Metric
+                        label="Power"
+                        value={recording.sensors.state.metrics.powerWatts}
+                        unit="W"
+                      />
+                      <Metric
+                        label="Speed"
+                        value={recording.sensors.state.metrics.speedKph}
+                        unit="km/h"
+                      />
+                      <Metric
+                        label="Distance"
+                        value={recording.sensors.state.metrics.distanceMeters}
+                        unit="m"
+                      />
+                      <Metric
+                        label="Calories"
+                        value={recording.sensors.state.metrics.calories}
+                        unit="kcal"
+                      />
+                    </fieldset>
+                    {recording.sensors.state.controlEligible && trainerCommandsAllowed ? (
+                      <div className="flex flex-wrap items-end gap-3 rounded-lg bg-muted/30 p-3">
+                        <p className="basis-full text-sm font-medium">Trainer control</p>
+                        {!recording.sensors.state.controlGranted ? (
+                          <Button
+                            variant="outline"
+                            onClick={() => void recording.sensors.requestControl()}
+                          >
+                            Enable trainer control
+                          </Button>
+                        ) : recording.sensors.state.targetPowerSupported ? (
+                          <>
+                            <Button
+                              aria-label="Decrease trainer target power"
+                              disabled={
+                                parseTrainerTargetPower(targetPower) === null ||
+                                Number(targetPower) <= 0
+                              }
+                              onClick={() => adjustTrainerTargetPower(-1)}
+                              type="button"
+                              variant="outline"
+                            >
+                              -5 W
+                            </Button>
+                            <label className="grid gap-1 text-sm" htmlFor="trainer-target-power">
+                              <span>Target power (W)</span>
+                              <Input
+                                aria-describedby={
+                                  targetPowerError ? "trainer-target-power-error" : undefined
+                                }
+                                aria-invalid={Boolean(targetPowerError)}
+                                id="trainer-target-power"
+                                min={0}
+                                type="number"
+                                value={targetPower}
+                                onChange={(event) => {
+                                  setTargetPower(event.target.value);
+                                  setTargetPowerError(null);
+                                }}
+                              />
+                              {targetPowerError ? (
+                                <span
+                                  className="text-sm text-destructive"
+                                  id="trainer-target-power-error"
+                                  role="alert"
+                                >
+                                  {targetPowerError}
+                                </span>
+                              ) : null}
+                            </label>
+                            <Button
+                              aria-label="Increase trainer target power"
+                              disabled={parseTrainerTargetPower(targetPower) === null}
+                              onClick={() => adjustTrainerTargetPower(1)}
+                              type="button"
+                              variant="outline"
+                            >
+                              +5 W
+                            </Button>
+                            <Button
+                              disabled={targetPower.trim() === ""}
+                              onClick={setTrainerTargetPower}
+                            >
+                              Set power
+                            </Button>
+                          </>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            This trainer does not advertise FTMS target-power support.
+                          </p>
+                        )}
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
+                {recording.sensors.state.error ? (
+                  <p className="text-sm text-destructive" role="alert">
+                    {recording.sensors.state.error}
+                  </p>
+                ) : null}
+              </section>
+            </details>
+          ) : null}
+
+          {planSnapshot && planStatus && lifecycle === "finishing" ? (
             <section className="space-y-4 rounded-xl border p-4 text-left">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -526,92 +1212,36 @@ export function RecordSessionPage() {
                   }}
                 />
               </div>
-              {currentOccurrence && (lifecycle === "recording" || lifecycle === "paused") ? (
+              {lifecycle !== "finishing" ? (
                 <div className="flex flex-wrap gap-2">
-                  <Button disabled={recording.durabilityFenced} onClick={recording.completeStep}>
-                    <SkipForward className="h-4 w-4" /> Complete / Next
-                  </Button>
+                  {currentOccurrence ? (
+                    <Button disabled={recording.durabilityFenced} onClick={recording.completeStep}>
+                      <SkipForward className="h-4 w-4" /> Complete / Next
+                    </Button>
+                  ) : null}
                   <Button
                     variant="outline"
                     disabled={
-                      recording.durabilityFenced || (planStatus.currentOccurrenceIndex ?? 0) <= 0
+                      recording.durabilityFenced ||
+                      (planStatus.currentOccurrenceIndex ?? planStatus.totalOccurrences) <= 0
                     }
                     onClick={recording.previousStep}
                   >
                     <StepBack className="h-4 w-4" /> Previous
                   </Button>
-                  <Button
-                    variant="outline"
-                    disabled={recording.durabilityFenced}
-                    onClick={recording.skipStep}
-                  >
-                    Skip step
-                  </Button>
+                  {currentOccurrence ? (
+                    <Button
+                      variant="outline"
+                      disabled={recording.durabilityFenced}
+                      onClick={recording.skipStep}
+                    >
+                      Skip step
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
             </section>
           ) : null}
-
-          <div className="flex flex-wrap justify-center gap-3">
-            {lifecycle === "pending" ? (
-              <Button
-                size="lg"
-                disabled={recording.savingCommand || recording.durabilityFenced}
-                onClick={recording.start}
-              >
-                <Play className="h-5 w-5" /> Start
-              </Button>
-            ) : null}
-            {lifecycle === "recording" ? (
-              <Button
-                size="lg"
-                variant="outline"
-                disabled={recording.durabilityFenced}
-                onClick={recording.pause}
-              >
-                <Pause className="h-5 w-5" /> Pause
-              </Button>
-            ) : null}
-            {lifecycle === "paused" && !recording.hasRecoveredDraft ? (
-              <Button
-                size="lg"
-                disabled={recording.hydrationStatus !== "ready" || recording.durabilityFenced}
-                onClick={recording.resume}
-              >
-                <Play className="h-5 w-5" /> Resume
-              </Button>
-            ) : null}
-            {lifecycle === "recording" || lifecycle === "paused" ? (
-              <Button
-                size="lg"
-                variant="outline"
-                disabled={recording.busy || recording.durabilityFenced}
-                onClick={recording.lap}
-              >
-                <Flag className="h-5 w-5" /> Lap
-              </Button>
-            ) : null}
-            {lifecycle === "recording" || lifecycle === "paused" ? (
-              <Button
-                size="lg"
-                variant="destructive"
-                disabled={recording.busy || recording.savingCommand || recording.durabilityFenced}
-                onClick={recording.finish}
-              >
-                <Square className="h-5 w-5" /> {recording.busy ? "Finishing…" : "Finish"}
-              </Button>
-            ) : null}
-            {lifecycle === "recording" || lifecycle === "paused" ? (
-              <Button
-                size="lg"
-                variant="ghost"
-                disabled={recording.busy || recording.savingCommand}
-                onClick={() => setIsConfirmingCancel(true)}
-              >
-                Cancel recording
-              </Button>
-            ) : null}
-          </div>
 
           {isConfirmingCancel && (lifecycle === "recording" || lifecycle === "paused") ? (
             <div
@@ -631,7 +1261,10 @@ export function RecordSessionPage() {
                 <Button
                   variant="destructive"
                   disabled={recording.busy || recording.savingCommand}
-                  onClick={() => void recording.cancel()}
+                  onClick={async () => {
+                    await recording.cancel({ confirmed: true });
+                    setIsConfirmingCancel(false);
+                  }}
                 >
                   Discard recording
                 </Button>
@@ -714,9 +1347,9 @@ export function RecordSessionPage() {
                   </span>
                 </p>
                 <p>
-                  Plan:{" "}
+                  Plan association:{" "}
                   <span className="font-medium">
-                    {recording.artifact.snapshot.planExecution?.name ?? "Free indoor activity"}
+                    {reviewPrimaryPlan?.name ?? "Free indoor activity"}
                   </span>
                 </p>
                 <p>
@@ -725,12 +1358,12 @@ export function RecordSessionPage() {
                     {recording.artifact.snapshot.activity.activity_category}
                   </span>
                 </p>
-                {routeId && selectedRouteQuery.data ? (
+                {reviewPrimaryRouteId && selectedRouteQuery.data ? (
                   <p>
-                    Route:{" "}
+                    Route association:{" "}
                     <Link
                       className="font-medium underline underline-offset-4"
-                      params={{ routeId }}
+                      params={{ routeId: reviewPrimaryRouteId }}
                       to="/routes/$routeId"
                     >
                       {selectedRouteQuery.data.name}
@@ -967,19 +1600,11 @@ function compileOccurrenceCount(structure: unknown): number {
 
 function occurrenceLabel(structure: unknown, occurrence: CompiledActivityPlanOccurrence): string {
   const parsed = activityPlanStructureSchema.safeParse(structure);
-  if (!parsed.success) return occurrence.role === "rest" ? "Rest" : "Plan step";
-  if (occurrence.role === "rest") {
-    return (
-      parsed.data.segments.find((segment) => segment.id === occurrence.segmentId)?.name ?? "Rest"
-    );
-  }
-  for (const segment of parsed.data.segments) {
-    if (segment.role !== "activity") continue;
-    for (const interval of segment.intervals) {
-      const step = interval.steps.find((candidate) => candidate.id === occurrence.stepId);
-      if (step) return step.name;
-    }
-  }
+  if (!parsed.success) return "Plan step";
+  const step = parsed.data.items
+    .flatMap((item) => (item.type === "step" ? [item] : item.steps))
+    .find((candidate) => candidate.id === occurrence.stepId);
+  if (step) return step.name ?? "Plan step";
   return "Plan step";
 }
 

@@ -5,6 +5,7 @@ import {
   providerManifestRegistry,
 } from "@repo/core";
 import type { DrizzleDbClient } from "@repo/db";
+import { garminProviderRuntime } from "./garmin-provider-runtime";
 import {
   certifyComposedProviderRuntimeRegistry,
   createComposedProviderRuntimeRegistry,
@@ -15,7 +16,11 @@ import {
 import { stravaProviderRuntime } from "./strava-provider-runtime";
 import { wahooProviderRuntime } from "./wahoo-provider-runtime";
 
-export const executableProviderRuntimes = [wahooProviderRuntime, stravaProviderRuntime] as const;
+export const executableProviderRuntimes = [
+  wahooProviderRuntime,
+  stravaProviderRuntime,
+  garminProviderRuntime,
+] as const;
 
 certifyComposedProviderRuntimeRegistry(providerManifestRegistry, executableProviderRuntimes);
 
@@ -103,7 +108,10 @@ export function requireProviderSynchronizationRuntime(provider: ExecutableIntegr
 export function requireProviderDisconnectionRuntime(provider: ExecutableIntegrationProviderId) {
   const runtime = providerRuntimeRegistry.get(provider);
   const disconnection = runtime?.execution.server.disconnection;
-  if (!runtime?.execution.server.availability.isConfigured() || !disconnection) {
+  if (
+    !disconnection ||
+    (!runtime?.execution.server.availability.isConfigured() && !disconnection.availableWhenDisabled)
+  ) {
     throw new ProviderRuntimeUnavailableError(provider);
   }
   return disconnection;

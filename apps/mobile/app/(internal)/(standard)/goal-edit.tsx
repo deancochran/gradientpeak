@@ -9,20 +9,34 @@ import {
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { GoalEditorForm, type GoalEditorFormHandle } from "@/components/goals";
 import { FormScreen } from "@/components/shared/FormScreen";
 import { EmptyState, ErrorState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
-import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
+import { useCreationFlowActive } from "@/lib/hooks/useCreationFlowActive";
 
 export default function GoalEditScreen() {
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const flow = useCreationFlowActive(["goal-edit"], false, { ownerKey: id ?? "missing" });
+  return flow.active ? (
+    <GoalEditSession key={`${id ?? "missing"}:${flow.key}`} isCurrent={flow.isCurrent} />
+  ) : null;
+}
+
+function GoalEditSession({ isCurrent }: { isCurrent: () => boolean }) {
   const router = useRouter();
   const utils = api.useUtils();
   const formRef = useRef<GoalEditorFormHandle>(null);
-  const [isDirty, setIsDirty] = useState(false);
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
   const { id } = useLocalSearchParams<{ id?: string }>();
   const goalId = typeof id === "string" ? id : "";
   const [isSaving, setIsSaving] = useState(false);
@@ -44,10 +58,6 @@ export default function GoalEditScreen() {
   const currentGoalContext = useRef(goalContext);
   currentGoalContext.current = goalContext;
   const updateGoalMutation = api.goals.update.useMutation();
-  const { allowNavigationAfterSuccess } = useDirtyNavigationGuard({
-    isDirty,
-    isPending: isSaving || updateGoalMutation.isPending,
-  });
 
   const initialDraft = useMemo(() => {
     if (!goalRecord) {
@@ -58,7 +68,7 @@ export default function GoalEditScreen() {
   }, [goalRecord]);
 
   const handleSubmit = async (draft: GoalEditorDraft) => {
-    if (!goalRecord || saveGuard.current) {
+    if (!active.current || !isCurrent() || !goalRecord || saveGuard.current) {
       return;
     }
 
@@ -69,16 +79,15 @@ export default function GoalEditScreen() {
         id: goalRecord.id,
         data: buildGoalUpdatePayload({ draft }),
       });
-      if (currentGoalContext.current !== goalContext) return;
+      if (!active.current || !isCurrent() || currentGoalContext.current !== goalContext) return;
       await Promise.allSettled([
         Promise.resolve().then(() => invalidateGoalQueries(utils, { goalId })),
       ]);
-      if (currentGoalContext.current !== goalContext) return;
-      allowNavigationAfterSuccess();
+      if (!active.current || !isCurrent() || currentGoalContext.current !== goalContext) return;
       router.replace(ROUTES.GOALS.DETAIL(goalId) as never);
     } finally {
       saveGuard.current = false;
-      setIsSaving(false);
+      if (active.current) setIsSaving(false);
     }
   };
 
@@ -141,7 +150,6 @@ export default function GoalEditScreen() {
         initialValue={initialDraft}
         submitLabel="Save Changes"
         isSubmitting={isSaving || updateGoalMutation.isPending}
-        onDirtyChange={setIsDirty}
         showSubmitAction={false}
         onSubmit={handleSubmit}
       />

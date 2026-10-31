@@ -4,6 +4,7 @@ import {
   type ProviderOperationToken,
   providerManifestRegistry,
 } from "@repo/core";
+import { drainGarminTrainingSync } from "./garmin-training-sync-worker";
 import { drainStravaProviderSync } from "./strava-sync-worker";
 import { drainWahooProviderSync } from "./wahoo-sync-worker";
 
@@ -93,6 +94,12 @@ export function certifyProviderWorkerRegistry<TWorker>(
 
 /** Actual app-owned drain functions, bound to manifest requirements at startup. */
 export const providerWorkerRegistry = createProviderWorkerRegistry<() => Promise<unknown>>([
+  {
+    provider: "garmin",
+    worker: "garmin-training-sync",
+    operations: ["planned_activity_push"],
+    value: drainGarminTrainingSync,
+  },
   {
     provider: "wahoo",
     worker: "wahoo-provider-sync",

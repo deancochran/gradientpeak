@@ -1,13 +1,25 @@
 // @vitest-environment jsdom
 
+import { parseActivityFile } from "@repo/core/activity-files/parser";
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AcceptedActivityStreamRecord } from "../../../../lib/activity-playback";
+import acceptedActivityTcx from "../../../../lib/recording/fixtures/raw.tcx?raw";
 
 import { Route } from "./index";
 
 const mocks = vi.hoisted(() => ({
+  activityId: "activity-1",
+  activityError: false,
+  refetchActivity: vi.fn(),
+  streamRequests: vi.fn(),
+  streamsBySegment: {} as Record<string, { records: AcceptedActivityStreamRecord[] }>,
+  streamLoading: false,
+  streamError: false,
+  streamPlaceholder: false,
+  refetchStreams: vi.fn(),
   detail: undefined as unknown,
   importedSources: [] as Array<{
     id: string;
@@ -42,7 +54,7 @@ vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
     useNavigate: () => vi.fn(),
-    useParams: () => ({ activityId: "activity-1" }),
+    useParams: () => ({ activityId: mocks.activityId }),
   }),
   Link: ({ children }: { children: ReactNode }) => <a href="/integrations">{children}</a>,
 }));
@@ -95,6 +107,8 @@ vi.mock("../../../../lib/api/client", () => ({
             importedSources: mocks.importedSources,
           },
           isLoading: false,
+          isError: mocks.activityError,
+          refetch: mocks.refetchActivity,
         }),
       },
       getEfforts: { useQuery: () => ({ data: [], isLoading: false, isError: false }) },
@@ -122,7 +136,22 @@ vi.mock("../../../../lib/api/client", () => ({
       },
     },
     activityFiles: {
-      getStreams: { useQuery: () => ({ data: { records: [] }, isLoading: false, isError: false }) },
+      getStreams: {
+        useQuery: (
+          input: { activityId: string; scope: { type: string; segmentId: string } },
+          options: unknown,
+        ) => {
+          mocks.streamRequests(input, options);
+          return {
+            data: mocks.streamsBySegment[input.scope.segmentId] ?? { records: [] },
+            isLoading: mocks.streamLoading,
+            isError: mocks.streamError,
+            isPlaceholderData: mocks.streamPlaceholder,
+            error: mocks.streamError ? { message: "Stream unavailable" } : null,
+            refetch: mocks.refetchStreams,
+          };
+        },
+      },
     },
     profiles: { getPublicById: { useQuery: () => ({ data: undefined }) } },
     social: { toggleLike: { useMutation: () => ({ isPending: false, mutate: vi.fn() }) } },
@@ -134,6 +163,15 @@ vi.mock("../../../../lib/api/client", () => ({
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), info: vi.fn(), success: vi.fn() } }));
 
 beforeEach(() => {
+  mocks.activityId = "activity-1";
+  mocks.activityError = false;
+  mocks.refetchActivity.mockReset();
+  mocks.streamRequests.mockReset();
+  mocks.streamsBySegment = {};
+  mocks.streamLoading = false;
+  mocks.streamError = false;
+  mocks.streamPlaceholder = false;
+  mocks.refetchStreams.mockReset();
   mocks.importedSources = [];
   mocks.resolveImportedSource.mockReset();
   mocks.ownedActivities = [];
@@ -213,6 +251,95 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("ActivityDetailPage plan execution summary", () => {
+  it("shows activity load failure rather than claiming the activity or streams do not exist", () => {
+    mocks.detail = undefined;
+    mocks.activityError = true;
+    const Page = (Route as unknown as { component: React.ComponentType }).component;
+    render(<Page />);
+    expect(screen.getByRole("alert").textContent).toBe("Activity could not be loaded.");
+    expect(screen.queryByText("Activity not found.")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry activity" }));
+    expect(mocks.refetchActivity).toHaveBeenCalledOnce();
+    expect(mocks.streamRequests).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ enabled: false }),
+    );
+  });
+  it("plays accepted parser records from the selected segment and resets when the scope changes", () => {
+    const parsed = parseActivityFile({
+      fileName: "accepted.tcx",
+      data: acceptedActivityTcx.trimEnd(),
+    });
+    const detail = mocks.detail as {
+      currentArtifact: unknown;
+      segments: Array<{ id: string; ordinal: number; activityCategory: string }>;
+      summary: { id: string };
+    };
+    detail.currentArtifact = { id: "accepted-artifact", format: "tcx", availability: "available" };
+    const first = detail.segments[0];
+    if (!first) throw new Error("Expected segment");
+    detail.segments = [first, { ...first, id: "segment-2", ordinal: 1, activityCategory: "bike" }];
+    mocks.streamsBySegment = {
+      "segment-1": { records: parsed.records },
+      "segment-2": {
+        records: [
+          { timestamp: new Date("2026-09-20T11:00:00Z"), power: 220 },
+          { timestamp: new Date("2026-09-20T11:00:10Z"), power: 250 },
+        ],
+      },
+    };
+    const Page = (Route as unknown as { component: React.ComponentType }).component;
+    const view = render(<Page />);
+    expect(mocks.streamRequests).toHaveBeenLastCalledWith(
+      { activityId: "activity-1", scope: { type: "segment", segmentId: "segment-1" } },
+      expect.objectContaining({ enabled: true }),
+    );
+    fireEvent.change(screen.getByRole("slider", { name: "Playback elapsed time" }), {
+      target: { value: "10000" },
+    });
+    expect(screen.getByTestId("playback-metric-heartRate").textContent).toContain("160 bpm");
+    expect(screen.getByTestId("playback-metric-speed").textContent).toContain("6 m/s");
+    expect(screen.getByTestId("playback-position-marker").getAttribute("data-latitude")).toBe(
+      "40.1",
+    );
+    fireEvent.change(screen.getByLabelText("Recorded segment"), { target: { value: "segment-2" } });
+    expect(mocks.streamRequests).toHaveBeenLastCalledWith(
+      { activityId: "activity-1", scope: { type: "segment", segmentId: "segment-2" } },
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(screen.getByTestId("playback-clock").textContent).toContain("0:00.0");
+    expect(screen.getByTestId("playback-metric-power").textContent).toContain("220 W");
+    expect(screen.queryByTestId("playback-metric-heartRate")).toBeNull();
+    expect(screen.getByText("This segment has no recorded GPS positions.")).toBeTruthy();
+    mocks.streamPlaceholder = true;
+    view.rerender(<Page />);
+    expect(screen.getByText("Loading recorded playback…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Play playback" })).toBeNull();
+    mocks.streamPlaceholder = false;
+    mocks.activityId = "activity-2";
+    detail.summary.id = "activity-2";
+    view.rerender(<Page />);
+    expect(mocks.streamRequests).toHaveBeenLastCalledWith(
+      { activityId: "activity-2", scope: { type: "segment", segmentId: "segment-1" } },
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(screen.getByTestId("playback-clock").textContent).toContain("0:00.0");
+    expect(mocks.resolveImportedSource).not.toHaveBeenCalled();
+    expect(mocks.sendCompletedActivity).not.toHaveBeenCalled();
+  });
+
+  it("exposes stream errors and retry without rendering cached playback values", () => {
+    const detail = mocks.detail as { currentArtifact: unknown };
+    detail.currentArtifact = { id: "artifact", format: "fit", availability: "available" };
+    mocks.streamError = true;
+    mocks.streamsBySegment["segment-1"] = { records: [{ timestamp: new Date(), power: 300 }] };
+    const Page = (Route as unknown as { component: React.ComponentType }).component;
+    render(<Page />);
+    expect(screen.getByText("Playback unavailable: Stream unavailable")).toBeTruthy();
+    expect(screen.queryByTestId("playback-metric-power")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry playback" }));
+    expect(mocks.refetchStreams).toHaveBeenCalledOnce();
+  });
   it("renders saved completion and basis evidence without inferring adherence or sensors", () => {
     const ActivityDetailPage = (Route as unknown as { component: React.ComponentType }).component;
     render(<ActivityDetailPage />);

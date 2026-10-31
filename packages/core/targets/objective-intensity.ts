@@ -14,6 +14,7 @@ export const activityTargetRoleByType = {
   speed: "objective",
   cadence: "supporting",
   RPE: "supporting",
+  rest: "supporting",
 } as const satisfies Record<ActivityTargetType, ActivityTargetRole>;
 
 export function getActivityTargetRole(target: Pick<ActivityTarget, "type">): ActivityTargetRole {
@@ -99,7 +100,7 @@ export function resolveObjectiveIntensityTarget(input: {
   if (target.type === "%FTP" || target.type === "%ThresholdHR" || target.type === "%MaxHR") {
     return { status: "available", value: target.intensity / 100, source: "direct_relative" };
   }
-  if (target.type === "cadence" || target.type === "RPE") {
+  if (target.type === "cadence" || target.type === "RPE" || target.type === "rest") {
     return { status: "unavailable", value: null, reason: "no_objective_target" };
   }
   const value = calibratedRatio({

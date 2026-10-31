@@ -118,7 +118,7 @@ export function MultiMetricChart({
       ],
     };
 
-    return configs[activityCategory] || configs.other;
+    return configs[activityCategory] ?? configs.other ?? [];
   };
 
   // Filter to only include metrics that have data

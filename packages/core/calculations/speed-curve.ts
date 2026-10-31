@@ -39,6 +39,20 @@ export function speedToPace(metersPerSecond: number): number {
   return Math.round(metersPerSecondToSecondsPerKilometer(metersPerSecond));
 }
 
+/** Converts a whole-second per-kilometer pace to the authored km/h target unit. */
+export function paceSecondsPerKilometerToKilometersPerHour(secondsPerKilometer: number): number {
+  if (!Number.isFinite(secondsPerKilometer) || secondsPerKilometer <= 0)
+    throw new Error("Pace must be finite and positive");
+  return 3600 / secondsPerKilometer;
+}
+
+/** Converts an authored km/h target to the whole-second pace used by pace controls. */
+export function kilometersPerHourToPaceSeconds(kilometersPerHour: number): number {
+  if (!Number.isFinite(kilometersPerHour) || kilometersPerHour <= 0)
+    throw new Error("Speed must be finite and positive");
+  return Math.round(3600 / kilometersPerHour);
+}
+
 /**
  * Formats pace in seconds to MM:SS string format.
  *

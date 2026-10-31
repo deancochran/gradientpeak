@@ -97,7 +97,12 @@ function RouteDetailPage() {
   }, [route?.has_liked, route?.likes_count]);
 
   const coordinates = useMemo(
-    () => routeFullQuery.data?.coordinates ?? [],
+    () =>
+      (routeFullQuery.data?.coordinates ?? []).map((coordinate) => ({
+        latitude: coordinate.latitude,
+        longitude: coordinate.longitude,
+        ...(coordinate.altitude === undefined ? {} : { altitude: coordinate.altitude }),
+      })),
     [routeFullQuery.data?.coordinates],
   );
 

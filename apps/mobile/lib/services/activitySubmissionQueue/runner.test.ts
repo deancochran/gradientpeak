@@ -1,46 +1,40 @@
 import { createHash } from "node:crypto";
+import { recordingSummarySubmissionInputSchema } from "@repo/api/recording-submission";
 import {
+  activityPlanSemanticHash,
   activityPlanStructureSchema,
+  compileActivityPlan,
   getCanonicalActivityPlanStructureHashInput,
 } from "@repo/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
 import { runActivitySubmissionQueueJob } from "./runner";
 import * as queueStorage from "./storage";
-import type { ActivitySubmissionQueueJob, ActivitySubmissionQueueRunnerDeps } from "./types";
+import {
+  type ActivitySubmissionQueueJob,
+  type ActivitySubmissionQueueRunnerDeps,
+  activitySubmissionQueueJobSchema,
+  type CreateFromRecordingSummaryInput,
+} from "./types";
 
 const persistedJobs: ActivitySubmissionQueueJob[] = [];
 const persistedHistory: ActivitySubmissionQueueJob[] = [];
 const leases = new Map<string, ActivitySubmissionQueueJob>();
 const executionManifest = {
   version: 1 as const,
-  compilerVersion: 1,
+  compilerVersion: 3 as const,
   planHash: "0".repeat(64),
   occurrences: [],
 };
 const prescribedStructure = activityPlanStructureSchema.parse({
-  version: 3 as const,
+  version: 5 as const,
   activity_category: "bike" as const,
-  segments: [
+  items: [
     {
-      id: "10000000-0000-4000-8000-000000000001",
-      role: "activity" as const,
-      name: "Bike",
-      intervals: [
-        {
-          id: "10000000-0000-4000-8000-000000000002",
-          name: "Work",
-          repetitions: 1,
-          steps: [
-            {
-              id: "10000000-0000-4000-8000-000000000003",
-              name: "Steady",
-              duration: { type: "time" as const, seconds: 600 },
-              targets: [{ type: "RPE" as const, intensity: 7 }],
-            },
-          ],
-        },
-      ],
+      type: "step",
+      id: "10000000-0000-4000-8000-000000000003",
+      name: "Steady",
+      duration: { type: "time" as const, seconds: 600 },
+      targets: [{ type: "RPE" as const, intensity: 7 }],
     },
   ],
 });
@@ -48,8 +42,8 @@ const prescribedStructureHash = `v1:sha256:${createHash("sha256")
   .update(getCanonicalActivityPlanStructureHashInput(prescribedStructure))
   .digest("hex")}`;
 const plannedExecution = {
-  manifestVersion: 1 as const,
-  compilerVersion: 1 as const,
+  manifestVersion: 2 as const,
+  compilerVersion: 3 as const,
   activityPlanId: "10000000-0000-4000-8000-000000000004",
   scheduledEventId: "10000000-0000-4000-8000-000000000005",
   name: "Hard",
@@ -63,15 +57,18 @@ const plannedExecution = {
     source: { kind: "direct" as const, operationId: "submission-runner-test-operation-01" },
     prescription: {
       resolutionManifest: {
-        resolver_version: "prescription-resolver-v1",
-        policy_version: "training-plan-policy-v1",
+        resolver_version: "prescription-resolver-v2" as const,
+        policy_version: "training-plan-policy-v2" as const,
         training_plan_id: null,
         training_plan_revision: null,
         training_plan_hash: null,
         athlete_context_revision: null,
         activity_plan_id: "10000000-0000-4000-8000-000000000004",
         activity_plan_revision: 3,
-        activity_plan_semantic_hash: `v1:sha256:${"a".repeat(64)}`,
+        activity_plan_semantic_hash: activityPlanSemanticHash({
+          structure: prescribedStructure,
+          trainingIntent: "aerobic_base",
+        }),
         effective_target_duration_minutes: null,
         effective_target_common_load: null,
         evidence_facts: [],
@@ -82,7 +79,6 @@ const plannedExecution = {
           target_common_load: null,
           importance: "normal" as const,
         },
-        adaptation_values: {},
         fallback_level: "system_default_no_context" as const,
         reason_codes: [],
         resolved_structure: prescribedStructure,
@@ -103,7 +99,6 @@ const plannedExecution = {
   personalizationEnabled: false,
   targetPresentations: [],
 };
-
 vi.mock("expo-crypto", async () => {
   const { createHash } = await import("node:crypto");
   return {
@@ -112,7 +107,6 @@ vi.mock("expo-crypto", async () => {
       createHash("sha256").update(value).digest("hex"),
   };
 });
-
 vi.mock("./storage", () => ({
   claimDueActivitySubmissionQueueJob: vi.fn(
     async (id: string, owner: string, token: string, leaseMs: number, now: number) => {
@@ -161,14 +155,12 @@ vi.mock("./storage", () => ({
         leases.set(job.id, job);
         return true;
       }
-
       persistedJobs.push(job);
       leases.set(job.id, job);
       return true;
     },
   ),
 }));
-
 const baseJob: ActivitySubmissionQueueJob = {
   schemaVersion: 3,
   id: "job-1",
@@ -186,7 +178,7 @@ const baseJob: ActivitySubmissionQueueJob = {
     activity_category: "bike",
     durationSeconds: 3600,
     movingSeconds: 3500,
-    distanceMeters: 25_000,
+    distanceMeters: 25000,
     calories: 500,
   },
   status: "queued",
@@ -194,7 +186,6 @@ const baseJob: ActivitySubmissionQueueJob = {
   createdAt: "2026-01-01T11:00:00.000Z",
   updatedAt: "2026-01-01T11:00:00.000Z",
 };
-
 function createDeps(overrides: Partial<ActivitySubmissionQueueRunnerDeps> = {}) {
   return {
     createFromRecordingSummary: vi.fn(async () => ({
@@ -220,7 +211,6 @@ function createDeps(overrides: Partial<ActivitySubmissionQueueRunnerDeps> = {}) 
       vi.fn(async () => ({ sha256: "a".repeat(64), byteSize: 1024 })),
   } satisfies ActivitySubmissionQueueRunnerDeps;
 }
-
 describe("activity submission queue runner", () => {
   beforeEach(() => {
     persistedJobs.length = 0;
@@ -228,7 +218,77 @@ describe("activity submission queue runner", () => {
     leases.clear();
     vi.clearAllMocks();
   });
-
+  it.each([
+    undefined,
+    null,
+    { status: "completed", method: "automatic" },
+    { status: "skipped", method: "manual" },
+  ] as const)("preserves legacy and explicit completion evidence through queue serialization and the API DTO: %j", async (completion) => {
+    const [occurrence] = compileActivityPlan(prescribedStructure).occurrences;
+    if (!occurrence) throw new Error("Expected prescribed occurrence");
+    const job = activitySubmissionQueueJobSchema.parse(
+      JSON.parse(
+        JSON.stringify({
+          ...baseJob,
+          id: "job-completion-evidence",
+          planExecution: plannedExecution,
+          draft: {
+            ...baseJob.draft,
+            profileId: "11111111-1111-4111-8111-111111111111",
+            activityPlanId: plannedExecution.activityPlanId,
+          },
+          executionManifest: {
+            ...executionManifest,
+            planHash: prescribedStructureHash.replace("v1:sha256:", ""),
+            occurrences: [
+              {
+                occurrenceId: occurrence.occurrenceId,
+                globalOrdinal: 0,
+                stepId: occurrence.stepId,
+                ...(occurrence.repeatId ? { repeatId: occurrence.repeatId } : {}),
+                repeatIteration: occurrence.repeatIteration,
+                role: occurrence.role,
+                activity_category: occurrence.activity_category,
+                startedAt: baseJob.draft.startedAt,
+                completedAt: baseJob.draft.finishedAt,
+                activeSeconds: 3500,
+                movingSeconds: 3500,
+                distanceMeters: 25000,
+                ...(completion !== undefined ? { completion } : {}),
+                timerEvents: [],
+                laps: [],
+              },
+            ],
+          },
+        }),
+      ),
+    );
+    leases.set(job.id, job);
+    const createFromRecordingSummary = vi.fn(async (_input: CreateFromRecordingSummaryInput) => ({
+      id: "activity-1",
+      ingestion: { id: "22222222-2222-4222-8222-222222222222" },
+    }));
+    const deps = createDeps({
+      createFromRecordingSummary,
+      beginMobileRecordingUpload: async () => ({
+        status: "upload",
+        ingestionId: "22222222-2222-4222-8222-222222222222",
+        activityId: "33333333-3333-4333-8333-333333333333",
+        signedUrl: "https://storage.example/upload",
+        token: "test-upload",
+      }),
+    });
+    await expect(runActivitySubmissionQueueJob(job, deps)).resolves.toMatchObject({
+      status: "complete",
+    });
+    const submitted = recordingSummarySubmissionInputSchema.parse(
+      createFromRecordingSummary.mock.calls[0]?.[0],
+    );
+    expect(submitted.executionManifest).toEqual(job.executionManifest);
+    expect(submitted.executionManifest.occurrences[0]?.completion).toEqual(completion);
+    if (completion === undefined)
+      expect(submitted.executionManifest.occurrences[0]).not.toHaveProperty("completion");
+  });
   it("coalesces concurrent execution for the same queue job", async () => {
     let releaseCreate!: () => void;
     const createGate = new Promise<void>((resolve) => {
@@ -239,18 +299,15 @@ describe("activity submission queue runner", () => {
       return { id: "activity-1", ingestion: { id: "ingestion-1" } };
     });
     const deps = createDeps({ createFromRecordingSummary });
-
     const first = runActivitySubmissionQueueJob(baseJob, deps);
     const second = runActivitySubmissionQueueJob(baseJob, deps);
     releaseCreate();
-
     await expect(Promise.all([first, second])).resolves.toMatchObject([
       { status: "complete" },
       { status: "complete" },
     ]);
     expect(createFromRecordingSummary).toHaveBeenCalledTimes(1);
   });
-
   it("submits immutable planned-session provenance with a finalized recording", async () => {
     const job: ActivitySubmissionQueueJob = {
       ...baseJob,
@@ -260,9 +317,7 @@ describe("activity submission queue runner", () => {
     };
     leases.set(job.id, job);
     const deps = createDeps();
-
     await runActivitySubmissionQueueJob(job, deps);
-
     expect(deps.createFromRecordingSummary).toHaveBeenCalledWith(
       expect.objectContaining({
         activityPlanId: plannedExecution.activityPlanId,
@@ -270,7 +325,6 @@ describe("activity submission queue runner", () => {
       }),
     );
   });
-
   it("fails corrupted scheduled provenance without invoking upload or submission effects", async () => {
     const job: ActivitySubmissionQueueJob = {
       ...baseJob,
@@ -293,7 +347,6 @@ describe("activity submission queue runner", () => {
     };
     leases.set(job.id, job);
     const deps = createDeps();
-
     await expect(runActivitySubmissionQueueJob(job, deps)).resolves.toMatchObject({
       status: "failed",
       retryClass: "validation",
@@ -302,7 +355,6 @@ describe("activity submission queue runner", () => {
     expect(deps.uploadToSignedUrl).not.toHaveBeenCalled();
     expect(deps.createFromRecordingSummary).not.toHaveBeenCalled();
   });
-
   it("keeps a long-running effect fenced with repeated heartbeats and prevents a second runner effect", async () => {
     vi.useFakeTimers();
     try {
@@ -322,8 +374,8 @@ describe("activity submission queue runner", () => {
       const first = runActivitySubmissionQueueJob(baseJob, deps);
       await vi.advanceTimersByTimeAsync(0);
       // Metadata and claim have settled; the upload is deliberately in flight.
-      clock += 45_000;
-      await vi.advanceTimersByTimeAsync(45_000);
+      clock += 45000;
+      await vi.advanceTimersByTimeAsync(45000);
       expect(
         vi.mocked(queueStorage.renewClaimedActivitySubmissionQueueJob).mock.calls.length,
       ).toBeGreaterThanOrEqual(3);
@@ -339,7 +391,6 @@ describe("activity submission queue runner", () => {
       vi.useRealTimers();
     }
   });
-
   it("rejects stale completion when heartbeat renewal is lost mid-effect without a fallback duplicate", async () => {
     vi.useFakeTimers();
     try {
@@ -375,8 +426,8 @@ describe("activity submission queue runner", () => {
       );
       const rejected = expect(result).rejects.toThrow("lease was lost");
       await vi.advanceTimersByTimeAsync(0);
-      clock += 20_000;
-      await vi.advanceTimersByTimeAsync(20_000);
+      clock += 20000;
+      await vi.advanceTimersByTimeAsync(20000);
       releaseUpload();
       await rejected;
       expect(uploadToSignedUrl).toHaveBeenCalledTimes(1);
@@ -385,12 +436,9 @@ describe("activity submission queue runner", () => {
       vi.useRealTimers();
     }
   });
-
   it("creates, uploads, processes, and persists progress after each step", async () => {
     const deps = createDeps();
-
     const result = await runActivitySubmissionQueueJob(baseJob, deps);
-
     expect(result.status).toBe("complete");
     expect(result.activityId).toBe("activity-1");
     expect(result.ingestionId).toBe("ingestion-1");
@@ -442,14 +490,11 @@ describe("activity submission queue runner", () => {
       artifactSha256: "a".repeat(64),
     });
   });
-
   it("preserves a failed job and increments attempts on error", async () => {
     const deps = createDeps({
       uploadToSignedUrl: vi.fn(async () => ({ success: false, error: "network down" })),
     });
-
     const result = await runActivitySubmissionQueueJob(baseJob, deps);
-
     expect(result).toMatchObject({
       status: "failed",
       attempts: 1,
@@ -458,7 +503,23 @@ describe("activity submission queue runner", () => {
     expect(result.nextAttemptAt).toBe("2026-01-01T11:01:02.137Z");
     expect(persistedJobs.at(-1)).toMatchObject({ status: "failed", lastError: "transient" });
   });
+  it("keeps a failed fetch claim retryable after an offline mobile save", async () => {
+    const result = await runActivitySubmissionQueueJob(
+      baseJob,
+      createDeps({
+        beginMobileRecordingUpload: vi.fn(async () => {
+          throw new Error("fetch failed");
+        }),
+      }),
+    );
 
+    expect(result).toMatchObject({
+      status: "failed",
+      attempts: 1,
+      retryClass: "transient",
+    });
+    expect(result.nextAttemptAt).not.toBeNull();
+  });
   it("retains a permanent error without scheduling another attempt", async () => {
     const result = await runActivitySubmissionQueueJob(
       baseJob,
@@ -475,7 +536,6 @@ describe("activity submission queue runner", () => {
       nextAttemptAt: null,
     });
   });
-
   it("completes a retry with an existing accepted activity without duplicate create", async () => {
     const deps = createDeps();
     const retryJob: ActivitySubmissionQueueJob = {
@@ -487,16 +547,13 @@ describe("activity submission queue runner", () => {
       lastError: "previous failure",
     };
     leases.set(retryJob.id, retryJob);
-
     const result = await runActivitySubmissionQueueJob(retryJob, deps);
-
     expect(result.status).toBe("complete");
     expect(result.attempts).toBe(1);
     expect(deps.createFromRecordingSummary).not.toHaveBeenCalled();
     expect(deps.beginMobileRecordingUpload).not.toHaveBeenCalled();
     expect(deps.uploadToSignedUrl).not.toHaveBeenCalled();
   });
-
   it("converges a lost response when begin upload reports the claim already ready", async () => {
     const deps = createDeps({
       beginMobileRecordingUpload: vi.fn(async () => ({
@@ -509,7 +566,6 @@ describe("activity submission queue runner", () => {
         mediaType: "application/vnd.ant.fit",
       })),
     });
-
     const result = await runActivitySubmissionQueueJob(baseJob, deps);
     expect(result).toMatchObject({
       status: "complete",
@@ -519,7 +575,6 @@ describe("activity submission queue runner", () => {
     expect(deps.uploadToSignedUrl).not.toHaveBeenCalled();
     expect(deps.createFromRecordingSummary).not.toHaveBeenCalled();
   });
-
   it("re-uploads retained local evidence after server acceptance fails", async () => {
     const createFromRecordingSummary = vi
       .fn()
@@ -529,11 +584,9 @@ describe("activity submission queue runner", () => {
         ingestion: { id: "ingestion-1", status: "ready", source: "mobile_recording" },
       });
     const deps = createDeps({ createFromRecordingSummary });
-
     const failed = await runActivitySubmissionQueueJob(baseJob, deps);
     expect(failed).toMatchObject({ status: "failed", uploadCompletedAt: undefined });
     expect(failed.activityId).toBeUndefined();
-
     const retried = await runActivitySubmissionQueueJob(failed, deps);
     expect(retried.status).toBe("complete");
     expect(deps.beginMobileRecordingUpload).toHaveBeenCalledTimes(2);

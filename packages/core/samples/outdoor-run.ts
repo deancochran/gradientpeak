@@ -1,18 +1,11 @@
 import { Duration, Target } from "../schemas/activity_payload";
-import {
-  createSystemActivityPlanAdaptationBuilder,
-  createSystemActivityPlanBuilderFactory,
-} from "./activity-plan-builder";
-import type {
-  SystemActivityPlanTemplate as RecordingServiceActivityPlan,
-  SystemActivityPlanTemplate,
-} from "./types";
+import { createSystemActivityPlanBuilderFactory } from "./activity-plan-builder";
+import type { SystemActivityPlanTemplate as RecordingServiceActivityPlan } from "./types";
 
 const createPlan = createSystemActivityPlanBuilderFactory("run", [
   "Easy Run:1:Easy Run",
   "Warm-up Jog:1:Warm-up Jog|Tempo Block:1:Tempo Block|Cool-down Jog:1:Cool-down Jog",
   "Warm-up:1:Warm-up|Interval 2:6:5K Pace Interval:Recovery Jog|Cool-down:1:Cool-down",
-  "Easy Start:1:Easy Start|Steady Middle:1:Steady Middle|Easy Finish:1:Easy Finish",
   "Warm-up:1:Warm-up|Interval 2:8:Hard Surge:Easy Recovery|Cool-down:1:Cool-down",
   "Warmup:1:Warmup|Tempo:1:Tempo|Cooldown:1:Cooldown",
   "Warmup:1:Warmup|Intervals:6:Fast:Recovery|Cooldown:1:Cooldown",
@@ -31,52 +24,6 @@ const createPlan = createSystemActivityPlanBuilderFactory("run", [
  * Total time: 30 minutes
  * Estimated Common Load: ~25
  */
-const easyAerobicRunStructure = createPlan()
-  .step({
-    name: "Easy Run",
-    purpose: "work",
-    duration: Duration.minutes(30),
-    targets: [Target.thresholdHR(65)],
-    notes: "Should feel comfortable and easy - you should be able to hold a conversation",
-  })
-  .build();
-const easyAerobicRunSegment = easyAerobicRunStructure.segments[0];
-if (!easyAerobicRunSegment || easyAerobicRunSegment.role !== "activity") {
-  throw new Error("Easy Aerobic Run must contain an activity segment");
-}
-const easyAerobicRunInterval = easyAerobicRunSegment.intervals[0];
-const easyAerobicRunStep = easyAerobicRunInterval?.steps[0];
-if (!easyAerobicRunInterval || !easyAerobicRunStep) {
-  throw new Error("Easy Aerobic Run must contain a steady step");
-}
-
-export const EASY_AEROBIC_RUN: SystemActivityPlanTemplate = {
-  id: "3b6c7d8e-9f0a-4b2c-bd4e-5f6a7b8c9d0e",
-  name: "Easy Aerobic Run",
-  description: "Comfortable outdoor run focusing on aerobic base building",
-  gps_recording_enabled: true,
-  structure: easyAerobicRunStructure,
-  adaptation: {
-    controls: [
-      createSystemActivityPlanAdaptationBuilder("easy-aerobic-run").control({
-        key: "steady_duration_seconds",
-        label: "Easy aerobic duration",
-        kind: "step_quantity",
-        range: { minimum: 1500, default: 1800, maximum: 2100, increment: 300 },
-        targets: [
-          {
-            type: "step_quantity",
-            activitySegmentId: easyAerobicRunSegment.id,
-            intervalId: easyAerobicRunInterval.id,
-            stepId: easyAerobicRunStep.id,
-            quantityType: "time",
-          },
-        ],
-      }),
-    ],
-  },
-};
-
 /**
  * Tempo Run - Outdoor
  * Total time: 60 minutes
@@ -90,21 +37,18 @@ export const TEMPO_RUN: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Warm-up Jog",
-      purpose: "warmup",
       duration: Duration.minutes(15),
       targets: [Target.thresholdHR(65)],
       notes: "Gradually increase pace to prepare for tempo",
     })
     .step({
       name: "Tempo Block",
-      purpose: "work",
       duration: Duration.minutes(30),
       targets: [Target.thresholdHR(85)],
       notes: "Steady, controlled effort - should feel comfortably hard",
     })
     .step({
       name: "Cool-down Jog",
-      purpose: "cooldown",
       duration: Duration.minutes(15),
       targets: [Target.thresholdHR(65)],
       notes: "Relax and gradually bring heart rate down",
@@ -125,7 +69,6 @@ export const INTERVAL_RUN: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Warm-up",
-      purpose: "warmup",
       duration: Duration.minutes(15),
       targets: [Target.thresholdHR(65)],
       notes: "Start easy and gradually build pace",
@@ -135,14 +78,12 @@ export const INTERVAL_RUN: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "5K Pace Interval",
-          purpose: "work",
           duration: Duration.minutes(3),
           targets: [Target.thresholdHR(95)],
           notes: "Run at your 5K race pace - this should feel hard",
         },
         {
           name: "Recovery Jog",
-          purpose: "recovery",
           duration: Duration.minutes(2),
           targets: [Target.thresholdHR(70)],
           notes: "Active recovery - keep moving but very easy",
@@ -151,45 +92,9 @@ export const INTERVAL_RUN: RecordingServiceActivityPlan = {
     })
     .step({
       name: "Cool-down",
-      purpose: "cooldown",
       duration: Duration.minutes(10),
       targets: [Target.thresholdHR(65)],
       notes: "Easy pace to bring heart rate down",
-    })
-    .build(),
-};
-
-/**
- * Long Run - Outdoor
- * Total time: 90 minutes
- * Estimated Common Load: ~65
- */
-export const LONG_RUN: RecordingServiceActivityPlan = {
-  id: "5d8e9f0a-1b2c-4d4e-9f6a-7b8c9d0e1f2a",
-  name: "Long Steady Run",
-  description: "Extended aerobic run for endurance building",
-  gps_recording_enabled: true,
-  structure: createPlan()
-    .step({
-      name: "Easy Start",
-      purpose: "warmup",
-      duration: Duration.minutes(30),
-      targets: [Target.thresholdHR(65)],
-      notes: "Start easy and settle into rhythm",
-    })
-    .step({
-      name: "Steady Middle",
-      purpose: "work",
-      duration: Duration.seconds(3000), // 50 minutes
-      targets: [Target.thresholdHR(75)],
-      notes: "Maintain steady, comfortable effort",
-    })
-    .step({
-      name: "Easy Finish",
-      purpose: "cooldown",
-      duration: Duration.minutes(10),
-      targets: [Target.thresholdHR(65)],
-      notes: "Relax and finish strong but controlled",
     })
     .build(),
 };
@@ -207,7 +112,6 @@ export const FARTLEK_RUN: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Warm-up",
-      purpose: "warmup",
       duration: Duration.minutes(10),
       targets: [Target.thresholdHR(65)],
       notes: "Start easy and prepare for varied efforts",
@@ -217,14 +121,12 @@ export const FARTLEK_RUN: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Hard Surge",
-          purpose: "work",
           duration: Duration.seconds(90),
           targets: [Target.thresholdHR(90)],
           notes: "Surge to hard effort - use terrain and feel",
         },
         {
           name: "Easy Recovery",
-          purpose: "recovery",
           duration: Duration.seconds(150),
           targets: [Target.thresholdHR(70)],
           notes: "Relax and recover between surges",
@@ -233,38 +135,9 @@ export const FARTLEK_RUN: RecordingServiceActivityPlan = {
     })
     .step({
       name: "Cool-down",
-      purpose: "cooldown",
       duration: Duration.minutes(10),
       targets: [Target.thresholdHR(65)],
       notes: "Easy pace to bring heart rate down",
-    })
-    .build(),
-};
-
-export const SYSTEM_TEMPO_RUN: RecordingServiceActivityPlan = {
-  id: "b6c2d5e4-9f3a-4b7c-ad1e-3f0a6b5c4d2f",
-  name: "Tempo Run",
-  description:
-    "20 minute tempo run at 85% threshold heart rate - Comfortably hard sustained effort",
-  gps_recording_enabled: true,
-  training_intent: "durable_endurance",
-  structure: createPlan()
-    .warmup({
-      duration: Duration.minutes(10),
-      targets: [Target.thresholdHR(65)],
-      notes: "Easy warmup pace",
-    })
-    .step({
-      name: "Tempo",
-      purpose: "work",
-      duration: Duration.minutes(20),
-      targets: [Target.thresholdHR(85)],
-      notes: "Comfortably hard tempo pace",
-    })
-    .cooldown({
-      duration: Duration.minutes(10),
-      targets: [Target.thresholdHR(60)],
-      notes: "Easy cool down",
     })
     .build(),
 };
@@ -285,14 +158,12 @@ export const SYSTEM_THRESHOLD_INTERVALS_RUN: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Fast",
-          purpose: "work",
           duration: Duration.km(1),
           targets: [Target.thresholdHR(95)],
           notes: "Threshold pace",
         },
         {
           name: "Recovery",
-          purpose: "recovery",
           duration: Duration.minutes(2),
           targets: [Target.thresholdHR(60)],
           notes: "Easy jog",
@@ -301,31 +172,6 @@ export const SYSTEM_THRESHOLD_INTERVALS_RUN: RecordingServiceActivityPlan = {
     })
     .cooldown({
       duration: Duration.minutes(10),
-      targets: [Target.thresholdHR(60)],
-    })
-    .build(),
-};
-
-export const SYSTEM_LONG_EASY_RUN: RecordingServiceActivityPlan = {
-  id: "d8e4f7a6-1b5c-4d9e-8f3a-5b2c8d7e6f4b",
-  name: "Long Easy Run",
-  description: "15km easy long run at 70% threshold heart rate - Build aerobic endurance",
-  gps_recording_enabled: true,
-  structure: createPlan()
-    .warmup({
-      duration: Duration.minutes(10),
-      targets: [Target.thresholdHR(65)],
-    })
-    .step({
-      name: "Easy Long Run",
-      purpose: "work",
-      duration: Duration.km(15),
-      targets: [Target.thresholdHR(70)],
-      notes: "Maintain steady aerobic pace",
-      intervalName: "Main Set",
-    })
-    .cooldown({
-      duration: Duration.minutes(5),
       targets: [Target.thresholdHR(60)],
     })
     .build(),
@@ -344,16 +190,14 @@ export const SYSTEM_MARATHON_PACE_LONG_RUN: RecordingServiceActivityPlan = {
     })
     .step({
       name: "Aerobic Settling",
-      purpose: "work",
       duration: Duration.minutes(40),
       targets: [Target.thresholdHR(70)],
       notes: "Stay smooth and controlled before race-pace work begins.",
     })
     .step({
       name: "Marathon Pace",
-      purpose: "work",
       duration: Duration.minutes(20),
-      targets: [Target.thresholdHR(82)],
+      targets: [Target.thresholdHR(80)],
       notes: "Controlled race pace with strong form and even effort.",
     })
     .cooldown({
@@ -382,17 +226,16 @@ export const SYSTEM_TRACK_100M_STRIDES: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Fast Stride",
-          purpose: "work",
           duration: Duration.meters(100),
           targets: [Target.rpe(8)],
           notes: "Fast but relaxed on the straightaway; focus on form, not sprinting.",
         },
         {
           name: "Walk Recovery",
-          purpose: "recovery",
           duration: Duration.meters(100),
           targets: [Target.rpe(2)],
-          notes: "Walk or very easy shuffle back under control.",
+          notes:
+            "Walk back to the starting line on a permitted route clear of active lanes; never reverse against track traffic.",
         },
       ],
     })
@@ -421,17 +264,15 @@ export const SYSTEM_TRACK_200M_REPEATS: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Fast 200m",
-          purpose: "work",
           duration: Duration.meters(200),
           targets: [Target.rpe(9)],
           notes: "Fast, smooth, and controlled; keep mechanics crisp.",
         },
         {
           name: "Recovery 200m",
-          purpose: "recovery",
           duration: Duration.meters(200),
-          targets: [Target.thresholdHR(60)],
-          notes: "Jog the curve easily before the next rep.",
+          targets: [Target.rpe(2)],
+          notes: "Jog the remaining 200 m around the track to your original starting line.",
         },
       ],
     })
@@ -446,7 +287,7 @@ export const SYSTEM_TRACK_400M_REPEATS: RecordingServiceActivityPlan = {
   id: "c457ea7d-780b-4e31-acbf-2592ff6cd946",
   name: "Track 400m Repeats",
   description:
-    "Staple 8x400m track session for 5K/10K speed, using 100m distance recoveries instead of timed rest.",
+    "Staple 8x400m track session for 5K/10K speed, with 60-second rests near the starting line.",
   gps_recording_enabled: true,
   structure: createPlan()
     .warmup({
@@ -460,17 +301,16 @@ export const SYSTEM_TRACK_400M_REPEATS: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Fast 400m",
-          purpose: "work",
           duration: Duration.meters(400),
           targets: [Target.rpe(8)],
           notes: "One lap at controlled 10K to 5K effort.",
         },
         {
-          name: "Recovery 100m",
-          purpose: "recovery",
-          duration: Duration.meters(100),
-          targets: [Target.thresholdHR(60)],
-          notes: "Easy jog or walk recovery by distance.",
+          name: "Rest",
+          duration: Duration.seconds(60),
+          targets: [{ type: "rest" }],
+          notes:
+            "Rest near the starting line, clear of active lanes; return to the line for the next rep.",
         },
       ],
     })
@@ -499,16 +339,14 @@ export const SYSTEM_TRACK_YASSO_800S: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "800m Repeat",
-          purpose: "work",
           duration: Duration.meters(800),
-          targets: [Target.thresholdHR(88), Target.rpe(8)],
+          targets: [Target.rpe(8)],
           notes: "Two laps at a consistent comfortably hard effort.",
         },
         {
           name: "Recovery 400m",
-          purpose: "recovery",
           duration: Duration.meters(400),
-          targets: [Target.thresholdHR(60)],
+          targets: [Target.rpe(2)],
           notes: "One easy lap recovery; keep it relaxed.",
         },
       ],
@@ -537,16 +375,14 @@ export const SYSTEM_TRACK_MILE_REPEATS: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "1600m Repeat",
-          purpose: "work",
           duration: Duration.meters(1600),
-          targets: [Target.thresholdHR(90), Target.rpe(8)],
+          targets: [Target.rpe(8)],
           notes: "Four laps just slower than 5K effort; prioritize even pacing.",
         },
         {
           name: "Recovery 400m",
-          purpose: "recovery",
           duration: Duration.meters(400),
-          targets: [Target.thresholdHR(60)],
+          targets: [Target.rpe(2)],
           notes: "One lap easy jog recovery.",
         },
       ],
@@ -562,7 +398,7 @@ export const SYSTEM_TRACK_LADDER_WORKOUT: RecordingServiceActivityPlan = {
   id: "4cdf7205-0093-46b9-a477-3daa1784f15e",
   name: "Track Ladder Activity",
   description:
-    "Classic track ladder progressing through 400m, 800m, 1200m, 1600m, then back down with distance-based recoveries.",
+    "Classic track ladder progressing through 400m, 800m, 1200m, 1600m, then back down, using 90-second rests and full-lap recovery jogs to preserve the starting point.",
   gps_recording_enabled: true,
   structure: createPlan()
     .warmup({
@@ -576,79 +412,74 @@ export const SYSTEM_TRACK_LADDER_WORKOUT: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "400m",
-          purpose: "work",
           duration: Duration.meters(400),
           targets: [Target.rpe(8)],
         },
         {
-          name: "Recovery 200m",
-          purpose: "recovery",
-          duration: Duration.meters(200),
-          targets: [Target.thresholdHR(60)],
+          name: "Rest",
+          duration: Duration.seconds(90),
+          targets: [{ type: "rest" }],
+          notes:
+            "Rest near the starting line, clear of active lanes; return to the line for the next rep.",
         },
         {
           name: "800m",
-          purpose: "work",
-          duration: Duration.meters(800),
-          targets: [Target.thresholdHR(88)],
-        },
-        {
-          name: "Recovery 200m",
-          purpose: "recovery",
-          duration: Duration.meters(200),
-          targets: [Target.thresholdHR(60)],
-        },
-        {
-          name: "1200m",
-          purpose: "work",
-          duration: Duration.meters(1200),
-          targets: [Target.thresholdHR(88)],
-        },
-        {
-          name: "Recovery 400m",
-          purpose: "recovery",
-          duration: Duration.meters(400),
-          targets: [Target.thresholdHR(60)],
-        },
-        {
-          name: "1600m",
-          purpose: "work",
-          duration: Duration.meters(1600),
-          targets: [Target.thresholdHR(86)],
-        },
-        {
-          name: "Recovery 400m",
-          purpose: "recovery",
-          duration: Duration.meters(400),
-          targets: [Target.thresholdHR(60)],
-        },
-        {
-          name: "1200m",
-          purpose: "work",
-          duration: Duration.meters(1200),
-          targets: [Target.thresholdHR(88)],
-        },
-        {
-          name: "Recovery 200m",
-          purpose: "recovery",
-          duration: Duration.meters(200),
-          targets: [Target.thresholdHR(60)],
-        },
-        {
-          name: "800m",
-          purpose: "work",
           duration: Duration.meters(800),
           targets: [Target.thresholdHR(90)],
         },
         {
-          name: "Recovery 200m",
-          purpose: "recovery",
-          duration: Duration.meters(200),
-          targets: [Target.thresholdHR(60)],
+          name: "Rest",
+          duration: Duration.seconds(90),
+          targets: [{ type: "rest" }],
+          notes:
+            "Rest near the starting line, clear of active lanes; return to the line for the next rep.",
+        },
+        {
+          name: "1200m",
+          duration: Duration.meters(1200),
+          targets: [Target.thresholdHR(90)],
+        },
+        {
+          name: "Recovery 400m",
+          duration: Duration.meters(400),
+          targets: [Target.rpe(2)],
+        },
+        {
+          name: "1600m",
+          duration: Duration.meters(1600),
+          targets: [Target.thresholdHR(85)],
+        },
+        {
+          name: "Recovery 400m",
+          duration: Duration.meters(400),
+          targets: [Target.rpe(2)],
+        },
+        {
+          name: "1200m",
+          duration: Duration.meters(1200),
+          targets: [Target.thresholdHR(90)],
+        },
+        {
+          name: "Rest",
+          duration: Duration.seconds(90),
+          targets: [{ type: "rest" }],
+          notes:
+            "Rest near the starting line, clear of active lanes; return to the line for the next rep.",
+        },
+        {
+          name: "800m",
+          duration: Duration.meters(800),
+          targets: [Target.thresholdHR(90)],
+        },
+        {
+          name: "Rest",
+          duration: Duration.seconds(90),
+          targets: [{ type: "rest" }],
+          notes:
+            "Rest near the starting line, clear of active lanes; return to the line for the next rep.",
         },
         {
           name: "400m",
-          purpose: "work",
           duration: Duration.meters(400),
           targets: [Target.rpe(9)],
         },
@@ -671,13 +502,9 @@ export const SYSTEM_TRACK_RUN_WORKOUTS: Array<RecordingServiceActivityPlan> = [
 ];
 
 export const SAMPLE_OUTDOOR_RUN_ACTIVITIES: Array<RecordingServiceActivityPlan> = [
-  EASY_AEROBIC_RUN,
   INTERVAL_RUN,
-  LONG_RUN,
   FARTLEK_RUN,
-  SYSTEM_TEMPO_RUN,
   SYSTEM_THRESHOLD_INTERVALS_RUN,
-  SYSTEM_LONG_EASY_RUN,
   SYSTEM_MARATHON_PACE_LONG_RUN,
   ...SYSTEM_TRACK_RUN_WORKOUTS,
 ];

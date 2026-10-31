@@ -6,12 +6,12 @@ import {
 } from "../home";
 
 const step = (id: string) => ({
+  type: "step",
   id,
   name: "Steady",
   duration: { type: "time" as const, seconds: 600 },
   targets: [{ type: "RPE" as const, intensity: 5 }],
 });
-
 describe("home plan card projection", () => {
   it("uses effective common Load and abstains when a planned item lacks Load", () => {
     expect(
@@ -60,7 +60,6 @@ describe("home plan card projection", () => {
       }),
     ).toBeNull();
   });
-
   it("withholds projected Load when planned evidence coverage is partial", () => {
     expect(
       projectCommonLoad({
@@ -71,7 +70,6 @@ describe("home plan card projection", () => {
       }),
     ).toBeNull();
   });
-
   it("rejects mixed-category composition from V3 segments", () => {
     const structure = {
       version: 3 as const,
@@ -120,10 +118,8 @@ describe("home plan card projection", () => {
         },
       ],
     };
-
     expect(getPlanCategoryComposition(structure)).toEqual([]);
   });
-
   it("uses canonical activity_category schedule presentation", () => {
     expect(
       getScheduleExecutionPresentation({

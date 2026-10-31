@@ -64,7 +64,7 @@ function ActivitiesPage() {
     if (!hasPendingDateDraft && !appliedMatchesDraft) {
       setDateDraft({ from: search.from ?? "", to: search.to ?? "" });
     }
-  }, [hasPendingDateDraft, search.from, search.to]);
+  }, [dateDraft.from, dateDraft.to, hasPendingDateDraft, search.from, search.to]);
   const activitiesQuery = api.activities.listPaginated.useInfiniteQuery(
     {
       limit: 20,
@@ -161,8 +161,9 @@ function ActivitiesPage() {
               <Input
                 id="activity-history-from"
                 onChange={(event) => {
+                  const value = event.currentTarget.value;
                   setHasPendingDateDraft(true);
-                  setDateDraft((draft) => ({ ...draft, from: event.currentTarget.value }));
+                  setDateDraft((draft) => ({ ...draft, from: value }));
                 }}
                 type="date"
                 value={dateDraft.from}
@@ -173,8 +174,9 @@ function ActivitiesPage() {
               <Input
                 id="activity-history-to"
                 onChange={(event) => {
+                  const value = event.currentTarget.value;
                   setHasPendingDateDraft(true);
-                  setDateDraft((draft) => ({ ...draft, to: event.currentTarget.value }));
+                  setDateDraft((draft) => ({ ...draft, to: value }));
                 }}
                 type="date"
                 value={dateDraft.to}

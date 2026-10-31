@@ -80,20 +80,21 @@ function createDbMock(plan: DbPlan = {}) {
   const deleteCalls: Array<{ table: unknown }> = [];
   let transactionCount = 0;
 
-  const db: any = {
+  const db = {
     select: () => {
-      const builder: any = {
-        from: () => builder,
-        innerJoin: () => builder,
-        leftJoin: () => builder,
-        where: () => builder,
-        groupBy: () => builder,
-        orderBy: () => builder,
-        for: () => Promise.resolve(selectQueue.shift() ?? []),
-        limit: () => builder,
-        then: (resolve: (rows: unknown[]) => unknown) =>
-          Promise.resolve(selectQueue.shift() ?? []).then(resolve),
-      };
+      const builder = Object.assign(
+        Promise.resolve().then(() => selectQueue.shift() ?? []),
+        {
+          from: () => builder,
+          innerJoin: () => builder,
+          leftJoin: () => builder,
+          where: () => builder,
+          groupBy: () => builder,
+          orderBy: () => builder,
+          for: () => builder,
+          limit: () => builder,
+        },
+      );
       return builder;
     },
     insert: (table: unknown) => ({
@@ -123,7 +124,7 @@ function createDbMock(plan: DbPlan = {}) {
         };
       },
     }),
-    transaction: async (callback: (tx: any) => unknown) => {
+    transaction: async (callback: (tx: unknown) => unknown) => {
       transactionCount += 1;
       return callback(db);
     },

@@ -40,6 +40,11 @@ export interface ApiRateLimitStore {
   increment(identity: RateLimitIdentity, now: number): RateLimitBucket | Promise<RateLimitBucket>;
 }
 
+export interface AuthenticatedRateLimitPolicy {
+  readonly keyPrefix: string;
+  readonly limit: number;
+}
+
 export class InMemoryApiRateLimitStore implements ApiRateLimitStore {
   private readonly buckets = new Map<string, RateLimitBucket>();
 
@@ -61,13 +66,16 @@ export class InMemoryApiRateLimitStore implements ApiRateLimitStore {
   }
 }
 
-function getRateLimitIdentity(ctx: Context): RateLimitIdentity {
+function getRateLimitIdentity(
+  ctx: Context,
+  authenticatedPolicy?: AuthenticatedRateLimitPolicy,
+): RateLimitIdentity {
   const userId = ctx.session?.user.id;
 
   if (userId) {
     return {
-      key: `user:${userId}`,
-      limit: AUTHENTICATED_LIMIT,
+      key: `${authenticatedPolicy?.keyPrefix ?? "user"}:${userId}`,
+      limit: authenticatedPolicy?.limit ?? AUTHENTICATED_LIMIT,
       type: "authenticated-user",
     };
   }
@@ -217,7 +225,22 @@ export async function checkApiRateLimit(
     ? testStore
     : new PostgresApiRateLimitStore(ctx),
 ): Promise<ApiRateLimitResult> {
-  const identity = getRateLimitIdentity(ctx);
+  return checkApiRateLimitWithPolicy(ctx, undefined, now, store);
+}
+
+/**
+ * Checks a separately named authenticated bucket while keeping the same durable
+ * cross-instance counter and fail-closed behavior as the general API guard.
+ */
+export async function checkApiRateLimitWithPolicy(
+  ctx: Context,
+  authenticatedPolicy: AuthenticatedRateLimitPolicy | undefined,
+  now = Date.now(),
+  store: ApiRateLimitStore = process.env.NODE_ENV === "test"
+    ? testStore
+    : new PostgresApiRateLimitStore(ctx),
+): Promise<ApiRateLimitResult> {
+  const identity = getRateLimitIdentity(ctx, authenticatedPolicy);
   try {
     const bucket = await store.increment(identity, now);
     const retryAfterSeconds = Math.max(1, Math.ceil((bucket.resetAt - now) / 1_000));

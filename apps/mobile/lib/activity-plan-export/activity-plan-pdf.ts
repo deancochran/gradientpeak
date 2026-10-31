@@ -5,7 +5,8 @@ import {
 
 const GRADIENTPEAK_APP_URL = "https://gradientpeak.app";
 const GRADIENTPEAK_MARK_PATH =
-  "M128 128 H896 V896 H128 Z M128 286 H748 V896 H128 Z M428 616 m-280,0 a280,280 0 1,0 560,0 a280,280 0 1,0 -560,0";
+  "M370 256 H756 Q768 256 768 268 V654 Q768 660 764 664 L686 742 Q674 754 674 738 V362 Q674 350 662 350 H286 Q270 350 282 338 L360 260 Q364 256 370 256 Z";
+const GRADIENTPEAK_MARK_TRANSFORM = "translate(-9 9)";
 
 function escapeHtml(value: string): string {
   return value
@@ -44,21 +45,18 @@ export function renderActivityPlanPrintHtml(model: ActivityPlanPrintModel): stri
       (section) => `
         <section>
           ${section.name ? `<h2>${escapeHtml(section.name)}</h2>` : ""}
-          ${!bikeCueStrip && section.notes ? `<small>${escapeHtml(section.notes)}</small>` : ""}
           ${section.groups
             .map(
               (group) => `
                 <div class="group ${group.repetitions > 1 ? "repeated" : ""}">
-                  ${group.name || group.repetitions > 1 ? `<h3>${escapeHtml([group.name, group.repetitions > 1 ? `Repeat ${group.repetitions}×` : null].filter(Boolean).join(" · "))}</h3>` : ""}
-                  ${!bikeCueStrip && group.notes ? `<small>${escapeHtml(group.notes)}</small>` : ""}
+                  ${group.repetitions > 1 ? `<h3>${escapeHtml(`Repeat ${group.repetitions}×`)}</h3>` : ""}
                   ${group.steps
                     .map(
                       (step) => `
                         <div class="step">
                            ${step.name ? `<strong>${escapeHtml(step.name)}</strong>` : swimDeckCard ? "<strong></strong>" : ""}
                           <div>${escapeHtml(step.instruction)}</div>
-                           ${!compact && step.description ? `<small>${escapeHtml(step.description)}</small>` : ""}
-                           ${!bikeCueStrip && step.notes ? `<small>${escapeHtml(step.notes)}</small>` : ""}
+                            ${(!compact || swimDeckCard) && step.instructions ? `<small>${escapeHtml(step.instructions)}</small>` : ""}
                         </div>`,
                     )
                     .join("")}
@@ -76,7 +74,7 @@ export function renderActivityPlanPrintHtml(model: ActivityPlanPrintModel): stri
         )
         .join("")}</div></figure>`
     : "";
-  const brand = `<a class="brand-link" href="${GRADIENTPEAK_APP_URL}"><svg aria-hidden="true" viewBox="0 0 1024 1024"><path d="${GRADIENTPEAK_MARK_PATH}" fill="#111827" fill-rule="evenodd"></path></svg><span>GRADIENTPEAK</span></a>`;
+  const brand = `<a class="brand-link" href="${GRADIENTPEAK_APP_URL}"><svg aria-hidden="true" viewBox="0 0 1024 1024"><g fill="#111827" transform="${GRADIENTPEAK_MARK_TRANSFORM}"><path d="${GRADIENTPEAK_MARK_PATH}"></path><circle cx="467" cy="557" r="147"></circle></g></svg><span>GRADIENTPEAK</span></a>`;
   return `<!doctype html>
 <html><head><meta charset="utf-8"><style>
 @page { size: ${width}px ${height}px; margin: 0; }

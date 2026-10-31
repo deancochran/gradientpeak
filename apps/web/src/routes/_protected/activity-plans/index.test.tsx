@@ -1,11 +1,9 @@
 // @vitest-environment jsdom
-
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Route } from "./index";
 
 const navigation = vi.hoisted(() => ({ navigate: vi.fn(), search: {} as Record<string, unknown> }));
-
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
@@ -13,7 +11,6 @@ vi.mock("@tanstack/react-router", () => ({
     useSearch: () => ({ activity_category: "run" }),
   }),
 }));
-
 vi.mock("../../../lib/api/client", () => ({
   api: {
     activityPlans: {
@@ -37,7 +34,7 @@ vi.mock("../../../lib/api/client", () => ({
                         key: "distance",
                         label: "Distance",
                         status: "available",
-                        value: 10_000,
+                        value: 10000,
                         unit: "meters",
                         reason: null,
                         provenance: "authored",
@@ -46,7 +43,7 @@ vi.mock("../../../lib/api/client", () => ({
                         key: "elapsed_duration",
                         label: "Duration",
                         status: "available",
-                        value: 1_800,
+                        value: 1800,
                         unit: "seconds",
                         reason: null,
                         provenance: "authored",
@@ -71,28 +68,15 @@ vi.mock("../../../lib/api/client", () => ({
                       },
                     ],
                     structure: {
-                      version: 3,
+                      version: 5,
                       activity_category: "bike",
-                      segments: [
+                      items: [
                         {
-                          role: "activity",
-                          name: "Ride",
-                          id: "00000000-0000-4000-8000-000000000001",
-                          intervals: [
-                            {
-                              id: "00000000-0000-4000-8000-000000000002",
-                              name: "Work",
-                              repetitions: 1,
-                              steps: [
-                                {
-                                  id: "00000000-0000-4000-8000-000000000003",
-                                  name: "Authored step",
-                                  duration: { type: "time", seconds: 1_800 },
-                                  targets: [{ type: "%FTP", intensity: 80 }],
-                                },
-                              ],
-                            },
-                          ],
+                          type: "step",
+                          id: "00000000-0000-4000-8000-000000000003",
+                          name: "Authored step",
+                          duration: { type: "time", seconds: 1800 },
+                          targets: [{ type: "%FTP", intensity: 80 }],
                         },
                       ],
                     },
@@ -107,9 +91,9 @@ vi.mock("../../../lib/api/client", () => ({
                     engagement: { likes: 0, viewerHasLiked: false },
                     metrics: [],
                     structure: {
-                      version: 3,
+                      version: 5,
                       activity_category: "run",
-                      segments: [],
+                      items: [],
                     },
                   },
                 ],
@@ -130,27 +114,31 @@ vi.mock("../../../lib/api/client", () => ({
     useUtils: () => ({ activityPlans: { invalidate: vi.fn() } }),
   },
 }));
-
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
-
 afterEach(cleanup);
-
 describe("ActivityPlansPage cards", () => {
   it("does not restore a stale category when search follows an All selection", () => {
     navigation.search = { activity_category: "run" };
     navigation.navigate.mockImplementation(({ search }) => {
       navigation.search = typeof search === "function" ? search(navigation.search) : search;
     });
-    const Page = (Route as unknown as { component: React.ComponentType }).component;
+    const Page = (
+      Route as unknown as {
+        component: React.ComponentType;
+      }
+    ).component;
     render(<Page />);
     fireEvent.click(screen.getByRole("button", { name: "All" }));
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "Tempo" } });
     expect(navigation.search).toEqual({ activity_category: undefined, q: "Tempo" });
   });
   it("renders authored duration and calculated headline metrics on plan cards", () => {
-    const ActivityPlansPage = (Route as unknown as { component: React.ComponentType }).component;
+    const ActivityPlansPage = (
+      Route as unknown as {
+        component: React.ComponentType;
+      }
+    ).component;
     render(<ActivityPlansPage />);
-
     expect(screen.getByText("Tempo bike")).toBeTruthy();
     expect(screen.getAllByText("@avery").length).toBeGreaterThan(0);
     expect(screen.getByText("Ride")).toBeTruthy();

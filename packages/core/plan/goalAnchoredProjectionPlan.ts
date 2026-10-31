@@ -174,7 +174,11 @@ function buildActivityDistribution(
   const distribution: GoalAnchoredProjectionPlan["activity_distribution"] = {};
 
   for (let index = 0; index < entries.length; index += 1) {
-    const [category, count] = entries[index]!;
+    const entry = entries[index];
+    if (!entry) {
+      continue;
+    }
+    const [category, count] = entry;
     const value =
       index === entries.length - 1
         ? Math.max(0, Math.round((1 - runningTotal) * 1000) / 1000)
@@ -360,7 +364,10 @@ function pushPreparationBlocks(input: {
   let consumedDays = 0;
 
   for (let index = 0; index < phases.length; index += 1) {
-    const phase = phases[index]!;
+    const phase = phases[index];
+    if (!phase) {
+      continue;
+    }
     const isLast = index === phases.length - 1;
     const phaseDays = isLast
       ? prepDays - consumedDays
@@ -429,7 +436,10 @@ export function buildGoalAnchoredProjectionPlan(
   let cursorDate = timeline.start_date;
 
   for (let index = 0; index < windows.length; index += 1) {
-    const window = windows[index]!;
+    const window = windows[index];
+    if (!window) {
+      continue;
+    }
     if (window.date < cursorDate) {
       continue;
     }

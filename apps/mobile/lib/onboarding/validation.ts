@@ -1,6 +1,8 @@
 import { completeOnboardingSchema } from "@repo/core";
 import type { OnboardingData } from "@/components/onboarding/types";
 
+export const ONBOARDING_SOCIAL_SELECTION_LIMIT = 8;
+
 export function isValidOnboardingUsername(username: string): boolean {
   return completeOnboardingSchema.shape.username.safeParse(username).success;
 }

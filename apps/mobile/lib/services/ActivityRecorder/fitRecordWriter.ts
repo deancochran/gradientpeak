@@ -1,3 +1,4 @@
+import { omitUndefined } from "../../omitUndefined";
 import type { FitRecord } from "../fit/GarminFitEncoder";
 import type { RecordingPlanOccurrence } from "./plan";
 
@@ -77,10 +78,10 @@ export async function appendActivityRecorderFitRecord(input: {
     temperature?: number;
   };
 }): Promise<boolean> {
-  if (input.hasPlan && (!input.currentOccurrence || input.currentOccurrence.role === "rest")) {
+  if (input.hasPlan && !input.currentOccurrence) {
     return false;
   }
-  const record: FitRecord = {
+  const record: FitRecord = omitUndefined({
     timestamp: input.timestamp,
     distance: input.distance,
     speed: input.readings.speed,
@@ -88,7 +89,7 @@ export async function appendActivityRecorderFitRecord(input: {
     cadence: input.readings.cadence,
     power: input.readings.power,
     temperature: input.readings.temperature,
-  };
+  });
   await input.encoder.addRecord(record);
   return true;
 }

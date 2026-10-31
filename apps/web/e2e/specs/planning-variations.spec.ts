@@ -16,6 +16,9 @@ test("[variation:agenda-detail] planned and completed cards open and return to t
   athleteActor,
   athletePage,
 }, testInfo) => {
+  // The round trip has two server-backed detail loads and exceeds the shared
+  // 30s default on a cold disposable backend while remaining deterministic.
+  test.setTimeout(45_000);
   await withDayAgendaFixture(testInfo, athleteActor, async (fixture) => {
     await athletePage.goto(`/calendar/day/${fixture.date}?month=2026-11&view=agenda`);
     const planned = athletePage.getByRole("link", {
@@ -73,7 +76,9 @@ test("[variation:training-plan-keyboard] searched plan opens, schedules, and ret
     await expect(athletePage.getByText("Plan scheduled.", { exact: true })).toBeVisible();
     await athletePage.goto("/calendar/day/2026-12-14?month=2026-12&view=agenda");
     await expect(
-      athletePage.getByRole("link", { name: "Open planned activity bike session" }),
+      athletePage.getByRole("link", {
+        name: `Open planned activity ${fixture.scheduledActivityPlanName}`,
+      }),
     ).toBeVisible();
   });
 });
@@ -130,6 +135,9 @@ test("manual completion can be associated with a recorded activity", async ({
   expect(candidate).toHaveLength(1);
   let sessionId: string | undefined;
   try {
+    // This is an association/completion boundary test, not a scheduling journey.
+    // Keep the plan and direct session as named, isolated prerequisites so this
+    // test does not imply that its setup exercises the schedule UI.
     sessionId = await createDirectPlannedSessionFixture({
       actor: athleteActor,
       operationId,

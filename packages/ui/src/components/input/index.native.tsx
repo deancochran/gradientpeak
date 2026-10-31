@@ -1,6 +1,7 @@
 import { forwardRef } from "react";
 import { StyleSheet, type TextInput } from "react-native";
 import { cn } from "../../lib/cn";
+import { omitUndefined } from "../../lib/omit-undefined";
 import { getNativeTestProps } from "../../lib/test-props";
 import { Input as RegistryInput } from "../../registry/native/input";
 import type { InputTestProps } from "./shared";
@@ -48,7 +49,7 @@ const Input = forwardRef<TextInput, InputProps>(function Input(
     <RegistryInputWithRef
       {...nativeTestProps}
       {...props}
-      className={inputVariants(props)}
+      className={inputVariants(omitUndefined(props))}
       ref={setRef}
       style={{ minHeight: 48, textAlignVertical: "center", ...StyleSheet.flatten(props.style) }}
     />

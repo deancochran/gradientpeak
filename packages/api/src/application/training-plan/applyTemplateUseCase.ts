@@ -11,6 +11,7 @@ import {
   plannedSessionIdempotencyKey,
   plannedSessionSchema,
 } from "@repo/core/calendar";
+import { prescriptionResolutionManifestSchema, type ResolutionManifest } from "@repo/core/plan";
 import {
   activityPlans,
   schema,
@@ -79,7 +80,7 @@ const resolvedSessionSchema = z
   .object({
     sourceSessionId: z.string().uuid(),
     planningDate: dateSchema,
-    manifest: z.unknown(),
+    manifest: prescriptionResolutionManifestSchema,
   })
   .strict();
 const applicationStaleSchema = z
@@ -225,8 +226,8 @@ async function deriveApplication(input: {
   const materialized = materializeAppliedTrainingPlan({
     applicationMode: input.values.applicationMode,
     planningTimezone: timezone.data,
-    startDate: input.values.startDate,
-    targetDate: input.values.targetDate,
+    ...(input.values.startDate === undefined ? {} : { startDate: input.values.startDate }),
+    ...(input.values.targetDate === undefined ? {} : { targetDate: input.values.targetDate }),
     structure: structure.data,
     todayDate: today,
   });
@@ -277,7 +278,6 @@ async function deriveApplication(input: {
         structure: row.structure,
         structureHash: row.structure_hash,
         semanticHash: row.semantic_hash,
-        adaptation: row.adaptation,
         trainingIntent: row.training_intent,
       })),
       explicitIds,
@@ -288,7 +288,11 @@ async function deriveApplication(input: {
       hash: plan.structureHash,
     });
   }
-  const sessions: Array<{ sourceSessionId: string; planningDate: string; manifest: unknown }> = [];
+  const sessions: Array<{
+    sourceSessionId: string;
+    planningDate: string;
+    manifest: ResolutionManifest;
+  }> = [];
   const unresolved: Array<{ sourceSessionId: string; status: "needs_input" | "unsupported" }> = [];
   for (const [index, source] of structure.data.sessions.entries()) {
     const planningDate = included.get(`sessions.${index}`);
@@ -507,6 +511,7 @@ export async function applyTrainingPlanApplication(input: {
           source,
           idempotencyKey: plannedSessionIdempotencyKey(source),
           groupEventId: null,
+          activityPlanId: item.manifest.activity_plan_id,
           prescription: { resolutionManifest: item.manifest, capturedAt: now.toISOString() },
           lifecycle: { status: "scheduled" },
         }),

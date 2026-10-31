@@ -10,7 +10,10 @@ import {
 
 function targets(
   asOf: string,
-  values: { bikeThresholdWatts?: number; runThresholdMetersPerSecond?: number } = {},
+  values: {
+    bikeThresholdWatts?: number;
+    runThresholdMetersPerSecond?: number;
+  } = {},
 ) {
   return materializeAthletePerformanceTargetFacts({
     athleteId: "planning-session-athlete",
@@ -52,7 +55,6 @@ function targets(
     })),
   });
 }
-
 const runDemand = {
   activity_category: "run" as const,
   training_intent: "aerobic_base" as const,
@@ -60,7 +62,17 @@ const runDemand = {
   target_common_load: 50,
   importance: "normal" as const,
 };
-
+function fixedStructure(
+  activity_category: "bike" | "run",
+  _blockId: string,
+  steps: Array<Record<string, unknown>>,
+) {
+  return {
+    version: 5 as const,
+    activity_category,
+    items: steps,
+  };
+}
 describe("planningSessions", () => {
   it("derives athlete-context estimates for assigned planned sessions", () => {
     const asOf = "2026-07-12T12:00:00.000Z";
@@ -93,43 +105,24 @@ describe("planningSessions", () => {
         prescriptionQuantification: null,
       },
     });
-
     const [estimatedSession] = deriveEstimatedPlannedTrainingSessions({
       athleteContext,
       sessions: [session],
       activityPlansById: {
         "11111111-1111-4111-8111-111111111111": {
           activity_category: "run",
-          structure: {
-            version: 3,
-            activity_category: "run",
-            segments: [
-              {
-                id: "22222222-2222-4222-8222-222222222222",
-                name: "Run",
-                role: "activity",
-                intervals: [
-                  {
-                    id: "33333333-3333-4333-8333-333333333333",
-                    name: "Tempo block",
-                    repetitions: 1,
-                    steps: [
-                      {
-                        id: "44444444-4444-4444-8444-444444444444",
-                        name: "Tempo 5K",
-                        duration: { type: "distance", meters: 5000 },
-                        targets: [{ type: "speed", intensity: 14.4 }],
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
+          structure: fixedStructure("run", "33333333-3333-4333-8333-333333333333", [
+            {
+              type: "step",
+              id: "44444444-4444-4444-8444-444444444444",
+              name: "Tempo 5K",
+              duration: { type: "distance", meters: 5000 },
+              targets: [{ type: "speed", intensity: 14.4 }],
+            },
+          ]),
         },
       },
     });
-
     expect(estimatedSession?.activityPlanEstimate).toMatchObject({
       durationEstimate: {
         valueSeconds: 1250,
@@ -160,7 +153,6 @@ describe("planningSessions", () => {
     }
     expect(commonLoad.load).toBeCloseTo(34.7222222222, 8);
   });
-
   it("stores unavailable canonical evidence without inventing scalar fallback facts", () => {
     const athleteContext = createAthletePlanningContextFromSnapshot({
       asOf: "2026-07-12T12:00:00.000Z",
@@ -182,32 +174,15 @@ describe("planningSessions", () => {
       },
     });
     const openPlan = {
-      structure: {
-        version: 3,
-        activity_category: "run",
-        segments: [
-          {
-            id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-            name: "Open run",
-            role: "activity",
-            intervals: [
-              {
-                id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-                name: "Open",
-                repetitions: 1,
-                steps: [
-                  {
-                    id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-                    name: "Finish when ready",
-                    duration: { type: "untilFinished" },
-                    targets: [{ type: "RPE", intensity: 5 }],
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      },
+      structure: fixedStructure("run", "cccccccc-cccc-4ccc-8ccc-cccccccccccc", [
+        {
+          type: "step",
+          id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+          name: "Finish when ready",
+          duration: { type: "untilFinished" },
+          targets: [{ type: "RPE", intensity: 5 }],
+        },
+      ]),
     };
     const [estimatedSession] = deriveEstimatedPlannedTrainingSessions({
       athleteContext,
@@ -216,7 +191,6 @@ describe("planningSessions", () => {
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa": openPlan,
       },
     });
-
     expect(estimatedSession?.activityPlanEstimate?.durationEstimate).toMatchObject({
       valueSeconds: null,
       basis: null,
@@ -229,7 +203,6 @@ describe("planningSessions", () => {
         summary: { duration: { elapsed: { status: "unavailable", value: null } } },
       },
     });
-
     const unavailable = estimatePlanningActivityPlanForAthlete({
       activityPlan: openPlan,
       athleteContext,
@@ -241,38 +214,20 @@ describe("planningSessions", () => {
       },
     });
   });
-
   it("keeps stronger assigned evidence when a new athlete-context estimate abstains", () => {
     const asOf = "2026-07-12T12:00:00.000Z";
     const unavailable = targets(asOf);
     const plan = {
       id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
-      structure: {
-        version: 3,
-        activity_category: "bike",
-        segments: [
-          {
-            id: "11111111-2222-4333-8444-555555555555",
-            name: "Bike",
-            role: "activity",
-            intervals: [
-              {
-                id: "66666666-7777-4888-8999-aaaaaaaaaaaa",
-                name: "Main",
-                repetitions: 1,
-                steps: [
-                  {
-                    id: "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff",
-                    name: "Steady",
-                    duration: { type: "time", seconds: 3_600 },
-                    targets: [{ type: "watts", intensity: 200 }],
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      },
+      structure: fixedStructure("bike", "66666666-7777-4888-8999-aaaaaaaaaaaa", [
+        {
+          type: "step",
+          id: "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff",
+          name: "Steady",
+          duration: { type: "time", seconds: 3600 },
+          targets: [{ type: "watts", intensity: 200 }],
+        },
+      ]),
     };
     const calibratedContext = createAthletePlanningContextFromSnapshot({
       asOf,
@@ -316,7 +271,6 @@ describe("planningSessions", () => {
         prescriptionQuantification: existingEstimate.prescriptionQuantification,
       },
     });
-
     expect(existingEstimate.prescriptionQuantification.summary.commonLoad.status).toBe("complete");
     expect(abstainingEstimate.prescriptionQuantification.summary.commonLoad.status).toBe(
       "unavailable",
@@ -326,7 +280,6 @@ describe("planningSessions", () => {
         ?.prescriptionQuantification,
     ).toEqual(existingEstimate.prescriptionQuantification);
   });
-
   it("replaces session plan evidence with the latest canonical prescription bundle", () => {
     const asOf = "2026-07-12T12:00:00.000Z";
     const athleteContext = createAthletePlanningContextFromSnapshot({
@@ -358,37 +311,19 @@ describe("planningSessions", () => {
       sessions: [session],
       activityPlansById: {
         "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee": {
-          structure: {
-            version: 3,
-            activity_category: "bike",
-            segments: [
-              {
-                id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
-                name: "Bike",
-                role: "activity",
-                intervals: [
-                  {
-                    id: "11111111-2222-4333-8444-555555555555",
-                    name: "Main",
-                    repetitions: 1,
-                    steps: [
-                      {
-                        id: "66666666-7777-4888-8999-aaaaaaaaaaaa",
-                        name: "Steady",
-                        duration: { type: "time", seconds: 3600 },
-                        targets: [{ type: "%FTP", intensity: 80 }],
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
+          structure: fixedStructure("bike", "11111111-2222-4333-8444-555555555555", [
+            {
+              type: "step",
+              id: "66666666-7777-4888-8999-aaaaaaaaaaaa",
+              name: "Steady",
+              duration: { type: "time", seconds: 3600 },
+              targets: [{ type: "%FTP", intensity: 80 }],
+            },
+          ]),
         },
       },
     });
     const estimate = estimatedSession?.activityPlanEstimate ?? null;
-
     const commonLoad = estimate?.prescriptionQuantification.summary.commonLoad;
     if (commonLoad?.status !== "complete") throw new Error("Expected complete Load");
     expect(commonLoad).toMatchObject({ status: "complete", intensity: 0.8 });

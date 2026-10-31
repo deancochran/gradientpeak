@@ -11,16 +11,16 @@ export type ActivityPlanIntensityBasis =
   | "unavailable";
 
 export type ActivityPlanPresentationOccurrence = {
-  activity_category: CanonicalActivityCategory | null;
+  activity_category: CanonicalActivityCategory;
   duration: ActivityPlanDuration;
   globalOrdinal: number;
   intensityBasis: ActivityPlanIntensityBasis;
   intensityLabel: string | null;
-  intervalId: string | null;
-  stepId: string | null;
+  repeatId?: string;
+  stepId: string;
   visualIntensity: number | null;
   occurrenceId: string;
-  role: "activity" | "rest";
+  role: "activity";
 };
 
 export type ActivityPlanPresentationModel = {
@@ -31,7 +31,7 @@ export type ActivityPlanPresentationModel = {
   structure: ActivityPlanStructure;
 };
 
-export type ActivityPlanIntervalSummary = {
+export type ActivityPlanBlockSummary = {
   hasOpenDuration: boolean;
   hasPartialQuantities: boolean;
   perRepeat: { distanceMeters: number; repetitionCount: number; timedSeconds: number };
@@ -42,14 +42,15 @@ export type ActivityPlanIntervalSummary = {
 const thresholdPercentTypes = new Set<ActivityTargetType>(["%FTP", "%MaxHR", "%ThresholdHR"]);
 const relativeEffortTypes = new Set<ActivityTargetType>(["watts", "bpm", "speed"]);
 const targetPriority: Record<ActivityTargetType, number> = {
-  RPE: 0,
-  "%FTP": 1,
-  "%ThresholdHR": 2,
-  "%MaxHR": 3,
-  watts: 4,
-  bpm: 5,
-  speed: 6,
-  cadence: 7,
+  rest: 0,
+  RPE: 1,
+  "%FTP": 2,
+  "%ThresholdHR": 3,
+  "%MaxHR": 4,
+  watts: 5,
+  bpm: 6,
+  speed: 7,
+  cadence: 8,
 };
 
 type TargetRange = { maximum: number; minimum: number };
@@ -71,15 +72,19 @@ function selectEffortTarget(targets: readonly ActivityTarget[]): ActivityTarget 
   const finalists = candidates.filter((target) => targetPriority[target.type] === highestPriority);
   const first = finalists[0];
   if (!first) return null;
-  return finalists.every(
-    (target) => target.type === first.type && target.intensity === first.intensity,
-  )
+  return finalists.every((target) => {
+    if (target.type !== first.type) return false;
+    return (
+      target.type === "rest" ||
+      ("intensity" in target && "intensity" in first && target.intensity === first.intensity)
+    );
+  })
     ? first
     : null;
 }
 
 function formatTarget(target: ActivityTarget): string {
-  return `${target.type} ${target.intensity}`;
+  return target.type === "rest" ? "Rest" : `${target.type} ${target.intensity}`;
 }
 
 function relativeRangeKey(
@@ -95,7 +100,7 @@ function collectRelativeRanges(
   const ranges = new Map<string, TargetRange>();
   for (const occurrence of occurrences) {
     const target = selectEffortTarget(occurrence.targets);
-    if (!target || !relativeEffortTypes.has(target.type)) continue;
+    if (!target || target.type === "rest" || !relativeEffortTypes.has(target.type)) continue;
     const key = relativeRangeKey(occurrence.activity_category, target.type);
     const current = ranges.get(key);
     ranges.set(key, {
@@ -116,6 +121,10 @@ function normalizeTarget(
 > {
   if (!target) {
     return { intensityBasis: "unavailable", intensityLabel: null, visualIntensity: null };
+  }
+
+  if (target.type === "rest") {
+    return { intensityBasis: "unavailable", intensityLabel: "Rest", visualIntensity: null };
   }
 
   if (target.type === "RPE") {
@@ -176,10 +185,10 @@ export function deriveActivityPlanPresentation(
       activity_category: occurrence.activity_category,
       duration: occurrence.duration,
       globalOrdinal: occurrence.globalOrdinal,
-      intervalId: occurrence.intervalId,
+      ...(occurrence.repeatId ? { repeatId: occurrence.repeatId } : {}),
       stepId: occurrence.stepId,
       occurrenceId: occurrence.occurrenceId,
-      role: occurrence.role,
+      role: "activity",
       ...intensity,
     };
   });
@@ -194,15 +203,13 @@ export function deriveActivityPlanPresentation(
 }
 
 /** Summarizes compiler-expanded work without converting distance or open work into time. */
-export function summarizeCompiledActivityPlanInterval(
+export function summarizeCompiledActivityPlanRepeat(
   compiled: CompiledActivityPlan,
-  intervalId: string,
-): ActivityPlanIntervalSummary | null {
-  const occurrences = compiled.occurrences.filter(
-    (occurrence) => occurrence.role === "activity" && occurrence.intervalId === intervalId,
-  );
+  repeatId: string,
+): ActivityPlanBlockSummary | null {
+  const occurrences = compiled.occurrences.filter((occurrence) => occurrence.repeatId === repeatId);
   const firstOccurrence = occurrences[0];
-  if (!firstOccurrence || firstOccurrence.repeatIteration === null) return null;
+  if (!firstOccurrence) return null;
 
   const repetitions = occurrences.reduce(
     (maximum, occurrence) => Math.max(maximum, (occurrence.repeatIteration ?? -1) + 1),

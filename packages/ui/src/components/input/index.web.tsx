@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "../../lib/cn";
+import { omitUndefined } from "../../lib/omit-undefined";
 import { getWebTestProps } from "../../lib/test-props";
 import { Input as RegistryInput } from "../../registry/web/input";
 import type { InputTestProps } from "./shared";
@@ -30,7 +31,7 @@ const Input = React.forwardRef<
   return (
     <RegistryInput
       {...getWebTestProps({ accessibilityLabel, id, role, testId })}
-      className={inputVariants({ className })}
+      className={inputVariants(omitUndefined({ className }))}
       ref={setRef}
       {...props}
     />

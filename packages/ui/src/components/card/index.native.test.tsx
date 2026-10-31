@@ -1,8 +1,10 @@
 import * as React from "react";
 
+type SlotTextProps = React.PropsWithChildren<Record<string, unknown>>;
+
 jest.mock("@rn-primitives/slot", () => {
   return {
-    Text: (props: any) => React.createElement("Slot.Text", props, props.children),
+    Text: (props: SlotTextProps) => React.createElement("Slot.Text", props, props.children),
   };
 });
 

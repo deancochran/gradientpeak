@@ -60,7 +60,18 @@ export const ProgressStory: Story = {
   ),
 };
 
-const ResizablePanelGroup = Resizable.ResizablePanelGroup as React.ComponentType<any>;
+const SCROLL_AREA_FIXTURE_KEYS = [
+  "overview",
+  "activity",
+  "duration",
+  "pace",
+  "distance",
+  "elevation",
+  "heart-rate",
+  "power",
+  "cadence",
+  "recovery",
+] as const;
 
 function WebFrame({ children }: { children: React.ReactNode }) {
   return <div className="min-w-[320px] max-w-3xl p-6">{children}</div>;
@@ -271,7 +282,7 @@ export const ResizableStory: Story = {
   render: () => (
     <WebFrame>
       <div className="h-56 w-full rounded-lg border">
-        <ResizablePanelGroup direction="horizontal">
+        <Resizable.ResizablePanelGroup orientation="horizontal">
           <Resizable.ResizablePanel defaultSize={45}>
             <div className="flex h-full items-center justify-center bg-muted/40">Plan summary</div>
           </Resizable.ResizablePanel>
@@ -279,7 +290,7 @@ export const ResizableStory: Story = {
           <Resizable.ResizablePanel defaultSize={55}>
             <div className="flex h-full items-center justify-center">Projected volume</div>
           </Resizable.ResizablePanel>
-        </ResizablePanelGroup>
+        </Resizable.ResizablePanelGroup>
       </div>
     </WebFrame>
   ),
@@ -291,8 +302,8 @@ export const ScrollAreaStory: Story = {
     <WebFrame>
       <ScrollArea.ScrollArea className="h-48 w-72 rounded-md border">
         <div className="space-y-2 p-4">
-          {Array.from({ length: 10 }, (_, index) => (
-            <div className="rounded-md bg-muted px-3 py-2 text-sm" key={`web-scroll-${index + 1}`}>
+          {SCROLL_AREA_FIXTURE_KEYS.map((key, index) => (
+            <div className="rounded-md bg-muted px-3 py-2 text-sm" key={key}>
               Component fixture {index + 1}
             </div>
           ))}

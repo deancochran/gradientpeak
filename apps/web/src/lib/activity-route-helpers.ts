@@ -254,7 +254,7 @@ export function getActivityCoordinates(
       coordinates.push({
         latitude,
         longitude,
-        altitude: typeof record.altitude === "number" ? record.altitude : undefined,
+        ...(typeof record.altitude === "number" ? { altitude: record.altitude } : {}),
       });
     }
   }

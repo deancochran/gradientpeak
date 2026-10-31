@@ -28,14 +28,39 @@ function row(id = activityId) {
 function dbWith(results: unknown[]) {
   const calls: string[] = [];
   let index = 0;
-  const builder: any = {
-    from: vi.fn(() => (calls.push("from"), builder)),
-    where: vi.fn(() => (calls.push("where"), builder)),
-    orderBy: vi.fn(() => (calls.push("orderBy"), builder)),
-    limit: vi.fn(() => (calls.push("limit"), builder)),
-    then: (resolve: (value: unknown) => unknown) => Promise.resolve(results[index++]).then(resolve),
+  const createBuilder = () => {
+    const builder = Object.assign(
+      Promise.resolve().then(() => results[index++]),
+      {
+        from: vi.fn(() => {
+          calls.push("from");
+          return builder;
+        }),
+        where: vi.fn(() => {
+          calls.push("where");
+          return builder;
+        }),
+        orderBy: vi.fn(() => {
+          calls.push("orderBy");
+          return builder;
+        }),
+        limit: vi.fn(() => {
+          calls.push("limit");
+          return builder;
+        }),
+      },
+    );
+    return builder;
   };
-  return { calls, db: { select: vi.fn(() => (calls.push("select"), builder)) } };
+  return {
+    calls,
+    db: {
+      select: vi.fn(() => {
+        calls.push("select");
+        return createBuilder();
+      }),
+    },
+  };
 }
 
 describe("createDrizzleTrendsDashboardRepository", () => {

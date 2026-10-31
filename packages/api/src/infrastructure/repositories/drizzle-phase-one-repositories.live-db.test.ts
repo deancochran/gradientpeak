@@ -3,7 +3,7 @@ import {
   ACTIVITY_FILE_INGESTION_CONTRACT_VERSION,
   activityFileIngestionOperationSchema,
 } from "@repo/core/activity-files";
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
+import { activityPlanSemanticHash, activityPlanStructureSchema } from "@repo/core/activity-plan";
 import {
   ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,
   athleteRecalculationIdempotencyKey,
@@ -20,6 +20,7 @@ import {
   activityPlans,
   dailyTrainingLoad,
   groupEvents,
+  groupMemberships,
   groups,
   profiles,
   trainingPlans,
@@ -27,9 +28,11 @@ import {
 } from "@repo/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import { createResolutionManifestFixture } from "../../test/builders/planned-session";
 import { createDrizzleActivityIngestionRepository } from "./drizzle-activity-ingestion-repository";
 import { createDrizzleAthleteDerivedStateRepository } from "./drizzle-athlete-derived-state-repository";
+import { createEventReadRepository } from "./drizzle-event-read-repository";
 import { createDrizzlePlannedSessionRepository } from "./drizzle-planned-session-repository";
 
 function isDisposableLocalDatabase(): boolean {
@@ -47,11 +50,9 @@ function isDisposableLocalDatabase(): boolean {
     return false;
   }
 }
-
 const describeDisposable = isDisposableLocalDatabase() ? describe : describe.skip;
 const profileIds: string[] = [];
 const groupIds: string[] = [];
-
 async function seedProfile(label: string) {
   const id = randomUUID();
   const email = `${id}@phase-one-repositories.test`;
@@ -68,19 +69,71 @@ async function seedProfile(label: string) {
   });
   return id;
 }
-
 afterEach(async () => {
   for (const groupId of groupIds.splice(0)) await db.delete(groups).where(eq(groups.id, groupId));
   for (const profileId of profileIds.splice(0)) {
     await db.delete(users).where(eq(users.id, profileId));
   }
 });
-
 afterAll(async () => {
   await pool.end();
 });
-
 describeDisposable("Phase 1 Drizzle repositories against a disposable database", () => {
+  it("reads a new reference-based session with all legacy snapshot columns null", async () => {
+    const profileId = await seedProfile("Current-plan effective-load owner");
+    const activityPlanId = randomUUID();
+    const structure = activityPlanStructureSchema.parse({
+      version: 5,
+      activity_category: "run",
+      items: [
+        {
+          type: "step",
+          id: randomUUID(),
+          name: "Current plan",
+          duration: { type: "time", seconds: 1_800 },
+          targets: [{ type: "RPE", intensity: 5 }],
+        },
+      ],
+    });
+    await db.insert(activityPlans).values({
+      id: activityPlanId,
+      profile_id: profileId,
+      name: "Current effective-load plan",
+      structure,
+      structure_hash: activityPlanStructureHash(structure),
+      semantic_hash: activityPlanSemanticHash({ structure, trainingIntent: "general_maintenance" }),
+    });
+    const session = plannedSessionSchema.parse({
+      contractVersion: PLANNED_SESSION_CONTRACT_VERSION,
+      id: randomUUID(),
+      profileId,
+      sessionRevision: 1,
+      planningDate: "2026-08-20",
+      originalTargetDate: "2026-08-20",
+      source: { kind: "direct", operationId: `direct_${"n".repeat(32)}` },
+      idempotencyKey: plannedSessionIdempotencyKey({
+        kind: "direct",
+        operationId: `direct_${"n".repeat(32)}`,
+      }),
+      activityPlanId,
+      lifecycle: { status: "scheduled" },
+    });
+    await createDrizzlePlannedSessionRepository(db).createOwned({ profileId, session });
+
+    const result = await createEventReadRepository(db).getEffectivePlanLoadInputs({
+      asOf: new Date("2026-08-20T12:00:00.000Z"),
+      profileId,
+    });
+
+    expect(result.plannedSessions).toEqual([
+      expect.objectContaining({
+        id: session.id,
+        currentPlan: expect.objectContaining({ id: activityPlanId }),
+        resolutionManifest: null,
+      }),
+    ]);
+  });
+
   it("coalesces athlete work and fences daily publication by revision and lease", async () => {
     const profileId = await seedProfile("Athlete state owner");
     const repository = createDrizzleAthleteDerivedStateRepository(db);
@@ -102,7 +155,6 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
       reasons: ["threshold_changed"],
       requestedAt: "2026-08-10T12:02:00.000Z",
     });
-
     await repository.coalesceRecalculationRequest({ profileId, request: first });
     await expect(
       repository.coalesceRecalculationRequest({ profileId, request: second }),
@@ -112,16 +164,14 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
       sourceRevision: 5,
       reasons: ["activity_changed", "threshold_changed"],
     });
-
     const claimedAt = new Date();
     const claimToken = randomUUID();
     const claim = await repository.claimNextRecalculation({
       claimToken,
       claimedAt: claimedAt.toISOString(),
-      leaseExpiresAt: new Date(claimedAt.getTime() + 60_000).toISOString(),
+      leaseExpiresAt: new Date(claimedAt.getTime() + 60000).toISOString(),
     });
     expect(claim).toMatchObject({ lifecycle: { state: "processing", claimToken } });
-
     const day = {
       contractVersion: ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION,
       profileId,
@@ -172,7 +222,6 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
         state: publicationState,
       }),
     ).resolves.toEqual({ status: "lease_lost" });
-
     await db.insert(dailyTrainingLoad).values({
       ...{
         profile_id: profileId,
@@ -209,7 +258,6 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
         publishedRevision: 5,
       }),
     ).resolves.toEqual([day]);
-
     const activityId = randomUUID();
     await db.transaction(async (tx) => {
       await tx.execute(sql`set local session_replication_role = replica`);
@@ -219,7 +267,7 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
         name: "Threshold source ride",
         started_at: new Date("2026-08-10T12:00:00.000Z"),
         finished_at: new Date("2026-08-10T12:30:00.000Z"),
-        elapsed_ms: 1_800_000,
+        elapsed_ms: 1800000,
         parser_version: "phase-one-v1",
         decoded_contract_version: "phase-one-v1",
         materializer_version: "phase-one-v1",
@@ -262,7 +310,7 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
           sourceSeriesId: "heart-rate-primary",
           sourceSeriesMetric: "heart_rate" as const,
           startTimestampSeconds: 600,
-          exactWindowSeconds: 1_200,
+          exactWindowSeconds: 1200,
         },
       };
     };
@@ -301,7 +349,6 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
       new Set(["power", "lthr"]),
     );
   });
-
   it("replays direct ingestion operations once and enforces lifecycle transitions", async () => {
     const profileId = await seedProfile("Ingestion owner");
     const otherProfileId = await seedProfile("Other ingestion owner");
@@ -351,7 +398,6 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
     await expect(
       operationRepository.createOrLoad({ ...operation, stagingPath: "other/path.fit" }),
     ).resolves.toEqual({ status: "identity_conflict" });
-
     await expect(
       operationRepository.transitionLifecycle({
         profileId,
@@ -399,36 +445,26 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
       operation: { status: "failed_terminal" },
     });
   });
-
   it("enforces planned-session ownership, idempotency, revisions, group uniqueness, and unlink history", async () => {
     const profileId = await seedProfile("Planned session owner");
     const otherProfileId = await seedProfile("Other planned session owner");
     const repository = createDrizzlePlannedSessionRepository(db);
     const activityPlanId = randomUUID();
     const trainingPlanId = randomUUID();
+    const trainingPlanStructure = {
+      version: 1,
+      sessions: [{ activity_plan_id: activityPlanId, offset_days: 0 }],
+    };
     const structure = activityPlanStructureSchema.parse({
-      version: 3,
+      version: 5,
       activity_category: "bike",
-      segments: [
+      items: [
         {
+          type: "step",
           id: randomUUID(),
-          role: "activity",
-          name: "Ride",
-          intervals: [
-            {
-              id: randomUUID(),
-              name: "Main",
-              repetitions: 1,
-              steps: [
-                {
-                  id: randomUUID(),
-                  name: "Steady",
-                  duration: { type: "time", seconds: 1800 },
-                  targets: [{ type: "%FTP", intensity: 75 }],
-                },
-              ],
-            },
-          ],
+          name: "Steady",
+          duration: { type: "time", seconds: 1800 },
+          targets: [{ type: "%FTP", intensity: 75 }],
         },
       ],
     });
@@ -437,17 +473,19 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
       profile_id: profileId,
       name: "Phase 1 activity plan",
       structure,
-      structure_hash: `v1:sha256:${"0".repeat(64)}`,
-      semantic_hash: `v1:sha256:${"2".repeat(64)}`,
+      structure_hash: activityPlanStructureHash(structure),
+      semantic_hash: activityPlanSemanticHash({
+        structure,
+        trainingIntent: "general_maintenance",
+      }),
     });
     await db.insert(trainingPlans).values({
       id: trainingPlanId,
       profile_id: profileId,
       name: "Phase 1 training plan",
-      structure: { version: 1, sessions: [{ activity_plan_id: activityPlanId, offset_days: 0 }] },
-      structure_hash: `v1:sha256:${"1".repeat(64)}`,
+      structure: trainingPlanStructure,
+      structure_hash: activityPlanStructureHash(trainingPlanStructure),
     });
-
     const makeDirectSession = (id: string, operationId: string) =>
       plannedSessionSchema.parse({
         contractVersion: PLANNED_SESSION_CONTRACT_VERSION,
@@ -514,7 +552,6 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
         planningDate: "2026-08-21",
       }),
     ).resolves.toEqual({ status: "stale_revision", currentRevision: 1 });
-
     const groupId = randomUUID();
     const groupEventId = randomUUID();
     groupIds.push(groupId);
@@ -523,6 +560,12 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
       created_by_profile_id: profileId,
       name: "Phase 1 group",
       slug: `phase-one-${groupId}`,
+    });
+    await db.insert(groupMemberships).values({
+      group_id: groupId,
+      profile_id: profileId,
+      role: "owner",
+      status: "active",
     });
     await db.insert(groupEvents).values({
       id: groupEventId,
@@ -550,7 +593,6 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
         groupEventId,
       }),
     ).resolves.toEqual({ status: "conflict", reason: "group_event_already_linked" });
-
     const activityId = randomUUID();
     await db.transaction(async (tx) => {
       await tx.execute(sql`set local session_replication_role = replica`);
@@ -560,7 +602,7 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
         name: "Completed ride",
         started_at: new Date("2026-08-20T12:00:00.000Z"),
         finished_at: new Date("2026-08-20T12:30:00.000Z"),
-        elapsed_ms: 1_800_000,
+        elapsed_ms: 1800000,
         parser_version: "phase-one-v1",
         decoded_contract_version: "phase-one-v1",
         materializer_version: "phase-one-v1",
@@ -594,7 +636,6 @@ describeDisposable("Phase 1 Drizzle repositories against a disposable database",
         },
       },
     });
-
     await db.delete(groupEvents).where(eq(groupEvents.id, groupEventId));
     await expect(repository.getOwned({ profileId, sessionId: first.id })).resolves.toMatchObject({
       groupEventId: null,

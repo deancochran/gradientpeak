@@ -216,13 +216,14 @@ export function resolveEffectiveLearnedRampRate(
   input: LearnedRampRateInput | undefined,
 ): EffectiveLearnedRampRate {
   const confidence = input?.confidence ?? "low";
-  const hasLearnedRate = typeof input?.max_safe_ramp_rate === "number";
+  const learnedRampRate = input?.max_safe_ramp_rate;
+  const hasLearnedRate = typeof learnedRampRate === "number";
 
   if (hasLearnedRate && (confidence === "medium" || confidence === "high")) {
     return {
       max_safe_ramp_rate: Math.max(
         MIN_LEARNED_RAMP_RATE,
-        Math.min(MAX_LEARNED_RAMP_RATE, Math.round(input.max_safe_ramp_rate!)),
+        Math.min(MAX_LEARNED_RAMP_RATE, Math.round(learnedRampRate)),
       ),
       confidence,
       source: "learned",

@@ -25,28 +25,15 @@ import { getPlannedEstimate } from "./planned-estimate";
 
 const id = (value: number) => `20000000-0000-4000-8000-${String(value).padStart(12, "0")}`;
 const singleBike = activityPlanStructureSchema.parse({
-  version: 3,
+  version: 5,
   activity_category: "bike",
-  segments: [
+  items: [
     {
-      role: "activity",
-      id: id(1),
-      name: "Bike",
-      intervals: [
-        {
-          id: id(2),
-          name: "Main",
-          repetitions: 1,
-          steps: [
-            {
-              id: id(3),
-              name: "Steady",
-              duration: { type: "time", seconds: 3600 },
-              targets: [{ type: "%FTP", intensity: 80 }],
-            },
-          ],
-        },
-      ],
+      type: "step",
+      id: id(3),
+      name: "Steady",
+      duration: { type: "time", seconds: 3600 },
+      targets: [{ type: "%FTP", intensity: 80 }],
     },
   ],
 });
@@ -97,26 +84,19 @@ const runPerformanceTargets = materializeAthletePerformanceTargetFacts({
     },
   ],
 });
-
 function singleBikeWithTargets(
-  targets: readonly { type: "%FTP" | "watts" | "cadence" | "RPE"; intensity: number }[],
+  targets: readonly {
+    type: "%FTP" | "watts" | "cadence" | "RPE";
+    intensity: number;
+  }[],
 ) {
-  const segment = singleBike.segments[0];
-  if (!segment || segment.role !== "activity") throw new Error("Expected activity segment");
-  const interval = segment.intervals[0];
-  const step = interval?.steps[0];
-  if (!interval || !step) throw new Error("Expected one interval step");
+  const step = singleBike.items[0];
+  if (!step || step.type !== "step") throw new Error("Expected one standalone step");
   return activityPlanStructureSchema.parse({
     ...singleBike,
-    segments: [
-      {
-        ...segment,
-        intervals: [{ ...interval, steps: [{ ...step, targets: [...targets] }] }],
-      },
-    ],
+    items: [{ ...step, targets: [...targets] }],
   });
 }
-
 function onlyPrescription(estimate: ActivityPlanPlanningEstimate) {
   const member = estimate.prescriptionQuantification.members[0];
   if (!member || estimate.prescriptionQuantification.members.length !== 1) {
@@ -124,65 +104,36 @@ function onlyPrescription(estimate: ActivityPlanPlanningEstimate) {
   }
   return member;
 }
-
 function distanceRun(target: { type: "speed" | "RPE"; intensity: number }) {
   return activityPlanStructureSchema.parse({
-    version: 3,
+    version: 5,
     activity_category: "run",
-    segments: [
+    items: [
       {
-        role: "activity",
-        id: id(30),
-        name: "Run",
-        intervals: [
-          {
-            id: id(31),
-            name: "Main",
-            repetitions: 1,
-            steps: [
-              {
-                id: id(32),
-                name: "5K",
-                duration: { type: "distance", meters: 5_000 },
-                targets: [target],
-              },
-            ],
-          },
-        ],
+        type: "step",
+        id: id(32),
+        name: "5K",
+        duration: { type: "distance", meters: 5000 },
+        targets: [target],
       },
     ],
   });
 }
-
 function timedPlan(activity_category: "bike" | "run" | "swim", targets: ActivityPlanTarget[]) {
   return activityPlanStructureSchema.parse({
-    version: 3,
+    version: 5,
     activity_category,
-    segments: [
+    items: [
       {
-        role: "activity",
-        id: id(40),
-        name: "Work",
-        intervals: [
-          {
-            id: id(41),
-            name: "Main",
-            repetitions: 1,
-            steps: [
-              {
-                id: id(42),
-                name: "Steady",
-                duration: { type: "time", seconds: 3_600 },
-                targets,
-              },
-            ],
-          },
-        ],
+        type: "step",
+        id: id(42),
+        name: "Steady",
+        duration: { type: "time", seconds: 3600 },
+        targets,
       },
     ],
   });
 }
-
 describe("estimateActivityPlanForTrainingContext", () => {
   it("projects the exact indoor Endurance Set objective intensity independently", () => {
     const estimate = estimateActivityPlanForTrainingContext({
@@ -190,10 +141,9 @@ describe("estimateActivityPlanForTrainingContext", () => {
       performanceTargets: unavailableTargets,
       asOf: unavailableTargets.asOf,
     });
-
     expect(estimate.planProjection?.objectiveIntensity).toMatchObject({
       status: "available",
-      value: expect.closeTo(2_439 / 3_500, 12),
+      value: 0.69,
       unit: "ratio",
       completionPolicy: "distance",
       weightingBasis: "distance_meters",
@@ -205,7 +155,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
       status: "unavailable",
     });
   });
-
   it("preserves the exact single-segment cycling calculation as a golden", () => {
     const estimate = estimateActivityPlanForTrainingContext({
       structure: singleBike,
@@ -255,7 +204,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
       load: { status: "estimated", value: expect.closeTo(64), basis: "plan_intent" },
     });
   });
-
   it("keeps two scheduled events of one plan distinct without changing plan or calculation identity", () => {
     const first = estimateActivityPlanForTrainingContext({
       structure: singleBike,
@@ -273,7 +221,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
       planId: "plan-1",
       scheduledEventId: "event-2",
     });
-
     const firstPrescription = onlyPrescription(first);
     const secondPrescription = onlyPrescription(second);
     expect(firstPrescription.subjectIdentity).toMatchObject({
@@ -320,7 +267,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
       ),
     ).toEqual(expect.arrayContaining(["event-1", "event-2"]));
   });
-
   it("binds a validated one-occurrence component bundle and rejects collection-shaped input", () => {
     const plan = estimateActivityPlanForTrainingContext({
       structure: singleBike,
@@ -332,7 +278,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
       prescriptionQuantification: plan.prescriptionQuantification,
       eventId: "persisted-event-1",
     });
-
     expect(bound).toMatchObject({
       members: [
         {
@@ -371,7 +316,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
       }),
     ).toThrow();
   });
-
   it("changes calculation identity on recomputation without changing the plan subject", () => {
     const first = estimateActivityPlanForTrainingContext({
       structure: singleBike,
@@ -413,7 +357,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
     const firstPrescription = onlyPrescription(first);
     const recomputedPrescription = onlyPrescription(recomputed);
     const revisedPrescription = onlyPrescription(revised);
-
     expect(recomputedPrescription.subjectIdentity).toEqual(firstPrescription.subjectIdentity);
     expect(recomputedPrescription.evidenceIdentity).toEqual(firstPrescription.evidenceIdentity);
     expect(recomputedPrescription.calculationIdentity.fingerprint).not.toBe(
@@ -433,24 +376,22 @@ describe("estimateActivityPlanForTrainingContext", () => {
       firstPrescription.intensity.prescribed,
     );
   });
-
   it("uses authored absolute speed rather than threshold pace for distance duration", () => {
     const estimate = estimateActivityPlanForTrainingContext({
       structure: distanceRun({ type: "speed", intensity: 18 }),
       performanceTargets: runPerformanceTargets,
       asOf: runPerformanceTargets.asOf,
     });
-
     expect(estimate.durationEstimate).toEqual({
-      valueSeconds: 1_000,
+      valueSeconds: 1000,
       status: "estimated",
       basis: "distance_and_pace",
       confidence: "medium",
     });
-    expect(estimate.durationEstimate.valueSeconds).not.toBe(1_250);
+    expect(estimate.durationEstimate.valueSeconds).not.toBe(1250);
     expect(onlyPrescription(estimate).distance).toMatchObject({
       status: "available",
-      value: 5_000,
+      value: 5000,
       evidenceRole: "prescribed",
     });
     expect(estimate.prescriptionQuantification.summary.commonLoad).toMatchObject({
@@ -458,14 +399,12 @@ describe("estimateActivityPlanForTrainingContext", () => {
       intensity: 1.25,
     });
   });
-
   it("never treats threshold pace as the planned pace when no pace target is authored", () => {
     const estimate = estimateActivityPlanForTrainingContext({
       structure: distanceRun({ type: "RPE", intensity: 5 }),
       performanceTargets: runPerformanceTargets,
       asOf: runPerformanceTargets.asOf,
     });
-
     expect(estimate.durationEstimate).toEqual({
       valueSeconds: null,
       status: "unavailable",
@@ -481,13 +420,11 @@ describe("estimateActivityPlanForTrainingContext", () => {
       values: [{ metric: "perceived_exertion" }],
     });
   });
-
   it("keeps unavailable plans canonical instead of reviving saved scalar projections", () => {
     const estimate = createUnavailableActivityPlanPlanningEstimate({
       asOf: runPerformanceTargets.asOf,
       activityCategory: "run",
     });
-
     expect(estimate).toMatchObject({
       durationEstimate: { basis: null, status: "unavailable", valueSeconds: null },
       durationProvenance: null,
@@ -505,7 +442,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
       load: { status: "unavailable", value: null },
     });
   });
-
   it("requires category calibration before resolving a future relative pace target", () => {
     const prescribedIntensity = prescribedActivityIntensitySchema.parse({
       status: "available",
@@ -519,7 +455,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
         },
       ],
     });
-
     expect(
       resolvePrescriptionSpeedMetersPerSecond({
         activityCategory: "run",
@@ -539,7 +474,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
       source: "relative_category_calibration",
     });
   });
-
   it("normalizes %MaxHR through recorded MaxHR and LTHR instead of treating it as %ThresholdHR", () => {
     const facts = buildPerformanceTargetFactsFixture({
       lthrBpm: { run: 160 },
@@ -550,7 +484,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
       performanceTargets: facts,
       asOf: facts.asOf,
     });
-
     expect(estimate.prescriptionQuantification.summary.commonLoad).toMatchObject({
       status: "complete",
       intensity: 1,
@@ -561,7 +494,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
       thresholdEvidence: { type: "lthr_bpm", value: 160, unit: "beats_per_minute" },
     });
   });
-
   it.each([
     "run",
     "swim",
@@ -588,7 +520,7 @@ describe("estimateActivityPlanForTrainingContext", () => {
       distance: {
         status: "available",
         evidenceRole: "derived",
-        value: activityCategory === "run" ? 10_000 : 3_000,
+        value: activityCategory === "run" ? 10000 : 3000,
         unit: "meters",
       },
     });
@@ -597,18 +529,15 @@ describe("estimateActivityPlanForTrainingContext", () => {
         members: [memberWithDerivedDistance],
       }),
     );
-
     expect(planned.prescribedIntensity).toEqual({
       status: "known",
       value: member.intensity.prescribed.values,
     });
     expect(estimate.planProjection).not.toHaveProperty("prescribedIntensity");
   });
-
   it("keeps %MaxHR load unavailable unless both MaxHR and LTHR are usable", () => {
     const missingMax = buildPerformanceTargetFactsFixture({ lthrBpm: { run: 160 } });
     const missingLthr = buildPerformanceTargetFactsFixture({ maxHrBpm: { run: 200 } });
-
     for (const facts of [missingMax, missingLthr]) {
       const estimate = estimateActivityPlanForTrainingContext({
         structure: timedPlan("run", [{ type: "%MaxHR", intensity: 80 }]),
@@ -625,20 +554,17 @@ describe("estimateActivityPlanForTrainingContext", () => {
       });
     }
   });
-
   it("keeps %ThresholdHR as explicit plan intent without relabeling %MaxHR", () => {
     const estimate = estimateActivityPlanForTrainingContext({
       structure: timedPlan("run", [{ type: "%ThresholdHR", intensity: 80 }]),
       performanceTargets: unavailableTargets,
       asOf: unavailableTargets.asOf,
     });
-
     expect(estimate.prescriptionQuantification.summary.commonLoad).toMatchObject({
       status: "complete",
       intensity: 0.8,
     });
   });
-
   it("resolves equivalent speed targets deterministically and rejects conflicting permutations", () => {
     const speed = {
       metric: "speed" as const,
@@ -663,7 +589,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
           values,
         }),
       });
-
     expect(resolve([speed, equivalentPace])).toEqual(resolve([equivalentPace, speed]));
     expect(resolve([speed, equivalentPace])).toMatchObject({ status: "available", value: 5 });
     expect(resolve([speed, conflictingPace])).toEqual(resolve([conflictingPace, speed]));
@@ -672,7 +597,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
       reason: "ambiguous_target",
     });
   });
-
   it("rejects conflicting speed targets before estimating a plan", () => {
     expect(() =>
       timedPlan("run", [
@@ -681,7 +605,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
       ]),
     ).toThrow("ACTIVITY_PLAN_MULTIPLE_OBJECTIVE_TARGETS");
   });
-
   it("keeps authored speed visible when Common Load calibration is unavailable", () => {
     const unavailable = createUnavailableAthletePerformanceTargetFacts(performanceTargets.asOf);
     const estimate = estimateActivityPlanForTrainingContext({
@@ -689,8 +612,7 @@ describe("estimateActivityPlanForTrainingContext", () => {
       performanceTargets: unavailable,
       asOf: unavailable.asOf,
     });
-
-    expect(estimate.durationEstimate.valueSeconds).toBe(1_000);
+    expect(estimate.durationEstimate.valueSeconds).toBe(1000);
     expect(estimate.prescriptionQuantification.summary.commonLoad).toMatchObject({
       status: "unavailable",
       reason: "no_load_data",
@@ -711,16 +633,20 @@ describe("estimateActivityPlanForTrainingContext", () => {
     });
     expect(getNormalizedIntensity(onlyPrescription(estimate).commonLoad)).toBeNull();
   });
-
-  it("preserves rest duration without adding rest to Common Load", () => {
+  it("treats a fixed untargeted recovery step as an authored activity occurrence", () => {
     const structure = activityPlanStructureSchema.parse({
       ...singleBike,
-      segments: [
-        ...singleBike.segments,
-        { role: "rest", id: id(4), name: "Transition", duration: { type: "time", seconds: 120 } },
+      items: [
+        ...singleBike.items,
+        {
+          type: "step",
+          id: id(5),
+          name: "Recovery",
+          duration: { type: "time", seconds: 120 },
+          targets: [],
+        },
       ],
     });
-
     const estimate = estimateActivityPlanForTrainingContext({
       structure,
       performanceTargets,
@@ -728,20 +654,19 @@ describe("estimateActivityPlanForTrainingContext", () => {
     });
     expect(estimate).toMatchObject({
       durationEstimate: { basis: "compiled_time", valueSeconds: 3720 },
-      restSeconds: 120,
-      prescriptionQuantification: { summary: { commonLoad: { status: "complete" } } },
+      restSeconds: 0,
+      prescriptionQuantification: { summary: { commonLoad: { status: "partial" } } },
     });
     const commonLoad = estimate.prescriptionQuantification.summary.commonLoad;
-    if (commonLoad.status === "unavailable") throw new Error("Expected quantified Load");
+    if (commonLoad.status !== "partial") throw new Error("Expected partial Load");
     expect(commonLoad.load).toBeCloseTo(64);
   });
-
   it("fails closed on mixed-category and transition plans", () => {
     const structure = {
       version: 3,
       activity_category: "bike",
       segments: [
-        ...singleBike.segments,
+        ...singleBike.items,
         { role: "transition", id: id(4), name: "T1", duration: { type: "time", seconds: 120 } },
         {
           role: "activity",
@@ -755,6 +680,7 @@ describe("estimateActivityPlanForTrainingContext", () => {
               repetitions: 1,
               steps: [
                 {
+                  type: "step",
                   id: id(7),
                   name: "5k",
                   duration: { type: "distance", meters: 5000 },
@@ -774,41 +700,27 @@ describe("estimateActivityPlanForTrainingContext", () => {
       }),
     ).toThrow();
   });
-
   it("does not report complete high-confidence load from partial cycling-power evidence", () => {
     const structure = activityPlanStructureSchema.parse({
-      version: 3,
+      version: 5,
       activity_category: "bike",
-      segments: [
+      items: [
         {
-          role: "activity",
-          id: id(20),
-          name: "Bike",
-          intervals: [
-            {
-              id: id(21),
-              name: "Main",
-              repetitions: 1,
-              steps: [
-                {
-                  id: id(22),
-                  name: "Power",
-                  duration: { type: "time", seconds: 1800 },
-                  targets: [{ type: "%FTP", intensity: 80 }],
-                },
-                {
-                  id: id(23),
-                  name: "RPE",
-                  duration: { type: "time", seconds: 1800 },
-                  targets: [{ type: "RPE", intensity: 5 }],
-                },
-              ],
-            },
-          ],
+          type: "step",
+          id: id(22),
+          name: "Power",
+          duration: { type: "time", seconds: 1800 },
+          targets: [{ type: "%FTP", intensity: 80 }],
+        },
+        {
+          type: "step",
+          id: id(23),
+          name: "RPE",
+          duration: { type: "time", seconds: 1800 },
+          targets: [{ type: "RPE", intensity: 5 }],
         },
       ],
     });
-
     const estimate = estimateActivityPlanForTrainingContext({
       structure,
       performanceTargets,
@@ -846,14 +758,12 @@ describe("estimateActivityPlanForTrainingContext", () => {
       load: { status: "partial", value: expect.any(Number), reason: "incomplete_members" },
     });
   });
-
   it("uses unanchored relative intent without inventing personalized physical output", () => {
     const estimate = estimateActivityPlanForTrainingContext({
       structure: singleBike,
       performanceTargets: unavailableTargets,
       asOf: unavailableTargets.asOf,
     });
-
     expect(estimate.prescriptionQuantification.summary.commonLoad).toMatchObject({
       status: "complete",
       intensity: 0.8,
@@ -865,7 +775,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
       basis: "plan_intent",
     });
   });
-
   it("uses the sole objective target regardless of supporting target order", () => {
     const targets = [
       { type: "%FTP" as const, intensity: 80 },
@@ -880,7 +789,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
           asOf: unavailableTargets.asOf,
         }).prescriptionQuantification.summary.commonLoad,
     );
-
     expect(results).toHaveLength(3);
     for (const result of results) {
       expect(result).toMatchObject({
@@ -890,7 +798,6 @@ describe("estimateActivityPlanForTrainingContext", () => {
       });
     }
   });
-
   it("rejects duplicate objective targets before estimating a plan", () => {
     expect(() =>
       singleBikeWithTargets([

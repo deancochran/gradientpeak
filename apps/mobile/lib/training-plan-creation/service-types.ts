@@ -1,10 +1,5 @@
 import type { CanonicalActivityCategory } from "@repo/core";
-import type { api } from "@/lib/api";
 import type { TrainingPlanBuilderGoalBlueprint } from "./types";
-
-type TrainingPlanMutationError = NonNullable<
-  ReturnType<typeof api.trainingPlans.commit.useMutation>["error"]
->;
 
 export interface TrainingPlanCreationProfileGoalSnapshot {
   id: string;
@@ -16,6 +11,7 @@ export interface TrainingPlanCreationProfileGoalSnapshot {
 }
 
 export interface UseTrainingPlanCreationServiceOptions {
+  isFlowCurrent?: (() => boolean) | undefined;
   mode?: "create" | "edit";
   planId?: string;
   activityPlanPicker?: {
@@ -26,7 +22,7 @@ export interface UseTrainingPlanCreationServiceOptions {
     selectedSessionId: string | null;
   };
   onCreated?: (createdPlan: { id: string }) => void;
-  onCreateError?: (error: TrainingPlanMutationError) => void;
+  onCreateError?: (error: Error) => void;
   onUpdated?: (updatedPlan: { id: string }) => void;
-  onUpdateError?: (error: TrainingPlanMutationError) => void;
+  onUpdateError?: (error: Error) => void;
 }

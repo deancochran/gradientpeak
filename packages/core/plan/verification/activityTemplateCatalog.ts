@@ -43,8 +43,10 @@ export interface NormalizedSystemActivityTemplateCatalogEntry {
   duplicate_name_count: number;
 }
 
-function mapStepTargetSignature(target: { type: string; intensity: number }): string {
-  return `${target.type}:${Math.round(target.intensity * 10) / 10}`;
+function mapStepTargetSignature(target: { type: string; intensity?: number }): string {
+  return target.intensity === undefined
+    ? target.type
+    : `${target.type}:${Math.round(target.intensity * 10) / 10}`;
 }
 
 function serializeDuration(duration: {
@@ -66,27 +68,24 @@ function serializeDuration(duration: {
 }
 
 function collectWorkSteps(structure: SystemTemplate["structure"]): Array<{
-  interval_name: string;
+  repeat_id?: string;
   repetitions: number;
   step_name: string;
   duration: string;
   targets: string[];
 }> {
-  const allSteps = structure.segments.flatMap((segment) =>
-    segment.role === "activity"
-      ? segment.intervals.flatMap((interval) =>
-          interval.steps.map((step) => ({
-            interval_name: interval.name.toLowerCase(),
-            repetitions: interval.repetitions,
-            step_name: step.name.toLowerCase(),
-            duration: serializeDuration(step.duration),
-            targets: step.targets.map(mapStepTargetSignature).sort(),
-          })),
-        )
-      : [],
+  const allSteps = structure.items.flatMap((item) =>
+    (item.type === "repeat" ? item.steps : [item]).map((step) => ({
+      ...(item.type === "repeat"
+        ? { repeat_id: item.id, repetitions: item.count }
+        : { repetitions: 1 }),
+      step_name: (step.name ?? "").toLowerCase(),
+      duration: serializeDuration(step.duration),
+      targets: step.targets.map(mapStepTargetSignature).sort(),
+    })),
   );
   const workSteps = allSteps.filter((step) => {
-    const stepName = `${step.interval_name} ${step.step_name}`;
+    const stepName = step.step_name;
     return !/(warm|cool|recover|easy reset|float recovery)/i.test(stepName);
   });
 

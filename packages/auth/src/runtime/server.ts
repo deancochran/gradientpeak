@@ -1,4 +1,4 @@
-import { drizzleAdapter } from "@better-auth/drizzle-adapter";
+import { type DrizzleAdapterConfig, drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { expo } from "@better-auth/expo";
 import { resolveDatabaseUrl } from "@repo/db/client";
 import { relationalSchema, schema } from "@repo/db/schema";
@@ -135,7 +135,7 @@ function createTrustedOrigins(appUrl: string, mobileScheme: string, trustedOrigi
     new Set([
       appUrl,
       `${mobileScheme}://`,
-      ...(process.env["NODE_ENV"] === "development"
+      ...(process.env.NODE_ENV === "development"
         ? [`${mobileScheme}://*`, "exp://", "exp://**"]
         : []),
       ...(trustedOrigins ?? []),
@@ -143,8 +143,8 @@ function createTrustedOrigins(appUrl: string, mobileScheme: string, trustedOrigi
   );
 }
 
-function createAdapterSchema() {
-  return schema as any;
+function createAdapterSchema(): DrizzleAdapterConfig["schema"] {
+  return schema;
 }
 
 function resolveAuthSecret(explicitSecret?: string) {
@@ -152,8 +152,8 @@ function resolveAuthSecret(explicitSecret?: string) {
     return explicitSecret;
   }
 
-  const isBuildPhase = process.env["NEXT_PHASE"] === "phase-production-build";
-  const isDevelopment = process.env["NODE_ENV"] === "development";
+  const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+  const isDevelopment = process.env.NODE_ENV === "development";
 
   if (isBuildPhase || isDevelopment) {
     if (isDevelopment && !authSecretWarningLogged) {
@@ -163,7 +163,7 @@ function resolveAuthSecret(explicitSecret?: string) {
       );
     }
 
-    return `gradientpeak-${process.env["NODE_ENV"] ?? "unknown"}-fallback-auth-secret`;
+    return `gradientpeak-${process.env.NODE_ENV ?? "unknown"}-fallback-auth-secret`;
   }
 
   throw new Error("BETTER_AUTH_SECRET is required outside development/build-time auth setup.");
@@ -176,18 +176,16 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
     loginPath: "/auth/login",
     webCallbackPath: "/auth/confirm",
     mobileCallbackPath: "callback",
-    emailMode: authRuntimeEnvSchema.shape.emailMode.parse(process.env["AUTH_EMAIL_MODE"] ?? "log"),
-    emailCapturePath: process.env["AUTH_EMAIL_CAPTURE_PATH"],
-    emailFrom: process.env["AUTH_EMAIL_FROM"],
-    emailReplyTo: process.env["AUTH_EMAIL_REPLY_TO"],
-    smtpHost: process.env["AUTH_SMTP_HOST"],
-    smtpPort: process.env["AUTH_SMTP_PORT"] ? Number(process.env["AUTH_SMTP_PORT"]) : undefined,
-    smtpUser: process.env["AUTH_SMTP_USER"],
-    smtpPass: process.env["AUTH_SMTP_PASS"],
+    emailMode: authRuntimeEnvSchema.shape.emailMode.parse(process.env.AUTH_EMAIL_MODE ?? "log"),
+    emailCapturePath: process.env.AUTH_EMAIL_CAPTURE_PATH,
+    emailFrom: process.env.AUTH_EMAIL_FROM,
+    emailReplyTo: process.env.AUTH_EMAIL_REPLY_TO,
+    smtpHost: process.env.AUTH_SMTP_HOST,
+    smtpPort: process.env.AUTH_SMTP_PORT ? Number(process.env.AUTH_SMTP_PORT) : undefined,
+    smtpUser: process.env.AUTH_SMTP_USER,
+    smtpPass: process.env.AUTH_SMTP_PASS,
     smtpSecure:
-      process.env["AUTH_SMTP_SECURE"] == null
-        ? undefined
-        : process.env["AUTH_SMTP_SECURE"] === "true",
+      process.env.AUTH_SMTP_SECURE == null ? undefined : process.env.AUTH_SMTP_SECURE === "true",
   });
 
   const mailer = createAuthMailer(env);
@@ -333,19 +331,19 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
 export function getGradientPeakAuth() {
   if (!authSingleton) {
     const bootstrapEnv = resolveAuthBootstrapEnv({
-      nodeEnv: process.env["NODE_ENV"],
-      appUrl: process.env["APP_URL"],
-      mobileScheme: process.env["AUTH_MOBILE_SCHEME"],
+      nodeEnv: process.env.NODE_ENV,
+      appUrl: process.env.APP_URL,
+      mobileScheme: process.env.AUTH_MOBILE_SCHEME,
     });
     const developmentTrustedOrigins = resolveDevelopmentAuthTrustedOrigins(
-      process.env["NODE_ENV"],
-      process.env["AUTH_TRUSTED_ORIGINS"],
+      process.env.NODE_ENV,
+      process.env.AUTH_TRUSTED_ORIGINS,
       ["http://100.119.109.24:3000", "https://tokyo.goose-noodlefish.ts.net"],
     );
     authSingleton = createGradientPeakAuth({
       appUrl: bootstrapEnv.appUrl,
       databaseUrl: resolveDatabaseUrl(process.env),
-      ...(process.env["BETTER_AUTH_SECRET"] ? { secret: process.env["BETTER_AUTH_SECRET"] } : {}),
+      ...(process.env.BETTER_AUTH_SECRET ? { secret: process.env.BETTER_AUTH_SECRET } : {}),
       mobileScheme: bootstrapEnv.mobileScheme,
       trustedOrigins: developmentTrustedOrigins,
     });

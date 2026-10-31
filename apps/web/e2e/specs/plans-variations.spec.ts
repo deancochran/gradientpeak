@@ -22,16 +22,19 @@ test("[variation:activity-plans.library:narrow-card] category filtering scrolls 
   const plans = new ActivityPlansPage(athletePage);
   await athletePage.setViewportSize({ width: 390, height: 844 });
   await plans.openLibrary();
-  await athletePage.getByRole("button", { name: /^all$/i }).click();
+  const cycling = athletePage.getByRole("button", { name: /^cycling$/i });
+  await cycling.click();
+  await expect(cycling).toHaveAttribute("aria-pressed", "true");
+  await expect(athletePage).toHaveURL(/activity_category=bike/);
   const search = plans.searchInput();
   await search.fill("Tempo Builder");
   const plan = plans.card(/playwright tempo builder/i);
-  await plan.scrollIntoViewIfNeeded();
+  await expect(plan).toBeVisible();
   await plan.click();
   await expect(
     athletePage.getByRole("heading", { name: /playwright tempo builder/i }),
   ).toBeVisible();
-  await expect(athletePage.getByTestId("activity-plan-structure")).toContainText("Tempo");
+  await expect(athletePage.getByTestId("activity-plan-session-flow")).toBeVisible();
 });
 
 test("[variation:activity-plans.library:keyboard-history] keyboard search opens structure and browser back retains the query", async ({
@@ -62,17 +65,25 @@ test("[variation:activity-plans.duplicate:cancel-edit] duplicate edit changes ar
       const plans = new ActivityPlansPage(athletePage);
       await athletePage.goto(sharedActivityPlanUrl());
       await plans.duplicate();
+      await expect(athletePage.getByRole("heading", { name: defaultName })).toBeVisible();
       await athletePage.getByRole("button", { name: /^edit$/i }).click();
       await athletePage.getByLabel("Plan name").fill("Abandoned duplicate rename");
       await athletePage.goBack();
       await expect(athletePage.getByRole("heading", { name: defaultName })).toBeVisible();
+      await expect(
+        athletePage.getByRole("heading", { name: "Abandoned duplicate rename" }),
+      ).toHaveCount(0);
       await athletePage.reload();
       await expect(athletePage.getByRole("heading", { name: defaultName })).toBeVisible();
+      await athletePage.goto(sharedActivityPlanUrl());
+      await expect(
+        athletePage.getByRole("heading", { name: "Playwright Tempo Builder" }),
+      ).toBeVisible();
     },
   );
 });
 
-test("[variation:activity-plans.duplicate:source-history] deleting a duplicate returns to a searchable unchanged source plan", async ({
+test("[variation:activity-plans.duplicate:source-history] returning from a duplicate retains a searchable unchanged source plan", async ({
   athletePage,
 }, testInfo) => {
   const defaultName = "Playwright Tempo Builder (Copy)";
@@ -83,12 +94,17 @@ test("[variation:activity-plans.duplicate:source-history] deleting a duplicate r
       const plans = new ActivityPlansPage(athletePage);
       await athletePage.goto(sharedActivityPlanUrl());
       await plans.duplicate();
-      await athletePage.getByRole("button", { name: /^delete$/i }).click();
-      await athletePage.getByRole("button", { name: /^delete plan$/i }).click();
+      await athletePage.goto(sharedActivityPlanUrl());
+      await expect(
+        athletePage.getByRole("heading", { name: "Playwright Tempo Builder" }),
+      ).toBeVisible();
+      await plans.openLibrary();
       await plans.search("Tempo Builder");
-      await plans.openPlan(/playwright tempo builder/i);
+      await athletePage
+        .getByRole("button", { name: "Open activity plan Playwright Tempo Builder", exact: true })
+        .click();
       await expect(athletePage.getByText("Owner", { exact: true })).toBeVisible();
-      await expect(athletePage.getByText("Tempo", { exact: true })).toBeVisible();
+      await expect(athletePage.getByTestId("activity-plan-session-flow")).toBeVisible();
     },
   );
 });
@@ -112,7 +128,10 @@ test("[variation:activity-plans.author:save-reopen] a minimal bike plan is creat
       await plans.openLibrary();
       await plans.search(name);
       await plans.openPlan(name);
-      await expect(athletePage.getByText("Steady ride", { exact: true })).toBeVisible();
+      const sessionFlow = athletePage.getByTestId("activity-plan-session-flow");
+      await expect(sessionFlow).toBeVisible();
+      await expect(sessionFlow.getByTestId("activity-plan-session-flow-timeline")).toBeVisible();
+      await expect(athletePage.getByTestId("activity-plan-estimates")).toBeVisible();
     },
   );
 });
@@ -126,10 +145,10 @@ test("[variation:activity-plans.author:schedule-cancel-delete] scheduled depende
     () => cleanupOwnedActivityPlans({ planNames: [name] }),
     async () => {
       const plans = new ActivityPlansPage(athletePage);
-      await plans.create({ name });
+      await plans.create({ name, category: "bike", firstStep: "Dependency ride" });
       await plans.schedule("2026-09-14");
       await athletePage.getByRole("button", { name: /^delete$/i }).click();
-      await expect(athletePage.getByText(/has 1 scheduled session/i)).toBeVisible();
+      await expect(athletePage.getByText(/including 1 scheduled session/i)).toBeVisible();
       await athletePage.keyboard.press("Escape");
       await expect(athletePage.getByRole("heading", { name })).toBeVisible();
       await athletePage.getByRole("button", { name: /remove from schedule/i }).click();
@@ -138,7 +157,7 @@ test("[variation:activity-plans.author:schedule-cancel-delete] scheduled depende
   );
 });
 
-test("[variation:activity-plans.structure-retry:repeated-correction] deleting and restoring structure twice keeps creation gated until valid", async ({
+test("[variation:activity-plans.author:required-inputs] creation remains gated until required metadata and composition are supplied", async ({
   athletePage,
 }, testInfo) => {
   const name = e2eArtifactIdentity(testInfo, "repeated structure correction");
@@ -149,20 +168,24 @@ test("[variation:activity-plans.structure-retry:repeated-correction] deleting an
       const plans = new ActivityPlansPage(athletePage);
       await plans.openLibrary();
       await plans.startCreate();
+      await expect(athletePage.getByRole("button", { name: "Create plan" })).toBeDisabled();
       await athletePage.getByLabel("Plan name").fill(name);
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        await athletePage.getByRole("button", { name: "Delete segment" }).click();
-        await expect(athletePage.getByRole("button", { name: "Create plan" })).toBeDisabled();
-        await athletePage.getByRole("button", { name: "Activity" }).click();
-        await expect(athletePage.getByRole("button", { name: "Create plan" })).toBeEnabled();
-      }
-      await athletePage.getByRole("button", { name: "Create plan" }).click();
-      await expect(athletePage.getByTestId("activity-plan-structure")).toContainText("Activity");
+      await expect(athletePage.getByRole("button", { name: "Create plan" })).toBeDisabled();
+      await athletePage.getByLabel("Activity category").selectOption("bike");
+      await expect(athletePage.getByRole("button", { name: "Create plan" })).toBeDisabled();
+      await expect(
+        athletePage.getByRole("button", { name: "Add step", exact: true }),
+      ).toBeEnabled();
+      await athletePage.getByRole("button", { name: "Add step", exact: true }).click();
+      const step = athletePage.locator('[id^="activity-plan-step-"]').first();
+      await step.getByLabel("Completion").selectOption("time");
+      await step.getByLabel("Quantity").fill("600");
+      await expect(athletePage.getByRole("button", { name: "Create plan" })).toBeEnabled();
     },
   );
 });
 
-test("[variation:activity-plans.structure-retry:narrow-focus] narrow structure error retains focusable recovery controls and saves the repaired plan", async ({
+test("[variation:activity-plans.author:narrow-controls] narrow composer retains focusable current composition controls", async ({
   athletePage,
 }, testInfo) => {
   const name = e2eArtifactIdentity(testInfo, "narrow repaired structure");
@@ -175,14 +198,15 @@ test("[variation:activity-plans.structure-retry:narrow-focus] narrow structure e
       await plans.openLibrary();
       await plans.startCreate();
       await athletePage.getByLabel("Plan name").fill(name);
-      await athletePage.getByRole("button", { name: "Delete segment" }).press("Enter");
-      const recovery = athletePage.getByRole("button", { name: "Activity" });
-      await recovery.scrollIntoViewIfNeeded();
-      await recovery.focus();
-      await expect(recovery).toBeFocused();
-      await recovery.press("Enter");
-      await athletePage.getByRole("button", { name: "Create plan" }).press("Enter");
-      await expect(athletePage.getByRole("heading", { name })).toBeVisible();
+      await athletePage.getByLabel("Activity category").selectOption("bike");
+      const addStep = athletePage.getByRole("button", { name: "Add step", exact: true });
+      await addStep.scrollIntoViewIfNeeded();
+      await addStep.focus();
+      await expect(addStep).toBeFocused();
+      await addStep.press("Enter");
+      await expect(
+        athletePage.getByRole("button", { name: "Close editor for step 1" }),
+      ).toBeVisible();
     },
   );
 });
@@ -262,47 +286,15 @@ test("[variation:training-plans.lifecycle:cancel-edit] browser back abandons an 
   }
 });
 
-test("[variation:training-preferences:unsaved-reload] invalid schedule edits are discarded by reload without changing persisted values", async ({
+test("[variation:settings:unsaved-reload] unsaved units edits are discarded by reload", async ({
   athletePage,
 }) => {
-  await athletePage.goto("/training-preferences");
-  await athletePage.getByRole("button", { name: "Schedule" }).click();
-  const min = athletePage.getByTestId("training-preferences-min-sessions-per-week");
-  const max = athletePage.getByTestId("training-preferences-max-sessions-per-week");
-  const originalMin = await min.inputValue();
-  const originalMax = await max.inputValue();
-  await min.fill("6");
-  await max.fill("1");
+  await athletePage.goto("/settings");
+  const units = athletePage.getByLabel("Preferred units");
+  const originalUnits = await units.inputValue();
+  await units.selectOption(originalUnits === "metric" ? "imperial" : "metric");
   await athletePage.reload();
-  await athletePage.getByRole("button", { name: "Schedule" }).click();
-  await expect(min).toHaveValue(originalMin);
-  await expect(max).toHaveValue(originalMax);
-});
-
-test("[variation:training-preferences:keyboard-restore] keyboard save persists a valid range and restores the original range", async ({
-  athletePage,
-}) => {
-  await athletePage.goto("/training-preferences");
-  await athletePage.getByRole("button", { name: "Schedule" }).press("Enter");
-  const min = athletePage.getByTestId("training-preferences-min-sessions-per-week");
-  const max = athletePage.getByTestId("training-preferences-max-sessions-per-week");
-  const originalMin = await min.inputValue();
-  const originalMax = await max.inputValue();
-  try {
-    await min.fill("1");
-    await max.fill("4");
-    await athletePage.getByRole("button", { name: "Save preferences" }).press("Enter");
-    await expect(athletePage.getByText("Training preferences saved.")).toBeVisible();
-    await athletePage.reload();
-    await athletePage.getByRole("button", { name: "Schedule" }).click();
-    await expect(min).toHaveValue("1");
-    await expect(max).toHaveValue("4");
-  } finally {
-    await min.fill(originalMin);
-    await max.fill(originalMax);
-    await athletePage.getByRole("button", { name: "Save preferences" }).click();
-    await expect(athletePage.getByText("Training preferences saved.")).toBeVisible();
-  }
+  await expect(units).toHaveValue(originalUnits);
 });
 
 test("[variation:training-plans.schedule:agenda-back] scheduled activity opens its plan and returns to the retained day agenda", async ({
@@ -318,10 +310,12 @@ test("[variation:training-plans.schedule:agenda-back] scheduled activity opens i
     await plans.confirmSchedule();
     await calendar.openDay("2026-12-21", { month: "2026-12", view: "agenda" });
     const planned = athletePage.getByRole("link", {
-      name: "Open planned activity bike session",
+      name: `Open planned activity ${fixture.scheduledActivityPlanName}`,
     });
     await planned.click();
-    await expect(athletePage.getByRole("heading", { name: "Playwright tempo" })).toBeVisible();
+    await expect(
+      athletePage.getByRole("heading", { name: fixture.scheduledActivityPlanName }),
+    ).toBeVisible();
     await athletePage.goBack();
     await expect(planned).toBeVisible();
     await expect(athletePage).toHaveURL(/calendar\/day\/2026-12-21/);

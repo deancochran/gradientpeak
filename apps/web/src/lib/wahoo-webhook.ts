@@ -1,4 +1,9 @@
 import crypto from "node:crypto";
+import {
+  ProviderWebhookPayloadTooLargeError,
+  providerWebhookSecretsMatch,
+  readProviderWebhookBody,
+} from "./provider-webhook-http";
 
 export const WAHOO_WEBHOOK_MAX_BODY_BYTES = 256 * 1024;
 
@@ -19,53 +24,11 @@ interface WahooWebhookHandlerDependencies {
   maxBodyBytes?: number;
 }
 
-class PayloadTooLargeError extends Error {}
-
 function errorResponse(status: number, error: string) {
   return Response.json(
     { error, received: false },
-    { status, headers: status === 503 ? { "Retry-After": "60" } : undefined },
+    { status, ...(status === 503 ? { headers: { "Retry-After": "60" } } : {}) },
   );
-}
-
-function secretsMatch(received: string, expected: string): boolean {
-  const receivedDigest = crypto.createHash("sha256").update(received, "utf8").digest();
-  const expectedDigest = crypto.createHash("sha256").update(expected, "utf8").digest();
-  return crypto.timingSafeEqual(receivedDigest, expectedDigest);
-}
-
-async function readBodyWithLimit(request: Request, maxBodyBytes: number): Promise<string> {
-  const contentLength = request.headers.get("content-length");
-
-  if (contentLength && Number(contentLength) > maxBodyBytes) {
-    throw new PayloadTooLargeError();
-  }
-
-  if (!request.body) {
-    return "";
-  }
-
-  const reader = request.body.getReader();
-  const decoder = new TextDecoder("utf-8", { fatal: true });
-  let body = "";
-  let bytesRead = 0;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-
-    bytesRead += value.byteLength;
-    if (bytesRead > maxBodyBytes) {
-      await reader.cancel();
-      throw new PayloadTooLargeError();
-    }
-
-    body += decoder.decode(value, { stream: true });
-  }
-
-  return body + decoder.decode();
 }
 
 function isWebhookPayload(value: unknown): value is WahooWebhookPayload {
@@ -125,12 +88,12 @@ export function createWahooWebhookPostHandler(dependencies: WahooWebhookHandlerD
 
     let body: string;
     try {
-      body = await readBodyWithLimit(
-        request,
-        dependencies.maxBodyBytes ?? WAHOO_WEBHOOK_MAX_BODY_BYTES,
-      );
+      body = await readProviderWebhookBody(request, {
+        contentLengthPolicy: "ignore-malformed",
+        maxBodyBytes: dependencies.maxBodyBytes ?? WAHOO_WEBHOOK_MAX_BODY_BYTES,
+      });
     } catch (error) {
-      if (error instanceof PayloadTooLargeError) {
+      if (error instanceof ProviderWebhookPayloadTooLargeError) {
         return errorResponse(413, "Webhook payload is too large");
       }
 
@@ -153,7 +116,7 @@ export function createWahooWebhookPostHandler(dependencies: WahooWebhookHandlerD
       return errorResponse(400, "Invalid webhook payload");
     }
 
-    if (!secretsMatch(payload.webhook_token, token)) {
+    if (!providerWebhookSecretsMatch(payload.webhook_token, token)) {
       return errorResponse(401, "Invalid webhook token");
     }
 

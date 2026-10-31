@@ -7,13 +7,24 @@ import {
   type PlannedCalculatedQuantity,
   type PlannedQuantity,
 } from "@repo/core";
+import {
+  durationMinutesToSeconds,
+  durationSecondsToWholeMinutes,
+  durationSegmentsText,
+  durationTextSegments,
+  formatDurationSeconds,
+  parseDurationSegments,
+  splitDurationSeconds,
+} from "@repo/core/utils/fitness-inputs";
 import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Form, FormTextField } from "@repo/ui/components/form";
+import { SegmentedDurationField } from "@repo/ui/components/segmented-duration-field";
 import { Text } from "@repo/ui/components/text";
+import { TimeInput } from "@repo/ui/components/time-input";
 import { useInputDraft, useZodForm } from "@repo/ui/hooks";
 import { formatActivityPlanHeadlineMetric } from "@repo/ui/lib/activity-plan-metric-presentation";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useWatch } from "react-hook-form";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import { z } from "zod";
@@ -60,6 +71,8 @@ type TrainingPlanBuilderEventEditorProps = {
   onOpenActivityPicker: (eventId: string) => void;
   onRemove: (eventId: string) => void;
   onNumericDraftError?: (key: string, message: string | null) => void;
+  rawDrafts?: Record<string, string> | undefined;
+  onRawDraftChange?: ((key: string, value: string) => void) | undefined;
 };
 
 function getEventTitle(event: TrainingPlanBuilderSession) {
@@ -360,15 +373,26 @@ export function TrainingPlanBuilderEventEditor({
   onOpenActivityPicker,
   onRemove,
   onNumericDraftError = () => undefined,
+  rawDrafts,
+  onRawDraftChange,
 }: TrainingPlanBuilderEventEditorProps) {
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const updateEvent = useCallback(
     (patch: Partial<TrainingPlanBuilderSession>) => {
+      if (!mounted.current) return;
       onChange({ ...event, ...patch });
     },
     [event, onChange],
   );
   const updateOverride = useCallback(
     (field: keyof TrainingPlanBuilderEventOverrides, value: string) => {
+      if (!mounted.current) return;
       const eventOverrides = compactOverrides({
         ...event.eventOverrides,
         [field]: value,
@@ -420,18 +444,31 @@ export function TrainingPlanBuilderEventEditor({
   const updateDemand = (patch: Partial<TrainingPlanBuilderSession["demand"]>) =>
     updateEvent({ demand: { ...event.demand, ...patch } });
   const [plannedDurationDraft, setPlannedDurationDraft] = useInputDraft(
-    event.demand.target_duration_minutes?.toString() ?? "",
+    rawDrafts?.[`session:${event.localId}:planned-duration`] ??
+      durationSegmentsText(
+        splitDurationSeconds(durationMinutesToSeconds(event.demand.target_duration_minutes), "hm"),
+        { layout: "hm" },
+      ),
     event.localId,
   );
   const updatePlannedDuration = (value: string) => {
+    if (!mounted.current) return;
     setPlannedDurationDraft(value);
+    onRawDraftChange?.(`session:${event.localId}:planned-duration`, value);
     if (!value.trim()) {
       onNumericDraftError(`session:${event.localId}:planned-duration`, null);
       updateDemand({ target_duration_minutes: null });
       return;
     }
-    const duration = Number(value);
-    if (!Number.isInteger(duration) || duration < 1 || duration > 600) {
+    const seconds = parseDurationSegments(durationTextSegments(value, "hm"), {
+      layout: "hm",
+      minSeconds: 60,
+      maxSeconds: 36000,
+      granularitySeconds: 60,
+      allowOmittedSegments: true,
+    });
+    const duration = seconds === null ? undefined : durationSecondsToWholeMinutes(seconds);
+    if (duration === undefined) {
       onNumericDraftError(
         `session:${event.localId}:planned-duration`,
         "Planned duration must be a whole number from 1 to 600 minutes.",
@@ -440,6 +477,23 @@ export function TrainingPlanBuilderEventEditor({
     }
     onNumericDraftError(`session:${event.localId}:planned-duration`, null);
     updateDemand({ target_duration_minutes: duration });
+  };
+  const loadKey = `session:${event.localId}:target-common-load`;
+  const [loadDraft, setLoadDraft] = useInputDraft(
+    rawDrafts?.[loadKey] ?? event.demand.target_common_load?.toString() ?? "",
+    event.localId,
+  );
+  const updateLoad = (value: string) => {
+    if (!mounted.current) return;
+    setLoadDraft(value);
+    onRawDraftChange?.(loadKey, value);
+    const parsed = value.trim() ? Number(value) : null;
+    const invalid = parsed !== null && (!Number.isInteger(parsed) || parsed < 0 || parsed > 10000);
+    onNumericDraftError(
+      loadKey,
+      invalid ? "Target common load must be a whole number from 0 to 10000." : null,
+    );
+    if (!invalid) updateDemand({ target_common_load: parsed });
   };
   return (
     <View className="gap-4 pb-1" testID="builder-session-editor-modal">
@@ -567,22 +621,36 @@ export function TrainingPlanBuilderEventEditor({
               </ChoicePill>
             ))}
           </View>
-          <BoundedNumberInput
-            adjustmentStep={5}
-            decimals={0}
+          <Text className="text-sm font-medium">Planned duration</Text>
+          <SegmentedDurationField
+            presentation="native-overlay"
             label="Planned duration"
-            max={600}
-            min={1}
-            {...(plannedDurationDraft.trim() &&
-            (!Number.isInteger(Number(plannedDurationDraft)) ||
-              Number(plannedDurationDraft) < 1 ||
-              Number(plannedDurationDraft) > 600)
-              ? { error: "Enter a whole number from 1 to 600." }
-              : {})}
-            onChange={updatePlannedDuration}
-            showAdjustmentButtons
-            unitLabel="min"
-            value={plannedDurationDraft}
+            layout="hm"
+            minSeconds={60}
+            maxSeconds={36000}
+            granularitySeconds={60}
+            allowOmittedSegments
+            required={false}
+            isCurrent={() => mounted.current}
+            valueSeconds={durationMinutesToSeconds(event.demand.target_duration_minutes)}
+            segments={durationTextSegments(plannedDurationDraft, "hm")}
+            onSegmentsChange={(parts) =>
+              updatePlannedDuration(
+                durationSegmentsText(parts, {
+                  layout: "hm",
+                  minSeconds: 60,
+                  maxSeconds: 36000,
+                  allowOmittedSegments: true,
+                }),
+              )
+            }
+            onChangeSeconds={() => undefined}
+            onInvalidChange={(invalid) =>
+              onNumericDraftError(
+                `session:${event.localId}:planned-duration`,
+                invalid ? "Enter whole hours and minutes totaling 1–600 minutes." : null,
+              )
+            }
           />
           <View
             accessibilityLabel="Planned duration presets"
@@ -594,9 +662,15 @@ export function TrainingPlanBuilderEventEditor({
                 className="flex-1 px-1"
                 isSelected={event.demand.target_duration_minutes === duration}
                 key={duration}
-                onPress={() => updatePlannedDuration(String(duration))}
+                onPress={() =>
+                  updatePlannedDuration(
+                    durationSegmentsText(splitDurationSeconds(duration * 60, "hm"), {
+                      layout: "hm",
+                    }),
+                  )
+                }
               >
-                {`${duration} min`}
+                {formatDurationSeconds(duration * 60)}
               </ChoicePill>
             ))}
           </View>
@@ -607,16 +681,9 @@ export function TrainingPlanBuilderEventEditor({
             label="Target common load"
             max={10000}
             min={0}
-            onChange={() => undefined}
-            onInvalidChange={(invalid) =>
-              onNumericDraftError(
-                `session:${event.localId}:target-common-load`,
-                invalid ? "Target common load must be a whole number from 0 to 10000." : null,
-              )
-            }
-            onNumberChange={(value) => updateDemand({ target_common_load: value ?? null })}
+            onChange={updateLoad}
             showAdjustmentButtons
-            value={event.demand.target_common_load?.toString() ?? ""}
+            value={loadDraft}
           />
         </View>
         <View className="gap-2">
@@ -662,7 +729,7 @@ export function TrainingPlanBuilderEventEditor({
                       isSelected={selectedWeekdayIndex === weekdayIndex}
                       onPress={() => setWeekday(weekdayIndex)}
                     >
-                      {weekday.slice(0, 3)}
+                      {weekday}
                     </ChoicePill>
                   );
                 })}
@@ -673,6 +740,17 @@ export function TrainingPlanBuilderEventEditor({
 
         <View className="gap-2">
           <Text className="text-sm font-semibold text-muted-foreground">Time</Text>
+          <TimeInput
+            id="builder-session-clock"
+            testId="builder-session-clock"
+            label="Exact start time"
+            clearable
+            is24Hour
+            {...(event.eventOverrides?.start_time
+              ? { value: event.eventOverrides.start_time }
+              : {})}
+            onChange={(value) => updateOverride("start_time", value ?? "")}
+          />
           <View accessibilityLabel="Activity time" accessibilityRole="radiogroup" className="gap-2">
             <View className={useVerticalLayout ? "gap-2" : "flex-row gap-2"}>
               <ChoicePill

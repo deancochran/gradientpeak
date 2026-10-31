@@ -10,14 +10,12 @@ describe("GPS cutover schemas", () => {
         gpsRecordingEnabled: false,
       }).success,
     ).toBe(true);
-
     expect(
       ActivityPayloadSchema.safeParse({
         activity_category: "run",
         gpsRecordingEnabled: true,
       }).success,
     ).toBe(false);
-
     expect(
       ActivityPayloadSchema.safeParse({
         activity_category: "run",
@@ -26,7 +24,6 @@ describe("GPS cutover schemas", () => {
       }).success,
     ).toBe(false);
   });
-
   it("rejects location aliases in ActivityUploadSchema", () => {
     const base = {
       name: "Morning Run",
@@ -38,16 +35,13 @@ describe("GPS cutover schemas", () => {
       distanceMeters: 9000,
       metrics: {},
     };
-
     expect(ActivityUploadSchema.safeParse(base).success).toBe(true);
-
     expect(
       ActivityUploadSchema.safeParse({
         ...base,
         location: "outdoor",
       }).success,
     ).toBe(false);
-
     for (const retiredField of ["ftp", "threshold_hr"] as const) {
       expect(
         ActivityUploadSchema.safeParse({
@@ -57,35 +51,20 @@ describe("GPS cutover schemas", () => {
       ).toBe(false);
     }
   });
-
   it("requires strict structure and rejects top-level location/activity_category aliases", () => {
     const structure = {
-      version: 3 as const,
+      version: 5 as const,
       activity_category: "run" as const,
-      segments: [
+      items: [
         {
-          id: "00000000-0000-4000-8000-000000000001",
-          role: "activity" as const,
+          type: "step",
+          id: "22222222-2222-4222-8222-222222222222",
           name: "Run",
-          intervals: [
-            {
-              id: "11111111-1111-4111-8111-111111111111",
-              name: "Main Set",
-              repetitions: 1,
-              steps: [
-                {
-                  id: "22222222-2222-4222-8222-222222222222",
-                  name: "Run",
-                  duration: { type: "time" as const, seconds: 600 },
-                  targets: [{ type: "%MaxHR" as const, intensity: 70 }],
-                },
-              ],
-            },
-          ],
+          duration: { type: "time" as const, seconds: 600 },
+          targets: [{ type: "%MaxHR" as const, intensity: 70 }],
         },
       ],
     };
-
     expect(
       activityPlanCreateSchema.safeParse({
         name: "Easy Run",
@@ -93,7 +72,6 @@ describe("GPS cutover schemas", () => {
         structure,
       }).success,
     ).toBe(true);
-
     expect(
       activityPlanCreateSchema.safeParse({
         name: "Old input",
@@ -101,7 +79,6 @@ describe("GPS cutover schemas", () => {
         structure: { version: 2, intervals: [] },
       }).success,
     ).toBe(false);
-
     expect(
       activityPlanCreateSchema.safeParse({
         name: "Easy Run",
@@ -110,7 +87,6 @@ describe("GPS cutover schemas", () => {
         structure,
       }).success,
     ).toBe(false);
-
     expect(
       activityPlanCreateSchema.safeParse({
         name: "Easy Run",

@@ -322,10 +322,13 @@ assert.ok(
 );
 assert.ok(
   plannedConfig.checks.some(
-    (constraint) => constraint.name === "planned_sessions_prescription_check",
+    (constraint) => constraint.name === "planned_sessions_legacy_prescription_check",
   ),
-  "planned sessions must bind the resolution manifest to its activity-plan identity",
+  "planned sessions must accept either complete legacy metadata or no snapshot metadata",
 );
+assert.equal(plannedSessionColumns.activity_plan_revision.notNull, false);
+assert.equal(plannedSessionColumns.resolution_manifest.notNull, false);
+assert.equal(plannedSessionColumns.prescription_captured_at.notNull, false);
 assert.ok(
   plannedConfig.uniqueConstraints.some(
     (constraint) => constraint.name === "planned_sessions_profile_idempotency_unique",

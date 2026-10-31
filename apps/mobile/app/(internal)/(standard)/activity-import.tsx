@@ -142,6 +142,10 @@ export default function ActivityImportScreen() {
 
   const handleHistoricalImport = async (data: ManualActivityImportOutput) => {
     const selectedFile = data.files[0];
+    if (selectedFile === undefined) {
+      form.setError("files", { type: "required", message: "Choose an activity file to import." });
+      return;
+    }
     const extension = getSupportedActivityFileExtension(selectedFile.name);
 
     if (extension === null) {

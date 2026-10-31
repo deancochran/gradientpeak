@@ -29,14 +29,13 @@ type ExpandedPlanInput = {
 };
 
 type ProjectionRelevantCreationConfig = Pick<
-  TrainingPlanCreationConfig,
-  | "optimization_profile"
-  | "post_goal_recovery_days"
-  | "behavior_controls"
-  | "calibration"
-  | "availability_config"
-  | "constraints"
->;
+  Pick<
+    TrainingPlanCreationConfig,
+    "optimization_profile" | "post_goal_recovery_days" | "behavior_controls"
+  >,
+  "optimization_profile" | "post_goal_recovery_days" | "behavior_controls"
+> &
+  Partial<Pick<TrainingPlanCreationConfig, "calibration" | "availability_config" | "constraints">>;
 
 export interface BuildProjectionEngineInputShape {
   expanded_plan: ExpandedPlanInput;
@@ -134,7 +133,9 @@ export function buildProjectionEngineInput(
             optimization_profile: input.normalized_creation_config.optimization_profile,
             post_goal_recovery_days: input.normalized_creation_config.post_goal_recovery_days,
             behavior_controls: input.normalized_creation_config.behavior_controls,
-            calibration: input.normalized_creation_config.calibration,
+            ...(input.normalized_creation_config.calibration === undefined
+              ? {}
+              : { calibration: input.normalized_creation_config.calibration }),
           }
         : undefined,
     ),

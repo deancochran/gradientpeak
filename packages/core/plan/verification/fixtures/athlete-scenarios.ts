@@ -107,8 +107,10 @@ function createAvailabilityContext(
         },
       ],
     })),
-    hard_rest_days: options?.hard_rest_days,
-    max_single_session_duration_minutes: options?.max_single_session_duration_minutes,
+    ...(options?.hard_rest_days === undefined ? {} : { hard_rest_days: options.hard_rest_days }),
+    ...(options?.max_single_session_duration_minutes === undefined
+      ? {}
+      : { max_single_session_duration_minutes: options.max_single_session_duration_minutes }),
   };
 }
 

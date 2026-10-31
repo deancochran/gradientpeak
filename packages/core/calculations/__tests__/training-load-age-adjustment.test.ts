@@ -4,6 +4,7 @@ import {
   calculateLongTermLoad,
   calculateRecentLoad,
 } from "../../load/progression";
+import { requireFixtureValue } from "../../testing/requireFixtureValue";
 
 describe("training load age adjustments", () => {
   it("falls back to baseline constants when age is undefined", () => {
@@ -36,6 +37,10 @@ describe("training load age adjustments", () => {
 
     expect(youngerLast).toBeDefined();
     expect(olderLast).toBeDefined();
-    expect(olderLast!.recentLoad).toBeGreaterThan(youngerLast!.recentLoad);
+    expect(
+      requireFixtureValue(olderLast, "expected older series result").recentLoad,
+    ).toBeGreaterThan(
+      requireFixtureValue(youngerLast, "expected younger series result").recentLoad,
+    );
   });
 });

@@ -6,20 +6,16 @@ import {
 } from "../verification/activityTemplateCoverageMatrix";
 
 describe("system activity-template coverage", () => {
-  it("covers all first-wave run and bike cells with shipped catalog templates", () => {
+  it("reports reduced-portfolio coverage gaps without masking them", () => {
     const matrix = buildSystemActivityTemplateCoverageMatrix();
 
-    expect(matrix.gap_rows).toEqual([]);
-    expect(matrix.first_wave_gate.blocking_cell_keys).toEqual([]);
-    expect(matrix.cell_rows.map((row) => row.status)).toEqual([
-      "covered",
-      "covered",
-      "covered",
-      "covered",
-      "covered",
-      "covered",
-      "covered",
-      "covered",
+    expect(matrix.gap_rows.map((row) => row.key)).toEqual([
+      "bike_long_endurance",
+      "run_easy_recovery",
+    ]);
+    expect(matrix.first_wave_gate.blocking_cell_keys).toEqual([
+      "bike_long_endurance",
+      "run_easy_recovery",
     ]);
   }, 15_000);
 

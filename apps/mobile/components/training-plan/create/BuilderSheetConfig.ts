@@ -26,17 +26,20 @@ export function getBuilderSheetDescription(input: {
 }) {
   const { activeSheet, selectedSession } = input;
   if (activeSheet === "metadata") {
-    return "Name the reusable plan.";
+    return "Apply updates the plan details. Close discards unapplied changes.";
   }
   if (activeSheet === "athleteContext") {
-    return "Adjust the athlete inputs used by this plan.";
+    return "Close finishes these fields in the open form. Correct or clear invalid values before saving the plan.";
   }
-  if (activeSheet === "goals") return "Create a new goal or select one from your profile.";
-  if (activeSheet === "localGoalCreate") return "Create a goal for this plan only.";
+  if (activeSheet === "goals")
+    return "Selections update the open form. Create a new goal or select one from your profile.";
+  if (activeSheet === "localGoalCreate")
+    return "Add to plan applies this goal. Close discards the unfinished goal.";
   if (activeSheet === "preferences") {
-    return "Set optional limits for this plan.";
+    return "Apply updates the optional limits. Close discards unapplied changes.";
   }
-  if (activeSheet === "session") return undefined;
+  if (activeSheet === "session")
+    return "Close finishes these fields in the open form. Days are relative to the plan start date.";
   if (activeSheet === "activityAssignment") {
     return selectedSession
       ? `Choose a activity for ${formatBuilderWeekdayWithWeek(selectedSession.offsetDays)}.`
@@ -48,14 +51,12 @@ export function getBuilderSheetDescription(input: {
 
 export function builderSheetHasSaveAction(activeSheet: BuilderSheet | null) {
   return (
-    activeSheet !== null &&
-    activeSheet !== "activityAssignment" &&
-    activeSheet !== "localGoalCreate"
+    activeSheet === "metadata" || activeSheet === "preferences" || activeSheet === "activityFilters"
   );
 }
 
 export function getBuilderSheetActionLabel(activeSheet: BuilderSheet | null) {
   if (activeSheet === "activityFilters" || activeSheet === "preferences") return "Apply";
-  if (activeSheet === "metadata") return "Save";
-  return "Done";
+  if (activeSheet === "metadata") return "Apply";
+  return "Close";
 }

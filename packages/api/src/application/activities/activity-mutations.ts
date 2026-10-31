@@ -1,5 +1,11 @@
 import { type ContentVisibility, getCalendarDateInIanaZone } from "@repo/core";
-import { activities, activitySourceReferences, comments, likes } from "@repo/db";
+import {
+  activities,
+  activitySourceReferences,
+  comments,
+  likes,
+  publicActivitiesRowSchema,
+} from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import type { DrizzleTransactionClient, getRequiredDb } from "../../db";
@@ -20,6 +26,7 @@ import {
   requestAthleteRecalculation,
 } from "../athlete-intelligence/request-athlete-recalculation";
 import { unlinkDeletedActivityCompletionsForActivity } from "../calendar/unlink-deleted-activity-completion";
+import { executeWithOperationReceipt } from "../operation-receipts";
 import { updateCanonicalActivityFields } from "./submit-activity";
 
 type ActivitiesDb = ReturnType<typeof getRequiredDb>;
@@ -29,6 +36,7 @@ export type UpdateActivityForProfileInput = {
   name?: string;
   notes?: string | null;
   content_visibility?: ContentVisibility;
+  operationId?: string;
 };
 
 /** Complete database-side canonical deletion with the profile advisory fence already held. */
@@ -122,16 +130,51 @@ export async function updateActivityForProfile({
   input: UpdateActivityForProfileInput;
   profileId: string;
 }) {
-  const data = await db.transaction((tx) =>
-    updateCanonicalActivityFields(tx, { activityId: input.id, profileId, fields: input }),
-  );
-
-  if (!data) {
-    throw new TRPCError({
-      code: "NOT_FOUND",
-      message: "Activity not found",
-    });
+  const { operationId, ...fields } = input;
+  if (!operationId) {
+    const data = await db.transaction((tx) =>
+      updateCanonicalActivityFields(tx, { activityId: input.id, profileId, fields }),
+    );
+    if (!data) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Activity not found",
+      });
+    }
+    return data;
   }
+  const data = await db.transaction((tx) =>
+    executeWithOperationReceipt({
+      tx,
+      actorId: profileId,
+      operationId,
+      command: "chatbot.activities.update",
+      semanticInput: fields,
+      output: publicActivitiesRowSchema,
+      authorize: async (executor) => {
+        const [activity] = await executor
+          .select({ id: activities.id })
+          .from(activities)
+          .where(and(eq(activities.id, input.id), eq(activities.profile_id, profileId)))
+          .limit(1);
+        return Boolean(activity);
+      },
+      mutate: async (executor) => {
+        const activity = await updateCanonicalActivityFields(executor, {
+          activityId: input.id,
+          profileId,
+          fields,
+        });
+        if (!activity) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Activity not found",
+          });
+        }
+        return activity;
+      },
+    }),
+  );
 
   return data;
 }

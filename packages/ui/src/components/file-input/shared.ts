@@ -2,10 +2,10 @@ import type { TestProps } from "../../lib/test-props";
 
 export type SelectedFile = {
   name: string;
-  size?: number | null;
-  type?: string | null;
-  uri?: string;
-  file?: File;
+  size?: number | null | undefined;
+  type?: string | null | undefined;
+  uri?: string | undefined;
+  file?: File | undefined;
 };
 
 export interface FileInputProps extends TestProps {

@@ -11,6 +11,36 @@ import {
 afterEach(() => vi.restoreAllMocks());
 
 describe("activity-file-parser", () => {
+  it.each([
+    "",
+    "ns3:",
+  ])("reads the %sTCX speed extension in meters per second without inventing other measurements", (prefix) => {
+    const activity = parseActivityFile({
+      fileName: "measured.tcx",
+      data: `<TrainingCenterDatabase xmlns:ns3="http://www.garmin.com/xmlschemas/ActivityExtension/v2"><Activities><Activity Sport="Biking"><Lap><Track><Trackpoint><Time>2026-09-20T10:00:00Z</Time><Extensions><${prefix}TPX><${prefix}Speed>6.25</${prefix}Speed></${prefix}TPX></Extensions></Trackpoint><Trackpoint><Time>2026-09-20T10:00:03Z</Time><HeartRateBpm><Value>140</Value></HeartRateBpm></Trackpoint></Track></Lap></Activity></Activities></TrainingCenterDatabase>`,
+    });
+    expect(activity.records[0]).toMatchObject({ speed: 6.25 });
+    expect(activity.records[0]?.heartRate).toBeUndefined();
+    expect(activity.records[1]?.speed).toBeUndefined();
+    expect(
+      activity.records.every(
+        (record) => record.positionLat === undefined && record.positionLong === undefined,
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    "NaN",
+    "Infinity",
+    "-1",
+    "12km/h",
+  ])("does not accept malformed speed extension %s", (speed) => {
+    const activity = parseActivityFile({
+      fileName: "invalid-speed.tcx",
+      data: `<TrainingCenterDatabase><Activities><Activity Sport="Biking"><Lap><Track><Trackpoint><Time>2026-09-20T10:00:00Z</Time><Extensions><TPX><Speed>${speed}</Speed></TPX></Extensions></Trackpoint></Track></Lap></Activity></Activities></TrainingCenterDatabase>`,
+    });
+    expect(activity.records[0]?.speed).toBeUndefined();
+  });
   it("normalizes GPX activity records", () => {
     const activity = parseActivityFile({
       data: `<gpx xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1"><trk><name>Morning Run</name><type>running</type><trkseg>

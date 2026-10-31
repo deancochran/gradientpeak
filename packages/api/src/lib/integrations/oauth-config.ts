@@ -67,6 +67,18 @@ const stravaOAuthDefinition = {
   tokenUrl: "https://www.strava.com/oauth/token",
 } as const satisfies ProviderOAuthConfigDefinition;
 
+const garminOAuthDefinition = {
+  authUrl: "https://connect.garmin.com/oauth2Confirm",
+  clientIdEnv: "GARMIN_CLIENT_ID",
+  clientSecretEnv: "GARMIN_CLIENT_SECRET",
+  pkce: true,
+  // Garmin assigns API scopes while registering the app. Per-user grants are fetched
+  // after consent from the permissions endpoint, not requested here.
+  scopes: [],
+  tokenClientAuthentication: "client_secret_post",
+  tokenUrl: "https://diauth.garmin.com/di-oauth2-service/oauth/token",
+} as const satisfies ProviderOAuthConfigDefinition;
+
 function readEnvValue(env: IntegrationEnv, key: string): string | null {
   const value = env[key];
   if (!value) return null;
@@ -160,6 +172,33 @@ export function getStravaOAuthConfig(
   };
 }
 
+export function isGarminIntegrationEnabled(env: IntegrationEnv = process.env): boolean {
+  return Boolean(
+    readEnvValue(env, "GARMIN_CLIENT_ID") &&
+      readEnvValue(env, "GARMIN_CLIENT_SECRET") &&
+      hasExplicitOAuthCallbackBase(env),
+  );
+}
+
+export function getGarminOAuthConfig(
+  env: IntegrationEnv = process.env,
+): ResolvedProviderOAuthConfig | null {
+  if (!isGarminIntegrationEnabled(env)) return null;
+  const clientId = readEnvValue(env, garminOAuthDefinition.clientIdEnv);
+  const clientSecret = readEnvValue(env, garminOAuthDefinition.clientSecretEnv);
+  if (!clientId || !clientSecret) return null;
+  return { adapter: "remote", clientId, clientSecret, ...garminOAuthDefinition };
+}
+
+/** Token maintenance for existing grants is independent of new-connection admission. */
+export function requireGarminTokenConfig(env: IntegrationEnv = process.env) {
+  const clientId = readEnvValue(env, garminOAuthDefinition.clientIdEnv);
+  const clientSecret = readEnvValue(env, garminOAuthDefinition.clientSecretEnv);
+  if (!clientId || !clientSecret)
+    throw new Error("Garmin token maintenance credentials are not configured");
+  return { clientId, clientSecret, tokenUrl: garminOAuthDefinition.tokenUrl };
+}
+
 export function createProviderOAuthConfigRegistry<TProvider extends string>(
   resolvers: ReadonlyMap<TProvider, (env: IntegrationEnv) => ResolvedProviderOAuthConfig | null>,
 ) {
@@ -178,6 +217,7 @@ export function createProviderOAuthConfigRegistry<TProvider extends string>(
 const oauthConfigResolvers = {
   wahoo: getWahooOAuthConfig,
   strava: getStravaOAuthConfig,
+  garmin: getGarminOAuthConfig,
 } satisfies Record<
   ExecutableIntegrationProviderId,
   (env: IntegrationEnv) => ResolvedProviderOAuthConfig | null
@@ -186,6 +226,7 @@ const oauthConfigResolvers = {
 const providerOAuthDefinitions = {
   wahoo: wahooOAuthDefinition,
   strava: stravaOAuthDefinition,
+  garmin: garminOAuthDefinition,
 } as const satisfies Record<ExecutableIntegrationProviderId, ProviderOAuthConfigDefinition>;
 
 export function certifyProviderOAuthScopeCoverage(
@@ -195,6 +236,10 @@ export function certifyProviderOAuthScopeCoverage(
 ): void {
   for (const manifest of providerManifestRegistry) {
     if (manifest.connection.kind !== "oauth2") continue;
+    // Garmin assigns API permissions to the application and returns the user's
+    // grants from its permissions endpoint; its PKCE authorization request must
+    // not synthesize an OAuth `scope` parameter for WORKOUT_IMPORT.
+    if (manifest.connectorId === "garmin") continue;
     const requested = new Set(definitions[manifest.connectorId].scopes);
     for (const scope of getProviderRequiredAuthorizationScopes(manifest.connectorId)) {
       if (!requested.has(scope)) {

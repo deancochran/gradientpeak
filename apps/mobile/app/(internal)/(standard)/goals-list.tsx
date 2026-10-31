@@ -20,6 +20,7 @@ import { toDateKey } from "@/lib/calendar/dateMath";
 import { ROUTES } from "@/lib/constants/routes";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 function getDateKey(value: Date) {
   return toDateKey(value);
@@ -62,13 +63,15 @@ function GoalsListScreen() {
   const [sortBy, setSortBy] = useState<"created_at" | "target_date" | "priority">("target_date");
   const [draftSortBy, setDraftSortBy] = useState<typeof sortBy>("target_date");
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
-  const goals = useProfileGoals({
-    loadAllPages: true,
-    search: searchQuery.trim(),
-    activityCategory: categoryFilter ?? undefined,
-    sortBy,
-    sortOrder: sortBy === "priority" ? "desc" : "asc",
-  });
+  const goals = useProfileGoals(
+    omitUndefined({
+      loadAllPages: true,
+      search: searchQuery.trim(),
+      activityCategory: categoryFilter ?? undefined,
+      sortBy,
+      sortOrder: sortBy === "priority" ? "desc" : "asc",
+    }),
+  );
   const today = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => getDateKey(today), [today]);
   const orderedGoals = useMemo(

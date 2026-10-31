@@ -72,9 +72,11 @@ export default function NewMessageScreen() {
     }
 
     if (selectedRecipients.length === 1) {
+      const recipient = selectedRecipients.at(0);
+      if (recipient === undefined) return;
       try {
         const conversation = await getOrCreateDMMutation.mutateAsync({
-          target_user_id: selectedRecipients[0].id,
+          target_user_id: recipient.id,
         });
 
         navigateTo(`/messages/${conversation.id}`);

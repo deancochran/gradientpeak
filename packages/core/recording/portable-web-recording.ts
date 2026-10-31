@@ -1,8 +1,11 @@
 import { z } from "zod";
+import { realRecordingExecutionSchema } from "./execution-evidence";
+import { measuredJournalWithinBounds, measuredRecordingJournalSchema } from "./measured-journal";
 
 import {
   portableWebPlanExecutionStateSchema,
   portableWebRecordingSessionSnapshotSchema,
+  recordingGuidanceTimelineSchema,
 } from "./portable-timer-draft";
 
 export const PORTABLE_WEB_RECORDING_SCHEMA_VERSION = 1;
@@ -25,6 +28,7 @@ export const portableWebRecordingReviewSchema = z
 export const portableWebRecordingArtifactSchema = z
   .object({
     schemaVersion: z.literal(PORTABLE_WEB_RECORDING_SCHEMA_VERSION),
+    execution: realRecordingExecutionSchema.optional(),
     ownerId: z.string().min(1),
     recordingSessionId: z.string().min(1).max(200),
     segmentId: z.string().uuid(),
@@ -35,14 +39,55 @@ export const portableWebRecordingArtifactSchema = z
     movingMs: z.number().int().nonnegative(),
     excludedElapsedMs: z.number().int().nonnegative().optional(),
     planExecution: portableWebPlanExecutionStateSchema.optional(),
+    guidance: recordingGuidanceTimelineSchema.optional(),
+    measuredJournal: measuredRecordingJournalSchema.optional(),
     fileName: z.string().trim().min(1).max(200),
-    fileText: z.string().min(1).max(1_000_000),
+    fileText: z.string().min(1).max(24_000_000),
     sha256: sha256Schema,
     review: portableWebRecordingReviewSchema,
     sessionRpeOperationId: z.string().uuid().nullable(),
   })
   .strict()
   .superRefine((artifact, context) => {
+    const initial = artifact.guidance?.revisions[0];
+    const last = artifact.guidance?.revisions.at(-1);
+    if (
+      artifact.guidance &&
+      (!initial ||
+        !last ||
+        last.elapsedMs > artifact.elapsedMs ||
+        last.activeMs > artifact.movingMs ||
+        initial.timestamp !== artifact.snapshot.identity.startedAt ||
+        initial.routeId !== artifact.snapshot.activity.routeId ||
+        JSON.stringify(initial.plan) !== JSON.stringify(artifact.snapshot.planExecution ?? null) ||
+        artifact.guidance.revisions.some(
+          (revision) =>
+            revision.plan &&
+            revision.plan.structure.activity_category !==
+              artifact.snapshot.activity.activity_category,
+        ))
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["guidance"],
+        message: "Guidance must retain its immutable session identity and bounded timing.",
+      });
+    }
+    if (
+      artifact.measuredJournal &&
+      !measuredJournalWithinBounds(
+        artifact.measuredJournal,
+        artifact.startedAt,
+        artifact.finishedAt,
+        true,
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["measuredJournal"],
+        message: "Finalized measured evidence must have closed in-session capture windows.",
+      });
+    }
     if (artifact.recordingSessionId !== artifact.snapshot.identity.sessionId) {
       context.addIssue({
         code: "custom",

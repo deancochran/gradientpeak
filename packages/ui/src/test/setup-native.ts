@@ -3,6 +3,11 @@ import mockReact from "react";
 
 type HostProps = Record<string, unknown> & { children?: mockReact.ReactNode };
 
+// React Native supplies RAF; the Node host renderer does not.
+globalThis.requestAnimationFrame ??= (callback) =>
+  Number(setTimeout(() => callback(Date.now()), 0));
+globalThis.cancelAnimationFrame ??= (handle) => clearTimeout(handle);
+
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
@@ -38,6 +43,26 @@ const mockCreateAnimationBuilder = () => ({
 
 jest.mock("react-native-screens", () => ({
   FullWindowOverlay: mockCreateHost("FullWindowOverlay"),
+}));
+jest.mock("react-native-safe-area-context", () => ({
+  SafeAreaProvider: mockCreateHost("SafeAreaProvider"),
+  SafeAreaView: mockCreateHost("SafeAreaView"),
+  initialWindowMetrics: {
+    frame: { x: 0, y: 0, width: 390, height: 844 },
+    insets: { top: 0, bottom: 0, left: 0, right: 0 },
+  },
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+  useSafeAreaFrame: () => ({ x: 0, y: 0, width: 390, height: 844 }),
+  SafeAreaConsumer: ({
+    children,
+  }: {
+    children: (insets: {
+      top: number;
+      bottom: number;
+      left: number;
+      right: number;
+    }) => mockReact.ReactNode;
+  }) => children({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
 function mockCreatePrimitiveModule(moduleName: string) {
@@ -203,6 +228,7 @@ jest.mock("@react-native-community/datetimepicker", () => {
     default: DateTimePicker,
     DateTimePickerAndroid: {
       open: jest.fn(),
+      dismiss: jest.fn(async () => true),
     },
   };
 });

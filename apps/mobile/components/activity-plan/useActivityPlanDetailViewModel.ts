@@ -1,6 +1,6 @@
 import {
   type ActivityPlanDetail,
-  type ActivityPlanIntervalStep,
+  type ActivityPlanStep,
   type ActivityPlanSummary,
   activityPlanDetailSchema,
   activityPlanStructureSchema,
@@ -61,13 +61,11 @@ export function useActivityPlanDetailViewModel({
     const parsed = activityPlanStructureSchema.safeParse(activityPlan?.structure);
     return parsed.success ? parsed.data : null;
   }, [activityPlan?.structure]);
-  const steps: ActivityPlanIntervalStep[] = useMemo(() => {
-    const flatSteps: ActivityPlanIntervalStep[] = [];
-    for (const segment of structure?.segments ?? []) {
-      if (segment.role !== "activity") continue;
-      for (const interval of segment.intervals) {
-        for (let i = 0; i < interval.repetitions; i++) flatSteps.push(...interval.steps);
-      }
+  const steps: ActivityPlanStep[] = useMemo(() => {
+    const flatSteps: ActivityPlanStep[] = [];
+    for (const item of structure?.items ?? []) {
+      if (item.type === "step") flatSteps.push(item);
+      else for (let i = 0; i < item.count; i++) flatSteps.push(...item.steps);
     }
     return flatSteps;
   }, [structure]);

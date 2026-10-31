@@ -25,8 +25,8 @@ function PlanPage() {
   return (
     <div className="space-y-6">
       <RouteFlashToast
-        message={flash}
-        type={flashType}
+        {...(flash === undefined ? {} : { message: flash })}
+        {...(flashType === undefined ? {} : { type: flashType })}
         clear={() =>
           void navigate({
             to: "/plan",

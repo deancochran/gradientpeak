@@ -91,8 +91,10 @@ export const INTENSITY_COLORS: Record<string, IntensityColorConfig> = {
  * Get color configuration for an activity category
  */
 export function getActivityColor(type: string | undefined): ActivityColorConfig {
-  if (!type) return ACTIVITY_COLORS.other;
-  return ACTIVITY_COLORS[type] || ACTIVITY_COLORS.other;
+  const defaultColor = ACTIVITY_COLORS.other;
+  if (defaultColor === undefined) throw new Error("Activity color configuration is incomplete");
+  if (!type) return defaultColor;
+  return ACTIVITY_COLORS[type] ?? defaultColor;
 }
 
 /**

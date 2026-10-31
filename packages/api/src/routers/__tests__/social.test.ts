@@ -56,23 +56,12 @@ function createDbMock(plan: DbPlan = {}) {
     executes: [] as unknown[],
   };
 
-  const db: any = {
+  const db = {
     select: () => {
       let tableName: SelectTableName | null = null;
 
-      const builder: any = {
-        from: (table: unknown) => {
-          tableName = getSelectTableName(table);
-          return builder;
-        },
-        where: () => builder,
-        limit: () => builder,
-        offset: () => builder,
-        orderBy: () => builder,
-        innerJoin: () => builder,
-        leftJoin: () => builder,
-        for: () => builder,
-        then: (onFulfilled: (value: unknown[]) => unknown) => {
+      const builder = Object.assign(
+        Promise.resolve().then(() => {
           if (!tableName) {
             throw new Error("Select called without table");
           }
@@ -80,11 +69,22 @@ function createDbMock(plan: DbPlan = {}) {
           if (tableName === "likes" || tableName === "profiles" || tableName === "trainingPlans") {
             calls.selects.push({ table: tableName });
           }
-          return Promise.resolve(
-            selectQueues[tableName].shift() ?? executeQueue.shift() ?? [],
-          ).then(onFulfilled);
+          return selectQueues[tableName].shift() ?? executeQueue.shift() ?? [];
+        }),
+        {
+          from: (table: unknown) => {
+            tableName = getSelectTableName(table);
+            return builder;
+          },
+          where: () => builder,
+          limit: () => builder,
+          offset: () => builder,
+          orderBy: () => builder,
+          innerJoin: () => builder,
+          leftJoin: () => builder,
+          for: () => builder,
         },
-      };
+      );
 
       return builder;
     },
@@ -92,38 +92,34 @@ function createDbMock(plan: DbPlan = {}) {
       values: (values: Record<string, unknown>) => {
         calls.inserts.push({ table: table === likes ? "likes" : String(table), values });
         const consume = () => Promise.resolve(executeQueue.shift() ?? []);
-        return {
+        const result = Object.assign(Promise.resolve([]), {
           onConflictDoNothing: () => {
             if (table === likes) hasLike = true;
-            return {
-              returning: consume,
-              then: (onFulfilled: (value: unknown) => unknown) => consume().then(onFulfilled),
-            };
+            return Object.assign(Promise.resolve([]), { returning: consume });
           },
-          onConflictDoUpdate: () => ({ returning: consume }),
+          onConflictDoUpdate: () => Object.assign(Promise.resolve([]), { returning: consume }),
           returning: consume,
-          then: (onFulfilled: (value: unknown) => unknown) => consume().then(onFulfilled),
-        };
+        });
+        return result;
       },
     }),
     delete: (table: unknown) => ({
       where: (whereArg: unknown) => {
         calls.deletes.push({ table: table === likes ? "likes" : String(table), whereArg });
-        return {
-          returning: () => {
-            if (table !== likes) return Promise.resolve(executeQueue.shift() ?? []);
-            const explicit = deletedLikesQueue.shift();
-            if (explicit) return Promise.resolve(explicit);
-            const rows = table === likes && hasLike ? [{ id: "existing-like" }] : [];
-            if (table === likes) hasLike = false;
-            return Promise.resolve(rows);
-          },
-          then: (onFulfilled: (value: unknown) => unknown) =>
-            Promise.resolve(executeQueue.shift() ?? undefined).then(onFulfilled),
+        const returning = () => {
+          if (table !== likes) return Promise.resolve(executeQueue.shift() ?? []);
+          const explicit = deletedLikesQueue.shift();
+          if (explicit) return Promise.resolve(explicit);
+          const rows = table === likes && hasLike ? [{ id: "existing-like" }] : [];
+          if (table === likes) hasLike = false;
+          return Promise.resolve(rows);
         };
+        return Object.assign(Promise.resolve().then(returning), {
+          returning,
+        });
       },
     }),
-    update: (table: unknown) => ({
+    update: (_table: unknown) => ({
       set: () => ({
         where: () => ({ returning: () => Promise.resolve(executeQueue.shift() ?? []) }),
       }),
@@ -160,12 +156,12 @@ function createCaller(plan: DbPlan = {}, userId = SESSION_USER_ID) {
   const { db, calls } = createDbMock(plan);
 
   const caller = socialRouter.createCaller({
-    db: db as any,
+    db,
     session: { user: { id: userId } },
     headers: new Headers(),
     clientType: "test",
     trpcSource: "vitest",
-  } as any);
+  } as never);
 
   return { caller, calls };
 }
@@ -524,7 +520,7 @@ describe("socialRouter", () => {
     const { caller } = createCaller();
 
     await expect(
-      caller.searchUsers({ query: "target", limit: 1, offset: 0, extra: true } as any),
+      caller.searchUsers({ query: "target", limit: 1, offset: 0, extra: true } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 

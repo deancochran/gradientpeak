@@ -1,4 +1,8 @@
-import { canonicalActivityCategorySchema, dateOnlySchema } from "@repo/core";
+import {
+  canonicalActivityCategorySchema,
+  canonicalGoalObjectiveSchema,
+  dateOnlySchema,
+} from "@repo/core";
 import { scheduledDateTimeToIsoInstant } from "@repo/core/calendar";
 import { redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
@@ -13,16 +17,27 @@ import {
 } from "../planning";
 import { createServerActionCaller } from "../server-action-api";
 
-export const goalActionSchema = z.object({
-  activity_category: canonicalActivityCategorySchema,
-  priority: z.coerce.number().int().min(0).max(10),
-  profile_id: z.string().uuid(),
-  redirectTo: z.string().optional(),
-  target_date: dateOnlySchema,
-  target_sessions_per_week: z.coerce.number().int().min(1).max(21),
-  target_weeks: z.coerce.number().int().min(1).max(104),
-  title: z.string().trim().min(1).max(100),
-});
+export const goalActionSchema = z
+  .object({
+    activity_category: canonicalActivityCategorySchema,
+    priority: z.number().int().min(0).max(10),
+    profile_id: z.string().uuid(),
+    redirectTo: z.string().optional(),
+    target_date: dateOnlySchema,
+    target_payload: canonicalGoalObjectiveSchema,
+    title: z.string().trim().min(1).max(100),
+  })
+  .strict()
+  .refine(
+    (goal) =>
+      !("activity_category" in goal.target_payload) ||
+      goal.target_payload.activity_category === undefined ||
+      goal.target_payload.activity_category === goal.activity_category,
+    {
+      message: "Goal target activity must match the selected activity.",
+      path: ["target_payload", "activity_category"],
+    },
+  );
 
 const deleteEventActionSchema = z.object({
   event_id: z.string().uuid(),
@@ -73,7 +88,7 @@ const createEventActionSchema = z
     }
   });
 
-const updateGoalActionSchema = goalActionSchema.extend({ goal_id: z.string().uuid() });
+const updateGoalActionSchema = goalActionSchema.safeExtend({ goal_id: z.string().uuid() });
 const deleteGoalActionSchema = z.object({
   goal_id: z.string().uuid(),
   redirectTo: z.string().optional(),
@@ -118,87 +133,67 @@ export function buildScopedCalendarEventUpdate(
           : buildCalendarEventUpdatePatch({
               allDay: data.all_day === "true",
               event: existingEvent,
-              notes: data.notes,
+              ...(data.notes === undefined ? {} : { notes: data.notes }),
               scheduledDate: data.scheduled_date,
-              time: data.time,
+              ...(data.time === undefined ? {} : { time: data.time }),
               title: data.title,
             }),
     scope: data.scope,
   };
 }
 
-export const createPlanGoalAction = createServerFn({ method: "POST" }).handler(async ({ data }) => {
-  let parsedData: z.infer<typeof goalActionSchema>;
+export const createPlanGoalAction = createServerFn({ method: "POST" })
+  .validator(goalActionSchema)
+  .handler(async ({ data: parsedData }) => {
+    try {
+      const caller = await createServerActionCaller();
 
-  try {
-    parsedData = fromFormData(goalActionSchema, data);
-  } catch {
-    return goalActionError("Check the goal form and try again.");
-  }
-
-  try {
-    const caller = await createServerActionCaller();
-
-    await caller.goals.create({
-      activity_category: parsedData.activity_category,
-      priority: parsedData.priority,
-      profile_id: parsedData.profile_id,
-      target_date: parsedData.target_date,
-      target_payload: {
-        type: "consistency",
-        target_sessions_per_week: parsedData.target_sessions_per_week,
-        target_weeks: parsedData.target_weeks,
-      },
-      title: parsedData.title,
-    });
-  } catch (error) {
-    return goalActionError(error instanceof Error ? error.message : "Unable to create goal.");
-  }
-
-  return goalActionResultSchema.parse({
-    status: "success",
-    redirectTo: buildFlashHref(parsedData.redirectTo ?? "/plan", "Goal created", "success"),
-  });
-});
-
-export const updatePlanGoalAction = createServerFn({ method: "POST" }).handler(async ({ data }) => {
-  let parsedData: z.infer<typeof updateGoalActionSchema>;
-
-  try {
-    parsedData = fromFormData(updateGoalActionSchema, data);
-  } catch {
-    return goalActionError("Check the goal form and try again.");
-  }
-
-  try {
-    const caller = await createServerActionCaller();
-    await caller.goals.update({
-      id: parsedData.goal_id,
-      data: {
+      await caller.goals.create({
         activity_category: parsedData.activity_category,
         priority: parsedData.priority,
+        profile_id: parsedData.profile_id,
         target_date: parsedData.target_date,
-        target_payload: {
-          type: "consistency",
-          target_sessions_per_week: parsedData.target_sessions_per_week,
-          target_weeks: parsedData.target_weeks,
-        },
+        target_payload: parsedData.target_payload,
         title: parsedData.title,
-      },
-    });
-  } catch (error) {
-    return goalActionError(error instanceof Error ? error.message : "Unable to update goal.");
-  }
+      });
+    } catch (error) {
+      return goalActionError(error instanceof Error ? error.message : "Unable to create goal.");
+    }
 
-  return goalActionResultSchema.parse({
-    status: "success",
-    redirectTo: buildFlashHref(
-      parsedData.redirectTo ?? `/goals/${parsedData.goal_id}`,
-      "Goal updated",
-      "success",
-    ),
+    return goalActionResultSchema.parse({
+      status: "success",
+      redirectTo: buildFlashHref(parsedData.redirectTo ?? "/plan", "Goal created", "success"),
+    });
   });
-});
+
+export const updatePlanGoalAction = createServerFn({ method: "POST" })
+  .validator(updateGoalActionSchema)
+  .handler(async ({ data: parsedData }) => {
+    try {
+      const caller = await createServerActionCaller();
+      await caller.goals.update({
+        id: parsedData.goal_id,
+        data: {
+          activity_category: parsedData.activity_category,
+          priority: parsedData.priority,
+          target_date: parsedData.target_date,
+          target_payload: parsedData.target_payload,
+          title: parsedData.title,
+        },
+      });
+    } catch (error) {
+      return goalActionError(error instanceof Error ? error.message : "Unable to update goal.");
+    }
+
+    return goalActionResultSchema.parse({
+      status: "success",
+      redirectTo: buildFlashHref(
+        parsedData.redirectTo ?? `/goals/${parsedData.goal_id}`,
+        "Goal updated",
+        "success",
+      ),
+    });
+  });
 
 export const deletePlanGoalAction = createServerFn({ method: "POST" }).handler(async ({ data }) => {
   let parsedData: z.infer<typeof deleteGoalActionSchema>;

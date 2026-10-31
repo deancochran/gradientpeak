@@ -9,10 +9,8 @@ import pg from "pg";
 import { canonicalJson } from "./canonical-json";
 
 export const STORAGE_API_IMAGE = "public.ecr.aws/supabase/storage-api:v1.62.5";
-// biome-ignore lint/security/noSecrets: This is the reviewed public OCI image digest, not a credential.
 export const EXPECTED_STORAGE_API_IMAGE_ID =
   "sha256:1dbe962d9862ef12e20357f9d7ba5431989c1daf4a556d6cb20ee4efd1c57320";
-// biome-ignore lint/security/noSecrets: This is the reviewed public OCI repository digest, not a credential.
 export const EXPECTED_STORAGE_API_REPO_DIGEST =
   "public.ecr.aws/supabase/storage-api@sha256:1dbe962d9862ef12e20357f9d7ba5431989c1daf4a556d6cb20ee4efd1c57320";
 

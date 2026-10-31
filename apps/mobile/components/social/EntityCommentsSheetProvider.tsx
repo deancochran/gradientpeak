@@ -21,10 +21,6 @@ export function useEntityCommentsSheet() {
 
 export function EntityCommentsSheetProvider({ children }: { children: React.ReactNode }) {
   const [target, setTarget] = useState<EntityCommentsTarget | null>(null);
-  const comments = useEntityCommentsController({
-    entityType: target?.entityType ?? "activity_plan",
-    ...(target ? { entityId: target.entityId } : {}),
-  });
   const closeEntityComments = useCallback(() => setTarget(null), []);
   const openEntityComments = useCallback((nextTarget: EntityCommentsTarget) => {
     if (nextTarget.entityId.trim()) {
@@ -32,36 +28,53 @@ export function EntityCommentsSheetProvider({ children }: { children: React.Reac
     }
   }, []);
   const value = useMemo(() => ({ openEntityComments }), [openEntityComments]);
-  const testIDPrefix = target?.entityType.replaceAll("_", "-") ?? "entity";
 
   return (
     <EntityCommentsSheetContext.Provider value={value}>
       {children}
-      <AppBottomSheet
-        {...(target ? { contentKey: `${target.entityType}-${target.entityId}` } : {})}
-        initialSnapIndex={APP_BOTTOM_SHEET_PRESENTATIONS.inspector.initialSnapIndex}
-        onClose={closeEntityComments}
-        showCloseAction
-        snapPoints={APP_BOTTOM_SHEET_PRESENTATIONS.inspector.snapPoints}
-        testID="entity-comments-sheet"
-        title={`Comments (${comments.commentCount})`}
-        visible={target !== null}
-      >
-        <EntityCommentsSection
-          addCommentPending={comments.addCommentPending}
-          commentCount={comments.commentCount}
-          comments={comments.comments}
-          commentsError={comments.commentsError}
-          hasMoreComments={comments.hasMoreComments}
-          isLoadingComments={comments.isLoadingComments}
-          isLoadingMoreComments={comments.isLoadingMoreComments}
-          newComment={comments.newComment}
-          onAddComment={comments.handleAddComment}
-          onChangeNewComment={comments.setNewComment}
-          onLoadMoreComments={comments.loadMoreComments}
-          testIDPrefix={testIDPrefix}
-        />
-      </AppBottomSheet>
+      {target ? <EntityCommentsSheet target={target} onClose={closeEntityComments} /> : null}
     </EntityCommentsSheetContext.Provider>
+  );
+}
+
+function EntityCommentsSheet({
+  target,
+  onClose,
+}: {
+  target: EntityCommentsTarget;
+  onClose: () => void;
+}) {
+  const comments = useEntityCommentsController({
+    entityId: target.entityId,
+    entityType: target.entityType,
+  });
+  const testIDPrefix = target.entityType.replaceAll("_", "-");
+
+  return (
+    <AppBottomSheet
+      contentKey={`${target.entityType}-${target.entityId}`}
+      initialSnapIndex={APP_BOTTOM_SHEET_PRESENTATIONS.inspector.initialSnapIndex}
+      onClose={onClose}
+      showCloseAction
+      snapPoints={APP_BOTTOM_SHEET_PRESENTATIONS.inspector.snapPoints}
+      testID="entity-comments-sheet"
+      title={`Comments (${comments.commentCount})`}
+      visible
+    >
+      <EntityCommentsSection
+        addCommentPending={comments.addCommentPending}
+        commentCount={comments.commentCount}
+        comments={comments.comments}
+        commentsError={comments.commentsError}
+        hasMoreComments={comments.hasMoreComments}
+        isLoadingComments={comments.isLoadingComments}
+        isLoadingMoreComments={comments.isLoadingMoreComments}
+        newComment={comments.newComment}
+        onAddComment={comments.handleAddComment}
+        onChangeNewComment={comments.setNewComment}
+        onLoadMoreComments={comments.loadMoreComments}
+        testIDPrefix={testIDPrefix}
+      />
+    </AppBottomSheet>
   );
 }

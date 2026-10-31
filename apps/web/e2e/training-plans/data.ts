@@ -14,7 +14,10 @@ import { createE2EExecutionIdentity } from "../support/identity";
 import { registerTrainingPlanCleanup } from "./cleanup";
 
 type TrainingPlanNames = { ownedName: string; templateName: string };
-type TrainingPlanFixture = TrainingPlanNames & { ownedId: string };
+type TrainingPlanFixture = TrainingPlanNames & {
+  ownedId: string;
+  scheduledActivityPlanName: string;
+};
 
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value === "boolean" || typeof value === "string")
@@ -54,6 +57,7 @@ async function normalizeSeededActivityPlanHash(database: LocalE2EDatabase, activ
   const [original] = await database.db
     .select({
       contentVisibility: activityPlans.content_visibility,
+      name: activityPlans.name,
       structure: activityPlans.structure,
       structureHash: activityPlans.structure_hash,
     })
@@ -270,7 +274,8 @@ export async function withTrainingPlanLibraryFixture(
         scheduledByProfileId: actor.profileId,
         systemTemplate: plan.isSystemTemplate,
       });
-    await run({ ...names, ownedId });
+    if (!originalActivityPlan) throw new Error("The scheduled activity-plan fixture is absent.");
+    await run({ ...names, ownedId, scheduledActivityPlanName: originalActivityPlan.name });
   } finally {
     try {
       await database.typedTransaction(async (transaction) => {

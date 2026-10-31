@@ -46,12 +46,12 @@ function createCaller() {
   });
 
   const caller = trainingPlansRouter.createCaller({
-    db: db as any,
+    db,
     session: { user: { id: "profile-123" } },
     headers: new Headers(),
     clientType: "test",
     trpcSource: "vitest",
-  } as any);
+  } as never);
 
   return { caller, callLog };
 }
@@ -78,7 +78,7 @@ describe("trainingPlansRouter boundary validation", () => {
             },
           ],
         },
-      } as any),
+      } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     expect(callLog).toHaveLength(0);
@@ -97,7 +97,7 @@ describe("trainingPlansRouter boundary validation", () => {
           structure: { version: 1, sessions: VALID_TRAINING_PLAN_STRUCTURE.sessions },
         },
         unexpected: true,
-      } as any),
+      } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     expect(callLog).toHaveLength(0);
@@ -115,7 +115,7 @@ describe("trainingPlansRouter boundary validation", () => {
           expectedRevision: 1,
           expectedStructureHash: `v1:sha256:${"0".repeat(64)}`,
         },
-      } as any),
+      } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     expect(callLog).toHaveLength(0);
@@ -141,7 +141,7 @@ describe("trainingPlansRouter boundary validation", () => {
             blocks: [],
           },
         },
-      } as any),
+      } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     expect(callLog).toHaveLength(0);

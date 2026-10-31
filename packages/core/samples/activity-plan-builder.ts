@@ -1,13 +1,13 @@
 import type {
   ActivityPlanDuration,
+  ActivityPlanItem,
   ActivityPlanStructure,
   ActivityPlanTarget,
-  AdaptationControl,
-  AdaptationState,
 } from "../activity-plan";
 import { activityPlanStructureSchema } from "../activity-plan";
 import { deterministicUuidFromSeed } from "../plan/normalizeGoalInput";
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
+import { catalogStepNote } from "./step-note-policy";
 
 type StepInput = {
   name: string;
@@ -15,7 +15,6 @@ type StepInput = {
   targets?: ActivityPlanTarget[];
   notes?: string;
   description?: string;
-  purpose?: "warmup" | "work" | "recovery" | "cooldown" | "technique";
 };
 
 type DraftInterval = {
@@ -31,7 +30,7 @@ export function requiredSampleItem<T>(values: readonly T[], index: number, conte
   return value;
 }
 
-/** Template-only builder that authors strict documents with stable nested IDs. */
+/** Template-only builder for fixed V5 documents with stable item and step IDs. */
 export class SystemActivityPlanBuilder {
   private readonly intervals: DraftInterval[] = [];
 
@@ -64,7 +63,6 @@ export class SystemActivityPlanBuilder {
       ...config,
       name: config.name ?? "Warmup",
       intervalName: "Warmup",
-      purpose: "warmup",
     });
   }
 
@@ -73,7 +71,6 @@ export class SystemActivityPlanBuilder {
       ...config,
       name: config.name ?? "Cooldown",
       intervalName: "Cooldown",
-      purpose: "cooldown",
     });
   }
 
@@ -81,43 +78,59 @@ export class SystemActivityPlanBuilder {
     return this.step({
       name: config.name ?? "Rest",
       duration: config.duration,
-      targets: [{ type: "RPE", intensity: 1 }],
+      targets: [{ type: "rest" }],
       ...(config.notes === undefined ? {} : { notes: config.notes }),
       intervalName: "Rest",
-      purpose: "recovery",
     });
   }
 
   build(): ActivityPlanStructure {
-    if (this.intervals.length === 0) throw new Error("Plan must have at least one interval");
+    if (this.intervals.length === 0) throw new Error("Plan must have at least one item");
 
     const segmentSeed = `system-template:${this.activity_category}:${this.identity}`;
-
     return activityPlanStructureSchema.parse({
-      version: 3,
+      version: 5,
       activity_category: this.activity_category,
-      segments: [
-        {
-          id: deterministicUuidFromSeed(`segment:0:${segmentSeed}`),
-          name: `${this.activity_category} activity`,
-          role: "activity",
-          intervals: this.intervals.map((interval, intervalIndex) => ({
-            id: deterministicUuidFromSeed(`interval:${intervalIndex}:${segmentSeed}`),
-            name: interval.name,
-            repetitions: interval.repetitions,
-            steps: interval.steps.map((step, stepIndex) => ({
-              id: deterministicUuidFromSeed(`step:${intervalIndex}:${stepIndex}:${segmentSeed}`),
-              name: step.name,
-              duration: step.duration,
-              targets: step.targets?.length ? step.targets : [{ type: "RPE", intensity: 5 }],
-              ...(step.description ? { description: step.description } : {}),
-              ...(step.notes ? { notes: step.notes } : {}),
-              ...(step.purpose ? { purpose: step.purpose } : {}),
-            })),
-            ...(interval.notes ? { notes: interval.notes } : {}),
-          })),
-        },
-      ],
+      items: this.intervals.flatMap((interval, intervalIndex): ActivityPlanItem[] => {
+        const context = [interval.name, interval.notes]
+          .filter((value): value is string => Boolean(value?.trim()))
+          .filter((value, index, values) => values.indexOf(value) === index)
+          .join("\n\n");
+        const contextLabel = interval.repetitions > 1 ? "Repeat context" : "Context";
+        const steps = interval.steps.map((step, stepIndex) => {
+          const childInstructions = [step.description, step.notes]
+            .filter((value): value is string => Boolean(value?.trim()))
+            .filter((value, index, values) => values.indexOf(value) === index)
+            .join("\n\n");
+          const instructions = catalogStepNote(
+            [
+              childInstructions,
+              stepIndex === 0 && context && !childInstructions.includes(context)
+                ? `${contextLabel}: ${context}`
+                : "",
+            ]
+              .filter(Boolean)
+              .join("\n\n"),
+          );
+          return {
+            type: "step" as const,
+            id: deterministicUuidFromSeed(`step:${intervalIndex}:${stepIndex}:${segmentSeed}`),
+            name: step.name,
+            duration: step.duration,
+            targets: step.targets ?? [{ type: "RPE", intensity: 5 }],
+            ...(instructions ? { instructions } : {}),
+          };
+        });
+        if (interval.repetitions === 1) return steps;
+        return [
+          {
+            type: "repeat" as const,
+            id: deterministicUuidFromSeed(`repeat:${intervalIndex}:${segmentSeed}`),
+            count: interval.repetitions,
+            steps,
+          },
+        ];
+      }),
     });
   }
 }
@@ -127,28 +140,6 @@ export function createSystemActivityPlanBuilder(
   identity: string,
 ) {
   return new SystemActivityPlanBuilder(activity_category, identity);
-}
-
-/** Creates stable semantic-adaptation identities for one system activity plan. */
-export function createSystemActivityPlanAdaptationBuilder(identity: string) {
-  return {
-    control(input: Omit<AdaptationControl, "id">): AdaptationControl {
-      return {
-        ...input,
-        id: deterministicUuidFromSeed(
-          `system-template-adaptation:${identity}:control:${input.key}`,
-        ),
-      };
-    },
-    state(input: Omit<AdaptationState, "id">): AdaptationState {
-      return {
-        ...input,
-        id: deterministicUuidFromSeed(
-          `system-template-adaptation:${identity}:state:${input.label}`,
-        ),
-      };
-    },
-  };
 }
 
 /** Binds explicit, ordered identity keys to a source module's authored template definitions. */

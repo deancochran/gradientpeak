@@ -1,11 +1,14 @@
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
+import { View } from "react-native";
 import { AppBottomSheet } from "@/components/shared/AppBottomSheet";
 import type { BuilderSheet } from "@/components/training-plan/create/BuilderSheetTypes";
-import { useTrainingPlanBuilderSheetDrafts } from "@/components/training-plan/create/TrainingPlanBuilderSheetContent";
+import type { TrainingPlanBuilderSheetState } from "@/components/training-plan/create/TrainingPlanBuilderSheetContent";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 type TrainingPlanBuilderSheetFrameProps = {
+  sheetState: TrainingPlanBuilderSheetState;
   activeSheet: BuilderSheet | null;
   canGoBack: boolean;
   children: ReactNode;
@@ -24,9 +27,11 @@ type TrainingPlanBuilderSheetFrameProps = {
   initialSnapIndex?: number;
   snapPoints?: string[];
   title: string;
+  isPending?: boolean;
 };
 
 export function TrainingPlanBuilderSheetFrame({
+  sheetState: sheetDrafts,
   activeSheet,
   canGoBack,
   children,
@@ -45,20 +50,35 @@ export function TrainingPlanBuilderSheetFrame({
   showCloseAction,
   snapPoints,
   title,
+  isPending = false,
 }: TrainingPlanBuilderSheetFrameProps) {
-  const sheetDrafts = useTrainingPlanBuilderSheetDrafts();
+  const identity = useRef({ sheet: activeSheet });
+  if (identity.current.sheet !== activeSheet) identity.current = { sheet: activeSheet };
+  const renderedIdentity = identity.current;
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const cancelSheet = () => {
-    sheetDrafts.cancelSheetDrafts();
+    if (!mounted.current || renderedIdentity !== identity.current) return;
+    identity.current = { sheet: null };
+    sheetDrafts.cancelDraftForSheet(activeSheet);
     closeSheet();
   };
 
   const cancelNestedSheet = () => {
+    if (!mounted.current || renderedIdentity !== identity.current) return;
+    identity.current = { sheet: null };
     sheetDrafts.cancelDraftForSheet(activeSheet);
     goBackSheet();
   };
 
   const saveSheet = () => {
+    if (!mounted.current || isPending || renderedIdentity !== identity.current) return;
     if (activeSheet === "activityFilters") {
       sheetDrafts.applyActivityFiltersDraft();
       goBackSheet();
@@ -66,8 +86,7 @@ export function TrainingPlanBuilderSheetFrame({
     }
 
     if (activeSheet === "preferences") {
-      sheetDrafts.applyPlanningPreferencesDraft();
-      closeSheet();
+      if (sheetDrafts.applyPlanningPreferencesDraft()) closeSheet();
       return;
     }
 
@@ -81,20 +100,31 @@ export function TrainingPlanBuilderSheetFrame({
     closeSheet();
   };
 
+  if (activeSheet === null) return null;
   return (
     <AppBottomSheet
+      {...omitUndefined({
+        contentMode,
+        customHeaderInLayout,
+        description,
+        footer,
+        headerContent,
+        initialSnapIndex,
+        isPending,
+        onBack: canGoBack ? cancelNestedSheet : undefined,
+        showCloseAction,
+        showTitleHeader,
+        snapPoints,
+      })}
       visible={activeSheet !== null}
       contentKey={contentKey}
-      contentMode={contentMode}
-      customHeaderInLayout={customHeaderInLayout}
       title={title}
-      description={description}
-      onBack={canGoBack ? cancelNestedSheet : undefined}
       onClose={cancelSheet}
       headerAction={
         hasSaveAction ? (
           <Button
             disabled={
+              isPending ||
               (activeSheet === "preferences" &&
                 (!sheetDrafts.canResetPlanningPreferences ||
                   !sheetDrafts.canSavePlanningPreferences)) ||
@@ -110,15 +140,42 @@ export function TrainingPlanBuilderSheetFrame({
           </Button>
         ) : undefined
       }
-      headerContent={headerContent}
-      initialSnapIndex={initialSnapIndex}
-      showTitleHeader={showTitleHeader}
-      showCloseAction={showCloseAction}
-      snapPoints={snapPoints}
-      footer={footer}
+      headerContent={
+        headerContent !== null && headerContent !== undefined && headerContent !== false ? (
+          <View
+            pointerEvents={isPending ? "none" : "auto"}
+            accessibilityElementsHidden={isPending}
+            importantForAccessibility={isPending ? "no-hide-descendants" : "auto"}
+          >
+            {headerContent}
+          </View>
+        ) : (
+          headerContent
+        )
+      }
+      footer={
+        footer !== null && footer !== undefined && footer !== false ? (
+          <View
+            pointerEvents={isPending ? "none" : "auto"}
+            accessibilityElementsHidden={isPending}
+            importantForAccessibility={isPending ? "no-hide-descendants" : "auto"}
+          >
+            {footer}
+          </View>
+        ) : (
+          footer
+        )
+      }
       testID="training-plan-builder-sheet"
     >
-      {children}
+      <View
+        pointerEvents={isPending ? "none" : "auto"}
+        accessibilityElementsHidden={isPending}
+        importantForAccessibility={isPending ? "no-hide-descendants" : "auto"}
+        style={contentMode === "custom" ? { flex: 1 } : undefined}
+      >
+        {children}
+      </View>
     </AppBottomSheet>
   );
 }

@@ -29,6 +29,7 @@ import {
   type TrainingPlanFilters,
   type TrainingPlanSortField,
 } from "@/lib/discover";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 const DISCOVER_FILTER_SHEET_SNAP_POINTS = ["92%"];
 
@@ -601,7 +602,7 @@ function SegmentedControl({
             key={option.value}
             onPress={() => onChange(option.value)}
             activeOpacity={0.85}
-            testID={option.testID}
+            {...omitUndefined({ testID: option.testID })}
             className={`flex-1 items-center justify-center rounded-lg px-3 py-2 ${
               isActive ? "bg-background" : "bg-transparent"
             }`}
@@ -641,7 +642,7 @@ function SortFieldSelector({
             label={option.label}
             isActive={value === option.value}
             onPress={() => onChange(option.value)}
-            testID={option.testID}
+            {...omitUndefined({ testID: option.testID })}
           />
         ))}
       </View>

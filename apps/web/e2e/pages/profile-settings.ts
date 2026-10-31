@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import { ShellPage } from "./shell";
 
 export class ProfilePage {
@@ -34,9 +34,22 @@ export class SettingsPage {
     await this.page.goto("/settings");
   }
 
+  /** Persist an athlete-visible planning preference through Settings, not tRPC setup. */
+  async setPlanningTimezone(timezone: string) {
+    await this.open();
+    await this.page.getByLabel("Planning Timezone").click();
+    await this.page.getByLabel("Search timezones").fill(timezone);
+    await this.page.getByRole("option", { name: timezone, exact: true }).click();
+    await this.page.getByRole("button", { name: "Update Profile" }).click();
+    await expect(
+      this.page.getByText("Profile updated successfully", { exact: true }).last(),
+    ).toBeVisible();
+  }
+
   async signOut(input: "click" | "keyboard" = "click") {
     const button = this.page.getByRole("button", { name: "Sign Out", exact: true });
     if (input === "keyboard") await button.press("Enter");
     else await button.click();
+    await expect(this.page).toHaveURL(/\/auth\/login/);
   }
 }

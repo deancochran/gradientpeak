@@ -11,6 +11,7 @@ import {
   useGroupEventActions,
   useGroupEventDetailViewModel,
 } from "@/lib/groups";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 function singleParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
@@ -104,16 +105,17 @@ export default function GroupEventDetailRoute() {
 
   return (
     <DetailScaffold
-      headerRight={
-        managementActions.length > 0
-          ? () => (
-              <DetailOverflowMenu
-                actions={managementActions}
-                testID="group-event-detail-overflow"
-              />
-            )
-          : undefined
-      }
+      {...omitUndefined({
+        headerRight:
+          managementActions.length > 0
+            ? () => (
+                <DetailOverflowMenu
+                  actions={managementActions}
+                  testID="group-event-detail-overflow"
+                />
+              )
+            : undefined,
+      })}
       isLoading={detailVm.isLoading}
       loadingLabel="Loading group event..."
       notFound={detailVm.isError || !event}

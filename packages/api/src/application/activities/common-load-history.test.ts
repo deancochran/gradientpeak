@@ -262,7 +262,7 @@ function createDb(
         }
         return rows;
       };
-      const query = {
+      const query = Object.assign(Promise.resolve().then(rowsForTable), {
         from: vi.fn((table: Parameters<typeof getTableName>[0]) => {
           tableName = getTableName(table);
           return query;
@@ -277,10 +277,6 @@ function createDb(
           if (failure && tableName === "activities") throw failure;
           return rowsForTable();
         }),
-      };
-      Object.defineProperty(query, "then", {
-        value: (onFulfilled: (value: unknown[]) => unknown) =>
-          Promise.resolve(rowsForTable()).then(onFulfilled),
       });
       return query;
     }),

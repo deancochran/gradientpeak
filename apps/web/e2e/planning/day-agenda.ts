@@ -108,7 +108,9 @@ export async function withDayAgendaFixture(
       completedName,
       date,
       eventId,
-      plannedAgendaTitle: "bike session",
+      // The visible agenda title is the scheduled activity plan's name.
+      // Keep the locator tied to the owned fixture rather than a retired seed label.
+      plannedAgendaTitle: plan.name,
       plannedPlanName: plan.name,
     });
   } catch (error) {

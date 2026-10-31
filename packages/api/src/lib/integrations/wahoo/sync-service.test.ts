@@ -57,10 +57,9 @@ function planWithRelativeTarget(type: "%FTP" | "%ThresholdHR", activityCategory:
   if (!template) throw new Error("Expected a system template fixture");
   const structure = structuredClone(template.structure);
   structure.activity_category = activityCategory;
-  for (const segment of structure.segments) {
-    if (segment.role !== "activity") continue;
-    for (const interval of segment.intervals) {
-      for (const step of interval.steps) step.targets = [{ type, intensity: 80 }];
+  for (const item of structure.items) {
+    for (const step of item.type === "step" ? [item] : item.steps) {
+      step.targets = [{ type, intensity: 80 }];
     }
   }
   return structure;
@@ -152,7 +151,10 @@ function syncFixture(
         description: "Bike session",
         id: "plan-1",
         name: "Tempo Intervals",
-        structure: input.planStructure ?? core.SYSTEM_TEMPLATES[0]?.structure,
+        // The catalog fixture may intentionally combine authoring-valid targets
+        // that Wahoo cannot project together. Keep reconciliation tests focused
+        // on their provider path with a supported, deterministic structure.
+        structure: input.planStructure ?? planWithRelativeTarget("%FTP", "bike"),
         updatedAt: "2026-07-28T10:00:00.000Z",
       },
       id: "event-1",
@@ -401,8 +403,8 @@ describe("WahooSyncService planned-activity validation", () => {
     const template = core.SYSTEM_TEMPLATES[0];
     if (!template) throw new Error("Expected a system template fixture");
     const source: core.ActivityPlanStructure = structuredClone(template.structure);
-    const sourceSegment = source.segments.find((segment) => segment.role === "activity");
-    if (!sourceSegment) throw new Error("Expected an activity segment fixture");
+    const sourceSegment = source.items[0];
+    if (!sourceSegment) throw new Error("Expected an activity block fixture");
     const duplicateSegment = {
       ...structuredClone(sourceSegment),
       activity_category: source.activity_category === "run" ? "bike" : "run",
@@ -418,7 +420,7 @@ describe("WahooSyncService planned-activity validation", () => {
           id: "plan-1",
           name: "Legacy mixed",
           description: null,
-          structure: { ...source, segments: [...source.segments, duplicateSegment] },
+          structure: { version: 3, segments: [...source.items, duplicateSegment] },
         },
       })),
     };
@@ -469,10 +471,9 @@ describe("route-only Wahoo convergence decision", () => {
 describe("WahooSyncService planned-activity reconciliation", () => {
   const withDuration = (duration: core.ActivityPlanDuration) => {
     const structure = planWithRelativeTarget("%FTP", "bike");
-    const segment = structure.segments.find((segment) => segment.role === "activity");
-    if (segment?.role !== "activity" || !segment.intervals[0]?.steps[0])
-      throw new Error("Missing fixture step");
-    segment.intervals[0].steps[0].duration = duration;
+    const step = structure.items.flatMap((item) => (item.type === "step" ? [item] : item.steps))[0];
+    if (!step) throw new Error("Missing fixture step");
+    step.duration = duration;
     return structure;
   };
 
@@ -690,8 +691,9 @@ describe("WahooSyncService planned-activity reconciliation", () => {
 
   it("prioritizes no-effect target failure when compatibility has mixed issues", async () => {
     const planStructure = planWithRelativeTarget("%FTP", "bike");
-    const firstActivity = planStructure.segments.find((segment) => segment.role === "activity");
-    const firstStep = firstActivity?.intervals[0]?.steps[0];
+    const firstStep = planStructure.items.flatMap((item) =>
+      item.type === "step" ? [item] : item.steps,
+    )[0];
     if (!firstStep) throw new Error("Expected an activity step fixture");
     firstStep.targets = [
       { type: "RPE", intensity: 4 },

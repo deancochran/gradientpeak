@@ -40,15 +40,15 @@ const CurrentStepDisplay = memo<{
                 {currentStep.name || `Step ${planProgress.currentStepIndex + 1}`}
               </Text>
               {consolidateActivityPlanText(
-                currentStep.notes,
                 currentStep.description,
-                "Description",
+                currentStep.notes,
+                "Instructions",
               ) && (
                 <Text className="text-xs text-muted-foreground mt-2 italic">
                   {consolidateActivityPlanText(
-                    currentStep.notes,
                     currentStep.description,
-                    "Description",
+                    currentStep.notes,
+                    "Instructions",
                   )}
                 </Text>
               )}

@@ -1,9 +1,7 @@
 import { z } from "zod";
 import {
-  activityPlanAdaptationSchema,
   activityPlanStructureSchema,
   activityPlanTrainingIntentSchema,
-  resolveActivityPlanStructure,
   validateActivityPlanIntent,
 } from "../activity-plan";
 import { stringifyCanonicalJson } from "../athlete-intelligence/canonical-json";
@@ -20,13 +18,16 @@ import { athletePlanningContextSchema } from "./athletePlanningContext";
 
 /** Canonical semantic hash envelope shared by Core, API, clients, and persistence. */
 export const canonicalSemanticHashSchema = z.string().regex(/^v1:sha256:[0-9a-f]{64}$/);
+/** V4 activity-plan semantic identity includes its fixed training intent. */
+export const activityPlanSemanticHashSchema = z.string().regex(/^v2:sha256:[0-9a-f]{64}$/);
 const weekdaySchema = z.number().int().min(0).max(6);
 const finiteNonnegativeSchema = z.number().finite().min(0);
 const NO_CONTEXT_CALCULATION_AS_OF = "1970-01-01T00:00:00.000Z";
 
-export const DEFAULT_TRAINING_PLAN_POLICY_V1 = {
-  version: "training-plan-policy-v1",
-  resolver_version: "prescription-resolver-v1",
+/** V4 plans are fixed documents; this policy deliberately has no adaptation surface. */
+export const DEFAULT_TRAINING_PLAN_POLICY_V2 = {
+  version: "training-plan-policy-v2",
+  resolver_version: "prescription-resolver-v2",
   preference_defaults: {
     weekly_session_count: 3,
     target_weekly_duration_minutes: 180,
@@ -36,7 +37,7 @@ export const DEFAULT_TRAINING_PLAN_POLICY_V1 = {
     progression_style: "balanced" as const,
     recovery_priority: "balanced" as const,
   },
-  limits: { candidates: 1000, adaptation_states: 10_000 },
+  limits: { candidates: 1000 },
 } as const;
 
 export const planningBaselineSchema = z.discriminatedUnion("status", [
@@ -66,10 +67,9 @@ export type EffectiveTrainingPlanPreferences = z.output<
   typeof effectiveTrainingPlanPreferencesSchema
 >;
 
-/** Resolves nullable authored preferences into the policy's canonical effective form. */
 export function resolveTrainingPlanPreferences(input: unknown): EffectiveTrainingPlanPreferences {
   const preferences = trainingPlanPreferencesSchema.parse(input);
-  const defaults = DEFAULT_TRAINING_PLAN_POLICY_V1.preference_defaults;
+  const defaults = DEFAULT_TRAINING_PLAN_POLICY_V2.preference_defaults;
   return effectiveTrainingPlanPreferencesSchema.parse({
     weekly_session_count: preferences.weekly_session_count ?? defaults.weekly_session_count,
     target_weekly_duration_minutes:
@@ -87,21 +87,19 @@ export const immutableActivityPlanRevisionSchema = z
   .object({
     id: z.string().uuid(),
     revision: z.number().int().positive(),
-    semantic_hash: canonicalSemanticHashSchema,
+    semantic_hash: activityPlanSemanticHashSchema,
     activity_category: canonicalActivityCategorySchema,
     training_intent: activityPlanTrainingIntentSchema,
     structure: activityPlanStructureSchema,
-    adaptation: activityPlanAdaptationSchema.nullable().optional(),
   })
   .strict()
   .superRefine((candidate, context) => {
-    if (candidate.activity_category !== candidate.structure.activity_category) {
+    if (candidate.activity_category !== candidate.structure.activity_category)
       context.addIssue({
         code: "custom",
         path: ["structure", "activity_category"],
         message: "Candidate and structure categories must match.",
       });
-    }
   });
 export type ImmutableActivityPlanRevision = z.output<typeof immutableActivityPlanRevisionSchema>;
 
@@ -131,10 +129,8 @@ export const resolutionFailureCodeSchema = z.enum([
   "missing_exact_coverage",
   "duplicate_candidate_id",
   "candidate_limit_exceeded",
-  "adaptation_surface_limit_exceeded",
   "hard_duration_exceeded",
   "unsupported_duration",
-  "adaptation_invalid",
   "intent_incompatible",
 ]);
 export const resolutionReasonCodeSchema = z.enum(["preferred_weekday"]);
@@ -154,9 +150,6 @@ export const missingPlanningInputSchema = z
 export const resolutionFailureSchema = z
   .object({ code: resolutionFailureCodeSchema, message: z.string().min(1).max(240) })
   .strict();
-export const semanticAdaptationValuesSchema = z
-  .record(z.string().min(1).max(64), z.number().finite())
-  .refine((value) => Object.keys(value).length <= 32, "At most 32 adaptation values are allowed.");
 
 export const prescriptionEstimateSchema = z
   .object({
@@ -179,29 +172,17 @@ export const prescriptionEstimateSchema = z
   })
   .strict()
   .superRefine((estimate, context) => {
-    if (estimate.duration.status === "unavailable" && estimate.duration.value_seconds !== null)
+    if ((estimate.duration.status === "unavailable") !== (estimate.duration.value_seconds === null))
       context.addIssue({
         code: "custom",
         path: ["duration", "value_seconds"],
-        message: "Unavailable duration cannot carry a value.",
+        message: "Duration availability and value must agree.",
       });
-    if (estimate.duration.status !== "unavailable" && estimate.duration.value_seconds === null)
-      context.addIssue({
-        code: "custom",
-        path: ["duration", "value_seconds"],
-        message: "Available duration requires a value.",
-      });
-    if (estimate.common_load.status === "unavailable" && estimate.common_load.value !== null)
+    if ((estimate.common_load.status === "unavailable") !== (estimate.common_load.value === null))
       context.addIssue({
         code: "custom",
         path: ["common_load", "value"],
-        message: "Unavailable common load cannot carry a value.",
-      });
-    if (estimate.common_load.status !== "unavailable" && estimate.common_load.value === null)
-      context.addIssue({
-        code: "custom",
-        path: ["common_load", "value"],
-        message: "Available common load requires a value.",
+        message: "Common Load availability and value must agree.",
       });
   });
 export type PrescriptionEstimate = z.output<typeof prescriptionEstimateSchema>;
@@ -221,17 +202,16 @@ export const prescriptionEvidenceFactSchema = z
 
 export const prescriptionResolutionManifestSchema = z
   .object({
-    resolver_version: z.string().min(1),
-    policy_version: z.string().min(1),
+    resolver_version: z.literal(DEFAULT_TRAINING_PLAN_POLICY_V2.resolver_version),
+    policy_version: z.literal(DEFAULT_TRAINING_PLAN_POLICY_V2.version),
     training_plan_id: z.string().uuid().nullable(),
     training_plan_revision: z.number().int().positive().nullable(),
     training_plan_hash: canonicalSemanticHashSchema.nullable(),
     athlete_context_revision: z.number().int().positive().nullable(),
     activity_plan_id: z.string().uuid(),
     activity_plan_revision: z.number().int().positive(),
-    activity_plan_semantic_hash: canonicalSemanticHashSchema,
+    activity_plan_semantic_hash: activityPlanSemanticHashSchema,
     session_demand: sessionDemandSchema,
-    adaptation_values: semanticAdaptationValuesSchema,
     effective_target_duration_minutes: z.number().finite().positive().nullable(),
     effective_target_common_load: finiteNonnegativeSchema.nullable(),
     evidence_facts: z.array(prescriptionEvidenceFactSchema).max(16),
@@ -248,12 +228,13 @@ export const prescriptionResolutionManifestSchema = z
   })
   .strict()
   .superRefine((manifest, context) => {
-    const provenance = provenanceSchema.safeParse({
-      training_plan_id: manifest.training_plan_id,
-      training_plan_revision: manifest.training_plan_revision,
-      training_plan_hash: manifest.training_plan_hash,
-    });
-    if (!provenance.success)
+    if (
+      !provenanceSchema.safeParse({
+        training_plan_id: manifest.training_plan_id,
+        training_plan_revision: manifest.training_plan_revision,
+        training_plan_hash: manifest.training_plan_hash,
+      }).success
+    )
       context.addIssue({
         code: "custom",
         path: ["training_plan_id"],
@@ -265,42 +246,26 @@ export const prescriptionResolutionManifestSchema = z
         path: ["resolved_structure", "activity_category"],
         message: "Demand category must match resolved structure category.",
       });
-    const expectedHash = structureHash(manifest.resolved_structure);
-    if (manifest.resolved_structure_hash !== expectedHash)
+    if (manifest.resolved_structure_hash !== structureHash(manifest.resolved_structure))
       context.addIssue({
         code: "custom",
         path: ["resolved_structure_hash"],
         message: "Resolved structure hash mismatch.",
       });
     if (
-      manifest.fallback_level === "evidence_informed" &&
-      manifest.athlete_context_revision === null
+      (manifest.fallback_level === "evidence_informed") !==
+      (manifest.athlete_context_revision !== null)
     )
       context.addIssue({
         code: "custom",
         path: ["athlete_context_revision"],
-        message: "Evidence-informed resolutions require an athlete-context revision.",
+        message: "Context revision must match evidence-informed resolution.",
       });
-    if (
-      manifest.fallback_level !== "evidence_informed" &&
-      manifest.athlete_context_revision !== null
-    )
-      context.addIssue({
-        code: "custom",
-        path: ["athlete_context_revision"],
-        message: "Non-evidence fallbacks cannot retain an athlete-context revision.",
-      });
-    if (manifest.fallback_level === "evidence_informed" && manifest.evidence_facts.length === 0)
+    if ((manifest.fallback_level === "evidence_informed") !== manifest.evidence_facts.length > 0)
       context.addIssue({
         code: "custom",
         path: ["evidence_facts"],
-        message: "Evidence-informed resolutions require the facts that affected resolution.",
-      });
-    if (manifest.fallback_level !== "evidence_informed" && manifest.evidence_facts.length > 0)
-      context.addIssue({
-        code: "custom",
-        path: ["evidence_facts"],
-        message: "Fallback resolutions cannot retain unused athlete evidence.",
+        message: "Evidence facts must match evidence-informed resolution.",
       });
   });
 export type ResolutionManifest = z.output<typeof prescriptionResolutionManifestSchema>;
@@ -318,13 +283,13 @@ export const resolvePrescriptionInputSchema = z
     planning_weekday: weekdaySchema.nullable().optional(),
     candidates: z
       .array(immutableActivityPlanRevisionSchema)
-      .max(DEFAULT_TRAINING_PLAN_POLICY_V1.limits.candidates + 1),
+      .max(DEFAULT_TRAINING_PLAN_POLICY_V2.limits.candidates + 1),
     provenance: provenanceSchema.optional(),
   })
   .strict();
 export type ResolvePrescriptionInput = z.input<typeof resolvePrescriptionInputSchema>;
 
-function structureHash(structure: unknown): string {
+function structureHash(structure: unknown) {
   return `v1:sha256:${sha256Hex(stringifyCanonicalJson(structure))}`;
 }
 function unsupported(
@@ -335,53 +300,22 @@ function unsupported(
 }
 function durationSeconds(structure: ImmutableActivityPlanRevision["structure"]): number | null {
   let total = 0;
-  for (const segment of structure.segments) {
-    if (segment.role === "rest") {
-      total += segment.duration.seconds;
-      continue;
+  for (const item of structure.items)
+    for (const step of item.type === "step" ? [item] : item.steps) {
+      if (step.duration.type !== "time") return null;
+      total += step.duration.seconds * (item.type === "repeat" ? item.count : 1);
     }
-    for (const interval of segment.intervals)
-      for (const step of interval.steps) {
-        if (step.duration.type !== "time") return null;
-        total += step.duration.seconds * interval.repetitions;
-      }
-  }
   return total;
 }
-function hasDistanceDuration(structure: ImmutableActivityPlanRevision["structure"]): boolean {
-  return structure.segments.some(
-    (segment) =>
-      segment.role === "activity" &&
-      segment.intervals.some((interval) =>
-        interval.steps.some((step) => step.duration.type === "distance"),
-      ),
-  );
-}
-function hasUnsupportedRepetitionDuration(
+function hasDuration(
   structure: ImmutableActivityPlanRevision["structure"],
-): boolean {
-  return (
-    structure.activity_category !== "strength" &&
-    structure.segments.some(
-      (segment) =>
-        segment.role === "activity" &&
-        segment.intervals.some((interval) =>
-          interval.steps.some((step) => step.duration.type === "repetitions"),
-        ),
-    )
-  );
-}
-function targetDurationMinutes(
-  demand: z.output<typeof sessionDemandSchema>,
-  preferences: EffectiveTrainingPlanPreferences,
+  type: "distance" | "repetitions",
 ) {
-  return (
-    demand.target_duration_minutes ??
-    preferences.target_weekly_duration_minutes / preferences.weekly_session_count
+  return structure.items.some((item) =>
+    (item.type === "step" ? [item] : item.steps).some((step) => step.duration.type === type),
   );
 }
 type TargetType = "watts" | "bpm" | "speed" | "%FTP" | "%ThresholdHR" | "%MaxHR" | "RPE";
-
 function hasTarget(targets: readonly { type: string }[], type: TargetType) {
   return targets.some((target) => target.type === type);
 }
@@ -389,10 +323,30 @@ function absoluteHasAlternative(
   targets: readonly { type: string }[],
   type: "watts" | "bpm" | "speed",
 ) {
-  if (hasTarget(targets, "RPE")) return true;
-  if (type === "watts") return hasTarget(targets, "%FTP");
-  if (type === "bpm") return hasTarget(targets, "%ThresholdHR") || hasTarget(targets, "%MaxHR");
-  return false;
+  return (
+    hasTarget(targets, "RPE") ||
+    (type === "watts"
+      ? hasTarget(targets, "%FTP")
+      : type === "bpm"
+        ? hasTarget(targets, "%ThresholdHR") || hasTarget(targets, "%MaxHR")
+        : false)
+  );
+}
+function eachStep(
+  structure: ImmutableActivityPlanRevision["structure"],
+  visit: (targets: readonly { type: string }[]) => void,
+) {
+  for (const item of structure.items)
+    for (const step of item.type === "step" ? [item] : item.steps) visit(step.targets);
+}
+function hasRequiredAbsoluteEvidence(structure: ImmutableActivityPlanRevision["structure"]) {
+  let required = false;
+  eachStep(structure, (targets) => {
+    required ||=
+      (hasTarget(targets, "watts") && !absoluteHasAlternative(targets, "watts")) ||
+      (hasTarget(targets, "bpm") && !absoluteHasAlternative(targets, "bpm"));
+  });
+  return required;
 }
 function freshEvidenceForObjective(
   structure: ImmutableActivityPlanRevision["structure"],
@@ -405,7 +359,6 @@ function freshEvidenceForObjective(
   const source = baseline.context.performanceTargets;
   let used = false;
   let missing = false;
-
   const copyPower = () => {
     if (structure.activity_category !== "bike") return false;
     const fact = source.thresholds.bike;
@@ -436,53 +389,39 @@ function freshEvidenceForObjective(
     used = true;
     return true;
   };
-  for (const segment of structure.segments)
-    if (segment.role === "activity")
-      for (const interval of segment.intervals)
-        for (const step of interval.steps) {
-          if (hasTarget(step.targets, "%FTP")) copyPower();
-          if (hasTarget(step.targets, "%ThresholdHR")) copyHeartRate("lthr");
-          if (hasTarget(step.targets, "%MaxHR")) copyHeartRate("maxHr");
-          if (
-            hasTarget(step.targets, "watts") &&
-            !absoluteHasAlternative(step.targets, "watts") &&
-            !copyPower()
-          )
-            missing = true;
-          if (
-            hasTarget(step.targets, "bpm") &&
-            !absoluteHasAlternative(step.targets, "bpm") &&
-            !copyHeartRate("lthr")
-          )
-            missing = true;
-          if (hasTarget(step.targets, "speed")) copySpeed();
-        }
+  // Common-load estimation uses threshold heart rate even when the authored
+  // target is expressed as a percentage of maximum heart rate.  Preserve both
+  // independently fresh facts rather than discarding LTHR at this boundary.
+  const copyHeartRateContext = () => {
+    const lthr = copyHeartRate("lthr");
+    const maxHr = copyHeartRate("maxHr");
+    return lthr || maxHr;
+  };
+  eachStep(structure, (targets) => {
+    if (hasTarget(targets, "%FTP")) copyPower();
+    if (hasTarget(targets, "%ThresholdHR") || hasTarget(targets, "%MaxHR")) copyHeartRateContext();
+    if (hasTarget(targets, "watts") && !absoluteHasAlternative(targets, "watts") && !copyPower())
+      missing = true;
+    if (
+      hasTarget(targets, "bpm") &&
+      !absoluteHasAlternative(targets, "bpm") &&
+      !copyHeartRate("lthr")
+    )
+      missing = true;
+    if (hasTarget(targets, "speed")) copySpeed();
+  });
   return { facts, used, missing };
 }
-function hasRequiredAbsoluteEvidence(structure: ImmutableActivityPlanRevision["structure"]) {
-  return structure.segments.some(
-    (segment) =>
-      segment.role === "activity" &&
-      segment.intervals.some((interval) =>
-        interval.steps.some(
-          (step) =>
-            (hasTarget(step.targets, "watts") && !absoluteHasAlternative(step.targets, "watts")) ||
-            (hasTarget(step.targets, "bpm") && !absoluteHasAlternative(step.targets, "bpm")),
-        ),
-      ),
-  );
-}
-
 function compactEvidenceFacts(
   facts: ReturnType<typeof createUnavailableAthletePerformanceTargetFacts>,
 ) {
   const result: z.output<typeof prescriptionEvidenceFactSchema>[] = [];
-  for (const activityCategory of ["bike", "run", "swim"] as const) {
-    const threshold = facts.thresholds[activityCategory];
+  for (const activity_category of ["bike", "run", "swim"] as const) {
+    const threshold = facts.thresholds[activity_category];
     if (threshold.status === "available")
       result.push({
         kind: "threshold",
-        activity_category: activityCategory,
+        activity_category,
         metric: threshold.metric,
         unit: threshold.unit,
         value: threshold.value,
@@ -491,11 +430,11 @@ function compactEvidenceFacts(
         policy_version: threshold.policyVersion,
       });
     for (const metric of ["lthr", "maxHr"] as const) {
-      const heartRate = facts.heartRate[activityCategory][metric];
+      const heartRate = facts.heartRate[activity_category][metric];
       if (heartRate.status === "available")
         result.push({
           kind: "heart_rate",
-          activity_category: activityCategory,
+          activity_category,
           metric,
           unit: "beats_per_minute",
           value: heartRate.valueBpm,
@@ -506,126 +445,6 @@ function compactEvidenceFacts(
     }
   }
   return result;
-}
-type PreparedCandidate = {
-  candidate: ImmutableActivityPlanRevision;
-  adaptation_values: z.output<typeof semanticAdaptationValuesSchema>;
-  structure: ImmutableActivityPlanRevision["structure"];
-  authored_structure_hash: string;
-  duration_seconds: number | null;
-  target_distance_seconds: number;
-};
-
-function intentCanBeInvalidatedByStructure(
-  trainingIntent: ImmutableActivityPlanRevision["training_intent"],
-) {
-  return [
-    "recovery",
-    "threshold_development",
-    "vo2max",
-    "anaerobic_capacity",
-    "speed_skill",
-    "technique",
-  ].includes(trainingIntent);
-}
-
-function* adaptationStates(
-  adaptation: ImmutableActivityPlanRevision["adaptation"],
-): Generator<z.output<typeof semanticAdaptationValuesSchema>, void> {
-  if (!adaptation) {
-    yield {};
-    return;
-  }
-  if (adaptation.allowedStates) {
-    for (const state of adaptation.allowedStates)
-      yield semanticAdaptationValuesSchema.parse(state.values);
-    return;
-  }
-  const controls = adaptation.controls;
-  function* visit(
-    index: number,
-    current: Record<string, number>,
-  ): Generator<z.output<typeof semanticAdaptationValuesSchema>, void> {
-    const control = controls[index];
-    if (!control) {
-      yield semanticAdaptationValuesSchema.parse({ ...current });
-      return;
-    }
-    const count =
-      Math.floor((control.range.maximum - control.range.minimum) / control.range.increment) + 1;
-    for (let step = 0; step < count; step += 1) {
-      const raw = control.range.minimum + step * control.range.increment;
-      current[control.key] = Number.isInteger(raw) ? raw : Number(raw.toFixed(9));
-      yield* visit(index + 1, current);
-    }
-    delete current[control.key];
-  }
-  yield* visit(0, {});
-}
-
-function adaptationStateCount(adaptation: ImmutableActivityPlanRevision["adaptation"]) {
-  if (!adaptation) return 1;
-  if (adaptation.allowedStates) return adaptation.allowedStates.length;
-  let total = 1;
-  for (const control of adaptation.controls) {
-    const cardinality =
-      Math.floor((control.range.maximum - control.range.minimum) / control.range.increment) + 1;
-    total *= cardinality;
-    if (
-      !Number.isSafeInteger(total) ||
-      total > DEFAULT_TRAINING_PLAN_POLICY_V1.limits.adaptation_states
-    )
-      return Number.POSITIVE_INFINITY;
-  }
-  return total;
-}
-
-function prepareCandidate(input: {
-  candidate: ImmutableActivityPlanRevision;
-  structure: ImmutableActivityPlanRevision["structure"];
-  adaptation: ImmutableActivityPlanRevision["adaptation"];
-  targetSeconds: number;
-  maximumSeconds: number;
-}): { candidates: PreparedCandidate[]; invalid: boolean } {
-  let invalid = false;
-  const candidates: PreparedCandidate[] = [];
-  const authoredStructureHash = structureHash(input.structure);
-  for (const adaptationValues of adaptationStates(input.adaptation)) {
-    const resolution = resolveActivityPlanStructure({
-      structure: input.structure,
-      adaptation: input.adaptation,
-      adaptation_values: adaptationValues,
-    });
-    if (resolution.status !== "resolved") {
-      invalid = true;
-      continue;
-    }
-    const duration = durationSeconds(resolution.structure);
-    if (duration !== null && duration > input.maximumSeconds) continue;
-    // The intent validator only rejects these intent variants; skipping its
-    // invariant-compatible cases avoids re-deriving plan characteristics for
-    // every state in a bounded adaptation surface.
-    if (intentCanBeInvalidatedByStructure(input.candidate.training_intent)) {
-      const intent = validateActivityPlanIntent({
-        intent: { training_intent: input.candidate.training_intent },
-        structure: resolution.structure,
-      });
-      if (intent.status !== "compatible") {
-        invalid = true;
-        continue;
-      }
-    }
-    candidates.push({
-      candidate: input.candidate,
-      adaptation_values: adaptationValues,
-      structure: resolution.structure,
-      authored_structure_hash: authoredStructureHash,
-      duration_seconds: duration,
-      target_distance_seconds:
-        duration === null ? Number.POSITIVE_INFINITY : Math.abs(duration - input.targetSeconds),
-    });
-  }
-  return { candidates, invalid };
 }
 function compactEstimate(
   estimate: ReturnType<typeof estimateActivityPlanForTrainingContext>,
@@ -638,7 +457,7 @@ function compactEstimate(
     },
     common_load: {
       status: common.status,
-      value: common.status !== "unavailable" ? common.load : null,
+      value: common.status === "unavailable" ? null : common.load,
     },
     rest_seconds: estimate.restSeconds,
     has_open_completion: estimate.hasOpenCompletion,
@@ -649,91 +468,62 @@ function compactEstimate(
 function preferencesAreDefault(preferences: EffectiveTrainingPlanPreferences) {
   return (
     stringifyCanonicalJson(preferences) ===
-    stringifyCanonicalJson(DEFAULT_TRAINING_PLAN_POLICY_V1.preference_defaults)
+    stringifyCanonicalJson(DEFAULT_TRAINING_PLAN_POLICY_V2.preference_defaults)
   );
 }
-
-function adaptationPreferenceScore(
-  prepared: PreparedCandidate,
-  preferences: EffectiveTrainingPlanPreferences,
-) {
-  const controls = prepared.candidate.adaptation?.controls;
-  if (!controls) return 0;
-  let score = 0;
-  for (const control of controls) {
-    const value = prepared.adaptation_values[control.key] ?? control.range.default;
-    const span = control.range.maximum - control.range.minimum;
-    const normalized = span === 0 ? 0 : (value - control.range.minimum) / span;
-    const defaultDistance = Math.abs(value - control.range.default) / (span || 1);
-    if (control.kind === "recovery_quantity") {
-      score +=
-        preferences.recovery_priority === "high"
-          ? -normalized
-          : preferences.recovery_priority === "low"
-            ? normalized
-            : defaultDistance;
-      continue;
-    }
-    if (control.kind === "target_intensity" && preferences.recovery_priority === "high") {
-      score += normalized;
-      continue;
-    }
-    score +=
-      preferences.progression_style === "ambitious"
-        ? -normalized
-        : preferences.progression_style === "conservative"
-          ? normalized
-          : defaultDistance;
-  }
-  return score;
-}
-
 function structureIntensityScore(structure: ImmutableActivityPlanRevision["structure"]) {
   let score = 0;
-  for (const segment of structure.segments) {
-    if (segment.role !== "activity") continue;
-    for (const interval of segment.intervals)
-      for (const step of interval.steps)
-        for (const target of step.targets) {
-          const definition = activityTargetDefinitionByType[target.type];
-          score +=
-            (target.intensity - definition.minimum) /
-            Math.max(definition.saveableMaximum - definition.minimum, 1);
-        }
-  }
+  for (const item of structure.items)
+    for (const step of item.type === "step" ? [item] : item.steps)
+      for (const target of step.targets) {
+        if (target.type === "rest") continue;
+        const definition = activityTargetDefinitionByType[target.type];
+        score +=
+          ((target.intensity - definition.minimum) /
+            Math.max(definition.saveableMaximum - definition.minimum, 1)) *
+          (item.type === "repeat" ? item.count : 1);
+      }
   return score;
 }
-
+function targetDurationMinutes(
+  demand: z.output<typeof sessionDemandSchema>,
+  preferences: EffectiveTrainingPlanPreferences,
+) {
+  return (
+    demand.target_duration_minutes ??
+    preferences.target_weekly_duration_minutes / preferences.weekly_session_count
+  );
+}
 function objectiveScore(
-  prepared: PreparedCandidate,
+  input: { duration_seconds: number | null },
   estimate: PrescriptionEstimate | null,
   demand: z.output<typeof sessionDemandSchema>,
   targetSeconds: number,
 ) {
   const importanceWeight =
     demand.importance === "key" ? 1.5 : demand.importance === "support" ? 0.75 : 1;
-  const durationShortfall = (prepared.duration_seconds ?? 0) < targetSeconds;
+  const duration = input.duration_seconds ?? 0;
   const durationError =
-    (prepared.target_distance_seconds / Math.max(targetSeconds, 1)) *
-    (durationShortfall ? importanceWeight : 1);
+    (Math.abs(duration - targetSeconds) / Math.max(targetSeconds, 1)) *
+    (duration < targetSeconds ? importanceWeight : 1);
   if (demand.target_common_load === null) return durationError;
   if (estimate?.common_load.value === null || estimate === null) return Number.POSITIVE_INFINITY;
-  const loadShortfall = estimate.common_load.value < demand.target_common_load;
-  const loadError =
+  return (
+    durationError +
     (Math.abs(estimate.common_load.value - demand.target_common_load) /
       Math.max(demand.target_common_load, 1)) *
-    (loadShortfall ? importanceWeight : 1);
-  return durationError + loadError;
+      (estimate.common_load.value < demand.target_common_load ? importanceWeight : 1)
+  );
 }
 
-/** The sole deterministic Core authority for selecting, adapting, validating, and estimating a prescription. */
+/** Deterministically selects and validates one fixed V4 prescription; it never rewrites authored structure. */
 export function resolvePrescription(input: ResolvePrescriptionInput): PrescriptionResolutionResult {
   const parsed = resolvePrescriptionInputSchema.parse(input);
   const baseline =
     parsed.baseline.status === "no_context"
       ? { ...parsed.baseline, as_of: NO_CONTEXT_CALCULATION_AS_OF }
       : parsed.baseline;
-  if (parsed.candidates.length > DEFAULT_TRAINING_PLAN_POLICY_V1.limits.candidates)
+  if (parsed.candidates.length > DEFAULT_TRAINING_PLAN_POLICY_V2.limits.candidates)
     return unsupported(
       "candidate_limit_exceeded",
       "Candidate catalog exceeds the 1000-item resolver limit.",
@@ -746,11 +536,11 @@ export function resolvePrescription(input: ResolvePrescriptionInput): Prescripti
       training_plan_hash: null,
     },
   );
-  const seen = new Set<string>();
+  const ids = new Set<string>();
   for (const candidate of parsed.candidates) {
-    if (seen.has(candidate.id))
+    if (ids.has(candidate.id))
       return unsupported("duplicate_candidate_id", "Candidate IDs must be unique.");
-    seen.add(candidate.id);
+    ids.add(candidate.id);
   }
   if (
     parsed.planning_weekday !== null &&
@@ -795,58 +585,25 @@ export function resolvePrescription(input: ResolvePrescriptionInput): Prescripti
       "missing_exact_coverage",
       "No candidate exactly matches the requested category and intent.",
     );
-  const targetMinutes = targetDurationMinutes(parsed.demand, preferences);
   const maximumSeconds = preferences.maximum_session_duration_minutes * 60;
-  const executableCandidates = pool.map((candidate) => ({
-    candidate,
-    structure: candidate.structure,
-    adaptation: candidate.adaptation,
-  }));
-  let aggregateStateCount = 0;
-  for (const candidate of executableCandidates) {
-    aggregateStateCount += adaptationStateCount(candidate.adaptation);
+  const targetSeconds = targetDurationMinutes(parsed.demand, preferences) * 60;
+  const eligible = pool.flatMap((candidate) => {
     if (
-      !Number.isSafeInteger(aggregateStateCount) ||
-      aggregateStateCount > DEFAULT_TRAINING_PLAN_POLICY_V1.limits.adaptation_states
+      validateActivityPlanIntent({
+        intent: { training_intent: candidate.training_intent },
+        structure: candidate.structure,
+      }).status !== "compatible"
     )
-      return unsupported(
-        "adaptation_surface_limit_exceeded",
-        "Executable adaptation domain exceeds the 10000-state resolver limit.",
-      );
-  }
-  const preparation = executableCandidates.map((candidate) =>
-    prepareCandidate({
-      ...candidate,
-      targetSeconds: targetMinutes * 60,
-      maximumSeconds,
-    }),
-  );
-  if (preparation.some((result) => result.invalid))
-    return unsupported(
-      "adaptation_invalid",
-      "An activity-plan adaptation state is invalid or violates its training intent.",
-    );
-  const prepared = preparation.flatMap((result) => result.candidates);
-  if (prepared.length === 0)
-    return unsupported(
-      "hard_duration_exceeded",
-      "No exact candidate can resolve within the maximum session duration hard constraint.",
-    );
-  const asOf = baseline.status === "available" ? baseline.context.evidence.asOf : baseline.as_of;
-  const evidenceByCandidate = new Map<
-    ImmutableActivityPlanRevision,
-    ReturnType<typeof freshEvidenceForObjective>
-  >();
-  const eligible = prepared.flatMap((candidate) => {
-    let evidence = evidenceByCandidate.get(candidate.candidate);
-    if (!evidence) {
-      evidence = freshEvidenceForObjective(candidate.structure, baseline);
-      evidenceByCandidate.set(candidate.candidate, evidence);
-    }
-    if (evidence.missing) return [];
-    return [{ candidate, evidence }];
+      return [];
+    const authoredDuration = durationSeconds(candidate.structure);
+    if (authoredDuration !== null && authoredDuration > maximumSeconds) return [];
+    const evidence = freshEvidenceForObjective(candidate.structure, baseline);
+    return evidence.missing ? [] : [{ candidate, authoredDuration, evidence }];
   });
-  if (eligible.length === 0)
+  if (
+    eligible.length === 0 &&
+    pool.some((candidate) => freshEvidenceForObjective(candidate.structure, baseline).missing)
+  )
     return {
       status: "needs_input",
       missing: [
@@ -858,55 +615,54 @@ export function resolvePrescription(input: ResolvePrescriptionInput): Prescripti
         },
       ],
     };
-  const evaluatedBeforeDurationConstraint = eligible.map(({ candidate, evidence }) => {
-    const estimate =
-      candidate.duration_seconds === null || parsed.demand.target_common_load !== null
-        ? compactEstimate(
-            estimateActivityPlanForTrainingContext({
-              structure: candidate.structure,
-              performanceTargets: evidence.facts,
-              asOf,
-              planId: candidate.candidate.id,
-              stage: "plan",
-            }),
-          )
-        : null;
-    const durationSeconds = candidate.duration_seconds ?? estimate?.duration.value_seconds ?? null;
-    return {
-      candidate: {
-        ...candidate,
-        duration_seconds: durationSeconds,
-        target_distance_seconds:
-          durationSeconds === null
-            ? Number.POSITIVE_INFINITY
-            : Math.abs(durationSeconds - targetMinutes * 60),
-      },
-      evidence,
-      estimate,
-    };
-  });
-  const evaluated = evaluatedBeforeDurationConstraint.filter(
-    (item) =>
-      item.candidate.duration_seconds !== null && item.candidate.duration_seconds <= maximumSeconds,
-  );
+  if (eligible.length === 0)
+    return unsupported(
+      "hard_duration_exceeded",
+      "No exact candidate can resolve within the maximum session duration hard constraint.",
+    );
+  const asOf = baseline.status === "available" ? baseline.context.evidence.asOf : baseline.as_of;
+  const evaluated = eligible
+    .map((item) => {
+      const estimate =
+        item.authoredDuration === null || parsed.demand.target_common_load !== null
+          ? compactEstimate(
+              estimateActivityPlanForTrainingContext({
+                structure: item.candidate.structure,
+                performanceTargets: item.evidence.facts,
+                asOf,
+                planId: item.candidate.id,
+                stage: "plan",
+              }),
+            )
+          : null;
+      const duration = item.authoredDuration ?? estimate?.duration.value_seconds ?? null;
+      return {
+        ...item,
+        estimate,
+        duration,
+        objective: objectiveScore(
+          { duration_seconds: duration },
+          estimate,
+          parsed.demand,
+          targetSeconds,
+        ),
+        intensity: structureIntensityScore(item.candidate.structure),
+      };
+    })
+    .filter((item) => item.duration !== null && item.duration <= maximumSeconds);
   if (evaluated.length === 0) {
     if (
-      evaluatedBeforeDurationConstraint.some(
-        (item) =>
-          item.candidate.duration_seconds === null &&
-          hasUnsupportedRepetitionDuration(item.candidate.structure),
+      pool.some(
+        (candidate) =>
+          hasDuration(candidate.structure, "repetitions") &&
+          candidate.structure.activity_category !== "strength",
       )
     )
       return unsupported(
         "unsupported_duration",
         "Non-strength repetition prescriptions require an explicit duration policy.",
       );
-    if (
-      evaluatedBeforeDurationConstraint.some(
-        (item) =>
-          item.candidate.duration_seconds === null && hasDistanceDuration(item.candidate.structure),
-      )
-    )
+    if (pool.some((candidate) => hasDuration(candidate.structure, "distance")))
       return {
         status: "needs_input",
         missing: [
@@ -937,57 +693,29 @@ export function resolvePrescription(input: ResolvePrescriptionInput): Prescripti
         },
       ],
     };
-  const ranked = evaluated.map((item) => ({
-    ...item,
-    objective_score: objectiveScore(
-      item.candidate,
-      item.estimate,
-      parsed.demand,
-      targetMinutes * 60,
-    ),
-    common_load_score: item.estimate?.common_load.value ?? Number.POSITIVE_INFINITY,
-    intensity_score: structureIntensityScore(item.candidate.structure),
-    adaptation_preference_score: adaptationPreferenceScore(item.candidate, preferences),
-    adaptation_values_key: stringifyCanonicalJson(item.candidate.adaptation_values),
-  }));
-  const compareRankedCandidates = (
-    left: (typeof ranked)[number],
-    right: (typeof ranked)[number],
-  ) => {
-    const leftCandidate = left.candidate;
-    const rightCandidate = right.candidate;
-    return (
-      left.objective_score - right.objective_score ||
-      left.common_load_score - right.common_load_score ||
-      left.intensity_score - right.intensity_score ||
-      (leftCandidate.duration_seconds ?? Number.POSITIVE_INFINITY) -
-        (rightCandidate.duration_seconds ?? Number.POSITIVE_INFINITY) ||
-      left.adaptation_preference_score - right.adaptation_preference_score ||
-      left.adaptation_values_key.localeCompare(right.adaptation_values_key) ||
-      leftCandidate.candidate.semantic_hash.localeCompare(rightCandidate.candidate.semantic_hash) ||
-      leftCandidate.candidate.id.localeCompare(rightCandidate.candidate.id) ||
-      leftCandidate.candidate.revision - rightCandidate.candidate.revision
-    );
-  };
-  let selectedEvaluation = ranked[0];
-  for (const candidate of ranked.slice(1))
-    if (selectedEvaluation && compareRankedCandidates(candidate, selectedEvaluation) < 0)
-      selectedEvaluation = candidate;
-  if (!selectedEvaluation) return unsupported("missing_exact_coverage");
-  const { candidate: selected, evidence } = selectedEvaluation;
-  const candidate = selected.candidate;
+  const selected = [...evaluated].sort(
+    (left, right) =>
+      left.objective - right.objective ||
+      (left.estimate?.common_load.value ?? Infinity) -
+        (right.estimate?.common_load.value ?? Infinity) ||
+      left.intensity - right.intensity ||
+      left.candidate.semantic_hash.localeCompare(right.candidate.semantic_hash) ||
+      left.candidate.id.localeCompare(right.candidate.id) ||
+      left.candidate.revision - right.candidate.revision,
+  )[0];
+  if (!selected) return unsupported("missing_exact_coverage");
   const estimate =
-    selectedEvaluation.estimate ??
+    selected.estimate ??
     compactEstimate(
       estimateActivityPlanForTrainingContext({
-        structure: selected.structure,
-        performanceTargets: evidence.facts,
+        structure: selected.candidate.structure,
+        performanceTargets: selected.evidence.facts,
         asOf,
-        planId: candidate.id,
+        planId: selected.candidate.id,
         stage: "plan",
       }),
     );
-  const fallback_level = evidence.used
+  const fallback_level = selected.evidence.used
     ? "evidence_informed"
     : baseline.status === "no_context" && preferencesAreDefault(preferences)
       ? "system_default_no_context"
@@ -998,33 +726,27 @@ export function resolvePrescription(input: ResolvePrescriptionInput): Prescripti
     preferences.preferred_weekdays.includes(parsed.planning_weekday)
       ? ["preferred_weekday" as const]
       : [];
-  const resolved_structure_hash = structureHash(selected.structure);
-  const effectiveEvidence = {
-    // Evaluation time is request metadata, not evidence. The revision and facts
-    // below retain changes that can alter the resolved prescription.
-    revision: baseline.status === "available" ? baseline.revision : null,
-    facts: compactEvidenceFacts(evidence.facts),
-  };
-  const fingerprint = `v1:sha256:${sha256Hex(stringifyCanonicalJson({ resolver_version: DEFAULT_TRAINING_PLAN_POLICY_V1.resolver_version, policy_version: DEFAULT_TRAINING_PLAN_POLICY_V1.version, preferences, planning_weekday: parsed.planning_weekday ?? null, demand: parsed.demand, provenance, candidate: { id: candidate.id, revision: candidate.revision, semantic_hash: candidate.semantic_hash, structure_hash: selected.authored_structure_hash }, adaptation_values: selected.adaptation_values, resolved_structure_hash, effective_evidence: effectiveEvidence, estimate }))}`;
+  const resolved_structure_hash = structureHash(selected.candidate.structure);
+  const evidence_facts = compactEvidenceFacts(selected.evidence.facts);
+  const fingerprint = `v1:sha256:${sha256Hex(stringifyCanonicalJson({ resolver_version: DEFAULT_TRAINING_PLAN_POLICY_V2.resolver_version, policy_version: DEFAULT_TRAINING_PLAN_POLICY_V2.version, preferences, planning_weekday: parsed.planning_weekday ?? null, demand: parsed.demand, provenance, candidate: { id: selected.candidate.id, revision: selected.candidate.revision, semantic_hash: selected.candidate.semantic_hash, structure_hash: resolved_structure_hash }, resolved_structure_hash, effective_evidence: { revision: baseline.status === "available" ? baseline.revision : null, facts: evidence_facts }, estimate }))}`;
   return {
     status: "resolved",
     manifest: prescriptionResolutionManifestSchema.parse({
-      resolver_version: DEFAULT_TRAINING_PLAN_POLICY_V1.resolver_version,
-      policy_version: DEFAULT_TRAINING_PLAN_POLICY_V1.version,
+      resolver_version: DEFAULT_TRAINING_PLAN_POLICY_V2.resolver_version,
+      policy_version: DEFAULT_TRAINING_PLAN_POLICY_V2.version,
       ...provenance,
       athlete_context_revision:
-        evidence.used && baseline.status === "available" ? baseline.revision : null,
-      activity_plan_id: candidate.id,
-      activity_plan_revision: candidate.revision,
-      activity_plan_semantic_hash: candidate.semantic_hash,
+        selected.evidence.used && baseline.status === "available" ? baseline.revision : null,
+      activity_plan_id: selected.candidate.id,
+      activity_plan_revision: selected.candidate.revision,
+      activity_plan_semantic_hash: selected.candidate.semantic_hash,
       session_demand: parsed.demand,
-      adaptation_values: selected.adaptation_values,
-      effective_target_duration_minutes: targetMinutes,
+      effective_target_duration_minutes: targetSeconds / 60,
       effective_target_common_load: parsed.demand.target_common_load,
-      evidence_facts: compactEvidenceFacts(evidence.facts),
+      evidence_facts,
       fallback_level,
       reason_codes,
-      resolved_structure: selected.structure,
+      resolved_structure: selected.candidate.structure,
       resolved_structure_hash,
       prescription_estimate: estimate,
       fingerprint,

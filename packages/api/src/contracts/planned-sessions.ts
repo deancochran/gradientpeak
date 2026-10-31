@@ -1,6 +1,7 @@
 import { planningDayIdentitySchema } from "@repo/core/athlete-intelligence";
 import {
   type PlannedSession,
+  plannedSessionActivityPlanId,
   plannedSessionComparisonSchema,
   plannedSessionLifecycleSchema,
   plannedSessionOperationIdSchema,
@@ -133,6 +134,15 @@ export const plannedSessionMutationSchema = z.discriminatedUnion("action", [
       groupEventId: uuidSchema,
     })
     .strict(),
+  z
+    .object({
+      action: z.literal("repoint_activity_plan"),
+      profileId: uuidSchema,
+      sessionId: uuidSchema,
+      expectedRevision: z.number().int().positive(),
+      activityPlanId: uuidSchema,
+    })
+    .strict(),
 ]);
 
 export const plannedSessionMutationResultSchema = z.discriminatedUnion("status", [
@@ -153,7 +163,12 @@ export const plannedSessionMutationResultSchema = z.discriminatedUnion("status",
   z
     .object({
       status: z.literal("conflict"),
-      reason: z.enum(["already_completed", "activity_not_owned", "group_event_already_linked"]),
+      reason: z.enum([
+        "already_completed",
+        "activity_not_owned",
+        "group_event_already_linked",
+        "not_scheduled",
+      ]),
     })
     .strict(),
 ]);
@@ -167,7 +182,10 @@ export const plannedSessionDtoSchema = z
     originalTargetDate: planningDayIdentitySchema,
     source: plannedSessionSourceSchema,
     groupEventId: uuidSchema.nullable(),
-    prescription: plannedSessionPrescriptionSnapshotSchema,
+    /** Durable current-plan reference; required for all new and migrated rows. */
+    activityPlanId: uuidSchema,
+    /** Legacy scheduling provenance only; absent from new reference-based rows. */
+    prescription: plannedSessionPrescriptionSnapshotSchema.optional(),
     lifecycle: plannedSessionLifecycleSchema,
   })
   .strict();
@@ -179,6 +197,7 @@ export const plannedSessionDetailDtoSchema = plannedSessionDtoSchema
 export const createPlannedSessionDtoRequestSchema = z
   .object({
     profileId: uuidSchema,
+    operationId: uuidSchema.optional(),
     session: z
       .object({
         planningDate: planningDayIdentitySchema,
@@ -203,13 +222,25 @@ const revisionedSessionRequest = {
 } as const;
 
 export const movePlannedSessionDtoRequestSchema = z
-  .object({ ...revisionedSessionRequest, planningDate: planningDayIdentitySchema })
+  .object({
+    ...revisionedSessionRequest,
+    planningDate: planningDayIdentitySchema,
+    operationId: uuidSchema.optional(),
+  })
+  .strict();
+
+export const changePlannedSessionPlanDtoRequestSchema = z
+  .object({
+    ...revisionedSessionRequest,
+    newName: z.string().min(1, "Plan name is required").optional(),
+  })
   .strict();
 
 export const cancelPlannedSessionDtoRequestSchema = z
   .object({
     ...revisionedSessionRequest,
     reason: z.literal("user_requested").default("user_requested"),
+    operationId: uuidSchema.optional(),
   })
   .strict();
 
@@ -261,7 +292,8 @@ export function toPlannedSessionDto(session: PlannedSession): PlannedSessionDto 
     originalTargetDate: session.originalTargetDate,
     source: session.source,
     groupEventId: session.groupEventId ?? null,
-    prescription: session.prescription,
+    activityPlanId: plannedSessionActivityPlanId(session),
+    ...(session.prescription ? { prescription: session.prescription } : {}),
     lifecycle: session.lifecycle,
   });
 }

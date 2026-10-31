@@ -12,7 +12,7 @@ export const persistentIntegrationSourceIdValues = [
 export const persistentIntegrationSourceIdSchema = z.enum(persistentIntegrationSourceIdValues);
 export type PersistentIntegrationSourceId = z.infer<typeof persistentIntegrationSourceIdSchema>;
 
-export const executableIntegrationProviderIdValues = ["wahoo", "strava"] as const;
+export const executableIntegrationProviderIdValues = ["wahoo", "strava", "garmin"] as const;
 export const executableIntegrationProviderIdSchema = z.enum(executableIntegrationProviderIdValues);
 export type ExecutableIntegrationProviderId = z.infer<typeof executableIntegrationProviderIdSchema>;
 
@@ -369,9 +369,78 @@ export const stravaProviderManifest = {
   "server"
 >;
 
+/**
+ * Garmin Connect supports a deliberately narrow scheduled activity-plan subset. The
+ * durable worker fences each effect by connection generation and WORKOUT_IMPORT;
+ * local worker coverage is not proof of a live Garmin or device delivery.
+ */
+export const garminProviderManifest = {
+  id: "garmin",
+  connectorId: "garmin",
+  defaultSourceId: "garmin",
+  connection: { kind: "oauth2" },
+  execution: "server",
+  label: "Garmin Connect",
+  onboarding: {
+    summary:
+      "Schedule eligible running and cycling activity plans in the next 14 days from your Garmin account.",
+    evidence: { activityHistory: false, profileDetails: false },
+  },
+  plannedActivities: {
+    maturity: "available",
+    supportedDurations: ["time", "distance"],
+    supportedActivityCategories: ["run", "bike"],
+    supportedTargets: ["watts", "bpm", "speed", "cadence"],
+    supportsBoundaries: false,
+    supportsMultipleTargets: false,
+  },
+  capabilities: {
+    profile_enrichment_read: {
+      status: "unsupported",
+      reason: "Garmin profile import is not implemented.",
+    },
+    activity_history_read: {
+      status: "unsupported",
+      reason: "Garmin history import is not implemented; this connector does not poll or backfill.",
+    },
+    activity_file_download: {
+      status: "unsupported",
+      reason: "Garmin activity file import is not implemented.",
+    },
+    activity_file_format_fit: {
+      status: "unsupported",
+      reason: "Garmin FIT import is not implemented.",
+    },
+    completed_activity_export: {
+      status: "unsupported",
+      reason: "Garmin activity export is not implemented.",
+    },
+    planned_activity_push: {
+      status: "supported",
+      operations: ["planned_activity_push"],
+      requiredScopes: ["WORKOUT_IMPORT"],
+      syncMode: "automatic",
+    },
+    route_push: { status: "unsupported", reason: "Garmin route delivery is not implemented." },
+    webhook_activity_updates: {
+      status: "unsupported",
+      reason: "Garmin push delivery is not enabled until its authenticity contract is implemented.",
+    },
+  },
+  runtimeOperations: ["oauth_authorization", "oauth_callback", "disconnect"],
+  actions: [{ action: "disconnect", userFacing: true }],
+  workerRequirements: [{ operation: "planned_activity_push", worker: "garmin-training-sync" }],
+} as const satisfies ProviderManifest<
+  "garmin",
+  "garmin",
+  OAuth2ProviderConnectionDescriptor,
+  "server"
+>;
+
 const providerCapabilityMap = {
   wahoo: wahooProviderManifest,
   strava: stravaProviderManifest,
+  garmin: garminProviderManifest,
 } as const satisfies Record<ExecutableIntegrationProviderId, ProviderCapabilityDefinition>;
 
 /** The single runtime-neutral registry for every executable connector. */

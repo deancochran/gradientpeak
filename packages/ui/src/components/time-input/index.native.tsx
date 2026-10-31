@@ -5,6 +5,7 @@ import DateTimePicker, {
 import { format } from "date-fns";
 import { useMemo, useState } from "react";
 import { Modal, Platform, Pressable, View } from "react-native";
+import { omitUndefined } from "../../lib/omit-undefined";
 import { getNativeTestProps } from "../../lib/test-props";
 import { Button } from "../button/index.native";
 import { Label } from "../label/index.native";
@@ -96,7 +97,7 @@ function TimeInput({
       DateTimePickerAndroid.open({
         value: selectedTime,
         mode: "time",
-        is24Hour,
+        ...omitUndefined({ is24Hour }),
         onChange: (_event, nextTime) => {
           if (nextTime) {
             commitSelectedTime(nextTime);
@@ -115,7 +116,7 @@ function TimeInput({
 
   return (
     <View className="gap-2">
-      <Label nativeID={id}>
+      <Label {...omitUndefined({ nativeID: id })}>
         <Text className="text-sm font-medium text-foreground">
           {label}
           {required ? <Text className="text-destructive"> *</Text> : null}

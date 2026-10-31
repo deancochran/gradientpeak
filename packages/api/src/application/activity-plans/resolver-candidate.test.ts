@@ -8,57 +8,49 @@ import {
 } from "./resolver-candidate";
 import { activityPlanStructureHash } from "./structure-hash";
 
-function candidate(purpose?: "work") {
+function candidate(policyInvalid = false) {
   const structure = activityPlanStructureSchema.parse({
-    version: 3,
+    version: 5,
     activity_category: "run",
-    segments: [
+    items: [
       {
-        id: "11111111-1111-4111-8111-111111111111",
-        role: "activity",
-        name: "Run",
-        intervals: [
-          {
-            id: "22222222-2222-4222-8222-222222222222",
-            name: "Main",
-            repetitions: 1,
-            steps: [
-              {
-                id: "33333333-3333-4333-8333-333333333333",
-                name: "Steady",
-                ...(purpose ? { purpose } : {}),
-                duration: { type: "time", seconds: 1800 },
-                targets: [{ type: "RPE", intensity: 5 }],
-              },
-            ],
-          },
-        ],
+        type: "step",
+        id: "33333333-3333-4333-8333-333333333333",
+        name: "Steady",
+        duration: { type: "time", seconds: 1800 },
+        targets: [{ type: "RPE", intensity: 5 }],
       },
     ],
   });
+  if (policyInvalid) {
+    const firstStep = structure.items
+      .flatMap((item) => (item.type === "step" ? [item] : item.steps))
+      .at(0);
+    if (!firstStep) throw new Error("Candidate fixture requires one activity-plan step");
+    firstStep.duration = { type: "untilFinished" };
+  }
   return {
-    id: purpose ? "44444444-4444-4444-8444-444444444444" : "55555555-5555-4555-8555-555555555555",
+    id: policyInvalid
+      ? "55555555-5555-4555-8555-555555555555"
+      : "44444444-4444-4444-8444-444444444444",
     revision: 1,
     structure,
-    adaptation: null,
     trainingIntent: "general_maintenance",
     structureHash: activityPlanStructureHash(structure),
     semanticHash: activityPlanSemanticHash({
       structure,
-      adaptation: null,
       trainingIntent: "general_maintenance",
     }),
   };
 }
-
 describe("new-selection resolver candidates", () => {
   it("rejects a historically valid but policy-invalid explicit selection", () => {
-    expect(() => toVerifiedResolverCandidate(candidate())).toThrow(ZodError);
-    expect(toVerifiedResolverCandidate(candidate("work"))).toMatchObject({ revision: 1 });
+    expect(() => toVerifiedResolverCandidate(candidate(true))).toThrow(ZodError);
+    expect(toVerifiedResolverCandidate(candidate())).toMatchObject({ revision: 1 });
   });
   it("skips policy-invalid historical candidates for automatic selection without hiding explicit failures", () => {
-    const historical = candidate();
-    const current = candidate("work");
+    const historical = candidate(true);
+    const current = candidate();
     expect(toVerifiedResolverCandidates([historical, current], []).map((item) => item.id)).toEqual([
       current.id,
     ]);
@@ -68,7 +60,7 @@ describe("new-selection resolver candidates", () => {
   });
   it("does not swallow integrity errors during automatic selection", () => {
     expect(() =>
-      toVerifiedResolverCandidates([{ ...candidate("work"), semanticHash: "invalid" }], []),
+      toVerifiedResolverCandidates([{ ...candidate(), semanticHash: "invalid" }], []),
     ).toThrow(ActivityPlanIntegrityError);
   });
 });

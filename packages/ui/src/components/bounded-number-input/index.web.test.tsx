@@ -73,7 +73,7 @@ describe("BoundedNumberInput web editing", () => {
     expect(input).toHaveValue("");
   });
 
-  it("publishes a bounded numeric projection without clamping the editable text", () => {
+  it("retains out-of-range text without publishing a clamped value", () => {
     const onNumberChange = vi.fn();
     render(
       <BoundedNumberInput
@@ -88,10 +88,11 @@ describe("BoundedNumberInput web editing", () => {
     );
     const input = screen.getByRole("textbox", { name: "Quantity" });
     fireEvent.change(input, { target: { value: "1" } });
-    expect(onNumberChange).toHaveBeenLastCalledWith(10);
+    expect(onNumberChange).not.toHaveBeenCalled();
     expect(input).toHaveValue("1");
     fireEvent.blur(input);
-    expect(onNumberChange).toHaveBeenLastCalledWith(10);
+    expect(onNumberChange).not.toHaveBeenCalled();
+    expect(input).toHaveValue("1");
     expect(input).toHaveAttribute("inputmode", "decimal");
   });
 
@@ -137,7 +138,7 @@ describe("BoundedNumberInput web editing", () => {
     const input = screen.getByRole("textbox", { name: "Watts" });
     fireEvent.change(input, { target: { value: "-1" } });
     expect(input).toHaveValue("-1");
-    expect(onNumberChange).toHaveBeenLastCalledWith(undefined);
+    expect(onNumberChange).not.toHaveBeenCalled();
     expect(onInvalidChange).toHaveBeenLastCalledWith(true);
   });
 });

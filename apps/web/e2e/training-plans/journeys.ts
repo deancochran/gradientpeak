@@ -39,7 +39,9 @@ export async function expectTrainingPlanLibraries(
 
 async function createPlan(page: Page, testInfo: TestInfo, profileId: string, suffix: string) {
   const name = trainingPlanName(testInfo, suffix);
-  await page.goto("/training-plans/create");
+  const plans = new TrainingPlansPage(page);
+  await plans.openLibrary();
+  await plans.startCreate();
   await page.getByLabel("Name").fill(name);
   await page.getByLabel("Description").fill("Created through the persisted browser journey.");
   await page.getByRole("button", { name: "Add activity" }).click();
@@ -78,7 +80,7 @@ export async function createEditAndReloadTrainingPlan(
   const { name } = await createPlan(page, testInfo, profileId, "Training plan");
   await page.reload();
   await expect(page.getByRole("heading", { name })).toBeVisible();
-  await page.getByRole("button", { name: "Edit" }).click();
+  await page.getByRole("button", { name: "Edit plan", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Edit training plan" })).toBeVisible();
   const description = "Edited persisted browser journey description.";
   await page.getByLabel("Description").fill(description);

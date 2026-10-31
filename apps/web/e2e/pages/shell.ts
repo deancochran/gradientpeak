@@ -35,6 +35,10 @@ export class ShellPage {
   }
 
   async openAccountMenu(input: "click" | "keyboard" = "click") {
+    // The protected shell is server-rendered before Radix attaches its menu
+    // behavior. Wait for the trigger's hydrated closed state so this remains a
+    // user-menu journey rather than losing a click to hydration.
+    await expect(this.userMenuButton).toHaveAttribute("data-state", "closed");
     if (input === "keyboard") await this.userMenuButton.press("Enter");
     else await this.userMenuButton.click();
   }

@@ -1,3 +1,4 @@
+import { formatGoalTypeLabel, getGoalObjectiveSummary, parseProfileGoalRecord } from "@repo/core";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -13,9 +14,11 @@ import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { GoalIntelligenceCard } from "../../../../components/planning/goal-intelligence-card";
+import { GoalProgressChart } from "../../../../components/planning/goal-progress-chart";
+import { RecordedGoalHistory } from "../../../../components/planning/recorded-goal-history";
 import { RouteFlashToast, type RouteFlashType } from "../../../../components/route-flash-toast";
 import { api } from "../../../../lib/api/client";
 import { formatDayLabel } from "../../../../lib/planning";
@@ -37,9 +40,25 @@ function GoalDetailPage() {
     { enabled: Boolean(goalId), retry: false },
   );
   const goal = goalQuery.data;
+  const goalRecord = useMemo(() => {
+    try {
+      return goal ? parseProfileGoalRecord(goal) : null;
+    } catch {
+      return null;
+    }
+  }, [goal]);
+  const profileQuery = api.profiles.get.useQuery();
   const assessmentQuery = api.athleteIntelligence.getGoalAssessment.useQuery(
     { goalId },
     { enabled: Boolean(goal) },
+  );
+  const progressQuery = api.athleteIntelligence.getGoalProgress.useQuery(
+    { goalId },
+    { enabled: Boolean(goal) },
+  );
+  const historyQuery = api.athleteIntelligence.getThresholdOverview.useQuery(
+    { historyLimit: 100 },
+    { enabled: Boolean(progressQuery.data && progressQuery.data.result.status !== "unsupported") },
   );
   if (goalQuery.isLoading) return <p>Loading goal...</p>;
   if (goalQuery.isError)
@@ -114,9 +133,35 @@ function GoalDetailPage() {
             <Badge variant="outline">Priority {goal.priority}/10</Badge>
           </div>
           <p>Target: {formatDayLabel(goal.target_date)}</p>
-          <GoalTargetDetails target={goal.target_payload} />
+          <GoalTargetDetails goal={goal} />
         </CardContent>
       </Card>
+      {goalRecord && goalRecord.objective.type !== "threshold" ? (
+        <RecordedGoalHistory
+          key={goalId}
+          goal={goalRecord}
+          timezone={profileQuery.data?.planning_timezone}
+        />
+      ) : (
+        <GoalProgressChart
+          planningTimezone={profileQuery.data?.planning_timezone ?? null}
+          targetDate={goal.target_date}
+          key={goalId}
+          data={progressQuery.data}
+          history={historyQuery.data?.history.items ?? []}
+          isLoading={
+            progressQuery.isLoading ||
+            (Boolean(progressQuery.data && progressQuery.data.result.status !== "unsupported") &&
+              historyQuery.isLoading)
+          }
+          isError={progressQuery.isError}
+          historyError={historyQuery.isError}
+          onRetry={() => {
+            void progressQuery.refetch();
+            void historyQuery.refetch();
+          }}
+        />
+      )}
       <GoalIntelligenceCard
         {...(assessmentQuery.data !== undefined ? { assessment: assessmentQuery.data } : {})}
         isError={assessmentQuery.isError}
@@ -127,27 +172,18 @@ function GoalDetailPage() {
   );
 }
 
-function GoalTargetDetails({ target }: { target: unknown }) {
-  if (!target || typeof target !== "object") {
+function GoalTargetDetails({ goal }: { goal: unknown }) {
+  let record: ReturnType<typeof parseProfileGoalRecord>;
+  try {
+    record = parseProfileGoalRecord(goal);
+  } catch {
     return <p className="text-sm text-muted-foreground">No target details are available.</p>;
   }
-  const payload = target as {
-    target_sessions_per_week?: unknown;
-    target_weeks?: unknown;
-    type?: unknown;
-  };
-  if (payload.type === "consistency") {
-    return (
-      <p className="text-sm">
-        Consistency target: {String(payload.target_sessions_per_week ?? "unspecified")} sessions per
-        week for {String(payload.target_weeks ?? "unspecified")} weeks.
-      </p>
-    );
-  }
   return (
-    <p className="text-sm text-muted-foreground">
-      Target type: {String(payload.type ?? "unknown")}.
-    </p>
+    <div className="border-l-4 border-primary pl-4">
+      <p className="text-xs text-muted-foreground">{formatGoalTypeLabel(record)}</p>
+      <p className="mt-1 text-2xl font-semibold">{getGoalObjectiveSummary(record)}</p>
+    </div>
   );
 }
 

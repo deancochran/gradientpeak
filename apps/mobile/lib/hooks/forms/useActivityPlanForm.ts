@@ -1,47 +1,63 @@
 import { invalidateActivityPlanQueries } from "@repo/api/react";
 import {
+  type ActivityPlanMetric,
   type ActivityPlanStructure,
   activityPlanAuthoringContentSchema,
   activityPlanStructureSchema,
   calculateActivityPlanStats,
   compileActivityPlan,
   consolidateActivityPlanText,
+  normalizeActivityPlanAuthoringStructure,
+  resolveActivityPlanDraft,
 } from "@repo/core";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
 import type { ZodIssue } from "zod";
 import { api } from "@/lib/api";
+import { omitUndefined } from "@/lib/omitUndefined";
 import {
-  type EditableActivityPlanStructure,
+  type ActivityPlanDraftStructure,
   useActivityPlanCreationStore,
 } from "@/lib/stores/activityPlanCreation";
 import { showErrorAlert } from "@/lib/utils/formErrors";
 
 export type ActivityPlanValidationErrors = Record<string, string>;
+export type ActivityPlanValidationIssue = {
+  key: string;
+  message: string;
+  label?: string;
+  intervalId?: string;
+  stepId?: string;
+  targetIndex?: number;
+  targetId?: string;
+  field?: "repetitions" | "duration" | "target";
+};
 
 export function mapActivityPlanIssueToUiKey(
   issue: ZodIssue,
-  structure: EditableActivityPlanStructure,
+  structure: ActivityPlanDraftStructure,
 ): string {
-  const [root, segmentIndex, segmentField, intervalIndex, intervalField, stepIndex, stepField] =
-    issue.path;
-  if (root !== "segments" || typeof segmentIndex !== "number") return "segments";
-  const segment = structure.segments[segmentIndex];
-  if (!segment || segment.role !== "activity") return "segments";
-  if (segmentField !== "intervals") return "segments";
-  if (typeof intervalIndex !== "number") return "intervals";
-  const interval = segment.intervals[intervalIndex];
-  if (!interval) return "intervals";
-  if (intervalField === "repetitions") return `interval:${interval.id}:repetitions`;
-  if (intervalField !== "steps") return `interval:${interval.id}:steps`;
-  if (typeof stepIndex !== "number") return `interval:${interval.id}:steps`;
-  const step = interval.steps[stepIndex];
-  if (!step) return `interval:${interval.id}:steps`;
-  if (stepField === "duration") return `step:${interval.id}:${step.id}:duration`;
-  if (stepField === "targets") return `step:${interval.id}:${step.id}:target`;
-  if (stepField === "purpose") return `step:${interval.id}:${step.id}:purpose`;
-  return `interval:${interval.id}:steps`;
+  const [root, itemIndex, itemField, stepIndex, stepField] = issue.path;
+  if (root === "activity_category") return "activity_category";
+  if (root !== "items" || typeof itemIndex !== "number") return "items";
+  const item = structure.items[itemIndex];
+  if (!item) return "items";
+  if (itemField === "count") return `repeat:${item.id}:count`;
+  const step =
+    item.type === "step"
+      ? item
+      : itemField === "steps" && typeof stepIndex === "number"
+        ? item.steps[stepIndex]
+        : undefined;
+  if (!step) return `item:${item.id}`;
+  if (item.type === "step") {
+    if (itemField === "duration") return `step:${step.id}:duration`;
+    if (itemField === "targets") return `step:${step.id}:target`;
+  }
+  if (stepField === "duration") return `step:${step.id}:duration`;
+  if (stepField === "targets") return `step:${step.id}:target`;
+  return `step:${step.id}`;
 }
 
 interface UseActivityPlanFormOptions {
@@ -49,6 +65,7 @@ interface UseActivityPlanFormOptions {
   onSuccess?: (planId: string) => void;
   onError?: (error: unknown) => void;
   onConflict?: () => void;
+  isCurrent?: () => boolean;
 }
 
 export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
@@ -57,7 +74,10 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
   const store = useActivityPlanCreationStore();
   const isEditMode = Boolean(options.planId);
   const didInitialHydrateRef = useRef(false);
+  const savedMetricsRef = useRef<readonly ActivityPlanMetric[]>([]);
   const active = useRef(true);
+  const isCurrent = useRef(options.isCurrent);
+  isCurrent.current = options.isCurrent;
   const submitGuard = useRef(false);
   const [saving, setSaving] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -80,14 +100,14 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       await Promise.allSettled([
         Promise.resolve().then(() => invalidateActivityPlanQueries(utils)),
       ]);
-      if (!active.current) return;
+      if (!active.current || isCurrent.current?.() === false) return;
       options.onSuccess?.(data.id);
-      if (!active.current) return;
+      if (!active.current || isCurrent.current?.() === false) return;
       store.reset();
       setHydrationVersion((version) => version + 1);
     },
     onError: (error) => {
-      if (!active.current) return;
+      if (!active.current || isCurrent.current?.() === false) return;
       if (options.onError) options.onError(error);
       else showErrorAlert(error, "Failed to Create Plan");
     },
@@ -97,17 +117,20 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     onSuccess: async (data) => {
       await Promise.allSettled([
         Promise.resolve().then(() =>
-          invalidateActivityPlanQueries(utils, {
-            planId: options.planId,
-            includeDetail: true,
-          }),
+          invalidateActivityPlanQueries(
+            utils,
+            omitUndefined({
+              planId: options.planId,
+              includeDetail: true,
+            }),
+          ),
         ),
       ]);
-      if (!active.current) return;
+      if (!active.current || isCurrent.current?.() === false) return;
       options.onSuccess?.(data.id);
     },
     onError: (error) => {
-      if (!active.current) return;
+      if (!active.current || isCurrent.current?.() === false) return;
       if (error.data?.code === "CONFLICT") {
         options.onConflict?.();
         return;
@@ -130,15 +153,19 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
           : "editable";
 
   const hydrate = useCallback(
-    (plan: NonNullable<typeof editPlan>, structure: ActivityPlanStructure) => {
+    (
+      plan: NonNullable<typeof editPlan>,
+      structure: ActivityPlanStructure,
+      savedMetrics: readonly ActivityPlanMetric[] = [],
+    ) => {
       store.reset();
       store.setName(plan.name);
       store.setDescription(
         consolidateActivityPlanText(plan.description, plan.notes, "Notes") ?? "",
       );
-      store.setNotes("");
       store.setActivityCategory(structure.activity_category);
       store.setStructure(structure);
+      savedMetricsRef.current = savedMetrics;
       setHydrationVersion((version) => version + 1);
     },
     [store],
@@ -146,28 +173,28 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
 
   const reloadFromServer = useCallback(async () => {
     const result = await refetchExistingPlan();
-    if (!active.current) return false;
+    if (!active.current || isCurrent.current?.() === false) return false;
     const freshPlan = result.data?.edit;
     const freshStructure = freshPlan
       ? activityPlanStructureSchema.safeParse(freshPlan.structure)
       : null;
     if (result.isError || !freshPlan || !freshStructure?.success) return false;
-    hydrate(freshPlan, freshStructure.data);
+    hydrate(freshPlan, freshStructure.data, result.data?.detail?.metrics ?? []);
     editSnapshotRef.current = freshPlan;
     return true;
   }, [hydrate, refetchExistingPlan]);
 
   useEffect(() => {
     if (didInitialHydrateRef.current || !editPlan || !editStructure?.success || !isEditMode) return;
-    hydrate(editPlan, editStructure.data);
+    hydrate(editPlan, editStructure.data, existingPlan?.detail?.metrics ?? []);
     editSnapshotRef.current = editPlan;
     didInitialHydrateRef.current = true;
-  }, [editPlan, editStructure, hydrate, isEditMode]);
+  }, [editPlan, editStructure, existingPlan?.detail?.metrics, hydrate, isEditMode]);
 
   const metrics = useMemo(() => {
-    const parsed = activityPlanStructureSchema.safeParse(store.structure);
-    if (!parsed.success) return { stepCount: 0, durationMs: 0, durationMinutes: 0 };
-    const stats = calculateActivityPlanStats(compileActivityPlan(parsed.data));
+    const resolution = resolveActivityPlanDraft(store.structure);
+    if (resolution.status !== "valid") return { stepCount: 0, durationMs: 0, durationMinutes: 0 };
+    const stats = calculateActivityPlanStats(compileActivityPlan(resolution.structure));
     const exactSeconds = stats.duration.exactElapsedSeconds ?? 0;
     return {
       stepCount: stats.occurrenceCount,
@@ -180,10 +207,10 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
   const validate = useCallback(
     (structureOverride = store.structure) => {
       const errors: ActivityPlanValidationErrors = {};
+      const issues: ActivityPlanValidationIssue[] = [];
       if (!store.name.trim()) errors.name = "Plan name is required.";
       const result = activityPlanAuthoringContentSchema.safeParse({
         structure: structureOverride,
-        adaptation: authoringSnapshot?.adaptation ?? null,
         intent: { training_intent: authoringSnapshot?.trainingIntent ?? "general_maintenance" },
       });
       if (!result.success) {
@@ -196,33 +223,75 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
                 )
               : issue.path.join(".");
           errors[key] ??= issue.message;
+          const path = issue.path[0] === "structure" ? issue.path.slice(1) : issue.path;
+          const item =
+            path[0] === "items" && typeof path[1] === "number"
+              ? structureOverride.items[path[1]]
+              : undefined;
+          const step =
+            item?.type === "step"
+              ? item
+              : item?.type === "repeat" && path[2] === "steps" && typeof path[3] === "number"
+                ? item.steps[path[3]]
+                : undefined;
+          issues.push({
+            key,
+            message: issue.message,
+            label: [
+              "Activity structure",
+              step?.name ?? "Step",
+              path[4] === "targets"
+                ? `Target ${typeof path[5] === "number" ? path[5] + 1 : "settings"}`
+                : path[4] === "duration"
+                  ? "Duration"
+                  : path[2] === "repetitions"
+                    ? "Repeats"
+                    : "Details",
+            ]
+              .filter(Boolean)
+              .join(" → "),
+            ...(item?.type === "repeat" ? { intervalId: item.id } : {}),
+            ...(step ? { stepId: step.id } : {}),
+            ...(step && path[4] === "targets" && typeof path[5] === "number"
+              ? { targetIndex: path[5], field: "target" as const }
+              : path[4] === "duration"
+                ? { field: "duration" as const }
+                : path[2] === "count"
+                  ? { field: "repetitions" as const }
+                  : {}),
+          });
         }
       }
-      return { isValid: Object.keys(errors).length === 0, errors };
+      return { isValid: Object.keys(errors).length === 0, errors, issues };
     },
     [store.name, store.structure, authoringSnapshot],
   );
   const validation = useMemo(() => validate(), [validate]);
 
   const submit = useCallback(async () => {
-    if (submitGuard.current || !active.current) return null;
+    if (submitGuard.current || !active.current || isCurrent.current?.() === false) return null;
     if (isEditMode && editStatus !== "editable") {
       Alert.alert("Plan unavailable", "Refresh this plan before editing.");
       return null;
     }
-    const parsed = activityPlanStructureSchema.safeParse(store.structure);
+    const resolution = resolveActivityPlanDraft(store.structure);
     const currentValidation = validate(store.structure);
-    if (!parsed.success || !currentValidation.isValid) {
+    if (resolution.status !== "valid" || !currentValidation.isValid) {
       Alert.alert(
         "Please Check Your Input",
         Object.values(currentValidation.errors)[0] ?? "Invalid plan",
       );
       return null;
     }
+    const normalized = normalizeActivityPlanAuthoringStructure(resolution.structure);
+    if (!normalized.success) {
+      setSubmitError(normalized.message);
+      return null;
+    }
     const payload = {
       name: store.name,
       description: store.description.trim() || null,
-      structure: parsed.data,
+      structure: normalized.structure,
       notes: null,
     };
     submitGuard.current = true;
@@ -238,7 +307,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
           id: options.planId,
           expectedStructureHash: editSnapshot.structureHash,
           expectedRevision: editSnapshot.activityPlanRevision,
-          adaptation: editSnapshot.adaptation,
           training_intent: editSnapshot.trainingIntent,
           ...payload,
         });
@@ -260,16 +328,9 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
   }, [store, validate, isEditMode, editStatus, options.planId, createMutation, updateMutation]);
 
   const cancel = useCallback(() => {
-    const discard = () => {
-      store.reset();
-      router.back();
-    };
-    if (store.name || store.description || store.structure.segments.length > 0) {
-      Alert.alert("Discard Changes", "Are you sure you want to discard your changes?", [
-        { text: "Keep Editing", style: "cancel" },
-        { text: "Discard", style: "destructive", onPress: discard },
-      ]);
-    } else discard();
+    active.current = false;
+    store.reset();
+    router.back();
   }, [router, store]);
 
   return {
@@ -278,12 +339,16 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       description: store.description,
       activityCategory: store.activityCategory,
       structure: store.structure,
-      notes: store.notes,
     },
-    setName: store.setName,
-    setDescription: store.setDescription,
-    setActivityCategory: store.setActivityCategory,
-    setNotes: store.setNotes,
+    setName: (name: string) => {
+      if (active.current && isCurrent.current?.() !== false) store.setName(name);
+    },
+    setDescription: (description: string) => {
+      if (active.current && isCurrent.current?.() !== false) store.setDescription(description);
+    },
+    setActivityCategory: (category: typeof store.activityCategory) => {
+      if (active.current && isCurrent.current?.() !== false) store.setActivityCategory(category);
+    },
     metrics: {
       stepCount: metrics.stepCount,
       duration: metrics.durationMinutes,
@@ -303,6 +368,9 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     retryLoad: refetchExistingPlan,
     submitError,
     hydrationVersion,
+    persistedMetrics: savedMetricsRef.current,
+    hydratedEditPlanId: editSnapshotRef.current?.id ?? null,
+    hydratedStructure: editSnapshotRef.current?.structure ?? null,
     canSubmit:
       editStatus === "editable" &&
       validation.isValid &&

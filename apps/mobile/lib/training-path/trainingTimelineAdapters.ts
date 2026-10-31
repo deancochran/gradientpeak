@@ -1,5 +1,6 @@
 import type { DailyCommonLoadObservation } from "@repo/core/load";
 import type { TrainingTimelineWindow } from "@repo/core/training-timeline";
+import { omitUndefined } from "@/lib/omitUndefined";
 import {
   type CompletedObservationMetadata,
   sameCommonLoadIdentity,
@@ -212,7 +213,7 @@ export function buildDailyTrainingAdjustmentPointsFromTimelineWindow(input: {
       const targetFitness = targetFitnessByDate.get(day.date);
       const scheduledFitness = scheduledFitnessByDate.get(day.date);
       const completedObservation = input.completedObservationsByDate?.get(day.date);
-      return {
+      return omitUndefined({
         date: day.date,
         completedObservationState: completedObservation?.state,
         completedCommonLoadIdentity: completedObservation?.identity ?? null,
@@ -228,7 +229,7 @@ export function buildDailyTrainingAdjustmentPointsFromTimelineWindow(input: {
         scheduledFitnessCtl: scheduledFitness?.longTermLoad ?? null,
         fatigueAtl: scheduledFitness?.recentLoad ?? fitness?.recentLoad ?? null,
         formTsb: scheduledFitness?.loadBalance ?? fitness?.loadBalance ?? null,
-      };
+      });
     }),
   });
 }

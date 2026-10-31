@@ -1,7 +1,12 @@
 import { pdf } from "@react-pdf/renderer";
 import type { ActivityPlanPrintModel } from "@repo/core/activity-plan";
 import { describe, expect, it } from "vitest";
-import { ActivityPlanPdfDocument, getActivityPlanPdfPageSize } from "./activity-plan-pdf-document";
+import {
+  ActivityPlanPdfDocument,
+  GRADIENTPEAK_MARK_PATH,
+  GRADIENTPEAK_MARK_TRANSFORM,
+  getActivityPlanPdfPageSize,
+} from "./activity-plan-pdf-document";
 
 const model: ActivityPlanPrintModel = {
   activityCategory: "bike",
@@ -11,6 +16,7 @@ const model: ActivityPlanPrintModel = {
     {
       color: "#f59e0b",
       duration: "2m",
+      durationSeconds: 120,
       heightPercent: 82,
       id: "profile-1",
       label: "95% FTP",
@@ -25,23 +31,19 @@ const model: ActivityPlanPrintModel = {
       groups: [
         {
           id: "group-1",
-          name: null,
-          notes: null,
           repetitions: 4,
           steps: [
             {
-              description: null,
               id: "step-1",
               instruction: "2m at 240 W",
+              instructions: null,
               name: "Over",
-              notes: null,
             },
           ],
         },
       ],
       id: "section-1",
       name: "Main set",
-      notes: null,
     },
   ],
   title: "FTP over-unders",
@@ -49,6 +51,13 @@ const model: ActivityPlanPrintModel = {
 };
 
 describe("activity plan PDF document", () => {
+  it("uses the approved draft 3 mark geometry", () => {
+    expect(GRADIENTPEAK_MARK_PATH).toBe(
+      "M370 256 H756 Q768 256 768 268 V654 Q768 660 764 664 L686 742 Q674 754 674 738 V362 Q674 350 662 350 H286 Q270 350 282 338 L360 260 Q364 256 370 256 Z",
+    );
+    expect(GRADIENTPEAK_MARK_TRANSFORM).toBe("translate(-9 9)");
+  });
+
   it("uses a landscape 5 by 3 inch page for swim deck cards", () => {
     expect(
       getActivityPlanPdfPageSize({ ...model, activityCategory: "swim", format: "swim-deck-card" }),

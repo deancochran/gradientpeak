@@ -73,7 +73,7 @@ describe("PaceSecondsField web", () => {
 
     fireEvent.change(input, { target: { value: "4:3" } });
     expect(input).toHaveValue("4:3");
-    expect(onChangeSeconds).not.toHaveBeenCalled();
+    expect(onChangeSeconds).toHaveBeenLastCalledWith(Number.NaN);
 
     fireEvent.change(input, { target: { value: "4:35" } });
     expect(onChangeSeconds).toHaveBeenCalledWith(275);

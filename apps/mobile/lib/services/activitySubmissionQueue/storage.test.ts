@@ -17,7 +17,7 @@ import type { ActivitySubmissionQueueJob } from "./types";
 const storage = new Map<string, string>();
 const executionManifest = {
   version: 1 as const,
-  compilerVersion: 1,
+  compilerVersion: 3 as const,
   planHash: "0".repeat(64),
   occurrences: [],
 };

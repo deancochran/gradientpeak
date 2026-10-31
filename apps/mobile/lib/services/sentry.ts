@@ -2,6 +2,7 @@ import { extractSafeErrorDiagnostic } from "@repo/api/telemetry-sanitizer";
 import * as Sentry from "@sentry/react-native";
 import { isRunningInExpoGo } from "expo";
 import Constants from "expo-constants";
+import { omitUndefined } from "../omitUndefined";
 import {
   createRuntimeSentryConfig,
   sanitizeMobileSentryContext,
@@ -93,8 +94,12 @@ export function captureException(error: Error, context?: Record<string, unknown>
     return;
   }
 
-  Sentry.captureException(error, {
-    extra: sanitizeMobileSentryContext(context) as Record<string, unknown> | undefined,
+  Sentry.withScope((scope) => {
+    const sanitizedContext = sanitizeMobileSentryContext(context);
+    if (sanitizedContext) {
+      scope.setExtras(sanitizedContext);
+    }
+    Sentry.captureException(error);
   });
 }
 
@@ -147,12 +152,14 @@ export function addBreadcrumb(category: string, message: string, data?: Record<s
     return;
   }
 
-  Sentry.addBreadcrumb({
-    category,
-    data: sanitizeMobileSentryContext(data) as Record<string, unknown> | undefined,
-    level: "info",
-    message,
-  });
+  Sentry.addBreadcrumb(
+    omitUndefined({
+      category,
+      data: sanitizeMobileSentryContext(data),
+      level: "info",
+      message,
+    }),
+  );
 }
 
 export function withErrorBoundary<Args extends unknown[], Result>(

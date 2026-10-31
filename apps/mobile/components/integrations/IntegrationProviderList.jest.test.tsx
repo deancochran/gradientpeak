@@ -117,6 +117,28 @@ describe("IntegrationProviderList", () => {
     );
   });
 
+  it("permits retry of a pending Garmin disconnect", async () => {
+    const onDisconnect = jest.fn();
+    const integration = createIntegration({
+      provider: "garmin",
+      label: "Garmin Connect",
+      connected: false,
+      primaryAction: "disconnect",
+      actions: ["disconnect"],
+      providerHealth: { lastError: null, status: "disconnecting" },
+    });
+    const view = await render(
+      <IntegrationProviderList
+        integrations={[integration]}
+        onConnect={jest.fn()}
+        onDisconnect={onDisconnect}
+      />,
+    );
+    const button = view.getByLabelText("Retry disconnect Garmin Connect");
+    await fireEvent.press(button);
+    expect(onDisconnect).toHaveBeenCalledWith(integration);
+  });
+
   it("announces a pending provider action once through the shared spinner", async () => {
     const { getByLabelText, queryByText } = await render(
       <IntegrationProviderList

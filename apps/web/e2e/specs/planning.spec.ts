@@ -1,5 +1,5 @@
 import { expect, test } from "../fixtures";
-import { expectNoHorizontalOverflow } from "../pages";
+import { CalendarPage, expectNoHorizontalOverflow } from "../pages";
 import { withPlanningPathFixture } from "../planning/data";
 import { withDayAgendaFixture } from "../planning/day-agenda";
 import { openPlanningRoute, planningJourneyIds, planningTestIdentity } from "../planning/journeys";
@@ -152,13 +152,15 @@ test("agenda.create and events.recurrence persist a bounded series and honor del
   athletePage,
 }) => {
   const title = planningTestIdentity("Web recurring event");
-  await athletePage.goto("/calendar/new?date=2026-08-03&type=custom");
+  const calendar = new CalendarPage(athletePage);
+  await calendar.startCreate("2026-08-03");
   await athletePage.getByLabel("Title").fill(title);
+  await athletePage.getByLabel("Time", { exact: true }).fill("09:00");
   await athletePage.getByLabel("Repeat weekly").selectOption("4");
   await athletePage.getByRole("button", { name: /^create$/i }).click();
   await expect(athletePage.getByRole("heading", { name: title })).toBeVisible();
 
-  await athletePage.getByRole("button", { name: /^delete$/i }).click();
+  await calendar.openDelete();
   await athletePage.getByLabel("Delete recurrence scope").selectOption("series");
   await athletePage.getByRole("button", { name: /delete event/i }).click();
   await expect(athletePage).toHaveURL(/\/calendar/);

@@ -62,6 +62,11 @@ import {
   getCompletedActivityProviderEligibility,
   sendCompletedActivityToProvider,
 } from "../application/integrations";
+import {
+  OperationReceiptConflictError,
+  OperationReceiptCorruptError,
+  OperationReceiptUnauthorizedError,
+} from "../application/operation-receipts";
 import { recordingSummarySubmissionInputSchema } from "../contracts/recording-submission";
 import { getRequiredDb } from "../db";
 import { getActivityArtifactStorageService } from "../storage-service";
@@ -196,12 +201,16 @@ const getEffortProfileInputSchema = z
   .object({ id: z.string().uuid(), viewerId: z.string().uuid() })
   .strict();
 
-const updateInputSchema = z
+export const updateInputSchema = z
   .object({
     id: z.string().uuid(),
     name: z.string().optional(),
     notes: z.string().nullable().optional(),
     content_visibility: contentVisibilitySchema.optional(),
+    operationId: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{32,128}$/)
+      .optional(),
   })
   .strict();
 
@@ -299,7 +308,7 @@ const recordSessionRpeInputSchema = z
     }
   });
 
-const createManualDiaryEntryInputSchema = z
+export const createManualDiaryEntryInputSchema = z
   .object({
     observation: manualTrainingDiaryObservationSchema,
     plannedSession: z
@@ -418,7 +427,21 @@ export const activitiesRouter = createTRPCRouter({
       const result = await listActivitiesForProfile({
         db: getRequiredDb(ctx),
         profileId: ctx.session.user.id,
-        input,
+        input: {
+          limit: input.limit,
+          composition_mode: input.composition_mode,
+          sort_by: input.sort_by,
+          sort_order: input.sort_order,
+          ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+          ...(input.importRunId === undefined ? {} : { importRunId: input.importRunId }),
+          ...(input.direction === undefined ? {} : { direction: input.direction }),
+          ...(input.activity_category === undefined
+            ? {}
+            : { activity_category: input.activity_category }),
+          ...(input.search === undefined ? {} : { search: input.search }),
+          ...(input.date_from === undefined ? {} : { date_from: input.date_from }),
+          ...(input.date_to === undefined ? {} : { date_to: input.date_to }),
+        },
       });
 
       return z
@@ -597,14 +620,39 @@ export const activitiesRouter = createTRPCRouter({
 
   // Update activity (e.g., to set metrics after calculation)
   update: protectedProcedure.input(updateInputSchema).mutation(async ({ ctx, input }) => {
-    const db = getRequiredDb(ctx);
-    const data = await updateActivityForProfile({
-      db,
-      input,
-      profileId: ctx.session.user.id,
-    });
-
-    return parseActivityRow(data);
+    try {
+      const data = await updateActivityForProfile({
+        db: getRequiredDb(ctx),
+        input: {
+          id: input.id,
+          ...(input.name === undefined ? {} : { name: input.name }),
+          ...(input.notes === undefined ? {} : { notes: input.notes }),
+          ...(input.content_visibility === undefined
+            ? {}
+            : { content_visibility: input.content_visibility }),
+          ...(input.operationId === undefined ? {} : { operationId: input.operationId }),
+        },
+        profileId: ctx.session.user.id,
+      });
+      return parseActivityRow(data);
+    } catch (error) {
+      if (error instanceof OperationReceiptConflictError) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Operation ID was already used differently.",
+        });
+      }
+      if (error instanceof OperationReceiptUnauthorizedError) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+      }
+      if (error instanceof OperationReceiptCorruptError) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Operation receipt is invalid.",
+        });
+      }
+      throw error;
+    }
   }),
 
   recordSessionRpe: protectedProcedure

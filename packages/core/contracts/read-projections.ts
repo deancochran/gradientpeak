@@ -524,13 +524,6 @@ function enforceActivityPlanProjectionPrivacy(
       message: "Non-owner projections must not include personalized plan metrics",
     });
   }
-  if (projection.capabilities.canRecord) {
-    context.addIssue({
-      code: "custom",
-      path: ["capabilities"],
-      message: "Recording this plan is not available to the current viewer",
-    });
-  }
 }
 
 export const activityPlanSummarySchema = z
@@ -559,14 +552,22 @@ export const activityPlanDetailSchema = z
   .strictObject({
     ...activityPlanSummaryShape,
     contractVersion: z.literal("activity-plan-detail-v1"),
-    /** These authoring fields are present only for the owner. */
+    /** Private authoring notes remain owner-only. */
     notes: z.string().max(1_000).nullable().optional(),
+    /** Execution identity derived from the readable prescription; also available to nonowners. */
     structureHash: z.string().trim().min(1).max(128).optional(),
     gpsRecordingEnabled: z.boolean().optional(),
   })
   .superRefine((projection, context) => {
     enforceActivityPlanProjectionPrivacy(projection, context);
-    const ownerOnlyFields = ["notes", "structureHash", "gpsRecordingEnabled"] as const;
+    if (projection.capabilities.canEdit && !projection.structureHash) {
+      context.addIssue({
+        code: "custom",
+        path: ["structureHash"],
+        message: "Owner detail projections must include a structure hash",
+      });
+    }
+    const ownerOnlyFields = ["notes", "gpsRecordingEnabled"] as const;
     for (const key of ownerOnlyFields) {
       const hasField = Object.hasOwn(projection, key);
       if (projection.capabilities.canEdit !== hasField) {

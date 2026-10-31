@@ -288,6 +288,30 @@
       "forceRls": false
     },
     {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "chatbot_actions",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "chatbot_operation_receipts",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "chatbot_threads",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "chatbot_turns",
+      "forceRls": false
+    },
+    {
       "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "name": "coaching_assignments",
@@ -327,6 +351,12 @@
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
       "name": "daily_training_load",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "deferred_threshold_calibrations",
       "forceRls": false
     },
     {
@@ -2638,16 +2668,6 @@
       "generated": ""
     },
     {
-      "name": "adaptation",
-      "type": "jsonb",
-      "table": "activity_plans",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 19,
-      "generated": ""
-    },
-    {
       "name": "semantic_hash",
       "type": "text",
       "table": "activity_plans",
@@ -3880,6 +3900,346 @@
     {
       "name": "id",
       "type": "uuid",
+      "table": "chatbot_actions",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "turn_id",
+      "type": "uuid",
+      "table": "chatbot_actions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "action_id",
+      "type": "uuid",
+      "table": "chatbot_actions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "tool_call_id",
+      "type": "text",
+      "table": "chatbot_actions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "tool_id",
+      "type": "text",
+      "table": "chatbot_actions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "input",
+      "type": "jsonb",
+      "table": "chatbot_actions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "input_fingerprint",
+      "type": "text",
+      "table": "chatbot_actions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "table": "chatbot_actions",
+      "default": "'pending'::text",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "result",
+      "type": "jsonb",
+      "table": "chatbot_actions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "chatbot_actions",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "completed_at",
+      "type": "timestamp with time zone",
+      "table": "chatbot_actions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "chatbot_operation_receipts",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "profile_id",
+      "type": "uuid",
+      "table": "chatbot_operation_receipts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "operation_id",
+      "type": "text",
+      "table": "chatbot_operation_receipts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "command",
+      "type": "text",
+      "table": "chatbot_operation_receipts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "request_fingerprint",
+      "type": "text",
+      "table": "chatbot_operation_receipts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "result",
+      "type": "jsonb",
+      "table": "chatbot_operation_receipts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "chatbot_operation_receipts",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "chatbot_threads",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "profile_id",
+      "type": "uuid",
+      "table": "chatbot_threads",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "chatbot_threads",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "chatbot_threads",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "chatbot_turns",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "thread_id",
+      "type": "uuid",
+      "table": "chatbot_turns",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "request_id",
+      "type": "uuid",
+      "table": "chatbot_turns",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "request_fingerprint",
+      "type": "text",
+      "table": "chatbot_turns",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "input",
+      "type": "jsonb",
+      "table": "chatbot_turns",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "output",
+      "type": "jsonb",
+      "table": "chatbot_turns",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "table": "chatbot_turns",
+      "default": "'running'::text",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "model_id",
+      "type": "text",
+      "table": "chatbot_turns",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "model_tier",
+      "type": "text",
+      "table": "chatbot_turns",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "lease_expires_at",
+      "type": "timestamp with time zone",
+      "table": "chatbot_turns",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "chatbot_turns",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "completed_at",
+      "type": "timestamp with time zone",
+      "table": "chatbot_turns",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 12,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
       "table": "coaching_assignments",
       "default": "gen_random_uuid()",
       "notNull": true,
@@ -4435,6 +4795,136 @@
       "notNull": true,
       "identity": "",
       "position": 14,
+      "generated": ""
+    },
+    {
+      "name": "profile_id",
+      "type": "uuid",
+      "table": "deferred_threshold_calibrations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "activity_id",
+      "type": "uuid",
+      "table": "deferred_threshold_calibrations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "source_revision",
+      "type": "integer",
+      "table": "deferred_threshold_calibrations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "due_at",
+      "type": "timestamp with time zone",
+      "table": "deferred_threshold_calibrations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "table": "deferred_threshold_calibrations",
+      "default": "'pending'::text",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "attempt_count",
+      "type": "integer",
+      "table": "deferred_threshold_calibrations",
+      "default": "0",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "lease_token",
+      "type": "uuid",
+      "table": "deferred_threshold_calibrations",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "lease_expires_at",
+      "type": "timestamp with time zone",
+      "table": "deferred_threshold_calibrations",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "retry_at",
+      "type": "timestamp with time zone",
+      "table": "deferred_threshold_calibrations",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "last_failure_code",
+      "type": "text",
+      "table": "deferred_threshold_calibrations",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "completed_at",
+      "type": "timestamp with time zone",
+      "table": "deferred_threshold_calibrations",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "deferred_threshold_calibrations",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 12,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "deferred_threshold_calibrations",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 13,
       "generated": ""
     },
     {
@@ -6482,7 +6972,7 @@
       "type": "integer",
       "table": "planned_sessions",
       "default": "",
-      "notNull": true,
+      "notNull": false,
       "identity": "",
       "position": 17,
       "generated": ""
@@ -6492,7 +6982,7 @@
       "type": "timestamp with time zone",
       "table": "planned_sessions",
       "default": "",
-      "notNull": true,
+      "notNull": false,
       "identity": "",
       "position": 20,
       "generated": ""
@@ -6602,7 +7092,7 @@
       "type": "jsonb",
       "table": "planned_sessions",
       "default": "",
-      "notNull": true,
+      "notNull": false,
       "identity": "",
       "position": 31,
       "generated": ""
@@ -9720,6 +10210,61 @@
       "definition": "CREATE UNIQUE INDEX athlete_recalculation_queue_pkey ON public.athlete_recalculation_queue USING btree (profile_id)"
     },
     {
+      "name": "chatbot_actions_pkey",
+      "table": "chatbot_actions",
+      "definition": "CREATE UNIQUE INDEX chatbot_actions_pkey ON public.chatbot_actions USING btree (id)"
+    },
+    {
+      "name": "chatbot_actions_turn_id_action_id_key",
+      "table": "chatbot_actions",
+      "definition": "CREATE UNIQUE INDEX chatbot_actions_turn_id_action_id_key ON public.chatbot_actions USING btree (turn_id, action_id)"
+    },
+    {
+      "name": "chatbot_actions_turn_id_tool_call_id_key",
+      "table": "chatbot_actions",
+      "definition": "CREATE UNIQUE INDEX chatbot_actions_turn_id_tool_call_id_key ON public.chatbot_actions USING btree (turn_id, tool_call_id)"
+    },
+    {
+      "name": "chatbot_operation_receipts_pkey",
+      "table": "chatbot_operation_receipts",
+      "definition": "CREATE UNIQUE INDEX chatbot_operation_receipts_pkey ON public.chatbot_operation_receipts USING btree (id)"
+    },
+    {
+      "name": "chatbot_operation_receipts_profile_created_idx",
+      "table": "chatbot_operation_receipts",
+      "definition": "CREATE INDEX chatbot_operation_receipts_profile_created_idx ON public.chatbot_operation_receipts USING btree (profile_id, created_at)"
+    },
+    {
+      "name": "chatbot_operation_receipts_profile_id_operation_id_key",
+      "table": "chatbot_operation_receipts",
+      "definition": "CREATE UNIQUE INDEX chatbot_operation_receipts_profile_id_operation_id_key ON public.chatbot_operation_receipts USING btree (profile_id, operation_id)"
+    },
+    {
+      "name": "chatbot_threads_pkey",
+      "table": "chatbot_threads",
+      "definition": "CREATE UNIQUE INDEX chatbot_threads_pkey ON public.chatbot_threads USING btree (id)"
+    },
+    {
+      "name": "chatbot_threads_profile_updated_idx",
+      "table": "chatbot_threads",
+      "definition": "CREATE INDEX chatbot_threads_profile_updated_idx ON public.chatbot_threads USING btree (profile_id, updated_at)"
+    },
+    {
+      "name": "chatbot_turns_pkey",
+      "table": "chatbot_turns",
+      "definition": "CREATE UNIQUE INDEX chatbot_turns_pkey ON public.chatbot_turns USING btree (id)"
+    },
+    {
+      "name": "chatbot_turns_thread_created_idx",
+      "table": "chatbot_turns",
+      "definition": "CREATE INDEX chatbot_turns_thread_created_idx ON public.chatbot_turns USING btree (thread_id, created_at)"
+    },
+    {
+      "name": "chatbot_turns_thread_id_request_id_key",
+      "table": "chatbot_turns",
+      "definition": "CREATE UNIQUE INDEX chatbot_turns_thread_id_request_id_key ON public.chatbot_turns USING btree (thread_id, request_id)"
+    },
+    {
       "name": "coaching_assignments_active_coach_membership_idx",
       "table": "coaching_assignments",
       "definition": "CREATE INDEX coaching_assignments_active_coach_membership_idx ON public.coaching_assignments USING btree (organization_id, coach_membership_id) WHERE (ended_at IS NULL)"
@@ -9848,6 +10393,16 @@
       "name": "daily_training_load_revision_range_idx",
       "table": "daily_training_load",
       "definition": "CREATE INDEX daily_training_load_revision_range_idx ON public.daily_training_load USING btree (profile_id, source_revision, planning_date)"
+    },
+    {
+      "name": "deferred_threshold_calibrations_due_idx",
+      "table": "deferred_threshold_calibrations",
+      "definition": "CREATE INDEX deferred_threshold_calibrations_due_idx ON public.deferred_threshold_calibrations USING btree (status, due_at, retry_at)"
+    },
+    {
+      "name": "deferred_threshold_calibrations_pkey",
+      "table": "deferred_threshold_calibrations",
+      "definition": "CREATE UNIQUE INDEX deferred_threshold_calibrations_pkey ON public.deferred_threshold_calibrations USING btree (profile_id, activity_id, source_revision)"
     },
     {
       "name": "events_id_profile_id_unique",
@@ -10919,10 +11474,10 @@
       "definition": "CREATE TRIGGER organizations_root_owner_transfer_command_guard BEFORE UPDATE OF root_owner_membership_id ON organizations FOR EACH ROW EXECUTE FUNCTION guard_organization_root_owner_transfer()"
     },
     {
-      "name": "planned_sessions_prescription_immutable",
+      "name": "planned_sessions_identity_immutable",
       "table": "planned_sessions",
       "schema": "public",
-      "definition": "CREATE TRIGGER planned_sessions_prescription_immutable BEFORE UPDATE ON planned_sessions FOR EACH ROW EXECUTE FUNCTION prevent_planned_session_prescription_mutation()"
+      "definition": "CREATE TRIGGER planned_sessions_identity_immutable BEFORE UPDATE ON planned_sessions FOR EACH ROW EXECUTE FUNCTION prevent_planned_session_identity_mutation()"
     },
     {
       "name": "threshold_evaluation_efforts_complete_guard",
@@ -10995,19 +11550,10 @@
     {
       "acl": "{postgres=X/postgres,service_role=X/postgres}",
       "config": ["search_path=pg_catalog"],
-      "identity": "activity_plan_authoring_content_is_valid(jsonb,jsonb,text)",
-      "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_authoring_content_is_valid(input jsonb, adaptation jsonb, intent text)\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  control jsonb; target jsonb; range_value jsonb; state_value jsonb; values_value jsonb;\n  segment jsonb; interval_value jsonb; step_value jsonb;\n  bindings jsonb := '[]'::jsonb; binding jsonb; owners jsonb := '{}'::jsonb; defaults jsonb := '{}'::jsonb;\n  ranges jsonb := '{}'::jsonb; states jsonb := '[{}]'::jsonb; next_states jsonb; seen_states jsonb := '[]'::jsonb;\n  keys text[] := '{}'::text[]; control_ids text[] := '{}'::text[]; state_ids text[] := '{}'::text[];\n  key text; kind text; unit_key text; first_unit text; quantity text; field_path text[];\n  minimum numeric; maximum numeric; default_value numeric; increment numeric; steps double precision;\n  state_count numeric := 1; cardinality integer; amount numeric;\n  si integer; ii integer; ti integer; target_index integer; matches integer;\n  resolved jsonb; has_default boolean := false; entry record;\nBEGIN\n  IF NOT public.activity_plan_authoring_structure_is_valid(input) OR NOT public.activity_plan_authoring_intent_is_valid(input, intent) THEN RETURN false; END IF;\n  IF adaptation IS NULL OR adaptation = 'null'::jsonb THEN RETURN true; END IF;\n  IF public.activity_plan_jsonb_has_exact_keys(adaptation, ARRAY['controls'], ARRAY['allowedStates']) IS NOT TRUE\n    OR jsonb_typeof(adaptation->'controls') IS DISTINCT FROM 'array'\n    OR jsonb_array_length(adaptation->'controls') NOT BETWEEN 1 AND 32 THEN RETURN false; END IF;\n  FOR control IN SELECT value FROM jsonb_array_elements(adaptation->'controls') LOOP\n    IF public.activity_plan_jsonb_has_exact_keys(control, ARRAY['id','key','label','kind','range','targets']) IS NOT TRUE\n      OR NOT public.activity_plan_authoring_uuid_is_valid(control->'id')\n      OR jsonb_typeof(control->'key') IS DISTINCT FROM 'string'\n      OR jsonb_typeof(control->'label') IS DISTINCT FROM 'string'\n      OR public.activity_plan_js_length(public.activity_plan_js_trim(control->>'label')) NOT BETWEEN 1 AND 100\n      OR jsonb_typeof(control->'targets') IS DISTINCT FROM 'array'\n      OR jsonb_array_length(control->'targets') NOT BETWEEN 1 AND 64 THEN RETURN false; END IF;\n    key := public.activity_plan_js_trim(control->>'key'); kind := control->>'kind';\n    IF public.activity_plan_js_length(key) NOT BETWEEN 1 AND 64 OR key !~ '^[a-z][a-z0-9_]*$' OR key = ANY(keys)\n      OR control->>'id' = ANY(control_ids) OR kind IS NULL\n      OR kind NOT IN ('interval_repetitions','step_quantity','recovery_quantity','target_intensity') THEN RETURN false; END IF;\n    keys := array_append(keys, key); control_ids := array_append(control_ids, control->>'id');\n    range_value := control->'range';\n    IF public.activity_plan_jsonb_has_exact_keys(range_value, ARRAY['minimum','default','maximum','increment']) IS NOT TRUE\n      OR EXISTS (SELECT 1 FROM jsonb_each(range_value) AS r WHERE jsonb_typeof(r.value) <> 'number') THEN RETURN false; END IF;\n    minimum := (range_value->>'minimum')::numeric; maximum := (range_value->>'maximum')::numeric;\n    default_value := (range_value->>'default')::numeric; increment := (range_value->>'increment')::numeric;\n    IF increment <= 0 OR minimum > default_value OR default_value > maximum THEN RETURN false; END IF;\n    FOREACH amount IN ARRAY ARRAY[default_value, maximum] LOOP\n      -- Core's alignment contract uses IEEE-754 arithmetic after JSON decoding.\n      steps := (amount::double precision - minimum::double precision) / increment::double precision;\n      IF abs(steps - round(steps)) > 0.000000001 OR abs(round(steps)) > 9007199254740991 THEN RETURN false; END IF;\n    END LOOP;\n    state_count := state_count * (round((maximum - minimum) / increment) + 1);\n    defaults := defaults || jsonb_build_object(key, default_value);\n    ranges := ranges || jsonb_build_object(key, range_value);\n    first_unit := NULL;\n    FOR target IN SELECT value FROM jsonb_array_elements(control->'targets') LOOP\n      IF target->>'type' = 'rest_segment' THEN\n        IF kind <> 'recovery_quantity' OR public.activity_plan_jsonb_has_exact_keys(target, ARRAY['type','segmentId']) IS NOT TRUE THEN RETURN false; END IF;\n        SELECT value, ordinality::integer - 1 INTO segment, si FROM jsonb_array_elements(input->'segments') WITH ORDINALITY WHERE value->>'id' = target->>'segmentId';\n        IF segment IS NULL OR segment->>'role' <> 'rest' THEN RETURN false; END IF;\n        field_path := ARRAY['segments',si::text,'duration','seconds']; unit_key := 'time';\n      ELSE\n        IF public.activity_plan_jsonb_has_exact_keys(target,\n          CASE target->>'type'\n            WHEN 'interval_repetitions' THEN ARRAY['type','activitySegmentId','intervalId']\n            WHEN 'target_intensity' THEN ARRAY['type','activitySegmentId','intervalId','stepId','targetType']\n            ELSE ARRAY['type','activitySegmentId','intervalId','stepId','quantityType'] END) IS NOT TRUE THEN RETURN false; END IF;\n        IF NOT public.activity_plan_authoring_uuid_is_valid(target->'activitySegmentId') OR NOT public.activity_plan_authoring_uuid_is_valid(target->'intervalId') THEN RETURN false; END IF;\n        SELECT value, ordinality::integer - 1 INTO segment, si FROM jsonb_array_elements(input->'segments') WITH ORDINALITY WHERE value->>'id' = target->>'activitySegmentId';\n        IF segment IS NULL OR segment->>'role' <> 'activity' THEN RETURN false; END IF;\n        SELECT value, ordinality::integer - 1 INTO interval_value, ii FROM jsonb_array_elements(segment->'intervals') WITH ORDINALITY WHERE value->>'id' = target->>'intervalId';\n        IF interval_value IS NULL THEN RETURN false; END IF;\n        field_path := ARRAY['segments',si::text,'intervals',ii::text];\n        IF target->>'type' = 'interval_repetitions' THEN\n          IF kind <> 'interval_repetitions' THEN RETURN false; END IF;\n          field_path := field_path || ARRAY['repetitions']; unit_key := 'interval_repetitions';\n        ELSE\n          IF NOT public.activity_plan_authoring_uuid_is_valid(target->'stepId') THEN RETURN false; END IF;\n          SELECT value, ordinality::integer - 1 INTO step_value, ti FROM jsonb_array_elements(interval_value->'steps') WITH ORDINALITY WHERE value->>'id' = target->>'stepId';\n          IF step_value IS NULL THEN RETURN false; END IF;\n          field_path := field_path || ARRAY['steps',ti::text];\n          IF target->>'type' = 'target_intensity' THEN\n            IF kind <> 'target_intensity' THEN RETURN false; END IF;\n            SELECT count(*) INTO matches FROM jsonb_array_elements(step_value->'targets') AS v WHERE v->>'type' = target->>'targetType';\n            IF matches <> 1 THEN RETURN false; END IF;\n            SELECT ordinality::integer - 1 INTO target_index FROM jsonb_array_elements(step_value->'targets') WITH ORDINALITY WHERE value->>'type' = target->>'targetType';\n            IF public.activity_plan_target_is_canonical(jsonb_build_object('type', target->>'targetType', 'intensity', minimum), input->>'activity_category') IS NOT TRUE\n              OR public.activity_plan_target_is_canonical(jsonb_build_object('type', target->>'targetType', 'intensity', maximum), input->>'activity_category') IS NOT TRUE THEN RETURN false; END IF;\n            field_path := field_path || ARRAY['targets',target_index::text,'intensity']; unit_key := 'intensity:' || (target->>'targetType');\n          ELSE\n            IF ((kind = 'step_quantity' AND target->>'type' = 'step_quantity') OR (kind = 'recovery_quantity' AND target->>'type' = 'recovery_step' AND step_value->>'purpose' = 'recovery')) IS NOT TRUE THEN RETURN false; END IF;\n            quantity := target->>'quantityType';\n            IF quantity IS NULL OR quantity NOT IN ('time','distance','repetitions') OR quantity IS DISTINCT FROM step_value->'duration'->>'type' THEN RETURN false; END IF;\n            field_path := field_path || ARRAY['duration', CASE quantity WHEN 'time' THEN 'seconds' WHEN 'distance' THEN 'meters' ELSE 'count' END]; unit_key := quantity;\n          END IF;\n        END IF;\n      END IF;\n      IF kind <> 'target_intensity' AND (minimum < 1 OR mod(minimum,1) <> 0 OR mod(maximum,1) <> 0 OR mod(default_value,1) <> 0 OR mod(increment,1) <> 0) THEN RETURN false; END IF;\n      IF first_unit IS NOT NULL AND first_unit <> unit_key THEN RETURN false; END IF;\n      first_unit := unit_key;\n      IF (input #>> field_path)::numeric IS DISTINCT FROM default_value THEN RETURN false; END IF;\n      IF owners ? field_path::text AND owners->>field_path::text <> key THEN RETURN false; END IF;\n      owners := owners || jsonb_build_object(field_path::text, key);\n      bindings := bindings || jsonb_build_array(jsonb_build_object('key',key,'path',to_jsonb(field_path)));\n    END LOOP;\n  END LOOP;\n  IF adaptation ? 'allowedStates' THEN\n    IF jsonb_typeof(adaptation->'allowedStates') IS DISTINCT FROM 'array' OR jsonb_array_length(adaptation->'allowedStates') NOT BETWEEN 1 AND 10000 THEN RETURN false; END IF;\n    states := '[]'::jsonb;\n    FOR state_value IN SELECT value FROM jsonb_array_elements(adaptation->'allowedStates') LOOP\n      IF public.activity_plan_jsonb_has_exact_keys(state_value, ARRAY['id','label','values']) IS NOT TRUE\n        OR NOT public.activity_plan_authoring_uuid_is_valid(state_value->'id') OR state_value->>'id' = ANY(state_ids)\n        OR jsonb_typeof(state_value->'label') IS DISTINCT FROM 'string' OR public.activity_plan_js_length(public.activity_plan_js_trim(state_value->>'label')) NOT BETWEEN 1 AND 100\n        OR jsonb_typeof(state_value->'values') IS DISTINCT FROM 'object' THEN RETURN false; END IF;\n      state_ids := array_append(state_ids, state_value->>'id');\n      SELECT coalesce(jsonb_object_agg(public.activity_plan_js_trim(e.key), e.value), '{}'::jsonb) INTO values_value FROM jsonb_each(state_value->'values') e;\n      IF public.activity_plan_jsonb_has_exact_keys(values_value, keys) IS NOT TRUE THEN RETURN false; END IF;\n      FOR entry IN SELECT * FROM jsonb_each(values_value) LOOP\n        IF jsonb_typeof(entry.value) <> 'number' THEN RETURN false; END IF;\n        range_value := ranges->entry.key; amount := (entry.value #>> '{}')::numeric;\n        minimum := (range_value->>'minimum')::numeric; maximum := (range_value->>'maximum')::numeric; increment := (range_value->>'increment')::numeric;\n        steps := (amount::double precision - minimum::double precision) / increment::double precision;\n        IF amount < minimum OR amount > maximum OR abs(steps-round(steps)) > 0.000000001 THEN RETURN false; END IF;\n      END LOOP;\n      IF seen_states @> jsonb_build_array(values_value) THEN RETURN false; END IF;\n      seen_states := seen_states || jsonb_build_array(values_value);\n      has_default := has_default OR values_value = defaults;\n      states := states || jsonb_build_array(values_value);\n    END LOOP;\n    IF NOT has_default THEN RETURN false; END IF;\n  ELSE\n    IF state_count > 10000 THEN RETURN false; END IF;\n    FOREACH key IN ARRAY keys LOOP\n      range_value := ranges->key; minimum := (range_value->>'minimum')::numeric;\n      maximum := (range_value->>'maximum')::numeric; increment := (range_value->>'increment')::numeric;\n      cardinality := round((maximum - minimum)/increment)::integer + 1;\n      next_states := '[]'::jsonb;\n      FOR values_value IN SELECT value FROM jsonb_array_elements(states) LOOP\n        FOR offset_index IN 0..cardinality-1 LOOP\n          amount := CASE WHEN offset_index = cardinality-1 THEN maximum ELSE minimum + offset_index*increment END;\n          next_states := next_states || jsonb_build_array(values_value || jsonb_build_object(key,amount));\n        END LOOP;\n      END LOOP;\n      states := next_states;\n    END LOOP;\n  END IF;\n  FOR values_value IN SELECT value FROM jsonb_array_elements(states) LOOP\n    resolved := input;\n    FOR binding IN SELECT value FROM jsonb_array_elements(bindings) LOOP\n      SELECT array_agg(value) INTO field_path FROM jsonb_array_elements_text(binding->'path');\n      resolved := jsonb_set(resolved, field_path, values_value->(binding->>'key'));\n    END LOOP;\n    IF NOT public.activity_plan_authoring_structure_is_valid(resolved) OR NOT public.activity_plan_authoring_intent_is_valid(resolved,intent) THEN RETURN false; END IF;\n  END LOOP;\n  RETURN true;\nEXCEPTION WHEN data_exception THEN RETURN false;\nEND;\n$function$\n",
-      "volatility": "s",
-      "securityDefiner": false
-    },
-    {
-      "acl": "{postgres=X/postgres,service_role=X/postgres}",
-      "config": ["search_path=pg_catalog"],
       "identity": "activity_plan_authoring_intent_is_valid(jsonb,text)",
       "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_authoring_intent_is_valid(input jsonb, intent text)\n RETURNS boolean\n LANGUAGE plpgsql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  segment jsonb; interval_value jsonb; step_value jsonb; target jsonb;\n  work_count numeric := 0; work_seconds numeric := 0; recovery_seconds numeric := 0;\n  seconds numeric; repeats numeric; intensity numeric;\n  high_intensity boolean := false; threshold_intensity boolean := false; technique boolean := false;\nBEGIN\n  IF intent IS NULL OR intent NOT IN ('recovery','aerobic_base','durable_endurance','threshold_development','race_specific','vo2max','anaerobic_capacity','muscular_endurance','speed_skill','technique','strength_support','general_maintenance') THEN RETURN false; END IF;\n  FOR segment IN SELECT value FROM jsonb_array_elements(input->'segments') LOOP\n    IF segment->>'role' = 'rest' THEN recovery_seconds := recovery_seconds + (segment->'duration'->>'seconds')::numeric;\n    ELSE\n      FOR interval_value IN SELECT value FROM jsonb_array_elements(segment->'intervals') LOOP\n        repeats := (interval_value->>'repetitions')::numeric;\n        FOR step_value IN SELECT value FROM jsonb_array_elements(interval_value->'steps') LOOP\n          seconds := CASE WHEN step_value->'duration'->>'type' = 'time' THEN (step_value->'duration'->>'seconds')::numeric * repeats ELSE 0 END;\n          IF step_value->>'purpose' = 'work' THEN work_count := work_count + repeats; work_seconds := work_seconds + seconds;\n          ELSIF step_value->>'purpose' = 'recovery' THEN recovery_seconds := recovery_seconds + seconds;\n          ELSIF step_value->>'purpose' = 'technique' THEN technique := true; END IF;\n          FOR target IN SELECT value FROM jsonb_array_elements(step_value->'targets') LOOP\n            intensity := (target->>'intensity')::numeric;\n            high_intensity := high_intensity OR CASE target->>'type'\n              WHEN '%FTP' THEN intensity >= 105 WHEN '%ThresholdHR' THEN intensity >= 100\n              WHEN '%MaxHR' THEN intensity >= 90 WHEN 'RPE' THEN intensity >= 8 ELSE false END;\n            threshold_intensity := threshold_intensity OR CASE target->>'type'\n              WHEN '%FTP' THEN intensity BETWEEN 88 AND 105 WHEN '%ThresholdHR' THEN intensity BETWEEN 95 AND 105\n              WHEN '%MaxHR' THEN intensity BETWEEN 80 AND 95 WHEN 'RPE' THEN intensity >= 6 ELSE false END;\n          END LOOP;\n        END LOOP;\n      END LOOP;\n    END IF;\n  END LOOP;\n  IF intent IN ('vo2max','threshold_development','anaerobic_capacity','speed_skill') AND work_count = 0 THEN RETURN false; END IF;\n  IF intent IN ('vo2max','threshold_development','anaerobic_capacity') AND work_seconds > 0 AND recovery_seconds > 0 AND work_seconds / recovery_seconds < 0.5 THEN RETURN false; END IF;\n  RETURN NOT ((intent = 'vo2max' AND NOT high_intensity) OR (intent = 'threshold_development' AND NOT threshold_intensity)\n    OR (intent = 'recovery' AND high_intensity) OR (intent = 'technique' AND NOT technique));\nEXCEPTION WHEN data_exception THEN RETURN false;\nEND;\n$function$\n",
-      "volatility": "i",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_authoring_intent_is_valid(input jsonb, intent text)\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE item jsonb; step jsonb; target jsonb; high boolean:=false; threshold boolean:=false; intensity numeric;\nBEGIN\n  IF intent NOT IN ('recovery','aerobic_base','durable_endurance','threshold_development','race_specific','vo2max','anaerobic_capacity','muscular_endurance','speed_skill','technique','strength_support','general_maintenance') THEN RETURN false; END IF;\n  FOR item IN SELECT value FROM jsonb_array_elements(input->'items') LOOP FOR step IN SELECT value FROM jsonb_array_elements(CASE WHEN item->>'type'='repeat' THEN item->'steps' ELSE jsonb_build_array(item) END) LOOP FOR target IN SELECT value FROM jsonb_array_elements(step->'targets') LOOP intensity:=(target->>'intensity')::numeric; high:=high OR (target->>'type'='%FTP' AND intensity>=105) OR (target->>'type'='%ThresholdHR' AND intensity>=100) OR (target->>'type'='%MaxHR' AND intensity>=90) OR (target->>'type'='RPE' AND intensity>=8); threshold:=threshold OR (target->>'type'='%FTP' AND intensity BETWEEN 88 AND 105) OR (target->>'type'='%ThresholdHR' AND intensity BETWEEN 95 AND 105) OR (target->>'type'='%MaxHR' AND intensity BETWEEN 80 AND 95) OR (target->>'type'='RPE' AND intensity>=6); END LOOP; END LOOP; END LOOP;\n  RETURN NOT ((intent='vo2max' AND NOT high) OR (intent='threshold_development' AND NOT threshold) OR (intent='recovery' AND high));\nEXCEPTION WHEN data_exception THEN RETURN false; END; $function$\n",
+      "volatility": "s",
       "securityDefiner": false
     },
     {
@@ -11015,8 +11561,8 @@
       "config": ["search_path=pg_catalog"],
       "identity": "activity_plan_authoring_structure_is_valid(jsonb)",
       "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_authoring_structure_is_valid(input jsonb)\n RETURNS boolean\n LANGUAGE plpgsql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE\n  historical jsonb := input;\n  segment jsonb; interval_value jsonb; step_value jsonb; target jsonb;\n  si integer; ii integer; ti integer; category text; duration_type text;\n  types text[]; objective_count integer; intensity numeric;\nBEGIN\n  IF jsonb_typeof(input) IS DISTINCT FROM 'object'\n    OR octet_length(input::text) > 1200000\n    OR jsonb_typeof(input->'segments') IS DISTINCT FROM 'array'\n    OR jsonb_array_length(input->'segments') NOT BETWEEN 1 AND 64 THEN RETURN false; END IF;\n  category := input->>'activity_category';\n  FOR segment, si IN SELECT value, ordinality::integer - 1 FROM jsonb_array_elements(input->'segments') WITH ORDINALITY LOOP\n    IF segment->>'role' = 'activity' THEN\n      IF jsonb_typeof(segment->'intervals') IS DISTINCT FROM 'array' OR jsonb_array_length(segment->'intervals') NOT BETWEEN 1 AND 50 THEN RETURN false; END IF;\n      FOR interval_value, ii IN SELECT value, ordinality::integer - 1 FROM jsonb_array_elements(segment->'intervals') WITH ORDINALITY LOOP\n        IF jsonb_typeof(interval_value->'steps') IS DISTINCT FROM 'array' OR jsonb_array_length(interval_value->'steps') NOT BETWEEN 1 AND 20 THEN RETURN false; END IF;\n        FOR step_value, ti IN SELECT value, ordinality::integer - 1 FROM jsonb_array_elements(interval_value->'steps') WITH ORDINALITY LOOP\n          IF step_value->>'purpose' IS NULL OR step_value->>'purpose' NOT IN ('warmup','work','recovery','cooldown','technique') THEN RETURN false; END IF;\n          duration_type := step_value->'duration'->>'type';\n          IF duration_type IS NULL OR NOT (\n            duration_type = 'time'\n            OR (duration_type = 'distance' AND category IN ('run','bike','swim'))\n            OR (duration_type = 'repetitions' AND category = 'strength')\n          ) THEN RETURN false; END IF;\n          IF jsonb_typeof(step_value->'targets') IS DISTINCT FROM 'array' OR jsonb_array_length(step_value->'targets') NOT BETWEEN 1 AND 3 THEN RETURN false; END IF;\n          IF duration_type = 'repetitions' AND (jsonb_array_length(step_value->'targets') <> 1 OR step_value->'targets'->0->>'type' IS DISTINCT FROM 'RPE') THEN RETURN false; END IF;\n          types := '{}'; objective_count := 0;\n          FOR target IN SELECT value FROM jsonb_array_elements(step_value->'targets') LOOP\n            IF target->>'type' = ANY(types) THEN RETURN false; END IF;\n            types := array_append(types, target->>'type');\n            IF target->>'type' NOT IN ('RPE','cadence') THEN objective_count := objective_count + 1; END IF;\n            intensity := (target->>'intensity')::numeric;\n            IF target->>'type' = 'RPE' AND (intensity NOT BETWEEN 1 AND 10 OR mod(intensity * 2, 1) <> 0) THEN RETURN false; END IF;\n            IF target->>'type' = '%MaxHR' AND intensity > 100 THEN RETURN false; END IF;\n            IF duration_type = 'distance' AND target->>'type' = 'speed' AND intensity <= 0 THEN RETURN false; END IF;\n          END LOOP;\n          IF objective_count > 1 OR (objective_count = 0 AND NOT ('RPE' = ANY(types))) THEN RETURN false; END IF;\n          -- The historical SQL shape predates optional purpose. Strip only that\n          -- field in a copy, then reuse its bounded structural/type validation.\n          historical := jsonb_set(historical, ARRAY['segments',si::text,'intervals',ii::text,'steps',ti::text], step_value - 'purpose');\n        END LOOP;\n      END LOOP;\n    END IF;\n  END LOOP;\n  RETURN public.activity_plan_structure_is_canonical(historical) IS TRUE;\nEXCEPTION WHEN data_exception THEN RETURN false;\nEND;\n$function$\n",
-      "volatility": "i",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_authoring_structure_is_valid(input jsonb)\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE item jsonb; step jsonb; target jsonb; category text; duration_type text; objective integer; has_intensity boolean;\nBEGIN\n  IF public.activity_plan_v5_structure_is_valid(input) IS NOT TRUE THEN RETURN false; END IF; category:=input->>'activity_category';\n  FOR item IN SELECT value FROM jsonb_array_elements(input->'items') LOOP\n    FOR step IN SELECT value FROM jsonb_array_elements(CASE WHEN item->>'type'='repeat' THEN item->'steps' ELSE jsonb_build_array(item) END) LOOP\n      duration_type:=step->'duration'->>'type';\n      IF duration_type='untilFinished' OR (category='strength' AND duration_type NOT IN ('time','repetitions')) OR (category IN ('run','bike','swim') AND duration_type NOT IN ('time','distance')) OR (category='other' AND duration_type <> 'time') THEN RETURN false; END IF;\n      objective:=0; has_intensity:=false;\n      FOR target IN SELECT value FROM jsonb_array_elements(step->'targets') LOOP\n        IF target->>'type'='rest' THEN\n          IF jsonb_array_length(step->'targets')<>1 OR duration_type<>'time' THEN RETURN false; END IF;\n        ELSIF target->>'type' NOT IN ('RPE','cadence') THEN objective:=objective+1; has_intensity:=true; END IF;\n        IF target->>'type'='RPE' AND ((target->>'intensity')::numeric NOT BETWEEN 1 AND 10 OR mod((target->>'intensity')::numeric*2,1)<>0) THEN RETURN false; END IF;\n        IF target->>'type'='%MaxHR' AND (target->>'intensity')::numeric>100 THEN RETURN false; END IF;\n        IF duration_type='distance' AND target->>'type'='speed' AND (target->>'intensity')::numeric<=0 THEN RETURN false; END IF;\n      END LOOP;\n      IF objective>1 OR (jsonb_array_length(step->'targets')>0 AND NOT has_intensity AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(step->'targets') AS t(value) WHERE t.value->>'type' IN ('RPE','rest'))) OR (duration_type='repetitions' AND (jsonb_array_length(step->'targets')<>1 OR step->'targets'->0->>'type'<>'RPE')) THEN RETURN false; END IF;\n    END LOOP;\n  END LOOP; RETURN true;\nEXCEPTION WHEN data_exception THEN RETURN false; END; $function$\n",
+      "volatility": "s",
       "securityDefiner": false
     },
     {
@@ -11038,20 +11584,11 @@
       "securityDefiner": false
     },
     {
-      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "acl": "",
       "config": ["search_path=pg_catalog"],
-      "identity": "activity_plan_core_normalize_adaptation(jsonb)",
-      "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_core_normalize_adaptation(input jsonb)\n RETURNS jsonb\n LANGUAGE plpgsql\n STABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE result jsonb := input; control jsonb; state_value jsonb; values_value jsonb; ordinal integer;\nBEGIN\n  IF input IS NULL OR input = 'null'::jsonb THEN RETURN 'null'::jsonb; END IF;\n  FOR control, ordinal IN SELECT value, ordinality::integer-1 FROM jsonb_array_elements(input->'controls') WITH ORDINALITY LOOP\n    control := jsonb_set(control,'{key}',to_jsonb(public.activity_plan_js_trim(control->>'key')));\n    control := jsonb_set(control,'{label}',to_jsonb(public.activity_plan_js_trim(control->>'label')));\n    result := jsonb_set(result,ARRAY['controls',ordinal::text],control);\n  END LOOP;\n  IF input ? 'allowedStates' THEN\n    FOR state_value, ordinal IN SELECT value, ordinality::integer-1 FROM jsonb_array_elements(input->'allowedStates') WITH ORDINALITY LOOP\n      state_value := jsonb_set(state_value,'{label}',to_jsonb(public.activity_plan_js_trim(state_value->>'label')));\n      SELECT jsonb_object_agg(public.activity_plan_js_trim(e.key),e.value) INTO values_value FROM jsonb_each(state_value->'values') e;\n      state_value := jsonb_set(state_value,'{values}',values_value);\n      result := jsonb_set(result,ARRAY['allowedStates',ordinal::text],state_value);\n    END LOOP;\n  END IF;\n  RETURN result;\nEND;\n$function$\n",
-      "volatility": "s",
-      "securityDefiner": false
-    },
-    {
-      "acl": "{postgres=X/postgres,service_role=X/postgres}",
-      "config": ["search_path=pg_catalog"],
-      "identity": "activity_plan_core_semantic_hash(jsonb,jsonb,text)",
+      "identity": "activity_plan_core_semantic_hash(jsonb,text)",
       "language": "sql",
-      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_core_semantic_hash(input jsonb, adaptation jsonb, intent text)\n RETURNS text\n LANGUAGE sql\n STABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\n  SELECT public.activity_plan_core_structure_hash(jsonb_build_object('structure',input,'adaptation',public.activity_plan_core_normalize_adaptation(adaptation),'training_intent',intent))\n$function$\n",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_core_semantic_hash(input jsonb, intent text)\n RETURNS text\n LANGUAGE sql\n STABLE PARALLEL SAFE STRICT\n SET search_path TO 'pg_catalog'\nAS $function$ SELECT 'v2:sha256:'||encode(sha256(convert_to(public.activity_plan_core_canonical_json(jsonb_build_object('structure',input,'training_intent',intent)),'UTF8')),'hex') $function$\n",
       "volatility": "s",
       "securityDefiner": false
     },
@@ -11060,8 +11597,17 @@
       "config": ["search_path=pg_catalog"],
       "identity": "activity_plan_core_structure_hash(jsonb)",
       "language": "sql",
-      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_core_structure_hash(input jsonb)\n RETURNS text\n LANGUAGE sql\n STABLE PARALLEL SAFE STRICT\n SET search_path TO 'pg_catalog'\nAS $function$\n  SELECT 'v1:sha256:' || encode(sha256(convert_to(public.activity_plan_core_canonical_json(input),'UTF8')),'hex')\n$function$\n",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_core_structure_hash(input jsonb)\n RETURNS text\n LANGUAGE sql\n STABLE PARALLEL SAFE STRICT\n SET search_path TO 'pg_catalog'\nAS $function$ SELECT 'v1:sha256:'||encode(sha256(convert_to(public.activity_plan_core_canonical_json(input),'UTF8')),'hex') $function$\n",
       "volatility": "s",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog"],
+      "identity": "activity_plan_datetime_is_valid(text)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_datetime_is_valid(input text)\n RETURNS boolean\n LANGUAGE plpgsql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE year_value integer; month_value integer; day_value integer; days integer;\nBEGIN\n  IF input IS NULL OR input !~ '^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9]([.][0-9]+)?)?Z$' THEN RETURN false; END IF;\n  year_value:=substring(input,1,4)::integer; month_value:=substring(input,6,2)::integer; day_value:=substring(input,9,2)::integer;\n  days:=CASE WHEN month_value=2 THEN CASE WHEN year_value%400=0 OR (year_value%4=0 AND year_value%100<>0) THEN 29 ELSE 28 END WHEN month_value IN (4,6,9,11) THEN 30 ELSE 31 END;\n  RETURN day_value<=days;\nEND; $function$\n",
+      "volatility": "i",
       "securityDefiner": false
     },
     {
@@ -11070,6 +11616,15 @@
       "identity": "activity_plan_duration_is_canonical(jsonb,boolean)",
       "language": "sql",
       "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_duration_is_canonical(input jsonb, rest_only boolean DEFAULT false)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\n  select case input ->> 'type'\n    when 'time' then public.activity_plan_jsonb_has_exact_keys(input, array['type', 'seconds'])\n      and public.activity_plan_jsonb_is_integer_between(input -> 'seconds', 1, 86400)\n    when 'distance' then not rest_only and public.activity_plan_jsonb_has_exact_keys(input, array['type', 'meters'])\n      and public.activity_plan_jsonb_is_integer_between(input -> 'meters', 1, 1000000)\n    when 'repetitions' then not rest_only and public.activity_plan_jsonb_has_exact_keys(input, array['type', 'count'])\n      and public.activity_plan_jsonb_is_integer_between(input -> 'count', 1, 10000)\n    when 'untilFinished' then not rest_only and public.activity_plan_jsonb_has_exact_keys(input, array['type'])\n    else false\n  end\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog"],
+      "identity": "activity_plan_ecmascript_trim(text)",
+      "language": "sql",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_ecmascript_trim(input text)\n RETURNS text\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\n  SELECT btrim(input, U&'\\0009\\000A\\000B\\000C\\000D\\0020\\00A0\\1680\\2000\\2001\\2002\\2003\\2004\\2005\\2006\\2007\\2008\\2009\\200A\\2028\\2029\\202F\\205F\\3000\\FEFF')\n$function$\n",
       "volatility": "i",
       "securityDefiner": false
     },
@@ -11097,6 +11652,15 @@
       "identity": "activity_plan_js_trim(text)",
       "language": "sql",
       "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_js_trim(input text)\n RETURNS text\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE STRICT\n SET search_path TO 'pg_catalog'\nAS $function$\n  SELECT btrim(input, U&'\\0009\\000A\\000B\\000C\\000D\\0020\\00A0\\1680\\2000\\2001\\2002\\2003\\2004\\2005\\2006\\2007\\2008\\2009\\200A\\2028\\2029\\202F\\205F\\3000\\FEFF')\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog"],
+      "identity": "activity_plan_json_numbers_are_finite(jsonb)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_json_numbers_are_finite(input jsonb)\n RETURNS boolean\n LANGUAGE plpgsql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE child jsonb;\nBEGIN\n  IF jsonb_typeof(input) = 'number' THEN RETURN abs((input #>> '{}')::numeric) <= 1.7976931348623157e308::numeric; END IF;\n  IF jsonb_typeof(input) = 'array' THEN\n    FOR child IN SELECT value FROM jsonb_array_elements(input) LOOP IF NOT public.activity_plan_json_numbers_are_finite(child) THEN RETURN false; END IF; END LOOP;\n  ELSIF jsonb_typeof(input) = 'object' THEN\n    FOR child IN SELECT value FROM jsonb_each(input) LOOP IF NOT public.activity_plan_json_numbers_are_finite(child) THEN RETURN false; END IF; END LOOP;\n  END IF;\n  RETURN true;\nEND; $function$\n",
       "volatility": "i",
       "securityDefiner": false
     },
@@ -11139,27 +11703,9 @@
     {
       "acl": "",
       "config": ["search_path=pg_catalog"],
-      "identity": "activity_plan_segment_is_canonical(jsonb)",
-      "language": "sql",
-      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_segment_is_canonical(input jsonb)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\n  select case input ->> 'role'\n    when 'rest' then public.activity_plan_jsonb_has_exact_keys(input, array['id', 'name', 'role', 'duration'], array['notes'])\n      and public.activity_plan_jsonb_is_uuid(input -> 'id')\n      and public.activity_plan_jsonb_is_string(input -> 'name', 1, 100)\n      and (input -> 'notes' is null or public.activity_plan_jsonb_is_string(input -> 'notes', 0, 1000))\n      and public.activity_plan_duration_is_canonical(input -> 'duration', true)\n    when 'activity' then public.activity_plan_jsonb_has_exact_keys(input, array['id', 'name', 'role', 'intervals'], array['notes'])\n      and public.activity_plan_jsonb_is_uuid(input -> 'id')\n      and public.activity_plan_jsonb_is_string(input -> 'name', 1, 100)\n      and (input -> 'notes' is null or public.activity_plan_jsonb_is_string(input -> 'notes', 0, 1000))\n      and pg_catalog.jsonb_typeof(input -> 'intervals') = 'array'\n      and pg_catalog.jsonb_array_length(input -> 'intervals') between 1 and 50\n      and not exists (\n        select 1 from pg_catalog.jsonb_array_elements(input -> 'intervals') interval_value\n        where not public.activity_plan_jsonb_has_exact_keys(interval_value, array['id', 'name', 'repetitions', 'steps'], array['notes'])\n          or not public.activity_plan_jsonb_is_uuid(interval_value -> 'id')\n          or not public.activity_plan_jsonb_is_string(interval_value -> 'name', 1, 100)\n          or not public.activity_plan_jsonb_is_integer_between(interval_value -> 'repetitions', 1, 50)\n          or (interval_value -> 'notes' is not null and not public.activity_plan_jsonb_is_string(interval_value -> 'notes', 0, 1000))\n          or pg_catalog.jsonb_typeof(interval_value -> 'steps') <> 'array'\n          or pg_catalog.jsonb_array_length(interval_value -> 'steps') not between 1 and 20\n          or exists (\n            select 1 from pg_catalog.jsonb_array_elements(interval_value -> 'steps') step_value\n            where not public.activity_plan_jsonb_has_exact_keys(step_value, array['id', 'name', 'duration', 'targets'], array['description', 'notes', 'purpose'])\n              or not public.activity_plan_jsonb_is_uuid(step_value -> 'id')\n              or not public.activity_plan_jsonb_is_string(step_value -> 'name', 1, 100)\n              or (step_value -> 'description' is not null and not public.activity_plan_jsonb_is_string(step_value -> 'description', 0, 500))\n              or (step_value -> 'notes' is not null and not public.activity_plan_jsonb_is_string(step_value -> 'notes', 0, 1000))\n              or (step_value -> 'purpose' is not null and step_value ->> 'purpose' not in ('warmup', 'work', 'recovery', 'cooldown', 'technique'))\n              or not public.activity_plan_duration_is_canonical(step_value -> 'duration')\n              or pg_catalog.jsonb_typeof(step_value -> 'targets') <> 'array'\n              or pg_catalog.jsonb_array_length(step_value -> 'targets') not between 1 and 3\n          )\n      )\n    else false\n  end\n$function$\n",
-      "volatility": "i",
-      "securityDefiner": false
-    },
-    {
-      "acl": "",
-      "config": ["search_path=pg_catalog"],
-      "identity": "activity_plan_structure_is_canonical(jsonb)",
-      "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_structure_is_canonical(input jsonb)\n RETURNS boolean\n LANGUAGE plpgsql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\ndeclare\n  segment_value jsonb;\n  interval_value jsonb;\n  step_value jsonb;\n  seen_ids text[] := '{}'::text[];\n  activity_category text;\n  prior_was_rest boolean := false;\n  activity_count integer := 0;\n  expanded_occurrences numeric := 0;\n  explicit_timed_seconds numeric := 0;\n  id_value text;\nbegin\n  -- jsonb::text inserts canonical whitespace that JSON.stringify does not. Core's\n  -- 1 MiB UTF-8 limit remains exact; this coarser database guard leaves bounded\n  -- serialization headroom so a Core-valid document is not rejected here.\n  if input is null\n    or pg_catalog.octet_length(input::text) > 1200000\n    or not public.activity_plan_jsonb_has_exact_keys(input, array['version', 'activity_category', 'segments'])\n    or input -> 'version' <> '3'::jsonb\n    or input ->> 'activity_category' not in ('run', 'bike', 'swim', 'strength', 'other')\n    or pg_catalog.jsonb_typeof(input -> 'segments') <> 'array'\n    or pg_catalog.jsonb_array_length(input -> 'segments') not between 1 and 64 then return false; end if;\n  activity_category := input ->> 'activity_category';\n  for segment_value in select value from pg_catalog.jsonb_array_elements(input -> 'segments') loop\n    if not public.activity_plan_segment_is_canonical(segment_value) then return false; end if;\n    id_value := segment_value ->> 'id';\n    if id_value = any(seen_ids) then return false; end if;\n    seen_ids := array_append(seen_ids, id_value);\n    if segment_value ->> 'role' = 'rest' then\n      if prior_was_rest then return false; end if;\n      prior_was_rest := true;\n      explicit_timed_seconds := explicit_timed_seconds + (segment_value -> 'duration' ->> 'seconds')::numeric;\n    else\n      prior_was_rest := false;\n      activity_count := activity_count + 1;\n      for interval_value in select value from pg_catalog.jsonb_array_elements(segment_value -> 'intervals') loop\n        id_value := interval_value ->> 'id';\n        if id_value = any(seen_ids) then return false; end if;\n        seen_ids := array_append(seen_ids, id_value);\n        expanded_occurrences := expanded_occurrences + pg_catalog.jsonb_array_length(interval_value -> 'steps') * (interval_value ->> 'repetitions')::numeric;\n        for step_value in select value from pg_catalog.jsonb_array_elements(interval_value -> 'steps') loop\n          id_value := step_value ->> 'id';\n          if id_value = any(seen_ids) then return false; end if;\n          seen_ids := array_append(seen_ids, id_value);\n          if step_value -> 'duration' ->> 'type' = 'time' then\n            explicit_timed_seconds := explicit_timed_seconds + (step_value -> 'duration' ->> 'seconds')::numeric * (interval_value ->> 'repetitions')::numeric;\n          end if;\n          if exists (\n            select 1 from pg_catalog.jsonb_array_elements(step_value -> 'targets') target_value\n            where not public.activity_plan_target_is_canonical(target_value, activity_category)\n          ) then return false; end if;\n        end loop;\n      end loop;\n    end if;\n  end loop;\n  return activity_count > 0 and expanded_occurrences <= 1000 and explicit_timed_seconds <= 604800;\nend\n$function$\n",
-      "volatility": "i",
-      "securityDefiner": false
-    },
-    {
-      "acl": "",
-      "config": ["search_path=pg_catalog"],
       "identity": "activity_plan_target_is_canonical(jsonb,text)",
       "language": "sql",
-      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_target_is_canonical(input jsonb, activity_category text)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\n  select public.activity_plan_jsonb_has_exact_keys(input, array['type', 'intensity'])\n    and pg_catalog.jsonb_typeof(input -> 'type') = 'string'\n    and pg_catalog.jsonb_typeof(input -> 'intensity') = 'number'\n    and case input ->> 'type'\n      when '%FTP' then (input ->> 'intensity')::numeric > 0 and (input ->> 'intensity')::numeric <= 300 and activity_category = 'bike'\n      when '%MaxHR' then (input ->> 'intensity')::numeric > 0 and (input ->> 'intensity')::numeric <= 200 and activity_category in ('run', 'bike', 'swim', 'other')\n      when '%ThresholdHR' then (input ->> 'intensity')::numeric > 0 and (input ->> 'intensity')::numeric <= 200 and activity_category in ('run', 'bike', 'swim')\n      when 'watts' then (input ->> 'intensity')::numeric between 0 and 3000 and activity_category = 'bike'\n      when 'bpm' then (input ->> 'intensity')::numeric between 30 and 250 and activity_category in ('run', 'bike', 'swim', 'other')\n      when 'speed' then (input ->> 'intensity')::numeric between 0 and 100 and activity_category = 'run'\n      when 'cadence' then (input ->> 'intensity')::numeric between 0 and 300 and activity_category in ('run', 'bike')\n      when 'RPE' then (input ->> 'intensity')::numeric between 1 and 10\n      else false\n    end\n$function$\n",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_target_is_canonical(input jsonb, activity_category text)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\n  select public.activity_plan_jsonb_has_exact_keys(input, array['type', 'intensity'])\n    and pg_catalog.jsonb_typeof(input -> 'type') = 'string'\n    and pg_catalog.jsonb_typeof(input -> 'intensity') = 'number'\n    and case input ->> 'type'\n      when '%FTP' then (input ->> 'intensity')::numeric > 0 and (input ->> 'intensity')::numeric <= 300 and activity_category = 'bike'\n      when '%MaxHR' then (input ->> 'intensity')::numeric > 0 and (input ->> 'intensity')::numeric <= 200 and activity_category in ('run', 'bike', 'swim', 'other')\n      when '%ThresholdHR' then (input ->> 'intensity')::numeric > 0 and (input ->> 'intensity')::numeric <= 200 and activity_category in ('run', 'bike', 'swim')\n      when 'watts' then (input ->> 'intensity')::numeric between 0 and 3000 and activity_category = 'bike'\n      when 'bpm' then (input ->> 'intensity')::numeric between 30 and 250 and activity_category in ('run', 'bike', 'swim', 'other')\n      when 'speed' then (input ->> 'intensity')::numeric between 0 and 100 and activity_category in ('run', 'swim')\n      when 'cadence' then (input ->> 'intensity')::numeric between 0 and 300 and activity_category in ('run', 'bike')\n      when 'RPE' then (input ->> 'intensity')::numeric between 1 and 10\n      else false\n    end\n$function$\n",
       "volatility": "i",
       "securityDefiner": false
     },
@@ -11169,6 +11715,33 @@
       "identity": "activity_plan_utf16_key(text)",
       "language": "plpgsql",
       "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_utf16_key(input text)\n RETURNS bytea\n LANGUAGE plpgsql\n IMMUTABLE PARALLEL SAFE STRICT\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE code_point integer; hex_key text := '';\nBEGIN\n  FOR position IN 1..char_length(input) LOOP\n    code_point := ascii(substr(input, position, 1));\n    IF code_point > 65535 THEN\n      code_point := code_point - 65536;\n      hex_key := hex_key || lpad(to_hex(55296 + code_point / 1024),4,'0') || lpad(to_hex(56320 + mod(code_point,1024)),4,'0');\n    ELSE hex_key := hex_key || lpad(to_hex(code_point),4,'0'); END IF;\n  END LOOP;\n  RETURN decode(hex_key,'hex');\nEND;\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog"],
+      "identity": "activity_plan_v5_has_exact_keys(jsonb,text[],text[])",
+      "language": "sql",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_v5_has_exact_keys(input jsonb, required text[], optional text[] DEFAULT ARRAY[]::text[])\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\n  SELECT jsonb_typeof(input) = 'object'\n    AND input ?& required\n    AND NOT EXISTS (\n      SELECT 1 FROM jsonb_object_keys(input) key WHERE key <> ALL(required || optional)\n    )\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog"],
+      "identity": "activity_plan_v5_structure_is_valid(jsonb)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_v5_structure_is_valid(input jsonb)\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\nDECLARE item jsonb; step jsonb; duration jsonb; target jsonb; category text; ids text[] := ARRAY[]::text[]; target_types text[]; expanded integer := 0; seconds numeric := 0; executions integer; objectives integer;\nBEGIN\n  IF public.activity_plan_v5_has_exact_keys(input, ARRAY['version','activity_category','items']) IS NOT TRUE\n    OR jsonb_typeof(input->'version') <> 'number' OR input->>'version' <> '5' OR input->>'activity_category' NOT IN ('run','bike','swim','strength','other')\n    OR jsonb_typeof(input->'items') <> 'array' OR jsonb_array_length(input->'items') NOT BETWEEN 1 AND 1000\n    OR octet_length(input::text) > 1048576 THEN RETURN false; END IF;\n  category := input->>'activity_category';\n  FOR item IN SELECT value FROM jsonb_array_elements(input->'items') LOOP\n    IF item->>'type' = 'step' THEN executions := 1;\n    ELSIF item->>'type' = 'repeat' THEN\n      IF public.activity_plan_v5_has_exact_keys(item, ARRAY['type','id','count','steps']) IS NOT TRUE OR NOT public.activity_plan_v5_uuid_is_valid(item->'id') OR item->>'id' = ANY(ids) OR jsonb_typeof(item->'count') <> 'number' OR item->>'count' !~ '^[0-9]+$' OR (item->>'count')::integer NOT BETWEEN 2 AND 50 OR jsonb_typeof(item->'steps') <> 'array' OR jsonb_array_length(item->'steps') NOT BETWEEN 1 AND 20 THEN RETURN false; END IF;\n      ids := array_append(ids,item->>'id'); executions := (item->>'count')::integer;\n    ELSE RETURN false; END IF;\n    FOR step IN SELECT value FROM jsonb_array_elements(CASE WHEN item->>'type'='repeat' THEN item->'steps' ELSE jsonb_build_array(item) END) LOOP\n      IF public.activity_plan_v5_has_exact_keys(step, ARRAY['type','id','duration','targets'], ARRAY['name','instructions']) IS NOT TRUE OR step->>'type' <> 'step' OR NOT public.activity_plan_v5_uuid_is_valid(step->'id') OR step->>'id'=ANY(ids) OR (step ? 'name' AND (jsonb_typeof(step->'name')<>'string' OR char_length(step->>'name') NOT BETWEEN 1 AND 100 OR char_length(public.activity_plan_ecmascript_trim(step->>'name')) = 0)) OR (step ? 'instructions' AND (jsonb_typeof(step->'instructions')<>'string' OR char_length(step->>'instructions') NOT BETWEEN 1 AND 1000 OR char_length(public.activity_plan_ecmascript_trim(step->>'instructions')) = 0)) OR jsonb_typeof(step->'targets') <> 'array' OR jsonb_array_length(step->'targets') > 3 THEN RETURN false; END IF;\n      ids := array_append(ids,step->>'id'); duration:=step->'duration';\n      IF duration->>'type'='time' THEN IF public.activity_plan_v5_has_exact_keys(duration,ARRAY['type','seconds']) IS NOT TRUE OR jsonb_typeof(duration->'seconds') <> 'number' OR duration->>'seconds' !~ '^[0-9]+$' OR (duration->>'seconds')::integer NOT BETWEEN 1 AND 86400 THEN RETURN false; END IF; seconds:=seconds+executions*(duration->>'seconds')::numeric;\n      ELSIF duration->>'type'='distance' THEN IF public.activity_plan_v5_has_exact_keys(duration,ARRAY['type','meters']) IS NOT TRUE OR jsonb_typeof(duration->'meters') <> 'number' OR duration->>'meters' !~ '^[0-9]+$' OR (duration->>'meters')::integer NOT BETWEEN 1 AND 1000000 THEN RETURN false; END IF;\n      ELSIF duration->>'type'='repetitions' THEN IF public.activity_plan_v5_has_exact_keys(duration,ARRAY['type','count']) IS NOT TRUE OR jsonb_typeof(duration->'count') <> 'number' OR duration->>'count' !~ '^[0-9]+$' OR (duration->>'count')::integer NOT BETWEEN 1 AND 10000 THEN RETURN false; END IF;\n      ELSIF duration->>'type'='untilFinished' THEN IF public.activity_plan_v5_has_exact_keys(duration,ARRAY['type']) IS NOT TRUE THEN RETURN false; END IF;\n      ELSE RETURN false; END IF;\n      expanded:=expanded+executions; target_types:=ARRAY[]::text[]; objectives:=0;\n      FOR target IN SELECT value FROM jsonb_array_elements(step->'targets') LOOP\n        IF target->>'type'='rest' THEN\n          IF jsonb_array_length(step->'targets')<>1 OR duration->>'type'<>'time' OR public.activity_plan_v5_has_exact_keys(target,ARRAY['type']) IS NOT TRUE THEN RETURN false; END IF;\n        ELSIF target->>'type'=ANY(target_types) OR public.activity_plan_target_is_canonical(target,category) IS NOT TRUE THEN RETURN false; END IF;\n        target_types:=array_append(target_types,target->>'type');\n        IF target->>'type' NOT IN ('RPE','cadence','rest') THEN objectives:=objectives+1; END IF;\n      END LOOP;\n      IF objectives>1 THEN RETURN false; END IF;\n    END LOOP;\n  END LOOP;\n  RETURN expanded<=1000 AND seconds<=604800;\nEXCEPTION WHEN data_exception THEN RETURN false; END; $function$\n",
+      "volatility": "s",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=pg_catalog"],
+      "identity": "activity_plan_v5_uuid_is_valid(jsonb)",
+      "language": "sql",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_plan_v5_uuid_is_valid(input jsonb)\n RETURNS boolean\n LANGUAGE sql\n IMMUTABLE PARALLEL SAFE\n SET search_path TO 'pg_catalog'\nAS $function$\n  SELECT jsonb_typeof(input) = 'string'\n    AND input #>> '{}' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'\n    AND lower(input #>> '{}') <> '00000000-0000-0000-0000-000000000000'\n$function$\n",
       "volatility": "i",
       "securityDefiner": false
     },
@@ -11258,7 +11831,7 @@
       "config": ["search_path=pg_catalog"],
       "identity": "enforce_activity_plan_authoring()",
       "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.enforce_activity_plan_authoring()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  IF TG_OP = 'INSERT' OR NEW.structure IS DISTINCT FROM OLD.structure\n    OR NEW.adaptation IS DISTINCT FROM OLD.adaptation OR NEW.training_intent IS DISTINCT FROM OLD.training_intent\n    OR NEW.structure_hash IS DISTINCT FROM OLD.structure_hash OR NEW.semantic_hash IS DISTINCT FROM OLD.semantic_hash THEN\n    IF public.activity_plan_authoring_content_is_valid(NEW.structure, NEW.adaptation, NEW.training_intent) IS NOT TRUE THEN\n      RAISE EXCEPTION USING ERRCODE = '23514', CONSTRAINT = 'activity_plans_authoring_guard',\n        MESSAGE = 'ACTIVITY_PLAN_AUTHORING_INVALID_CONTENT';\n    END IF;\n    IF NEW.structure_hash IS DISTINCT FROM public.activity_plan_core_structure_hash(NEW.structure)\n      OR NEW.semantic_hash IS DISTINCT FROM public.activity_plan_core_semantic_hash(NEW.structure,NEW.adaptation,NEW.training_intent) THEN\n      RAISE EXCEPTION USING ERRCODE = '23514', CONSTRAINT = 'activity_plans_hash_guard', MESSAGE = 'ACTIVITY_PLAN_HASH_MISMATCH';\n    END IF;\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "definition": "CREATE OR REPLACE FUNCTION public.enforce_activity_plan_authoring()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$ BEGIN IF TG_OP='INSERT' OR NEW.structure IS DISTINCT FROM OLD.structure OR NEW.training_intent IS DISTINCT FROM OLD.training_intent THEN IF NEW.structure_hash IS DISTINCT FROM public.activity_plan_core_structure_hash(NEW.structure) OR NEW.semantic_hash IS DISTINCT FROM public.activity_plan_core_semantic_hash(NEW.structure,NEW.training_intent) THEN RAISE EXCEPTION 'ACTIVITY_PLAN_HASH_MISMATCH' USING ERRCODE='23514', CONSTRAINT='activity_plans_hash_guard'; END IF; IF public.activity_plan_authoring_structure_is_valid(NEW.structure) IS NOT TRUE OR public.activity_plan_authoring_intent_is_valid(NEW.structure,NEW.training_intent) IS NOT TRUE THEN RAISE EXCEPTION 'ACTIVITY_PLAN_AUTHORING_INVALID_CONTENT' USING ERRCODE='23514', CONSTRAINT='activity_plans_authoring_guard'; END IF; ELSIF NEW.structure_hash IS DISTINCT FROM OLD.structure_hash OR NEW.semantic_hash IS DISTINCT FROM OLD.semantic_hash THEN RAISE EXCEPTION 'ACTIVITY_PLAN_HASH_MISMATCH' USING ERRCODE='23514', CONSTRAINT='activity_plans_hash_guard'; END IF; RETURN NEW; END; $function$\n",
       "volatility": "v",
       "securityDefiner": false
     },
@@ -11267,7 +11840,7 @@
       "config": ["search_path=pg_catalog"],
       "identity": "enforce_activity_plan_revision()",
       "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.enforce_activity_plan_revision()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$\nBEGIN\n  IF NEW.structure IS DISTINCT FROM OLD.structure OR NEW.adaptation IS DISTINCT FROM OLD.adaptation\n    OR NEW.training_intent IS DISTINCT FROM OLD.training_intent THEN\n    NEW.revision := OLD.revision + 1;\n  ELSE\n    NEW.revision := OLD.revision;\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "definition": "CREATE OR REPLACE FUNCTION public.enforce_activity_plan_revision()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO 'pg_catalog'\nAS $function$ BEGIN IF NEW.structure IS DISTINCT FROM OLD.structure OR NEW.training_intent IS DISTINCT FROM OLD.training_intent THEN NEW.revision:=OLD.revision+1; ELSE NEW.revision:=OLD.revision; END IF; RETURN NEW; END; $function$\n",
       "volatility": "v",
       "securityDefiner": false
     },
@@ -11373,9 +11946,9 @@
     {
       "acl": "{postgres=X/postgres}",
       "config": ["search_path=\"\""],
-      "identity": "prevent_planned_session_prescription_mutation()",
+      "identity": "prevent_planned_session_identity_mutation()",
       "language": "plpgsql",
-      "definition": "CREATE OR REPLACE FUNCTION public.prevent_planned_session_prescription_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nbegin\n  if new.id is distinct from old.id\n    or new.profile_id is distinct from old.profile_id\n    or new.contract_version is distinct from old.contract_version\n    or new.original_target_date is distinct from old.original_target_date\n    or new.source_kind is distinct from old.source_kind\n    or new.idempotency_key is distinct from old.idempotency_key\n    or new.direct_operation_id is distinct from old.direct_operation_id\n    or new.training_plan_id is distinct from old.training_plan_id\n    or new.training_plan_revision is distinct from old.training_plan_revision\n    or new.training_plan_application_id is distinct from old.training_plan_application_id\n    or new.source_session_id is distinct from old.source_session_id\n    or new.activity_plan_id is distinct from old.activity_plan_id\n    or new.activity_plan_revision is distinct from old.activity_plan_revision\n    or new.resolution_manifest is distinct from old.resolution_manifest\n    or new.prescription_captured_at is distinct from old.prescription_captured_at\n    or new.created_at is distinct from old.created_at\n  then\n    raise exception using\n      errcode = '23514',\n      message = 'planned session prescription and source fields are immutable';\n  end if;\n  return new;\nend;\n$function$\n",
+      "definition": "CREATE OR REPLACE FUNCTION public.prevent_planned_session_identity_mutation()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nBEGIN\n  IF NEW.id IS DISTINCT FROM OLD.id\n    OR NEW.profile_id IS DISTINCT FROM OLD.profile_id\n    OR NEW.contract_version IS DISTINCT FROM OLD.contract_version\n    OR NEW.original_target_date IS DISTINCT FROM OLD.original_target_date\n    OR NEW.source_kind IS DISTINCT FROM OLD.source_kind\n    OR NEW.idempotency_key IS DISTINCT FROM OLD.idempotency_key\n    OR NEW.direct_operation_id IS DISTINCT FROM OLD.direct_operation_id\n    OR NEW.training_plan_id IS DISTINCT FROM OLD.training_plan_id\n    OR NEW.training_plan_revision IS DISTINCT FROM OLD.training_plan_revision\n    OR NEW.training_plan_application_id IS DISTINCT FROM OLD.training_plan_application_id\n    OR NEW.source_session_id IS DISTINCT FROM OLD.source_session_id\n    OR NEW.created_at IS DISTINCT FROM OLD.created_at\n  THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '23514',\n      MESSAGE = 'planned session identity and source fields are immutable';\n  END IF;\n  IF NEW.activity_plan_id IS DISTINCT FROM OLD.activity_plan_id\n    AND (\n      OLD.status <> 'scheduled'\n      OR NEW.status <> 'scheduled'\n      OR NEW.session_revision <> OLD.session_revision + 1\n    )\n  THEN\n    RAISE EXCEPTION USING\n      ERRCODE = '23514',\n      MESSAGE = 'planned session activity-plan reference may change only for a scheduled revision transition';\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
       "volatility": "v",
       "securityDefiner": false
     },
@@ -12262,13 +12835,6 @@
     },
     {
       "kind": "c",
-      "name": "activity_plans_adaptation_check",
-      "table": "activity_plans",
-      "validated": true,
-      "definition": "CHECK (adaptation IS NULL OR jsonb_typeof(adaptation) = 'object'::text AND pg_column_size(adaptation) <= 262144)"
-    },
-    {
-      "kind": "c",
       "name": "activity_plans_content_visibility_check",
       "table": "activity_plans",
       "validated": true,
@@ -12300,14 +12866,14 @@
       "name": "activity_plans_semantic_hash_check",
       "table": "activity_plans",
       "validated": true,
-      "definition": "CHECK (semantic_hash ~ '^v1:sha256:[0-9a-f]{64}$'::text)"
+      "definition": "CHECK (semantic_hash ~ '^v2:sha256:[0-9a-f]{64}$'::text)"
     },
     {
       "kind": "c",
       "name": "activity_plans_structure_canonical_check",
       "table": "activity_plans",
-      "validated": false,
-      "definition": "CHECK (activity_plan_structure_is_canonical(structure) OR activity_plan_authoring_structure_is_valid(structure)) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (activity_plan_v5_structure_is_valid(structure))"
     },
     {
       "kind": "c",
@@ -12318,10 +12884,10 @@
     },
     {
       "kind": "c",
-      "name": "activity_plans_structure_v3_check",
+      "name": "activity_plans_structure_v5_check",
       "table": "activity_plans",
       "validated": true,
-      "definition": "CHECK (jsonb_typeof(structure) = 'object'::text AND (structure ->> 'version'::text) = '3'::text AND ((structure ->> 'activity_category'::text) = ANY (ARRAY['run'::text, 'bike'::text, 'swim'::text, 'strength'::text, 'other'::text])) AND jsonb_typeof(structure -> 'segments'::text) = 'array'::text AND jsonb_array_length(structure -> 'segments'::text) >= 1 AND jsonb_array_length(structure -> 'segments'::text) <= 64 AND pg_column_size(structure) <= 1048576)"
+      "definition": "CHECK (activity_plan_v5_structure_is_valid(structure))"
     },
     {
       "kind": "c",
@@ -12962,6 +13528,160 @@
     },
     {
       "kind": "c",
+      "name": "chatbot_actions_input_check",
+      "table": "chatbot_actions",
+      "validated": true,
+      "definition": "CHECK (jsonb_typeof(input) = 'object'::text)"
+    },
+    {
+      "kind": "c",
+      "name": "chatbot_actions_input_fingerprint_check",
+      "table": "chatbot_actions",
+      "validated": true,
+      "definition": "CHECK (input_fingerprint ~ '^v1:sha256:[0-9a-f]{64}$'::text)"
+    },
+    {
+      "kind": "p",
+      "name": "chatbot_actions_pkey",
+      "table": "chatbot_actions",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "c",
+      "name": "chatbot_actions_status_check",
+      "table": "chatbot_actions",
+      "validated": true,
+      "definition": "CHECK (status = ANY (ARRAY['pending'::text, 'completed'::text, 'failed'::text, 'unknown'::text]))"
+    },
+    {
+      "kind": "u",
+      "name": "chatbot_actions_turn_id_action_id_key",
+      "table": "chatbot_actions",
+      "validated": true,
+      "definition": "UNIQUE (turn_id, action_id)"
+    },
+    {
+      "kind": "f",
+      "name": "chatbot_actions_turn_id_fkey",
+      "table": "chatbot_actions",
+      "validated": true,
+      "definition": "FOREIGN KEY (turn_id) REFERENCES chatbot_turns(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "u",
+      "name": "chatbot_actions_turn_id_tool_call_id_key",
+      "table": "chatbot_actions",
+      "validated": true,
+      "definition": "UNIQUE (turn_id, tool_call_id)"
+    },
+    {
+      "kind": "c",
+      "name": "chatbot_operation_receipts_command_check",
+      "table": "chatbot_operation_receipts",
+      "validated": true,
+      "definition": "CHECK (command ~ '^chatbot[.][a-z0-9_.-]{2,80}$'::text)"
+    },
+    {
+      "kind": "c",
+      "name": "chatbot_operation_receipts_operation_id_check",
+      "table": "chatbot_operation_receipts",
+      "validated": true,
+      "definition": "CHECK (operation_id ~ '^[A-Za-z0-9_-]{32,128}$'::text)"
+    },
+    {
+      "kind": "p",
+      "name": "chatbot_operation_receipts_pkey",
+      "table": "chatbot_operation_receipts",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "f",
+      "name": "chatbot_operation_receipts_profile_id_fkey",
+      "table": "chatbot_operation_receipts",
+      "validated": true,
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "u",
+      "name": "chatbot_operation_receipts_profile_id_operation_id_key",
+      "table": "chatbot_operation_receipts",
+      "validated": true,
+      "definition": "UNIQUE (profile_id, operation_id)"
+    },
+    {
+      "kind": "c",
+      "name": "chatbot_operation_receipts_request_fingerprint_check",
+      "table": "chatbot_operation_receipts",
+      "validated": true,
+      "definition": "CHECK (request_fingerprint ~ '^v1:sha256:[0-9a-f]{64}$'::text)"
+    },
+    {
+      "kind": "c",
+      "name": "chatbot_operation_receipts_result_check",
+      "table": "chatbot_operation_receipts",
+      "validated": true,
+      "definition": "CHECK (jsonb_typeof(result) = 'object'::text)"
+    },
+    {
+      "kind": "p",
+      "name": "chatbot_threads_pkey",
+      "table": "chatbot_threads",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "f",
+      "name": "chatbot_threads_profile_id_fkey",
+      "table": "chatbot_threads",
+      "validated": true,
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "chatbot_turns_input_check",
+      "table": "chatbot_turns",
+      "validated": true,
+      "definition": "CHECK (jsonb_typeof(input) = 'object'::text)"
+    },
+    {
+      "kind": "p",
+      "name": "chatbot_turns_pkey",
+      "table": "chatbot_turns",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "c",
+      "name": "chatbot_turns_request_fingerprint_check",
+      "table": "chatbot_turns",
+      "validated": true,
+      "definition": "CHECK (request_fingerprint ~ '^v1:sha256:[0-9a-f]{64}$'::text)"
+    },
+    {
+      "kind": "c",
+      "name": "chatbot_turns_status_check",
+      "table": "chatbot_turns",
+      "validated": true,
+      "definition": "CHECK (status = ANY (ARRAY['running'::text, 'completed'::text, 'failed'::text, 'interrupted'::text]))"
+    },
+    {
+      "kind": "f",
+      "name": "chatbot_turns_thread_id_fkey",
+      "table": "chatbot_turns",
+      "validated": true,
+      "definition": "FOREIGN KEY (thread_id) REFERENCES chatbot_threads(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "u",
+      "name": "chatbot_turns_thread_id_request_id_key",
+      "table": "chatbot_turns",
+      "validated": true,
+      "definition": "UNIQUE (thread_id, request_id)"
+    },
+    {
+      "kind": "c",
       "name": "coaching_assignments_chronology_check",
       "table": "coaching_assignments",
       "validated": true,
@@ -13190,6 +13910,55 @@
       "table": "daily_training_load",
       "validated": true,
       "definition": "CHECK (fitness >= 0::numeric AND fatigue >= 0::numeric AND abs(form - (fitness - fatigue)) <= 0.000000001 AND (fitness <> ALL (ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric])) AND (fatigue <> ALL (ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric])) AND (form <> ALL (ARRAY['NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric])))"
+    },
+    {
+      "kind": "f",
+      "name": "deferred_threshold_calibrations_activity_profile_fkey",
+      "table": "deferred_threshold_calibrations",
+      "validated": true,
+      "definition": "FOREIGN KEY (activity_id, profile_id) REFERENCES activities(id, profile_id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "deferred_threshold_calibrations_attempt_check",
+      "table": "deferred_threshold_calibrations",
+      "validated": true,
+      "definition": "CHECK (attempt_count >= 0)"
+    },
+    {
+      "kind": "c",
+      "name": "deferred_threshold_calibrations_lease_check",
+      "table": "deferred_threshold_calibrations",
+      "validated": true,
+      "definition": "CHECK ((status = 'running'::text) = (lease_token IS NOT NULL AND lease_expires_at IS NOT NULL))"
+    },
+    {
+      "kind": "p",
+      "name": "deferred_threshold_calibrations_pkey",
+      "table": "deferred_threshold_calibrations",
+      "validated": true,
+      "definition": "PRIMARY KEY (profile_id, activity_id, source_revision)"
+    },
+    {
+      "kind": "f",
+      "name": "deferred_threshold_calibrations_profile_id_fkey",
+      "table": "deferred_threshold_calibrations",
+      "validated": true,
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "deferred_threshold_calibrations_revision_check",
+      "table": "deferred_threshold_calibrations",
+      "validated": true,
+      "definition": "CHECK (source_revision > 0)"
+    },
+    {
+      "kind": "c",
+      "name": "deferred_threshold_calibrations_status_check",
+      "table": "deferred_threshold_calibrations",
+      "validated": true,
+      "definition": "CHECK (status = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text]))"
     },
     {
       "kind": "u",
@@ -14096,6 +14865,13 @@
     },
     {
       "kind": "c",
+      "name": "planned_sessions_legacy_prescription_check",
+      "table": "planned_sessions",
+      "validated": true,
+      "definition": "CHECK (num_nonnulls(activity_plan_revision, resolution_manifest, prescription_captured_at) = ANY (ARRAY[0, 3]))"
+    },
+    {
+      "kind": "c",
       "name": "planned_sessions_lifecycle_check",
       "table": "planned_sessions",
       "validated": true,
@@ -14107,13 +14883,6 @@
       "table": "planned_sessions",
       "validated": true,
       "definition": "PRIMARY KEY (id)"
-    },
-    {
-      "kind": "c",
-      "name": "planned_sessions_prescription_check",
-      "table": "planned_sessions",
-      "validated": true,
-      "definition": "CHECK (activity_plan_revision > 0 AND jsonb_typeof(resolution_manifest) = 'object'::text AND pg_column_size(resolution_manifest) <= 1048576 AND jsonb_typeof(resolution_manifest -> 'resolver_version'::text) = 'string'::text AND btrim(resolution_manifest ->> 'resolver_version'::text) <> ''::text AND jsonb_typeof(resolution_manifest -> 'policy_version'::text) = 'string'::text AND btrim(resolution_manifest ->> 'policy_version'::text) <> ''::text AND (resolution_manifest ->> 'activity_plan_id'::text) = activity_plan_id::text AND (resolution_manifest -> 'activity_plan_revision'::text) = to_jsonb(activity_plan_revision) AND (resolution_manifest ->> 'activity_plan_semantic_hash'::text) ~ '^v1:sha256:[0-9a-f]{64}$'::text AND jsonb_typeof(resolution_manifest -> 'session_demand'::text) = 'object'::text AND jsonb_typeof(resolution_manifest -> 'adaptation_values'::text) = 'object'::text AND ((resolution_manifest -> 'effective_target_duration_minutes'::text) = 'null'::jsonb OR jsonb_typeof(resolution_manifest -> 'effective_target_duration_minutes'::text) = 'number'::text) AND ((resolution_manifest -> 'effective_target_common_load'::text) = 'null'::jsonb OR jsonb_typeof(resolution_manifest -> 'effective_target_common_load'::text) = 'number'::text) AND jsonb_typeof(resolution_manifest -> 'evidence_facts'::text) = 'array'::text AND jsonb_typeof(resolution_manifest -> 'reason_codes'::text) = 'array'::text AND jsonb_typeof(resolution_manifest -> 'resolved_structure'::text) = 'object'::text AND (resolution_manifest ->> 'resolved_structure_hash'::text) ~ '^v1:sha256:[0-9a-f]{64}$'::text AND jsonb_typeof(resolution_manifest -> 'prescription_estimate'::text) = 'object'::text AND (resolution_manifest ->> 'fingerprint'::text) ~ '^v1:sha256:[0-9a-f]{64}$'::text)"
     },
     {
       "kind": "f",
@@ -15230,6 +15999,38 @@
       "forceRls": false
     },
     {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "chatbot_actions",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "chatbot_operation_receipts",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "chatbot_threads",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "chatbot_turns",
+      "managed": true,
+      "forceRls": false
+    },
+    {
       "acl": "{postgres=arwdDxtm/postgres,service_role=rm/postgres}",
       "rls": true,
       "kind": "r",
@@ -15282,6 +16083,14 @@
       "rls": true,
       "kind": "r",
       "name": "daily_training_load",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "deferred_threshold_calibrations",
       "managed": true,
       "forceRls": false
     },

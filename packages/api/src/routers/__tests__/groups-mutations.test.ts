@@ -31,18 +31,19 @@ function createDbMock(plan: DbPlan = {}) {
   const updateCalls: Array<{ table: unknown; values: unknown }> = [];
   let transactionCount = 0;
 
-  const db: any = {
+  const db = {
     select: () => {
-      const builder: any = {
-        from: () => builder,
-        innerJoin: () => builder,
-        where: () => builder,
-        orderBy: () => builder,
-        limit: () => builder,
-        for: () => Promise.resolve(selectQueue.shift() ?? []),
-        then: (resolve: (rows: unknown[]) => unknown) =>
-          Promise.resolve(selectQueue.shift() ?? []).then(resolve),
-      };
+      const builder = Object.assign(
+        Promise.resolve().then(() => selectQueue.shift() ?? []),
+        {
+          from: () => builder,
+          innerJoin: () => builder,
+          where: () => builder,
+          orderBy: () => builder,
+          limit: () => builder,
+          for: () => builder,
+        },
+      );
       return builder;
     },
     insert: (table: unknown) => ({
@@ -67,7 +68,7 @@ function createDbMock(plan: DbPlan = {}) {
         };
       },
     }),
-    transaction: async (callback: (tx: any) => unknown) => {
+    transaction: async (callback: (tx: unknown) => unknown) => {
       transactionCount += 1;
       return callback(db);
     },

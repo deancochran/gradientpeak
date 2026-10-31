@@ -1,5 +1,6 @@
 import type { ActivityPlanTrainingIntent } from "../activity-plan";
 import { getExactDurationSeconds } from "../duration";
+import { REFERENCE_ASSESSMENT_ACTIVITIES } from "./assessment-activities";
 import { EXPANDED_ENDURANCE_BIKE_ACTIVITIES } from "./endurance-expansion-bike";
 import { EXPANDED_ENDURANCE_OTHER_ACTIVITIES } from "./endurance-expansion-other";
 import { EXPANDED_ENDURANCE_RUN_ACTIVITIES } from "./endurance-expansion-run";
@@ -8,7 +9,6 @@ import { EXPANDED_ENDURANCE_SWIM_ACTIVITIES } from "./endurance-expansion-swim";
 import { ICONIC_ENDURANCE_ACTIVITIES } from "./iconic-endurance";
 import {
   SAMPLE_INDOOR_TRAINER_ACTIVITIES,
-  SAMPLE_RECOVERY_WORKOUT,
   SYSTEM_FTP_INTERVALS_WORKOUT,
   SYSTEM_SWEET_SPOT_WORKOUT,
   SYSTEM_VO2_MAX_WORKOUT,
@@ -16,14 +16,12 @@ import {
 import { SAMPLE_INDOOR_STRENGTH_ACTIVITIES } from "./indoor-strength";
 import { SAMPLE_INDOOR_SWIM_ACTIVITIES } from "./indoor-swim";
 import {
-  EASY_RECOVERY_RUN,
   SAMPLE_TREADMILL_ACTIVITIES,
   THRESHOLD_RUN_WORKOUT_1,
   THRESHOLD_RUN_WORKOUT_2,
 } from "./indoor-treadmill";
 import { SAMPLE_MULTISPORT_COMPONENT_ACTIVITIES } from "./multisport";
 import {
-  OTHER_LONG_ENDURANCE_ELLIPTICAL,
   OTHER_RACE_SIMULATION,
   OTHER_THRESHOLD_ROW,
   SAMPLE_OTHER_ACTIVITIES,
@@ -31,14 +29,11 @@ import {
 import {
   GROUP_RIDE_SIMULATION,
   SAMPLE_OUTDOOR_BIKE_ACTIVITIES,
-  SYSTEM_LONG_ENDURANCE_RIDE,
   SYSTEM_PROGRESSIVE_LONG_ENDURANCE_RIDE,
 } from "./outdoor-bike";
 import {
-  EASY_AEROBIC_RUN,
   FARTLEK_RUN,
   SAMPLE_OUTDOOR_RUN_ACTIVITIES,
-  SYSTEM_LONG_EASY_RUN,
   SYSTEM_MARATHON_PACE_LONG_RUN,
 } from "./outdoor-run";
 import { normalizeSystemActivityTemplateId } from "./template-ids";
@@ -123,20 +118,14 @@ function toNormalizedTemplateId(template: RecordingServiceActivityPlan): string 
 
 function estimateTemplateDurationSeconds(template: RecordingServiceActivityPlan): number | null {
   let totalSeconds = 0;
-  for (const segment of template.structure.segments) {
-    if (segment.role !== "activity") {
-      totalSeconds += segment.duration.seconds;
-      continue;
+  for (const item of template.structure.items) {
+    let itemSeconds = 0;
+    for (const step of item.type === "step" ? [item] : item.steps) {
+      const stepSeconds = getExactDurationSeconds(step.duration);
+      if (stepSeconds === null) return null;
+      itemSeconds += stepSeconds;
     }
-    for (const interval of segment.intervals) {
-      let intervalSeconds = 0;
-      for (const step of interval.steps) {
-        const stepSeconds = getExactDurationSeconds(step.duration);
-        if (stepSeconds === null) return null;
-        intervalSeconds += stepSeconds;
-      }
-      totalSeconds += intervalSeconds * interval.repetitions;
-    }
+    totalSeconds += itemSeconds * (item.type === "repeat" ? item.count : 1);
   }
   return totalSeconds;
 }
@@ -362,6 +351,11 @@ function deriveRecoveryCostBand(input: {
 
 const SYSTEM_TEMPLATE_SOURCE_GROUPS = [
   {
+    source_file: "assessment-activities.ts",
+    execution_context: "indoor" as const,
+    templates: REFERENCE_ASSESSMENT_ACTIVITIES,
+  },
+  {
     source_file: "endurance-expansion-bike.ts",
     execution_context: "indoor" as const,
     templates: EXPANDED_ENDURANCE_BIKE_ACTIVITIES,
@@ -426,15 +420,12 @@ const SYSTEM_TEMPLATE_SOURCE_GROUPS = [
   {
     source_file: "other-activity.ts",
     execution_context: "outdoor" as const,
-    templates: SAMPLE_OTHER_ACTIVITIES.filter(
-      (template) =>
-        template !== OTHER_THRESHOLD_ROW && template !== OTHER_LONG_ENDURANCE_ELLIPTICAL,
-    ),
+    templates: SAMPLE_OTHER_ACTIVITIES.filter((template) => template !== OTHER_THRESHOLD_ROW),
   },
   {
     source_file: "other-activity.ts",
     execution_context: "indoor" as const,
-    templates: [OTHER_THRESHOLD_ROW, OTHER_LONG_ENDURANCE_ELLIPTICAL],
+    templates: [OTHER_THRESHOLD_ROW],
   },
   {
     source_file: "multisport.ts",
@@ -461,20 +452,6 @@ export const SYSTEM_ACTIVITY_TEMPLATE_SOURCE_INDEX = new Map<
 export const SYSTEM_ACTIVITY_TEMPLATE_TAXONOMY_OVERRIDES: Readonly<
   Record<string, SystemActivityTemplateTaxonomyOverride>
 > = {
-  [toNormalizedTemplateId(EASY_AEROBIC_RUN)]: {
-    session_archetype: "aerobic_endurance",
-    training_intent: "aerobic_base",
-    intensity_family: "endurance",
-    progression_level: "foundation",
-    recovery_cost_band: "low",
-  },
-  [toNormalizedTemplateId(EASY_RECOVERY_RUN)]: {
-    session_archetype: "easy_recovery",
-    training_intent: "recovery",
-    intensity_family: "recovery",
-    progression_level: "conservative",
-    recovery_cost_band: "low",
-  },
   [toNormalizedTemplateId(THRESHOLD_RUN_WORKOUT_1)]: {
     session_archetype: "threshold",
     training_intent: "threshold_development",
@@ -488,11 +465,6 @@ export const SYSTEM_ACTIVITY_TEMPLATE_TAXONOMY_OVERRIDES: Readonly<
     session_archetype: "vo2_speed",
     training_intent: "speed_skill",
     intensity_family: "high_intensity",
-  },
-  [toNormalizedTemplateId(SYSTEM_LONG_EASY_RUN)]: {
-    session_archetype: "long_endurance",
-    training_intent: "durable_endurance",
-    intensity_family: "endurance",
   },
   [toNormalizedTemplateId(SYSTEM_MARATHON_PACE_LONG_RUN)]: {
     session_archetype: "long_endurance",
@@ -531,24 +503,12 @@ export const SYSTEM_ACTIVITY_TEMPLATE_TAXONOMY_OVERRIDES: Readonly<
     progression_level: "advanced",
     recovery_cost_band: "high",
   },
-  [toNormalizedTemplateId(SYSTEM_LONG_ENDURANCE_RIDE)]: {
-    session_archetype: "long_endurance",
-    training_intent: "durable_endurance",
-    intensity_family: "endurance",
-  },
   [toNormalizedTemplateId(SYSTEM_PROGRESSIVE_LONG_ENDURANCE_RIDE)]: {
     session_archetype: "long_endurance",
     training_intent: "durable_endurance",
     intensity_family: "moderate",
     progression_level: "advanced",
     recovery_cost_band: "high",
-  },
-  [toNormalizedTemplateId(SAMPLE_RECOVERY_WORKOUT)]: {
-    session_archetype: "easy_recovery",
-    training_intent: "recovery",
-    intensity_family: "recovery",
-    progression_level: "conservative",
-    recovery_cost_band: "low",
   },
 };
 

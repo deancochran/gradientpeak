@@ -76,9 +76,9 @@ describe("extracted inputs native", () => {
     ]);
   });
 
-  it("BoundedNumberInput commits preset values", async () => {
+  it("BoundedNumberInput uses its dial instead of presets", async () => {
     const onChange = jest.fn();
-    const { getByText } = await renderNative(
+    const { getByLabelText, queryByText } = await renderNative(
       <BoundedNumberInput
         {...boundedNumberInputFixtures.ftp}
         onChange={onChange}
@@ -86,7 +86,9 @@ describe("extracted inputs native", () => {
       />,
     );
 
-    await fireEvent.press(getByText("Sweet Spot"));
+    expect(queryByText("Sweet Spot")).toBeNull();
+    await fireEvent.press(getByLabelText("FTP target"));
+    await fireEvent(getByLabelText("FTP target W"), "valueChange", 285);
 
     expect(onChange).toHaveBeenCalledWith("285");
   });
@@ -104,26 +106,24 @@ describe("extracted inputs native", () => {
 
   it("DurationInput forwards typed values", async () => {
     const onChange = jest.fn();
-    const { getByDisplayValue } = await renderNative(
+    const { getByLabelText } = await renderNative(
       <DurationInput {...durationInputFixtures.activity} onChange={onChange} />,
     );
 
-    await fireEvent(
-      getByDisplayValue(durationInputFixtures.activity.value),
-      "changeText",
-      "1:45:00",
-    );
+    await fireEvent.press(getByLabelText("Activity duration"));
+    await fireEvent(getByLabelText("Activity duration minutes"), "valueChange", 45);
 
     expect(onChange).toHaveBeenCalledWith("1:45:00");
   });
 
   it("PaceInput forwards typed values", async () => {
     const onChange = jest.fn();
-    const { getByDisplayValue } = await renderNative(
+    const { getByLabelText } = await renderNative(
       <PaceInput {...paceInputFixtures.threshold} onChange={onChange} />,
     );
 
-    await fireEvent(getByDisplayValue(paceInputFixtures.threshold.value), "changeText", "4:05");
+    await fireEvent.press(getByLabelText("Threshold pace"));
+    await fireEvent(getByLabelText("Threshold pace seconds"), "valueChange", 5);
 
     expect(onChange).toHaveBeenCalledWith("4:05");
   });
@@ -211,22 +211,22 @@ describe("extracted inputs native", () => {
 
   it("PaceSecondsField converts pace text into seconds", async () => {
     const onChangeSeconds = jest.fn();
-    const { getByDisplayValue, getByTestId } = await renderNative(
+    const { getByLabelText, getByTestId } = await renderNative(
       <PaceSecondsField {...paceSecondsFieldFixtures.easy} onChangeSeconds={onChangeSeconds} />,
     );
 
-    const input = getByDisplayValue("5:30");
-    expect(getByTestId("easy-pace-seconds-field")).toBe(input);
-    await fireEvent(input, "changeText", "5:45");
-    await fireEvent(input, "blur");
+    expect(getByTestId("easy-pace-seconds-field")).toBeTruthy();
+    await fireEvent.press(getByTestId("easy-pace-seconds-field"));
+    await fireEvent(getByLabelText("Easy pace seconds"), "valueChange", 45);
+    await fireEvent.press(getByLabelText("Done Easy pace"));
 
     expect(onChangeSeconds).toHaveBeenLastCalledWith(345);
   });
 
-  it("WeightInputField lets callers switch units", async () => {
+  it("WeightInputField keeps its configured unit static", async () => {
     const onChangeKg = jest.fn();
     const onUnitChange = jest.fn();
-    const { getByText } = await renderNative(
+    const { getByLabelText, queryByText, rerender } = await renderNative(
       <WeightInputField
         {...weightInputFieldFixtures.athlete}
         onChangeKg={onChangeKg}
@@ -234,9 +234,19 @@ describe("extracted inputs native", () => {
       />,
     );
 
-    await fireEvent.press(getByText("LBS"));
-
-    expect(onUnitChange).toHaveBeenCalledWith("lbs");
+    expect(queryByText("LBS")).toBeNull();
+    await fireEvent.press(getByLabelText("Weight"));
+    expect(onChangeKg).not.toHaveBeenCalled();
+    await rerender(
+      <WeightInputField
+        {...weightInputFieldFixtures.athlete}
+        unit="lbs"
+        onChangeKg={onChangeKg}
+        onUnitChange={onUnitChange}
+      />,
+    );
+    expect(getByLabelText("Weight").props.accessibilityValue).toEqual({ text: "154.32" });
+    expect(onUnitChange).not.toHaveBeenCalled();
   });
 
   it("TimeInput clears a selected value", async () => {

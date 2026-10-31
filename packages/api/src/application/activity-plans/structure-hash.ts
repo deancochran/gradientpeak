@@ -6,8 +6,8 @@ export function activityPlanStructureHash(structure: unknown) {
   return `v1:sha256:${createHash("sha256").update(stringifyCanonicalJson(structure)).digest("hex")}`;
 }
 
-/** Strict executable V3 hash used at prescription trust boundaries. */
-export function activityPlanV3StructureHash(structure: unknown) {
+/** Strict executable V5 hash used at prescription trust boundaries. */
+export function activityPlanCanonicalStructureHash(structure: unknown) {
   return `v1:sha256:${createHash("sha256")
     .update(getCanonicalActivityPlanStructureHashInput(structure))
     .digest("hex")}`;

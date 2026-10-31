@@ -1,12 +1,9 @@
 // @vitest-environment jsdom
-
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
 import { DiscoveryExplorer } from "./discovery-explorer";
 
 const mocks = vi.hoisted(() => ({ navigate: vi.fn(), routeError: false, routeQuery: vi.fn() }));
-
 const emptyQuery = {
   data: { pages: [{ items: [] }] },
   fetchNextPage: vi.fn(),
@@ -17,7 +14,6 @@ const emptyQuery = {
   isLoading: false,
   refetch: vi.fn(),
 };
-
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
     children,
@@ -52,28 +48,15 @@ vi.mock("../../lib/api/client", () => ({
                     activityCategory: "bike",
                     activityPlanRevision: 1,
                     structure: {
-                      version: 3,
+                      version: 5,
                       activity_category: "bike",
-                      segments: [
+                      items: [
                         {
-                          id: "00000000-0000-4000-8000-000000000001",
-                          role: "activity",
-                          name: "Ride",
-                          intervals: [
-                            {
-                              id: "00000000-0000-4000-8000-000000000002",
-                              name: "Tempo",
-                              repetitions: 1,
-                              steps: [
-                                {
-                                  id: "00000000-0000-4000-8000-000000000003",
-                                  name: "Work",
-                                  duration: { type: "time", seconds: 900 },
-                                  targets: [{ type: "%FTP", intensity: 85 }],
-                                },
-                              ],
-                            },
-                          ],
+                          type: "step",
+                          id: "00000000-0000-4000-8000-000000000003",
+                          name: "Work",
+                          duration: { type: "time", seconds: 900 },
+                          targets: [{ type: "%FTP", intensity: 85 }],
                         },
                       ],
                     },
@@ -117,18 +100,15 @@ vi.mock("../../lib/api/client", () => ({
     trainingPlans: { listTemplates: { useInfiniteQuery: () => emptyQuery } },
   },
 }));
-
 afterEach(() => {
   cleanup();
   mocks.navigate.mockClear();
   mocks.routeQuery.mockClear();
   mocks.routeError = false;
 });
-
 describe("DiscoveryExplorer", () => {
   it("renders discovered activity plans with their timeline and opens detail", () => {
     render(<DiscoveryExplorer />);
-
     expect(
       screen.getByTestId("activity-plan-card-timeline-plan-1-bar-0").getAttribute("data-intensity"),
     ).toBe("%FTP 85");
@@ -138,53 +118,42 @@ describe("DiscoveryExplorer", () => {
       params: { activityPlanId: "plan-1" },
     });
   });
-
   it("links discovered groups to their detail page", () => {
     render(<DiscoveryExplorer />);
-
     fireEvent.click(screen.getByRole("tab", { name: "Groups" }));
-
     expect(screen.getByRole("link", { name: "View group" }).getAttribute("href")).toBe(
       "/groups/group-1",
     );
   });
-
   it("commits a public discovery query once on apply", () => {
     render(<DiscoveryExplorer />);
-
     fireEvent.change(screen.getByLabelText("Search activity plans"), {
       target: { value: "tempo" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
-
     expect(mocks.navigate).toHaveBeenCalledTimes(1);
     expect(mocks.navigate).toHaveBeenCalledWith(
       expect.objectContaining({ search: { q: "tempo", scope: "activityPlans" } }),
     );
   });
-
   it("keeps invalid route-distance drafts out of the applied query and clears bounds", () => {
     render(<DiscoveryExplorer initialScope="routes" />);
     mocks.navigate.mockClear();
     mocks.routeQuery.mockClear();
-
     fireEvent.change(screen.getByLabelText("Minimum distance (km)"), {
       target: { value: "not-a-number" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
-
     expect(screen.getByRole("alert").textContent).toContain("Minimum distance");
     expect(mocks.navigate).not.toHaveBeenCalled();
     expect(mocks.routeQuery).toHaveBeenLastCalledWith(
       expect.objectContaining({ min_distance_m: undefined, max_distance_m: undefined }),
     );
-
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(mocks.navigate).toHaveBeenCalledWith(
       expect.objectContaining({ search: { scope: "routes" } }),
     );
   });
-
   it("resynchronizes clean controls from route props", () => {
     const view = render(<DiscoveryExplorer initialQuery="first" initialScope="routes" />);
     view.rerender(
@@ -195,18 +164,14 @@ describe("DiscoveryExplorer", () => {
         initialScope="routes"
       />,
     );
-
     expect((screen.getByLabelText("Search routes") as HTMLInputElement).value).toBe("second");
     expect((screen.getByLabelText("Minimum distance (km)") as HTMLInputElement).value).toBe("10");
   });
-
   it("keeps an unapplied discovery draft when route loading fails and is retried", () => {
     mocks.routeError = true;
     render(<DiscoveryExplorer initialScope="routes" />);
     fireEvent.change(screen.getByLabelText("Search routes"), { target: { value: "ridge" } });
-
     fireEvent.click(screen.getByRole("button", { name: "Retry routes" }));
-
     expect((screen.getByLabelText("Search routes") as HTMLInputElement).value).toBe("ridge");
   });
 });

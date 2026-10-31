@@ -1,4 +1,5 @@
 export * from "../../registry/web/form";
+export { FormChoiceField } from "../form-fields/choice-field.web";
 export {
   FormBoundedNumberField,
   FormDateInputField,

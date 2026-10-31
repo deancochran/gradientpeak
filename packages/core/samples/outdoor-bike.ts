@@ -1,8 +1,5 @@
 import { Duration, Target } from "../schemas/activity_payload";
-import {
-  createSystemActivityPlanAdaptationBuilder,
-  createSystemActivityPlanBuilderFactory,
-} from "./activity-plan-builder";
+import { createSystemActivityPlanBuilderFactory } from "./activity-plan-builder";
 import type { SystemActivityPlanTemplate as RecordingServiceActivityPlan } from "./types";
 
 const createPlan = createSystemActivityPlanBuilderFactory("bike", [
@@ -20,52 +17,6 @@ const createPlan = createSystemActivityPlanBuilderFactory("bike", [
  * Total time: 60 minutes
  * Estimated Common Load: ~45
  */
-const easyEnduranceRideStructure = createPlan()
-  .step({
-    name: "Easy Ride",
-    purpose: "work",
-    duration: Duration.minutes(60),
-    targets: [Target.ftp(60)],
-    notes: "Keep effort relaxed - you should be able to hold a conversation easily",
-  })
-  .build();
-const easyEnduranceRideSegment = easyEnduranceRideStructure.segments[0];
-if (!easyEnduranceRideSegment || easyEnduranceRideSegment.role !== "activity") {
-  throw new Error("Easy Endurance Ride must contain an activity segment");
-}
-const easyEnduranceRideInterval = easyEnduranceRideSegment.intervals[0];
-const easyEnduranceRideStep = easyEnduranceRideInterval?.steps[0];
-if (!easyEnduranceRideInterval || !easyEnduranceRideStep) {
-  throw new Error("Easy Endurance Ride must contain a steady step");
-}
-
-export const EASY_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
-  id: "8c1d2e3f-4a5b-4c7d-8e9f-0a1b2c3d4e5f",
-  name: "Easy Endurance Ride",
-  description: "Comfortable outdoor ride focusing on aerobic base building",
-  gps_recording_enabled: true,
-  structure: easyEnduranceRideStructure,
-  adaptation: {
-    controls: [
-      createSystemActivityPlanAdaptationBuilder("easy-endurance-ride").control({
-        key: "steady_duration_seconds",
-        label: "Easy endurance duration",
-        kind: "step_quantity",
-        range: { minimum: 3000, default: 3600, maximum: 4200, increment: 600 },
-        targets: [
-          {
-            type: "step_quantity",
-            activitySegmentId: easyEnduranceRideSegment.id,
-            intervalId: easyEnduranceRideInterval.id,
-            stepId: easyEnduranceRideStep.id,
-            quantityType: "time",
-          },
-        ],
-      }),
-    ],
-  },
-};
-
 /**
  * Sweet Spot Outdoor Ride
  * Total time: 75 minutes
@@ -79,7 +30,6 @@ export const SWEET_SPOT_OUTDOOR_RIDE: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Warm-up",
-      purpose: "warmup",
       duration: Duration.minutes(15),
       targets: [Target.ftp(55)],
       notes: "Start easy and gradually build intensity",
@@ -89,14 +39,12 @@ export const SWEET_SPOT_OUTDOOR_RIDE: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Sweet Spot Interval",
-          purpose: "work",
           duration: Duration.minutes(15),
-          targets: [Target.ftp(88)],
+          targets: [Target.ftp(90)],
           notes: "Maintain steady power in sweet spot zone (85-90% FTP)",
         },
         {
           name: "Easy Recovery",
-          purpose: "recovery",
           duration: Duration.minutes(5),
           targets: [Target.ftp(50)],
           notes: "Easy spinning to recover between intervals",
@@ -105,7 +53,6 @@ export const SWEET_SPOT_OUTDOOR_RIDE: RecordingServiceActivityPlan = {
     })
     .step({
       name: "Cool-down",
-      purpose: "cooldown",
       duration: Duration.minutes(10),
       targets: [Target.ftp(50)],
       notes: "Easy spinning to bring heart rate down",
@@ -126,35 +73,30 @@ export const TEMPO_INTERVALS_RIDE: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Progressive Warm-up",
-      purpose: "warmup",
       duration: Duration.minutes(20),
       targets: [Target.ftp(60)],
       notes: "Gradually increase effort to prepare for tempo work",
     })
     .step({
       name: "Tempo Block 1",
-      purpose: "work",
       duration: Duration.minutes(20),
-      targets: [Target.ftp(78)],
+      targets: [Target.ftp(80)],
       notes: "Steady tempo effort - should feel moderately hard but sustainable",
     })
     .step({
       name: "Easy Recovery",
-      purpose: "recovery",
       duration: Duration.minutes(10),
       targets: [Target.ftp(55)],
       notes: "Easy spinning to recover",
     })
     .step({
       name: "Tempo Block 2",
-      purpose: "work",
       duration: Duration.minutes(20),
-      targets: [Target.ftp(78)],
+      targets: [Target.ftp(80)],
       notes: "Maintain same effort as first block",
     })
     .step({
       name: "Cool-down",
-      purpose: "cooldown",
       duration: Duration.minutes(10),
       targets: [Target.ftp(50)],
       notes: "Easy spinning to normalize heart rate",
@@ -175,7 +117,6 @@ export const CLIMBING_INTERVALS_RIDE: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Warm-up",
-      purpose: "warmup",
       duration: Duration.minutes(15),
       targets: [Target.ftp(60)],
       notes: "Include some brief higher efforts to open the legs",
@@ -185,14 +126,12 @@ export const CLIMBING_INTERVALS_RIDE: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Climbing Interval",
-          purpose: "work",
           duration: Duration.minutes(6),
           targets: [Target.ftp(95)],
           notes: "Find a good climb and push hard - aim for threshold power",
         },
         {
           name: "Recovery Descent",
-          purpose: "recovery",
           duration: Duration.minutes(4),
           targets: [Target.ftp(45)],
           notes: "Use terrain to recover - easy spinning or coasting",
@@ -201,7 +140,6 @@ export const CLIMBING_INTERVALS_RIDE: RecordingServiceActivityPlan = {
     })
     .step({
       name: "Cool-down",
-      purpose: "cooldown",
       duration: Duration.minutes(15),
       targets: [Target.ftp(50)],
       notes: "Easy spinning on flat terrain to recover",
@@ -222,7 +160,6 @@ export const GROUP_RIDE_SIMULATION: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Group Warm-up",
-      purpose: "warmup",
       duration: Duration.minutes(20),
       targets: [Target.ftp(60)],
       notes: "Conversational pace as group gets organized",
@@ -232,21 +169,18 @@ export const GROUP_RIDE_SIMULATION: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Attack/Chase",
-          purpose: "work",
           duration: Duration.minutes(2),
           targets: [Target.ftp(100)],
           notes: "Hard effort to simulate attacks or bridging gaps",
         },
         {
           name: "Group Tempo",
-          purpose: "work",
           duration: Duration.minutes(3),
           targets: [Target.ftp(75)],
           notes: "Steady pace as group settles after effort",
         },
         {
           name: "Easy Spinning",
-          purpose: "recovery",
           duration: Duration.minutes(2),
           targets: [Target.ftp(55)],
           notes: "Easy spinning in the bunch",
@@ -255,42 +189,16 @@ export const GROUP_RIDE_SIMULATION: RecordingServiceActivityPlan = {
     })
     .step({
       name: "Sprint Finish",
-      purpose: "work",
       duration: Duration.minutes(1),
-      targets: [Target.ftp(150)],
-      notes: "All-out sprint to simulate group ride finish",
+      targets: [Target.rpe(10)],
+      notes:
+        "Give your best effort over the full minute to simulate a group ride finish; maintain bike control rather than trying to hold peak sprint power throughout.",
     })
     .step({
       name: "Cool-down Spin",
-      purpose: "cooldown",
       duration: Duration.minutes(14),
       targets: [Target.ftp(50)],
       notes: "Easy spinning to cool down after efforts",
-    })
-    .build(),
-};
-
-export const SYSTEM_LONG_ENDURANCE_RIDE: RecordingServiceActivityPlan = {
-  id: "a5f1b4c3-8e2b-4a6d-9c0f-2e9d5b4a3c1e",
-  name: "Long Endurance Ride",
-  description: "2 hour Zone 2 endurance ride at 70% FTP - Build aerobic base",
-  gps_recording_enabled: true,
-  structure: createPlan()
-    .warmup({
-      duration: Duration.minutes(15),
-      targets: [Target.ftp(60)],
-    })
-    .step({
-      name: "Zone 2 Endurance",
-      purpose: "work",
-      duration: Duration.hours(2),
-      targets: [Target.ftp(70)],
-      notes: "Keep it conversational",
-      intervalName: "Main Set",
-    })
-    .cooldown({
-      duration: Duration.minutes(10),
-      targets: [Target.ftp(55)],
     })
     .build(),
 };
@@ -303,14 +211,13 @@ export const SYSTEM_PROGRESSIVE_LONG_ENDURANCE_RIDE: RecordingServiceActivityPla
   structure: createPlan()
     .warmup({
       duration: Duration.minutes(15),
-      targets: [Target.ftp(58)],
+      targets: [Target.ftp(60)],
       notes: "Start relaxed and build cadence smoothly.",
     })
     .step({
       name: "Settled Endurance",
-      purpose: "work",
       duration: Duration.minutes(55),
-      targets: [Target.ftp(68)],
+      targets: [Target.ftp(70)],
       notes: "Lock into conversational endurance riding.",
     })
     .interval({
@@ -319,14 +226,12 @@ export const SYSTEM_PROGRESSIVE_LONG_ENDURANCE_RIDE: RecordingServiceActivityPla
       steps: [
         {
           name: "Tempo Lift",
-          purpose: "work",
           duration: Duration.minutes(10),
-          targets: [Target.ftp(76)],
+          targets: [Target.ftp(75)],
           notes: "Raise pressure without drifting above controlled tempo.",
         },
         {
           name: "Easy Reset",
-          purpose: "recovery",
           duration: Duration.minutes(8),
           targets: [Target.ftp(60)],
           notes: "Recover while keeping pedals moving.",
@@ -335,7 +240,6 @@ export const SYSTEM_PROGRESSIVE_LONG_ENDURANCE_RIDE: RecordingServiceActivityPla
     })
     .step({
       name: "Steady Finish",
-      purpose: "work",
       duration: Duration.minutes(25),
       targets: [Target.ftp(70)],
       notes: "Finish with durable aerobic pressure, not a fade.",
@@ -349,11 +253,9 @@ export const SYSTEM_PROGRESSIVE_LONG_ENDURANCE_RIDE: RecordingServiceActivityPla
 };
 
 export const SAMPLE_OUTDOOR_BIKE_ACTIVITIES: Array<RecordingServiceActivityPlan> = [
-  EASY_ENDURANCE_RIDE,
   SWEET_SPOT_OUTDOOR_RIDE,
   TEMPO_INTERVALS_RIDE,
   CLIMBING_INTERVALS_RIDE,
   GROUP_RIDE_SIMULATION,
-  SYSTEM_LONG_ENDURANCE_RIDE,
   SYSTEM_PROGRESSIVE_LONG_ENDURANCE_RIDE,
 ];

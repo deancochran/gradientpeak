@@ -31,7 +31,7 @@ export type ActivityPlanPickerState<TItem extends ActivityPlanPickerItem = Activ
 
 export function deriveActivityPlanPickerState<TItem extends ActivityPlanPickerItem>({
   pages,
-  athleteContext,
+  athleteContext: _athleteContext,
   selectedSessionId,
   sessions,
   sort = "newest",

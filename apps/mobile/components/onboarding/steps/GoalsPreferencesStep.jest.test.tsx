@@ -16,7 +16,7 @@ jest.mock("@/components/goals", () => ({
   },
 }));
 
-import { GoalsPreferencesStep } from ".";
+import { GoalsPreferencesStep, SummaryStep } from ".";
 
 function Harness({ accountIdentity = "a" }: { accountIdentity?: string }) {
   const [data, setData] = useState<OnboardingData>(INITIAL_ONBOARDING_DATA);
@@ -30,7 +30,30 @@ function Harness({ accountIdentity = "a" }: { accountIdentity?: string }) {
 }
 
 describe("optional onboarding goal drafts", () => {
-  it("does not auto-select a goal and retains the draft through explicit skip and re-selection", async () => {
+  it.each([
+    0, 23,
+  ])("does not label a complete same-calendar-day goal as skipped at hour %s", async (hour) => {
+    jest.useFakeTimers({ doNotFake: ["setImmediate", "setTimeout"] });
+    jest.setSystemTime(new Date(2026, 2, 8, hour, 30));
+    try {
+      const data = {
+        ...INITIAL_ONBOARDING_DATA,
+        should_create_goal: true,
+        goal_draft: {
+          ...createEmptyGoalDraft(),
+          title: "Same-day goal",
+          targetDate: "2026-03-08",
+          targetDuration: "30:00",
+        },
+      };
+      const view = await render(<SummaryStep data={data} />);
+      expect(view.getByText("Create Same-day goal")).toBeTruthy();
+      expect(view.queryByText("Skip incomplete goal")).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+  it("does not auto-select a goal and starts fresh after explicitly skipping the goal", async () => {
     const view = await render(<Harness />);
     expect(view.queryByTestId("goal-editor")).toBeNull();
     expect(view.getByText("Initial goal (optional)")).toBeTruthy();
@@ -40,7 +63,7 @@ describe("optional onboarding goal drafts", () => {
     await fireEvent.press(view.getByTestId("onboarding-skip-goal"));
     expect(view.queryByTestId("goal-editor")).toBeNull();
     await fireEvent.press(view.getByTestId("onboarding-add-goal"));
-    expect(view.getByTestId("goal-editor").props.initialValue.title).toBe("My unfinished goal");
+    expect(view.getByTestId("goal-editor").props.initialValue.title).toBe("");
   });
   it("keeps the current editor seed across same-account refresh and takes only the new account seed on identity change", async () => {
     const updateData = jest.fn();

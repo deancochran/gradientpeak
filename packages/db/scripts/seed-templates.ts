@@ -50,7 +50,7 @@ function hasChanges(
   const remoteStructure = remote.structure;
 
   if (!deepEqual(localStructure, remoteStructure)) return true;
-  return !deepEqual(local.adaptation ?? null, remote.adaptation);
+  return false;
 }
 
 async function seedTemplates() {

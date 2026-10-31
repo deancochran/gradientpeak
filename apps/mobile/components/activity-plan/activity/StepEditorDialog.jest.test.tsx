@@ -1,102 +1,73 @@
-import type { ActivityPlanIntervalStep } from "@repo/core";
-import { createElement } from "react";
+import type { ActivityPlanStep } from "@repo/core";
+import { createElement, useState } from "react";
 import { Alert } from "react-native";
 import { act, fireEvent, renderNative, screen } from "../../../test/render-native";
-import { fromStepEditorTargets, StepEditorDialog, toStepEditorTargets } from "./StepEditorDialog";
+import { StepEditorDialog } from "./StepEditorDialog";
 
-jest.mock("expo-crypto", () => ({
-  randomUUID: () => "00000000-0000-4000-8000-000000000001",
-}));
 jest.mock("expo-haptics", () => ({
   ImpactFeedbackStyle: { Light: "light" },
-  NotificationFeedbackType: { Success: "success" },
   impactAsync: jest.fn(async () => undefined),
-  notificationAsync: jest.fn(async () => undefined),
 }));
 jest.mock("@/components/shared/AppFormModal", () => ({
   AppFormModal: ({
-    actionPlacement,
     children,
     primaryAction,
-    testID,
-    onClose,
+    ...props
   }: {
-    actionPlacement?: "footer" | "header";
     children: React.ReactNode;
     primaryAction: React.ReactNode;
-    testID?: string;
-    onClose: () => void;
-  }) =>
-    createElement("AppFormModal", { actionPlacement, testID, onClose }, children, primaryAction),
+  }) => createElement("AppFormModal", props, children, primaryAction),
 }));
 
-const rpeStep: ActivityPlanIntervalStep = {
+const step: ActivityPlanStep = {
+  type: "step",
   id: "00000000-0000-4000-8000-000000000010",
   name: "Main set",
-  purpose: "work",
+  instructions: "Stay smooth.",
   duration: { type: "time", seconds: 60 },
-  notes: "Keep the optional note.",
   targets: [{ type: "RPE", intensity: 4 }],
 };
 
 describe("StepEditorDialog", () => {
-  it("preserves same-step edits across a refreshed object and confirms discard", async () => {
-    const close = jest.fn();
-    const save = jest.fn();
-    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
-    const view = await renderNative(
-      <StepEditorDialog
-        open
-        activityCategory="run"
-        onOpenChange={close}
-        onSave={save}
-        step={rpeStep}
-      />,
-    );
-    await fireEvent.changeText(screen.getByLabelText("Name"), "Local step");
-    await view.rerender(
-      <StepEditorDialog
-        open
-        activityCategory="run"
-        onOpenChange={close}
-        onSave={save}
-        step={{ ...rpeStep, name: "Refresh" }}
-      />,
-    );
-    expect(screen.getByLabelText("Name").props.value).toBe("Local step");
-    await fireEvent(screen.getByTestId("step-editor-modal"), "close");
-    expect(close).not.toHaveBeenCalled();
-    const choices = alert.mock.calls.at(-1)?.[2];
-    expect(choices?.some((choice) => choice.text === "Keep editing")).toBe(true);
-    await act(() => choices?.find((choice) => choice.text === "Discard")?.onPress?.());
-    expect(close).toHaveBeenCalledWith(false);
-    expect(save).not.toHaveBeenCalled();
-    alert.mockRestore();
-  });
-
-  it("blocks invalid repetition exact drafts without replacing them on blur", async () => {
-    const save = jest.fn();
+  it("is one full-screen save transaction with all applicable form inputs visible", async () => {
     await renderNative(
       <StepEditorDialog
         open
-        activityCategory="strength"
+        activityCategory="run"
         onOpenChange={jest.fn()}
-        onSave={save}
-        step={{ ...rpeStep, duration: { type: "repetitions", count: 8 } }}
+        onSave={jest.fn()}
+        step={step}
       />,
     );
-    await fireEvent.changeText(screen.getByLabelText("Reps"), "1.5");
-    await fireEvent(screen.getByLabelText("Reps"), "blur");
-    expect(screen.getByLabelText("Reps").props.value).toBe("1.5");
-    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
-    expect(save).not.toHaveBeenCalled();
-    await fireEvent.changeText(screen.getByLabelText("Reps"), "9");
-    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
-    expect(save).toHaveBeenCalledWith(
-      expect.objectContaining({ duration: { type: "repetitions", count: 9 } }),
-    );
+    expect(screen.getByTestId("step-editor-modal").props.presentationStyle).toBe("fullScreen");
+    expect(screen.getByLabelText("Name (optional)")).toBeTruthy();
+    expect(screen.getByLabelText("Notes (optional)")).toBeTruthy();
+    expect(screen.getByLabelText("Duration type: Time")).toBeTruthy();
+    expect(screen.getByLabelText("Duration value")).toBeTruthy();
+    expect(screen.getByLabelText("Target type: RPE")).toBeTruthy();
+    expect(screen.getByLabelText("Target value")).toBeTruthy();
+    expect(screen.queryByText("Hide instructions")).toBeNull();
+    expect(screen.queryByText("Change target type")).toBeNull();
+    expect(screen.queryByTestId("step-picker-modal")).toBeNull();
   });
-  it("does not infer legacy purpose and lets the user explicitly repair it", async () => {
+
+  it("updates the displayed target value control immediately when its type changes", async () => {
+    await renderNative(
+      <StepEditorDialog
+        open
+        activityCategory="run"
+        onOpenChange={jest.fn()}
+        onSave={jest.fn()}
+        step={step}
+      />,
+    );
+    await fireEvent(screen.getByLabelText("Target type"), "valueChange", "bpm");
+    expect(screen.getByLabelText("Target type: Heart rate · bpm")).toBeTruthy();
+    expect(screen.getByLabelText("Target value")).toBeTruthy();
+    expect(screen.queryByTestId("step-picker-modal")).toBeNull();
+  });
+
+  it("presents a running speed target as Pace while saving its canonical speed in km/h", async () => {
     const onSave = jest.fn();
     await renderNative(
       <StepEditorDialog
@@ -104,28 +75,110 @@ describe("StepEditorDialog", () => {
         activityCategory="run"
         onOpenChange={jest.fn()}
         onSave={onSave}
-        step={{ ...rpeStep, name: "Warmup", purpose: undefined }}
+        step={{ ...step, targets: [{ type: "speed", intensity: 10 }] }}
       />,
     );
-    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
-    expect(onSave).not.toHaveBeenCalled();
-    expect(screen.getByText(/Choose an explicit step purpose/)).toBeTruthy();
-    await fireEvent(screen.getByTestId("step-purpose"), "valueChange", {
-      value: "technique",
-      label: "technique",
-    });
+    expect(screen.getByLabelText("Target type: Pace")).toBeTruthy();
+    expect(screen.getByLabelText("Target pace").props.accessibilityValue.text).toBe("6:00 /km");
+    expect(screen.queryByLabelText("Target pace minutes")).toBeNull();
+    await fireEvent.press(screen.getByLabelText("Target pace"));
+    await fireEvent(screen.getByLabelText("Target pace minutes"), "valueChange", 5);
     await fireEvent.press(screen.getByTestId("step-editor-save-button"));
     expect(onSave).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Warmup", purpose: "technique" }),
+      expect.objectContaining({ targets: [{ type: "speed", intensity: 12 }] }),
     );
+  });
+
+  it("keeps an existing zero running speed visible as an actionable invalid pace until corrected", async () => {
+    const onSave = jest.fn();
+    await renderNative(
+      <StepEditorDialog
+        open
+        activityCategory="run"
+        onOpenChange={jest.fn()}
+        onSave={onSave}
+        step={{ ...step, targets: [{ type: "speed", intensity: 0 }] }}
+      />,
+    );
+    expect(screen.getByLabelText("Target pace").props.accessibilityValue.text).toBe("Not set");
+    expect(
+      screen.getByText(
+        "This saved zero speed cannot be shown as pace. Choose a positive pace or another target type before saving.",
+      ),
+    ).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(
+        "A zero speed target cannot be represented as pace. Choose a positive pace or another target type.",
+      ),
+    ).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Target pace"));
+    await fireEvent(screen.getByLabelText("Target pace minutes"), "valueChange", 5);
+    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ targets: [{ type: "speed", intensity: 12 }] }),
+    );
+  });
+
+  it("keeps swimming speed in km/h and replaces it with the selected heart-rate default", async () => {
+    await renderNative(
+      <StepEditorDialog
+        open
+        activityCategory="swim"
+        onOpenChange={jest.fn()}
+        onSave={jest.fn()}
+        step={{ ...step, targets: [{ type: "speed", intensity: 25 }] }}
+      />,
+    );
+    expect(screen.getByLabelText("Target type: Speed · km/h")).toBeTruthy();
+    await fireEvent(screen.getByLabelText("Target type"), "valueChange", "bpm");
+    expect(screen.getByLabelText("Target type: Heart rate · bpm")).toBeTruthy();
+    expect(screen.getByLabelText("Target value").props.accessibilityValue.text).toBe("120");
+  });
+
+  it("adds and removes targets with visible controls", async () => {
+    await renderNative(
+      <StepEditorDialog
+        open
+        activityCategory="run"
+        onOpenChange={jest.fn()}
+        onSave={jest.fn()}
+        step={step}
+      />,
+    );
+    await fireEvent.press(screen.getByLabelText("Add target"));
+    expect(screen.getAllByTestId(/target-row-/)).toHaveLength(2);
+    expect(screen.getByLabelText("Target 2 type: Pace")).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Remove target 2"));
+    expect(screen.getAllByTestId(/target-row-/)).toHaveLength(1);
+  });
+
+  it("does not let a captured removed-target picker callback change a replacement target", async () => {
+    await renderNative(
+      <StepEditorDialog
+        open
+        activityCategory="run"
+        onOpenChange={jest.fn()}
+        onSave={jest.fn()}
+        step={step}
+      />,
+    );
+    await fireEvent.press(screen.getByLabelText("Add target"));
+    const stale = screen.getByLabelText("Target 2 type").props.onValueChange;
+    await fireEvent.press(screen.getByLabelText("Remove target 2"));
+    await fireEvent.press(screen.getByLabelText("Add target"));
+    stale("bpm");
+    expect(screen.getByLabelText("Target 2 type: Pace")).toBeTruthy();
   });
 
   it.each([
-    { type: "RPE" as const, intensity: 5.25 },
-    { type: "%MaxHR" as const, intensity: 101 },
-    { type: "speed" as const, intensity: 0 },
-    { type: "cadence" as const, intensity: 90 },
-  ])("rejects an invalid $type prescription while retaining it for correction", async (target) => {
+    [{ type: "distance", meters: 0 }, []],
+    [{ type: "repetitions", count: 0 }, []],
+    [{ type: "time", seconds: 60 }, [{ type: "RPE", intensity: null }]],
+    [{ type: "time", seconds: 60 }, [{ type: "bpm", intensity: 999 }]],
+    [{ type: "time", seconds: 60 }, [{ type: "RPE", intensity: 4.25 }]],
+  ] as const)("rejects an invalid persisted step fixture", async (duration, targets) => {
     const onSave = jest.fn();
     await renderNative(
       <StepEditorDialog
@@ -133,227 +186,266 @@ describe("StepEditorDialog", () => {
         activityCategory="run"
         onOpenChange={jest.fn()}
         onSave={onSave}
-        step={{ ...rpeStep, duration: { type: "distance", meters: 100 }, targets: [target] }}
+        step={{ ...step, duration, targets } as unknown as ActivityPlanStep}
       />,
     );
     await fireEvent.press(screen.getByTestId("step-editor-save-button"));
     expect(onSave).not.toHaveBeenCalled();
-    expect(screen.getByLabelText("Target 1 value exact value").props.value).toBe(
-      String(target.intensity),
-    );
+    expect(screen.getAllByRole("alert").length).toBeGreaterThan(0);
   });
 
-  it("retains targets and duration when category changes while editing a draft", async () => {
-    const onSave = jest.fn();
-    const step: ActivityPlanIntervalStep = {
-      ...rpeStep,
-      targets: [{ type: "watts", intensity: 250 }],
-      duration: { type: "distance", meters: 1000 },
-    };
-    const view = await renderNative(
-      <StepEditorDialog
-        open
-        activityCategory="bike"
-        onOpenChange={jest.fn()}
-        onSave={onSave}
-        step={step}
-      />,
-    );
-    await fireEvent.press(screen.getByTestId("target-value-0-current-value"));
-    await fireEvent.changeText(screen.getByTestId("target-value-0-inline-value"), "275");
-    await view.rerender(
-      <StepEditorDialog
-        open
-        activityCategory="strength"
-        onOpenChange={jest.fn()}
-        onSave={onSave}
-        step={step}
-      />,
-    );
-    expect(screen.getByTestId("target-value-0-inline-value").props.value).toBe("275");
-    expect(screen.getByText(/distance is not permitted/)).toBeTruthy();
-    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
-    expect(onSave).not.toHaveBeenCalled();
-  });
-
-  it("requires exactly one RPE for repetition steps and preserves extra targets until removed", async () => {
+  it("saves valid edits", async () => {
     const onSave = jest.fn();
     await renderNative(
       <StepEditorDialog
         open
-        activityCategory="strength"
-        onOpenChange={jest.fn()}
-        onSave={onSave}
-        step={{
-          ...rpeStep,
-          duration: { type: "repetitions", count: 8 },
-          targets: [
-            { type: "RPE", intensity: 5 },
-            { type: "bpm", intensity: 120 },
-          ],
-        }}
-      />,
-    );
-    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
-    expect(onSave).not.toHaveBeenCalled();
-    expect(screen.getByTestId("target-remove-1")).toBeTruthy();
-    await fireEvent.press(screen.getByTestId("target-remove-1"));
-    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
-    expect(onSave).toHaveBeenCalledWith(
-      expect.objectContaining({ targets: [{ type: "RPE", intensity: 5 }] }),
-    );
-  });
-  it("preserves canonical target values while editing", () => {
-    expect(toStepEditorTargets([{ type: "speed", intensity: 18 }])).toEqual([
-      { type: "speed", intensity: 18 },
-    ]);
-    expect(fromStepEditorTargets([{ type: "cadence", intensity: 90 }])).toEqual([
-      { type: "cadence", intensity: 90 },
-    ]);
-  });
-
-  it("saves valid duration and target exact edits without requiring blur", async () => {
-    const onSave = jest.fn();
-    await renderNative(
-      <StepEditorDialog
         activityCategory="run"
         onOpenChange={jest.fn()}
         onSave={onSave}
-        open
-        step={rpeStep}
+        step={step}
       />,
     );
-
-    await fireEvent.press(screen.getByTestId("step-duration-value-current-value"));
-    await fireEvent.changeText(screen.getByTestId("step-duration-value-inline-value"), "5");
-    await fireEvent.press(screen.getByTestId("target-value-0-current-value"));
-    await fireEvent.changeText(screen.getByTestId("target-value-0-inline-value"), "4.5");
     await fireEvent.press(screen.getByTestId("step-editor-save-button"));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ name: "Main set" }));
+  });
 
+  it("rejects a missing completion while still allowing a step with no targets", async () => {
+    const onSave = jest.fn();
+    await renderNative(
+      <StepEditorDialog
+        open
+        activityCategory="run"
+        onOpenChange={jest.fn()}
+        onSave={onSave}
+        step={{ ...step, duration: null, targets: [] }}
+      />,
+    );
+    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("alert").length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    "time",
+    "distance",
+  ] as const)("saves a blank step after choosing and entering %s", async (kind) => {
+    const onSave = jest.fn();
+    await renderNative(
+      <StepEditorDialog
+        open
+        activityCategory="run"
+        onOpenChange={jest.fn()}
+        onSave={onSave}
+        step={{ ...step, duration: null, targets: [] }}
+      />,
+    );
+    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", kind);
+    await fireEvent.press(screen.getByLabelText("Duration value"));
+    if (kind === "time")
+      await fireEvent(screen.getByLabelText("Duration value minutes"), "valueChange", 5);
+    else await fireEvent(screen.getByLabelText("Duration value units"), "valueChange", 1);
+    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
-        duration: { type: "time", seconds: 300 },
-        notes: "Keep the optional note.",
-        targets: [{ type: "RPE", intensity: 4.5 }],
+        duration:
+          kind === "time" ? { type: "time", seconds: 300 } : { type: "distance", meters: 1000 },
       }),
     );
   });
 
-  it("keeps stored instructions collapsed until explicitly edited, then collapses and saves them", async () => {
+  it("rejects save when a newly selected distance has no value", async () => {
     const onSave = jest.fn();
     await renderNative(
       <StepEditorDialog
+        open
         activityCategory="run"
         onOpenChange={jest.fn()}
         onSave={onSave}
-        open
-        step={rpeStep}
+        step={{ ...step, duration: null, targets: [] }}
       />,
     );
-
-    expect(screen.queryByPlaceholderText("Add step instructions")).toBeNull();
-    await fireEvent.press(screen.getByText("Instructions: Keep the optional note."));
-    expect(screen.getByDisplayValue("Keep the optional note.")).toBeTruthy();
-    await fireEvent.press(screen.getByText("Hide instructions"));
-    expect(screen.queryByPlaceholderText("Add step instructions")).toBeNull();
-    expect(screen.getByText("Instructions: Keep the optional note.")).toBeTruthy();
+    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "distance");
     await fireEvent.press(screen.getByTestId("step-editor-save-button"));
-
-    expect(onSave).toHaveBeenCalledWith(
-      expect.objectContaining({ notes: "Keep the optional note." }),
-    );
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("alert").length).toBeGreaterThan(0);
   });
 
-  it("uses one unit-bearing target row without visible Type or Value labels", async () => {
+  it("rejects a zero distance selected from the native picker instead of retaining its old value", async () => {
+    const onSave = jest.fn();
     await renderNative(
       <StepEditorDialog
+        open
+        activityCategory="run"
+        onOpenChange={jest.fn()}
+        onSave={onSave}
+        step={{ ...step, duration: { type: "distance", meters: 1000 }, targets: [] }}
+      />,
+    );
+    await fireEvent.press(screen.getByLabelText("Duration value"));
+    await fireEvent(screen.getByLabelText("Duration value units"), "valueChange", 0);
+    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByText("Finish or correct the exact value before saving.")).toBeTruthy();
+  });
+
+  it("rejects a zero pace selected from the native picker instead of retaining its old target", async () => {
+    const onSave = jest.fn();
+    await renderNative(
+      <StepEditorDialog
+        open
+        activityCategory="run"
+        onOpenChange={jest.fn()}
+        onSave={onSave}
+        step={{ ...step, targets: [{ type: "speed", intensity: 10 }] }}
+      />,
+    );
+    await fireEvent.press(screen.getByLabelText("Target pace"));
+    await fireEvent(screen.getByLabelText("Target pace minutes"), "valueChange", 0);
+    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByText("Finish or correct the exact value before saving.")).toBeTruthy();
+  });
+
+  it("disables save and close during an async save, then permits retry after rejection", async () => {
+    let reject: ((error: Error) => void) | undefined;
+    const onSave = jest.fn(
+      () =>
+        new Promise<void>((_resolve, rejectSave) => {
+          reject = rejectSave;
+        }),
+    );
+    await renderNative(
+      <StepEditorDialog
+        open
+        activityCategory="run"
+        onOpenChange={jest.fn()}
+        onSave={onSave}
+        step={step}
+      />,
+    );
+    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
+    expect(screen.getByTestId("step-editor-save-button").props.accessibilityState.disabled).toBe(
+      true,
+    );
+    expect(screen.getByTestId("step-editor-modal").props.dismissDisabled).toBe(true);
+    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
+    expect(onSave).toHaveBeenCalledTimes(1);
+    await act(async () => reject?.(new Error("Try again")));
+    expect(screen.getByTestId("step-editor-save-button").props.accessibilityState.disabled).toBe(
+      false,
+    );
+    expect(screen.getByTestId("step-editor-modal").props.dismissDisabled).toBe(false);
+    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
+    expect(onSave).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears an existing time duration and rejects save instead of retaining the old value", async () => {
+    const onSave = jest.fn();
+    await renderNative(
+      <StepEditorDialog
+        open
+        activityCategory="run"
+        onOpenChange={jest.fn()}
+        onSave={onSave}
+        step={{ ...step, targets: [] }}
+      />,
+    );
+    await fireEvent.press(screen.getByLabelText("Duration value"));
+    await fireEvent.press(screen.getByLabelText("Clear Duration value"));
+    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByText("Choose a completion type and value before saving.")).toBeTruthy();
+  });
+
+  it("confirms whole-screen cancel and does not save", async () => {
+    const close = jest.fn();
+    const alert = jest
+      .spyOn(Alert, "alert")
+      .mockImplementation((_title, _message, actions) =>
+        actions?.find((action) => action.text === "Discard edits")?.onPress?.(),
+      );
+    await renderNative(
+      <StepEditorDialog
+        open
+        activityCategory="run"
+        onOpenChange={close}
+        onSave={jest.fn()}
+        step={step}
+      />,
+    );
+    await fireEvent.changeText(screen.getByLabelText("Name (optional)"), "Changed");
+    await fireEvent(screen.getByTestId("step-editor-modal"), "close");
+    expect(close).toHaveBeenCalledWith(false);
+    alert.mockRestore();
+  });
+
+  it("restores the original existing draft after cancel and reopen", async () => {
+    const alert = jest
+      .spyOn(Alert, "alert")
+      .mockImplementation((_title, _message, actions) =>
+        actions?.find((action) => action.text === "Discard edits")?.onPress?.(),
+      );
+    function Owner() {
+      const [open, setOpen] = useState(true);
+      return (
+        <StepEditorDialog
+          open={open}
+          activityCategory="run"
+          onOpenChange={setOpen}
+          onSave={jest.fn()}
+          step={step}
+        />
+      );
+    }
+    const view = await renderNative(<Owner />);
+    await fireEvent.changeText(screen.getByLabelText("Name (optional)"), "Changed");
+    await fireEvent(screen.getByTestId("step-editor-modal"), "close");
+    await view.rerender(
+      <StepEditorDialog
+        open
         activityCategory="run"
         onOpenChange={jest.fn()}
         onSave={jest.fn()}
-        open
-        step={rpeStep}
+        step={step}
       />,
     );
-
-    expect(screen.getByLabelText("Target 1 type")).toBeTruthy();
-    expect(screen.getByLabelText("Target 1 value: 4 RPE")).toBeTruthy();
-    expect(screen.queryAllByTestId("target-value-0-slider")).toHaveLength(0);
-    expect(screen.queryByText("Type")).toBeNull();
-    expect(screen.queryByText("Value")).toBeNull();
-    expect(screen.queryByTestId("target-value-0-inline-value")).toBeNull();
-    expect(screen.getByLabelText("Remove target 1")).toBeTruthy();
-    expect(screen.queryByTestId("target-actions-0")).toBeNull();
-    expect(screen.getByTestId("step-editor-modal").props.actionPlacement).toBe("header");
+    expect(screen.getByLabelText("Name (optional)").props.value).toBe("Main set");
+    alert.mockRestore();
   });
 
-  it("shows an existing high target value without silently changing it", async () => {
-    await renderNative(
+  it("discards an invalid native pace draft when the parent closes and reopens the editor", async () => {
+    const alert = jest
+      .spyOn(Alert, "alert")
+      .mockImplementation((_title, _message, actions) =>
+        actions?.find((action) => action.text === "Discard edits")?.onPress?.(),
+      );
+    function Owner() {
+      const [open, setOpen] = useState(true);
+      return (
+        <StepEditorDialog
+          open={open}
+          activityCategory="run"
+          onOpenChange={setOpen}
+          onSave={jest.fn()}
+          step={{ ...step, targets: [{ type: "speed", intensity: 10 }] }}
+        />
+      );
+    }
+    const view = await renderNative(<Owner />);
+    await fireEvent.press(screen.getByLabelText("Target pace"));
+    await fireEvent(screen.getByLabelText("Target pace minutes"), "valueChange", 0);
+    await fireEvent(screen.getByTestId("step-editor-modal"), "close");
+    await view.rerender(
       <StepEditorDialog
-        activityCategory="bike"
-        onOpenChange={jest.fn()}
-        onSave={jest.fn()}
         open
-        step={{ ...rpeStep, targets: [{ type: "watts", intensity: 2500 }] }}
-      />,
-    );
-
-    expect(screen.getByLabelText("Target 1 value: 2500 watts")).toBeTruthy();
-    expect(screen.queryByTestId("target-value-0-inline-value")).toBeNull();
-  });
-
-  it("blocks Done while invalid duration or target exact edits remain focused", async () => {
-    const onSave = jest.fn();
-    await renderNative(
-      <StepEditorDialog
         activityCategory="run"
         onOpenChange={jest.fn()}
-        onSave={onSave}
-        open
-        step={rpeStep}
+        onSave={jest.fn()}
+        step={{ ...step, targets: [{ type: "speed", intensity: 10 }] }}
       />,
     );
-
-    await fireEvent.press(screen.getByTestId("step-duration-value-current-value"));
-    await fireEvent.changeText(screen.getByTestId("step-duration-value-inline-value"), "1.001");
-    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
-
-    expect(onSave).not.toHaveBeenCalled();
-    expect(screen.getByText("Finish or correct the exact value before saving.")).toBeTruthy();
-
-    await fireEvent.changeText(screen.getByTestId("step-duration-value-inline-value"), "5");
-    await fireEvent.press(screen.getByTestId("target-value-0-current-value"));
-    await fireEvent.changeText(screen.getByTestId("target-value-0-inline-value"), "0");
-    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
-
-    expect(onSave).not.toHaveBeenCalled();
-  });
-
-  it("removes only the removed target's invalid marker", async () => {
-    const onSave = jest.fn();
-    await renderNative(
-      <StepEditorDialog
-        activityCategory="bike"
-        onOpenChange={jest.fn()}
-        onSave={onSave}
-        open
-        step={{
-          ...rpeStep,
-          targets: [
-            { type: "watts", intensity: 200 },
-            { type: "cadence", intensity: 90 },
-          ],
-        }}
-      />,
-    );
-
-    await fireEvent.press(screen.getByTestId("target-value-0-current-value"));
-    await fireEvent.changeText(screen.getByTestId("target-value-0-inline-value"), "5000");
-    await fireEvent.press(screen.getByTestId("target-value-1-current-value"));
-    await fireEvent.changeText(screen.getByTestId("target-value-1-inline-value"), "5000");
-    await fireEvent.press(screen.getByTestId("target-remove-0"));
-    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
-
-    expect(onSave).not.toHaveBeenCalled();
-    expect(screen.getByText("Finish or correct the exact value before saving.")).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Target pace"));
+    expect(screen.getByLabelText("Target pace minutes").props.selectedValue).toBe(6);
+    alert.mockRestore();
   });
 });

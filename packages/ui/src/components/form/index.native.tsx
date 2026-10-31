@@ -1,19 +1,33 @@
 import * as React from "react";
+
+export { FormChoiceField } from "../form-fields/choice-field.native";
+
 import {
   Controller,
   type FieldPath,
   type FieldValues,
   FormProvider,
+  type FormProviderProps,
   useFormContext,
   useFormState,
 } from "react-hook-form";
 import { type AccessibilityProps, type TextProps, View, type ViewProps } from "react-native";
-
+import { NativeInputPresentationProvider } from "../../hooks/native-input-presentation.native";
 import { cn } from "../../lib/cn";
 import { Text } from "../text/index.native";
 import type { FormFieldContextValue, FormFieldProps, FormItemContextValue } from "./shared";
 
-const Form = FormProvider;
+function Form<
+  TFieldValues extends FieldValues = FieldValues,
+  TContext = unknown,
+  TTransformedValues = TFieldValues,
+>(props: FormProviderProps<TFieldValues, TContext, TTransformedValues>) {
+  return (
+    <FormProvider {...props}>
+      <NativeInputPresentationProvider>{props.children}</NativeInputPresentationProvider>
+    </FormProvider>
+  );
+}
 
 const FormFieldContext = React.createContext<FormFieldContextValue | null>(null);
 

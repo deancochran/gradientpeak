@@ -20,6 +20,7 @@ import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 function UserDetailScreen() {
   const router = useRouter();
@@ -165,6 +166,15 @@ function UserDetailScreen() {
       <Stack.Screen options={{ headerRight: renderHeaderActions }} />
 
       <ProfileSummaryCard
+        {...omitUndefined({
+          onEdit: isOwnProfile ? () => navigateTo(ROUTES.PROFILE_EDIT) : undefined,
+          onFollowersPress: canViewSocialGraph
+            ? () => navigateTo(`/followers?userId=${targetUserId}`)
+            : undefined,
+          onFollowingPress: canViewSocialGraph
+            ? () => navigateTo(`/following?userId=${targetUserId}`)
+            : undefined,
+        })}
         actions={
           !isOwnProfile ? (
             <View className="flex-row gap-3">
@@ -222,14 +232,7 @@ function UserDetailScreen() {
         }
         emailFallback={isOwnProfile ? user?.email : null}
         isOwnProfile={isOwnProfile}
-        onEdit={isOwnProfile ? () => navigateTo(ROUTES.PROFILE_EDIT) : undefined}
-        onFollowersPress={
-          canViewSocialGraph ? () => navigateTo(`/followers?userId=${targetUserId}`) : undefined
-        }
-        onFollowingPress={
-          canViewSocialGraph ? () => navigateTo(`/following?userId=${targetUserId}`) : undefined
-        }
-        profile={renderedProfile}
+        profile={omitUndefined(renderedProfile)}
         showMetadata={
           renderedProfile.is_public !== false ||
           isOwnProfile ||

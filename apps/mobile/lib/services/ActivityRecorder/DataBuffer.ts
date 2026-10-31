@@ -189,7 +189,8 @@ export class DataBuffer {
       if (firstValidIndex === -1) {
         // All readings are old (or array empty)
         // If array not empty, all are old -> clear
-        if (readings.length > 0 && readings[readings.length - 1].timestamp <= cutoff) {
+        const latestReading = readings.at(-1);
+        if (latestReading !== undefined && latestReading.timestamp <= cutoff) {
           this.stores.set(metric, []);
           this.newestTimestampByMetric.delete(metric);
           totalRemoved += beforeCount;
@@ -261,8 +262,9 @@ export class DataBuffer {
       totalReadings += readings.length;
 
       if (readings.length > 0) {
-        const first = readings[0];
-        const last = readings[readings.length - 1];
+        const first = readings.at(0);
+        const last = readings.at(-1);
+        if (first === undefined || last === undefined) continue;
 
         if (oldestTimestamp === null || first.timestamp < oldestTimestamp) {
           oldestTimestamp = first.timestamp;

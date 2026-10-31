@@ -7,107 +7,62 @@ import {
   resolveActivityPlanSessionFlow,
 } from "./session-flow-personalization";
 import type { ActivityPlanDuration } from "./structure-schema";
-import { consolidateActivityPlanText } from "./text-consolidation";
-
 export type ActivityPlanPrintFormat = "full-page" | "swim-deck-card" | "bike-cue-strip";
 export type ActivityPlanBikeCueLength = "short" | "long";
-
 export type ActivityPlanPrintStep = {
-  description: string | null;
+  /** The authored execution duration, kept separate so renderers need not parse instruction text. */
+  durationLabel?: string;
   id: string;
+  /** Backward-compatible compact representation for existing print consumers. */
   instruction: string;
   name: string | null;
-  notes: string | null;
+  instructions: string | null;
+  /** Ordered authored targets; an empty list means no target was authored. */
+  targetLabels?: readonly string[];
 };
-
 export type ActivityPlanPrintGroup = {
   id: string;
-  name: string | null;
-  notes: string | null;
   repetitions: number;
   steps: readonly ActivityPlanPrintStep[];
 };
-
 export type ActivityPlanPrintSection = {
   groups: readonly ActivityPlanPrintGroup[];
   id: string;
   name: string | null;
-  notes: string | null;
 };
-
 export type ActivityPlanPrintProfileBar = {
   color: string;
   duration: string;
+  /** Exact timed duration for time-proportional renderers; null for non-timed work. */
+  durationSeconds?: number | null;
   heightPercent: number;
   id: string;
   label: string;
-  role: "activity" | "rest";
+  role: "activity";
   weight: number;
 };
-
-function formatProfileIntensityLabel(label: string | null, role: "activity" | "rest"): string {
-  if (!label) return role === "rest" ? "Recovery" : "Intensity unavailable";
-  const match = /^(RPE|%FTP|%MaxHR|%ThresholdHR)\s+(.+)$/u.exec(label);
-  if (!match) return label;
-  const [, type, intensity] = match;
-  switch (type) {
-    case "RPE":
-      return `${intensity} RPE`;
-    case "%FTP":
-      return `${intensity}% FTP`;
-    case "%MaxHR":
-      return `${intensity}% Max HR`;
-    case "%ThresholdHR":
-      return `${intensity}% Threshold HR`;
-    default:
-      return label;
-  }
-}
-
 export type ActivityPlanPrintModel = {
   activityCategory: CanonicalActivityCategory;
   description: string | null;
   format: ActivityPlanPrintFormat;
   intensityProfile: readonly ActivityPlanPrintProfileBar[];
   intensityReferences: readonly string[];
-  notes: string | null;
+  notes: null;
   sections: readonly ActivityPlanPrintSection[];
   title: string;
   totals: readonly string[];
 };
-
 export function getActivityPlanBikeCueLength(
   model: Pick<ActivityPlanPrintModel, "sections">,
 ): ActivityPlanBikeCueLength {
-  const stepCount = model.sections.reduce(
-    (sectionTotal, section) =>
-      sectionTotal +
-      section.groups.reduce((groupTotal, group) => groupTotal + group.steps.length, 0),
+  return model.sections.reduce(
+    (total, section) =>
+      total + section.groups.reduce((count, group) => count + group.steps.length, 0),
     0,
-  );
-  return stepCount <= 5 ? "short" : "long";
+  ) <= 5
+    ? "short"
+    : "long";
 }
-
-function normalizeLabel(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
-}
-
-function labelsMatch(left: string | null | undefined, right: string | null | undefined): boolean {
-  return Boolean(left && right && normalizeLabel(left) === normalizeLabel(right));
-}
-
-function isGenericSectionLabel(
-  label: string,
-  activityCategory: CanonicalActivityCategory,
-): boolean {
-  const normalized = normalizeLabel(label);
-  return normalized === "activity" || normalized === `${activityCategory} activity`;
-}
-
 function occurrenceWeight(duration: ActivityPlanDuration): number {
   switch (duration.type) {
     case "time":
@@ -120,25 +75,6 @@ function occurrenceWeight(duration: ActivityPlanDuration): number {
       return 1;
   }
 }
-
-function buildIntensityProfile(structure: unknown): readonly ActivityPlanPrintProfileBar[] {
-  const presentation = deriveActivityPlanPresentation(structure);
-  if (!presentation) return [];
-  return presentation.occurrences.map((occurrence) => {
-    const isRecovery = occurrence.role === "rest" || occurrence.visualIntensity === null;
-    const intensity = occurrence.visualIntensity ?? 0;
-    return {
-      color: isRecovery ? "#cbd5e1" : INTENSITY_ZONES[getIntensityZone(intensity * 100)].color,
-      duration: formatActivityPlanPrintDuration(occurrence.duration),
-      heightPercent: isRecovery ? 18 : Math.round(24 + intensity * 76),
-      id: occurrence.occurrenceId,
-      label: formatProfileIntensityLabel(occurrence.intensityLabel, occurrence.role),
-      role: occurrence.role,
-      weight: occurrenceWeight(occurrence.duration),
-    };
-  });
-}
-
 export function getActivityPlanPrintFormats(
   activityCategory: CanonicalActivityCategory,
 ): readonly ActivityPlanPrintFormat[] {
@@ -146,18 +82,13 @@ export function getActivityPlanPrintFormats(
   if (activityCategory === "bike") return ["full-page", "bike-cue-strip"];
   return ["full-page"];
 }
-
 export function getActivityPlanPrintFormatLabel(format: ActivityPlanPrintFormat): string {
-  switch (format) {
-    case "full-page":
-      return "Full activity plan";
-    case "swim-deck-card":
-      return "Swim deck card";
-    case "bike-cue-strip":
-      return "Bike cue strip";
-  }
+  return format === "full-page"
+    ? "Full activity plan"
+    : format === "swim-deck-card"
+      ? "Swim deck card"
+      : "Bike cue strip";
 }
-
 export function formatActivityPlanPrintDuration(duration: ActivityPlanDuration): string {
   switch (duration.type) {
     case "time": {
@@ -182,144 +113,129 @@ export function formatActivityPlanPrintDuration(duration: ActivityPlanDuration):
       return "Until finished";
   }
 }
-
 function printTotals(input: {
   distanceMeters: number;
+  hasOpenEndedWork: boolean;
   repetitionCount: number;
+  restSeconds: number;
   timeSeconds: number;
-}) {
+}): string[] {
   const totals: string[] = [];
-  if (input.distanceMeters > 0) {
+  if (input.distanceMeters)
     totals.push(
-      input.distanceMeters >= 1_000
-        ? `${Math.round((input.distanceMeters / 1_000) * 100) / 100} km`
-        : `${input.distanceMeters} m`,
+      `${input.hasOpenEndedWork ? "Distance subtotal" : "Distance"}: ${
+        input.distanceMeters >= 1_000
+          ? `${Math.round((input.distanceMeters / 1_000) * 100) / 100} km`
+          : `${input.distanceMeters} m`
+      }`,
+    );
+  if (input.timeSeconds) {
+    const duration = formatActivityPlanPrintDuration({ type: "time", seconds: input.timeSeconds });
+    totals.push(
+      `${input.restSeconds ? (input.hasOpenEndedWork ? "Active timed subtotal" : "Active time") : input.hasOpenEndedWork ? "Timed subtotal" : "Time"}: ${duration}`,
     );
   }
-  if (input.timeSeconds > 0) {
-    totals.push(formatActivityPlanPrintDuration({ type: "time", seconds: input.timeSeconds }));
-  }
-  if (input.repetitionCount > 0) totals.push(`${input.repetitionCount} reps`);
+  if (input.restSeconds)
+    totals.push(
+      `Rest${input.hasOpenEndedWork ? " subtotal" : ""}: ${formatActivityPlanPrintDuration({ type: "time", seconds: input.restSeconds })}`,
+    );
+  if (input.repetitionCount)
+    totals.push(
+      `${input.hasOpenEndedWork ? "Repetitions subtotal" : "Repetitions"}: ${input.repetitionCount} reps`,
+    );
+  if (input.hasOpenEndedWork) totals.push("Plus open-ended work");
   return totals;
 }
-
+/** Builds V5 step/repeat print content without reconstructing removed segment or interval labels. */
 export function buildActivityPlanPrintModel(input: {
   description?: string | null;
   format: ActivityPlanPrintFormat;
-  notes?: string | null;
+  notes?: never;
   performanceTargets?: AthletePerformanceTargetFacts | null;
-  personalizeTargets: boolean;
+  personalizeTargets?: boolean;
   structure: unknown;
   title: string;
 }): ActivityPlanPrintModel | null {
   const resolution = resolveActivityPlanSessionFlow({
     structure: input.structure,
-    ...(input.performanceTargets ? { performanceTargets: input.performanceTargets } : {}),
-    personalize: input.personalizeTargets,
+    ...(input.personalizeTargets !== false && input.performanceTargets
+      ? { performanceTargets: input.performanceTargets }
+      : {}),
+    ...(input.personalizeTargets === undefined ? {} : { personalize: input.personalizeTargets }),
   });
   const structure = resolution.structure;
-  const authoredStructure = resolution.authoredStructure;
   if (
     !structure ||
-    !authoredStructure ||
     !getActivityPlanPrintFormats(structure.activity_category).includes(input.format)
-  ) {
+  )
     return null;
-  }
-
   const intensityReferences = new Set<string>();
   let distanceMeters = 0;
+  let hasOpenEndedWork = false;
   let repetitionCount = 0;
+  let restSeconds = 0;
   let timeSeconds = 0;
-  const sections: ActivityPlanPrintSection[] = structure.segments.map((segment) => {
-    if (segment.role === "rest") {
-      timeSeconds += segment.duration.seconds;
-      return {
-        id: segment.id,
-        name: null,
-        notes: segment.notes ?? null,
-        groups: [
-          {
-            id: segment.id,
-            name: null,
-            notes: null,
-            repetitions: 1,
-            steps: [
-              {
-                id: segment.id,
-                name: labelsMatch(segment.name, input.title) ? null : segment.name,
-                instruction: formatActivityPlanPrintDuration(segment.duration),
-                description: null,
-                notes: null,
-              },
-            ],
-          },
-        ],
-      };
-    }
-
-    const sectionName =
-      labelsMatch(segment.name, input.title) ||
-      isGenericSectionLabel(segment.name, structure.activity_category)
-        ? null
-        : segment.name;
-    const groups = segment.intervals.map((interval) => {
-      const steps = interval.steps.map((step) => {
-        const targetLabels = getActivityPlanSessionFlowTargetPresentations(resolution, step.id).map(
-          (target) => target.label,
-        );
-        for (const target of targetLabels) intensityReferences.add(target);
-        const multiplier = interval.repetitions;
-        switch (step.duration.type) {
-          case "time":
-            timeSeconds += step.duration.seconds * multiplier;
-            break;
-          case "distance":
-            distanceMeters += step.duration.meters * multiplier;
-            break;
-          case "repetitions":
-            repetitionCount += step.duration.count * multiplier;
-            break;
-          case "untilFinished":
-            break;
-        }
-        const duration = formatActivityPlanPrintDuration(step.duration);
-        return {
-          id: step.id,
-          name: labelsMatch(step.name, input.title) ? null : step.name,
-          instruction:
-            targetLabels.length > 0 ? `${duration} at ${targetLabels.join(" · ")}` : duration,
-          description: null,
-          notes: consolidateActivityPlanText(step.notes, step.description, "Description"),
-        };
+  const groups = structure.items.map((item) => ({
+    id: item.id,
+    repetitions: item.type === "repeat" ? item.count : 1,
+    steps: (item.type === "step" ? [item] : item.steps).map((step) => {
+      const labels = getActivityPlanSessionFlowTargetPresentations(resolution, step.id).map(
+        (target) => target.label,
+      );
+      labels.forEach((label) => {
+        intensityReferences.add(label);
       });
-      const onlyStepName = steps.length === 1 ? steps[0]?.name : null;
+      const count = item.type === "repeat" ? item.count : 1;
+      if (step.duration.type === "time" && step.targets[0]?.type === "rest")
+        restSeconds += step.duration.seconds * count;
+      else if (step.duration.type === "time") timeSeconds += step.duration.seconds * count;
+      else if (step.duration.type === "distance") distanceMeters += step.duration.meters * count;
+      else if (step.duration.type === "repetitions") repetitionCount += step.duration.count * count;
+      else hasOpenEndedWork = true;
+      const duration = formatActivityPlanPrintDuration(step.duration);
       return {
-        id: interval.id,
-        name:
-          /^interval\s+\d+$/iu.test(interval.name.trim()) ||
-          labelsMatch(interval.name, input.title) ||
-          labelsMatch(interval.name, sectionName) ||
-          labelsMatch(interval.name, onlyStepName)
-            ? null
-            : interval.name,
-        notes: interval.notes ?? null,
-        repetitions: interval.repetitions,
-        steps,
+        id: step.id,
+        name: step.name ?? null,
+        instructions: step.instructions ?? null,
+        instruction: labels.length ? `${duration} at ${labels.join(" · ")}` : duration,
+        durationLabel: duration,
+        targetLabels: labels,
       };
-    });
-    return { id: segment.id, name: sectionName, notes: segment.notes ?? null, groups };
-  });
-
+    }),
+  }));
+  const presentation = deriveActivityPlanPresentation(structure);
+  const intensityProfile =
+    presentation?.occurrences.map((occurrence) => {
+      const intensity = occurrence.visualIntensity ?? 0;
+      return {
+        color:
+          occurrence.visualIntensity === null
+            ? "#cbd5e1"
+            : INTENSITY_ZONES[getIntensityZone(intensity * 100)].color,
+        duration: formatActivityPlanPrintDuration(occurrence.duration),
+        durationSeconds: occurrence.duration.type === "time" ? occurrence.duration.seconds : null,
+        heightPercent: occurrence.visualIntensity === null ? 18 : Math.round(24 + intensity * 76),
+        id: occurrence.occurrenceId,
+        label: occurrence.intensityLabel ?? "Intensity unavailable",
+        role: "activity" as const,
+        weight: occurrenceWeight(occurrence.duration),
+      };
+    }) ?? [];
   return {
     activityCategory: structure.activity_category,
-    description: consolidateActivityPlanText(input.description, input.notes, "Notes"),
+    description: input.description?.trim() || null,
     format: input.format,
-    intensityProfile: buildIntensityProfile(authoredStructure),
+    intensityProfile,
     intensityReferences: [...intensityReferences],
     notes: null,
-    sections,
+    sections: [{ id: "blocks", name: null, groups }],
     title: input.title.trim() || "Activity plan",
-    totals: printTotals({ distanceMeters, repetitionCount, timeSeconds }),
+    totals: printTotals({
+      distanceMeters,
+      hasOpenEndedWork,
+      repetitionCount,
+      restSeconds,
+      timeSeconds,
+    }),
   };
 }

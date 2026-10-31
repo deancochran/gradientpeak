@@ -1,8 +1,151 @@
 import type { Page } from "@playwright/test";
+import { activityCategoryChoices } from "@repo/core";
+import { profileGoals } from "@repo/db/schema";
+import { and, eq } from "drizzle-orm";
 import { expect, test } from "../fixtures";
-import { expectNoHorizontalOverflow, withTrpcFailure } from "../pages";
+import { expectNoHorizontalOverflow, GoalsPage, withTrpcFailure } from "../pages";
+import {
+  captureAuthoring,
+  chooseAuthoringOption,
+  createLocalAuthoringPage,
+} from "../pages/authoring";
 import { type GoalFixture, withGoalFixture } from "../planning/data";
 import { createE2EExecutionIdentity } from "../support/identity";
+
+test("[authoring-final] goal creation discards Cancel and Back, focuses malformed optional values, and persists", async ({
+  athleteActor,
+  e2eDatabase,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const athletePage = await createLocalAuthoringPage(athleteActor);
+  const goals = new GoalsPage(athletePage);
+  await withGoalFixture(async (fixture) => {
+    await goals.startCreate("2026-12-01");
+    await athletePage.getByLabel("Title", { exact: true }).fill("Discard on Cancel");
+    await athletePage.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(athletePage.getByTestId("goal-form")).toHaveCount(0);
+    await goals.startCreate("2026-12-01");
+    await expect(athletePage.getByLabel("Title", { exact: true })).toHaveValue("");
+    await athletePage.getByLabel("Title", { exact: true }).fill("Discard on Back");
+    await athletePage.goBack();
+    await expect(athletePage).toHaveURL((url) => url.pathname === "/goals");
+    await goals.startCreate("2026-12-01");
+    await expect(athletePage.getByLabel("Title", { exact: true })).toHaveValue("");
+    await expect(athletePage.getByText(/resume draft|restore draft/i)).toHaveCount(0);
+    const name = createE2EExecutionIdentity(testInfo).name("Final goal creation");
+    fixture.rememberGoalTitle(name);
+    const matching = () =>
+      e2eDatabase.db
+        .select({ id: profileGoals.id })
+        .from(profileGoals)
+        .where(
+          and(eq(profileGoals.profile_id, athleteActor.profileId), eq(profileGoals.title, name)),
+        );
+    await athletePage.getByLabel("Title", { exact: true }).fill(name);
+    await athletePage.getByLabel("Sessions / week").fill("3");
+    const weeks = athletePage.getByLabel("Weeks", { exact: true });
+    await weeks.fill("oops");
+    await athletePage.getByTestId("goal-submit").click();
+    await expect(weeks).toBeFocused();
+    await expect(weeks).toHaveAttribute("aria-invalid", "true");
+    await expect(athletePage.getByRole("alert")).toContainText(/weeks/i);
+    await expect.poll(matching).toEqual([]);
+    await captureAuthoring(athletePage, testInfo, "goal-invalid-weeks", [weeks]);
+    for (const example of [
+      { type: "Power threshold", field: "Watts", invalid: "250w" },
+      { type: "Power threshold", field: "Test duration", invalid: "bad" },
+      { type: "Pace threshold", field: "Target pace", invalid: "4:3" },
+    ]) {
+      await chooseAuthoringOption(athletePage, "Goal type", example.type);
+      if (example.field === "Test duration")
+        await athletePage.getByLabel("Watts", { exact: true }).fill("250");
+      const field = athletePage.getByLabel(example.field, { exact: true });
+      await field.fill(example.invalid);
+      await athletePage.getByTestId("goal-submit").click();
+      await expect(field).toBeFocused();
+      await expect(field).toHaveAttribute("aria-invalid", "true");
+      await expect(athletePage.getByRole("alert")).toContainText(new RegExp(example.field, "i"));
+      await expect.poll(matching).toEqual([]);
+    }
+    await chooseAuthoringOption(athletePage, "Goal type", "Completion");
+    await athletePage.getByLabel("Duration", { exact: true }).fill("0:10:00");
+    const distance = athletePage.getByLabel("Distance (km)", { exact: true });
+    await distance.fill("10km");
+    await athletePage.getByTestId("goal-submit").click();
+    await expect(distance).toBeFocused();
+    await expect(athletePage.getByRole("alert")).toContainText(/distance/i);
+    await expect.poll(matching).toEqual([]);
+    await distance.fill("10.00012345");
+    await athletePage.getByTestId("goal-submit").click();
+    await expect(athletePage.getByTestId("goal-form")).toHaveCount(0);
+    await expect.poll(async () => (await matching()).length).toBe(1);
+    const id = (await matching())[0]?.id;
+    if (!id) throw new Error("Created goal was not persisted in the local fixture database.");
+    fixture.rememberGoal(id);
+    await expect
+      .poll(() => fixture.getGoal(id))
+      .toMatchObject({
+        title: name,
+        targetPayload: { type: "completion", distance_m: 10.00012345 * 1000, duration_s: 600 },
+      });
+    await athletePage.goto(`/goals/${id}`);
+    await expect(athletePage.getByRole("heading", { name, exact: true })).toBeVisible();
+  });
+});
+
+test("[authoring-final] goal metadata edit preserves precise objective fields", async ({
+  athleteActor,
+  e2eDatabase,
+  e2eIdentity,
+}, testInfo) => {
+  const athletePage = await createLocalAuthoringPage(athleteActor);
+  await withGoalFixture(async (fixture) => {
+    const id = e2eIdentity.uuid("precise-goal");
+    const name = e2eIdentity.name("Precise goal");
+    const targetPayload = {
+      type: "event_performance",
+      activity_category: "run",
+      distance_m: 10000.1234567,
+      target_speed_mps: 3.4567890123,
+      environment: "outdoor",
+      tolerance_pct: 0.0123456789,
+    };
+    fixture.rememberGoal(id);
+    await e2eDatabase.typedTransaction((transaction) =>
+      transaction.insert(profileGoals).values({
+        id,
+        profile_id: athleteActor.profileId,
+        title: name,
+        target_date: "2026-12-01",
+        activity_category: "run",
+        priority: 4,
+        target_payload: targetPayload,
+        created_at: new Date(),
+        updated_at: new Date(),
+      }),
+    );
+    await athletePage.goto(`/goals/${id}/edit`);
+    await athletePage.getByLabel("Title", { exact: true }).fill(`${name} renamed`);
+    await chooseAuthoringOption(athletePage, "Priority", "8");
+    await athletePage.getByLabel("Target date").fill("2026-12-02");
+    await athletePage.getByLabel("Distance (km)").scrollIntoViewIfNeeded();
+    await captureAuthoring(athletePage, testInfo, "goal-metadata-precision");
+    await athletePage.getByTestId("goal-submit").click();
+    await expect(
+      athletePage.getByRole("heading", { name: `${name} renamed`, exact: true }),
+    ).toBeVisible();
+    await athletePage.reload();
+    await expect
+      .poll(() => fixture.getGoal(id))
+      .toEqual({
+        activityCategory: "run",
+        priority: 8,
+        targetDate: "2026-12-02",
+        targetPayload,
+        title: `${name} renamed`,
+      });
+  });
+});
 
 function title(suffix: string) {
   return createE2EExecutionIdentity(test.info()).name(`Playwright goal ${suffix}`);
@@ -24,13 +167,16 @@ async function createGoal(
     weeks: string;
   },
 ) {
-  await page.goto(`/goals/new?date=${input.date}`);
+  const goals = new GoalsPage(page);
+  await goals.startCreate(input.date);
   const goalForm = page.getByTestId("goal-form");
   await expect(goalForm.getByLabel("Target date")).toHaveValue(input.date);
   await expect(goalForm.getByLabel("Title")).toHaveAttribute("required", "");
   await goalForm.getByLabel("Title").fill(input.title);
-  await goalForm.getByLabel("Activity", { exact: true }).selectOption(input.category);
-  await goalForm.getByLabel("Priority").fill(input.priority);
+  const category = activityCategoryChoices.find((option) => option.value === input.category);
+  if (!category) throw new Error("Unsupported goal activity fixture.");
+  await chooseAuthoringOption(page, "Activity", category.label);
+  await chooseAuthoringOption(page, "Priority", input.priority);
   await goalForm.getByLabel("Sessions / week").fill(input.sessions);
   await goalForm.getByLabel("Weeks").fill(input.weeks);
   fixture.rememberGoalTitle(input.title);
@@ -86,9 +232,12 @@ test("goals.lifecycle and goals.intelligence persist exact owned goals", async (
     await expect(goalCard(athletePage, secondId)).toHaveCount(0);
     await athletePage.reload();
     await expect(goalCard(athletePage, firstId)).toBeVisible();
-    await athletePage.goBack();
-    await expect(goalCard(athletePage, secondId)).toBeVisible();
+    // Goal-list filter submission replaces the current search entry. Returning
+    // would correctly revisit the preceding authoring route, so clear through
+    // the visible list control rather than asserting an unrelated history hop.
     await athletePage.getByLabel("Search goals").fill("");
+    await athletePage.getByRole("button", { name: /apply filters/i }).click();
+    await expect(goalCard(athletePage, secondId)).toBeVisible();
     await athletePage.getByLabel("Activity category").selectOption("bike");
     await athletePage.getByRole("button", { name: /apply filters/i }).click();
     await expect(goalCard(athletePage, secondId)).toBeVisible();
@@ -97,6 +246,13 @@ test("goals.lifecycle and goals.intelligence persist exact owned goals", async (
     await athletePage.getByRole("button", { name: /apply filters/i }).click();
     await expect(goalCard(athletePage, firstId)).toBeVisible();
     await expect(goalCard(athletePage, secondId)).toBeVisible();
+    await expect
+      .poll(async () =>
+        athletePage
+          .locator('[data-testid^="goal-card-"]')
+          .evaluateAll((cards) => cards.map((card) => card.getAttribute("data-testid"))),
+      )
+      .toEqual(expect.arrayContaining([`goal-card-${firstId}`, `goal-card-${secondId}`]));
     const orderedIds = await athletePage
       .locator('[data-testid^="goal-card-"]')
       .evaluateAll((cards) => cards.map((card) => card.getAttribute("data-testid")));
@@ -118,7 +274,7 @@ test("goals.lifecycle and goals.intelligence persist exact owned goals", async (
     ).toBe(true);
     await expect(athletePage.getByTestId("goal-intelligence")).toBeVisible();
     await expect(
-      athletePage.getByText(/consistency target: 5 sessions per week for 12 weeks/i),
+      athletePage.getByText("5 sessions/week for 12 weeks", { exact: true }),
     ).toBeVisible();
     await expect(athletePage.getByText("Goal readiness", { exact: true })).toBeVisible();
     await expect(athletePage.getByText(/% confidence$/i)).toBeVisible({ timeout: 15_000 });
@@ -142,8 +298,8 @@ test("goals.lifecycle and goals.intelligence persist exact owned goals", async (
     const editForm = athletePage.getByTestId("goal-form");
     await editForm.getByLabel("Title").fill(`${firstTitle} edited`);
     await editForm.getByLabel("Target date").fill("2026-09-21");
-    await editForm.getByLabel("Activity", { exact: true }).selectOption("swim");
-    await editForm.getByLabel("Priority").fill("7");
+    await chooseAuthoringOption(athletePage, "Activity", "Swim");
+    await chooseAuthoringOption(athletePage, "Priority", "7");
     await editForm.getByLabel("Sessions / week").fill("4");
     await editForm.getByLabel("Weeks").fill("10");
     await athletePage.getByTestId("goal-submit").click();

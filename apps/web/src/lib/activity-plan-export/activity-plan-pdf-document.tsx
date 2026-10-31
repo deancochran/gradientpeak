@@ -1,4 +1,15 @@
-import { Document, Link, Page, Path, StyleSheet, Svg, Text, View } from "@react-pdf/renderer";
+import {
+  Circle,
+  Document,
+  G,
+  Link,
+  Page,
+  Path,
+  StyleSheet,
+  Svg,
+  Text,
+  View,
+} from "@react-pdf/renderer";
 import {
   type ActivityPlanPrintGroup,
   type ActivityPlanPrintModel,
@@ -6,21 +17,37 @@ import {
 } from "@repo/core/activity-plan";
 
 const GRADIENTPEAK_APP_URL = "https://gradientpeak.app";
-const GRADIENTPEAK_MARK_PATH =
-  "M128 128 H896 V896 H128 Z M128 286 H748 V896 H128 Z M428 616 m-280,0 a280,280 0 1,0 560,0 a280,280 0 1,0 -560,0";
+const GRADIENTPEAK_PDF_FONT_FAMILY = "Helvetica";
+export const GRADIENTPEAK_MARK_PATH =
+  "M370 256 H756 Q768 256 768 268 V654 Q768 660 764 664 L686 742 Q674 754 674 738 V362 Q674 350 662 350 H286 Q270 350 282 338 L360 260 Q364 256 370 256 Z";
+export const GRADIENTPEAK_MARK_TRANSFORM = "translate(-9 9)";
+
+export function GradientPeakPdfMark({ color }: { color: string }) {
+  return (
+    <G fill={color} transform={GRADIENTPEAK_MARK_TRANSFORM}>
+      <Path d={GRADIENTPEAK_MARK_PATH} />
+      <Circle cx={467} cy={557} r={147} />
+    </G>
+  );
+}
 
 const styles = StyleSheet.create({
-  page: { backgroundColor: "#ffffff", color: "#111827", fontFamily: "Helvetica", padding: 32 },
+  page: {
+    backgroundColor: "#ffffff",
+    color: "#111827",
+    fontFamily: GRADIENTPEAK_PDF_FONT_FAMILY,
+    padding: 32,
+  },
   compactPage: {
     backgroundColor: "#ffffff",
     color: "#111827",
-    fontFamily: "Helvetica",
+    fontFamily: GRADIENTPEAK_PDF_FONT_FAMILY,
     padding: 14,
   },
   swimPage: {
     backgroundColor: "#ffffff",
     color: "#111827",
-    fontFamily: "Helvetica",
+    fontFamily: GRADIENTPEAK_PDF_FONT_FAMILY,
     paddingBottom: 8,
     paddingLeft: 10,
     paddingRight: 10,
@@ -157,11 +184,13 @@ const styles = StyleSheet.create({
 export function GradientPeakPdfBrand({
   color = "#111827",
   compact = false,
+  fontFamily,
   size,
   swimDeckCard = false,
 }: {
   color?: string;
   compact?: boolean;
+  fontFamily?: string;
   size?: number;
   swimDeckCard?: boolean;
 }) {
@@ -176,12 +205,13 @@ export function GradientPeakPdfBrand({
           viewBox="0 0 1024 1024"
           width={markSize}
         >
-          <Path d={GRADIENTPEAK_MARK_PATH} fill={color} fillRule="evenodd" />
+          <GradientPeakPdfMark color={color} />
         </Svg>
         <Text
           style={[
             swimDeckCard ? styles.swimBrand : styles.brand,
             { color },
+            fontFamily ? { fontFamily } : {},
             brandFontSize ? { fontSize: brandFontSize } : {},
           ]}
         >
@@ -211,15 +241,10 @@ function renderGroup(
             : styles.group
       }
     >
-      {group.name || group.repetitions > 1 ? (
+      {group.repetitions > 1 ? (
         <Text style={swimDeckCard ? styles.swimGroupTitle : styles.groupTitle}>
-          {[group.name, group.repetitions > 1 ? `Repeat ${group.repetitions}×` : null]
-            .filter(Boolean)
-            .join(" · ")}
+          Repeat {group.repetitions}×
         </Text>
-      ) : null}
-      {!bikeCueStrip && group.notes ? (
-        <Text style={swimDeckCard ? styles.swimNote : styles.note}>{group.notes}</Text>
       ) : null}
       {group.steps.map((step) => (
         <View key={step.id} style={swimDeckCard ? styles.swimStep : styles.step} wrap={false}>
@@ -247,11 +272,10 @@ function renderGroup(
           >
             {step.instruction}
           </Text>
-          {!compact && step.description ? (
-            <Text style={styles.note}>{step.description}</Text>
-          ) : null}
-          {!bikeCueStrip && step.notes ? (
-            <Text style={swimDeckCard ? styles.swimStepNote : styles.note}>{step.notes}</Text>
+          {!bikeCueStrip && step.instructions ? (
+            <Text style={swimDeckCard ? styles.swimStepNote : styles.note}>
+              {step.instructions}
+            </Text>
           ) : null}
         </View>
       ))}
@@ -362,7 +386,6 @@ export function ActivityPlanPdfPage({ model }: { model: ActivityPlanPrintModel }
         ? model.sections.map((section) => (
             <View key={section.id} style={styles.swimSection}>
               {section.name ? <Text style={styles.swimSectionTitle}>{section.name}</Text> : null}
-              {section.notes ? <Text style={styles.swimNote}>{section.notes}</Text> : null}
               {section.groups.map((group) =>
                 renderGroup(group, compact, swimDeckCard, bikeCueStrip),
               )}
@@ -374,9 +397,6 @@ export function ActivityPlanPdfPage({ model }: { model: ActivityPlanPrintModel }
                 <Text style={compact ? styles.compactSectionTitle : styles.sectionTitle}>
                   {section.name}
                 </Text>
-              ) : null}
-              {!bikeCueStrip && section.notes ? (
-                <Text style={styles.note}>{section.notes}</Text>
               ) : null}
               {section.groups.map((group) =>
                 renderGroup(group, compact, swimDeckCard, bikeCueStrip),

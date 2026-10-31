@@ -8,6 +8,12 @@ import {
   MAX_ACTIVITY_FILE_SIZE_BYTES,
   supportedActivityFileExtensionSchema,
 } from "@repo/core/activity-files";
+import { realRecordingExecutionSchema } from "@repo/core/recording/execution-evidence";
+import {
+  primaryRecordingGuidancePlan,
+  primaryRecordingGuidanceRoute,
+  recordingGuidanceTimelineSchema,
+} from "@repo/core/recording/guidance";
 import { z } from "zod";
 
 const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/);
@@ -42,6 +48,7 @@ const recordingSummarySchema = z
   .default({ distanceMeters: 0 });
 
 const recordingSummarySubmissionBaseShape = {
+  execution: realRecordingExecutionSchema.optional(),
   profileId: z.string().uuid(),
   name: z.string().trim().min(1),
   notes: z.string().nullable().optional(),
@@ -50,6 +57,7 @@ const recordingSummarySubmissionBaseShape = {
   finishedAt: z.string().datetime({ offset: true }),
   activityPlanId: z.string().uuid().nullable().optional(),
   planExecution: recordingPlanExecutionSnapshotSchema.optional(),
+  guidance: recordingGuidanceTimelineSchema.optional(),
   routeId: z.string().uuid().nullable().optional(),
   executionManifest: recordingExecutionManifestSchema,
   laps: activityLapRecordListSchema.optional(),
@@ -91,10 +99,42 @@ export const recordingSummarySubmissionInputSchema = z
       message: "planExecution must match activityPlanId",
       path: ["planExecution", "activityPlanId"],
     },
-  );
+  )
+  .superRefine((value, context) => {
+    if (!value.guidance) return;
+    const primary = primaryRecordingGuidancePlan(value.guidance);
+    const primaryRoute = primaryRecordingGuidanceRoute(value.guidance);
+    const last = value.guidance.revisions.at(-1);
+    if (
+      !value.sessionTiming ||
+      !last ||
+      last.elapsedMs > value.sessionTiming.elapsedMs ||
+      last.activeMs > value.sessionTiming.activeMs ||
+      (primary?.activityPlanId ?? null) !== (value.activityPlanId ?? null) ||
+      primaryRoute !== (value.routeId ?? null) ||
+      JSON.stringify(primary ?? undefined) !== JSON.stringify(value.planExecution) ||
+      value.guidance.revisions[0]?.timestamp !== value.startedAt ||
+      value.guidance.revisions.some(
+        (revision) =>
+          Date.parse(revision.timestamp) < Date.parse(value.startedAt) ||
+          Date.parse(revision.timestamp) > Date.parse(value.finishedAt) ||
+          (primary &&
+            revision.plan &&
+            revision.plan.structure.activity_category !== primary.structure.activity_category),
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["guidance"],
+        message:
+          "Guidance must retain its primary prescription and remain within the recording boundary.",
+      });
+    }
+  });
 
 export const beginMobileRecordingUploadInputSchema = z
   .object({
+    execution: realRecordingExecutionSchema.optional(),
     recordingSessionId: z.string().trim().min(1).max(200),
     byteSize: z.number().int().positive().max(MAX_ACTIVITY_FILE_SIZE_BYTES),
     sha256: sha256Schema,

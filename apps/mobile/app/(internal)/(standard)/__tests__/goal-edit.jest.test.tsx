@@ -1,3 +1,4 @@
+import type { CanonicalGoalObjective, ProfileGoalRecord } from "@repo/core";
 import { act } from "@testing-library/react-native";
 import type React from "react";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
@@ -8,7 +9,11 @@ const invalidateMock = jest.fn();
 const firstId = "11111111-1111-4111-8111-111111111111";
 const secondId = "22222222-2222-4222-8222-222222222222";
 let id = firstId;
-const goal = (goalId = firstId, title = "Existing goal") => ({
+let pathname = "/goal-edit";
+jest.mock("expo-router/react-navigation", () => ({
+  useIsFocused: () => pathname === "/goal-edit",
+}));
+const goal = (goalId = firstId, title = "Existing goal"): ProfileGoalRecord => ({
   id: goalId,
   profile_id: "33333333-3333-4333-8333-333333333333",
   target_date: "2030-10-20",
@@ -26,7 +31,12 @@ jest.mock("expo-router", () => ({
       options.headerRight?.() ?? null,
   },
   useLocalSearchParams: () => ({ id }),
-  useNavigation: () => ({ dispatch: jest.fn() }),
+  usePathname: () => pathname,
+  useNavigation: () => ({
+    dispatch: jest.fn(),
+    addListener: jest.fn(() => jest.fn()),
+    getState: () => ({ index: 0, routes: [] }),
+  }),
   useRouter: () => ({ replace: replaceMock, back: jest.fn() }),
 }));
 jest.mock("@repo/api/react", () => ({
@@ -53,12 +63,61 @@ const GoalEditScreen = require("../goal-edit").default;
 
 beforeEach(() => {
   id = firstId;
+  pathname = "/goal-edit";
   data = goal();
   queryError = null;
   refetchMock.mockReset();
   updateMock.mockReset().mockResolvedValue({});
   replaceMock.mockReset();
   invalidateMock.mockReset().mockResolvedValue(undefined);
+});
+
+it.each([
+  { type: "event_performance", activity_category: "run", distance_m: 42195, target_time_s: 14400 },
+  { type: "completion", distance_m: 42195 },
+  { type: "threshold", metric: "power", value: 250.125 },
+  { type: "consistency", target_weeks: 6 },
+] satisfies CanonicalGoalObjective[])("saves a title edit through the actual route and form without changing objective %#", async (objective) => {
+  data = { ...goal(), target_payload: objective };
+  await renderNative(<GoalEditScreen />);
+  await fireEvent.changeText(screen.getByTestId("goal-editor-title-input"), "Renamed goal");
+  await fireEvent.press(screen.getByText("Save"));
+  await waitFor(() => expect(replaceMock).toHaveBeenCalledTimes(1));
+  expect(updateMock).toHaveBeenCalledWith({
+    id: firstId,
+    data: {
+      title: "Renamed goal",
+      target_date: data.target_date,
+      priority: data.priority,
+      activity_category: data.activity_category,
+      target_payload: objective,
+    },
+  });
+  expect(invalidateMock).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  { objective: { type: "completion", distance_m: 42195.123 }, testId: "goal-duration" },
+  {
+    objective: { type: "threshold", metric: "power", value: 250.125 },
+    testId: "goal-power-duration",
+  },
+] satisfies {
+  objective: CanonicalGoalObjective;
+  testId: string;
+}[])("clears optional zero duration without invalidating a legacy goal %#", async ({
+  objective,
+  testId,
+}) => {
+  data = { ...goal(), target_payload: objective };
+  await renderNative(<GoalEditScreen />);
+  const label = screen.getByTestId(testId).props.accessibilityLabel;
+  await fireEvent.press(screen.getByTestId(testId));
+  await fireEvent(screen.getByLabelText(`${label} seconds`), "valueChange", 0);
+  await fireEvent.press(screen.getByLabelText(`Done ${label}`));
+  await fireEvent.press(screen.getByText("Save"));
+  await waitFor(() => expect(replaceMock).toHaveBeenCalledTimes(1));
+  expect(updateMock.mock.calls[0]?.[0].data.target_payload).toStrictEqual(objective);
 });
 
 it("distinguishes an initial read failure from a missing goal and retries explicitly", async () => {
@@ -87,6 +146,18 @@ it("preserves actual form edits during same-goal refresh and resets for a differ
   data = goal(secondId, "Second goal");
   await view.rerender(<GoalEditScreen />);
   expect(screen.getByTestId("goal-editor-title-input").props.value).toBe("Second goal");
+});
+
+it("discards unsaved edits on navigation away and loads the existing record on return", async () => {
+  const view = await renderNative(<GoalEditScreen />);
+  await fireEvent.changeText(screen.getByTestId("goal-editor-title-input"), "Not saved");
+  pathname = "/profile";
+  await view.rerender(<GoalEditScreen />);
+  pathname = "/goal-edit";
+  await view.rerender(<GoalEditScreen />);
+  expect(screen.getByTestId("goal-editor-title-input").props.value).toBe("Existing goal");
+  expect(data?.title).toBe("Existing goal");
+  expect(updateMock).not.toHaveBeenCalled();
 });
 
 it("keeps failed goal edits with an announced retry error", async () => {

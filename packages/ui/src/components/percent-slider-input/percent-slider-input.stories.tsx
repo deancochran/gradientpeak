@@ -34,7 +34,7 @@ export const Playground: Story = {
       />
     );
   },
-  play: async ({ args, canvasElement }) => {
+  play: async ({ canvasElement }) => {
     await exercisePercentSliderInputStory({
       canvasElement,
       expectedLabel: percentSliderInputFixtures.recovery.label,

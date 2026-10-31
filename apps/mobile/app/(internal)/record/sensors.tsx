@@ -21,6 +21,7 @@ import {
   useRecordingCommands,
   useSessionView,
 } from "@/lib/hooks/useActivityRecorder";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { useActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
 import {
   type ConnectedSensor,
@@ -332,22 +333,22 @@ function SensorsScreen() {
       <ScrollView className="flex-1" contentContainerClassName="px-4 py-4 gap-4">
         {readinessIssue ? (
           <EmptyListState
+            {...omitUndefined({
+              actionLabel:
+                readinessIssue.action === "permission"
+                  ? "Grant access"
+                  : readinessIssue.action === "settings"
+                    ? "Open settings"
+                    : undefined,
+              onAction:
+                readinessIssue.action === "permission"
+                  ? requestBluetoothPermission
+                  : readinessIssue.action === "settings"
+                    ? openBluetoothSettings
+                    : undefined,
+            })}
             title={readinessIssue.title}
             description={readinessIssue.description}
-            actionLabel={
-              readinessIssue.action === "permission"
-                ? "Grant access"
-                : readinessIssue.action === "settings"
-                  ? "Open settings"
-                  : undefined
-            }
-            onAction={
-              readinessIssue.action === "permission"
-                ? requestBluetoothPermission
-                : readinessIssue.action === "settings"
-                  ? openBluetoothSettings
-                  : undefined
-            }
           />
         ) : trainerFailure ? (
           <InlineIssueCard
@@ -394,10 +395,10 @@ function SensorsScreen() {
               ) : (
                 disconnectedKnownSensors.map((sensor) => (
                   <KnownSensorRow
+                    {...omitUndefined({ error: connectErrors[sensor.id] })}
                     key={sensor.id}
                     sensor={sensor}
                     isConnecting={connectingDevices.has(sensor.id)}
-                    error={connectErrors[sensor.id]}
                     onConnect={handleConnectDevice}
                     onForget={handleForgetDevice}
                   />

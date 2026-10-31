@@ -4,6 +4,7 @@ import { InlineLoadingStatus } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import type { ComponentType, ReactNode } from "react";
 import { View } from "react-native";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 type ScreenStateTone = "default" | "error" | "empty";
 type IconComponent = ComponentType<{ className?: string; color?: string; size?: number }>;
@@ -92,10 +93,7 @@ export function EmptyState({
 }: Omit<ScreenStateProps, "tone">) {
   return (
     <ScreenState
-      actionLabel={actionLabel}
-      description={description}
-      onAction={onAction}
-      testID={testID}
+      {...omitUndefined({ actionLabel, description, onAction, testID })}
       title={title}
       tone="empty"
     />
@@ -111,10 +109,12 @@ export function ErrorState({
 }: Partial<Omit<ScreenStateProps, "tone">> & { title?: string }) {
   return (
     <ScreenState
-      actionLabel={onAction ? actionLabel : undefined}
-      description={description}
-      onAction={onAction}
-      testID={testID}
+      {...omitUndefined({
+        actionLabel: onAction ? actionLabel : undefined,
+        description,
+        onAction,
+        testID,
+      })}
       title={title}
       tone="error"
     />

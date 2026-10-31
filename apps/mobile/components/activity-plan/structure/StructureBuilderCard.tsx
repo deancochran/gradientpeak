@@ -1,318 +1,358 @@
-import {
-  type ActivityPlanInterval,
-  type ActivityPlanSegment,
-  deriveActivityPlanPresentation,
-  summarizeCompiledActivityPlanInterval,
+import type {
+  ActivityPlanDraftItem,
+  ActivityPlanDraftStep,
+  ActivityTargetCategory,
 } from "@repo/core";
-import { formatDurationCompact } from "@repo/core/duration/time-format";
 import { Button } from "@repo/ui/components/button";
-import { Icon } from "@repo/ui/components/icon";
+import { IntegerStepper } from "@repo/ui/components/integer-stepper";
 import { Text } from "@repo/ui/components/text";
-import { Copy, GripVertical, Plus, Trash2 } from "lucide-react-native";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { type AccessibilityActionEvent, Pressable, View } from "react-native";
+import { Copy, GripVertical, Plus, Repeat2, Trash2 } from "lucide-react-native";
+import { useState } from "react";
+import { Alert, Pressable, View } from "react-native";
 import { NestableDraggableFlatList } from "react-native-draggable-flatlist";
-import { TimelineChart } from "@/components/activity-plan/activity/TimelineChart";
-import { ResourceMetricsRow } from "@/components/shared/ResourceCardPrimitives";
-import type { ActivityPlanCopyResult } from "@/lib/stores/activityPlanCreation";
+import { ActivityPlanStepPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
+import type { ActivityPlanOperationResult } from "@/lib/stores/activityPlanCreation";
 
-interface StructureStats {
-  durationMs: number | null;
-  hasOpenDuration: boolean;
-  hasPartialDuration: boolean;
-  stepCount: number;
-  distanceMeters: number;
-}
+type Location = { repeatId?: string; index: number };
 
 interface StructureBuilderCardProps {
-  structure: { version: 3; segments: ActivityPlanSegment[] };
-  segmentId: string;
-  intervals: ActivityPlanInterval[];
-  structureStats: StructureStats;
+  activityCategory: ActivityTargetCategory;
+  items: ActivityPlanDraftItem[];
   validationErrors: Record<string, string | undefined>;
-  selectedIntervalId: string | null;
-  showChartCoachmark: boolean;
-  onAddInterval: () => void;
-  onDismissChartCoachmark: () => void;
-  onDuplicateInterval: (intervalId: string) => ActivityPlanCopyResult;
-  onDeleteInterval: (intervalId: string) => void;
-  onReorderIntervals?: (intervals: ActivityPlanInterval[]) => void;
-  onTimelineIntervalPress: (intervalId: string) => void;
+  onEditStep: (step: ActivityPlanDraftStep) => void;
+  onAddStep: (repeatId?: string) => void;
+  onAddRepeat: () => void;
+  onRemove: (id: string) => ActivityPlanOperationResult;
+  onDuplicate: (id: string) => ActivityPlanOperationResult;
+  onUngroup: (id: string) => ActivityPlanOperationResult;
+  onMove: (id: string, to: Location) => ActivityPlanOperationResult;
+  onRepeatCount: (id: string, count: number) => ActivityPlanOperationResult;
 }
 
-function moveInterval(
-  intervals: ActivityPlanInterval[],
-  from: number,
-  to: number,
-): ActivityPlanInterval[] {
-  if (from === to || from < 0 || to < 0 || from >= intervals.length || to >= intervals.length) {
-    return intervals;
-  }
-  const reordered = [...intervals];
-  const [interval] = reordered.splice(from, 1);
-  if (!interval) return intervals;
-  reordered.splice(to, 0, interval);
-  return reordered;
-}
-
-function formatIntervalDose(
-  interval: ActivityPlanInterval,
-  summary: ReturnType<typeof summarizeCompiledActivityPlanInterval>,
-) {
-  if (!summary) return `${interval.repetitions}× · Details unavailable`;
-  const quantities = [
-    summary.total.timedSeconds > 0 ? `${Math.round(summary.total.timedSeconds / 60)} min` : null,
-    summary.total.distanceMeters > 0
-      ? `${(summary.total.distanceMeters / 1000).toFixed(1)} km`
-      : null,
-    summary.total.repetitionCount > 0 ? `${summary.total.repetitionCount} reps` : null,
-  ].filter((value): value is string => value !== null);
-  const dose = summary.hasOpenDuration ? "Open-ended" : quantities.join(" + ") || "Open-ended";
-  return `${interval.repetitions}× · ${dose}`;
-}
-
-export function StructureBuilderCard({
-  structure,
-  segmentId,
-  intervals,
-  structureStats,
-  validationErrors,
-  selectedIntervalId,
-  showChartCoachmark: _showChartCoachmark,
-  onAddInterval,
-  onDismissChartCoachmark: _onDismissChartCoachmark,
-  onDuplicateInterval,
-  onDeleteInterval,
-  onReorderIntervals,
-  onTimelineIntervalPress,
-}: StructureBuilderCardProps) {
-  const [duplicateError, setDuplicateError] = useState<string | null>(null);
-  const [previewIntervals, setPreviewIntervals] = useState<ActivityPlanInterval[] | null>(null);
-  const currentIntervalsRef = useRef(intervals);
-  const dragStartIntervalsRef = useRef<ActivityPlanInterval[] | null>(null);
-  const dragStartIndexRef = useRef<number | null>(null);
-  currentIntervalsRef.current = intervals;
-  const displayedIntervals = previewIntervals ?? intervals;
-  const chartStructure = useMemo(
-    () =>
-      previewIntervals
-        ? {
-            ...structure,
-            segments: structure.segments.map((segment) =>
-              segment.role === "activity" && segment.id === segmentId
-                ? { ...segment, intervals: previewIntervals }
-                : segment,
-            ),
-          }
-        : structure,
-    [previewIntervals, segmentId, structure],
-  );
-  const presentation = useMemo(
-    () => deriveActivityPlanPresentation(chartStructure),
-    [chartStructure],
-  );
-
-  useEffect(() => {
-    // A draft update outside the drag gesture supersedes any transient preview.
-    setPreviewIntervals(null);
-    dragStartIntervalsRef.current = null;
-    dragStartIndexRef.current = null;
-  }, [intervals]);
-
-  const reorderFromIndex = (from: number, to: number) => {
-    const reordered = moveInterval(intervals, from, to);
-    if (reordered === intervals) return;
-    onReorderIntervals?.(reordered);
-  };
-  const durationLabel = structureStats.hasOpenDuration
-    ? structureStats.hasPartialDuration
-      ? "Partial duration"
-      : "Open-ended"
-    : structureStats.durationMs === null
-      ? "Duration not specified"
-      : formatDurationCompact(structureStats.durationMs / 1000);
-  const distanceKm = structureStats.distanceMeters / 1000;
-  const formattedDistance =
-    distanceKm < 10 ? distanceKm.toFixed(1) : Math.round(distanceKm).toString();
-  const expectedMetrics = [
-    {
-      label: "Expected duration",
-      value: durationLabel,
-    },
-    {
-      label: "Steps",
-      value: `${structureStats.stepCount}`,
-    },
-    ...(structureStats.distanceMeters > 0
-      ? [
-          {
-            label: "Expected distance",
-            value: `${formattedDistance} km`,
-          },
-        ]
-      : []),
+/** V5 chronological outline with native drag reorder plus explicit cross-list destinations. */
+export function StructureBuilderCard(props: StructureBuilderCardProps) {
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const apply = (operation: ActivityPlanOperationResult) =>
+    setOperationError(operation.success ? null : operation.error);
+  const repeats = props.items.filter((item) => item.type === "repeat");
+  const rootDestinations = (index: number): { label: string; to: Location }[] => [
+    ...(index > 0 ? [{ label: "Move earlier", to: { index: index - 1 } }] : []),
+    ...(index < props.items.length - 1 ? [{ label: "Move later", to: { index: index + 1 } }] : []),
   ];
+  return (
+    <View className="gap-3" testID="activity-plan-structure-card">
+      <NestableDraggableFlatList
+        data={props.items}
+        keyExtractor={(item) => item.id}
+        scrollEnabled={false}
+        onDragEnd={({ from, to }) => {
+          if (from !== to) apply(props.onMove(props.items[from]?.id ?? "", { index: to }));
+        }}
+        renderItem={({ item, getIndex, drag, isActive }) => {
+          const rootIndex = getIndex() ?? 0;
+          if (item.type === "step")
+            return (
+              <StepRow
+                step={item}
+                activityCategory={props.activityCategory}
+                label={`Standalone step ${rootIndex + 1}`}
+                drag={drag}
+                isActive={isActive}
+                onEdit={() => props.onEditStep(item)}
+                onDelete={() => apply(props.onRemove(item.id))}
+                onDuplicate={() => apply(props.onDuplicate(item.id))}
+                destinations={[
+                  ...rootDestinations(rootIndex),
+                  ...repeats.map((repeat, repeatIndex) => ({
+                    label: `Move into repeat ${repeatIndex + 1}`,
+                    to: { repeatId: repeat.id, index: repeat.steps.length },
+                  })),
+                ]}
+                onMove={(to) => apply(props.onMove(item.id, to))}
+              />
+            );
+          return (
+            <RepeatRow
+              key={item.id}
+              item={item}
+              rootIndex={rootIndex}
+              activityCategory={props.activityCategory}
+              repeats={repeats}
+              destinations={rootDestinations(rootIndex)}
+              drag={drag}
+              isActive={isActive}
+              onEditStep={props.onEditStep}
+              onAddStep={props.onAddStep}
+              onRemove={(id) => apply(props.onRemove(id))}
+              onDuplicate={(id) => apply(props.onDuplicate(id))}
+              onUngroup={(id) => apply(props.onUngroup(id))}
+              onMove={(id, to) => apply(props.onMove(id, to))}
+              onRepeatCount={(id, count) => apply(props.onRepeatCount(id, count))}
+            />
+          );
+        }}
+      />
+      {[...Object.values(props.validationErrors), operationError].filter(Boolean).map((error) => (
+        <Text key={error} accessibilityRole="alert" className="text-sm text-destructive">
+          {error}
+        </Text>
+      ))}
+    </View>
+  );
+}
 
+function RepeatRow({
+  item,
+  rootIndex,
+  activityCategory,
+  repeats,
+  destinations,
+  drag,
+  isActive,
+  onEditStep,
+  onAddStep,
+  onRemove,
+  onDuplicate,
+  onUngroup,
+  onMove,
+  onRepeatCount,
+}: {
+  item: Extract<ActivityPlanDraftItem, { type: "repeat" }>;
+  rootIndex: number;
+  activityCategory: ActivityTargetCategory;
+  repeats: Extract<ActivityPlanDraftItem, { type: "repeat" }>[];
+  destinations: { label: string; to: Location }[];
+  drag: () => void;
+  isActive: boolean;
+  onEditStep: (step: ActivityPlanDraftStep) => void;
+  onAddStep: (repeatId?: string) => void;
+  onRemove: (id: string) => void;
+  onDuplicate: (id: string) => void;
+  onUngroup: (id: string) => void;
+  onMove: (id: string, to: Location) => void;
+  onRepeatCount: (id: string, count: number) => void;
+}) {
   return (
     <View
-      className="gap-4 rounded-3xl border border-border bg-card p-4"
-      testID="activity-plan-structure-card"
+      className="gap-2 rounded-xl border border-border bg-muted/20 p-3"
+      testID={`repeat-row-${item.id}`}
     >
-      <View className="gap-3">
-        <Text accessibilityRole="header" className="text-base font-semibold text-foreground">
-          Structure
-        </Text>
-        <ResourceMetricsRow metrics={expectedMetrics} testID="activity-plan-structure-metrics" />
+      <View
+        className="flex-row items-center justify-between gap-2"
+        testID={`repeat-header-${item.id}`}
+      >
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Reorder repeat ${rootIndex + 1}`}
+          disabled={isActive}
+          onLongPress={drag}
+          className="min-h-12 min-w-12 flex-row items-center justify-center gap-2"
+        >
+          <GripVertical size={16} />
+          <Repeat2 size={16} />
+          <Text className="font-semibold">
+            Repeat {rootIndex + 1} × {item.count}
+          </Text>
+        </Pressable>
+        <IntegerStepper
+          label={`Repeats in repeat ${rootIndex + 1}`}
+          value={item.count}
+          min={2}
+          max={50}
+          presentation="compact"
+          onChange={(count) => onRepeatCount(item.id, count)}
+        />
       </View>
-
-      {intervals.length > 0 ? (
-        <TimelineChart
-          presentation={presentation}
-          height={156}
-          compact
-          selectedIntervalId={selectedIntervalId}
-          onIntervalPress={onTimelineIntervalPress}
-        />
-      ) : null}
-
-      {intervals.length > 0 ? (
-        <NestableDraggableFlatList
-          activationDistance={8}
-          data={intervals}
-          keyExtractor={(interval) => interval.id}
-          onDragBegin={(index) => {
-            dragStartIntervalsRef.current = intervals;
-            dragStartIndexRef.current = index;
-            setPreviewIntervals(intervals);
-          }}
-          onDragEnd={({ data, from, to }) => {
-            const startedWithCurrentIntervals =
-              dragStartIntervalsRef.current === currentIntervalsRef.current;
-            setPreviewIntervals(null);
-            dragStartIntervalsRef.current = null;
-            dragStartIndexRef.current = null;
-            if (startedWithCurrentIntervals && from !== to) onReorderIntervals?.(data);
-          }}
-          onPlaceholderIndexChange={(placeholderIndex) => {
-            const startIntervals = dragStartIntervalsRef.current;
-            const startIndex = dragStartIndexRef.current;
-            if (startIntervals !== currentIntervalsRef.current || startIndex === null) return;
-            setPreviewIntervals(moveInterval(startIntervals, startIndex, placeholderIndex));
-          }}
-          renderItem={({ item: interval, drag, isActive }) => {
-            const intervalIndex = intervals.indexOf(interval);
-            const accessibilityActions = [
-              ...(intervalIndex > 0 ? [{ name: "increment", label: "Move interval earlier" }] : []),
-              ...(intervalIndex < intervals.length - 1
-                ? [{ name: "decrement", label: "Move interval later" }]
-                : []),
-            ];
-            const onAccessibilityAction = (event: AccessibilityActionEvent) => {
-              if (event.nativeEvent.actionName === "increment") {
-                reorderFromIndex(intervalIndex, intervalIndex - 1);
-              }
-              if (event.nativeEvent.actionName === "decrement") {
-                reorderFromIndex(intervalIndex, intervalIndex + 1);
-              }
-            };
-            const summary = presentation
-              ? summarizeCompiledActivityPlanInterval(presentation.compiled, interval.id)
-              : null;
-            return (
-              <View className="flex-row items-center gap-2 border-t border-border pt-2">
-                <Pressable
-                  accessibilityHint="Double tap and hold, then drag to reorder this interval"
-                  accessibilityLabel={`Reorder interval ${interval.name}`}
-                  accessibilityRole="button"
-                  accessibilityActions={accessibilityActions}
-                  className="min-h-12 min-w-10 items-center justify-center"
-                  disabled={isActive}
-                  onAccessibilityAction={onAccessibilityAction}
-                  onLongPress={drag}
-                  testID={`reorder-interval-${interval.id}`}
-                >
-                  <Icon as={GripVertical} size={18} className="text-muted-foreground" />
-                </Pressable>
-                <Pressable
-                  accessibilityHint="Opens interval editor"
-                  accessibilityLabel={`Edit interval ${interval.name}`}
-                  accessibilityRole="button"
-                  className="min-h-12 flex-1 justify-center"
-                  onPress={() => onTimelineIntervalPress(interval.id)}
-                  testID={`interval-row-${interval.id}`}
-                >
-                  <Text className="text-sm font-medium text-foreground" numberOfLines={1}>
-                    {interval.name}
-                  </Text>
-                  <Text className="text-xs text-muted-foreground" numberOfLines={1}>
-                    {formatIntervalDose(interval, summary)}
-                  </Text>
-                </Pressable>
-                <Button
-                  accessibilityHint="Duplicates this interval after it"
-                  accessibilityLabel={`Duplicate interval ${interval.name}`}
-                  className="min-h-12 min-w-12"
-                  onPress={(event) => {
-                    event.stopPropagation();
-                    const result = onDuplicateInterval(interval.id);
-                    setDuplicateError(result.success ? null : result.error);
-                  }}
-                  size="sm"
-                  testID={`duplicate-interval-${interval.id}`}
-                  variant="ghost"
-                >
-                  <Icon as={Copy} size={14} className="text-primary" />
-                </Button>
-                <Button
-                  accessibilityHint="Requests confirmation before deleting this interval"
-                  accessibilityLabel={`Delete interval ${interval.name}`}
-                  className="min-h-12 min-w-12"
-                  onPress={(event) => {
-                    event.stopPropagation();
-                    onDeleteInterval(interval.id);
-                  }}
-                  size="sm"
-                  testID={`delete-interval-${interval.id}`}
-                  variant="ghost"
-                >
-                  <Icon as={Trash2} size={14} className="text-destructive" />
-                </Button>
-              </View>
-            );
-          }}
-          scrollEnabled={false}
-        />
-      ) : null}
-
-      {intervals.length > 0 ? (
+      <DestinationButtons
+        destinations={destinations}
+        label={`repeat ${rootIndex + 1}`}
+        onMove={(to) => onMove(item.id, to)}
+      />
+      <NestableDraggableFlatList
+        data={item.steps}
+        keyExtractor={(step) => step.id}
+        scrollEnabled={false}
+        onDragEnd={({ from, to }) => {
+          if (from !== to) onMove(item.steps[from]?.id ?? "", { repeatId: item.id, index: to });
+        }}
+        renderItem={({ item: step, getIndex, drag: dragStep, isActive: stepActive }) => {
+          const index = getIndex() ?? 0;
+          return (
+            <StepRow
+              step={step}
+              activityCategory={activityCategory}
+              label={`Repeat ${rootIndex + 1}, step ${index + 1}`}
+              drag={dragStep}
+              isActive={stepActive}
+              onEdit={() => onEditStep(step)}
+              onDelete={() => onRemove(step.id)}
+              onDuplicate={() => onDuplicate(step.id)}
+              destinations={[
+                ...(index > 0
+                  ? [{ label: "Move earlier", to: { repeatId: item.id, index: index - 1 } }]
+                  : []),
+                ...(index < item.steps.length - 1
+                  ? [{ label: "Move later", to: { repeatId: item.id, index: index + 1 } }]
+                  : []),
+                // Core removes an emptied source repeat before resolving this root index.
+                {
+                  label: "Move out of repeat",
+                  to: { index: rootIndex + (item.steps.length === 1 ? 0 : 1) },
+                },
+                ...repeats
+                  .filter((repeat) => repeat.id !== item.id)
+                  .map((repeat) => ({
+                    // Keep the destination's visible ordinal, rather than its ordinal
+                    // after filtering out the source repeat.
+                    label: `Move to repeat ${repeats.findIndex((candidate) => candidate.id === repeat.id) + 1}`,
+                    to: { repeatId: repeat.id, index: repeat.steps.length },
+                  })),
+              ]}
+              onMove={(to) => onMove(step.id, to)}
+            />
+          );
+        }}
+      />
+      <Button
+        variant="ghost"
+        onPress={() => onAddStep(item.id)}
+        accessibilityLabel={`Add step to repeat ${rootIndex + 1}`}
+      >
+        <Plus size={16} />
+        <Text>Add Step</Text>
+      </Button>
+      <View className="flex-row flex-wrap gap-1">
         <Button
-          variant="ghost"
           size="sm"
-          onPress={onAddInterval}
-          className="min-h-12 self-start px-1"
+          variant="ghost"
+          onPress={() => onDuplicate(item.id)}
+          accessibilityLabel={`Duplicate repeat ${rootIndex + 1}`}
         >
-          <Icon as={Plus} size={15} className="text-primary" />
-          <Text className="ml-1 text-primary">Add interval</Text>
+          <Copy size={14} />
+          <Text>Duplicate</Text>
         </Button>
-      ) : null}
-
-      {duplicateError ? <Text className="text-xs text-destructive">{duplicateError}</Text> : null}
-
-      {validationErrors.intervals ? (
-        <Text className="text-xs text-destructive">{validationErrors.intervals}</Text>
-      ) : null}
-
-      {intervals.length === 0 ? (
         <Button
-          variant="ghost"
           size="sm"
-          onPress={onAddInterval}
-          className="min-h-12 self-start px-1"
+          variant="ghost"
+          onPress={() => onUngroup(item.id)}
+          accessibilityLabel={`Ungroup repeat ${rootIndex + 1}`}
         >
-          <Icon as={Plus} size={15} className="text-primary" />
-          <Text className="ml-1 text-primary">Add your first interval</Text>
+          <Text>Ungroup</Text>
         </Button>
-      ) : null}
+        <Button
+          size="sm"
+          variant="ghost"
+          accessibilityLabel={`Delete repeat ${rootIndex + 1}`}
+          onPress={() =>
+            Alert.alert(
+              "Delete repeat?",
+              "This deletes the repeat and all of its steps. Ungroup keeps the prescribed dose.",
+              [
+                { text: "Cancel", style: "cancel" },
+                { text: "Delete repeat", style: "destructive", onPress: () => onRemove(item.id) },
+              ],
+            )
+          }
+        >
+          <Trash2 size={14} />
+          <Text>Delete</Text>
+        </Button>
+      </View>
     </View>
+  );
+}
+
+function StepRow({
+  step,
+  activityCategory,
+  label,
+  drag,
+  isActive,
+  onEdit,
+  onDelete,
+  onDuplicate,
+  destinations,
+  onMove,
+}: {
+  step: ActivityPlanDraftStep;
+  activityCategory: ActivityTargetCategory;
+  label: string;
+  drag: () => void;
+  isActive: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+  onDuplicate: () => void;
+  destinations: { label: string; to: Location }[];
+  onMove: (to: Location) => void;
+}) {
+  return (
+    <View className="gap-1 border-t border-border pt-2" testID={`step-row-${step.id}`}>
+      <View className="flex-row items-center gap-1">
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Reorder ${label}`}
+          disabled={isActive}
+          onLongPress={drag}
+          className="min-h-12 min-w-12 items-center justify-center"
+        >
+          <GripVertical size={16} />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Edit ${label}`}
+          className="flex-1 rounded-lg bg-background px-3 py-2"
+          onPress={onEdit}
+        >
+          <ActivityPlanStepPreview activityCategory={activityCategory} step={step} />
+        </Pressable>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="min-h-12 min-w-12"
+          accessibilityLabel={`Duplicate ${label}`}
+          onPress={onDuplicate}
+        >
+          <Copy size={16} />
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="min-h-12 min-w-12"
+          accessibilityLabel={`Delete ${label}`}
+          onPress={onDelete}
+        >
+          <Trash2 size={16} />
+        </Button>
+      </View>
+      <View className="flex-row flex-wrap gap-1">
+        <DestinationButtons destinations={destinations} label={label} onMove={onMove} />
+      </View>
+    </View>
+  );
+}
+
+function DestinationButtons({
+  destinations,
+  label,
+  onMove,
+}: {
+  destinations: { label: string; to: Location }[];
+  label: string;
+  onMove: (to: Location) => void;
+}) {
+  return (
+    <>
+      {destinations.map(({ label: destination, to }) => (
+        <Button
+          key={`${destination}-${to.repeatId ?? "root"}-${to.index}`}
+          size="sm"
+          variant="ghost"
+          accessibilityLabel={`${destination} ${label}`}
+          onPress={() => onMove(to)}
+        >
+          <Text>{destination}</Text>
+        </Button>
+      ))}
+    </>
   );
 }

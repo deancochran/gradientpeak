@@ -74,8 +74,9 @@ function parseGpxActivity(
     throw new ActivityFileParseError("corrupt_artifact");
   }
 
+  const name = extractFirstText(track, "name");
   return buildXmlActivity({
-    name: extractFirstText(track, "name"),
+    ...(name === undefined ? {} : { name }),
     records,
     type: extractFirstText(track, "type")?.toLowerCase() || "generic",
   });
@@ -106,9 +107,11 @@ function parseTcxActivity(
       activity?.getAttribute("Sport") ?? activity?.getAttribute("ActivityCategory")
     )?.toLowerCase() || "generic";
 
+  const calories = parseNumberText(activity, "Calories");
+  const name = extractFirstText(activity, "Id");
   return buildXmlActivity({
-    calories: parseNumberText(activity, "Calories"),
-    name: extractFirstText(activity, "Id"),
+    ...(calories === undefined ? {} : { calories }),
+    ...(name === undefined ? {} : { name }),
     records,
     type,
   });
@@ -324,14 +327,18 @@ function parseGpxPoint(element: Element): ActivityRecord | null {
   const longitude = parseAttributeNumber(element, "lon");
   if (latitude === undefined || longitude === undefined) return null;
 
+  const altitude = parseNumberText(element, "ele");
+  const heartRate = parseNumberText(element, "gpxtpx:hr") ?? parseNumberText(element, "hr");
+  const cadence = parseNumberText(element, "gpxtpx:cad") ?? parseNumberText(element, "cad");
+  const power = parseNumberText(element, "power");
   return {
     timestamp: parseDateText(element, "time") ?? new Date(0),
     positionLat: latitude,
     positionLong: longitude,
-    altitude: parseNumberText(element, "ele"),
-    heartRate: parseNumberText(element, "gpxtpx:hr") ?? parseNumberText(element, "hr"),
-    cadence: parseNumberText(element, "gpxtpx:cad") ?? parseNumberText(element, "cad"),
-    power: parseNumberText(element, "power"),
+    ...(altitude === undefined ? {} : { altitude }),
+    ...(heartRate === undefined ? {} : { heartRate }),
+    ...(cadence === undefined ? {} : { cadence }),
+    ...(power === undefined ? {} : { power }),
   };
 }
 
@@ -354,16 +361,30 @@ function parseTcxTrackpoint(element: Element): ActivityRecord | null {
   const position = firstDescendantElementByLocalName(element, "position");
   const latitude = position ? parseNumberText(position, "LatitudeDegrees") : undefined;
   const longitude = position ? parseNumberText(position, "LongitudeDegrees") : undefined;
+  const extensions = firstDescendantElementByLocalName(element, "extensions");
+  const tpx = extensions ? firstDescendantElementByLocalName(extensions, "tpx") : undefined;
+  const speedText = tpx ? extractFirstText(tpx, "Speed") : undefined;
+  const speed =
+    speedText !== undefined && /^[+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(speedText)
+      ? Number(speedText)
+      : NaN;
 
+  const distance = parseNumberText(element, "DistanceMeters");
+  const altitude = parseNumberText(element, "AltitudeMeters");
+  const heartRate = parseNumberText(element, "Value");
+  const cadence = parseNumberText(element, "Cadence");
+  const power = parseNumberText(element, "Watts");
+  const validSpeed = Number.isFinite(speed) && speed >= 0 ? speed : undefined;
   return {
     timestamp: parseDateText(element, "Time") ?? new Date(0),
-    positionLat: latitude,
-    positionLong: longitude,
-    distance: parseNumberText(element, "DistanceMeters"),
-    altitude: parseNumberText(element, "AltitudeMeters"),
-    heartRate: parseNumberText(element, "Value"),
-    cadence: parseNumberText(element, "Cadence"),
-    power: parseNumberText(element, "Watts"),
+    ...(latitude === undefined ? {} : { positionLat: latitude }),
+    ...(longitude === undefined ? {} : { positionLong: longitude }),
+    ...(distance === undefined ? {} : { distance }),
+    ...(altitude === undefined ? {} : { altitude }),
+    ...(heartRate === undefined ? {} : { heartRate }),
+    ...(cadence === undefined ? {} : { cadence }),
+    ...(power === undefined ? {} : { power }),
+    ...(validSpeed === undefined ? {} : { speed: validSpeed }),
   };
 }
 
@@ -393,24 +414,30 @@ function buildXmlActivity(input: {
     records.filter(hasPosition).map((record) => ({
       latitude: record.positionLat,
       longitude: record.positionLong,
-      altitude: record.altitude,
+      ...(record.altitude === undefined ? {} : { altitude: record.altitude }),
     })),
   );
+  const avgCadence = average(records.map((record) => record.cadence));
+  const avgHeartRate = average(records.map((record) => record.heartRate));
+  const avgPower = average(records.map((record) => record.power));
+  const maxCadence = maximum(records.map((record) => record.cadence));
+  const maxHeartRate = maximum(records.map((record) => record.heartRate));
+  const maxPower = maximum(records.map((record) => record.power));
 
   return {
     metadata: {
-      name: input.name,
+      ...(input.name === undefined ? {} : { name: input.name }),
       startTime,
       type: input.type,
     },
     summary: {
-      avgCadence: average(records.map((record) => record.cadence)),
-      avgHeartRate: average(records.map((record) => record.heartRate)),
-      avgPower: average(records.map((record) => record.power)),
-      calories: input.calories,
-      maxCadence: maximum(records.map((record) => record.cadence)),
-      maxHeartRate: maximum(records.map((record) => record.heartRate)),
-      maxPower: maximum(records.map((record) => record.power)),
+      ...(avgCadence === undefined ? {} : { avgCadence }),
+      ...(avgHeartRate === undefined ? {} : { avgHeartRate }),
+      ...(avgPower === undefined ? {} : { avgPower }),
+      ...(input.calories === undefined ? {} : { calories: input.calories }),
+      ...(maxCadence === undefined ? {} : { maxCadence }),
+      ...(maxHeartRate === undefined ? {} : { maxHeartRate }),
+      ...(maxPower === undefined ? {} : { maxPower }),
       totalAscent: stats.totalAscent,
       totalDescent: stats.totalDescent,
       totalDistance,
@@ -455,7 +482,7 @@ function resolveTotalDistance(records: ActivityRecord[]): number {
   const coords = records.filter(hasPosition).map((record) => ({
     latitude: record.positionLat,
     longitude: record.positionLong,
-    altitude: record.altitude,
+    ...(record.altitude === undefined ? {} : { altitude: record.altitude }),
   }));
 
   return calculateRouteStats(coords).totalDistance;

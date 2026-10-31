@@ -31,7 +31,7 @@ test("athlete recovers after refresh, then reviews and discards an atomic finali
   await athletePage.reload();
   await expect(athletePage.getByRole("heading", { name: /review recording/i })).toBeVisible();
   await recording.discard();
-  await expect(athletePage.getByText(/no recording session/i)).toBeVisible();
+  await expect(athletePage.getByRole("button", { name: /^start$/i })).toBeEnabled();
 });
 
 test("cross-tab takeover fences the old recorder and recovers in the new tab", async ({

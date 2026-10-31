@@ -15,6 +15,7 @@ import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { markEstimated } from "@/lib/estimatedMetrics";
 import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
 type AgendaCreateType = "event" | "goal";
@@ -105,11 +106,13 @@ export default function AgendaCreateScreen() {
   const createDate = readParam(params.date);
   const planSuggestionDefaults = useMemo(
     () =>
-      buildPlanSuggestionDefaults({
-        description: readParam(params.planSuggestionDescription),
-        loadDelta: parseSuggestionLoadDelta(readParam(params.planSuggestionLoadDelta)),
-        type: readParam(params.planSuggestionType),
-      }),
+      buildPlanSuggestionDefaults(
+        omitUndefined({
+          description: readParam(params.planSuggestionDescription),
+          loadDelta: parseSuggestionLoadDelta(readParam(params.planSuggestionLoadDelta)),
+          type: readParam(params.planSuggestionType),
+        }),
+      ),
     [params.planSuggestionDescription, params.planSuggestionLoadDelta, params.planSuggestionType],
   );
   const requestedType = readParam(params.type);
@@ -236,7 +239,7 @@ export default function AgendaCreateScreen() {
           <CreateEventFlow
             key={createType}
             ref={eventFlowRef}
-            createDate={createDate}
+            {...omitUndefined({ createDate })}
             defaults={{
               ...planSuggestionDefaults,
               createEventType: "custom",

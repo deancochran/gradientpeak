@@ -113,7 +113,9 @@ export class PredictiveResistanceCalculator {
 
     for (let i = 0; i < samples.length; i++) {
       const weight = (i + 1) / samples.length; // Linear weighting: 0.1, 0.2, ..., 1.0
-      weightedSum += samples[i].value * weight;
+      const sample = samples[i];
+      if (sample === undefined) continue;
+      weightedSum += sample.value * weight;
       totalWeight += weight;
     }
 
@@ -130,7 +132,9 @@ export class PredictiveResistanceCalculator {
       return newResistance;
     }
 
-    const lastResistance = this.resistanceHistory[this.resistanceHistory.length - 1].value;
+    const lastHistoryEntry = this.resistanceHistory.at(-1);
+    if (lastHistoryEntry === undefined) return newResistance;
+    const lastResistance = lastHistoryEntry.value;
     const timeSinceLastChange = (timestamp - this.lastUpdateTime) / 1000; // Convert to seconds
 
     // Calculate max allowed change based on time elapsed
@@ -165,7 +169,8 @@ export class PredictiveResistanceCalculator {
   ): number {
     // Use last known resistance if available
     if (this.resistanceHistory.length > 0) {
-      return this.resistanceHistory[this.resistanceHistory.length - 1].value;
+      const lastHistoryEntry = this.resistanceHistory.at(-1);
+      if (lastHistoryEntry !== undefined) return lastHistoryEntry.value;
     }
 
     // Otherwise calculate as if user were at standard cadence
@@ -224,9 +229,8 @@ export class PredictiveResistanceCalculator {
     const samples = this.cadenceBuffer.getSamples(this.SMOOTHING_WINDOW_MS);
     if (samples.length === 0) return undefined;
 
-    return this.smoothCadence(
-      samples[samples.length - 1].value,
-      samples[samples.length - 1].timestamp,
-    );
+    const latestSample = samples.at(-1);
+    if (latestSample === undefined) return undefined;
+    return this.smoothCadence(latestSample.value, latestSample.timestamp);
   }
 }

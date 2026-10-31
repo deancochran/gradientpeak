@@ -188,7 +188,9 @@ export function prepareProfileMetrics(
       metric_type: "max_hr",
       value: maxHR,
       unit: "bpm",
-      source: maxHrSource === "baseline" ? baseline?.source : undefined,
+      ...(maxHrSource === "baseline" && baseline?.source !== undefined
+        ? { source: baseline.source }
+        : {}),
       observationSource: observation.observationSource,
       method: observation.method,
       calculationVersion: "onboarding-v1",
@@ -202,7 +204,9 @@ export function prepareProfileMetrics(
       metric_type: "resting_hr",
       value: restingHR,
       unit: "bpm",
-      source: restingHrSource === "baseline" ? baseline?.source : undefined,
+      ...(restingHrSource === "baseline" && baseline?.source !== undefined
+        ? { source: baseline.source }
+        : {}),
       observationSource: observation.observationSource,
       method: observation.method,
       calculationVersion: "onboarding-v1",
@@ -217,7 +221,7 @@ export function prepareProfileMetrics(
       metric_type: "vo2_max",
       value: vo2max,
       unit: "ml/kg/min",
-      source: input.vo2max ? undefined : "calculated_from_hr",
+      ...(input.vo2max ? {} : { source: "calculated_from_hr" }),
       observationSource: input.vo2max ? "manual" : "estimated",
       method: input.vo2max ? "onboarding_manual_seed" : "onboarding_derived_estimate",
       calculationVersion: "onboarding-v1",

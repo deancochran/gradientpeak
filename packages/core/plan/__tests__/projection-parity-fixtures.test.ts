@@ -471,14 +471,14 @@ describe("projection parity fixtures", () => {
         ...baseInput,
         creation_config: {
           ...baseInput.creation_config,
-          calibration: preset.calibration,
+          ...(preset.calibration === undefined ? {} : { calibration: preset.calibration }),
         },
       });
       const runB = buildDeterministicProjectionPayload({
         ...baseInput,
         creation_config: {
           ...baseInput.creation_config,
-          calibration: preset.calibration,
+          ...(preset.calibration === undefined ? {} : { calibration: preset.calibration }),
         },
       });
 
@@ -507,9 +507,12 @@ describe("projection parity fixtures", () => {
       });
     }
 
-    const balanced = byPreset.get("balanced_default")!;
-    const conservative = byPreset.get("conservative_durability")!;
-    const aggressive = byPreset.get("aggressive_target_attainment")!;
+    const balanced = byPreset.get("balanced_default");
+    const conservative = byPreset.get("conservative_durability");
+    const aggressive = byPreset.get("aggressive_target_attainment");
+    if (!balanced || !conservative || !aggressive) {
+      throw new Error("Expected every calibration preset to produce an observation");
+    }
 
     expect(conservative.readiness_score).toBeLessThanOrEqual(balanced.readiness_score);
     expect(aggressive.readiness_score).toBeGreaterThanOrEqual(balanced.readiness_score);
@@ -520,7 +523,7 @@ describe("projection parity fixtures", () => {
   it("keeps local-preview and server recompute payload assembly in parity for low/sparse/rich/no-history fixtures", () => {
     const fixtures: Array<{
       key: "low" | "sparse" | "rich" | "no-history";
-      input: any;
+      input: Parameters<typeof buildProjectionEngineInput>[0];
     }> = [
       {
         key: "low",
@@ -715,8 +718,11 @@ describe("projection parity fixtures", () => {
       expect(serverPath.points.map((point) => point.date)).toEqual(localDates);
 
       for (let i = 0; i < localPath.points.length; i += 1) {
-        const localPoint = localPath.points[i]!;
-        const serverPoint = serverPath.points[i]!;
+        const localPoint = localPath.points[i];
+        const serverPoint = serverPath.points[i];
+        if (!localPoint || !serverPoint) {
+          throw new Error(`Expected matching projection points at index ${i}`);
+        }
 
         expect(localPoint.date, `${fixture.key} point ${i} date`).toBe(serverPoint.date);
         expect(

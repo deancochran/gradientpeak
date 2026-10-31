@@ -331,7 +331,7 @@ export function createContentAccessPermissions(db: DrizzleQueryExecutor) {
       actorProfileId: input.actorProfileId,
       action: "read",
       resource: input.resource,
-      message: input.message,
+      ...(input.message === undefined ? {} : { message: input.message }),
     });
   }
 
@@ -456,17 +456,27 @@ export function createContentAccessPermissions(db: DrizzleQueryExecutor) {
     canRead: (actorProfileId: string, resource: PermissionResource) =>
       can({ actorProfileId, action: "read", resource }),
     requireRead: (actorProfileId: string, resource: PermissionResource, message?: string) =>
-      require({ actorProfileId, action: "read", resource, message }),
+      require({
+        actorProfileId,
+        action: "read",
+        resource,
+        ...(message === undefined ? {} : { message }),
+      }),
     canReadForRow,
     requireReadForRow,
     requireManage: (actorProfileId: string, resource: PermissionResource, message?: string) =>
-      require({ actorProfileId, action: "manage", resource, message }),
+      require({
+        actorProfileId,
+        action: "manage",
+        resource,
+        ...(message === undefined ? {} : { message }),
+      }),
     requireRouteGeometry: (actorProfileId: string, routeId: string, message?: string) =>
       require({
         actorProfileId,
         action: "read_geometry",
         resource: { type: "activity_route", id: routeId },
-        message,
+        ...(message === undefined ? {} : { message }),
       }),
     grant,
     grantRead,

@@ -1,9 +1,16 @@
+import { usePlannedSessionMutations } from "@repo/api/react";
 import { Button } from "@repo/ui/components/button";
-import { Form, FormNumberField, FormTextareaField } from "@repo/ui/components/form";
+import {
+  Form,
+  FormDateInputField,
+  FormNumberField,
+  FormTextareaField,
+} from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { flushPendingFormDrafts, useZodForm } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { randomUUID } from "expo-crypto";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
@@ -33,6 +40,7 @@ import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
 import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { buildPlannedSessionRecordingLaunchPayload } from "@/lib/recording/plannedSessionLaunch";
 import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
@@ -44,6 +52,10 @@ const actualDetailsSchema = z.object({
   durationMinutes: z.number().finite().nonnegative().nullable(),
   notes: z.string().max(10_000).nullable(),
   rpe: z.number().int().min(1).max(10).nullable(),
+});
+
+const plannedSessionRescheduleSchema = z.object({
+  planningDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose a valid date."),
 });
 
 function formatComparisonDuration(value: number | null) {
@@ -179,6 +191,25 @@ function isAccessDeniedError(error: unknown) {
   return code === "FORBIDDEN" || code === "UNAUTHORIZED";
 }
 
+function isNotFoundError(error: unknown) {
+  const code = (error as { data?: { code?: string | null } | null } | null | undefined)?.data?.code;
+  return code === "NOT_FOUND";
+}
+
+// Keep this aligned with @repo/api's receipt-aware mutation hook. A conflict has
+// already replaced the saved action and supplied its recovery guidance.
+function isPlannedSessionConflict(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "data" in error &&
+    typeof error.data === "object" &&
+    error.data !== null &&
+    "code" in error.data &&
+    error.data.code === "CONFLICT"
+  );
+}
+
 function parseSuggestionLoadDelta(value: string | string[] | undefined) {
   const parsed = Number(readSearchParam(value));
   return Number.isFinite(parsed) ? parsed : null;
@@ -283,11 +314,13 @@ export default function EventDetailScreen() {
       : null;
   const planSuggestionDefaults = useMemo(
     () =>
-      buildPlanSuggestionDefaults({
-        type: readSearchParam(planSuggestionType),
-        loadDelta: parseSuggestionLoadDelta(planSuggestionLoadDelta),
-        description: readSearchParam(planSuggestionDescription),
-      }),
+      buildPlanSuggestionDefaults(
+        omitUndefined({
+          type: readSearchParam(planSuggestionType),
+          loadDelta: parseSuggestionLoadDelta(planSuggestionLoadDelta),
+          description: readSearchParam(planSuggestionDescription),
+        }),
+      ),
     [planSuggestionDescription, planSuggestionLoadDelta, planSuggestionType],
   );
 
@@ -317,11 +350,19 @@ export default function EventDetailScreen() {
     { id: eventId },
     { enabled: isPlannedSession && !startsInCreateMode && !hasInvalidResource },
   );
+  const plannedActivityPlanQuery = api.activityPlans.getById.useQuery(
+    { id: plannedSessionQuery.data?.activityPlanId ?? "", personalize: false },
+    {
+      enabled: isPlannedSession && Boolean(plannedSessionQuery.data?.activityPlanId),
+      retry: false,
+    },
+  );
   const profileQuery = api.profiles.get.useQuery(undefined, { enabled: isPlannedSession });
   const createManualDiaryEntry = api.activities.createManualDiaryEntry.useMutation({
     retry: false,
   });
   const skipPlannedSession = api.plannedSessions.skip.useMutation({ retry: false });
+  const recordingLaunch = api.plannedSessions.recordingLaunch.useMutation({ retry: false });
   const linkPlannedSessionCompletion = api.plannedSessions.linkCompletion.useMutation({
     retry: false,
   });
@@ -335,6 +376,54 @@ export default function EventDetailScreen() {
   >(null);
   const plannedInFlightRef = useRef(false);
   const [plannedError, setPlannedError] = useState<string | null>(null);
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [cancelConfirmVisible, setCancelConfirmVisible] = useState(false);
+  const plannedSessionMutationRef = useRef<
+    | {
+        kind: "move";
+        input: {
+          expectedRevision: number;
+          planningDate: string;
+          profileId: string;
+          sessionId: string;
+        };
+      }
+    | {
+        kind: "cancel";
+        input: {
+          expectedRevision: number;
+          profileId: string;
+          reason: "user_requested";
+          sessionId: string;
+        };
+      }
+    | null
+  >(null);
+  const rescheduleForm = useZodForm({
+    defaultValues: { planningDate: "" },
+    schema: plannedSessionRescheduleSchema,
+  });
+  const plannedSessionMutations = usePlannedSessionMutations({
+    onConflict: async () => {
+      // Conflicts prove the pinned revision is stale. Never replay a saved management intent
+      // against a newer session; let the user explicitly choose a fresh action after refetching.
+      plannedSessionMutationRef.current = null;
+      setRescheduleOpen(false);
+      setCancelConfirmVisible(false);
+      setPlannedError("This session changed. Review the updated schedule before trying again.");
+      await Promise.all([
+        plannedSessionQuery.refetch(),
+        refreshScheduleViews(queryClient, "eventMutation"),
+      ]);
+    },
+    onReceipt: async () => {
+      await Promise.all([
+        plannedSessionQuery.refetch(),
+        refreshScheduleViews(queryClient, "eventMutation"),
+      ]);
+    },
+  });
+  const { changePlanOnly } = plannedSessionMutations;
   const [actualDetailsOpen, setActualDetailsOpen] = useState(false);
   const completionForm = useZodForm({
     defaultValues: { distanceKilometers: null, durationMinutes: null, notes: null, rpe: null },
@@ -354,7 +443,7 @@ export default function EventDetailScreen() {
   const [pendingDeleteScope, setPendingDeleteScope] = useState<EventMutationScope | null>(null);
 
   useEffect(() => {
-    redirectOnNotFound(error);
+    redirectOnNotFound(error?.data?.code === "NOT_FOUND" ? { data: { code: "NOT_FOUND" } } : null);
   }, [error, redirectOnNotFound]);
 
   const deleteMutation = api.events.delete.useMutation({
@@ -369,7 +458,7 @@ export default function EventDetailScreen() {
   const recurring = useMemo(() => isRecurringEvent(event), [event]);
   const route = event?.route;
   const updateSupportsRecurrence = true;
-  const comments = useEntityCommentsController({ entityId: event?.id, entityType: "event" });
+  const comments = useEntityCommentsController({ entityId: event?.id ?? "", entityType: "event" });
   const _detailTitle = startsInCreateMode ? "Create Event" : "Event details";
   const _detailSubtitle = startsInCreateMode
     ? "choose event type"
@@ -502,13 +591,24 @@ export default function EventDetailScreen() {
     );
   }
 
-  if (isPlannedSession && !plannedSessionQuery.data) {
+  if (isPlannedSession && !plannedSessionQuery.data && isNotFoundError(plannedSessionQuery.error)) {
     return (
       <EmptyState
         actionLabel="Go back"
         description="This planned session may have been removed."
         onAction={() => router.back()}
         title="Planned session not found"
+      />
+    );
+  }
+
+  if (isPlannedSession && !plannedSessionQuery.data) {
+    return (
+      <EmptyState
+        actionLabel="Retry"
+        description="The planned session could not be loaded. Check your connection and try again."
+        onAction={() => void plannedSessionQuery.refetch()}
+        title="Planned session unavailable"
       />
     );
   }
@@ -528,7 +628,19 @@ export default function EventDetailScreen() {
 
   if (isPlannedSession && plannedSessionQuery.data) {
     const session = plannedSessionQuery.data;
-    const category = session.prescription.resolutionManifest.resolved_structure.activity_category;
+    const category = plannedActivityPlanQuery.data?.detail?.activityCategory;
+    if (!category) {
+      return (
+        <View className="flex-1 items-center justify-center px-6 bg-background">
+          <EmptyState
+            actionLabel="Retry"
+            description="The current activity plan for this session could not be loaded."
+            onAction={() => void plannedActivityPlanQuery.refetch()}
+            title="Activity plan unavailable"
+          />
+        </View>
+      );
+    }
     const timezone = profileQuery.data?.planning_timezone ?? null;
     const today = timezone
       ? new Intl.DateTimeFormat("en-CA", {
@@ -544,6 +656,99 @@ export default function EventDetailScreen() {
       : null;
     const available =
       session.lifecycle.status === "scheduled" && today !== null && session.planningDate <= today;
+    const editThisSessionOnly = async () => {
+      if (session.lifecycle.status !== "scheduled" || changePlanOnly.isPending) return;
+      setPlannedError(null);
+      try {
+        const receipt = await changePlanOnly.mutateAsync({
+          expectedRevision: session.sessionRevision,
+          profileId: session.profileId,
+          sessionId: session.id,
+        });
+        navigateTo(`/create-activity-plan?planId=${receipt.session.activityPlanId}` as never);
+      } catch (error) {
+        setPlannedError(
+          error instanceof Error
+            ? error.message
+            : "This session could not be prepared for editing. Refresh and try again.",
+        );
+      }
+    };
+    const openReschedule = () => {
+      if (session.lifecycle.status !== "scheduled" || plannedSessionMutations.move.isPending)
+        return;
+      setPlannedError(null);
+      rescheduleForm.reset({ planningDate: session.planningDate });
+      setRescheduleOpen(true);
+    };
+    const reschedule = async () => {
+      if (session.lifecycle.status !== "scheduled" || plannedSessionMutations.move.isPending)
+        return;
+      flushPendingFormDrafts(rescheduleForm.control);
+      if (!(await rescheduleForm.trigger())) return;
+      const existing = plannedSessionMutationRef.current;
+      if (existing && existing.kind !== "move") {
+        setPlannedError("Retry the saved action or refresh before choosing a different action.");
+        return;
+      }
+      const input =
+        existing?.kind === "move"
+          ? existing.input
+          : {
+              expectedRevision: session.sessionRevision,
+              planningDate: rescheduleForm.getValues().planningDate,
+              profileId: session.profileId,
+              sessionId: session.id,
+            };
+      plannedSessionMutationRef.current = { kind: "move", input };
+      setPlannedError(null);
+      try {
+        await plannedSessionMutations.move.mutateAsync(input);
+        plannedSessionMutationRef.current = null;
+        setRescheduleOpen(false);
+      } catch (error) {
+        if (!isPlannedSessionConflict(error)) {
+          setPlannedError(
+            error instanceof Error
+              ? error.message
+              : "The session move could not be confirmed. Retry the saved action or refresh.",
+          );
+        }
+      }
+    };
+    const cancel = async () => {
+      if (session.lifecycle.status !== "scheduled" || plannedSessionMutations.cancel.isPending)
+        return;
+      const existing = plannedSessionMutationRef.current;
+      if (existing && existing.kind !== "cancel") {
+        setPlannedError("Retry the saved action or refresh before choosing a different action.");
+        return;
+      }
+      const input =
+        existing?.kind === "cancel"
+          ? existing.input
+          : {
+              expectedRevision: session.sessionRevision,
+              profileId: session.profileId,
+              reason: "user_requested" as const,
+              sessionId: session.id,
+            };
+      plannedSessionMutationRef.current = { kind: "cancel", input };
+      setPlannedError(null);
+      try {
+        await plannedSessionMutations.cancel.mutateAsync(input);
+        plannedSessionMutationRef.current = null;
+        setCancelConfirmVisible(false);
+      } catch (error) {
+        if (!isPlannedSessionConflict(error)) {
+          setPlannedError(
+            error instanceof Error
+              ? error.message
+              : "The cancellation could not be confirmed. Retry the saved action or refresh.",
+          );
+        }
+      }
+    };
     const run = async (outcome: "full" | "partial" | "skip") => {
       if (!available || !timezone || plannedInFlightRef.current) return;
       const existing = plannedRequestRef.current;
@@ -568,7 +773,7 @@ export default function EventDetailScreen() {
                   profileId: session.profileId,
                   sessionId: session.id,
                   expectedRevision: session.sessionRevision,
-                  operationId: crypto.randomUUID(),
+                  operationId: randomUUID(),
                 };
           plannedRequestRef.current = { kind: "skip", input };
           await skipPlannedSession.mutateAsync(input);
@@ -578,7 +783,7 @@ export default function EventDetailScreen() {
               ? existing.input
               : {
                   observation: {
-                    operationId: crypto.randomUUID(),
+                    operationId: randomUUID(),
                     diaryDate: session.planningDate,
                     diaryTimezone: timezone,
                     name: "Completed activity",
@@ -588,7 +793,7 @@ export default function EventDetailScreen() {
                     distanceMeters: distanceKilometers === null ? null : distanceKilometers * 1_000,
                     startedAt: null,
                     finishedAt: null,
-                    ...(rpe === null ? {} : { rpe, rpeOperationId: crypto.randomUUID() }),
+                    ...(rpe === null ? {} : { rpe, rpeOperationId: randomUUID() }),
                   },
                   plannedSession: {
                     sessionId: session.id,
@@ -612,18 +817,20 @@ export default function EventDetailScreen() {
       }
     };
     const record = async () => {
-      activitySelectionStore.setSelection(
-        await buildPlannedSessionRecordingLaunchPayload({
-          plannedSession: {
-            id: session.id,
-            sessionRevision: session.sessionRevision,
-            source: session.source,
-            prescription: session.prescription,
-          },
-          name: "Scheduled activity plan",
-        }),
-      );
-      navigateTo(ROUTES.RECORD as never);
+      setPlannedError(null);
+      try {
+        const launch = await recordingLaunch.mutateAsync({ id: session.id });
+        activitySelectionStore.setSelection(
+          await buildPlannedSessionRecordingLaunchPayload({
+            plannedSession: launch,
+            name: "Scheduled activity plan",
+          }),
+        );
+        navigateTo(ROUTES.RECORD as never);
+      } catch (error) {
+        setPlannedError(error instanceof Error ? error.message : "Unable to start this session.");
+        await plannedSessionQuery.refetch();
+      }
     };
     const linkedActivityId =
       session.lifecycle.status === "completed" && session.lifecycle.completion.state === "linked"
@@ -647,7 +854,7 @@ export default function EventDetailScreen() {
               sessionId: session.id,
               expectedRevision: session.sessionRevision,
               activityId: selectedCandidate.id,
-              operationId: crypto.randomUUID(),
+              operationId: randomUUID(),
             };
       plannedRequestRef.current = { kind: "associate", input };
       plannedInFlightRef.current = true;
@@ -710,6 +917,53 @@ export default function EventDetailScreen() {
             >
               <Text>View completed activity</Text>
             </Button>
+          ) : null}
+          {session.lifecycle.status === "scheduled" ? (
+            <View className="gap-2">
+              <Button
+                accessibilityState={{
+                  busy: changePlanOnly.isPending,
+                  disabled: changePlanOnly.isPending,
+                }}
+                disabled={changePlanOnly.isPending}
+                onPress={() => void editThisSessionOnly()}
+                testID="planned-session-edit-this-only"
+                variant="outline"
+              >
+                <Text>
+                  {changePlanOnly.isPending ? "Preparing session..." : "Edit this session only"}
+                </Text>
+              </Button>
+              <Button
+                onPress={() =>
+                  navigateTo(`/create-activity-plan?planId=${session.activityPlanId}` as never)
+                }
+                testID="planned-session-edit-all"
+                variant="ghost"
+              >
+                <Text>Edit plan for all sessions</Text>
+              </Button>
+              <Text className="text-sm text-muted-foreground">
+                Editing this session creates a private copy first. Editing the plan applies to all
+                future sessions that reference it.
+              </Text>
+              <Button
+                disabled={plannedSessionMutations.move.isPending}
+                onPress={openReschedule}
+                testID="planned-session-reschedule"
+                variant="outline"
+              >
+                <Text>Reschedule session</Text>
+              </Button>
+              <Button
+                disabled={plannedSessionMutations.cancel.isPending}
+                onPress={() => setCancelConfirmVisible(true)}
+                testID="planned-session-cancel"
+                variant="outline"
+              >
+                <Text>Cancel session</Text>
+              </Button>
+            </View>
           ) : null}
           {linkedActivityId ? (
             <View className="gap-2">
@@ -890,9 +1144,87 @@ export default function EventDetailScreen() {
                   <Text>Retry saved action</Text>
                 </Button>
               ) : null}
+              {session.lifecycle.status === "scheduled" &&
+              plannedSessionMutationRef.current?.kind === "move" ? (
+                <Button
+                  disabled={plannedSessionMutations.move.isPending}
+                  onPress={() => void reschedule()}
+                  testID="planned-session-retry-reschedule"
+                  variant="outline"
+                >
+                  <Text>Retry reschedule</Text>
+                </Button>
+              ) : null}
+              {session.lifecycle.status === "scheduled" &&
+              plannedSessionMutationRef.current?.kind === "cancel" ? (
+                <Button
+                  disabled={plannedSessionMutations.cancel.isPending}
+                  onPress={() => void cancel()}
+                  testID="planned-session-retry-cancel"
+                  variant="outline"
+                >
+                  <Text>Retry cancellation</Text>
+                </Button>
+              ) : null}
             </View>
           ) : null}
         </ScrollView>
+        {rescheduleOpen ? (
+          <AppFormModal
+            description="Choose the new calendar day for this session."
+            onClose={() => setRescheduleOpen(false)}
+            primaryAction={
+              <Button
+                disabled={plannedSessionMutations.move.isPending}
+                onPress={() => void reschedule()}
+                testID="planned-session-reschedule-submit"
+              >
+                <Text>
+                  {plannedSessionMutations.move.isPending ? "Rescheduling..." : "Reschedule"}
+                </Text>
+              </Button>
+            }
+            secondaryAction={
+              <Button onPress={() => setRescheduleOpen(false)} variant="outline">
+                <Text>Cancel</Text>
+              </Button>
+            }
+            testID="planned-session-reschedule-date"
+            title="Reschedule session"
+          >
+            <Form {...rescheduleForm}>
+              <FormDateInputField
+                accessibilityHint="Choose the new date for this planned session"
+                control={rescheduleForm.control}
+                disabled={plannedSessionMutations.move.isPending}
+                label="Scheduled date"
+                name="planningDate"
+                pickerPresentation="modal"
+                testId="planned-session-reschedule-date-input"
+              />
+            </Form>
+          </AppFormModal>
+        ) : null}
+        {cancelConfirmVisible ? (
+          <AppConfirmModal
+            description="This removes the session from your schedule. This cannot be undone."
+            onClose={() => setCancelConfirmVisible(false)}
+            primaryAction={{
+              disabled: plannedSessionMutations.cancel.isPending,
+              label: plannedSessionMutations.cancel.isPending ? "Cancelling..." : "Cancel session",
+              onPress: () => void cancel(),
+              testID: "planned-session-confirm-cancel",
+              variant: "destructive",
+            }}
+            secondaryAction={{
+              label: "Keep session",
+              onPress: () => setCancelConfirmVisible(false),
+              variant: "outline",
+            }}
+            testID="planned-session-confirm-cancel-modal"
+            title="Cancel session?"
+          />
+        ) : null}
       </View>
     );
   }
@@ -906,10 +1238,10 @@ export default function EventDetailScreen() {
       testID="event-detail-screen"
     >
       <Stack.Screen
-        options={{
+        options={omitUndefined({
           headerRight: renderHeaderActions,
           title: startsInCreateMode ? "Create Event" : undefined,
-        }}
+        })}
       />
       <ScrollView
         className="flex-1"
@@ -935,13 +1267,15 @@ export default function EventDetailScreen() {
                   : formatScheduleDateLabel(displayStartsAt)}
               </Text>
               <Text className="text-sm text-muted-foreground">
-                {formatEventTimeRange({
-                  all_day: displayAllDay,
-                  starts_at: displayStartsAt.toISOString(),
-                  ends_at: event?.ends_at ?? null,
-                  timezone: event?.timezone,
-                  preserveInstant: false,
-                })}
+                {formatEventTimeRange(
+                  omitUndefined({
+                    all_day: displayAllDay,
+                    starts_at: displayStartsAt.toISOString(),
+                    ends_at: event?.ends_at ?? null,
+                    timezone: event?.timezone,
+                    preserveInstant: false,
+                  }),
+                )}
               </Text>
               {recurring ? (
                 <Text className="text-sm text-muted-foreground">
@@ -977,7 +1311,12 @@ export default function EventDetailScreen() {
         {startsInCreateMode ? (
           <CreateEventFlow
             ref={createEventFlowRef}
-            createDate={createDate}
+            {...omitUndefined({
+              createDate,
+              preselectedActivityPlanId,
+              preselectedRoute,
+              scheduleGapNote,
+            })}
             defaults={planSuggestionDefaults}
             onCancel={() => router.back()}
             onDirtyChange={setCreateDirty}
@@ -988,9 +1327,6 @@ export default function EventDetailScreen() {
                 ? router.replace(ROUTES.PLAN.EVENT_DETAIL(resource.id))
                 : router.replace(ROUTES.PLAN.CALENDAR);
             }}
-            preselectedActivityPlanId={preselectedActivityPlanId}
-            preselectedRoute={preselectedRoute}
-            scheduleGapNote={scheduleGapNote}
             showFooterActions={false}
             testIDPrefix="event-detail"
           />

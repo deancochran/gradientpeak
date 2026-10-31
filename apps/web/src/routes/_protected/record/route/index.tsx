@@ -4,8 +4,8 @@ import { validateRecordingSearch } from "../../../../lib/recording-web";
 
 export const Route = createFileRoute("/_protected/record/route/")({
   validateSearch: (search: Record<string, unknown>) => validateRecordingSearch(search),
-  beforeLoad: () => {
-    throw redirect({ to: "/record", search: { activity_category: "run", gps: "off" } });
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: "/record/session", search });
   },
   component: RecordRoutePage,
 });

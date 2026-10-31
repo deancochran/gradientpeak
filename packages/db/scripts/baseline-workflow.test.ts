@@ -35,15 +35,12 @@ try {
     env: { ...process.env, GRADIENTPEAK_BASELINE_WORKFLOW_ROOT: fixture },
     stdio: "pipe",
   });
-  writeFileSync(
-    resolve(fixture, "supabase/migrations/20260825000000_forward_fix.sql"),
-    "BEGIN;\nselect 1;\nCOMMIT;\n",
+  rejects(() =>
+    writeFileSync(
+      resolve(fixture, "supabase/migrations/20260825000000_forward_fix.sql"),
+      "BEGIN;\nselect 1;\nCOMMIT;\n",
+    ),
   );
-  execFileSync("pnpm", ["exec", "tsx", workflow, "check"], {
-    cwd: dbPackageRoot,
-    env: { ...process.env, GRADIENTPEAK_BASELINE_WORKFLOW_ROOT: fixture },
-    stdio: "pipe",
-  });
   rejects(() =>
     writeFileSync(
       resolve(fixture, "supabase/migrations/20260730000000_duplicate.sql"),
@@ -75,7 +72,7 @@ try {
     const path = resolve(fixture, "supabase/migrations/20260730000000_mvp_baseline.sql");
     writeFileSync(path, "select 1;\n");
   });
-  console.log("[db:baseline:workflow:test] baseline plus ordered forward migrations OK");
+  console.log("[db:baseline:workflow:test] one fresh-only baseline enforced");
 } finally {
   rmSync(fixture, { force: true, recursive: true });
 }

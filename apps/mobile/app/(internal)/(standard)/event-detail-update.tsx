@@ -35,7 +35,7 @@ export default function EventDetailUpdateScreen() {
   );
 
   useEffect(() => {
-    redirectOnNotFound(error);
+    redirectOnNotFound(error?.data?.code === "NOT_FOUND" ? { data: { code: "NOT_FOUND" } } : null);
   }, [error, redirectOnNotFound]);
 
   if (isLoading || isRedirecting) {

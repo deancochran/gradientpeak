@@ -1,5 +1,7 @@
 # Training-plan builder: current-code audit and implementation outline
 
+> Historical audit: activity-plan topology and adaptation findings below were superseded on 2026-09-30 by the [fixed V4 implementation specification](activity-plan-simplification-specification.md). Do not reintroduce adaptive controls from this audit. Frozen prescription and completed multisport preservation requirements remain applicable.
+
 Date: 2026-09-14. Scope: **only F1-F6 and T1-T9** in the [initial-release specification](training-plan-ux-parity-specification.md). This is documentation of proposed changes, not implementation. Source references describe the current dirty development checkout; recheck them before editing. No DB or application source was changed during this audit.
 
 ## Superseding correction — 2026-09-17

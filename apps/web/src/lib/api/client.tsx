@@ -28,12 +28,18 @@ export function createWebHeaders() {
   return headers;
 }
 
-function createApiFetch(input: RequestInfo | URL, init?: RequestInit) {
+type ApiFetch = NonNullable<Parameters<typeof createApiBatchLink>[0]["fetch"]>;
+
+const createApiFetch: ApiFetch = (input, init) => {
+  const { body, headers, method, signal } = init ?? {};
   return fetch(input, {
-    ...init,
+    ...(body === undefined ? {} : { body }),
+    ...(headers === undefined ? {} : { headers }),
+    ...(method === undefined ? {} : { method }),
+    ...(signal === undefined ? {} : { signal }),
     credentials: "include",
   });
-}
+};
 
 export function createApiClient() {
   return api.createClient({

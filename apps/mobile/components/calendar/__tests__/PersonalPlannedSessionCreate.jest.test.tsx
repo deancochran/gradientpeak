@@ -4,9 +4,10 @@ import { fireEvent, renderNative, screen, waitFor } from "../../../test/render-n
 const createMock = jest.fn(async () => undefined);
 const invalidateCalendarPageMock = jest.fn(async () => undefined);
 const replaceMock = jest.fn();
-let plannedSessionMutationOptions: { onConflict: () => Promise<unknown> } | null = null;
+let plannedSessionMutationOptions: {
+  onConflict: () => Promise<unknown>;
+} | null = null;
 const activityPlanQueryInputs: unknown[] = [];
-
 jest.mock("expo-crypto", () => ({ randomUUID: () => "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }));
 jest.mock("expo-router", () => ({ useRouter: () => ({ replace: replaceMock }) }));
 jest.mock("@repo/api/react", () => ({
@@ -18,8 +19,13 @@ jest.mock("@repo/api/react", () => ({
   },
 }));
 jest.mock("@/lib/stores/auth-store", () => ({
-  useAuthStore: (selector: (state: { profile: { id: string } }) => unknown) =>
-    selector({ profile: { id: "11111111-1111-4111-8111-111111111111" } }),
+  useAuthStore: (
+    selector: (state: {
+      profile: {
+        id: string;
+      };
+    }) => unknown,
+  ) => selector({ profile: { id: "11111111-1111-4111-8111-111111111111" } }),
 }));
 jest.mock("@/lib/api", () => ({
   api: {
@@ -45,7 +51,7 @@ jest.mock("@/lib/api", () => ({
                               {
                                 key: "elapsed_duration",
                                 status: "available",
-                                value: 1_200,
+                                value: 1200,
                               },
                             ],
                             structure: {
@@ -63,9 +69,10 @@ jest.mock("@/lib/api", () => ({
                                       repetitions: 1,
                                       steps: [
                                         {
+                                          type: "step",
                                           id: "55555555-5555-4555-8555-555555555555",
                                           name: "Work",
-                                          duration: { type: "time", seconds: 1_200 },
+                                          duration: { type: "time", seconds: 1200 },
                                           targets: [{ type: "RPE", intensity: 7 }],
                                         },
                                       ],
@@ -94,11 +101,15 @@ jest.mock("@/lib/api", () => ({
   },
 }));
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
-  ActivityPlanCard: ({ plan }: { plan: { name: string } }) => <Text>{plan.name}</Text>,
+  ActivityPlanCard: ({
+    plan,
+  }: {
+    plan: {
+      name: string;
+    };
+  }) => <Text>{plan.name}</Text>,
 }));
-
 const { PersonalPlannedSessionCreate } = require("../PersonalPlannedSessionCreate");
-
 describe("PersonalPlannedSessionCreate", () => {
   beforeEach(() => {
     createMock.mockClear();
@@ -106,10 +117,8 @@ describe("PersonalPlannedSessionCreate", () => {
     plannedSessionMutationOptions = null;
     activityPlanQueryInputs.length = 0;
   });
-
   it("schedules a selected system activity plan when the user has no owned plans", async () => {
     await renderNative(<PersonalPlannedSessionCreate planningDate="2026-08-16" />);
-
     await fireEvent.press(screen.getByText("Tempo run"));
     expect(screen.getByText("Selected activity plan: Tempo run")).toBeTruthy();
     expect(screen.getByText("Approximate duration: About 20 min")).toBeTruthy();
@@ -117,7 +126,6 @@ describe("PersonalPlannedSessionCreate", () => {
       screen.getByTestId("catalog-activity-plan-22222222-2222-4222-8222-222222222222").props,
     ).toMatchObject({ accessibilityState: { selected: true } });
     await fireEvent.press(screen.getByTestId("personal-planned-session-submit"));
-
     await waitFor(() => expect(createMock).toHaveBeenCalledTimes(1));
     expect(activityPlanQueryInputs).toEqual(
       expect.arrayContaining([
@@ -133,14 +141,11 @@ describe("PersonalPlannedSessionCreate", () => {
     });
     expect((createMock as jest.Mock).mock.calls[0]?.[0].session).not.toHaveProperty("prescription");
   });
-
   it("locks the selected activity plan after an unconfirmed scheduling request", async () => {
     createMock.mockRejectedValueOnce(new Error("Request timed out"));
     await renderNative(<PersonalPlannedSessionCreate planningDate="2026-08-16" />);
-
     await fireEvent.press(screen.getByText("Tempo run"));
     await fireEvent.press(screen.getByTestId("personal-planned-session-submit"));
-
     await waitFor(() =>
       expect(screen.getByRole("alert").props.children).toContain("could not confirm scheduling"),
     );
@@ -148,17 +153,14 @@ describe("PersonalPlannedSessionCreate", () => {
       screen.getByTestId("catalog-activity-plan-22222222-2222-4222-8222-222222222222").props,
     ).toMatchObject({ accessibilityState: { disabled: true, selected: true } });
   });
-
   it("shows a typed safe error and unlocks the intent after a definitive client error", async () => {
     createMock.mockRejectedValueOnce({
       data: { code: "BAD_REQUEST", httpStatus: 400 },
       message: "Failed query: select private_data",
     });
     await renderNative(<PersonalPlannedSessionCreate planningDate="2026-08-16" />);
-
     await fireEvent.press(screen.getByText("Tempo run"));
     await fireEvent.press(screen.getByTestId("personal-planned-session-submit"));
-
     await waitFor(() =>
       expect(screen.getByRole("alert").props.children).toBe(
         "The schedule details are invalid. Review them and try again.",
@@ -168,7 +170,6 @@ describe("PersonalPlannedSessionCreate", () => {
       screen.getByTestId("catalog-activity-plan-22222222-2222-4222-8222-222222222222").props,
     ).toMatchObject({ accessibilityState: { disabled: false, selected: true } });
   });
-
   it("shows the typed integrity error without exposing the server failure text", async () => {
     createMock.mockRejectedValueOnce({
       data: {
@@ -179,22 +180,17 @@ describe("PersonalPlannedSessionCreate", () => {
       message: "Activity plan structure integrity check failed",
     });
     await renderNative(<PersonalPlannedSessionCreate planningDate="2026-08-16" />);
-
     await fireEvent.press(screen.getByText("Tempo run"));
     await fireEvent.press(screen.getByTestId("personal-planned-session-submit"));
-
     await waitFor(() =>
       expect(screen.getByRole("alert").props.children).toBe(
         "That activity plan needs repair. Choose another plan and try again.",
       ),
     );
   });
-
   it("refreshes calendar pages after a scheduling conflict without reading a per-day session range", async () => {
     await renderNative(<PersonalPlannedSessionCreate planningDate="2026-08-16" />);
-
     await plannedSessionMutationOptions?.onConflict();
-
     expect(invalidateCalendarPageMock).toHaveBeenCalledTimes(1);
   });
 });

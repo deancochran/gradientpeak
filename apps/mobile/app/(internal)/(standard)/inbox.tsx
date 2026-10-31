@@ -2,7 +2,7 @@ import { Badge } from "@repo/ui/components/badge";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useRouter } from "expo-router";
-import { Bell, ChevronRight, MessageSquare } from "lucide-react-native";
+import { Bell, Bot, ChevronRight, MessageSquare } from "lucide-react-native";
 import { Pressable, View } from "react-native";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
@@ -67,6 +67,13 @@ export default function InboxScreen() {
         label="Notifications"
         onPress={() => router.navigate(ROUTES.NOTIFICATIONS)}
         testID="inbox-notifications"
+      />
+      <InboxRow
+        count={0}
+        icon={Bot}
+        label="Assistant"
+        onPress={() => router.navigate("./chat")}
+        testID="inbox-assistant"
       />
     </View>
   );

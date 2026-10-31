@@ -9,7 +9,11 @@ type BuildTRPCErrorOptions = {
 };
 
 export function buildTRPCError({ code, message, cause }: BuildTRPCErrorOptions) {
-  return new TRPCError({ code, message, cause });
+  return new TRPCError({
+    code,
+    ...(message === undefined ? {} : { message }),
+    ...(cause === undefined ? {} : { cause }),
+  });
 }
 
 export function internalServerError(message = "Internal server error", cause?: unknown) {

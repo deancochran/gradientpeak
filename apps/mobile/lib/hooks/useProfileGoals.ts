@@ -6,6 +6,7 @@ import {
 import { useCallback, useMemo } from "react";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useAutoPaginateInfiniteQuery } from "./useAutoPaginateInfiniteQuery";
 
@@ -25,17 +26,17 @@ export function useProfileGoals(options: UseProfileGoalsOptions = {}) {
   const isEnabled = options.enabled ?? true;
 
   const query = api.goals.list.useInfiniteQuery(
-    {
+    omitUndefined({
       profile_id: profileId ?? "",
       search: options.search || undefined,
       activity_category: options.activityCategory,
       sort_by: options.sortBy ?? "created_at",
       sort_order: options.sortOrder ?? "desc",
       limit: GOALS_PAGE_SIZE,
-    },
+    }),
     {
       enabled: isEnabled && !!profileId,
-      getNextPageParam: (lastPage: { nextCursor?: string | null }) => lastPage.nextCursor,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
       ...scheduleAwareReadQueryOptions,
     },
   );

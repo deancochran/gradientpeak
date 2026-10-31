@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createWahooWebhookPostHandler } from "./wahoo-webhook";
 
 const TOKEN = "configured-token";
+type StreamingRequestInit = RequestInit & { duplex: "half" };
 
 function payload(overrides: Record<string, unknown> = {}) {
   return JSON.stringify({
@@ -35,6 +36,35 @@ afterEach(() => {
 });
 
 describe("Wahoo webhook boundary", () => {
+  it("verifies signed multibyte UTF-8 payloads split across byte chunks", async () => {
+    const storeAndEnqueueReceipt = vi.fn().mockResolvedValue(undefined);
+    const handler = createWahooWebhookPostHandler({
+      isEnabled: () => true,
+      getToken: () => TOKEN,
+      storeAndEnqueueReceipt,
+    });
+    const raw = payload({ workout_summary: { id: 99, name: "café 🏃" } });
+    const bytes = new TextEncoder().encode(raw);
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const byte of bytes) controller.enqueue(Uint8Array.of(byte));
+        controller.close();
+      },
+    });
+    const init: StreamingRequestInit = {
+      method: "POST",
+      duplex: "half",
+      body,
+      headers: { "X-Wahoo-Signature": signature(raw) },
+    };
+    const response = await handler(new Request("https://app.example/api/webhooks/wahoo", init));
+    expect(response.status).toBe(200);
+    expect(storeAndEnqueueReceipt).toHaveBeenCalledWith({
+      event_type: "workout_summary",
+      user: { id: 42 },
+      workout_summary: { id: 99, name: "café 🏃" },
+    });
+  });
   it("returns not found without reading or persisting when Wahoo is disabled", async () => {
     const getToken = vi.fn(() => TOKEN);
     const storeAndEnqueueReceipt = vi.fn();

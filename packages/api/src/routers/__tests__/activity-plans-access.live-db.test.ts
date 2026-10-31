@@ -1,40 +1,27 @@
 import { randomUUID } from "node:crypto";
+import { activityPlanSemanticHash, activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { db, pool } from "@repo/db/client";
 import { activityPlans, contentAccessGrants, follows, profiles, users } from "@repo/db/schema";
 import { eq, ilike, inArray, or } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import { activityPlansRouter } from "../activity-plans";
 
 const createdAt = new Date("2026-07-01T12:00:00.000Z");
 const expiredAt = new Date("2020-01-01T00:00:00.000Z");
-const activityPlanStructure = {
-  version: 3,
-  segments: [
+const activityPlanStructure = activityPlanStructureSchema.parse({
+  version: 5,
+  activity_category: "bike",
+  items: [
     {
-      id: "10000000-0000-4000-8000-000000000001",
-      role: "activity",
-      activity_category: "bike",
-      name: "Bike",
-      intervals: [
-        {
-          id: "20000000-0000-4000-8000-000000000001",
-          name: "Main",
-          repetitions: 1,
-          steps: [
-            {
-              id: "30000000-0000-4000-8000-000000000001",
-              name: "Ride",
-              duration: { type: "time", seconds: 1800 },
-              targets: [{ type: "%FTP", intensity: 75 }],
-            },
-          ],
-        },
-      ],
+      type: "step",
+      id: "20000000-0000-4000-8000-000000000001",
+      name: "Ride",
+      duration: { type: "time", seconds: 1800 },
+      targets: [{ type: "%FTP", intensity: 75 }],
     },
   ],
-};
-const structureHash = `v1:sha256:${"0".repeat(64)}`;
-
+});
 function createCaller(profileId: string) {
   return activityPlansRouter.createCaller({
     db,
@@ -45,7 +32,6 @@ function createCaller(profileId: string) {
     // biome-ignore lint/suspicious/noExplicitAny: bounded live-DB caller context fixture.
   } as any);
 }
-
 async function seedProfile(label: string) {
   const id = randomUUID();
   const email = `${id}@activity-plan-access.test`;
@@ -70,7 +56,6 @@ async function seedProfile(label: string) {
   });
   return id;
 }
-
 async function seedPlan(input: {
   ownerId?: string;
   visibility: "private" | "followers" | "public";
@@ -84,22 +69,30 @@ async function seedPlan(input: {
     description: null,
     notes: null,
     structure: activityPlanStructure,
-    structure_hash: structureHash,
-    semantic_hash: structureHash,
+    structure_hash: activityPlanStructureHash(activityPlanStructure),
+    semantic_hash: activityPlanSemanticHash({
+      structure: activityPlanStructure,
+      trainingIntent: "general_maintenance",
+    }),
     gps_recording_enabled: true,
     content_visibility: input.system ? "public" : input.visibility,
     is_system_template: input.system ?? false,
+    ...(input.system
+      ? {
+          system_content_key: `live-db-access-${id}`,
+          system_content_version: 1,
+          system_content_hash: activityPlanStructureHash(activityPlanStructure),
+        }
+      : {}),
     created_at: createdAt,
     updated_at: createdAt,
   });
   return id;
 }
-
 async function visibleIds(viewerId: string, ids: string[]) {
   const result = await createCaller(viewerId).getManyByIds({ ids });
   return result.items.map((item) => item.id);
 }
-
 async function cleanupSeededProfiles() {
   const seededProfiles = await db
     .select({ id: profiles.id })
@@ -107,23 +100,18 @@ async function cleanupSeededProfiles() {
     .where(ilike(profiles.email, "%@activity-plan-access.test"));
   const profileIds = seededProfiles.map((profile) => profile.id);
   if (profileIds.length === 0) return;
-
   await db
     .delete(follows)
     .where(or(inArray(follows.follower_id, profileIds), inArray(follows.following_id, profileIds)));
   await db.delete(users).where(inArray(users.id, profileIds));
 }
-
 beforeEach(cleanupSeededProfiles);
-
 afterEach(async () => {
   await cleanupSeededProfiles();
 });
-
 afterAll(async () => {
   await pool.end();
 });
-
 describe("activityPlans.getManyByIds access live DB", () => {
   it("returns owner, public, system, and accepted-follower plans but not pending-follower plans", async () => {
     const ownerId = await seedProfile("Plan access owner");
@@ -137,7 +125,6 @@ describe("activityPlans.getManyByIds access live DB", () => {
       ownerId: pendingOwnerId,
       visibility: "followers",
     });
-
     await db.insert(follows).values([
       {
         follower_id: viewerId,
@@ -154,7 +141,6 @@ describe("activityPlans.getManyByIds access live DB", () => {
         updated_at: createdAt,
       },
     ]);
-
     await expect(
       visibleIds(viewerId, [
         pendingFollowerPlanId,
@@ -165,7 +151,6 @@ describe("activityPlans.getManyByIds access live DB", () => {
       ]),
     ).resolves.toEqual([ownPlanId, publicPlanId, systemPlanId, acceptedFollowerPlanId]);
   });
-
   it("returns only private plans with an active full-read grant", async () => {
     const ownerId = await seedProfile("Plan grant owner");
     const viewerId = await seedProfile("Plan grant viewer");
@@ -173,7 +158,6 @@ describe("activityPlans.getManyByIds access live DB", () => {
     const revokedPlanId = await seedPlan({ ownerId, visibility: "private" });
     const expiredPlanId = await seedPlan({ ownerId, visibility: "private" });
     const geometryPlanId = await seedPlan({ ownerId, visibility: "private" });
-
     await db.insert(contentAccessGrants).values([
       {
         content_type: "activity_plan",
@@ -224,12 +208,10 @@ describe("activityPlans.getManyByIds access live DB", () => {
         created_at: createdAt,
       },
     ]);
-
     await expect(
       visibleIds(viewerId, [revokedPlanId, expiredPlanId, geometryPlanId, activePlanId]),
     ).resolves.toEqual([activePlanId]);
   });
-
   it("uses visibility at query time after a follower-visible plan becomes private", async () => {
     const ownerId = await seedProfile("Plan state-change owner");
     const viewerId = await seedProfile("Plan state-change viewer");
@@ -241,12 +223,10 @@ describe("activityPlans.getManyByIds access live DB", () => {
       created_at: createdAt,
       updated_at: createdAt,
     });
-
     await db
       .update(activityPlans)
       .set({ content_visibility: "private", updated_at: new Date("2026-07-01T12:01:00.000Z") })
       .where(eq(activityPlans.id, planId));
-
     await expect(visibleIds(viewerId, [planId])).resolves.toEqual([]);
   });
 });

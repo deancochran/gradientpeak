@@ -7,8 +7,13 @@ export { submitImportedActivityArtifact } from "./application/activity-file-inge
 export { AthleteStateWorkerService } from "./application/athlete-intelligence/athlete-state-worker";
 export { readPublishedAthletePerformanceTargets } from "./application/athlete-intelligence/published-athlete-state";
 export { createWahooRepository, createWahooSyncRepository } from "./infrastructure/repositories";
+export {
+  admitGarminPlannedSessionSyncWindow,
+  runGarminPlannedSessionSyncJobs,
+} from "./infrastructure/repositories/drizzle-garmin-training-sync-repository";
 export { createStravaRepository } from "./infrastructure/repositories/drizzle-strava-repository";
 export {
+  getGarminOAuthConfig,
   isStravaIntegrationEnabled,
   isWahooIntegrationEnabled,
 } from "./lib/integrations/oauth-config";

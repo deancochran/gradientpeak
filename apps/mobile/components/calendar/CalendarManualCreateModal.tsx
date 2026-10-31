@@ -23,6 +23,7 @@ import { z } from "zod";
 import { InlineNotice } from "@/components/shared/LayoutPrimitives";
 import { getDetectedDeviceTimeZone } from "@/lib/calendar/eventSchedule";
 import { useDirtyCloseGuard } from "@/lib/hooks/useDirtyCloseGuard";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 export type ManualEventCreateType = "race_target" | "custom";
 
@@ -138,7 +139,6 @@ export function CalendarManualCreateModal({
 
   const title = form.watch("title");
   const allDay = form.watch("all_day");
-  const timezone = form.watch("timezone");
   const wasVisibleRef = useRef(false);
   const createTypeRef = useRef<ManualEventCreateType | null>(null);
 
@@ -184,9 +184,11 @@ export function CalendarManualCreateModal({
         startsAt,
         allDay: data.all_day,
         timezone: data.timezone,
-        recurrence: serializeWeeklyCountRecurrence({
-          recurrence,
-          startInstant: startsAt,
+        ...omitUndefined({
+          recurrence: serializeWeeklyCountRecurrence({
+            recurrence,
+            startInstant: startsAt,
+          }),
         }),
       });
     },

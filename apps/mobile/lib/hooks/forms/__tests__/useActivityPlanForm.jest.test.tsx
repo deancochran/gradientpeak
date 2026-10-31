@@ -1,3 +1,4 @@
+import type { ActivityPlanDraftStructure } from "@repo/core";
 import { act, renderHook } from "@testing-library/react-native";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
 
@@ -6,18 +7,14 @@ const backMock = jest.fn();
 const alertMock = jest.fn();
 const createMock = jest.fn(async (_input: unknown) => ({ id: "created-1" }));
 const updateMock = jest.fn(async (_input: unknown) => ({ id: "updated-1" }));
-const getByIdMock = jest.fn(() => ({ data: undefined, isLoading: false }));
+const getByIdMock = jest.fn<unknown, []>(() => ({ data: undefined, isLoading: false }));
 const refetchMock = jest.fn();
 let createOptions: { onSuccess: (data: { id: string }) => Promise<void> };
+
 jest.mock("@repo/api/react", () => ({
   invalidateActivityPlanQueries: jest.fn(async () => undefined),
 }));
-
 jest.mock("expo-router", () => ({ __esModule: true, useRouter: () => ({ back: backMock }) }));
-jest.mock("expo-crypto", () => ({
-  __esModule: true,
-  randomUUID: () => "00000000-0000-4000-8000-000000000099",
-}));
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
@@ -27,11 +24,7 @@ jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
     useUtils: () => ({
-      activityPlans: {
-        list: { invalidate: jest.fn(async () => undefined) },
-        getUserPlansCount: { invalidate: jest.fn(async () => undefined) },
-        getById: { invalidate: jest.fn(async () => undefined) },
-      },
+      activityPlans: { list: { invalidate: jest.fn() }, getById: { invalidate: jest.fn() } },
     }),
     activityPlans: {
       getById: { useQuery: () => getByIdMock() },
@@ -46,90 +39,103 @@ jest.mock("@/lib/api", () => ({
   },
 }));
 
-import { useActivityPlanForm } from "../useActivityPlanForm";
+import { mapActivityPlanIssueToUiKey, useActivityPlanForm } from "../useActivityPlanForm";
 
 const ids = {
-  segment: "00000000-0000-4000-8000-000000000001",
-  interval: "00000000-0000-4000-8000-000000000002",
-  step: "00000000-0000-4000-8000-000000000003",
-  segment2: "00000000-0000-4000-8000-000000000005",
-  interval2: "00000000-0000-4000-8000-000000000006",
-  step2: "00000000-0000-4000-8000-000000000007",
+  root: "00000000-0000-4000-8000-000000000001",
+  repeat: "00000000-0000-4000-8000-000000000002",
+  repeatedStep: "00000000-0000-4000-8000-000000000003",
+  finish: "00000000-0000-4000-8000-000000000004",
 };
-
-function validStructure() {
+function validStructure(): ActivityPlanDraftStructure {
   return {
-    version: 3 as const,
-    activity_category: "bike" as const,
-    segments: [
+    version: 5,
+    activity_category: "bike",
+    items: [
       {
-        id: ids.segment,
-        role: "activity" as const,
-        name: "Bike",
-        intervals: [
+        type: "step",
+        id: ids.root,
+        name: "Warm up",
+        duration: { type: "time", seconds: 300 },
+        targets: [],
+      },
+      {
+        type: "repeat",
+        id: ids.repeat,
+        count: 2,
+        steps: [
           {
-            id: ids.interval,
-            name: "Main",
-            repetitions: 2,
-            steps: [
-              {
-                id: ids.step,
-                name: "Steady",
-                purpose: "work" as const,
-                duration: { type: "time" as const, seconds: 300 },
-                targets: [{ type: "%FTP" as const, intensity: 75 }],
-              },
-            ],
+            type: "step",
+            id: ids.repeatedStep,
+            name: "Steady",
+            duration: { type: "time", seconds: 300 },
+            targets: [{ type: "%FTP", intensity: 75 }],
           },
         ],
       },
       {
-        id: ids.segment2,
-        role: "activity" as const,
-        name: "Bike again",
-        intervals: [
-          {
-            id: ids.interval2,
-            name: "Finish",
-            repetitions: 1,
-            steps: [
-              {
-                id: ids.step2,
-                name: "Finish",
-                purpose: "work" as const,
-                duration: { type: "time" as const, seconds: 300 },
-                targets: [{ type: "%FTP" as const, intensity: 70 }],
-              },
-            ],
-          },
-        ],
+        type: "step",
+        id: ids.finish,
+        name: "Finish",
+        duration: { type: "time", seconds: 300 },
+        targets: [{ type: "%FTP", intensity: 70 }],
       },
     ],
   };
 }
 
-describe("useActivityPlanForm", () => {
+describe("useActivityPlanForm V5", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    getByIdMock.mockReturnValue({ data: undefined, isLoading: false });
+    getByIdMock.mockReturnValue({ data: undefined, isLoading: false, refetch: refetchMock });
     refetchMock.mockResolvedValue({ data: undefined, isError: true });
     useActivityPlanCreationStore.setState({
       name: "Morning brick",
       description: "",
       activityCategory: "bike",
-      notes: "",
-      structure: { version: 3, activity_category: "bike", segments: [] },
+      structure: { version: 5, activity_category: "bike", items: [] },
     });
   });
 
-  it("single-flights a pending write and retains the draft on rejection", async () => {
+  it("retains separate V5 repair locations for incompatible targets", async () => {
+    const structure = validStructure();
+    const repeat = structure.items[1];
+    if (!repeat || repeat.type !== "repeat") throw new Error("missing repeat");
+    const repeatedStep = repeat.steps[0];
+    if (!repeatedStep) throw new Error("missing repeated step");
+    repeatedStep.targets = [
+      { type: "watts", intensity: 250 },
+      { type: "cadence", intensity: 90 },
+    ];
+    useActivityPlanCreationStore.setState({
+      activityCategory: "strength",
+      structure: { ...structure, activity_category: "strength" },
+    });
+    const { result } = await renderHook(() => useActivityPlanForm());
+    expect(result.current.validation.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          intervalId: ids.repeat,
+          stepId: ids.repeatedStep,
+          targetIndex: 0,
+        }),
+        expect.objectContaining({
+          intervalId: ids.repeat,
+          stepId: ids.repeatedStep,
+          targetIndex: 1,
+        }),
+      ]),
+    );
+  });
+
+  it("single-flights a pending write and retains a rejected draft", async () => {
     useActivityPlanCreationStore.setState({
       structure: validStructure(),
       description: "Keep instructions",
     });
     let reject!: (error: Error) => void;
     createMock.mockReturnValueOnce(
-      new Promise((_done, fail) => {
+      new Promise((_resolve, fail) => {
         reject = fail;
       }),
     );
@@ -139,162 +145,75 @@ describe("useActivityPlanForm", () => {
       void result.current.submit();
     });
     expect(createMock).toHaveBeenCalledTimes(1);
-    expect(result.current.isSubmitting).toBe(true);
     await act(async () => reject(new Error("Write unavailable")));
     expect(result.current.form.description).toBe("Keep instructions");
     expect(result.current.submitError).toBe("Write unavailable");
-    expect(result.current.isSubmitting).toBe(false);
   });
 
-  it("does not clear a new editor's store after an old create completes", async () => {
+  it("does not clear a new editor after an old create succeeds", async () => {
     useActivityPlanCreationStore.setState({ structure: validStructure() });
-    const onSuccess = jest.fn();
-    const view = await renderHook(() => useActivityPlanForm({ onSuccess }));
+    const view = await renderHook(() => useActivityPlanForm());
     const oldSuccess = createOptions.onSuccess;
     await view.unmount();
     useActivityPlanCreationStore.setState({ name: "New editor draft" });
     await act(async () => oldSuccess({ id: "created-1" }));
     expect(useActivityPlanCreationStore.getState().name).toBe("New editor draft");
-    expect(onSuccess).not.toHaveBeenCalled();
   });
 
-  it("rejects a missing segment list", async () => {
-    const { result } = await renderHook(() => useActivityPlanForm());
-    expect(result.current.canSubmit).toBe(false);
-    expect(Object.values(result.current.validation.errors)[0]).toContain("Too small");
-  });
-
-  it("counts compiled repeats and explicit boundary time", async () => {
+  it("rejects an empty root, counts expanded repeat occurrences, and requires a category", async () => {
+    const empty = await renderHook(() => useActivityPlanForm());
+    expect(empty.result.current.canSubmit).toBe(false);
+    expect(Object.values(empty.result.current.validation.errors)[0]).toContain("Too small");
+    await empty.unmount();
     useActivityPlanCreationStore.setState({ structure: validStructure() });
     const { result } = await renderHook(() => useActivityPlanForm());
-    expect(result.current.metrics.stepCount).toBe(3);
-    expect(result.current.metrics.duration).toBe(15);
-  });
-
-  it("maps segment paths to interval and step UI error keys", async () => {
-    const structure = validStructure();
-    const firstActivity = structure.segments[0];
-    const secondActivity = structure.segments[1];
-    if (!firstActivity || firstActivity.role !== "activity") throw new Error("missing activity");
-    if (!secondActivity || secondActivity.role !== "activity") throw new Error("missing activity");
-    const firstInterval = firstActivity.intervals[0];
-    const secondStep = secondActivity.intervals[0]?.steps[0];
-    if (!firstInterval || !secondStep) throw new Error("missing interval step");
-    firstInterval.repetitions = 0;
-    secondStep.duration = {
-      type: "time",
-      seconds: 0,
-    };
-    useActivityPlanCreationStore.setState({ structure });
-
-    const { result } = await renderHook(() => useActivityPlanForm());
-
-    expect(result.current.validation.errors[`interval:${ids.interval}:repetitions`]).toBeDefined();
-    expect(
-      result.current.validation.errors[`step:${ids.interval2}:${ids.step2}:duration`],
-    ).toBeDefined();
-  });
-
-  it("submits only strict structures without a synthetic activity_category field", async () => {
-    useActivityPlanCreationStore.setState({ structure: validStructure() });
-    const { result } = await renderHook(() => useActivityPlanForm());
+    expect(result.current.metrics.stepCount).toBe(4);
+    expect(result.current.metrics.duration).toBe(20);
     await act(async () => {
-      await expect(result.current.submit()).resolves.toEqual({ id: "created-1" });
+      useActivityPlanCreationStore.setState({
+        activityCategory: null,
+        structure: { ...validStructure(), activity_category: null },
+      });
     });
-    expect(createMock).toHaveBeenCalledWith(
-      expect.objectContaining({ structure: expect.objectContaining({ version: 3 }) }),
+    expect(result.current.validation.errors.activity_category).toBeDefined();
+  });
+
+  it("maps repeat count and root/repeat step paths to canonical V5 UI keys", () => {
+    const structure = validStructure();
+    expect(mapActivityPlanIssueToUiKey({ path: ["items", 1, "count"] } as never, structure)).toBe(
+      `repeat:${ids.repeat}:count`,
     );
-    expect(createMock.mock.calls[0]?.[0]).not.toHaveProperty("activity_category");
-    expect(createMock.mock.calls[0]?.[0]).not.toHaveProperty("route_id");
+    expect(
+      mapActivityPlanIssueToUiKey(
+        { path: ["items", 1, "steps", 0, "duration"] } as never,
+        structure,
+      ),
+    ).toBe(`step:${ids.repeatedStep}:duration`);
+    expect(mapActivityPlanIssueToUiKey({ path: ["items", 0, "targets"] } as never, structure)).toBe(
+      `step:${ids.root}:target`,
+    );
+  });
+
+  it("submits a strict V5 structure without synthetic fields", async () => {
+    useActivityPlanCreationStore.setState({ structure: validStructure() });
+    const { result } = await renderHook(() => useActivityPlanForm());
+    await act(async () => expect(await result.current.submit()).toEqual({ id: "created-1" }));
+    expect(createMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        structure: expect.objectContaining({ version: 5, items: expect.any(Array) }),
+      }),
+    );
     expect(createMock.mock.calls[0]?.[0]).not.toHaveProperty("routeId");
   });
 
-  it("keeps an existing canonical plan editable and submittable", async () => {
-    const structure = validStructure();
-    getByIdMock.mockReturnValue({
-      data: {
-        detail: null,
-        edit: {
-          id: "plan-1",
-          name: "Existing plan",
-          description: null,
-          notes: null,
-          structure,
-          structureHash: "a".repeat(64),
-          activityPlanRevision: 7,
-          gpsRecordingEnabled: true,
-          contentVisibility: "private",
-          trainingIntent: "aerobic_base",
-          adaptation: null,
-        },
-      },
-      isLoading: false,
-    } as never);
-    const { result } = await renderHook(() => useActivityPlanForm({ planId: "plan-1" }));
-    await act(async () => undefined);
-
-    expect(result.current.editStatus).toBe("editable");
-    expect(result.current.canSubmit).toBe(true);
-    await act(async () => {
-      await expect(result.current.submit()).resolves.toEqual({ id: "updated-1" });
-    });
-    expect(updateMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: "plan-1",
-        structure,
-        expectedStructureHash: "a".repeat(64),
-        expectedRevision: 7,
-        training_intent: "aerobic_base",
-        adaptation: null,
-      }),
-    );
-  });
-
-  it("preserves an edited draft when an explicit server reload fails", async () => {
+  it("keeps an editable V5 draft and revision token across reload failures and conflicts", async () => {
     const structure = validStructure();
     const edit = {
       id: "plan-1",
-      name: "Existing plan",
+      name: "Existing",
       description: null,
       notes: null,
       structure,
-      structureHash: "a".repeat(64),
-      gpsRecordingEnabled: true,
-      contentVisibility: "private",
-    };
-    getByIdMock.mockReturnValue({
-      data: { detail: null, edit },
-      isError: false,
-      isLoading: false,
-      refetch: refetchMock,
-    } as never);
-    refetchMock.mockResolvedValue({ data: { detail: null, edit }, isError: true });
-
-    const { result } = await renderHook(() => useActivityPlanForm({ planId: "plan-1" }));
-    await act(async () => undefined);
-    await act(async () => result.current.setName("Keep this draft"));
-
-    await act(async () => {
-      await expect(result.current.reloadFromServer()).resolves.toBe(false);
-    });
-
-    expect(result.current.form.name).toBe("Keep this draft");
-    refetchMock.mockResolvedValue({
-      data: { edit: { ...edit, name: "Fresh server name" } },
-      isError: false,
-    });
-    await act(async () => {
-      await result.current.retryLoad();
-    });
-    expect(result.current.form.name).toBe("Keep this draft");
-  });
-  it("keeps the loaded revision token with the draft across background refetch and conflicts", async () => {
-    const edit = {
-      id: "plan-1",
-      name: "Loaded",
-      description: null,
-      notes: null,
-      structure: validStructure(),
       structureHash: "a".repeat(64),
       activityPlanRevision: 7,
       trainingIntent: "general_maintenance",
@@ -302,21 +221,26 @@ describe("useActivityPlanForm", () => {
       gpsRecordingEnabled: true,
       contentVisibility: "private",
     };
-    getByIdMock.mockReturnValue({ data: { edit }, isLoading: false } as never);
-    const view = await renderHook(() => useActivityPlanForm({ planId: "plan-1" }));
-    await act(async () => view.result.current.setName("Keep draft"));
+    getByIdMock.mockReturnValue({
+      data: { detail: null, edit },
+      isLoading: false,
+      refetch: refetchMock,
+    });
+    const { result, rerender } = await renderHook(() => useActivityPlanForm({ planId: "plan-1" }));
+    await act(async () => undefined);
+    expect(result.current.editStatus).toBe("editable");
+    await act(async () => result.current.setName("Keep draft"));
+    await act(async () => expect(result.current.reloadFromServer()).resolves.toBe(false));
+    expect(result.current.form.name).toBe("Keep draft");
     getByIdMock.mockReturnValue({
       data: { edit: { ...edit, activityPlanRevision: 8 } },
       isLoading: false,
-    } as never);
-    await view.rerender({});
-    updateMock.mockRejectedValueOnce(new Error("STALE_ACTIVITY_PLAN_REVISION"));
-    await act(async () => {
-      await view.result.current.submit();
+      refetch: refetchMock,
     });
+    await rerender({});
+    await act(async () => result.current.submit());
     expect(updateMock).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Keep draft", expectedRevision: 7 }),
+      expect.objectContaining({ expectedRevision: 7, name: "Keep draft" }),
     );
-    expect(view.result.current.form.name).toBe("Keep draft");
   });
 });

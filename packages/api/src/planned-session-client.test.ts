@@ -6,18 +6,16 @@ import {
 } from "./planned-session-client";
 
 describe("buildDirectPlannedSessionCreateInput", () => {
-  it("sends only the saved-plan identity needed for a server-owned snapshot", () => {
+  it("sends only the saved-plan identity needed for a reference-based session", () => {
     const fixture = PLANNED_SESSION_V1_FIXTURES[0];
     const result = buildDirectPlannedSessionCreateInput({
       profileId: fixture.profileId,
       planningDate: fixture.planningDate,
       operationId: "direct-operation-00000000000000000001",
-      activityPlanId: fixture.prescription.resolutionManifest.activity_plan_id,
+      activityPlanId: fixture.activityPlanId,
     });
 
-    expect(result.session.activityPlanId).toBe(
-      fixture.prescription.resolutionManifest.activity_plan_id,
-    );
+    expect(result.session.activityPlanId).toBe(fixture.activityPlanId);
     expect(result.session).not.toHaveProperty("prescription");
     expect(result.session).not.toHaveProperty("capturedAt");
   });

@@ -91,7 +91,7 @@ function CalendarIndexPage() {
     return [...(eventsQuery.data?.items ?? [])].sort(compareCalendarProjectionItems);
   }, [eventsQuery.data?.items]);
   const plannedSessions = projectionItems.flatMap((item) =>
-    item.plannedSession ? [item.plannedSession] : [],
+    item.plannedSession ? [{ session: item.plannedSession, title: item.title }] : [],
   );
   const weekComparison = useMemo(
     () =>
@@ -212,8 +212,8 @@ function CalendarIndexPage() {
         <CardHeader>
           <CardTitle>Personal planned sessions</CardTitle>
           <CardDescription>
-            Immutable snapshots from your saved activity plans. Event-specific calendar items stay
-            in the calendar views below.
+            Current activity-plan details for your scheduled sessions. Event-specific calendar items
+            stay in the calendar views below.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -227,16 +227,13 @@ function CalendarIndexPage() {
             <p className="text-sm text-muted-foreground">Loading personal planned sessions...</p>
           ) : plannedSessions.length > 0 ? (
             <div className="space-y-2">
-              {plannedSessions.map((session) => (
+              {plannedSessions.map(({ session, title }) => (
                 <div
                   className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"
                   key={session.id}
                 >
                   <div>
-                    <p className="font-medium capitalize">
-                      {session.prescription.resolutionManifest.resolved_structure.activity_category}{" "}
-                      session
-                    </p>
+                    <p className="font-medium capitalize">{title}</p>
                     <p className="text-sm text-muted-foreground">
                       {session.planningDate} · {session.lifecycle.status}
                     </p>

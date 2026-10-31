@@ -57,7 +57,11 @@ function requireSingleMapping(scenarioId: AthleteScenarioFixtureId): SystemPlanM
     );
   }
 
-  return mappings[0]!;
+  const [mapping] = mappings;
+  if (!mapping) {
+    throw new Error(`Missing system plan mapping for verification scenario ${scenarioId}`);
+  }
+  return mapping;
 }
 
 function requirePlanName(planId: string): string {
@@ -101,7 +105,9 @@ export function deriveFixtureBackedSystemPlanContracts(
       current_longTermLoad: scenarioFixture.athlete_snapshot.starting_longTermLoad,
       start_date: scenarioFixture.projection_input.expanded_plan.start_date,
       end_date: scenarioFixture.projection_input.expanded_plan.end_date,
-      preference_profile: scenarioFixture.preference_profile,
+      ...(scenarioFixture.preference_profile === undefined
+        ? {}
+        : { preference_profile: scenarioFixture.preference_profile }),
       goals: scenarioFixture.projection_input.expanded_plan.goals,
       expected_mode: override.expected_mode,
       notes: [scenarioFixture.description, ...mappingFixture.audit.limitations, override.notes]

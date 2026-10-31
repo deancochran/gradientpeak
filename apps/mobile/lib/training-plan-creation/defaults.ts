@@ -9,13 +9,14 @@ function getDefaultAnchorDate() {
 }
 
 export function createDefaultTrainingPlanBuilderState(): TrainingPlanBuilderState {
+  const anchorDate = getDefaultAnchorDate();
   return {
     details: {
       name: DEFAULT_TRAINING_PLAN_NAME,
       description: "",
       contentVisibility: "private",
     },
-    anchorDate: getDefaultAnchorDate(),
+    anchorDate,
     athleteContext: createAthletePlanningContextFromSnapshot({
       profile: null,
       profileMetrics: [],
@@ -37,7 +38,7 @@ export function createDefaultTrainingPlanBuilderState(): TrainingPlanBuilderStat
       sessions: [],
     },
     scheduling: {
-      startDate: getDefaultAnchorDate(),
+      startDate: anchorDate,
       preferredWeekdays: [],
       sessionDateOverrides: {},
     },

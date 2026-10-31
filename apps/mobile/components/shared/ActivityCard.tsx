@@ -9,6 +9,7 @@ import { formatDistanceMeters } from "@/lib/display/formatters";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { getPublicShareUrl } from "@/lib/share/public-share-url";
 import {
   type ResourceCardAccessory,
@@ -61,12 +62,16 @@ function formatMetric(
 
 function ActivityMetricsRow({ activity }: { activity: ActivityDisplayModel }) {
   const preferredUnitSystem = usePreferredUnitSystem();
-  const metrics: ResourceMetric[] = activity.metrics.slice(0, 4).map((metric) => ({
-    label: metric.label,
-    value: formatMetric(metric, preferredUnitSystem),
-    tone:
-      metric.key === "common_load" || metric.key === "normalized_intensity" ? "primary" : undefined,
-  }));
+  const metrics: ResourceMetric[] = activity.metrics.slice(0, 4).map((metric) =>
+    omitUndefined({
+      label: metric.label,
+      value: formatMetric(metric, preferredUnitSystem),
+      tone:
+        metric.key === "common_load" || metric.key === "normalized_intensity"
+          ? "primary"
+          : undefined,
+    }),
+  );
 
   if (metrics.length === 0) {
     return null;
@@ -154,7 +159,11 @@ export function ActivityCard({
 
   return (
     <ResourceCardShell
-      accessibilityLabel={onPress ? `Open activity ${activity.title}` : undefined}
+      {...omitUndefined({
+        accessibilityLabel: onPress ? `Open activity ${activity.title}` : undefined,
+        onPress,
+        testID,
+      })}
       actionRegion={
         <ResourceOwnerActionRow
           actions={
@@ -174,14 +183,12 @@ export function ActivityCard({
           }
           categoryItems={categoryItems}
           fallbackLabel="GradientPeak"
-          onOwnerPress={onOwnerPress}
+          {...omitUndefined({ onOwnerPress })}
           owner={attributionOwner}
           timestamp={resolvedDateMode === "none" ? null : activity.time.startedAt}
         />
       }
       contentClassName="gap-3 px-3"
-      onPress={onPress}
-      testID={testID}
     >
       <ResourceCardHeader
         description={showNotes ? activity.notes : null}

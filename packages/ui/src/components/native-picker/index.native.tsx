@@ -1,5 +1,5 @@
 import { Picker } from "@react-native-picker/picker";
-import { type Ref, useEffect, useImperativeHandle, useRef } from "react";
+import { type Ref, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 
 export interface NativePickerProps<T extends string | number> {
   label: string;
@@ -10,6 +10,10 @@ export interface NativePickerProps<T extends string | number> {
   isCurrent?: () => boolean;
   testID?: string;
   ref?: Ref<{ focus: () => void }>;
+  mode?: "dialog" | "dropdown";
+  /** Optional, caller-scoped native modal colors. Regular pickers retain their token styling. */
+  foregroundColor?: string;
+  backgroundColor?: string;
 }
 
 /** UIPickerView on iOS; platform Spinner dialog on Android. No selection styling. */
@@ -22,6 +26,9 @@ export function NativePicker<T extends string | number>({
   disabled = false,
   isCurrent,
   testID,
+  mode = "dialog",
+  foregroundColor,
+  backgroundColor,
 }: NativePickerProps<T>) {
   const picker = useRef<Picker<T>>(null);
   const mounted = useRef(false);
@@ -38,6 +45,13 @@ export function NativePicker<T extends string | number>({
     };
   }, []);
   useImperativeHandle(ref, () => ({ focus: () => picker.current?.focus?.() }));
+  const items = useMemo(
+    () =>
+      options.map((option) => (
+        <Picker.Item key={option.value} label={option.label} value={option.value} />
+      )),
+    [options],
+  );
   return (
     <Picker
       ref={picker}
@@ -45,9 +59,11 @@ export function NativePicker<T extends string | number>({
       testID={testID ?? `${label}-picker`}
       selectedValue={value}
       enabled={!disabled}
-      mode="dialog"
+      mode={mode}
       prompt={label}
-      style={{ width: "100%" }}
+      {...(foregroundColor === undefined ? {} : { dropdownIconColor: foregroundColor })}
+      itemStyle={foregroundColor ? { color: foregroundColor } : undefined}
+      style={{ width: "100%", color: foregroundColor, backgroundColor }}
       onValueChange={(next) => {
         if (
           !mounted.current ||
@@ -63,9 +79,7 @@ export function NativePicker<T extends string | number>({
       {!options.some((option) => option.value === value) ? (
         <Picker.Item label={`${value || "Choose"} (needs selection)`} value={value} />
       ) : null}
-      {options.map((option) => (
-        <Picker.Item key={option.value} label={option.label} value={option.value} />
-      ))}
+      {items}
     </Picker>
   );
 }

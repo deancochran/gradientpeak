@@ -6,48 +6,34 @@ import { ActivityPayloadSchema } from "../activity_payload";
 const planId = "11111111-1111-4111-8111-111111111111";
 const plannedSessionId = "22222222-2222-4222-8222-222222222222";
 const structure = {
-  version: 3 as const,
+  version: 5 as const,
   activity_category: "bike" as const,
-  segments: [
+  items: [
     {
-      id: "44444444-4444-4444-8444-444444444444",
-      role: "activity" as const,
-      name: "Bike",
-      intervals: [
-        {
-          id: "55555555-5555-4555-8555-555555555555",
-          name: "Main",
-          repetitions: 1,
-          steps: [
-            {
-              id: "66666666-6666-4666-8666-666666666666",
-              name: "Tempo",
-              duration: { type: "time" as const, seconds: 900 },
-              targets: [{ type: "RPE" as const, intensity: 6 }],
-            },
-          ],
-        },
-      ],
+      type: "step",
+      id: "66666666-6666-4666-8666-666666666666",
+      name: "Tempo",
+      duration: { type: "time" as const, seconds: 900 },
+      targets: [{ type: "RPE" as const, intensity: 6 }],
     },
   ],
 };
 const structureHash = `v1:sha256:${sha256Hex(stringifyCanonicalJson(structure))}`;
-
 const plannedSession = {
   id: plannedSessionId,
   sessionRevision: 3,
   source: { kind: "direct" as const, operationId: "core-activity-payload-test-operation-01" },
   prescription: {
     resolutionManifest: {
-      resolver_version: "prescription-resolver-v1",
-      policy_version: "training-plan-policy-v1",
+      resolver_version: "prescription-resolver-v2",
+      policy_version: "training-plan-policy-v2",
       training_plan_id: null,
       training_plan_revision: null,
       training_plan_hash: null,
       athlete_context_revision: null,
       activity_plan_id: planId,
       activity_plan_revision: 7,
-      activity_plan_semantic_hash: `v1:sha256:${"a".repeat(64)}`,
+      activity_plan_semantic_hash: `v2:sha256:${"a".repeat(64)}`,
       effective_target_duration_minutes: null,
       effective_target_common_load: null,
       evidence_facts: [],
@@ -58,7 +44,6 @@ const plannedSession = {
         target_common_load: null,
         importance: "normal" as const,
       },
-      adaptation_values: {},
       fallback_level: "system_default_no_context" as const,
       reason_codes: [],
       resolved_structure: structure,
@@ -76,7 +61,6 @@ const plannedSession = {
     capturedAt: "2026-09-01T10:00:00.000Z",
   },
 };
-
 describe("scheduled activity payload", () => {
   it("accepts the exact planned-session prescription and retains all provenance", () => {
     const payload = ActivityPayloadSchema.parse({
@@ -86,11 +70,9 @@ describe("scheduled activity payload", () => {
       plan: { id: planId, name: "Scheduled tempo", structure },
       plannedSession,
     });
-
     expect(payload.plannedSession).toEqual(plannedSession);
     expect(payload.plan?.structure).toEqual(structure);
   });
-
   it("rejects mutable/default plan data substituted for the scheduled snapshot", () => {
     expect(
       ActivityPayloadSchema.safeParse({
@@ -101,14 +83,13 @@ describe("scheduled activity payload", () => {
           name: "Changed default",
           structure: {
             ...structure,
-            segments: [],
+            blocks: [],
           },
         },
         plannedSession,
       }).success,
     ).toBe(false);
   });
-
   it("keeps an unplanned ad-hoc launch valid", () => {
     expect(
       ActivityPayloadSchema.safeParse({

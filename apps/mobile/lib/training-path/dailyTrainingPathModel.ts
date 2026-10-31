@@ -1,4 +1,5 @@
 import { addDaysDateKey } from "@repo/core/plan/trainingLoadTimeline";
+import { omitUndefined } from "@/lib/omitUndefined";
 import type {
   CommonLoadIdentity,
   CompletedObservationState,
@@ -79,7 +80,7 @@ function normalizeDailyTrainingLoadAdjustments(input: {
           )
         : finiteNonnegativeNumber(raw.actualOrScheduledLoad);
 
-    return {
+    return omitUndefined({
       date,
       plannedLoad,
       completedLoad,
@@ -90,7 +91,7 @@ function normalizeDailyTrainingLoadAdjustments(input: {
         (actual, target) => actual - target,
       ),
       plannedDelta: deriveLoad([plannedLoad, targetLoad], (planned, target) => planned - target),
-    };
+    });
   });
 }
 
@@ -214,7 +215,7 @@ export function normalizeDailyTrainingAdjustmentPoints(input: {
 
   return normalizeDailyTrainingLoadAdjustments(input).map((point) => {
     const raw = pointsByDate.get(point.date);
-    return {
+    return omitUndefined({
       ...point,
       completedObservationState: raw?.completedObservationState,
       completedCommonLoadIdentity: raw?.completedCommonLoadIdentity ?? null,
@@ -231,7 +232,7 @@ export function normalizeDailyTrainingAdjustmentPoints(input: {
       scheduledFormTsb: raw?.scheduledFormTsb ?? null,
       readinessScore: raw?.readinessScore ?? null,
       annotations: raw?.annotations ?? [],
-    };
+    });
   });
 }
 

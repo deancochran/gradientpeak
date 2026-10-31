@@ -12,10 +12,16 @@ function emptyReadDb() {
             ? "planned_sessions"
             : "activities";
       if (table) tables.push(table);
-      const builder: Record<string, unknown> = {};
-      for (const method of ["from", "where", "orderBy", "limit"]) builder[method] = () => builder;
-      builder.then = (resolve: (rows: unknown[]) => unknown) =>
-        Promise.resolve(resolve(table === "profiles" ? [{ planningTimezone: "UTC" }] : []));
+      const builder = Object.assign(
+        Promise.resolve(table === "profiles" ? [{ planningTimezone: "UTC" }] : []),
+        {
+          from: () => builder,
+          leftJoin: () => builder,
+          where: () => builder,
+          orderBy: () => builder,
+          limit: () => builder,
+        },
+      );
       return builder;
     },
   };
@@ -37,5 +43,55 @@ describe("drizzle-event-read-repository effective Plan Load inputs", () => {
     expect(tables).toContain("planned_sessions");
     expect(tables).not.toContain("events");
     expect(tables).not.toContain("group_events");
+  });
+
+  it("keeps a new reference-based row's absent legacy provenance nullable", async () => {
+    const newRow = {
+      id: "session-1",
+      planning_date: "2026-07-20",
+      original_target_date: "2026-07-20",
+      status: "scheduled" as const,
+      completed_activity_id: null,
+      training_plan_id: null,
+      training_plan_revision: null,
+      activity_plan_id: "plan-1",
+      activity_plan_revision: null,
+      resolution_manifest: null,
+      prescription_captured_at: null,
+      current_plan_name: "Current run",
+      current_plan_structure: { version: 5, activity_category: "run", items: [] },
+      current_plan_updated_at: new Date("2026-07-20T12:00:00.000Z"),
+    };
+    const db = {
+      select(selection?: Record<string, unknown>) {
+        const result =
+          "planningTimezone" in (selection ?? {})
+            ? [{ planningTimezone: "UTC" }]
+            : "resolution_manifest" in (selection ?? {})
+              ? [newRow]
+              : [];
+        const builder = Object.assign(Promise.resolve(result), {
+          from: () => builder,
+          leftJoin: () => builder,
+          where: () => builder,
+          orderBy: () => builder,
+          limit: () => builder,
+        });
+        return builder;
+      },
+    };
+
+    const result = await createEventReadRepository(db as never).getEffectivePlanLoadInputs({
+      asOf: new Date("2026-07-20T12:00:00.000Z"),
+      profileId: "profile-1",
+    });
+
+    expect(result.plannedSessions).toEqual([
+      expect.objectContaining({
+        id: "session-1",
+        currentPlan: expect.objectContaining({ id: "plan-1", name: "Current run" }),
+        resolutionManifest: null,
+      }),
+    ]);
   });
 });

@@ -6,6 +6,8 @@ import { useEffect, useRef, useState } from "react";
  */
 export function useInputDraft(value: string, identity?: string | number) {
   const [draftValue, setDraftValue] = useState(value);
+  const current = useRef(value);
+  const edited = useRef(false);
   const expectedEchoes = useRef<string[]>([]);
   const previousIdentity = useRef(identity);
 
@@ -14,13 +16,25 @@ export function useInputDraft(value: string, identity?: string | number) {
     previousIdentity.current = identity;
     const isOwnEcho = sameIdentity && expectedEchoes.current.includes(value);
     expectedEchoes.current = [];
-    if (!isOwnEcho) setDraftValue(value);
+    if (!isOwnEcho) {
+      current.current = value;
+      edited.current = false;
+      setDraftValue(value);
+    }
   }, [value, identity]);
 
   const updateDraft = (nextValue: string, echoes: string[] = []) => {
     expectedEchoes.current = [nextValue, ...echoes];
+    current.current = nextValue;
+    edited.current = true;
     setDraftValue(nextValue);
   };
 
-  return [draftValue, updateDraft] as const;
+  const reset = (nextValue = value) => {
+    expectedEchoes.current = [];
+    current.current = nextValue;
+    edited.current = false;
+    setDraftValue(nextValue);
+  };
+  return [draftValue, updateDraft, { current, edited, reset }] as const;
 }

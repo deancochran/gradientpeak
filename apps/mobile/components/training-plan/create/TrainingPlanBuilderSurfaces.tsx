@@ -1,7 +1,10 @@
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { ScrollView, View } from "react-native";
-import type { TrainingPathChartSectionContext } from "@/components/plan/training-path/TrainingPathLoadChartSection";
+import {
+  BuilderActivityAssignmentSheetContent,
+  BuilderActivityAssignmentSheetHeader,
+} from "@/components/training-plan/create/BuilderActivityAssignmentSheetContent";
 import { BuilderAuthoritativeProjectionCard } from "@/components/training-plan/create/BuilderAuthoritativeProjectionCard";
 import { BuilderScheduleEditor } from "@/components/training-plan/create/BuilderScheduleEditor";
 import { BuilderStrategyComposer } from "@/components/training-plan/create/BuilderStrategyComposer";
@@ -19,15 +22,53 @@ export function TrainingPlanBuilderSurfaces({ controller }: TrainingPlanBuilderS
   const contextQueries = [controller.builder.queries.creationContext];
   const hasContextError = contextQueries.some((query) => query.isError);
   const previewError = controller.builder.derived.backendPlanningPreview.error;
-  const renderSelectedDayPanel = (context: TrainingPathChartSectionContext) => (
-    <View className="mx-2">
-      <BuilderScheduleEditor
-        {...scheduleEditor}
-        selectedDayPointOverride={context.selectedDayPoint}
-        showChart={false}
-      />
-    </View>
-  );
+  if (controller.sheetStack.activeSheet === "activityAssignment") {
+    const { activityPicker } = controller;
+    const { activityPlansQuery, activityPlanItems } = controller.builder;
+    return (
+      <View className="flex-1 bg-background" testID="builder-activity-picker-screen">
+        <View className="flex-row items-center gap-3 border-b border-border px-4 py-3">
+          <Button
+            accessibilityLabel="Close activity picker"
+            onPress={() => {
+              controller.actions.cancelPendingSessionDraft();
+              controller.sheetStack.closeSheet();
+            }}
+            size="sm"
+            variant="ghost"
+          >
+            <Text>Back</Text>
+          </Button>
+          <Text className="flex-1 text-lg font-semibold text-foreground">Choose activity</Text>
+        </View>
+        <View className="px-4 pt-3">
+          <BuilderActivityAssignmentSheetHeader
+            activityPlanSort={activityPicker.sort}
+            categoryFilter={activityPicker.categoryFilter}
+            onClearSearch={() => activityPicker.setSearchQuery("")}
+            onOpenFilters={() => controller.sheetStack.pushSheet("activityFilters")}
+            onSearchChange={activityPicker.setSearchQuery}
+            searchQuery={activityPicker.searchQuery}
+          />
+        </View>
+        <BuilderActivityAssignmentSheetContent
+          activityPlanEstimateById={activityPicker.estimateById}
+          activityPlanItems={activityPlanItems}
+          activityPlanSort={activityPicker.sort}
+          categoryFilter={activityPicker.categoryFilter}
+          hasNextPage={activityPlansQuery.hasNextPage}
+          isFetchingNextPage={activityPlansQuery.isFetchingNextPage}
+          isLoading={activityPlansQuery.isLoading}
+          onClearSearch={() => activityPicker.setSearchQuery("")}
+          onFetchNextPage={() => void activityPlansQuery.fetchNextPage()}
+          onOpenFilters={() => controller.sheetStack.pushSheet("activityFilters")}
+          onSearchChange={activityPicker.setSearchQuery}
+          onSelectActivityPlan={activityPicker.selectPlan}
+          searchQuery={activityPicker.searchQuery}
+        />
+      </View>
+    );
+  }
 
   return (
     <ScrollView className="flex-1 bg-background" contentContainerClassName="gap-5 px-4 py-3 pb-10">
@@ -62,7 +103,8 @@ export function TrainingPlanBuilderSurfaces({ controller }: TrainingPlanBuilderS
           }}
           projection={controller.builder.derived.authoritativeProjectionState}
         />
-        <BuilderStrategyComposer {...strategyComposer} renderBelowChart={renderSelectedDayPanel} />
+        <BuilderStrategyComposer {...strategyComposer} />
+        <BuilderScheduleEditor {...scheduleEditor} />
       </View>
     </ScrollView>
   );

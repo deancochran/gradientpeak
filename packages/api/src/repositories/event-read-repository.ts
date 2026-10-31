@@ -1,11 +1,6 @@
 import type { ResolutionManifest } from "@repo/core";
-import type {
-  ActivityPlanRow,
-  ActivityRow,
-  EventRow,
-  ProfileMetricRow,
-  TrainingPlanRow,
-} from "@repo/db";
+import type { ActivityPlanRow, ActivityRow, ProfileMetricRow, TrainingPlanRow } from "@repo/db";
+import type { CurrentPlannedSessionPlan } from "../application/calendar/current-planned-session-projection";
 import type { EventCompletionEventRecord } from "./event-completion-repository";
 
 export interface EventListOwnedInput {
@@ -57,7 +52,6 @@ export type CalendarGoalRecord = {
   target_payload: unknown;
   title: string;
 };
-type SerializedEventDate = { starts_at: string };
 export type EffectivePlanLoadActivityRecord = Pick<
   ActivityRow,
   | "id"
@@ -77,12 +71,14 @@ export type EffectivePlanLoadActivityRecord = Pick<
  * intentionally narrower than the general event-completion record contract.
  */
 export type EffectivePlanLoadPlannedSessionRecord = {
+  currentPlan: CurrentPlannedSessionPlan | null;
   completedActivityId: string | null;
   id: string;
   lifecycleStatus: "scheduled" | "completed" | "cancelled";
   originalTargetDate: string;
   planningDate: string;
-  resolutionManifest: ResolutionManifest;
+  /** Legacy scheduling provenance. New reference-based rows deliberately omit it. */
+  resolutionManifest: ResolutionManifest | null;
   source: {
     trainingPlanId: string | null;
     trainingPlanRevision: number | null;
@@ -210,6 +206,10 @@ export interface EventReadRepository {
     activityPlanIds: string[];
     profileId: string;
   }): Promise<ActivityPlanRow[]>;
+  listCurrentPlannedSessionPlans(input: {
+    activityPlanIds: string[];
+    profileId: string;
+  }): Promise<CurrentPlannedSessionPlan[]>;
   getValidateConstraintsInputs(input: {
     activityPlanId: string;
     asOf: Date;

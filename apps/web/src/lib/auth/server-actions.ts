@@ -219,7 +219,7 @@ export const requestPasswordResetAction = createServerFn({ method: "POST" })
           redirectTo: toAbsoluteAppUrl("/auth/update-password"),
         },
       });
-    } catch (error) {
+    } catch {
       // Do not distinguish an absent account from a delivered reset request.
       throw redirect({
         href: buildFlashHref("/auth/forgot-password", passwordRecoveryAcknowledgement, "success"),

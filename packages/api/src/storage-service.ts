@@ -123,7 +123,7 @@ export function createActivityArtifactStorageService(input: {
  * Backend-owned storage provider for API file flows.
  * This is intentionally a storage concern, not a relational query client.
  */
-export function getApiStorageService() {
+export function getApiStorageService(): SupabaseClient {
   if (!apiStorageServiceSingleton) {
     const { serviceRoleKey, url } = resolveApiStorageServiceConfig();
     apiStorageServiceSingleton = createClient(url, serviceRoleKey, {
@@ -134,7 +134,7 @@ export function getApiStorageService() {
     });
   }
 
-  return apiStorageServiceSingleton as any;
+  return apiStorageServiceSingleton;
 }
 
 /** Server-only adapter for private activity artifacts with bounded streaming reads. */
@@ -145,7 +145,25 @@ export function getActivityArtifactStorageService(): ActivityArtifactStorage {
     activityArtifactStorageSingleton = createActivityArtifactStorageService({
       url,
       serviceRoleKey,
-      storage: genericStorage.storage,
+      storage: {
+        from(bucket) {
+          const storage = genericStorage.storage.from(bucket);
+          return {
+            async upload(path, body, options) {
+              const { error } = await storage.upload(path, body, options);
+              return {
+                error: error
+                  ? {
+                      message: error.message,
+                      ...(error.statusCode === undefined ? {} : { statusCode: error.statusCode }),
+                    }
+                  : null,
+              };
+            },
+            remove: (paths) => storage.remove(paths),
+          };
+        },
+      },
     });
   }
   if (!activityArtifactStorageSingleton) {

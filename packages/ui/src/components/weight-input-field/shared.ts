@@ -1,7 +1,16 @@
 import type { WeightUnit } from "@repo/core/utils/fitness-inputs";
+import type { NumericInputResult } from "@repo/core/utils/numeric-ux-policy";
+import type { Ref } from "react";
 import type { TestProps } from "../../lib/test-props";
 
 export interface WeightInputFieldProps extends TestProps {
+  ref?: Ref<{ focus: () => void }>;
+  disabled?: boolean;
+  onBlur?: () => void;
+  onInputResult?: (result: NumericInputResult) => void;
+  onInvalidChange?: (invalid: boolean) => void;
+  formControl?: object;
+  fieldName?: string;
   label: string;
   valueKg: number | null | undefined;
   /** Change to discard an editable draft even when the numeric value is unchanged. */

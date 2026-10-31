@@ -64,13 +64,17 @@ export default function Avatar({ url, size = 150, onUpload }: Props) {
       }
 
       const image = result.assets[0];
+      if (image === undefined) {
+        Alert.alert("No image was selected. Please choose an image and try again.");
+        return;
+      }
       console.log("Got image", image);
 
       if (!image.uri) {
         throw new Error("No image uri!"); // Realistically, this should never happen, but just in case...
       }
 
-      const fileExt = image.uri?.split(".").pop()?.toLowerCase() ?? "jpeg";
+      const fileExt = image.uri.split(".").pop()?.toLowerCase() ?? "jpeg";
       const fileName = `${Date.now()}.${fileExt}`;
       const fileType: AllowedAvatarMimeType = allowedAvatarMimeTypes.includes(
         image.mimeType as AllowedAvatarMimeType,

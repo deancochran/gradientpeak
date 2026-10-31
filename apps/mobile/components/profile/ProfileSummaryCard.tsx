@@ -4,6 +4,7 @@ import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import type { ReactNode } from "react";
 import { Image, TouchableOpacity, View } from "react-native";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 
 export type ProfileSummary = {
@@ -141,16 +142,16 @@ export function ProfileSummaryCard({
 
         <View className="flex-row gap-3">
           <ProfileStatButton
+            {...omitUndefined({ onPress: onFollowersPress })}
             disabled={!onFollowersPress}
             label="Followers"
-            onPress={onFollowersPress}
             testID={testID ? `${testID}-followers` : "profile-summary-followers"}
             value={formatSocialCount(profile.followers_count, socialCountsStatus)}
           />
           <ProfileStatButton
+            {...omitUndefined({ onPress: onFollowingPress })}
             disabled={!onFollowingPress}
             label="Following"
-            onPress={onFollowingPress}
             testID={testID ? `${testID}-following` : "profile-summary-following"}
             value={formatSocialCount(profile.following_count, socialCountsStatus)}
           />

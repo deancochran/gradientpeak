@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { ContentVisibility } from "@repo/core";
 import {
-  activityPlanAdaptationSchema,
   activityPlanSemanticHash,
   activityPlanStructureSchema,
   activityPlanTrainingIntentSchema,
   consolidateActivityPlanAuthoringText,
+  normalizeActivityPlanAuthoringStructure,
 } from "@repo/core/activity-plan";
+import { getCalendarDateInIanaZone, isValidIanaTimeZone } from "@repo/core/calendar";
 import { activityPlanCreateSchema, activityPlanUpdateSchema } from "@repo/core/schemas";
 import {
   type ActivityPlanInsert,
@@ -27,18 +28,29 @@ import {
   deleteActivityPlanUseCase,
 } from "../application/activity-plans/delete-activity-plan";
 import {
+  ActivityPlanDuplicateAccessError,
+  ActivityPlanDuplicateNotFoundError,
+  duplicateActivityPlan,
+} from "../application/activity-plans/duplicate-activity-plan";
+import {
   type ActivityPlanWithEstimate,
   estimateActivityPlan,
   estimateActivityPlans,
 } from "../application/activity-plans/estimate-activity-plans";
 import {
-  canDuplicateFullActivityPlan,
   toActivityPlanDetail,
   toActivityPlanSummary,
 } from "../application/activity-plans/read-projections";
-import { activityPlanV3StructureHash } from "../application/activity-plans/structure-hash";
-import { getRequiredDb } from "../db";
+import { activityPlanStructureHash } from "../application/activity-plans/structure-hash";
+import {
+  executeWithOperationReceipt,
+  OperationReceiptConflictError,
+  OperationReceiptUnauthorizedError,
+} from "../application/operation-receipts";
+import { type DrizzleQueryExecutor, getRequiredDb } from "../db";
 import { createActivityPlanWriteRepository } from "../infrastructure/repositories";
+import { enqueueGarminActivityPlanRefreshAfterMutation } from "../infrastructure/repositories/drizzle-garmin-training-sync-repository";
+import { enqueueWahooActivityPlanRefreshAfterMutation } from "../lib/provider-sync/planned-activities";
 import { createContentAccessPermissions } from "../permissions/content-access";
 import { getLikeStats, loadLikeStats } from "../repositories/like-stats";
 import { captureApiError } from "../telemetry";
@@ -118,6 +130,40 @@ const serializedActivityPlanSchema = activityPlanRowSchema.transform((row) => ({
   updated_at: row.updated_at.toISOString(),
 }));
 
+const activityPlanMutationOutputSchema = z
+  .object({
+    activity_category: publicActivityCategorySchema,
+    activityPlanRevision: z.number().int().positive(),
+    content_type: z.literal("activity_plan"),
+    content_id: uuidSchema,
+    owner_profile_id: uuidSchema.nullable(),
+    visibility: contentVisibilitySchema,
+    created_at: z.string().datetime(),
+    updated_at: z.string().datetime(),
+  })
+  .passthrough()
+  .transform((row, ctx) => {
+    const parsed = activityPlanRowSchema.passthrough().safeParse({
+      ...row,
+      created_at: typeof row.created_at === "string" ? new Date(row.created_at) : row.created_at,
+      updated_at: typeof row.updated_at === "string" ? new Date(row.updated_at) : row.updated_at,
+    });
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues)
+        ctx.addIssue({ ...issue, path: issue.path as Array<string | number> });
+      return z.NEVER;
+    }
+    return {
+      ...serializedActivityPlanSchema.parse(activityPlanRowSchema.strip().parse(parsed.data)),
+      activity_category: row.activity_category,
+      activityPlanRevision: row.activityPlanRevision,
+      content_type: row.content_type,
+      content_id: row.content_id,
+      owner_profile_id: row.owner_profile_id,
+      visibility: row.visibility,
+    };
+  });
+
 function consolidateActivityPlanSave(input: {
   description?: string | null;
   notes?: string | null;
@@ -126,7 +172,6 @@ function consolidateActivityPlanSave(input: {
   const structure = activityPlanStructureSchema.parse(input.structure);
   const consolidated = consolidateActivityPlanAuthoringText({
     description: input.description,
-    notes: input.notes,
     structure,
   });
   if (consolidated.status === "too_long") {
@@ -141,12 +186,15 @@ function consolidateActivityPlanSave(input: {
   };
 }
 
-const createActivityPlanInput = activityPlanCreateSchema.safeExtend({
+export const createActivityPlanInput = activityPlanCreateSchema.safeExtend({
   gps_recording_enabled: z.boolean().default(true),
   structure: activityPlanStructureSchema,
   content_visibility: contentVisibilitySchema.optional(),
   training_intent: activityPlanTrainingIntentSchema.default("general_maintenance"),
-  adaptation: activityPlanAdaptationSchema.nullable().default(null),
+  operationId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{32,128}$/)
+    .optional(),
 });
 
 const updateActivityPlanInput = activityPlanUpdateSchema.safeExtend({
@@ -154,20 +202,24 @@ const updateActivityPlanInput = activityPlanUpdateSchema.safeExtend({
   structure: activityPlanStructureSchema.optional(),
   content_visibility: contentVisibilitySchema.optional(),
   training_intent: activityPlanTrainingIntentSchema.optional(),
-  adaptation: activityPlanAdaptationSchema.nullable().optional(),
 });
 
-const updateActivityPlanWithIdInput = updateActivityPlanInput
+export const updateActivityPlanWithIdInput = updateActivityPlanInput
   .safeExtend({
     id: uuidSchema,
     expectedStructureHash: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
     expectedRevision: z.number().int().positive(),
+    operationId: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{32,128}$/)
+      .optional(),
   })
   .strict()
   .superRefine((input, ctx) => {
     const updateKeys = Object.entries(input).filter(
       ([key, value]) =>
-        !["id", "expectedStructureHash", "expectedRevision"].includes(key) && value !== undefined,
+        !["id", "expectedStructureHash", "expectedRevision", "operationId"].includes(key) &&
+        value !== undefined,
     );
     if (updateKeys.length === 0) {
       ctx.addIssue({
@@ -193,6 +245,20 @@ function toPublicActivityPlan<T extends { structure: unknown; revision: number }
     activity_category: parsed.data.activity_category,
     activityPlanRevision: plan.revision,
   };
+}
+
+function mapOperationReceiptError(error: unknown): never {
+  if (error instanceof OperationReceiptConflictError)
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: "Operation ID was already used differently.",
+    });
+  if (error instanceof OperationReceiptUnauthorizedError)
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Activity plan not found or you don't have permission to edit it",
+    });
+  throw error;
 }
 
 type SerializedActivityPlan = z.output<typeof serializedActivityPlanSchema>;
@@ -278,10 +344,7 @@ async function requireActivityPlanReadForRow(input: {
   });
 }
 
-async function getProfileDefaultContentVisibility(
-  db: ReturnType<typeof getRequiredDb>,
-  profileId: string,
-) {
+async function getProfileDefaultContentVisibility(db: DrizzleQueryExecutor, profileId: string) {
   let profile: { defaultContentVisibility: "private" | "followers" | "public" } | undefined;
   try {
     [profile] = await db
@@ -336,7 +399,6 @@ function buildCreateValues(
   const consolidated = consolidateActivityPlanSave({
     structure: input.structure,
     ...(input.description === undefined ? {} : { description: input.description }),
-    ...(input.notes === undefined ? {} : { notes: input.notes }),
   });
   return {
     id: randomUUID(),
@@ -348,11 +410,9 @@ function buildCreateValues(
     notes: consolidated.notes,
     training_intent: input.training_intent,
     structure: consolidated.structure,
-    adaptation: input.adaptation,
-    structure_hash: activityPlanV3StructureHash(consolidated.structure),
+    structure_hash: activityPlanStructureHash(consolidated.structure),
     semantic_hash: activityPlanSemanticHash({
       structure: consolidated.structure,
-      adaptation: input.adaptation,
       trainingIntent: input.training_intent,
     }),
     gps_recording_enabled: input.gps_recording_enabled,
@@ -611,7 +671,6 @@ export const activityPlansRouter = createTRPCRouter({
               gpsRecordingEnabled: plan.gps_recording_enabled,
               contentVisibility: plan.content_visibility,
               trainingIntent: plan.training_intent,
-              adaptation: plan.adaptation,
             }
           : null,
     };
@@ -674,10 +733,13 @@ export const activityPlansRouter = createTRPCRouter({
 
   create: protectedProcedure.input(createActivityPlanInput).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
+    const { operationId: _operationId, ...receiptInput } = input;
+    let authoring: ReturnType<typeof parseActivityPlanAuthoringContent>;
     try {
-      parseActivityPlanAuthoringContent({
-        structure: input.structure,
-        adaptation: input.adaptation,
+      const normalized = normalizeActivityPlanAuthoringStructure(input.structure);
+      if (!normalized.success) throw new Error(normalized.message);
+      authoring = parseActivityPlanAuthoringContent({
+        structure: normalized.structure,
         training_intent: input.training_intent,
       });
     } catch (validationError) {
@@ -688,177 +750,252 @@ export const activityPlansRouter = createTRPCRouter({
       });
     }
 
-    const defaultContentVisibility = await getProfileDefaultContentVisibility(
-      db,
-      ctx.session.user.id,
-    );
-
-    const [createdRow] = await db
-      .insert(activityPlans)
-      .values(buildCreateValues(input, ctx.session.user.id, defaultContentVisibility))
-      .returning();
-
-    if (!createdRow) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to create activity plan",
-      });
+    try {
+      return await db.transaction((tx) =>
+        executeWithOperationReceipt({
+          tx,
+          actorId: ctx.session.user.id,
+          ...(input.operationId ? { operationId: input.operationId } : {}),
+          command: "chatbot.activity-plans.create",
+          semanticInput: {
+            ...receiptInput,
+            structure: authoring.structure,
+            training_intent: authoring.intent.training_intent,
+          },
+          output: activityPlanMutationOutputSchema,
+          // A protected procedure plus the activity_plans profile foreign key is
+          // the creation authority; there is no existing resource to own yet.
+          authorize: async () => true,
+          mutate: async (executor) => {
+            const defaultContentVisibility = await getProfileDefaultContentVisibility(
+              executor,
+              ctx.session.user.id,
+            );
+            const [createdRow] = await executor
+              .insert(activityPlans)
+              .values(
+                buildCreateValues(
+                  {
+                    ...input,
+                    structure: authoring.structure,
+                    training_intent: authoring.intent.training_intent,
+                  },
+                  ctx.session.user.id,
+                  defaultContentVisibility,
+                ),
+              )
+              .returning();
+            if (!createdRow) throw new Error("Failed to create activity plan");
+            const planWithEstimation = await estimateActivityPlan(
+              serializeActivityPlanRow(createdRow),
+              executor,
+              ctx.session.user.id,
+            );
+            return toPublicActivityPlan(withIdentityFields(planWithEstimation));
+          },
+        }),
+      );
+    } catch (error) {
+      return mapOperationReceiptError(error);
     }
-
-    const planWithEstimation = await estimateActivityPlan(
-      serializeActivityPlanRow(createdRow),
-      db,
-      ctx.session.user.id,
-    );
-
-    return toPublicActivityPlan(withIdentityFields(planWithEstimation));
   }),
 
   update: protectedProcedure
     .input(updateActivityPlanWithIdInput)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const { id, expectedStructureHash, expectedRevision, ...updates } = input;
+      const { id, expectedStructureHash, expectedRevision, operationId, ...updates } = input;
 
-      const [existingRow] = await db
-        .select()
-        .from(activityPlans)
-        .where(and(eq(activityPlans.id, id), eq(activityPlans.profile_id, ctx.session.user.id)))
-        .limit(1);
-
-      if (!existingRow) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Activity plan not found or you don't have permission to edit it",
-        });
+      // Normalize only an explicitly supplied new structure. A metadata-only
+      // update must not rewrite legacy saved target values.
+      if (updates.structure !== undefined) {
+        const normalized = normalizeActivityPlanAuthoringStructure(updates.structure);
+        if (!normalized.success)
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: normalized.message,
+            cause: new Error(normalized.message),
+          });
+        updates.structure = normalized.structure;
       }
 
-      if (existingRow.revision !== expectedRevision) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "STALE_ACTIVITY_PLAN_REVISION",
-          cause: {
-            code: "STALE_ACTIVITY_PLAN_REVISION",
-            expectedRevision,
-            currentRevision: existingRow.revision,
-          },
-        });
-      }
-      if (!activityPlanRowSchema.safeParse(existingRow).success) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Stored activity plan is not valid",
-        });
-      }
-      if (existingRow.structure_hash !== expectedStructureHash) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "STALE_STRUCTURE_HASH",
-          cause: {
-            code: "STALE_STRUCTURE_HASH",
-            expectedStructureHash,
-            currentStructureHash: existingRow.structure_hash,
-          },
-        });
-      }
-
-      const consolidated = consolidateActivityPlanSave({
-        description:
-          updates.description === undefined ? existingRow.description : updates.description,
-        notes: updates.notes === undefined ? existingRow.notes : updates.notes,
-        structure: updates.structure ?? existingRow.structure,
-      });
-      const normalizedExisting = consolidateActivityPlanSave({
-        description: existingRow.description,
-        notes: existingRow.notes,
-        structure: existingRow.structure,
-      });
+      const receiptInput = { id, expectedStructureHash, expectedRevision, ...updates };
       try {
-        const trainingIntent = updates.training_intent ?? existingRow.training_intent;
-        parseActivityPlanAuthoringContent({
-          structure: consolidated.structure,
-          adaptation:
-            updates.adaptation === undefined ? existingRow.adaptation : updates.adaptation,
-          training_intent: trainingIntent,
-        });
-      } catch (validationError) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Invalid activity plan structure",
-          cause: validationError,
-        });
+        return await db.transaction((tx) =>
+          executeWithOperationReceipt({
+            tx,
+            actorId: ctx.session.user.id,
+            ...(operationId ? { operationId } : {}),
+            command: "chatbot.activity-plans.update",
+            semanticInput: receiptInput,
+            output: activityPlanMutationOutputSchema,
+            // Do not apply the caller's optimistic version to replay authorization.
+            authorize: async (executor) => {
+              const [owned] = await executor
+                .select({ id: activityPlans.id })
+                .from(activityPlans)
+                .where(
+                  and(eq(activityPlans.id, id), eq(activityPlans.profile_id, ctx.session.user.id)),
+                )
+                .limit(1);
+              return !!owned;
+            },
+            mutate: async (executor) => {
+              const [existingRow] = await executor
+                .select()
+                .from(activityPlans)
+                .where(
+                  and(eq(activityPlans.id, id), eq(activityPlans.profile_id, ctx.session.user.id)),
+                )
+                .limit(1);
+              if (!existingRow) throw new OperationReceiptUnauthorizedError();
+              if (existingRow.revision !== expectedRevision)
+                throw new TRPCError({
+                  code: "CONFLICT",
+                  message: "STALE_ACTIVITY_PLAN_REVISION",
+                  cause: {
+                    code: "STALE_ACTIVITY_PLAN_REVISION",
+                    expectedRevision,
+                    currentRevision: existingRow.revision,
+                  },
+                });
+              if (!activityPlanRowSchema.safeParse(existingRow).success)
+                throw new TRPCError({
+                  code: "INTERNAL_SERVER_ERROR",
+                  message: "Stored activity plan is not valid",
+                });
+              if (existingRow.structure_hash !== expectedStructureHash)
+                throw new TRPCError({
+                  code: "CONFLICT",
+                  message: "STALE_STRUCTURE_HASH",
+                  cause: {
+                    code: "STALE_STRUCTURE_HASH",
+                    expectedStructureHash,
+                    currentStructureHash: existingRow.structure_hash,
+                  },
+                });
+
+              const consolidated = consolidateActivityPlanSave({
+                description:
+                  updates.description === undefined ? existingRow.description : updates.description,
+                structure: updates.structure ?? existingRow.structure,
+              });
+              const normalizedExisting = consolidateActivityPlanSave({
+                description: existingRow.description,
+                structure: existingRow.structure,
+              });
+              try {
+                const authoring = parseActivityPlanAuthoringContent({
+                  structure: consolidated.structure,
+                  training_intent: updates.training_intent ?? existingRow.training_intent,
+                });
+                consolidated.structure = authoring.structure;
+                updates.training_intent = authoring.intent.training_intent;
+              } catch (validationError) {
+                throw new TRPCError({
+                  code: "BAD_REQUEST",
+                  message: "Invalid activity plan structure",
+                  cause: validationError,
+                });
+              }
+              const updateValues: Omit<Partial<ActivityPlanInsert>, "revision"> & {
+                revision?: number | SQL;
+              } = {
+                updated_at: new Date(),
+                ...(updates.name === undefined ? {} : { name: updates.name }),
+                description: consolidated.description,
+                notes: consolidated.notes,
+                ...(updates.training_intent === undefined
+                  ? {}
+                  : { training_intent: updates.training_intent }),
+                structure: consolidated.structure,
+                structure_hash: activityPlanStructureHash(consolidated.structure),
+                ...(updates.gps_recording_enabled === undefined
+                  ? {}
+                  : { gps_recording_enabled: updates.gps_recording_enabled }),
+                ...(updates.content_visibility === undefined
+                  ? {}
+                  : { content_visibility: updates.content_visibility }),
+              };
+              const structureChanged = !isDeepStrictEqual(
+                consolidated.structure,
+                normalizedExisting.structure,
+              );
+              const intentChanged =
+                updates.training_intent !== undefined &&
+                updates.training_intent !== existingRow.training_intent;
+              if (structureChanged || intentChanged) {
+                updateValues.revision = sql`${activityPlans.revision} + 1`;
+                updateValues.semantic_hash = activityPlanSemanticHash({
+                  structure: activityPlanStructureSchema.parse(consolidated.structure),
+                  trainingIntent: updates.training_intent ?? existingRow.training_intent,
+                });
+              }
+              const [row] = await executor
+                .update(activityPlans)
+                .set(updateValues)
+                .where(
+                  and(
+                    eq(activityPlans.id, id),
+                    eq(activityPlans.profile_id, ctx.session.user.id),
+                    eq(activityPlans.structure_hash, expectedStructureHash),
+                    // Prevent a semantic edit racing after effective-document validation.
+                    eq(activityPlans.revision, expectedRevision),
+                  ),
+                )
+                .returning();
+              if (!row)
+                throw new TRPCError({
+                  code: "CONFLICT",
+                  message: "STALE_ACTIVITY_PLAN_REVISION",
+                  cause: {
+                    code: "STALE_ACTIVITY_PLAN_REVISION",
+                    expectedRevision,
+                    expectedStructureHash,
+                  },
+                });
+
+              const [profile] = await executor
+                .select({ planningTimezone: profiles.planning_timezone })
+                .from(profiles)
+                .where(eq(profiles.id, ctx.session.user.id))
+                .limit(1);
+              const planningTimezone =
+                profile?.planningTimezone && isValidIanaTimeZone(profile.planningTimezone)
+                  ? profile.planningTimezone
+                  : "UTC";
+
+              const refresh = await enqueueWahooActivityPlanRefreshAfterMutation({
+                activityPlanId: id,
+                db,
+                profileId: ctx.session.user.id,
+                transaction: executor,
+                upcomingOnOrAfter: getCalendarDateInIanaZone(
+                  new Date().toISOString(),
+                  planningTimezone,
+                ),
+              });
+              if (refresh?.success === false) {
+                throw new Error("Unable to durably enqueue activity-plan provider refresh");
+              }
+              await enqueueGarminActivityPlanRefreshAfterMutation({
+                activityPlanId: id,
+                db,
+                profileId: ctx.session.user.id,
+                transaction: executor,
+              });
+              const planWithEstimation = await estimateActivityPlan(
+                serializeActivityPlanRow(row),
+                executor,
+                ctx.session.user.id,
+              );
+              return toPublicActivityPlan(withIdentityFields(planWithEstimation));
+            },
+          }),
+        );
+      } catch (error) {
+        return mapOperationReceiptError(error);
       }
-
-      const updateValues: Omit<Partial<ActivityPlanInsert>, "revision"> & {
-        revision?: number | SQL;
-      } = {
-        updated_at: new Date(),
-        name: updates.name,
-        description: consolidated.description,
-        notes: consolidated.notes,
-        training_intent: updates.training_intent,
-        structure: consolidated.structure,
-        adaptation: updates.adaptation,
-        structure_hash: activityPlanV3StructureHash(consolidated.structure),
-        gps_recording_enabled: updates.gps_recording_enabled,
-        content_visibility: updates.content_visibility,
-      };
-
-      const structureChanged = !isDeepStrictEqual(
-        consolidated.structure,
-        normalizedExisting.structure,
-      );
-      const adaptationChanged =
-        updates.adaptation !== undefined &&
-        !isDeepStrictEqual(updates.adaptation, existingRow.adaptation);
-      const intentChanged =
-        updates.training_intent !== undefined &&
-        updates.training_intent !== existingRow.training_intent;
-      if (structureChanged || adaptationChanged || intentChanged) {
-        updateValues.revision = sql`${activityPlans.revision} + 1`;
-        const effectiveStructure = activityPlanStructureSchema.parse(consolidated.structure);
-        const effectiveAdaptation = activityPlanAdaptationSchema
-          .nullable()
-          .parse(updates.adaptation === undefined ? existingRow.adaptation : updates.adaptation);
-        const effectiveTrainingIntent = updates.training_intent ?? existingRow.training_intent;
-        updateValues.semantic_hash = activityPlanSemanticHash({
-          structure: effectiveStructure,
-          adaptation: effectiveAdaptation,
-          trainingIntent: effectiveTrainingIntent,
-        });
-      }
-
-      const [updatedRow] = await db
-        .update(activityPlans)
-        .set(updateValues)
-        .where(
-          and(
-            eq(activityPlans.id, id),
-            eq(activityPlans.profile_id, ctx.session.user.id),
-            eq(activityPlans.structure_hash, expectedStructureHash),
-            // Prevent a semantic edit racing after effective-document validation.
-            eq(activityPlans.revision, expectedRevision),
-          ),
-        )
-        .returning();
-
-      if (!updatedRow) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "STALE_ACTIVITY_PLAN_REVISION",
-          cause: { code: "STALE_ACTIVITY_PLAN_REVISION", expectedRevision, expectedStructureHash },
-        });
-      }
-
-      const planWithEstimation = await estimateActivityPlan(
-        serializeActivityPlanRow(updatedRow),
-        db,
-        ctx.session.user.id,
-      );
-
-      return {
-        ...toPublicActivityPlan(withIdentityFields(planWithEstimation)),
-      };
     }),
 
   delete: protectedProcedure.input(activityPlanIdInputSchema).mutation(async ({ ctx, input }) => {
@@ -895,67 +1032,38 @@ export const activityPlansRouter = createTRPCRouter({
         .from(activityPlans)
         .where(eq(activityPlans.id, input.id))
         .limit(1);
-
       if (!originalRow) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Original activity plan not found",
-        });
+        throw new TRPCError({ code: "NOT_FOUND", message: "Original activity plan not found" });
       }
-
       await requireActivityPlanReadForRow({ db, plan: originalRow, userId: ctx.session.user.id });
-
-      if (!canDuplicateFullActivityPlan(originalRow, ctx.session.user.id)) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Only the plan owner can duplicate this activity plan",
-        });
-      }
-
-      const originalPlan = serializeActivityPlanRow(originalRow);
-
-      try {
-        parseActivityPlanAuthoringContent(originalPlan);
-      } catch (validationError) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Original plan does not satisfy current authoring policy",
-          cause: validationError,
-        });
-      }
-
-      const now = new Date();
-      const [duplicatedRow] = await db
-        .insert(activityPlans)
-        .values({
-          id: randomUUID(),
-          created_at: now,
-          updated_at: now,
-          name: input.newName?.trim() || `${originalPlan.name} (Copy)`,
-          description: originalPlan.description,
-          notes: originalRow.notes ?? null,
-          structure: originalPlan.structure,
-          structure_hash: activityPlanV3StructureHash(originalPlan.structure),
-          adaptation: originalPlan.adaptation,
-          training_intent: originalPlan.training_intent,
-          semantic_hash: activityPlanSemanticHash({
-            structure: originalPlan.structure,
-            adaptation: originalPlan.adaptation,
-            trainingIntent: originalPlan.training_intent,
-          }),
-          gps_recording_enabled: originalPlan.gps_recording_enabled,
-          profile_id: ctx.session.user.id,
-          content_visibility: "private",
-          is_system_template: false,
-        })
-        .returning();
-
-      if (!duplicatedRow) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Failed to duplicate activity plan",
-        });
-      }
+      const duplicatedRow = await (async () => {
+        try {
+          return await duplicateActivityPlan({
+            db,
+            profileId: ctx.session.user.id,
+            sourceActivityPlanId: input.id,
+            ...(input.newName === undefined ? {} : { newName: input.newName }),
+          });
+        } catch (error) {
+          if (error instanceof ActivityPlanDuplicateNotFoundError) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Original activity plan not found" });
+          }
+          if (error instanceof ActivityPlanDuplicateAccessError) {
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Only the plan owner can duplicate this activity plan",
+            });
+          }
+          if (error instanceof z.ZodError) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "Original plan does not satisfy current authoring policy",
+              cause: error,
+            });
+          }
+          throw error;
+        }
+      })();
 
       const planWithEstimation = await estimateActivityPlan(
         serializeActivityPlanRow(duplicatedRow),

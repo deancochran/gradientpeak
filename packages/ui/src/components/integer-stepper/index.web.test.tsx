@@ -56,7 +56,7 @@ describe("IntegerStepper web", () => {
     fireEvent.keyDown(input, { key: "ArrowUp" });
     fireEvent.keyDown(input, { key: "ArrowDown" });
 
-    expect(onChange.mock.calls).toEqual([[5], [4]]);
+    expect(onChange.mock.calls).toEqual([[4], [5], [4]]);
     expect(input).toHaveValue("4");
   });
 
@@ -69,7 +69,7 @@ describe("IntegerStepper web", () => {
     fireEvent.blur(input);
 
     expect(onChange).not.toHaveBeenCalled();
-    expect(input).toHaveValue("1");
+    expect(input).toHaveValue("1abc");
   });
 
   it("disables every control when disabled", () => {

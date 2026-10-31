@@ -1,4 +1,6 @@
 import type { Page } from "@playwright/test";
+import { activities } from "@repo/db/schema";
+import { and, eq } from "drizzle-orm";
 import { deleteImportedActivity } from "../activities/fixture-files";
 import { expect, test } from "../fixtures";
 import { RecordingPage } from "../pages";
@@ -32,17 +34,44 @@ test("[variation:recording.plan:keyboard-review] keyboard-selected plan remains 
   await recording.startFromLauncher("keyboard");
   await waitForActiveRecordingDraft(athletePage);
   await recording.finish("keyboard");
-  await expect(athletePage.getByText("Playwright Tempo Builder", { exact: true })).toBeVisible();
+  await expect(
+    athletePage
+      .getByRole("region", { name: "Review recording" })
+      .getByText("Playwright Tempo Builder", { exact: true }),
+  ).toBeVisible();
   await recording.discard("keyboard");
 });
 
 test("[variation:recording.plan:activity-history] saved plan recording opens from history and preserves its plan relationship after back-forward", async ({
   athletePage,
+  athleteActor,
+  e2eDatabase,
 }) => {
+  const profileId = athleteActor.profileId;
+  if (!profileId) throw new Error("An owned athlete profile is required");
   let activityId = "";
   const recording = new RecordingPage(athletePage);
   try {
     await chooseTempoPlan(athletePage);
+    const planId = athleteActor.activityPlanId;
+    const assertPlanAssociation = async () => {
+      await expect(athletePage).toHaveURL(new RegExp(`/activities/${activityId}$`));
+      await expect(
+        athletePage.getByRole("heading", { name: "Context", exact: true }),
+      ).toBeVisible();
+      await expect(
+        athletePage
+          .getByText("Linked activity plan", { exact: true })
+          .locator("..")
+          .getByText("Playwright Tempo Builder", { exact: true }),
+      ).toBeVisible();
+      expect(
+        await e2eDatabase.db
+          .select({ planId: activities.activity_plan_id })
+          .from(activities)
+          .where(and(eq(activities.id, activityId), eq(activities.profile_id, profileId))),
+      ).toEqual([{ planId }]);
+    };
     await recording.startFromLauncher();
     await waitForActiveRecordingDraft(athletePage);
     await recording.finish();
@@ -51,15 +80,15 @@ test("[variation:recording.plan:activity-history] saved plan recording opens fro
     await expect(open).toBeVisible({ timeout: 20_000 });
     await open.click();
     activityId = athletePage.url().match(/\/activities\/([0-9a-f-]+)/)?.[1] ?? "";
+    expect(activityId).not.toBe("");
+    await assertPlanAssociation();
     await athletePage.goto("/activities");
     await athletePage.getByTestId(`activity-card-${activityId}-open`).click();
-    await expect(athletePage.getByText("Playwright Tempo Builder", { exact: true })).toBeVisible();
+    await assertPlanAssociation();
     await athletePage.goBack();
     await expect(athletePage.getByTestId(`activity-card-${activityId}`)).toBeVisible();
     await athletePage.goForward();
-    await expect(
-      athletePage.getByRole("heading", { name: "Playwright Tempo Builder" }),
-    ).toBeVisible();
+    await assertPlanAssociation();
   } finally {
     await deleteImportedActivity(athletePage, activityId);
   }
@@ -107,7 +136,7 @@ test("[variation:recording.recovery:review-history] recovered review survives a 
   await athletePage.goBack();
   await expect(athletePage.getByRole("heading", { name: /review recording/i })).toBeVisible();
   await athletePage.getByRole("button", { name: /^discard$/i }).click();
-  await expect(athletePage.getByText(/no recording session/i)).toBeVisible();
+  await expect(athletePage.getByRole("button", { name: /^start$/i })).toBeEnabled();
 });
 
 test("[variation:recording.recovery:double-reload] two reloads keep the same paused recovery and produce one discardable review", async ({
@@ -199,7 +228,6 @@ test("[variation:recording.offline:feature-navigation] queued save remains the s
     await athletePage.context().setOffline(false);
     await athletePage.goto("/activities");
     await new RecordingPage(athletePage).openLauncher();
-    await athletePage.getByRole("button", { name: /^return to recorder$/i }).click();
     await expect(athletePage.getByRole("heading", { name: /review recording/i })).toBeVisible();
     expect(await recordingSubmissionJobCount(athletePage)).toBe(1);
     await athletePage.getByRole("button", { name: /retry now/i }).click();

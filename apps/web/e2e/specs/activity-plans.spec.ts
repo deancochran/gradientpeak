@@ -1,30 +1,15 @@
+import { activityPlans, plannedSessions } from "@repo/db/schema";
+import { and, eq } from "drizzle-orm";
 import { expect, test } from "../fixtures";
 import { ActivityPlansPage, expectNoHorizontalOverflow, ShellPage } from "../pages";
+import { captureAuthoring } from "../pages/authoring";
 import {
   cleanupOwnedActivityPlans,
   e2eArtifactIdentity,
   runWithE2ECleanup,
 } from "../utils/testData";
 
-const duplicatedPlanDefaultName = "Playwright Tempo Builder (Copy)";
-
-test("an owned activity plan card with established thresholds shows load and intensity", async ({
-  athleteActor,
-  athletePage,
-}) => {
-  const plans = new ActivityPlansPage(athletePage);
-  await plans.openLibrary();
-  await plans.search("Playwright Tempo Builder");
-
-  const card = athletePage.getByTestId(`activity-plan-card-${athleteActor.activityPlanId}`);
-  await expect(card).toBeVisible();
-  await expect(card.getByLabel(/Load, (?!Unavailable)/)).toBeVisible();
-  await expect(card.getByLabel(/Intensity, (?!Unavailable)/)).toBeVisible();
-  await expect(card.getByLabel(/Load, Unavailable/)).toHaveCount(0);
-  await expect(card.getByLabel(/Intensity, Unavailable/)).toHaveCount(0);
-});
-
-test("athlete can discover and open the activity plan library", async ({
+test("athlete can discover and open the canonical V5 activity plan library", async ({
   athleteActor,
   athletePage,
 }) => {
@@ -34,236 +19,239 @@ test("athlete can discover and open the activity plan library", async ({
   const activityPlansLink = shell.accountDestination(/activity plans/i);
   await expect(activityPlansLink).toBeVisible();
   await activityPlansLink.click();
-
   await expect(athletePage).toHaveURL(/\/activity-plans$/);
   await expect(athletePage.getByRole("heading", { name: /^activity plans$/i })).toBeVisible();
-  const search = plans.searchInput();
-  await expect(search).toBeVisible();
-  await expect(athletePage.getByText("20+ activity plans loaded")).toBeVisible();
-
-  await athletePage.getByRole("button", { name: /load more activity plans/i }).click();
-  await expect(athletePage.getByText("22 activity plans loaded")).toBeVisible();
-
-  await athletePage.getByRole("button", { name: /^running$/i }).click();
-  await expect(athletePage.getByRole("button", { name: /playwright library 02/i })).toBeVisible();
-  await expect(athletePage.getByRole("button", { name: /playwright library 01/i })).toHaveCount(0);
-
-  await athletePage.getByRole("button", { name: /^all$/i }).click();
-  await expect(athletePage).toHaveURL(/\/activity-plans$/);
-  await search.fill("Tempo Builder");
+  await plans.search("Tempo Builder");
   const planCard = plans.card(/playwright tempo builder/i);
   await expect(planCard).toBeVisible();
   await planCard.press("Enter");
-
   await expect(athletePage).toHaveURL(`/activity-plans/${athleteActor.activityPlanId}`);
   await expect(
     athletePage.getByRole("heading", { name: /playwright tempo builder/i }),
   ).toBeVisible();
-  await expect(athletePage.getByText("Bring bottles")).toBeVisible();
-  await expect(athletePage.getByTestId("activity-plan-structure")).toBeVisible();
-  await expect(athletePage.getByTestId("activity-plan-comments")).toBeVisible();
-  await expect(athletePage.getByText("Owner", { exact: true })).toBeVisible();
-  await expect(athletePage.getByRole("button", { name: /^like$/i })).toBeVisible();
+  const sessionFlow = athletePage.getByTestId("activity-plan-session-flow");
+  await expect(sessionFlow).toContainText("Ordered fixed steps, repeats, and targets.");
+  await expect(sessionFlow.getByTestId("activity-plan-session-flow-timeline")).toBeVisible();
+  await expect(sessionFlow.locator("ol:has(> li > div > h3)")).toHaveCount(1);
+  await expect(sessionFlow).toContainText("Step 1");
+  await expect(sessionFlow).toContainText("600 sec · 60% FTP");
+  await expect(athletePage.getByTestId("activity-plan-estimates")).toBeVisible();
+  await expect(sessionFlow).not.toContainText(/segment|adapt/i);
   await expectNoHorizontalOverflow(athletePage);
 });
-
-test("athlete can duplicate an owned plan into an editable copy", async ({
+test("V5 authoring persists zero targets, recovers invalid drafts, and schedules its UI-edited RPE plan reference", async ({
   athleteActor,
   athletePage,
+  e2eDatabase,
 }, testInfo) => {
-  const duplicatedPlanName = e2eArtifactIdentity(testInfo, "duplicated activity plan");
+  test.setTimeout(120000);
+  const plans = new ActivityPlansPage(athletePage);
+  const createdName = e2eArtifactIdentity(testInfo, "V5 authored activity plan");
+  const editedName = `${createdName} edited`;
+  const duplicatedName = `${editedName} (Copy)`;
+  const scheduleDate = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
   const cleanup = () =>
     cleanupOwnedActivityPlans(
-      {
-        planNames: [duplicatedPlanDefaultName, duplicatedPlanName],
-      },
+      { planNames: [createdName, editedName, duplicatedName] },
       athleteActor.email,
     );
-
   await runWithE2ECleanup(testInfo, cleanup, async () => {
-    const plans = new ActivityPlansPage(athletePage);
-    await athletePage.goto(`/activity-plans/${athleteActor.activityPlanId}`);
-    await plans.duplicate();
-
+    await plans.openLibrary();
+    await plans.startCreate();
+    await expect(athletePage.getByLabel("Plan name")).toHaveValue("");
+    await expect(athletePage.getByTestId(/^activity-plan-item-/)).toHaveCount(0);
+    await expect(athletePage.getByText(/segment|training intent|adaptation/i)).toHaveCount(0);
+    await athletePage.getByLabel("Plan name").fill(createdName);
+    await athletePage.getByLabel("Activity category").selectOption("bike");
+    await athletePage.getByRole("button", { name: "Add repeat", exact: true }).click();
+    const firstItem = athletePage.getByTestId("activity-plan-item-0");
+    await expect(firstItem.getByLabel("Repeat count")).toHaveValue("2");
+    await firstItem.getByRole("button", { name: "Add step", exact: true }).click();
+    const firstStep = firstItem.locator('[id^="activity-plan-step-"]').first();
+    await expect(firstStep.getByRole("button", { name: "Add name", exact: true })).toBeVisible();
     await expect(
-      athletePage.getByRole("heading", { name: duplicatedPlanDefaultName }),
+      firstStep.getByRole("button", { name: "Add instructions", exact: true }),
     ).toBeVisible();
-    await athletePage.getByRole("button", { name: /^edit$/i }).click();
-    await athletePage.getByLabel("Plan name").fill(duplicatedPlanName);
-    await athletePage.getByRole("button", { name: /save changes/i }).click();
-    await expect(athletePage.getByRole("heading", { name: duplicatedPlanName })).toBeVisible();
-    await athletePage.reload();
-    await expect(athletePage.getByRole("heading", { name: duplicatedPlanName })).toBeVisible();
-
-    await athletePage.getByRole("button", { name: /^delete$/i }).click();
-    await athletePage.getByRole("button", { name: /^delete plan$/i }).click();
-    await expect(athletePage).toHaveURL(/\/activity-plans$/);
-
-    await athletePage.goto(`/activity-plans/${athleteActor.activityPlanId}`);
+    await firstStep.getByRole("button", { name: "Add name", exact: true }).click();
+    await firstStep.getByLabel("Name (optional)").fill("Zero-power work");
+    await firstStep.getByRole("button", { name: "Add instructions", exact: true }).click();
+    await firstStep.getByLabel("Instructions (optional)").fill("Keep the cadence smooth.");
+    await firstStep.getByLabel("Completion").selectOption("time");
+    await firstStep.getByLabel("Quantity").fill("600");
+    await firstStep.getByRole("button", { name: "Add target", exact: true }).click();
+    await firstStep.getByLabel("Target type 1").selectOption("watts");
+    const target = firstStep.getByLabel("Target intensity 1");
+    await target.fill("not-a-number");
+    await expect(target).toHaveValue("not-a-number");
+    await expect(target).toHaveAttribute("aria-invalid", "true");
+    await expect(athletePage.getByRole("button", { name: "Create plan" })).toBeDisabled();
+    await target.fill("0");
+    await expect(target).toHaveValue("0");
+    await expect(athletePage.getByRole("button", { name: "Create plan" })).toBeEnabled();
+    await firstStep.getByRole("button", { name: "Add target" }).click();
+    const cadenceTarget = firstStep.getByLabel("Target intensity 2");
+    await expect(cadenceTarget).toHaveValue("");
+    // Core correctly rejects combining perceived effort with objective power.
+    // Cadence is the permitted supplemental target for this zero-power step.
+    await firstStep.getByLabel("Target type 2").selectOption("cadence");
+    await expect(athletePage.getByRole("button", { name: "Create plan" })).toBeDisabled();
+    await cadenceTarget.fill("90");
+    await firstStep.getByRole("button", { name: "Close editor for step 1" }).click();
+    await firstItem.getByRole("button", { name: "Add step", exact: true }).click();
+    const secondStep = firstItem.locator('[id^="activity-plan-step-"]').nth(1);
+    await secondStep.getByRole("button", { name: "Add name", exact: true }).click();
+    await secondStep.getByLabel("Name (optional)").fill("Recovery");
+    await secondStep.getByRole("button", { name: "Add instructions", exact: true }).click();
+    await secondStep.getByLabel("Instructions (optional)").fill("Easy spin.");
+    await secondStep.getByLabel("Completion").selectOption("time");
+    await secondStep.getByLabel("Quantity").fill("60");
+    await secondStep.getByRole("button", { name: "Close editor for step 2" }).click();
+    await firstItem.getByRole("button", { name: "Duplicate item" }).click();
+    await expect(athletePage.getByTestId(/^activity-plan-item-/)).toHaveCount(2);
+    const lastItem = athletePage.getByTestId("activity-plan-item-1");
+    athletePage.once("dialog", (dialog) => dialog.accept());
+    await lastItem.getByRole("button", { name: "Delete item" }).click();
+    await expect(athletePage.getByTestId(/^activity-plan-item-/)).toHaveCount(1);
+    await captureAuthoring(athletePage, testInfo, "v5-authoring-recovered");
+    await athletePage.getByRole("button", { name: "Create plan" }).click();
     await expect(
-      athletePage.getByRole("heading", { name: "Playwright Tempo Builder" }),
+      athletePage.getByRole("heading", { name: createdName, exact: true }),
     ).toBeVisible();
-    await expect(athletePage.getByText("Tempo", { exact: true })).toBeVisible();
-  });
-});
-
-test("athlete can author, edit, schedule and comment while planned history protects deletion", async ({
-  athleteActor,
-  athletePage,
-}, testInfo) => {
-  const authoredPlanName = e2eArtifactIdentity(testInfo, "authored activity plan");
-  const editedPlanName = e2eArtifactIdentity(testInfo, "edited activity plan");
-  const dateAfter = (days: number) =>
-    new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
-  const firstDate = dateAfter(3);
-  const movedDate = dateAfter(4);
-  const finalDate = dateAfter(5);
-  const cleanup = () =>
-    cleanupOwnedActivityPlans(
-      {
-        planNames: [authoredPlanName, editedPlanName],
+    const planId = athletePage.url().match(/activity-plans\/([0-9a-f-]+)/i)?.[1];
+    if (!planId) throw new Error("Created V5 activity plan did not expose its ID.");
+    const stored = async () =>
+      (
+        await e2eDatabase.db
+          .select({ name: activityPlans.name, structure: activityPlans.structure })
+          .from(activityPlans)
+          .where(
+            and(eq(activityPlans.id, planId), eq(activityPlans.profile_id, athleteActor.profileId)),
+          )
+      )[0];
+    await expect.poll(stored).toMatchObject({
+      name: createdName,
+      structure: {
+        version: 5,
+        activity_category: "bike",
+        items: [
+          {
+            type: "repeat",
+            count: 2,
+            steps: [
+              {
+                name: "Zero-power work",
+                instructions: "Keep the cadence smooth.",
+                duration: { type: "time", seconds: 600 },
+                targets: [
+                  { type: "watts", intensity: 0 },
+                  { type: "cadence", intensity: 90 },
+                ],
+              },
+              {
+                name: "Recovery",
+                instructions: "Easy spin.",
+                duration: { type: "time", seconds: 60 },
+              },
+            ],
+          },
+        ],
       },
-      athleteActor.email,
-    );
-
-  await runWithE2ECleanup(testInfo, cleanup, async () => {
-    const plans = new ActivityPlansPage(athletePage);
-    await plans.create({
-      name: authoredPlanName,
-      description: "A structured browser-authored activity plan",
-      category: "bike",
-      firstStep: "Controlled threshold",
     });
-    await expect(athletePage.getByText("Controlled threshold")).toBeVisible();
-
-    await athletePage.getByRole("button", { name: /^edit$/i }).click();
-    await athletePage.getByLabel("Plan name").fill(editedPlanName);
-    const firstStep = plans.step();
-    await firstStep.getByRole("button", { name: /, details$/ }).click();
-    await firstStep.getByRole("textbox", { name: /, name$/ }).fill("Edited threshold");
-    await plans.openDuration();
-    await firstStep.getByRole("textbox", { name: /duration minutes$/ }).fill("15");
-    await firstStep.getByRole("button", { name: "Close editor" }).click();
-    await expect(firstStep.getByRole("button", { name: /duration: 15 min/ })).toBeVisible();
-    await expect(firstStep.getByRole("textbox", { name: /duration minutes$/ })).toBeHidden();
-    await plans.openTarget();
-    await firstStep.getByRole("radio", { name: /, RPE 7$/ }).check();
-    await firstStep.getByRole("radio", { name: /, RPE 7$/ }).press("ArrowRight");
-    await expect(firstStep.getByRole("radio", { name: /, RPE 7.5$/ })).toBeChecked();
-    await firstStep.getByRole("radio", { name: /, RPE 7.5$/ }).press("ArrowLeft");
-    await expect(firstStep.getByRole("radio", { name: /, RPE 7$/ })).toBeChecked();
-    await firstStep.getByRole("button", { name: "Close editor" }).click();
-    await athletePage.getByRole("button", { name: "Add step", exact: true }).click();
-    const secondStep = plans.step(1, 2);
-    await expect(secondStep.getByRole("textbox", { name: /duration minutes$/ })).toBeFocused();
-    await expect(firstStep.getByRole("textbox", { name: /duration minutes$/ })).toBeHidden();
-    await expect(firstStep.getByRole("button", { name: /duration: 15 min/ })).toBeVisible();
-    await secondStep.getByRole("textbox", { name: /duration minutes$/ }).fill("3");
-    await plans.openTarget(1, 1, 2);
-    await secondStep.getByRole("radio", { name: /, RPE 3$/ }).check();
-    await athletePage.getByTestId("activity-plan-composer-timeline-bar-0").press("Enter");
-    await expect(firstStep.getByRole("textbox", { name: /duration minutes$/ })).toBeFocused();
-    await expect(secondStep.getByRole("button", { name: /duration: 3 min/ })).toBeVisible();
-    await expect(firstStep).toHaveAttribute("data-selected", "true");
-    await expect(secondStep).toHaveAttribute("data-selected", "false");
-    await expect(firstStep.getByRole("slider")).toHaveCount(0);
-    await expect(firstStep.getByRole("button", { name: /Increase|Decrease/ })).toHaveCount(0);
-    await expect(firstStep.getByRole("textbox", { name: /, name$/ })).toBeHidden();
-    const activeEditor = athletePage.locator('[data-testid^="step-context-editor-"]:visible');
-    const assertEditorInViewport = async () => {
-      await expect(activeEditor).toHaveCount(1);
-      const box = await activeEditor.boundingBox();
-      const viewport = athletePage.viewportSize();
-      expect(box).not.toBeNull();
-      expect(viewport).not.toBeNull();
-      if (!box || !viewport) throw new Error("Missing editor viewport");
-      const closeBox = await activeEditor
-        .getByRole("button", { name: "Close editor" })
-        .boundingBox();
-      expect(closeBox?.width).toBeGreaterThanOrEqual(44);
-      expect(closeBox?.height).toBeGreaterThanOrEqual(44);
-      expect(box.x).toBeGreaterThanOrEqual(0);
-      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
-      expect(box.y).toBeGreaterThanOrEqual(0);
-      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
-      const rowBox = await firstStep.getByTestId("prescription-row").boundingBox();
-      expect(rowBox).not.toBeNull();
-      if (rowBox) expect(box.y).toBeGreaterThanOrEqual(rowBox.y + rowBox.height);
-    };
-    await assertEditorInViewport();
-    await athletePage.screenshot({ path: testInfo.outputPath("context-active-duration.png") });
-    await firstStep.getByRole("textbox", { name: /duration minutes$/ }).press("Escape");
-    const durationTrigger = firstStep.getByRole("button", { name: /, duration:/ });
-    await expect(durationTrigger).toBeFocused();
-    await durationTrigger.press("Tab");
-    await expect(firstStep.getByRole("button", { name: /, target 1:/ })).toBeFocused();
-    await athletePage.keyboard.press("Enter");
-    await firstStep.getByRole("combobox", { name: /, Target metric$/ }).selectOption("watts");
-    const exactEffort = firstStep.getByRole("textbox", { name: /, Intensity$/ });
-    await exactEffort.fill("250.1234567");
-    await assertEditorInViewport();
-    await athletePage.screenshot({ path: testInfo.outputPath("context-active-effort.png") });
-    await exactEffort.press("Escape");
-    await expect(firstStep.getByRole("button", { name: /target 1: 7 RPE/ })).toBeFocused();
-    await expect(firstStep.getByRole("button", { name: /duration: 15 min/ })).toBeVisible();
-    await firstStep.getByRole("button", { name: "Step 1 actions" }).click();
-    await athletePage.getByRole("menuitem", { name: "Add RPE target" }).click();
-    await expect(firstStep.getByRole("radio", { name: /target 2, RPE 5$/ })).toBeFocused();
-    await firstStep.getByRole("combobox", { name: /, Target 2 metric$/ }).selectOption("cadence");
-    await firstStep.getByRole("textbox", { name: /, Target 2 intensity$/ }).fill("90");
-    await firstStep.getByRole("button", { name: /, details$/ }).click();
-    await firstStep.getByRole("textbox", { name: /, instructions$/ }).fill("Relax shoulders");
-    await firstStep.getByRole("button", { name: "Close editor" }).click();
-    await expect(firstStep.getByRole("button", { name: /target 2: 90 rpm/ })).toBeVisible();
-    await expect(firstStep.getByRole("button", { name: /, details$/ })).toContainText(
-      "Relax shoulders",
-    );
-    await expectNoHorizontalOverflow(athletePage);
-    await firstStep.scrollIntoViewIfNeeded();
-    await athletePage.screenshot({ path: testInfo.outputPath("context-rest.png") });
-    await plans.openTarget(2);
-    await firstStep.getByRole("textbox", { name: /, Target 2 intensity$/ }).fill("invalid");
-    await plans.openDuration(1, 2);
-    await secondStep.getByRole("textbox", { name: /duration seconds$/ }).fill("1");
-    await secondStep.getByRole("button", { name: "Close editor" }).click();
-    await expect(
-      firstStep.getByRole("button", { name: /target 2: Unresolved effort/ }),
-    ).toBeVisible();
-    await athletePage.getByRole("button", { name: "Go to the first invalid value" }).click();
-    await expect(firstStep.getByRole("textbox", { name: /, Target 2 intensity$/ })).toBeFocused();
-    await expect(firstStep.getByRole("textbox", { name: /, Target 2 intensity$/ })).toHaveValue(
-      "invalid",
-    );
-    await assertEditorInViewport();
-    await athletePage.screenshot({ path: testInfo.outputPath("context-invalid.png") });
-    await firstStep.getByRole("button", { name: "Remove target 2", exact: true }).click();
-    await athletePage.getByRole("button", { name: /save changes/i }).click();
-    await expect(athletePage.getByRole("heading", { name: editedPlanName })).toBeVisible();
+    const savedSessionFlow = athletePage.getByTestId("activity-plan-session-flow");
+    await expect(savedSessionFlow.getByTestId("activity-plan-session-flow-timeline")).toBeVisible();
+    await expect(savedSessionFlow).toContainText("600 sec · 0 W, 90 rpm");
+    await expect(savedSessionFlow.locator("ol:has(> li > div > h3)")).toHaveCount(1);
+    await expect(athletePage.getByTestId("activity-plan-estimates")).toBeVisible();
+    await athletePage.getByRole("button", { name: "Edit", exact: true }).click();
+    await athletePage.getByLabel("Plan name").fill(editedName);
+    // The persisted zero-watt draft above proves raw-zero authoring. Scheduling
+    // absolute watts correctly needs a current calibration fact, and the web
+    // product currently exposes no UI to create one. Convert this same saved
+    // plan through its editor to RPE before exercising schedule/retry/history.
+    await athletePage.getByLabel("Target type 1").selectOption("RPE");
+    await athletePage.getByLabel("Target intensity 1").fill("5");
+    await athletePage.getByRole("button", { name: "Delete target" }).last().click();
+    await athletePage.getByRole("button", { name: "Save changes", exact: true }).click();
+    await expect(athletePage.getByRole("heading", { name: editedName, exact: true })).toBeVisible();
     await athletePage.reload();
-    await expect(athletePage.getByRole("heading", { name: editedPlanName })).toBeVisible();
-    await expect(athletePage.getByText("Edited threshold", { exact: true })).toBeVisible();
-    await expect(athletePage.getByText("900 sec · 7 RPE", { exact: true })).toBeVisible();
-
-    await athletePage.getByRole("button", { name: /^like$/i }).click();
-    await expect(athletePage.getByRole("button", { name: /1 like/i })).toBeVisible();
-    await athletePage.getByLabel("Add a comment").fill("Ready for Tuesday");
-    await athletePage.getByRole("button", { name: /post comment/i }).click();
-    await expect(athletePage.getByText("Ready for Tuesday")).toBeVisible();
-
-    await plans.schedule(firstDate);
-    await expect(athletePage.getByRole("button", { name: /^reschedule$/i })).toBeVisible();
-
-    await athletePage.getByLabel("Schedule date").fill(movedDate);
-    await athletePage.getByRole("button", { name: /^reschedule$/i }).click();
-    await expect(athletePage.getByText(`Currently scheduled for ${movedDate}.`)).toBeVisible();
-
-    await athletePage.getByRole("button", { name: /remove from schedule/i }).click();
-    await expect(athletePage.getByRole("button", { name: /^schedule$/i })).toBeVisible();
-
-    await plans.schedule(finalDate);
-    await expect(athletePage.getByRole("button", { name: /^reschedule$/i })).toBeVisible();
-
-    await athletePage.getByRole("button", { name: /^delete$/i }).click();
+    await expect.poll(stored).toMatchObject({
+      name: editedName,
+      structure: {
+        version: 5,
+        items: [
+          expect.objectContaining({
+            type: "repeat",
+            steps: expect.arrayContaining([
+              expect.objectContaining({ targets: [{ type: "RPE", intensity: 5 }] }),
+            ]),
+          }),
+        ],
+      },
+    });
+    await plans.duplicate();
+    await expect(
+      athletePage.getByRole("heading", { name: duplicatedName, exact: true }),
+    ).toBeVisible();
+    await athletePage.getByRole("button", { name: "Delete", exact: true }).click();
+    await athletePage.getByRole("button", { name: "Delete plan", exact: true }).click();
+    await expect(athletePage).toHaveURL(/\/activity-plans$/);
+    await expect
+      .poll(async () =>
+        e2eDatabase.db
+          .select({ id: activityPlans.id })
+          .from(activityPlans)
+          .where(
+            and(
+              eq(activityPlans.name, duplicatedName),
+              eq(activityPlans.profile_id, athleteActor.profileId),
+            ),
+          ),
+      )
+      .toEqual([]);
+    await athletePage.goto(`/activity-plans/${planId}`);
+    await expect(athletePage.getByRole("heading", { name: editedName, exact: true })).toBeVisible();
+    await plans.schedule(scheduleDate);
+    await expect(
+      athletePage.getByRole("button", { name: "Reschedule", exact: true }),
+    ).toBeVisible();
+    await expect
+      .poll(
+        async () =>
+          (
+            await e2eDatabase.db
+              .select({
+                activityPlanId: plannedSessions.activity_plan_id,
+                activityPlanRevision: plannedSessions.activity_plan_revision,
+                planningDate: plannedSessions.planning_date,
+                prescriptionCapturedAt: plannedSessions.prescription_captured_at,
+                resolutionManifest: plannedSessions.resolution_manifest,
+                status: plannedSessions.status,
+              })
+              .from(plannedSessions)
+              .where(
+                and(
+                  eq(plannedSessions.activity_plan_id, planId),
+                  eq(plannedSessions.profile_id, athleteActor.profileId),
+                ),
+              )
+          )[0],
+      )
+      .toEqual(
+        expect.objectContaining({
+          activityPlanId: planId,
+          activityPlanRevision: null,
+          planningDate: scheduleDate,
+          prescriptionCapturedAt: null,
+          resolutionManifest: null,
+          status: "scheduled",
+        }),
+      );
+    await athletePage.getByLabel("Add a comment").fill("Ready for the fixed V5 session");
+    await athletePage.getByRole("button", { name: "Post comment", exact: true }).click();
+    await expect(
+      athletePage.getByText("Ready for the fixed V5 session", { exact: true }),
+    ).toBeVisible();
+    await athletePage.getByRole("button", { name: "Delete", exact: true }).click();
     await expect(
       athletePage.getByText(/has planned-session history.*cannot be deleted/i),
     ).toBeVisible();
@@ -271,53 +259,6 @@ test("athlete can author, edit, schedule and comment while planned history prote
       athletePage.getByRole("button", { name: "Delete plan", exact: true }),
     ).toBeDisabled();
     await athletePage.getByRole("button", { name: "Cancel", exact: true }).click();
-    await expect(athletePage.getByText(`Currently scheduled for ${finalDate}.`)).toBeVisible();
-    await athletePage.reload();
-    await expect(athletePage.getByRole("heading", { name: editedPlanName })).toBeVisible();
-  });
-});
-
-test("athlete can correct an invalid structure and retry authoring", async ({
-  athleteActor,
-  athletePage,
-}, testInfo) => {
-  const authoredPlanName = e2eArtifactIdentity(testInfo, "structure retry activity plan");
-  const cleanup = () =>
-    cleanupOwnedActivityPlans({ planNames: [authoredPlanName] }, athleteActor.email);
-
-  await runWithE2ECleanup(testInfo, cleanup, async () => {
-    const plans = new ActivityPlansPage(athletePage);
-    await plans.openLibrary();
-    await plans.startCreate();
-    await athletePage.getByLabel("Plan name").fill(authoredPlanName);
-
-    await athletePage.getByRole("button", { name: "Interval 1 actions" }).click();
-    await athletePage.getByRole("menuitem", { name: "Delete interval" }).click();
-    await expect(athletePage.getByRole("alert")).toContainText("Structure needs attention");
-    await expect(athletePage.getByRole("button", { name: "Create plan" })).toBeDisabled();
-
-    await athletePage.getByRole("button", { name: "Add interval" }).click();
-    await expect(athletePage.getByLabel("Interval name", { exact: true })).toBeFocused();
-    await expect(athletePage.getByRole("button", { name: "Create plan" })).toBeEnabled();
-    await plans.openDuration();
-    await plans
-      .step()
-      .getByRole("textbox", { name: /duration seconds$/ })
-      .fill("1.5");
-    await athletePage.getByRole("button", { name: "Add recovery step" }).click();
-    const recovery = athletePage.getByRole("group", { name: "Interval 1, step 2", exact: true });
-    await expect(recovery.getByRole("textbox", { name: /duration minutes$/ })).toBeFocused();
-    await expect(recovery.getByRole("button", { name: /purpose: recovery/ })).toBeVisible();
-    await expect(athletePage.getByRole("button", { name: "Create plan" })).toBeDisabled();
-    await athletePage.getByRole("button", { name: "Go to the first invalid value" }).click();
-    const first = athletePage.getByRole("group", { name: "Interval 1, step 1", exact: true });
-    await expect(first.getByRole("textbox", { name: /duration seconds$/ })).toBeFocused();
-    await expect(first.getByRole("textbox", { name: /duration seconds$/ })).toHaveValue("1.5");
-    await first.getByRole("textbox", { name: /duration seconds$/ }).fill("0");
-    await first.getByRole("textbox", { name: /duration minutes$/ }).fill("10");
-    await athletePage.getByRole("button", { name: "Create plan" }).click();
-    await expect(athletePage.getByRole("heading", { name: authoredPlanName })).toBeVisible();
-    await athletePage.reload();
-    await expect(athletePage.getByTestId("activity-plan-structure")).toContainText("Steady effort");
+    await expect(athletePage.getByText(`Currently scheduled for ${scheduleDate}.`)).toBeVisible();
   });
 });

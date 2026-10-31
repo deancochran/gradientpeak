@@ -1,5 +1,4 @@
 import {
-  activityPlanAdaptationSchema,
   activityPlanSemanticHash,
   activityPlanStructureSchema,
   activityPlanTrainingIntentSchema,
@@ -23,22 +22,19 @@ export function toVerifiedResolverCandidate(input: {
   structure: unknown;
   structureHash: string;
   semanticHash: string;
-  adaptation: unknown;
   trainingIntent: unknown;
 }): ImmutableActivityPlanRevision {
   const structure = activityPlanStructureSchema.parse(input.structure);
   if (activityPlanStructureHash(structure) !== input.structureHash) {
     throw new ActivityPlanIntegrityError();
   }
-  const adaptation = activityPlanAdaptationSchema.nullish().parse(input.adaptation) ?? null;
   const trainingIntent = activityPlanTrainingIntentSchema.parse(input.trainingIntent);
   const semanticHash = activityPlanSemanticHash({
     structure,
-    adaptation,
     trainingIntent,
   });
   if (semanticHash !== input.semanticHash) throw new ActivityPlanIntegrityError();
-  parseActivityPlanAuthoringContent({ structure, adaptation, training_intent: trainingIntent });
+  parseActivityPlanAuthoringContent({ structure, training_intent: trainingIntent });
   return {
     id: input.id,
     revision: input.revision,
@@ -46,7 +42,6 @@ export function toVerifiedResolverCandidate(input: {
     activity_category: structure.activity_category,
     training_intent: trainingIntent,
     structure,
-    adaptation,
   };
 }
 

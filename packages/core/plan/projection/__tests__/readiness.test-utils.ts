@@ -38,8 +38,8 @@ export function createMockGoal(
 ): ProjectionPointReadinessGoalInput & { targets?: TrainingPlanGoalTarget[] } {
   return {
     target_date: targetDate,
-    priority,
-    targets,
+    ...(priority === undefined ? {} : { priority }),
+    ...(targets === undefined ? {} : { targets }),
   };
 }
 

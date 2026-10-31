@@ -30,10 +30,12 @@ function getRegionForCoordinates(
     return null;
   }
 
-  let minLatitude = coordinates[0]?.latitude;
-  let maxLatitude = coordinates[0]?.latitude;
-  let minLongitude = coordinates[0]?.longitude;
-  let maxLongitude = coordinates[0]?.longitude;
+  const firstCoordinate = coordinates.at(0);
+  if (firstCoordinate === undefined) return null;
+  let minLatitude = firstCoordinate.latitude;
+  let maxLatitude = firstCoordinate.latitude;
+  let minLongitude = firstCoordinate.longitude;
+  let maxLongitude = firstCoordinate.longitude;
 
   for (const coordinate of coordinates) {
     minLatitude = Math.min(minLatitude, coordinate.latitude);

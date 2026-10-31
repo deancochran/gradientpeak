@@ -302,7 +302,9 @@ describe("CalendarManualCreateModal", () => {
     await chooseTime();
     await fireEvent.press(screen.getByTestId("manual-create-submit"));
 
-    expect(submitMock).toHaveBeenCalledWith(expect.objectContaining({ recurrence: undefined }));
+    const submitted = submitMock.mock.calls.at(-1)?.[0];
+    expect(submitted).toBeDefined();
+    expect(Object.hasOwn(submitted ?? {}, "recurrence")).toBe(false);
   });
 
   it.each([

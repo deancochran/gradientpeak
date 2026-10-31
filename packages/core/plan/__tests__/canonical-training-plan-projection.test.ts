@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { trainingPlanSchema } from "../../schemas";
+import { requireFixtureValue } from "../../testing/requireFixtureValue";
 import { projectCanonicalTrainingPlan } from "../canonicalTrainingPlanProjection";
 import type { GoalAnchoredProjectionPlan } from "../goalAnchoredProjectionPlan";
 import { materializePlanToEvents } from "../materializePlanToEvents";
@@ -245,7 +246,12 @@ describe("projectCanonicalTrainingPlan", () => {
     });
     const changedOverrides = projectCanonicalTrainingPlan({
       ...input,
-      dailyLoadPoints: [{ ...input.dailyLoadPoints[0]!, event_overrides: { title: "Changed" } }],
+      dailyLoadPoints: [
+        {
+          ...requireFixtureValue(input.dailyLoadPoints[0], "expected daily load fixture"),
+          event_overrides: { title: "Changed" },
+        },
+      ],
     });
 
     expect(first.fingerprint).toMatch(/^v1:sha256:[0-9a-f]{64}$/);

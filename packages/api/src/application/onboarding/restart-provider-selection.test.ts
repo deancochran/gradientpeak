@@ -46,17 +46,17 @@ function dbFor(state: "healthy" | "lost" | "recovery") {
           }),
         }),
         where: () => ({
-          limit: () => ({
-            for: async () => [{ id: PROFILE, onboarding_status: status }],
-            then: (resolve: (rows: unknown[]) => void) =>
-              resolve(
+          limit: () =>
+            Object.assign(
+              Promise.resolve(
                 "onboarding_status" in selection
                   ? [{ id: PROFILE, onboarding_status: status }]
                   : [],
               ),
-          }),
+              { for: async () => [{ id: PROFILE, onboarding_status: status }] },
+            ),
         }),
-        limit: () => ({ then: (resolve: (rows: unknown[]) => void) => resolve([]) }),
+        limit: () => Promise.resolve([]),
       }),
     }),
     update: (table: unknown) => ({

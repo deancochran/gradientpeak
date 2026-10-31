@@ -1,7 +1,4 @@
-import {
-  type RouteEditForm as RouteEditFormValues,
-  routeEditFormSchema,
-} from "@repo/core/route-files";
+import { routeEditFormSchema } from "@repo/core/route-files";
 import { Button } from "@repo/ui/components/button";
 import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form";
 import { LoadingButton } from "@repo/ui/components/loading";
@@ -63,7 +60,7 @@ export default function RouteEditScreen() {
     user?.id,
   ]);
 
-  const submit = useZodFormSubmit<RouteEditFormValues>({
+  const submit = useZodFormSubmit({
     form,
     shouldRethrow: false,
     submittingLabel: "Saving...",

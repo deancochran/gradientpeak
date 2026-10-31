@@ -1,9 +1,11 @@
 import * as React from "react";
 import { Text } from "react-native";
 
+type TabMockProps = React.PropsWithChildren<{ value?: string } & Record<string, unknown>>;
+
 jest.mock("@rn-primitives/slot", () => {
   return {
-    Text: (props: any) => React.createElement("Slot.Text", props, props.children),
+    Text: (props: TabMockProps) => React.createElement("Slot.Text", props, props.children),
   };
 });
 
@@ -12,11 +14,11 @@ jest.mock("@rn-primitives/tabs", () => {
     value: undefined as string | undefined,
   });
   const createHost = (type: string) =>
-    function Host(props: any) {
+    function Host(props: TabMockProps) {
       return React.createElement(type, props, props.children);
     };
 
-  function Root(props: any) {
+  function Root(props: TabMockProps) {
     return React.createElement(
       valueContext.Provider,
       {
@@ -28,7 +30,7 @@ jest.mock("@rn-primitives/tabs", () => {
     );
   }
 
-  function Content(props: any) {
+  function Content(props: TabMockProps) {
     const context = React.useContext(valueContext);
     if (props.value !== context.value) {
       return null;
@@ -66,9 +68,6 @@ describe("Tabs native", () => {
         </TabsContent>
       </Tabs>,
     );
-
-    const trigger = getByTestId(fixture.triggers.profile.testId);
-    const content = getByTestId(fixture.contentTestIds.profile);
 
     expect(getByTestId(fixture.rootTestId)).toBeTruthy();
     expect(getByText(fixture.triggers.profile.label)).toBeTruthy();

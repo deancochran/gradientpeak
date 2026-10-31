@@ -1,7 +1,6 @@
 import { activityDisplayModelSchema, activityPlanSummarySchema } from "@repo/core";
 
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
-
 export const mobileCardFixtures = {
   activity: activityDisplayModelSchema.parse({
     contractVersion: "activity-display-v1",
@@ -17,7 +16,7 @@ export const mobileCardFixtures = {
         key: "distance",
         label: "Distance",
         status: "available",
-        value: 10_000,
+        value: 10000,
         unit: "meters",
         reason: null,
       },
@@ -25,7 +24,7 @@ export const mobileCardFixtures = {
         key: "elapsed_duration",
         label: "Elapsed",
         status: "available",
-        value: 3_420,
+        value: 3420,
         unit: "seconds",
         reason: null,
       },
@@ -53,40 +52,29 @@ export const mobileCardFixtures = {
     activityCategory: "run",
     activityPlanRevision: 1,
     structure: {
-      version: 3,
+      version: 5,
       activity_category: "run",
-      segments: [
+      items: [
         {
-          id: id(1),
-          role: "activity",
-          name: "Tempo run",
-          intervals: [
-            {
-              id: id(2),
-              name: "Progression",
-              repetitions: 1,
-              steps: [
-                {
-                  id: id(3),
-                  name: "Easy",
-                  duration: { type: "time", seconds: 600 },
-                  targets: [{ type: "RPE", intensity: 3 }],
-                },
-                {
-                  id: id(4),
-                  name: "Tempo",
-                  duration: { type: "time", seconds: 1_200 },
-                  targets: [{ type: "RPE", intensity: 7 }],
-                },
-                {
-                  id: id(5),
-                  name: "Fast finish",
-                  duration: { type: "time", seconds: 300 },
-                  targets: [{ type: "RPE", intensity: 9 }],
-                },
-              ],
-            },
-          ],
+          type: "step",
+          id: id(2),
+          name: "Easy",
+          duration: { type: "time", seconds: 600 },
+          targets: [{ type: "RPE", intensity: 3 }],
+        },
+        {
+          type: "step",
+          id: id(4),
+          name: "Tempo",
+          duration: { type: "time", seconds: 1200 },
+          targets: [{ type: "RPE", intensity: 7 }],
+        },
+        {
+          type: "step",
+          id: id(5),
+          name: "Fast finish",
+          duration: { type: "time", seconds: 300 },
+          targets: [{ type: "RPE", intensity: 9 }],
         },
       ],
     },
@@ -105,7 +93,7 @@ export const mobileCardFixtures = {
         key: "elapsed_duration",
         label: "Duration",
         status: "available",
-        value: 2_100,
+        value: 2100,
         unit: "seconds",
         reason: null,
         provenance: "authored",
@@ -158,7 +146,7 @@ export const mobileCardFixtures = {
     name: "Ridgeline loop",
     description: "Rolling approach followed by one sustained climb.",
     activity_category: "run",
-    total_distance: 12_400,
+    total_distance: 12400,
     total_ascent: 340,
     total_descent: 338,
     likes_count: 8,

@@ -18,7 +18,7 @@ test("[variation:screens.protected:feature-history] calendar, goals, and recordi
   await shell.open("/goals");
   await expect(athletePage.getByLabel("Search goals")).toBeVisible();
   await shell.open("/record");
-  await expect(athletePage.getByRole("button", { name: /^open recorder$/i })).toBeVisible();
+  await expect(athletePage.getByRole("heading", { name: /run session/i })).toBeVisible();
   await athletePage.goBack();
   await expect(athletePage.getByLabel("Search goals")).toBeVisible();
   await athletePage.goBack();
@@ -90,15 +90,18 @@ test("[variation:screens.message-composer:keyboard-back] keyboard opens compose 
 
 test("[variation:screens.message-composer:empty-search] recipient empty search keeps the composer open for a corrected query", async ({
   athletePage,
+  coachActor,
 }) => {
   await new MessagingPage(athletePage).openComposer();
   const search = athletePage.getByRole("searchbox", { name: "Search message recipients" });
   await search.fill("zzzz-no-message-recipient");
   await athletePage.getByRole("button", { name: /^search$/i }).click();
   await expect(athletePage.getByText(/no .*recipient|no profiles found/i)).toBeVisible();
-  await search.fill("playwright_coach");
+  const coachUsername = coachActor.username;
+  if (!coachUsername) throw new Error("The isolated coach fixture has no username.");
+  await search.fill(coachUsername);
   await athletePage.getByRole("button", { name: /^search$/i }).press("Enter");
-  await expect(athletePage.getByRole("heading", { name: /new message/i })).toBeVisible();
+  await expect(athletePage.getByRole("button", { name: `@${coachUsername}` })).toBeVisible();
 });
 
 test("[variation:screens.account-menu:keyboard-destination] keyboard account menu opens integrations and history returns focusable menu access", async ({
@@ -119,17 +122,17 @@ test("[variation:screens.account-menu:keyboard-destination] keyboard account men
   await expect(trigger).toBeFocused();
 });
 
-test("[variation:screens.account-menu:narrow-scroll] narrow extended menu scrolls to training preferences and opens its feature content", async ({
+test("[variation:screens.account-menu:narrow-scroll] narrow extended menu scrolls to and opens Settings", async ({
   athletePage,
 }) => {
   const shell = new ShellPage(athletePage);
   await athletePage.setViewportSize({ width: 390, height: 844 });
   await shell.openAccountMenu();
-  const preferences = shell.accountDestination("Training preferences");
-  await preferences.scrollIntoViewIfNeeded();
-  await preferences.click();
-  await expect(athletePage).toHaveURL(/\/training-preferences$/);
-  await expect(athletePage.getByRole("heading", { name: /training preferences/i })).toBeVisible();
+  const settings = shell.accountDestination("Settings");
+  await settings.scrollIntoViewIfNeeded();
+  await settings.click();
+  await expect(athletePage).toHaveURL(/\/settings$/);
+  await expect(athletePage.getByLabel("Full name")).toBeVisible();
 });
 
 test("[variation:smoke.protected-routes:nav-links] header notification and message links open their exact feature content", async ({
@@ -147,7 +150,7 @@ test("[variation:smoke.protected-routes:reload-history] settings reload and mess
   const shell = new ShellPage(athletePage);
   await shell.open("/settings");
   await athletePage.reload();
-  await expect(athletePage.getByLabel("Preferred units")).toBeVisible();
+  await expect(athletePage.getByRole("group", { name: "Theme preference" })).toBeVisible();
   await shell.open("/messages");
   await expect(athletePage.getByRole("link", { name: /^new message$/i })).toBeVisible();
   await athletePage.goBack();
@@ -217,7 +220,7 @@ test("[variation:navigation.mobile:scroll-record] mobile sheet scrolls to record
   await record.scrollIntoViewIfNeeded();
   await record.click();
   await expect.poll(() => new URL(athletePage.url()).pathname).toBe("/record");
-  await expect(athletePage.getByRole("button", { name: /^open recorder$/i })).toBeVisible();
+  await expect(athletePage.getByRole("heading", { name: /run session/i })).toBeVisible();
   await expect(mobile).toBeHidden();
 });
 

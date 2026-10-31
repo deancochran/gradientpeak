@@ -1,8 +1,5 @@
 import { Duration, Target } from "../schemas/activity_payload";
-import {
-  createSystemActivityPlanAdaptationBuilder,
-  createSystemActivityPlanBuilderFactory,
-} from "./activity-plan-builder";
+import { createSystemActivityPlanBuilderFactory } from "./activity-plan-builder";
 import type { SystemActivityPlanTemplate as RecordingServiceActivityPlan } from "./types";
 
 const createPlan = createSystemActivityPlanBuilderFactory("run", [
@@ -27,7 +24,6 @@ export const THRESHOLD_RUN_WORKOUT_1: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Progressive Warm-up",
-      purpose: "warmup",
       duration: Duration.minutes(15),
       targets: [Target.thresholdHR(60)],
       notes: "Easy pace jogging to prepare legs and lungs",
@@ -37,23 +33,21 @@ export const THRESHOLD_RUN_WORKOUT_1: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Threshold Interval",
-          purpose: "work",
           duration: Duration.minutes(5),
           targets: [Target.thresholdHR(95)],
           notes: "Steady effort at high intensity",
         },
         {
           name: "Active Recovery",
-          purpose: "recovery",
           duration: Duration.minutes(3),
           targets: [Target.thresholdHR(70)],
-          notes: "Easy jog or walk to bring HR down",
+          notes:
+            "Jog very easily; walk briefly if needed. Let heart rate fall naturally rather than chasing the target immediately after the effort.",
         },
       ],
     })
     .step({
       name: "Cool-down",
-      purpose: "cooldown",
       duration: Duration.minutes(10),
       targets: [Target.thresholdHR(70)],
       notes: "Relaxed pace to flush lactate",
@@ -75,7 +69,6 @@ export const THRESHOLD_RUN_WORKOUT_2: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Warm-up Jog",
-      purpose: "warmup",
       duration: Duration.minutes(15),
       targets: [Target.thresholdHR(60)],
       notes: "Gradually increase speed to prep for intervals",
@@ -85,30 +78,27 @@ export const THRESHOLD_RUN_WORKOUT_2: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Long Threshold Interval",
-          purpose: "work",
           duration: Duration.minutes(8),
           targets: [Target.thresholdHR(95)],
           notes: "Maintain pace comfortably hard",
         },
         {
           name: "Recovery Jog",
-          purpose: "recovery",
           duration: Duration.minutes(5),
           targets: [Target.thresholdHR(60)],
-          notes: "Keep HR below 70% threshold",
+          notes:
+            "Jog very easily with relaxed breathing. Let heart rate fall naturally; do not speed up to chase the recovery target.",
         },
       ],
     })
     .step({
       name: "Short Threshold Push",
-      purpose: "work",
       duration: Duration.minutes(3),
       targets: [Target.thresholdHR(95)],
       notes: "Push pace for short duration",
     })
     .step({
       name: "Cool-down",
-      purpose: "cooldown",
       duration: Duration.minutes(10),
       targets: [Target.thresholdHR(60)],
       notes: "Relaxed pace to normalize heart rate",
@@ -130,7 +120,6 @@ export const SPEED_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Progressive Warm-up",
-      purpose: "warmup",
       duration: Duration.minutes(15),
       targets: [Target.thresholdHR(65)],
       notes: "Include some strides in final 5 minutes to prepare for speed",
@@ -140,23 +129,21 @@ export const SPEED_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Speed Interval",
-          purpose: "work",
           duration: Duration.minutes(3),
           targets: [Target.thresholdHR(105)],
           notes: "Fast pace - should feel hard but controlled",
         },
         {
           name: "Recovery Jog",
-          purpose: "recovery",
           duration: Duration.minutes(2),
           targets: [Target.thresholdHR(65)],
-          notes: "Light jog to recover",
+          notes:
+            "Jog very easily; walk briefly if needed to regain controlled breathing before the next fast interval.",
         },
       ],
     })
     .step({
       name: "Cool-down",
-      purpose: "cooldown",
       duration: Duration.minutes(10),
       targets: [Target.thresholdHR(60)],
       notes: "Easy pace to bring heart rate down",
@@ -169,51 +156,6 @@ export const SPEED_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
  * Total time: 30 minutes
  * Estimated Common Load: ~25
  */
-const easyRecoveryRunStructure = createPlan()
-  .step({
-    name: "Easy Recovery Run",
-    purpose: "recovery",
-    duration: Duration.minutes(30),
-    targets: [Target.thresholdHR(60)],
-    notes: "Very easy pace - should feel relaxed and restorative",
-  })
-  .build();
-const easyRecoveryRunSegment = easyRecoveryRunStructure.segments[0];
-if (!easyRecoveryRunSegment || easyRecoveryRunSegment.role !== "activity") {
-  throw new Error("Easy Recovery Run must contain an activity segment");
-}
-const easyRecoveryRunInterval = easyRecoveryRunSegment.intervals[0];
-const easyRecoveryRunStep = easyRecoveryRunInterval?.steps[0];
-if (!easyRecoveryRunInterval || !easyRecoveryRunStep) {
-  throw new Error("Easy Recovery Run must contain a steady step");
-}
-
-export const EASY_RECOVERY_RUN: RecordingServiceActivityPlan = {
-  id: "1b4c5d6e-7f8a-4b0c-9d2e-3f4a5b6c7d8e",
-  name: "Easy Recovery Run",
-  description: "Low-intensity recovery run for active recovery",
-  gps_recording_enabled: false,
-  structure: easyRecoveryRunStructure,
-  adaptation: {
-    controls: [
-      createSystemActivityPlanAdaptationBuilder("easy-recovery-run").control({
-        key: "steady_duration_seconds",
-        label: "Easy recovery duration",
-        kind: "step_quantity",
-        range: { minimum: 1500, default: 1800, maximum: 2100, increment: 300 },
-        targets: [
-          {
-            type: "step_quantity",
-            activitySegmentId: easyRecoveryRunSegment.id,
-            intervalId: easyRecoveryRunInterval.id,
-            stepId: easyRecoveryRunStep.id,
-            quantityType: "time",
-          },
-        ],
-      }),
-    ],
-  },
-};
 
 /**
  * Hill Intervals - Indoor Treadmill
@@ -229,7 +171,6 @@ export const HILL_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Flat Warm-up",
-      purpose: "warmup",
       duration: Duration.minutes(10),
       targets: [Target.thresholdHR(65)],
       notes: "Start on 0% grade, gradually increase pace",
@@ -239,14 +180,12 @@ export const HILL_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Hill Climb",
-          purpose: "work",
           duration: Duration.minutes(2),
-          targets: [Target.thresholdHR(88)],
+          targets: [Target.thresholdHR(90)],
           notes: "Increase incline to 6-8%, maintain strong effort uphill",
         },
         {
           name: "Recovery Descent",
-          purpose: "recovery",
           duration: Duration.seconds(90),
           targets: [Target.thresholdHR(65)],
           notes: "Return to 0% grade, easy jog to recover",
@@ -255,7 +194,6 @@ export const HILL_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
     })
     .step({
       name: "Cool-down",
-      purpose: "cooldown",
       duration: Duration.minutes(10),
       targets: [Target.thresholdHR(60)],
       notes: "Flat grade, easy pace to cool down",
@@ -267,6 +205,5 @@ export const SAMPLE_TREADMILL_ACTIVITIES: Array<RecordingServiceActivityPlan> = 
   THRESHOLD_RUN_WORKOUT_1,
   THRESHOLD_RUN_WORKOUT_2,
   SPEED_INTERVALS_WORKOUT,
-  EASY_RECOVERY_RUN,
   HILL_INTERVALS_WORKOUT,
 ];

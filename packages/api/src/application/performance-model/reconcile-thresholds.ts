@@ -23,14 +23,18 @@ import {
 } from "@repo/core/performance-calibration";
 import { activities, activityEfforts, thresholds } from "@repo/db";
 import { and, asc, eq, gt, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
-import type { DrizzleTransactionClient } from "../../db";
+import type { DrizzleTransactionClient, getRequiredDb } from "../../db";
 import { createDrizzleAthleteDerivedStateRepository } from "../../infrastructure/repositories";
 import { markAthleteStateDirty } from "../../repositories/athlete-state-repository";
 import {
+  claimDeferredThresholdCalibration,
+  completeDeferredThresholdCalibration,
+  enqueueDeferredThresholdCalibration,
   insertThresholdEvaluation,
   planThresholdEvaluationPersistence,
   readThresholdEvidenceSources,
   rebuildThresholdChainWithProfileLockHeld,
+  retryDeferredThresholdCalibration,
   type ThresholdEffortLink,
   type ThresholdIdentity,
   type ThresholdImpact,
@@ -44,6 +48,8 @@ import {
 
 type EffortInsert = typeof activityEfforts.$inferInsert;
 const FULL_THRESHOLD_HISTORY_HORIZON = new Date("9999-12-31T23:59:59.999Z");
+const DEFERRED_CALIBRATION_LEASE_MILLISECONDS = 5 * 60_000;
+type DbClient = ReturnType<typeof getRequiredDb>;
 
 type ThresholdHistoryRow = Pick<
   typeof thresholds.$inferSelect,
@@ -462,9 +468,15 @@ export async function reconcileThresholdsWithProfileLockHeld(
     now: Date;
   },
 ) {
-  const sources = (await readThresholdEvidenceSources(tx, input)).filter(
-    (source): source is typeof source & { finishedAt: Date } => source.finishedAt !== null,
-  );
+  // Both the source read and the insert trigger use PostgreSQL's clock. A
+  // caller's app clock therefore cannot promote future device evidence early.
+  const sources = (
+    await readThresholdEvidenceSources(tx, {
+      ...input,
+      eligibleAtDatabaseNow: true,
+    })
+  ).filter((source): source is typeof source & { finishedAt: Date } => source.finishedAt !== null);
+  if (sources.length === 0) await enqueueDeferredThresholdCalibration(tx, input);
   const impacts = new Map(
     (input.preInvalidatedIdentities ?? []).map((impact) => [
       `${impact.activityCategory}/${impact.metric}`,
@@ -737,4 +749,78 @@ export async function finalizeThresholdsAfterHistoryImport(
     changed = true;
   }
   return { changed, identities };
+}
+
+/**
+ * Promotes persisted future-clock source revisions through the same fenced
+ * reconciliation path as an immediate accepted activity. Claim timing, lease
+ * recovery, completion, and retry backoff are all database-clock based.
+ */
+export async function processDueDeferredThresholdCalibrations(
+  db: DbClient,
+  input: { limit?: number } = {},
+) {
+  const limit = Math.max(1, Math.min(input.limit ?? 5, 50));
+  const result = { completed: 0, failed: 0, processed: 0 };
+  for (let index = 0; index < limit; index += 1) {
+    const claim = await claimDeferredThresholdCalibration(db, {
+      leaseMilliseconds: DEFERRED_CALIBRATION_LEASE_MILLISECONDS,
+    });
+    if (!claim) break;
+    result.processed += 1;
+    try {
+      await db.transaction(async (tx) => {
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${claim.profileId}, 0))`,
+        );
+        const sources = await readThresholdEvidenceSources(tx, {
+          profileId: claim.profileId,
+          activityId: claim.activityId,
+          eligibleAtDatabaseNow: true,
+        });
+        // A replacement/deletion must never let a stale claimed revision
+        // evaluate the activity's newer evidence.
+        if (
+          sources.length === 0 ||
+          sources.some((source) => source.sourceRevision !== claim.sourceRevision)
+        ) {
+          if (!(await completeDeferredThresholdCalibration(tx, claim))) {
+            throw new Error("Deferred threshold calibration claim was lost");
+          }
+          return;
+        }
+        const efforts = await tx
+          .select()
+          .from(activityEfforts)
+          .where(
+            and(
+              eq(activityEfforts.profile_id, claim.profileId),
+              eq(activityEfforts.activity_id, claim.activityId),
+              eq(activityEfforts.source_revision, claim.sourceRevision),
+            ),
+          );
+        const clock = await tx.execute(sql`select clock_timestamp() as now`);
+        const now = clock.rows[0]?.now;
+        if (!(now instanceof Date)) throw new Error("Database clock did not return a timestamp");
+        await reconcileThresholdsWithProfileLockHeld(tx, {
+          profileId: claim.profileId,
+          activityId: claim.activityId,
+          efforts,
+          now,
+        });
+        if (!(await completeDeferredThresholdCalibration(tx, claim))) {
+          throw new Error("Deferred threshold calibration claim was lost");
+        }
+      });
+      result.completed += 1;
+    } catch (error) {
+      result.failed += 1;
+      await retryDeferredThresholdCalibration(
+        db,
+        claim,
+        error instanceof Error ? error.name : "deferred_threshold_calibration_failed",
+      );
+    }
+  }
+  return result;
 }

@@ -11,6 +11,10 @@ import { groupEventRsvpStatusSchema, resolveGroupEventRsvpStatus } from "@repo/c
 import { z } from "zod";
 
 import { toScheduledActivityPlanSummary } from "../activity-plans/read-projections";
+import {
+  type CurrentPlannedSessionPlan,
+  materializeCurrentPlannedSessionProjection,
+} from "./current-planned-session-projection";
 
 const eventSourceSchema = z.looseObject({
   id: z.string(),
@@ -39,6 +43,7 @@ const plannedSessionSourceSchema = z
   .object({
     session: plannedSessionSchema,
     linkedActivityDisplay: activityDisplayModelSchema.nullable(),
+    currentPlan: z.unknown().nullable().optional(),
   })
   .strict();
 
@@ -176,29 +181,15 @@ export function assembleCalendarProjectionRange(input: {
 
   for (const source of plannedSessionSources) {
     const session = source.session;
-    const manifest = session.prescription.resolutionManifest;
-    const prescriptionMetrics = [
-      metric(
-        "elapsed_duration",
-        "Duration",
-        manifest.prescription_estimate.duration.value_seconds,
-        "seconds",
-        manifest.prescription_estimate.duration.status !== "exact",
-      ),
-      metric(
-        "common_load",
-        "Load",
-        manifest.prescription_estimate.common_load.value,
-        "load",
-        manifest.prescription_estimate.common_load.status !== "complete",
-      ),
-    ].filter((item): item is SemanticMetric => item !== null);
+    const currentPlan = materializeCurrentPlannedSessionProjection(
+      (source.currentPlan as CurrentPlannedSessionPlan | null | undefined) ?? null,
+    );
     const metrics =
       source.linkedActivityDisplay?.metrics ??
-      (session.lifecycle.status === "completed" ? [] : prescriptionMetrics);
+      (session.lifecycle.status === "completed" ? [] : (currentPlan?.metrics ?? []));
     const plannedActual = buildPlannedSessionComparison({
       session: {
-        prescription: session.prescription,
+        ...(session.prescription ? { prescription: session.prescription } : {}),
         lifecycle: session.lifecycle,
       },
       actual: observationFromDisplay(source.linkedActivityDisplay),
@@ -208,10 +199,12 @@ export function assembleCalendarProjectionRange(input: {
       calendarDate: session.planningDate,
       timing: { startsAt: null, endsAt: null, allDay: true, timezone: input.timezone },
       kind: "planned_activity",
-      title: `${manifest.resolved_structure.activity_category} session`,
+      title: currentPlan?.title ?? "Scheduled session",
       subtitle: null,
       status: session.lifecycle.status,
-      navigation: { target: "activity_plan", href: "/record" },
+      navigation: source.linkedActivityDisplay
+        ? { target: "activity", href: source.linkedActivityDisplay.href }
+        : { target: "activity_plan", href: "/record" },
       metrics,
       estimated:
         session.lifecycle.status === "scheduled" &&

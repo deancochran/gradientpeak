@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { activityPlanSemanticHash, activityPlanStructureSchema } from "../../activity-plan";
 import { stringifyCanonicalJson } from "../../athlete-intelligence/canonical-json";
 import { createUnavailableAthletePerformanceTargetFacts } from "../../performance-model";
 import { sha256Hex } from "../../utils/sha256";
-
 import {
+  recordingExecutionManifestSchema,
   recordingLaunchIntentSchema,
+  recordingOccurrenceResultSchema,
   recordingSessionArtifactSchema,
   recordingSessionOverrideSchema,
   recordingSessionSnapshotSchema,
@@ -31,8 +33,40 @@ const validCapabilities = {
   errors: [],
   warnings: [],
 };
-
 describe("recording session schemas", () => {
+  it.each([
+    undefined,
+    null,
+    { status: "completed", method: "automatic" },
+    { status: "skipped", method: "manual" },
+  ])("round-trips legacy, unfinished, and terminal occurrence evidence: %j", (completion) => {
+    const occurrence = {
+      occurrenceId: "prescribed-occurrence",
+      globalOrdinal: 0,
+      stepId: "550e8400-e29b-41d4-a716-446655440003",
+      repeatIteration: 0,
+      role: "activity",
+      activity_category: "run",
+      startedAt: "2026-03-20T10:00:00.000Z",
+      completedAt: "2026-03-20T10:00:10.000Z",
+      activeSeconds: 10,
+      movingSeconds: 10,
+      distanceMeters: 0,
+      ...(completion !== undefined ? { completion } : {}),
+    };
+    const checkpointResult = recordingOccurrenceResultSchema.parse(
+      JSON.parse(JSON.stringify(occurrence)),
+    );
+    expect(checkpointResult).toEqual(occurrence);
+    const manifest = recordingExecutionManifestSchema.parse({
+      version: 1,
+      compilerVersion: 3,
+      planHash: "a".repeat(64),
+      occurrences: [{ ...checkpointResult, timerEvents: [], laps: [] }],
+    });
+    expect(manifest.occurrences[0]?.completion).toEqual(completion);
+    if (completion === undefined) expect(manifest.occurrences[0]).not.toHaveProperty("completion");
+  });
   it("accepts event/session-owned route linkage in a launch intent", () => {
     const result = recordingLaunchIntentSchema.safeParse({
       activityCategory: "bike",
@@ -52,37 +86,22 @@ describe("recording session schemas", () => {
         autoAdvanceSteps: true,
       },
     });
-
     expect(result.success).toBe(true);
   });
-
   it("accepts a snapshot and artifact for a finalized session", () => {
-    const prescribedStructure = {
-      version: 3 as const,
+    const prescribedStructure = activityPlanStructureSchema.parse({
+      version: 5 as const,
       activity_category: "bike" as const,
-      segments: [
+      items: [
         {
-          id: "550e8400-e29b-41d4-a716-446655440003",
-          role: "activity" as const,
-          name: "Bike",
-          intervals: [
-            {
-              id: "550e8400-e29b-41d4-a716-446655440004",
-              name: "Work",
-              repetitions: 1,
-              steps: [
-                {
-                  id: "550e8400-e29b-41d4-a716-446655440005",
-                  name: "Steady",
-                  duration: { type: "time" as const, seconds: 600 },
-                  targets: [{ type: "RPE" as const, intensity: 7 }],
-                },
-              ],
-            },
-          ],
+          type: "step",
+          id: "550e8400-e29b-41d4-a716-446655440005",
+          name: "Steady",
+          duration: { type: "time" as const, seconds: 600 },
+          targets: [{ type: "RPE" as const, intensity: 7 }],
         },
       ],
-    };
+    });
     const snapshot = {
       identity: {
         sessionId: "session-1",
@@ -134,8 +153,8 @@ describe("recording session schemas", () => {
       },
       capabilities: validCapabilities,
       planExecution: {
-        manifestVersion: 1 as const,
-        compilerVersion: 1 as const,
+        manifestVersion: 2 as const,
+        compilerVersion: 3 as const,
         activityPlanId: "550e8400-e29b-41d4-a716-446655440001",
         scheduledEventId: "550e8400-e29b-41d4-a716-446655440000",
         name: "Hard",
@@ -149,15 +168,18 @@ describe("recording session schemas", () => {
           source: { kind: "direct", operationId: "core-recording-session-test-operation" },
           prescription: {
             resolutionManifest: {
-              resolver_version: "prescription-resolver-v1",
-              policy_version: "training-plan-policy-v1",
+              resolver_version: "prescription-resolver-v2",
+              policy_version: "training-plan-policy-v2",
               training_plan_id: null,
               training_plan_revision: null,
               training_plan_hash: null,
               athlete_context_revision: null,
               activity_plan_id: "550e8400-e29b-41d4-a716-446655440001",
               activity_plan_revision: 2,
-              activity_plan_semantic_hash: `v1:sha256:${"a".repeat(64)}`,
+              activity_plan_semantic_hash: activityPlanSemanticHash({
+                structure: prescribedStructure,
+                trainingIntent: "aerobic_base",
+              }),
               effective_target_duration_minutes: null,
               effective_target_common_load: null,
               evidence_facts: [],
@@ -168,7 +190,6 @@ describe("recording session schemas", () => {
                 target_common_load: null,
                 importance: "normal",
               },
-              adaptation_values: {},
               fallback_level: "system_default_no_context",
               reason_codes: [],
               resolved_structure: prescribedStructure,
@@ -206,7 +227,6 @@ describe("recording session schemas", () => {
         },
       },
     };
-
     const parsedSnapshot = recordingSessionSnapshotSchema.parse(snapshot);
     expect(parsedSnapshot.performanceTargets.asOf).toBe("2026-03-20T10:00:00.000Z");
     expect(
@@ -217,7 +237,6 @@ describe("recording session schemas", () => {
         ),
       }).success,
     ).toBe(false);
-
     const artifact = recordingSessionArtifactSchema.safeParse({
       schemaVersion: 2,
       sessionId: "session-1",
@@ -240,7 +259,7 @@ describe("recording session schemas", () => {
       streamArtifactPaths: ["/tmp/power.jsonl"],
       executionManifest: {
         version: 1,
-        compilerVersion: 1,
+        compilerVersion: 3,
         planHash: "0".repeat(64),
         occurrences: [],
       },
@@ -252,14 +271,12 @@ describe("recording session schemas", () => {
       },
       completedAt: "2026-03-20T11:00:00Z",
     });
-
     expect(artifact.success).toBe(true);
     expect(artifact.data?.finalStats.manualLapsMs).toEqual([]);
     expect(artifact.data?.snapshot.planExecution?.plannedSession).toEqual(
       snapshot.planExecution.plannedSession,
     );
   });
-
   it("rejects obsolete recording threshold and default markers", () => {
     const result = recordingSessionSnapshotSchema.safeParse({
       identity: { sessionId: "session-1", revision: 1, startedAt: "2026-03-20T10:00:00Z" },
@@ -296,10 +313,8 @@ describe("recording session schemas", () => {
         },
       },
     });
-
     expect(result.success).toBe(false);
   });
-
   it("rejects unsupported identity-changing overrides", () => {
     const result = recordingSessionOverrideSchema.safeParse({
       type: "gps_mode",
@@ -307,7 +322,6 @@ describe("recording session schemas", () => {
       scope: "until_changed",
       recordedAt: "2026-03-20T10:30:00Z",
     });
-
     expect(result.success).toBe(false);
   });
 });

@@ -5,6 +5,7 @@ import { View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { FilterChip, IndexSearchBar } from "@/components/shared/IndexSearchBar";
 import { SearchableBottomSheetList } from "@/components/shared/SearchableBottomSheetList";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 export type ActivityCategoryFilter = "run" | "bike" | "swim" | "strength" | "other" | null;
 export type ActivityPlanSort = "newest" | "oldest" | "name";
@@ -69,12 +70,12 @@ export function BuilderActivityAssignmentSheetContent({
 
   return (
     <SearchableBottomSheetList
+      {...omitUndefined({ hasNextPage })}
       data={activityPlanItemsWithEstimates}
       emptyMessage="No matching activities."
-      hasNextPage={hasNextPage}
       headerInLayout
-      isFetchingNextPage={isFetchingNextPage}
-      isLoading={isLoading}
+      {...omitUndefined({ isFetchingNextPage })}
+      {...omitUndefined({ isLoading })}
       keyExtractor={(item) => item.id}
       loadingMessage="Loading activities..."
       onFetchNextPage={onFetchNextPage}

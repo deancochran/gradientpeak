@@ -74,12 +74,32 @@ async function requestBytes(request: IncomingMessage): Promise<Uint8Array | unde
   return chunks.length === 0 ? undefined : Buffer.concat(chunks);
 }
 
-async function proxyStorageRequest(
+export async function proxyStorageRequest(
   request: IncomingMessage,
   response: ServerResponse,
   directBaseUrl: string,
+  browserOrigin?: string,
 ) {
   try {
+    if (browserOrigin && request.headers.origin) {
+      if (request.headers.origin !== browserOrigin) {
+        response.writeHead(403).end();
+        return;
+      }
+      response.setHeader("access-control-allow-origin", browserOrigin);
+      response.setHeader("vary", "Origin");
+      response.setHeader("access-control-allow-methods", "GET, HEAD, POST, PUT, DELETE, OPTIONS");
+      // Actor fixtures attach a synthetic forwarding address to every browser request.
+      // Permit it only behind this exact-origin, loopback-only disposable gateway.
+      response.setHeader(
+        "access-control-allow-headers",
+        "authorization, apikey, content-type, x-client-info, x-upsert, x-forwarded-for",
+      );
+      if (request.method === "OPTIONS") {
+        response.writeHead(204).end();
+        return;
+      }
+    }
     const path = (request.url ?? "/").replace(/^\/storage\/v1(?=\/|$)/, "");
     const headers = new Headers();
     for (const [name, value] of Object.entries(request.headers)) {
@@ -106,6 +126,12 @@ async function proxyStorageRequest(
     response.statusCode = upstream.status;
     const contentType = upstream.headers.get("content-type");
     if (contentType) response.setHeader("content-type", contentType);
+    // Browser uploads need the upstream Storage API's preflight and response CORS headers.
+    // Forward its policy rather than inventing a more permissive gateway policy.
+    for (const [name, value] of upstream.headers) {
+      if (!browserOrigin && (name.startsWith("access-control-") || name === "vary"))
+        response.setHeader(name, value);
+    }
     response.setHeader("content-length", bytes.byteLength);
     response.end(bytes);
   } catch {
@@ -114,9 +140,21 @@ async function proxyStorageRequest(
   }
 }
 
-async function startGatewayProxy(directBaseUrl: string) {
+async function startGatewayProxy(directBaseUrl: string, browserOrigin?: string) {
+  if (browserOrigin) {
+    const origin = new URL(browserOrigin);
+    if (
+      origin.protocol !== "http:" ||
+      origin.hostname !== "127.0.0.1" ||
+      origin.origin !== browserOrigin
+    ) {
+      throw new Error(
+        "Disposable Storage browser origin must be an exact literal-loopback HTTP origin",
+      );
+    }
+  }
   const server = createServer((request, response) => {
-    void proxyStorageRequest(request, response, directBaseUrl);
+    void proxyStorageRequest(request, response, directBaseUrl, browserOrigin);
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -138,6 +176,7 @@ export async function withDisposableSupabaseStorage<T>(
   pool: Pool,
   connectionString: string,
   run: (storage: { url: string; serviceRoleKey: string }) => Promise<T>,
+  options: { temporaryDirectory?: string; browserOrigin?: string } = {},
 ): Promise<T> {
   const sourceContainerName = "supabase_storage_gradientpeak";
   const source = (dockerJson(["inspect", sourceContainerName]) as ContainerInspect[])[0];
@@ -146,104 +185,109 @@ export async function withDisposableSupabaseStorage<T>(
   if (!sourceEnvironment || !network) {
     throw new Error("repository-managed local Storage API inspection failed");
   }
-  const storageRoot = mkdtempSync(join(realpathSync("/tmp/opencode"), "gradientpeak-storage-"));
-  const containerName = `gradientpeak-storage-disposable-${process.pid}-${Date.now()}`;
-  const spec = buildStorageContainerSpec({
-    name: containerName,
-    network,
-    storageRoot,
-    databaseUrl: connectionString,
-    sourceEnvironment,
-  });
-  const database = new URL(connectionString).pathname.slice(1);
-  if (!/^gradientpeak_[a-z_]+_\d+_\d+$/.test(database)) {
-    throw new Error("Storage API target is not a guarded disposable database");
-  }
-  const sourceDatabaseUrl = sourceEnvironment
-    .find((entry) => entry.startsWith("DATABASE_URL="))
-    ?.slice("DATABASE_URL=".length);
-  const storageRole = sourceDatabaseUrl ? new URL(sourceDatabaseUrl).username : "";
-  if (!/^[a-z_][a-z0-9_]*$/.test(storageRole)) {
-    throw new Error("reviewed local Storage API database role is invalid");
-  }
-  await pool.query(`grant create on database "${database}" to "${storageRole}"`);
-
-  let proxy: Awaited<ReturnType<typeof startGatewayProxy>> | undefined;
+  const storageRoot = mkdtempSync(
+    join(realpathSync(options.temporaryDirectory ?? "/tmp/opencode"), "gradientpeak-storage-"),
+  );
   try {
-    const command = [
-      "run",
-      "-d",
-      "--name",
-      spec.name,
-      "--network",
-      spec.network,
-      "-p",
-      "127.0.0.1::5000",
-      "-v",
-      `${spec.mount.source}:${spec.mount.destination}`,
-    ];
-    for (const environment of spec.environment) command.push("-e", environment);
-    command.push(spec.image);
-    execFileSync("docker", command, { stdio: "ignore" });
-    const inspect = (
-      dockerJson(["inspect", spec.name]) as Parameters<typeof attestStorageContainer>[0][]
-    )[0];
-    const imageInspect = (dockerJson(["image", "inspect", spec.image]) as ImageInspect[])[0];
-    if (!inspect || !imageInspect) throw new Error("disposable Storage API attestation failed");
-    attestStorageContainer(inspect, imageInspect, spec);
-    const port = execFileSync("docker", ["port", spec.name, "5000/tcp"], {
-      encoding: "utf8",
-    })
-      .trim()
-      .match(/:(\d+)$/)?.[1];
-    if (!port) throw new Error("disposable Storage API has no loopback port");
-    const directBaseUrl = `http://127.0.0.1:${port}`;
-    await waitForStorageApi(directBaseUrl, spec.name);
-    await waitForStorageMigrations(pool);
-    const storageAdminUrl = new URL(connectionString);
-    const sourceDatabase = new URL(sourceDatabaseUrl ?? "");
-    storageAdminUrl.username = sourceDatabase.username;
-    storageAdminUrl.password = sourceDatabase.password;
-    const storageAdmin = new Pool({ connectionString: storageAdminUrl.toString(), max: 1 });
+    const containerName = `gradientpeak-storage-disposable-${process.pid}-${Date.now()}`;
+    const spec = buildStorageContainerSpec({
+      name: containerName,
+      network,
+      storageRoot,
+      databaseUrl: connectionString,
+      sourceEnvironment,
+    });
+    const database = new URL(connectionString).pathname.slice(1);
+    if (!/^gradientpeak_[a-z_]+_\d+_\d+$/.test(database)) {
+      throw new Error("Storage API target is not a guarded disposable database");
+    }
+    const sourceDatabaseUrl = sourceEnvironment
+      .find((entry) => entry.startsWith("DATABASE_URL="))
+      ?.slice("DATABASE_URL=".length);
+    const storageRole = sourceDatabaseUrl ? new URL(sourceDatabaseUrl).username : "";
+    if (!/^[a-z_][a-z0-9_]*$/.test(storageRole)) {
+      throw new Error("reviewed local Storage API database role is invalid");
+    }
+    await pool.query(`grant create on database "${database}" to "${storageRole}"`);
+
+    let proxy: Awaited<ReturnType<typeof startGatewayProxy>> | undefined;
     try {
-      await storageAdmin.query(`
+      const command = [
+        "run",
+        "-d",
+        "--name",
+        spec.name,
+        "--network",
+        spec.network,
+        "-p",
+        "127.0.0.1::5000",
+        "-v",
+        `${spec.mount.source}:${spec.mount.destination}`,
+      ];
+      for (const environment of spec.environment) command.push("-e", environment);
+      command.push(spec.image);
+      execFileSync("docker", command, { stdio: "ignore" });
+      const inspect = (
+        dockerJson(["inspect", spec.name]) as Parameters<typeof attestStorageContainer>[0][]
+      )[0];
+      const imageInspect = (dockerJson(["image", "inspect", spec.image]) as ImageInspect[])[0];
+      if (!inspect || !imageInspect) throw new Error("disposable Storage API attestation failed");
+      attestStorageContainer(inspect, imageInspect, spec);
+      const port = execFileSync("docker", ["port", spec.name, "5000/tcp"], {
+        encoding: "utf8",
+      })
+        .trim()
+        .match(/:(\d+)$/)?.[1];
+      if (!port) throw new Error("disposable Storage API has no loopback port");
+      const directBaseUrl = `http://127.0.0.1:${port}`;
+      await waitForStorageApi(directBaseUrl, spec.name);
+      await waitForStorageMigrations(pool);
+      const storageAdminUrl = new URL(connectionString);
+      const sourceDatabase = new URL(sourceDatabaseUrl ?? "");
+      storageAdminUrl.username = sourceDatabase.username;
+      storageAdminUrl.password = sourceDatabase.password;
+      const storageAdmin = new Pool({ connectionString: storageAdminUrl.toString(), max: 1 });
+      try {
+        await storageAdmin.query(`
         grant usage on schema storage to service_role;
         grant select, insert, update, delete on all tables in schema storage to service_role;
         grant usage, select on all sequences in schema storage to service_role;
       `);
-    } finally {
-      await storageAdmin.end();
-    }
-    const serviceRoleKey = spec.environment
-      .find((entry) => entry.startsWith("SERVICE_KEY="))
-      ?.slice("SERVICE_KEY=".length);
-    if (!serviceRoleKey) throw new Error("reviewed local Storage API lacks a service credential");
-    const privileges = await pool.query<{ service_schema: boolean; storage_schema: boolean }>(`
+      } finally {
+        await storageAdmin.end();
+      }
+      const serviceRoleKey = spec.environment
+        .find((entry) => entry.startsWith("SERVICE_KEY="))
+        ?.slice("SERVICE_KEY=".length);
+      if (!serviceRoleKey) throw new Error("reviewed local Storage API lacks a service credential");
+      const privileges = await pool.query<{ service_schema: boolean; storage_schema: boolean }>(`
       select
         has_schema_privilege('service_role', 'storage', 'usage') service_schema,
         has_schema_privilege('${storageRole}', 'storage', 'usage') storage_schema
     `);
-    if (!privileges.rows[0]?.service_schema || !privileges.rows[0]?.storage_schema) {
-      throw new Error(
-        `disposable Storage API schema grants are incomplete (${JSON.stringify(privileges.rows[0])})`,
-      );
+      if (!privileges.rows[0]?.service_schema || !privileges.rows[0]?.storage_schema) {
+        throw new Error(
+          `disposable Storage API schema grants are incomplete (${JSON.stringify(privileges.rows[0])})`,
+        );
+      }
+      proxy = await startGatewayProxy(directBaseUrl, options.browserOrigin);
+      return await run({ url: proxy.url, serviceRoleKey });
+    } finally {
+      await proxy?.close().catch(() => undefined);
+      spawnSync("docker", ["exec", spec.name, "chmod", "-R", "a+rwx", "/mnt"], {
+        stdio: "ignore",
+      });
+      const removed = spawnSync("docker", ["rm", "-f", spec.name], { stdio: "ignore" });
+      const remaining = execFileSync(
+        "docker",
+        ["ps", "-a", "--filter", `name=${spec.name}`, "--format", "{{.Names}}"],
+        { encoding: "utf8" },
+      )
+        .split("\n")
+        .filter(Boolean);
+      attestCleanup(spec.name, removed.status, remaining);
     }
-    proxy = await startGatewayProxy(directBaseUrl);
-    return await run({ url: proxy.url, serviceRoleKey });
   } finally {
-    await proxy?.close().catch(() => undefined);
-    spawnSync("docker", ["exec", spec.name, "chmod", "-R", "a+rwx", "/mnt"], {
-      stdio: "ignore",
-    });
-    const removed = spawnSync("docker", ["rm", "-f", spec.name], { stdio: "ignore" });
-    const remaining = execFileSync(
-      "docker",
-      ["ps", "-a", "--filter", `name=${spec.name}`, "--format", "{{.Names}}"],
-      { encoding: "utf8" },
-    )
-      .split("\n")
-      .filter(Boolean);
-    attestCleanup(spec.name, removed.status, remaining);
     rmSync(storageRoot, { recursive: true, force: true });
   }
 }

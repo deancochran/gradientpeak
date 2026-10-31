@@ -64,6 +64,14 @@ export interface TrainingPlanRepository {
     profileId: string;
     visibility?: "private" | "followers" | "public";
   }): Promise<TrainingPlanRow[]>;
+  listTrainingPlansPage(input: {
+    limit: number;
+    offset: number;
+    ownerScope: TrainingPlanOwnerScope;
+    profileId: string;
+    search?: string;
+    visibility?: "private" | "followers" | "public";
+  }): Promise<{ items: TrainingPlanRow[]; total: number }>;
   updateTrainingPlan(input: UpdateTrainingPlanRecordInput): Promise<TrainingPlanRow>;
   getPriorInferredStateSnapshot(profileId: string): Promise<InferredStateSnapshot | null>;
   persistInferredStateSnapshot(input: {

@@ -6,7 +6,6 @@ import {
   compileValidatedActivityPlan,
   type RecordingActivityCategory,
 } from "@repo/core";
-
 export interface RecordingActivityPlanInput {
   id?: string;
   name: string;
@@ -16,11 +15,7 @@ export interface RecordingActivityPlanInput {
   /** Untrusted transport input; compileRecordingPlan performs strict parsing. */
   structure: unknown;
 }
-
-const FREE_RECORDING_SEGMENT_ID = "00000000-0000-4000-8000-000000000001";
-const FREE_RECORDING_INTERVAL_ID = "00000000-0000-4000-8000-000000000002";
 const FREE_RECORDING_STEP_ID = "00000000-0000-4000-8000-000000000003";
-
 /**
  * Creates the canonical execution-only structure for a free recording.
  *
@@ -35,34 +30,20 @@ export function createFreeRecordingExecutionPlan(
   return {
     name,
     structure: {
-      version: 3,
+      version: 5,
       activity_category,
-      segments: [
+      items: [
         {
-          id: FREE_RECORDING_SEGMENT_ID,
-          role: "activity",
+          type: "step",
+          id: FREE_RECORDING_STEP_ID,
           name,
-          intervals: [
-            {
-              id: FREE_RECORDING_INTERVAL_ID,
-              name,
-              repetitions: 1,
-              steps: [
-                {
-                  id: FREE_RECORDING_STEP_ID,
-                  name,
-                  duration: { type: "untilFinished" },
-                  targets: [{ type: "RPE", intensity: 1 }],
-                },
-              ],
-            },
-          ],
+          duration: { type: "untilFinished" },
+          targets: [],
         },
       ],
     },
   };
 }
-
 type PresentableOccurrence<T extends CompiledActivityPlanOccurrence> = T extends unknown
   ? Omit<T, "targets"> & {
       id: string;
@@ -73,39 +54,31 @@ type PresentableOccurrence<T extends CompiledActivityPlanOccurrence> = T extends
     }
   : never;
 export type RecordingPlanOccurrence = PresentableOccurrence<CompiledActivityPlanOccurrence>;
-
 export type CompiledRecordingPlan = Omit<CompiledActivityPlan, "occurrences"> & {
   occurrences: readonly RecordingPlanOccurrence[];
 };
-
 /** Compiles the strict snapshot and adds presentation-only labels without changing identity/order. */
 export function compileRecordingPlan(plan: RecordingActivityPlanInput): CompiledRecordingPlan {
   const structure = activityPlanStructureSchema.parse(plan.structure);
   const compiled = compileValidatedActivityPlan(structure);
-
   return {
     ...compiled,
     occurrences: compiled.occurrences.map((occurrence) => {
-      const segment = structure.segments[occurrence.segmentIndex];
-      if (occurrence.role !== "activity") {
-        return {
-          ...occurrence,
-          id: occurrence.occurrenceId,
-          name: segment?.name ?? occurrence.role,
-          targets: [...occurrence.targets],
-        };
-      }
-      const step =
-        segment?.role === "activity"
-          ? segment.intervals[occurrence.intervalIndex]?.steps[occurrence.stepIndex]
-          : undefined;
+      const step = structure.items.find((item) =>
+        item.type === "step"
+          ? item.id === occurrence.stepId
+          : item.steps.some((candidate) => candidate.id === occurrence.stepId),
+      );
+      const matchedStep =
+        step?.type === "step"
+          ? step
+          : step?.steps.find((candidate) => candidate.id === occurrence.stepId);
       return {
         ...occurrence,
         id: occurrence.occurrenceId,
-        name: step?.name ?? "Activity step",
+        name: matchedStep?.name ?? "Activity step",
         targets: [...occurrence.targets],
-        ...(step?.description ? { description: step.description } : {}),
-        ...(step?.notes ? { notes: step.notes } : {}),
+        ...(matchedStep?.instructions ? { description: matchedStep.instructions } : {}),
       };
     }),
   };

@@ -1,248 +1,124 @@
-import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { createHost } from "../../test/mock-components";
-import { renderNative, screen } from "../../test/render-native";
-import { ActivityPlanContentPreview } from "./ActivityPlanContentPreview";
+import { fireEvent, renderNative, screen } from "../../test/render-native";
+import { ActivityPlanContentPreview, ActivityPlanRepeatSteps } from "./ActivityPlanContentPreview";
 
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
 }));
-
-jest.mock("@repo/ui/components/text", () => ({
-  __esModule: true,
-  Text: createHost("Text"),
-}));
-
-jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
-  __esModule: true,
-  ElevationProfileChart: createHost("ElevationProfileChart"),
-}));
-
+jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
+jest.mock("@repo/ui/components/switch", () => ({ __esModule: true, Switch: createHost("Switch") }));
 jest.mock("@/components/activity-plan/activity/TimelineChart", () => ({
   __esModule: true,
   TimelineChart: createHost("TimelineChart"),
 }));
 
-jest.mock("@/components/shared/StaticRouteMapPreview", () => ({
-  __esModule: true,
-  StaticRouteMapPreview: createHost("StaticRouteMapPreview"),
-}));
-
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
-
 const structure = {
-  version: 3,
-  activity_category: "run",
-  segments: [
+  version: 5 as const,
+  activity_category: "run" as const,
+  items: [
     {
+      type: "step" as const,
       id: id(1),
-      role: "activity",
-      name: "Tempo run",
-      intervals: [
+      name: "Warm up",
+      instructions: "Start easy",
+      duration: { type: "time" as const, seconds: 300 },
+      targets: [],
+    },
+    {
+      type: "repeat" as const,
+      id: id(2),
+      count: 2,
+      steps: [
         {
-          id: id(2),
-          name: "Build",
-          repetitions: 2,
-          steps: [
-            {
-              id: id(3),
-              name: "Tempo",
-              duration: { type: "time", seconds: 300 },
-              targets: [{ type: "RPE", intensity: 7 }],
-            },
-          ],
+          type: "step" as const,
+          id: id(3),
+          name: "Tempo",
+          instructions: "Stay smooth",
+          duration: { type: "time" as const, seconds: 300 },
+          targets: [{ type: "RPE" as const, intensity: 7 }],
+        },
+        {
+          type: "step" as const,
+          id: id(4),
+          duration: { type: "time" as const, seconds: 60 },
+          targets: [],
         },
       ],
     },
   ],
 };
 
-describe("ActivityPlanContentPreview", () => {
-  it("shows the interval chart without an embedded profile heading", async () => {
+describe("ActivityPlanContentPreview V5", () => {
+  it("shows root items then each repeat definition once, in authored order", async () => {
     await renderNative(
-      <ActivityPlanContentPreview
-        plan={{ structure }}
-        size="medium"
-        testIDPrefix="structured-plan-preview"
-      />,
+      <ActivityPlanContentPreview plan={{ structure }} size="large" testIDPrefix="preview" />,
     );
 
-    expect(screen.queryByText("Intensity profile")).toBeNull();
-    expect(screen.getByTestId("structured-plan-preview-timeline")).toBeTruthy();
+    expect(screen.getByTestId("preview-timeline")).toBeTruthy();
+    expect(screen.getByText("Warm up")).toBeTruthy();
+    expect(screen.getByText("Start easy")).toBeTruthy();
+    expect(screen.getByText("Repeat × 2")).toBeTruthy();
+    expect(screen.getByText("Tempo")).toBeTruthy();
+    expect(screen.getAllByText("Tempo")).toHaveLength(1);
+    expect(screen.getByText("Stay smooth")).toBeTruthy();
   });
 
-  it("does not render an empty visual wrapper for a metrics-only plan", async () => {
+  it("shows a targetless duration without repeat metadata or fabricated effort", async () => {
+    const targetless = { ...structure, items: [structure.items[0]] };
     await renderNative(
-      <ActivityPlanContentPreview plan={{}} size="medium" testIDPrefix="metrics-only-preview" />,
+      <ActivityPlanContentPreview plan={{ structure: targetless }} size="large" />,
     );
 
-    expect(screen.queryByTestId("metrics-only-preview")).toBeNull();
-    expect(screen.queryByText("Intensity profile")).toBeNull();
+    expect(screen.getByText("5min")).toBeTruthy();
+    expect(screen.queryByText(/Repeat/)).toBeNull();
+    expect(screen.queryByText(/^at /)).toBeNull();
   });
 
-  it("collapses repeated segment, activity_category, interval, and step labels", async () => {
+  it("uses whole-second editor pace notation in the readonly and interactive flows", async () => {
+    const repeat = structure.items[1];
+    if (!repeat || repeat.type !== "repeat") throw new Error("Expected repeat fixture");
+    const firstStep = repeat.steps[0];
+    if (!firstStep) throw new Error("Expected repeat child fixture");
+    const paceRepeat = {
+      ...repeat,
+      count: 3,
+      steps: [
+        {
+          ...firstStep,
+          targets: [{ type: "speed" as const, intensity: 13.33 }],
+        },
+      ],
+    };
     await renderNative(
       <ActivityPlanContentPreview
-        plan={{
-          structure: {
-            version: 3,
-            activity_category: "swim",
-            segments: [
-              {
-                id: id(10),
-                role: "activity",
-                name: "Swim",
-                intervals: [
-                  {
-                    id: id(11),
-                    name: "Swim",
-                    repetitions: 1,
-                    steps: [
-                      {
-                        id: id(12),
-                        name: "Swim",
-                        duration: { type: "time", seconds: 1200 },
-                        targets: [{ type: "RPE", intensity: 5 }],
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-        }}
+        plan={{ structure: { ...structure, items: [paceRepeat] } }}
         size="large"
       />,
     );
+    expect(screen.getByText("5min at 4:30/km")).toBeTruthy();
 
-    expect(screen.queryByText("Swim")).toBeNull();
-    expect(screen.queryByText("swim")).toBeNull();
-    expect(screen.getByText("20min at 5 RPE")).toBeTruthy();
-  });
-
-  it("keeps distinct hierarchy labels and formats longer target summaries", async () => {
+    const onTargetPress = jest.fn();
     await renderNative(
-      <ActivityPlanContentPreview
-        plan={{
-          structure: {
-            version: 3,
-            activity_category: "run",
-            segments: [
-              {
-                id: id(20),
-                role: "activity",
-                name: "Run",
-                intervals: [
-                  {
-                    id: id(21),
-                    name: "क",
-                    repetitions: 2,
-                    steps: [
-                      {
-                        id: id(22),
-                        name: "कि",
-                        duration: { type: "time", seconds: 600 },
-                        targets: [
-                          { type: "cadence", intensity: 90 },
-                          { type: "speed", intensity: 30 },
-                        ],
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-        }}
-        size="large"
+      <ActivityPlanRepeatSteps
+        activityCategory="run"
+        repeat={paceRepeat}
+        onTargetPress={onTargetPress}
       />,
     );
-
-    expect(screen.queryByText("Run")).toBeNull();
-    expect(screen.getByText("क · Repeat 2×")).toBeTruthy();
-    expect(screen.getByText("कि")).toBeTruthy();
-    expect(screen.getByText("10min at 30 km/h · 90 rpm")).toBeTruthy();
+    fireEvent.press(screen.getByLabelText("Edit 4:30/km for Tempo"));
+    expect(onTargetPress).toHaveBeenCalledWith(id(3), 0);
   });
 
-  it("shows authored fallback by default and viewer-personalized output only when enabled", async () => {
-    const bikeStructure = structuredClone(structure);
-    bikeStructure.activity_category = "bike";
-    const bikeSegment = bikeStructure.segments[0];
-    const bikeInterval = bikeSegment?.intervals[0];
-    const bikeStep = bikeInterval?.steps[0];
-    if (!bikeSegment || !bikeInterval || !bikeStep) {
-      throw new Error("Bike fixture must contain one segment, interval, and step");
-    }
-    bikeStep.targets = [{ type: "%FTP", intensity: 80 }];
-    const performanceTargets = buildPerformanceTargetFactsFixture({
-      asOf: "2026-08-18T12:00:00.000Z",
-      athleteId: "viewer-1",
-      bikeThresholdWatts: 300,
-    });
-    const { rerender } = await renderNative(
-      <ActivityPlanContentPreview
-        performanceTargets={performanceTargets}
-        plan={{ structure: bikeStructure }}
-        size="large"
-      />,
-    );
+  it("keeps readonly prescriptions free of editable child controls and hides unavailable structure", async () => {
+    const repeat = structure.items[1];
+    if (!repeat || repeat.type !== "repeat") throw new Error("Expected repeat fixture");
+    await renderNative(<ActivityPlanRepeatSteps activityCategory="run" repeat={repeat} />);
+    expect(screen.queryByLabelText("Edit duration for Tempo")).toBeNull();
+    expect(screen.queryByLabelText("Edit 7 RPE for Tempo")).toBeNull();
 
-    expect(screen.getByText(/80% FTP/)).toBeTruthy();
-    expect(screen.queryByText(/240 W/)).toBeNull();
-
-    await rerender(
-      <ActivityPlanContentPreview
-        personalizeTargets
-        performanceTargets={performanceTargets}
-        plan={{ structure: bikeStructure }}
-        size="large"
-      />,
-    );
-    expect(screen.getByText(/240 W/)).toBeTruthy();
-  });
-
-  it("shows every authored instruction annotation on the full detail preview", async () => {
-    await renderNative(
-      <ActivityPlanContentPreview
-        plan={{
-          structure: {
-            version: 3,
-            activity_category: "run",
-            segments: [
-              {
-                id: id(30),
-                role: "activity",
-                name: "Tempo run",
-                notes: "Keep the warm-up easy.",
-                intervals: [
-                  {
-                    id: id(31),
-                    name: "Work",
-                    notes: "Jog the recoveries.",
-                    repetitions: 1,
-                    steps: [
-                      {
-                        id: id(32),
-                        name: "Tempo",
-                        description: "Hold a controlled hard effort.",
-                        notes: "Relax your shoulders.",
-                        duration: { type: "time", seconds: 300 },
-                        targets: [{ type: "RPE", intensity: 7 }],
-                      },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-        }}
-        size="large"
-      />,
-    );
-
-    expect(screen.getByText("Keep the warm-up easy.")).toBeTruthy();
-    expect(screen.getByText("Jog the recoveries.")).toBeTruthy();
-    expect(screen.getByText(/Hold a controlled hard effort\./)).toBeTruthy();
-    expect(screen.getByText(/Relax your shoulders\./)).toBeTruthy();
+    await renderNative(<ActivityPlanContentPreview plan={{}} testIDPrefix="preview" />);
+    expect(screen.queryByTestId("preview")).toBeNull();
   });
 });

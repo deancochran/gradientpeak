@@ -84,12 +84,17 @@ export function calculatePowerZoneDistribution(
   };
 
   for (let index = 0; index < powers.length; index += 1) {
-    const pct = (powers[index]! / ftp) * 100;
+    const power = powers[index];
+    const currentTimestamp = timestamps[index];
+    if (power === undefined || currentTimestamp === undefined) continue;
+    const pct = (power / ftp) * 100;
+    const nextTimestamp = timestamps[index + 1];
+    const previousTimestamp = timestamps[index - 1];
     const timeInZone =
-      index < timestamps.length - 1
-        ? timestamps[index + 1]! - timestamps[index]!
-        : index > 0
-          ? timestamps[index]! - timestamps[index - 1]!
+      nextTimestamp !== undefined
+        ? nextTimestamp - currentTimestamp
+        : previousTimestamp !== undefined
+          ? currentTimestamp - previousTimestamp
           : 1;
     const zoneIndex = getPowerZoneIndexFromFtpPercent(pct);
     zones[`zone${zoneIndex + 1}` as keyof typeof zones] += timeInZone;

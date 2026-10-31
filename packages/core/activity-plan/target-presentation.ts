@@ -1,6 +1,7 @@
 import type { AthletePerformanceTargetFacts } from "../performance-model";
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
 import { resolvePerformanceTargetValue } from "../utils/recording-plan-target-resolver";
+import { ACTIVITY_PLAN_SPEED_DECIMAL_PLACES } from "./authoring";
 import type { ActivityPlanTarget } from "./structure-schema";
 
 export type ActivityPlanTargetPresentation =
@@ -9,14 +10,15 @@ export type ActivityPlanTargetPresentation =
   | { kind: "abstract"; label: string; sourceLabel: string };
 
 const presentationTargetOrder: Record<ActivityPlanTarget["type"], number> = {
-  RPE: 0,
-  "%FTP": 1,
-  "%ThresholdHR": 2,
-  "%MaxHR": 3,
-  watts: 4,
-  bpm: 5,
-  speed: 6,
-  cadence: 7,
+  rest: 0,
+  RPE: 1,
+  "%FTP": 2,
+  "%ThresholdHR": 3,
+  "%MaxHR": 4,
+  watts: 5,
+  bpm: 6,
+  speed: 7,
+  cadence: 8,
 };
 
 /** Returns a copy in stable semantic order so authored array permutations render identically. */
@@ -26,7 +28,7 @@ export function orderActivityPlanTargetsForPresentation(
   return [...targets].sort(
     (left, right) =>
       presentationTargetOrder[left.type] - presentationTargetOrder[right.type] ||
-      left.intensity - right.intensity,
+      ("intensity" in left ? left.intensity : 0) - ("intensity" in right ? right.intensity : 0),
   );
 }
 
@@ -34,8 +36,21 @@ function formatNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : String(value);
 }
 
+function formatSpeed(value: number): string {
+  // Legacy saved targets may have conversion artifacts. Presentation is safe and
+  // bounded, but it never mutates the stored structure.
+  return (
+    Math.round((value + Number.EPSILON) * 10 ** ACTIVITY_PLAN_SPEED_DECIMAL_PLACES) /
+    10 ** ACTIVITY_PLAN_SPEED_DECIMAL_PLACES
+  )
+    .toFixed(ACTIVITY_PLAN_SPEED_DECIMAL_PLACES)
+    .replace(/\.0+$/, "");
+}
+
 function abstractLabel(target: ActivityPlanTarget): string {
   switch (target.type) {
+    case "rest":
+      return "Rest";
     case "%FTP":
       return `${formatNumber(target.intensity)}% FTP`;
     case "%ThresholdHR":
@@ -47,7 +62,7 @@ function abstractLabel(target: ActivityPlanTarget): string {
     case "bpm":
       return `${formatNumber(target.intensity)} bpm`;
     case "speed":
-      return `${formatNumber(target.intensity)} km/h`;
+      return `${formatSpeed(target.intensity)} km/h`;
     case "cadence":
       return `${formatNumber(target.intensity)} rpm`;
     case "RPE":
@@ -87,7 +102,8 @@ export function resolveActivityPlanTargetPresentation(input: {
     target.type === "%FTP" ||
     target.type === "%ThresholdHR" ||
     target.type === "%MaxHR" ||
-    target.type === "RPE"
+    target.type === "RPE" ||
+    target.type === "rest"
   ) {
     return { kind: "abstract", label: sourceLabel, sourceLabel };
   }

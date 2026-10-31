@@ -50,7 +50,6 @@ function calendarItem(
   };
   return { ...base, ...overrides };
 }
-
 describe("Plan upcoming scheduled work projection", () => {
   it("renders only scheduled planned work with canonical dates and type labels", () => {
     const plannedActivity = calendarItem({
@@ -70,28 +69,15 @@ describe("Plan upcoming scheduled work projection", () => {
         activityCategory: "run",
         activityPlanRevision: 1,
         structure: activityPlanStructureSchema.parse({
-          version: 3,
+          version: 5,
           activity_category: "run",
-          segments: [
+          items: [
             {
-              id: "00000000-0000-4000-8000-000000000001",
-              role: "activity",
-              name: "Run",
-              intervals: [
-                {
-                  id: "00000000-0000-4000-8000-000000000002",
-                  name: "Work",
-                  repetitions: 1,
-                  steps: [
-                    {
-                      id: "00000000-0000-4000-8000-000000000003",
-                      name: "Tempo",
-                      duration: { type: "time", seconds: 600 },
-                      targets: [{ type: "RPE", intensity: 7 }],
-                    },
-                  ],
-                },
-              ],
+              type: "step",
+              id: "00000000-0000-4000-8000-000000000003",
+              name: "Tempo",
+              duration: { type: "time", seconds: 600 },
+              targets: [{ type: "RPE", intensity: 7 }],
             },
           ],
         }),
@@ -128,7 +114,6 @@ describe("Plan upcoming scheduled work projection", () => {
     const completed = calendarItem({ id: "completed", kind: "completed_activity", title: "Done" });
     const goal = calendarItem({ id: "goal", kind: "goal", title: "Race goal" });
     const groupEvent = calendarItem({ id: "group", kind: "group_event", title: "Club ride" });
-
     const result = getUpcomingScheduledWorkItems([
       completed,
       goal,
@@ -136,7 +121,6 @@ describe("Plan upcoming scheduled work projection", () => {
       groupEvent,
       customEvent,
     ]);
-
     expect(result.map(({ id, calendarDate }) => ({ id, calendarDate }))).toEqual([
       { id: "planned", calendarDate: "2026-08-12" },
       { id: "custom", calendarDate: "2026-08-13" },

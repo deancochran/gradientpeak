@@ -128,6 +128,25 @@ afterEach(() => {
 describe("web integrations journey", () => {
   const IntegrationsPage = (Route as unknown as { component: React.ComponentType }).component;
 
+  it("offers retry for a pending Garmin disconnect without offering reconnect", () => {
+    mocks.integrations = [
+      integration({
+        provider: "garmin",
+        label: "Garmin Connect",
+        actions: ["disconnect"],
+        connected: false,
+        primaryAction: "disconnect",
+        providerHealth: { lastError: null, status: "disconnecting" },
+      }),
+    ];
+    render(<IntegrationsPage />);
+    expect(screen.getByRole("button", { name: "Retry disconnect" }).hasAttribute("disabled")).toBe(
+      false,
+    );
+    expect(screen.queryByRole("button", { name: "Connect" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reconnect" })).toBeNull();
+  });
+
   it("shows enabled but unconfigured providers without offering connect", () => {
     mocks.integrations = [
       integration({

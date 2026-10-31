@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import {
-  activityPlanAdaptationSchema,
+  activityPlanAuthoringContentSchema,
   activityPlanSemanticHash,
   activityPlanStructureSchema,
   activityPlanTrainingIntentSchema,
@@ -33,18 +33,27 @@ function activityPlanStructureHash(structure: unknown) {
     .update(getCanonicalActivityPlanStructureHashInput(structure))
     .digest("hex")}`;
 }
-
-type OwnedInput = { actorEmail: string; label?: string; name?: string };
-type FixtureRecord = { id: string; name: string; url: string };
-
+type OwnedInput = {
+  actorEmail: string;
+  label?: string;
+  name?: string;
+};
+type FixtureRecord = {
+  id: string;
+  name: string;
+  url: string;
+};
 export class ActivityFixtureBuilder {
   constructor(
     private readonly database: LocalE2EDatabase,
     private readonly cleanup: E2ECleanupRegistry,
     private readonly identity: E2EExecutionIdentity,
   ) {}
-
-  async create(input: OwnedInput & { date?: string }): Promise<FixtureRecord> {
+  async create(
+    input: OwnedInput & {
+      date?: string;
+    },
+  ): Promise<FixtureRecord> {
     const label = input.label ?? "activity";
     const id = this.identity.uuid(label);
     const segmentId = this.identity.uuid(`${label}-segment`);
@@ -59,20 +68,20 @@ export class ActivityFixtureBuilder {
       name,
       started_at: startedAt,
       finished_at: finishedAt,
-      elapsed_ms: 3_600_000,
-      active_ms: 3_600_000,
-      moving_ms: 3_600_000,
+      elapsed_ms: 3600000,
+      active_ms: 3600000,
+      moving_ms: 3600000,
       timing_coverage: "complete",
       parser_version: "e2e-fixture-v1",
       decoded_contract_version: "e2e-fixture-v1",
       materializer_version: "e2e-fixture-v1",
       segments_generated_at: finishedAt,
       entry_provenance: null,
-      distance_meters: 10_000,
+      distance_meters: 10000,
     };
     const summary = completedSegmentSummarySchema.parse({
       version: 1,
-      timing: { timingCoverage: "complete", activeMs: 3_600_000, movingMs: 3_600_000 },
+      timing: { timingCoverage: "complete", activeMs: 3600000, movingMs: 3600000 },
       normalizedPowerResult: calculateCyclingNormalizedPower({ samples: [] }),
     });
     const segment: ActivitySegmentInsert = {
@@ -83,12 +92,12 @@ export class ActivityFixtureBuilder {
       role: "activity",
       activity_category: "bike",
       start_offset_ms: 0,
-      end_offset_ms: 3_600_000,
+      end_offset_ms: 3600000,
       summary,
       summary_version: 1,
       timing_coverage: "complete",
-      active_ms: 3_600_000,
-      moving_ms: 3_600_000,
+      active_ms: 3600000,
+      moving_ms: 3600000,
       segment_revision: 1,
       parser_version: "e2e-fixture-v1",
       materializer_version: "e2e-fixture-v1",
@@ -100,7 +109,6 @@ export class ActivityFixtureBuilder {
     this.register(id, actor.profileId);
     return { id, name, url: `/activities/${id}` };
   }
-
   register(id: string, profileId?: string) {
     this.cleanup.registerExactId({
       kind: "activity",
@@ -125,50 +133,44 @@ export class ActivityFixtureBuilder {
     });
   }
 }
-
 export class ActivityPlanFixtureBuilder {
   constructor(
     private readonly database: LocalE2EDatabase,
     private readonly cleanup: E2ECleanupRegistry,
     private readonly identity: E2EExecutionIdentity,
   ) {}
-
   async create(
-    input: OwnedInput & { visibility?: "private" | "followers" | "public" },
+    input: OwnedInput & {
+      structure?: unknown;
+      visibility?: "private" | "followers" | "public";
+    },
   ): Promise<FixtureRecord> {
     const label = input.label ?? "activity-plan";
     const id = this.identity.uuid(label);
     const name = input.name ?? this.identity.name(`Playwright ${label}`);
     const actor = await this.database.requireActorByEmail(input.actorEmail);
-    const structure = {
-      version: 3,
+    const structure = input.structure ?? {
+      version: 5,
       activity_category: "bike",
-      segments: [
+      items: [
         {
-          id: this.identity.uuid(`${label}-segment`),
-          role: "activity",
-          name: "Tempo ride",
-          intervals: [
-            {
-              id: this.identity.uuid(`${label}-interval`),
-              name: "Main set",
-              repetitions: 1,
-              steps: [
-                {
-                  id: this.identity.uuid(`${label}-step`),
-                  name: "Tempo",
-                  duration: { type: "time", seconds: 1_800 },
-                  targets: [{ type: "%FTP", intensity: 75 }],
-                },
-              ],
-            },
-          ],
+          type: "step",
+          id: this.identity.uuid(`${label}-step`),
+          name: "Tempo",
+          duration: { type: "time", seconds: 1800 },
+          targets:
+            input.visibility === "public"
+              ? [{ type: "watts", intensity: 180 }]
+              : [{ type: "%FTP", intensity: 75 }],
         },
       ],
     };
     const parsedStructure = activityPlanStructureSchema.parse(structure);
-    const adaptation = activityPlanAdaptationSchema.nullable().parse(null);
     const trainingIntent = activityPlanTrainingIntentSchema.parse("general_maintenance");
+    activityPlanAuthoringContentSchema.parse({
+      structure: parsedStructure,
+      intent: { training_intent: trainingIntent },
+    });
     const activityPlan: ActivityPlanInsert = {
       id,
       profile_id: actor.profileId,
@@ -176,11 +178,9 @@ export class ActivityPlanFixtureBuilder {
       description: "Exact-ID browser fixture.",
       notes: "Bring bottles",
       structure: parsedStructure,
-      adaptation,
       structure_hash: activityPlanStructureHash(parsedStructure),
       semantic_hash: activityPlanSemanticHash({
         structure: parsedStructure,
-        adaptation,
         trainingIntent,
       }),
       training_intent: trainingIntent,
@@ -192,7 +192,6 @@ export class ActivityPlanFixtureBuilder {
     this.register(id, actor.profileId);
     return { id, name, url: `/activity-plans/${id}` };
   }
-
   register(id: string, profileId?: string) {
     this.cleanup.registerExactId({
       kind: "activity-plan",
@@ -218,15 +217,17 @@ export class ActivityPlanFixtureBuilder {
     });
   }
 }
-
 export class RouteFixtureBuilder {
   constructor(
     private readonly database: LocalE2EDatabase,
     private readonly cleanup: E2ECleanupRegistry,
     private readonly identity: E2EExecutionIdentity,
   ) {}
-
-  async create(input: OwnedInput & { isPublic?: boolean }): Promise<FixtureRecord> {
+  async create(
+    input: OwnedInput & {
+      isPublic?: boolean;
+    },
+  ): Promise<FixtureRecord> {
     const label = input.label ?? "route";
     const id = this.identity.uuid(label);
     const name = input.name ?? this.identity.name(`Playwright ${label}`);
@@ -238,7 +239,7 @@ export class RouteFixtureBuilder {
       description: "Exact-ID browser fixture.",
       file_path: `e2e/${id}.gpx`,
       storage_state: "ready",
-      total_distance: 10_000,
+      total_distance: 10000,
       total_ascent: 120,
       total_descent: 110,
       polyline: "_p~iF~ps|U_ulLnnqC_mqNvxq`@",
@@ -248,7 +249,6 @@ export class RouteFixtureBuilder {
     this.register(id, actor.profileId);
     return { id, name, url: `/routes/${id}` };
   }
-
   register(id: string, profileId?: string) {
     this.cleanup.registerExactId({
       kind: "activity-route",

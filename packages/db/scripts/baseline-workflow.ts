@@ -13,7 +13,7 @@ export type FreshBaseline = {
   version: string;
 };
 
-/** Guard one transactional MVP baseline followed only by ordered forward migrations. */
+/** Guard exactly one transactional, fresh-only MVP baseline. */
 export function requireFreshBaseline(root = dbPackageRoot): FreshBaseline {
   const authority = resolve(root, "supabase/migrations");
   const retiredActiveArtifacts = [
@@ -31,7 +31,7 @@ export function requireFreshBaseline(root = dbPackageRoot): FreshBaseline {
     left.name.localeCompare(right.name),
   );
   if (
-    entries.length === 0 ||
+    entries.length !== 1 ||
     entries.some(
       (entry) =>
         !entry.isFile() || entry.isSymbolicLink() || !/^\d{14}_[a-z0-9_]+\.sql$/.test(entry.name),
@@ -41,13 +41,7 @@ export function requireFreshBaseline(root = dbPackageRoot): FreshBaseline {
   }
   const baselineEntries = entries.filter((entry) => /^\d{14}_mvp_baseline\.sql$/.test(entry.name));
   if (baselineEntries.length !== 1 || entries[0]?.name !== baselineEntries[0]?.name) {
-    throw new Error(
-      "migration authority must begin with exactly one regular MVP baseline SQL file",
-    );
-  }
-  const versions = entries.map((entry) => entry.name.slice(0, 14));
-  if (new Set(versions).size !== versions.length) {
-    throw new Error("migration authority requires unique ordered timestamp versions");
+    throw new Error("migration authority must contain exactly one regular MVP baseline SQL file");
   }
   const filename = baselineEntries[0]?.name;
   if (!filename) throw new Error("migration authority is missing the MVP baseline SQL file");
@@ -67,7 +61,7 @@ export function requireFreshBaseline(root = dbPackageRoot): FreshBaseline {
 
 function check() {
   requireFreshBaseline(process.env.GRADIENTPEAK_BASELINE_WORKFLOW_ROOT ?? dbPackageRoot);
-  console.log("[db:baseline:check] transactional MVP baseline and ordered forward migrations OK");
+  console.log("[db:baseline:check] one transactional fresh-only MVP baseline OK");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

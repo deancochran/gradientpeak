@@ -1,5 +1,5 @@
 type TestRouter = {
-  createCaller: (...args: any[]) => any;
+  createCaller: (...args: never[]) => unknown;
 };
 
 type TestSession = {
@@ -49,7 +49,7 @@ export function createRouterCaller<TRouter extends TestRouter>(
   router: TRouter,
   options: CreateRouterCallerOptions = {},
 ) {
-  return router.createCaller(createRouterCallerContext(options)) as ReturnType<
+  return router.createCaller(createRouterCallerContext(options) as never) as ReturnType<
     TRouter["createCaller"]
   >;
 }

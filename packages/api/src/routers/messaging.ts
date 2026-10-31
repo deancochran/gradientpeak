@@ -16,8 +16,14 @@ import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import {
   getConversationMessagesForViewer,
-  requireConversationParticipant,
+  isConversationParticipant,
 } from "../application/messaging/getConversationMessages";
+import {
+  executeWithOperationReceipt,
+  OperationReceiptConflictError,
+  OperationReceiptCorruptError,
+  OperationReceiptUnauthorizedError,
+} from "../application/operation-receipts";
 import { resolveProfileMediaUrl } from "../application/storage/profile-media-url";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -40,7 +46,13 @@ const createConversationInputSchema = CreateConversationSchema.strict().superRef
 
 const getMessagesInputSchema = z.object({ conversation_id: z.string().uuid() }).strict();
 
-const createMessageInputSchema = CreateMessageSchema.strict();
+export const createMessageInputSchema = CreateMessageSchema.extend({
+  operation_id: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{32,128}$/)
+    .optional(),
+}).strict();
+const sendMessageOutputSchema = z.object({ success: z.literal(true) }).strict();
 
 const markAsReadInputSchema = z.object({ conversation_id: z.string().uuid() }).strict();
 
@@ -126,7 +138,7 @@ export const messagingRouter = createTRPCRouter({
               eq(conversations.is_group, false),
               eq(viewerMembership.user_id, ctx.session.user.id),
               eq(targetMembership.user_id, input.target_user_id),
-              sql`(select count(*) from ${participantCount} where ${participantCount.conversation_id} = ${conversations.id}) = 2`,
+              sql`(select count(*) from ${conversationParticipants} as ${sql.identifier("participant_count")} where ${participantCount.conversation_id} = ${conversations.id}) = 2`,
             ),
           )
           .limit(1);
@@ -283,8 +295,8 @@ export const messagingRouter = createTRPCRouter({
           ${peerProfile.username} as peer_profile_username,
           ${peerProfile.full_name} as peer_profile_full_name,
           ${peerProfile.avatar_url} as peer_profile_avatar_url
-        from ${membership}
-        inner join ${conversation} on ${conversation.id} = ${membership.conversation_id}
+        from ${conversationParticipants} as ${sql.identifier("membership")}
+        inner join ${conversations} as ${sql.identifier("conversation")} on ${conversation.id} = ${membership.conversation_id}
         left join lateral (
           select count(*) as unread_count
           from ${messages}
@@ -301,15 +313,15 @@ export const messagingRouter = createTRPCRouter({
         ) unread_counts on true
         left join lateral (
           select ${latestMessage.id}, ${latestMessage.conversation_id}, ${latestMessage.sender_id}, ${latestMessage.content}, ${latestMessage.created_at}, ${latestMessage.deleted_at}
-          from ${latestMessage}
+          from ${messages} as ${sql.identifier("latest_message")}
           where ${latestMessage.conversation_id} = ${conversation.id}
           order by ${latestMessage.created_at} desc, ${latestMessage.id} desc
           limit 1
         ) latest_message on true
         left join lateral (
           select ${peerProfile.id}, ${peerProfile.username}, ${peerProfile.full_name}, ${peerProfile.avatar_url}
-          from ${peerMembership}
-          inner join ${peerProfile} on ${peerProfile.id} = ${peerMembership.user_id}
+          from ${conversationParticipants} as ${sql.identifier("peer_membership")}
+          inner join ${profiles} as ${sql.identifier("peer_profile")} on ${peerProfile.id} = ${peerMembership.user_id}
           where ${peerMembership.conversation_id} = ${conversation.id}
             and ${peerMembership.user_id} <> ${ctx.session.user.id}
           order by ${peerMembership.user_id} asc
@@ -388,30 +400,54 @@ export const messagingRouter = createTRPCRouter({
 
   sendMessage: protectedProcedure
     .input(createMessageInputSchema)
+    .output(sendMessageOutputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
       try {
-        await requireConversationParticipant(db, {
-          conversationId: input.conversation_id,
-          userId: ctx.session.user.id,
-        });
-
-        await db.transaction(async (tx) => {
-          await tx.insert(messages).values({
-            conversation_id: input.conversation_id,
-            sender_id: ctx.session.user.id,
-            content: input.content,
-          });
-
-          await tx
-            .update(conversations)
-            .set({ last_message_at: new Date() })
-            .where(eq(conversations.id, input.conversation_id));
-        });
-
-        return { success: true };
+        return await db.transaction((tx) =>
+          executeWithOperationReceipt({
+            tx,
+            actorId: ctx.session.user.id,
+            ...(input.operation_id ? { operationId: input.operation_id } : {}),
+            command: "chatbot.messaging.send-message",
+            semanticInput: { conversation_id: input.conversation_id, content: input.content },
+            output: sendMessageOutputSchema,
+            authorize: (executor) =>
+              isConversationParticipant(executor, {
+                conversationId: input.conversation_id,
+                userId: ctx.session.user.id,
+              }),
+            mutate: async (executor) => {
+              await executor.insert(messages).values({
+                conversation_id: input.conversation_id,
+                sender_id: ctx.session.user.id,
+                content: input.content,
+              });
+              await executor
+                .update(conversations)
+                .set({ last_message_at: new Date() })
+                .where(eq(conversations.id, input.conversation_id));
+              return { success: true } as const;
+            },
+          }),
+        );
       } catch (error) {
+        if (error instanceof OperationReceiptConflictError) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Operation ID was already used differently.",
+          });
+        }
+        if (error instanceof OperationReceiptUnauthorizedError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
+        }
+        if (error instanceof OperationReceiptCorruptError) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Operation receipt is invalid.",
+          });
+        }
         if (error instanceof TRPCError) {
           throw error;
         }
@@ -437,10 +473,10 @@ export const messagingRouter = createTRPCRouter({
             ${participant.user_id},
             latest_message.created_at as latest_created_at,
             latest_message.id as latest_message_id
-          from ${participant}
+          from ${conversationParticipants} as ${sql.identifier("participant")}
           left join lateral (
             select ${message.created_at}, ${message.id}
-            from ${message}
+            from ${messages} as ${sql.identifier("message")}
             where ${message.conversation_id} = ${participant.conversation_id}
               and ${message.sender_id} <> ${participant.user_id}
               and ${message.deleted_at} is null
@@ -450,7 +486,7 @@ export const messagingRouter = createTRPCRouter({
           where ${participant.conversation_id} = ${input.conversation_id}
             and ${participant.user_id} = ${ctx.session.user.id}
         )
-        update ${participant}
+        update ${conversationParticipants} as ${sql.identifier("participant")}
         set
           last_read_at = case
             when target.latest_message_id is not null and (

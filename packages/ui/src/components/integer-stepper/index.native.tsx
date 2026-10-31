@@ -1,201 +1,92 @@
-import {
-  clampInteger,
-  parseBoundedInteger,
-  parseNumberOrUndefined,
-} from "@repo/core/utils/fitness-inputs";
-import { type Ref, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { clampInteger } from "@repo/core/utils/fitness-inputs";
+import { type Ref, useImperativeHandle, useRef } from "react";
 import { View } from "react-native";
 import { Button } from "../button/index.native";
-import { Input } from "../input/index.native";
-import { Label } from "../label/index.native";
+import { NativeQuantityInput } from "../native-quantity-input/index.native";
 import { Text } from "../text/index.native";
 import type { IntegerStepperProps } from "./shared";
 
 interface NativeIntegerStepperProps extends IntegerStepperProps {
-  ref?: Ref<{ focus: () => void }>;
-  presentation?: "default" | "tactile";
-  onInvalidChange?: (invalid: boolean) => void;
-  onDraftChange?: (draft: string) => void;
-  exactDraft?: string;
+  presentation?: "default" | "tactile" | "compact";
 }
 
-function IntegerStepper({
-  accessibilityHint,
-  disabled = false,
-  error,
-  helperText,
-  id,
-  label,
-  max = 20,
-  min = 0,
-  onChange,
-  step = 1,
-  testId,
-  value,
-  ref,
-  presentation = "default",
-  onInvalidChange,
-  onDraftChange,
-  exactDraft,
-}: NativeIntegerStepperProps) {
-  const [exact, setExact] = useState(exactDraft !== undefined);
-  const input = useRef<React.ComponentRef<typeof Input>>(null);
-  const [focusRequested, setFocusRequested] = useState(false);
-  useImperativeHandle(ref, () => ({
-    focus: () => {
-      setExact(true);
-      setFocusRequested(true);
-    },
+/** Count changes are a finite native dial; +/- remains a secondary quick adjustment. */
+function IntegerStepper(props: NativeIntegerStepperProps) {
+  const {
+    disabled = false,
+    label = "Value",
+    max = 20,
+    min = 0,
+    presentation = "default",
+    step = 1,
+  } = props;
+  const dial = useRef<{ focus: () => void }>(null);
+  useImperativeHandle(props.ref as Ref<{ focus: () => void }>, () => ({
+    focus: () => dial.current?.focus(),
   }));
-  useEffect(() => {
-    if (focusRequested && exact) {
-      input.current?.focus?.();
-      setFocusRequested(false);
-    }
-  }, [focusRequested, exact]);
-  const labelText = label || "value";
-  const normalizedStep = Number.isInteger(step) && step > 0 ? step : 1;
-  const [localDraftValue, setDraftValue] = useState(String(value));
-  const draftValue = exactDraft ?? localDraftValue;
-
-  useEffect(() => {
-    setDraftValue(String(value));
-  }, [value]);
-
-  const commitDraft = (nextDraft: string) => {
-    if (disabled) {
+  const current =
+    typeof props.value === "number" && Number.isSafeInteger(props.value) ? props.value : undefined;
+  const increment = Number.isSafeInteger(step) && step > 0 ? step : 1;
+  const decrementDisabled = disabled || current === undefined || current <= min;
+  const incrementDisabled = disabled || current === undefined || current >= max;
+  const nudge = (direction: -1 | 1) => {
+    if (
+      current === undefined ||
+      disabled ||
+      (direction < 0 && current <= min) ||
+      (direction > 0 && current >= max)
+    )
       return;
-    }
-
-    const parsed = parseBoundedInteger(nextDraft, { min, max });
-    if (parsed === undefined) {
-      if (presentation === "default") setDraftValue(String(value));
-      return;
-    }
-
-    const normalized = clampInteger(parsed, min, max);
-    setDraftValue(String(normalized));
-    onChange(normalized);
+    const next = clampInteger(current + direction * increment, min, max);
+    props.onDraftChange?.(String(next));
+    props.onChange(next);
   };
-
-  const parseDraft = (raw: string) => {
-    if (presentation === "default") return parseBoundedInteger(raw, { min, max });
-    const parsed = parseNumberOrUndefined(raw);
-    return parsed !== undefined && Number.isInteger(parsed) && parsed >= min && parsed <= max
-      ? parsed
-      : undefined;
-  };
-  const parsedDraft = parseDraft(draftValue);
-  const currentValue = parsedDraft ?? value;
-  const decreaseValue = clampInteger(currentValue - normalizedStep, min, max);
-  const increaseValue = clampInteger(currentValue + normalizedStep, min, max);
-  const invalid = parsedDraft === undefined;
-  const decreaseDisabled =
-    disabled || decreaseValue === currentValue || (presentation === "tactile" && invalid);
-  const increaseDisabled =
-    disabled || increaseValue === currentValue || (presentation === "tactile" && invalid);
-  const changeValue = (nextValue: number, isChangeDisabled: boolean) => {
-    if (isChangeDisabled) {
-      return;
-    }
-
-    setDraftValue(String(nextValue));
-    onDraftChange?.(String(nextValue));
-    onInvalidChange?.(false);
-    onChange(nextValue);
-  };
-
   return (
-    <View className="gap-2">
-      {label ? (
-        <Label {...(id ? { nativeID: id } : {})}>
-          <Text className="text-sm font-medium text-foreground">{label}</Text>
-        </Label>
-      ) : null}
-      <View className="flex-row items-center gap-2">
-        <Button
-          accessibilityLabel={`Decrease ${labelText}`}
-          disabled={decreaseDisabled}
-          variant="outline"
-          className={presentation === "tactile" ? "min-h-12 min-w-12" : "min-h-11 min-w-11"}
-          size="sm"
-          onPress={() => {
-            if (!decreaseDisabled) {
-              changeValue(decreaseValue, decreaseDisabled);
-            }
+    <View className={presentation === "compact" ? "flex-row items-center gap-2" : "gap-2"}>
+      <Button
+        accessibilityLabel={`Decrease ${label}`}
+        disabled={decrementDisabled}
+        onPress={() => nudge(-1)}
+        size="sm"
+        variant="outline"
+      >
+        <Text>-</Text>
+      </Button>
+      <View className="flex-1">
+        <NativeQuantityInput
+          ref={dial}
+          label={label}
+          value={props.exactDraft ?? (current === undefined ? "" : String(current))}
+          onChange={props.onDraftChange ?? (() => undefined)}
+          onNumberChange={(value) => {
+            if (value !== undefined) props.onChange(value);
           }}
-        >
-          <Text>-</Text>
-        </Button>
-        {presentation === "tactile" && !exact ? (
-          <Text
-            accessibilityLabel={`${labelText}: ${draftValue}`}
-            className="flex-1 text-center text-2xl font-semibold"
-          >
-            {draftValue} {labelText}
-          </Text>
-        ) : (
-          <Input
-            ref={input}
-            accessibilityHint={accessibilityHint ?? `Enter whole number between ${min} and ${max}`}
-            accessibilityLabel={labelText}
-            accessibilityState={{ disabled }}
-            accessibilityValue={{ max, min, now: currentValue }}
-            className="flex-1 text-center"
-            editable={!disabled}
-            value={draftValue}
-            onBlur={() => {
-              if (presentation === "default") commitDraft(draftValue);
-            }}
-            onChangeText={(nextDraft) => {
-              if (!disabled) {
-                setDraftValue(nextDraft);
-                if (presentation === "tactile") {
-                  onDraftChange?.(nextDraft);
-                  const parsed = parseDraft(nextDraft);
-                  onInvalidChange?.(parsed === undefined);
-                  if (parsed !== undefined) onChange(parsed);
-                }
-              }
-            }}
-            keyboardType="numeric"
-            {...(testId ? { testId } : {})}
-          />
-        )}
-        <Button
-          accessibilityLabel={`Increase ${labelText}`}
-          disabled={increaseDisabled}
-          variant="outline"
-          className={presentation === "tactile" ? "min-h-12 min-w-12" : "min-h-11 min-w-11"}
-          size="sm"
-          onPress={() => {
-            if (!increaseDisabled) {
-              changeValue(increaseValue, increaseDisabled);
-            }
-          }}
-        >
-          <Text>+</Text>
-        </Button>
-      </View>
-      {presentation === "tactile" ? (
-        <Button
-          variant="ghost"
+          onInputResult={props.onInputResult}
+          onInvalidChange={props.onInvalidChange}
+          onBlur={props.onBlur}
+          formControl={props.formControl}
+          fieldName={props.fieldName}
+          resetKey={props.resetKey}
+          required={props.required}
           disabled={disabled}
-          onPress={() => {
-            if (!exact || !invalid) setExact(!exact);
-          }}
-          accessibilityLabel={exact ? `Use ${labelText} buttons` : `Enter exact ${labelText}`}
-        >
-          <Text>{exact ? "Use buttons" : "Enter exact value"}</Text>
-        </Button>
-      ) : null}
-      {presentation === "tactile" && invalid ? (
-        <Text accessibilityRole="alert" className="text-destructive">
-          Enter a whole number from {min} to {max}.
-        </Text>
-      ) : null}
-      {helperText ? <Text className="text-xs text-muted-foreground">{helperText}</Text> : null}
-      {error ? <Text className="text-xs text-destructive">{error}</Text> : null}
+          min={min}
+          max={max}
+          decimals={0}
+          error={props.error}
+          helperText={props.helperText}
+          accessibilityHint={props.accessibilityHint}
+          testId={props.testId}
+        />
+      </View>
+      <Button
+        accessibilityLabel={`Increase ${label}`}
+        disabled={incrementDisabled}
+        onPress={() => nudge(1)}
+        size="sm"
+        variant="outline"
+      >
+        <Text>+</Text>
+      </Button>
     </View>
   );
 }

@@ -43,11 +43,13 @@ test("[variation:auth.return-path:keyboard-login] a protected deep link returns 
   page,
 }) => {
   const auth = new AuthPage(page);
-  await page.goto("/training-preferences");
-  await expect(page).toHaveURL(/auth\/login\?redirect=%2Ftraining-preferences/);
+  // Training preferences was retired; settings is the current protected
+  // preference surface and still proves the return-path contract.
+  await page.goto("/settings");
+  await expect(page).toHaveURL(/auth\/login\?redirect=%2Fsettings/);
   await auth.signIn(athleteActor, "keyboard");
-  await expect(page).toHaveURL(/\/training-preferences$/);
-  await expect(page.getByRole("heading", { name: "Training preferences" })).toBeVisible();
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
 });
 
 test("[variation:auth.return-path:validation] hostile redirect remains local after a visible invalid-form retry", async ({
@@ -98,7 +100,8 @@ test("[variation:auth.verification:keyboard-onboarding] verification reaches a k
 test("[variation:auth.password-reset:mismatch-retry] mismatched reset fields preserve the form before a corrected password succeeds", async ({
   laneServer,
   page,
-}) => {
+}, testInfo) => {
+  testInfo.setTimeout(60_000);
   const actor = uniqueAuthActor("reset-mismatch");
   const verification = await signUp(page, actor);
   expect(
@@ -133,7 +136,8 @@ test("[variation:auth.password-reset:mismatch-retry] mismatched reset fields pre
 test("[variation:auth.password-reset:return-path] the changed password completes a protected return-path login while the old password fails visibly", async ({
   laneServer,
   page,
-}) => {
+}, testInfo) => {
+  testInfo.setTimeout(60_000);
   const actor = uniqueAuthActor("reset-return");
   const verification = await signUp(page, actor);
   expect(

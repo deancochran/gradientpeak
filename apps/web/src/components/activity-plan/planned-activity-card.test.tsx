@@ -50,10 +50,9 @@ describe("PlannedActivityCard", () => {
     expect(screen.getByTestId("planned-activity-card-planned-1")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Open planned activity Morning run/i })).toBeTruthy();
     expect(screen.getByText(/August 20, 2026/)).toBeTruthy();
-    expect(screen.getByText("Load")).toBeTruthy();
-    expect(screen.getByText("Intensity")).toBeTruthy();
-    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByLabelText("Load, Unavailable, Unavailable")).toBeTruthy();
+    expect(screen.queryByText("Load")).toBeNull();
+    expect(screen.queryByText("Intensity")).toBeNull();
+    expect(screen.queryByText("Estimate details")).toBeNull();
   });
 
   it("delegates rich plan data to ActivityPlanCard", () => {

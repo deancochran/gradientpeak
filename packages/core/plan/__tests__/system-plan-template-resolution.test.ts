@@ -1,98 +1,47 @@
 import { describe, expect, it } from "vitest";
 import { materializeAthletePerformanceTargetFacts } from "../../performance-model";
 import { ALL_SAMPLE_PLANS } from "../../samples";
+import { buildSystemTrainingPlanAudit } from "../verification/systemPlanAudit";
 import {
-  SYSTEM_PLAN_FIXTURE_CATALOG,
-  SYSTEM_PLAN_MAPPING_FIXTURES,
-} from "../verification/fixtures/system-plan-mappings";
-import {
-  buildAllSystemTrainingPlanAudits,
-  buildSystemTrainingPlanAudit,
-} from "../verification/systemPlanAudit";
+  LOCAL_TRAINING_PLAN_FIXTURE,
+  LOCAL_TRAINING_PLAN_TEMPLATES,
+} from "./fixtures/local-training-plan-verification";
 
-const planNameById = new Map(
-  SYSTEM_PLAN_FIXTURE_CATALOG.map((entry) => [entry.plan_id, entry.plan_name]),
+const localTemplateIndex = new Map(
+  LOCAL_TRAINING_PLAN_TEMPLATES.map((template) => [template.id, template]),
 );
-const FIRST_WAVE_EXACT_PLAN_NAMES = Array.from(
-  new Set(
-    SYSTEM_PLAN_MAPPING_FIXTURES.filter((fixture) => fixture.tolerance_class === "tight")
-      .map((fixture) => planNameById.get(fixture.plan_id))
-      .filter((planName): planName is string => Boolean(planName)),
-  ),
-).sort();
-const firstWaveExactPlanNameSet = new Set(FIRST_WAVE_EXACT_PLAN_NAMES);
-const DEFAULT_AUDITS = buildAllSystemTrainingPlanAudits();
-const REPEATED_DEFAULT_AUDITS = buildAllSystemTrainingPlanAudits();
+const localAudit = buildSystemTrainingPlanAudit(LOCAL_TRAINING_PLAN_FIXTURE, localTemplateIndex);
 
 describe("system plan template resolution audit", () => {
-  it("materialized sessions with linked activity templates - resolve deterministically", () => {
-    for (const audit of DEFAULT_AUDITS) {
-      expect(audit.missingTemplateIds, audit.planName).toEqual([]);
-      expect(REPEATED_DEFAULT_AUDITS.find((item) => item.planId === audit.planId)).toEqual(audit);
-      expect(audit.materializedEvents.length).toBeGreaterThan(0);
-      expect(
-        audit.sessionDurationEvidence.every(
-          (evidence) =>
-            evidence.prescriptionQuantification.members.length > 0 &&
-            evidence.prescriptionQuantification.members.every(
-              (quantification) =>
-                quantification.stage === "template" &&
-                quantification.duration !== undefined &&
-                quantification.distance !== undefined &&
-                quantification.intensity !== undefined &&
-                quantification.commonLoad !== undefined,
-            ),
-        ),
-      ).toBe(true);
-    }
-  });
-
-  it("resolved weekly duration aggregation - stays finite, ordered, and reconciles to plan totals", () => {
-    for (const audit of DEFAULT_AUDITS) {
-      expect(audit.weeklyResolvedDurationHours.length).toBe(audit.materializedWeekCount);
-      const knownWeeks = audit.weeklyResolvedDurationHours.filter(
-        (hours): hours is number => hours !== null,
-      );
-      expect(knownWeeks.every(Number.isFinite)).toBe(true);
-      expect(knownWeeks.every((hours) => hours >= 0)).toBe(true);
-      if (knownWeeks.length !== audit.weeklyResolvedDurationHours.length) {
-        expect(audit.totalResolvedDurationHours).toBeNull();
-      } else {
-        expect(Number(knownWeeks.reduce((sum, weekHours) => sum + weekHours, 0).toFixed(2))).toBe(
-          audit.totalResolvedDurationHours,
-        );
-      }
-    }
-  });
-
-  it("first-wave plans expose exact duration only when every prescription is timed", () => {
-    const exactPlanDurations = DEFAULT_AUDITS.filter((audit) =>
-      firstWaveExactPlanNameSet.has(audit.planName),
-    ).map((audit) => ({
-      planName: audit.planName,
-      declaredDurationHours: audit.declaredDurationHours,
-      meanWeeklyResolvedDurationHours: audit.meanWeeklyResolvedDurationHours,
-      differenceHours:
-        audit.meanWeeklyResolvedDurationHours === null
-          ? null
-          : Number(
-              Math.abs(audit.declaredDurationHours - audit.meanWeeklyResolvedDurationHours).toFixed(
-                2,
-              ),
-            ),
-    }));
-
-    expect(exactPlanDurations).toHaveLength(FIRST_WAVE_EXACT_PLAN_NAMES.length);
+  it("keeps retired production plans empty while local linked templates resolve deterministically", () => {
+    expect(ALL_SAMPLE_PLANS).toEqual([]);
+    expect(localAudit.missingTemplateIds).toEqual([]);
+    expect(buildSystemTrainingPlanAudit(LOCAL_TRAINING_PLAN_FIXTURE, localTemplateIndex)).toEqual(
+      localAudit,
+    );
+    expect(localAudit.materializedEvents).toHaveLength(11);
     expect(
-      exactPlanDurations.every(
-        (duration) =>
-          duration.differenceHours === null ||
-          (Number.isFinite(duration.differenceHours) && duration.differenceHours >= 0),
+      localAudit.sessionDurationEvidence.every((evidence) =>
+        evidence.prescriptionQuantification.members.every(
+          (quantification) =>
+            quantification.stage === "template" &&
+            quantification.duration !== undefined &&
+            quantification.commonLoad !== undefined,
+        ),
       ),
     ).toBe(true);
   });
 
-  it("does not use threshold pace as an assumed planned pace for a distance template", () => {
+  it("resolved weekly duration aggregation - stays finite, ordered, and reconciles to plan totals", () => {
+    expect(localAudit.weeklyResolvedDurationHours).toEqual([2.67, 2.67, 2.67, 2]);
+    expect(localAudit.totalResolvedDurationHours).toBe(10.01);
+  });
+
+  it("retains an explicit empty production audit surface", () => {
+    expect(ALL_SAMPLE_PLANS).toHaveLength(0);
+  });
+
+  it("uses compiled timing for a complete local prescription without athlete calibration", () => {
     const asOf = "2026-07-12T12:00:00.000Z";
     const performanceTargets = materializeAthletePerformanceTargetFacts({
       athleteId: "system-plan-athlete",
@@ -116,32 +65,26 @@ describe("system plan template resolution audit", () => {
         },
       ],
     });
-    const longRunId = "d8e4f7a6-1b5c-4d9e-8f3a-5b2c8d7e6f4b";
-    const audit = buildAllSystemTrainingPlanAudits({ performanceTargets, asOf }).find((candidate) =>
-      candidate.sessionDurationEvidence.some((evidence) => evidence.activityPlanId === longRunId),
-    );
+    const audit = buildSystemTrainingPlanAudit(LOCAL_TRAINING_PLAN_FIXTURE, localTemplateIndex, {
+      performanceTargets,
+      asOf,
+    });
     const evidence = audit?.sessionDurationEvidence.find(
-      (candidate) => candidate.activityPlanId === longRunId,
+      (candidate) => candidate.activityPlanId === LOCAL_TRAINING_PLAN_TEMPLATES[2]?.id,
     );
 
     expect(evidence?.durationEstimate).toEqual({
-      valueSeconds: null,
-      status: "unavailable",
-      basis: null,
-      confidence: null,
+      valueSeconds: 5400,
+      status: "exact",
+      basis: "compiled_time",
+      confidence: "high",
     });
-    expect(evidence?.prescriptionQuantification.summary.distance).toMatchObject({
-      status: "partial",
-      value: 15_000,
-    });
-    expect(evidence?.prescriptionQuantification.summary.duration.elapsed.status).toBe("partial");
-    expect(audit?.weeklyResolvedDurationHours).toContain(null);
+    expect(evidence?.prescriptionQuantification.summary.commonLoad.status).toBe("complete");
+    expect(audit.weeklyResolvedDurationHours).not.toContain(null);
   });
 
-  it("keeps unresolved system-plan session duration explicitly unavailable", () => {
-    const plan = ALL_SAMPLE_PLANS[0];
-    if (!plan) throw new Error("Expected a shipped system plan");
-    const audit = buildSystemTrainingPlanAudit(plan, new Map());
+  it("keeps a local session with a missing template explicitly unavailable", () => {
+    const audit = buildSystemTrainingPlanAudit(LOCAL_TRAINING_PLAN_FIXTURE, new Map());
 
     expect(audit.sessionDurationEvidence.length).toBeGreaterThan(0);
     expect(

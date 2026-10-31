@@ -27,7 +27,12 @@ function classifyFailure(error: unknown): "transient" | "permanent" | "auth" | "
   const message = getErrorMessage(error).toLowerCase();
   if (/unauthori[sz]ed|forbidden|auth|token/.test(message)) return "auth";
   if (/invalid|validation|metadata|owner|different upload claim/.test(message)) return "validation";
-  if (/network|timeout|temporar|unavailable|5\d\d/.test(message)) return "transient";
+  if (
+    /network|timeout|temporar|unavailable|5\d\d|fetch|connection|transport|econn|socket|offline/.test(
+      message,
+    )
+  )
+    return "transient";
   return "permanent";
 }
 

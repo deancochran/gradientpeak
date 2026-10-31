@@ -1,15 +1,17 @@
-import crypto from "node:crypto";
 import {
   createStravaWebhookDeliveryIdentity,
   parseStravaWebhookPayload,
   type StravaWebhookPayload,
 } from "@repo/api/strava-webhook";
+import {
+  ProviderWebhookPayloadTooLargeError,
+  providerWebhookSecretsMatch,
+  readProviderWebhookBody,
+} from "./provider-webhook-http";
 
 export const STRAVA_WEBHOOK_MAX_BODY_BYTES = 16 * 1024;
 export const STRAVA_WEBHOOK_MAX_CHALLENGE_BYTES = 512;
 const STRAVA_WEBHOOK_MAX_VERIFY_TOKEN_BYTES = 512;
-
-class PayloadTooLargeError extends Error {}
 
 type StravaWebhookDependencies = {
   getSubscriptionId: () => string | undefined;
@@ -24,12 +26,6 @@ function errorResponse(status: number, error: string) {
     { error, received: false },
     { status, ...(status === 503 ? { headers: { "Retry-After": "60" } } : {}) },
   );
-}
-
-function secretsMatch(received: string, expected: string): boolean {
-  const receivedDigest = crypto.createHash("sha256").update(received, "utf8").digest();
-  const expectedDigest = crypto.createHash("sha256").update(expected, "utf8").digest();
-  return crypto.timingSafeEqual(receivedDigest, expectedDigest);
 }
 
 function isBoundedVerifyToken(value: string): boolean {
@@ -50,30 +46,6 @@ function isJsonContentType(value: string | null): boolean {
   return parameters.every((parameter) =>
     /^[\w!#$%&'*+.^`|~-]+\s*=\s*[^;]+$/.test(parameter.trim()),
   );
-}
-
-async function readBodyWithLimit(request: Request, limit: number): Promise<string> {
-  const declared = request.headers.get("content-length");
-  if (declared !== null) {
-    if (!/^\d+$/.test(declared.trim())) throw new Error("invalid_content_length");
-    if (Number(declared) > limit) throw new PayloadTooLargeError();
-  }
-  if (!request.body) return "";
-  const reader = request.body.getReader();
-  const decoder = new TextDecoder("utf-8", { fatal: true });
-  let body = "";
-  let bytes = 0;
-  while (true) {
-    const part = await reader.read();
-    if (part.done) break;
-    bytes += part.value.byteLength;
-    if (bytes > limit) {
-      await reader.cancel();
-      throw new PayloadTooLargeError();
-    }
-    body += decoder.decode(part.value, { stream: true });
-  }
-  return body + decoder.decode();
 }
 
 function validChallenge(value: string | null): value is string {
@@ -105,7 +77,7 @@ export function createStravaWebhookHandlers(dependencies: StravaWebhookDependenc
         !validChallenge(challenge) ||
         !receivedToken ||
         !isBoundedVerifyToken(receivedToken) ||
-        !secretsMatch(receivedToken, verifyToken)
+        !providerWebhookSecretsMatch(receivedToken, verifyToken)
       ) {
         return errorResponse(403, "Webhook verification failed");
       }
@@ -121,12 +93,12 @@ export function createStravaWebhookHandlers(dependencies: StravaWebhookDependenc
       }
       let body: string;
       try {
-        body = await readBodyWithLimit(
-          request,
-          dependencies.maxBodyBytes ?? STRAVA_WEBHOOK_MAX_BODY_BYTES,
-        );
+        body = await readProviderWebhookBody(request, {
+          contentLengthPolicy: "reject-malformed",
+          maxBodyBytes: dependencies.maxBodyBytes ?? STRAVA_WEBHOOK_MAX_BODY_BYTES,
+        });
       } catch (error) {
-        return error instanceof PayloadTooLargeError
+        return error instanceof ProviderWebhookPayloadTooLargeError
           ? errorResponse(413, "Webhook payload is too large")
           : errorResponse(400, "Webhook body could not be read");
       }

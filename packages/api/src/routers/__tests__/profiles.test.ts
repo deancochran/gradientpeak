@@ -94,23 +94,8 @@ function createDbMock(plan: DbPlan = {}) {
       const limitArgs: unknown[] = [];
       const offsetArgs: unknown[] = [];
 
-      const builder: any = {
-        from: (table: unknown) => {
-          tableName = getTableName(table);
-          return builder;
-        },
-        innerJoin: () => builder,
-        where: () => builder,
-        orderBy: () => builder,
-        limit: (...args: unknown[]) => {
-          limitArgs.push(...args);
-          return builder;
-        },
-        offset: (...args: unknown[]) => {
-          offsetArgs.push(...args);
-          return builder;
-        },
-        then: (onFulfilled: (value: unknown[]) => unknown) => {
+      const builder = Object.assign(
+        Promise.resolve().then(() => {
           if (!tableName) {
             throw new Error("Select called without table");
           }
@@ -120,10 +105,26 @@ function createDbMock(plan: DbPlan = {}) {
             limitArgs: [...limitArgs],
             offsetArgs: [...offsetArgs],
           });
-          const rows = selectQueues[tableName].shift() ?? [];
-          return Promise.resolve(rows).then(onFulfilled);
+          return selectQueues[tableName].shift() ?? [];
+        }),
+        {
+          from: (table: unknown) => {
+            tableName = getTableName(table);
+            return builder;
+          },
+          innerJoin: () => builder,
+          where: () => builder,
+          orderBy: () => builder,
+          limit: (...args: unknown[]) => {
+            limitArgs.push(...args);
+            return builder;
+          },
+          offset: (...args: unknown[]) => {
+            offsetArgs.push(...args);
+            return builder;
+          },
         },
-      };
+      );
 
       return builder;
     },
@@ -184,12 +185,12 @@ function createCaller(
 ) {
   const { db, calls } = createDbMock(plan);
   const caller = profilesRouter.createCaller({
-    db: db as any,
+    db,
     session,
     headers: new Headers(),
     clientType: "test",
     trpcSource: "vitest",
-  } as any);
+  } as never);
 
   return { caller, calls };
 }
@@ -350,7 +351,7 @@ describe("profilesRouter", () => {
     const { caller } = createCaller();
 
     await expect(
-      caller.getPublicById({ id: OTHER_USER_ID, extra: true } as any),
+      caller.getPublicById({ id: OTHER_USER_ID, extra: true } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 

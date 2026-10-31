@@ -2,12 +2,47 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createRef, useState } from "react";
 import { uninstrumentedUserEvent as userEvent } from "storybook/test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SegmentedDurationField } from "./index.web";
+import {
+  SegmentedDurationField as DurationField,
+  type SegmentedDurationFieldProps,
+} from "./index.web";
+
+const SegmentedDurationField = (props: SegmentedDurationFieldProps) => (
+  <DurationField maxSeconds={86400} {...props} />
+);
+
 import { type DurationSegments, splitDurationSeconds } from "./shared";
 
 afterEach(cleanup);
 
 describe("segmented duration web", () => {
+  it("retains zero and over-limit text with all segments visible and directly repairs zero hours", () => {
+    const change = vi.fn();
+    function Owner() {
+      const [seconds, setSeconds] = useState(0);
+      return (
+        <SegmentedDurationField
+          valueSeconds={seconds}
+          onInvalidChange={vi.fn()}
+          onChangeSeconds={(value) => {
+            change(value);
+            setSeconds(value);
+          }}
+        />
+      );
+    }
+    render(<Owner />);
+    for (const part of ["hours", "minutes", "seconds"])
+      expect(screen.getByLabelText(`Duration ${part}`)).toHaveProperty("value", "0");
+    expect(change).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Duration hours"), { target: { value: "24" } });
+    expect(change).toHaveBeenLastCalledWith(86400);
+    fireEvent.change(screen.getByLabelText("Duration seconds"), { target: { value: "1" } });
+    expect(change).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("Duration hours")).toHaveProperty("value", "24");
+    expect(screen.getByLabelText("Duration seconds")).toHaveProperty("value", "1");
+    expect(screen.getByRole("alert")).toBeTruthy();
+  });
   it("notifies initial and restored snapshot validity once per transition with a changing callback", () => {
     const notified = vi.fn();
     const invalidSegments = { hours: "0", minutes: "1", seconds: "" };
@@ -87,8 +122,7 @@ describe("segmented duration web", () => {
     expect((screen.getByLabelText("Duration seconds") as HTMLInputElement).value).toBe(
       parts.seconds,
     );
-    if (seconds >= 3600)
-      expect((screen.getByLabelText("Duration hours") as HTMLInputElement).value).toBe(parts.hours);
+    expect((screen.getByLabelText("Duration hours") as HTMLInputElement).value).toBe(parts.hours);
     expect(change).not.toHaveBeenCalled();
   });
   it("supports selection, paste, Tab and bounded arrow adjustments without blocking invalid text", async () => {
@@ -109,6 +143,15 @@ describe("segmented duration web", () => {
       );
     }
     render(<Owner />);
+    const hours = screen.getByLabelText("Duration hours") as HTMLInputElement;
+    expect(hours.value).toBe("0");
+    await user.click(hours);
+    hours.select();
+    await user.paste("1");
+    expect(change).toHaveBeenLastCalledWith(3780);
+    hours.select();
+    await user.paste("0");
+    expect(change).toHaveBeenLastCalledWith(180);
     const minutes = screen.getByLabelText("Duration minutes") as HTMLInputElement;
     await user.click(minutes);
     minutes.select();

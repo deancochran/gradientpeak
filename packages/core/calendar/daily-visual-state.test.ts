@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { calendarProjectionItemSchema } from "../contracts/read-projections";
-
 import { deriveCalendarDayVisualState, describeCalendarDayVisualState } from "./daily-visual-state";
 
 const metric = (
@@ -18,7 +17,6 @@ const metric = (
         unit: "score",
         reason: status === "partial" ? "partial_recording" : null,
       };
-
 function item(input: {
   id: string;
   kind: "planned_activity" | "completed_activity" | "event";
@@ -58,28 +56,15 @@ function item(input: {
             activityCategory: "run",
             activityPlanRevision: 1,
             structure: {
-              version: 3,
+              version: 5,
               activity_category: "run",
-              segments: [
+              items: [
                 {
-                  id: "00000000-0000-4000-8000-000000000001",
-                  role: "activity",
-                  name: "Run",
-                  intervals: [
-                    {
-                      id: "00000000-0000-4000-8000-000000000002",
-                      name: "Work",
-                      repetitions: 1,
-                      steps: [
-                        {
-                          id: "00000000-0000-4000-8000-000000000003",
-                          name: "Work",
-                          duration: { type: "time", seconds: 1_800 },
-                          targets: [{ type: "RPE", intensity: 6 }],
-                        },
-                      ],
-                    },
-                  ],
+                  type: "step",
+                  id: "00000000-0000-4000-8000-000000000003",
+                  name: "Work",
+                  duration: { type: "time", seconds: 1800 },
+                  targets: [{ type: "RPE", intensity: 6 }],
                 },
               ],
             },
@@ -97,7 +82,7 @@ function item(input: {
                 key: "elapsed_duration",
                 label: "Duration",
                 status: "available",
-                value: 1_800,
+                value: 1800,
                 unit: "seconds",
                 reason: null,
                 provenance: "estimated",
@@ -178,7 +163,6 @@ function item(input: {
     goal: null,
   });
 }
-
 describe("deriveCalendarDayVisualState", () => {
   it("keeps completed-only training distinct from planned adherence", () => {
     const state = deriveCalendarDayVisualState([
@@ -189,7 +173,6 @@ describe("deriveCalendarDayVisualState", () => {
         metrics: [metric("common_load", 42), metric("normalized_intensity", 0.72)],
       }),
     ]);
-
     expect(state).toMatchObject({
       treatment: "unplanned_completed",
       adherence: "unplanned",
@@ -199,7 +182,6 @@ describe("deriveCalendarDayVisualState", () => {
       signal: { kind: "completed", loadDepth: "half" },
     });
   });
-
   it.each([
     ["scheduled", "planned", "planned"],
     ["expired", "missed", "missed"],
@@ -216,7 +198,6 @@ describe("deriveCalendarDayVisualState", () => {
         ],
       }),
     ]);
-
     expect(state).toMatchObject({
       treatment,
       adherence,
@@ -226,7 +207,6 @@ describe("deriveCalendarDayVisualState", () => {
       expect(state.intensity).toMatchObject({ family: "tempo", source: "planned_estimate" });
     }
   });
-
   it("does not turn unavailable completed metrics into zero", () => {
     const state = deriveCalendarDayVisualState([
       item({
@@ -236,11 +216,9 @@ describe("deriveCalendarDayVisualState", () => {
         metrics: [metric("common_load", null, "unavailable")],
       }),
     ]);
-
     expect(state.completedLoad).toEqual({ depth: "unknown", coverage: "unavailable", value: null });
     expect(describeCalendarDayVisualState(state)).toContain("Completed load unavailable");
   });
-
   it("marks a linked completion partial when observed load is well below its plan estimate", () => {
     const state = deriveCalendarDayVisualState([
       item({
@@ -251,7 +229,6 @@ describe("deriveCalendarDayVisualState", () => {
         metrics: [metric("common_load", 40), metric("normalized_intensity", 0.9)],
       }),
     ]);
-
     expect(state).toMatchObject({
       treatment: "partial",
       adherence: "partial",
@@ -260,7 +237,6 @@ describe("deriveCalendarDayVisualState", () => {
       signal: { kind: "completed", loadDepth: "half" },
     });
   });
-
   it("combines multiple sessions without hiding partial, missed, or mixed intensity evidence", () => {
     const state = deriveCalendarDayVisualState([
       item({
@@ -277,7 +253,6 @@ describe("deriveCalendarDayVisualState", () => {
       }),
       item({ id: "missed", kind: "planned_activity", status: "expired" }),
     ]);
-
     expect(state).toMatchObject({
       sessionCount: 3,
       treatment: "partial",
@@ -290,7 +265,6 @@ describe("deriveCalendarDayVisualState", () => {
       },
     });
   });
-
   it("ignores non-training calendar objects while retaining them for accessibility", () => {
     const state = deriveCalendarDayVisualState([
       item({
@@ -300,12 +274,10 @@ describe("deriveCalendarDayVisualState", () => {
         eventType: "custom",
       }),
     ]);
-
     expect(state).toMatchObject({ sessionCount: 0, otherItemCount: 1 });
     expect(state.signal).toEqual({ kind: "rest", loadDepth: "none" });
     expect(describeCalendarDayVisualState(state)).toContain("1 other calendar item");
   });
-
   it("lets a goal date supersede planned and completed calendar signals", () => {
     const base = item({
       id: "goal",
@@ -321,7 +293,6 @@ describe("deriveCalendarDayVisualState", () => {
       event: null,
       goal: { typeLabel: "Race", objectiveSummary: "Finish" },
     });
-
     const state = deriveCalendarDayVisualState([
       goal,
       item({
@@ -332,7 +303,6 @@ describe("deriveCalendarDayVisualState", () => {
       }),
       item({ id: "planned", kind: "planned_activity", status: "scheduled" }),
     ]);
-
     expect(state.signal).toEqual({ kind: "goal", loadDepth: "none" });
     expect(describeCalendarDayVisualState(state)).toContain("Goal date");
   });

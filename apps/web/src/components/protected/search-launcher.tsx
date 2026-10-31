@@ -14,7 +14,7 @@ import {
   Calendar,
   Circle,
   Home,
-  Map,
+  Map as MapIcon,
   MessageSquare,
   Search,
   Settings,
@@ -45,7 +45,7 @@ type SearchDestination = {
 const SEARCH_DESTINATIONS: SearchDestination[] = [
   { icon: Home, label: "Home", to: "/" },
   { icon: Activity, label: "Activities", to: "/activities" },
-  { icon: Map, label: "Routes", to: "/routes" },
+  { icon: MapIcon, label: "Routes", to: "/routes" },
   { icon: Circle, label: "Record", to: "/record" },
   { icon: Target, label: "Plan", to: "/plan" },
   { icon: Calendar, label: "Calendar", to: "/calendar" },

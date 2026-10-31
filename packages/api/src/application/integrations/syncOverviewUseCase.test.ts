@@ -160,7 +160,7 @@ describe("getProviderSyncOverview planned Wahoo delivery", () => {
     const overview = await getProviderSyncOverview({ db: overviewDb(), profileId: PROFILE_ID });
     const wahoo = overview.find((provider) => provider.provider === "wahoo");
 
-    expect(overview.map(({ provider }) => provider)).toEqual(["wahoo", "strava"]);
+    expect(overview.map(({ provider }) => provider)).toEqual(["wahoo", "strava", "garmin"]);
     expect(wahoo?.plannedActivities).toEqual({
       lastError: null,
       lastFailedAt: null,
@@ -193,6 +193,20 @@ describe("getProviderSyncOverview planned Wahoo delivery", () => {
     expect(wahoo?.plannedActivities).toMatchObject({
       lastError: "Reconnect Wahoo to grant planned activity permissions",
       status: "unsupported",
+    });
+  });
+
+  it("exposes pending Garmin disconnect recovery without permitting reconnect", async () => {
+    const [row] = await mocks.listByProfileId();
+    mocks.listByProfileId.mockResolvedValue([
+      { ...row, provider: "garmin", lifecycle_status: "disconnect_pending" },
+    ]);
+    const overview = await getProviderSyncOverview({ db: overviewDb(), profileId: PROFILE_ID });
+    expect(overview.find((item) => item.provider === "garmin")).toMatchObject({
+      connected: false,
+      primaryAction: "disconnect",
+      actions: ["disconnect"],
+      providerHealth: { status: "disconnecting" },
     });
   });
 

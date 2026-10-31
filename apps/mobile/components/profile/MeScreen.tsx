@@ -114,6 +114,7 @@ export default function MeScreen({ showHeader = true }: { showHeader?: boolean }
   const [passwordSubmissionError, setPasswordSubmissionError] = useState<string | null>(null);
   const activeUserId = user?.id ?? null;
   const activeUserIdRef = useRef(activeUserId);
+  const formUserIdRef = useRef(activeUserId);
   const emailForm = useZodForm({
     schema: updateEmailSchema,
     defaultValues: { email: "" },
@@ -126,16 +127,21 @@ export default function MeScreen({ showHeader = true }: { showHeader?: boolean }
       newPassword: "",
     },
   });
+  const resetEmailForm = emailForm.reset;
+  const resetPasswordForm = passwordForm.reset;
+  const accountFormsCurrent = formUserIdRef.current === activeUserId;
   if (activeUserIdRef.current !== activeUserId) activeUserIdRef.current = activeUserId;
 
   useEffect(() => {
+    if (formUserIdRef.current === activeUserId) return;
+    formUserIdRef.current = activeUserId;
     setEmailFormVisible(false);
     setPasswordFormVisible(false);
     setEmailSubmissionError(null);
     setPasswordSubmissionError(null);
-    emailForm.reset();
-    passwordForm.reset();
-  }, [activeUserId, emailForm, passwordForm]);
+    resetEmailForm();
+    resetPasswordForm();
+  }, [activeUserId, resetEmailForm, resetPasswordForm]);
   const { data: publicProfile, isLoading: publicProfileLoading } =
     api.profiles.getPublicById.useQuery({ id: user?.id ?? "" }, { enabled: Boolean(user?.id) });
   const socialCountsStatus = publicProfile
@@ -311,7 +317,7 @@ export default function MeScreen({ showHeader = true }: { showHeader?: boolean }
             disabled={!canUpdateEmail}
             testID="profile-tab-update-email"
           />
-          {emailFormVisible ? (
+          {emailFormVisible && accountFormsCurrent ? (
             <View className="mb-4 gap-3 rounded-2xl border border-border bg-card p-4">
               <Text className="text-sm font-medium text-foreground">Update Email Address</Text>
               <Form {...emailForm}>
@@ -354,7 +360,7 @@ export default function MeScreen({ showHeader = true }: { showHeader?: boolean }
             onPress={() => setPasswordFormVisible((value) => !value)}
             testID="profile-tab-change-password"
           />
-          {passwordFormVisible ? (
+          {passwordFormVisible && accountFormsCurrent ? (
             <View className="mb-4 gap-3 rounded-2xl border border-border bg-card p-4">
               <Text className="text-sm font-medium text-foreground">Change Your Password</Text>
               <Form {...passwordForm}>

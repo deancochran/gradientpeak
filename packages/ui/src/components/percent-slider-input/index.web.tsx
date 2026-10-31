@@ -1,39 +1,37 @@
-import {
-  clampNumber,
-  formatNumberForInput,
-  parseBoundedNumber,
-} from "@repo/core/utils/fitness-inputs";
-import { useEffect, useState } from "react";
+import { useImperativeHandle, useRef } from "react";
 import { Input } from "../input/index.web";
 import { Label } from "../label/index.web";
 import { Slider } from "../slider/index.web";
 import type { PercentSliderInputProps } from "./shared";
+import { usePercentSliderInput } from "./use-percent-slider-input";
 
-function PercentSliderInput({
-  accessibilityHint,
-  decimals = 2,
-  disabled = false,
-  error,
-  helperText,
-  id,
-  label,
-  max = 20,
-  min = 0,
-  onChange,
-  required = false,
-  showNumericInput = true,
-  step = 0.25,
-  testID,
-  testId,
-  value,
-}: PercentSliderInputProps) {
-  const [draftValue, setDraftValue] = useState(formatNumberForInput(value, decimals));
+function PercentSliderInput(props: PercentSliderInputProps) {
+  const {
+    ref,
+    disabled = false,
+    error: providedError,
+    helperText,
+    id,
+    label,
+    max = 20,
+    min = 0,
+    required = false,
+    showNumericInput = true,
+    step = 0.25,
+    testID,
+    testId,
+  } = props;
+  const inputRef = useRef<HTMLInputElement>(null);
+  const focus = () => inputRef.current?.focus();
+  useImperativeHandle(ref, () => ({ focus }));
+  const input = usePercentSliderInput(props, focus);
+  const error =
+    providedError ??
+    (input.result.status === "invalid"
+      ? `Enter a valid percent from ${min} to ${max}.`
+      : undefined);
   const descriptionId = `${id}-description`;
   const errorId = `${id}-error`;
-
-  useEffect(() => {
-    setDraftValue(formatNumberForInput(value, decimals));
-  }, [decimals, value]);
 
   return (
     <div className="grid gap-2">
@@ -50,7 +48,9 @@ function PercentSliderInput({
       ) : null}
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground">{min}%</span>
-        <span className="text-xs font-medium">{formatNumberForInput(value, decimals)}%</span>
+        <span className="text-xs font-medium">
+          {input.display ? `${input.display}%` : "Not set"}
+        </span>
         <span className="text-xs text-muted-foreground">{max}%</span>
       </div>
       <Slider
@@ -58,20 +58,15 @@ function PercentSliderInput({
         disabled={disabled}
         maximumValue={max}
         minimumValue={min}
-        onValueChange={(nextValue) => {
-          if (disabled) return;
-          const clamped = clampNumber(nextValue, min, max);
-          const rounded = Number(clamped.toFixed(decimals));
-          onChange(rounded);
-          setDraftValue(formatNumberForInput(rounded, decimals));
-        }}
+        onValueChange={input.slide}
         step={step}
         testId={testId ? `${testId}-slider` : testID ? `${testID}-slider` : undefined}
-        value={value}
+        value={input.sliderValue}
       />
       {showNumericInput ? (
         <div className="flex items-center gap-2">
           <Input
+            ref={inputRef}
             accessibilityLabel={label}
             aria-describedby={
               [helperText ? descriptionId : undefined, error ? errorId : undefined]
@@ -83,23 +78,12 @@ function PercentSliderInput({
             className="flex-1"
             disabled={disabled}
             id={`${id}-field`}
-            onBlur={() => {
-              if (disabled) return;
-              const parsed = parseBoundedNumber(draftValue, { min, max, decimals });
-              if (parsed === undefined) {
-                setDraftValue(formatNumberForInput(value, decimals));
-                return;
-              }
-              onChange(parsed);
-              setDraftValue(formatNumberForInput(parsed, decimals));
-            }}
-            onChange={(event) => {
-              if (!disabled) setDraftValue(event.currentTarget.value);
-            }}
+            onBlur={input.blur}
+            onChange={(event) => input.change(event.currentTarget.value)}
             required={required}
             testId={testId ?? testID}
             type="text"
-            value={draftValue}
+            value={input.text}
           />
           <span className="text-xs text-muted-foreground">%</span>
         </div>

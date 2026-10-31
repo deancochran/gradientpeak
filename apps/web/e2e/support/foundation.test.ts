@@ -25,6 +25,49 @@ const testCoordinates = {
 };
 
 describe("local E2E database safety", () => {
+  it("requires explicit matching guarded acceptance URLs for the disposable lane", () => {
+    const url = "postgresql://tester:test@127.0.0.1:54322/gradientpeak_web_acceptance_123_456";
+    expect(
+      localE2EDatabaseEnvironment({
+        E2E_DISPOSABLE_DATABASE: "1",
+        DATABASE_URL: url,
+        POSTGRES_URL: url,
+      }),
+    ).toEqual({ DATABASE_URL: url, POSTGRES_URL: url });
+    expect(() => localE2EDatabaseEnvironment({ DATABASE_URL: url, POSTGRES_URL: url })).toThrow(
+      /dedicated PostgreSQL port/,
+    );
+    expect(() => localE2EDatabaseEnvironment({ E2E_DISPOSABLE_DATABASE: "1" })).toThrow(
+      /matching explicit/,
+    );
+    expect(() =>
+      localE2EDatabaseEnvironment({ E2E_DISPOSABLE_DATABASE: "1", DATABASE_URL: url }),
+    ).toThrow(/matching explicit/);
+    expect(() =>
+      localE2EDatabaseEnvironment({
+        E2E_DISPOSABLE_DATABASE: "1",
+        DATABASE_URL: url,
+        POSTGRES_URL: url.replace("123_456", "123_789"),
+      }),
+    ).toThrow(/matching explicit/);
+    for (const invalid of [
+      url.replace("54322", "55322"),
+      url.replace("127.0.0.1", "localhost"),
+      url.replace("gradientpeak_web_acceptance_123_456", "postgres"),
+      `${url}?options=-csearch_path%3Dpublic`,
+      `${url}#ignored`,
+      url.replace("123_456", "%31%32%33_456"),
+    ]) {
+      expect(() =>
+        localE2EDatabaseEnvironment({
+          E2E_DISPOSABLE_DATABASE: "1",
+          DATABASE_URL: invalid,
+          POSTGRES_URL: invalid,
+        }),
+      ).toThrow(/guarded named acceptance/);
+    }
+  });
+
   it("exposes only the typed transaction boundary and remains closed after close", async () => {
     const previousDatabaseUrl = process.env.DATABASE_URL;
     const previousPostgresUrl = process.env.POSTGRES_URL;

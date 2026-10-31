@@ -278,6 +278,43 @@ test("allows Wahoo provider workout protocol terms but not first-party UI copy",
   );
 });
 
+test("allows only exact Garmin training wire identifiers", () => {
+  assert.deepEqual(
+    findLegacyDomainTerminology(
+      `const payload: GarminWorkout = { workoutId: 1, workoutName: "Wire name", sport: "RUNNING" };`,
+      "packages/api/src/lib/integrations/garmin/training-client.ts",
+    ),
+    [],
+  );
+  for (const source of [
+    `const title = "Structured workout";`,
+    `const title = "sport";`,
+    `type LocalCopy = Pick<LocalModel, "sport">;`,
+    `const workout = buildActivityPlan();`,
+    `const sport = "run";`,
+  ]) {
+    assert.ok(
+      findLegacyDomainTerminology(
+        source,
+        "packages/api/src/lib/integrations/garmin/training-client.ts",
+      ).length > 0,
+    );
+  }
+  assert.deepEqual(
+    findLegacyDomainTerminology(
+      `type Payload = Omit<GarminWorkout, "workoutId" | "sport">;`,
+      "packages/api/src/lib/integrations/garmin/training-client.ts",
+    ),
+    [],
+  );
+  assert.ok(
+    findLegacyDomainTerminology(
+      `const title = "Structured workout";`,
+      "packages/api/src/application/integrations/garmin-provider-runtime.ts",
+    ).length > 0,
+  );
+});
+
 test("does not exempt branded copy outside a provider adapter", () => {
   const violations = findLegacyDomainTerminology(
     `const label = "Wahoo workout";`,

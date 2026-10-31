@@ -1,3 +1,4 @@
+import { plannedSessionActivityPlanId } from "@repo/core/calendar";
 import { activities, activitySegments, plannedSessions } from "@repo/db";
 import { and, eq, exists, isNull, ne, sql } from "drizzle-orm";
 import type { DrizzleTransactionClient } from "../../db";
@@ -23,6 +24,8 @@ export async function reconcileManualPlannedSessionCompletion(input: {
   activityId: string;
   operationId: string;
   reconciledAt: Date;
+  /** Recording evidence can replace the manual diary's full/partial outcome. */
+  outcome?: "full" | "partial";
 }) {
   const repository = createDrizzlePlannedSessionRepository(input.tx);
   await input.tx
@@ -89,8 +92,12 @@ export async function reconcileManualPlannedSessionCompletion(input: {
     throw new PlannedSessionStateConflictError("already_completed");
   }
   const manualActivityId = session.lifecycle.completion.activityId;
-  const expectedCategory =
-    session.prescription.resolutionManifest.resolved_structure.activity_category;
+  const currentPlan = await repository.getActivityPlanPrescriptionSource({
+    profileId: input.profileId,
+    activityPlanId: plannedSessionActivityPlanId(session),
+  });
+  if (!currentPlan) throw new PlannedSessionNotFoundError();
+  const expectedCategory = currentPlan.structure.activity_category;
   await input.tx
     .select({ id: activities.id })
     .from(activities)
@@ -181,6 +188,7 @@ export async function reconcileManualPlannedSessionCompletion(input: {
     .update(plannedSessions)
     .set({
       completed_activity_id: input.activityId,
+      ...(input.outcome ? { completion_outcome: input.outcome } : {}),
       session_revision: sql`${plannedSessions.session_revision} + 1`,
       linked_at: input.reconciledAt,
       updated_at: input.reconciledAt,

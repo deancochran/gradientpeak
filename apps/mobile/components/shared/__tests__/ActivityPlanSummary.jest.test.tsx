@@ -28,6 +28,17 @@ function objective(overrides: Record<string, unknown> = {}): SemanticMetric {
 }
 
 describe("ActivityPlanSummary", () => {
+  it("renders the canonical four labels exactly once", async () => {
+    await renderNative(
+      <ActivityPlanSummary projectionMetrics={[]} showAttribution={false} title="Metric plan" />,
+    );
+
+    expect(screen.getAllByText("Distance")).toHaveLength(1);
+    expect(screen.getAllByText("Duration")).toHaveLength(1);
+    expect(screen.getAllByText("Load")).toHaveLength(1);
+    expect(screen.getAllByText("Intensity")).toHaveLength(1);
+  });
+
   it("keeps Option 1 partial duration, load, and normalized intensity unavailable", async () => {
     await renderNative(
       <ActivityPlanSummary

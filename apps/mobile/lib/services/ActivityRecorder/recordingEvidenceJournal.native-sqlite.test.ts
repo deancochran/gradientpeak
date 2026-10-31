@@ -203,7 +203,7 @@ describe("recording evidence native SQLite schema", () => {
       streamArtifactPaths: ["file:///documents/compatible-streams/"],
       executionManifest: {
         version: 1,
-        compilerVersion: 1,
+        compilerVersion: 3,
         planHash: "0".repeat(64),
         occurrences: [],
       },
@@ -871,7 +871,7 @@ describe("recording evidence native SQLite schema", () => {
       streamArtifactPaths: [],
       executionManifest: {
         version: 1,
-        compilerVersion: 1,
+        compilerVersion: 3,
         planHash: "0".repeat(64),
         occurrences: [],
       },
@@ -982,7 +982,7 @@ describe("recording evidence native SQLite schema", () => {
       streamArtifactPaths: [],
       executionManifest: {
         version: 1,
-        compilerVersion: 1,
+        compilerVersion: 3,
         planHash: "0".repeat(64),
         occurrences: [],
       },

@@ -4,6 +4,13 @@ export type StepDurationValue =
   | { type: "repetitions"; count: number }
   | { type: "untilFinished" };
 
+/** Accept binary floating-point noise, but never round a real fractional metre. */
+function nearestInteger(value: number): number | null {
+  const rounded = Math.round(value);
+  const tolerance = Number.EPSILON * Math.max(1, Math.abs(value)) * 8;
+  return Math.abs(value - rounded) <= tolerance ? rounded : null;
+}
+
 export function fromUIValue(
   type: StepDurationValue["type"],
   value: number,
@@ -16,17 +23,10 @@ export function fromUIValue(
   }
 
   if (type === "distance") {
-    const meters = unit === "km" ? value * 1000 : value;
-    return Number.isInteger(meters) ? { type, meters } : null;
+    const meters = nearestInteger(unit === "km" ? value * 1000 : value);
+    return meters === null ? null : { type, meters };
   }
 
   if (type === "repetitions") return Number.isInteger(value) ? { type, count: value } : null;
   return { type: "untilFinished" };
-}
-
-export function durationForType(type: StepDurationValue["type"]): StepDurationValue {
-  if (type === "distance") return { type, meters: 1000 };
-  if (type === "repetitions") return { type, count: 10 };
-  if (type === "untilFinished") return { type };
-  return { type, seconds: 600 };
 }

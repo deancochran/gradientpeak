@@ -254,6 +254,7 @@ jest.mock("@/lib/api", () => ({
     },
     plannedSessions: {
       create: { useMutation: () => ({ isPending: false, mutate: createEventMutateMock }) },
+      recordingLaunch: { useMutation: () => ({ mutateAsync: jest.fn() }) },
     },
     activityPlans: {
       list: {

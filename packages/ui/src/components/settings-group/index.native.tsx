@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { View } from "react-native";
+import { omitUndefined } from "../../lib/omit-undefined";
 import { Button } from "../button/index.native";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../card/index.native";
 import { Separator } from "../separator/index.native";
@@ -16,7 +17,7 @@ interface SettingsGroupProps {
 
 export function SettingsGroup({ title, description, children, testID }: SettingsGroupProps) {
   return (
-    <Card className="bg-card border-border" testId={testID}>
+    <Card className="bg-card border-border" {...omitUndefined({ testId: testID })}>
       <CardHeader className="pb-4">
         <CardTitle className="text-card-foreground">{title}</CardTitle>
         {description ? (
@@ -76,8 +77,10 @@ export function SettingItem(props: SettingItemPropsUnion) {
           <Switch
             checked={props.value}
             onCheckedChange={props.onValueChange}
-            disabled={props.disabled}
-            testId={testID ? `${testID}-switch` : undefined}
+            {...omitUndefined({
+              disabled: props.disabled,
+              testId: testID ? `${testID}-switch` : undefined,
+            })}
           />
         );
       case "button":

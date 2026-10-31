@@ -20,6 +20,13 @@ import {
   reduceRecordingEvents,
   resolveActivityPlanTargetPresentation,
 } from "@repo/core";
+import { assertRealRecordingExecution } from "@repo/core/recording/execution-evidence";
+import {
+  currentRecordingGuidance,
+  type RecordingGuidanceTimeline,
+  recordingGuidanceTimelineSchema,
+  validateRecordingIntensityScale,
+} from "@repo/core/recording/guidance";
 
 export type TimerOnlyRecordingPlanConfiguration = {
   activityPlanId: string;
@@ -34,6 +41,7 @@ export type TimerOnlyRecordingPlanConfiguration = {
 };
 
 export type TimerOnlyRecordingConfiguration = {
+  intensityScale?: number;
   activity_category: RecordingActivityCategory;
   eventId?: string;
   activityPlanId?: string;
@@ -51,6 +59,7 @@ type TimerState = {
 };
 
 export type TimerOnlyRecordingState = {
+  guidance?: RecordingGuidanceTimeline;
   configuration: TimerOnlyRecordingConfiguration | null;
   reducer: RecordingSessionReducerState;
   timer: TimerState;
@@ -70,6 +79,8 @@ export type TimerOnlyRecordingTimes = {
 };
 
 export type TimerOnlyPlanStatus = {
+  intensityScale: number;
+  targetLabels: string[];
   totalOccurrences: number;
   currentOccurrence: CompiledActivityPlanOccurrence | null;
   currentOccurrenceIndex: number | null;
@@ -162,7 +173,7 @@ export function startTimerOnlyRecording(
   const transition = applyCoreCommand(ready.state, { type: "start" });
   if (transition.rejectedReason) return transition;
 
-  return {
+  const started: TimerOnlyRecordingTransition = {
     ...transition,
     state: {
       ...transition.state,
@@ -179,6 +190,9 @@ export function startTimerOnlyRecording(
       ),
     },
   };
+  return state.configuration.intensityScale && state.configuration.intensityScale !== 1
+    ? adjustTimerOnlyIntensity(started.state, nowMs, state.configuration.intensityScale)
+    : started;
 }
 
 export function pauseTimerOnlyRecording(
@@ -230,6 +244,9 @@ export function finishTimerOnlyRecording(
   const advanced = advanceTimerOnlyRecording(state, nowMs);
   const finalizing = applyCoreCommand(advanced.state, { type: "begin_finalization" });
   if (finalizing.rejectedReason) return finalizing;
+  if (getTimerOnlyRecordingTimesMs(advanced.state, nowMs).elapsedMs <= 0) {
+    return { state, rejectedReason: "Record some time before finishing this activity." };
+  }
 
   const frozenAtMs = finalizing.state.timer.endedAtMs;
   const stoppedState = {
@@ -274,6 +291,7 @@ export function createTimerOnlyRecordingDraft(
   nowMs: number,
   ownerId: string,
 ): PortableTimerRecordingDraft | null {
+  assertRealRecordingExecution(state);
   const effectiveState = advanceTimerOnlyRecording(state, nowMs).state;
   const { lifecycle, snapshot } = effectiveState.reducer;
   if ((lifecycle !== "recording" && lifecycle !== "paused") || !snapshot) return null;
@@ -301,6 +319,7 @@ export function createTimerOnlyRecordingDraft(
       excludedElapsedMs: effectiveState.timer.excludedElapsedMs,
     },
     ...(effectiveState.planExecution ? { planExecution: effectiveState.planExecution } : {}),
+    ...(effectiveState.guidance ? { guidance: effectiveState.guidance } : {}),
     revision: snapshot.identity.revision,
   });
 }
@@ -326,6 +345,7 @@ export function recoverTimerOnlyRecording(untrustedDraft: unknown): TimerOnlyRec
     rejectedReason: null,
     state: {
       ...recovered.state,
+      ...(draft.guidance ? { guidance: draft.guidance } : {}),
       configuration: {
         activity_category: activity.activity_category,
         ...(activity.eventId ? { eventId: activity.eventId } : {}),
@@ -393,6 +413,7 @@ export function restoreFinishedTimerOnlyRecording(artifact: {
   elapsedMs: number;
   movingMs: number;
   planExecution?: PortableWebPlanExecutionState | undefined;
+  guidance?: RecordingGuidanceTimeline;
 }): TimerOnlyRecordingState {
   let state = createInitialTimerOnlyRecordingState();
   for (const command of [
@@ -412,6 +433,7 @@ export function restoreFinishedTimerOnlyRecording(artifact: {
   const activity = artifact.snapshot.activity;
   return {
     ...state,
+    ...(artifact.guidance ? { guidance: artifact.guidance } : {}),
     configuration: {
       activity_category: activity.activity_category,
       ...(activity.eventId ? { eventId: activity.eventId } : {}),
@@ -532,7 +554,7 @@ function lockPlanExecution(
   const structure = activityPlanStructureSchema.parse(plan.structure);
   const compiled = compileValidatedActivityPlan(structure);
   return {
-    manifestVersion: 1,
+    manifestVersion: 2,
     compilerVersion: compiled.compilerVersion,
     activityPlanId: plan.activityPlanId,
     scheduledEventId: plan.scheduledEventId,
@@ -541,7 +563,9 @@ function lockPlanExecution(
     activityPlanRevision: plan.activityPlanRevision,
     structureHash: plan.structureHash,
     structure,
-    plannedSession: plan.plannedSession ?? null,
+    plannedSession: plan.plannedSession
+      ? recordingPlannedSessionLaunchSchema.parse(plan.plannedSession)
+      : null,
     personalizationEnabled: false,
     targetPresentations: compiled.occurrences.map((occurrence) => ({
       occurrenceId: occurrence.occurrenceId,
@@ -582,7 +606,7 @@ function createInitialPlanExecutionState(
 function planOccurrences(
   state: TimerOnlyRecordingState,
 ): readonly CompiledActivityPlanOccurrence[] {
-  const plan = state.reducer.snapshot?.planExecution;
+  const plan = getCurrentTimerOnlyPlan(state);
   return plan ? compileValidatedActivityPlan(plan.structure).occurrences : [];
 }
 
@@ -632,6 +656,9 @@ export function previousPlanStep(
   state: TimerOnlyRecordingState,
   nowMs: number,
 ): TimerOnlyRecordingTransition {
+  if (state.reducer.lifecycle !== "recording" && state.reducer.lifecycle !== "paused") {
+    return { state, rejectedReason: "Plan controls require an active recording." };
+  }
   const execution = state.planExecution;
   const occurrences = planOccurrences(state);
   if (!execution || (execution.currentOccurrenceIndex ?? occurrences.length) <= 0) {
@@ -726,6 +753,31 @@ export function getTimerOnlyPlanStatus(
   const lastLapElapsedMs = execution.laps.at(-1)?.elapsedMs ?? 0;
   const elapsedMs = getTimerOnlyRecordingTimesMs(effective, nowMs).elapsedMs;
   return {
+    intensityScale: effective.guidance
+      ? currentRecordingGuidance(effective.guidance).intensityScale
+      : 1,
+    targetLabels:
+      current?.role === "activity"
+        ? current.targets.map(
+            (target) =>
+              resolveActivityPlanTargetPresentation({
+                target:
+                  target.type === "%FTP"
+                    ? {
+                        ...target,
+                        intensity:
+                          target.intensity *
+                          (effective.guidance
+                            ? currentRecordingGuidance(effective.guidance).intensityScale
+                            : 1),
+                      }
+                    : target,
+                activityCategory: effective.configuration?.activity_category ?? "bike",
+                asOf:
+                  effective.reducer.snapshot?.identity.startedAt ?? new Date(nowMs).toISOString(),
+              }).label,
+          )
+        : [],
     totalOccurrences: occurrences.length,
     currentOccurrence: current,
     currentOccurrenceIndex: index,
@@ -774,6 +826,9 @@ function transitionPlanOccurrence(
     type === "auto" && current.duration.type === "time"
       ? execution.occurrenceStartedMovingMs + current.duration.seconds * 1_000
       : times.movingMs;
+  // A late foreground tick may cross several timed boundaries. Journal the
+  // actual boundary rather than attributing the next step's time to this one.
+  const overshootMs = type === "auto" ? Math.max(0, times.movingMs - occurrenceStartedMovingMs) : 0;
   const nextExecution: PortableWebPlanExecutionState = {
     ...execution,
     currentOccurrenceIndex: nextIndex,
@@ -786,7 +841,16 @@ function transitionPlanOccurrence(
       : execution.skippedOccurrenceIds,
     transitions: [
       ...execution.transitions,
-      planTransition(type, nowMs, times, current.occurrenceId, next?.occurrenceId ?? null),
+      planTransition(
+        type,
+        nowMs - overshootMs,
+        {
+          elapsedMs: times.elapsedMs - overshootMs,
+          movingMs: times.movingMs - overshootMs,
+        },
+        current.occurrenceId,
+        next?.occurrenceId ?? null,
+      ),
     ],
   };
   return {
@@ -833,6 +897,208 @@ function withExecutionCheckpoint(
       ],
     },
   };
+}
+
+export function getCurrentTimerOnlyPlan(state: TimerOnlyRecordingState) {
+  return state.guidance
+    ? currentRecordingGuidance(state.guidance).plan
+    : (state.reducer.snapshot?.planExecution ?? null);
+}
+
+export function getCurrentTimerOnlyRoute(state: TimerOnlyRecordingState) {
+  return state.guidance
+    ? currentRecordingGuidance(state.guidance).routeId
+    : (state.reducer.snapshot?.activity.routeId ?? state.configuration?.routeId ?? null);
+}
+
+export function changeTimerOnlyPlan(
+  state: TimerOnlyRecordingState,
+  nowMs: number,
+  plan: TimerOnlyRecordingPlanConfiguration | null,
+): TimerOnlyRecordingTransition {
+  const configuration = state.configuration;
+  if (!configuration) return { state, rejectedReason: "Choose the recording category first." };
+  if (plan?.plannedSession)
+    return {
+      state,
+      rejectedReason: "A scheduled prescription can only be selected before starting.",
+    };
+  const beforeStart = !state.reducer.snapshot && state.reducer.lifecycle === "pending";
+  const parsedPlan = plan ? activityPlanStructureSchema.safeParse(plan.structure) : null;
+  if (parsedPlan && !parsedPlan.success)
+    return { state, rejectedReason: "The selected plan is invalid." };
+  const activityCategory =
+    beforeStart && parsedPlan?.success
+      ? parsedPlan.data.activity_category
+      : configuration.activity_category;
+  const candidate = configureTimerOnlyRecording(createInitialTimerOnlyRecordingState(), {
+    activity_category: activityCategory,
+    ...(plan
+      ? { activityPlanId: plan.activityPlanId, plan: { ...plan, scheduledEventId: null } }
+      : {}),
+  });
+  if (candidate.rejectedReason)
+    return {
+      state,
+      rejectedReason: "Choose a valid plan matching this recording's fixed activity category.",
+    };
+  if (beforeStart && candidate.state.configuration) {
+    return {
+      state: {
+        ...state,
+        configuration: {
+          ...candidate.state.configuration,
+          ...(configuration.routeId ? { routeId: configuration.routeId } : {}),
+        },
+      },
+      rejectedReason: null,
+    };
+  }
+  return reviseTimerGuidance(state, nowMs, "plan", {
+    plan: plan
+      ? lockPlanExecution(
+          { ...plan, scheduledEventId: null },
+          configuration.activity_category,
+          new Date(nowMs).toISOString(),
+        )
+      : null,
+    intensityScale: 1,
+  });
+}
+
+export function changeTimerOnlyRoute(
+  state: TimerOnlyRecordingState,
+  nowMs: number,
+  routeId: string | null,
+): TimerOnlyRecordingTransition {
+  if (!state.reducer.snapshot && state.reducer.lifecycle === "pending" && state.configuration) {
+    if (routeId && !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(routeId))
+      return { state, rejectedReason: "Invalid route identity." };
+    const { routeId: _previous, ...configuration } = state.configuration;
+    return {
+      state: { ...state, configuration: { ...configuration, ...(routeId ? { routeId } : {}) } },
+      rejectedReason: null,
+    };
+  }
+  return reviseTimerGuidance(state, nowMs, "route", { routeId });
+}
+
+export function adjustTimerOnlyIntensity(
+  state: TimerOnlyRecordingState,
+  nowMs: number,
+  scale: number,
+): TimerOnlyRecordingTransition {
+  try {
+    validateRecordingIntensityScale(scale, new Date(nowMs).toISOString());
+  } catch {
+    return { state, rejectedReason: "Session intensity must be between 50% and 150%." };
+  }
+  const occurrences =
+    !state.reducer.snapshot && state.configuration?.plan
+      ? compileValidatedActivityPlan(
+          activityPlanStructureSchema.parse(state.configuration.plan.structure),
+        ).occurrences
+      : planOccurrences(state);
+  if (
+    !occurrences.some(
+      (occurrence) =>
+        occurrence.role === "activity" &&
+        occurrence.targets.some((target) => target.type === "%FTP"),
+    )
+  ) {
+    return {
+      state,
+      rejectedReason: "Session intensity scaling requires relative cycling power targets.",
+    };
+  }
+  if (!state.reducer.snapshot && state.reducer.lifecycle === "pending" && state.configuration) {
+    return {
+      state: { ...state, configuration: { ...state.configuration, intensityScale: scale } },
+      rejectedReason: null,
+    };
+  }
+  return reviseTimerGuidance(state, nowMs, "intensity", { intensityScale: scale });
+}
+
+function reviseTimerGuidance(
+  state: TimerOnlyRecordingState,
+  nowMs: number,
+  kind: "plan" | "route" | "intensity",
+  patch: Partial<
+    Pick<RecordingGuidanceTimeline["revisions"][number], "plan" | "routeId" | "intensityScale">
+  >,
+): TimerOnlyRecordingTransition {
+  const snapshot = state.reducer.snapshot;
+  if (
+    !snapshot ||
+    (state.reducer.lifecycle !== "recording" && state.reducer.lifecycle !== "paused")
+  ) {
+    return { state, rejectedReason: "Live guidance requires a recording or paused session." };
+  }
+  const advanced = advanceTimerOnlyRecording(state, nowMs);
+  if (advanced.rejectedReason) return { state, rejectedReason: advanced.rejectedReason };
+  const previous = advanced.state;
+  const timeline = previous.guidance ?? {
+    version: 1 as const,
+    revisions: [
+      {
+        revision: 0,
+        kind: "initial" as const,
+        timestamp: snapshot.identity.startedAt,
+        elapsedMs: 0,
+        activeMs: 0,
+        plan: snapshot.planExecution ?? null,
+        routeId: snapshot.activity.routeId,
+        intensityScale: 1,
+      },
+    ],
+  };
+  const current = currentRecordingGuidance(timeline);
+  if (
+    (kind === "route" && patch.routeId === current.routeId) ||
+    (kind === "intensity" && patch.intensityScale === current.intensityScale)
+  )
+    return { state, rejectedReason: null };
+  const times = getTimerOnlyRecordingTimesMs(previous, nowMs);
+  const parsed = recordingGuidanceTimelineSchema.safeParse({
+    ...timeline,
+    revisions: [
+      ...timeline.revisions,
+      {
+        ...current,
+        ...patch,
+        revision: timeline.revisions.length,
+        kind,
+        timestamp: new Date(nowMs).toISOString(),
+        elapsedMs: times.elapsedMs,
+        activeMs: times.movingMs,
+        closedExecution: kind === "plan" ? (previous.planExecution ?? undefined) : undefined,
+      },
+    ],
+  });
+  if (!parsed.success)
+    return {
+      state,
+      rejectedReason: "Guidance is invalid or its durable history limit has been reached.",
+    };
+  const nextPlan = currentRecordingGuidance(parsed.data).plan;
+  const planExecution =
+    kind === "plan"
+      ? {
+          ...createInitialPlanExecutionState(nowMs, Boolean(nextPlan)),
+          occurrenceStartedMovingMs: times.movingMs,
+          laps: previous.planExecution?.laps ?? [],
+          checkpoints: [
+            {
+              timestamp: new Date(nowMs).toISOString(),
+              currentOccurrenceIndex: nextPlan ? 0 : null,
+              elapsedMs: times.elapsedMs,
+              movingMs: times.movingMs,
+            },
+          ],
+        }
+      : previous.planExecution;
+  return { state: { ...previous, guidance: parsed.data, planExecution }, rejectedReason: null };
 }
 
 function getTimerOnlyRecordingTimesMs(state: TimerOnlyRecordingState, nowMs: number) {

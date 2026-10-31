@@ -124,6 +124,17 @@ vi.mock("../../lib/api/client", () => ({
 }));
 
 describe("TrainingPlanDetail", () => {
+  it.each([0, 23])("uses the local calendar day for today's schedule date at hour %s", (hour) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(2026, 2, 8, hour, 30));
+      render(detail());
+      expect(screen.getByLabelText("Start date")).toHaveProperty("value", "2026-03-08");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("offers the canonical editor and linked read view without definition controls", () => {
     const onEdit = vi.fn();
     render(

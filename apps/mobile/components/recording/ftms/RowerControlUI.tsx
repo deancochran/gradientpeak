@@ -64,6 +64,8 @@ export function RowerControlUI({ service, controlMode }: RowerControlUIProps) {
 
   const isDisabled = controlMode === "auto";
 
+  const currentPlanTarget = plan?.currentStep?.targets?.at(0);
+
   return (
     <View className="gap-6">
       {/* Damper Control */}
@@ -230,13 +232,13 @@ export function RowerControlUI({ service, controlMode }: RowerControlUIProps) {
           <Text className="text-xs text-muted-foreground">
             Current step: {plan.currentStep.name || "Interval"}
           </Text>
-          {plan.currentStep.targets && plan.currentStep.targets.length > 0 && (
+          {currentPlanTarget !== undefined && (
             <Text className="text-xs text-muted-foreground mt-1">
-              Target: {plan.currentStep.targets[0].type}{" "}
-              {"min" in plan.currentStep.targets[0] &&
-                "max" in plan.currentStep.targets[0] &&
-                `${plan.currentStep.targets[0].min}-${plan.currentStep.targets[0].max}`}
-              {"value" in plan.currentStep.targets[0] && `${plan.currentStep.targets[0].value}`}
+              Target: {currentPlanTarget.type}{" "}
+              {"min" in currentPlanTarget &&
+                "max" in currentPlanTarget &&
+                `${currentPlanTarget.min}-${currentPlanTarget.max}`}
+              {"value" in currentPlanTarget && `${currentPlanTarget.value}`}
             </Text>
           )}
         </View>

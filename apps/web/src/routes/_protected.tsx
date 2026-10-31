@@ -62,9 +62,23 @@ export const Route = createFileRoute("/_protected")({
   component: ProtectedLayout,
 });
 
-function ProtectedLayout() {
+export function ProtectedLayout() {
   const { authUserId } = Route.useRouteContext();
+  const location = useLocation();
   if (!authUserId) throw new Error("The protected layout requires an authenticated user.");
+
+  // Direct simulation visits never hydrate, lease, checkpoint or initialize the
+  // real recorder. Existing active-recording navigation remains guarded by its provider.
+  if (location.pathname.replace(/\/$/, "") === "/record/simulate") {
+    return (
+      <div className="gp-protected-shell flex min-h-screen flex-col">
+        <ProtectedHeader />
+        <main className="mx-auto w-full max-w-7xl flex-1 p-4 sm:p-6 lg:px-8">
+          <Outlet />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <RecordingStorageBoundary>

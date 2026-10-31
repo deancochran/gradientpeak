@@ -33,6 +33,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
+import { omitUndefined } from "@/lib/omitUndefined";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import type { RecordingSessionArtifact } from "@/lib/services/ActivityRecorder/types";
 // import * as FileSystem from "expo-file-system"; // Removed as we use File class now
@@ -142,7 +143,7 @@ function submissionReducer(state: SubmissionState, action: Action): SubmissionSt
       if (!state.activity) return state;
       return {
         ...state,
-        activity: { ...state.activity, ...action.updates },
+        activity: omitUndefined({ ...state.activity, ...action.updates }),
       };
 
     case "QUEUE_STATUS": {
@@ -205,7 +206,7 @@ function buildActivityFromArtifact(args: {
 }): PreparedRecordedActivityDraft {
   const { artifact, profileId } = args;
 
-  return {
+  return omitUndefined({
     profileId,
     startedAt: new Date(artifact.snapshot.identity.startedAt),
     finishedAt: new Date(artifact.completedAt),
@@ -216,7 +217,7 @@ function buildActivityFromArtifact(args: {
     distanceMeters: Math.round(artifact.finalStats.distanceMeters),
     calories: artifact.finalStats.calories,
     activityPlanId: artifact.snapshot.activity.activityPlanId,
-  };
+  });
 }
 
 function toQueueDraft(activity: PreparedRecordedActivityDraft) {
@@ -503,7 +504,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
             }
 
             await invalidatePostActivityIngestionQueries(queryClient);
-            dispatch({ type: "SUCCESS", activityId: job.activityId });
+            dispatch(omitUndefined({ type: "SUCCESS" as const, activityId: job.activityId }));
           })
           .catch((error) => {
             dispatch({
@@ -578,10 +579,13 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       dispatch({ type: "QUEUE_STATUS", status: "queued" });
 
       try {
-        await submitOnce(state.artifact, {
-          ...activityForSubmit,
-          notes: activityForSubmit.notes ?? null,
-        });
+        await submitOnce(
+          state.artifact,
+          omitUndefined({
+            ...activityForSubmit,
+            notes: activityForSubmit.notes ?? null,
+          }),
+        );
         return true;
       } catch (err) {
         console.error("[useActivitySubmission] Submission failed:", err);

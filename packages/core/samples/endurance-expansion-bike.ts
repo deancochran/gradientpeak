@@ -1,9 +1,5 @@
 import { Duration, Target } from "../schemas/activity_payload";
-import {
-  createSystemActivityPlanAdaptationBuilder,
-  createSystemActivityPlanBuilder,
-  requiredSampleItem,
-} from "./activity-plan-builder";
+import { createSystemActivityPlanBuilder } from "./activity-plan-builder";
 import type {
   ActivityPlanIntensityBand,
   ActivityPlanPortfolioMetadata,
@@ -18,6 +14,7 @@ type BikeFamily = {
   purpose: string;
   primaryIntensity: ActivityPlanIntensityBand;
   workFtp: number;
+  workCadence?: number;
   workNote: string;
   repetitions?: readonly [number, number, number];
   recoverySeconds?: number;
@@ -26,30 +23,6 @@ type BikeFamily = {
 };
 
 const families: readonly BikeFamily[] = [
-  {
-    id: "b1c00000-0001-4000-8001-000000000001",
-    key: "recovery-spin",
-    name: "Recovery Spin",
-    description:
-      "Low-stress cycling that restores movement quality while preserving aerobic rhythm.",
-    purpose: "recovery",
-    primaryIntensity: "recovery",
-    workFtp: 50,
-    workNote: "Keep pressure light, cadence fluid, and breathing completely conversational.",
-    steadyMinutes: [25, 35, 45, 60],
-  },
-  {
-    id: "b1c00000-0002-4000-8001-000000000005",
-    key: "aerobic-durability",
-    name: "Aerobic Durability Ride",
-    description:
-      "Steady Zone 2 riding that develops durable aerobic efficiency for long-distance cycling.",
-    purpose: "long-endurance",
-    primaryIntensity: "endurance",
-    workFtp: 68,
-    workNote: "Hold even pressure and finish with the same relaxed posture used at the start.",
-    steadyMinutes: [45, 70, 100, 145],
-  },
   {
     id: "b1c00000-0003-4000-8001-000000000009",
     key: "tempo-control",
@@ -73,7 +46,7 @@ const families: readonly BikeFamily[] = [
       "Threshold intervals that build sustainable race power and tolerance for prolonged pressure.",
     purpose: "threshold",
     primaryIntensity: "threshold",
-    workFtp: 92,
+    workFtp: 90,
     workNote:
       "Ride close to threshold with controlled breathing and repeatable power through the final interval.",
     repetitions: [3, 4, 6],
@@ -119,8 +92,8 @@ const families: readonly BikeFamily[] = [
     purpose: "aerobic-cadence-efficiency",
     primaryIntensity: "endurance",
     workFtp: 70,
-    workNote:
-      "Alternate one minute at 85–90 rpm with one minute at 95–100 rpm while holding even aerobic pressure.",
+    workCadence: 90,
+    workNote: "Hold a smooth, even pedal stroke while maintaining aerobic pressure.",
     repetitions: [3, 4, 6],
     recoverySeconds: 180,
     workSeconds: 480,
@@ -138,7 +111,6 @@ function buildBikePlan(family: BikeFamily): SystemActivityPlanTemplate {
   if (family.steadyMinutes) {
     const mainMinutes = family.steadyMinutes[1];
     builder.step({
-      purpose: family.primaryIntensity === "recovery" ? "recovery" : "work",
       duration: Duration.minutes(mainMinutes),
       intervalName: "Main Set",
       name: family.name,
@@ -152,44 +124,12 @@ function buildBikePlan(family: BikeFamily): SystemActivityPlanTemplate {
         notes: "Reduce pressure progressively and finish with relaxed, smooth pedaling.",
       })
       .build();
-    const segment = requiredSampleItem(structure.segments, 0, "bike activity segment");
-    if (segment.role !== "activity") throw new Error("Expected bike activity segment");
-    const step = segment.intervals[1]?.steps[0];
-    if (!step) throw new Error("Missing bike main step");
-    const adaptation = createSystemActivityPlanAdaptationBuilder(identity);
     return {
       id: family.id,
       name: family.name,
       description: family.description,
       gps_recording_enabled: true,
       structure,
-      adaptation: {
-        controls: [
-          adaptation.control({
-            key: "main_seconds",
-            label: "Main-set duration",
-            kind: "step_quantity",
-            range: {
-              minimum: family.steadyMinutes[0] * 60,
-              default: mainMinutes * 60,
-              maximum: family.steadyMinutes[3] * 60,
-              increment: 300,
-            },
-            targets: [
-              {
-                type: "step_quantity",
-                activitySegmentId: segment.id,
-                intervalId: requiredSampleItem(segment.intervals, 1, "bike work interval").id,
-                stepId: step.id,
-                quantityType: "time",
-              },
-            ],
-          }),
-        ],
-        allowedStates: family.steadyMinutes.map((value) =>
-          adaptation.state({ label: `${value} minutes`, values: { main_seconds: value * 60 } }),
-        ),
-      },
     };
   }
   if (
@@ -207,14 +147,15 @@ function buildBikePlan(family: BikeFamily): SystemActivityPlanTemplate {
       {
         duration: Duration.seconds(family.workSeconds),
         name: "Work",
-        purpose: "work",
         notes: family.workNote,
-        targets: [Target.ftp(family.workFtp)],
+        targets: [
+          Target.ftp(family.workFtp),
+          ...(family.workCadence === undefined ? [] : [Target.cadence(family.workCadence)]),
+        ],
       },
       {
         duration: Duration.seconds(family.recoverySeconds),
         name: "Recovery",
-        purpose: "recovery",
         notes: "Pedal easily until breathing and movement quality are ready for the next effort.",
         targets: [Target.ftp(50)],
       },
@@ -227,38 +168,12 @@ function buildBikePlan(family: BikeFamily): SystemActivityPlanTemplate {
       notes: "Reduce pressure progressively and finish with relaxed, smooth pedaling.",
     })
     .build();
-  const segment = requiredSampleItem(structure.segments, 0, "bike activity segment");
-  if (segment.role !== "activity") throw new Error("Expected bike activity segment");
-  const interval = requiredSampleItem(segment.intervals, 1, "bike work interval");
-  const adaptation = createSystemActivityPlanAdaptationBuilder(identity);
   return {
     id: family.id,
     name: family.name,
     description: family.description,
     gps_recording_enabled: true,
     structure,
-    adaptation: {
-      controls: [
-        adaptation.control({
-          key: "work_repetitions",
-          label: "Work repetitions",
-          kind: "interval_repetitions",
-          range: {
-            minimum: family.repetitions[0],
-            default: repetitions,
-            maximum: family.repetitions[2],
-            increment: 1,
-          },
-          targets: [
-            {
-              type: "interval_repetitions",
-              activitySegmentId: segment.id,
-              intervalId: interval.id,
-            },
-          ],
-        }),
-      ],
-    },
   };
 }
 

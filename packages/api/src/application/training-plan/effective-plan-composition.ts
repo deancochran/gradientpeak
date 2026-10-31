@@ -33,7 +33,9 @@ const quantifiedCompositionItemSchema = z.discriminatedUnion("kind", [
       scheduledItemId: identitySchema,
       date: dateSchema,
       commonLoad: commonLoadEnvelopeSchema,
-      resolutionManifest: prescriptionResolutionManifestSchema,
+      // A manifest is legacy scheduling provenance only. New sessions resolve
+      // their effective load from the current-plan projection and retain null.
+      resolutionManifest: prescriptionResolutionManifestSchema.nullable(),
     })
     .strict(),
   z
@@ -55,7 +57,7 @@ export type QuantifiedEffectiveCompositionInput = Omit<
   scheduledItems: Array<
     Omit<EffectiveCompositionInput["scheduledItems"][number], "commonLoad"> & {
       commonLoad: z.infer<typeof commonLoadEnvelopeSchema>;
-      resolutionManifest: ResolutionManifest;
+      resolutionManifest: ResolutionManifest | null;
     }
   >;
   completedActivities: Array<
@@ -104,7 +106,10 @@ export function composeEffectivePlanDto(
 ): EffectivePlanCompositionDto {
   const normalizedScheduledItems = input.scheduledItems.map((item) => ({
     ...item,
-    resolutionManifest: prescriptionResolutionManifestSchema.parse(item.resolutionManifest),
+    resolutionManifest:
+      item.resolutionManifest === null
+        ? null
+        : prescriptionResolutionManifestSchema.parse(item.resolutionManifest),
   }));
   const normalizedCompletedActivities = input.completedActivities.map((item) => ({
     ...item,

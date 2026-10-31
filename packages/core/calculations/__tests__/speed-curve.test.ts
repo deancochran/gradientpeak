@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { formatPace, paceToSpeed, parsePace, speedToPace } from "../speed-curve";
+import {
+  formatPace,
+  kilometersPerHourToPaceSeconds,
+  paceSecondsPerKilometerToKilometersPerHour,
+  paceToSpeed,
+  parsePace,
+  speedToPace,
+} from "../speed-curve";
 
 describe("paceToSpeed and speedToPace", () => {
   it("should convert pace to speed correctly", () => {
@@ -19,6 +26,12 @@ describe("paceToSpeed and speedToPace", () => {
     const speed = paceToSpeed(originalPace);
     const convertedPace = speedToPace(speed);
     expect(convertedPace).toBe(originalPace);
+  });
+
+  it("keeps the 4:30/km to km/h conversion explicit without rounding its source value", () => {
+    const speed = paceSecondsPerKilometerToKilometersPerHour(270);
+    expect(speed).toBeCloseTo(13.333333333333334);
+    expect(kilometersPerHourToPaceSeconds(speed)).toBe(270);
   });
 
   it("should throw error for invalid inputs", () => {

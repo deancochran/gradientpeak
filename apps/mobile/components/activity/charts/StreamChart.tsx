@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { View } from "react-native";
 import { CartesianChart, Line, useChartPressState, useChartTransformState } from "victory-native";
 import { InteractiveChartValueTray } from "@/components/charts/InteractiveChartValueTray";
+import { omitUndefined } from "@/lib/omitUndefined";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
 type NumericStream = Omit<DecompressedStream, "values"> & {
@@ -178,7 +179,9 @@ export function StreamChart({
 
     // Get the reference stream (first one) for x-axis
     const referenceStream = processedStreams[0];
-    const startTime = referenceStream.timestamps[0] || 0;
+    if (referenceStream === undefined) return [];
+    const startTime = referenceStream.timestamps.at(0);
+    if (startTime === undefined) return [];
 
     // Build data points aligned by timestamp
     // Create a map of timestamp -> point for efficient lookup
@@ -219,7 +222,7 @@ export function StreamChart({
           // Within 1 second
           const point = pointMap.get(closestTimestamp);
           if (point) {
-            point[streamData.type] = streamData.values[i];
+            point[streamData.type] = streamData.values[i] ?? null;
           }
         }
       });
@@ -241,16 +244,16 @@ export function StreamChart({
 
   return (
     <ChartCard
-      title={title}
-      legend={
-        showLegend
+      {...omitUndefined({
+        title,
+        legend: showLegend
           ? streams.map((stream) => ({
               id: stream.type,
               color: stream.color,
               label: stream.label,
             }))
-          : undefined
-      }
+          : undefined,
+      })}
       summary={summary}
     >
       <View style={{ height }}>
@@ -274,16 +277,20 @@ export function StreamChart({
           >
             {({ points }) => (
               <>
-                {streams.map((stream) => (
-                  <Line
-                    key={stream.type}
-                    points={points[stream.type]}
-                    color={stream.color}
-                    strokeWidth={2}
-                    connectMissingData={false}
-                    animate={{ type: "timing", duration: 300 }}
-                  />
-                ))}
+                {streams.map((stream) => {
+                  const streamPoints = points[stream.type];
+                  if (streamPoints === undefined) return null;
+                  return (
+                    <Line
+                      key={stream.type}
+                      points={streamPoints}
+                      color={stream.color}
+                      strokeWidth={2}
+                      connectMissingData={false}
+                      animate={{ type: "timing", duration: 300 }}
+                    />
+                  );
+                })}
                 {isActive &&
                   streams.map((stream) => {
                     const point = (state.y as StreamPressState)[stream.type];

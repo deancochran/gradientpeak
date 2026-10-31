@@ -62,7 +62,14 @@ vi.mock("@repo/core", async (importOriginal) => {
 
 import { routesRouter } from "../routes";
 
-function createCaller(db: any, userId = OWNER_ID) {
+function createCaller(
+  db: Record<string, unknown> & {
+    transaction?: (
+      operation: (transaction: Record<string, unknown>) => Promise<unknown>,
+    ) => Promise<unknown>;
+  },
+  userId = OWNER_ID,
+) {
   const dbWithTransaction = {
     ...db,
     transaction:
@@ -75,7 +82,7 @@ function createCaller(db: any, userId = OWNER_ID) {
     headers: new Headers(),
     clientType: "test",
     trpcSource: "vitest",
-  } as any);
+  } as never);
 }
 
 function createRouteRow(overrides: Record<string, unknown> = {}) {

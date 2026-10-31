@@ -6,7 +6,6 @@ import {
   type CanonicalRunningDurationEffortEvidence,
   canonicalRunningDurationEffortEvidenceSchema,
   DURATION_PERFORMANCE_MAX_INPUT_EFFORTS,
-  type DurationPerformanceConfidence,
   type DurationPerformanceEvidenceCoverage,
   durationPerformanceCalculationIdentitySchema,
   durationPerformanceConfidenceSchema,

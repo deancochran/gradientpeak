@@ -18,13 +18,11 @@ const apiAuthoringContentSchema = z.unknown().transform((input, context) => {
 /** New writes and newly selected prescriptions only; historical reads use persisted schemas. */
 export function parseActivityPlanAuthoringContent(input: {
   structure: unknown;
-  adaptation?: unknown;
   training_intent: unknown;
 }) {
   const content = apiAuthoringContentSchema.parse({
     structure: input.structure,
-    adaptation: input.adaptation ?? null,
     intent: { training_intent: input.training_intent },
   });
-  return { ...content, adaptation: content.adaptation ?? null };
+  return content;
 }

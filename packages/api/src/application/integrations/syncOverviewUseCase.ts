@@ -60,11 +60,15 @@ function summary(input: {
       title: input.label,
     };
   }
-  if ([input.activityStatus, input.plannedStatus, input.setupStatus].includes("failed")) {
+  if (
+    [input.activityStatus, input.plannedStatus, input.setupStatus].includes("failed") ||
+    input.plannedStatus === "recovery_required"
+  ) {
     return {
       badge: "Issue",
       health: "failed" as const,
-      subtitle: "Needs attention",
+      subtitle:
+        input.plannedStatus === "recovery_required" ? "Recovery required" : "Needs attention",
       title: input.label,
     };
   }
@@ -79,11 +83,14 @@ function summary(input: {
   if (input.activityStatus === "queued" || input.plannedStatus === "queued") {
     return { badge: "Queued", health: "queued" as const, subtitle: "Waiting", title: input.label };
   }
-  if (input.plannedStatus === "unsupported") {
+  if (["unsupported", "unsupported_projection"].includes(input.plannedStatus)) {
     return {
       badge: "Limited",
       health: "connected" as const,
-      subtitle: "Planned activities unavailable",
+      subtitle:
+        input.plannedStatus === "unsupported_projection"
+          ? "Some planned activities are unsupported"
+          : "Planned activities unavailable",
       title: input.label,
     };
   }
@@ -118,6 +125,7 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
       const configured = runtime?.availability.isConfigured() ?? false;
       const lifecycle = integrationsByProvider.get(definition.connectorId);
       const disconnecting = lifecycle?.lifecycle_status === "disconnect_pending";
+      const retryDisconnect = disconnecting && definition.connectorId === "garmin";
       const integration = lifecycle?.lifecycle_status === "active" ? lifecycle : undefined;
       const grant = integration
         ? await repositories.integrations.findGrantByProfileIdAndProvider({
@@ -154,7 +162,7 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
           ? getConfigurableProviderActions(definition.connectorId).filter((action) =>
               runtime.actionAuthorization.allowsAction({ action, grantedScope: grant?.scope }),
             )
-          : connected
+          : connected || retryDisconnect
             ? (["disconnect"] as const)
             : [];
       const compact = summary({
@@ -183,7 +191,9 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
         label: definition.label,
         primaryAction:
           providerHealthStatus === "disconnecting"
-            ? null
+            ? retryDisconnect
+              ? ("disconnect" as const)
+              : null
             : !configured
               ? connected
                 ? ("disconnect" as const)

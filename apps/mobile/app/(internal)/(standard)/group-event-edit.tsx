@@ -94,6 +94,9 @@ export default function GroupEventEditRoute() {
                   groupEventId: event.id,
                 });
             allowNavigationAfterSuccess();
+            if (result.event === undefined) {
+              throw new Error("Event update completed without an event to open.");
+            }
             router.replace({
               pathname: "/group-event-detail",
               params: { groupEventId: result.event.id },

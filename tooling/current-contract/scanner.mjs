@@ -523,6 +523,24 @@ const wahooProviderWorkoutProtocolFiles = new Set([
   "packages/api/src/lib/provider-sync/planned-activities/wahoo-planned-workout-provider.ts",
   "packages/api/src/lib/provider-sync/wahoo-staging-cleanup.test.ts",
   "packages/api/src/lib/provider-sync/wahoo-staging-cleanup.ts",
+  "packages/api/src/lib/provider-sync/planned-activities/wahoo-plan-refresh.live-db.test.ts",
+]);
+
+// Garmin's training-resource client and its persistence adapter exchange a
+// small, externally defined DTO. This is an exact-path *and AST-node*
+// allowance: a Garmin file is not a blanket exemption for first-party names.
+const garminProviderWorkoutProtocolFiles = new Set([
+  "packages/api/src/infrastructure/repositories/drizzle-garmin-training-sync-repository.test.ts",
+  "packages/api/src/infrastructure/repositories/drizzle-garmin-training-sync-repository.ts",
+  "packages/api/src/infrastructure/repositories/garmin-training-sync.live-db.test.ts",
+  "packages/api/src/lib/integrations/garmin/activity-push.ts",
+  "packages/api/src/lib/integrations/garmin/training-client.ts",
+  "packages/api/src/lib/integrations/garmin/training-mapper.ts",
+  "packages/api/src/lib/integrations/garmin/training.test.ts",
+  "packages/api/src/lib/integrations/garmin/training-types.ts",
+  "packages/api/src/lib/provider-sync/planned-activities/garmin-training-gating.test.ts",
+  "packages/api/src/lib/provider-sync/planned-activities/garmin-training-sync.test.ts",
+  "packages/api/src/lib/provider-sync/planned-activities/garmin-training-sync.ts",
 ]);
 
 // This accepted Phase-0 checkpoint is pinned by a reviewed SHA-256 digest and
@@ -549,6 +567,10 @@ function isWahooProtocolBoundary(relativePath) {
 
 function isWahooProviderWorkoutProtocolBoundary(relativePath) {
   return wahooProviderWorkoutProtocolFiles.has(relativePath);
+}
+
+function isGarminProviderWorkoutProtocolBoundary(relativePath) {
+  return garminProviderWorkoutProtocolFiles.has(relativePath);
 }
 
 const legacyDomainPatterns = [
@@ -620,6 +642,156 @@ const providerWorkoutProtocolPatterns = [
   /\b(?:sport|sports|workout|workouts)\b/i,
   /\b[A-Za-z0-9_]*(?:Workout|workout[A-Z])[A-Za-z0-9_]*\b/,
 ];
+
+const garminTrainingProtocolSymbols = new Set([
+  "GarminWorkout",
+  // biome-ignore lint/security/noSecrets: Garmin protocol DTO symbol, not a credential.
+  "GarminWorkoutSchedule",
+  "GarminWorkoutStep",
+  "garminWorkoutSchema",
+  // biome-ignore lint/security/noSecrets: Garmin protocol DTO symbol, not a credential.
+  "garminWorkoutScheduleSchema",
+  // biome-ignore lint/security/noSecrets: Garmin protocol DTO symbol, not a credential.
+  "garminWorkoutStepSchema",
+  "GARMIN_TRAINING_MAX_WORKOUT_STEPS",
+]);
+
+const garminTrainingProtocolProperties = new Set([
+  "sport",
+  "workoutId",
+  "workoutName",
+  "workoutProvider",
+  "workoutSourceId",
+]);
+
+const garminTrainingProtocolLiteralValues = new Set(["WorkoutStep", "WorkoutRepeatStep"]);
+
+const garminActivityPushProtocolProperties = new Set(["activityType"]);
+
+function isGarminTrainingEndpointLiteral(node) {
+  const value = ts.isTemplateExpression(node) ? node.head.text : staticLiteralString(node);
+  return (
+    value !== null &&
+    /^(?:https:\/\/apis\.garmin\.com)?\/(?:workoutportal\/workout\/v2|training-api\/workout\/v2(?:\/|$))/.test(
+      value,
+    )
+  );
+}
+
+function addGarminTrainingProtocolSpans(spans, source, relativePath) {
+  const isTrainingBoundary = isGarminProviderWorkoutProtocolBoundary(relativePath);
+  const isActivityPushBoundary =
+    relativePath === "packages/api/src/lib/integrations/garmin/activity-push.ts";
+  if (!isTrainingBoundary && !isActivityPushBoundary) return;
+  const sourceFile = ts.createSourceFile(
+    relativePath,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    relativePath.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  const add = (node) => spans.push({ start: node.getStart(sourceFile), end: node.getEnd() });
+  const protocolPropertyName = (node) => {
+    const name = ts.isBindingElement(node) && node.propertyName ? node.propertyName : node.name;
+    return name && (ts.isIdentifier(name) || ts.isStringLiteral(name)) ? name.text : null;
+  };
+  const isProtocolTypeFieldSelector = (node) => {
+    if (
+      relativePath === "packages/api/src/lib/integrations/garmin/training-client.ts" &&
+      node.text === "workoutId"
+    ) {
+      const parent = node.parent;
+      if (
+        ts.isCallExpression(parent) &&
+        parent.arguments[2] === node &&
+        ts.isPropertyAccessExpression(parent.expression) &&
+        parent.expression.expression.kind === ts.SyntaxKind.ThisKeyword &&
+        ["extractId", "extractWriteId"].includes(parent.expression.name.text)
+      )
+        return true;
+      if (ts.isLiteralTypeNode(parent) && ts.isUnionTypeNode(parent.parent)) {
+        const parameter = parent.parent.parent;
+        if (
+          ts.isTypeParameterDeclaration(parameter) &&
+          parameter.constraint === parent.parent &&
+          ts.isMethodDeclaration(parameter.parent) &&
+          ts.isIdentifier(parameter.parent.name) &&
+          ["extractId", "extractWriteId"].includes(parameter.parent.name.text)
+        )
+          return true;
+      }
+    }
+    if (!ts.isLiteralTypeNode(node.parent)) return false;
+    let selector = node.parent;
+    if (ts.isUnionTypeNode(selector.parent)) selector = selector.parent;
+    const utility = selector.parent;
+    if (
+      !ts.isTypeReferenceNode(utility) ||
+      !ts.isIdentifier(utility.typeName) ||
+      !["Pick", "Omit"].includes(utility.typeName.text) ||
+      utility.typeArguments?.[1] !== selector
+    )
+      return false;
+    const target = utility.typeArguments[0];
+    return (
+      target &&
+      ts.isTypeReferenceNode(target) &&
+      ts.isIdentifier(target.typeName) &&
+      garminTrainingProtocolSymbols.has(target.typeName.text)
+    );
+  };
+  function visit(node) {
+    if (
+      ts.isIdentifier(node) &&
+      isTrainingBoundary &&
+      garminTrainingProtocolSymbols.has(node.text)
+    ) {
+      add(node);
+    } else if (
+      ts.isPropertyAccessExpression(node) &&
+      isTrainingBoundary &&
+      garminTrainingProtocolProperties.has(node.name.text)
+    ) {
+      add(node.name);
+    } else if (
+      (ts.isPropertyAssignment(node) ||
+        ts.isPropertySignature(node) ||
+        ts.isPropertyDeclaration(node) ||
+        ts.isBindingElement(node)) &&
+      node.name &&
+      ((isTrainingBoundary && garminTrainingProtocolProperties.has(protocolPropertyName(node))) ||
+        (isActivityPushBoundary &&
+          garminActivityPushProtocolProperties.has(protocolPropertyName(node))))
+    ) {
+      add(ts.isBindingElement(node) && node.propertyName ? node.propertyName : node.name);
+    } else if (
+      ts.isStringLiteral(node) &&
+      isTrainingBoundary &&
+      garminTrainingProtocolProperties.has(node.text) &&
+      isProtocolTypeFieldSelector(node)
+    ) {
+      // Generic helpers such as Pick/Omit carry a provider field name as a
+      // string literal rather than as a property AST node.
+      add(node);
+    } else if (
+      (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
+      isTrainingBoundary &&
+      garminTrainingProtocolLiteralValues.has(node.text)
+    ) {
+      add(node);
+    } else if (
+      (ts.isStringLiteral(node) ||
+        ts.isNoSubstitutionTemplateLiteral(node) ||
+        ts.isTemplateExpression(node)) &&
+      isTrainingBoundary &&
+      isGarminTrainingEndpointLiteral(node)
+    ) {
+      add(node);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+}
 
 const wahooActivityTypeAdapterPatterns = [
   /\b(?:activityType|ActivityType|activity-type)\b/,
@@ -881,6 +1053,7 @@ function allowedLegacyTerminologySpans(source, relativePath) {
       allowActivityType: isWahooBoundary,
     });
   }
+  addGarminTrainingProtocolSpans(spans, source, relativePath);
   addRawProtocolMappingSpans(spans, source, relativePath);
 
   let lineStart = 0;

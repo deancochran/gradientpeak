@@ -12,28 +12,15 @@ export function createActivityPlanStructure(
   activityCategory: "run" | "bike" | "swim" | "strength" | "other" = "run",
 ) {
   return activityPlanStructureSchema.parse({
-    version: 3 as const,
+    version: 5 as const,
     activity_category: activityCategory,
-    segments: [
+    items: [
       {
+        type: "step",
         id: "00000000-0000-4000-8000-000000000001",
-        role: "activity" as const,
-        name: "Activity",
-        intervals: [
-          {
-            id: "00000000-0000-4000-8000-000000000002",
-            name: "Work",
-            repetitions: 1,
-            steps: [
-              {
-                id: "00000000-0000-4000-8000-000000000003",
-                name: "Work",
-                duration: { type: "time" as const, seconds: 300 },
-                targets: [{ type: "RPE" as const, intensity: 5 }],
-              },
-            ],
-          },
-        ],
+        name: "Work",
+        duration: { type: "time" as const, seconds: 300 },
+        targets: [{ type: "RPE" as const, intensity: 5 }],
       },
     ],
   });

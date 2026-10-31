@@ -1,7 +1,7 @@
 declare module "@garmin/fitsdk" {
   export class Encoder {
     constructor();
-    writeMesg(message: any): void;
+    writeMesg(message: unknown): void;
     close(): Uint8Array;
   }
 
@@ -9,14 +9,19 @@ declare module "@garmin/fitsdk" {
     constructor(stream: Stream);
     static isFIT(stream: Stream): boolean;
     checkIntegrity(): boolean;
-    read(options?: any): { messages: any; errors: any[] };
+    read(options?: unknown): {
+      messages: Record<string, unknown[]>;
+      errors: Array<{ offset?: unknown; message?: unknown }>;
+    };
   }
 
-  export class Stream {
-    static fromBuffer(buffer: Buffer): Stream;
-    static fromByteArray(bytes: number[] | Uint8Array): Stream;
-    static fromArrayBuffer(buffer: ArrayBuffer): Stream;
-  }
+  export interface Stream {}
+
+  export const Stream: {
+    fromBuffer(buffer: Buffer): Stream;
+    fromByteArray(bytes: number[] | Uint8Array): Stream;
+    fromArrayBuffer(buffer: ArrayBuffer): Stream;
+  };
 
   export const Profile: {
     MesgNum: {

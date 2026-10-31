@@ -14,6 +14,7 @@ import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityP
 import { useEntityCommentsSheet } from "@/components/social/EntityCommentsSheetProvider";
 import { getUniqueActivityCategoryConfigs } from "@/lib/constants/activities";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { getPublicShareUrl } from "@/lib/share/public-share-url";
 import { ActivityPlanSummary } from "./ActivityPlanSummary";
 import {
@@ -102,9 +103,9 @@ export function ActivityPlanCard({
 
   return (
     <ResourceCardShell
-      accessibilityLabel={onPress ? `Open activity plan ${plan.name}` : undefined}
-      actionRegion={
-        isCompact ? undefined : (
+      {...omitUndefined({
+        accessibilityLabel: onPress ? `Open activity plan ${plan.name}` : undefined,
+        actionRegion: isCompact ? undefined : (
           <ResourceOwnerActionRow
             actions={
               <ResourceCardActionButton
@@ -131,17 +132,18 @@ export function ActivityPlanCard({
                 : null
             }
           />
-        )
-      }
-      cardClassName={
-        plan.contractVersion === "scheduled-activity-plan-summary-v1" &&
-        plan.schedule.status === "completed"
-          ? "opacity-60"
-          : undefined
-      }
+        ),
+      })}
+      {...omitUndefined({
+        cardClassName:
+          plan.contractVersion === "scheduled-activity-plan-summary-v1" &&
+          plan.schedule.status === "completed"
+            ? "opacity-60"
+            : undefined,
+      })}
       compact={isCompact}
       contentClassName={isCompact ? "gap-3 px-2" : "gap-3 px-3"}
-      onPress={onPress}
+      {...omitUndefined({ onPress })}
       testID={testID ?? `activity-plan-card-${plan.id}`}
     >
       {isCompact ? <ResourceCategoryItems items={categoryItems} /> : null}

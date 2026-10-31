@@ -277,7 +277,7 @@
       "database": ["**/*.sql", "**/*.backup"],
       "templates": ["**/*.html", "**/*.xml", "**/*.svg"],
       "documentation": ["**/*.md"],
-      "scripts": ["**/*.sh"],
+      "scripts": ["**/*.sh", "**/*.py"],
       "ui-platform-marker": [
         "packages/ui/src/components/*/.native-only",
         "packages/ui/src/components/*/.web-only"
@@ -293,6 +293,8 @@
         "**/*.example",
         "**/*.webmanifest",
         "**/*.txt",
+        "**/*.pdf",
+        "**/*.zip",
         "**/*.fixture",
         "**/.feature-id",
         "**/CODEOWNERS",

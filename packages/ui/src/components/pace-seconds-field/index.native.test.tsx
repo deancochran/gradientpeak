@@ -4,8 +4,12 @@ import { Pressable, Text } from "react-native";
 import { z } from "zod";
 import { useZodForm } from "../../hooks/use-zod-form";
 import { useZodFormSubmit } from "../../hooks/use-zod-form-submit";
-import { fireEvent, renderNative } from "../../test/render-native";
+import { fireEvent, renderNative, screen } from "../../test/render-native";
 import { PaceSecondsField } from "./index.native";
+
+async function openPace() {
+  await fireEvent.press(screen.getByLabelText("Pace"));
+}
 
 function FormHarness({ onSubmit }: { onSubmit: (value: { pace: number }) => void }) {
   const form = useZodForm({
@@ -43,6 +47,21 @@ function FormHarness({ onSubmit }: { onSubmit: (value: { pace: number }) => void
 }
 
 describe("PaceSecondsField native", () => {
+  it.each([195, 195.125])("retains canonical pace %s when untouched", async (valueSeconds) => {
+    const onChangeSeconds = jest.fn();
+    const view = await renderNative(
+      <PaceSecondsField
+        label="Pace"
+        valueSeconds={valueSeconds}
+        onChangeSeconds={onChangeSeconds}
+      />,
+    );
+    await openPace();
+    expect(view.getByLabelText("Pace minutes").props.selectedValue).toBe(3);
+    expect(view.getByLabelText("Pace seconds").props.selectedValue).toBe(15);
+    await fireEvent.press(view.getByLabelText("Done Pace"));
+    expect(onChangeSeconds).not.toHaveBeenCalled();
+  });
   it("adjusts canonical pace by five seconds", async () => {
     const onChangeSeconds = jest.fn();
     const { getByLabelText } = await renderNative(
@@ -58,7 +77,7 @@ describe("PaceSecondsField native", () => {
     expect(onChangeSeconds).toHaveBeenNthCalledWith(1, 275);
     expect(onChangeSeconds).toHaveBeenNthCalledWith(2, 270);
   });
-  it("retains an incomplete draft and emits a corrected valid value before blur", async () => {
+  it("emits a corrected native-wheel value before close", async () => {
     const onBlur = jest.fn();
     const onChangeSeconds = jest.fn();
     const { getByTestId } = await renderNative(
@@ -71,16 +90,11 @@ describe("PaceSecondsField native", () => {
         valueSeconds={270}
       />,
     );
-    const input = getByTestId("pace-input");
-
-    await fireEvent(input, "changeText", "4:3");
-    expect(getByTestId("pace-input").props.value).toBe("4:3");
-    expect(onChangeSeconds).not.toHaveBeenCalled();
-
-    await fireEvent(getByTestId("pace-input"), "changeText", "4:35");
+    await openPace();
+    await fireEvent(getByTestId("pace-seconds"), "valueChange", 35);
     expect(onChangeSeconds).toHaveBeenCalledWith(275);
     expect(onBlur).not.toHaveBeenCalled();
-    await fireEvent(getByTestId("pace-input"), "blur");
+    await fireEvent.press(screen.getByLabelText("Done Pace"));
 
     expect(onChangeSeconds).toHaveBeenCalledWith(275);
     expect(onBlur).toHaveBeenCalledTimes(1);
@@ -88,7 +102,7 @@ describe("PaceSecondsField native", () => {
 
   it("treats empty text as an intentional clear", async () => {
     const onChangeSeconds = jest.fn();
-    const { getByTestId } = await renderNative(
+    const { getByLabelText } = await renderNative(
       <PaceSecondsField
         id="pace"
         label="Pace"
@@ -98,7 +112,8 @@ describe("PaceSecondsField native", () => {
       />,
     );
 
-    await fireEvent(getByTestId("pace-input"), "changeText", "");
+    await openPace();
+    await fireEvent.press(getByLabelText("Clear Pace"));
 
     expect(onChangeSeconds).toHaveBeenCalledWith(null);
   });
@@ -107,7 +122,9 @@ describe("PaceSecondsField native", () => {
     const onSubmit = jest.fn();
     const { findByText, getByTestId } = await renderNative(<FormHarness onSubmit={onSubmit} />);
 
-    await fireEvent(getByTestId("pace-input"), "changeText", "5:45");
+    await openPace();
+    await fireEvent(getByTestId("pace-seconds"), "valueChange", 45);
+    await fireEvent.press(screen.getByLabelText("Done Pace"));
     await act(async () => {
       await fireEvent.press(await findByText("Save"));
     });
@@ -115,29 +132,39 @@ describe("PaceSecondsField native", () => {
     expect(onSubmit).toHaveBeenCalledWith({ pace: 345 });
   });
 
-  it("retains an incomplete submitted draft and exposes the error to accessibility", async () => {
+  it("blocks an invalid zero pace, announces the error, and submits only after correction", async () => {
     const onSubmit = jest.fn();
     const { findByText, getByTestId } = await renderNative(<FormHarness onSubmit={onSubmit} />);
 
-    await fireEvent(getByTestId("pace-input"), "changeText", "4:3");
+    await openPace();
+    await fireEvent(getByTestId("pace-minutes"), "valueChange", 0);
+    await fireEvent(getByTestId("pace-seconds"), "valueChange", 0);
+    await act(async () => {
+      await fireEvent.press(await findByText("Save"));
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("alert").length).toBeGreaterThan(0);
+    expect(getByTestId("pace-minutes").props.selectedValue).toBe(0);
+    expect(getByTestId("pace-seconds").props.selectedValue).toBe(0);
+    await fireEvent(getByTestId("pace-minutes"), "valueChange", 5);
+    await fireEvent(getByTestId("pace-seconds"), "valueChange", 35);
     await act(async () => {
       await fireEvent.press(await findByText("Save"));
     });
 
-    const input = getByTestId("pace-input");
-    expect(input.props.value).toBe("4:3");
-    expect(input.props["aria-invalid"]).toBe(true);
-    expect(input.props.accessibilityHint).toContain("Error: Pace is required");
-    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onSubmit).toHaveBeenCalledWith({ pace: 335 });
   });
 
   it("discards a same-value pending draft on reset", async () => {
     const { findByText, getByTestId } = await renderNative(<FormHarness onSubmit={jest.fn()} />);
-    await fireEvent(getByTestId("pace-input"), "changeText", "4:3");
+    await openPace();
+    await fireEvent(getByTestId("pace-seconds"), "valueChange", 35);
 
     await fireEvent.press(await findByText("Reset"));
 
-    expect(getByTestId("pace-input").props.value).toBe("5:30");
+    await openPace();
+    expect(getByTestId("pace-minutes").props.selectedValue).toBe(5);
+    expect(getByTestId("pace-seconds").props.selectedValue).toBe(30);
   });
 
   it("resynchronizes when the external value changes", async () => {
@@ -151,7 +178,8 @@ describe("PaceSecondsField native", () => {
         valueSeconds={330}
       />,
     );
-    await fireEvent(getByTestId("pace-input"), "changeText", "4:3");
+    await openPace();
+    await fireEvent(getByTestId("pace-seconds"), "valueChange", 35);
 
     await rerender(
       <PaceSecondsField
@@ -163,6 +191,7 @@ describe("PaceSecondsField native", () => {
       />,
     );
 
-    expect(getByTestId("pace-input").props.value).toBe("6:00");
+    expect(getByTestId("pace-minutes").props.selectedValue).toBe(6);
+    expect(getByTestId("pace-seconds").props.selectedValue).toBe(0);
   });
 });

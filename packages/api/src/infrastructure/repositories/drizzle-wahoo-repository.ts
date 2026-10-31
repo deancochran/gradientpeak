@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { activityPlanStructureSchema } from "@repo/core/activity-plan";
 import { schema } from "@repo/db";
-import { and, asc, eq, gt, gte, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
 import {
   decryptNullableProviderToken,
   decryptProviderToken,
@@ -680,10 +680,11 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
     },
 
     // Compatibility for imported activity linking. The identifier is now a
-    // planned-session ID and the activity-plan identity comes from its frozen manifest.
+    // planned-session ID; use its durable reference rather than a historical
+    // scheduling snapshot so future plan edits remain visible to the provider.
     async getEventActivityPlanId({ eventId, profileId }) {
       const [row] = await db
-        .select({ manifest: schema.plannedSessions.resolution_manifest })
+        .select({ activityPlanId: schema.plannedSessions.activity_plan_id })
         .from(schema.plannedSessions)
         .where(
           and(
@@ -692,7 +693,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           ),
         )
         .limit(1);
-      return row?.manifest?.activity_plan_id ?? null;
+      return row?.activityPlanId ?? null;
     },
 
     async getPlannedSessionResourceLink({ plannedSessionId, forUpdate, profileId, provider }) {
@@ -756,11 +757,24 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           id: schema.plannedSessions.id,
           planningDate: schema.plannedSessions.planning_date,
           timezone: schema.profiles.planning_timezone,
-          manifest: schema.plannedSessions.resolution_manifest,
-          capturedAt: schema.plannedSessions.prescription_captured_at,
+          activityPlanId: schema.activityPlans.id,
+          description: schema.activityPlans.description,
+          name: schema.activityPlans.name,
+          structure: schema.activityPlans.structure,
+          updatedAt: schema.activityPlans.updated_at,
         })
         .from(schema.plannedSessions)
         .innerJoin(schema.profiles, eq(schema.profiles.id, schema.plannedSessions.profile_id))
+        .innerJoin(
+          schema.activityPlans,
+          and(
+            eq(schema.activityPlans.id, schema.plannedSessions.activity_plan_id),
+            or(
+              eq(schema.activityPlans.profile_id, profileId),
+              eq(schema.activityPlans.is_system_template, true),
+            ),
+          ),
+        )
         .where(
           and(
             eq(schema.plannedSessions.id, plannedSessionId),
@@ -771,9 +785,8 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         .limit(1);
 
       if (!row) return null;
-
-      const manifest = row.manifest;
-      if (!manifest) return null;
+      const updatedAt = toIsoString(row.updatedAt);
+      if (!updatedAt) return null;
 
       return {
         id: row.id,
@@ -781,28 +794,41 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         planningDate: row.planningDate,
         timezone: row.timezone ?? "UTC",
         activityPlan: {
-          description: null,
-          id: manifest.activity_plan_id,
-          name: "Planned activity",
-          structure: activityPlanStructureSchema.parse(manifest.resolved_structure),
-          updatedAt: row.capturedAt.toISOString(),
+          description: row.description,
+          id: row.activityPlanId,
+          name: row.name,
+          structure: activityPlanStructureSchema.parse(row.structure),
+          updatedAt,
         },
       };
     },
 
-    // Legacy adapter surface is intentionally backed by the immutable planned-session snapshot,
-    // never an event or mutable activity-plan row. Generic event enqueue is disabled upstream.
+    // Legacy adapter surface remains planned-session scoped, while projecting
+    // the currently authorized activity-plan definition.
     async getPlannedEventForSync({ eventId, profileId }) {
       const [row] = await db
         .select({
           id: schema.plannedSessions.id,
           planningDate: schema.plannedSessions.planning_date,
           timezone: schema.profiles.planning_timezone,
-          manifest: schema.plannedSessions.resolution_manifest,
-          capturedAt: schema.plannedSessions.prescription_captured_at,
+          activityPlanId: schema.activityPlans.id,
+          description: schema.activityPlans.description,
+          name: schema.activityPlans.name,
+          structure: schema.activityPlans.structure,
+          updatedAt: schema.activityPlans.updated_at,
         })
         .from(schema.plannedSessions)
         .innerJoin(schema.profiles, eq(schema.profiles.id, schema.plannedSessions.profile_id))
+        .innerJoin(
+          schema.activityPlans,
+          and(
+            eq(schema.activityPlans.id, schema.plannedSessions.activity_plan_id),
+            or(
+              eq(schema.activityPlans.profile_id, profileId),
+              eq(schema.activityPlans.is_system_template, true),
+            ),
+          ),
+        )
         .where(
           and(
             eq(schema.plannedSessions.id, eventId),
@@ -812,19 +838,19 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         )
         .limit(1);
       if (!row) return null;
-      const manifest = row.manifest;
-      if (!manifest) return null;
+      const updatedAt = toIsoString(row.updatedAt);
+      if (!updatedAt) return null;
       return {
         id: row.id,
         startsAt: `${row.planningDate}T12:00:00.000Z`,
         timezone: row.timezone ?? "UTC",
         routeId: null,
         activityPlan: {
-          description: null,
-          id: manifest.activity_plan_id,
-          name: "Planned activity",
-          structure: activityPlanStructureSchema.parse(manifest.resolved_structure),
-          updatedAt: row.capturedAt.toISOString(),
+          description: row.description,
+          id: row.activityPlanId,
+          name: row.name,
+          structure: activityPlanStructureSchema.parse(row.structure),
+          updatedAt,
         },
       };
     },

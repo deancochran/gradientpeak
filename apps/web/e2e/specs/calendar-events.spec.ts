@@ -9,8 +9,8 @@ test("calendar.events creates durable one-off, all-day, and bounded recurring ev
   test.setTimeout(90_000);
   await withCalendarEventFixture(async (fixture) => {
     const calendar = new CalendarPage(athletePage);
-    await athletePage.goto("/calendar/new?date=2026-10-26&type=custom");
-    await athletePage.getByRole("button", { name: /^create$/i }).click();
+    await calendar.startCreate("2026-10-26");
+    await expect(athletePage.getByRole("button", { name: /^create$/i })).toBeDisabled();
     await expect(athletePage).toHaveURL(/\/calendar\/new/);
     await expect(athletePage.locator("#agenda-title")).toHaveValue("");
     expect(
@@ -29,7 +29,7 @@ test("calendar.events creates durable one-off, all-day, and bounded recurring ev
     await athletePage.reload();
     await expect(athletePage.getByRole("heading", { name: title })).toBeVisible();
     await calendar.openEdit(eventId);
-    await athletePage.getByLabel("Title").fill(`${title} edited`);
+    await athletePage.getByLabel("Title", { exact: true }).fill(`${title} edited`);
     await athletePage.getByLabel("Notes").fill("durable browser edit");
     await athletePage.locator("#event-date-field").fill("2026-10-27");
     await athletePage.locator("#event-time-field").fill("10:30");
@@ -95,8 +95,8 @@ test("calendar.events applies single, future, and series updates to exact recurr
       throw new Error("Expected four recurring event rows.");
 
     await calendar.openEdit(second.id);
-    await athletePage.getByLabel("Title").fill(`${initialTitle} single`);
-    await athletePage.getByLabel("Notes").fill("single occurrence notes");
+    await athletePage.getByLabel("Title", { exact: true }).fill(`${initialTitle} single`);
+    await athletePage.getByLabel("Notes", { exact: true }).fill("single occurrence notes");
     await athletePage.getByRole("button", { name: /save changes/i }).click();
     await expect(
       athletePage.getByRole("heading", { name: `${initialTitle} single` }),

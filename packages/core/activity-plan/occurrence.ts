@@ -1,54 +1,31 @@
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
 import type { ActivityPlanDuration, ActivityPlanTarget } from "./structure-schema";
 
-export type CompiledActivityStepOccurrence = {
+export type CompiledActivityPlanOccurrence = {
   occurrenceId: string;
+  /** Chronological zero-based position in the expanded prescription. */
+  ordinal: number;
+  /** @deprecated Use ordinal. */
   globalOrdinal: number;
-  segmentId: string;
-  segmentIndex: number;
+  stepId: string;
+  repeatId?: string;
+  /** Zero for a standalone step; zero-based execution index for repeat children. */
+  repeatIteration: number;
   role: "activity";
   activity_category: CanonicalActivityCategory;
-  intervalId: string;
-  intervalIndex: number;
-  stepId: string;
-  stepIndex: number;
-  repeatIteration: number;
   completionPolicy: ActivityPlanDuration["type"];
   duration: ActivityPlanDuration;
   targets: readonly ActivityPlanTarget[];
 };
-
-export type CompiledRestOccurrence = {
-  occurrenceId: string;
-  globalOrdinal: number;
-  segmentId: string;
-  segmentIndex: number;
-  role: "rest";
-  activity_category: null;
-  intervalId: null;
-  intervalIndex: null;
-  stepId: null;
-  stepIndex: null;
-  repeatIteration: null;
-  completionPolicy: "time";
-  duration: { type: "time"; seconds: number };
-  targets: readonly [];
-};
-
-export type CompiledActivityPlanOccurrence =
-  | CompiledActivityStepOccurrence
-  | CompiledRestOccurrence;
-
-/** IDs are delimiter-safe because every identity component has fixed UUID or integer grammar. */
+/** @deprecated Use CompiledActivityPlanOccurrence. */
+export type CompiledActivityStepOccurrence = CompiledActivityPlanOccurrence;
+/** Stable V5 identity; standalone occurrences deliberately have no invented repeat identity. */
 export function createActivityStepOccurrenceId(input: {
-  segmentId: string;
-  intervalId: string;
-  repeatIteration: number;
   stepId: string;
+  repeatId?: string;
+  repeatIteration: number;
 }): string {
-  return `activity:${input.segmentId}:${input.intervalId}:${input.repeatIteration}:${input.stepId}`;
-}
-
-export function createBoundaryOccurrenceId(segmentId: string): string {
-  return `boundary:${segmentId}`;
+  return input.repeatId
+    ? `activity:repeat:${input.repeatId}:${input.repeatIteration}:step:${input.stepId}`
+    : `activity:step:${input.stepId}`;
 }

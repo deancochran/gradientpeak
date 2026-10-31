@@ -13,6 +13,11 @@ export const ACTIVITY_PLAN_INTENSITY_BANDS = [
 ] as const;
 
 export type ActivityPlanIntensityBand = (typeof ACTIVITY_PLAN_INTENSITY_BANDS)[number];
+/** Lifting effort is not an endurance training zone; purpose is recorded separately. */
+export type ActivityPlanStrengthEffortBand =
+  | "strength-light"
+  | "strength-moderate"
+  | "strength-hard";
 export type ActivityPlanDifficulty = "foundation" | "development" | "advanced" | "race-specific";
 export type ActivityPlanDurationClass = "short" | "medium" | "long";
 
@@ -20,11 +25,17 @@ export type ActivityPlanPortfolioMetadata = {
   difficulty: ActivityPlanDifficulty;
   durationClass: ActivityPlanDurationClass;
   family: string;
-  primaryIntensity: ActivityPlanIntensityBand;
+  primaryIntensity: ActivityPlanIntensityBand | ActivityPlanStrengthEffortBand;
   primaryPurpose: string;
   templateId: string;
   triathlonContext: boolean;
 };
+
+function isEnduranceIntensity(
+  value: ActivityPlanPortfolioMetadata["primaryIntensity"],
+): value is ActivityPlanIntensityBand {
+  return ACTIVITY_PLAN_INTENSITY_BANDS.some((band) => band === value);
+}
 
 export const ACTIVITY_PLAN_PORTFOLIO_MAX_SIZE = 200;
 export const ACTIVITY_PLAN_PORTFOLIO_VOLUME_SATURATION = 180;
@@ -104,12 +115,11 @@ function targetFulfillment(actual: number, target: number): number {
 type ParsedActivityPlan = ReturnType<typeof activityPlanStructureSchema.parse>;
 
 function activitySteps(structure: ParsedActivityPlan) {
-  return structure.segments.flatMap((segment) =>
-    segment.role === "activity"
-      ? segment.intervals.flatMap((interval) =>
-          interval.steps.map((step) => ({ repetitions: interval.repetitions, step })),
-        )
-      : [],
+  return structure.items.flatMap((item) =>
+    (item.type === "step" ? [item] : item.steps).map((step) => ({
+      repetitions: item.type === "repeat" ? item.count : 1,
+      step,
+    })),
   );
 }
 
@@ -140,9 +150,11 @@ function inferDurationClass(structure: ParsedActivityPlan): ActivityPlanDuration
   return "long";
 }
 
-function inferPrimaryIntensity(structure: ParsedActivityPlan): ActivityPlanIntensityBand | null {
+function inferPrimaryIntensity(
+  structure: ParsedActivityPlan,
+): ActivityPlanPortfolioMetadata["primaryIntensity"] | null {
   const workSteps = activitySteps(structure).filter(
-    ({ step }) => !/^(warmup|cooldown|recovery|rest)$/i.test(step.name),
+    ({ step }) => !/^(warmup|cooldown|recovery|rest)$/i.test(step.name ?? ""),
   );
   const candidates = workSteps.flatMap(({ step }) =>
     step.targets.flatMap((target) =>
@@ -151,8 +163,22 @@ function inferPrimaryIntensity(structure: ParsedActivityPlan): ActivityPlanInten
         : [],
     ),
   );
-  const primary = candidates.sort((left, right) => right.intensity - left.intensity)[0];
+  // Select one interpretable domain before comparing values. RPM, watts and
+  // percentages are not comparable magnitudes. Cadence never defines effort.
+  const preference =
+    structure.activity_category === "strength" ? ["RPE"] : ["%FTP", "%MaxHR", "RPE"];
+  const primaryType = preference.find((type) =>
+    candidates.some((candidate) => candidate.type === type),
+  );
+  const primary = candidates
+    .filter((candidate) => candidate.type === primaryType)
+    .sort((left, right) => right.intensity - left.intensity)[0];
   if (!primary) return null;
+  if (structure.activity_category === "strength") {
+    if (primary.intensity <= 5) return "strength-light";
+    if (primary.intensity <= 7) return "strength-moderate";
+    return "strength-hard";
+  }
   if (primary.type === "RPE") {
     if (primary.intensity <= 3) return "recovery";
     if (primary.intensity <= 5) return "endurance";
@@ -248,7 +274,7 @@ export function evaluateActivityPlanPortfolio(
     if (templateMetadata?.triathlonContext) triathlonPlanCount += 1;
     if (
       templateMetadata &&
-      templateMetadata.primaryIntensity in intensityCounts.bike &&
+      isEnduranceIntensity(templateMetadata.primaryIntensity) &&
       templateMetadata.templateId === template.id &&
       parsed.success &&
       (parsed.data.activity_category === "bike" ||

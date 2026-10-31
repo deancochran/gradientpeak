@@ -1,9 +1,11 @@
 import * as React from "react";
 
+type SwitchMockProps = React.PropsWithChildren<Record<string, unknown>>;
+
 jest.mock("@rn-primitives/switch", () => {
   return {
-    Root: (props: any) => React.createElement("SwitchRoot", props, props.children),
-    Thumb: (props: any) => React.createElement("SwitchThumb", props, props.children),
+    Root: (props: SwitchMockProps) => React.createElement("SwitchRoot", props, props.children),
+    Thumb: (props: SwitchMockProps) => React.createElement("SwitchThumb", props, props.children),
   };
 });
 

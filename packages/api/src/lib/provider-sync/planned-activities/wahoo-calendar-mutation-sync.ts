@@ -1,5 +1,5 @@
 import { type DrizzleDbClient, schema } from "@repo/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gte, inArray } from "drizzle-orm";
 import type { DrizzleTransactionClient } from "../../../db";
 import {
   createIntegrationsRepositories,
@@ -192,6 +192,39 @@ export async function enqueueWahooPlannedSessionSyncAfterMutation(
   });
 
   return result;
+}
+
+/**
+ * Durable follow-up for an activity-plan edit. The worker resolves the current
+ * plan when it runs; the queue stores only session identity, and its lane
+ * coalescing makes a later edit authoritative over an older queued payload.
+ */
+export async function enqueueWahooActivityPlanRefreshAfterMutation(input: {
+  activityPlanId: string;
+  db: DrizzleDbClient;
+  profileId: string;
+  transaction: DrizzleTransactionClient;
+  upcomingOnOrAfter: string;
+}): Promise<WahooPlannedActivityQueueResult | null> {
+  const sessions = await input.transaction
+    .select({ id: schema.plannedSessions.id })
+    .from(schema.plannedSessions)
+    .where(
+      and(
+        eq(schema.plannedSessions.activity_plan_id, input.activityPlanId),
+        eq(schema.plannedSessions.profile_id, input.profileId),
+        eq(schema.plannedSessions.status, "scheduled"),
+        gte(schema.plannedSessions.planning_date, input.upcomingOnOrAfter),
+      ),
+    );
+
+  return enqueueWahooPlannedSessionSyncAfterMutation({
+    db: input.db,
+    transaction: input.transaction,
+    plannedSessionIds: sessions.map((session) => session.id),
+    operation: "publish",
+    profileId: input.profileId,
+  });
 }
 
 export async function getEventWahooPlannedActivityStatuses(input: {

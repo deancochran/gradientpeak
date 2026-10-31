@@ -2,7 +2,7 @@ import {
   getActivityCategoryStepDefaults,
   getActivityCategoryStepName,
 } from "../activity-categories";
-import type { ActivityPlanDuration, ActivityPlanIntervalStep } from "../activity-plan";
+import type { ActivityPlanDuration, ActivityPlanStep } from "../activity-plan";
 import type { CanonicalActivityCategory } from "../schemas";
 import type { ActivityTarget } from "../targets";
 
@@ -40,15 +40,15 @@ export function getDefaultTarget(ctx: DefaultsContext): ActivityTarget | undefin
 /**
  * Create a complete step with smart defaults based on context
  */
-export function createDefaultStep(ctx: DefaultsContext): ActivityPlanIntervalStep {
+export function createDefaultStep(ctx: DefaultsContext): ActivityPlanStep {
   const target = getDefaultTarget(ctx);
 
   return {
+    type: "step",
     id: crypto.randomUUID(),
     name: generateStepName(ctx),
     duration: getDefaultDuration(ctx),
     targets: [target ?? { type: "RPE", intensity: 5 }],
-    notes: "",
   };
 }
 

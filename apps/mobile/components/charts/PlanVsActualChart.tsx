@@ -314,7 +314,7 @@ function interpolateMarkerX(
 
   for (let index = 0; index < framedPoints.length; index += 1) {
     const pointTime = pointTimes[index];
-    if (pointTime === null) continue;
+    if (typeof pointTime !== "number") continue;
     if (targetTime === pointTime) {
       return points[index]?.x ?? null;
     }
@@ -381,7 +381,8 @@ export function PlanVsActualChart({
             idealData: idealData ?? [],
           });
 
-    const todayStr = new Date().toISOString().split("T")[0];
+    const todayStr = new Date().toISOString().split("T").at(0);
+    if (todayStr === undefined) return base;
     const _todayWeek = getWeekStartDateKey(todayStr);
 
     let startIndex = 0;
@@ -390,13 +391,17 @@ export function PlanVsActualChart({
     if (latestGoalTargetDate) {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const thirtyDaysAgoWeek = getWeekStartDateKey(thirtyDaysAgo.toISOString().split("T")[0]);
+      const thirtyDaysAgoDate = thirtyDaysAgo.toISOString().split("T").at(0);
+      if (thirtyDaysAgoDate === undefined) return base;
+      const thirtyDaysAgoWeek = getWeekStartDateKey(thirtyDaysAgoDate);
 
       const goalDateObj = new Date(`${latestGoalTargetDate}T12:00:00.000Z`);
       if (!Number.isNaN(goalDateObj.getTime())) {
         goalDateObj.setDate(goalDateObj.getDate() + 30);
       }
-      const goalPlusThirtyWeek = getWeekStartDateKey(goalDateObj.toISOString().split("T")[0]);
+      const goalPlusThirtyDate = goalDateObj.toISOString().split("T").at(0);
+      if (goalPlusThirtyDate === undefined) return base;
+      const goalPlusThirtyWeek = getWeekStartDateKey(goalPlusThirtyDate);
 
       const sIdx = base.findIndex((p) => p.date >= thirtyDaysAgoWeek);
       const eIdx = base.findIndex((p) => p.date >= goalPlusThirtyWeek);
@@ -407,7 +412,9 @@ export function PlanVsActualChart({
     } else {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const thirtyDaysAgoWeek = getWeekStartDateKey(thirtyDaysAgo.toISOString().split("T")[0]);
+      const thirtyDaysAgoDate = thirtyDaysAgo.toISOString().split("T").at(0);
+      if (thirtyDaysAgoDate === undefined) return base;
+      const thirtyDaysAgoWeek = getWeekStartDateKey(thirtyDaysAgoDate);
 
       const sIdx = base.findIndex((p) => p.date >= thirtyDaysAgoWeek);
 
@@ -419,9 +426,9 @@ export function PlanVsActualChart({
 
       const thirtyDaysFuture = new Date();
       thirtyDaysFuture.setDate(thirtyDaysFuture.getDate() + 30);
-      const thirtyDaysFutureWeek = getWeekStartDateKey(
-        thirtyDaysFuture.toISOString().split("T")[0],
-      );
+      const thirtyDaysFutureDate = thirtyDaysFuture.toISOString().split("T").at(0);
+      if (thirtyDaysFutureDate === undefined) return base;
+      const thirtyDaysFutureWeek = getWeekStartDateKey(thirtyDaysFutureDate);
       const futureIdx = base.findIndex((p) => p.date >= thirtyDaysFutureWeek);
       if (futureIdx !== -1 && futureIdx > endIndex) {
         endIndex = futureIdx;

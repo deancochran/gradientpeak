@@ -625,9 +625,13 @@ describe("activity plan detail scheduling", () => {
     if (!plan.structure) throw new Error("Expected owner authoring structure");
     const structure = structuredClone(plan.structure);
     structure.activity_category = "bike";
-    const segment = structure.segments[0];
-    if (!segment || segment.role !== "activity") throw new Error("Expected activity segment");
-    const step = segment.intervals[0]?.steps[0];
+    const firstItem = structure.items[0];
+    const step =
+      firstItem?.type === "step"
+        ? firstItem
+        : firstItem?.type === "repeat"
+          ? firstItem.steps[0]
+          : undefined;
     if (!step) throw new Error("Expected activity step");
     step.targets = [{ type: "%FTP", intensity: 80 }];
     fetchedPlanMock.current = createActivityPlanDetail({

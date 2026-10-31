@@ -147,7 +147,7 @@ export function estimateActivityPlanDuration(
     }
 
     const nonTimedActivities = compiled.occurrences.filter(
-      (occurrence) => occurrence.role === "activity" && occurrence.duration.type !== "time",
+      (occurrence) => occurrence.duration.type !== "time",
     );
     const distanceOnly =
       nonTimedActivities.length > 0 &&

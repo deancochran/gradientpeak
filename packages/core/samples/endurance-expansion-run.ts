@@ -1,9 +1,5 @@
 import { Duration, Target } from "../schemas/activity_payload";
-import {
-  createSystemActivityPlanAdaptationBuilder,
-  createSystemActivityPlanBuilder,
-  requiredSampleItem,
-} from "./activity-plan-builder";
+import { createSystemActivityPlanBuilder } from "./activity-plan-builder";
 import type {
   ActivityPlanIntensityBand,
   ActivityPlanPortfolioMetadata,
@@ -20,35 +16,11 @@ type RunFamily = {
   rpe: number;
   workSeconds: number;
   recoverySeconds: number;
+  recoveryNotes: string;
   repetitions?: readonly [number, number, number];
   steadyMinutes?: readonly [number, number, number, number];
 };
 const families: readonly RunFamily[] = [
-  {
-    id: "c1a00000-0001-4000-8001-000000000001",
-    key: "easy-reset",
-    name: "Easy Reset Run",
-    description:
-      "Conversational running that restores rhythm with deliberately low mechanical stress.",
-    purpose: "recovery",
-    primaryIntensity: "recovery",
-    rpe: 3,
-    workSeconds: 0,
-    recoverySeconds: 0,
-    steadyMinutes: [15, 20, 25, 30],
-  },
-  {
-    id: "c1a00000-0002-4000-8001-000000000005",
-    key: "aerobic-long-run",
-    name: "Aerobic Long Run",
-    description: "Steady aerobic running that builds durable, economical time on feet.",
-    purpose: "aerobic-durability",
-    primaryIntensity: "endurance",
-    rpe: 5,
-    workSeconds: 0,
-    recoverySeconds: 0,
-    steadyMinutes: [75, 80, 85, 90],
-  },
   {
     id: "c1a00000-0003-4000-8001-000000000009",
     key: "cruise-tempo",
@@ -60,6 +32,8 @@ const families: readonly RunFamily[] = [
     rpe: 6,
     workSeconds: 510,
     recoverySeconds: 170,
+    recoveryNotes:
+      "Jog very easily throughout recovery; keep it conversational rather than turning it into another tempo effort.",
     repetitions: [3, 4, 6],
   },
   {
@@ -73,6 +47,8 @@ const families: readonly RunFamily[] = [
     rpe: 9,
     workSeconds: 45,
     recoverySeconds: 125,
+    recoveryNotes:
+      "Walk or jog gently downhill. Start the next surge only with controlled breathing and stable form; extend recovery if needed.",
     repetitions: [3, 4, 6],
   },
   {
@@ -86,6 +62,8 @@ const families: readonly RunFamily[] = [
     rpe: 9,
     workSeconds: 20,
     recoverySeconds: 90,
+    recoveryNotes:
+      "Walk or jog very easily until breathing settles. Keep each stride relaxed and quick; extend recovery rather than sprinting fatigued.",
     repetitions: [3, 4, 6],
   },
 ];
@@ -103,7 +81,6 @@ function buildRunPlan(family: RunFamily): SystemActivityPlanTemplate {
       duration: Duration.minutes(minutes),
       intervalName: "Main Set",
       name: family.name,
-      purpose: "work",
       notes: "Keep breathing controlled and stop early if gait changes.",
       targets: [Target.rpe(family.rpe)],
     });
@@ -114,44 +91,12 @@ function buildRunPlan(family: RunFamily): SystemActivityPlanTemplate {
         notes: "Jog easily, then walk until breathing settles.",
       })
       .build();
-    const segment = requiredSampleItem(structure.segments, 0, "run activity segment");
-    if (segment.role !== "activity") throw new Error("Expected run activity segment");
-    const interval = requiredSampleItem(segment.intervals, 1, "run work interval");
-    const step = requiredSampleItem(interval.steps, 0, "run work step");
-    const adaptation = createSystemActivityPlanAdaptationBuilder(identity);
     return {
       id: family.id,
       name: family.name,
       description: family.description,
       gps_recording_enabled: true,
       structure,
-      adaptation: {
-        controls: [
-          adaptation.control({
-            key: "main_seconds",
-            label: "Main-set duration",
-            kind: "step_quantity",
-            range: {
-              minimum: family.steadyMinutes[0] * 60,
-              default: minutes * 60,
-              maximum: family.steadyMinutes[3] * 60,
-              increment: 300,
-            },
-            targets: [
-              {
-                type: "step_quantity",
-                activitySegmentId: segment.id,
-                intervalId: interval.id,
-                stepId: step.id,
-                quantityType: "time",
-              },
-            ],
-          }),
-        ],
-        allowedStates: family.steadyMinutes.map((value) =>
-          adaptation.state({ label: `${value} minutes`, values: { main_seconds: value * 60 } }),
-        ),
-      },
     };
   }
   if (family.repetitions === undefined) {
@@ -164,15 +109,13 @@ function buildRunPlan(family: RunFamily): SystemActivityPlanTemplate {
       {
         duration: Duration.seconds(family.workSeconds),
         name: "Work",
-        purpose: "work",
         notes: `${family.description} Run tall and controlled; preserve the same mechanics through every repetition.`,
         targets: [Target.rpe(family.rpe)],
       },
       {
         duration: Duration.seconds(family.recoverySeconds),
         name: "Recovery",
-        purpose: "recovery",
-        notes: "Walk or jog easily until breathing and form are ready for the next effort.",
+        notes: family.recoveryNotes,
         targets: [Target.rpe(2)],
       },
     ],
@@ -184,46 +127,19 @@ function buildRunPlan(family: RunFamily): SystemActivityPlanTemplate {
       notes: "Jog easily, then walk until breathing settles.",
     })
     .build();
-  const segment = requiredSampleItem(structure.segments, 0, "run activity segment");
-  if (segment.role !== "activity") throw new Error("Expected run activity segment");
-  const interval = requiredSampleItem(segment.intervals, 1, "run work interval");
-  const adaptation = createSystemActivityPlanAdaptationBuilder(identity);
   return {
     id: family.id,
     name: family.name,
     description: family.description,
     gps_recording_enabled: true,
     structure,
-    adaptation: {
-      controls: [
-        adaptation.control({
-          key: "work_repetitions",
-          label: "Work repetitions",
-          kind: "interval_repetitions",
-          range: {
-            minimum: family.repetitions[0],
-            default: family.repetitions[1],
-            maximum: family.repetitions[2],
-            increment: 1,
-          },
-          targets: [
-            {
-              type: "interval_repetitions",
-              activitySegmentId: segment.id,
-              intervalId: interval.id,
-            },
-          ],
-        }),
-      ],
-    },
   };
 }
 export const EXPANDED_ENDURANCE_RUN_ACTIVITIES = families.map(buildRunPlan);
 export const EXPANDED_ENDURANCE_RUN_METADATA: ActivityPlanPortfolioMetadata[] = families.map(
   (family) => ({
     difficulty: "development",
-    durationClass:
-      family.key === "aerobic-long-run" || family.key === "cruise-tempo" ? "medium" : "short",
+    durationClass: family.key === "cruise-tempo" ? "medium" : "short",
     family: `run:${family.key}`,
     primaryIntensity: family.primaryIntensity,
     primaryPurpose: family.purpose,

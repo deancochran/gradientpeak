@@ -1,9 +1,5 @@
 import type { AppRouter } from "@repo/api/client";
-import {
-  activityPlanStructureSchema,
-  buildActivityPlanPrintModel,
-  resolveActivityPlanSessionFlow,
-} from "@repo/core/activity-plan";
+import { activityPlanStructureSchema, buildActivityPlanPrintModel } from "@repo/core/activity-plan";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,7 +31,6 @@ import { ActivityPlanEditSession } from "../../../components/activity-plan/activ
 import { ActivityPlanEstimateRow } from "../../../components/activity-plan/activity-plan-estimates";
 import { ActivityPlanPdfActions } from "../../../components/activity-plan/activity-plan-pdf-actions";
 import { ActivityPlanSessionFlow } from "../../../components/activity-plan/activity-plan-session-flow";
-import { ActivityPlanStructure } from "../../../components/activity-plan/activity-plan-structure";
 import {
   DetailPageIntro,
   LikeToggleButton,
@@ -58,18 +53,12 @@ function ActivityPlanDetailPage() {
   const { activityPlanId } = Route.useParams();
   const activePlanId = useRef(activityPlanId);
   activePlanId.current = activityPlanId;
+  const editOwner = useRef(0);
   const { edit: editMode } = Route.useSearch();
   const editing = editMode === true;
-  const [personalizationChoice, setPersonalizationChoice] = useState<boolean | null>(null);
   const planQuery = api.activityPlans.getById.useQuery(
     { id: activityPlanId, personalize: false },
     { retry: false },
-  );
-  const performanceTargetsQuery = api.athleteIntelligence.getReadModel.useQuery(
-    { sections: { publishedState: true } },
-    {
-      enabled: Boolean(planQuery.data?.detail),
-    },
   );
   const today = getTodayDateKey();
   const profileQuery = api.profiles.get.useQuery();
@@ -99,7 +88,7 @@ function ActivityPlanDetailPage() {
   const detail = planQuery.data?.detail;
   const edit = planQuery.data?.edit;
   const linkedSessions = (scheduleQuery.data?.items ?? []).filter(
-    (session) => session.prescription.resolutionManifest.activity_plan_id === activityPlanId,
+    (session) => session.activityPlanId === activityPlanId,
   );
   const scheduledEvents = linkedSessions.filter(
     (session) => session.lifecycle.status === "scheduled",
@@ -109,29 +98,17 @@ function ActivityPlanDetailPage() {
   const isOwner = detail?.capabilities.canEdit ?? false;
   const parsedStructure = activityPlanStructureSchema.safeParse(detail?.structure);
   const displayStructure = parsedStructure.success ? parsedStructure.data : null;
-  const performanceTargets = performanceTargetsQuery.data?.publishedState?.performanceTargets;
-  const personalizationEligibility = resolveActivityPlanSessionFlow({
-    structure: displayStructure,
-    ...(performanceTargets ? { performanceTargets } : {}),
-    personalize: false,
-  }).eligibility;
-  const personalizeTargets = Boolean(
-    personalizationEligibility.eligible && (personalizationChoice ?? true),
-  );
   const printModel = detail
     ? buildActivityPlanPrintModel({
         format: "full-page",
         ...(detail.description === undefined ? {} : { description: detail.description }),
-        ...(detail.notes === undefined ? {} : { notes: detail.notes }),
-        ...(performanceTargets ? { performanceTargets } : {}),
-        personalizeTargets,
         structure: displayStructure,
         title: detail.name,
       })
     : null;
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Changing the resource starts a fresh local interaction scope.
   useEffect(() => {
-    setPersonalizationChoice(null);
     setDeleteBlocked(false);
     setDeleteProgress(null);
   }, [activityPlanId]);
@@ -175,16 +152,10 @@ function ActivityPlanDetailPage() {
       if (variables.id !== activePlanId.current) return;
       await Promise.allSettled([Promise.resolve().then(() => utils.activityPlans.invalidate())]);
       if (variables.id !== activePlanId.current) return;
-      toast.success("Activity plan updated");
     },
     onError: async (error, variables) => {
       if (variables.id !== activePlanId.current) return;
       if (error.data?.code === "CONFLICT") await planQuery.refetch();
-      toast.error(
-        error.data?.code === "CONFLICT"
-          ? "This plan changed elsewhere. Your changes are kept. Cancel and reopen the editor to load the latest saved plan."
-          : error.message,
-      );
     },
   });
   const createSchedule = api.plannedSessions.create.useMutation({
@@ -283,15 +254,22 @@ function ActivityPlanDetailPage() {
   }
 
   if (editing && edit) {
+    const owner = editOwner.current;
     return (
       <div className="container mx-auto max-w-6xl space-y-6 py-4">
         <ActivityPlanEditSession
           key={activityPlanId}
           edit={edit}
-          onCancel={() => void navigate({ search: { edit: undefined }, replace: true })}
+          onCancel={() => {
+            editOwner.current += 1;
+            void navigate({ search: { edit: undefined }, replace: true });
+          }}
           onUpdate={(values) => updatePlan.mutateAsync(values)}
-          pending={updatePlan.isPending}
-          onSaved={() => navigate({ search: { edit: undefined }, replace: true })}
+          onSaved={() => {
+            if (editOwner.current !== owner || activePlanId.current !== activityPlanId) return;
+            toast.success("Activity plan updated");
+            return navigate({ search: { edit: undefined }, replace: true });
+          }}
         />
       </div>
     );
@@ -457,20 +435,7 @@ function ActivityPlanDetailPage() {
       </div>
 
       {displayStructure ? (
-        <>
-          <ActivityPlanSessionFlow
-            structure={displayStructure}
-            {...(performanceTargets ? { performanceTargets } : {})}
-            personalizeTargets={personalizeTargets}
-            onPersonalizeTargetsChange={setPersonalizationChoice}
-            showPersonalizationControl
-            showStepNames={false}
-            personalizationFactsLoading={performanceTargetsQuery.isLoading}
-          />
-          <div className="print:hidden">
-            <ActivityPlanStructure structure={displayStructure} />
-          </div>
-        </>
+        <ActivityPlanSessionFlow structure={displayStructure} showStepNames={false} />
       ) : (
         <Card data-testid="activity-plan-unavailable-structure">
           <CardHeader>

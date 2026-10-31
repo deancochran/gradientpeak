@@ -1,287 +1,369 @@
-import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
+import {
+  activityCategoryChoices,
+  buildGoalCreatePayload,
+  buildGoalDraftFromGoal,
+  canonicalActivityCategorySchema,
+  createEmptyGoalDraft,
+  type GoalEditorDraft,
+  goalFocusChoices,
+  goalPriorityChoices,
+  goalPriorityHelpText,
+  goalRaceMeasureChoices,
+  type ProfileGoalRecord,
+  parseProfileGoalRecord,
+} from "@repo/core";
+import { normalizeDurationInput, parseHmsToSeconds } from "@repo/core/utils/fitness-inputs";
 import { Button } from "@repo/ui/components/button";
+import { ChoiceField as Choice } from "@repo/ui/components/choice-field";
 import { DateInput } from "@repo/ui/components/date-input";
+import { DurationInput } from "@repo/ui/components/duration-input";
+import { Form, FormBoundedNumberField, FormPaceField } from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
+import { useZodFormSubmit } from "@repo/ui/hooks";
 import { useServerFn } from "@tanstack/react-start";
-import { useRef, useState } from "react";
-
+import { useEffect, useRef, useState } from "react";
+import { Controller, type FieldPath, type FieldPathValue, useForm } from "react-hook-form";
 import { api } from "../../lib/api/client";
-import { getTodayDateKey, isValidDateKey } from "../../lib/planning";
+import { getTodayDateKey } from "../../lib/planning";
 import { createPlanGoalAction, updatePlanGoalAction } from "../../lib/planning/server-actions";
-import { useUnsavedChangesGuard } from "../../lib/use-unsaved-changes-guard";
-
-type EditableGoal = {
-  activity_category: string;
-  id: string;
-  priority: number;
-  profile_id: string;
-  target_date: string;
-  target_payload?: unknown;
-  title: string;
-};
+import { useFormLifetime } from "../../lib/use-form-lifetime";
 
 type PlanGoalFormProps = {
   profileId?: string | null;
   redirectTo?: string;
-  goal?: EditableGoal | null;
+  goal?: ProfileGoalRecord | null;
   initialDate?: string;
+  onCancel?: () => void;
 };
 
-function integerRangeError(value: string, min: number, max: number, label: string) {
-  const parsed = Number(value);
-  return value.trim() && Number.isInteger(parsed) && parsed >= min && parsed <= max
-    ? undefined
-    : `${label} must be a whole number from ${min} to ${max}.`;
+const goalTypes = goalFocusChoices;
+
+type NumericField =
+  | "importance"
+  | "raceDistanceKm"
+  | "targetWatts"
+  | "targetBpm"
+  | "consistencySessionsPerWeek"
+  | "consistencyWeeks";
+
+export function PlanGoalForm(props: PlanGoalFormProps) {
+  const lifetime = useFormLifetime();
+  return (
+    <PlanGoalFormSession
+      key={`${props.goal?.id ?? props.profileId ?? "new"}:${lifetime.sessionKey}`}
+      {...props}
+      isCurrent={lifetime.isCurrent}
+      onExit={() => {
+        lifetime.end();
+        if (props.onCancel) props.onCancel();
+        else window.location.assign(props.redirectTo ?? "/plan");
+      }}
+    />
+  );
 }
 
-export function PlanGoalForm({
+function PlanGoalFormSession({
   goal,
   initialDate,
   profileId,
   redirectTo = "/plan",
-}: PlanGoalFormProps) {
+  isCurrent,
+  onExit,
+}: PlanGoalFormProps & { isCurrent: () => boolean; onExit: () => void }) {
   const utils = api.useUtils();
   const createPlanGoal = useServerFn(createPlanGoalAction);
   const updatePlanGoal = useServerFn(updatePlanGoalAction);
-  const consistencyPayload =
-    goal?.target_payload && typeof goal.target_payload === "object"
-      ? (goal.target_payload as { target_sessions_per_week?: number; target_weeks?: number })
-      : null;
-  const [goalTitle, setGoalTitle] = useState(goal?.title ?? "");
-  const [goalDate, setGoalDate] = useState(goal?.target_date ?? initialDate ?? getTodayDateKey());
-  const [goalPriority, setGoalPriority] = useState(String(goal?.priority ?? 5));
-  const [goalActivityCategory, setGoalActivityCategory] = useState(
-    goal?.activity_category ?? "run",
+  const [defaultValues] = useState<GoalEditorDraft>(() =>
+    goal
+      ? buildGoalDraftFromGoal({ goal: parseProfileGoalRecord(goal) })
+      : {
+          ...createEmptyGoalDraft(),
+          goalType: "consistency",
+          targetDate: initialDate ?? getTodayDateKey(),
+        },
   );
-  const [goalSessionsPerWeek, setGoalSessionsPerWeek] = useState(
-    String(consistencyPayload?.target_sessions_per_week ?? 4),
-  );
-  const [goalWeeks, setGoalWeeks] = useState(String(consistencyPayload?.target_weeks ?? 8));
+  const form = useForm<GoalEditorDraft>({ defaultValues });
+  const draft = form.watch();
+  const isSubmitting = form.formState.isSubmitting;
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isTitleTouched, setIsTitleTouched] = useState(false);
   const submittingRef = useRef(false);
-  const titleError = (() => {
-    const title = goalTitle.trim();
-    if (!title) return "Enter a goal title.";
-    if (title.length > 100) return "Goal title must be 100 characters or fewer.";
-    return undefined;
-  })();
-  const dateError = isValidDateKey(goalDate) ? undefined : "Choose a valid target date.";
-  const priorityError = integerRangeError(goalPriority, 0, 10, "Priority");
-  const sessionsError = integerRangeError(goalSessionsPerWeek, 1, 21, "Sessions per week");
-  const weeksError = integerRangeError(goalWeeks, 1, 104, "Weeks");
-  const hasFieldError = Boolean(
-    titleError || dateError || priorityError || sessionsError || weeksError,
-  );
-  const initialValues = useRef({
-    activity: goal?.activity_category ?? "run",
-    date: goal?.target_date ?? initialDate ?? getTodayDateKey(),
-    priority: String(goal?.priority ?? 5),
-    sessions: String(consistencyPayload?.target_sessions_per_week ?? 4),
-    title: goal?.title ?? "",
-    weeks: String(consistencyPayload?.target_weeks ?? 8),
-  });
-  const dirty =
-    goalTitle !== initialValues.current.title ||
-    goalDate !== initialValues.current.date ||
-    goalPriority !== initialValues.current.priority ||
-    goalActivityCategory !== initialValues.current.activity ||
-    goalSessionsPerWeek !== initialValues.current.sessions ||
-    goalWeeks !== initialValues.current.weeks;
-  const { guardedCancel, markSaved } = useUnsavedChangesGuard({
-    draft: {
-      goalActivityCategory,
-      goalDate,
-      goalPriority,
-      goalSessionsPerWeek,
-      goalTitle,
-      goalWeeks,
-    },
-    dirty,
-    pending: isSubmitting,
-  });
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    const subscription = form.watch((_values, event) => {
+      if (event.type === "change") setSubmitError(null);
+    });
+    return () => {
+      mounted.current = false;
+      subscription.unsubscribe();
+    };
+  }, [form]);
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (submittingRef.current) return;
-    if (!(goal?.profile_id ?? profileId) || hasFieldError) {
-      setIsTitleTouched(true);
+  function update<K extends FieldPath<GoalEditorDraft>>(
+    name: K,
+    value: FieldPathValue<GoalEditorDraft, K>,
+  ) {
+    if (!mounted.current || !isCurrent() || submittingRef.current || form.formState.isSubmitting)
+      return;
+    form.setValue(name, value, { shouldDirty: true });
+    setSubmitError(null);
+  }
+
+  function numberField(field: NumericField, label: string, required = false, integer = false) {
+    return (
+      <FormBoundedNumberField
+        key={`${draft.goalType}:${field}`}
+        control={form.control}
+        name={field}
+        label={label}
+        disabled={isSubmitting}
+        required={required}
+        decimals={integer ? 0 : 8}
+        min={field === "importance" ? 0 : Number.MIN_VALUE}
+        max={field === "importance" ? 10 : Number.POSITIVE_INFINITY}
+        emptyValue={null}
+      />
+    );
+  }
+
+  async function saveDraft(values: GoalEditorDraft) {
+    if (!mounted.current || !isCurrent() || submittingRef.current) return;
+    const owner = goal?.profile_id ?? profileId;
+    if (!owner) {
+      setSubmitError("Choose an athlete before saving this goal.");
       return;
     }
-
-    submittingRef.current = true;
-    setIsSubmitting(true);
-    setSubmitError(null);
     try {
-      const result = await (goal ? updatePlanGoal : createPlanGoal)({
-        data: new FormData(event.currentTarget) as never,
-      });
+      // The snapshot is editing context only. Only the validated canonical payload crosses transport.
+      const payload = buildGoalCreatePayload({ draft: values, profileId: owner });
+      submittingRef.current = true;
+      setSubmitError(null);
+      const result = goal
+        ? await updatePlanGoal({ data: { ...payload, goal_id: goal.id, redirectTo } })
+        : await createPlanGoal({ data: { ...payload, redirectTo } });
       if (result.status === "error") {
-        setSubmitError(result.message);
+        if (mounted.current && isCurrent()) setSubmitError(result.message);
         return;
       }
       await Promise.all([utils.goals.invalidate(), utils.athleteIntelligence.invalidate()]);
-      initialValues.current = {
-        activity: goalActivityCategory,
-        date: goalDate,
-        priority: goalPriority,
-        sessions: goalSessionsPerWeek,
-        title: goalTitle,
-        weeks: goalWeeks,
-      };
-      markSaved();
+      if (!mounted.current || !isCurrent()) return;
       window.location.assign(result.redirectTo);
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "Unable to save goal. Try again.");
+      if (mounted.current && isCurrent())
+        setSubmitError(error instanceof Error ? error.message : "Unable to save goal. Try again.");
     } finally {
       submittingRef.current = false;
-      setIsSubmitting(false);
     }
-  };
+  }
 
+  const submit = useZodFormSubmit<GoalEditorDraft>({
+    form,
+    onSubmit: saveDraft,
+    onValidationError: (errors) => {
+      const first = Object.values(errors).find((error) => typeof error?.message === "string");
+      setSubmitError(
+        typeof first?.message === "string"
+          ? first.message
+          : "Correct the highlighted fields before saving.",
+      );
+    },
+  });
+
+  function durationField(
+    name: "targetDuration" | "thresholdTestDuration",
+    label: string,
+    required = false,
+  ) {
+    return (
+      <Controller
+        key={`${draft.goalType}:${name}`}
+        control={form.control}
+        name={name}
+        rules={{
+          validate: (value) =>
+            (!value?.trim()
+              ? !required
+              : (parseHmsToSeconds(normalizeDurationInput(value)) ?? 0) > 0) ||
+            `Enter a valid ${label.toLowerCase()}${required ? "." : " or clear the field."}`,
+        }}
+        render={({ field, fieldState }) => (
+          <DurationInput
+            ref={field.ref}
+            id={`goal-${name}`}
+            label={label}
+            name={field.name}
+            required={required}
+            disabled={isSubmitting}
+            value={field.value ?? ""}
+            onChange={field.onChange}
+            onBlur={field.onBlur}
+            {...(fieldState.error?.message === undefined
+              ? {}
+              : { error: fieldState.error.message })}
+          />
+        )}
+      />
+    );
+  }
+
+  const race = draft.goalType === "race_performance";
+  const completion = draft.goalType === "completion";
+  const threshold =
+    draft.goalType === "pace_threshold" ||
+    draft.goalType === "power_threshold" ||
+    draft.goalType === "hr_threshold";
   return (
-    <form className="space-y-4" data-testid="goal-form" onSubmit={handleSubmit}>
-      <input type="hidden" name="profile_id" value={goal?.profile_id ?? profileId ?? ""} />
-      {goal ? <input type="hidden" name="goal_id" value={goal.id} /> : null}
-      <input type="hidden" name="redirectTo" value={redirectTo} />
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
+    <Form {...form}>
+      <form noValidate className="space-y-4" data-testid="goal-form" onSubmit={submit.handleSubmit}>
+        <div className="space-y-2">
           <Label htmlFor="goal-title">Title</Label>
           <span data-testid="goal-title-required" className="text-xs text-muted-foreground">
             Required
           </span>
+          <Input
+            id="goal-title"
+            data-testid="goal-title-input"
+            required
+            maxLength={100}
+            disabled={isSubmitting}
+            value={draft.title}
+            onChange={(event) => update("title", event.target.value)}
+          />
         </div>
-        <Input
-          disabled={isSubmitting}
-          id="goal-title"
-          aria-describedby={isTitleTouched && titleError ? "goal-title-error" : undefined}
-          aria-invalid={Boolean(isTitleTouched && titleError)}
-          data-testid="goal-title-input"
-          name="title"
+        <DateInput
+          id="goal-date"
+          label="Target date"
           required
-          maxLength={100}
-          value={goalTitle}
-          onChange={(event) => {
-            if (!submittingRef.current) setGoalTitle(event.target.value);
-          }}
-          onBlur={() => setIsTitleTouched(true)}
+          disabled={isSubmitting}
+          value={draft.targetDate}
+          onChange={(value) => update("targetDate", value ?? "")}
         />
-        {isTitleTouched && titleError ? (
-          <p id="goal-title-error" className="text-sm text-destructive">
-            {titleError}
+        <Choice
+          label="Priority"
+          value={draft.importance}
+          options={goalPriorityChoices}
+          helperText={goalPriorityHelpText}
+          disabled={isSubmitting}
+          isCurrent={isCurrent}
+          required
+          onChange={(importance) => update("importance", importance)}
+        />
+        <Choice
+          label="Goal type"
+          isCurrent={isCurrent}
+          required
+          value={draft.goalType}
+          options={goalTypes}
+          disabled={isSubmitting}
+          onChange={(value) => {
+            const choice = goalTypes.find((option) => option.value === value);
+            if (
+              !choice ||
+              choice.value === draft.goalType ||
+              submittingRef.current ||
+              form.formState.isSubmitting
+            )
+              return;
+            const defaults = createEmptyGoalDraft();
+            setSubmitError(null);
+            form.reset({
+              ...defaults,
+              title: draft.title,
+              targetDate: draft.targetDate,
+              importance: draft.importance,
+              originalGoal: undefined,
+              goalType: choice.value,
+              activityCategory:
+                choice.value === "pace_threshold"
+                  ? "run"
+                  : choice.value === "power_threshold"
+                    ? "bike"
+                    : draft.activityCategory,
+              thresholdTestDuration:
+                choice.value === "hr_threshold" ? "" : (defaults.thresholdTestDuration ?? ""),
+            });
+          }}
+        />
+        <Choice
+          label="Activity"
+          isCurrent={isCurrent}
+          required
+          value={draft.activityCategory}
+          disabled={isSubmitting}
+          options={activityCategoryChoices}
+          onChange={(value) => {
+            const category = canonicalActivityCategorySchema.safeParse(value);
+            if (category.success) update("activityCategory", category.data);
+          }}
+        />
+        {race || completion ? (
+          <>
+            {numberField("raceDistanceKm", "Distance (km)", race)}
+            {race ? (
+              <Choice
+                label="Race target"
+                isCurrent={isCurrent}
+                required
+                value={draft.raceTargetMode ?? "time"}
+                disabled={isSubmitting}
+                options={goalRaceMeasureChoices}
+                onChange={(value) => {
+                  if (value === "time" || value === "pace") update("raceTargetMode", value);
+                }}
+              />
+            ) : null}
+            {completion || draft.raceTargetMode !== "pace" ? (
+              durationField("targetDuration", completion ? "Duration" : "Goal time", race)
+            ) : (
+              <FormPaceField
+                key={`${draft.goalType}:targetPace`}
+                control={form.control}
+                name="targetPace"
+                label="Goal pace"
+                required
+                disabled={isSubmitting}
+              />
+            )}
+          </>
+        ) : null}
+        {draft.goalType === "pace_threshold" ? (
+          <FormPaceField
+            key={`${draft.goalType}:targetPace`}
+            control={form.control}
+            name="targetPace"
+            label="Target pace"
+            required
+            disabled={isSubmitting}
+          />
+        ) : null}
+        {draft.goalType === "power_threshold" ? numberField("targetWatts", "Watts", true) : null}
+        {draft.goalType === "hr_threshold" ? numberField("targetBpm", "Target bpm", true) : null}
+        {threshold ? durationField("thresholdTestDuration", "Test duration") : null}
+        {draft.goalType === "consistency" ? (
+          <>
+            {numberField("consistencySessionsPerWeek", "Sessions / week", false, true)}
+            {numberField("consistencyWeeks", "Weeks", false, true)}
+          </>
+        ) : null}
+        {submitError ? (
+          <p role="alert" aria-live="polite" className="text-sm text-destructive">
+            {submitError}
           </p>
         ) : null}
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <DateInput
-            disabled={isSubmitting}
-            id="goal-date"
-            label="Target date"
-            name="target_date"
-            {...(dateError ? { error: dateError } : {})}
-            required
-            value={goalDate}
-            onChange={(value) => {
-              if (!submittingRef.current) setGoalDate(value ?? "");
-            }}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="goal-activity">Activity</Label>
-          <select
-            disabled={isSubmitting}
-            id="goal-activity"
-            name="activity_category"
-            value={goalActivityCategory}
-            onChange={(event) => {
-              if (!submittingRef.current) setGoalActivityCategory(event.target.value);
-            }}
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          >
-            <option value="run">Run</option>
-            <option value="bike">Bike</option>
-            <option value="swim">Swim</option>
-            <option value="strength">Strength</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
-      </div>
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div>
-          <BoundedNumberInput
-            disabled={isSubmitting}
-            id="goal-priority"
-            decimals={0}
-            {...(priorityError ? { error: priorityError } : {})}
-            label="Priority"
-            max={10}
-            min={0}
-            name="priority"
-            required
-            value={goalPriority}
-            onChange={(value) => {
-              if (!submittingRef.current) setGoalPriority(value);
-            }}
-          />
-        </div>
-        <div>
-          <BoundedNumberInput
-            disabled={isSubmitting}
-            id="goal-sessions"
-            decimals={0}
-            {...(sessionsError ? { error: sessionsError } : {})}
-            label="Sessions / week"
-            max={21}
-            min={1}
-            name="target_sessions_per_week"
-            required
-            value={goalSessionsPerWeek}
-            onChange={(value) => {
-              if (!submittingRef.current) setGoalSessionsPerWeek(value);
-            }}
-          />
-        </div>
-        <div>
-          <BoundedNumberInput
-            disabled={isSubmitting}
-            id="goal-weeks"
-            decimals={0}
-            {...(weeksError ? { error: weeksError } : {})}
-            label="Weeks"
-            max={104}
-            min={1}
-            name="target_weeks"
-            required
-            value={goalWeeks}
-            onChange={(value) => {
-              if (!submittingRef.current) setGoalWeeks(value);
-            }}
-          />
-        </div>
-      </div>
-      {submitError ? (
-        <p role="alert" aria-live="polite" className="text-sm text-destructive">
-          {submitError}
-        </p>
-      ) : null}
-      <Button
-        data-testid="goal-submit"
-        type="submit"
-        disabled={!(goal?.profile_id ?? profileId) || hasFieldError || isSubmitting}
-      >
-        {isSubmitting ? "Saving..." : goal ? "Save goal" : "Create goal"}
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        disabled={isSubmitting}
-        onClick={() => guardedCancel(() => window.location.assign(redirectTo))}
-      >
-        Cancel
-      </Button>
-    </form>
+        <Button data-testid="goal-submit" type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "Saving..." : goal ? "Save goal" : "Create goal"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            if (mounted.current && isCurrent()) onExit();
+          }}
+        >
+          Cancel
+        </Button>
+      </form>
+    </Form>
   );
 }

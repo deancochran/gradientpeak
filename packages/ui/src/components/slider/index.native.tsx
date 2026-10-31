@@ -3,19 +3,20 @@ import * as React from "react";
 import { Platform, useColorScheme } from "react-native";
 
 import { getResolvedNativeTheme } from "../../lib/native-theme";
+import { omitUndefined } from "../../lib/omit-undefined";
 import { getNativeTestProps } from "../../lib/test-props";
-import type { SliderProps } from "./shared";
+import { SLIDER_DEFAULTS, type SliderProps } from "./shared";
 
 const Slider = React.forwardRef<RNSliderRef, SliderProps>(
   (
     {
-      value = 0,
+      value,
       onValueChange,
       onSlidingStart,
       onSlidingComplete,
-      minimumValue = 0,
-      maximumValue = 1,
-      step = 0.01,
+      minimumValue = SLIDER_DEFAULTS.minimumValue,
+      maximumValue = SLIDER_DEFAULTS.maximumValue,
+      step = SLIDER_DEFAULTS.step,
       minimumTrackTintColor,
       maximumTrackTintColor,
       thumbTintColor,
@@ -28,6 +29,22 @@ const Slider = React.forwardRef<RNSliderRef, SliderProps>(
     },
     ref,
   ) => {
+    const availability = React.useRef({ disabled, generation: 0 });
+    if (availability.current.disabled !== disabled) {
+      availability.current = { disabled, generation: availability.current.generation + 1 };
+    }
+    const generation = availability.current.generation;
+    const alive = React.useRef(true);
+    React.useEffect(() => {
+      alive.current = true;
+      return () => {
+        alive.current = false;
+      };
+    }, []);
+    const usable = () =>
+      alive.current &&
+      !availability.current.disabled &&
+      availability.current.generation === generation;
     const theme = getResolvedNativeTheme(useColorScheme());
     const defaultMinimumTrackTintColor = minimumTrackTintColor || theme.primary;
     const defaultMaximumTrackTintColor = maximumTrackTintColor || theme.input;
@@ -42,10 +59,16 @@ const Slider = React.forwardRef<RNSliderRef, SliderProps>(
     return (
       <RNSlider
         ref={ref}
-        value={value}
-        {...(onValueChange ? { onValueChange } : {})}
-        {...(onSlidingStart ? { onSlidingStart } : {})}
-        {...(onSlidingComplete ? { onSlidingComplete } : {})}
+        value={value ?? minimumValue}
+        onValueChange={(next) => {
+          if (usable()) onValueChange?.(next);
+        }}
+        onSlidingStart={(next) => {
+          if (usable()) onSlidingStart?.(next);
+        }}
+        onSlidingComplete={(next) => {
+          if (usable()) onSlidingComplete?.(next);
+        }}
         minimumValue={minimumValue}
         maximumValue={maximumValue}
         step={step}
@@ -55,7 +78,7 @@ const Slider = React.forwardRef<RNSliderRef, SliderProps>(
         disabled={disabled}
         style={{ opacity: disabled ? 0.5 : 1 }}
         {...nativeTestProps}
-        {...props}
+        {...omitUndefined(props)}
       />
     );
   },

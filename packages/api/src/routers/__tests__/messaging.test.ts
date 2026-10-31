@@ -1,5 +1,6 @@
 import { conversationParticipants, conversations, messages } from "@repo/db";
 import { describe, expect, it } from "vitest";
+import { createRouterCaller } from "../../test/router";
 import { messagingRouter } from "../messaging";
 
 const OWNER_ID = "11111111-1111-4111-8111-111111111111";
@@ -28,12 +29,11 @@ function getTableName(table: unknown): TableName {
   throw new Error(`Unhandled table: ${String(table)}`);
 }
 
-function createAwaitable<TValue extends object>(value: unknown, extra: TValue): TValue {
-  return {
-    ...extra,
-    then: (onFulfilled: (result: unknown) => unknown, onRejected?: (error: unknown) => unknown) =>
-      Promise.resolve(value).then(onFulfilled, onRejected),
-  } as TValue;
+function createAwaitable<TValue extends object>(
+  value: unknown,
+  extra: TValue,
+): Promise<unknown> & TValue {
+  return Object.assign(Promise.resolve(value), extra);
 }
 
 function createConversationRow(overrides: Partial<Record<string, unknown>> = {}) {
@@ -118,7 +118,16 @@ function createDbMock(plan: MockPlan = {}) {
     let joined = false;
     let tableName: TableName | null = null;
 
-    const builder: any = {
+    const rowsForSelection = () => {
+      if (!tableName) throw new Error("Select called without table");
+
+      return isUnreadCount
+        ? (unreadCountQueue.shift() ?? [])
+        : tableName === "conversations"
+          ? (existingConversationQueue.shift() ?? [])
+          : resolveSelectRows(tableName, joined);
+    };
+    const builder = Object.assign(Promise.resolve().then(rowsForSelection), {
       from: (table: unknown) => {
         tableName = getTableName(table);
         return builder;
@@ -142,24 +151,16 @@ function createDbMock(plan: MockPlan = {}) {
         Promise.resolve(
           tableName === "conversations"
             ? (existingConversationQueue.shift() ?? [])
-            : resolveSelectRows(tableName!, joined),
+            : rowsForSelection(),
         ),
       limit: (count: number) =>
         Promise.resolve(
           (tableName === "conversations"
             ? (existingConversationQueue.shift() ?? [])
-            : resolveSelectRows(tableName!, joined)
+            : rowsForSelection()
           ).slice(0, count),
         ),
-      then: (onFulfilled: (rows: unknown[]) => unknown, onRejected?: (error: unknown) => unknown) =>
-        Promise.resolve(
-          isUnreadCount
-            ? (unreadCountQueue.shift() ?? [])
-            : tableName === "conversations"
-              ? (existingConversationQueue.shift() ?? [])
-              : resolveSelectRows(tableName!, joined),
-        ).then(onFulfilled, onRejected),
-    };
+    });
 
     return builder;
   };
@@ -206,15 +207,20 @@ function createDbMock(plan: MockPlan = {}) {
       },
     };
   };
+  const select = (selection?: Record<string, unknown>) =>
+    createSelectBuilder(Boolean(selection?.unread_count));
 
   const db = {
-    select: (selection?: Record<string, unknown>) =>
-      createSelectBuilder(Boolean(selection?.unread_count)),
+    select,
     insert,
     update,
     transaction: async (
-      callback: (tx: { insert: typeof insert; update: typeof update }) => unknown,
-    ) => callback({ insert, update }),
+      callback: (tx: {
+        select: typeof select;
+        insert: typeof insert;
+        update: typeof update;
+      }) => unknown,
+    ) => callback({ select, insert, update }),
     execute: async (query: unknown) => {
       calls.execute.push(query);
 
@@ -233,13 +239,7 @@ function createDbMock(plan: MockPlan = {}) {
 function createCaller(plan: MockPlan = {}, userId = OWNER_ID) {
   const { calls, db } = createDbMock(plan);
 
-  const caller = messagingRouter.createCaller({
-    db: db as any,
-    session: { user: { id: userId } },
-    headers: new Headers(),
-    clientType: "test",
-    trpcSource: "vitest",
-  } as any);
+  const caller = createRouterCaller(messagingRouter, { db, userId });
 
   return { caller, calls };
 }
@@ -266,7 +266,7 @@ describe("messagingRouter", () => {
     const { caller } = createCaller();
 
     await expect(
-      caller.getOrCreateDM({ target_user_id: PEER_ID, extra: true } as any),
+      caller.getOrCreateDM({ target_user_id: PEER_ID, extra: true } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 

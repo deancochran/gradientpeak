@@ -110,7 +110,10 @@ export function mergeGoalTrajectories(
     .sort(([leftDate], [rightDate]) => leftDate.localeCompare(rightDate))
     .map(([, group]) => {
       const sortedGroup = [...group].sort(compareCandidates);
-      const primary = sortedGroup[0]!;
+      const primary = sortedGroup.at(0);
+      if (!primary) {
+        throw new Error("Goal trajectory group must contain at least one candidate");
+      }
       const goalIds = sortedGroup.map((item) => item.goal.id);
 
       return {
@@ -137,7 +140,10 @@ export function mergeGoalTrajectories(
   const merged: MergedGoalTrajectory[] = [];
 
   for (let index = 0; index < collapsed.length; index += 1) {
-    const current = collapsed[index]!;
+    const current = collapsed[index];
+    if (!current) {
+      continue;
+    }
     const next = collapsed[index + 1];
 
     if (

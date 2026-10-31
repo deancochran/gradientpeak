@@ -151,6 +151,7 @@ export const apiOperationPolicyOverrides = {
   "activityFiles.retryPendingMobileRecordingCleanup": { mutationSafety: "idempotency_key" },
   "activityPlans.create": { mutationSafety: "non_idempotent" },
   "activityPlans.duplicate": { mutationSafety: "non_idempotent" },
+  "plannedSessions.changePlanOnly": { mutationSafety: "transactional" },
   "athleteIntelligence.requestRecalculationRepair": { mutationSafety: "idempotency_key" },
   "events.create": { mutationSafety: "non_idempotent" },
   "events.reconcileHistoricalCompletions": { mutationSafety: "idempotency_key" },

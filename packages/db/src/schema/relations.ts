@@ -197,7 +197,7 @@ export const athleteConsentPolicyVersionsRelations = relations(
 
 export const athleteDataSharingConsentsRelations = relations(
   athleteDataSharingConsents,
-  ({ one, many }) => ({
+  ({ one }) => ({
     engagement: one(coachingEngagements, {
       fields: [athleteDataSharingConsents.engagement_id],
       references: [coachingEngagements.id],

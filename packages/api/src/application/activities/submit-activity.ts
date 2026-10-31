@@ -356,6 +356,8 @@ export interface ActivitySubmission {
   requestedActivityId?: string;
   profileId: string;
   name: string;
+  /** Recorder-owned review names are user-visible activity titles. */
+  nameStrategy?: "generated" | "provided";
   notes: string | null;
   activityPlanId?: string | null;
   routeId?: string | null;
@@ -1087,13 +1089,16 @@ export async function submitActivity(
           input.activityPlanId === undefined
             ? (existing?.activity_plan_id ?? null)
             : input.activityPlanId,
-        name: completedActivityTitle({
-          activityCategory: primaryActivityCategory,
-          startedAt,
-          ...(profile?.planningTimezone === undefined
-            ? {}
-            : { timezone: profile.planningTimezone }),
-        }),
+        name:
+          input.kind !== "enrich" && input.nameStrategy === "provided" && input.name.trim()
+            ? input.name.trim()
+            : completedActivityTitle({
+                activityCategory: primaryActivityCategory,
+                startedAt,
+                ...(profile?.planningTimezone === undefined
+                  ? {}
+                  : { timezone: profile.planningTimezone }),
+              }),
         notes: input.notes === undefined ? (existing?.notes ?? null) : input.notes,
         content_visibility: visibility,
         started_at: startedAt,

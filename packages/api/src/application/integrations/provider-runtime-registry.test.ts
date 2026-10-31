@@ -20,6 +20,7 @@ import {
   executableProviderRuntimes,
   getProviderCompletedActivityExportRuntime,
   getProviderOnboardingRuntime,
+  getProviderOverviewRuntime,
   getProviderReviewedSourceMaterializationRuntime,
   providerRuntimeRegistry,
 } from "./provider-runtime-registry";
@@ -136,6 +137,7 @@ describe("composed provider runtime registry", () => {
     expect(getProviderOnboardingRuntime("strava")).toBe(
       stravaProviderRuntime.execution.server.onboarding,
     );
+    expect(getProviderOverviewRuntime("garmin")).not.toBeNull();
   });
 
   it("composes non-OAuth runtimes without fake OAuth or server methods", () => {

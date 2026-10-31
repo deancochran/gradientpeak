@@ -74,6 +74,8 @@ jest.mock("../TrainingPlanBuilderEventCard", () => ({
       React.createElement("Pressable", { onPress: () => onMoveByDays(1), testID: "event-move" }),
       React.createElement("Pressable", { onPress: onRemove, testID: "event-remove" }),
     ),
+  TrainingPlanBuilderEventEditor: ({ event }: { event: { localId: string } }) =>
+    React.createElement("View", { testID: `inline-editor-${event.localId}` }),
 }));
 
 const makeWeeks = () => [
@@ -200,5 +202,16 @@ describe("BuilderScheduleEditor selected day planning", () => {
     expect(props.onDuplicateSession).toHaveBeenCalledWith("session-1");
     expect(props.onMoveSessionByDays).toHaveBeenCalledWith("session-1", 1);
     expect(props.onRemoveSession).toHaveBeenCalledWith("session-1");
+  });
+
+  it("keeps the selected activity editor inline with the weekly schedule", async () => {
+    await renderEditor(0, {
+      selectedSession: { localId: "session-inline", offsetDays: 0 },
+      onChangeSession: jest.fn(),
+      onOpenActivityPicker: jest.fn(),
+    } as unknown as Partial<React.ComponentProps<typeof BuilderScheduleEditor>>);
+
+    expect(screen.getByTestId("builder-inline-session-editor")).toBeTruthy();
+    expect(screen.getByTestId("inline-editor-session-inline")).toBeTruthy();
   });
 });

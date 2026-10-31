@@ -33,7 +33,7 @@ export function buildDailyLoadByDateSeries(input: {
   const end = new Date(`${input.endDate}T00:00:00.000Z`);
 
   while (cursor <= end) {
-    const date = cursor.toISOString().split("T")[0]!;
+    const date = cursor.toISOString().slice(0, 10);
     const load =
       input.loadByDate instanceof Map
         ? (input.loadByDate.get(date) ?? 0)

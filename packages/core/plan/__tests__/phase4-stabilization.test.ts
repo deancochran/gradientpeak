@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { requireFixtureValue } from "../../testing/requireFixtureValue";
 import {
   type BuildDeterministicProjectionInput,
   buildDeterministicProjectionPayload,
@@ -36,9 +37,9 @@ function randomSimplex4(random: () => number): {
 } {
   const values = [random(), random(), random(), random()];
   const total = values.reduce((sum, value) => sum + value, 0) || 1;
-  const targetAttainment = values[0]! / total;
-  const envelope = values[1]! / total;
-  const durability = values[2]! / total;
+  const targetAttainment = requireFixtureValue(values[0], "expected simplex target value") / total;
+  const envelope = requireFixtureValue(values[1], "expected simplex envelope value") / total;
+  const durability = requireFixtureValue(values[2], "expected simplex durability value") / total;
   const evidence = Math.max(0, 1 - (targetAttainment + envelope + durability));
   const correction = 1 - (targetAttainment + envelope + durability + evidence);
 
@@ -159,14 +160,26 @@ describe("phase 4 property suite", () => {
     const permutationA = buildDeterministicProjectionPayload({
       ...shared,
       goals: [
-        goals[2]!,
-        { ...goals[0]!, targets: [...(goals[0]?.targets ?? [])].reverse() },
-        goals[1]!,
+        requireFixtureValue(goals[2], "expected third goal fixture"),
+        {
+          ...requireFixtureValue(goals[0], "expected first goal fixture"),
+          targets: [
+            ...requireFixtureValue(
+              requireFixtureValue(goals[0], "expected first goal fixture").targets,
+              "expected first goal targets",
+            ),
+          ].reverse(),
+        },
+        requireFixtureValue(goals[1], "expected second goal fixture"),
       ],
     });
     const permutationB = buildDeterministicProjectionPayload({
       ...shared,
-      goals: [goals[1]!, goals[2]!, goals[0]!],
+      goals: [
+        requireFixtureValue(goals[1], "expected second goal fixture"),
+        requireFixtureValue(goals[2], "expected third goal fixture"),
+        requireFixtureValue(goals[0], "expected first goal fixture"),
+      ],
     });
 
     expect(permutationA).toEqual(baseline);
@@ -545,8 +558,14 @@ describe("phase 4 golden scenarios", () => {
       },
     });
 
-    const richFeasibility = richHistory.no_history.projection_feasibility!;
-    const sparseFeasibility = sparseHistory.no_history.projection_feasibility!;
+    const richFeasibility = requireFixtureValue(
+      richHistory.no_history.projection_feasibility,
+      "expected rich-history feasibility",
+    );
+    const sparseFeasibility = requireFixtureValue(
+      sparseHistory.no_history.projection_feasibility,
+      "expected sparse-history feasibility",
+    );
     const richWidth =
       (richFeasibility.projection_uncertainty?.load_high ?? 0) -
       (richFeasibility.projection_uncertainty?.load_low ?? 0);

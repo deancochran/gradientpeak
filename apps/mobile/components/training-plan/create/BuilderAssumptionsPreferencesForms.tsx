@@ -4,19 +4,27 @@ import type {
   TrainingPlanPreferences,
   TrainingPlanPreferenceValidationIssue,
 } from "@repo/core";
+import {
+  activityCategoryChoices,
+  progressionStyleChoices,
+  recoveryPriorityChoices,
+  trainingPlanPreferencesSchema,
+  trainingWeekdayChoices,
+} from "@repo/core";
+import {
+  durationMinutesToSeconds,
+  durationSecondsToWholeMinutes,
+  durationSegmentsText,
+  durationTextSegments,
+} from "@repo/core/utils/fitness-inputs";
 import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
+import { ChoiceField as LocalSelect } from "@repo/ui/components/choice-field";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@repo/ui/components/select";
+import { SegmentedDurationField } from "@repo/ui/components/segmented-duration-field";
 import { Text } from "@repo/ui/components/text";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import { BuilderFieldList } from "@/components/training-plan/create/BuilderFieldList";
 
@@ -33,11 +41,6 @@ type BuilderWeekday =
   | "friday"
   | "saturday"
   | "sunday";
-
-interface SelectOption<TValue extends string> {
-  label: string;
-  value: TValue;
-}
 
 export interface BuilderProfileAssumptionsValues {
   displayName?: string;
@@ -95,9 +98,13 @@ export interface BuilderAthleteContextFormProps {
   onAddField: (fieldKey: AthletePlanningContextFieldKey) => void;
   onChangeField: (fieldKey: AthletePlanningContextFieldKey, value: number | null) => void;
   onRemoveField: (fieldKey: AthletePlanningContextFieldKey) => void;
+  rawDrafts?: Record<string, string>;
+  onRawDraftChange?: (key: string, value: string) => void;
+  onInvalidChange?: (key: string, message: string | null) => void;
 }
 
 export interface BuilderPlanPreferencesContextFormProps {
+  disabled?: boolean;
   preferences: TrainingPlanPreferences;
   numericDrafts: Record<string, string>;
   onNumericDraftChange: (key: string, value: string) => void;
@@ -106,17 +113,7 @@ export interface BuilderPlanPreferencesContextFormProps {
   onNumericDraftError: (key: string, message: string | null) => void;
 }
 
-const activityCategoryOptions: SelectOption<BuilderActivityCategory>[] = [
-  { value: "run", label: "Run" },
-  { value: "bike", label: "Bike" },
-  { value: "swim", label: "Swim" },
-  { value: "strength", label: "Strength" },
-  { value: "other", label: "Other" },
-];
-
-function findOption<TValue extends string>(options: SelectOption<TValue>[], value?: TValue) {
-  return options.find((option) => option.value === value);
-}
+const activityCategoryOptions = activityCategoryChoices;
 
 function HelperCopy({ children }: { children: ReactNode }) {
   return (
@@ -160,58 +157,6 @@ function TextField({
   );
 }
 
-function LocalSelect<TValue extends string>({
-  label,
-  onChange,
-  onClear,
-  options,
-  placeholder,
-  value,
-}: {
-  label: string;
-  onChange: (value: TValue) => void;
-  onClear: () => void;
-  options: SelectOption<TValue>[];
-  placeholder: string;
-  value?: TValue | undefined;
-}) {
-  const selectedOption = findOption(options, value);
-
-  return (
-    <View className="gap-2">
-      <View className="flex-row items-center justify-between gap-2">
-        <Label>
-          <Text className="text-sm font-medium text-foreground">{label}</Text>
-        </Label>
-        {value ? (
-          <Button accessibilityLabel={`Clear ${label}`} size="sm" variant="ghost" onPress={onClear}>
-            <Text className="text-xs text-muted-foreground">Clear</Text>
-          </Button>
-        ) : null}
-      </View>
-      <Select
-        value={selectedOption}
-        onValueChange={(option) => {
-          if (option?.value) {
-            onChange(option.value as TValue);
-          }
-        }}
-      >
-        <SelectTrigger accessibilityLabel={label}>
-          <SelectValue placeholder={placeholder} />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option.value} label={option.label} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </View>
-  );
-}
-
 function NumberField({
   helperText,
   label,
@@ -251,6 +196,9 @@ export function BuilderAthleteContextForm({
   onAddField,
   onChangeField,
   onRemoveField,
+  rawDrafts,
+  onRawDraftChange,
+  onInvalidChange,
 }: BuilderAthleteContextFormProps) {
   return (
     <View className="gap-4">
@@ -262,12 +210,16 @@ export function BuilderAthleteContextForm({
         onAddField={onAddField}
         onChangeField={onChangeField}
         onRemoveField={onRemoveField}
+        rawDrafts={rawDrafts}
+        onRawDraftChange={onRawDraftChange}
+        onInvalidChange={onInvalidChange}
       />
     </View>
   );
 }
 
 export function BuilderPlanPreferencesContextForm({
+  disabled = false,
   preferences,
   numericDrafts,
   onNumericDraftChange,
@@ -275,6 +227,15 @@ export function BuilderPlanPreferencesContextForm({
   onChange,
   onNumericDraftError,
 }: BuilderPlanPreferencesContextFormProps) {
+  const mounted = useRef(true);
+  const disabledRef = useRef(disabled);
+  disabledRef.current = disabled;
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const [showAdvanced, setShowAdvanced] = useState(
     preferences.maximum_session_duration_minutes !== null ||
       preferences.preferred_weekdays.length > 0 ||
@@ -282,8 +243,9 @@ export function BuilderPlanPreferencesContextForm({
       preferences.progression_style !== null ||
       preferences.recovery_priority !== null,
   );
-  const update = (patch: Partial<TrainingPlanPreferences>) =>
-    onChange({ ...preferences, ...patch });
+  const update = (patch: Partial<TrainingPlanPreferences>) => {
+    if (mounted.current && !disabledRef.current) onChange({ ...preferences, ...patch });
+  };
   const updateNumber = (
     field:
       | "weekly_session_count"
@@ -293,6 +255,7 @@ export function BuilderPlanPreferencesContextForm({
     min: number,
     max: number,
   ) => {
+    if (!mounted.current || disabledRef.current) return;
     onNumericDraftChange(field, value);
     if (!value.trim()) {
       onNumericDraftError(field, null);
@@ -324,11 +287,57 @@ export function BuilderPlanPreferencesContextForm({
       [oppositeKey]: preferences[oppositeKey].filter((value) => value !== weekday),
     });
   };
+  const durationBudget = (
+    field: "target_weekly_duration_minutes" | "maximum_session_duration_minutes",
+    label: string,
+  ) => {
+    const schema = trainingPlanPreferencesSchema.shape[field].unwrap();
+    const policy = {
+      layout: "hm" as const,
+      minSeconds: (schema.minValue ?? 1) * 60,
+      maxSeconds: (schema.maxValue ?? Number.MAX_SAFE_INTEGER / 60) * 60,
+      granularitySeconds: 60,
+      allowOmittedSegments: true,
+    };
+    const raw = numericDrafts[field];
+    return (
+      <View className="gap-2">
+        <Text className="text-sm font-medium text-foreground">{label}</Text>
+        <SegmentedDurationField
+          {...policy}
+          presentation="native-overlay"
+          label={label}
+          required={false}
+          disabled={disabled}
+          valueSeconds={durationMinutesToSeconds(preferences[field])}
+          {...(raw === undefined ? {} : { segments: durationTextSegments(raw, "hm") })}
+          onSegmentsChange={(segments) =>
+            onNumericDraftChange(field, durationSegmentsText(segments, policy))
+          }
+          onChangeSeconds={(seconds) => {
+            const minutes = durationSecondsToWholeMinutes(seconds);
+            if (minutes !== undefined) update({ [field]: minutes });
+          }}
+          onEmpty={() => update({ [field]: null })}
+          onInvalidChange={(invalid) =>
+            onNumericDraftError(
+              field,
+              invalid
+                ? `Enter whole hours and minutes totaling ${schema.minValue}–${schema.maxValue} minutes.`
+                : null,
+            )
+          }
+        />
+      </View>
+    );
+  };
   return (
     <View className="gap-5">
       <HelperCopy>These preferences apply only to this training plan.</HelperCopy>
       <BoundedNumberInput
+        disabled={disabled}
         decimals={0}
+        clampProjection={false}
         label="Sessions per week"
         min={1}
         max={14}
@@ -342,25 +351,9 @@ export function BuilderPlanPreferencesContextForm({
           numericDrafts.weekly_session_count ?? preferences.weekly_session_count?.toString() ?? ""
         }
       />
-      <BoundedNumberInput
-        decimals={0}
-        label="Weekly duration"
-        min={1}
-        max={10080}
-        unitLabel="min"
-        error={
-          hasInvalidNumberDraft("target_weekly_duration_minutes", 1, 10080)
-            ? "Enter a whole number from 1 to 10080."
-            : undefined
-        }
-        onChange={(value) => updateNumber("target_weekly_duration_minutes", value, 1, 10080)}
-        value={
-          numericDrafts.target_weekly_duration_minutes ??
-          preferences.target_weekly_duration_minutes?.toString() ??
-          ""
-        }
-      />
+      {durationBudget("target_weekly_duration_minutes", "Weekly duration")}
       <Pressable
+        disabled={disabled}
         accessibilityRole="button"
         accessibilityState={{ expanded: showAdvanced }}
         className="min-h-11 self-start justify-center rounded-full px-2 py-1"
@@ -372,32 +365,16 @@ export function BuilderPlanPreferencesContextForm({
       </Pressable>
       {showAdvanced ? (
         <>
-          <BoundedNumberInput
-            decimals={0}
-            label="Maximum session duration"
-            min={1}
-            max={600}
-            unitLabel="min"
-            error={
-              hasInvalidNumberDraft("maximum_session_duration_minutes", 1, 600)
-                ? "Enter a whole number from 1 to 600."
-                : undefined
-            }
-            onChange={(value) => updateNumber("maximum_session_duration_minutes", value, 1, 600)}
-            value={
-              numericDrafts.maximum_session_duration_minutes ??
-              preferences.maximum_session_duration_minutes?.toString() ??
-              ""
-            }
-          />
+          {durationBudget("maximum_session_duration_minutes", "Maximum session duration")}
           {(["preferred_weekdays", "rest_days"] as const).map((key) => (
             <View className="gap-2" key={key}>
               <Text className="text-sm font-medium text-foreground">
                 {key === "preferred_weekdays" ? "Preferred training days" : "Rest days"}
               </Text>
               <View className="flex-row gap-1">
-                {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label, weekday) => (
+                {trainingWeekdayChoices.map(({ label, value: weekday }) => (
                   <Pressable
+                    disabled={disabled}
                     accessibilityLabel={`${key}-${label}`}
                     accessibilityRole="checkbox"
                     accessibilityState={{ checked: preferences[key].includes(weekday) }}
@@ -420,26 +397,20 @@ export function BuilderPlanPreferencesContextForm({
             </View>
           ))}
           <LocalSelect
+            disabled={disabled}
             label="Progression style"
             onChange={(progression_style) => update({ progression_style })}
             onClear={() => update({ progression_style: null })}
-            options={[
-              { value: "conservative", label: "Conservative" },
-              { value: "balanced", label: "Balanced" },
-              { value: "ambitious", label: "Ambitious" },
-            ]}
+            options={progressionStyleChoices}
             placeholder="Choose progression"
             value={preferences.progression_style ?? undefined}
           />
           <LocalSelect
+            disabled={disabled}
             label="Recovery priority"
             onChange={(recovery_priority) => update({ recovery_priority })}
             onClear={() => update({ recovery_priority: null })}
-            options={[
-              { value: "low", label: "Low" },
-              { value: "balanced", label: "Balanced" },
-              { value: "high", label: "High" },
-            ]}
+            options={recoveryPriorityChoices}
             placeholder="Choose recovery priority"
             value={preferences.recovery_priority ?? undefined}
           />
@@ -481,7 +452,10 @@ export function BuilderProfileAssumptionsForm({
         label="Primary activity category"
         value={values.primaryActivityCategory}
         onChange={(primaryActivityCategory) => update({ primaryActivityCategory })}
-        onClear={() => update({ primaryActivityCategory: undefined })}
+        onClear={() => {
+          const { primaryActivityCategory: _primaryActivityCategory, ...remainingValues } = values;
+          onChange(remainingValues);
+        }}
         options={activityCategoryOptions}
         placeholder="Select activity category"
       />

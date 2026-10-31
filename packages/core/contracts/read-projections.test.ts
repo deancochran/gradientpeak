@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-
 import {
   ACTIVITY_CARD_EFFORT_PROFILE_MAX_ELAPSED_SECONDS,
   ACTIVITY_CARD_EFFORT_PROFILE_MAX_SAMPLES,
@@ -42,11 +41,11 @@ describe("read projections", () => {
         key: "distance",
         label: "Distance",
         status: "available",
-        value: 10_000,
+        value: 10000,
         unit: "meters",
         reason: null,
       }),
-    ).toMatchObject({ value: 10_000, unit: "meters" });
+    ).toMatchObject({ value: 10000, unit: "meters" });
     expect(() =>
       semanticMetricSchema.parse({
         key: "distance",
@@ -58,7 +57,6 @@ describe("read projections", () => {
       }),
     ).toThrow();
   });
-
   it("represents an all-day manual activity without a synthetic measured instant", () => {
     expect(
       activityDisplayModelSchema.parse({
@@ -81,7 +79,6 @@ describe("read projections", () => {
       metrics: [],
     });
   });
-
   it("requires an explicit number or explicit unavailable null for every metric", () => {
     expect(
       semanticMetricSchema.safeParse({
@@ -113,7 +110,6 @@ describe("read projections", () => {
       }),
     ).toMatchObject({ status: "unavailable", value: null });
   });
-
   const objectiveIntensityMetric = {
     key: "objective_intensity",
     label: "Intensity",
@@ -123,13 +119,12 @@ describe("read projections", () => {
     reason: null,
     provenance: "estimated",
   } as const;
-
   const activityPlanMetrics = [
     {
       key: "distance",
       label: "Distance",
       status: "available",
-      value: 10_000,
+      value: 10000,
       unit: "meters",
       reason: null,
       provenance: "authored",
@@ -138,7 +133,7 @@ describe("read projections", () => {
       key: "elapsed_duration",
       label: "Duration",
       status: "available",
-      value: 3_600,
+      value: 3600,
       unit: "seconds",
       reason: null,
       provenance: "authored",
@@ -154,7 +149,6 @@ describe("read projections", () => {
     },
     objectiveIntensityMetric,
   ] as const;
-
   it("accepts only available or unavailable objective-intensity ratios", () => {
     expect(semanticMetricSchema.parse(objectiveIntensityMetric)).toEqual(objectiveIntensityMetric);
     expect(
@@ -187,7 +181,6 @@ describe("read projections", () => {
       }).success,
     ).toBe(false);
   });
-
   it("keeps unrelated semantic metrics unchanged and rejects retired projection metadata", () => {
     expect(
       semanticMetricSchema.parse({
@@ -211,7 +204,6 @@ describe("read projections", () => {
       }).success,
     ).toBe(false);
   });
-
   it("rejects contradictory duplicate metric keys", () => {
     const load = {
       key: "common_load",
@@ -228,7 +220,6 @@ describe("read projections", () => {
       }).success,
     ).toBe(false);
   });
-
   it("requires exactly the four canonical activity-plan metric keys once each", () => {
     expect(activityPlanMetricListSchema.safeParse(activityPlanMetrics).success).toBe(true);
     expect(activityPlanMetricListSchema.safeParse(activityPlanMetrics.slice(0, 3)).success).toBe(
@@ -258,7 +249,6 @@ describe("read projections", () => {
       ]).success,
     ).toBe(false);
   });
-
   it("rejects partial headline values from summary, detail, and scheduled plan contracts", () => {
     const summary = {
       contractVersion: "activity-plan-summary-v1" as const,
@@ -272,28 +262,15 @@ describe("read projections", () => {
       activityCategory: "run" as const,
       activityPlanRevision: 1,
       structure: {
-        version: 3 as const,
+        version: 5 as const,
         activity_category: "run" as const,
-        segments: [
+        items: [
           {
-            id: "00000000-0000-4000-8000-000000000101",
-            role: "activity" as const,
-            name: "Run",
-            intervals: [
-              {
-                id: "00000000-0000-4000-8000-000000000102",
-                name: "Main",
-                repetitions: 1,
-                steps: [
-                  {
-                    id: "00000000-0000-4000-8000-000000000103",
-                    name: "Work",
-                    duration: { type: "time" as const, seconds: 600 },
-                    targets: [{ type: "RPE" as const, intensity: 5 }],
-                  },
-                ],
-              },
-            ],
+            type: "step",
+            id: "00000000-0000-4000-8000-000000000103",
+            name: "Work",
+            duration: { type: "time" as const, seconds: 600 },
+            targets: [{ type: "RPE" as const, intensity: 5 }],
           },
         ],
       },
@@ -310,7 +287,6 @@ describe("read projections", () => {
         canRecord: false,
       },
     };
-
     for (const partialKey of [
       "distance",
       "elapsed_duration",
@@ -327,7 +303,6 @@ describe("read projections", () => {
           : metric,
       );
       const partialSummary = { ...summary, metrics: partialMetrics };
-
       expect(activityPlanMetricListSchema.safeParse(partialMetrics).success).toBe(false);
       expect(activityPlanSummarySchema.safeParse(partialSummary).success).toBe(false);
       expect(
@@ -353,7 +328,6 @@ describe("read projections", () => {
       ).toBe(false);
     }
   });
-
   it("rejects persistence fields from the activity display boundary", () => {
     expect(() =>
       activityDisplayModelSchema.parse({
@@ -380,7 +354,6 @@ describe("read projections", () => {
       }),
     ).toThrow();
   });
-
   it("accepts an absent or strictly ordered threshold-free activity-card effort profile", () => {
     expect(activityDisplay.effortProfile).toBeUndefined();
     expect(activityDisplayModelSchema.parse({ ...activityDisplay, effortProfile: null })).toEqual(
@@ -407,7 +380,6 @@ describe("read projections", () => {
       }),
     );
   });
-
   it("rejects invalid order, numeric effort fields, and oversized activity-card profiles", () => {
     expect(
       activityCardEffortProfileSchema.safeParse({
@@ -461,31 +433,17 @@ describe("read projections", () => {
       }).success,
     ).toBe(false);
   });
-
   it("requires full authored plan structure while keeping personalized quantification owner-only", () => {
     const structure = {
-      version: 3 as const,
+      version: 5 as const,
       activity_category: "run" as const,
-      segments: [
+      items: [
         {
-          id: "00000000-0000-4000-8000-000000000001",
-          role: "activity" as const,
-          name: "Run",
-          intervals: [
-            {
-              id: "00000000-0000-4000-8000-000000000002",
-              name: "Tempo",
-              repetitions: 1,
-              steps: [
-                {
-                  id: "00000000-0000-4000-8000-000000000003",
-                  name: "Work",
-                  duration: { type: "time" as const, seconds: 600 },
-                  targets: [{ type: "RPE" as const, intensity: 7 }],
-                },
-              ],
-            },
-          ],
+          type: "step",
+          id: "00000000-0000-4000-8000-000000000003",
+          name: "Work",
+          duration: { type: "time" as const, seconds: 600 },
+          targets: [{ type: "RPE" as const, intensity: 7 }],
         },
       ],
     };
@@ -514,8 +472,25 @@ describe("read projections", () => {
         canRecord: false,
       },
     };
-
     expect(activityPlanSummarySchema.parse(publicProjection).structure).toEqual(structure);
+    const recordable = {
+      ...publicProjection,
+      capabilities: { ...publicProjection.capabilities, canRecord: true },
+    };
+    expect(activityPlanSummarySchema.parse(recordable).capabilities.canRecord).toBe(true);
+    const executableDetail = {
+      ...recordable,
+      contractVersion: "activity-plan-detail-v1",
+      structureHash: `v1:sha256:${"a".repeat(64)}`,
+    };
+    expect(activityPlanDetailSchema.parse(executableDetail).structureHash).toBe(
+      executableDetail.structureHash,
+    );
+    for (const privateFields of [{ notes: "private note" }, { gpsRecordingEnabled: true }]) {
+      expect(
+        activityPlanDetailSchema.safeParse({ ...executableDetail, ...privateFields }).success,
+      ).toBe(false);
+    }
     expect(
       activityPlanSummarySchema.safeParse({
         ...publicProjection,
@@ -540,7 +515,6 @@ describe("read projections", () => {
       activityPlanSummarySchema.safeParse({ ...publicProjection, structure: undefined }).success,
     ).toBe(false);
   });
-
   it("enforces range membership and canonical ordering", () => {
     const base = {
       timing: {
@@ -590,13 +564,11 @@ describe("read projections", () => {
         goals: false,
       },
     };
-
     expect(calendarProjectionRangeSchema.safeParse(range).success).toBe(false);
     expect(
       calendarProjectionRangeSchema.parse({ ...range, items: [...range.items].reverse() }).items,
     ).toHaveLength(2);
   });
-
   it("orders timed items by instant and places untimed items deterministically", () => {
     const item = (
       id: string,
@@ -631,7 +603,6 @@ describe("read projections", () => {
       item("all-day", null, true),
       item("earlier", "2026-05-01T04:30:00.000Z"),
     ];
-
     expect(values.sort(compareCalendarProjectionItems).map(({ id }) => id)).toEqual([
       "all-day",
       "earlier",

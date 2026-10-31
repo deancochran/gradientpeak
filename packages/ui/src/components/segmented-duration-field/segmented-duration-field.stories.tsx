@@ -76,6 +76,14 @@ type Story = StoryObj<typeof meta>;
 export const Playground: Story = {
   play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
+    const hours = canvas.getByRole("textbox", { name: "Duration hours" });
+    await expect(hours).toHaveValue("0");
+    await expect(canvas.getByRole("textbox", { name: "Duration seconds" })).toHaveValue("0");
+    await userEvent.clear(hours);
+    await userEvent.type(hours, "1");
+    await expect(args.onChangeSeconds).toHaveBeenLastCalledWith(3780);
+    await userEvent.clear(hours);
+    await userEvent.type(hours, "0");
     const minutes = canvas.getByRole("textbox", { name: "Duration minutes" });
     await userEvent.clear(minutes);
     await userEvent.type(minutes, "4");
@@ -91,5 +99,7 @@ export const Playground: Story = {
   },
 };
 export const LongDuration: Story = { args: segmentedDurationFixtures.long };
+export const ZeroDurationNeedsCorrection: Story = { args: segmentedDurationFixtures.zero };
+export const DayLimit: Story = { args: segmentedDurationFixtures.dayLimit };
 export const IncompleteDraft: Story = { args: segmentedDurationFixtures.incomplete };
 export const DisabledDayLimit: Story = { args: segmentedDurationFixtures.disabled };

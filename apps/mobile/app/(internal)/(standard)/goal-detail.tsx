@@ -12,10 +12,13 @@ import type React from "react";
 import { useMemo, useState } from "react";
 import { RefreshControl, View } from "react-native";
 import { GoalIntelligenceCard } from "@/components/goals/GoalIntelligenceCard";
-import { PlanProgressInsight } from "@/components/plan/insights/PlanProgressInsight";
+import { RecordedGoalHistory } from "@/components/goals/RecordedGoalHistory";
+import {
+  formatGoalTimeLeft,
+  PlanProgressInsight,
+} from "@/components/plan/insights/PlanProgressInsight";
 import {
   buildComparableThresholdTrend,
-  buildGoalTrajectoryAnswer,
   mergeGoalProgressThresholdEvidence,
 } from "@/components/plan/training-path/planDashboardPresentation";
 import { getTrainingPathTodayKey } from "@/components/plan/training-path/trainingPathPlanningTime";
@@ -29,6 +32,7 @@ import { ErrorState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 function SectionCard({ children, testID }: { children: React.ReactNode; testID?: string }) {
   return (
@@ -45,6 +49,7 @@ export default function GoalDetailScreen() {
   const goalId = typeof id === "string" ? id : "";
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [recordedHistoryRevision, setRecordedHistoryRevision] = useState(0);
   const { profile } = useAuth();
 
   const goalQuery = api.goals.getById.useQuery({ id: goalId }, { enabled: !!goalId });
@@ -59,12 +64,9 @@ export default function GoalDetailScreen() {
   );
   const thresholdQuery = api.athleteIntelligence.getThresholdOverview.useQuery(
     { historyLimit: 100 },
-    { enabled: !!goalId },
+    { enabled: Boolean(progressQuery.data && progressQuery.data.result.status !== "unsupported") },
   );
-  const todayKey = useMemo(
-    () => getTrainingPathTodayKey(new Date(), profile?.planning_timezone ?? "UTC") ?? "",
-    [profile?.planning_timezone],
-  );
+  const todayKey = getTrainingPathTodayKey(new Date(), profile?.planning_timezone ?? "UTC") ?? "";
   const goalRecord = useMemo(() => {
     if (!goal) {
       return null;
@@ -93,15 +95,16 @@ export default function GoalDetailScreen() {
   const goalProgress = progressQuery.data?.result;
   const progressIdentity =
     goalProgress && goalProgress.status !== "unsupported" ? goalProgress.target : null;
-  const thresholdTrend = buildComparableThresholdTrend(
-    mergeGoalProgressThresholdEvidence(
-      thresholdQuery.data?.history.items ?? [],
-      progressQuery.data?.provenance,
-    ),
-    progressIdentity?.activityCategory ?? null,
-    progressIdentity ? { metric: progressIdentity.metric, unit: progressIdentity.unit } : null,
-  );
-  const trajectoryAnswer = buildGoalTrajectoryAnswer(goalProgress);
+  const thresholdTrend = progressIdentity
+    ? buildComparableThresholdTrend(
+        mergeGoalProgressThresholdEvidence(
+          thresholdQuery.data?.history.items ?? [],
+          progressQuery.data?.provenance,
+        ),
+        progressIdentity?.activityCategory ?? null,
+        progressIdentity ? { metric: progressIdentity.metric, unit: progressIdentity.unit } : null,
+      )
+    : null;
   const intelligenceRevisions = [
     assessmentQuery.data?.stateRevision,
     progressQuery.data?.publication?.publishedRevision,
@@ -125,6 +128,8 @@ export default function GoalDetailScreen() {
     .at(-1);
   const refreshGoal = async () => {
     setRefreshing(true);
+    // A fresh mount advances the recorded-history window as well as fetching its pages.
+    setRecordedHistoryRevision((revision) => revision + 1);
     try {
       await Promise.allSettled([
         goalQuery.refetch(),
@@ -226,78 +231,110 @@ export default function GoalDetailScreen() {
         testID="goal-detail-card"
       />
 
+      {goalRecord.objective.type !== "threshold" ? (
+        <RecordedGoalHistory
+          key={`${goalRecord.id}:${recordedHistoryRevision}`}
+          goal={goalRecord}
+          timezone={profile?.planning_timezone}
+          onOpenActivity={(activityId) =>
+            router.navigate(ROUTES.ACTIVITIES.DETAIL(activityId) as never)
+          }
+        />
+      ) : (
+        <SectionCard testID="goal-detail-progress">
+          <View className="flex-row items-center justify-between gap-3">
+            <Text accessibilityRole="header" className="text-lg font-semibold text-foreground">
+              Goal progress
+            </Text>
+            {progressIdentity ? (
+              <Text className="text-xs text-muted-foreground">6 months</Text>
+            ) : null}
+          </View>
+          {goalProgress?.status !== "unsupported" ? (
+            <Text className="text-xs text-muted-foreground" testID="goal-detail-evidence-freshness">
+              {assessmentQuery.isLoading || progressQuery.isLoading || thresholdQuery.isLoading
+                ? "Updating signals"
+                : assessmentQuery.isError || progressQuery.isError || thresholdQuery.isError
+                  ? "Some signals are unavailable"
+                  : intelligenceAligned
+                    ? `Signals aligned at revision ${intelligenceRevisions[0]}`
+                    : intelligenceAvailable
+                      ? "Signals updated separately"
+                      : "Some signals are stale or unavailable"}
+              {intelligenceComputedAt
+                ? ` · calculated ${new Date(intelligenceComputedAt).toLocaleString()}`
+                : " · calculation time unavailable"}
+            </Text>
+          ) : null}
+          {goalProgress?.status === "unsupported" ? (
+            <View className="gap-2">
+              <Text className="text-xs text-muted-foreground">Time left</Text>
+              <Text className="text-xl font-semibold text-foreground">
+                {formatGoalTimeLeft(targetDate, todayKey)}
+              </Text>
+              <Text className="text-sm text-muted-foreground">
+                Progress charts are not available for this goal type.
+              </Text>
+            </View>
+          ) : progressQuery.isLoading || thresholdQuery.isLoading ? (
+            <Text className="text-sm text-muted-foreground">Loading threshold evidence…</Text>
+          ) : progressQuery.isError || thresholdQuery.isError ? (
+            <View className="gap-2">
+              <Text className="text-sm text-muted-foreground">
+                Goal progress could not be loaded.
+              </Text>
+              <Text
+                accessibilityRole="button"
+                className="py-2 font-semibold text-primary"
+                onPress={() => void refreshGoal()}
+              >
+                Retry progress
+              </Text>
+            </View>
+          ) : !goalProgress ? (
+            <Text className="text-sm text-muted-foreground">Goal progress is unavailable.</Text>
+          ) : (
+            <PlanProgressInsight
+              planningTimezone={profile?.planning_timezone ?? "UTC"}
+              showGoalSummary
+              deadlineDate={targetDate}
+              onOpenSourceActivity={(activityId) =>
+                router.navigate(ROUTES.ACTIVITIES.DETAIL(activityId) as never)
+              }
+              progress={goalProgress}
+              todayKey={todayKey}
+              trend={thresholdTrend}
+              window={{ end: analysisWindow.endDate, start: analysisWindow.startDate }}
+            />
+          )}
+          {progressIdentity ? (
+            <Text
+              accessibilityRole="button"
+              className="self-start text-sm font-semibold text-primary"
+              onPress={() =>
+                router.navigate(
+                  ROUTES.PLAN.ANALYSIS({
+                    anchorDate: todayKey,
+                    goalId: goalRecord.id,
+                    metric: "threshold",
+                    range: "6m",
+                    view: "progress",
+                  }) as never,
+                )
+              }
+              testID="goal-detail-analyze"
+            >
+              Analyze
+            </Text>
+          ) : null}
+        </SectionCard>
+      )}
       <GoalIntelligenceCard
-        assessment={assessmentQuery.data}
+        {...omitUndefined({ assessment: assessmentQuery.data })}
         isError={assessmentQuery.isError}
         isLoading={assessmentQuery.isLoading}
         onRetry={() => void assessmentQuery.refetch()}
       />
-      <SectionCard testID="goal-detail-progress">
-        <View className="flex-row items-center justify-between gap-3">
-          <Text accessibilityRole="header" className="text-lg font-semibold text-foreground">
-            Trajectory and threshold progress
-          </Text>
-          <Text className="text-xs text-muted-foreground">6 months</Text>
-        </View>
-        <View className="gap-1" testID="goal-detail-trajectory-answer">
-          <Text className="font-semibold text-foreground">{trajectoryAnswer.headline}</Text>
-          <Text className="text-sm leading-5 text-muted-foreground">{trajectoryAnswer.body}</Text>
-        </View>
-        <Text className="text-xs text-muted-foreground" testID="goal-detail-evidence-freshness">
-          {assessmentQuery.isLoading || progressQuery.isLoading || thresholdQuery.isLoading
-            ? "Updating signals"
-            : assessmentQuery.isError || progressQuery.isError || thresholdQuery.isError
-              ? "Some signals are unavailable"
-              : intelligenceAligned
-                ? `Signals aligned at revision ${intelligenceRevisions[0]}`
-                : intelligenceAvailable
-                  ? "Signals updated separately"
-                  : "Some signals are stale or unavailable"}
-          {intelligenceComputedAt
-            ? ` · calculated ${new Date(intelligenceComputedAt).toLocaleString()}`
-            : " · calculation time unavailable"}
-        </Text>
-        {progressQuery.isLoading || thresholdQuery.isLoading ? (
-          <Text className="text-sm text-muted-foreground">Loading threshold evidence…</Text>
-        ) : progressQuery.isError || thresholdQuery.isError ? (
-          <Text className="text-sm text-muted-foreground">
-            Threshold progress is unavailable. Retry from the goal when data is available.
-          </Text>
-        ) : (
-          <PlanProgressInsight
-            deadlineDate={
-              goalProgress && goalProgress.status !== "unsupported"
-                ? goalProgress.deadlineAt.slice(0, 10)
-                : targetDate
-            }
-            onOpenSourceActivity={(activityId) =>
-              router.navigate(ROUTES.ACTIVITIES.DETAIL(activityId) as never)
-            }
-            progress={goalProgress}
-            todayKey={todayKey}
-            trend={thresholdTrend}
-            window={{ end: analysisWindow.endDate, start: analysisWindow.startDate }}
-          />
-        )}
-        <Text
-          accessibilityRole="button"
-          className="self-start text-sm font-semibold text-primary"
-          onPress={() =>
-            router.navigate(
-              ROUTES.PLAN.ANALYSIS({
-                anchorDate: todayKey,
-                goalId: goalRecord.id,
-                metric: "threshold",
-                range: "6m",
-                view: "progress",
-              }) as never,
-            )
-          }
-          testID="goal-detail-analyze"
-        >
-          Analyze
-        </Text>
-      </SectionCard>
     </DetailScaffold>
   );
 }

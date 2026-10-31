@@ -24,7 +24,7 @@ export function validateActivityImportSearch(
 
   return {
     ...recordingSearch,
-    from,
+    ...(from === undefined ? {} : { from }),
   };
 }
 

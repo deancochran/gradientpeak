@@ -39,9 +39,7 @@ describe("ProfileCard", () => {
 
   it("does not present absent or redacted social counts as zero", async () => {
     await renderNative(
-      <ProfileCard
-        profile={{ followers_count: null, following_count: undefined, username: "private-rider" }}
-      />,
+      <ProfileCard profile={{ followers_count: null, username: "private-rider" }} />,
     );
 
     expect(screen.queryByText("Followers")).toBeNull();

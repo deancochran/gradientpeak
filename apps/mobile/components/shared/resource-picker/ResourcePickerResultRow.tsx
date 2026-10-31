@@ -10,6 +10,7 @@ import { getActivityCategoryConfig } from "@/lib/constants/activities";
 import { formatDistanceMeters, formatElevationMeters } from "@/lib/display/formatters";
 import { formatEstimatedDurationSeconds } from "@/lib/estimatedMetrics";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
+import { omitUndefined } from "@/lib/omitUndefined";
 import type { ResourcePickerItem, ResourcePickerScope } from "./resourcePickerTypes";
 
 type RoutePickerSource = {
@@ -170,7 +171,7 @@ export function mapActivityPlanToResourcePickerItem(
 }
 
 export function mapRouteToResourcePickerItem(route: RoutePickerSource): ResourcePickerItem {
-  return {
+  return omitUndefined({
     activityCategory: route.activity_category,
     description: route.description,
     id: route.id,
@@ -178,7 +179,7 @@ export function mapRouteToResourcePickerItem(route: RoutePickerSource): Resource
     isSystem: route.is_system_template,
     name: route.name,
     presentation: "canonical",
-    routeCardData: {
+    routeCardData: omitUndefined({
       activity_category: route.activity_category,
       description: route.description,
       has_liked: route.has_liked,
@@ -188,8 +189,8 @@ export function mapRouteToResourcePickerItem(route: RoutePickerSource): Resource
       total_ascent: route.total_ascent,
       total_descent: route.total_descent,
       total_distance: route.total_distance,
-    },
+    }),
     totalAscent: route.total_ascent,
     totalDistance: route.total_distance,
-  };
+  });
 }

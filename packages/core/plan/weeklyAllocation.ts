@@ -3,7 +3,6 @@ import { canonicalActivityCategorySchema } from "../schemas/activity-category";
 import type { AthletePreferenceProfile } from "../schemas/settings/profile_settings";
 import {
   type ActivityCategoryPrescription,
-  activityCategoryPrescriptionSchema,
   keyExposureSchema,
   prescriptionActivityRoleSchema,
   prescriptionIntensityDistributionSchema,

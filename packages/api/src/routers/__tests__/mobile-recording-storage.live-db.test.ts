@@ -147,13 +147,14 @@ describe.skipIf(!hasLiveStoragePrerequisite)("mobile recording storage live-db",
       finishedAt: "2026-07-24T09:00:00.000Z",
       executionManifest: {
         version: 1 as const,
-        compilerVersion: 1,
+        compilerVersion: 3 as const,
         planHash: "b".repeat(64),
         occurrences: [
           {
             occurrenceId: randomUUID(),
             globalOrdinal: 0,
-            segmentId: randomUUID(),
+            stepId: null,
+            repeatIteration: 0,
             role: "activity" as const,
             activity_category: "run" as const,
             startedAt: "2026-07-24T08:00:00.000Z",

@@ -1,7 +1,6 @@
 import { keepPreviousData, skipToken } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
-import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import { getTrainingPlanStructureActivityPlanIds } from "./canonical-draft";
 import type { UseTrainingPlanCreationServiceOptions } from "./service-types";
 
@@ -10,11 +9,8 @@ const ACTIVITY_PLAN_PICKER_PAGE_SIZE = 25;
 export function useTrainingPlanCreationQueries({
   activityPlanPicker,
   mode = "create",
-  onCreateError,
-  onUpdateError,
   planId,
 }: UseTrainingPlanCreationServiceOptions) {
-  const utils = api.useUtils();
   const isEditMode = mode === "edit" && !!planId;
   const shouldLoadCreateContext = mode === "create";
 
@@ -70,14 +66,9 @@ export function useTrainingPlanCreationQueries({
     },
   );
 
-  const commitPlanMutation = useReliableMutation(api.trainingPlans.commit, {
-    invalidate: [utils.trainingPlans],
-    silent: true,
-    onError: (error) => {
-      if (isEditMode) onUpdateError?.(error);
-      else onCreateError?.(error);
-    },
-  });
+  // The service owns refresh after an acknowledged write, keeping RPC rejection
+  // distinct from a cache-refresh failure after a successful commit.
+  const commitPlanMutation = api.trainingPlans.commit.useMutation({ retry: false });
   return {
     profileQuery,
     creationContextQuery,

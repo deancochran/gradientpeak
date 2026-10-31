@@ -78,7 +78,11 @@ test("registry has no implementation gaps while mobile proof remains component e
   const classification = classifyParity(await buildParityRegistry(process.cwd()));
 
   assert.equal(classification.implementationGaps.length, 0);
-  assert.equal(classification.runtimeProofGaps.length, 19);
+  assert.equal(classification.runtimeProofGaps.length, 20);
+  assert.ok(
+    classification.runtimeProofGaps.some(({ record }) => record.id === "chatbot.assistant"),
+    "chatbot mobile component tests must not count as native runtime proof",
+  );
   for (const { platform, record } of classification.runtimeProofGaps) {
     assert.equal(platform, "mobile");
     assert.notEqual(record.mobile.evidenceStrength, "runtime");

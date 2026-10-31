@@ -4,16 +4,16 @@ This directory contains comprehensive sample activity plans for all supported ac
 
 ## Overview
 
-The samples provide structured activity plans across 7 different activity categories, with at least 5 different activities per activity category, totaling **36 unique activity plans**.
+The samples provide structured activity plans across 7 different activity categories, totaling **49 unique activity plans**.
 
 ## Activity Types & Activities
 
-### 🚴 Indoor Bike Trainer (6 activities)
+### 🚴 Indoor Bike Trainer (8 activities)
 - **Sweet Spot Intervals** - 60min focusing on sweet spot power development
 - **VO2 Max Development** - 75min with challenging VO2 max intervals
 - **Active Recovery Ride** - 45min easy recovery ride
 - **Sprint Power Development** - 35min neuromuscular power focus
-- **Threshold Heart Rate Intervals** - 45min threshold HR training
+- **Threshold Heart Rate Intervals** - 55min threshold HR training
 - **Comprehensive Test** - 1min test activity for schema validation
 
 ### 🏃 Indoor Treadmill (5 activities)
@@ -23,14 +23,13 @@ The samples provide structured activity plans across 7 different activity catego
 - **Easy Recovery Run** - 30min low-intensity recovery
 - **Hill Intervals** - 45min incline-based strength and power
 
-### 🏃‍♂️ Outdoor Run (5 activities)
+### 🏃‍♂️ Outdoor Run (14 activities)
 - **Easy Aerobic Run** - 45min comfortable aerobic base building
 - **Tempo Run** - 60min sustained tempo effort
 - **5K Pace Intervals** - 55min high-intensity intervals at race pace
-- **Long Steady Run** - 90min extended aerobic endurance
 - **Fartlek Training** - 50min unstructured speed play
 
-### 🚵 Outdoor Bike (5 activities)
+### 🚵 Outdoor Bike (7 activities)
 - **Easy Endurance Ride** - 60min comfortable aerobic ride
 - **Sweet Spot Intervals** - 75min outdoor sweet spot power
 - **Tempo Intervals** - 80min sustained tempo efforts
@@ -51,19 +50,15 @@ The samples provide structured activity plans across 7 different activity catego
 - **Technique Focus** - 40min technical stroke mechanics
 - **Endurance Set** - 75min long aerobic base building
 
-### 🎯 Other Activities (5 activities)
-- **Yoga Flow** - 60min flexibility and mindfulness practice
-- **Rock Climbing Session** - 90min climbing with warm-up and cool-down
-- **Hiking Adventure** - 120min moderate-intensity hiking
+### 🎯 Other Activities (2 activities)
 - **CrossFit WOD** - 45min high-intensity activity of the day
-- **Recovery Walk** - 45min gentle walking for active recovery
 
 ## Usage
 
 ### Import All Samples
 ```typescript
 import { SAMPLE_ACTIVITIES } from "@gradientpeak/core/samples";
-// Returns array with all 36 activity plans
+// Returns array with all 49 activity plans
 ```
 
 ### Import Specific Activity Type

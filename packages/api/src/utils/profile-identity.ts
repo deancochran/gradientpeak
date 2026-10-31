@@ -14,7 +14,13 @@ export const profileIdentitySchema = z
 export type ProfileIdentity = z.infer<typeof profileIdentitySchema>;
 
 export async function loadProfileIdentityMap(
-  db: any,
+  db: {
+    select(...fields: unknown[]): {
+      from(table: typeof profiles): {
+        where(condition: unknown): PromiseLike<unknown>;
+      };
+    };
+  },
   profileIds: Array<string | null | undefined>,
 ) {
   const ids = Array.from(new Set(profileIds.filter((id): id is string => typeof id === "string")));

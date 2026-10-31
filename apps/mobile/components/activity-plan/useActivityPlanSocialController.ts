@@ -1,6 +1,7 @@
 import { Alert, Share } from "react-native";
 import { api } from "@/lib/api";
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { getPublicShareUrl } from "@/lib/share/public-share-url";
 
 function isValidUuid(value: string): boolean {
@@ -37,10 +38,12 @@ export function useActivityPlanSocialController({
     },
   });
 
-  const comments = useEntityCommentsController({
-    entityId: isCommentEntityIdValid ? actualPlanId : undefined,
-    entityType: "activity_plan",
-  });
+  const comments = useEntityCommentsController(
+    omitUndefined({
+      entityId: isCommentEntityIdValid ? actualPlanId : undefined,
+      entityType: "activity_plan",
+    }),
+  );
 
   React.useEffect(() => {
     setIsLiked(initialHasLiked ?? false);

@@ -1,14 +1,13 @@
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
-import { type NavigationAction, usePreventRemove } from "expo-router/react-navigation";
+import type { NavigationAction } from "expo-router/react-navigation";
 import type { ReactNode } from "react";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
-import { Alert } from "react-native";
+import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
 
 type ActivityPlanComposerProcessParams = {
   activityCategory: string;
   allowNavigationRef: RefObject<boolean>;
-  canSubmit: boolean;
   description: string;
   isEditMode: boolean;
   isEditBlocked: boolean;
@@ -24,15 +23,14 @@ type ActivityPlanComposerProcessParams = {
     dispatch: (action: NavigationAction) => void;
     setOptions: (options: { headerRight: () => ReactNode; title: string }) => void;
   };
-  notes: string;
   structure: unknown;
   submit: () => undefined | Promise<unknown>;
+  onAttempt: () => void;
 };
 
 export function useActivityPlanComposerProcess({
   activityCategory,
   allowNavigationRef,
-  canSubmit,
   description,
   isEditMode,
   isEditBlocked,
@@ -41,14 +39,18 @@ export function useActivityPlanComposerProcess({
   isSubmitting,
   name,
   navigation,
-  notes,
   structure,
   submit,
+  onAttempt,
 }: ActivityPlanComposerProcessParams) {
   const appliedHydrationVersionRef = useRef<number | null>(null);
   const [baselineSignature, setBaselineSignature] = useState<string | null>(null);
   const submitRef = useRef(submit);
   submitRef.current = submit;
+  const attemptRef = useRef(onAttempt);
+  attemptRef.current = onAttempt;
+  // This is set synchronously from Save, before mutation state can cause a re-render.
+  const pendingSubmitRef = useRef(false);
   const formSignature = useMemo(
     () =>
       JSON.stringify({
@@ -56,9 +58,8 @@ export function useActivityPlanComposerProcess({
         description,
         activityCategory,
         structure,
-        notes,
       }),
-    [activityCategory, description, name, notes, structure],
+    [activityCategory, description, name, structure],
   );
 
   useEffect(() => {
@@ -72,35 +73,19 @@ export function useActivityPlanComposerProcess({
   }, [baselineSignature, formSignature, hydrationVersion, isLoading]);
 
   const isDirty = baselineSignature !== null && baselineSignature !== formSignature;
+  useDirtyNavigationGuard({
+    isDirty,
+    isPending: isSubmitting,
+    allowNavigationRef,
+    pendingRef: pendingSubmitRef,
+    navigation,
+  });
   const previousSignature = useRef(formSignature);
   useEffect(() => {
     if (previousSignature.current !== formSignature && !isSubmitting)
       allowNavigationRef.current = false;
     previousSignature.current = formSignature;
   }, [allowNavigationRef, formSignature, isSubmitting]);
-
-  usePreventRemove(!allowNavigationRef.current && (isDirty || isSubmitting), ({ data }) => {
-    if (allowNavigationRef.current) {
-      navigation.dispatch(data.action);
-      return;
-    }
-    if (isSubmitting) {
-      Alert.alert("Saving changes", "Please wait for the save to finish before leaving.");
-      return;
-    }
-    if (!isDirty) return;
-    Alert.alert("Discard changes?", "Your edits will be lost.", [
-      { text: "Keep Editing", style: "cancel" },
-      {
-        text: "Discard",
-        style: "destructive",
-        onPress: () => {
-          allowNavigationRef.current = true;
-          navigation.dispatch(data.action);
-        },
-      },
-    ]);
-  });
 
   useEffect(() => {
     navigation.setOptions({
@@ -110,8 +95,14 @@ export function useActivityPlanComposerProcess({
           <LoadingButton
             variant="ghost"
             size="sm"
-            onPress={() => submitRef.current()}
-            disabled={!canSubmit || isLoading || isSubmitting}
+            onPress={() => {
+              pendingSubmitRef.current = true;
+              attemptRef.current();
+              void Promise.resolve(submitRef.current()).finally(() => {
+                pendingSubmitRef.current = false;
+              });
+            }}
+            disabled={isLoading || isSubmitting}
             loading={isSubmitting}
             loadingLabel="Saving..."
             loadingTextClassName="text-primary"
@@ -120,7 +111,7 @@ export function useActivityPlanComposerProcess({
           </LoadingButton>
         ),
     });
-  }, [navigation, isEditMode, isEditBlocked, canSubmit, isLoading, isSubmitting]);
+  }, [navigation, isEditMode, isEditBlocked, isLoading, isSubmitting]);
 
   return {
     isDirty,

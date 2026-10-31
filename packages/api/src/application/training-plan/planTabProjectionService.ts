@@ -28,7 +28,7 @@ import {
   profileGoals,
   trainingPlans,
 } from "@repo/db";
-import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, or } from "drizzle-orm";
 import { z } from "zod";
 import { type DrizzleQueryExecutor, withRepeatableReadSnapshot } from "../../db";
 import { createEventReadRepository } from "../../infrastructure/repositories";
@@ -364,7 +364,8 @@ const defaultDependencies: PlanTabProjectionDependencies = {
         trainingPlanRevision: plannedSessions.training_plan_revision,
         nextPlannedSessionId: plannedSessions.id,
         nextPlannedSessionDate: plannedSessions.planning_date,
-        resolutionManifest: plannedSessions.resolution_manifest,
+        nextActivityPlanId: plannedSessions.activity_plan_id,
+        nextPlannedSessionTitle: activityPlans.name,
       })
       .from(plannedSessions)
       .innerJoin(
@@ -372,6 +373,13 @@ const defaultDependencies: PlanTabProjectionDependencies = {
         and(
           eq(trainingPlans.id, plannedSessions.training_plan_id),
           eq(trainingPlans.profile_id, plannedSessions.profile_id),
+        ),
+      )
+      .leftJoin(
+        activityPlans,
+        and(
+          eq(activityPlans.id, plannedSessions.activity_plan_id),
+          or(eq(activityPlans.profile_id, profileId), eq(activityPlans.is_system_template, true)),
         ),
       )
       .where(
@@ -389,9 +397,9 @@ const defaultDependencies: PlanTabProjectionDependencies = {
           name: row.name,
           applicationReceipt: `${row.id}:${row.trainingPlanRevision}`,
           nextPlannedSessionId: row.nextPlannedSessionId,
-          nextPlannedSessionTitle: "Scheduled session",
+          nextPlannedSessionTitle: row.nextPlannedSessionTitle?.trim() || "Scheduled session",
           nextPlannedSessionDate: row.nextPlannedSessionDate,
-          nextActivityPlanId: null,
+          nextActivityPlanId: row.nextActivityPlanId,
         }
       : null;
   },
@@ -417,9 +425,20 @@ const defaultDependencies: PlanTabProjectionDependencies = {
         : await db
             .select({
               id: plannedSessions.id,
-              resolutionManifest: plannedSessions.resolution_manifest,
+              title: activityPlans.name,
+              structure: activityPlans.structure,
             })
             .from(plannedSessions)
+            .leftJoin(
+              activityPlans,
+              and(
+                eq(activityPlans.id, plannedSessions.activity_plan_id),
+                or(
+                  eq(activityPlans.profile_id, profileId),
+                  eq(activityPlans.is_system_template, true),
+                ),
+              ),
+            )
             .where(
               and(
                 eq(plannedSessions.profile_id, profileId),
@@ -480,8 +499,8 @@ const defaultDependencies: PlanTabProjectionDependencies = {
         scheduledRows.map((row) => [
           row.id,
           {
-            title: "Scheduled session",
-            activityCategory: extractActivityCategory(row.resolutionManifest.resolved_structure),
+            title: row.title?.trim() || "Scheduled session",
+            activityCategory: extractActivityCategory(row.structure),
           },
         ]),
       ),

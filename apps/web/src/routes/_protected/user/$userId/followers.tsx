@@ -38,8 +38,8 @@ function FollowersPage() {
   return (
     <div className="container max-w-3xl space-y-6 py-8">
       <RouteFlashToast
-        message={flash}
-        type={flashType}
+        {...(flash === undefined ? {} : { message: flash })}
+        {...(flashType === undefined ? {} : { type: flashType })}
         clear={() =>
           void navigate({
             to: "/user/$userId/followers",

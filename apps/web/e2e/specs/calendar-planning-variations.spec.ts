@@ -4,14 +4,18 @@ import { withCalendarEventFixture, withPlanningPathFixture } from "../planning/d
 import { withDayAgendaFixture } from "../planning/day-agenda";
 import { openPlanningRoute, planningTestIdentity } from "../planning/journeys";
 
-test("[variation:calendar.create:cancel-invalid] invalid creation remains editable and browser back returns to the selected calendar day", async ({
+test("[variation:calendar.create:blank-gated-back] blank creation is gated and browser back returns to the selected calendar day", async ({
   athletePage,
 }) => {
   const calendar = new CalendarPage(athletePage);
   await calendar.openDay("2026-10-30", { month: "2026-10", view: "agenda" });
   await athletePage.getByText("Create event for this day", { exact: true }).click();
   await expect(athletePage.locator("#agenda-date-field")).toHaveValue("2026-10-30");
-  await athletePage.getByRole("button", { name: /^create$/i }).click();
+  await expect(athletePage.getByLabel("Time", { exact: true })).toHaveValue("");
+  await expect(
+    athletePage.getByRole("button", { name: "Event time zone", exact: true }),
+  ).toHaveText("Select a timezone");
+  await expect(athletePage.getByRole("button", { name: "Create", exact: true })).toBeDisabled();
   await expect(athletePage).toHaveURL(/\/calendar\/new/);
   await expect(athletePage.getByLabel("Title")).toBeFocused();
   await athletePage.goBack();
@@ -61,7 +65,10 @@ test("[variation:calendar.update:cancel-single] an unsaved single-occurrence edi
     const second = rows[1];
     if (!second) throw new Error("Expected a second occurrence.");
     await calendar.openEdit(second.id);
-    await athletePage.getByLabel("Title").fill("Unsaved occurrence title");
+    await athletePage
+      .getByRole("textbox", { name: "Title", exact: true })
+      .last()
+      .fill("Unsaved occurrence title");
     await athletePage.goBack();
     await expect(athletePage.getByRole("heading", { name: title })).toBeVisible();
     await expect.poll(() => fixture.getSeries(anchor)).toEqual(rows);

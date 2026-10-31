@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
+import { activityPlanSummarySchema } from "@repo/core";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-
 import { RecordPlanPage } from "./plan";
 
 const mocks = vi.hoisted(() => ({
@@ -17,46 +17,65 @@ const mocks = vi.hoisted(() => ({
 const PLAN_ID = "00000000-0000-4000-8000-000000000010";
 const SESSION_ID = "00000000-0000-4000-8000-000000000020";
 const structure = {
-  version: 3,
+  version: 5,
   activity_category: "run",
-  segments: [
+  items: [
     {
-      id: "00000000-0000-4000-8000-000000000101",
-      name: "Main",
-      role: "activity",
-      intervals: [
-        {
-          id: "00000000-0000-4000-8000-000000000102",
-          name: "Set",
-          repetitions: 1,
-          steps: [
-            {
-              id: "00000000-0000-4000-8000-000000000103",
-              name: "Tempo",
-              duration: { type: "time", seconds: 60 },
-              targets: [{ type: "%ThresholdHR", intensity: 80 }],
-            },
-            {
-              id: "00000000-0000-4000-8000-000000000104",
-              name: "Perceived effort",
-              duration: { type: "time", seconds: 60 },
-              targets: [{ type: "RPE", intensity: 7 }],
-            },
-          ],
-        },
-      ],
+      type: "step",
+      id: "00000000-0000-4000-8000-000000000103",
+      name: "Tempo",
+      duration: { type: "time", seconds: 60 },
+      targets: [{ type: "%ThresholdHR", intensity: 80 }],
+    },
+    {
+      type: "step",
+      id: "00000000-0000-4000-8000-000000000104",
+      name: "Perceived effort",
+      duration: { type: "time", seconds: 60 },
+      targets: [{ type: "RPE", intensity: 7 }],
     },
   ],
 } as const;
+const publicPlanFields = {
+  contractVersion: "activity-plan-summary-v1",
+  href: `/activity-plans/${PLAN_ID}`,
+  createdAt: "2026-08-19T00:00:00.000Z",
+  updatedAt: "2026-08-19T00:00:00.000Z",
+  owner: { id: "other-owner", username: "coach", avatarUrl: null },
+  activityPlanRevision: 2,
+  visibility: "public",
+  isSystemTemplate: false,
+  capabilities: {
+    canRecord: true,
+    canSchedule: true,
+    canEdit: false,
+    canDelete: false,
+    canLike: true,
+    canDuplicate: false,
+  },
+  metrics: [
+    ["distance", "meters"],
+    ["elapsed_duration", "seconds"],
+    ["common_load", "score"],
+    ["objective_intensity", "ratio"],
+  ].map(([key, unit]) => ({
+    key,
+    unit,
+    label: key,
+    status: "unavailable",
+    value: null,
+    reason: "calibration_required",
+    provenance: null,
+  })),
+};
 const plans = [
   {
     id: PLAN_ID,
     name: "Tempo run",
     description: "Steady work",
     activityCategory: "run",
-    capabilities: { canRecord: true },
+    ...publicPlanFields,
     structure,
-    metrics: [],
     engagement: { likes: 0, viewerHasLiked: false },
   },
   {
@@ -64,13 +83,11 @@ const plans = [
     name: "Recovery ride",
     description: "Easy spin",
     activityCategory: "bike",
-    capabilities: { canRecord: true },
+    ...publicPlanFields,
     structure,
-    metrics: [],
     engagement: { likes: 0, viewerHasLiked: false },
   },
-];
-
+].map((plan) => activityPlanSummarySchema.parse(plan));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
@@ -79,7 +96,6 @@ vi.mock("@tanstack/react-router", () => ({
   }),
   Link: ({ children }: { children: React.ReactNode }) => <a href="/record">{children}</a>,
 }));
-
 vi.mock("../../../lib/api/client", () => ({
   api: {
     calendar: {
@@ -99,15 +115,7 @@ vi.mock("../../../lib/api/client", () => ({
                     planningDate: "2026-08-19",
                     sessionRevision: 4,
                     lifecycle: { status: "scheduled" },
-                    prescription: {
-                      capturedAt: "2026-08-01T00:00:00.000Z",
-                      resolutionManifest: {
-                        activity_plan_id: PLAN_ID,
-                        activity_plan_revision: 2,
-                        resolved_structure: structure,
-                        resolved_structure_hash: `v1:sha256:${"a".repeat(64)}`,
-                      },
-                    },
+                    activityPlanId: PLAN_ID,
                   },
                 },
               ],
@@ -175,11 +183,9 @@ vi.mock("../../../lib/api/client", () => ({
     },
   },
 }));
-
 vi.mock("../../../lib/recording/provider", () => ({
   useTimerOnlyRecording: () => ({ state: { reducer: { snapshot: null } } }),
 }));
-
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -188,8 +194,18 @@ afterEach(() => {
   mocks.dayError = false;
   mocks.detailError = false;
 });
-
 describe("RecordPlanPage", () => {
+  it("selects a readable public plan without edit permission", () => {
+    render(<RecordPlanPage />);
+    const card = screen.getByRole("button", { name: "Select Tempo run" });
+    expect((card as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(card);
+    fireEvent.click(screen.getByRole("button", { name: "Use this plan" }));
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      to: "/record/session",
+      search: { activity_category: "run", gps: "off", activityPlanId: PLAN_ID },
+    });
+  });
   it("shows a zero-result failure rather than empty and retries without losing search", () => {
     mocks.listError = true;
     mocks.listEmpty = true;
@@ -203,7 +219,6 @@ describe("RecordPlanPage", () => {
     expect(mocks.refetchPlans).toHaveBeenCalledOnce();
     expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("tempo");
   });
-
   it("uses the canonical selectable card and preserves selection while retrying detail", () => {
     const view = render(<RecordPlanPage />);
     const card = screen.getByTestId(`activity-plan-card-${PLAN_ID}`);
@@ -220,7 +235,6 @@ describe("RecordPlanPage", () => {
     expect(card.getAttribute("aria-pressed")).toBe("true");
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
-
   it("searches all visible recordable plans", () => {
     render(<RecordPlanPage />);
     const search = screen.getByRole("searchbox", { name: "Search all activity plans" });
@@ -228,21 +242,22 @@ describe("RecordPlanPage", () => {
     expect(screen.getAllByText("Tempo run").length).toBeGreaterThan(0);
     expect(screen.queryByText("Recovery ride")).toBeNull();
   });
-
-  it("selects a planned session by identity rather than loading its mutable activity plan", () => {
+  it("records a new-style calendar session through its current activity-plan reference", () => {
     render(<RecordPlanPage />);
     fireEvent.click(
-      screen.getByRole("button", { name: /run session.*Frozen scheduled prescription/i }),
+      screen.getByRole("button", {
+        name: /Scheduled activity plan.*Uses the current plan at start/i,
+      }),
     );
-
     expect(screen.queryByRole("switch", { name: "Calculated targets" })).toBeNull();
     expect(screen.getByText("80% Threshold HR")).toBeTruthy();
     expect(screen.getByText("7 RPE")).toBeTruthy();
-    expect(screen.getByText("Recording uses this session's frozen prescription.")).toBeTruthy();
-
+    expect(
+      screen.getByText("Recording captures the current plan when this session starts."),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Use this plan" }));
     expect(mocks.navigate).toHaveBeenCalledWith({
-      to: "/record",
+      to: "/record/session",
       search: {
         activity_category: "run",
         gps: "off",

@@ -34,7 +34,7 @@ pnpm --filter mobile test:jest
 pnpm --filter mobile test:e2e
 ```
 
-## Android and optional mobile smoke
+## Android smoke versus disposable full journey
 
 ```bash
 pnpm --filter mobile android:dev
@@ -42,7 +42,18 @@ pnpm --filter mobile test:e2e
 ```
 
 `test:e2e` runs one optional app-launch smoke against an already installed development build. It is
-not a CI requirement and uses no fixtures.
+not a CI requirement and uses no fixtures; it is not the plan, calendar, recording, or recovery
+acceptance journey.
+
+Run the disposable full native journey from the repository root with the designated runner:
+
+```bash
+apps/web mise exec node@24.19.0 -- pnpm exec tsx scripts/run-disposable-acceptance.ts \
+  e2e/native/current-candidate.spec.ts --project='Desktop Chrome'
+```
+
+The runner owns the disposable backend, `gradientpeak-e2e` emulator, Metro wiring, and the
+offline-retry fault. Do not substitute the smoke result for this full UI journey.
 
 ## Related docs
 

@@ -22,7 +22,7 @@ import {
   clearRouteUploadOperation,
 } from "@/lib/route-files/route-upload-operation";
 import { handleSubmitFormError } from "@/lib/utils/formErrors";
-import { type RouteUploadFormValues, routeUploadFormSchema } from "@/lib/validation/route-upload";
+import { routeUploadFormSchema } from "@/lib/validation/route-upload";
 
 type UploadPhase = "idle" | "reading" | "uploading" | "success";
 
@@ -99,7 +99,7 @@ export default function UploadRouteScreen() {
     return () => subscription.unsubscribe();
   }, [form]);
 
-  const submitForm = useZodFormSubmit<RouteUploadFormValues>({
+  const submitForm = useZodFormSubmit({
     form,
     shouldRethrow: false,
     onSubmit: async (values) => {

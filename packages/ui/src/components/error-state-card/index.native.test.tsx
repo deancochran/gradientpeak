@@ -9,8 +9,8 @@ describe("ErrorStateCard native", () => {
       <ErrorStateCard {...errorStateCardFixtures.generic} onRetry={onRetry} />,
     );
 
-    expect(getByText(errorStateCardFixtures.generic.title!)).toBeTruthy();
-    await fireEvent.press(getByText(errorStateCardFixtures.generic.retryLabel!));
+    expect(getByText(errorStateCardFixtures.generic.title)).toBeTruthy();
+    await fireEvent.press(getByText(errorStateCardFixtures.generic.retryLabel));
     expect(onRetry).toHaveBeenCalled();
   });
 

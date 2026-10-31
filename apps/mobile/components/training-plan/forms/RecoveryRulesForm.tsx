@@ -49,7 +49,9 @@ export function RecoveryRulesForm({ data, onChange, errors }: RecoveryRulesFormP
           max={7}
           onChange={(nextValue) => onChange({ max_consecutive_days: nextValue })}
           helperText="Set max streak before a required rest day"
-          error={errors.max_consecutive_days}
+          {...(errors.max_consecutive_days === undefined
+            ? {}
+            : { error: errors.max_consecutive_days })}
         />
 
         {!errors.max_consecutive_days && data.max_consecutive_days > 0 && (
@@ -75,7 +77,7 @@ export function RecoveryRulesForm({ data, onChange, errors }: RecoveryRulesFormP
           max={7}
           onChange={(nextValue) => onChange({ min_rest_days_per_week: nextValue })}
           helperText="Set guaranteed complete rest days each week"
-          error={errors.min_rest_days}
+          {...(errors.min_rest_days === undefined ? {} : { error: errors.min_rest_days })}
         />
 
         {!errors.min_rest_days && data.min_rest_days_per_week >= 0 && (

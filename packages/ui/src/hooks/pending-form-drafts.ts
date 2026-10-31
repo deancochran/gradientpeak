@@ -1,8 +1,10 @@
 import { useLayoutEffect, useRef, useState } from "react";
 
+export type PendingInputIssue = { name: string; message: string; focus?: (() => void) | undefined };
 type DraftLifecycle = {
   commit: () => void;
   discard: () => void;
+  issue?: (() => PendingInputIssue | null) | undefined;
 };
 
 const pendingDrafts = new WeakMap<object, Set<DraftLifecycle>>();
@@ -11,12 +13,13 @@ function flushPendingFormDrafts(control: object) {
   const drafts = pendingDrafts.get(control);
 
   if (!drafts) {
-    return;
+    return [];
   }
 
   for (const draft of [...drafts]) {
     draft.commit();
   }
+  return [...drafts].flatMap((draft) => draft.issue?.() ?? []);
 }
 
 function discardPendingFormDrafts(control: object) {
@@ -43,6 +46,7 @@ function usePendingFormDraft(control: object | undefined, lifecycle: DraftLifecy
     const registeredLifecycle: DraftLifecycle = {
       commit: () => lifecycleRef.current.commit(),
       discard: () => lifecycleRef.current.discard(),
+      issue: () => lifecycleRef.current.issue?.() ?? null,
     };
     const drafts = pendingDrafts.get(control) ?? new Set<DraftLifecycle>();
     drafts.add(registeredLifecycle);
@@ -58,7 +62,7 @@ function usePendingFormDraft(control: object | undefined, lifecycle: DraftLifecy
 }
 
 /** Same-value resets must also reset string drafts that contain formatting. */
-function useFormDraftResetKey(control: object) {
+function useFormDraftResetKey(control: object | undefined) {
   const [revision, setRevision] = useState(0);
   usePendingFormDraft(control, {
     commit: () => undefined,

@@ -110,15 +110,19 @@ export class WahooWebhookJobService {
 
     const receipt = await this.deps.providerSyncRepository.storeWebhookReceipt({
       eventType: payload.event_type,
-      integrationId: integration?.integrationId,
-      integrationGeneration: integration?.integrationGeneration,
-      objectId: providerEventId,
+      ...(integration?.integrationId === undefined
+        ? {}
+        : { integrationId: integration.integrationId }),
+      ...(integration?.integrationGeneration === undefined
+        ? {}
+        : { integrationGeneration: integration.integrationGeneration }),
+      ...(providerEventId === undefined ? {} : { objectId: providerEventId }),
       objectType: payload.event_type,
       payload,
       payloadHash,
       provider: "wahoo",
       providerAccountId,
-      providerEventId,
+      ...(providerEventId === undefined ? {} : { providerEventId }),
     });
 
     if (!integration || !receipt.inserted || !receipt.captured) {
@@ -373,9 +377,9 @@ export class WahooWebhookJobService {
               jobId: job.id,
               jobStatus: shouldDeadLetter ? "dead_lettered" : "failed",
               lastError,
-              nextRunAt: shouldDeadLetter
-                ? undefined
-                : addMinutes(now, Math.min(job.attempt * 5, 60)),
+              ...(shouldDeadLetter
+                ? {}
+                : { nextRunAt: addMinutes(now, Math.min(job.attempt * 5, 60)) }),
               receiptId: receipt.id,
               receiptStatus: "failed",
               workerId,

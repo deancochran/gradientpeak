@@ -72,6 +72,7 @@ describe("recordSessionRpe", () => {
     });
 
     expect(repository.lockSessionRpeActivity).toHaveBeenCalledWith({}, input);
+    expect(repository.findOwnedCompletedActivity).toHaveBeenCalledWith({}, input);
     expect(repository.insertSessionRpeEvidence).toHaveBeenCalledWith(
       {},
       expect.objectContaining({

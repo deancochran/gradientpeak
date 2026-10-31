@@ -21,14 +21,16 @@ describe("replay baseline override fixture", () => {
     expect(decayedStart?.longTermLoad ?? 0).toBeLessThan(fixture.overrideLongTermLoad);
     expect(decayedStart?.recentLoad ?? 0).toBeLessThan(fixture.overrideRecentLoad);
 
+    const initialLongTermLoad = decayedStart?.longTermLoad;
+    const initialRecentLoad = decayedStart?.recentLoad;
     const historyReplay = replayCommonLoadFitnessByDate({
       dailyLoad: buildDailyLoadByDateSeries({
         startDate: fixture.historyStart,
         endDate: fixture.historyEnd,
         loadByDate: fixture.loadByDate,
       }),
-      initialLongTermLoad: decayedStart?.longTermLoad,
-      initialRecentLoad: decayedStart?.recentLoad,
+      ...(initialLongTermLoad === undefined ? {} : { initialLongTermLoad }),
+      ...(initialRecentLoad === undefined ? {} : { initialRecentLoad }),
     });
 
     expect(historyReplay.map((point) => point.date)).toEqual([

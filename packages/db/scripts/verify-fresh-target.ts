@@ -14,41 +14,37 @@ import { requireFreshBaseline } from "./baseline-workflow";
 import { structureHash } from "./canonical-json";
 
 const activityCategoryValues = ["run", "bike", "swim", "strength", "other"] as const;
-const planningHardCutMigration = "20260913090000_freeze_planned_session_prescriptions.sql";
 
-async function seedPlanningHardCutUpgradeFixture(target: Pool) {
-  const profileId = "06000000-0000-4000-8000-000000000001";
-  await target.query(
-    "insert into auth.users (id, email, raw_user_meta_data) values ($1, 'planning-hard-cut@example.test', '{}'::jsonb)",
-    [profileId],
+/** Accept only Supabase CLI's complete known empty migra envelope. */
+export function isEmptyPublicSchemaDiff(output: string): boolean {
+  const trimmed = output.trim();
+  if (!trimmed) return true;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return false;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+  const envelope = parsed as Record<string, unknown>;
+  const expected = ["diff", "dropStatements", "engine", "file", "files", "message", "schemas"];
+  const keys = Object.keys(envelope).sort();
+  return (
+    keys.length === expected.length &&
+    keys.every((key, index) => key === expected[index]) &&
+    envelope.engine === "migra" &&
+    envelope.file === null &&
+    envelope.message === "Diff complete." &&
+    typeof envelope.diff === "string" &&
+    envelope.diff.trim() === "" &&
+    Array.isArray(envelope.files) &&
+    envelope.files.length === 0 &&
+    Array.isArray(envelope.schemas) &&
+    envelope.schemas.length === 1 &&
+    envelope.schemas[0] === "public" &&
+    Array.isArray(envelope.dropStatements) &&
+    envelope.dropStatements.length === 0
   );
-  await target.query(
-    `insert into public.events (id, profile_id, event_type, title, starts_at, scheduled_date)
-     values
-       ('06000000-0000-4000-8000-000000000002', $1, 'planned', 'Legacy mirror', '2026-09-13T08:00:00Z', '2026-09-13'),
-       ('06000000-0000-4000-8000-000000000003', $1, 'custom', 'Retained custom event', '2026-09-13T09:00:00Z', '2026-09-13'),
-       ('06000000-0000-4000-8000-000000000004', $1, 'race_target', 'Retained race', '2026-09-13T10:00:00Z', '2026-09-13')`,
-    [profileId],
-  );
-}
-
-async function assertPlanningHardCutUpgradeFixture(target: Pool) {
-  const result = await target.query<{ event_type: string }>(
-    `select event_type::text as event_type
-     from public.events
-     where id in (
-       '06000000-0000-4000-8000-000000000002',
-       '06000000-0000-4000-8000-000000000003',
-       '06000000-0000-4000-8000-000000000004'
-     )
-     order by event_type::text`,
-  );
-  if (
-    JSON.stringify(result.rows) !==
-    JSON.stringify([{ event_type: "custom" }, { event_type: "race_target" }])
-  )
-    throw new Error("planning hard cut did not remove only the legacy planned-event mirror");
-  console.log("[db:planning-hard-cut] legacy planned mirror removed and generic events retained");
 }
 
 async function assertCanonicalActivityCategories(target: {
@@ -1695,56 +1691,22 @@ async function assertPrelaunchSchemaHardening(target: VerificationTarget) {
   const thresholdActivityId = "80000000-0000-4000-8000-000000000006";
   const revisionActivityPlanId = "80000000-0000-4000-8000-000000000014";
   const prescription = {
-    version: 3,
+    version: 5 as const,
     activity_category: "run",
-    segments: [
+    items: [
       {
+        type: "step" as const,
         id: "80000000-0000-4000-8000-000000000011",
-        role: "activity",
         name: "Run",
-        intervals: [
-          {
-            id: "80000000-0000-4000-8000-000000000012",
-            name: "Work",
-            repetitions: 1,
-            steps: [
-              {
-                id: "80000000-0000-4000-8000-000000000013",
-                name: "Step",
-                purpose: "work",
-                duration: { type: "time", seconds: 60 },
-                targets: [{ type: "RPE", intensity: 5 }],
-              },
-            ],
-          },
-        ],
+        duration: { type: "time" as const, seconds: 60 },
+        targets: [{ type: "RPE" as const, intensity: 5 }],
       },
     ],
-  };
-  const resolutionManifest = {
-    resolver_version: "fixture-v1",
-    policy_version: "fixture-v1",
-    activity_plan_id: activityPlanId,
-    activity_plan_revision: 1,
-    activity_plan_semantic_hash:
-      "v1:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    effective_target_duration_minutes: null,
-    effective_target_common_load: null,
-    evidence_facts: [],
-    session_demand: {},
-    adaptation_values: {},
-    reason_codes: [],
-    resolved_structure: prescription,
-    resolved_structure_hash:
-      "v1:sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-    prescription_estimate: {},
-    fingerprint: "v1:sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
   };
 
   const prescriptionHash = structureHash(prescription);
   const semanticHash = activityPlanSemanticHash({
     structure: activityPlanStructureSchema.parse(prescription),
-    adaptation: null,
     trainingIntent: "general_maintenance",
   });
 
@@ -1776,9 +1738,9 @@ async function assertPrelaunchSchemaHardening(target: VerificationTarget) {
     throw new Error("activity plan revision changed without a prescription structure change");
   }
   const changedPrescription = structuredClone(prescription);
-  const firstSegment = changedPrescription.segments[0];
-  if (!firstSegment) throw new Error("Missing fixture segment");
-  firstSegment.name = "Changed run";
+  const firstItem = changedPrescription.items[0];
+  if (!firstItem) throw new Error("Missing fixture item");
+  firstItem.name = "Changed run";
   await target.query(
     `update public.activity_plans
      set structure = $2::jsonb, structure_hash=$3, semantic_hash=$4, revision = 99
@@ -1789,7 +1751,6 @@ async function assertPrelaunchSchemaHardening(target: VerificationTarget) {
       structureHash(changedPrescription),
       activityPlanSemanticHash({
         structure: activityPlanStructureSchema.parse(changedPrescription),
-        adaptation: null,
         trainingIntent: "general_maintenance",
       }),
     ],
@@ -1845,50 +1806,43 @@ async function assertPrelaunchSchemaHardening(target: VerificationTarget) {
   await target.query(
     `insert into public.planned_sessions (
         id, profile_id, planning_date, original_target_date, source_kind, idempotency_key,
-        direct_operation_id, group_event_id, activity_plan_id, activity_plan_revision,
-        resolution_manifest, prescription_captured_at, status, completed_activity_id,
-       completion_state, linked_at
-     ) values (
-       $1::uuid, $2::uuid, current_date, current_date, 'direct',
+        direct_operation_id, group_event_id, activity_plan_id, status, completed_activity_id,
+        completion_state, linked_at
+      ) values (
+        $1::uuid, $2::uuid, current_date, current_date, 'direct',
         'direct:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-        $3::uuid, $4::uuid, 1, $5::jsonb,
-        now(), 'completed', $6::uuid, 'linked', now()
-     )`,
-    [
-      plannedSessionId,
-      profileId,
-      groupEventId,
-      activityPlanId,
-      JSON.stringify(resolutionManifest),
-      completedActivityId,
-    ],
+        $3::uuid, $4::uuid, 'completed', $5::uuid, 'linked', now()
+      )`,
+    [plannedSessionId, profileId, groupEventId, activityPlanId, completedActivityId],
   );
   await expectDatabaseError(
     target,
     `insert into public.planned_sessions (
         id, profile_id, planning_date, original_target_date, source_kind, idempotency_key,
-        direct_operation_id, group_event_id, activity_plan_id, activity_plan_revision,
-        resolution_manifest, prescription_captured_at
-     ) values (
-       '80000000-0000-4000-8000-000000000015', '${profileId}', current_date, current_date,
+        direct_operation_id, group_event_id, activity_plan_id
+      ) values (
+        '80000000-0000-4000-8000-000000000015', '${profileId}', current_date, current_date,
         'direct', 'direct:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', '${groupEventId}', '${activityPlanId}', 1,
-        '${JSON.stringify(resolutionManifest)}'::jsonb,
-        now()
-     )`,
+        'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', '${groupEventId}', '${activityPlanId}'
+      )`,
     { code: "23505", constraint: "planned_sessions_profile_group_event_unique" },
+  );
+  await expectDatabaseError(
+    target,
+    `insert into public.planned_sessions (
+       id, profile_id, planning_date, original_target_date, source_kind, idempotency_key,
+       direct_operation_id, activity_plan_id, activity_plan_revision
+     ) values (
+       '80000000-0000-4000-8000-000000000016', '${profileId}', current_date, current_date,
+       'direct', 'direct:cccccccccccccccccccccccccccccccc',
+       'cccccccccccccccccccccccccccccccc', '${activityPlanId}', 1
+     )`,
+    { code: "23514", constraint: "planned_sessions_legacy_prescription_check" },
   );
   await expectDatabaseError(
     target,
     `delete from public.activities where id = '${completedActivityId}'`,
     { code: "23503", constraint: "planned_sessions_completed_activity_owner_fkey" },
-  );
-  await expectDatabaseError(
-    target,
-    `update public.planned_sessions
-     set prescription_captured_at = prescription_captured_at + interval '1 second'
-     where id = '${plannedSessionId}'`,
-    { code: "23514" },
   );
   await target.query(`
     begin;
@@ -2065,11 +2019,8 @@ async function main() {
     await bootstrapSupabaseSchemas(target);
     const baseline = requireFreshBaseline();
     for (const migrationPath of baseline.migrationPaths) {
-      if (migrationPath.endsWith(planningHardCutMigration))
-        await seedPlanningHardCutUpgradeFixture(target);
       await applySqlFile(target, migrationPath);
     }
-    await assertPlanningHardCutUpgradeFixture(target);
     await assertCanonicalActivityCategories(target);
     await assertActivityAnalysisRevisionContract(target);
     await assertActivitySourceIdentityContract(target);
@@ -2129,7 +2080,8 @@ async function main() {
         dbPackageRoot,
         "utf8",
       ).toString();
-      if (diff.trim()) throw new Error(`fresh target schema diff is not empty:\n${diff}`);
+      if (!isEmptyPublicSchemaDiff(diff))
+        throw new Error(`fresh target schema diff is not empty:\n${diff}`);
       console.log("[db:diff] disposable authoritative target has no public schema diff");
     }
     console.log(

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { requireFixtureValue } from "../../testing/requireFixtureValue";
 import {
   type BuildReadinessForecastTimelineInput,
   buildReadinessForecastTimeline,
@@ -143,8 +144,19 @@ describe("buildReadinessForecastTimeline", () => {
 
     expect(mediumPoint?.low).toBeTypeOf("number");
     expect(mediumPoint?.high).toBeTypeOf("number");
+    const resolvedLowPoint = requireFixtureValue(
+      lowPoint,
+      "expected low-confidence readiness point",
+    );
+    const resolvedMediumPoint = requireFixtureValue(
+      mediumPoint,
+      "expected medium-confidence readiness point",
+    );
     expect(
-      lowPoint?.readiness! - lowPoint?.low! > mediumPoint?.readiness! - mediumPoint?.low!,
+      requireFixtureValue(resolvedLowPoint.readiness, "expected low readiness") -
+        requireFixtureValue(resolvedLowPoint.low, "expected low confidence lower bound") >
+        requireFixtureValue(resolvedMediumPoint.readiness, "expected medium readiness") -
+          requireFixtureValue(resolvedMediumPoint.low, "expected medium confidence lower bound"),
     ).toBe(true);
   });
 

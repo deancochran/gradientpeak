@@ -113,8 +113,10 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private zoneStartTime?: number;
   private currentHrZone?: number;
   private currentPowerZone?: number;
-  private hrZoneTimes = [0, 0, 0, 0, 0]; // 5 zones
-  private powerZoneTimes = [0, 0, 0, 0, 0, 0, 0]; // 7 zones
+  private hrZoneTimes: [number, number, number, number, number] = [0, 0, 0, 0, 0]; // 5 zones
+  private powerZoneTimes: [number, number, number, number, number, number, number] = [
+    0, 0, 0, 0, 0, 0, 0,
+  ]; // 7 zones
 
   constructor(
     profile: RecorderProfileRef,
@@ -198,11 +200,11 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     );
     this.zones = this.calculateZones(this.profile);
     if (this.zones.hrZones.length === 0) {
-      this.currentHrZone = undefined;
+      delete this.currentHrZone;
       delete this.metrics.currentHeartRateZone;
     }
     if (this.zones.powerZones.length === 0) {
-      this.currentPowerZone = undefined;
+      delete this.currentPowerZone;
       delete this.metrics.currentPowerZone;
     }
     if (!this.isActive) this.resetRecordingMetricsAccumulator();
@@ -287,7 +289,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       observedAtMs: input.recoveryPausedAt,
     });
     this.provisionalMetricsSnapshot = this.provisionalMetricsAccumulator.getSnapshot();
-    this.cachedStats = undefined;
+    delete this.cachedStats;
     this.calculateAndEmitMetrics();
   }
 
@@ -313,10 +315,10 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.addRecordingMetricsSample(resumedAt);
     if (this.pauseStartTime) {
       this.totalPauseTime += resumedAt - this.pauseStartTime;
-      this.pauseStartTime = undefined;
+      delete this.pauseStartTime;
     }
     if (!options.preserveHistory) this.buffer.clear();
-    this.cachedStats = undefined;
+    delete this.cachedStats;
     this.lastStatsEmit = 0;
     this.isActive = true;
     this.zoneStartTime = resumedAt;
@@ -385,7 +387,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     if (!this.sensorUpdateTimer) {
       this.sensorUpdateTimer = setTimeout(() => {
         this.flushSensorUpdates();
-        this.sensorUpdateTimer = undefined;
+        delete this.sensorUpdateTimer;
       }, 100);
     }
     if (this.isActive) this.streamBuffer.add(reading);
@@ -758,15 +760,15 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private stopTimers(): void {
     if (this.updateTimer) {
       clearInterval(this.updateTimer);
-      this.updateTimer = undefined;
+      delete this.updateTimer;
     }
     if (this.persistenceTimer) {
       clearInterval(this.persistenceTimer);
-      this.persistenceTimer = undefined;
+      delete this.persistenceTimer;
     }
     if (this.sensorUpdateTimer) {
       clearTimeout(this.sensorUpdateTimer);
-      this.sensorUpdateTimer = undefined;
+      delete this.sensorUpdateTimer;
     }
   }
 
@@ -814,7 +816,9 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
       // Calculate total work (joules)
       // For each second, work = power * 1 second
-      this.totalWork += powerValues[powerValues.length - 1]; // Latest power reading
+      const latestPower = powerValues.at(-1);
+      if (latestPower === undefined) return;
+      this.totalWork += latestPower; // Latest power reading
       this.metrics.totalWork = Math.round(this.totalWork);
     }
   }
@@ -875,7 +879,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       const hrZone = this.getHeartRateZone(currentHr);
       if (hrZone !== undefined) {
         if (this.currentHrZone !== undefined && timeDelta < 60000) {
-          this.hrZoneTimes[this.currentHrZone] += timeDelta;
+          const elapsed = this.hrZoneTimes[this.currentHrZone];
+          if (elapsed !== undefined) this.hrZoneTimes[this.currentHrZone] = elapsed + timeDelta;
         }
         this.currentHrZone = hrZone;
         this.metrics.currentHeartRateZone = hrZone + 1;
@@ -888,7 +893,9 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       const powerZone = this.getPowerZone(currentPower);
       if (powerZone !== undefined) {
         if (this.currentPowerZone !== undefined && timeDelta < 60000) {
-          this.powerZoneTimes[this.currentPowerZone] += timeDelta;
+          const elapsed = this.powerZoneTimes[this.currentPowerZone];
+          if (elapsed !== undefined)
+            this.powerZoneTimes[this.currentPowerZone] = elapsed + timeDelta;
         }
         this.currentPowerZone = powerZone;
         this.metrics.currentPowerZone = powerZone + 1;
@@ -1054,12 +1061,12 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private resetLiveSessionState(): void {
     this.buffer.clear();
     this.metrics = this.createInitialMetrics();
-    this.cachedStats = undefined;
+    delete this.cachedStats;
     this.lastStatsEmit = 0;
     this.lastAdvancedMetricsSampleAt = 0;
     this.advancedMetricsDisabledUntil = 0;
-    this.startTime = undefined;
-    this.pauseStartTime = undefined;
+    delete this.startTime;
+    delete this.pauseStartTime;
     this.totalPauseTime = 0;
     this.totalDistance = 0;
     this.totalWork = 0;
@@ -1069,9 +1076,9 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.maxPower = 0;
     this.maxHeartRate = 0;
     this.maxCadence = 0;
-    this.lastPowerUpdate = undefined;
+    delete this.lastPowerUpdate;
     this.lastPowerValue = 0;
-    this.zoneStartTime = undefined;
+    delete this.zoneStartTime;
     delete this.currentHrZone;
     delete this.currentPowerZone;
     this.hrZoneTimes = [0, 0, 0, 0, 0];
@@ -1154,7 +1161,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     const smoothed = recentAltitudes.reduce((sum, a) => sum + a, 0) / recentAltitudes.length;
 
     // Calculate change (with noise threshold)
-    const previous = recentAltitudes[recentAltitudes.length - 2];
+    const previous = recentAltitudes.at(-2);
+    if (previous === undefined) return;
     const delta = smoothed - previous;
 
     if (Math.abs(delta) > MOVEMENT_THRESHOLDS.ELEVATION_NOISE_THRESHOLD_M) {
@@ -1288,7 +1296,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     const thresholds = this.zones.hrZones;
     if (thresholds.length === 0) return undefined;
     for (let i = 0; i < thresholds.length; i++) {
-      if (hr < thresholds[i]) return i;
+      const threshold = thresholds[i];
+      if (threshold !== undefined && hr < threshold) return i;
     }
     return thresholds.length - 1;
   }
@@ -1300,7 +1309,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     const thresholds = this.zones.powerZones;
     if (thresholds.length === 0) return undefined;
     for (let i = 0; i < thresholds.length; i++) {
-      if (power < thresholds[i]) return i;
+      const threshold = thresholds[i];
+      if (threshold !== undefined && power < threshold) return i;
     }
     return thresholds.length - 1;
   }

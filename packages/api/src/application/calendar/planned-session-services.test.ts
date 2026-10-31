@@ -32,38 +32,26 @@ const systemTrainingPlanId = "77777777-7777-4777-8777-777777777777";
 const otherTrainingPlanId = "88888888-8888-4888-8888-888888888888";
 const activityId = "99999999-9999-4999-8999-999999999999";
 const groupEventId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-
 const structure = activityPlanStructureSchema.parse({
-  version: 3,
+  version: 5,
   activity_category: "bike",
-  segments: [
+  items: [
     {
-      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-      role: "activity",
-      name: "Ride",
-      intervals: [
-        {
-          id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-          name: "Main",
-          repetitions: 1,
-          steps: [
-            {
-              id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-              name: "Steady",
-              duration: { type: "time", seconds: 1800 },
-              targets: [{ type: "%FTP", intensity: 75 }],
-            },
-          ],
-        },
-      ],
+      type: "step",
+      id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      name: "Steady",
+      duration: { type: "time", seconds: 1800 },
+      targets: [{ type: "%FTP", intensity: 75 }],
     },
   ],
 });
-
 function session(input: {
   id: string;
   source:
-    | { kind: "direct"; operationId: string }
+    | {
+        kind: "direct";
+        operationId: string;
+      }
     | {
         kind: "training_plan";
         trainingPlanId: string;
@@ -102,14 +90,12 @@ function session(input: {
     lifecycle: { status: "scheduled" },
   });
 }
-
 class MemoryPlannedSessionRepository implements PlannedSessionRepositoryPort {
   readonly sessions = new Map<string, PlannedSession>();
   readonly idempotency = new Map<string, string>();
   readonly activityPlans = new Set([ownedActivityPlanId, systemActivityPlanId]);
   readonly trainingPlans = new Set([ownedTrainingPlanId, systemTrainingPlanId]);
   readonly activities = new Set([activityId]);
-
   async createOwned(input: {
     profileId: string;
     session: PlannedSession;
@@ -140,7 +126,6 @@ class MemoryPlannedSessionRepository implements PlannedSessionRepositoryPort {
     this.idempotency.set(`${input.profileId}:${input.session.idempotencyKey}`, input.session.id);
     return { status: "created", session: input.session };
   }
-
   async listOwnedRange(input: {
     profileId: string;
     startDate: string;
@@ -160,12 +145,10 @@ class MemoryPlannedSessionRepository implements PlannedSessionRepositoryPort {
       );
     return { items: matches.slice(0, input.limit), truncated: matches.length > input.limit };
   }
-
   async getOwned(input: { profileId: string; sessionId: string }) {
     const existing = this.sessions.get(input.sessionId);
     return existing?.profileId === input.profileId ? existing : null;
   }
-
   async listOwnedLinkedToActivity(input: { profileId: string; activityId: string }) {
     return [...this.sessions.values()].filter(
       (candidate) =>
@@ -175,7 +158,6 @@ class MemoryPlannedSessionRepository implements PlannedSessionRepositoryPort {
         candidate.lifecycle.completion.activityId === input.activityId,
     );
   }
-
   async mutateOwned(input: Parameters<PlannedSessionRepositoryPort["mutateOwned"]>[0]) {
     const current = await this.getOwned({ profileId: input.profileId, sessionId: input.sessionId });
     if (!current) return { status: "not_found" as const };
@@ -224,15 +206,12 @@ class MemoryPlannedSessionRepository implements PlannedSessionRepositoryPort {
     this.sessions.set(updated.id, updated);
     return { status: "updated" as const, session: updated };
   }
-
   async trainingPlanExistsForProfile(input: { profileId: string; trainingPlanId: string }) {
     return input.profileId === profileId && this.trainingPlans.has(input.trainingPlanId);
   }
-
   async activityPlanExistsForProfile(input: { profileId: string; activityPlanId: string }) {
     return input.profileId === profileId && this.activityPlans.has(input.activityPlanId);
   }
-
   async getActivityPlanPrescriptionSource(input: { profileId: string; activityPlanId: string }) {
     if (!(await this.activityPlanExistsForProfile(input))) return null;
     return {
@@ -242,24 +221,20 @@ class MemoryPlannedSessionRepository implements PlannedSessionRepositoryPort {
       description: null,
       revision: 1,
       structure,
-      adaptation: null,
       trainingIntent: "general_maintenance" as const,
       structureHash: `v1:sha256:${"a".repeat(64)}`,
       semanticHash: activityPlanSemanticHash({
         structure,
-        adaptation: null,
         trainingIntent: "general_maintenance",
       }),
       gpsRecordingEnabled: true,
       updatedAt: "2026-08-01T00:00:00.000Z",
     };
   }
-
   async groupEventExistsForProfile(input: { profileId: string; groupEventId: string }) {
     return input.profileId === profileId && input.groupEventId.length > 0;
   }
 }
-
 describe("planned-session application services", () => {
   it("converges direct and training-plan source replays", async () => {
     const repository = new MemoryPlannedSessionRepository();
@@ -288,7 +263,6 @@ describe("planned-session application services", () => {
       expect(replay.session.id).toBe(candidate.id);
     }
   });
-
   it("requires the current revision for move, cancel, and completion link", async () => {
     const repository = new MemoryPlannedSessionRepository();
     const planned = session({
@@ -296,7 +270,6 @@ describe("planned-session application services", () => {
       source: { kind: "direct", operationId: `direct_${"b".repeat(32)}` },
     });
     await createPlannedSession({ repository, profileId, session: planned });
-
     await expect(
       movePlannedSession({
         repository,
@@ -337,7 +310,6 @@ describe("planned-session application services", () => {
       }),
     ).rejects.toMatchObject({ reason: "activity_not_owned" });
   });
-
   it("allows only owned or system activity and training plans", async () => {
     const repository = new MemoryPlannedSessionRepository();
     for (const [id, activityPlanId, trainingPlanId] of [
@@ -361,7 +333,6 @@ describe("planned-session application services", () => {
         }),
       ).resolves.toMatchObject({ status: "created" });
     }
-
     await expect(
       createPlannedSession({
         repository,
@@ -389,7 +360,6 @@ describe("planned-session application services", () => {
       }),
     ).rejects.toBeInstanceOf(PlannedSessionAccessError);
   });
-
   it("enforces one group-event association per profile and owner-scoped range reads", async () => {
     const repository = new MemoryPlannedSessionRepository();
     const first = session({
@@ -406,7 +376,6 @@ describe("planned-session application services", () => {
     await expect(
       createPlannedSession({ repository, profileId, session: second }),
     ).rejects.toBeInstanceOf(PlannedSessionStateConflictError);
-
     expect(
       await readPlannedSessionRange({
         repository,

@@ -5,6 +5,7 @@ import { fireEvent, renderNative, screen } from "../../../../test/render-native"
 
 const navigate = jest.fn();
 const back = jest.fn();
+jest.mock("expo-router/react-navigation", () => ({ useIsFocused: () => true }));
 
 type HostProps = {
   ListEmptyComponent?: React.ReactNode;
@@ -29,7 +30,12 @@ jest.mock("expo-router", () => ({
       options?.headerRight?.() ?? null,
   },
   useLocalSearchParams: () => ({ id: "missing-goal" }),
-  useNavigation: () => ({ dispatch: jest.fn() }),
+  usePathname: () => "/goal-edit",
+  useNavigation: () => ({
+    dispatch: jest.fn(),
+    addListener: jest.fn(() => jest.fn()),
+    getState: () => ({ index: 0, routes: [] }),
+  }),
   useRouter: () => ({ back, navigate }),
 }));
 

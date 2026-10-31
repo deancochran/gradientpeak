@@ -170,7 +170,9 @@ export function PeriodizationForm({
               max={250}
               onChange={(nextCtl) => handleTargetCtlChange(String(nextCtl))}
               helperText=""
-              error={errors.target_longTermLoad}
+              {...(errors.target_longTermLoad === undefined
+                ? {}
+                : { error: errors.target_longTermLoad })}
             />
           </View>
 
@@ -184,7 +186,7 @@ export function PeriodizationForm({
               max={20}
               onChange={(nextRate) => handleRampRateChange(String(nextRate))}
               helperText=""
-              error={errors.ramp_rate}
+              {...(errors.ramp_rate === undefined ? {} : { error: errors.ramp_rate })}
             />
           </View>
 

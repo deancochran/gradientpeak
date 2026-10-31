@@ -9,7 +9,7 @@ export function ActivityPlanEditSession({
   edit,
   onCancel,
   onUpdate,
-  pending,
+  pending = false,
   onSaved,
 }: {
   edit: EditSnapshot;
@@ -21,7 +21,7 @@ export function ActivityPlanEditSession({
       expectedRevision: number;
     },
   ) => Promise<unknown>;
-  pending: boolean;
+  pending?: boolean;
   onSaved?: () => Promise<void> | void;
 }) {
   const [snapshot] = useState(edit);
@@ -35,7 +35,6 @@ export function ActivityPlanEditSession({
         gps_recording_enabled: snapshot.gpsRecordingEnabled,
         content_visibility: snapshot.contentVisibility,
         training_intent: snapshot.trainingIntent,
-        adaptation: snapshot.adaptation,
       }}
       mode="edit"
       onCancel={onCancel}

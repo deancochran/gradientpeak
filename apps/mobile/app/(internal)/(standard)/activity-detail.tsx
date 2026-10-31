@@ -48,6 +48,7 @@ import {
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { getPublicShareUrl } from "@/lib/share/public-share-url";
 
 function formatDuration(seconds: number): string {
@@ -97,6 +98,11 @@ function formatSwimPace(metersPerSecond: number, preferredUnitSystem: PreferredU
       preferredUnitSystem,
     ),
   );
+}
+
+function formatSegmentCategory(activityCategory: string | null): string {
+  if (!activityCategory) return "Activity";
+  return activityCategory[0]?.toUpperCase() + activityCategory.slice(1);
 }
 
 function VisualStateCard({
@@ -354,11 +360,37 @@ function ActivityDetailScreen() {
     linkedActivityPlanId ? { id: linkedActivityPlanId } : skipToken,
     { enabled: !!linkedActivityPlanId },
   );
-  const primaryActivitySegment = detail?.segments.find((segment) => segment.role === "activity");
-  const activityCategory = primaryActivitySegment?.activityCategory ?? null;
+  const orderedSegments = useMemo(
+    () => [...(detail?.segments ?? [])].sort((left, right) => left.ordinal - right.ordinal),
+    [detail?.segments],
+  );
+  const activitySegments = useMemo(
+    () => orderedSegments.filter((segment) => segment.role === "activity"),
+    [orderedSegments],
+  );
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
+  const selectedActivitySegment =
+    activitySegments.find((segment) => segment.id === selectedSegmentId) ?? activitySegments[0];
+  const activityCategory = selectedActivitySegment?.activityCategory ?? null;
+  const selectedSegmentSummary =
+    selectedActivitySegment?.status === "available" ? selectedActivitySegment.summary : null;
+  const hasMultipleActivityLegs = activitySegments.length > 1;
+  const hasNoActivityLegs = detail !== undefined && activitySegments.length === 0;
+
+  // A new activity, or a refreshed detail response that removed a selected leg, must not retain
+  // a selection (and therefore streams or metrics) from the previous activity or leg.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Activity identity also resets selection when an unchanged segment array is reused.
+  useEffect(() => {
+    setSelectedSegmentId((currentSegmentId) =>
+      currentSegmentId && activitySegments.some((segment) => segment.id === currentSegmentId)
+        ? currentSegmentId
+        : (activitySegments[0]?.id ?? null),
+    );
+  }, [activity?.id, activitySegments]);
+
   const normalizedPowerPresentation = getNormalizedPowerPresentation(
-    primaryActivitySegment?.status === "available"
-      ? primaryActivitySegment.summary.normalizedPowerResult
+    selectedSegmentSummary?.normalizedPowerResult
+      ? selectedSegmentSummary.normalizedPowerResult
       : undefined,
   );
   const derived = activityData?.analysis.derived;
@@ -395,7 +427,8 @@ function ActivityDetailScreen() {
   const currentArtifact = detail?.currentArtifact;
   const activityFilePath = currentArtifact?.availability === "accepted" ? currentArtifact.id : null;
   const [shouldLoadDetailedStreams, setShouldLoadDetailedStreams] = useState(false);
-  const canLoadDetailedStreams = !!activityFilePath && !!activityId && isOwner;
+  const canLoadDetailedStreams =
+    !!activityFilePath && !!activityId && isOwner && !!selectedActivitySegment;
 
   useEffect(() => {
     setShouldLoadDetailedStreams(false);
@@ -415,12 +448,10 @@ function ActivityDetailScreen() {
     isLoading: isLoadingStreams,
     error: streamsError,
   } = api.activityFiles.getStreams.useQuery(
-    canLoadDetailedStreams
+    canLoadDetailedStreams && selectedActivitySegment
       ? {
           activityId: activityId,
-          scope: primaryActivitySegment?.id
-            ? { type: "segment" as const, segmentId: primaryActivitySegment.id }
-            : { type: "session" as const, sessionMessageIndex: 0 },
+          scope: { type: "segment" as const, segmentId: selectedActivitySegment.id },
         }
       : skipToken,
     {
@@ -461,8 +492,12 @@ function ActivityDetailScreen() {
   const activityLike = useResourceLike({
     entityId: activity?.id ?? "",
     entityType: "activity",
-    initialCount: activity?.engagement.likes,
-    initialLiked: activity?.engagement.viewerHasLiked,
+    ...(activity?.engagement.likes === undefined
+      ? {}
+      : { initialCount: activity.engagement.likes }),
+    ...(activity?.engagement.viewerHasLiked === undefined
+      ? {}
+      : { initialLiked: activity.engagement.viewerHasLiked }),
   });
 
   const handleLikeToggle = () => {
@@ -470,7 +505,10 @@ function ActivityDetailScreen() {
     activityLike.toggleLike();
   };
 
-  const comments = useEntityCommentsController({ entityId: activity?.id, entityType: "activity" });
+  const comments = useEntityCommentsController({
+    entityId: activity?.id ?? "",
+    entityType: "activity",
+  });
   const entityCommentsSheet = useEntityCommentsSheet();
   const [activeTab, setActiveTab] = useState<ActivityDetailTab>("overview");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -558,12 +596,22 @@ function ActivityDetailScreen() {
     });
   };
 
+  // Do not render a previous leg's response while a newly selected leg is loading.
+  const scopedStreamsData = isLoadingStreams ? undefined : streamsData;
   const { chartStreams, distanceStream, elevationStream, routeCoordinates } =
     useActivityDetailStreams({
       activity: activity
-        ? { id: activity.id, polyline: detail?.routePolyline ?? null, type: activityCategory }
+        ? {
+            id: activity.id,
+            polyline: hasMultipleActivityLegs ? null : (detail?.routePolyline ?? null),
+            type: activityCategory,
+          }
         : null,
-      streamsData,
+      streamsData: scopedStreamsData
+        ? omitUndefined({
+            records: scopedStreamsData.records?.map((record) => omitUndefined(record)),
+          })
+        : scopedStreamsData,
     });
   const isPreparingDetailedContent = canLoadDetailedStreams && !shouldLoadDetailedStreams;
   const isDetailedContentLoading =
@@ -572,12 +620,14 @@ function ActivityDetailScreen() {
     "Detailed streams are private to the activity owner. Summary metrics are still visible.";
   const shouldShowPrivateStreamMessage = !!activityFilePath && !isOwner;
 
-  const streamPresentation = streamsData?.analysis
-    ? presentActivityStreamAnalysis(streamsData.analysis)
+  const streamPresentation = scopedStreamsData?.analysis
+    ? presentActivityStreamAnalysis(scopedStreamsData.analysis)
     : null;
 
   // Get laps
-  const laps = parseActivityLapRecords(streamsData?.laps ?? detail?.laps);
+  const laps = parseActivityLapRecords(
+    scopedStreamsData?.laps ?? (activitySegments.length <= 1 ? detail?.laps : []),
+  );
   const ingestionMessage = getIngestionMessage(
     detail?.ingestion
       ? { status: detail.ingestion.status, last_error_message: detail.ingestion.lastErrorMessage }
@@ -710,6 +760,78 @@ function ActivityDetailScreen() {
             ) : null}
           </View>
 
+          {hasNoActivityLegs ? (
+            <VisualStateCard
+              message="No recorded activity segment is available for detailed analysis."
+              testID="activity-no-recorded-segment"
+              title="Recorded segments"
+            />
+          ) : orderedSegments.length > 1 && activitySegments.length > 0 ? (
+            <Card testID="activity-segment-selector">
+              <CardHeader>
+                <CardTitle>Recorded segments</CardTitle>
+              </CardHeader>
+              <CardContent className="gap-2">
+                {orderedSegments.map((segment) => {
+                  const activityLegIndex = activitySegments.findIndex(
+                    (activitySegment) => activitySegment.id === segment.id,
+                  );
+                  const isActivityLeg = segment.role === "activity";
+                  const isSelected = selectedActivitySegment?.id === segment.id;
+                  const label = isActivityLeg
+                    ? `Leg ${activityLegIndex + 1} · ${formatSegmentCategory(segment.activityCategory)}`
+                    : segment.role === "transition"
+                      ? "Transition"
+                      : segment.role === "rest"
+                        ? "Rest"
+                        : "Unclassified segment";
+                  const activeMs =
+                    segment.status === "available" && "activeMs" in segment.summary.timing
+                      ? segment.summary.timing.activeMs
+                      : undefined;
+
+                  return isActivityLeg ? (
+                    <Pressable
+                      accessibilityLabel={`Select ${label}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: isSelected }}
+                      className={
+                        isSelected
+                          ? "rounded-xl border border-primary bg-primary/10 px-3 py-3"
+                          : "rounded-xl border border-border px-3 py-3"
+                      }
+                      key={segment.id}
+                      onPress={() => setSelectedSegmentId(segment.id)}
+                      testID={`activity-segment-select-${segment.id}`}
+                    >
+                      <Text className="font-medium text-foreground">{label}</Text>
+                      {activeMs === undefined ? null : (
+                        <Text className="mt-1 text-xs text-muted-foreground">
+                          Active {formatDuration(Math.round(activeMs / 1_000))}
+                        </Text>
+                      )}
+                    </Pressable>
+                  ) : (
+                    <View
+                      accessibilityLabel={label}
+                      accessibilityRole="text"
+                      className="rounded-xl border border-border bg-muted/30 px-3 py-3"
+                      key={segment.id}
+                      testID={`activity-segment-boundary-${segment.id}`}
+                    >
+                      <Text className="font-medium text-muted-foreground">{label}</Text>
+                      {activeMs === undefined ? null : (
+                        <Text className="mt-1 text-xs text-muted-foreground">
+                          Active {formatDuration(Math.round(activeMs / 1_000))}
+                        </Text>
+                      )}
+                    </View>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Tabs
             accessibilityLabel="Activity detail sections"
             onValueChange={(tab) => setActiveTab(tab as ActivityDetailTab)}
@@ -811,7 +933,7 @@ function ActivityDetailScreen() {
             elevationStream ? (
               <ElevationProfileChart
                 elevationStream={elevationStream}
-                distanceStream={distanceStream || undefined}
+                {...(distanceStream == null ? {} : { distanceStream })}
                 preferredUnitSystem={preferredUnitSystem}
                 title="Elevation Profile"
                 height={200}
@@ -873,30 +995,46 @@ function ActivityDetailScreen() {
                 <View className="flex-row justify-between">
                   <View className="items-center">
                     <Text className="text-2xl font-bold">
-                      {typeof detail?.performance.poolLengthMeters === "number"
+                      {typeof selectedSegmentSummary?.swim?.poolLengthMeters === "number"
                         ? formatDisplayUnitValue(
                             toDisplayUnitValue(
                               {
                                 dimension: "pool_length",
-                                value: detail.performance.poolLengthMeters,
+                                value: selectedSegmentSummary.swim.poolLengthMeters,
                                 unit: "meters",
                               },
                               preferredUnitSystem,
                             ),
                           )
-                        : "--"}
+                        : activitySegments.length <= 1 &&
+                            typeof detail?.performance.poolLengthMeters === "number"
+                          ? formatDisplayUnitValue(
+                              toDisplayUnitValue(
+                                {
+                                  dimension: "pool_length",
+                                  value: detail.performance.poolLengthMeters,
+                                  unit: "meters",
+                                },
+                                preferredUnitSystem,
+                              ),
+                            )
+                          : "--"}
                     </Text>
                     <Text className="text-xs text-muted-foreground uppercase">Pool</Text>
                   </View>
                   <View className="items-center">
                     <Text className="text-2xl font-bold">
-                      {detail?.performance.totalStrokes ?? "--"}
+                      {selectedSegmentSummary?.swim?.strokeCount ??
+                        (activitySegments.length <= 1 ? detail?.performance.totalStrokes : null) ??
+                        "--"}
                     </Text>
                     <Text className="text-xs text-muted-foreground uppercase">Strokes</Text>
                   </View>
                   <View className="items-center">
                     <Text className="text-2xl font-bold">
-                      {detail?.performance.averageSwolf ?? "--"}
+                      {selectedSegmentSummary?.swim?.averageSwolf ??
+                        (activitySegments.length <= 1 ? detail?.performance.averageSwolf : null) ??
+                        "--"}
                     </Text>
                     <Text className="text-xs text-muted-foreground uppercase">Swolf</Text>
                   </View>
@@ -982,18 +1120,18 @@ function ActivityDetailScreen() {
           ) : null}
 
           {activeTab === "breakdown" ? (
-            activityCategory === "bike" && primaryActivitySegment?.status === "processing" ? (
+            activityCategory === "bike" && selectedActivitySegment?.status === "processing" ? (
               <VisualStateCard
                 title="Normalized Power"
                 state="loading"
                 message="Segment analysis is still processing. Normalized Power will appear when analysis completes."
                 testID="activity-segment-analysis-processing"
               />
-            ) : activityCategory === "bike" && primaryActivitySegment?.status === "failed" ? (
+            ) : activityCategory === "bike" && selectedActivitySegment?.status === "failed" ? (
               <VisualStateCard
                 title="Normalized Power"
                 state="error"
-                message={`Segment analysis failed: ${primaryActivitySegment.reason}`}
+                message={`Segment analysis failed: ${selectedActivitySegment.reason}`}
                 testID="activity-segment-analysis-failed"
               />
             ) : activityCategory === "bike" && normalizedPowerPresentation ? (

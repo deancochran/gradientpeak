@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   certifyProviderOAuthScopeCoverage,
   createProviderOAuthConfigRegistry,
+  getGarminOAuthConfig,
   getProviderOAuthConfig,
   getStravaOAuthConfig,
   getWahooOAuthConfig,
+  isGarminIntegrationEnabled,
   isStravaIntegrationEnabled,
   isWahooIntegrationEnabled,
 } from "./oauth-config";
@@ -25,6 +27,7 @@ describe("Wahoo server enablement", () => {
           ],
         },
         strava: { scopes: ["activity:read_all"] },
+        garmin: { scopes: [] },
       }),
     ).toThrow(/strava\/activity:write/i);
   });
@@ -119,5 +122,47 @@ describe("Wahoo server enablement", () => {
         OAUTH_CALLBACK_BASE_URL: "https://app.example.test",
       }),
     ).toMatchObject({ scopes: ["activity:read_all", "activity:write"], pkce: false });
+  });
+
+  it("uses Garmin's registration-fixed scope rather than inventing requested API scopes", () => {
+    expect(
+      getGarminOAuthConfig({
+        GARMIN_CLIENT_ID: "client",
+        GARMIN_CLIENT_SECRET: "secret",
+        OAUTH_CALLBACK_BASE_URL: "https://dev.gradientpeak.com",
+      }),
+    ).toMatchObject({
+      pkce: true,
+      scopes: [],
+      tokenClientAuthentication: "client_secret_post",
+    });
+  });
+
+  it.each([
+    [undefined, undefined, false],
+    ["client", undefined, false],
+    [undefined, "secret", false],
+    ["", "secret", false],
+    ["client", "  ", false],
+    ["null", "secret", false],
+    ["client", "secret", true],
+  ] as const)("derives Garmin enablement from credentials without an extra flag (%#)", (clientId, clientSecret, enabled) => {
+    const env = {
+      GARMIN_CLIENT_ID: clientId,
+      GARMIN_CLIENT_SECRET: clientSecret,
+      OAUTH_CALLBACK_BASE_URL: "https://dev.gradientpeak.com",
+    };
+    expect(isGarminIntegrationEnabled(env)).toBe(enabled);
+    expect(getGarminOAuthConfig(env) !== null).toBe(enabled);
+  });
+
+  it("still rejects invalid callback configuration", () => {
+    expect(
+      getGarminOAuthConfig({
+        GARMIN_CLIENT_ID: "client",
+        GARMIN_CLIENT_SECRET: "secret",
+        OAUTH_CALLBACK_BASE_URL: "not-a-url",
+      }),
+    ).toBeNull();
   });
 });

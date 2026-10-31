@@ -259,6 +259,8 @@ function buildTargetMetricCard(
   service: InsightCardProps["service"],
 ): TargetMetricCard | null {
   switch (target.type) {
+    case "rest":
+      return null;
     case "%FTP": {
       const performanceTargets = service?.getPerformanceTargets();
       const intensityScale = service?.getIntensityScale();
@@ -436,6 +438,8 @@ function resolveReadableTarget(
   service: InsightCardProps["service"],
 ) {
   switch (target.type) {
+    case "rest":
+      return "Rest";
     case "%FTP": {
       const performanceTargets = service?.getPerformanceTargets();
       const intensityScale = service?.getIntensityScale();
@@ -527,7 +531,11 @@ function ActivityPlanIntensityChart({
       style={fill ? { columnGap } : { columnGap, height }}
     >
       {allSteps.map((step, index) => {
-        const intensity = step.role === "activity" ? (step.targets[0]?.intensity ?? 50) : 0;
+        const firstTarget = step.targets[0];
+        const intensity =
+          step.role === "activity" && firstTarget?.type !== "rest"
+            ? (firstTarget?.intensity ?? 50)
+            : 0;
         const barHeight: DimensionValue = fill
           ? (`${Math.max(10, Math.min(100, intensity))}%` as DimensionValue)
           : Math.max(minBarHeight, (availableHeight ?? 1) * Math.min(1, intensity / 100));

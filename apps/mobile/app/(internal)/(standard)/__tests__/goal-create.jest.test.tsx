@@ -17,6 +17,10 @@ let mutationOptions:
     }
   | undefined;
 let ownerId = "profile-1";
+let pathname = "/goal-create";
+jest.mock("expo-router/react-navigation", () => ({
+  useIsFocused: () => pathname === "/goal-create",
+}));
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -34,7 +38,12 @@ jest.mock("expo-router", () => ({
     ),
   },
   useLocalSearchParams: () => ({ returnToTrainingPlanCreate: "1" }),
-  useNavigation: () => ({ dispatch: jest.fn() }),
+  usePathname: () => pathname,
+  useNavigation: () => ({
+    dispatch: jest.fn(),
+    addListener: jest.fn(() => jest.fn()),
+    getState: () => ({ index: 0, routes: [] }),
+  }),
   useRouter: () => ({ back: backMock, replace: jest.fn() }),
 }));
 
@@ -88,6 +97,7 @@ describe("goal create route", () => {
     jest.clearAllMocks();
     mutationOptions = undefined;
     ownerId = "profile-1";
+    pathname = "/goal-create";
   });
 
   it("uses the platform-specific keyboard avoidance structure, one vertical form surface, and a header Create action", async () => {

@@ -341,6 +341,12 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
+        name="chat"
+        options={{
+          title: "Assistant",
+        }}
+      />
+      <Stack.Screen
         name="search"
         options={{
           title: "Search",

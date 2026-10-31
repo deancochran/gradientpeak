@@ -17,6 +17,7 @@ import {
   findOwnedManualDiaryActivity,
   findSessionRpeOperation,
 } from "../../repositories/manual-training-diary-repository";
+import { resolveCurrentPlannedSessionPlan } from "../calendar/resolve-current-planned-session-plan";
 import { getCurrentAthletePlanningDate } from "../training-plan/appliedScheduleUseCases";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
@@ -68,9 +69,10 @@ export function assertManualDiaryDateIsCurrentOrPast(input: {
   }
 }
 
-function assertPlannedSessionCanBeCompleted(input: {
+async function assertPlannedSessionCanBeCompleted(input: {
   activityCategory: ManualTrainingDiaryObservation["activityCategory"];
   expectedRevision: number;
+  repository: ReturnType<typeof createDrizzlePlannedSessionRepository>;
   session: Awaited<
     ReturnType<ReturnType<typeof createDrizzlePlannedSessionRepository>["getOwned"]>
   >;
@@ -85,10 +87,12 @@ function assertPlannedSessionCanBeCompleted(input: {
       "Planned session changed before manual completion could be linked",
     );
   }
-  if (
-    session.prescription.resolutionManifest.resolved_structure.activity_category !==
-    input.activityCategory
-  ) {
+  const currentPlan = await resolveCurrentPlannedSessionPlan({
+    repository: input.repository,
+    profileId: session.profileId,
+    session,
+  });
+  if (!currentPlan || currentPlan.structure.activity_category !== input.activityCategory) {
     throw new ManualDiaryConflictError(
       "Manual diary activity category must match the planned session",
     );
@@ -158,9 +162,10 @@ export async function createManualDiaryEntry(input: {
         profileId: input.profileId,
         sessionId: input.plannedSession.sessionId,
       });
-      assertPlannedSessionCanBeCompleted({
+      await assertPlannedSessionCanBeCompleted({
         activityCategory: observation.activityCategory,
         expectedRevision: input.plannedSession.expectedRevision,
+        repository: plannedSessionRepository,
         session,
       });
       if (!session) throw new ManualDiaryConflictError("Planned session is unavailable");

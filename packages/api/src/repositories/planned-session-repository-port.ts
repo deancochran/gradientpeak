@@ -1,8 +1,4 @@
-import type {
-  ActivityPlanAdaptation,
-  ActivityPlanStructure,
-  ActivityPlanTrainingIntent,
-} from "@repo/core/activity-plan";
+import type { ActivityPlanStructure, ActivityPlanTrainingIntent } from "@repo/core/activity-plan";
 import type { PlannedSession } from "@repo/core/calendar";
 import type {
   PlannedSessionMutation,
@@ -24,7 +20,6 @@ export type ActivityPlanPrescriptionSource = {
   description: string | null;
   revision: number;
   structure: ActivityPlanStructure;
-  adaptation: ActivityPlanAdaptation | null;
   trainingIntent: ActivityPlanTrainingIntent;
   structureHash: string;
   semanticHash: string;

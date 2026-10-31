@@ -1,34 +1,29 @@
-import { normalizePaceInput, parseMmSsToSeconds } from "@repo/core/utils/fitness-inputs";
-import { useEffect, useState } from "react";
+import { useImperativeHandle, useRef } from "react";
 import { Input } from "../input/index.web";
 import { Label } from "../label/index.web";
 import type { PaceInputProps } from "./shared";
+import { usePaceInput } from "./use-pace-input";
 
-function PaceInput({
-  accessibilityHint: _accessibilityHint,
-  disabled = false,
-  error,
-  helperText = "Use mm:ss per kilometer",
-  id,
-  label,
-  name,
-  onBlur,
-  onChange,
-  onPaceSecondsChange,
-  placeholder = "e.g., 4:15",
-  required = false,
-  unitLabel = "/km",
-  value,
-  testId,
-}: PaceInputProps) {
-  const [draftValue, setDraftValue] = useState(value);
+function PaceInput(props: PaceInputProps) {
+  const {
+    accessibilityHint: _accessibilityHint,
+    disabled = false,
+    error,
+    helperText = "Use mm:ss per kilometer",
+    id,
+    label,
+    name,
+    placeholder = "e.g., 4:15",
+    required = false,
+    unitLabel = "/km",
+    testId,
+  } = props;
+  const input = usePaceInput(props);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useImperativeHandle(props.ref, () => ({ focus: () => inputRef.current?.focus() }), []);
   const inputId = `${id}-field`;
   const descriptionId = `${id}-description`;
   const errorId = `${id}-error`;
-
-  useEffect(() => {
-    setDraftValue(value);
-  }, [value]);
 
   return (
     <div className="grid gap-2">
@@ -38,6 +33,7 @@ function PaceInput({
       </Label>
       <div className="flex items-center gap-2">
         <Input
+          inputRef={inputRef}
           accessibilityLabel={label}
           aria-describedby={
             [helperText ? descriptionId : undefined, error ? errorId : undefined]
@@ -50,30 +46,13 @@ function PaceInput({
           disabled={disabled}
           id={inputId}
           name={name}
-          onBlur={() => {
-            if (!disabled) {
-              const normalized = normalizePaceInput(draftValue);
-              if (normalized) {
-                if (normalized !== draftValue) {
-                  setDraftValue(normalized);
-                  onChange(normalized);
-                }
-                onPaceSecondsChange?.(parseMmSsToSeconds(normalized));
-              }
-            }
-            onBlur?.();
-          }}
-          onChange={(event) => {
-            if (disabled) return;
-            setDraftValue(event.currentTarget.value);
-            onChange(event.currentTarget.value);
-            onPaceSecondsChange?.(parseMmSsToSeconds(event.currentTarget.value));
-          }}
+          onBlur={input.blur}
+          onChange={(event) => input.change(event.currentTarget.value)}
           placeholder={placeholder}
           required={required}
           testId={testId}
           type="text"
-          value={draftValue}
+          value={input.text}
         />
         <span className="text-xs text-muted-foreground">{unitLabel}</span>
       </div>

@@ -28,12 +28,11 @@ const createPlan = createSystemActivityPlanBuilderFactory("bike", [
 export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
   id: "8a1b2c3d-4e5f-4a7b-8c9d-0e1f2a3b4c5d",
   name: "VO2 Max Development",
-  description: "75-minute activity with challenging VO2 max intervals",
+  description: "89-minute activity with challenging VO2 max intervals",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
       name: "Progressive Warm-up",
-      purpose: "warmup",
       duration: Duration.minutes(15),
       targets: [Target.ftp(60)],
       notes: "Start easy and build gradually. Include some leg openers.",
@@ -43,14 +42,12 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Activation Effort",
-          purpose: "warmup",
           duration: Duration.seconds(30),
           targets: [Target.ftp(120)],
           notes: "Hard but controlled effort",
         },
         {
           name: "Recovery",
-          purpose: "recovery",
           duration: Duration.seconds(150),
           targets: [Target.ftp(55)],
           notes: "Complete recovery before next effort",
@@ -59,7 +56,6 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
     })
     .step({
       name: "Preparation",
-      purpose: "recovery",
       duration: Duration.minutes(5),
       targets: [Target.ftp(55)],
       notes: "Mental preparation for the main set",
@@ -69,14 +65,12 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "VO2 Max Interval",
-          purpose: "work",
           duration: Duration.minutes(5),
           targets: [Target.ftp(110)],
           notes: "Sustained effort at VO2 max power. Focus on smooth breathing.",
         },
         {
           name: "Recovery",
-          purpose: "recovery",
           duration: Duration.minutes(4),
           targets: [Target.ftp(55)],
           notes: "Active recovery. Heart rate should come down significantly.",
@@ -85,7 +79,6 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
     })
     .step({
       name: "Cool-down",
-      purpose: "cooldown",
       duration: Duration.minutes(15),
       targets: [Target.ftp(50)],
       notes: "Take time to cool down properly after intense efforts",
@@ -98,35 +91,6 @@ export const SAMPLE_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
  * Total time: 45 minutes
  * Estimated Common Load: ~25
  */
-export const SAMPLE_RECOVERY_WORKOUT: RecordingServiceActivityPlan = {
-  id: "9b2c3d4e-5f6a-4b8c-9d0e-1f2a3b4c5d6e",
-  name: "Active Recovery Ride",
-  description: "45-minute easy recovery ride to promote blood flow",
-  gps_recording_enabled: false,
-  structure: createPlan()
-    .step({
-      name: "Easy Warm-up",
-      purpose: "warmup",
-      duration: Duration.minutes(5),
-      targets: [Target.ftp(45)],
-      notes: "Start very easy, just getting the legs moving",
-    })
-    .step({
-      name: "Steady Recovery Effort",
-      purpose: "recovery",
-      duration: Duration.minutes(35),
-      targets: [Target.maxHR(65)],
-      notes: "Comfortable conversational effort. Should feel refreshing, not tiring.",
-    })
-    .step({
-      name: "Easy Cool-down",
-      purpose: "cooldown",
-      duration: Duration.minutes(5),
-      targets: [Target.ftp(45)],
-      notes: "End as easy as you started",
-    })
-    .build(),
-};
 
 /**
  * Sprint Power Development Activity
@@ -141,7 +105,6 @@ export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Progressive Warm-up",
-      purpose: "warmup",
       duration: Duration.minutes(15),
       targets: [Target.ftp(60)],
       notes: "Include some higher cadence work to prepare for sprints",
@@ -151,14 +114,12 @@ export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Sprint Opener",
-          purpose: "warmup",
           duration: Duration.seconds(10),
-          targets: [Target.watts(600)],
+          targets: [Target.rpe(10)],
           notes: "All-out sprint from moderate speed",
         },
         {
           name: "Recovery",
-          purpose: "recovery",
           duration: Duration.seconds(230),
           targets: [Target.ftp(55)],
           notes: "Complete recovery",
@@ -170,14 +131,12 @@ export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Max Sprint",
-          purpose: "work",
           duration: Duration.seconds(15),
-          targets: [Target.watts(750)],
+          targets: [Target.rpe(10)],
           notes: "All-out sprint - maximum power output",
         },
         {
           name: "Recovery",
-          purpose: "recovery",
           duration: Duration.seconds(345),
           targets: [Target.ftp(50)],
           notes: "Complete recovery is essential for quality",
@@ -186,7 +145,6 @@ export const SAMPLE_SPRINT_WORKOUT: RecordingServiceActivityPlan = {
     })
     .step({
       name: "Cool-down",
-      purpose: "cooldown",
       duration: Duration.minutes(10),
       targets: [Target.ftp(50)],
       notes: "Easy spinning to flush lactate",
@@ -198,19 +156,17 @@ export const SAMPLE_THRESHOLD_HR_WORKOUT: RecordingServiceActivityPlan = {
   id: "1d4e5f6a-7b8c-4d0e-9f2a-3b4c5d6e7f8a",
   name: "Threshold Heart Rate Intervals",
   description:
-    "45-minute indoor trainer activity focused on threshold heart rate intervals. Maintain steady cadence of 85-95 RPM and target threshold HR zones during main intervals.",
+    "55-minute indoor trainer activity focused on threshold heart rate intervals. Maintain steady cadence of 85-95 RPM and target threshold HR zones during main intervals.",
   gps_recording_enabled: false,
   structure: createPlan()
     .step({
       name: "Easy Warm-up",
-      purpose: "warmup",
       duration: Duration.minutes(10),
       targets: [Target.thresholdHR(60)],
       notes: "Spin easy, focus on smooth pedaling and preparing the legs",
     })
     .step({
       name: "Gradual Build",
-      purpose: "warmup",
       duration: Duration.minutes(5),
       targets: [Target.thresholdHR(75)],
       notes: "Steadily increase intensity to get near threshold",
@@ -220,14 +176,12 @@ export const SAMPLE_THRESHOLD_HR_WORKOUT: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Threshold Interval",
-          purpose: "work",
           duration: Duration.minutes(5),
           targets: [Target.thresholdHR(100)],
           notes: "Maintain steady cadence, focus on consistent threshold effort",
         },
         {
           name: "Recovery",
-          purpose: "recovery",
           duration: Duration.seconds(150),
           targets: [Target.thresholdHR(65)],
           notes: "Spin easy to recover, prepare for next interval",
@@ -236,7 +190,6 @@ export const SAMPLE_THRESHOLD_HR_WORKOUT: RecordingServiceActivityPlan = {
     })
     .step({
       name: "Cool-down",
-      purpose: "cooldown",
       duration: Duration.minutes(10),
       targets: [Target.thresholdHR(55)],
       notes: "Spin easy, focus on relaxed breathing and form",
@@ -253,28 +206,24 @@ export const SAMPLE_TESTING_WORKOUT: RecordingServiceActivityPlan = {
   structure: createPlan()
     .step({
       name: "Warm-up Spin",
-      purpose: "warmup",
       duration: Duration.seconds(10),
       targets: [Target.ftp(60)],
       notes: "Smooth cadence around 90 RPM",
     })
     .step({
       name: "Threshold Effort",
-      purpose: "work",
       duration: Duration.seconds(10),
       targets: [Target.thresholdHR(100)],
       notes: "Simulate sustained threshold effort",
     })
     .step({
       name: "High-HR Surge",
-      purpose: "work",
       duration: Duration.seconds(10),
       targets: [Target.maxHR(95)],
       notes: "Short high-intensity test for HR mapping",
     })
     .step({
       name: "Fixed Watt Step",
-      purpose: "work",
       duration: Duration.seconds(10),
       targets: [Target.watts(250)],
       notes: "Test absolute watt targeting logic",
@@ -284,14 +233,12 @@ export const SAMPLE_TESTING_WORKOUT: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Cadence Drill",
-          purpose: "technique",
           duration: Duration.seconds(5),
           targets: [Target.cadence(110), Target.rpe(3)],
           notes: "Check non-power/HR target parsing",
         },
         {
           name: "Micro-Recovery",
-          purpose: "recovery",
           duration: Duration.seconds(2),
           targets: [Target.ftp(50)],
           notes: "Verify short-duration handling",
@@ -300,7 +247,6 @@ export const SAMPLE_TESTING_WORKOUT: RecordingServiceActivityPlan = {
     })
     .step({
       name: "Cool-down",
-      purpose: "cooldown",
       duration: Duration.seconds(11),
       targets: [Target.thresholdHR(60)],
       notes: "End of test sequence",
@@ -321,7 +267,6 @@ export const SYSTEM_SWEET_SPOT_WORKOUT: RecordingServiceActivityPlan = {
     })
     .step({
       name: "Build",
-      purpose: "warmup",
       duration: Duration.minutes(5),
       targets: [Target.ftp(75)],
       notes: "Gradually increase intensity",
@@ -332,14 +277,12 @@ export const SYSTEM_SWEET_SPOT_WORKOUT: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Sweet Spot",
-          purpose: "work",
           duration: Duration.minutes(10),
           targets: [Target.ftp(90)],
           notes: "Steady effort in sweet spot zone",
         },
         {
           name: "Recovery",
-          purpose: "recovery",
           duration: Duration.minutes(5),
           targets: [Target.ftp(55)],
           notes: "Easy recovery spin",
@@ -365,14 +308,12 @@ const systemVo2MaxStructure = createPlan()
     steps: [
       {
         name: "Hard",
-        purpose: "work",
         duration: Duration.minutes(3),
         targets: [Target.ftp(120)],
         notes: "Maximum sustainable effort",
       },
       {
         name: "Recovery",
-        purpose: "recovery",
         duration: Duration.minutes(3),
         targets: [Target.ftp(50)],
         notes: "Full recovery",
@@ -384,16 +325,6 @@ const systemVo2MaxStructure = createPlan()
     targets: [Target.ftp(55)],
   })
   .build();
-const systemVo2Segment = systemVo2MaxStructure.segments[0];
-if (!systemVo2Segment || systemVo2Segment.role !== "activity") {
-  throw new Error("System VO2max structure is missing its activity segment");
-}
-const systemVo2Interval = systemVo2Segment.intervals[1];
-const systemVo2WorkStep = systemVo2Interval?.steps[0];
-const systemVo2RecoveryStep = systemVo2Interval?.steps[1];
-if (!systemVo2Interval || !systemVo2WorkStep || !systemVo2RecoveryStep) {
-  throw new Error("System VO2max structure is missing its adaptable interval");
-}
 
 export const SYSTEM_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
   id: "e3d9a2b1-6c0f-5f4b-9a8e-0d7c5b3f2a1e",
@@ -403,72 +334,6 @@ export const SYSTEM_VO2_MAX_WORKOUT: RecordingServiceActivityPlan = {
   gps_recording_enabled: false,
   training_intent: "vo2max",
   structure: systemVo2MaxStructure,
-  adaptation: {
-    controls: [
-      {
-        id: "4cefb72f-82d0-4e8b-8259-241ffbe18a80",
-        key: "work_repetitions",
-        label: "Work repetitions",
-        kind: "interval_repetitions",
-        range: { minimum: 3, default: 5, maximum: 6, increment: 1 },
-        targets: [
-          {
-            type: "interval_repetitions",
-            activitySegmentId: systemVo2Segment.id,
-            intervalId: systemVo2Interval.id,
-          },
-        ],
-      },
-      {
-        id: "984774d3-7416-4c35-ae72-013ce36ce25a",
-        key: "work_seconds",
-        label: "Work duration",
-        kind: "step_quantity",
-        range: { minimum: 180, default: 180, maximum: 300, increment: 60 },
-        targets: [
-          {
-            type: "step_quantity",
-            activitySegmentId: systemVo2Segment.id,
-            intervalId: systemVo2Interval.id,
-            stepId: systemVo2WorkStep.id,
-            quantityType: "time",
-          },
-        ],
-      },
-      {
-        id: "b702d29f-e5eb-49bc-a30e-2c2e8feb631e",
-        key: "recovery_seconds",
-        label: "Recovery duration",
-        kind: "recovery_quantity",
-        range: { minimum: 120, default: 180, maximum: 300, increment: 60 },
-        targets: [
-          {
-            type: "recovery_step",
-            activitySegmentId: systemVo2Segment.id,
-            intervalId: systemVo2Interval.id,
-            stepId: systemVo2RecoveryStep.id,
-            quantityType: "time",
-          },
-        ],
-      },
-      {
-        id: "1d0566ac-d959-4c5d-a8d2-46fd43c4e208",
-        key: "work_ftp_percent",
-        label: "Work intensity",
-        kind: "target_intensity",
-        range: { minimum: 110, default: 120, maximum: 125, increment: 5 },
-        targets: [
-          {
-            type: "target_intensity",
-            activitySegmentId: systemVo2Segment.id,
-            intervalId: systemVo2Interval.id,
-            stepId: systemVo2WorkStep.id,
-            targetType: "%FTP",
-          },
-        ],
-      },
-    ],
-  },
 };
 
 export const SYSTEM_FTP_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
@@ -487,14 +352,12 @@ export const SYSTEM_FTP_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
       steps: [
         {
           name: "Threshold",
-          purpose: "work",
           duration: Duration.minutes(8),
           targets: [Target.ftp(95)],
           notes: "At threshold - max sustainable for 1 hour",
         },
         {
           name: "Recovery",
-          purpose: "recovery",
           duration: Duration.minutes(4),
           targets: [Target.ftp(55)],
         },
@@ -509,7 +372,6 @@ export const SYSTEM_FTP_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
 
 export const SAMPLE_INDOOR_TRAINER_ACTIVITIES: Array<RecordingServiceActivityPlan> = [
   SAMPLE_VO2_MAX_WORKOUT,
-  SAMPLE_RECOVERY_WORKOUT,
   SAMPLE_SPRINT_WORKOUT,
   SAMPLE_THRESHOLD_HR_WORKOUT,
   SAMPLE_TESTING_WORKOUT,

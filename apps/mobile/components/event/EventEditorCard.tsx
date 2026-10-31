@@ -24,6 +24,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/shared/Screen
 import { SearchField } from "@/components/shared/SearchField";
 import { eventDateForEditor, getDeviceTimeZone } from "@/lib/calendar/eventSchedule";
 import { formatRecurrenceUntil, recurrenceEndDate } from "@/lib/calendar/recurrenceInput";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 export type CreateEventType = "custom" | "planned";
 export type EventRecurrenceFrequency = "none" | "daily" | "weekly" | "monthly";
@@ -286,7 +287,7 @@ export function EventEditorCard({
                 ) : activityPlansError ? (
                   <ErrorState
                     description="Activity plans could not be loaded."
-                    onAction={onRetryActivityPlans}
+                    {...omitUndefined({ onAction: onRetryActivityPlans })}
                     testID={`${testIDPrefix}-activity-plan-retry`}
                     title="Unable to load activity plans"
                   />
@@ -297,7 +298,11 @@ export function EventEditorCard({
                       return (
                         <View
                           key={plan.id}
-                          className={isSelected ? "rounded-2xl border-2 border-primary" : undefined}
+                          {...omitUndefined({
+                            className: isSelected
+                              ? "rounded-2xl border-2 border-primary"
+                              : undefined,
+                          })}
                         >
                           <ActivityPlanCard
                             plan={plan}

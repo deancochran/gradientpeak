@@ -15,6 +15,7 @@ const TargetZoneIndicator = memo<TargetZoneIndicatorProps>(function TargetZoneIn
   target,
   current,
 }) {
+  if (target.type === "rest") return null;
   const [minVal, maxVal] = getTargetRange(target);
   const targetVal = target.intensity;
 

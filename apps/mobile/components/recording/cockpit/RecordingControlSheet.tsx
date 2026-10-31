@@ -12,6 +12,7 @@ import { Pressable, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { RecordingControls } from "@/components/recording/footer";
 import { AppBottomSheetContent } from "@/components/shared/AppBottomSheet";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { useTheme } from "@/lib/stores/theme-store";
 import { getResolvedThemeScale, type ResolvedThemeMode } from "@/lib/theme";
 import type { RecordingSheetSetupItem } from "./model/recordingSheetModel";
@@ -189,10 +190,12 @@ export function RecordingControlSheet({
                       sensorCount,
                       sessionContract,
                     })}
-                    onRemove={getSetupRemoveHandler(item.id, {
-                      onRemovePlan,
-                      onRemoveRoute,
-                      sessionContract,
+                    {...omitUndefined({
+                      onRemove: getSetupRemoveHandler(item.id, {
+                        onRemovePlan,
+                        onRemoveRoute,
+                        sessionContract,
+                      }),
                     })}
                   />
                 ))}

@@ -9,7 +9,8 @@ import { ProfileCard } from "@/components/profile/ProfileCard";
 import { api } from "@/lib/api";
 import type { GroupSummary, MyGroupInvitation } from "@/lib/groups";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
-import { ONBOARDING_SOCIAL_SELECTION_LIMIT } from "@/lib/onboarding/onboarding-recovery";
+import { omitUndefined } from "@/lib/omitUndefined";
+import { ONBOARDING_SOCIAL_SELECTION_LIMIT } from "@/lib/onboarding/validation";
 import type { OnboardingGroupAction, StepProps } from "../types";
 
 type SocialProfile = inferRouterOutputs<AppRouter>["social"]["searchUsers"]["users"][number];
@@ -298,10 +299,10 @@ function AccountGroupsAndPeopleStep({ data, updateData }: StepProps) {
           const canSelect = group.viewer.canJoin || group.viewer.canRequestToJoin;
           return (
             <GroupCard
+              {...omitUndefined({ onPress: canSelect ? () => toggleGroup(group) : undefined })}
               disabled={!canSelect}
               group={group}
               key={group.id}
-              onPress={canSelect ? () => toggleGroup(group) : undefined}
               selected={selected}
               testID={`onboarding-group-${group.id}`}
               viewer={group.viewer}
@@ -340,9 +341,9 @@ function AccountGroupsAndPeopleStep({ data, updateData }: StepProps) {
             profile.follow_status === "accepted" || profile.follow_status === "pending";
           return (
             <ProfileCard
+              {...omitUndefined({ onPress: disabled ? undefined : () => togglePerson(profile) })}
               disabled={disabled}
               key={profile.id}
-              onPress={disabled ? undefined : () => togglePerson(profile)}
               profile={profile}
               selected={selected}
               supportingText={

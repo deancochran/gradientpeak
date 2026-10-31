@@ -4,17 +4,19 @@ import {
   copyTrainingPlanWeek,
   summarizeTrainingPlanWeek,
 } from "@repo/core";
+import { formatLocalDateOnly } from "@repo/core/utils/fitness-inputs";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
 import { Textarea } from "@repo/ui/components/textarea";
 import { skipToken } from "@tanstack/react-query";
 import type { inferRouterInputs } from "@trpc/server";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 
 import { api } from "../../lib/api/client";
-import { useUnsavedChangesGuard } from "../../lib/use-unsaved-changes-guard";
+import { useFormLifetime } from "../../lib/use-form-lifetime";
+import { useAuth } from "../providers/auth-provider";
 import {
   buildTrainingPlanStructure,
   summarizeTrainingPlan,
@@ -28,19 +30,89 @@ const startDateSchema = z.iso.date();
 type TrainingPlanEditorProps = {
   planId?: string;
   onSaved: (id: string) => void;
+  onCancel?: () => void;
 };
 
 type TrainingPlanCommitRequest = inferRouterInputs<AppRouter>["trainingPlans"]["commit"];
 
-export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps) {
+function isDefinitiveRejection(error: unknown) {
+  if (!error || typeof error !== "object" || !("data" in error)) return false;
+  const data = error.data;
+  return (
+    !!data &&
+    typeof data === "object" &&
+    "code" in data &&
+    (data.code === "BAD_REQUEST" ||
+      data.code === "UNAUTHORIZED" ||
+      data.code === "FORBIDDEN" ||
+      data.code === "NOT_FOUND")
+  );
+}
+
+export function TrainingPlanEditor(props: TrainingPlanEditorProps) {
+  const lifetime = useFormLifetime();
+  const { user, isLoading } = useAuth();
+  const account = useRef(user?.id ?? null);
+  account.current = user?.id ?? null;
+  const getAccountId = useCallback(() => account.current, []);
+  if (isLoading) return <p>Checking account…</p>;
+  if (!user) return <p>Sign in to open training-plan drafts.</p>;
+  return (
+    <TrainingPlanEditorSession
+      key={`${user.id}:${props.planId ?? "new"}:${lifetime.sessionKey}`}
+      accountId={user.id}
+      getAccountId={getAccountId}
+      {...props}
+      isCurrent={lifetime.isCurrent}
+      onCancel={() => {
+        lifetime.end();
+        props.onCancel?.();
+      }}
+    />
+  );
+}
+
+function TrainingPlanEditorSession({
+  onSaved,
+  planId,
+  accountId,
+  getAccountId,
+  onCancel,
+  isCurrent,
+}: TrainingPlanEditorProps & {
+  accountId: string;
+  getAccountId: () => string | null;
+  onCancel: () => void;
+  isCurrent: () => boolean;
+}) {
+  const mounted = useRef(true);
+  const saveGuard = useRef(false);
+  const completed = useRef(false);
+  const [savePending, setSavePending] = useState(false);
+  const [editBase, setEditBase] = useState<{ revision: number; structureHash: string } | null>(
+    null,
+  );
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      retainedCommitRequestRef.current = null;
+      acknowledgedRequest.current = null;
+    };
+  }, []);
   const utils = api.useUtils();
   const planQuery = api.trainingPlans.get.useQuery(planId ? { id: planId } : skipToken, {
     enabled: Boolean(planId),
   });
-  const activityPlansQuery = api.activityPlans.list.useQuery({
-    ownerScope: "own",
-    limit: 100,
-  });
+  const [activitySearch, setActivitySearch] = useState("");
+  const activityPlansQuery = api.activityPlans.list.useInfiniteQuery(
+    {
+      ownerScope: "own",
+      search: activitySearch.trim() || undefined,
+      limit: 25,
+    },
+    { getNextPageParam: (page) => page.nextCursor },
+  );
   const profileQuery = api.profiles.get.useQuery();
   const athleteReadModelQuery = api.athleteIntelligence.getReadModel.useQuery(
     profileQuery.data
@@ -58,57 +130,29 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [contentVisibility, setContentVisibility] = useState<ContentVisibility>("private");
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(() => formatLocalDateOnly(new Date()));
   const [sessions, setSessions] = useState<TrainingPlanSessionDraft[]>([]);
   const [sourceStructure, setSourceStructure] = useState<unknown>(undefined);
   const [hydratedId, setHydratedId] = useState<string | null>(null);
   const [projectionConflict, setProjectionConflict] = useState<{
     message: string;
-    fingerprint: string;
     reason: "state" | "plan";
   } | null>(null);
+  const acknowledgedRequest = useRef<{ operationId: string; planId: string } | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [startDateError, setStartDateError] = useState<string | null>(null);
   const [copySourceWeek, setCopySourceWeek] = useState(0);
   const [copyDestinationWeek, setCopyDestinationWeek] = useState(1);
-  const initialDraftRef = useRef<string | null>(null);
-  const snapshotRef = useRef<{
-    description: string;
-    contentVisibility: ContentVisibility;
-    name: string;
-    sessions: TrainingPlanSessionDraft[];
-    sourceStructure: unknown;
-    startDate: string;
-  } | null>(null);
-
-  if (!planId && snapshotRef.current === null) {
-    snapshotRef.current = {
-      description,
-      contentVisibility,
-      name,
-      sessions,
-      sourceStructure,
-      startDate,
-    };
-  }
-
   useEffect(() => {
-    if (!planId || !planQuery.data || hydratedId === planId) return;
+    if (!planId || !planQuery.data || planQuery.data.id !== planId || hydratedId === planId) return;
     setName(planQuery.data.name);
     setDescription(planQuery.data.description ?? "");
     setContentVisibility(planQuery.data.content_visibility);
     setSessions(toTrainingPlanSessionDrafts(planQuery.data.structure));
     setSourceStructure(planQuery.data.structure);
-    snapshotRef.current = {
-      description: planQuery.data.description ?? "",
-      contentVisibility: planQuery.data.content_visibility,
-      name: planQuery.data.name,
-      sessions: toTrainingPlanSessionDrafts(planQuery.data.structure),
-      sourceStructure: structuredClone(planQuery.data.structure),
-      startDate,
-    };
     setHydratedId(planId);
-  }, [hydratedId, planId, planQuery.data, startDate]);
+    setEditBase(planQuery.data.editor ? { ...planQuery.data.editor } : null);
+  }, [hydratedId, planId, planQuery.data]);
 
   const preview = useMemo(() => {
     try {
@@ -123,29 +167,10 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
     }
   }, [sessions, sourceStructure]);
 
-  const draftFingerprint = useMemo(
-    () =>
-      JSON.stringify({
-        description,
-        contentVisibility,
-        name,
-        startDate,
-        sessions,
-        structure: preview.structure,
-      }),
-    [description, contentVisibility, name, preview.structure, sessions, startDate],
-  );
-  if (!planId && initialDraftRef.current === null) initialDraftRef.current = draftFingerprint;
-  if (planId && hydratedId === planId && initialDraftRef.current === null) {
-    initialDraftRef.current = draftFingerprint;
-  }
-  const commitMutation = api.trainingPlans.commit.useMutation();
-  const saving = commitMutation.isPending;
-  const { guardedCancel, markSaved } = useUnsavedChangesGuard({
-    draft: draftFingerprint,
-    dirty: initialDraftRef.current !== null && draftFingerprint !== initialDraftRef.current,
-    pending: saving,
-  });
+  const commitMutation = api.trainingPlans.commit.useMutation({ retry: false });
+  const saving = savePending || commitMutation.isPending;
+  const retainedCommitRequestRef = useRef<TrainingPlanCommitRequest | null>(null);
+  const [hasUncertainCommit, setHasUncertainCommit] = useState(false);
   const authoritativePreviewInput = useMemo(() => {
     if (!preview.structure || !name.trim()) return null;
     const commonDraft = {
@@ -156,7 +181,7 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
       previewStartDate: startDate,
     };
     if (!planId) return { kind: "create" as const, draft: commonDraft };
-    const editor = planQuery.data?.editor;
+    const editor = editBase;
     if (!editor) return null;
     return {
       kind: "update" as const,
@@ -167,15 +192,7 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
         expectedStructureHash: editor.structureHash,
       },
     };
-  }, [
-    description,
-    contentVisibility,
-    name,
-    planId,
-    planQuery.data?.editor,
-    preview.structure,
-    startDate,
-  ]);
+  }, [description, contentVisibility, name, planId, editBase, preview.structure, startDate]);
   const authoritativePreviewQuery = api.trainingPlans.preview.useQuery(
     authoritativePreviewInput ?? skipToken,
     {
@@ -185,9 +202,7 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
     },
   );
 
-  const retainedCommitRequestRef = useRef<TrainingPlanCommitRequest | null>(null);
-  const [hasUncertainCommit, setHasUncertainCommit] = useState(false);
-  const activityPlans = activityPlansQuery.data?.items ?? [];
+  const activityPlans = activityPlansQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const authoritativeProjection =
     authoritativePreviewQuery.data?.status === "available"
       ? authoritativePreviewQuery.data.simulation
@@ -241,124 +256,192 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
   };
 
   const save = async () => {
-    setFormError(null);
-    const retainedCommitRequest = retainedCommitRequestRef.current;
-    if (retainedCommitRequest) {
-      try {
-        const result = await commitMutation.mutateAsync(retainedCommitRequest);
-        if (result.status === "saved") {
+    if (!mounted.current || !isCurrent() || saveGuard.current || completed.current) return;
+    if (getAccountId() !== accountId) return;
+    saveGuard.current = true;
+    setSavePending(true);
+    let acknowledged = false;
+    const current = () => mounted.current && isCurrent() && getAccountId() === accountId;
+    try {
+      setFormError(null);
+      const retainedCommitRequest = retainedCommitRequestRef.current;
+      if (retainedCommitRequest) {
+        try {
+          const knownId =
+            acknowledgedRequest.current?.operationId === retainedCommitRequest.operationId
+              ? acknowledgedRequest.current.planId
+              : null;
+          const result = knownId
+            ? { status: "saved" as const, planId: knownId }
+            : await commitMutation.mutateAsync(retainedCommitRequest);
+          if (!current()) {
+            if (result.status === "saved") await utils.trainingPlans.invalidate();
+            return;
+          }
+          if (result.status === "saved") {
+            acknowledged = true;
+            acknowledgedRequest.current = {
+              operationId: retainedCommitRequest.operationId,
+              planId: result.planId,
+            };
+            await utils.trainingPlans.invalidate();
+            if (!current()) return;
+            await onSaved(result.planId);
+            if (current()) {
+              retainedCommitRequestRef.current = null;
+              acknowledgedRequest.current = null;
+              setHasUncertainCommit(false);
+              completed.current = true;
+            }
+            return;
+          }
           retainedCommitRequestRef.current = null;
           setHasUncertainCommit(false);
-          await utils.trainingPlans.invalidate();
-          markSaved();
-          onSaved(result.planId);
+          if (result.status === "stale") {
+            setProjectionConflict({
+              reason: result.reason === "state_revision" ? "state" : "plan",
+              message:
+                "The prior save was not applied. Your draft is preserved; reload the saved plan or retry state validation.",
+            });
+          }
+          setFormError(
+            "The prior save was not applied. Review the refreshed plan before saving again.",
+          );
+          await Promise.allSettled([athleteReadModelQuery.refetch(), planQuery.refetch()]);
+        } catch (error) {
+          if (!current()) return;
+          // A rejected replay says nothing about whether the earlier attempt committed.
+          setFormError(
+            `${error instanceof Error ? error.message : "Could not save this plan."} ${acknowledged ? "The plan was saved. Retry to finish updating this view." : "The outcome is unknown; retry the same save to reconcile it."}`,
+          );
+        }
+        return;
+      }
+      if (!name.trim()) {
+        setFormError("Plan name is required.");
+        return;
+      }
+      if (!startDateSchema.safeParse(startDate).success) {
+        setStartDateError("Enter a valid plan start date.");
+        return;
+      }
+      if (!preview.structure) {
+        setFormError(preview.error ?? "Add at least one valid activity.");
+        return;
+      }
+      if (
+        !authoritativePreviewInput ||
+        !authoritativeProjection ||
+        authoritativePreviewQuery.isFetching
+      ) {
+        setFormError("Wait for the authoritative preview before saving this plan.");
+        return;
+      }
+      try {
+        const commonDraft = {
+          name: name.trim(),
+          description: description.trim() || null,
+          contentVisibility,
+          structure: preview.structure,
+          previewStartDate: startDate,
+        };
+        const editor = editBase;
+        if (planId && !editor) {
+          setFormError("Load the saved plan before saving changes.");
           return;
         }
-        retainedCommitRequestRef.current = null;
-        setHasUncertainCommit(false);
-        setFormError(
-          "The prior save was not applied. Review the refreshed plan before saving again.",
-        );
-        await Promise.all([athleteReadModelQuery.refetch(), planQuery.refetch()]);
+        const commitDraft =
+          planId && editor
+            ? {
+                kind: "update" as const,
+                draft: {
+                  ...commonDraft,
+                  planId,
+                  expectedRevision: editor.revision,
+                  expectedStructureHash: editor.structureHash,
+                },
+              }
+            : { kind: "create" as const, draft: commonDraft };
+        const commitPreview = await utils.trainingPlans.preview.fetch(commitDraft);
+        if (!current()) return;
+        if (commitPreview.status !== "available") {
+          setFormError("The authoritative preview is unavailable. Refresh and retry.");
+          return;
+        }
+        if (!commitPreview.applicable) {
+          setFormError(
+            commitPreview.explanations.join(" ") ||
+              "One or more sessions need additional planning input before this plan can be saved.",
+          );
+          return;
+        }
+        const commitRequest: TrainingPlanCommitRequest = {
+          ...commitDraft,
+          operationId: crypto.randomUUID(),
+          basePublishedRevision: commitPreview.basePublishedRevision,
+          previewFingerprint: commitPreview.previewFingerprint,
+        };
+        retainedCommitRequestRef.current = commitRequest;
+        const result = await commitMutation.mutateAsync(commitRequest);
+        if (!current()) {
+          if (result.status === "saved") await utils.trainingPlans.invalidate();
+          return;
+        }
+        if (result.status === "stale") {
+          retainedCommitRequestRef.current = null;
+          setProjectionConflict({
+            reason: result.reason === "state_revision" ? "state" : "plan",
+            message:
+              result.reason === "state_revision"
+                ? "Athlete state changed while saving. Your changes are preserved and have been re-simulated against the refreshed baseline."
+                : "The saved plan changed while saving. Your changes are preserved; review the refreshed plan before retrying.",
+          });
+          await Promise.allSettled([athleteReadModelQuery.refetch(), planQuery.refetch()]);
+          return;
+        }
+        if (result.status === "operation_conflict") {
+          retainedCommitRequestRef.current = null;
+          setFormError(
+            "This save request conflicts with another operation. Review and save again.",
+          );
+          return;
+        }
+        acknowledged = true;
+        acknowledgedRequest.current = {
+          operationId: commitRequest.operationId,
+          planId: result.planId,
+        };
+        await utils.trainingPlans.invalidate();
+        if (!current()) return;
+        await onSaved(result.planId);
+        if (current()) {
+          retainedCommitRequestRef.current = null;
+          acknowledgedRequest.current = null;
+          completed.current = true;
+        }
       } catch (error) {
+        if (!current()) return;
+        const rejected = !acknowledged && isDefinitiveRejection(error);
+        if (rejected) retainedCommitRequestRef.current = null;
+        setHasUncertainCommit(retainedCommitRequestRef.current !== null);
         setFormError(
-          `${error instanceof Error ? error.message : "Could not save this plan."} The outcome is unknown; retry the same save to reconcile it.`,
+          `${error instanceof Error ? error.message : "Could not save this plan."} ${acknowledged ? "The plan was saved. Retry to finish updating this view." : rejected ? "The save was rejected. Correct the draft and retry." : retainedCommitRequestRef.current ? "The outcome is unknown; retry the same save to reconcile it." : "No commit was sent. Your draft is preserved; retry the preview."}`,
         );
       }
-      return;
-    }
-    if (!name.trim()) {
-      setFormError("Plan name is required.");
-      return;
-    }
-    if (!startDateSchema.safeParse(startDate).success) {
-      setStartDateError("Enter a valid plan start date.");
-      return;
-    }
-    if (!preview.structure) {
-      setFormError(preview.error ?? "Add at least one valid activity.");
-      return;
-    }
-    if (
-      !authoritativePreviewInput ||
-      !authoritativeProjection ||
-      authoritativePreviewQuery.isFetching
-    ) {
-      setFormError("Wait for the authoritative preview before saving this plan.");
-      return;
-    }
-    try {
-      const commonDraft = {
-        name: name.trim(),
-        description: description.trim() || null,
-        contentVisibility,
-        structure: preview.structure,
-        previewStartDate: startDate,
-      };
-      const editor = planQuery.data?.editor;
-      const commitDraft =
-        planId && editor
-          ? {
-              kind: "update" as const,
-              draft: {
-                ...commonDraft,
-                planId,
-                expectedRevision: editor.revision,
-                expectedStructureHash: editor.structureHash,
-              },
-            }
-          : { kind: "create" as const, draft: commonDraft };
-      const commitPreview = await utils.trainingPlans.preview.fetch(commitDraft);
-      if (commitPreview.status !== "available") {
-        setFormError("The authoritative preview is unavailable. Refresh and retry.");
-        return;
+    } finally {
+      if (current()) {
+        saveGuard.current = false;
+        setSavePending(false);
       }
-      if (!commitPreview.applicable) {
-        setFormError(
-          commitPreview.explanations.join(" ") ||
-            "One or more sessions need additional planning input before this plan can be saved.",
-        );
-        return;
-      }
-      const commitRequest: TrainingPlanCommitRequest = {
-        ...commitDraft,
-        operationId: crypto.randomUUID(),
-        basePublishedRevision: commitPreview.basePublishedRevision,
-        previewFingerprint: commitPreview.previewFingerprint,
-      };
-      retainedCommitRequestRef.current = commitRequest;
-      const result = await commitMutation.mutateAsync(commitRequest);
-      if (result.status === "stale") {
-        retainedCommitRequestRef.current = null;
-        setProjectionConflict({
-          fingerprint: draftFingerprint,
-          reason: result.reason === "state_revision" ? "state" : "plan",
-          message:
-            result.reason === "state_revision"
-              ? "Athlete state changed while saving. Your changes are preserved and have been re-simulated against the refreshed baseline."
-              : "The saved plan changed while saving. Your changes are preserved; review the refreshed plan before retrying.",
-        });
-        await Promise.all([athleteReadModelQuery.refetch(), planQuery.refetch()]);
-        return;
-      }
-      if (result.status === "operation_conflict") {
-        retainedCommitRequestRef.current = null;
-        setFormError("This save request conflicts with another operation. Review and save again.");
-        return;
-      }
-      await utils.trainingPlans.invalidate();
-      retainedCommitRequestRef.current = null;
-      markSaved();
-      onSaved(result.planId);
-    } catch (error) {
-      setHasUncertainCommit(true);
-      setFormError(
-        `${error instanceof Error ? error.message : "Could not save this plan."} The outcome is unknown; retry the same save to reconcile it.`,
-      );
     }
   };
 
   const retryProjectionValidation = async () => {
+    if (projectionConflict?.reason === "plan") {
+      setHydratedId(null);
+      setProjectionConflict(null);
+      return;
+    }
     setFormError(null);
     try {
       await save();
@@ -382,323 +465,340 @@ export function TrainingPlanEditor({ onSaved, planId }: TrainingPlanEditorProps)
   return (
     <form
       className="grid gap-6 lg:grid-cols-[1fr_22rem]"
+      onChangeCapture={(event) => {
+        if (saveGuard.current || retainedCommitRequestRef.current || completed.current)
+          event.stopPropagation();
+      }}
       onSubmit={(event) => {
         event.preventDefault();
         void save();
       }}
     >
-      <fieldset className="space-y-5" disabled={saving}>
-        <div>
-          <p className="text-sm font-medium text-muted-foreground">Plan builder</p>
-          <h1 className="text-3xl font-semibold">
-            {planId ? "Edit training plan" : "Create training plan"}
-          </h1>
-        </div>
-        <label className="block space-y-2" htmlFor="training-plan-name">
-          <span className="text-sm font-medium">Name</span>
-          <Input
-            disabled={hasUncertainCommit}
-            id="training-plan-name"
-            onChange={(event) => setName(event.target.value)}
-            value={name}
-          />
-        </label>
-        <label className="block space-y-2" htmlFor="training-plan-description">
-          <span className="text-sm font-medium">Description</span>
-          <Textarea
-            disabled={hasUncertainCommit}
-            id="training-plan-description"
-            onChange={(event) => setDescription(event.target.value)}
-            value={description}
-          />
-        </label>
-        <label className="block space-y-2" htmlFor="training-plan-visibility">
-          <span className="text-sm font-medium">Visibility</span>
-          <select
-            className="h-10 w-full rounded-md border bg-background px-3"
-            disabled={saving || hasUncertainCommit}
-            id="training-plan-visibility"
-            onChange={(event) => setContentVisibility(event.target.value as ContentVisibility)}
-            value={contentVisibility}
-          >
-            <option value="private">Private</option>
-            <option value="followers">Followers</option>
-            <option value="public">Public</option>
-          </select>
-        </label>
-        <label className="block space-y-2" htmlFor="training-plan-start-date">
-          <span className="text-sm font-medium">Start date</span>
-          <Input
-            aria-describedby={startDateError ? "training-plan-start-date-error" : undefined}
-            aria-invalid={Boolean(startDateError)}
-            disabled={hasUncertainCommit}
-            id="training-plan-start-date"
-            onChange={(event) => {
-              setStartDate(event.target.value);
-              setStartDateError(null);
-            }}
-            type="date"
-            value={startDate}
-          />
-          {startDateError ? (
-            <span
-              className="text-sm text-destructive"
-              id="training-plan-start-date-error"
-              role="alert"
+      <div className="space-y-5">
+        <fieldset className="space-y-5" disabled={saving || completed.current}>
+          <div>
+            <p className="text-sm font-medium text-muted-foreground">Plan builder</p>
+            <h1 className="text-3xl font-semibold">
+              {planId ? "Edit training plan" : "Create training plan"}
+            </h1>
+          </div>
+          <label className="block space-y-2" htmlFor="training-plan-name">
+            <span className="text-sm font-medium">Name</span>
+            <Input
+              disabled={hasUncertainCommit}
+              id="training-plan-name"
+              onChange={(event) => setName(event.target.value)}
+              value={name}
+            />
+          </label>
+          <label className="block space-y-2" htmlFor="training-plan-description">
+            <span className="text-sm font-medium">Description</span>
+            <Textarea
+              disabled={hasUncertainCommit}
+              id="training-plan-description"
+              onChange={(event) => setDescription(event.target.value)}
+              value={description}
+            />
+          </label>
+          <label className="block space-y-2" htmlFor="training-plan-visibility">
+            <span className="text-sm font-medium">Visibility</span>
+            <select
+              className="h-10 w-full rounded-md border bg-background px-3"
+              disabled={saving || hasUncertainCommit}
+              id="training-plan-visibility"
+              onChange={(event) => setContentVisibility(event.target.value as ContentVisibility)}
+              value={contentVisibility}
             >
-              {startDateError}
-            </span>
-          ) : null}
-        </label>
-        <Card>
-          <CardHeader className="flex-row items-center justify-between">
-            <CardTitle>Activities</CardTitle>
-            <Button
-              disabled={activityPlansQuery.isLoading || hasUncertainCommit}
-              onClick={addSession}
-              type="button"
-              variant="outline"
-            >
-              Add activity
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-end gap-2 rounded-lg border p-3">
-              <label className="space-y-1 text-sm" htmlFor="copy-source-week">
-                <span>Copy week</span>
-                <select
-                  disabled={hasUncertainCommit}
-                  id="copy-source-week"
-                  onChange={(event) => setCopySourceWeek(Number(event.target.value))}
-                  value={copySourceWeek}
-                >
-                  {weekIndexes.map((weekIndex) => (
-                    <option key={`source-week-${weekIndex}`} value={weekIndex}>
-                      Week {weekIndex + 1}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="space-y-1 text-sm" htmlFor="copy-destination-week">
-                <span>To week</span>
-                <select
-                  disabled={hasUncertainCommit}
-                  id="copy-destination-week"
-                  onChange={(event) => setCopyDestinationWeek(Number(event.target.value))}
-                  value={copyDestinationWeek}
-                >
-                  {weekIndexes.map((weekIndex) => (
-                    <option key={`destination-week-${weekIndex}`} value={weekIndex}>
-                      Week {weekIndex + 1}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <option value="private">Private</option>
+              <option value="followers">Followers</option>
+              <option value="public">Public</option>
+            </select>
+          </label>
+          <label className="block space-y-2" htmlFor="training-plan-start-date">
+            <span className="text-sm font-medium">Start date</span>
+            <Input
+              aria-describedby={startDateError ? "training-plan-start-date-error" : undefined}
+              aria-invalid={Boolean(startDateError)}
+              disabled={hasUncertainCommit}
+              id="training-plan-start-date"
+              onChange={(event) => {
+                setStartDate(event.target.value);
+                setStartDateError(null);
+              }}
+              type="date"
+              value={startDate}
+            />
+            {startDateError ? (
+              <span
+                className="text-sm text-destructive"
+                id="training-plan-start-date-error"
+                role="alert"
+              >
+                {startDateError}
+              </span>
+            ) : null}
+          </label>
+          <Card>
+            <CardHeader className="flex-row items-center justify-between">
+              <CardTitle>Activities</CardTitle>
               <Button
-                disabled={hasUncertainCommit}
-                onClick={copyWeek}
+                disabled={activityPlansQuery.isLoading || hasUncertainCommit}
+                onClick={addSession}
                 type="button"
                 variant="outline"
               >
-                Copy week
+                Add activity
               </Button>
-            </div>
-            {activityPlansQuery.error ? (
-              <p role="alert">
-                Could not load owned activities: {activityPlansQuery.error.message}
-              </p>
-            ) : null}
-            {sessions.length === 0 ? <p>Add a activity to build the plan structure.</p> : null}
-            {sessions.map((session, index) => (
-              <fieldset
-                className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_8rem_auto]"
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <label htmlFor="training-plan-activity-search">Search owned activity plans</label>
+              <Input
+                id="training-plan-activity-search"
                 disabled={hasUncertainCommit}
-                key={
-                  session.draftId ??
-                  `${session.offsetDays}-${session.activityPlanId}-${session.title}`
-                }
-              >
-                <legend className="px-1 text-sm font-medium">Activity {index + 1}</legend>
-                <label
-                  className="space-y-1"
-                  htmlFor={`training-plan-session-activity-${session.draftId}`}
+                value={activitySearch}
+                onChange={(event) => setActivitySearch(event.target.value)}
+              />
+              {activityPlansQuery.hasNextPage ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={hasUncertainCommit || activityPlansQuery.isFetchingNextPage}
+                  onClick={() => void activityPlansQuery.fetchNextPage()}
                 >
-                  <span className="text-xs">Activity plan</span>
+                  Load more activity plans
+                </Button>
+              ) : null}
+              <div className="flex flex-wrap items-end gap-2 rounded-lg border p-3">
+                <label className="space-y-1 text-sm" htmlFor="copy-source-week">
+                  <span>Copy week</span>
                   <select
-                    className="h-10 w-full rounded-md border bg-background px-3"
-                    id={`training-plan-session-activity-${session.draftId}`}
-                    onChange={(event) => {
-                      const plan = activityPlans.find((item) => item.id === event.target.value);
-                      setSessions((current) =>
-                        current.map((item, itemIndex) =>
-                          itemIndex === index
-                            ? {
-                                ...item,
-                                activityPlanId: event.target.value || null,
-                                ...(plan
-                                  ? { activityCategory: plan.activityCategory, title: plan.name }
-                                  : {}),
-                              }
-                            : item,
-                        ),
-                      );
-                    }}
-                    value={session.activityPlanId ?? ""}
+                    disabled={hasUncertainCommit}
+                    id="copy-source-week"
+                    onChange={(event) => setCopySourceWeek(Number(event.target.value))}
+                    value={copySourceWeek}
                   >
-                    <option value="">Choose automatically</option>
-                    {activityPlans.map((plan) => (
-                      <option key={plan.id} value={plan.id}>
-                        {plan.name}
+                    {weekIndexes.map((weekIndex) => (
+                      <option key={`source-week-${weekIndex}`} value={weekIndex}>
+                        Week {weekIndex + 1}
                       </option>
                     ))}
                   </select>
                 </label>
-                {session.activityPlanId === null ? (
+                <label className="space-y-1 text-sm" htmlFor="copy-destination-week">
+                  <span>To week</span>
+                  <select
+                    disabled={hasUncertainCommit}
+                    id="copy-destination-week"
+                    onChange={(event) => setCopyDestinationWeek(Number(event.target.value))}
+                    value={copyDestinationWeek}
+                  >
+                    {weekIndexes.map((weekIndex) => (
+                      <option key={`destination-week-${weekIndex}`} value={weekIndex}>
+                        Week {weekIndex + 1}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Button
+                  disabled={hasUncertainCommit}
+                  onClick={copyWeek}
+                  type="button"
+                  variant="outline"
+                >
+                  Copy week
+                </Button>
+              </div>
+              {activityPlansQuery.error ? (
+                <p role="alert">
+                  Could not load owned activities: {activityPlansQuery.error.message}
+                </p>
+              ) : null}
+              {sessions.length === 0 ? <p>Add a activity to build the plan structure.</p> : null}
+              {sessions.map((session, index) => (
+                <fieldset
+                  className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_8rem_auto]"
+                  disabled={hasUncertainCommit}
+                  key={
+                    session.draftId ??
+                    `${session.offsetDays}-${session.activityPlanId}-${session.title}`
+                  }
+                >
+                  <legend className="px-1 text-sm font-medium">Activity {index + 1}</legend>
                   <label
                     className="space-y-1"
-                    htmlFor={`training-plan-session-category-${session.draftId}`}
+                    htmlFor={`training-plan-session-activity-${session.draftId}`}
                   >
-                    <span className="text-xs">Activity category</span>
+                    <span className="text-xs">Activity plan</span>
                     <select
                       className="h-10 w-full rounded-md border bg-background px-3"
-                      id={`training-plan-session-category-${session.draftId}`}
+                      id={`training-plan-session-activity-${session.draftId}`}
+                      onChange={(event) => {
+                        const plan = activityPlans.find((item) => item.id === event.target.value);
+                        setSessions((current) =>
+                          current.map((item, itemIndex) =>
+                            itemIndex === index
+                              ? {
+                                  ...item,
+                                  activityPlanId: event.target.value || null,
+                                  ...(plan
+                                    ? { activityCategory: plan.activityCategory, title: plan.name }
+                                    : {}),
+                                }
+                              : item,
+                          ),
+                        );
+                      }}
+                      value={session.activityPlanId ?? ""}
+                    >
+                      <option value="">Choose automatically</option>
+                      {session.activityPlanId &&
+                      !activityPlans.some((plan) => plan.id === session.activityPlanId) ? (
+                        <option value={session.activityPlanId}>
+                          {session.title || "Selected activity"}
+                        </option>
+                      ) : null}
+                      {activityPlans.map((plan) => (
+                        <option key={plan.id} value={plan.id}>
+                          {plan.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {session.activityPlanId === null ? (
+                    <label
+                      className="space-y-1"
+                      htmlFor={`training-plan-session-category-${session.draftId}`}
+                    >
+                      <span className="text-xs">Activity category</span>
+                      <select
+                        className="h-10 w-full rounded-md border bg-background px-3"
+                        id={`training-plan-session-category-${session.draftId}`}
+                        onChange={(event) =>
+                          setSessions((current) =>
+                            current.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? {
+                                    ...item,
+                                    activityCategory: event.target
+                                      .value as TrainingPlanSessionDraft["activityCategory"],
+                                  }
+                                : item,
+                            ),
+                          )
+                        }
+                        value={session.activityCategory}
+                      >
+                        {activityCategories.map((category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
+                  <label
+                    className="space-y-1"
+                    htmlFor={`training-plan-session-offset-${session.draftId}`}
+                  >
+                    <span className="text-xs">Day offset</span>
+                    <Input
+                      aria-describedby={
+                        Number.isFinite(session.offsetDays)
+                          ? undefined
+                          : `training-plan-session-offset-error-${session.draftId}`
+                      }
+                      id={`training-plan-session-offset-${session.draftId}`}
+                      min={0}
                       onChange={(event) =>
                         setSessions((current) =>
                           current.map((item, itemIndex) =>
                             itemIndex === index
                               ? {
                                   ...item,
-                                  activityCategory: event.target
-                                    .value as TrainingPlanSessionDraft["activityCategory"],
+                                  offsetDays:
+                                    event.target.value === ""
+                                      ? Number.NaN
+                                      : Number(event.target.value),
                                 }
                               : item,
                           ),
                         )
                       }
-                      value={session.activityCategory}
-                    >
-                      {activityCategories.map((category) => (
-                        <option key={category} value={category}>
-                          {category}
-                        </option>
-                      ))}
-                    </select>
+                      type="number"
+                      aria-invalid={!Number.isFinite(session.offsetDays)}
+                      value={Number.isFinite(session.offsetDays) ? session.offsetDays : ""}
+                    />
+                    {!Number.isFinite(session.offsetDays) ? (
+                      <span
+                        className="text-xs text-destructive"
+                        id={`training-plan-session-offset-error-${session.draftId}`}
+                        role="alert"
+                      >
+                        Enter a day offset of zero or greater.
+                      </span>
+                    ) : null}
                   </label>
-                ) : null}
-                <label
-                  className="space-y-1"
-                  htmlFor={`training-plan-session-offset-${session.draftId}`}
-                >
-                  <span className="text-xs">Day offset</span>
-                  <Input
-                    aria-describedby={
-                      Number.isFinite(session.offsetDays)
-                        ? undefined
-                        : `training-plan-session-offset-error-${session.draftId}`
-                    }
-                    id={`training-plan-session-offset-${session.draftId}`}
-                    min={0}
-                    onChange={(event) =>
+                  <Button
+                    className="self-end"
+                    onClick={() =>
                       setSessions((current) =>
-                        current.map((item, itemIndex) =>
-                          itemIndex === index
-                            ? {
-                                ...item,
-                                offsetDays:
-                                  event.target.value === ""
-                                    ? Number.NaN
-                                    : Number(event.target.value),
-                              }
-                            : item,
-                        ),
+                        current.filter((_, itemIndex) => itemIndex !== index),
                       )
                     }
-                    type="number"
-                    aria-invalid={!Number.isFinite(session.offsetDays)}
-                    value={Number.isFinite(session.offsetDays) ? session.offsetDays : ""}
-                  />
-                  {!Number.isFinite(session.offsetDays) ? (
-                    <span
-                      className="text-xs text-destructive"
-                      id={`training-plan-session-offset-error-${session.draftId}`}
-                      role="alert"
-                    >
-                      Enter a day offset of zero or greater.
-                    </span>
-                  ) : null}
-                </label>
-                <Button
-                  className="self-end"
-                  onClick={() =>
-                    setSessions((current) => current.filter((_, itemIndex) => itemIndex !== index))
-                  }
-                  type="button"
-                  variant="ghost"
-                >
-                  Remove
-                </Button>
-              </fieldset>
-            ))}
-          </CardContent>
-        </Card>
-        {formError ? (
-          <p className="text-sm text-destructive" role="alert">
-            {formError}
-          </p>
-        ) : null}
-        {projectionConflict ? (
-          <div className="space-y-2 rounded-lg border border-amber-500/50 p-3" role="alert">
-            <p>{projectionConflict.message}</p>
-            <Button
-              disabled={saving}
-              onClick={() => void retryProjectionValidation()}
-              type="button"
-              variant="outline"
-            >
-              Rebase and retry validation
-            </Button>
-          </div>
-        ) : null}
-        <Button
-          disabled={
-            saving ||
-            (!hasUncertainCommit &&
-              (!name.trim() || !preview.structure || !authoritativeProjection))
-          }
-          type="submit"
-        >
-          {saving
-            ? "Saving…"
-            : hasUncertainCommit
-              ? "Retry save"
-              : planId
-                ? "Save changes"
-                : "Create plan"}
-        </Button>
-        {snapshotRef.current ? (
+                    type="button"
+                    variant="ghost"
+                  >
+                    Remove
+                  </Button>
+                </fieldset>
+              ))}
+            </CardContent>
+          </Card>
+          {formError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {formError}
+            </p>
+          ) : null}
+          {projectionConflict ? (
+            <div className="space-y-2 rounded-lg border border-amber-500/50 p-3" role="alert">
+              <p>{projectionConflict.message}</p>
+              <Button
+                disabled={saving}
+                onClick={() => void retryProjectionValidation()}
+                type="button"
+                variant="outline"
+              >
+                {projectionConflict.reason === "plan" ? "Reload saved plan" : "Retry validation"}
+              </Button>
+            </div>
+          ) : null}
           <Button
-            disabled={saving || hasUncertainCommit}
-            onClick={() =>
-              guardedCancel(() => {
-                const snapshot = snapshotRef.current;
-                if (!snapshot) return;
-                setName(snapshot.name);
-                setDescription(snapshot.description);
-                setContentVisibility(snapshot.contentVisibility);
-                setSessions(snapshot.sessions);
-                setSourceStructure(structuredClone(snapshot.sourceStructure));
-                setStartDate(snapshot.startDate);
-                setFormError(null);
-                setStartDateError(null);
-              })
+            disabled={
+              saving ||
+              (!hasUncertainCommit &&
+                (!name.trim() || !preview.structure || !authoritativeProjection))
             }
-            type="button"
-            variant="outline"
+            type="submit"
           >
-            Cancel changes
+            {saving
+              ? "Saving…"
+              : hasUncertainCommit
+                ? "Retry save"
+                : planId
+                  ? "Save changes"
+                  : "Create plan"}
           </Button>
-        ) : null}
-      </fieldset>
+        </fieldset>
+        <Button
+          onClick={() => {
+            if (mounted.current && isCurrent()) onCancel();
+          }}
+          type="button"
+          variant="outline"
+        >
+          Cancel changes
+        </Button>
+      </div>
       <Card className="h-fit lg:sticky lg:top-6">
         <CardHeader>
           <CardTitle>Preview</CardTitle>

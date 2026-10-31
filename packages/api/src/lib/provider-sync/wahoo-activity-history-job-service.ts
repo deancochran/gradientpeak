@@ -136,7 +136,7 @@ function isActivityHistoryPayload(value: unknown): value is WahooActivityHistory
 function createDefaultWahooClient(integration: WahooIntegrationRecord): WahooWorkoutSummaryClient {
   return new WahooClient({
     accessToken: integration.accessToken,
-    refreshToken: integration.refreshToken ?? undefined,
+    ...(integration.refreshToken === null ? {} : { refreshToken: integration.refreshToken }),
   });
 }
 
@@ -525,12 +525,16 @@ export class WahooActivityHistoryJobService {
                         await assertActive();
                         const detail = await client.getWorkoutSummary(workoutId.toString(), signal);
                         await assertActive();
+                        const mergedWorkoutId = summary.workout_id ?? detail.workout_id;
+                        const workout = summary.workout ?? detail.workout;
                         return {
                           ...summary,
                           ...detail,
-                          workout_id: summary.workout_id ?? detail.workout_id,
-                          workout: summary.workout ?? detail.workout,
-                          started_at: summary.started_at,
+                          ...(mergedWorkoutId === undefined ? {} : { workout_id: mergedWorkoutId }),
+                          ...(workout === undefined ? {} : { workout }),
+                          ...(summary.started_at === undefined
+                            ? {}
+                            : { started_at: summary.started_at }),
                         };
                       })();
                   await assertActive();
@@ -682,7 +686,7 @@ export class WahooActivityHistoryJobService {
               id: job.id,
               integrationId: job.integrationId,
               lastError,
-              nextRunAt,
+              ...(nextRunAt === undefined ? {} : { nextRunAt }),
               provider: "wahoo",
               resource: WAHOO_ACTIVITY_HISTORY_RESOURCE,
               status: shouldDeadLetter ? "dead_lettered" : "failed",

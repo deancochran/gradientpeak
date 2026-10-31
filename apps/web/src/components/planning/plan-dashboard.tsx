@@ -1,4 +1,4 @@
-import type { CalendarProjectionItem } from "@repo/core";
+import { type CalendarProjectionItem, formatDateOnlyInTimeZone } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
@@ -39,12 +39,18 @@ export function getScheduledWorkTypeLabel(item: CalendarProjectionItem): string 
 }
 
 export function PlanDashboard() {
-  const today = getTodayDateKey();
   const profileQuery = api.profiles.get.useQuery();
-  const planTabQuery = api.trainingPlans.getPlanTabProjection.useQuery({
-    startDate: today,
-    endDate: shiftDateKey(today, 89),
-  });
+  const planningTimezone = profileQuery.data?.planning_timezone ?? null;
+  const today = planningTimezone
+    ? formatDateOnlyInTimeZone(new Date(), planningTimezone)
+    : getTodayDateKey();
+  const planTabQuery = api.trainingPlans.getPlanTabProjection.useQuery(
+    {
+      startDate: today,
+      endDate: shiftDateKey(today, 89),
+    },
+    { enabled: profileQuery.data !== undefined },
+  );
   const trainingPlansQuery = api.trainingPlans.list.useQuery({ ownerScope: "own", limit: 6 });
   const upcomingEventsQuery = api.calendar.range.useQuery({
     startDate: today,

@@ -1,16 +1,17 @@
 import type { Page } from "@playwright/test";
 import { expect, test } from "../fixtures";
-import { withTrpcFailure } from "../pages";
+import { GoalsPage, withTrpcFailure } from "../pages";
+import { chooseAuthoringOption } from "../pages/authoring";
 import { type GoalFixture, withGoalFixture } from "../planning/data";
 import { createE2EExecutionIdentity } from "../support/identity";
 
 async function createGoal(page: Page, fixture: GoalFixture, suffix: string) {
   const title = createE2EExecutionIdentity(test.info()).name(`Variation goal ${suffix}`);
-  await page.goto("/goals/new?date=2026-09-27");
+  await new GoalsPage(page).startCreate("2026-09-27");
   const form = page.getByTestId("goal-form");
   await form.getByLabel("Title").fill(title);
-  await form.getByLabel("Activity", { exact: true }).selectOption("run");
-  await form.getByLabel("Priority").fill("8");
+  await chooseAuthoringOption(page, "Activity", "Run");
+  await chooseAuthoringOption(page, "Priority", "8");
   await form.getByLabel("Sessions / week").fill("4");
   await form.getByLabel("Weeks").fill("10");
   fixture.rememberGoalTitle(title);
@@ -67,12 +68,12 @@ test("[variation:goals.lifecycle:narrow-filter-detail] narrow filtered card open
     await search.fill(goal.title);
     await athletePage.getByRole("button", { name: /apply filters/i }).press("Enter");
     const card = athletePage.getByTestId(`goal-card-${goal.id}`);
-    await card.scrollIntoViewIfNeeded();
+    await expect(card).toBeVisible();
     await card.click();
     await expect(athletePage.getByTestId("goal-intelligence")).toBeVisible();
     await athletePage.goBack();
     await expect(search).toHaveValue(goal.title);
-    await expect(card).toBeVisible();
+    await expect(athletePage.getByTestId(`goal-card-${goal.id}`)).toBeVisible();
   });
 });
 
@@ -84,7 +85,7 @@ test("[variation:goals.lifecycle:cancel-edit] browser back abandons unsaved goal
     await athletePage.getByTestId(`goal-card-${goal.id}`).click();
     await athletePage.getByTestId(`goal-edit-${goal.id}`).click();
     await athletePage.getByLabel("Title").fill("Unsaved goal variation");
-    await athletePage.getByLabel("Priority").fill("1");
+    await chooseAuthoringOption(athletePage, "Priority", "1");
     await athletePage.goBack();
     await expect(athletePage.getByRole("heading", { name: goal.title })).toBeVisible();
     await athletePage.reload();

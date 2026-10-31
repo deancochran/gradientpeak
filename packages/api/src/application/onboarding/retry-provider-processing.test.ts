@@ -34,56 +34,56 @@ function dbFor(input: { status?: string; failed?: boolean; profileId?: string } 
     execute: vi.fn(),
     transaction: undefined,
     select: (selection: Record<string, unknown>) => ({
-      from: (table: unknown) => ({
+      from: (_table: unknown) => ({
         innerJoin: () => ({
           leftJoin: () => ({
-            where: () => ({
-              then: (resolve: (rows: unknown[]) => void) =>
-                resolve([
-                  {
-                    active: true,
-                    id: INTEGRATION_ID,
-                    generation: 1,
-                    provider: "wahoo",
-                    scope: "workouts_read offline_data user_read",
-                    job_id: "history",
-                    import_run_id: null,
-                    payload_import_run_id: null,
-                    job_type: "wahoo.activity_history_reconcile",
-                    status: input.failed === false ? "queued" : "dead_lettered",
-                    last_error: "failed",
-                  },
-                  {
-                    active: true,
-                    id: INTEGRATION_ID,
-                    generation: 1,
-                    provider: "wahoo",
-                    scope: "workouts_read offline_data user_read",
-                    job_id: "profile",
-                    import_run_id: null,
-                    payload_import_run_id: null,
-                    job_type: "wahoo.profile_enrichment",
-                    status: "completed",
-                    last_error: null,
-                  },
-                ]),
-            }),
+            where: () =>
+              Promise.resolve([
+                {
+                  active: true,
+                  id: INTEGRATION_ID,
+                  generation: 1,
+                  provider: "wahoo",
+                  scope: "workouts_read offline_data user_read",
+                  job_id: "history",
+                  import_run_id: null,
+                  payload_import_run_id: null,
+                  job_type: "wahoo.activity_history_reconcile",
+                  status: input.failed === false ? "queued" : "dead_lettered",
+                  last_error: "failed",
+                },
+                {
+                  active: true,
+                  id: INTEGRATION_ID,
+                  generation: 1,
+                  provider: "wahoo",
+                  scope: "workouts_read offline_data user_read",
+                  job_id: "profile",
+                  import_run_id: null,
+                  payload_import_run_id: null,
+                  job_type: "wahoo.profile_enrichment",
+                  status: "completed",
+                  last_error: null,
+                },
+              ]),
           }),
         }),
         where: () => ({
-          limit: () => ({
-            for: async () => [
-              "onboarding_status" in selection
-                ? { id: profileId, onboarding_status: input.status ?? "processing" }
-                : { published_revision: 1, source_revision: 1 },
-            ],
-            then: (resolve: (rows: unknown[]) => void) =>
-              resolve(
+          limit: () =>
+            Object.assign(
+              Promise.resolve(
                 "onboarding_status" in selection
                   ? [{ id: profileId, onboarding_status: input.status ?? "processing" }]
                   : [],
               ),
-          }),
+              {
+                for: async () => [
+                  "onboarding_status" in selection
+                    ? { id: profileId, onboarding_status: input.status ?? "processing" }
+                    : { published_revision: 1, source_revision: 1 },
+                ],
+              },
+            ),
           orderBy: () =>
             "job_type" in selection ? Promise.resolve(jobRows) : { limit: async () => [] },
         }),

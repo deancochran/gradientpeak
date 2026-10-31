@@ -68,7 +68,7 @@ import {
 import { useFormServerFn } from "../../lib/use-form-server-fn";
 import { useUnsavedChangesGuard } from "../../lib/use-unsaved-changes-guard";
 
-type AvatarFile = { file?: File; name: string };
+type AvatarFile = { file?: File | undefined; name: string };
 type ProfileMediaField = "avatar_url" | "cover_url";
 type ProfileMediaOperation = "upload" | "remove";
 
@@ -97,9 +97,9 @@ export function SettingsPage() {
   });
 
   const [avatarBlobUrl, setAvatarBlobUrl] = useState<string | null>(null);
-  const [avatarFiles, setAvatarFiles] = useState<Array<{ file?: File; name: string }>>([]);
+  const [avatarFiles, setAvatarFiles] = useState<AvatarFile[]>([]);
   const [coverBlobUrl, setCoverBlobUrl] = useState<string | null>(null);
-  const [coverFiles, setCoverFiles] = useState<Array<{ file?: File; name: string }>>([]);
+  const [coverFiles, setCoverFiles] = useState<AvatarFile[]>([]);
   const [submittingProfile, setSubmittingProfile] = useState(false);
   const [profileSaveError, setProfileSaveError] = useState<string | null>(null);
   const [mediaErrors, setMediaErrors] = useState<Partial<Record<ProfileMediaField, string>>>({});
@@ -322,8 +322,8 @@ export function SettingsPage() {
       <div className="space-y-8">
         <div>
           <RouteFlashToast
-            message={flash}
-            type={flashType}
+            {...(flash === undefined ? {} : { message: flash })}
+            {...(flashType === undefined ? {} : { type: flashType })}
             clear={() =>
               void navigate({
                 to: "/settings",
@@ -344,9 +344,9 @@ export function SettingsPage() {
           coverPending={mediaOperations.cover_url ?? null}
           form={form}
           profileSaveError={profileSaveError}
-          profileUsername={profile?.username}
+          {...(profile?.username === undefined ? {} : { profileUsername: profile.username })}
           submittingProfile={submittingProfile}
-          userEmail={user?.email}
+          {...(user?.email === undefined ? {} : { userEmail: user.email })}
           avatarError={mediaErrors.avatar_url ?? null}
           avatarPending={mediaOperations.avatar_url ?? null}
           onAvatarFilesChange={setAvatarFiles}
@@ -357,10 +357,10 @@ export function SettingsPage() {
         <MyGroupsCard />
         <AccountInformationCard
           key={`account:${user?.id}`}
-          accountId={user?.id}
+          {...(user?.id === undefined ? {} : { accountId: user.id })}
           createdAt={createdAt}
-          email={user?.email}
-          emailVerified={user?.emailVerified}
+          {...(user?.email === undefined ? {} : { email: user.email })}
+          {...(user?.emailVerified === undefined ? {} : { emailVerified: user.emailVerified })}
         />
         <ProductAnalyticsCard />
         <AppearanceCard />

@@ -9,6 +9,7 @@ import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { SearchField } from "@/components/shared/SearchField";
 import { api } from "@/lib/api";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
+import { omitUndefined } from "@/lib/omitUndefined";
 import {
   mapActivityPlanToResourcePickerItem,
   mapRouteToResourcePickerItem,
@@ -163,13 +164,13 @@ export function ResourcePickerModal({
 
   return (
     <AppFormModal
+      {...omitUndefined({ testID })}
       description={description ?? getDefaultDescription(scope)}
       footerContent={
         footerSlot ?? (hasFooterAction ? <View className="gap-2">{footerAction}</View> : undefined)
       }
       onClose={onClose}
       scrollProps={{ contentContainerClassName: "gap-3 p-4" }}
-      testID={testID}
       title={title}
     >
       <View className="gap-2">
@@ -178,7 +179,7 @@ export function ResourcePickerModal({
           onChangeText={setSearchQuery}
           onClear={() => setSearchQuery("")}
           placeholder={getPlaceholder(scope)}
-          testID={searchTestID}
+          {...omitUndefined({ testID: searchTestID })}
           value={searchQuery}
         />
         <View className="flex-row items-center justify-between gap-3">

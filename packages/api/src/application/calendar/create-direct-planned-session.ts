@@ -10,7 +10,10 @@ import type { PlannedSessionRepositoryPort } from "../../repositories/planned-se
 import { toVerifiedResolverCandidate } from "../activity-plans/resolver-candidate";
 import { loadPlanningBaseline } from "../athlete-intelligence/load-planning-baseline";
 import { createPlannedSession } from "./create-planned-session";
-import { PlannedSessionAccessError } from "./planned-session-errors";
+import {
+  PlannedSessionAccessError,
+  PlannedSessionPrescriptionPreconditionError,
+} from "./planned-session-errors";
 
 type DirectPlannedSessionSource = Extract<PlannedSessionSource, { kind: "direct" }>;
 
@@ -45,7 +48,6 @@ export async function createDirectPlannedSession(input: {
     structure: plan.structure,
     structureHash: plan.structureHash,
     semanticHash: plan.semanticHash,
-    adaptation: plan.adaptation,
     trainingIntent: plan.trainingIntent,
   });
   const resolution = resolvePrescription({
@@ -75,8 +77,12 @@ export async function createDirectPlannedSession(input: {
     candidates: [candidate],
   });
   if (resolution.status !== "resolved") {
-    throw new PlannedSessionAccessError(
-      "The selected activity plan cannot satisfy this session demand",
+    const explanation =
+      resolution.status === "needs_input"
+        ? resolution.missing[0]?.message
+        : resolution.reasons[0]?.message;
+    throw new PlannedSessionPrescriptionPreconditionError(
+      explanation ?? "The selected activity plan cannot satisfy this session demand.",
     );
   }
   const session = plannedSessionSchema.parse({
@@ -89,6 +95,7 @@ export async function createDirectPlannedSession(input: {
     source: input.source,
     idempotencyKey: plannedSessionIdempotencyKey(input.source),
     groupEventId: input.groupEventId,
+    activityPlanId: candidate.id,
     prescription: {
       resolutionManifest: resolution.manifest,
       capturedAt: input.capturedAt.toISOString(),

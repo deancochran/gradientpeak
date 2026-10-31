@@ -7,6 +7,7 @@ const mobileTests = {
     "apps/mobile/app/(internal)/(standard)/__tests__/activity-detail-screen.jest.test.tsx",
   "auth.access": "apps/mobile/app/(external)/__tests__/capability-p0-auth-entry.jest.test.tsx",
   "calendar.manage": "apps/mobile/app/(internal)/(tabs)/__tests__/calendar-screen.jest.test.tsx",
+  "chatbot.assistant": "apps/mobile/components/chatbot/__tests__/ChatScreen.jest.test.tsx",
   "discovery.search":
     "apps/mobile/app/(internal)/(tabs)/__tests__/capability-p2-discovery-feed.jest.test.tsx",
   "goals.manage":
@@ -41,7 +42,7 @@ const webTests = {
   },
   "activity-plan.manage": {
     identity:
-      "athlete can author, edit, schedule and comment while planned history protects deletion",
+      "V5 authoring persists zero targets, recovers invalid drafts, and schedules its UI-edited RPE plan reference",
     path: "apps/web/e2e/specs/activity-plans.spec.ts",
   },
   "auth.access": {
@@ -55,6 +56,10 @@ const webTests = {
   "calendar.manage": {
     identity: "calendar.events creates durable one-off, all-day, and bounded recurring events",
     path: "apps/web/e2e/specs/calendar-events.spec.ts",
+  },
+  "chatbot.assistant": {
+    identity: "authenticated athlete completes and restores a durable assistant conversation",
+    path: "apps/web/e2e/specs/chatbot.spec.ts",
   },
   "training-plan.manage": {
     identity: "athlete creates, reloads, edits, and cleans a persisted training plan",
@@ -205,6 +210,16 @@ const definitions = [
     outcome: "A person can browse groups and manage membership or group events.",
     steps: ["browse", "join", "manage"],
     matches: (_platform, source) => source.includes("group"),
+  },
+  {
+    id: "chatbot.assistant",
+    title: "Use the assistant conversation",
+    outcome: "An authenticated person can open, send, and restore an assistant conversation.",
+    steps: ["open", "send", "restore"],
+    matches: (platform, source) =>
+      platform === "web"
+        ? source.endsWith("/routes/_protected.tsx")
+        : source.includes("chatbot") || /\/chat\.tsx$/.test(source),
   },
   {
     id: "messages.manage",

@@ -322,19 +322,28 @@ function interpolateAgeCurve(points: AgeCurvePoint[], age?: number | null): numb
   }
 
   const sorted = [...points].sort((a, b) => a.age - b.age);
-  const first = sorted[0]!;
+  const first = sorted.at(0);
+  if (!first) {
+    return undefined;
+  }
   if (age <= first.age) {
     return first.value;
   }
 
-  const last = sorted[sorted.length - 1]!;
+  const last = sorted.at(-1);
+  if (!last) {
+    return undefined;
+  }
   if (age >= last.age) {
     return last.value;
   }
 
   for (let index = 1; index < sorted.length; index += 1) {
-    const left = sorted[index - 1]!;
-    const right = sorted[index]!;
+    const left = sorted[index - 1];
+    const right = sorted[index];
+    if (!left || !right) {
+      continue;
+    }
     if (age > right.age) {
       continue;
     }
@@ -355,19 +364,28 @@ function interpolateContinuousCurve(
   }
 
   const sorted = [...points].sort((a, b) => a.input - b.input);
-  const first = sorted[0]!;
+  const first = sorted.at(0);
+  if (!first) {
+    return undefined;
+  }
   if (input <= first.input) {
     return first.value;
   }
 
-  const last = sorted[sorted.length - 1]!;
+  const last = sorted.at(-1);
+  if (!last) {
+    return undefined;
+  }
   if (input >= last.input) {
     return last.value;
   }
 
   for (let index = 1; index < sorted.length; index += 1) {
-    const left = sorted[index - 1]!;
-    const right = sorted[index]!;
+    const left = sorted[index - 1];
+    const right = sorted[index];
+    if (!left || !right) {
+      continue;
+    }
     if (input > right.input) {
       continue;
     }

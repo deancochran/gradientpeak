@@ -20,6 +20,7 @@ describe("objective activity intensity", () => {
       speed: "objective",
       cadence: "supporting",
       RPE: "supporting",
+      rest: "supporting",
     });
   });
 

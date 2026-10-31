@@ -11,28 +11,15 @@ const analysis = vi.hoisted(() => ({
 vi.mock("../../lib/activity-analysis", () => analysis);
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 const structure = activityPlanStructureSchema.parse({
-  version: 3,
+  version: 5,
   activity_category: "run",
-  segments: [
+  items: [
     {
-      id: id(1),
-      role: "activity",
-      name: "Run",
-      intervals: [
-        {
-          id: id(2),
-          name: "Work",
-          repetitions: 1,
-          steps: [
-            {
-              id: id(3),
-              name: "Steady",
-              duration: { type: "time", seconds: 1800 },
-              targets: [{ type: "RPE", intensity: 5 }],
-            },
-          ],
-        },
-      ],
+      type: "step",
+      id: id(3),
+      name: "Steady",
+      duration: { type: "time", seconds: 1800 },
+      targets: [{ type: "RPE", intensity: 5 }],
     },
   ],
 });
@@ -77,10 +64,15 @@ const session = (overrides = {}) => ({
   lifecycleStatus: "scheduled" as const,
   completedActivityId: null,
   source: { trainingPlanId: id(5), trainingPlanRevision: 2 },
+  currentPlan: {
+    id: id(4),
+    name: "Current steady run",
+    structure,
+    updatedAt: "2026-07-20T12:00:00.000Z",
+  },
   resolutionManifest: manifest,
   ...overrides,
 });
-
 describe("getEffectivePlanLoad", () => {
   it("requires paired bounded dates", () => {
     expect(getEffectivePlanLoadInputSchema.safeParse({ startDate: "2026-07-20" }).success).toBe(
@@ -91,8 +83,7 @@ describe("getEffectivePlanLoad", () => {
         .success,
     ).toBe(true);
   });
-
-  it("uses only immutable planned-session manifests for scheduled and recommendation load", async () => {
+  it("uses current activity-plan structure for scheduled and recommendation load", async () => {
     analysis.loadActivitySegmentsByActivityId.mockResolvedValue(new Map());
     analysis.buildActivityDerivedSummaries.mockResolvedValue({ parent: new Map(), segments: [] });
     const getEffectivePlanLoadInputs = vi.fn().mockResolvedValue(facts([session()], [session()]));
@@ -105,27 +96,26 @@ describe("getEffectivePlanLoad", () => {
     });
     expect(result.status).toBe("available");
     if (result.status === "available") {
-      expect(result.remaining).toMatchObject({ status: "complete", load: 50 });
+      expect(result.remaining).toMatchObject({ status: "unavailable", reason: "no_load_data" });
       expect(result.effective).toMatchObject({
         firmItems: [
           {
             kind: "scheduled",
             scheduledItemId: id(6),
             date: "2026-07-22",
-            commonLoad: { status: "complete", load: 50 },
+            commonLoad: { status: "unavailable", reason: "duration_missing" },
             resolutionManifest: { fingerprint: manifest.fingerprint },
           },
         ],
       });
       expect(result.recommendation.points).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ date: "2026-07-21", state: "complete", load: 50 }),
+          expect.objectContaining({ date: "2026-07-21", state: "unavailable" }),
         ]),
       );
     }
   });
-
-  it("reports unavailable scheduled load when the frozen manifest estimate is incomplete", async () => {
+  it("does not treat a missing current plan as an immutable-manifest fallback", async () => {
     analysis.loadActivitySegmentsByActivityId.mockResolvedValue(new Map());
     analysis.buildActivityDerivedSummaries.mockResolvedValue({ parent: new Map(), segments: [] });
     const incomplete = session({
@@ -134,6 +124,7 @@ describe("getEffectivePlanLoad", () => {
         structure,
         demand: manifest.session_demand,
       }),
+      currentPlan: null,
     });
     const result = await getEffectivePlanLoad({
       db: {} as never,

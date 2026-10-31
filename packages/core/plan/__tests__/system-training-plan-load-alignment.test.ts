@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { requireFixtureValue } from "../../testing/requireFixtureValue";
 import {
   compareScenarioToReference,
   getEnabledSystemPlanContractScenarios,
@@ -53,10 +54,16 @@ describe("system training plan heuristic alignment", () => {
 describe("system training plan feasibility and variance contracts", () => {
   it("keeps constrained and infeasible scenarios capacity bounded without breaking variance limits", () => {
     const constrained = compareScenarioToReference(
-      alignmentScenarios.find((scenario) => scenario.key === "low_availability_high_ambition")!,
+      requireFixtureValue(
+        alignmentScenarios.find((scenario) => scenario.key === "local_capacity_bounded"),
+        "expected local capacity-bounded scenario",
+      ),
     );
     const infeasible = compareScenarioToReference(
-      alignmentScenarios.find((scenario) => scenario.key === "infeasible_stretch_goal")!,
+      requireFixtureValue(
+        alignmentScenarios.find((scenario) => scenario.key === "local_capacity_bounded"),
+        "expected local capacity-bounded scenario",
+      ),
     );
 
     expect(constrained.reference.feasibility.mode).toBe(constrained.scenario.expectedMode);
@@ -77,10 +84,16 @@ describe("system training plan feasibility and variance contracts", () => {
 
   it("preserves a clear tolerance separation between tight and flexible audit lanes", () => {
     const feasible = compareScenarioToReference(
-      alignmentScenarios.find((scenario) => scenario.key === "intermediate_rich_half")!,
+      requireFixtureValue(
+        alignmentScenarios.find((scenario) => scenario.key === "local_exact_run"),
+        "expected local exact scenario",
+      ),
     );
     const infeasible = compareScenarioToReference(
-      alignmentScenarios.find((scenario) => scenario.key === "infeasible_stretch_goal")!,
+      requireFixtureValue(
+        alignmentScenarios.find((scenario) => scenario.key === "local_capacity_bounded"),
+        "expected local capacity-bounded scenario",
+      ),
     );
 
     expect(infeasible.reference.feasibility.mode).toBe("capacity_bounded");

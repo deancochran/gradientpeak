@@ -7,7 +7,11 @@ export const CONTRACT_EPOCH_DATABASE_DELETE_TIMEOUT_MS = 5_000;
 export const CONTRACT_EPOCH_RESET_TIMEOUT_MS = 10_000;
 export const LEGACY_WEB_RECORDING_DATABASE_NAME = "gradientpeak-web-recording";
 export const WEB_RECORDING_DATABASE_PREFIX = "gradientpeak-web-recording-epoch-";
-export const WEB_RECORDING_DATABASE_NAME = `${WEB_RECORDING_DATABASE_PREFIX}${CURRENT_CONTRACT_EPOCH}`;
+// Independent local wire generation. Epoch-3 readers know only the old exact
+// namespace/prefix, so they cannot claim, parse, remove, or reset these drafts.
+export const WEB_RECORDING_JOURNAL_DATABASE_PREFIX = "gradientpeak-web-recording-journal-v2-epoch-";
+export const WEB_RECORDING_DATABASE_NAME = `${WEB_RECORDING_JOURNAL_DATABASE_PREFIX}${CURRENT_CONTRACT_EPOCH}`;
+export const LEGACY_TIMER_RECORDING_DATABASE_NAME = `${WEB_RECORDING_DATABASE_PREFIX}${CURRENT_CONTRACT_EPOCH}`;
 export const CURRENT_CONTRACT_EPOCH_VALUE = String(CURRENT_CONTRACT_EPOCH);
 export const contractEpochFormInputProps = Object.freeze({
   name: CONTRACT_EPOCH_HEADER,
@@ -83,7 +87,8 @@ export async function ensureCurrentContractEpoch(runtime: ContractEpochRuntime):
   const detectedDatabaseNames = discoveredDatabaseNames.filter(
     (databaseName) =>
       databaseName === LEGACY_WEB_RECORDING_DATABASE_NAME ||
-      databaseName.startsWith(WEB_RECORDING_DATABASE_PREFIX),
+      databaseName.startsWith(WEB_RECORDING_DATABASE_PREFIX) ||
+      databaseName.startsWith(WEB_RECORDING_JOURNAL_DATABASE_PREFIX),
   );
 
   for (const key of PRODUCT_LOCAL_STORAGE_KEYS) {

@@ -45,6 +45,7 @@ import {
 } from "@repo/core";
 import { EventEmitter } from "expo";
 import { AppState, type AppStateStatus } from "react-native";
+import { omitUndefined } from "../../omitUndefined";
 import { getLocalActivityArtifactMetadata } from "../activitySubmissionQueue/localArtifact";
 import {
   type FitSessionData,
@@ -250,26 +251,30 @@ function buildFtmsAvailableModes(
   ];
 
   if (features.powerTargetSettingSupported && isFtmsModeAllowedForMachine("erg", machineType)) {
-    modes.push({
-      id: "erg",
-      label: "Target Power",
-      enabled: true,
-      range: toFtmsRange(features.powerRange, "W", 5),
-      safetyLevel: "none",
-    });
+    modes.push(
+      omitUndefined({
+        id: "erg",
+        label: "Target Power",
+        enabled: true,
+        range: toFtmsRange(features.powerRange, "W", 5),
+        safetyLevel: "none",
+      }),
+    );
   }
 
   if (
     features.resistanceTargetSettingSupported &&
     isFtmsModeAllowedForMachine("resistance", machineType)
   ) {
-    modes.push({
-      id: "resistance",
-      label: "Resistance",
-      enabled: true,
-      range: toFtmsRange(features.resistanceRange, "level", 1),
-      safetyLevel: "none",
-    });
+    modes.push(
+      omitUndefined({
+        id: "resistance",
+        label: "Resistance",
+        enabled: true,
+        range: toFtmsRange(features.resistanceRange, "level", 1),
+        safetyLevel: "none",
+      }),
+    );
   }
 
   if (features.indoorBikeSimulationSupported && isFtmsModeAllowedForMachine("grade", machineType)) {
@@ -285,36 +290,42 @@ function buildFtmsAvailableModes(
     features.inclinationTargetSettingSupported &&
     isFtmsModeAllowedForMachine("inclination", machineType)
   ) {
-    modes.push({
-      id: "inclination",
-      label: "Inclination",
-      enabled: true,
-      range: toFtmsRange(features.inclinationRange, "%", 0.5),
-      safetyLevel: "confirm",
-    });
+    modes.push(
+      omitUndefined({
+        id: "inclination",
+        label: "Inclination",
+        enabled: true,
+        range: toFtmsRange(features.inclinationRange, "%", 0.5),
+        safetyLevel: "confirm",
+      }),
+    );
   }
 
   if (features.speedTargetSettingSupported && isFtmsModeAllowedForMachine("speed", machineType)) {
-    modes.push({
-      id: "speed",
-      label: "Speed",
-      enabled: true,
-      range: toFtmsRange(features.speedRange, "kph", 0.1),
-      safetyLevel: "strong_confirm",
-    });
+    modes.push(
+      omitUndefined({
+        id: "speed",
+        label: "Speed",
+        enabled: true,
+        range: toFtmsRange(features.speedRange, "kph", 0.1),
+        safetyLevel: "strong_confirm",
+      }),
+    );
   }
 
   if (
     features.heartRateTargetSettingSupported &&
     isFtmsModeAllowedForMachine("target_heart_rate", machineType)
   ) {
-    modes.push({
-      id: "target_heart_rate",
-      label: "Target Heart Rate",
-      enabled: true,
-      range: toFtmsRange(features.heartRateRange, "bpm", 1),
-      safetyLevel: "confirm",
-    });
+    modes.push(
+      omitUndefined({
+        id: "target_heart_rate",
+        label: "Target Heart Rate",
+        enabled: true,
+        range: toFtmsRange(features.heartRateRange, "bpm", 1),
+        safetyLevel: "confirm",
+      }),
+    );
   }
 
   if (
@@ -333,7 +344,7 @@ function buildFtmsAvailableModes(
     id: "free_ride",
     label: "Free Ride",
     enabled: selectedMode !== "status",
-    disabledReason: selectedMode === "status" ? "No active target to clear" : undefined,
+    ...(selectedMode === "status" ? { disabledReason: "No active target to clear" } : {}),
     safetyLevel: "confirm",
   });
 
@@ -641,6 +652,13 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
 
     if (this.shouldAutoFollowPlanTargets() && this.currentStep?.role === "activity") {
+      // An activity occurrence with no target is an explicit automatic-control
+      // boundary, not an invitation to retain the preceding ERG/resistance
+      // command (or to fall through to route simulation).
+      if (this.currentStep.targets.length === 0) {
+        await this.trainerControl.neutralizeForBoundary();
+        return;
+      }
       await this.trainerControl.applyStepTargets(this.currentStep, source);
       return;
     }
@@ -663,9 +681,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
 
     // Update LiveMetricsManager
-    this.liveMetricsManager.updateMetrics({
-      weightKg: this.weightKg,
-    });
+    this.liveMetricsManager.updateMetrics(
+      this.weightKg === undefined ? {} : { weightKg: this.weightKg },
+    );
 
     this.emit("metricsUpdated");
     this.publishSessionUpdate();
@@ -1292,14 +1310,14 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       nextStep: info.next,
       currentSegment: info.current
         ? {
-            id: info.current.segmentId,
+            id: info.current.occurrenceId,
             role: info.current.role,
             activity_category: info.current.activity_category,
           }
         : null,
       nextSegment: info.next
         ? {
-            id: info.next.segmentId,
+            id: info.next.occurrenceId,
             role: info.next.role,
             activity_category: info.next.activity_category,
           }
@@ -1569,7 +1587,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     const planExecution =
       this._plan && this._plannedSession
         ? {
-            manifestVersion: 1 as const,
+            manifestVersion: 2 as const,
             compilerVersion: ACTIVITY_PLAN_COMPILER_VERSION,
             activityPlanId: this._plannedSession.prescription.resolutionManifest.activity_plan_id,
             scheduledEventId: this._eventId ?? null,
@@ -1887,7 +1905,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.selectedActivityCategory =
       this.currentStep?.activity_category ?? support.activity_category;
     this.syncSelectedActivityCategoryTargets();
-    this.emit("planSelected", { plan, eventId });
+    this.emit("planSelected", omitUndefined({ plan, eventId }));
 
     // Emit step changed immediately so UI shows the first step
     this.emit("stepChanged", this.getStepInfo());
@@ -1982,7 +2000,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         return;
       }
 
-      if (!this.routeController.loadRoute(route, operationId)) {
+      const loadedRoute = omitUndefined({
+        ...route,
+        coordinates: route.coordinates.map((coordinate) => omitUndefined(coordinate)),
+      });
+      if (!this.routeController.loadRoute(loadedRoute, operationId)) {
         return;
       }
 
@@ -2233,6 +2255,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private completeCurrentOccurrence(
     completedAt: number,
     occurrence = this.currentStep,
+    completion: RecordingOccurrenceResult["completion"] = null,
   ): RecordingOccurrenceResult | null {
     if (!this._plan) return null;
     if (
@@ -2249,7 +2272,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     const result: RecordingOccurrenceResult = {
       occurrenceId: occurrence.occurrenceId,
       globalOrdinal: occurrence.globalOrdinal,
-      segmentId: occurrence.segmentId,
+      stepId: occurrence.stepId,
+      ...(occurrence.repeatId ? { repeatId: occurrence.repeatId } : {}),
+      repeatIteration: occurrence.repeatIteration,
       role: occurrence.role,
       activity_category: occurrence.activity_category,
       startedAt: new Date(this.occurrenceStartedAt ?? this.startTime ?? completedAt).toISOString(),
@@ -2257,6 +2282,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       activeSeconds: occurrenceMovingSeconds,
       movingSeconds: occurrenceMovingSeconds,
       distanceMeters: Math.max(0, stats.distance - this.occurrenceStartStats.distanceMeters),
+      completion,
     };
     this.completedOccurrences.push(result);
     this.occurrenceStartStats = { movingSeconds: stats.movingTime, distanceMeters: stats.distance };
@@ -2281,7 +2307,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         {
           occurrenceId: freeRecordingOccurrence.occurrenceId,
           globalOrdinal: freeRecordingOccurrence.globalOrdinal,
-          segmentId: freeRecordingOccurrence.segmentId,
+          stepId: null,
+          repeatIteration: freeRecordingOccurrence.repeatIteration,
           role: freeRecordingOccurrence.role,
           activity_category: this.selectedActivityCategory,
           startedAt,
@@ -2289,6 +2316,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           activeSeconds: stats.movingTime,
           movingSeconds: stats.movingTime,
           distanceMeters: stats.distance,
+          completion: { status: "completed", method: "manual" },
         },
       ];
     }
@@ -2317,18 +2345,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     };
   }
 
-  private isRestEvidenceTimestamp(timestamp: number): boolean {
-    if (
-      this.completedOccurrences.some(
-        (occurrence) =>
-          occurrence.role === "rest" &&
-          timestamp >= Date.parse(occurrence.startedAt) &&
-          timestamp <= Date.parse(occurrence.completedAt),
-      )
-    ) {
-      return true;
-    }
-    return this.currentStep?.role === "rest" && timestamp >= (this.occurrenceStartedAt ?? 0);
+  private isRestEvidenceTimestamp(_timestamp: number): boolean {
+    // Fixed V4 plans compile exclusively to activity occurrences.
+    return false;
   }
 
   private async prepareFitEncoderForRewind(
@@ -2363,55 +2382,60 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   private buildFitSessions(manifest: RecordingExecutionManifest): FitSessionData[] {
-    const groups: RecordingExecutionManifest["occurrences"][] = [];
-    for (const occurrence of manifest.occurrences) {
-      const current = groups.at(-1);
-      if (current?.[0]?.segmentId === occurrence.segmentId) current.push(occurrence);
-      else groups.push([occurrence]);
-    }
-
-    return groups.flatMap((occurrences) => {
-      const first = occurrences[0];
-      const last = occurrences.at(-1);
-      if (!first || !last || first.role === "rest") return [];
-      const startTime = Date.parse(first.startedAt);
-      const endedAt = Date.parse(last.completedAt);
-      const totalActiveSeconds = occurrences.reduce(
-        (total, occurrence) => total + occurrence.activeSeconds,
-        0,
-      );
-      const totalMovingSeconds = occurrences.reduce(
-        (total, occurrence) => total + occurrence.movingSeconds,
-        0,
-      );
-      const distance = occurrences.reduce(
-        (total, occurrence) => total + occurrence.distanceMeters,
-        0,
-      );
-      const fitSport =
-        first.role === "activity" && first.activity_category
-          ? this.getFitSport(first.activity_category)
-          : { sport: "transition", subSport: "generic" };
-      const timerEvents: RecordingExecutionManifest["occurrences"][number]["timerEvents"] = [];
-      for (const event of occurrences.flatMap((occurrence) => occurrence.timerEvents)) {
-        const paused = timerEvents.at(-1)?.type === "pause";
-        if ((event.type === "pause" && !paused) || (event.type === "resume" && paused)) {
-          timerEvents.push(event);
-        }
+    const occurrences = manifest.occurrences;
+    const first = occurrences[0];
+    const last = occurrences.at(-1);
+    const firstActivity = occurrences.find((occurrence) => occurrence.role === "activity");
+    if (!first || !last || !firstActivity?.activity_category) return [];
+    const startTime = Date.parse(first.startedAt);
+    const endedAt = Date.parse(last.completedAt);
+    const totalMovingSeconds = occurrences.reduce(
+      (total, occurrence) => total + occurrence.movingSeconds,
+      0,
+    );
+    const distance = occurrences.reduce(
+      (total, occurrence) => total + occurrence.distanceMeters,
+      0,
+    );
+    const fitSport = this.getFitSport(firstActivity.activity_category);
+    const timerEvents: RecordingExecutionManifest["occurrences"][number]["timerEvents"] = [];
+    for (const event of occurrences.flatMap((occurrence) => occurrence.timerEvents)) {
+      const paused = timerEvents.at(-1)?.type === "pause";
+      if ((event.type === "pause" && !paused) || (event.type === "resume" && paused)) {
+        timerEvents.push(event);
       }
-      if (timerEvents.at(-1)?.type === "pause") timerEvents.pop();
-      let lapNumber = 0;
-      return {
+    }
+    if (timerEvents.at(-1)?.type === "pause") timerEvents.pop();
+    const pausedMilliseconds = timerEvents.reduce(
+      (total, event, index) =>
+        event.type === "resume"
+          ? total +
+            Math.max(
+              0,
+              Date.parse(event.timestamp) -
+                Date.parse(timerEvents[index - 1]?.timestamp ?? event.timestamp),
+            )
+          : total,
+      0,
+    );
+    let lapNumber = 0;
+    return [
+      {
         startTime,
         endedAt,
-        totalTime: totalActiveSeconds * 1000,
+        // FIT session time covers the full planned recording timeline. A
+        // timed untargeted recovery is still activity evidence even when it
+        // contributes no moving samples.
+        totalTime: Math.max(0, endedAt - startTime - pausedMilliseconds),
         movingTime: totalMovingSeconds * 1000,
         distance,
         avgSpeed: totalMovingSeconds > 0 ? distance / totalMovingSeconds : 0,
         maxSpeed: 0,
         sport: fitSport.sport,
         subSport: fitSport.subSport,
-        role: first.role,
+        // A scheduled mobile recording is one FIT activity. Block and step
+        // boundaries remain laps rather than being emitted as multisport legs.
+        role: "activity" as const,
         timerEvents: timerEvents.map((event) => ({
           type: event.type,
           timestamp: Date.parse(event.timestamp),
@@ -2428,8 +2452,17 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
             maxSpeed: 0,
           })),
         ),
-      };
-    });
+      },
+    ];
+  }
+
+  private requiresAutomaticTrainerRelease(target: RecordingPlanOccurrence | undefined): boolean {
+    return (
+      !this.isTrainerManualMode() &&
+      target !== undefined &&
+      (target.role !== "activity" ||
+        (this.shouldAutoFollowPlanTargets() && target.targets.length === 0))
+    );
   }
 
   private navigatePlanStep(
@@ -2491,8 +2524,12 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
             targetIndex > 0,
           )
         : undefined;
-      if (target && target.role !== "activity") {
-        await this.trainerControl.neutralizeForBoundary();
+      const requiresTrainerRelease = this.requiresAutomaticTrainerRelease(target);
+      if (requiresTrainerRelease && !(await this.trainerControl.neutralizeForBoundary())) {
+        // The outgoing command is still potentially active. Do not commit a
+        // boundary into an automatic untargeted/rest occurrence until the FTMS
+        // reset is confirmed; the controller has already published the error.
+        return false;
       }
       const navigated =
         reason === "advance"
@@ -2509,7 +2546,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
       const committedAt = Date.now();
       const completed = completesCurrent
-        ? this.completeCurrentOccurrence(committedAt, previous)
+        ? this.completeCurrentOccurrence(committedAt, previous, {
+            status: reason === "skip" ? "skipped" : "completed",
+            method: reason === "skip" ? "manual" : advanceOrigin,
+          })
         : null;
       if (targetIndex < sourceIndex && rewindBoundary) {
         this.rewindJournal.push(rewindBoundary);
@@ -2539,7 +2579,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         movingSeconds: this.getSessionStats().movingTime,
         distanceMeters,
       };
-      if (target && previous.segmentId !== target.segmentId) {
+      if (target && previous.occurrenceId !== target.occurrenceId) {
         this.trainerControl.resetAdaptiveState();
       }
       if (target) {
@@ -2553,7 +2593,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         committedAt: new Date(committedAt).toISOString(),
       });
       await this.writeCheckpointWithinFence();
-      await this.syncAutomaticTrainerControl("step_change");
+      if (!requiresTrainerRelease) {
+        await this.syncAutomaticTrainerControl("step_change");
+      }
       this.emit("stepChanged", this.getStepInfo());
       this.publishSessionUpdate();
       if (completesPlan) this.emit("planCompleted");
@@ -2702,9 +2744,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return null; // No plan, no validation needed
     }
 
-    return validatePlanRequirements(this._plan, this.profile, {
-      performanceTargets,
-    });
+    return validatePlanRequirements(
+      this._plan,
+      this.profile,
+      omitUndefined({ performanceTargets }),
+    );
   }
 
   // ================================
@@ -3248,7 +3292,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       if (!executionPlan) throw new Error("Free recording execution structure is unavailable");
       if (this._plannedSession) {
         await assertRecordingPlanExecutionStructureHashes({
-          manifestVersion: 1,
+          manifestVersion: 2,
           compilerVersion: ACTIVITY_PLAN_COMPILER_VERSION,
           activityPlanId: this._plannedSession.prescription.resolutionManifest.activity_plan_id,
           scheduledEventId: this._eventId ?? null,
@@ -3501,7 +3545,27 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       const evidenceSessionId = this.getSessionSnapshot()?.identity.sessionId;
       if (!evidenceSessionId) throw new Error("Recording evidence session is unavailable");
       await this.planBoundaryTransition;
-      const finalOccurrence = this.completeCurrentOccurrence(this.recordingEndTime ?? Date.now());
+      const finalStep = this.currentStep;
+      const finalProgress =
+        finalStep && this._plan
+          ? this.planExecution.getStepProgress(
+              this.getMovingTime(),
+              this.getSessionStats().distance,
+            )
+          : null;
+      // Finish closes an observation, not necessarily the prescribed work. Open
+      // steps end by user intent; measurable targets must actually be reached.
+      const finalCompletion: RecordingOccurrenceResult["completion"] =
+        finalStep?.duration.type === "untilFinished"
+          ? { status: "completed", method: "manual" }
+          : finalProgress?.canAutoAdvance
+            ? { status: "completed", method: "automatic" }
+            : null;
+      const finalOccurrence = this.completeCurrentOccurrence(
+        this.recordingEndTime ?? Date.now(),
+        finalStep,
+        finalCompletion,
+      );
       if (finalOccurrence) {
         this.planExecution.completeForFinalization();
         this.boundaryJournal.push({
@@ -3551,7 +3615,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         await this.fitEncoder.finalize(
           fitSessions.length > 0
             ? fitSessions
-            : {
+            : omitUndefined({
                 startTime: this.startTime || Date.now(),
                 endedAt: this.recordingEndTime,
                 totalTime: stats.movingTime * 1000,
@@ -3568,7 +3632,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
                 calories: stats.calories,
                 sport: fallbackSport.sport,
                 subSport: fallbackSport.subSport,
-              },
+              }),
         );
         this.recordingMetadata.activityFilePath = this.fitEncoder.getFilePath();
         await validateFinalizedFitFile(this.recordingMetadata.activityFilePath, {
@@ -3839,11 +3903,13 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       const metrics = this.liveMetricsManager.getMetrics();
       const progress = this.hasPlan && this.currentStep ? this.stepProgress : null;
       this.notificationsManager
-        .update({
-          elapsedInStep: progress?.movingTime || 0,
-          heartRate: metrics.avgHeartRate || undefined,
-          power: metrics.avgPower || undefined,
-        })
+        .update(
+          omitUndefined({
+            elapsedInStep: progress?.movingTime || 0,
+            heartRate: metrics.avgHeartRate || undefined,
+            power: metrics.avgPower || undefined,
+          }),
+        )
         .catch(console.error);
     }
   }
@@ -3999,7 +4065,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   /**
-   * Get moving time in milliseconds (excludes paused time)
+   * Get running-session time in milliseconds (excludes explicit pauses).
+   * The legacy name does not mean sensor-detected motion: stationary rest
+   * counts, so timed steps must use this clock rather than GPS moving time.
    */
   getMovingTime(): number {
     if (!this.startTime) return 0;

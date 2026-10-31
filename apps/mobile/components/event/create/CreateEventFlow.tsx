@@ -20,7 +20,8 @@ import { z } from "zod";
 import { AppFormModal } from "@/components/shared/AppFormModal";
 import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
 import { api } from "@/lib/api";
-import { getDetectedDeviceTimeZone, getEventScheduledDate } from "@/lib/calendar/eventSchedule";
+import { getEventScheduledDate } from "@/lib/calendar/eventSchedule";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import {
@@ -282,12 +283,14 @@ export const CreateEventFlow = forwardRef<
     updateEvent
       ? buildDraftFromEvent(updateEvent)
       : withPreselectedRoute(
-          createDefaultEventDraft({
-            createDate,
-            mode: initialMode,
-            notes: initialNotes,
-            title: defaults?.title,
-          }),
+          createDefaultEventDraft(
+            omitUndefined({
+              createDate,
+              mode: initialMode,
+              notes: initialNotes,
+              title: defaults?.title,
+            }),
+          ),
           preselectedRoute,
         ),
   );
@@ -466,12 +469,14 @@ export const CreateEventFlow = forwardRef<
     if (updateEvent) return;
     if (isDraftDirtyRef.current) return;
     const nextDraft = withPreselectedRoute(
-      createDefaultEventDraft({
-        createDate,
-        mode: initialMode,
-        notes: initialNotes,
-        title: defaults?.title,
-      }),
+      createDefaultEventDraft(
+        omitUndefined({
+          createDate,
+          mode: initialMode,
+          notes: initialNotes,
+          title: defaults?.title,
+        }),
+      ),
       preselectedRoute,
     );
     initialDraftKeyRef.current = draftKey(nextDraft);

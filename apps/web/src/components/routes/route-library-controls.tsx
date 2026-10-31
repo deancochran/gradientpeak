@@ -73,6 +73,10 @@ export function RouteLibraryControls({
     filters.minAscentM,
     filters.minDistanceKm,
     hasPendingNumberDrafts,
+    numberDrafts.maxAscentM,
+    numberDrafts.maxDistanceKm,
+    numberDrafts.minAscentM,
+    numberDrafts.minDistanceKm,
   ]);
 
   const update = <TKey extends keyof RouteLibraryFilters>(

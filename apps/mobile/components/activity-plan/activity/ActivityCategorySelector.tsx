@@ -1,12 +1,10 @@
-import { ACTIVITY_CATEGORY_CONFIG } from "@repo/core/constants/activity";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import * as Haptics from "expo-haptics";
-import { ChevronDown } from "lucide-react-native";
-import { memo, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
-import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
+import { memo, useEffect, useState } from "react";
+import { BackHandler, Pressable, ScrollView, View } from "react-native";
+import { ACTIVITY_CATEGORY_CONFIGS, getActivityCategoryConfig } from "@/lib/constants/activities";
 
 interface ActivityCategorySelectorProps {
   value: string;
@@ -37,67 +35,79 @@ export const ActivityCategorySelector = memo<ActivityCategorySelectorProps>(
       setOpen(false);
     };
 
-    const selectedConfig = value
-      ? ACTIVITY_CATEGORY_CONFIG[value as keyof typeof ACTIVITY_CATEGORY_CONFIG]
-      : undefined;
+    const selectedConfig = getActivityCategoryConfig(value);
 
-    // The compact trigger remains identifiable and signals that it opens a category menu.
+    useEffect(() => {
+      if (!open || !compact) return;
+      const listener = BackHandler.addEventListener("hardwareBackPress", () => {
+        setOpen(false);
+        return true;
+      });
+      return () => listener?.remove();
+    }, [compact, open]);
+
+    // Plan metadata needs a fast local choice, not another fullscreen flow.
     if (compact) {
       return (
-        <>
+        <View className="relative self-end">
           <Pressable
             disabled={disabled}
             accessibilityHint={accessibilityHint}
             accessibilityLabel={accessibilityLabel ?? "Activity category"}
             accessibilityRole="button"
             accessibilityState={{ expanded: open, disabled }}
-            onPress={() => setOpen(true)}
-            className="h-12 w-12 flex-row items-center justify-center gap-0.5 rounded-full bg-muted active:bg-muted/70"
+            accessibilityValue={{ text: selectedConfig?.name ?? "Not set" }}
+            onPress={() => {
+              if (!disabled) setOpen((current) => !current);
+            }}
+            className="min-h-12 flex-row items-center gap-2 rounded-full bg-muted px-3 active:bg-muted/70"
           >
-            <Text className="text-lg">{selectedConfig?.icon || "⚡"}</Text>
-            <Icon as={ChevronDown} size={12} className="text-muted-foreground" />
+            <Icon as={selectedConfig.icon} size={22} className={selectedConfig.color} />
+            <Text className="text-sm font-medium">{selectedConfig.name}</Text>
           </Pressable>
-
           {open ? (
-            <AppSelectionModal
-              description="Choose the activity category for this activity."
-              onClose={() => setOpen(false)}
-              testID="activity-category-selector-modal"
-              title="Select Activity Category"
+            <View
+              accessibilityViewIsModal
+              className="absolute right-0 top-14 z-50 w-44 rounded-md border border-border bg-popover p-1 shadow-lg shadow-black/5"
+              onAccessibilityEscape={() => setOpen(false)}
+              testID="activity-category-selector-menu"
             >
-              <ScrollView className="max-h-[400px]" showsVerticalScrollIndicator={false}>
-                <View className="gap-2 py-2">
-                  {Object.entries(ACTIVITY_CATEGORY_CONFIG).map(([key, config]) => {
-                    const isSelected = value === key;
+              <Pressable
+                accessibilityLabel="Close category menu"
+                accessibilityRole="button"
+                className="min-h-11 items-end justify-center rounded-sm px-2 py-2 active:bg-accent"
+                onPress={() => setOpen(false)}
+                testID="activity-category-selector-close"
+              >
+                <Text className="font-medium">Close</Text>
+              </Pressable>
+              {Object.entries(ACTIVITY_CATEGORY_CONFIGS).map(([key, config]) => {
+                const isSelected = value === key;
 
-                    return (
-                      <Pressable
-                        disabled={disabled}
-                        key={key}
-                        onPress={() => handleSelect(key)}
-                        className={`flex-row items-center gap-3 rounded-lg border p-3 ${
-                          isSelected
-                            ? "border-primary bg-primary/10"
-                            : "border-border bg-card active:bg-muted"
-                        }`}
-                      >
-                        <Text className="text-2xl">{config.icon}</Text>
-                        <Text
-                          className={`text-base font-medium ${
-                            isSelected ? "text-primary" : "text-foreground"
-                          }`}
-                        >
-                          {config.name}
-                        </Text>
-                        {isSelected ? <Text className="ml-auto text-primary">✓</Text> : null}
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </ScrollView>
-            </AppSelectionModal>
+                return (
+                  <Pressable
+                    disabled={disabled}
+                    key={key}
+                    accessibilityLabel={`Select ${config.name}`}
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled, selected: isSelected }}
+                    onPress={() => handleSelect(key)}
+                    testID={`activity-category-option-${key}`}
+                    className={`min-h-11 flex-row items-center gap-2 rounded-sm px-2 py-2 active:bg-accent ${
+                      isSelected ? "bg-primary/10" : ""
+                    }`}
+                  >
+                    <Icon as={config.icon} size={20} className={config.color} />
+                    <Text className={isSelected ? "font-medium text-primary" : "font-medium"}>
+                      {config.name}
+                    </Text>
+                    {isSelected ? <Text className="ml-auto text-primary">✓</Text> : null}
+                  </Pressable>
+                );
+              })}
+            </View>
           ) : null}
-        </>
+        </View>
       );
     }
 
@@ -109,7 +119,7 @@ export const ActivityCategorySelector = memo<ActivityCategorySelectorProps>(
         className="flex-row"
         contentContainerClassName="gap-2 px-4"
       >
-        {Object.entries(ACTIVITY_CATEGORY_CONFIG).map(([key, config]) => {
+        {Object.entries(ACTIVITY_CATEGORY_CONFIGS).map(([key, config]) => {
           const isSelected = value === key;
 
           return (
@@ -123,12 +133,17 @@ export const ActivityCategorySelector = memo<ActivityCategorySelectorProps>(
                 isSelected ? "bg-primary border-primary" : "bg-card border-border"
               }`}
             >
+              <Icon
+                as={config.icon}
+                size={20}
+                className={isSelected ? "text-primary-foreground" : config.color}
+              />
               <Text
                 className={`text-sm font-medium ${
                   isSelected ? "text-primary-foreground" : "text-foreground"
                 }`}
               >
-                {config.icon} {config.name}
+                {config.name}
               </Text>
             </Button>
           );

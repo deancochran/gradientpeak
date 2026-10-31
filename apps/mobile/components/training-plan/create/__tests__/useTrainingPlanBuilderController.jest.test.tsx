@@ -48,6 +48,15 @@ jest.mock("@/lib/training-plan-creation/useTrainingPlanCreationService", () => (
 }));
 
 describe("useTrainingPlanBuilderController chart selection", () => {
+  it("checks new invalid text synchronously even through a previously captured save callback", async () => {
+    const { result } = await renderHook(() => useTrainingPlanBuilderController({ mode: "create" }));
+    const save = result.current.actions.handleSave;
+    await act(async () => {
+      result.current.numericDrafts.setError("athlete:weight", "Correct Weight");
+      await save();
+    });
+    expect(mockBuilder.derived.savePlan.execute).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     jest.clearAllMocks();
   });

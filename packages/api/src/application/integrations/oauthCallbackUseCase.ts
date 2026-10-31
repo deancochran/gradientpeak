@@ -190,9 +190,14 @@ export async function handleOAuthCallback({
   let tokens: Awaited<ReturnType<typeof providerConnection.exchangeOAuthCode>>;
   let externalId: string;
   let requiresActivation: boolean;
+  let providerGrantedScope: string | undefined;
   try {
     tokens = await providerConnection.exchangeOAuthCode({ code, state });
-    ({ externalId, requiresActivation } = await providerConnection.resolveOAuthIdentity(tokens));
+    ({
+      externalId,
+      requiresActivation,
+      scope: providerGrantedScope,
+    } = await providerConnection.resolveOAuthIdentity(tokens));
   } catch (caughtError) {
     const failure = providerConnection.classifyOAuthFailure(caughtError);
     logger.warn(
@@ -220,7 +225,12 @@ export async function handleOAuthCallback({
   let integration: Awaited<
     ReturnType<IntegrationsRepositories["integrations"]["upsertFromOAuthState"]>
   >;
-  const grantedScope = tokens.scope || storedState.requested_scope;
+  // Garmin's app-level OAuth scope is fixed. Its user permission endpoint is therefore
+  // authoritative over the token response's fixed scope string.
+  const grantedScope =
+    providerGrantedScope !== undefined
+      ? providerGrantedScope
+      : tokens.scope || storedState.requested_scope;
   try {
     integration = await runInTransaction(async (transaction) => {
       const storedIntegration = await repositories.integrations.upsertFromOAuthStateInTransaction(

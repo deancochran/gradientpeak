@@ -6,28 +6,15 @@ import { composeEffectivePlanDto } from "./effective-plan-composition";
 
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 const structure = activityPlanStructureSchema.parse({
-  version: 3,
+  version: 5,
   activity_category: "run",
-  segments: [
+  items: [
     {
-      id: id(1),
-      role: "activity",
-      name: "Run",
-      intervals: [
-        {
-          id: id(2),
-          name: "Work",
-          repetitions: 1,
-          steps: [
-            {
-              id: id(3),
-              name: "Steady",
-              duration: { type: "time", seconds: 1800 },
-              targets: [{ type: "RPE", intensity: 5 }],
-            },
-          ],
-        },
-      ],
+      type: "step",
+      id: id(3),
+      name: "Steady",
+      duration: { type: "time", seconds: 1800 },
+      targets: [{ type: "RPE", intensity: 5 }],
     },
   ],
 });
@@ -58,7 +45,6 @@ const commonLoad = commonLoadAggregateSchema.parse({
   knownDurationCoverage: 1,
   unknownDurationActivityCount: 0,
 });
-
 describe("composeEffectivePlanDto", () => {
   it("uses canonical manifests and direct common-load envelopes without fabricating prescription members", () => {
     const result = composeEffectivePlanDto({
@@ -83,6 +69,32 @@ describe("composeEffectivePlanDto", () => {
       firm: { status: "complete", commonLoad: { load: 50 } },
       lifecycleQuantifications: { prescriptions: null, comparison: null },
       firmItems: [{ kind: "scheduled", resolutionManifest: { fingerprint: manifest.fingerprint } }],
+    });
+  });
+
+  it("keeps absent legacy provenance null while composing current-plan load", () => {
+    const result = composeEffectivePlanDto({
+      scheduledItems: [
+        {
+          scheduledItemId: id(6),
+          scheduledDate: "2026-07-24",
+          status: "active",
+          linkedCompletedActivityId: null,
+          commonLoad,
+          resolutionManifest: null,
+        },
+      ],
+      completedActivities: [],
+      scheduledSource: { status: "complete", startDate: "2026-07-24", endDate: "2026-07-24" },
+      completedSource: { status: "complete", startDate: "2026-07-24", endDate: "2026-07-24" },
+      planningTimezone: "UTC",
+      asOfInstant: "2026-07-23T12:00:00.000Z",
+    });
+
+    expect(result).toMatchObject({
+      status: "available",
+      firm: { status: "complete", commonLoad: { load: 50 } },
+      firmItems: [{ kind: "scheduled", resolutionManifest: null }],
     });
   });
 });

@@ -113,9 +113,9 @@ function parseGPXDocument(doc: Document): ParsedRoute {
   }
 
   return {
-    name,
+    ...(name === undefined ? {} : { name }),
     coordinates,
-    metadata,
+    ...(metadata === undefined ? {} : { metadata }),
   };
 }
 
@@ -136,9 +136,9 @@ function parseTCXDocument(doc: Document): ParsedRoute {
   }
 
   return {
-    name,
+    ...(name === undefined ? {} : { name }),
     coordinates,
-    metadata: time ? { time } : undefined,
+    ...(time === undefined ? {} : { metadata: { time } }),
   };
 }
 
@@ -288,10 +288,12 @@ function parseTrackPoint(element: Element): LatLngAlt | null {
     ? parseFloat(elevationElement.textContent)
     : undefined;
 
+  const validAltitude =
+    typeof altitude === "number" && !Number.isNaN(altitude) ? altitude : undefined;
   return {
     latitude: lat,
     longitude: lon,
-    altitude: typeof altitude === "number" && !Number.isNaN(altitude) ? altitude : undefined,
+    ...(validAltitude === undefined ? {} : { altitude: validAltitude }),
   };
 }
 
@@ -364,10 +366,11 @@ function parseTCXTrackpoint(element: Element | undefined): LatLngAlt | null {
   const longitude = parseNumberText(position, "LongitudeDegrees");
   if (latitude === undefined || longitude === undefined) return null;
 
+  const altitude = parseNumberText(element, "AltitudeMeters");
   return {
     latitude,
     longitude,
-    altitude: parseNumberText(element, "AltitudeMeters"),
+    ...(altitude === undefined ? {} : { altitude }),
   };
 }
 

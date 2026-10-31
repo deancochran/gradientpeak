@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultAthletePreferenceProfile } from "../../../schemas/settings/profile_settings";
+import { requireFixtureValue } from "../../../testing/requireFixtureValue";
 import {
   assessFeasibility,
   fromProfileGoals,
@@ -62,7 +63,9 @@ describe("generateReferenceTrajectory", () => {
     const goals = fromProfileGoals(
       periodizationScenarioFixtures.feasibleSingleAGoal.goals as never,
     );
-    const demandResult = resolveEventDemand(goals[0]!);
+    const demandResult = resolveEventDemand(
+      requireFixtureValue(goals[0], "expected feasible A-goal fixture"),
+    );
     const trajectory = buildTrajectoryFixture({
       currentLongTermLoad: periodizationScenarioFixtures.feasibleSingleAGoal.currentLongTermLoad,
       startDate: "2026-03-12",

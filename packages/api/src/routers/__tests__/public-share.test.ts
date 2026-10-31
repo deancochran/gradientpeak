@@ -1,52 +1,46 @@
 import { activityPlanStructureSchema } from "@repo/core";
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
-import { activities, activityArtifactLinks, activitySegments, likes } from "@repo/db";
+import { activityArtifactLinks, activitySegments, likes } from "@repo/db";
 import { describe, expect, it } from "vitest";
-
 import { publicShareRouter } from "../public-share";
 
 const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
-
 function createCaller(rows: unknown[]) {
   const selectCalls: unknown[] = [];
   const activity = rows[0] as Record<string, unknown> | undefined;
   const db = {
     select: () => {
       let table: unknown;
-      const builder = {
-        from: (value: unknown) => {
-          table = value;
-          return builder;
-        },
-        leftJoin: () => builder,
-        innerJoin: () => builder,
-        where: () => builder,
-        orderBy: () => builder,
-        limit: () => builder,
-        then: (onFulfilled: (value: unknown[]) => unknown) => {
+      const builder = Object.assign(
+        Promise.resolve().then(() => {
           selectCalls.push(table);
           if (table === activitySegments) {
-            return Promise.resolve(
+            return (
               (activity?.activity_categories as string[] | undefined)?.map((category) => ({
                 category,
-              })) ?? [],
-            ).then(onFulfilled);
+              })) ?? []
+            );
           }
-          if (table === activityArtifactLinks) {
-            return Promise.resolve(
-              activity?.current_artifact ? [activity.current_artifact] : [],
-            ).then(onFulfilled);
-          }
-          if (table === likes) {
-            return Promise.resolve([{ value: activity?.likes_count ?? 0 }]).then(onFulfilled);
-          }
-          return Promise.resolve(table === activities ? rows : rows).then(onFulfilled);
+          if (table === activityArtifactLinks)
+            return activity?.current_artifact ? [activity.current_artifact] : [];
+          if (table === likes) return [{ value: activity?.likes_count ?? 0 }];
+          return rows;
+        }),
+        {
+          from: (value: unknown) => {
+            table = value;
+            return builder;
+          },
+          leftJoin: () => builder,
+          innerJoin: () => builder,
+          where: () => builder,
+          orderBy: () => builder,
+          limit: () => builder,
         },
-      };
+      );
       return builder;
     },
   };
-
   const caller = publicShareRouter.createCaller({
     db,
     headers: new Headers(),
@@ -59,19 +53,15 @@ function createCaller(rows: unknown[]) {
       session: null,
     },
   } as never);
-
   return { caller, selectCalls };
 }
-
 describe("publicShareRouter", () => {
   it("returns null for unavailable activities so private and missing reads are indistinguishable", async () => {
     const { caller } = createCaller([]);
-
     await expect(
       caller.activity({ id: "00000000-0000-4000-8000-000000000001" }),
     ).resolves.toBeNull();
   });
-
   it("maps public activities to a safe DTO", async () => {
     const { caller } = createCaller([
       {
@@ -82,9 +72,9 @@ describe("publicShareRouter", () => {
         notes: "Sunny tempo work",
         started_at: new Date("2026-07-16T12:00:00.000Z"),
         finished_at: new Date("2026-07-16T13:15:00.000Z"),
-        elapsed_ms: 4_500_000,
-        active_ms: 4_400_000,
-        moving_ms: 4_300_000,
+        elapsed_ms: 4500000,
+        active_ms: 4400000,
+        moving_ms: 4300000,
         timing_coverage: "complete",
         distance_meters: 30250,
         elevation_gain_meters: "420.5",
@@ -102,10 +92,10 @@ describe("publicShareRouter", () => {
             role: "activity",
             activity_category: "bike",
             startOffsetMs: 0,
-            endOffsetMs: 4_500_000,
+            endOffsetMs: 4500000,
             summary: {
               version: 1,
-              timing: { timingCoverage: "complete", activeMs: 4_400_000, movingMs: 4_300_000 },
+              timing: { timingCoverage: "complete", activeMs: 4400000, movingMs: 4300000 },
               normalizedPowerResult: unavailableNormalizedPowerResult,
             },
           },
@@ -129,9 +119,7 @@ describe("publicShareRouter", () => {
         owner_avatar_url: "https://example.test/avatar.png",
       },
     ]);
-
     const activity = await caller.activity({ id: "00000000-0000-4000-8000-000000000002" });
-
     expect(activity).toMatchObject({
       id: "00000000-0000-4000-8000-000000000002",
       startedAt: "2026-07-16T12:00:00.000Z",
@@ -154,43 +142,27 @@ describe("publicShareRouter", () => {
     expect(activity).not.toHaveProperty("activity_file_path");
     expect(activity?.sourceArtifact).not.toHaveProperty("path");
   });
-
   it("returns only the activity-plan fields rendered by the public route", async () => {
     const id = "00000000-0000-4000-8000-000000000010";
     const structure = activityPlanStructureSchema.parse({
-      version: 3,
+      version: 5,
       activity_category: "run",
-      segments: [
+      items: [
         {
-          id: "00000000-0000-4000-8000-000000000011",
-          role: "activity",
-          name: "Run",
-          notes: "Ease into the first interval.",
-          intervals: [
-            {
-              id: "00000000-0000-4000-8000-000000000012",
-              name: "Run interval",
-              notes: "Walk between rounds.",
-              repetitions: 1,
-              steps: [
-                {
-                  id: "00000000-0000-4000-8000-000000000013",
-                  name: "Easy run",
-                  description: "Keep the effort conversational.",
-                  notes: "Relax your shoulders.",
-                  duration: { type: "time", seconds: 1800 },
-                  targets: [{ type: "RPE", intensity: 5 }],
-                },
-              ],
-            },
-          ],
+          type: "step",
+          id: "00000000-0000-4000-8000-000000000013",
+          name: "Easy run",
+          instructions: "Keep the effort conversational.\n\nRelax your shoulders.",
+          duration: { type: "time", seconds: 1800 },
+          targets: [{ type: "RPE", intensity: 5 }],
         },
         {
-          id: "00000000-0000-4000-8000-000000000014",
-          role: "rest",
+          type: "step",
+          id: "00000000-0000-4000-8000-000000000015",
           name: "Cool down",
-          notes: "Walk until your breathing settles.",
+          instructions: "Walk until your breathing settles.",
           duration: { type: "time", seconds: 300 },
+          targets: [],
         },
       ],
     });
@@ -215,44 +187,29 @@ describe("publicShareRouter", () => {
         version: "must-not-leak",
       },
     ]);
-
     const activityPlan = await caller.activityPlan({ id });
-
     expect(activityPlan).toMatchObject({
       id,
       activity_category: "run",
-      structure_version: 3,
+      structure_version: 5,
       structure_summary: "Structured plan details",
       structure: {
-        version: 3,
+        version: 5,
         activity_category: "run",
-        segments: [
+        items: [
           {
-            role: "activity",
-            name: "Run",
-            notes: "Ease into the first interval.",
-            intervals: [
-              {
-                name: "Run interval",
-                notes: "Walk between rounds.",
-                repetitions: 1,
-                steps: [
-                  {
-                    name: "Easy run",
-                    description: "Keep the effort conversational.",
-                    notes: "Relax your shoulders.",
-                    duration: { type: "time", seconds: 1800 },
-                    targets: [{ type: "RPE", intensity: 5 }],
-                  },
-                ],
-              },
-            ],
+            type: "step",
+            name: "Easy run",
+            instructions: "Keep the effort conversational.\n\nRelax your shoulders.",
+            duration: { type: "time", seconds: 1800 },
+            targets: [{ type: "RPE", intensity: 5 }],
           },
           {
-            role: "rest",
+            type: "step",
             name: "Cool down",
-            notes: "Walk until your breathing settles.",
+            instructions: "Walk until your breathing settles.",
             duration: { type: "time", seconds: 300 },
+            targets: [],
           },
         ],
       },
@@ -282,7 +239,7 @@ describe("publicShareRouter", () => {
       expect.objectContaining({
         key: "elapsed_duration",
         status: "available",
-        value: 2_100,
+        value: 2100,
         provenance: "authored",
       }),
       expect.objectContaining({ key: "common_load", status: "unavailable", provenance: null }),
@@ -295,21 +252,12 @@ describe("publicShareRouter", () => {
     expect(JSON.stringify(activityPlan?.metrics)).not.toMatch(
       /athlete|threshold|calibration|evidence/i,
     );
-    const firstSegment = activityPlan?.structure.segments[0];
-    expect(firstSegment).toMatchObject({ role: "activity" });
-    if (!firstSegment || firstSegment.role !== "activity")
-      throw new Error("Expected activity segment");
-    const firstInterval = firstSegment.intervals[0];
-    const firstStep = firstInterval?.steps[0];
-    expect(firstSegment).not.toHaveProperty("id");
-    expect(firstInterval).not.toHaveProperty("id");
-    expect(firstStep).not.toHaveProperty("id");
-    expect(activityPlan?.structure.segments[1]).not.toHaveProperty("id");
-    expect(JSON.stringify(activityPlan?.structure)).not.toMatch(
-      /00000000-0000-4000-8000-00000000001[1234]/,
-    );
+    const firstItem = activityPlan?.structure.items[0];
+    if (!firstItem) throw new Error("Expected activity item");
+    expect(firstItem).toHaveProperty("id", "00000000-0000-4000-8000-000000000013");
+    expect(firstItem).toHaveProperty("type");
+    expect(activityPlan?.structure.items[1]).toHaveProperty("id");
   });
-
   it("returns only the public route fields rendered by the public route page", async () => {
     const id = "00000000-0000-4000-8000-000000000030";
     const { caller } = createCaller([
@@ -327,7 +275,6 @@ describe("publicShareRouter", () => {
         file_path: "must-not-leak.gpx",
       },
     ]);
-
     await expect(caller.route({ id })).resolves.toEqual({
       id,
       name: "Public loop",
@@ -339,7 +286,6 @@ describe("publicShareRouter", () => {
       owner: { name: "Alex Athlete", username: "alex" },
     });
   });
-
   it("returns a canonical training-plan share without internal IDs at direct public tRPC", async () => {
     const id = "00000000-0000-4000-8000-000000000020";
     const secretActivityPlanId = "00000000-0000-4000-8000-000000000021";
@@ -397,10 +343,8 @@ describe("publicShareRouter", () => {
         owner_avatar_url: "https://example.test/private-avatar.png",
       },
     ]);
-
     const trainingPlan = await caller.trainingPlan({ id });
     const serialized = JSON.stringify(trainingPlan);
-
     expect(trainingPlan).toEqual({
       id,
       name: "Public marathon plan",

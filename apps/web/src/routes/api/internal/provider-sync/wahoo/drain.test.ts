@@ -49,7 +49,7 @@ describe("Wahoo internal drain route", () => {
           "utf8",
         ),
         readFile(
-          new URL("../../../../../../scripts/drain-wahoo-provider-sync.mjs", import.meta.url),
+          new URL("../../../../../../scripts/drain-provider-sync.mjs", import.meta.url),
           "utf8",
         ),
       ],
@@ -82,11 +82,9 @@ describe("Wahoo internal drain route", () => {
     expect(directSource).toContain('fetch(new URL("/api/internal/provider-sync/wahoo/drain"');
     expect(directSource).not.toContain("createWahooSyncRuntime");
     expect(directSource).not.toContain("processDueJobs");
-    expect(schedulerSource).toContain('WAHOO_PROVIDER_SYNC_DRAIN_INTERVAL_MS ?? "5000"');
-    expect(schedulerSource).toContain("await drain()");
-    expect(schedulerSource.indexOf("await drain()")).toBeLessThan(
-      schedulerSource.indexOf("setTimeout(resolve"),
-    );
+    expect(schedulerSource).toContain("WAHOO_PROVIDER_SYNC_DRAIN_INTERVAL_MS, DEFAULT_INTERVAL_MS");
+    expect(schedulerSource).toContain("garmin/training-drain");
+    expect(schedulerSource).toContain("await sleep(hasConnected ? config.intervalMs");
   });
 
   it("keeps athlete-state draining while Wahoo provider work is disabled", async () => {

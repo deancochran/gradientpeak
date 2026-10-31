@@ -3,6 +3,16 @@ import type {
   PortableWebRecordingReview,
   PortableWebRecordingSubmissionJob,
 } from "@repo/core";
+import {
+  closeMeasuredWindow,
+  emptyMeasuredJournal,
+  MEASURED_BATCH_SIZE,
+  MeasuredNotificationAppender,
+  type MeasuredRecordingJournal,
+  MeasuredRecordingLimitError,
+  measuredRecordingPoints,
+  openMeasuredWindow,
+} from "@repo/core/recording/measured-journal";
 import { useBlocker, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   createContext,
@@ -15,11 +25,12 @@ import {
 } from "react";
 
 import {
-  checkpointTimerDraft,
   IndexedDbTimerDraftStorage,
+  LegacyRecordingRecoveryRequiredError,
   loadTimerDraft,
   TimerDraftStorageInUseError,
   TimerDraftStorageUnavailableError,
+  UnsupportedRecordingContractError,
   type WebRecordingStorage,
 } from "./draft-storage";
 import {
@@ -28,8 +39,11 @@ import {
 } from "./finalized-artifact";
 import { drainWebRecordingSubmissionQueue, type SubmitWebRecording } from "./submission-queue";
 import {
+  adjustTimerOnlyIntensity,
   advanceTimerOnlyRecording,
   captureTimerOnlyLap,
+  changeTimerOnlyPlan,
+  changeTimerOnlyRoute,
   completeCurrentPlanStep,
   configureTimerOnlyRecording,
   createInitialTimerOnlyRecordingState,
@@ -47,6 +61,7 @@ import {
   startTimerOnlyRecording,
   type TimerOnlyPlanStatus,
   type TimerOnlyRecordingConfiguration,
+  type TimerOnlyRecordingPlanConfiguration,
   type TimerOnlyRecordingState,
   type TimerOnlyRecordingTransition,
 } from "./timer-runtime";
@@ -67,6 +82,9 @@ type TimerOnlyRecordingContextValue = {
   hydrationStatus: "hydrating" | "ready" | "error";
   hasRecoveredDraft: boolean;
   configure: (configuration: TimerOnlyRecordingConfiguration) => boolean;
+  changePlan: (plan: TimerOnlyRecordingPlanConfiguration | null) => Promise<boolean>;
+  changeRoute: (routeId: string | null) => Promise<boolean>;
+  adjustIntensity: (scale: number) => Promise<boolean>;
   start: () => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
@@ -77,7 +95,7 @@ type TimerOnlyRecordingContextValue = {
   finish: () => Promise<void>;
   save: (review: PortableWebRecordingReview) => Promise<void>;
   reset: () => void;
-  cancel: () => Promise<void>;
+  cancel: (options?: { confirmed?: boolean }) => Promise<void>;
   discardFinalizedArtifact: () => Promise<void>;
   takeOver: () => Promise<void>;
   retryDurableStorage: () => Promise<void>;
@@ -88,6 +106,8 @@ type TimerOnlyRecordingContextValue = {
   history: PortableWebRecordingArtifact[];
   busy: boolean;
   canTakeOver: boolean;
+  legacyRecoveryAvailable: boolean;
+  downloadLegacyArchive: () => Promise<void>;
   sensors: {
     state: WebBluetoothState;
     connect: () => Promise<void>;
@@ -152,11 +172,20 @@ export function TimerOnlyRecordingProvider({
   const durableCommandGeneration = useRef(0);
   const durabilityFenced = useRef(false);
   const commandInFlight = useRef(false);
+  const finalizationInFlight = useRef(false);
   const checkpointGeneration = useRef(0);
   const drainInFlight = useRef(false);
   const enabledRef = useRef(enabled);
   const recordingRef = useRef(providerState.recording);
   const lastConfirmedRecordingRef = useRef(providerState.recording);
+  const measuredJournalRef = useRef<MeasuredRecordingJournal>(emptyMeasuredJournal());
+  const confirmedJournalRef = useRef<MeasuredRecordingJournal>(emptyMeasuredJournal());
+  const sampleCaptureFenced = useRef(false);
+  const sampleAppender = useRef(new MeasuredNotificationAppender());
+  const sampleFlushInFlight = useRef(false);
+  const confirmedJournalSession = useRef<string | null>(null);
+  const recoveryBlocked = useRef(true);
+  const legacyRecoveryAvailable = useRef(false);
   const location = useLocation();
   const navigate = useNavigate();
   recordingRef.current = providerState.recording;
@@ -179,7 +208,11 @@ export function TimerOnlyRecordingProvider({
       providerState.hydrationStatus === "ready" &&
       location.pathname !== "/record/session"
     ) {
-      void navigate({ to: "/record/session", replace: true });
+      void navigate({
+        to: "/record/session",
+        search: { activity_category: "run", gps: "off" },
+        replace: true,
+      });
     }
     return () => {
       delete document.documentElement.dataset.recordingLocked;
@@ -189,8 +222,15 @@ export function TimerOnlyRecordingProvider({
 
   const hydrate = useCallback(async () => {
     if (!draftStorage) return;
+    recoveryBlocked.current = true;
+    sampleCaptureFenced.current = true;
+    bluetooth.recorder.pauseSessionMetrics();
+    setProviderState((current) => ({ ...current, hydrationStatus: "hydrating" }));
     try {
+      await durableCommandQueue.current.catch(() => undefined);
+      await storageQueue.current.catch(() => undefined);
       const result = await loadTimerDraft(draftStorage, ownerId);
+      legacyRecoveryAvailable.current = Boolean(await draftStorage.getLegacyArchive());
       const history = await draftStorage.listArtifacts();
       const artifact = await draftStorage.loadLatestArtifact();
       const submissionJob = artifact
@@ -201,9 +241,27 @@ export function TimerOnlyRecordingProvider({
 
       if (result.draft) {
         const recovered = recoverTimerOnlyRecording(result.draft);
+        const recoveredJournal = closeMeasuredWindow(
+          result.draft.measuredJournal ?? emptyMeasuredJournal(),
+          result.draft.timing.updatedAt,
+        );
+        measuredJournalRef.current = {
+          ...recoveredJournal,
+          entries: [...recoveredJournal.entries],
+        };
+        confirmedJournalRef.current = recoveredJournal;
+        confirmedJournalSession.current = result.draft.sessionSnapshot.identity.sessionId;
+        const totals = measuredRecordingPoints(recoveredJournal);
+        bluetooth.recorder.beginSessionMetrics({
+          distanceMeters: totals.distanceMeters,
+          calories: totals.calories,
+        });
+        bluetooth.recorder.pauseSessionMetrics();
+        sampleCaptureFenced.current = true;
         recordingRef.current = recovered.state;
         lastConfirmedRecordingRef.current = recovered.state;
         durabilityFenced.current = false;
+        recoveryBlocked.current = false;
         setProviderState({
           recording: recovered.state,
           error: recovered.rejectedReason,
@@ -224,11 +282,27 @@ export function TimerOnlyRecordingProvider({
       }
 
       const restoredRecording = artifact
-        ? restoreFinishedTimerOnlyRecording(artifact)
-        : createInitialTimerOnlyRecordingState();
+        ? restoreFinishedTimerOnlyRecording({
+            snapshot: artifact.snapshot,
+            startedAt: artifact.startedAt,
+            finishedAt: artifact.finishedAt,
+            elapsedMs: artifact.elapsedMs,
+            movingMs: artifact.movingMs,
+            ...(artifact.planExecution ? { planExecution: artifact.planExecution } : {}),
+            ...(artifact.guidance ? { guidance: artifact.guidance } : {}),
+          })
+        : lastConfirmedRecordingRef.current.reducer.lifecycle === "pending"
+          ? lastConfirmedRecordingRef.current
+          : createInitialTimerOnlyRecordingState();
       recordingRef.current = restoredRecording;
       lastConfirmedRecordingRef.current = restoredRecording;
+      measuredJournalRef.current = artifact?.measuredJournal ?? emptyMeasuredJournal();
+      confirmedJournalRef.current = measuredJournalRef.current;
+      confirmedJournalSession.current = artifact?.recordingSessionId ?? null;
+      sampleCaptureFenced.current = true;
+      bluetooth.recorder.endSessionMetrics();
       durabilityFenced.current = false;
+      recoveryBlocked.current = false;
       setProviderState((current) => ({
         ...current,
         recording: restoredRecording,
@@ -247,45 +321,80 @@ export function TimerOnlyRecordingProvider({
             : null,
       }));
     } catch (error) {
+      if (error instanceof LegacyRecordingRecoveryRequiredError)
+        legacyRecoveryAvailable.current = true;
+      recoveryBlocked.current = true;
+      durabilityFenced.current = true;
+      sampleCaptureFenced.current = true;
+      bluetooth.recorder.pauseSessionMetrics();
+      recordingRef.current = lastConfirmedRecordingRef.current;
+      measuredJournalRef.current = {
+        ...confirmedJournalRef.current,
+        entries: [...confirmedJournalRef.current.entries],
+      };
       setProviderState((current) => ({
         ...current,
+        recording: lastConfirmedRecordingRef.current,
         hydrationStatus: "error",
         canTakeOver: error instanceof TimerDraftStorageInUseError,
         error:
-          error instanceof TimerDraftStorageInUseError
-            ? "This timer is active in another tab. Take over only if that tab is no longer recording."
-            : error instanceof TimerDraftStorageUnavailableError
-              ? "This browser cannot provide durable timer recovery because IndexedDB is unavailable."
-              : "Saved timer recovery is unavailable.",
+          error instanceof UnsupportedRecordingContractError
+            ? error.message
+            : error instanceof LegacyRecordingRecoveryRequiredError
+              ? error.message
+              : error instanceof TimerDraftStorageInUseError
+                ? "This timer is active in another tab. Take over only if that tab is no longer recording."
+                : error instanceof TimerDraftStorageUnavailableError
+                  ? "This browser cannot provide durable timer recovery because IndexedDB is unavailable."
+                  : "Saved timer recovery is unavailable.",
       }));
     }
-  }, [draftStorage, ownerId]);
+  }, [bluetooth.recorder, draftStorage, ownerId]);
 
-  const fenceDurabilityFailure = useCallback((error: unknown) => {
-    if (durabilityFenced.current) return;
-    durabilityFenced.current = true;
-    const rollback = lastConfirmedRecordingRef.current;
-    recordingRef.current = rollback;
-    setProviderState((current) => ({
-      ...current,
-      recording: rollback,
-      hydrationStatus:
-        error instanceof TimerDraftStorageInUseError ||
-        error instanceof TimerDraftStorageUnavailableError
-          ? "error"
-          : current.hydrationStatus,
-      canTakeOver: error instanceof TimerDraftStorageInUseError,
-      error:
-        error instanceof TimerDraftStorageInUseError
-          ? "Durable timer ownership moved to another tab. Unsaved changes were rolled back to the last local checkpoint."
-          : error instanceof TimerDraftStorageUnavailableError
-            ? "Durable timer recovery became unavailable. Unsaved changes were rolled back to the last local checkpoint."
-            : "The latest recorder change could not be saved. Unsaved changes were rolled back to the last local checkpoint.",
-      statusMessage: "Recording paused at its last confirmed local checkpoint.",
-      savingCommand: false,
-      backgroundPaused: false,
-    }));
-  }, []);
+  const fenceDurabilityFailure = useCallback(
+    (error: unknown) => {
+      if (durabilityFenced.current) return;
+      durabilityFenced.current = true;
+      sampleCaptureFenced.current = true;
+      measuredJournalRef.current = {
+        ...confirmedJournalRef.current,
+        entries: [...confirmedJournalRef.current.entries],
+      };
+      const totals = measuredRecordingPoints(confirmedJournalRef.current);
+      bluetooth.recorder.beginSessionMetrics({
+        distanceMeters: totals.distanceMeters,
+        calories: totals.calories,
+      });
+      bluetooth.recorder.pauseSessionMetrics();
+      const rollback = lastConfirmedRecordingRef.current;
+      recordingRef.current = rollback;
+      setProviderState((current) => ({
+        ...current,
+        recording: rollback,
+        hydrationStatus:
+          error instanceof TimerDraftStorageInUseError ||
+          error instanceof TimerDraftStorageUnavailableError
+            ? "error"
+            : current.hydrationStatus,
+        canTakeOver: error instanceof TimerDraftStorageInUseError,
+        error:
+          error instanceof MeasuredRecordingLimitError
+            ? error.message
+            : error instanceof TimerDraftStorageInUseError
+              ? "Durable timer ownership moved to another tab. Unsaved changes were rolled back to the last local checkpoint."
+              : error instanceof TimerDraftStorageUnavailableError
+                ? "Durable timer recovery became unavailable. Unsaved changes were rolled back to the last local checkpoint."
+                : "The latest recorder checkpoint could not be confirmed. Reload local saving to recover the committed prefix.",
+        statusMessage:
+          rollback.reducer.lifecycle === "finished"
+            ? "The finished recording is retained; local saving needs attention."
+            : "Recording paused at its last confirmed local checkpoint.",
+        savingCommand: false,
+        backgroundPaused: false,
+      }));
+    },
+    [bluetooth.recorder],
+  );
 
   useEffect(() => {
     if (!enabled || draftStorage) return;
@@ -314,6 +423,63 @@ export function TimerOnlyRecordingProvider({
     [fenceDurabilityFailure],
   );
 
+  const persistMeasuredPrefix = useCallback(
+    async (
+      state: TimerOnlyRecordingState,
+      at: number,
+      journal: MeasuredRecordingJournal,
+      count: number,
+    ) => {
+      if (!draftStorage)
+        throw new TimerDraftStorageUnavailableError("Local storage is unavailable.");
+      const draft = createTimerOnlyRecordingDraft(state, at, ownerId);
+      if (!draft) {
+        await draftStorage.remove();
+        lastConfirmedRecordingRef.current = state;
+        return;
+      }
+      const sessionId = draft.sessionSnapshot.identity.sessionId;
+      let cursor =
+        confirmedJournalSession.current === sessionId
+          ? confirmedJournalRef.current.entries.length
+          : 0;
+      if (cursor > count) return; // An obsolete periodic checkpoint must not rewind a newer prefix.
+      do {
+        if (durabilityFenced.current) return;
+        const entries = journal.entries.slice(
+          cursor,
+          Math.min(count, cursor + MEASURED_BATCH_SIZE),
+        );
+        const header = {
+          version: journal.version,
+          provenance: journal.provenance,
+          windows: journal.windows,
+        };
+        const committed = await draftStorage.appendMeasuredCheckpoint(draft, {
+          header,
+          expectedCursor: cursor,
+          entries,
+        });
+        if (committed !== cursor + entries.length)
+          throw new Error("Measured storage returned an invalid committed cursor.");
+        if (confirmedJournalSession.current !== sessionId) {
+          confirmedJournalSession.current = sessionId;
+          confirmedJournalRef.current = emptyMeasuredJournal();
+        }
+        const durableEntries = confirmedJournalRef.current.entries;
+        durableEntries.push(...entries);
+        confirmedJournalRef.current = closeMeasuredWindow(
+          { ...header, entries: durableEntries },
+          draft.timing.updatedAt,
+        );
+        lastConfirmedRecordingRef.current = toConfirmedRecoveryState(state, at, ownerId);
+        cursor = committed;
+        if (!entries.length) break;
+      } while (cursor < count);
+    },
+    [draftStorage, ownerId],
+  );
+
   const checkpoint = useCallback(
     (state: TimerOnlyRecordingState, nowMs: number) => {
       if (
@@ -324,6 +490,8 @@ export function TimerOnlyRecordingProvider({
       )
         return;
       const generation = checkpointGeneration.current;
+      const journal = measuredJournalRef.current;
+      const count = journal.entries.length;
       void enqueueStorage(async () => {
         if (
           commandInFlight.current ||
@@ -331,11 +499,78 @@ export function TimerOnlyRecordingProvider({
           generation !== checkpointGeneration.current
         )
           return;
-        await checkpointTimerDraft(draftStorage, state, nowMs, ownerId);
-        lastConfirmedRecordingRef.current = toConfirmedRecoveryState(state, nowMs, ownerId);
+        await persistMeasuredPrefix(state, nowMs, journal, count);
       });
     },
-    [draftStorage, enqueueStorage, ownerId],
+    [draftStorage, enqueueStorage, persistMeasuredPrefix],
+  );
+
+  const flushSamples = useCallback(() => {
+    const state = recordingRef.current;
+    if (
+      sampleFlushInFlight.current ||
+      commandInFlight.current ||
+      durabilityFenced.current ||
+      sampleCaptureFenced.current ||
+      state.reducer.lifecycle !== "recording"
+    )
+      return;
+    const journal = measuredJournalRef.current;
+    const count = journal.entries.length;
+    const committed =
+      confirmedJournalSession.current === state.reducer.snapshot?.identity.sessionId
+        ? confirmedJournalRef.current.entries.length
+        : 0;
+    if (count <= committed) return;
+    sampleFlushInFlight.current = true;
+    const at = Date.now();
+    void enqueueStorage(() => persistMeasuredPrefix(state, at, journal, count)).finally(() => {
+      sampleFlushInFlight.current = false;
+    });
+  }, [enqueueStorage, persistMeasuredPrefix]);
+
+  useEffect(() => {
+    if (lifecycle !== "recording") return;
+    const timer = window.setInterval(flushSamples, 1_000);
+    return () => window.clearInterval(timer);
+  }, [flushSamples, lifecycle]);
+
+  useEffect(
+    () =>
+      bluetooth.recorder.subscribeNotifications((notification) => {
+        const state = recordingRef.current;
+        if (
+          !enabledRef.current ||
+          !draftStorage ||
+          providerState.hydrationStatus !== "ready" ||
+          durabilityFenced.current ||
+          sampleCaptureFenced.current ||
+          state.reducer.lifecycle !== "recording"
+        )
+          return;
+        try {
+          const committed =
+            confirmedJournalSession.current === state.reducer.snapshot?.identity.sessionId
+              ? confirmedJournalRef.current.entries.length
+              : 0;
+          if (measuredJournalRef.current.entries.length - committed >= 4096)
+            throw new MeasuredRecordingLimitError(
+              "Measured recording storage cannot keep up with the sensor. Recording is paused; restore local saving before continuing.",
+            );
+          if (!sampleAppender.current.append(measuredJournalRef.current, notification)) return;
+          if (measuredJournalRef.current.entries.length - committed >= MEASURED_BATCH_SIZE)
+            flushSamples();
+        } catch (error) {
+          fenceDurabilityFailure(error);
+        }
+      }),
+    [
+      bluetooth.recorder,
+      draftStorage,
+      flushSamples,
+      fenceDurabilityFailure,
+      providerState.hydrationStatus,
+    ],
   );
 
   useEffect(() => {
@@ -375,6 +610,7 @@ export function TimerOnlyRecordingProvider({
         recording: result.state,
         error: result.rejectedReason,
       }));
+      return result.rejectedReason === null;
     },
     [],
   );
@@ -387,10 +623,12 @@ export function TimerOnlyRecordingProvider({
         backgroundPaused?: boolean;
         clearRecovered?: boolean;
         announceImmediately?: boolean;
+        flushBeforeTransition?: boolean;
       } = {},
     ): Promise<void> => {
       if (!enabledRef.current) return Promise.resolve();
-      if (durabilityFenced.current) {
+      if (finalizationInFlight.current) return Promise.resolve();
+      if (durabilityFenced.current || recoveryBlocked.current) {
         setProviderState((current) => ({
           ...current,
           error: "Local saving must be restored before the recording can continue.",
@@ -399,6 +637,7 @@ export function TimerOnlyRecordingProvider({
         return Promise.resolve();
       }
       const commandNowMs = Date.now();
+      const previousState = recordingRef.current;
       const result = transition(recordingRef.current, commandNowMs);
       if (result.rejectedReason) {
         setProviderState((current) => ({
@@ -410,6 +649,33 @@ export function TimerOnlyRecordingProvider({
       }
 
       const generation = ++durableCommandGeneration.current;
+      const timestamp = new Date(commandNowMs).toISOString();
+      try {
+        if (
+          previousState.reducer.snapshot?.identity.sessionId !==
+          result.state.reducer.snapshot?.identity.sessionId
+        ) {
+          measuredJournalRef.current = emptyMeasuredJournal();
+          bluetooth.recorder.beginSessionMetrics();
+        }
+        if (
+          result.state.reducer.lifecycle === "recording" &&
+          previousState.reducer.lifecycle !== "recording"
+        ) {
+          measuredJournalRef.current = openMeasuredWindow(measuredJournalRef.current, timestamp);
+          bluetooth.recorder.resumeSessionMetrics();
+          sampleCaptureFenced.current = false;
+        } else if (result.state.reducer.lifecycle !== "recording") {
+          measuredJournalRef.current = closeMeasuredWindow(measuredJournalRef.current, timestamp);
+          bluetooth.recorder.pauseSessionMetrics();
+          sampleCaptureFenced.current = true;
+        }
+      } catch (error) {
+        fenceDurabilityFailure(error);
+        return Promise.resolve();
+      }
+      const journal = measuredJournalRef.current;
+      const journalCount = journal.entries.length;
       commandInFlight.current = true;
       checkpointGeneration.current += 1;
       recordingRef.current = result.state;
@@ -426,7 +692,8 @@ export function TimerOnlyRecordingProvider({
         ...(options.announceImmediately ? { statusMessage: successMessage } : {}),
       }));
 
-      const operation = durableCommandQueue.current
+      // Reserve the write in invocation order, before any later notification can enqueue.
+      const write = storageQueue.current
         .catch(() => undefined)
         .then(async () => {
           if (!enabledRef.current || !draftStorage) {
@@ -434,20 +701,20 @@ export function TimerOnlyRecordingProvider({
               "Durable recording storage is unavailable.",
             );
           }
-          const write = storageQueue.current
-            .catch(() => undefined)
-            .then(async () => {
-              if (durabilityFenced.current) return;
-              await checkpointTimerDraft(draftStorage, result.state, commandNowMs, ownerId);
-            });
-          storageQueue.current = write.catch(() => undefined);
-          await write;
           if (durabilityFenced.current) return;
-          lastConfirmedRecordingRef.current = toConfirmedRecoveryState(
-            result.state,
-            commandNowMs,
-            ownerId,
-          );
+          // Commit pending measurements against the old guidance before atomically
+          // publishing the revision. A failed flush cannot partially attach a plan.
+          if (options.flushBeforeTransition) {
+            await persistMeasuredPrefix(previousState, commandNowMs, journal, journalCount);
+          }
+          await persistMeasuredPrefix(result.state, commandNowMs, journal, journalCount);
+        });
+      storageQueue.current = write.catch((error: unknown) => {
+        fenceDurabilityFailure(error);
+      });
+      const operation = write
+        .then(() => {
+          if (durabilityFenced.current) return;
           setProviderState((current) => ({
             ...current,
             error: null,
@@ -465,7 +732,7 @@ export function TimerOnlyRecordingProvider({
       durableCommandQueue.current = operation;
       return operation;
     },
-    [draftStorage, fenceDurabilityFailure, ownerId],
+    [bluetooth.recorder, draftStorage, fenceDurabilityFailure, persistMeasuredPrefix],
   );
 
   useEffect(() => {
@@ -474,7 +741,11 @@ export function TimerOnlyRecordingProvider({
     const interval = window.setInterval(() => {
       const tickNowMs = Date.now();
       setNowMs(tickNowMs);
-      if (durabilityFenced.current || recordingRef.current.reducer.lifecycle !== "recording") {
+      if (
+        durabilityFenced.current ||
+        sampleCaptureFenced.current ||
+        recordingRef.current.reducer.lifecycle !== "recording"
+      ) {
         return;
       }
       const previousOccurrenceIndex = recordingRef.current.planExecution?.currentOccurrenceIndex;
@@ -497,28 +768,80 @@ export function TimerOnlyRecordingProvider({
   const configure = useCallback(
     (configuration: TimerOnlyRecordingConfiguration) => {
       if (hasActiveSession) return false;
-      applyTransition((state) => configureTimerOnlyRecording(state, configuration));
-      return true;
+      return applyTransition((state) => configureTimerOnlyRecording(state, configuration));
     },
     [applyTransition, hasActiveSession],
   );
+  const applyGuidance = useCallback(
+    async (
+      transition: (state: TimerOnlyRecordingState, at: number) => TimerOnlyRecordingTransition,
+      message: string,
+    ) => {
+      if (
+        !enabledRef.current ||
+        finalizationInFlight.current ||
+        durabilityFenced.current ||
+        recoveryBlocked.current
+      )
+        return false;
+      let accepted = false;
+      await applyDurableTransition(
+        (state, at) => {
+          const result = transition(state, at);
+          accepted = result.rejectedReason === null;
+          return result;
+        },
+        message,
+        { flushBeforeTransition: true },
+      );
+      return accepted && !durabilityFenced.current;
+    },
+    [applyDurableTransition],
+  );
+  const changePlan = useCallback(
+    (plan: TimerOnlyRecordingPlanConfiguration | null) =>
+      applyGuidance(
+        (state, at) => changeTimerOnlyPlan(state, at, plan),
+        plan ? "Plan guidance attached and saved." : "Plan guidance detached and saved.",
+      ),
+    [applyGuidance],
+  );
+  const changeRoute = useCallback(
+    (routeId: string | null) =>
+      applyGuidance(
+        (state, at) => changeTimerOnlyRoute(state, at, routeId),
+        "Route guidance saved.",
+      ),
+    [applyGuidance],
+  );
+  const adjustIntensity = useCallback(
+    (scale: number) =>
+      applyGuidance(
+        (state, at) => adjustTimerOnlyIntensity(state, at, scale),
+        "Session intensity saved.",
+      ),
+    [applyGuidance],
+  );
   const start = useCallback(() => {
-    bluetooth.recorder.beginSessionMetrics();
     return applyDurableTransition(
       (state, commandNowMs) => startTimerOnlyRecording(state, commandNowMs, createSessionId()),
-      "Recording started and saved locally.",
+      "Recording started and saved locally. Sensor samples checkpoint in batches; only the committed prefix survives interruption.",
     );
-  }, [applyDurableTransition, bluetooth.recorder]);
+  }, [applyDurableTransition]);
   const pause = useCallback(
     () => applyDurableTransition(pauseTimerOnlyRecording, "Recording paused."),
     [applyDurableTransition],
   );
   const resume = useCallback(
     () =>
-      applyDurableTransition(resumeTimerOnlyRecording, "Recording resumed.", {
-        backgroundPaused: false,
-        clearRecovered: true,
-      }),
+      applyDurableTransition(
+        resumeTimerOnlyRecording,
+        "Recording resumed. Sensor samples checkpoint in batches; only the committed prefix survives interruption.",
+        {
+          backgroundPaused: false,
+          clearRecovered: true,
+        },
+      ),
     [applyDurableTransition],
   );
   const completeStep = useCallback(
@@ -557,6 +880,8 @@ export function TimerOnlyRecordingProvider({
 
   const finish = useCallback(async () => {
     if (!enabledRef.current || !draftStorage) return;
+    if (recoveryBlocked.current) return;
+    if (recordingRef.current.reducer.lifecycle === "finished") return;
     if (durabilityFenced.current) {
       setProviderState((current) => ({
         ...current,
@@ -565,17 +890,41 @@ export function TimerOnlyRecordingProvider({
       return;
     }
     if (commandInFlight.current) return;
+    finalizationInFlight.current = true;
     commandInFlight.current = true;
     setProviderState((current) => ({ ...current, busy: true, error: null }));
     try {
       const now = Date.now();
-      const sensorDeltas = bluetooth.recorder.getSessionMetricDeltas();
       const finished = finishTimerOnlyRecording(recordingRef.current, now);
       if (finished.rejectedReason) throw new Error(finished.rejectedReason);
+      sampleCaptureFenced.current = true;
+      bluetooth.recorder.pauseSessionMetrics();
+      checkpointGeneration.current += 1;
+      const stopped =
+        recordingRef.current.reducer.lifecycle === "recording"
+          ? pauseTimerOnlyRecording(recordingRef.current, now).state
+          : recordingRef.current;
+      recordingRef.current = stopped;
+      const journal = closeMeasuredWindow(measuredJournalRef.current, new Date(now).toISOString());
+      measuredJournalRef.current = journal;
+      setProviderState((current) => ({ ...current, recording: stopped }));
+      await storageQueue.current;
+      if (durabilityFenced.current)
+        throw new Error(
+          "Measured samples could not be saved. Restore local saving before finishing.",
+        );
+      try {
+        await persistMeasuredPrefix(stopped, now, journal, journal.entries.length);
+      } catch (error) {
+        fenceDurabilityFailure(error);
+        throw error;
+      }
+      const sensorDeltas = measuredRecordingPoints(journal);
       const activityCategory =
         finished.state.reducer.snapshot?.activity.activity_category ?? "other";
       const artifact = await finalizeTimerRecordingArtifact({
         state: finished.state,
+        measuredJournal: journal,
         ownerId,
         segmentId: createSessionId(),
         review: {
@@ -592,19 +941,25 @@ export function TimerOnlyRecordingProvider({
         },
         sessionRpeOperationId: null,
       });
-      await storageQueue.current;
       await draftStorage.finalize(artifact);
+      lastConfirmedRecordingRef.current = finished.state;
+      confirmedJournalRef.current = { ...journal, entries: [...journal.entries] };
       bluetooth.recorder.endSessionMetrics();
-      const history = await draftStorage.listArtifacts();
+      // The artifact commit is authoritative; a history refresh failure must not
+      // turn an acknowledged finish into a second, differently timed recording.
+      const history = await draftStorage.listArtifacts().catch(() => null);
+      recordingRef.current = finished.state;
       setProviderState((current) => ({
         ...current,
         recording: finished.state,
         artifact,
         submissionJob: null,
-        history,
+        history: history ?? current.history,
         hasRecoveredDraft: false,
         busy: false,
-        error: null,
+        error: history
+          ? null
+          : "Recording saved locally, but local history could not be refreshed.",
         statusMessage: "Recording finished and saved locally for review.",
         backgroundPaused: false,
       }));
@@ -612,8 +967,9 @@ export function TimerOnlyRecordingProvider({
       setProviderState((current) => ({
         ...current,
         busy: false,
-        error:
-          error instanceof TimerDraftStorageInUseError
+        error: durabilityFenced.current
+          ? "The measured checkpoint could not be confirmed. Reload the committed prefix before finishing."
+          : error instanceof TimerDraftStorageInUseError
             ? "Another tab took over this timer. Finalization was fenced and the recovery recording was retained."
             : error instanceof Error
               ? error.message
@@ -621,9 +977,10 @@ export function TimerOnlyRecordingProvider({
         statusMessage: "Recording could not be finished.",
       }));
     } finally {
+      finalizationInFlight.current = false;
       commandInFlight.current = false;
     }
-  }, [bluetooth.recorder, draftStorage, ownerId]);
+  }, [bluetooth.recorder, draftStorage, fenceDurabilityFailure, ownerId, persistMeasuredPrefix]);
 
   const save = useCallback(
     async (review: PortableWebRecordingReview) => {
@@ -645,6 +1002,7 @@ export function TimerOnlyRecordingProvider({
         });
         const artifact = await finalizeTimerRecordingArtifact({
           state: recordingRef.current,
+          measuredJournal: providerState.artifact.measuredJournal,
           ownerId,
           segmentId: providerState.artifact.segmentId,
           review,
@@ -654,13 +1012,16 @@ export function TimerOnlyRecordingProvider({
           artifact,
           new Date().toISOString(),
         );
-        const history = await draftStorage.listArtifacts();
+        const history = await draftStorage.listArtifacts().catch(() => null);
         setProviderState((current) => ({
           ...current,
           artifact,
           submissionJob,
-          history,
+          history: history ?? current.history,
           busy: false,
+          error: history
+            ? null
+            : "Review saved to the queue, but local history could not be refreshed.",
           statusMessage: "Activity review saved to the submission queue.",
         }));
       } catch (error) {
@@ -678,8 +1039,14 @@ export function TimerOnlyRecordingProvider({
   );
   const reset = useCallback(() => {
     if (!enabledRef.current || !draftStorage) return;
+    if (recoveryBlocked.current || commandInFlight.current) return;
+    const phase = recordingRef.current.reducer.lifecycle;
+    if (phase === "recording" || phase === "paused" || phase === "finishing") return;
     const result = resetTimerOnlyRecording();
     bluetooth.recorder.endSessionMetrics();
+    measuredJournalRef.current = emptyMeasuredJournal();
+    confirmedJournalRef.current = emptyMeasuredJournal();
+    sampleCaptureFenced.current = true;
     recordingRef.current = result.state;
     lastConfirmedRecordingRef.current = result.state;
     durabilityFenced.current = false;
@@ -697,45 +1064,79 @@ export function TimerOnlyRecordingProvider({
     }));
     void enqueueStorage(() => draftStorage.remove());
   }, [bluetooth.recorder, draftStorage, enqueueStorage]);
-  const cancel = useCallback(async () => {
-    if (!enabledRef.current || !draftStorage) return;
-    if (!window.confirm("Cancel this recording? Its saved timer will be deleted.")) return;
-    if (commandInFlight.current) return;
-    commandInFlight.current = true;
-    checkpointGeneration.current += 1;
-    setProviderState((current) => ({ ...current, busy: true, error: null }));
-    try {
-      const cleanup = storageQueue.current.catch(() => undefined).then(() => draftStorage.remove());
-      storageQueue.current = cleanup.catch(() => undefined);
-      await cleanup;
-      bluetooth.recorder.endSessionMetrics();
-      const initial = createInitialTimerOnlyRecordingState();
-      recordingRef.current = initial;
-      lastConfirmedRecordingRef.current = initial;
-      durabilityFenced.current = false;
-      setNowMs(Date.now());
-      setProviderState((current) => ({
-        ...current,
-        recording: initial,
-        error: null,
-        hasRecoveredDraft: false,
-        artifact: null,
-        submissionJob: null,
-        busy: false,
-        statusMessage: "Recording cancelled.",
-        backgroundPaused: false,
-        savingCommand: false,
-      }));
-    } catch (error) {
-      setProviderState((current) => ({
-        ...current,
-        busy: false,
-        error: error instanceof Error ? error.message : "The recording could not be cancelled.",
-      }));
-    } finally {
-      commandInFlight.current = false;
-    }
-  }, [bluetooth.recorder, draftStorage]);
+  const cancel = useCallback(
+    async (options?: { confirmed?: boolean }) => {
+      if (!enabledRef.current || !draftStorage) return;
+      if (
+        !options?.confirmed &&
+        !window.confirm("Cancel this recording? Its saved timer will be deleted.")
+      )
+        return;
+      if (commandInFlight.current) return;
+      measuredJournalRef.current = closeMeasuredWindow(
+        measuredJournalRef.current,
+        new Date(Date.now()).toISOString(),
+      );
+      sampleCaptureFenced.current = true;
+      bluetooth.recorder.pauseSessionMetrics();
+      commandInFlight.current = true;
+      checkpointGeneration.current += 1;
+      setProviderState((current) => ({ ...current, busy: true, error: null }));
+      try {
+        const cleanup = storageQueue.current
+          .catch(() => undefined)
+          .then(() => draftStorage.remove());
+        storageQueue.current = cleanup.catch(() => undefined);
+        await cleanup;
+        bluetooth.recorder.endSessionMetrics();
+        measuredJournalRef.current = emptyMeasuredJournal();
+        confirmedJournalRef.current = emptyMeasuredJournal();
+        sampleCaptureFenced.current = true;
+        const initial = createInitialTimerOnlyRecordingState();
+        recordingRef.current = initial;
+        lastConfirmedRecordingRef.current = initial;
+        durabilityFenced.current = false;
+        setNowMs(Date.now());
+        setProviderState((current) => ({
+          ...current,
+          recording: initial,
+          error: null,
+          hasRecoveredDraft: false,
+          artifact: null,
+          submissionJob: null,
+          busy: false,
+          statusMessage: "Recording cancelled.",
+          backgroundPaused: false,
+          savingCommand: false,
+        }));
+      } catch (error) {
+        setProviderState((current) => ({
+          ...current,
+          busy: false,
+          error: error instanceof Error ? error.message : "The recording could not be cancelled.",
+        }));
+        if (
+          error instanceof TimerDraftStorageInUseError ||
+          error instanceof TimerDraftStorageUnavailableError
+        )
+          fenceDurabilityFailure(error);
+        else if (
+          !durabilityFenced.current &&
+          recordingRef.current.reducer.lifecycle === "recording"
+        ) {
+          measuredJournalRef.current = openMeasuredWindow(
+            measuredJournalRef.current,
+            new Date(Date.now()).toISOString(),
+          );
+          sampleCaptureFenced.current = false;
+          bluetooth.recorder.resumeSessionMetrics();
+        }
+      } finally {
+        commandInFlight.current = false;
+      }
+    },
+    [bluetooth.recorder, draftStorage, fenceDurabilityFailure],
+  );
   const discardFinalizedArtifact = useCallback(async () => {
     if (!enabledRef.current || !draftStorage) return;
     const artifact = providerState.artifact;
@@ -766,26 +1167,77 @@ export function TimerOnlyRecordingProvider({
   }, [draftStorage, providerState.artifact]);
 
   const takeOver = useCallback(async () => {
-    if (!enabledRef.current || !draftStorage) return;
-    await draftStorage.takeOver();
-    await hydrate();
-  }, [draftStorage, hydrate]);
+    if (!enabledRef.current || !draftStorage || commandInFlight.current) return;
+    sampleCaptureFenced.current = true;
+    bluetooth.recorder.pauseSessionMetrics();
+    await durableCommandQueue.current.catch(() => undefined);
+    await storageQueue.current.catch(() => undefined);
+    try {
+      await draftStorage.takeOver();
+      await hydrate();
+    } catch (error) {
+      setProviderState((current) => ({
+        ...current,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Recovery could not be copied. Original data was retained.",
+      }));
+    }
+  }, [bluetooth.recorder, draftStorage, hydrate]);
+
+  const downloadLegacyArchive = useCallback(async () => {
+    if (!draftStorage) return;
+    try {
+      const archive = await draftStorage.getLegacyArchive();
+      if (!archive) throw new Error("No older recorder archive is available.");
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(archive)], { type: "application/json" }),
+      );
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "gradientpeak-legacy-recordings.json";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (error) {
+      setProviderState((current) => ({
+        ...current,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Legacy export is unavailable; original data is retained.",
+      }));
+    }
+  }, [draftStorage]);
 
   const retryDurableStorage = useCallback(async () => {
-    if (!enabledRef.current || !draftStorage || !durabilityFenced.current) return;
+    if (
+      !enabledRef.current ||
+      !draftStorage ||
+      !durabilityFenced.current ||
+      commandInFlight.current
+    )
+      return;
+    if (recoveryBlocked.current) {
+      await hydrate();
+      return;
+    }
     commandInFlight.current = true;
     setProviderState((current) => ({ ...current, savingCommand: true }));
     try {
-      await durableCommandQueue.current.catch(() => undefined);
-      const confirmed = lastConfirmedRecordingRef.current;
-      const retryNowMs = Date.now();
-      const write = storageQueue.current
-        .catch(() => undefined)
-        .then(() => checkpointTimerDraft(draftStorage, confirmed, retryNowMs, ownerId));
-      storageQueue.current = write.catch(() => undefined);
-      await write;
-      lastConfirmedRecordingRef.current = toConfirmedRecoveryState(confirmed, retryNowMs, ownerId);
-      durabilityFenced.current = false;
+      // A rejected acknowledgement can follow a committed transaction. Read the
+      // authoritative cursor instead of overwriting it with an older RAM prefix.
+      await hydrate();
+      if (recoveryBlocked.current || durabilityFenced.current) return;
+      const confirmed = recordingRef.current;
+      recoveryBlocked.current = true;
+      await persistMeasuredPrefix(
+        confirmed,
+        Date.now(),
+        measuredJournalRef.current,
+        measuredJournalRef.current.entries.length,
+      );
+      recoveryBlocked.current = false;
       setProviderState((current) => ({
         ...current,
         recording: confirmed,
@@ -796,7 +1248,9 @@ export function TimerOnlyRecordingProvider({
         statusMessage:
           confirmed.reducer.lifecycle === "paused"
             ? "Local saving is restored. Resume when you are ready."
-            : "Local saving is restored. You can start again.",
+            : confirmed.reducer.lifecycle === "finished"
+              ? "Local saving is restored. The finished recording is ready for review."
+              : "Local saving is restored. You can start again.",
       }));
     } catch (error) {
       durabilityFenced.current = false;
@@ -805,21 +1259,33 @@ export function TimerOnlyRecordingProvider({
       commandInFlight.current = false;
       setProviderState((current) => ({ ...current, savingCommand: false }));
     }
-  }, [draftStorage, fenceDurabilityFailure, ownerId]);
+  }, [draftStorage, fenceDurabilityFailure, hydrate, persistMeasuredPrefix]);
 
   const retrySubmission = useCallback(async () => {
-    if (!enabledRef.current || !draftStorage) return;
+    if (
+      !enabledRef.current ||
+      !draftStorage ||
+      recoveryBlocked.current ||
+      providerState.hydrationStatus !== "ready"
+    )
+      return;
     if (!providerState.submissionJob) return;
     const submissionJob = await draftStorage.retrySubmissionNow(
       providerState.submissionJob.id,
       new Date().toISOString(),
     );
     setProviderState((current) => ({ ...current, submissionJob }));
-  }, [draftStorage, providerState.submissionJob]);
+  }, [draftStorage, providerState.hydrationStatus, providerState.submissionJob]);
 
   const drainSubmissionQueue = useCallback(
     async (submit: SubmitWebRecording) => {
-      if (!enabledRef.current || !draftStorage) return;
+      if (
+        !enabledRef.current ||
+        !draftStorage ||
+        recoveryBlocked.current ||
+        providerState.hydrationStatus !== "ready"
+      )
+        return;
       if (drainInFlight.current || commandInFlight.current) return;
       drainInFlight.current = true;
       commandInFlight.current = true;
@@ -866,7 +1332,7 @@ export function TimerOnlyRecordingProvider({
         commandInFlight.current = false;
       }
     },
-    [draftStorage, providerState.artifact?.recordingSessionId],
+    [draftStorage, providerState.artifact?.recordingSessionId, providerState.hydrationStatus],
   );
   const times = getTimerOnlyRecordingTimes(providerState.recording, nowMs);
   const planStatus = getTimerOnlyPlanStatus(providerState.recording, nowMs);
@@ -879,6 +1345,9 @@ export function TimerOnlyRecordingProvider({
         activeSeconds: times.activeSeconds,
         movingSeconds: times.movingSeconds,
         planStatus,
+        changePlan,
+        changeRoute,
+        adjustIntensity,
         error: providerState.error,
         statusMessage: providerState.statusMessage,
         savingCommand: providerState.savingCommand,
@@ -908,12 +1377,36 @@ export function TimerOnlyRecordingProvider({
         history: providerState.history,
         busy: providerState.busy,
         canTakeOver: providerState.canTakeOver,
+        legacyRecoveryAvailable: legacyRecoveryAvailable.current,
+        downloadLegacyArchive,
         sensors: {
           state: bluetooth.state,
           connect: () => bluetooth.recorder.connect(),
           disconnect: () => bluetooth.recorder.disconnect(),
-          requestControl: () => bluetooth.recorder.requestControl(),
-          setTargetPower: (watts) => bluetooth.recorder.setTargetPower(watts),
+          requestControl: () => {
+            const lifecycle = recordingRef.current.reducer.lifecycle;
+            if (
+              lifecycle === "finishing" ||
+              lifecycle === "finished" ||
+              commandInFlight.current ||
+              finalizationInFlight.current ||
+              durabilityFenced.current
+            )
+              return Promise.resolve(false);
+            return bluetooth.recorder.requestControl();
+          },
+          setTargetPower: (watts) => {
+            const lifecycle = recordingRef.current.reducer.lifecycle;
+            if (
+              lifecycle === "finishing" ||
+              lifecycle === "finished" ||
+              commandInFlight.current ||
+              finalizationInFlight.current ||
+              durabilityFenced.current
+            )
+              return Promise.resolve(false);
+            return bluetooth.recorder.setTargetPower(watts);
+          },
         },
       }}
     >

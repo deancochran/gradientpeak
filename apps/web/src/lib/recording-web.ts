@@ -59,27 +59,22 @@ export function validateRecordingSearch(search: Record<string, unknown>): Record
     activity_category: activityCategory,
     // Web recording remains indoor only; the selected route is retained as activity context.
     gps: "off",
-    eventId:
-      typeof search.eventId === "string" && uuidPattern.test(search.eventId)
-        ? search.eventId
-        : undefined,
-    activityPlanId:
-      typeof search.activityPlanId === "string" && uuidPattern.test(search.activityPlanId)
-        ? search.activityPlanId
-        : undefined,
-    plannedSessionId:
-      typeof search.plannedSessionId === "string" && uuidPattern.test(search.plannedSessionId)
-        ? search.plannedSessionId
-        : undefined,
-    plannedSessionDate:
-      typeof search.plannedSessionDate === "string" &&
-      /^\d{4}-\d{2}-\d{2}$/.test(search.plannedSessionDate)
-        ? search.plannedSessionDate
-        : undefined,
-    routeId:
-      typeof search.routeId === "string" && uuidPattern.test(search.routeId)
-        ? search.routeId
-        : undefined,
+    ...(typeof search.eventId === "string" && uuidPattern.test(search.eventId)
+      ? { eventId: search.eventId }
+      : {}),
+    ...(typeof search.activityPlanId === "string" && uuidPattern.test(search.activityPlanId)
+      ? { activityPlanId: search.activityPlanId }
+      : {}),
+    ...(typeof search.plannedSessionId === "string" && uuidPattern.test(search.plannedSessionId)
+      ? { plannedSessionId: search.plannedSessionId }
+      : {}),
+    ...(typeof search.plannedSessionDate === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(search.plannedSessionDate)
+      ? { plannedSessionDate: search.plannedSessionDate }
+      : {}),
+    ...(typeof search.routeId === "string" && uuidPattern.test(search.routeId)
+      ? { routeId: search.routeId }
+      : {}),
   };
 }
 

@@ -1,33 +1,21 @@
-import { createElement } from "react";
-import { Alert } from "react-native";
+import { Children, isValidElement, useState } from "react";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
-import { StepDurationField } from "./StepDurationField";
+import { StepDurationField, type StepDurationValue } from "./StepDurationField";
 
-jest.mock("@repo/ui/components/number-slider-input", () => ({
-  NumberSliderInput: ({ testId, ...props }: { testId?: string }) =>
-    createElement("NumberSliderInput", { ...props, testID: testId }),
-}));
-jest.mock("@repo/ui/components/select", () => ({
-  Select: (props: { children: React.ReactNode; onValueChange?: unknown }) =>
-    createElement("Select", { ...props, testID: "select" }),
-  SelectContent: ({ children }: { children: React.ReactNode }) =>
-    createElement("SelectContent", null, children),
-  SelectItem: ({ children }: { children: React.ReactNode }) =>
-    createElement("SelectItem", null, createElement("Text", null, children)),
-  SelectTrigger: ({ children, testID }: { children: React.ReactNode; testID?: string }) =>
-    createElement("SelectTrigger", { testID }, children),
-  SelectValue: ({ children }: { children: React.ReactNode }) =>
-    createElement("SelectValue", null, children),
-}));
+function pickerValues(label: string) {
+  return Children.toArray(screen.getByLabelText(label).props.children)
+    .filter(isValidElement<{ value: string }>)
+    .map((child) => child.props.value);
+}
 
-describe("StepDurationField", () => {
+describe("StepDurationField compact rows", () => {
   it.each([
-    "run",
-    "bike",
-    "swim",
-    "strength",
-    "other",
-  ] as const)("offers supported %s choices without an untilFinished authoring option", async (activityCategory) => {
+    ["run", ["time", "distance"]],
+    ["bike", ["time", "distance"]],
+    ["swim", ["time", "distance"]],
+    ["strength", ["time", "repetitions"]],
+    ["other", ["time"]],
+  ] as const)("offers only permissible %s duration choices", async (activityCategory, expected) => {
     await renderNative(
       <StepDurationField
         activityCategory={activityCategory}
@@ -37,112 +25,202 @@ describe("StepDurationField", () => {
         }}
       />,
     );
-    expect(screen.queryByText("Until finished")).toBeNull();
-    expect(Boolean(screen.queryByText("Distance"))).toBe(
-      ["run", "bike", "swim"].includes(activityCategory),
-    );
-    expect(Boolean(screen.queryByText("Repetitions"))).toBe(activityCategory === "strength");
+    expect(pickerValues("Duration type")).toEqual(expect.arrayContaining(expected));
+    expect(pickerValues("Duration type")).not.toContain("untilFinished");
+    expect(screen.getByLabelText("Duration value")).toBeTruthy();
+    expect(screen.queryByText("Change completion type")).toBeNull();
   });
-  it("keeps legacy untilFinished visible until the user replaces it", async () => {
+
+  it("changes type in-place and gives repetitions its existing default", async () => {
     const setValue = jest.fn();
-    await renderNative(
-      <StepDurationField
-        activityCategory="run"
-        form={{ getValues: () => ({ duration: { type: "untilFinished" } }), setValue }}
-      />,
+    function Owner() {
+      const [duration, setDuration] = useState<StepDurationValue | null>(null);
+      return (
+        <StepDurationField
+          activityCategory="strength"
+          form={{
+            getValues: () => ({ duration }),
+            setValue: (_name, next, options) => {
+              setValue(_name, next, options);
+              setDuration(next);
+            },
+          }}
+        />
+      );
+    }
+    await renderNative(<Owner />);
+    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "repetitions");
+    expect(setValue).toHaveBeenLastCalledWith(
+      "duration",
+      { type: "repetitions", count: 1 },
+      { shouldDirty: true, shouldValidate: true },
     );
-    expect(screen.getByText(/untilFinished is not permitted/)).toBeTruthy();
-    expect(setValue).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Duration value")).toBeTruthy();
+    expect(screen.getByTestId("completion-type-row")).toBeTruthy();
   });
-  it("uses the compact duration dropdown and leaves the duration unchanged when replacement is cancelled", async () => {
+
+  it("keeps blank time and distance value rows visible until their first native value is chosen", async () => {
     const setValue = jest.fn();
-    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
-    await renderNative(
-      <StepDurationField
-        form={{ getValues: () => ({ duration: { type: "time", seconds: 600 } }), setValue }}
-      />,
-    );
-
-    expect(screen.getByTestId("step-duration-type")).toBeTruthy();
-    expect(screen.getByTestId("step-duration-value").props.compactHeader).toBe(true);
-    expect(screen.getByTestId("step-duration-value").props.showNumericInput).toBeUndefined();
-    const durationTypeSelect = screen.getAllByTestId("select")[0];
-    if (!durationTypeSelect) throw new Error("Duration type select is missing.");
-    await fireEvent(durationTypeSelect, "valueChange", { value: "distance" });
-    const actions = alert.mock.calls[0]?.[2] ?? [];
-    actions.find((action) => action.text === "Cancel")?.onPress?.();
-
-    expect(setValue).not.toHaveBeenCalled();
-    alert.mockRestore();
-  });
-
-  it("converts time and distance slider values into canonical seconds and meters", async () => {
-    const timeSetValue = jest.fn();
-    await renderNative(
-      <StepDurationField
-        form={{
-          getValues: () => ({ duration: { type: "time", seconds: 60 } }),
-          setValue: timeSetValue,
-        }}
-      />,
-    );
-    await fireEvent(screen.getByTestId("step-duration-value"), "change", 5);
-    expect(timeSetValue).toHaveBeenLastCalledWith(
+    function Owner() {
+      const [duration, setDuration] = useState<StepDurationValue | null>(null);
+      return (
+        <StepDurationField
+          form={{
+            getValues: () => ({ duration }),
+            setValue: (_name, next, options) => {
+              setValue(_name, next, options);
+              setDuration(next);
+            },
+          }}
+        />
+      );
+    }
+    await renderNative(<Owner />);
+    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "time");
+    expect(screen.getByLabelText("Duration value").props.accessibilityValue.text).toBe("Not set");
+    await fireEvent.press(screen.getByLabelText("Duration value"));
+    await fireEvent(screen.getByLabelText("Duration value minutes"), "valueChange", 5);
+    expect(setValue).toHaveBeenLastCalledWith(
       "duration",
       { type: "time", seconds: 300 },
       { shouldDirty: true, shouldValidate: true },
     );
 
-    const distanceSetValue = jest.fn();
-    await renderNative(
-      <StepDurationField
-        form={{
-          getValues: () => ({ duration: { type: "distance", meters: 1000 } }),
-          setValue: distanceSetValue,
-        }}
-      />,
-    );
-    await fireEvent(screen.getByTestId("step-duration-value"), "change", 1.5);
-    expect(distanceSetValue).toHaveBeenLastCalledWith(
+    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "distance");
+    expect(screen.getByLabelText("Distance unit")).toBeTruthy();
+    expect(screen.getByLabelText("Duration value").props.accessibilityValue.text).toBe("Not set");
+    await fireEvent.press(screen.getByLabelText("Duration value"));
+    await fireEvent(screen.getByLabelText("Duration value units"), "valueChange", 1);
+    expect(setValue).toHaveBeenLastCalledWith(
       "duration",
-      { type: "distance", meters: 1500 },
+      { type: "distance", meters: 1000 },
       { shouldDirty: true, shouldValidate: true },
     );
   });
 
-  it("expands the time slider viewport for an existing long duration without changing its canonical value", async () => {
+  it("changes existing completion types without retaining the previous value and preserves same-type values", async () => {
+    const setValue = jest.fn();
+    function Owner() {
+      const [duration, setDuration] = useState<StepDurationValue | null>({
+        type: "time",
+        seconds: 60,
+      });
+      return (
+        <StepDurationField
+          activityCategory="strength"
+          form={{
+            getValues: () => ({ duration }),
+            setValue: (_name, next, options) => {
+              setValue(_name, next, options);
+              setDuration(next);
+            },
+          }}
+        />
+      );
+    }
+    await renderNative(<Owner />);
+    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "time");
+    expect(setValue).not.toHaveBeenCalled();
+    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "repetitions");
+    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "time");
+    expect(setValue).toHaveBeenLastCalledWith("duration", null, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    expect(screen.getByLabelText("Duration value")).toBeTruthy();
+  });
+
+  it("shows the applicable row through time-to-distance-to-time replacements", async () => {
+    const setValue = jest.fn();
+    function Owner() {
+      const [duration, setDuration] = useState<StepDurationValue | null>({
+        type: "time",
+        seconds: 60,
+      });
+      return (
+        <StepDurationField
+          form={{
+            getValues: () => ({ duration }),
+            setValue: (_name, next, options) => {
+              setValue(_name, next, options);
+              setDuration(next);
+            },
+          }}
+        />
+      );
+    }
+    await renderNative(<Owner />);
+    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "distance");
+    expect(setValue).toHaveBeenLastCalledWith("duration", null, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    expect(screen.getByLabelText("Distance unit")).toBeTruthy();
+    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "time");
+    expect(setValue).toHaveBeenLastCalledWith("duration", null, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    expect(screen.getByLabelText("Duration value")).toBeTruthy();
+  });
+
+  it("keeps a time value exact and edits it only in its native overlay", async () => {
     const setValue = jest.fn();
     await renderNative(
       <StepDurationField
-        form={{ getValues: () => ({ duration: { type: "time", seconds: 86_399 } }), setValue }}
+        form={{ getValues: () => ({ duration: { type: "time", seconds: 86399 } }), setValue }}
       />,
     );
-
-    const control = screen.getByTestId("step-duration-value");
-    expect(control.props.max).toBe(3600);
-    expect(control.props.value).toBe(86_399);
-    expect(control.props.adjustmentMax).toBe(86_400);
-    expect(setValue).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Duration value").props.accessibilityValue.text).toBe("23:59:59");
+    await fireEvent.press(screen.getByLabelText("Duration value"));
+    await fireEvent(screen.getByLabelText("Duration value minutes"), "valueChange", 5);
+    expect(setValue).toHaveBeenLastCalledWith(
+      "duration",
+      { type: "time", seconds: 83159 },
+      { shouldDirty: true, shouldValidate: true },
+    );
   });
 
-  it("converts the visible value on a valid unit switch and refuses to discard an invalid exact draft", async () => {
+  it("preserves an invalid zero kilometer selection and blocks its unit switch until corrected", async () => {
+    const setValue = jest.fn();
     await renderNative(
       <StepDurationField
-        form={{
-          getValues: () => ({ duration: { type: "time", seconds: 600 } }),
-          setValue: jest.fn(),
-        }}
+        form={{ getValues: () => ({ duration: { type: "distance", meters: 1000 } }), setValue }}
       />,
     );
-    const slider = screen.getByTestId("step-duration-value");
-    const units = screen.getAllByTestId("select")[1];
-    if (!units) throw new Error("Expected the duration unit selector");
-    await fireEvent(slider, "exactValueInvalidChange", true);
-    await fireEvent(units, "valueChange", { value: "seconds" });
-    expect(screen.getByTestId("step-duration-value").props.unitLabel).toBe("minutes");
+    await fireEvent.press(screen.getByLabelText("Duration value"));
+    await fireEvent(screen.getByLabelText("Duration value units"), "valueChange", 0);
+    expect(screen.getByLabelText("Duration value").props.accessibilityValue.text).toBe("0");
+    expect(screen.getByText("Correct the completion value before saving.")).toBeTruthy();
+    await fireEvent(screen.getByLabelText("Distance unit"), "valueChange", "meters");
+    expect(screen.getByLabelText("Distance unit: Kilometers")).toBeTruthy();
+    expect(screen.getByLabelText("Duration value").props.accessibilityValue.text).toBe("0");
 
-    await fireEvent(slider, "exactValueInvalidChange", false);
-    await fireEvent(units, "valueChange", { value: "seconds" });
-    expect(screen.getByTestId("step-duration-value").props.value).toBe(600);
+    await fireEvent(screen.getByLabelText("Duration value units"), "valueChange", 1);
+    expect(setValue).toHaveBeenLastCalledWith(
+      "duration",
+      { type: "distance", meters: 1000 },
+      { shouldDirty: true, shouldValidate: true },
+    );
+    await fireEvent(screen.getByLabelText("Distance unit"), "valueChange", "meters");
+    expect(screen.getByLabelText("Duration value").props.accessibilityValue.text).toBe("1000");
+  });
+
+  it("ignores a queued value callback while inactive", async () => {
+    const setValue = jest.fn();
+    const form = {
+      getValues: () => ({ duration: { type: "repetitions" as const, count: 8 } }),
+      setValue,
+    };
+    const view = await renderNative(
+      <StepDurationField active activityCategory="strength" form={form} />,
+    );
+    await fireEvent.press(screen.getByLabelText("Duration value"));
+    const stale = screen.getByLabelText("Duration value thousands").props.onValueChange;
+    await view.rerender(
+      <StepDurationField active={false} activityCategory="strength" form={form} />,
+    );
+    stale(9);
+    expect(setValue).not.toHaveBeenCalled();
   });
 });

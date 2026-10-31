@@ -271,7 +271,7 @@ function DraftSubmitHarness({ onSubmit }: { onSubmit: (values: { amount: number 
 function OptionalNumberSubmitHarness({
   onSubmit,
 }: {
-  onSubmit: (values: { amount?: number }) => void;
+  onSubmit: (values: { amount?: number | undefined }) => void;
 }) {
   const methods = useZodForm({
     schema: z.object({ amount: z.number().optional() }),
@@ -386,12 +386,12 @@ describe("Form fields native", () => {
     const quantity = getByLabelText("Quantity");
     const weight = getByLabelText("Weight");
     await fireEvent(quantity, "changeText", "1.0");
-    await fireEvent(weight, "changeText", "70.0");
+    await fireEvent.press(weight);
     expect(quantity.props.value).toBe("1.0");
-    expect(weight.props.value).toBe("70.0");
+    expect(weight.props.accessibilityValue).toEqual({ text: "70" });
     await fireEvent.press(getByText("Reset drafts"));
     expect(quantity.props.value).toBe("1");
-    expect(weight.props.value).toBe("70");
+    expect(weight.props.accessibilityValue).toEqual({ text: "70" });
   });
 
   it("binds shared controlled wrappers to react-hook-form", async () => {
@@ -410,9 +410,11 @@ describe("Form fields native", () => {
     );
     await fireEvent(timePicker, "change", {}, new Date(2026, 2, 23, 3, 45));
     await fireEvent.press(getLastNode(getAllByText("Done"), "Done button"));
-    await fireEvent(getByLabelText("Duration"), "changeText", "45:00");
-    await fireEvent(getByLabelText("Duration"), "blur");
-    await fireEvent.press(getByLabelText("Increase Max Sessions"));
+    await fireEvent.press(getByLabelText("Duration"));
+    await fireEvent(getByLabelText("Duration minutes"), "valueChange", 45);
+    await fireEvent.press(getByLabelText("Done Duration"));
+    await fireEvent.press(getByLabelText("Max Sessions"));
+    await fireEvent(getByLabelText("Max Sessions Value"), "valueChange", 4);
     await fireEvent.press(getByTestId("recorded-at-field-date"));
     const datePicker = getPickerByMode(getAllByTypeName("DateTimePicker"), "date");
     await fireEvent(datePicker, "change", {}, new Date(2026, 2, 24, 0, 0));
@@ -424,12 +426,14 @@ describe("Form fields native", () => {
     await fireEvent.press(getByTestId("activity-category-field-bike"));
     await fireEvent(getByLabelText("FTP"), "changeText", "300");
     await fireEvent(getByLabelText("FTP"), "blur");
-    await fireEvent(getByLabelText("Pace"), "changeText", "04:05");
-    await fireEvent(getByLabelText("Pace"), "blur");
+    await fireEvent.press(getByLabelText("Pace"));
+    await fireEvent(getByLabelText("Pace seconds"), "valueChange", 5);
+    await fireEvent.press(getByLabelText("Done Pace"));
     await fireEvent(getByLabelText("Recovery Priority"), "changeText", "75");
     await fireEvent(getByLabelText("Recovery Priority"), "blur");
-    await fireEvent(getByLabelText("Weight"), "changeText", "72.5");
-    await fireEvent(getByLabelText("Weight"), "blur");
+    await fireEvent.press(getByLabelText("Weight"));
+    await fireEvent(getByLabelText("Weight kg"), "valueChange", 72);
+    await fireEvent(getByLabelText("Weight Fractional kg"), "valueChange", "50");
 
     expect(getByText(/"username":"Taylor"/)).toBeTruthy();
     expect(getByText(/"bio":"Coach"/)).toBeTruthy();
@@ -491,7 +495,7 @@ describe("Form fields native", () => {
     expect(getByText(/"target_power":12/)).toBeTruthy();
   });
 
-  it("preserves opt-out out-of-range drafts while the default field clamps", async () => {
+  it("preserves invalid out-of-range drafts regardless of the deprecated clamping option", async () => {
     const { getByLabelText, getByText } = await renderNative(<FormFieldsHarness />);
     const preserved = getByLabelText("Target Power");
     const clamped = getByLabelText("Clamped Target Power");
@@ -499,12 +503,12 @@ describe("Form fields native", () => {
     await fireEvent(preserved, "changeText", "500");
     await fireEvent(preserved, "blur");
     expect(preserved.props.value).toBe("500");
-    expect(getByText(/"target_power":500/)).toBeTruthy();
+    expect(getByText(/"target_power":null/)).toBeTruthy(); // JSON encodes NaN as null.
 
     await fireEvent(clamped, "changeText", "500");
     await fireEvent(clamped, "blur");
-    expect(clamped.props.value).toBe("300");
-    expect(getByText(/"target_power":300/)).toBeTruthy();
+    expect(clamped.props.value).toBe("500");
+    expect(getByText(/"target_power":null/)).toBeTruthy();
   });
 
   it("keeps invalid optional number drafts visible and rejects submission instead of clearing", async () => {

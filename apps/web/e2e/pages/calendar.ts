@@ -31,16 +31,28 @@ export class CalendarPage {
 
   async createEvent(input: CalendarEventInput) {
     return test.step(`Create calendar event: ${input.title}`, async () => {
-      await this.page.goto(`/calendar/new?date=${input.date}&type=custom`);
-      await expect(this.page.locator("#agenda-date-field")).toHaveValue(input.date);
+      await this.startCreate(input.date);
       await this.page.getByLabel("Title").fill(input.title);
       if (input.notes) await this.page.getByLabel("Notes").fill(input.notes);
       if (input.allDay) await this.page.getByLabel("All day").check();
+      else await this.page.getByLabel("Time", { exact: true }).fill("09:00");
       if (input.repeat) await this.page.getByLabel("Repeat weekly").selectOption("4");
       await this.page.getByRole("button", { name: /^create$/i }).press("Enter");
       await expect(this.page.getByRole("heading", { name: input.title })).toBeVisible();
       return this.eventId();
     });
+  }
+
+  async startCreate(date: string) {
+    await this.page.goto(`/calendar?month=${date.slice(0, 7)}&date=${date}&view=month`);
+    await expect(this.page.getByRole("heading", { name: "Calendar", exact: true })).toBeVisible();
+    await this.page.getByRole("link", { name: "Create", exact: true }).click();
+    await expect(this.page.locator("#agenda-date-field")).toHaveValue(date);
+    const timezone = this.page.getByRole("button", { name: "Event time zone", exact: true });
+    if ((await timezone.textContent())?.includes("Select a timezone")) {
+      await timezone.click();
+      await this.page.getByRole("option", { name: "UTC", exact: true }).click();
+    }
   }
 
   async eventId() {
@@ -58,8 +70,8 @@ export class CalendarPage {
   }) {
     if (input.scope && input.scope !== "single")
       await this.page.getByLabel("Apply changes to").selectOption(input.scope);
-    if (input.title) await this.page.getByLabel("Title").fill(input.title);
-    if (input.notes) await this.page.getByLabel("Notes").fill(input.notes);
+    if (input.title) await this.page.getByLabel("Title", { exact: true }).fill(input.title);
+    if (input.notes) await this.page.getByLabel("Notes", { exact: true }).fill(input.notes);
     await this.page.getByRole("button", { name: /save changes/i }).click();
   }
 

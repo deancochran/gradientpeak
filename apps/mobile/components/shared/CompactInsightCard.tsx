@@ -8,6 +8,7 @@ import type {
   InsightSource,
   InsightVisualType,
 } from "@/lib/insights/visualPolicy";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 const COMPACT_INSIGHT_CARD_SIZE = 160;
 
@@ -121,14 +122,16 @@ export function CompactInsightCard({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={getAccessibilityLabel({
-        title,
-        value,
-        hasData,
-        summary,
-        visualPolicy,
-        accessibilityDetail,
-      })}
+      accessibilityLabel={getAccessibilityLabel(
+        omitUndefined({
+          title,
+          value,
+          hasData,
+          summary,
+          visualPolicy,
+          accessibilityDetail,
+        }),
+      )}
       accessibilityHint="Opens insight details."
       onPress={onPress}
       style={{ width: COMPACT_INSIGHT_CARD_SIZE, height: COMPACT_INSIGHT_CARD_SIZE }}
@@ -151,7 +154,7 @@ export function CompactInsightCard({
             {children}
           </View>
 
-          <CompactInsightFooter value={value} hasData={hasData} layout={layout} summary={summary} />
+          <CompactInsightFooter {...omitUndefined({ value, hasData, layout, summary })} />
         </CardContent>
       </Card>
     </Pressable>

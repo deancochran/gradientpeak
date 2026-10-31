@@ -6,6 +6,7 @@ import {
   getActivityEffortObservationStatus as getCoreActivityEffortObservationStatus,
   paceSecondsFromSpeedMetersPerSecond,
 } from "@repo/core/athlete-inputs";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 export function formatActivityEffortPresentationValue(record: ActivityEffortCurveRow) {
   if (record.effort_type === "speed" && Number.isFinite(record.value) && record.value > 0) {
@@ -57,17 +58,19 @@ export function getActivityEffortObservationStatus(
   const definition = activityEffortDefinitions.find((candidate) => candidate.id === definitionId);
   if (!definition) return "invalid";
 
-  return getCoreActivityEffortObservationStatus({
-    activityId: record.activity_id,
-    activityCategory: definition.activityCategory,
-    effortType: definition.effortType,
-    durationSeconds: record.duration_seconds,
-    value: record.value,
-    unit: record.unit,
-    source: record.source,
-    method: record.method,
-    provenance: record.provenance,
-  });
+  return getCoreActivityEffortObservationStatus(
+    omitUndefined({
+      activityId: record.activity_id,
+      activityCategory: definition.activityCategory,
+      effortType: definition.effortType,
+      durationSeconds: record.duration_seconds,
+      value: record.value,
+      unit: record.unit,
+      source: record.source,
+      method: record.method,
+      provenance: record.provenance,
+    }),
+  );
 }
 
 export function getObservedActivityEffortRecords(records: ActivityEffortCurveRow[]) {

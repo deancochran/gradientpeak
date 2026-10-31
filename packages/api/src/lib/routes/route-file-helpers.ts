@@ -103,12 +103,13 @@ export function parseStoredRouteFile(fileContent: string, fileName?: string): Pa
     throw new Error("Stored route file contained invalid route data");
   }
 
-  const validation = validateRoute(parsed.data);
+  const route = toParsedRoute(parsed.data);
+  const validation = validateRoute(route);
   if (!validation.valid) {
     throw new Error("Stored route file contained invalid route data");
   }
 
-  return parsed.data;
+  return route;
 }
 
 export function buildRouteFileArtifacts(
@@ -124,14 +125,15 @@ export function buildRouteFileArtifacts(
     throw new Error("Failed to process route file");
   }
 
-  const validation = validateRoute(parsed.data);
+  const route = toParsedRoute(parsed.data);
+  const validation = validateRoute(route);
   if (!validation.valid) {
     throw new Error(`Invalid route: ${validation.errors.join(", ")}`);
   }
 
-  const stats = calculateRouteStats(parsed.data.coordinates);
-  const tolerance = calculateSimplificationTolerance(parsed.data.coordinates.length);
-  const simplified = simplifyCoordinates(parsed.data.coordinates, tolerance);
+  const stats = calculateRouteStats(route.coordinates);
+  const tolerance = calculateSimplificationTolerance(route.coordinates.length);
+  const simplified = simplifyCoordinates(route.coordinates, tolerance);
   const polyline = encodePolyline(simplified);
 
   let elevationPolyline: string | null = null;
@@ -142,11 +144,31 @@ export function buildRouteFileArtifacts(
   return {
     elevationPolyline,
     format: parsedResult.format,
-    parsed: parsed.data,
+    parsed: route,
     polyline,
     totalAscent: stats.totalAscent,
     totalDescent: stats.totalDescent,
     totalDistance: stats.totalDistance,
+  };
+}
+
+function toParsedRoute(route: z.output<typeof parsedRouteSchema>): ParsedRoute {
+  return {
+    ...(route.name === undefined ? {} : { name: route.name }),
+    coordinates: route.coordinates.map((coordinate) => ({
+      latitude: coordinate.latitude,
+      longitude: coordinate.longitude,
+      ...(coordinate.altitude === undefined ? {} : { altitude: coordinate.altitude }),
+    })),
+    ...(route.metadata === undefined
+      ? {}
+      : {
+          metadata: {
+            ...(route.metadata.author === undefined ? {} : { author: route.metadata.author }),
+            ...(route.metadata.time === undefined ? {} : { time: route.metadata.time }),
+            ...(route.metadata.bounds === undefined ? {} : { bounds: route.metadata.bounds }),
+          },
+        }),
   };
 }
 

@@ -4,7 +4,7 @@ import { validateActivityPlanIntent } from "./intent-validation";
 
 describe("system activity-plan intent validation", () => {
   it("keeps every existing system activity plan inside its declared training intent", () => {
-    expect(SYSTEM_TEMPLATES).toHaveLength(94);
+    expect(SYSTEM_TEMPLATES).toHaveLength(68);
     const incompatible = SYSTEM_TEMPLATES.flatMap((plan) => {
       const validation = validateActivityPlanIntent({
         intent: {

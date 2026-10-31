@@ -4,10 +4,28 @@ import { Platform, View } from "react-native";
 import { AppConfirmModal, AppFormModal } from "../AppFormModal";
 
 jest.mock("react-native-safe-area-context", () => ({
-  useSafeAreaInsets: () => ({ bottom: 34, left: 0, right: 0, top: 0 }),
+  useSafeAreaInsets: () => ({ bottom: 34, left: 0, right: 0, top: 47 }),
 }));
 
 describe("AppFormModal", () => {
+  it("opts dedicated editors into full-screen presentation with top safe-area clearance", async () => {
+    const { container } = await render(
+      <AppFormModal
+        presentationStyle="fullScreen"
+        actionPlacement="header"
+        onClose={jest.fn()}
+        title="Edit Step"
+      >
+        <Text>Step fields</Text>
+      </AppFormModal>,
+    );
+    expect(container.queryAll((node) => node.type === "Modal")[0]?.props.presentationStyle).toBe(
+      "fullScreen",
+    );
+    expect(
+      container.queryAll((node) => node.type === "KeyboardAvoidingView")[0]?.props.style,
+    ).toEqual({ paddingTop: 47 });
+  });
   it("keeps footer actions above the bottom safe area and enables keyboard avoidance", async () => {
     const { container, getByRole } = await render(
       <AppFormModal
@@ -26,6 +44,9 @@ describe("AppFormModal", () => {
       container.queryAll((node) => node.type === "Modal")[0]?.props.accessibilityViewIsModal,
     ).toBe(true);
     expect(getByRole("header")).toHaveTextContent("Edit details");
+    expect(container.queryAll((node) => node.type === "Modal")[0]?.props.presentationStyle).toBe(
+      "pageSheet",
+    );
 
     const footer = container
       .queryAll((node) => node.type === "View")
@@ -47,7 +68,10 @@ describe("AppFormModal", () => {
 
     expect(
       container.queryAll((node) => node.type === "ScrollView")[0]?.props.contentContainerStyle,
-    ).toEqual([{ paddingBottom: 50 }, callerStyle]);
+    ).toEqual([
+      { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 50, rowGap: 16 },
+      callerStyle,
+    ]);
   });
 
   it("provides a labeled, stable 44-point close action", async () => {

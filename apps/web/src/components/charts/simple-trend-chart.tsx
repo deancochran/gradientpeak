@@ -80,7 +80,7 @@ export function SimpleTrendChart({
 
   if (!valueSummary) {
     return (
-      <ChartCard description={description} title={title}>
+      <ChartCard {...(description === undefined ? {} : { description })} title={title}>
         <ChartEmptyState message={emptyMessage} />
       </ChartCard>
     );
@@ -112,7 +112,11 @@ export function SimpleTrendChart({
   const ariaLabel = `${getChartAccessibilityLabel(title, summary)}${pointDescription ? `. Points: ${pointDescription}` : ""}`;
 
   return (
-    <ChartCard description={description} summary={summary} title={title}>
+    <ChartCard
+      {...(description === undefined ? {} : { description })}
+      summary={summary}
+      title={title}
+    >
       <div aria-label={ariaLabel} className="relative h-56 w-full" role="img">
         <svg
           aria-hidden="true"

@@ -1,3 +1,4 @@
+import { omitUndefined } from "../../lib/omit-undefined";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../card/index.web";
 import type { ChartCardProps, ChartEmptyStateProps } from "./shared";
 import { getChartAccessibilityLabel } from "./shared";
@@ -12,7 +13,7 @@ function ChartCard({
   title,
 }: ChartCardProps) {
   return (
-    <Card className={className} testId={testId}>
+    <Card {...omitUndefined({ className, testId })}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         {description ? <CardDescription>{description}</CardDescription> : null}

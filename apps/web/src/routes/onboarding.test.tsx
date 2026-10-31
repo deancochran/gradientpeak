@@ -3,7 +3,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  complete: vi.fn(async (_input: { data: FormData }) => ({ status: "ok" })),
+  complete: vi.fn(
+    async (_input: { data: FormData }): Promise<{ status: string } | undefined> => ({
+      status: "ok",
+    }),
+  ),
   loaderData: {
     draft: { full_name: "Web Athlete", username: "web_athlete" },
     integrations: [],
@@ -65,6 +69,18 @@ afterEach(() => {
 });
 
 describe("simplified web onboarding", () => {
+  it("does not throw when successful navigation consumes the server redirect result", async () => {
+    mocks.complete.mockResolvedValueOnce(undefined);
+    render(<OnboardingPage />);
+    const button = screen.getByRole("button", { name: "Finish setup" });
+    const form = button.closest("form");
+    if (!form) throw new Error("Onboarding form missing");
+    fireEvent.submit(form);
+    await waitFor(() => expect(mocks.complete).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("renders identity, optional provider controls, and no removed initial setup sections", async () => {
     render(<OnboardingPage />);
 

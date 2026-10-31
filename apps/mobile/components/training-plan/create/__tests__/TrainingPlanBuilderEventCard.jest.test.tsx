@@ -1,11 +1,13 @@
+import { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import {
   type ActivityPlanPlanningEstimate,
   type ActivityPrescriptionQuantificationBundle,
   createUnavailableActivityPlanPlanningEstimate,
 } from "@repo/core";
 import React from "react";
+import { Platform } from "react-native";
 import { createPrescriptionQuantificationBundleFixture } from "@/components/shared/__tests__/activityQuantificationFixture";
-import { fireEvent, renderNative, screen } from "../../../../test/render-native";
+import { act, fireEvent, renderNative, screen } from "../../../../test/render-native";
 import {
   TrainingPlanBuilderEventCard,
   TrainingPlanBuilderEventEditor,
@@ -152,7 +154,7 @@ describe("TrainingPlanBuilderEventCard actions", () => {
     );
   });
 
-  it("uses checked radio semantics and full weekday labels in the session editor", async () => {
+  it("uses checked radio semantics and relative template days in the session editor", async () => {
     await renderNative(
       <TrainingPlanBuilderEventEditor
         event={session}
@@ -163,14 +165,57 @@ describe("TrainingPlanBuilderEventCard actions", () => {
       />,
     );
 
-    expect(screen.getByLabelText("Monday").props.accessibilityState).toEqual({ checked: true });
-    expect(screen.getByLabelText("Tuesday").props.accessibilityState).toEqual({ checked: false });
+    expect(screen.getByLabelText("Day 1").props.accessibilityState).toEqual({ checked: true });
+    expect(screen.getByLabelText("Day 2").props.accessibilityState).toEqual({ checked: false });
     expect(screen.getByLabelText("No time").props.accessibilityState).toEqual({ checked: true });
     expect(screen.getByLabelText("Activity day").props.accessibilityRole).toBe("radiogroup");
     expect(screen.getByLabelText("Activity time").props.accessibilityRole).toBe("radiogroup");
     expect(screen.getByLabelText("Move earlier").props.accessibilityState).toEqual({
       disabled: true,
     });
+  });
+
+  it("accepts an exact native clock time, clears it, and ignores a picker callback after close", async () => {
+    const previousPlatform = Platform.OS;
+    Platform.OS = "android";
+    const open = jest.spyOn(DateTimePickerAndroid, "open").mockImplementation(() => undefined);
+    try {
+      const onChange = jest.fn();
+      const props = {
+        event: session,
+        onChange,
+        onDuplicate: jest.fn(),
+        onOpenActivityPicker: jest.fn(),
+        onRemove: jest.fn(),
+      };
+      const view = await renderNative(<TrainingPlanBuilderEventEditor {...props} />);
+      await fireEvent.press(screen.getByLabelText("Exact start time"));
+      const callback = open.mock.calls.at(-1)?.[0].onChange;
+      const chosen = new Date(2026, 2, 8, 7, 17);
+      const event = {
+        type: "set" as const,
+        nativeEvent: { timestamp: chosen.getTime(), utcOffset: 0 },
+      };
+      await act(() => callback?.(event, chosen));
+      expect(onChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ eventOverrides: { start_time: "07:17" } }),
+      );
+      await view.rerender(
+        <TrainingPlanBuilderEventEditor
+          {...props}
+          event={{ ...session, eventOverrides: { start_time: "07:17" } }}
+        />,
+      );
+      await fireEvent.press(screen.getByLabelText("Clear time"));
+      expect(onChange.mock.calls.at(-1)?.[0].eventOverrides).toBeUndefined();
+      await view.unmount();
+      onChange.mockClear();
+      await act(() => callback?.(event, chosen));
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      open.mockRestore();
+      Platform.OS = previousPlatform;
+    }
   });
 
   it("keeps exact authored values unmarked and marks complete calculated values", async () => {

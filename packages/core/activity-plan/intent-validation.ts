@@ -5,10 +5,11 @@ import { type ActivityPlanIntent, activityPlanIntentSchema } from "./training-in
 
 export type ActivityPlanPrescriptionCharacteristics = {
   explicit_duration_seconds: number;
-  work_duration_seconds: number;
+  /** Step purpose is no longer authored, so work/recovery classification is unavailable. */
+  work_duration_seconds: null;
   recovery_duration_seconds: number;
-  work_recovery_ratio: number | null;
-  work_step_count: number;
+  work_recovery_ratio: null;
+  work_step_count: null;
   recovery_step_count: number;
   objective_intensities: Array<{ type: ActivityTarget["type"]; intensity: number }>;
   maximum_rpe: number | null;
@@ -27,65 +28,37 @@ export type ActivityPlanIntentValidation = {
   warnings: string[];
 };
 
-function inferredPurpose(name: string): "work" | "recovery" | "other" {
-  const normalized = name.toLowerCase();
-  if (/recovery|recover|rest|easy|float/.test(normalized)) return "recovery";
-  if (/warm.?up|cool.?down/.test(normalized)) return "other";
-  return "work";
-}
-
 export function deriveActivityPlanPrescriptionCharacteristics(
   structure: ActivityPlanStructure,
 ): ActivityPlanPrescriptionCharacteristics {
   let explicitDurationSeconds = 0;
-  let workDurationSeconds = 0;
-  let recoveryDurationSeconds = 0;
-  let workStepCount = 0;
-  let recoveryStepCount = 0;
   let maximumRpe: number | null = null;
   const objectiveIntensities: ActivityPlanPrescriptionCharacteristics["objective_intensities"] = [];
 
-  for (const segment of structure.segments) {
-    if (segment.role === "rest") {
-      explicitDurationSeconds += segment.duration.seconds;
-      recoveryDurationSeconds += segment.duration.seconds;
-      recoveryStepCount += 1;
-      continue;
-    }
-    for (const interval of segment.intervals) {
-      for (const step of interval.steps) {
-        const purpose = step.purpose ?? inferredPurpose(step.name);
-        const seconds =
-          step.duration.type === "time" ? step.duration.seconds * interval.repetitions : 0;
-        explicitDurationSeconds += seconds;
-        if (purpose === "work") {
-          workDurationSeconds += seconds;
-          workStepCount += interval.repetitions;
-        } else if (purpose === "recovery") {
-          recoveryDurationSeconds += seconds;
-          recoveryStepCount += interval.repetitions;
+  for (const item of structure.items) {
+    const steps = item.type === "step" ? [item] : item.steps;
+    const count = item.type === "step" ? 1 : item.count;
+    for (const step of steps) {
+      const seconds = step.duration.type === "time" ? step.duration.seconds * count : 0;
+      explicitDurationSeconds += seconds;
+      for (const target of step.targets) {
+        if (target.type === "RPE") {
+          maximumRpe = Math.max(maximumRpe ?? 0, target.intensity);
         }
-        for (const target of step.targets) {
-          if (target.type === "RPE") {
-            maximumRpe = Math.max(maximumRpe ?? 0, target.intensity);
-          }
-          if (getActivityTargetRole(target) === "objective") {
+        if (getActivityTargetRole(target) === "objective") {
+          if (target.type !== "rest")
             objectiveIntensities.push({ type: target.type, intensity: target.intensity });
-          }
         }
       }
     }
   }
   return {
     explicit_duration_seconds: explicitDurationSeconds,
-    work_duration_seconds: workDurationSeconds,
-    recovery_duration_seconds: recoveryDurationSeconds,
-    work_recovery_ratio:
-      recoveryDurationSeconds > 0 && workDurationSeconds > 0
-        ? workDurationSeconds / recoveryDurationSeconds
-        : null,
-    work_step_count: workStepCount,
-    recovery_step_count: recoveryStepCount,
+    work_duration_seconds: null,
+    recovery_duration_seconds: 0,
+    work_recovery_ratio: null,
+    work_step_count: null,
+    recovery_step_count: 0,
     objective_intensities: objectiveIntensities,
     maximum_rpe: maximumRpe,
   };
@@ -124,28 +97,6 @@ export function validateActivityPlanIntent(input: {
   const add = (code: ActivityPlanIntentViolationCode, message: string) =>
     violations.push({ code, message });
 
-  if (
-    characteristics.work_step_count === 0 &&
-    ["vo2max", "threshold_development", "anaerobic_capacity", "speed_skill"].includes(
-      intent.training_intent,
-    )
-  ) {
-    add("NO_QUALIFYING_WORK", "The activity plan contains no qualifying work steps.");
-  }
-
-  if (
-    (intent.training_intent === "vo2max" ||
-      intent.training_intent === "threshold_development" ||
-      intent.training_intent === "anaerobic_capacity") &&
-    characteristics.work_recovery_ratio !== null &&
-    characteristics.work_recovery_ratio < 0.5
-  ) {
-    add(
-      "RECOVERY_EXCESSIVE_FOR_INTENT",
-      "Recovery exceeds the supported density for the declared training intent.",
-    );
-  }
-
   if (intent.training_intent === "vo2max" && !hasHighIntensity(characteristics)) {
     add(
       "INTENSITY_INCOMPATIBLE_WITH_INTENT",
@@ -167,22 +118,6 @@ export function validateActivityPlanIntent(input: {
       "Recovery activity plans cannot contain high-intensity work.",
     );
   }
-  if (
-    intent.training_intent === "technique" &&
-    !input.structure.segments.some(
-      (segment) =>
-        segment.role === "activity" &&
-        segment.intervals.some((interval) =>
-          interval.steps.some((step) => step.purpose === "technique"),
-        ),
-    )
-  ) {
-    add(
-      "TECHNIQUE_WORK_MISSING",
-      "Technique activity plans require an explicitly marked technique step.",
-    );
-  }
-
   return {
     status:
       violations.length > 0 ? "incompatible" : warnings.length > 0 ? "indeterminate" : "compatible",

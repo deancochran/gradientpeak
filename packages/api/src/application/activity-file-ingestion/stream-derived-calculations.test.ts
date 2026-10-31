@@ -36,6 +36,7 @@ function calculationsFor(input: {
     heartRate?: number;
   }>;
   includedTimeline?: readonly boolean[];
+  bestEffortMaxGapSeconds?: number;
   segmentEndOffsetSeconds?: number;
 }) {
   const segmentEndOffsetSeconds = input.segmentEndOffsetSeconds ?? 60;
@@ -55,6 +56,9 @@ function calculationsFor(input: {
     duration: segmentEndOffsetSeconds,
     segmentEndOffsetSeconds,
     ...(input.includedTimeline === undefined ? {} : { includedTimeline: input.includedTimeline }),
+    ...(input.bestEffortMaxGapSeconds === undefined
+      ? {}
+      : { bestEffortMaxGapSeconds: input.bestEffortMaxGapSeconds }),
     streamMetadata: collectActivityFileStreamMetadata(input.records),
   });
 }
@@ -72,6 +76,32 @@ function rowsFor(activityCategory: CanonicalActivityCategory) {
 }
 
 describe("canonical activity-file best-effort evidence", () => {
+  it("keeps imported default gaps strict while accepted recording may opt into its 5-second policy", () => {
+    const records = Array.from({ length: 7 }, (_, index) => ({
+      timestamp: new Date(index * 5_000),
+      power: 200,
+    }));
+    const resultFor = (calculation: ReturnType<typeof calculationsFor>) =>
+      calculation.bestEffortExtractions
+        .find((extraction) => extraction.metric === "power")
+        ?.results.find((result) => result.durationSeconds === 30);
+
+    expect(resultFor(calculationsFor({ activityCategory: "bike", records }))).toMatchObject({
+      status: "unavailable",
+      reason: "no_contributing_intervals",
+    });
+    expect(
+      resultFor(
+        calculationsFor({
+          activityCategory: "bike",
+          records,
+          bestEffortMaxGapSeconds: 5,
+          segmentEndOffsetSeconds: 30,
+        }),
+      ),
+    ).toMatchObject({ status: "available", value: 200 });
+  });
+
   it("retains swim extraction but does not promote speed without qualified context", () => {
     const calculation = calculateActivityFileStreamDerivedCalculations({
       ...base,

@@ -19,18 +19,22 @@ function resolveItemKey(item: unknown, index: number): string {
 const createHost = (type: string) =>
   function MockComponent(props: HostProps) {
     const children =
-      type === "Text"
-        ? props.children
-        : React.Children.map(props.children, (child) =>
-            typeof child === "string" || typeof child === "number"
-              ? React.createElement("Text", null, String(child))
-              : child,
-          );
+      type === "Modal" && props.visible === false
+        ? null
+        : type === "Text"
+          ? props.children
+          : React.Children.map(props.children, (child) =>
+              typeof child === "string" || typeof child === "number"
+                ? React.createElement("Text", null, String(child))
+                : child,
+            );
 
     return React.createElement(type, props, children);
   };
 
 export const Modal = createHost("Modal");
+export const findNodeHandle = jest.fn((_node: unknown): number | null => null);
+export const AccessibilityInfo = { setAccessibilityFocus: jest.fn() };
 export const ActivityIndicator = createHost("ActivityIndicator");
 export const KeyboardAvoidingView = createHost("KeyboardAvoidingView");
 export const FlatList = ({
@@ -116,7 +120,8 @@ export const TouchableOpacity = createHost("TouchableOpacity");
 export const View = createHost("View");
 export const Image = createHost("Image");
 
-export const useColorScheme = () => "light";
+/** Mutable in tests so native surfaces can prove both resolved color schemes. */
+export const useColorScheme = jest.fn(() => "light" as const);
 export const useWindowDimensions = () => ({ width: 390, height: 844 });
 
 export const Appearance = {

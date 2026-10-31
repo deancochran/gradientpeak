@@ -171,7 +171,13 @@ function buildActivityPolyline(parsedActivity: StandardActivity | null): string 
     ) {
       return [];
     }
-    return [{ latitude, longitude, altitude: record.altitude }];
+    return [
+      {
+        latitude,
+        longitude,
+        ...(record.altitude === undefined ? {} : { altitude: record.altitude }),
+      },
+    ];
   });
 
   if (coordinates.length < 2) {

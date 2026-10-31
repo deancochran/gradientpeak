@@ -27,6 +27,8 @@ export {
 } from "./calculations/heart-rate";
 export { estimatePowerForDuration } from "./calculations/power-curve";
 export {
+  kilometersPerHourToPaceSeconds,
+  paceSecondsPerKilometerToKilometersPerHour,
   paceToSpeed,
   parsePace,
   speedToPace,
@@ -121,6 +123,8 @@ export * as ActivityCategories from "./activity-categories";
 export * as AthleteInputs from "./athlete-inputs";
 export * as Bluetooth from "./bluetooth";
 export * as Calculations from "./calculations";
+export * from "./chatbot";
+export * from "./constants/authoring-choices";
 export * as Duration from "./duration";
 export * as Estimators from "./estimators/index";
 export * as Load from "./load";

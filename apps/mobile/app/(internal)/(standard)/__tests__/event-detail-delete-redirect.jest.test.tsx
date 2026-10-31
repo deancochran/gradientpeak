@@ -23,6 +23,13 @@ jest.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: jest.fn() }),
 }));
 
+jest.mock("@repo/api/react", () => ({
+  __esModule: true,
+  usePlannedSessionMutations: () => ({
+    changePlanOnly: { isPending: false, mutateAsync: jest.fn() },
+  }),
+}));
+
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
@@ -221,6 +228,7 @@ jest.mock("@/lib/api", () => ({
     },
     plannedSessions: {
       create: { useMutation: () => ({ isPending: false, mutate: jest.fn() }) },
+      recordingLaunch: { useMutation: () => ({ mutateAsync: jest.fn() }) },
       getById: {
         useQuery: () => ({ data: null, error: null, isLoading: false }),
       },
@@ -242,6 +250,9 @@ jest.mock("@/lib/api", () => ({
       },
     },
     activityPlans: {
+      getById: {
+        useQuery: () => ({ data: null, error: null, isLoading: false }),
+      },
       list: {
         useQuery: () => ({
           data: { items: [] },

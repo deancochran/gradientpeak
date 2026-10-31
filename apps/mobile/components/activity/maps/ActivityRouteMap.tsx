@@ -4,6 +4,7 @@ import { Text } from "@repo/ui/components/text";
 import { useEffect, useMemo, useRef } from "react";
 import { View } from "react-native";
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 interface Coordinate {
   latitude: number;
@@ -49,8 +50,19 @@ function getColoredSegments(
   const segments: Array<{ coordinates: Coordinate[]; color: string }> = [];
 
   for (let i = 0; i < coordinates.length - 1; i++) {
-    const segmentCoords = [coordinates[i], coordinates[i + 1]];
-    const avgValue = (colorData[i] + colorData[i + 1]) / 2;
+    const currentCoordinate = coordinates[i];
+    const nextCoordinate = coordinates[i + 1];
+    const currentValue = colorData[i];
+    const nextValue = colorData[i + 1];
+    if (
+      currentCoordinate === undefined ||
+      nextCoordinate === undefined ||
+      currentValue === undefined ||
+      nextValue === undefined
+    )
+      continue;
+    const segmentCoords = [currentCoordinate, nextCoordinate];
+    const avgValue = (currentValue + nextValue) / 2;
     const color = getGradientColor(avgValue, min, max);
 
     segments.push({ coordinates: segmentCoords, color });
@@ -153,8 +165,9 @@ export function ActivityRouteMap({
     );
   }
 
-  const startCoord = processedCoordinates[0];
-  const endCoord = processedCoordinates[processedCoordinates.length - 1];
+  const startCoord = processedCoordinates.at(0);
+  const endCoord = processedCoordinates.at(-1);
+  if (startCoord === undefined || endCoord === undefined) return null;
 
   return (
     <Card>
@@ -176,7 +189,7 @@ export function ActivityRouteMap({
           )}
         </CardHeader>
       )}
-      <CardContent className={compact ? "p-2" : undefined}>
+      <CardContent {...omitUndefined({ className: compact ? "p-2" : undefined })}>
         <View style={{ height }} className="rounded-lg overflow-hidden border border-border">
           <MapView
             ref={mapRef}

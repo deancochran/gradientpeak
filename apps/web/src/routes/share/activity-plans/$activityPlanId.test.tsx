@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Route } from "./$activityPlanId";
@@ -7,7 +6,6 @@ import { Route } from "./$activityPlanId";
 const mocks = vi.hoisted(() => ({
   loaderData: undefined as unknown,
 }));
-
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
@@ -15,13 +13,10 @@ vi.mock("@tanstack/react-router", () => ({
   }),
   notFound: vi.fn(),
 }));
-
 vi.mock("../../../lib/public-share", () => ({
   loadPublicActivityPlan: vi.fn(),
 }));
-
 afterEach(cleanup);
-
 describe("PublicActivityPlanPage", () => {
   it("uses the compiled canonical activity category as its badge and overview value", () => {
     mocks.loaderData = {
@@ -32,7 +27,7 @@ describe("PublicActivityPlanPage", () => {
         owner: { name: "Avery", username: "avery" },
         activity_category: "run",
         structure_summary: "1 activity step",
-        structure_version: 3,
+        structure_version: 4,
         metrics: [
           {
             key: "distance",
@@ -72,46 +67,35 @@ describe("PublicActivityPlanPage", () => {
           },
         ],
         structure: {
-          version: 3,
+          version: 5,
           activity_category: "run",
-          segments: [
+          items: [
             {
-              role: "activity",
-              name: "Run",
-              notes: "Start controlled.",
-              intervals: [
-                {
-                  name: "Tempo",
-                  notes: "Jog the recovery.",
-                  repetitions: 1,
-                  steps: [
-                    {
-                      name: "Work",
-                      description: "Hold a steady hard effort.",
-                      notes: "Stay relaxed.",
-                      duration: { type: "time", seconds: 600 },
-                      targets: [{ type: "RPE", intensity: 8 }],
-                    },
-                  ],
-                },
-              ],
+              type: "step",
+              id: "00000000-0000-4000-8000-000000000002",
+              name: "Work",
+              instructions:
+                "Start controlled. Jog the recovery. Hold a steady hard effort. Stay relaxed.",
+              duration: { type: "time", seconds: 600 },
+              targets: [{ type: "RPE", intensity: 8 }],
             },
           ],
         },
       },
     };
-    const PublicActivityPlanPage = (Route as unknown as { component: React.ComponentType })
-      .component;
-
+    const PublicActivityPlanPage = (
+      Route as unknown as {
+        component: React.ComponentType;
+      }
+    ).component;
     render(<PublicActivityPlanPage />);
-
     expect(screen.getAllByText("Run").length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("Categories")).toBeNull();
     expect(screen.queryByRole("button", { name: /print|save as pdf/i })).toBeNull();
     expect(screen.getByText("Session Flow")).toBeTruthy();
     expect(
       screen.getByRole("figure", {
-        name: /Session flow.*normalized and capped.*authored intensity/i,
+        name: /Session flow with 1 work step.*normalized and capped.*authored intensity/i,
       }),
     ).toBeTruthy();
     expect(
@@ -119,18 +103,18 @@ describe("PublicActivityPlanPage", () => {
         .getByTestId("activity-plan-session-flow-timeline-bar-0")
         .getAttribute("data-intensity"),
     ).toBe("RPE 8");
-    expect(screen.getByText("Activity structure")).toBeTruthy();
+    expect(screen.getByText("Session Flow")).toBeTruthy();
     expect(screen.getAllByText(/8 RPE/).length).toBeGreaterThan(0);
     expect(screen.getByTestId("activity-plan-estimates")).toBeTruthy();
-    expect(screen.getByLabelText("Distance, Unavailable, Unavailable")).toBeTruthy();
     expect(screen.getByLabelText("Duration, 10m, Authored")).toBeTruthy();
-    expect(screen.getByLabelText("Load, Unavailable, Unavailable")).toBeTruthy();
-    expect(screen.getByLabelText("Intensity, Unavailable, Unavailable")).toBeTruthy();
+    expect(screen.queryByLabelText("Distance, Unavailable, Unavailable")).toBeNull();
+    expect(screen.getByText("Estimate details")).toBeTruthy();
     expect(screen.queryByText("Personalized")).toBeNull();
-    expect(screen.getAllByText("Start controlled.").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Jog the recovery.").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Hold a steady hard effort\./).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Stay relaxed\./).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(
+        "Start controlled. Jog the recovery. Hold a steady hard effort. Stay relaxed.",
+      ).length,
+    ).toBeGreaterThan(0);
     expect(screen.queryByText(/240 W/)).toBeNull();
   });
 });

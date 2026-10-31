@@ -1,4 +1,5 @@
 import { GoalCard } from "@/components/shared/GoalCard";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 type GoalListItemGoal = {
   id: string;
@@ -42,7 +43,7 @@ export function GoalListItem({
 }) {
   return (
     <GoalCard
-      goal={{
+      goal={omitUndefined({
         id: goal.id,
         objectiveSummary: label ?? status ?? undefined,
         targetDate: goal.target_date,
@@ -53,9 +54,9 @@ export function GoalListItem({
           : {
               compactSignals: [{ label: "Readiness", value: `${Math.round(readinessPercent)}%` }],
             }),
-      }}
+      })}
       onPress={onPress}
-      testID={testID}
+      {...omitUndefined({ testID })}
       variant="compact"
     />
   );

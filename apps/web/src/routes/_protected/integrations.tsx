@@ -209,6 +209,9 @@ function IntegrationsPage() {
                 integration.configured &&
                 (integration.primaryAction === "connect" ||
                   integration.primaryAction === "reconnect");
+              const canRetryDisconnect =
+                integration.providerHealth.status === "disconnecting" &&
+                integration.primaryAction === "disconnect";
 
               return (
                 <Card key={integration.provider}>
@@ -258,7 +261,8 @@ function IntegrationsPage() {
                     ) : null}
 
                     <div className="flex flex-wrap gap-2">
-                      {integration.providerHealth.status === "disconnecting" ? (
+                      {integration.providerHealth.status === "disconnecting" &&
+                      !canRetryDisconnect ? (
                         <Button variant="outline" disabled>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                           Disconnecting
@@ -292,7 +296,8 @@ function IntegrationsPage() {
                           Refresh setup data
                         </Button>
                       ) : null}
-                      {integration.actions.includes("disconnect") && integration.connected ? (
+                      {integration.actions.includes("disconnect") &&
+                      (integration.connected || canRetryDisconnect) ? (
                         <Button
                           variant="destructive"
                           disabled={isMutating}
@@ -306,7 +311,7 @@ function IntegrationsPage() {
                             }
                           }}
                         >
-                          Disconnect
+                          {canRetryDisconnect ? "Retry disconnect" : "Disconnect"}
                         </Button>
                       ) : null}
                       {importRun ? (

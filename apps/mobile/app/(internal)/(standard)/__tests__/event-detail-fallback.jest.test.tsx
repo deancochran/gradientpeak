@@ -92,6 +92,11 @@ const navigateToMock = jest.fn();
 const deleteEventMutateMock = jest.fn();
 const completePlannedMock = jest.fn();
 const associateRecordedMock = jest.fn();
+const changePlanOnlyMock = jest.fn();
+const movePlannedMock = jest.fn();
+const cancelPlannedMock = jest.fn();
+const plannedSessionRefetchMock = jest.fn(async () => undefined);
+let plannedSessionMutationOptions: unknown;
 let completionCandidates: { canAssociate: boolean; items: unknown[]; nextCursor: null } = {
   canAssociate: true,
   items: [],
@@ -101,6 +106,7 @@ const eventQueryCalls: unknown[][] = [];
 const plannedQueryCalls: unknown[][] = [];
 let routeParams: Record<string, string> = { id: "event-1" };
 let plannedSession: unknown = null;
+let plannedSessionError: EventQueryError | null = null;
 var getActivityColorMock = jest.fn((_activityCategory: string) => ({ name: "Outdoor Run" }));
 
 type StackScreenProps = Record<string, unknown> & {
@@ -111,6 +117,18 @@ jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
   ...jest.requireActual("@tanstack/react-query"),
   useQueryClient: () => ({ invalidateQueries: jest.fn() }),
+}));
+
+jest.mock("@repo/api/react", () => ({
+  __esModule: true,
+  usePlannedSessionMutations: (options: unknown) => {
+    plannedSessionMutationOptions = options;
+    return {
+      cancel: { isPending: false, mutateAsync: cancelPlannedMock },
+      changePlanOnly: { isPending: false, mutateAsync: changePlanOnlyMock },
+      move: { isPending: false, mutateAsync: movePlannedMock },
+    };
+  },
 }));
 
 jest.mock("react-native", () => ({
@@ -161,6 +179,27 @@ jest.mock("@/components/shared/ActivityPlanCard", () => ({
 jest.mock("@/components/shared/RouteCard", () => ({
   __esModule: true,
   RouteCard: createHost("RouteCard"),
+}));
+jest.mock("@/components/shared/AppFormModal", () => ({
+  __esModule: true,
+  AppConfirmModal: ({
+    primaryAction,
+    testID,
+  }: {
+    primaryAction: { onPress: () => void; testID: string };
+    testID?: string;
+  }) =>
+    React.createElement(
+      "AppConfirmModal",
+      { testID },
+      React.createElement("Button", primaryAction),
+    ),
+  AppFormModal: ({
+    children,
+    primaryAction,
+    testID,
+  }: React.PropsWithChildren<{ primaryAction?: React.ReactNode; testID?: string }>) =>
+    React.createElement("AppFormModal", { testID }, children, primaryAction),
 }));
 
 jest.mock("@/components/shared/resource-picker", () => ({
@@ -303,7 +342,12 @@ jest.mock("@/lib/api", () => ({
       getById: {
         useQuery: (...args: unknown[]) => {
           plannedQueryCalls.push(args);
-          return { data: plannedSession, isLoading: false, error: null, refetch: jest.fn() };
+          return {
+            data: plannedSession,
+            isLoading: false,
+            error: plannedSessionError,
+            refetch: plannedSessionRefetchMock,
+          };
         },
       },
       completionCandidates: {
@@ -318,12 +362,21 @@ jest.mock("@/lib/api", () => ({
       },
       linkCompletion: { useMutation: () => ({ mutateAsync: associateRecordedMock }) },
       skip: { useMutation: () => ({ mutateAsync: jest.fn() }) },
+      recordingLaunch: { useMutation: () => ({ mutateAsync: jest.fn() }) },
     },
     profiles: { get: { useQuery: () => ({ data: { planning_timezone: "UTC" } }) } },
     activities: {
       createManualDiaryEntry: { useMutation: () => ({ mutateAsync: completePlannedMock }) },
     },
     activityPlans: {
+      getById: {
+        useQuery: () => ({
+          data: { detail: { activityCategory: "run" } },
+          isLoading: false,
+          error: null,
+          refetch: jest.fn(),
+        }),
+      },
       list: {
         useQuery: () => ({
           data: { items: [] },
@@ -368,6 +421,11 @@ describe("event detail fallback screen", () => {
     jest.clearAllMocks();
     routeParams = { id: "event-1" };
     plannedSession = null;
+    plannedSessionError = null;
+    plannedSessionMutationOptions = undefined;
+    movePlannedMock.mockReset();
+    cancelPlannedMock.mockReset();
+    plannedSessionRefetchMock.mockClear();
     completionCandidates = { canAssociate: true, items: [], nextCursor: null };
     eventQueryCalls.length = 0;
     plannedQueryCalls.length = 0;
@@ -418,13 +476,24 @@ describe("event detail fallback screen", () => {
     await fireEvent.press(screen.getByTestId("planned-session-actual-details-toggle"));
     const duration = screen.getByLabelText("Actual duration (minutes, optional)");
     await fireEvent(duration, "changeText", "30");
-    await fireEvent.press(screen.getByTestId("planned-session-complete-full"));
-    await waitFor(() => expect(completePlannedMock).toHaveBeenCalledTimes(1));
+    const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto");
+    Object.defineProperty(globalThis, "crypto", { configurable: true, value: undefined });
+    try {
+      await fireEvent.press(screen.getByTestId("planned-session-complete-full"));
+      await waitFor(() => expect(completePlannedMock).toHaveBeenCalledTimes(1));
+    } finally {
+      if (cryptoDescriptor) {
+        Object.defineProperty(globalThis, "crypto", cryptoDescriptor);
+      } else {
+        Reflect.deleteProperty(globalThis, "crypto");
+      }
+    }
     const payload = completePlannedMock.mock.calls[0]?.[0];
     expect(payload.observation).toMatchObject({
       activityCategory: "run",
       diaryDate: "2000-01-01",
       name: "Completed activity",
+      operationId: "00000000-0000-4000-8000-000000000000",
     });
     expect(payload.observation).toMatchObject({
       elapsedMs: 1_800_000,
@@ -433,6 +502,237 @@ describe("event detail fallback screen", () => {
     });
     expect(duration.props.value).toBe("30");
     expect(screen.getByTestId("planned-session-retry")).toBeTruthy();
+  });
+
+  it("offers a retry rather than a not-found state when a planned-session read fails transiently", async () => {
+    routeParams = {
+      id: "00000000-0000-4000-8000-000000000001",
+      resourceType: "planned_session",
+    };
+    plannedSessionError = { data: { code: "INTERNAL_SERVER_ERROR" }, message: "Temporary outage" };
+
+    await renderNative(<EventDetailScreen />);
+
+    expect(screen.getByText("Planned session unavailable")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "The planned session could not be loaded. Check your connection and try again.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("Planned session not found")).toBeNull();
+    await fireEvent.press(screen.getByText("Retry"));
+    expect(plannedSessionRefetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders planned-session not found only after a confirmed NOT_FOUND response", async () => {
+    routeParams = {
+      id: "00000000-0000-4000-8000-000000000001",
+      resourceType: "planned_session",
+    };
+    plannedSessionError = { data: { code: "NOT_FOUND" }, message: "Not found" };
+
+    await renderNative(<EventDetailScreen />);
+
+    expect(screen.getByText("Planned session not found")).toBeTruthy();
+    expect(screen.queryByText("Planned session unavailable")).toBeNull();
+  });
+
+  it("creates a private edit copy for a reference-only scheduled session", async () => {
+    routeParams = {
+      id: "00000000-0000-4000-8000-000000000001",
+      resourceType: "planned_session",
+    };
+    plannedSession = {
+      id: routeParams.id,
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 4,
+      planningDate: "2099-01-01",
+      lifecycle: { status: "scheduled" },
+      activityPlanId: "00000000-0000-4000-8000-000000000003",
+      prescription: null,
+    };
+    changePlanOnlyMock.mockResolvedValueOnce({
+      outcome: "updated",
+      session: { activityPlanId: "00000000-0000-4000-8000-000000000004" },
+    });
+
+    await renderNative(<EventDetailScreen />);
+    expect(screen.getByTestId("planned-session-edit-this-only")).toBeTruthy();
+    expect(screen.getByTestId("planned-session-edit-all")).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId("planned-session-edit-this-only"));
+
+    await waitFor(() =>
+      expect(changePlanOnlyMock).toHaveBeenCalledWith({
+        expectedRevision: 4,
+        profileId: "00000000-0000-4000-8000-000000000002",
+        sessionId: "00000000-0000-4000-8000-000000000001",
+      }),
+    );
+    expect(navigateToMock).toHaveBeenCalledWith(
+      "/create-activity-plan?planId=00000000-0000-4000-8000-000000000004",
+    );
+    expect(plannedSessionMutationOptions).toMatchObject({ onConflict: expect.any(Function) });
+  });
+
+  it("does not navigate when preparing the private edit copy fails", async () => {
+    routeParams = {
+      id: "00000000-0000-4000-8000-000000000001",
+      resourceType: "planned_session",
+    };
+    plannedSession = {
+      id: routeParams.id,
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 4,
+      planningDate: "2099-01-01",
+      lifecycle: { status: "scheduled" },
+      activityPlanId: "00000000-0000-4000-8000-000000000003",
+      prescription: null,
+    };
+    changePlanOnlyMock.mockRejectedValueOnce(new Error("Session was changed elsewhere"));
+
+    await renderNative(<EventDetailScreen />);
+    await fireEvent.press(screen.getByTestId("planned-session-edit-this-only"));
+
+    expect(await screen.findByText("Session was changed elsewhere")).toBeTruthy();
+    expect(navigateToMock).not.toHaveBeenCalled();
+  });
+
+  it("moves a scheduled planned session with its revision and retries the identical request", async () => {
+    routeParams = {
+      id: "00000000-0000-4000-8000-000000000001",
+      resourceType: "planned_session",
+    };
+    plannedSession = {
+      id: routeParams.id,
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 7,
+      planningDate: "2099-05-14",
+      lifecycle: { status: "scheduled" },
+      activityPlanId: "00000000-0000-4000-8000-000000000003",
+      prescription: null,
+    };
+    movePlannedMock.mockRejectedValueOnce(new Error("Move status is unknown"));
+
+    await renderNative(<EventDetailScreen />);
+    await fireEvent.press(screen.getByTestId("planned-session-reschedule"));
+    expect(screen.getByTestId("planned-session-reschedule-date")).toBeTruthy();
+    expect(screen.getByTestId("planned-session-reschedule-date-input")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("planned-session-reschedule-submit"));
+
+    const expectedInput = {
+      expectedRevision: 7,
+      planningDate: "2099-05-14",
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionId: "00000000-0000-4000-8000-000000000001",
+    };
+    await waitFor(() => expect(movePlannedMock).toHaveBeenCalledWith(expectedInput));
+    expect(screen.getByText("Move status is unknown")).toBeTruthy();
+
+    movePlannedMock.mockResolvedValueOnce({ outcome: "updated" });
+    await fireEvent.press(screen.getByTestId("planned-session-retry-reschedule"));
+    await waitFor(() => expect(movePlannedMock).toHaveBeenCalledTimes(2));
+    expect(movePlannedMock.mock.calls[1]?.[0]).toEqual(expectedInput);
+  });
+
+  it("keeps conflict recovery guidance after the actual move mutation rejects", async () => {
+    routeParams = {
+      id: "00000000-0000-4000-8000-000000000001",
+      resourceType: "planned_session",
+    };
+    plannedSession = {
+      id: routeParams.id,
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 7,
+      planningDate: "2099-05-14",
+      lifecycle: { status: "scheduled" },
+      activityPlanId: "00000000-0000-4000-8000-000000000003",
+      prescription: null,
+    };
+    movePlannedMock.mockImplementationOnce(async () => {
+      const options = plannedSessionMutationOptions as { onConflict: () => Promise<unknown> };
+      plannedSession = {
+        ...(plannedSession as Record<string, unknown>),
+        planningDate: "2099-05-15",
+        sessionRevision: 8,
+      };
+      await options.onConflict();
+      throw { data: { code: "CONFLICT" }, message: "Session changed elsewhere" };
+    });
+
+    await renderNative(<EventDetailScreen />);
+    await fireEvent.press(screen.getByTestId("planned-session-reschedule"));
+    await fireEvent.press(screen.getByTestId("planned-session-reschedule-submit"));
+    await waitFor(() => expect(movePlannedMock).toHaveBeenCalledTimes(1));
+
+    await waitFor(() => {
+      expect(plannedSessionRefetchMock).toHaveBeenCalledTimes(1);
+      expect(screen.queryByTestId("planned-session-reschedule-date")).toBeNull();
+      expect(
+        screen.getByText("This session changed. Review the updated schedule before trying again."),
+      ).toBeTruthy();
+    });
+
+    movePlannedMock.mockResolvedValueOnce({ outcome: "updated" });
+    await fireEvent.press(screen.getByTestId("planned-session-reschedule"));
+    await fireEvent.press(screen.getByTestId("planned-session-reschedule-submit"));
+    await waitFor(() => expect(movePlannedMock).toHaveBeenCalledTimes(2));
+    expect(movePlannedMock.mock.calls[1]?.[0]).toEqual({
+      expectedRevision: 8,
+      planningDate: "2099-05-15",
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionId: "00000000-0000-4000-8000-000000000001",
+    });
+  });
+
+  it("confirms cancellation for scheduled sessions", async () => {
+    routeParams = {
+      id: "00000000-0000-4000-8000-000000000001",
+      resourceType: "planned_session",
+    };
+    plannedSession = {
+      id: routeParams.id,
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 8,
+      planningDate: "2099-05-14",
+      lifecycle: { status: "scheduled" },
+      activityPlanId: "00000000-0000-4000-8000-000000000003",
+      prescription: null,
+    };
+    cancelPlannedMock.mockResolvedValueOnce({ outcome: "updated" });
+
+    await renderNative(<EventDetailScreen />);
+    await fireEvent.press(screen.getByTestId("planned-session-cancel"));
+    expect(screen.getByTestId("planned-session-confirm-cancel")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("planned-session-confirm-cancel"));
+    await waitFor(() =>
+      expect(cancelPlannedMock).toHaveBeenCalledWith({
+        expectedRevision: 8,
+        profileId: "00000000-0000-4000-8000-000000000002",
+        reason: "user_requested",
+        sessionId: "00000000-0000-4000-8000-000000000001",
+      }),
+    );
+  });
+
+  it("does not render move or cancel actions for a cancelled session", async () => {
+    routeParams = {
+      id: "00000000-0000-4000-8000-000000000001",
+      resourceType: "planned_session",
+    };
+    plannedSession = {
+      id: routeParams.id,
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 9,
+      planningDate: "2099-05-14",
+      lifecycle: { status: "cancelled" },
+      activityPlanId: "00000000-0000-4000-8000-000000000003",
+      prescription: null,
+    };
+    await renderNative(<EventDetailScreen />);
+    expect(screen.getByText("cancelled")).toBeTruthy();
+    expect(screen.queryByTestId("planned-session-reschedule")).toBeNull();
+    expect(screen.queryByTestId("planned-session-cancel")).toBeNull();
   });
 
   it("retains an invalid actual draft and does not submit a planned completion", async () => {

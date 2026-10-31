@@ -3,6 +3,9 @@ import type { PlannedSessionMutationResult } from "../../contracts/planned-sessi
 
 export class PlannedSessionAccessError extends Error {}
 
+/** The caller is authorized, but the selected prescription needs actionable input. */
+export class PlannedSessionPrescriptionPreconditionError extends Error {}
+
 export class PlannedSessionIdentityConflictError extends Error {}
 
 export class PlannedSessionNotFoundError extends Error {}

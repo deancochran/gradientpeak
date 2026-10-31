@@ -1,17 +1,14 @@
 import { ActivityPayloadSchema } from "@repo/core";
 
 const mockCheckpoint = jest.fn(async () => undefined);
-
 jest.mock("expo", () => ({
   EventEmitter: class MockEventEmitter {
     emit = jest.fn();
   },
 }));
-
 jest.mock("react-native", () => ({
   AppState: { currentState: "active", addEventListener: jest.fn(() => ({ remove: jest.fn() })) },
 }));
-
 jest.mock("./recordingEvidenceJournal", () => ({
   allocateRecordingEvidenceSession: jest.fn(async () => undefined),
   rollbackRecordingEvidenceSession: jest.fn(async () => undefined),
@@ -64,7 +61,7 @@ function createService() {
   // biome-ignore lint/suspicious/noExplicitAny: this fixture intentionally supplies only the public-boundary collaborators under test.
   const mutable = service as any;
   const snapshot = {
-    identity: { sessionId: "record-start-session", startedAt: new Date(1_000).toISOString() },
+    identity: { sessionId: "record-start-session", startedAt: new Date(1000).toISOString() },
     activity: { activity_category: "bike", gpsMode: "off", eventId: null },
     performanceTargets: undefined,
   };
@@ -159,16 +156,12 @@ function createService() {
   });
   return { service, mutable };
 }
-
 describe("record start capability", () => {
   beforeEach(() => jest.clearAllMocks());
-
   it("starts a manual activity through the public service boundary", async () => {
     const { service, mutable } = createService();
-
     service.selectActivityFromPayload({ activity_category: "bike", gpsRecordingEnabled: false });
     await service.startRecording();
-
     expect(allocateRecordingEvidenceSession).toHaveBeenCalledTimes(1);
     expect(mutable.liveMetricsManager.startRecording).toHaveBeenCalledTimes(1);
     expect(service.state).toBe("recording");
@@ -178,19 +171,16 @@ describe("record start capability", () => {
       profileId: "profile-1",
     });
   });
-
   it("allocates and acknowledges one exact profile-bound reserved session", async () => {
     const { service, mutable } = createService();
     const markStarted = jest.fn(async () => undefined);
     const sessionId = "25ecaafc-4933-5c89-95c3-627fe44ed3ba";
-
     service.selectActivityFromPayload({ activity_category: "bike", gpsRecordingEnabled: false });
     await service.startRecording(undefined, {
       profileId: "profile-1",
       sessionId,
       markStarted,
     });
-
     expect(allocateRecordingEvidenceSession).toHaveBeenCalledWith({
       profileId: "profile-1",
       sessionId,
@@ -200,7 +190,6 @@ describe("record start capability", () => {
       markStarted.mock.invocationCallOrder[0] ?? 0,
     );
   });
-
   it("loads an activity plan through the payload boundary before starting", async () => {
     const { service, mutable } = createService();
     const plan = ActivityPayloadSchema.parse({
@@ -209,40 +198,25 @@ describe("record start capability", () => {
       plan: {
         name: "Intervals",
         structure: {
-          version: 3,
+          version: 5,
           activity_category: "run",
-          segments: [
+          items: [
             {
-              id: "10000000-0000-4000-8000-000000000001",
-              role: "activity",
-              name: "Run",
-              intervals: [
-                {
-                  id: "10000000-0000-4000-8000-000000000002",
-                  name: "Main",
-                  repetitions: 1,
-                  steps: [
-                    {
-                      id: "10000000-0000-4000-8000-000000000003",
-                      name: "Steady",
-                      duration: { type: "time", seconds: 60 },
-                      targets: [{ type: "RPE", intensity: 4 }],
-                    },
-                  ],
-                },
-              ],
+              type: "step",
+              id: "10000000-0000-4000-8000-000000000002",
+              name: "Main",
+              duration: { type: "time", seconds: 60 },
+              targets: [{ type: "RPE", intensity: 4 }],
             },
           ],
         },
       },
     }).plan;
-
     service.selectActivityFromPayload({
       activity_category: "run",
       gpsRecordingEnabled: false,
       plan,
     });
-
     expect(allocateRecordingEvidenceSession).not.toHaveBeenCalled();
     expect(mutable.planExecution.loadPlan).toHaveBeenCalledWith(
       expect.objectContaining({ name: "Intervals" }),
@@ -252,16 +226,12 @@ describe("record start capability", () => {
       "payloadProcessed",
       expect.objectContaining({ plan }),
     );
-
     service.clearPlan();
     expect(allocateRecordingEvidenceSession).not.toHaveBeenCalled();
   });
-
   it("detaches route setup before Start without allocating recording evidence", () => {
     const { service, mutable } = createService();
-
     service.detachRoute();
-
     expect(mutable.routeController.detachRoute).toHaveBeenCalledTimes(1);
     expect(mutable.publishSessionUpdate).toHaveBeenCalledTimes(1);
     expect(mutable.hasConfiguredSetup).toBe(true);

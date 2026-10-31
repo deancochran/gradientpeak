@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   invalidateIngestion: vi.fn(),
   navigate: vi.fn(),
   process: vi.fn(),
-  search: { from: undefined } as {
+  search: {} as {
     activity_category?: "run" | "bike" | "swim" | "strength" | "other";
     eventId?: string;
     from?: "record";
@@ -80,7 +80,7 @@ vi.mock("sonner", () => ({
 
 beforeEach(() => {
   mocks.formProps = undefined;
-  mocks.search = { from: undefined };
+  mocks.search = {};
   mocks.signedUrl.mockResolvedValue({ filePath: "user/activity.fit", signedUrl: "https://upload" });
   mocks.upload.mockResolvedValue(undefined);
   mocks.process.mockResolvedValue({ activity: { id: "activity-1", name: "Morning ride" } });
@@ -268,7 +268,6 @@ describe("ActivityImportPage", () => {
     expect(mocks.navigate).toHaveBeenCalledWith({
       search: {
         activity_category: "run",
-        activityPlanId: undefined,
         eventId,
         gps: "off",
         routeId,
@@ -278,7 +277,7 @@ describe("ActivityImportPage", () => {
 
     unmount();
     mocks.navigate.mockClear();
-    mocks.search = { from: undefined };
+    mocks.search = {};
     render(<ActivityImportPage />);
     mocks.formProps?.onCancel();
     expect(mocks.navigate).toHaveBeenCalledWith({ to: "/activities" });
@@ -289,15 +288,11 @@ describe("activity import search and deduplication", () => {
   it("keeps validated recording provenance without legacy classification compatibility", () => {
     expect(validateActivityImportSearch({ activityCategory: "swim", from: "record" })).toEqual({
       activity_category: "run",
-      eventId: undefined,
       from: "record",
       gps: "off",
-      routeId: undefined,
     });
-    expect(validateActivityImportSearch({ activity_category: "run" })).toEqual({ from: undefined });
-    expect(validateActivityImportSearch({ activityCategory: "invalid" })).toEqual({
-      from: undefined,
-    });
+    expect(validateActivityImportSearch({ activity_category: "run" })).toEqual({});
+    expect(validateActivityImportSearch({ activityCategory: "invalid" })).toEqual({});
 
     const eventId = "11111111-1111-4111-8111-111111111111";
     const routeId = "22222222-2222-4222-8222-222222222222";
@@ -312,7 +307,6 @@ describe("activity import search and deduplication", () => {
       }),
     ).toEqual({
       activity_category: "bike",
-      activityPlanId: undefined,
       eventId,
       from: "record",
       gps: "off",

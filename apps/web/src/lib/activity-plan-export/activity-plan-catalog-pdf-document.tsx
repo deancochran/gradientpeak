@@ -1,51 +1,64 @@
-import { Document, Link, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document, Link, Page, Rect, StyleSheet, Svg, Text, View } from "@react-pdf/renderer";
 import type { ActivityPlanPrintGroup, ActivityPlanPrintModel } from "@repo/core/activity-plan";
 import {
   ACTIVITY_PLAN_CATALOG_PAGE_SIZE,
-  ACTIVITY_PLAN_CATALOG_TWO_UP_GEOMETRY,
-  type ActivityPlanCatalogEntry,
+  type ActivityPlanCatalogFragment,
   type ActivityPlanCatalogLayout,
   type ActivityPlanCatalogTrainingPlan,
   type ActivityPlanCatalogTrainingWeek,
   activityPlanCatalogNeedsBlankBeforeBackCover,
+  formatActivityPlanCatalogDuration,
+  formatActivityPlanCatalogInstruction,
+  formatActivityPlanCatalogTotal,
   getActivityPlanCatalogContentPageCount,
   getActivityPlanCatalogInteriorMargins,
-  isActivityPlanTwoUpEligible,
+  getActivityPlanCatalogTimedProfileWidths,
 } from "./activity-plan-catalog";
 import { GradientPeakPdfBrand } from "./activity-plan-pdf-document";
+
+const GRADIENTPEAK_PDF_FONT_FAMILY = "GradientPeakCatalogSans";
 
 const styles = StyleSheet.create({
   page: {
     backgroundColor: "#ffffff",
     color: "#111827",
-    fontFamily: "Helvetica",
-    paddingBottom: 30,
-    paddingLeft: 48,
-    paddingRight: 30,
-    paddingTop: 60,
+    fontFamily: GRADIENTPEAK_PDF_FONT_FAMILY,
+    fontFeatureSettings: { liga: false, dlig: false },
+    paddingBottom: 42,
+    paddingLeft: 52.2,
+    paddingRight: 27,
+    paddingTop: 62,
   },
-  recto: { paddingLeft: 48, paddingRight: 30 },
-  verso: { paddingLeft: 30, paddingRight: 48 },
+  recto: { paddingLeft: 52.2, paddingRight: 27 },
+  verso: { paddingLeft: 27, paddingRight: 52.2 },
   cover: {
     backgroundColor: "#0f172a",
     color: "#ffffff",
     display: "flex",
-    fontFamily: "Helvetica",
+    fontFamily: GRADIENTPEAK_PDF_FONT_FAMILY,
+    fontFeatureSettings: { liga: false, dlig: false },
     justifyContent: "space-between",
-    padding: 54,
+    paddingBottom: 27,
+    paddingLeft: 52.2,
+    paddingRight: 27,
+    paddingTop: 30,
   },
   coverKicker: { color: "#7dd3fc", fontSize: 11, letterSpacing: 1.8, marginBottom: 14 },
-  coverTitle: { fontSize: 42, fontWeight: 700, lineHeight: 1.05, maxWidth: 410 },
-  coverSubtitle: { color: "#cbd5e1", fontSize: 15, lineHeight: 1.45, marginTop: 20, maxWidth: 430 },
+  coverTitle: { fontSize: 31, fontWeight: 700, lineHeight: 1.05, maxWidth: 300 },
+  coverSubtitle: { color: "#cbd5e1", fontSize: 11, lineHeight: 1.45, marginTop: 14, maxWidth: 300 },
   coverMeta: { color: "#94a3b8", fontSize: 10, lineHeight: 1.5 },
   backCover: {
     alignItems: "center",
     backgroundColor: "#0f172a",
     color: "#ffffff",
     display: "flex",
-    fontFamily: "Helvetica",
+    fontFamily: GRADIENTPEAK_PDF_FONT_FAMILY,
+    fontFeatureSettings: { liga: false, dlig: false },
     justifyContent: "center",
-    padding: 54,
+    paddingBottom: 27,
+    paddingLeft: 27,
+    paddingRight: 52.2,
+    paddingTop: 27,
     textAlign: "center",
   },
   backCoverBody: { color: "#cbd5e1", fontSize: 11, lineHeight: 1.5, marginTop: 18 },
@@ -58,30 +71,31 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     height: 28,
     justifyContent: "space-between",
-    left: 32,
+    left: 27,
     position: "absolute",
-    right: 32,
-    top: 20,
+    right: 27,
+    top: 27,
   },
   headerSection: { color: "#475569", fontSize: 9.5, textAlign: "center" },
   headerNumber: { color: "#475569", fontSize: 9.5, minWidth: 28, textAlign: "right" },
   footer: {
-    bottom: 12,
+    // Preserve the quiet area even after the press converter rewrites font metrics.
+    bottom: 30,
     color: "#94a3b8",
     fontSize: 8,
-    left: 32,
+    left: 27,
     position: "absolute",
-    right: 32,
+    right: 27,
     textAlign: "center",
   },
-  frontTitle: { fontSize: 26, fontWeight: 700, marginBottom: 20 },
-  frontHeading: { fontSize: 14, fontWeight: 700, marginBottom: 7, marginTop: 15 },
-  frontBody: { color: "#334155", fontSize: 10.5, lineHeight: 1.45, marginBottom: 7 },
+  frontTitle: { fontSize: 20, fontWeight: 700, marginBottom: 13 },
+  frontHeading: { fontSize: 12, fontWeight: 700, marginBottom: 5, marginTop: 11 },
+  frontBody: { color: "#334155", fontSize: 10, lineHeight: 1.38, marginBottom: 6 },
   frontRule: { borderBottomColor: "#e2e8f0", borderBottomWidth: 0.8, marginVertical: 10 },
   contentsColumns: { display: "flex", flexDirection: "row" },
   contentsColumn: { width: "50%" },
-  contentsColumnLeft: { paddingRight: 13 },
-  contentsColumnRight: { paddingLeft: 13 },
+  contentsColumnLeft: { paddingRight: 8 },
+  contentsColumnRight: { paddingLeft: 8 },
   contentsSection: {
     color: "#0369a1",
     fontSize: 10,
@@ -102,8 +116,8 @@ const styles = StyleSheet.create({
     paddingTop: 1.7,
     textDecoration: "none",
   },
-  contentsName: { paddingRight: 5, width: "88%" },
-  contentsNumber: { textAlign: "right", width: "12%" },
+  contentsName: { paddingRight: 5, width: "84%" },
+  contentsNumber: { textAlign: "right", width: "16%" },
   finderIndex: { display: "flex", flexDirection: "row", flexWrap: "wrap", marginTop: 8 },
   finderItem: {
     borderBottomColor: "#e2e8f0",
@@ -117,24 +131,15 @@ const styles = StyleSheet.create({
   finderTitle: { color: "#0369a1", fontSize: 11.5, fontWeight: 700, marginBottom: 3 },
   finderMeta: { color: "#475569", fontSize: 9, lineHeight: 1.3 },
   finderTraining: { marginTop: 4, width: "100%" },
-  slot: {
-    borderColor: "#dbe3ec",
-    borderRadius: 6,
-    borderWidth: 0.8,
-    height: ACTIVITY_PLAN_CATALOG_TWO_UP_GEOMETRY.slotHeight,
-    padding: ACTIVITY_PLAN_CATALOG_TWO_UP_GEOMETRY.slotPadding,
-  },
-  secondSlot: { marginTop: ACTIVITY_PLAN_CATALOG_TWO_UP_GEOMETRY.slotGap },
   fullCard: { paddingHorizontal: 2 },
-  planTitle: { fontSize: 16, fontWeight: 700, lineHeight: 1.1 },
+  planTitle: { fontSize: 15, fontWeight: 700, lineHeight: 1.1 },
   planMeta: {
     color: "#475569",
     fontSize: 8.2,
     lineHeight: 1.2,
     marginTop: 4,
-    textTransform: "uppercase",
   },
-  planDescription: { color: "#334155", fontSize: 9.5, lineHeight: 1.3, marginTop: 5 },
+  planDescription: { color: "#334155", fontSize: 10, lineHeight: 1.3, marginTop: 5 },
   profile: {
     backgroundColor: "#f8fafc",
     borderColor: "#e2e8f0",
@@ -142,13 +147,11 @@ const styles = StyleSheet.create({
     borderWidth: 0.7,
     display: "flex",
     flexDirection: "row",
-    height: 86,
-    marginBottom: 13,
-    marginTop: 12,
+    height: 76,
+    marginBottom: 9,
+    marginTop: 8,
     padding: 5,
   },
-  compactProfile: { height: 66, marginBottom: 8, marginTop: 7, padding: 4 },
-  profileBar: { alignSelf: "flex-end", borderRadius: 1, minWidth: 1 },
   section: {
     borderBottomColor: "#e5e7eb",
     borderBottomWidth: 0.6,
@@ -161,35 +164,16 @@ const styles = StyleSheet.create({
     marginBottom: 5,
     paddingBottom: 4,
   },
-  sectionTitle: { fontSize: 13, fontWeight: 700, marginBottom: 5, textTransform: "uppercase" },
-  compactSectionTitle: {
-    fontSize: 10,
-    fontWeight: 700,
-    marginBottom: 2,
-    textTransform: "uppercase",
-  },
+  sectionTitle: { fontSize: 11, fontWeight: 700, marginBottom: 4, textTransform: "uppercase" },
   group: { marginBottom: 5 },
-  compactGroup: { marginBottom: 3 },
   repeatedGroup: { borderLeftColor: "#94a3b8", borderLeftWidth: 1.2, paddingLeft: 6 },
   groupTitle: { fontSize: 9.8, marginBottom: 3 },
-  compactGroupTitle: { fontSize: 8.8, fontWeight: 700, marginBottom: 2 },
   step: { marginBottom: 4 },
-  compactStep: { marginBottom: 2 },
-  instruction: { fontSize: 10.3, lineHeight: 1.3 },
-  compactInstruction: { fontSize: 9.2, lineHeight: 1.2 },
+  instruction: { fontSize: 10, lineHeight: 1.3 },
   stepName: { fontWeight: 700 },
-  note: { color: "#64748b", fontSize: 9, lineHeight: 1.3, marginTop: 1.5 },
-  compactNote: { color: "#64748b", fontSize: 8.2, lineHeight: 1.18, marginTop: 1 },
-  compactInlineNote: { color: "#64748b", fontSize: 8.2, fontWeight: 400 },
-  adaptation: {
-    backgroundColor: "#eff6ff",
-    borderLeftColor: "#38bdf8",
-    borderLeftWidth: 2,
-    marginTop: 5,
-    paddingLeft: 6,
-  },
-  adaptationLabel: { color: "#075985", fontSize: 7.8, fontWeight: 700 },
-  adaptationText: { color: "#334155", fontSize: 7.6, lineHeight: 1.2, marginTop: 1 },
+  stepDuration: { color: "#0f172a", fontWeight: 700 },
+  stepTarget: { color: "#0369a1" },
+  note: { color: "#64748b", fontSize: 8.5, lineHeight: 1.3, marginTop: 1.5 },
   trainingPlanList: { marginTop: 14 },
   trainingPlanListRow: {
     alignItems: "baseline",
@@ -270,7 +254,7 @@ const styles = StyleSheet.create({
     width: "13.14%",
   },
   scheduleDayHeader: { color: "#475569", fontSize: 7.2, fontWeight: 700, textAlign: "center" },
-  scheduleWeekRow: { borderTopColor: "#cbd5e1", borderTopWidth: 0.5, minHeight: 49 },
+  scheduleWeekRow: { borderTopColor: "#cbd5e1", borderTopWidth: 0.5, minHeight: 54 },
   scheduleSession: {
     borderBottomColor: "#e2e8f0",
     borderBottomWidth: 0.4,
@@ -313,7 +297,7 @@ function InteriorHeader({ pageNumber, section }: { pageNumber: number; section: 
   const bindingInset = getActivityPlanCatalogInteriorMargins(pageNumber);
   return (
     <View fixed style={[styles.header, bindingInset]}>
-      <GradientPeakPdfBrand size={14} />
+      <GradientPeakPdfBrand fontFamily={GRADIENTPEAK_PDF_FONT_FAMILY} size={14} />
       <Text style={styles.headerSection}>{section}</Text>
       <Text
         fixed
@@ -328,76 +312,84 @@ function InteriorFooter({ pageNumber }: { pageNumber: number }) {
   const bindingInset = getActivityPlanCatalogInteriorMargins(pageNumber);
   return (
     <Text fixed style={[styles.footer, bindingInset]}>
-      GradientPeak Activity & Training Plan Catalog
+      GRADIENTPEAK · ACTIVITY PLAN CATALOG
     </Text>
   );
 }
 
-function Profile({ compact, model }: { compact: boolean; model: ActivityPlanPrintModel }) {
+export function ActivityPlanCatalogProfile({ model }: { model: ActivityPlanPrintModel }) {
   if (model.intensityProfile.length === 0) return null;
+  const widths = getActivityPlanCatalogTimedProfileWidths(model.intensityProfile);
   return (
-    <View style={[styles.profile, compact ? styles.compactProfile : {}]} wrap={false}>
-      {model.intensityProfile.map((bar, index) => (
-        <View
-          key={bar.id}
-          style={[
-            styles.profileBar,
-            {
-              backgroundColor: bar.color,
-              flexGrow: bar.weight,
-              height: `${bar.heightPercent}%`,
-              marginRight: index === model.intensityProfile.length - 1 ? 0 : 2,
-              width: 1,
+    <View style={[styles.profile, { flexDirection: "column" }]} wrap={false}>
+      <Svg height={48} preserveAspectRatio="none" viewBox="0 0 100 100" width="100%">
+        {
+          model.intensityProfile.reduce<{ bars: React.ReactNode[]; offset: number }>(
+            (result, bar, index) => {
+              const width = widths ? (widths[index] ?? 0) : 100 / model.intensityProfile.length;
+              result.bars.push(
+                <Rect
+                  fill={bar.color}
+                  height={bar.heightPercent}
+                  key={bar.id}
+                  rx={1}
+                  width={width}
+                  x={result.offset}
+                  y={100 - bar.heightPercent}
+                />,
+              );
+              return { bars: result.bars, offset: result.offset + width };
             },
-          ]}
-        />
-      ))}
+            { bars: [], offset: 0 },
+          ).bars
+        }
+      </Svg>
     </View>
   );
 }
 
-function Group({ compact, group }: { compact: boolean; group: ActivityPlanPrintGroup }) {
+function Group({
+  activityCategory,
+  continues,
+  continuesAfter,
+  group,
+}: {
+  activityCategory: string;
+  continues: boolean;
+  continuesAfter: boolean;
+  group: ActivityPlanPrintGroup;
+}) {
   const groupLabel =
     group.repetitions > 1
-      ? [`${group.repetitions}×`, group.name].filter(Boolean).join(" ")
-      : group.name;
-  const normalizedGroupName = group.name?.trim().toLowerCase();
+      ? `${group.repetitions}×${continues ? " · sequence continues" : ""}${continuesAfter ? " · continues next page" : ""}`
+      : continues
+        ? "Same sequence continues"
+        : continuesAfter
+          ? "Sequence continues on next page"
+          : null;
   return (
-    <View
-      style={[
-        compact ? styles.compactGroup : styles.group,
-        group.repetitions > 1 ? styles.repeatedGroup : {},
-      ]}
-    >
-      {groupLabel ? (
-        <Text style={compact ? styles.compactGroupTitle : styles.groupTitle}>
-          {groupLabel}
-          {compact && group.notes ? (
-            <Text style={styles.compactInlineNote}> — {group.notes}</Text>
-          ) : null}
-        </Text>
-      ) : null}
-      {!compact && group.notes ? (
-        <Text style={compact ? styles.compactNote : styles.note}>{group.notes}</Text>
-      ) : null}
+    <View style={[styles.group, group.repetitions > 1 ? styles.repeatedGroup : {}]}>
+      {groupLabel ? <Text style={styles.groupTitle}>{groupLabel}</Text> : null}
       {group.steps.map((step) => {
-        const showStepName = step.name && step.name.trim().toLowerCase() !== normalizedGroupName;
+        const durationLabel = formatActivityPlanCatalogDuration(
+          step.durationLabel ?? step.instruction,
+        );
+        const targetLabels = step.targetLabels ?? [];
+        const cue = formatActivityPlanCatalogInstruction({ ...step, activityCategory });
         return (
-          <View key={step.id} style={compact ? styles.compactStep : styles.step} wrap={false}>
-            <Text style={compact ? styles.compactInstruction : styles.instruction}>
-              {showStepName ? <Text style={styles.stepName}>{step.name}: </Text> : null}
-              {step.instruction}
-              {compact && step.description ? (
-                <Text style={styles.compactInlineNote}> — {step.description}</Text>
-              ) : null}
-              {compact && step.notes ? (
-                <Text style={styles.compactInlineNote}> — {step.notes}</Text>
+          <View key={step.id} style={styles.step} wrap={false}>
+            <Text style={styles.instruction}>
+              {step.name ? <Text style={styles.stepName}>{step.name}</Text> : null}
+              {step.name ? (
+                <Text style={styles.stepDuration}> · {durationLabel}</Text>
+              ) : (
+                <Text style={styles.stepDuration}>{durationLabel}</Text>
+              )}
+              {targetLabels.length > 0 ? (
+                <Text style={styles.stepTarget}> · {targetLabels.join(" · ")}</Text>
               ) : null}
             </Text>
-            {!compact && step.description ? (
-              <Text style={styles.note}>{step.description}</Text>
-            ) : null}
-            {!compact && step.notes ? <Text style={styles.note}>{step.notes}</Text> : null}
+            {cue ? <Text style={styles.note}>{cue}</Text> : null}
           </View>
         );
       })}
@@ -405,58 +397,60 @@ function Group({ compact, group }: { compact: boolean; group: ActivityPlanPrintG
   );
 }
 
-function PlanCard({ compact, entry }: { compact: boolean; entry: ActivityPlanCatalogEntry }) {
-  const { model } = entry;
+function PlanCard({ fragment }: { fragment: ActivityPlanCatalogFragment }) {
+  const { entry, model } = fragment;
   return (
-    <View id={`plan-${entry.key}`} style={compact ? {} : styles.fullCard} wrap={false}>
-      <Text style={styles.planTitle}>{model.title}</Text>
-      <Text style={styles.planMeta}>
-        {[model.activityCategory.toUpperCase(), ...model.totals].join(" · ")}
+    <View
+      id={fragment.partIndex === 0 ? `plan-${entry.key}` : `plan-${fragment.key}`}
+      style={styles.fullCard}
+      wrap={false}
+    >
+      <Text style={styles.planTitle}>
+        {model.title}
+        {!fragment.showContext ? " (continued)" : ""}
       </Text>
-      {model.description ? <Text style={styles.planDescription}>{model.description}</Text> : null}
-      <Profile compact={compact} model={model} />
+      <Text style={styles.planMeta}>
+        {model.totals.length
+          ? model.totals.map(formatActivityPlanCatalogTotal).join(" · ")
+          : "Open-ended session"}
+      </Text>
+      {fragment.showContext && model.description ? (
+        <Text style={styles.planDescription}>{model.description}</Text>
+      ) : null}
+      {fragment.showContext ? <ActivityPlanCatalogProfile model={model} /> : null}
       {model.sections.map((section) => (
-        <View key={section.id} style={compact ? styles.compactSection : styles.section}>
-          {section.name ? (
-            <Text style={compact ? styles.compactSectionTitle : styles.sectionTitle}>
-              {section.name}
-              {compact && section.notes ? (
-                <Text style={styles.compactInlineNote}> — {section.notes}</Text>
-              ) : null}
-            </Text>
-          ) : null}
-          {!compact && section.notes ? (
-            <Text style={compact ? styles.compactNote : styles.note}>{section.notes}</Text>
-          ) : null}
+        <View key={section.id} style={styles.section}>
+          {section.name ? <Text style={styles.sectionTitle}>{section.name}</Text> : null}
           {section.groups.map((group) => (
-            <Group compact={compact} group={group} key={group.id} />
+            <Group
+              activityCategory={model.activityCategory}
+              continues={fragment.continuedGroupIds.includes(group.id)}
+              continuesAfter={fragment.continuesAfterGroupIds.includes(group.id)}
+              group={group}
+              key={group.id}
+            />
           ))}
         </View>
       ))}
-      {model.notes ? (
-        <Text style={compact ? styles.compactNote : styles.note}>{model.notes}</Text>
-      ) : null}
-      {entry.adaptation ? (
-        <View style={styles.adaptation} wrap={false}>
-          <Text style={styles.adaptationLabel}>AUTHORED ADAPTATION</Text>
-          {entry.adaptation.controls.map((control) => (
-            <Text key={control} style={styles.adaptationText}>
-              {control}
-            </Text>
-          ))}
-          {entry.adaptation.allowedStates ? (
-            <Text style={styles.adaptationText}>
-              Allowed states: {entry.adaptation.allowedStates.join(" | ")}
-            </Text>
-          ) : (
-            <Text style={styles.adaptationText}>
-              All increment-aligned values in the range are allowed.
-            </Text>
-          )}
-        </View>
-      ) : null}
-      <Text style={styles.preflightMarker}>{`CATALOG-END-${entry.key}`}</Text>
+      <Text style={styles.preflightMarker}>{`CATALOG-END-${fragment.key}`}</Text>
     </View>
+  );
+}
+
+/** One-page render target used by the exporter as the pagination authority. */
+export function ActivityPlanCatalogMeasurementDocument({
+  fragment,
+}: {
+  fragment: ActivityPlanCatalogFragment;
+}) {
+  return (
+    <Document>
+      <Page size={ACTIVITY_PLAN_CATALOG_PAGE_SIZE} style={interiorPageStyle(1)} wrap>
+        <InteriorHeader pageNumber={1} section="Activity catalog" />
+        <PlanCard fragment={fragment} />
+        <InteriorFooter pageNumber={1} />
+      </Page>
+    </Document>
   );
 }
 
@@ -485,7 +479,11 @@ function FrontMatterPage({
 
 function getEntryPageNumbers(layout: ActivityPlanCatalogLayout): Map<string, number> {
   return new Map(
-    layout.planPages.flatMap((page) => page.entries.map((entry) => [entry.key, page.pageNumber])),
+    layout.planPages.flatMap((page) =>
+      page.entries
+        .filter((fragment) => fragment.partIndex === 0)
+        .map((fragment) => [fragment.entry.key, page.pageNumber]),
+    ),
   );
 }
 
@@ -569,8 +567,6 @@ function TrainingScheduleTable({ weeks }: { weeks: readonly ActivityPlanCatalogT
 }
 
 function TrainingPlanOverviewPage({ plan }: { plan: ActivityPlanCatalogTrainingPlan }) {
-  const splitIndex = Math.ceil(plan.weeks.length / 2);
-  const firstWeeks = plan.weeks.slice(0, splitIndex);
   return (
     <FrontMatterPage pageNumber={plan.overviewPageNumber} section="Training plan templates">
       <View id={`training-plan-${plan.id}`}>
@@ -600,43 +596,47 @@ function TrainingPlanOverviewPage({ plan }: { plan: ActivityPlanCatalogTrainingP
         </View>
         <Text style={styles.scheduleTitle}>Weekly session distribution</Text>
         <TrainingScheduleChart plan={plan} />
-        <Text style={styles.scheduleTitle}>
-          Weeks {firstWeeks[0]?.weekIndex === undefined ? "" : firstWeeks[0].weekIndex + 1}–
-          {(firstWeeks.at(-1)?.weekIndex ?? 0) + 1}
-        </Text>
         <Text style={styles.scheduleDemandNote}>
-          Each entry lists its authored session objective as minutes / Common Load. An em dash means
-          that no objective is authored; these are not athlete-specific resolved prescriptions.
+          The following schedule pages list every authored session objective as minutes / Common
+          Load and link it to its first activity-catalog page. An em dash means no objective is
+          authored; these are not athlete-specific resolved prescriptions.
         </Text>
-        <TrainingScheduleTable weeks={firstWeeks} />
       </View>
     </FrontMatterPage>
   );
 }
 
-function TrainingPlanSchedulePage({ plan }: { plan: ActivityPlanCatalogTrainingPlan }) {
-  const splitIndex = Math.ceil(plan.weeks.length / 2);
-  const remainingWeeks = plan.weeks.slice(splitIndex);
+function TrainingPlanSchedulePage({
+  pageNumber,
+  plan,
+  weeks,
+}: {
+  pageNumber: number;
+  plan: ActivityPlanCatalogTrainingPlan;
+  weeks: readonly ActivityPlanCatalogTrainingWeek[];
+}) {
   const distinctActivities = Array.from(
     new Map(
       plan.weeks
+        .filter((week) => weeks.some((candidate) => candidate.weekIndex === week.weekIndex))
         .flatMap((week) => week.sessions)
         .map((session) => [session.activityPlanId, session]),
     ).values(),
   );
   return (
-    <FrontMatterPage pageNumber={plan.schedulePageNumber} section="Training plan templates">
-      <Text style={styles.preflightMarker}>{`TRAINING-PLAN-SCHEDULE-${plan.id}`}</Text>
+    <FrontMatterPage pageNumber={pageNumber} section="Training plan templates">
+      <Text
+        style={styles.preflightMarker}
+      >{`TRAINING-PLAN-SCHEDULE-${plan.id}-${pageNumber}`}</Text>
       <Text style={styles.frontTitle}>{plan.name}</Text>
       <Text style={styles.scheduleTitle}>
-        Weeks {(remainingWeeks[0]?.weekIndex ?? 0) + 1}–
-        {(remainingWeeks.at(-1)?.weekIndex ?? 0) + 1}
+        Weeks {(weeks[0]?.weekIndex ?? 0) + 1}–{(weeks.at(-1)?.weekIndex ?? 0) + 1}
       </Text>
       <Text style={styles.scheduleDemandNote}>
         Each entry lists its authored session objective as minutes / Common Load. An em dash means
         that no objective is authored; these are not athlete-specific resolved prescriptions.
       </Text>
-      <TrainingScheduleTable weeks={remainingWeeks} />
+      <TrainingScheduleTable weeks={weeks} />
       <Text style={styles.scheduleTitle}>Linked activity plans</Text>
       <View style={styles.activityKey}>
         {distinctActivities.map((activity) => (
@@ -650,10 +650,12 @@ function TrainingPlanSchedulePage({ plan }: { plan: ActivityPlanCatalogTrainingP
           </View>
         ))}
       </View>
-      <Text style={styles.note}>
-        Session placement is relative to the selected plan start date. Bars show scheduled session
-        count—not athlete-specific load, intensity, or progression.
-      </Text>
+      {pageNumber === plan.schedulePageNumbers.at(-1) ? (
+        <Text style={styles.note}>
+          Session placement is relative to the selected plan start date. Bars show scheduled session
+          count—not athlete-specific load, intensity, or progression.
+        </Text>
+      ) : null}
     </FrontMatterPage>
   );
 }
@@ -675,11 +677,15 @@ export function ActivityPlanCatalogPdfDocument({ layout }: { layout: ActivityPla
       <Page bookmark="Front cover" size={ACTIVITY_PLAN_CATALOG_PAGE_SIZE} style={styles.cover} wrap>
         <View>
           <View>
-            <GradientPeakPdfBrand color="#ffffff" size={28} />
+            <GradientPeakPdfBrand
+              color="#ffffff"
+              fontFamily={GRADIENTPEAK_PDF_FONT_FAMILY}
+              size={28}
+            />
           </View>
           <View style={{ marginTop: 130 }}>
             <Text style={styles.coverKicker}>ACTIVITY & TRAINING PLAN CATALOG</Text>
-            <Text style={styles.coverTitle}>Train with purpose.</Text>
+            <Text style={styles.coverTitle}>Train with{"\n"}purpose.</Text>
             <Text style={styles.coverSubtitle}>
               Structured cycling, running, swimming, strength, cross-training, and multisport
               sessions from GradientPeak.
@@ -703,9 +709,9 @@ export function ActivityPlanCatalogPdfDocument({ layout }: { layout: ActivityPla
         <View style={styles.frontRule} />
         <Text style={styles.frontHeading}>Methodology</Text>
         <Text style={styles.frontBody}>
-          Each plan presents an authored session structure with calculated totals and a visual
-          intensity profile. Targets are shown as authored and are not personalized to an individual
-          athlete.
+          Each plan presents an authored session structure and prescribed-volume totals. Timed
+          subtotals exclude any open-ended work. Targets are shown as authored and are not
+          personalized to an individual athlete.
         </Text>
         <Text style={styles.frontHeading}>Safety</Text>
         <Text style={styles.frontBody}>
@@ -762,12 +768,22 @@ export function ActivityPlanCatalogPdfDocument({ layout }: { layout: ActivityPla
         <Text style={styles.frontHeading}>Read targets in context</Text>
         <Text style={styles.frontBody}>
           FTP means functional threshold power. Max HR means maximum heart rate. Threshold HR means
-          lactate-threshold heart rate. RPE is rating of perceived exertion.
+          lactate-threshold heart rate. RPE is rating of perceived exertion. Percentage targets use
+          the stated reference; power is watts (W), heart rate is beats per minute (bpm), and pace
+          is written in the plan's stated unit.
+        </Text>
+        <Text style={styles.frontHeading}>Read the written notation</Text>
+        <Text style={styles.frontBody}>
+          Time is shown as hours, min, and sec; distance as m or km; and strength volume as reps.
+          “Until finished” is open-ended work, so any timed subtotal does not claim the full session
+          duration. “N×” repeats the whole listed sequence—N is not a strength-repetition count.
         </Text>
         <Text style={styles.frontHeading}>Read the profile as an overview</Text>
         <Text style={styles.frontBody}>
-          Taller bars represent higher relative intensity; pale bars identify recovery or
-          unavailable intensity. The written sequence remains authoritative.
+          Taller bars represent higher relative effort. Pale bars identify unavailable intensity,
+          not recovery. For all-timed plans, bar widths represent authored time; mixed-unit and
+          open-ended plans use an unscaled step overview. Height is not medically calibrated across
+          plans, and the written authored target remains authoritative.
         </Text>
         <Text style={styles.frontHeading}>Confirm individual reference points</Text>
         <Text style={styles.frontBody}>
@@ -854,22 +870,7 @@ export function ActivityPlanCatalogPdfDocument({ layout }: { layout: ActivityPla
           wrap
         >
           <InteriorHeader pageNumber={catalogPage.pageNumber} section={catalogPage.sectionTitle} />
-          {catalogPage.entries.length === 1 ? (
-            <PlanCard
-              compact={!isActivityPlanTwoUpEligible(catalogPage.entries[0].model)}
-              entry={catalogPage.entries[0]}
-            />
-          ) : (
-            catalogPage.entries.map((entry, index) => (
-              <View
-                key={entry.key}
-                style={[styles.slot, index === 1 ? styles.secondSlot : {}]}
-                wrap={false}
-              >
-                <PlanCard compact entry={entry} />
-              </View>
-            ))
-          )}
+          <PlanCard fragment={catalogPage.entries[0]} />
           <InteriorFooter pageNumber={catalogPage.pageNumber} />
         </Page>
       ))}
@@ -888,8 +889,8 @@ export function ActivityPlanCatalogPdfDocument({ layout }: { layout: ActivityPla
             <Text style={styles.frontTitle}>Training plan templates</Text>
             <Text style={styles.frontBody}>
               Six authored schedules connect the activity plans in this catalog into complete
-              multi-week programmes. Each spread shows the exact relative session placement and
-              links every scheduled session back to its activity prescription.
+              multi-week programmes. Each page shows the exact relative session placement and links
+              every scheduled session back to its activity prescription.
             </Text>
             <Text style={styles.frontBody}>
               Weekly bars represent scheduled session counts only. They do not claim training load,
@@ -916,12 +917,22 @@ export function ActivityPlanCatalogPdfDocument({ layout }: { layout: ActivityPla
 
       {layout.trainingPlanSection?.plans.flatMap((plan) => [
         <TrainingPlanOverviewPage key={`${plan.id}-overview`} plan={plan} />,
-        <TrainingPlanSchedulePage key={`${plan.id}-schedule`} plan={plan} />,
+        ...plan.schedulePageNumbers.map((pageNumber, index) => (
+          <TrainingPlanSchedulePage
+            key={`${plan.id}-schedule-${pageNumber}`}
+            pageNumber={pageNumber}
+            plan={plan}
+            weeks={plan.weeks.slice(index, index + 1)}
+          />
+        )),
       ])}
 
       {activityPlanCatalogNeedsBlankBeforeBackCover(layout) ? (
         <Page size={ACTIVITY_PLAN_CATALOG_PAGE_SIZE} style={styles.blankPage} />
       ) : null}
+
+      {/* Mixam's separate cover stock includes a blank inside back cover. */}
+      <Page size={ACTIVITY_PLAN_CATALOG_PAGE_SIZE} style={styles.blankPage} />
 
       <Page
         bookmark="Back cover"
@@ -929,7 +940,7 @@ export function ActivityPlanCatalogPdfDocument({ layout }: { layout: ActivityPla
         style={styles.backCover}
         wrap
       >
-        <GradientPeakPdfBrand color="#ffffff" size={28} />
+        <GradientPeakPdfBrand color="#ffffff" fontFamily={GRADIENTPEAK_PDF_FONT_FAMILY} size={28} />
         <Text style={styles.backCoverBody}>
           Structured training for deliberate progress.{"\n"}gradientpeak.app
         </Text>
@@ -942,6 +953,6 @@ export function getActivityPlanCatalogExpectedPageCount(layout: ActivityPlanCata
   return (
     getActivityPlanCatalogContentPageCount(layout) +
     (activityPlanCatalogNeedsBlankBeforeBackCover(layout) ? 1 : 0) +
-    1
+    2
   );
 }

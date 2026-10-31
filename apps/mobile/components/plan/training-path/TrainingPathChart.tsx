@@ -28,6 +28,7 @@ import Animated, {
   useSharedValue,
 } from "react-native-reanimated";
 import { CartesianChart, Line, useChartPressState } from "victory-native";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { useTheme } from "@/lib/stores/theme-store";
 import { getPlanChartTheme } from "./planChartTheme";
 import {
@@ -218,8 +219,7 @@ function AnimatedFocusedRect({
       height={height}
       color={color}
       opacity={opacity}
-      style={style}
-      strokeWidth={strokeWidth}
+      {...omitUndefined({ style, strokeWidth })}
     />
   );
 }
@@ -737,7 +737,9 @@ export function TrainingPathChart({
           lineColor: chartColors.frame,
           lineWidth: { bottom: 1, left: scrollX ? 0 : 1, right: 0, top: 0 },
         }}
-        chartPressState={reviewWeeks && !scrollX ? chartPressState : undefined}
+        {...omitUndefined({
+          chartPressState: reviewWeeks && !scrollX ? chartPressState : undefined,
+        })}
       >
         {({ points, chartBounds }) => (
           <>

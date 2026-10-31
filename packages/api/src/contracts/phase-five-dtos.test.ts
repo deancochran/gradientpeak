@@ -9,34 +9,19 @@ import { trainingEffectDtoSchema } from "./training-effects";
 
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 const now = "2026-08-10T08:00:00.000Z";
-
 const structure = activityPlanStructureSchema.parse({
-  version: 3 as const,
+  version: 5 as const,
   activity_category: "run" as const,
-  segments: [
+  items: [
     {
-      id: id(1),
-      role: "activity" as const,
-      name: "Run",
-      intervals: [
-        {
-          id: id(2),
-          name: "Work",
-          repetitions: 1,
-          steps: [
-            {
-              id: id(3),
-              name: "Steady",
-              duration: { type: "time" as const, seconds: 1_800 },
-              targets: [{ type: "RPE" as const, intensity: 5 }],
-            },
-          ],
-        },
-      ],
+      type: "step",
+      id: id(3),
+      name: "Steady",
+      duration: { type: "time" as const, seconds: 1800 },
+      targets: [{ type: "RPE" as const, intensity: 5 }],
     },
   ],
 });
-
 const plannedSession = (lifecycle: unknown) => ({
   id: id(10),
   profileId: id(11),
@@ -45,6 +30,7 @@ const plannedSession = (lifecycle: unknown) => ({
   originalTargetDate: "2026-08-10",
   source: { kind: "direct" as const, operationId: "a".repeat(32) },
   groupEventId: null,
+  activityPlanId: id(12),
   prescription: {
     resolutionManifest: createResolutionManifestFixture({
       activityPlanId: id(12),
@@ -61,7 +47,6 @@ const plannedSession = (lifecycle: unknown) => ({
   },
   lifecycle,
 });
-
 const ingestionBase = {
   ingestionId: id(20),
   profileId: id(11),
@@ -72,7 +57,6 @@ const ingestionBase = {
   requestedAt: now,
   updatedAt: now,
 };
-
 describe("Phase 5 public DTOs", () => {
   it.each([
     { status: "scheduled" },
@@ -88,7 +72,10 @@ describe("Phase 5 public DTOs", () => {
   ])("accepts the planned-session lifecycle variant %#", (lifecycle) => {
     expect(plannedSessionDtoSchema.safeParse(plannedSession(lifecycle)).success).toBe(true);
   });
-
+  it("accepts a new reference-based session with no legacy prescription", () => {
+    const { prescription: _prescription, ...newSession } = plannedSession({ status: "scheduled" });
+    expect(plannedSessionDtoSchema.parse(newSession)).toEqual(newSession);
+  });
   it.each([
     {
       ...ingestionBase,
@@ -127,7 +114,6 @@ describe("Phase 5 public DTOs", () => {
   ])("accepts the safe ingestion lifecycle variant %#", (status) => {
     expect(activityIngestionSafeStatusDtoSchema.safeParse(status).success).toBe(true);
   });
-
   it("rejects persistence and worker-only fields instead of silently stripping them", () => {
     expect(
       plannedSessionDtoSchema.safeParse({
@@ -147,7 +133,6 @@ describe("Phase 5 public DTOs", () => {
       }).success,
     ).toBe(false);
   });
-
   it("keeps user-visible effect and evidence fields strict", () => {
     const effect = {
       activityId: id(40),
@@ -158,7 +143,7 @@ describe("Phase 5 public DTOs", () => {
       activityCategory: "run",
       commonLoad: 42.5,
       evidenceConfidence: 0.8,
-      capabilityObservation: { distanceMeters: 10_000, durationMinutes: 50 },
+      capabilityObservation: { distanceMeters: 10000, durationMinutes: 50 },
     };
     const evidence = {
       evidenceId: id(41),
@@ -185,7 +170,6 @@ describe("Phase 5 public DTOs", () => {
       }).success,
     ).toBe(false);
   });
-
   it("round-trips date identities and finite numeric values through the API transformer", () => {
     const dto = plannedSessionDtoSchema.parse(plannedSession({ status: "scheduled" }));
     const envelope = { dto, generatedAt: new Date(now), load: 42.5 };

@@ -1,5 +1,7 @@
 # Integrated training and activity planning specification
 
+> Activity-plan supersession (2026-09-30): the [fixed V4 activity-plan specification](activity-plan-simplification-specification.md) replaces this document's V3 segment/interval hierarchy and authored adaptation requirements. Active activity plans are single-sport fixed blocks/steps; templates no longer enumerate adaptive variants. Frozen concrete prescriptions, training intent, authorization and completed multisport ingestion remain required. Earlier adaptation sections below are historical design context, not current implementation requirements.
+
 ## Status and decision
 
 Authoring correction (2026-09-17) takes precedence over any earlier durable-draft proposal or phase requirement: there is no persisted-draft product, table/service, save-draft/resume flow, or autosave requirement. Open-editor input, invalid text, and frozen retry requests are temporary form state. Web `TrainingPlanEditor` and mobile `TrainingPlanBuilderScreen` each own create/edit; detail is for viewing and canonical Edit/linked-read navigation. Visibility and session-definition edits require explicit editor Save; Cancel/back uses the standard discard guard. Preserve technical API `draft`/revision/source contracts, recording recovery, and authorized copy/apply/social/removal/delete operations. This UI correction authorizes no DB changes or recorded-data deletion. See [form experience contract](form-experience-contract.md).

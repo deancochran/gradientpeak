@@ -5,6 +5,7 @@ import { Heart } from "lucide-react-native";
 import type { ComponentType, ReactNode } from "react";
 import { type AccessibilityState, Pressable, TouchableOpacity, View } from "react-native";
 import { formatSmartTimestamp, formatTimestamp } from "@/lib/display/formatters";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { type EntityOwner, EntityOwnerRow } from "./EntityOwnerRow";
 
 type ResourceCardShellProps = {
@@ -199,12 +200,14 @@ export function ResourceOwnerActionRow({
     <View className="flex-row items-start justify-between gap-3" testID={testID}>
       <View className="min-w-0 flex-1">
         <EntityOwnerRow
+          {...omitUndefined({
+            displayNameOverride: ownerName,
+            fallbackClassName,
+            fallbackInitials,
+            onPress: onOwnerPress,
+          })}
           compact={compact}
-          displayNameOverride={ownerName}
-          fallbackClassName={fallbackClassName}
-          fallbackInitials={fallbackInitials}
           minimal
-          onPress={onOwnerPress}
           owner={displayOwner}
           subtitle={subtitle}
         />
@@ -454,7 +457,12 @@ export function ResourceAttributionRow({
     <View className="mt-3 flex-row items-end justify-between gap-3" testID={testID}>
       <View className="min-w-0 flex-1">
         {owner ? (
-          <EntityOwnerRow compact={compact} minimal onPress={onOwnerPress} owner={owner} />
+          <EntityOwnerRow
+            {...omitUndefined({ onPress: onOwnerPress })}
+            compact={compact}
+            minimal
+            owner={owner}
+          />
         ) : (
           <Text
             className={

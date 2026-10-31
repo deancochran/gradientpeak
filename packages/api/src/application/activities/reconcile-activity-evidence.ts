@@ -1,7 +1,11 @@
 import { activityEfforts, activitySegments } from "@repo/db";
 import { and, eq, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
-import { type ThresholdImpact, thresholdEffortId } from "../../repositories/threshold-repository";
+import {
+  enqueueDeferredThresholdCalibration,
+  type ThresholdImpact,
+  thresholdEffortId,
+} from "../../repositories/threshold-repository";
 import type { GeneratedActivityLthrEvidence } from "../activity-file-ingestion/stream-derived-calculations";
 import { reconcileThresholdsWithProfileLockHeld } from "../performance-model/reconcile-thresholds";
 
@@ -284,7 +288,13 @@ export async function reconcileGeneratedActivityEvidenceWithProfileLockHeld(
 
   if (plan.effortInserts.length) await tx.insert(activityEfforts).values(plan.effortInserts);
   const calibrationReconciliation = input.deferPerformanceCalibration
-    ? null
+    ? await (async () => {
+        await enqueueDeferredThresholdCalibration(tx, {
+          profileId: input.profileId,
+          activityId: input.activityId,
+        });
+        return null;
+      })()
     : await reconcileThresholdsWithProfileLockHeld(tx, {
         profileId: input.profileId,
         activityId: input.activityId,

@@ -3,7 +3,6 @@ import {
   createProfileMetricInputSchema,
   formatProfileMetricValue,
   getCanonicalProfileMetricValueFromDisplay,
-  getProfileMetricDefinition,
   getProfileMetricDisplayUnit,
   getProfileMetricDisplayValue,
   isProfileMetricValueWithinRange,

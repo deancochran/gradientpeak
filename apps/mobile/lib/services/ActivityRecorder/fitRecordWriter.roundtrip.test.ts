@@ -48,7 +48,7 @@ import {
   rebaseRetainedFitRecordDistances,
 } from "./fitRecordWriter";
 
-describe("ActivityRecorder FIT rest round trip", () => {
+describe("ActivityRecorder FIT V4 round trip", () => {
   beforeEach(() => files.clear());
 
   it("never writes coordinates from a new in-app recording record", async () => {
@@ -77,7 +77,7 @@ describe("ActivityRecorder FIT rest round trip", () => {
     expect(records[0]).not.toHaveProperty("altitude");
   });
 
-  it("round-trips a rewound activity/rest attempt without superseded or rest records", async () => {
+  it("round-trips a rewound V4 attempt with untargeted recovery evidence in one FIT session", async () => {
     const origin = Date.parse("2026-01-01T10:00:00.000Z");
     const encoder = new GarminFitEncoder("activity-recorder-rest", "profile-1");
     await encoder.initialize([], new Date(origin + 30_000));
@@ -88,7 +88,7 @@ describe("ActivityRecorder FIT rest round trip", () => {
       },
     };
     const activity = { role: "activity" } as never;
-    const rest = { role: "rest" } as never;
+    const untargetedRecovery = { role: "activity", targets: [] } as never;
     const append = (offset: number, currentOccurrence: never, distance: number) =>
       appendActivityRecorderFitRecord({
         encoder: recorderSink,
@@ -115,10 +115,10 @@ describe("ActivityRecorder FIT rest round trip", () => {
 
     await append(35_000, activity, 60);
     await append(40_000, activity, 75);
-    await expect(append(45_000, rest, 90)).resolves.toBe(false);
+    await append(45_000, untargetedRecovery, 90);
     await append(50_000, activity, 90);
     await append(55_000, activity, 105);
-    await expect(append(60_000, rest, 120)).resolves.toBe(false);
+    await append(60_000, untargetedRecovery, 120);
     await expect(
       appendActivityRecorderFitRecord({
         encoder: recorderSink,
@@ -130,29 +130,17 @@ describe("ActivityRecorder FIT rest round trip", () => {
       }),
     ).resolves.toBe(false);
     const retainedRecords = rebaseRetainedFitRecordDistances(rawRecorderRecords, rewindJournal);
-    expect(retainedRecords.map((record) => record.distance)).toEqual([0, 15, 30, 45]);
+    expect(retainedRecords.map((record) => record.distance)).toEqual([0, 15, 30, 30, 45, 60]);
     await encoder.addRecords(retainedRecords);
 
     await encoder.finalize([
       {
         startTime: origin + 30_000,
-        endedAt: origin + 45_000,
-        totalTime: 15_000,
-        movingTime: 15_000,
-        distance: 30,
-        avgSpeed: 2,
-        maxSpeed: 3,
-        sport: "running",
-        subSport: "street",
-        role: "activity",
-      },
-      {
-        startTime: origin + 50_000,
         endedAt: origin + 60_000,
-        totalTime: 10_000,
-        movingTime: 10_000,
-        distance: 30,
-        avgSpeed: 3,
+        totalTime: 30_000,
+        movingTime: 30_000,
+        distance: 60,
+        avgSpeed: 2,
         maxSpeed: 3,
         sport: "running",
         subSport: "street",
@@ -161,8 +149,8 @@ describe("ActivityRecorder FIT rest round trip", () => {
     ]);
 
     const decoded = parseFitFileWithSDK(await encoder.getFile());
-    expect(decoded.sessions).toHaveLength(2);
-    expect(decoded.records).toHaveLength(4);
+    expect(decoded.sessions).toHaveLength(1);
+    expect(decoded.records).toHaveLength(6);
   });
 
   it("keeps cumulative distance monotonic and nonnegative across multiple rewinds", () => {

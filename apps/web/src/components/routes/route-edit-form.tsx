@@ -27,7 +27,7 @@ export function RouteEditForm({
     defaultValues,
     schema: routeEditFormSchema,
   });
-  const submit = useZodFormSubmit<RouteEditFormValues>({
+  const submit = useZodFormSubmit({
     form,
     onSubmit,
     shouldRethrow: false,

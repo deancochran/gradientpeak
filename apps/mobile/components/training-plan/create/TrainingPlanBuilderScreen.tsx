@@ -1,36 +1,59 @@
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { Stack } from "expo-router";
-import { useRef, useState } from "react";
+import { Stack, useGlobalSearchParams, usePathname } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
 import { TrainingPlanBuilderSheets } from "@/components/training-plan/create/TrainingPlanBuilderSheets";
 import { TrainingPlanBuilderSurfaces } from "@/components/training-plan/create/TrainingPlanBuilderSurfaces";
 import { useTrainingPlanBuilderController } from "@/components/training-plan/create/useTrainingPlanBuilderController";
-import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
+import { useCreationFlowActive } from "@/lib/hooks/useCreationFlowActive";
+import { omitUndefined } from "@/lib/omitUndefined";
+import { useAuthStore } from "@/lib/stores/auth-store";
 
 interface TrainingPlanBuilderScreenProps {
   mode?: "create" | "edit";
   planId?: string;
 }
 
-export function TrainingPlanBuilderScreen({
+export function TrainingPlanBuilderScreen(props: TrainingPlanBuilderScreenProps) {
+  const path = usePathname();
+  const params = useGlobalSearchParams<{ returnToTrainingPlanCreate?: string }>();
+  const flow = useCreationFlowActive(
+    ["training-plan-create", "training-plan-edit"],
+    path.endsWith("/goal-create") && params.returnToTrainingPlanCreate === "1",
+    {
+      ownerKey: `${props.mode ?? "create"}:${props.planId ?? "new"}`,
+      isOwnedChild: (route) =>
+        route.name === "goal-create" &&
+        !!route.params &&
+        "returnToTrainingPlanCreate" in route.params &&
+        route.params.returnToTrainingPlanCreate === "1",
+    },
+  );
+  const accountId = useAuthStore((auth) => auth.session?.user.id ?? null);
+  if (!flow.active) return null;
+  if (!accountId) return <Text>Sign in to create or edit a training plan.</Text>;
+  return (
+    <TrainingPlanBuilderScreenSession
+      key={`${accountId}:${props.mode ?? "create"}:${props.planId ?? "new"}:${flow.key}`}
+      {...props}
+      isFlowCurrent={flow.isCurrent}
+    />
+  );
+}
+
+function TrainingPlanBuilderScreenSession({
   mode = "create",
   planId,
-}: TrainingPlanBuilderScreenProps) {
-  const [isDirty, setIsDirty] = useState(false);
-  const allowNavigationAfterSuccessRef = useRef<(() => void) | null>(null);
-  const controller = useTrainingPlanBuilderController({
-    mode,
-    planId,
-    onDirtyChange: setIsDirty,
-    onPersisted: () => allowNavigationAfterSuccessRef.current?.(),
-  });
+  isFlowCurrent,
+}: TrainingPlanBuilderScreenProps & { isFlowCurrent: () => boolean }) {
+  const controller = useTrainingPlanBuilderController(
+    omitUndefined({
+      mode,
+      planId,
+      isFlowCurrent,
+    }),
+  );
   const { builder } = controller;
-  const { allowNavigationAfterSuccess } = useDirtyNavigationGuard({
-    isDirty,
-    isPending: controller.isSaving,
-  });
-  allowNavigationAfterSuccessRef.current = allowNavigationAfterSuccess;
 
   if (
     mode === "edit" &&
@@ -95,8 +118,19 @@ export function TrainingPlanBuilderScreen({
         }}
       />
 
-      <TrainingPlanBuilderSurfaces controller={controller} />
-      <TrainingPlanBuilderSheets controller={controller} />
+      <View
+        className="flex-1"
+        pointerEvents={builder.derived.savePlan.isLocked ? "none" : "auto"}
+        accessibilityElementsHidden={builder.derived.savePlan.isLocked}
+        importantForAccessibility={
+          builder.derived.savePlan.isLocked ? "no-hide-descendants" : "auto"
+        }
+      >
+        <TrainingPlanBuilderSurfaces controller={controller} />
+        {controller.sheetStack.activeSheet !== "activityAssignment" ? (
+          <TrainingPlanBuilderSheets controller={controller} />
+        ) : null}
+      </View>
     </>
   );
 }

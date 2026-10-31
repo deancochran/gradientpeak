@@ -11,7 +11,8 @@ import {
 
 describe("Select native", () => {
   it("renders trigger and option content", async () => {
-    const selectedOption = selectFixtures.sessionFocus.options[1]!;
+    const selectedOption = selectFixtures.sessionFocus.options[1];
+    if (!selectedOption) throw new Error("Select fixture requires a second option");
 
     const { getByTestId } = await renderNative(
       <Select onValueChange={() => {}} value={selectedOption as never}>

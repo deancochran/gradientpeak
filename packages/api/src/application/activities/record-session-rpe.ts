@@ -82,7 +82,7 @@ export async function recordSessionRpe(
       );
     }
 
-    const activity = await findOwnedCompletedActivity(tx, { ...input, now: new Date() });
+    const activity = await findOwnedCompletedActivity(tx, input);
     if (!activity) throw new SessionRpeEvidenceNotFoundError();
 
     const effective = await findOwnedEffectiveSessionRpeEvidence(tx, {

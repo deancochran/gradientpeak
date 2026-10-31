@@ -267,7 +267,7 @@ function DraftSubmitHarness({ onSubmit }: { onSubmit: (values: { amount: number 
 function OptionalNumberSubmitHarness({
   onSubmit,
 }: {
-  onSubmit: (values: { amount?: number }) => void;
+  onSubmit: (values: { amount?: number | undefined }) => void;
 }) {
   const methods = useZodForm({
     schema: z.object({ amount: z.number().optional() }),
@@ -319,8 +319,10 @@ function TimezoneHarness() {
 
   return (
     <Form {...methods}>
-      <FormTimezoneField control={methods.control} label="Planning timezone" name="timezone" />
-      <output data-testid="timezone-values">{JSON.stringify(methods.watch())}</output>
+      <form data-testid="timezone-form">
+        <FormTimezoneField control={methods.control} label="Planning timezone" name="timezone" />
+        <output data-testid="timezone-values">{JSON.stringify(methods.watch())}</output>
+      </form>
     </Form>
   );
 }
@@ -401,18 +403,22 @@ describe("Form fields web", () => {
 
   it("searches timezone choices and persists canonical values and explicit clearing", () => {
     renderWeb(<TimezoneHarness />);
+    const form = screen.getByTestId("timezone-form") as HTMLFormElement;
+    expect(new FormData(form).get("timezone")).toBe("Pacific/Kiritimati");
     fireEvent.click(screen.getByRole("button", { name: "Planning timezone" }));
     fireEvent.change(screen.getByRole("combobox", { name: "Search timezones" }), {
       target: { value: "kathmandu" },
     });
     fireEvent.click(screen.getByRole("option", { name: "Asia / Kathmandu" }));
     expect(screen.getByTestId("timezone-values")).toHaveTextContent('"timezone":"Asia/Kathmandu"');
+    expect(new FormData(form).get("timezone")).toBe("Asia/Kathmandu");
     fireEvent.click(screen.getByRole("button", { name: "Planning timezone" }));
     fireEvent.change(screen.getByRole("combobox", { name: "Search timezones" }), {
       target: { value: "not set" },
     });
     fireEvent.click(screen.getByRole("option", { name: "Not set" }));
     expect(screen.getByTestId("timezone-values")).toHaveTextContent('"timezone":null');
+    expect(new FormData(form).get("timezone")).toBe("");
   });
   it("discards same-value bounded and weight drafts on form reset", () => {
     function ResetForm() {
@@ -467,7 +473,9 @@ describe("Form fields web", () => {
       target: { value: "45:00" },
     });
     fireEvent.blur(screen.getByLabelText("Duration"));
-    fireEvent.click(screen.getAllByText("+")[0]!);
+    const [increment] = screen.getAllByText("+");
+    if (!increment) throw new Error("Expected an increment button");
+    fireEvent.click(increment);
     fireEvent.click(screen.getByLabelText("Profile visibility"));
     fireEvent.change(screen.getByLabelText("FTP"), {
       target: { value: "300" },
@@ -540,7 +548,7 @@ describe("Form fields web", () => {
     expect(screen.getByTestId("values").textContent).toContain('"target_power":12');
   });
 
-  it("preserves opt-out out-of-range drafts while the default field clamps", () => {
+  it("preserves invalid out-of-range drafts regardless of the deprecated clamping option", () => {
     renderWeb(<FormFieldsHarness />);
     const preserved = screen.getByLabelText("Target Power");
     const clamped = screen.getByLabelText("Clamped Target Power");
@@ -548,12 +556,12 @@ describe("Form fields web", () => {
     fireEvent.change(preserved, { target: { value: "500" } });
     fireEvent.blur(preserved);
     expect(preserved).toHaveValue("500");
-    expect(screen.getByTestId("values").textContent).toContain('"target_power":500');
+    expect(screen.getByTestId("values").textContent).toContain('"target_power":null'); // JSON encodes NaN as null.
 
     fireEvent.change(clamped, { target: { value: "500" } });
     fireEvent.blur(clamped);
-    expect(clamped).toHaveValue("300");
-    expect(screen.getByTestId("values").textContent).toContain('"target_power":300');
+    expect(clamped).toHaveValue("500");
+    expect(screen.getByTestId("values").textContent).toContain('"target_power":null');
   });
 
   it("keeps invalid optional number drafts visible and rejects submission instead of clearing", async () => {

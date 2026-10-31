@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 import { ResourceList } from "@/components/shared/ResourceList";
 import type { DisplayGroupViewerState, GroupListItem } from "@/lib/groups";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { GroupCard } from "./GroupCards";
 import { GroupEmptyState, GroupListSkeleton } from "./GroupStates";
 
@@ -39,7 +40,7 @@ export function GroupList({
 }: GroupListProps) {
   return (
     <ResourceList
-      contentContainerClassName={contentContainerClassName}
+      {...omitUndefined({ contentContainerClassName })}
       data={groups}
       emptyComponent={emptyComponent ?? <GroupEmptyState />}
       errorDescription="Pull to refresh or try again later."
@@ -51,14 +52,12 @@ export function GroupList({
       keyExtractor={(item) => item.id}
       loadingComponent={<GroupListSkeleton />}
       loadingMoreLabel="Loading more groups..."
-      ListHeaderComponent={ListHeaderComponent}
-      onLoadMore={onLoadMore}
-      onRefresh={onRefresh}
+      {...omitUndefined({ ListHeaderComponent })}
+      {...omitUndefined({ onLoadMore, onRefresh })}
       refreshing={refreshing}
       renderItem={(group) => (
         <GroupCard
-          group={group}
-          onPress={onGroupPress}
+          {...omitUndefined({ group, onPress: onGroupPress })}
           variant={variant}
           viewer={viewerByGroupId?.[group.id] ?? null}
         />

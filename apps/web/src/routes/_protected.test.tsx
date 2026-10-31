@@ -6,6 +6,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   location: { pathname: "/plan" },
+  providerMount: vi.fn(),
+  storageMount: vi.fn(),
+  recordingRead: vi.fn(),
   recording: {
     hydrationStatus: "hydrating" as "hydrating" | "ready",
     state: { reducer: { lifecycle: "pending" } },
@@ -37,7 +40,10 @@ vi.mock("../components/protected/protected-header", () => ({
   ProtectedHeader: () => <header>Protected header</header>,
 }));
 vi.mock("../components/providers/recording-storage-boundary", () => ({
-  RecordingStorageBoundary: ({ children }: { children: React.ReactNode }) => children,
+  RecordingStorageBoundary: ({ children }: { children: React.ReactNode }) => {
+    mocks.storageMount();
+    return children;
+  },
   useRecordingStorageReadiness: () => mocks.storage,
 }));
 vi.mock("../lib/auth/route-guards", () => ({
@@ -47,15 +53,33 @@ vi.mock("../lib/auth/route-guards", () => ({
   resolveRouteProfileState: vi.fn(),
 }));
 vi.mock("../lib/recording/provider", () => ({
-  TimerOnlyRecordingProvider: ({ children }: { children: React.ReactNode }) => children,
-  useTimerOnlyRecording: () => mocks.recording,
+  TimerOnlyRecordingProvider: ({ children }: { children: React.ReactNode }) => {
+    mocks.providerMount();
+    return children;
+  },
+  useTimerOnlyRecording: () => {
+    mocks.recordingRead();
+    return mocks.recording;
+  },
 }));
 
-import { ProtectedRecordingShell } from "./_protected";
+import { ProtectedLayout, ProtectedRecordingShell } from "./_protected";
 
 afterEach(() => cleanup());
 
 describe("ProtectedRecordingShell", () => {
+  it("isolates direct simulation visits from real recording hydration and storage readiness", () => {
+    vi.clearAllMocks();
+    mocks.location.pathname = "/record/simulate";
+    mocks.storage.state = "blocked";
+    mocks.recording.state.reducer.lifecycle = "paused";
+    render(<ProtectedLayout />);
+    expect(screen.getByText("Protected page content")).toBeTruthy();
+    expect(mocks.providerMount).not.toHaveBeenCalled();
+    expect(mocks.storageMount).not.toHaveBeenCalled();
+    expect(mocks.recordingRead).not.toHaveBeenCalled();
+    mocks.location.pathname = "/plan";
+  });
   it("keeps ordinary protected pages visible during recording recovery", () => {
     mocks.storage.state = "checking";
     mocks.recording.hydrationStatus = "hydrating";

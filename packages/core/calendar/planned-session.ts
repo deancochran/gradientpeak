@@ -55,6 +55,13 @@ export const plannedSessionPrescriptionSnapshotSchema = z
   })
   .strict();
 
+/**
+ * The durable association is the activity-plan id.  `prescription` remains a
+ * transition/provenance payload: it records how the session was resolved when
+ * scheduled, but it is not the authority for a future session's current plan.
+ */
+export const plannedSessionActivityPlanReferenceSchema = uuidSchema;
+
 export const plannedSessionCompletionSchema = z.discriminatedUnion("state", [
   z
     .object({
@@ -119,7 +126,10 @@ export const plannedSessionSchema = z
     source: plannedSessionSourceSchema,
     idempotencyKey: z.string().min(1).max(512),
     groupEventId: uuidSchema.nullable().optional(),
-    prescription: plannedSessionPrescriptionSnapshotSchema,
+    activityPlanId: plannedSessionActivityPlanReferenceSchema.optional(),
+    // Compatibility only. New sessions persist no scheduled prescription;
+    // current-plan consumers resolve activityPlanId at read/start time.
+    prescription: plannedSessionPrescriptionSnapshotSchema.optional(),
     lifecycle: plannedSessionLifecycleSchema,
   })
   .strict()
@@ -139,6 +149,19 @@ export type PlannedSessionPrescriptionSnapshot = z.infer<
 >;
 export type PlannedSessionCompletion = z.infer<typeof plannedSessionCompletionSchema>;
 
+/**
+ * Returns the reference used for authorization and current-plan resolution.
+ * Older serialized DTOs did not have `activityPlanId`; their persisted
+ * `resolutionManifest.activity_plan_id` is accepted only for wire
+ * compatibility while every new persistence mapping writes the explicit id.
+ */
+export function plannedSessionActivityPlanId(session: PlannedSession): string {
+  const activityPlanId =
+    session.activityPlanId ?? session.prescription?.resolutionManifest.activity_plan_id;
+  if (!activityPlanId) throw new Error("Planned session is missing its activity-plan reference");
+  return activityPlanId;
+}
+
 /** Minimal immutable session provenance exposed by event and calendar projections. */
 export const plannedSessionProjectionSchema = z
   .object({
@@ -147,6 +170,7 @@ export const plannedSessionProjectionSchema = z
     sessionRevision: plannedSessionSchema.shape.sessionRevision,
     planningDate: plannedSessionSchema.shape.planningDate,
     source: plannedSessionSchema.shape.source,
+    activityPlanId: plannedSessionActivityPlanReferenceSchema.optional(),
     prescription: plannedSessionSchema.shape.prescription,
     lifecycle: plannedSessionSchema.shape.lifecycle,
   })

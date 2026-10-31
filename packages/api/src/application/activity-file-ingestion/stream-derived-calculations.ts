@@ -47,6 +47,7 @@ export interface ActivityFileStreamDerivedMetricsInput {
   activeDuration?: number | null;
   movingDuration?: number | null;
   includedTimeline?: readonly boolean[];
+  bestEffortMaxGapSeconds?: number;
   streamMetadata: ActivityFileStreamMetadata;
 }
 
@@ -179,6 +180,7 @@ function extractMetricBestEfforts(input: {
   valueFor: (sample: ActivityFileTimelineSample) => number | null;
   unpositionedValueCount: number;
   durationsSeconds?: number[];
+  maxGapSeconds?: number;
 }): BestEffortExtractionResult {
   return extractBestEfforts({
     metric: input.metric,
@@ -190,6 +192,7 @@ function extractMetricBestEfforts(input: {
     config: {
       unpositionedValueCount: input.unpositionedValueCount,
       ...(input.durationsSeconds === undefined ? {} : { durationsSeconds: input.durationsSeconds }),
+      ...(input.maxGapSeconds === undefined ? {} : { maxGapSeconds: input.maxGapSeconds }),
     },
   });
 }
@@ -199,6 +202,7 @@ function calculateBestEffortExtractions(input: {
   metadata: ActivityFileStreamMetadata;
   includedTimeline: readonly boolean[] | undefined;
   gradeAdjustedSpeed: readonly { timestampSeconds: number; value: number | null }[];
+  bestEffortMaxGapSeconds?: number;
 }): BestEffortExtractionResult[] {
   const { activityCategory, metadata, includedTimeline } = input;
   const extractions: BestEffortExtractionResult[] = [];
@@ -210,6 +214,9 @@ function calculateBestEffortExtractions(input: {
         includedTimeline,
         valueFor: (sample) => sample.powerWatts,
         unpositionedValueCount: metadata.unpositionedValueCounts.power,
+        ...(input.bestEffortMaxGapSeconds === undefined
+          ? {}
+          : { maxGapSeconds: input.bestEffortMaxGapSeconds }),
       }),
     );
   }
@@ -221,6 +228,9 @@ function calculateBestEffortExtractions(input: {
         includedTimeline,
         valueFor: (sample) => sample.speedMetersPerSecond,
         unpositionedValueCount: metadata.unpositionedValueCounts.speed,
+        ...(input.bestEffortMaxGapSeconds === undefined
+          ? {}
+          : { maxGapSeconds: input.bestEffortMaxGapSeconds }),
         ...(activityCategory === "swim"
           ? {
               durationsSeconds: [...STANDARD_BEST_EFFORT_DURATIONS_SECONDS, 900].sort(
@@ -246,6 +256,9 @@ function calculateBestEffortExtractions(input: {
         config: {
           unpositionedValueCount:
             metadata.unpositionedValueCounts.speed + metadata.unpositionedValueCounts.elevation,
+          ...(input.bestEffortMaxGapSeconds === undefined
+            ? {}
+            : { maxGapSeconds: input.bestEffortMaxGapSeconds }),
         },
       }),
     );
@@ -263,6 +276,9 @@ function calculateBestEffortExtractions(input: {
         includedTimeline,
         valueFor: (sample) => sample.heartRateBpm,
         unpositionedValueCount: metadata.unpositionedValueCounts.heartRate,
+        ...(input.bestEffortMaxGapSeconds === undefined
+          ? {}
+          : { maxGapSeconds: input.bestEffortMaxGapSeconds }),
       }),
     );
   }
@@ -393,6 +409,9 @@ export function calculateActivityFileStreamDerivedMetrics(
       metadata: input.streamMetadata,
       includedTimeline: input.includedTimeline,
       gradeAdjustedSpeed,
+      ...(input.bestEffortMaxGapSeconds === undefined
+        ? {}
+        : { bestEffortMaxGapSeconds: input.bestEffortMaxGapSeconds }),
     }),
   };
 }

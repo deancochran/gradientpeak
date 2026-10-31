@@ -11,6 +11,7 @@ import { View } from "react-native";
 import { Area, CartesianChart, useChartPressState, useChartTransformState } from "victory-native";
 import { InteractiveChartValueTray } from "@/components/charts/InteractiveChartValueTray";
 import { buildElevationProfilePoints } from "@/lib/charts/elevationProfile";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { useTheme } from "@/lib/stores/theme-store";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
@@ -77,13 +78,17 @@ export function ElevationProfileChart({
     // Calculate stats
     const totalAscent = elevationValues.reduce((sum, val, i) => {
       if (i === 0) return 0;
-      const diff = val - elevationValues[i - 1];
+      const previous = elevationValues[i - 1];
+      if (previous === undefined) return sum;
+      const diff = val - previous;
       return sum + (diff > 0 ? diff : 0);
     }, 0);
 
     const totalDescent = elevationValues.reduce((sum, val, i) => {
       if (i === 0) return 0;
-      const diff = val - elevationValues[i - 1];
+      const previous = elevationValues[i - 1];
+      if (previous === undefined) return sum;
+      const diff = val - previous;
       return sum + (diff < 0 ? Math.abs(diff) : 0);
     }, 0);
 
@@ -198,7 +203,7 @@ export function ElevationProfileChart({
   );
 
   return showHeader ? (
-    <ChartCard title={title} summary={showStats ? summary : undefined}>
+    <ChartCard {...omitUndefined({ title, summary: showStats ? summary : undefined })}>
       {chartContent}
     </ChartCard>
   ) : (

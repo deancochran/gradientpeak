@@ -82,7 +82,7 @@ async function writeRequiredProfile(input: {
     tx: input.tx,
     profileId: input.profileId,
     input: { ...input.data, username: input.data.username.toLowerCase() },
-    onboardingStatus: input.onboardingStatus,
+    ...(input.onboardingStatus === undefined ? {} : { onboardingStatus: input.onboardingStatus }),
   });
   await batchInsertProfileMetrics(input.tx, input.profileId, input.metrics);
 }

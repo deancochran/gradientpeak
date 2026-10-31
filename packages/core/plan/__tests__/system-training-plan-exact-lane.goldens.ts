@@ -1,15 +1,9 @@
 export const EXACT_LANE_MISS_BUDGETS: Record<string, number> = {
-  exact_5k_speed_block: 2,
-  intermediate_rich_half: 6,
-  advanced_marathon_build: 6,
-  boundary_feasible_bike: 4,
+  local_exact_run: 4,
 };
 
 export const EXACT_LANE_CONSECUTIVE_MISS_PAIR_BUDGETS: Record<string, number> = {
-  exact_5k_speed_block: 0,
-  intermediate_rich_half: 4,
-  advanced_marathon_build: 3,
-  boundary_feasible_bike: 0,
+  local_exact_run: 3,
 };
 
 export interface ExactLaneGoldenArtifact {
@@ -32,85 +26,20 @@ export interface ExactLaneGoldenArtifact {
 }
 
 export const EXACT_LANE_GOLDENS: Record<string, ExactLaneGoldenArtifact> = {
-  exact_5k_speed_block: {
-    weeklyLoad: [117.9, 148.6, 114.2, 130.6, 148.6, 148.6, 114.2, 130.6],
-    weeklyStatus: [
-      "partial",
-      "complete",
-      "partial",
-      "complete",
-      "complete",
-      "complete",
-      "partial",
-      "complete",
-    ],
+  local_exact_run: {
+    weeklyLoad: [93, 93, 93, 55.5],
+    weeklyStatus: ["complete", "complete", "complete", "complete"],
     summary: {
-      weeks: 8,
-      sessionCount: 30,
-      totalLoad: 1053.2,
-      meanLoad: 131.7,
-      minLoad: 114.2,
-      maxLoad: 148.6,
-      feasibilityMode: "target_seeking",
-      blockStatus: "partial",
-      blockGatePass: null,
-      meanGatePass: null,
-      weeklyMissesWithinBudget: true,
-      consecutiveMissPairsWithinBudget: true,
-    },
-  },
-  intermediate_rich_half: {
-    weeklyLoad: [86.3, 54.9, 86.3, 54.9, 72.9, 153.7, 72.9, 153.7, 54.9, 68.3],
-    weeklyStatus: Array.from({ length: 10 }, () => "partial"),
-    summary: {
-      weeks: 10,
-      sessionCount: 36,
-      totalLoad: 858.8,
-      meanLoad: 85.9,
-      minLoad: 54.9,
-      maxLoad: 153.7,
+      weeks: 4,
+      sessionCount: 11,
+      totalLoad: 334.5,
+      meanLoad: 83.6,
+      minLoad: 55.5,
+      maxLoad: 93,
       feasibilityMode: "capacity_bounded",
-      blockStatus: "partial",
-      blockGatePass: null,
-      meanGatePass: null,
-      weeklyMissesWithinBudget: true,
-      consecutiveMissPairsWithinBudget: true,
-    },
-  },
-  advanced_marathon_build: {
-    weeklyLoad: [86.3, 86.3, 104.3, 65.2, 86.3, 104.3, 86.3, 65.2, 86.3, 104.3, 86.3, 65.2],
-    weeklyStatus: Array.from({ length: 12 }, () => "partial"),
-    summary: {
-      weeks: 12,
-      sessionCount: 48,
-      totalLoad: 1026.1,
-      meanLoad: 85.5,
-      minLoad: 65.2,
-      maxLoad: 104.3,
-      feasibilityMode: "capacity_bounded",
-      blockStatus: "partial",
-      blockGatePass: null,
-      meanGatePass: null,
-      weeklyMissesWithinBudget: true,
-      consecutiveMissPairsWithinBudget: true,
-    },
-  },
-  boundary_feasible_bike: {
-    weeklyLoad: [
-      219.5, 210.6, 219.5, 151.4, 227.5, 218.5, 227.5, 151.4, 227.5, 218.5, 227.5, 151.4,
-    ],
-    weeklyStatus: Array.from({ length: 12 }, () => "partial"),
-    summary: {
-      weeks: 12,
-      sessionCount: 45,
-      totalLoad: 2450.9,
-      meanLoad: 204.2,
-      minLoad: 151.4,
-      maxLoad: 227.5,
-      feasibilityMode: "target_seeking",
-      blockStatus: "partial",
-      blockGatePass: null,
-      meanGatePass: null,
+      blockStatus: "complete",
+      blockGatePass: true,
+      meanGatePass: true,
       weeklyMissesWithinBudget: true,
       consecutiveMissPairsWithinBudget: true,
     },

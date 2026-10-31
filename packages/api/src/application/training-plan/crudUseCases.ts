@@ -56,24 +56,16 @@ export async function listTrainingPlansUseCase(input: {
   const ownerScope = input.query.ownerScope;
 
   const offset = parseIndexCursor(input.query.cursor);
-  const data = await input.repository.listTrainingPlans({
+  const page = await input.repository.listTrainingPlansPage({
+    limit: input.query.limit,
+    offset,
     profileId: input.profileId,
     ownerScope,
-    visibility: input.query.visibility,
+    ...(input.query.visibility === undefined ? {} : { visibility: input.query.visibility }),
+    ...(input.query.search === undefined ? {} : { search: input.query.search }),
   });
-
-  const normalizedSearch = input.query.search?.toLowerCase() ?? "";
-  const filteredData = normalizedSearch
-    ? data.filter((plan) => {
-        return [plan.name, plan.description]
-          .filter((value) => typeof value === "string")
-          .some((value) => value.toLowerCase().includes(normalizedSearch));
-      })
-    : data;
-
-  const total = filteredData.length;
-  const pageItems = filteredData.slice(offset, offset + input.query.limit);
-  const pageInfo = buildIndexPageInfo({ offset, limit: input.query.limit, total });
+  const pageItems = page.items;
+  const pageInfo = buildIndexPageInfo({ offset, limit: input.query.limit, total: page.total });
   const planIds = pageItems.map((plan) => plan.id);
 
   const [likeStats, profileIdentityMap] = await Promise.all([
@@ -100,7 +92,7 @@ export async function listTrainingPlansUseCase(input: {
       ),
       ...getLikeStats(likeStats, plan.id),
     })),
-    total,
+    total: page.total,
     ...pageInfo,
   };
 }

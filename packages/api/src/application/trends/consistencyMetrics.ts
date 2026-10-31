@@ -15,6 +15,12 @@ function toDateKey(value: Date) {
   return value.toISOString().split("T")[0] ?? "";
 }
 
+function dateAt(activityDays: string[], index: number): Date {
+  const activityDay = activityDays.at(index);
+  if (activityDay === undefined) throw new Error("Expected an activity day at the requested index");
+  return new Date(activityDay);
+}
+
 export function buildConsistencyMetrics(
   activityRows: ConsistencyMetricsActivityRow[],
   startDate: Date,
@@ -52,8 +58,8 @@ export function buildConsistencyMetrics(
     currentStreak = 1;
 
     for (let i = activityDays.length - 2; i >= 0; i--) {
-      const currentDate = new Date(activityDays[i]!);
-      const nextDate = new Date(activityDays[i + 1]!);
+      const currentDate = dateAt(activityDays, i);
+      const nextDate = dateAt(activityDays, i + 1);
       const diffDays = Math.round(
         (nextDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24),
       );
@@ -67,8 +73,8 @@ export function buildConsistencyMetrics(
   }
 
   for (let i = 1; i < activityDays.length; i++) {
-    const prevDate = new Date(activityDays[i - 1]!);
-    const currDate = new Date(activityDays[i]!);
+    const prevDate = dateAt(activityDays, i - 1);
+    const currDate = dateAt(activityDays, i);
     const diffDays = Math.round((currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24));
 
     if (diffDays === 1) {

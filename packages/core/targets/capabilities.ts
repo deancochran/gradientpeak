@@ -6,11 +6,11 @@ export type ActivityTargetCategory = CanonicalActivityCategory;
 export type ActivityTargetCapability = readonly ActivityTargetType[];
 
 export const activityTargetCapabilityConfig = {
-  run: ["speed", "%ThresholdHR", "bpm", "%MaxHR", "cadence", "RPE"],
-  bike: ["%FTP", "watts", "cadence", "%ThresholdHR", "bpm", "%MaxHR", "RPE"],
-  swim: ["speed", "RPE", "%ThresholdHR", "bpm", "%MaxHR"],
-  strength: ["RPE"],
-  other: ["RPE", "bpm", "%MaxHR"],
+  run: ["speed", "%ThresholdHR", "bpm", "%MaxHR", "cadence", "RPE", "rest"],
+  bike: ["%FTP", "watts", "cadence", "%ThresholdHR", "bpm", "%MaxHR", "RPE", "rest"],
+  swim: ["speed", "RPE", "%ThresholdHR", "bpm", "%MaxHR", "rest"],
+  strength: ["RPE", "rest"],
+  other: ["RPE", "bpm", "%MaxHR", "rest"],
 } as const satisfies Record<ActivityTargetCategory, ActivityTargetCapability>;
 
 export function getPermissibleTargetTypes(

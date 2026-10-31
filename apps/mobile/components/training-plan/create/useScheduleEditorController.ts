@@ -5,8 +5,7 @@ import type { TrainingPlanBuilderController } from "@/components/training-plan/c
 export function useScheduleEditorController(controller: TrainingPlanBuilderController) {
   const { builder } = controller;
   const { schedule } = builder.derived.viewModel;
-  const { openSheet } = controller.sheetStack;
-  const { actions, selection } = controller;
+  const { actions, selection, sheetStack } = controller;
   // Preview estimates are resolver-owned and returned by the authoritative API preview.
   const estimateBySessionId = useMemo(() => new Map(), []);
   const canonicalSessions = builder.state.structure.sessions.map((session) => ({
@@ -70,20 +69,24 @@ export function useScheduleEditorController(controller: TrainingPlanBuilderContr
       },
       onPressSession: (sessionId: string) => {
         selection.setSessionId(sessionId);
-        openSheet("session");
+        sheetStack.openSheet("session");
       },
       onRemoveSession: actions.confirmRemoveSession,
+      selectedSession: selection.session,
+      onChangeSession: builder.actions.updateSession,
+      onOpenActivityPicker: actions.openActivityPicker,
     }),
     [
       actions.addSessionAtOffset,
       actions.confirmRemoveSession,
+      actions.openActivityPicker,
       builder.actions,
       canonicalSessions,
       controller.chartReview,
       estimateBySessionId,
-      openSheet,
       schedule.viewModel,
       selection,
+      sheetStack.openSheet,
       weekSummary,
       builder.state.structure.sessions,
     ],

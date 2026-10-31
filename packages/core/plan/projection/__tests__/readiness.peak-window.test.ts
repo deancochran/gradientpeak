@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { requireFixtureValue } from "../../../testing/requireFixtureValue";
 import { computeProjectionPointReadinessScores } from "../readiness";
 import {
   createMockGoal,
@@ -13,6 +14,10 @@ import {
   createTestScenario,
   RACE_PRESETS,
 } from "./readiness.test-utils";
+
+function requireScore(scores: number[], index: number): number {
+  return requireFixtureValue(scores[index], `expected readiness score at index ${index}`);
+}
 
 describe("Dynamic Peak Windows", () => {
   it("5K uses shorter window (~10 days)", () => {
@@ -167,12 +172,12 @@ describe("Conflict Detection", () => {
 
     // Second marathon should show impact of first marathon
     // With conflict detection, it won't be forced to local max
-    expect(scores[marathon2Index]).toBeLessThanOrEqual(scores[marathon1Index]!);
+    expect(scores[marathon2Index]).toBeLessThanOrEqual(requireScore(scores, marathon1Index));
 
     console.log("Conflicting marathons:", {
       marathon1: scores[marathon1Index],
       marathon2: scores[marathon2Index],
-      difference: scores[marathon1Index]! - scores[marathon2Index]!,
+      difference: requireScore(scores, marathon1Index) - requireScore(scores, marathon2Index),
       note: "Marathon 2 should show fatigue, not forced peak",
     });
   });
@@ -262,9 +267,9 @@ describe("Peak Forcing Behavior", () => {
 
     // Marathon 2 should show natural fatigue curve, not forced peak
     // With conflict detection, it should be lower
-    expect(scores[marathon2Index]).toBeLessThanOrEqual(scores[marathon1Index]!);
+    expect(scores[marathon2Index]).toBeLessThanOrEqual(requireScore(scores, marathon1Index));
 
-    const difference = scores[marathon1Index]! - scores[marathon2Index]!;
+    const difference = requireScore(scores, marathon1Index) - requireScore(scores, marathon2Index);
 
     console.log("Back-to-back marathons (no peak forcing):", {
       marathon1: scores[marathon1Index],
@@ -299,7 +304,7 @@ describe("Peak Forcing Behavior", () => {
     });
 
     const marathonIndex = 19; // Day 20
-    const marathonScore = scores[marathonIndex];
+    const marathonScore = requireScore(scores, marathonIndex);
 
     // Should be a local maximum within its window (or very close to it)
     // Check a smaller window around the goal
@@ -308,7 +313,7 @@ describe("Peak Forcing Behavior", () => {
 
     let higherScoresCount = 0;
     for (let i = windowStart; i <= windowEnd; i++) {
-      if (i !== marathonIndex && scores[i]! > marathonScore!) {
+      if (i !== marathonIndex && requireScore(scores, i) > marathonScore) {
         higherScoresCount++;
       }
     }
@@ -394,9 +399,9 @@ describe("Dynamic Peak Windows - Edge Cases", () => {
 
     // All three should show impact of cumulative fatigue
     // Marathon 2 should be affected by Marathon 1
-    expect(scores[marathon2Index]).toBeLessThanOrEqual(scores[marathon1Index]!);
+    expect(scores[marathon2Index]).toBeLessThanOrEqual(requireScore(scores, marathon1Index));
     // Marathon 3 should be affected by Marathon 2
-    expect(scores[marathon3Index]).toBeLessThanOrEqual(scores[marathon2Index]!);
+    expect(scores[marathon3Index]).toBeLessThanOrEqual(requireScore(scores, marathon2Index));
 
     console.log("Three conflicting marathons:", {
       marathon1: scores[marathon1Index],

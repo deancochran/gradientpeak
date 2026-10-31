@@ -39,26 +39,20 @@ describe("useActivityPlanDetailViewModel", () => {
               },
             ],
             structure: {
-              version: 3,
+              version: 5,
               activity_category: "run",
-              segments: [
+              items: [
                 {
+                  type: "repeat",
                   id: "00000000-0000-4000-8000-000000000001",
-                  role: "activity",
-                  name: "Run",
-                  intervals: [
+                  count: 2,
+                  steps: [
                     {
-                      id: "00000000-0000-4000-8000-000000000002",
+                      type: "step",
+                      id: "00000000-0000-4000-8000-000000000003",
+                      duration: { type: "time", seconds: 600 },
                       name: "Tempo",
-                      repetitions: 2,
-                      steps: [
-                        {
-                          id: "00000000-0000-4000-8000-000000000003",
-                          duration: { type: "time", seconds: 600 },
-                          name: "Tempo",
-                          targets: [{ type: "RPE", intensity: 6 }],
-                        },
-                      ],
+                      targets: [{ type: "RPE", intensity: 6 }],
                     },
                   ],
                 },

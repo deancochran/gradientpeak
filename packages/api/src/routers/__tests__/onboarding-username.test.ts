@@ -10,12 +10,12 @@ function createCaller(conflictId?: string) {
   };
 
   return onboardingRouter.createCaller({
-    db: db as any,
+    db,
     session: { user: { id: USER_ID } },
     headers: new Headers(),
     clientType: "test",
     trpcSource: "vitest",
-  } as any);
+  } as never);
 }
 
 describe("onboarding.checkUsernameAvailability", () => {
@@ -35,12 +35,12 @@ describe("onboarding.checkUsernameAvailability", () => {
 
   it("requires authentication and validates the onboarding username contract", async () => {
     const caller = onboardingRouter.createCaller({
-      db: {} as any,
+      db: {} as never,
       session: null,
       headers: new Headers(),
       clientType: "test",
       trpcSource: "vitest",
-    } as any);
+    } as never);
 
     await expect(caller.checkUsernameAvailability({ username: "athlete" })).rejects.toMatchObject({
       code: "UNAUTHORIZED",

@@ -54,11 +54,11 @@ function hasSourceType(snapshot: RecordingSessionSnapshot, sourceType: MetricSou
   return snapshot.devices.connected.some((device) => device.sourceTypes.includes(sourceType));
 }
 
-export class RecordingConfigResolver {
+export const RecordingConfigResolver = {
   /**
    * Main entry point - converts input to full configuration
    */
-  static resolve(input: RecordingConfigInput): RecordingConfiguration {
+  resolve(input: RecordingConfigInput): RecordingConfiguration {
     const gpsFreeInput: RecordingConfigInput = {
       ...input,
       gpsRecordingEnabled: false,
@@ -76,10 +76,10 @@ export class RecordingConfigResolver {
       capabilities: fullCapabilities,
       session: RecordingConfigResolver.buildSessionContract(gpsFreeInput, fullCapabilities),
     };
-  }
+  },
 
   /** Resolves activity-category-specific recording UI and metrics for the active compiled segment. */
-  static resolveForOccurrence(
+  resolveForOccurrence(
     input: RecordingConfigInput,
     occurrence: Pick<CompiledActivityStepOccurrence, "activity_category">,
   ): RecordingConfiguration {
@@ -87,33 +87,33 @@ export class RecordingConfigResolver {
       ...input,
       activityCategory: occurrence.activity_category,
     });
-  }
+  },
 
   /**
    * Additive entry point for the new start-time session vocabulary.
    */
-  static resolveFromLaunchIntent(
+  resolveFromLaunchIntent(
     intent: RecordingLaunchIntent,
     context: RecordingConfigLaunchContext,
   ): RecordingConfiguration {
     return RecordingConfigResolver.resolve(
       RecordingConfigResolver.buildInputFromLaunchIntent(intent, context),
     );
-  }
+  },
 
   /**
    * Resolves a configuration from an immutable session snapshot.
    */
-  static resolveFromSessionSnapshot(
+  resolveFromSessionSnapshot(
     snapshot: RecordingSessionSnapshot,
     context: RecordingConfigSnapshotContext = {},
   ): RecordingConfiguration {
     return RecordingConfigResolver.resolve(
       RecordingConfigResolver.buildInputFromSessionSnapshot(snapshot, context),
     );
-  }
+  },
 
-  static buildInputFromLaunchIntent(
+  buildInputFromLaunchIntent(
     intent: RecordingLaunchIntent,
     context: RecordingConfigLaunchContext,
   ): RecordingConfigInput {
@@ -133,9 +133,9 @@ export class RecordingConfigResolver {
       gpsAvailable: false,
       ...(context.session === undefined ? {} : { session: context.session }),
     };
-  }
+  },
 
-  static buildInputFromSessionSnapshot(
+  buildInputFromSessionSnapshot(
     snapshot: RecordingSessionSnapshot,
     context: RecordingConfigSnapshotContext = {},
   ): RecordingConfigInput {
@@ -182,7 +182,7 @@ export class RecordingConfigResolver {
       gpsAvailable: false,
       session: context.session ?? { identityLocked: true },
     };
-  }
+  },
 
   /**
    * Compute what the app can do based on context
@@ -190,7 +190,7 @@ export class RecordingConfigResolver {
    * Philosophy: Show capabilities whenever they exist, unless hiding them prevents user errors.
    * Allow maximum flexibility - users should control their experience.
    */
-  private static computeCapabilities(
+  computeCapabilities(
     input: RecordingConfigInput,
   ): Omit<RecordingCapabilities, "isValid" | "errors" | "warnings"> {
     const hasStructuredPlan = input.plan?.hasStructure ?? false;
@@ -271,9 +271,9 @@ export class RecordingConfigResolver {
       autoFollowConflictReason,
       primaryMetric,
     };
-  }
+  },
 
-  private static determineAutoFollowPriority(
+  determineAutoFollowPriority(
     input: RecordingConfigInput,
     context: {
       hasStructuredPlan: boolean;
@@ -300,9 +300,9 @@ export class RecordingConfigResolver {
     }
 
     return "none";
-  }
+  },
 
-  private static hasTrainerControllablePlanTargets(structure: unknown): boolean {
+  hasTrainerControllablePlanTargets(structure: unknown): boolean {
     if (!structure) return false;
     try {
       return compileActivityPlan(structure).occurrences.some(
@@ -321,9 +321,9 @@ export class RecordingConfigResolver {
     } catch {
       return false;
     }
-  }
+  },
 
-  private static buildSessionContract(
+  buildSessionContract(
     input: RecordingConfigInput,
     capabilities: RecordingCapabilities,
   ): RecordingSessionContract {
@@ -417,12 +417,12 @@ export class RecordingConfigResolver {
         consequences: RecordingConfigResolver.determineConsequences(input, capabilities, routeMode),
       },
     };
-  }
+  },
 
   /**
    * Determine the primary metric for this recording
    */
-  private static determinePrimaryMetric(
+  determinePrimaryMetric(
     input: RecordingConfigInput,
     computed: { canTrackLocation: boolean; canTrackPower: boolean },
   ): RecordingCapabilities["primaryMetric"] {
@@ -431,9 +431,9 @@ export class RecordingConfigResolver {
     if (computed.canTrackPower) return "power";
     if (computed.canTrackLocation) return "distance";
     return "time";
-  }
+  },
 
-  private static determineRouteMode(input: RecordingConfigInput) {
+  determineRouteMode(input: RecordingConfigInput) {
     if (!RecordingConfigResolver.hasRoute(input)) {
       return "none" as const;
     }
@@ -443,9 +443,9 @@ export class RecordingConfigResolver {
     }
 
     return "virtual" as const;
-  }
+  },
 
-  private static determineBackdropMode(
+  determineBackdropMode(
     routeMode: "none" | "preview" | "virtual" | "live_navigation" | "unavailable",
   ): RecordingBackdropMode {
     if (routeMode === "virtual") {
@@ -461,9 +461,9 @@ export class RecordingConfigResolver {
     }
 
     return "ambient";
-  }
+  },
 
-  private static determineInsightCards(params: {
+  determineInsightCards(params: {
     hasStructuredPlan: boolean;
     hasRouteGeometry: boolean;
     trainerControllable: boolean;
@@ -485,9 +485,9 @@ export class RecordingConfigResolver {
     cards.push("metrics");
 
     return Array.from(new Set(cards));
-  }
+  },
 
-  private static determinePrimarySurface(params: {
+  determinePrimarySurface(params: {
     hasStructuredPlan: boolean;
     hasRouteGeometry: boolean;
     trainerControllable: boolean;
@@ -506,9 +506,9 @@ export class RecordingConfigResolver {
     }
 
     return "metrics";
-  }
+  },
 
-  private static determineAvailableSurfaces(params: {
+  determineAvailableSurfaces(params: {
     hasStructuredPlan: boolean;
     hasRouteGeometry: boolean;
     hasTrainer: boolean;
@@ -528,9 +528,9 @@ export class RecordingConfigResolver {
     }
 
     return surfaces;
-  }
+  },
 
-  private static determineQuickActions(params: {
+  determineQuickActions(params: {
     hasPlan: boolean;
     hasRoute: boolean;
     trainerControllable: boolean;
@@ -548,9 +548,9 @@ export class RecordingConfigResolver {
     }
 
     return actions;
-  }
+  },
 
-  private static determineEmphasizedMetrics(
+  determineEmphasizedMetrics(
     input: RecordingConfigInput,
     capabilities: Pick<
       RecordingCapabilities,
@@ -587,9 +587,9 @@ export class RecordingConfigResolver {
     }
 
     return Array.from(new Set(metrics));
-  }
+  },
 
-  private static determineConsequences(
+  determineConsequences(
     input: RecordingConfigInput,
     capabilities: Pick<RecordingCapabilities, "canTrackLocation" | "shouldAutoFollowTargets">,
     routeMode: "none" | "preview" | "virtual" | "live_navigation" | "unavailable",
@@ -634,29 +634,27 @@ export class RecordingConfigResolver {
     }
 
     return consequences;
-  }
+  },
 
-  private static hasPlan(input: RecordingConfigInput) {
+  hasPlan(input: RecordingConfigInput) {
     return (
       input.mode === "planned" ||
       (input.activityPlanId !== null && input.activityPlanId !== undefined)
     );
-  }
+  },
 
-  private static hasRoute(input: RecordingConfigInput) {
+  hasRoute(input: RecordingConfigInput) {
     return Boolean(input.routeId);
-  }
+  },
 
-  private static hasRouteGeometry(input: RecordingConfigInput) {
+  hasRouteGeometry(input: RecordingConfigInput) {
     const hasRoute = RecordingConfigResolver.hasRoute(input);
     if (!hasRoute) return false;
 
     return input.routeGeometryAvailable ?? true;
-  }
+  },
 
-  private static determineDegradedState(
-    input: RecordingConfigInput,
-  ): RecordingSessionContract["degraded"] {
+  determineDegradedState(input: RecordingConfigInput): RecordingSessionContract["degraded"] {
     const degraded: RecordingSessionContract["degraded"] = {};
 
     if (
@@ -671,12 +669,12 @@ export class RecordingConfigResolver {
     }
 
     return degraded;
-  }
+  },
 
   /**
    * Validate configuration and return errors/warnings
    */
-  private static validate(
+  validate(
     input: RecordingConfigInput,
     capabilities: Omit<RecordingCapabilities, "isValid" | "errors" | "warnings">,
   ): Pick<RecordingCapabilities, "isValid" | "errors" | "warnings"> {
@@ -719,5 +717,5 @@ export class RecordingConfigResolver {
       errors,
       warnings,
     };
-  }
-}
+  },
+};

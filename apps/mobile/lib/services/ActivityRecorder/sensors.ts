@@ -260,7 +260,9 @@ export class SensorsManager {
             ? "Bluetooth permission unavailable"
             : "Bluetooth is powered off",
           {
-            deviceId: this.trainerState.deviceId ?? undefined,
+            ...(this.trainerState.deviceId === null
+              ? {}
+              : { deviceId: this.trainerState.deviceId }),
             recoverable: true,
           },
         );
@@ -341,7 +343,7 @@ export class SensorsManager {
       // Process any pending transitions
       if (sensor.pendingStateTransition) {
         const pending = sensor.pendingStateTransition;
-        sensor.pendingStateTransition = undefined;
+        delete sensor.pendingStateTransition;
 
         // Only apply if still recent (within 2 seconds)
         if (Date.now() - pending.timestamp < 2000) {
@@ -413,8 +415,8 @@ export class SensorsManager {
       const sensor = this.connectedSensors.get(sensorId);
       if (sensor) {
         sensor.isControllable = false;
-        sensor.ftmsController = undefined;
-        sensor.currentControlMode = undefined;
+        delete sensor.ftmsController;
+        delete sensor.currentControlMode;
       }
       this.ftmsControllers.get(sensorId)?.dispose();
       this.ftmsControllers.delete(sensorId);
@@ -464,7 +466,7 @@ export class SensorsManager {
       category,
       message,
       recordedAt: Date.now(),
-      deviceId: options?.deviceId,
+      ...(options?.deviceId === undefined ? {} : { deviceId: options.deviceId }),
       recoverable: options?.recoverable ?? true,
     };
 
@@ -486,7 +488,7 @@ export class SensorsManager {
     if (deviceId) {
       const sensor = this.connectedSensors.get(deviceId);
       if (sensor) {
-        sensor.lastServiceError = undefined;
+        delete sensor.lastServiceError;
       }
 
       if (this.trainerState.deviceId === deviceId) {
@@ -994,13 +996,13 @@ export class SensorsManager {
 
         if (connectedSensor.connectionState === "disconnecting") {
           this.transitionSensorState(connectedSensor, "disconnected", true);
-          connectedSensor.lastDataTimestamp = undefined;
+          delete connectedSensor.lastDataTimestamp;
           this.clearDeviceGattRuntime(connectedSensor.id, "Device disconnected");
           return;
         }
 
         this.transitionSensorState(connectedSensor, "disconnected", true);
-        connectedSensor.lastDataTimestamp = undefined;
+        delete connectedSensor.lastDataTimestamp;
         this.clearDeviceGattRuntime(connectedSensor.id, "Device disconnected");
         if (this.trainerState.deviceId === connectedSensor.id) {
           this.clearControllableTrainer(connectedSensor.id);
@@ -1281,7 +1283,7 @@ export class SensorsManager {
     } catch (error) {
       console.error("[SensorsManager] FTMS setup failed:", error);
       sensor.isControllable = false;
-      sensor.ftmsController = undefined;
+      delete sensor.ftmsController;
       this.clearControllableTrainer(sensor.id);
       const setupError = this.recordServiceError(
         "ftms_control_request_error",
@@ -1593,6 +1595,7 @@ export class SensorsManager {
       ) {
         const bytes = decodeBase64ToBytes(initialValue.value);
         const batteryLevel = bytes[0];
+        if (batteryLevel === undefined) return;
         console.log(`[SensorsManager] Initial battery level for ${sensor.name}: ${batteryLevel}%`);
         this.handleBatteryUpdate(sensor.id, sensor.name, batteryLevel);
       }
@@ -1623,6 +1626,7 @@ export class SensorsManager {
 
             const bytes = decodeBase64ToBytes(char.value);
             const batteryLevel = bytes[0];
+            if (batteryLevel === undefined) return;
 
             console.log(`[SensorsManager] Battery level for ${sensor.name}: ${batteryLevel}%`);
             this.handleBatteryUpdate(sensor.id, sensor.name, batteryLevel);
@@ -2184,7 +2188,17 @@ export class SensorsManager {
       this.dataCallbacks.clear();
       this.connectionCallbacks.clear();
       this.bleStateCallbacks.clear();
-      this.bleManager.destroy();
+      // BLE PLX teardown is asynchronous. Leaving its rejected promise detached
+      // produces an app-wide unhandled-rejection overlay even though recording
+      // does not require a Bluetooth device.
+      try {
+        await this.bleManager.destroy();
+      } catch (error) {
+        console.warn(
+          "[SensorsManager] Bluetooth manager teardown did not complete",
+          error instanceof Error ? error.name : "unknown_error",
+        );
+      }
     }
 
     if (cleanupFailure) {

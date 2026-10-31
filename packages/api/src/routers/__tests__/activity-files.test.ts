@@ -95,7 +95,7 @@ const mocks = vi.hoisted(() => ({
   drainPendingMobileRecordingStagingCleanup: vi.fn(),
   readActivityIngestionSafeStatus: vi.fn(),
   db: {
-    current: null as any,
+    current: null as unknown,
   },
 }));
 
@@ -196,6 +196,7 @@ vi.mock(
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { activities } from "@repo/db";
 import { MobileRecordingUploadError } from "../../application/activity-file-ingestion/mobile-recording-upload";
+import { createRouterCaller } from "../../test/router";
 import { activityFilesRouter } from "../activity-files";
 
 type MockDbPlan = {
@@ -219,32 +220,33 @@ function createDbMock(plan: MockDbPlan = {}) {
   };
   let selectedTable: unknown;
 
-  const builder: any = {
-    from: vi.fn((table: unknown) => {
-      selectedTable = table;
-      return builder;
-    }),
-    innerJoin: vi.fn(() => builder),
-    leftJoin: vi.fn(() => builder),
-    where: vi.fn((...args: unknown[]) => {
-      callLog.selectCalls.push({ type: "where", args });
-      return builder;
-    }),
-    orderBy: vi.fn((...args: unknown[]) => {
-      callLog.selectCalls.push({ type: "orderBy", args });
-      return builder;
-    }),
-    limit: vi.fn((...args: unknown[]) => {
-      callLog.selectCalls.push({ type: "limit", args });
-      return builder;
-    }),
-    then: (onFulfilled: (rows: unknown[]) => unknown) =>
-      Promise.resolve(
-        selectedTable === activities && plan.activitySelectResult
-          ? plan.activitySelectResult
-          : (selectResults.shift() ?? []),
-      ).then(onFulfilled),
-  };
+  const builder = Object.assign(
+    Promise.resolve().then(() =>
+      selectedTable === activities && plan.activitySelectResult
+        ? plan.activitySelectResult
+        : (selectResults.shift() ?? []),
+    ),
+    {
+      from: vi.fn((table: unknown) => {
+        selectedTable = table;
+        return builder;
+      }),
+      innerJoin: vi.fn(() => builder),
+      leftJoin: vi.fn(() => builder),
+      where: vi.fn((...args: unknown[]) => {
+        callLog.selectCalls.push({ type: "where", args });
+        return builder;
+      }),
+      orderBy: vi.fn((...args: unknown[]) => {
+        callLog.selectCalls.push({ type: "orderBy", args });
+        return builder;
+      }),
+      limit: vi.fn((...args: unknown[]) => {
+        callLog.selectCalls.push({ type: "limit", args });
+        return builder;
+      }),
+    },
+  );
 
   const db = {
     $client: {},
@@ -258,27 +260,23 @@ function createDbMock(plan: MockDbPlan = {}) {
         const conflictResult = {
           returning: vi.fn(async () => (Array.isArray(values) ? values : [values])),
         };
-        return {
+        return Object.assign(Promise.resolve(values), {
           onConflictDoUpdate: vi.fn(() => conflictResult),
           onConflictDoNothing: vi.fn(() => conflictResult),
           returning: vi.fn(async () => (Array.isArray(values) ? values : [values])),
-          then: (onFulfilled: (result: unknown) => unknown) =>
-            Promise.resolve(values).then(onFulfilled),
-        };
+        });
       }),
     })),
     update: vi.fn((table: unknown) => ({
       set: vi.fn((set: unknown) => {
         callLog.updateCalls.push({ table, set });
-        return {
+        return Object.assign(Promise.resolve(set), {
           where: vi.fn(() => ({
             returning: vi.fn(async () =>
               table === activities ? [{ id: "activity-1" }] : (selectResults.shift() ?? [set]),
             ),
-            then: (onFulfilled: (result: unknown) => unknown) =>
-              Promise.resolve(set).then(onFulfilled),
           })),
-        };
+        });
       }),
     })),
     delete: vi.fn((table: unknown) => ({
@@ -314,12 +312,9 @@ function createDbMock(plan: MockDbPlan = {}) {
 function createCaller(options?: { db?: unknown; userId?: string }) {
   mocks.db.current = options?.db ?? null;
 
-  return activityFilesRouter.createCaller({
-    session: { user: { id: options?.userId ?? "11111111-1111-4111-8111-111111111111" } },
-    headers: new Headers(),
-    clientType: "test",
-    trpcSource: "vitest",
-  } as any);
+  return createRouterCaller(activityFilesRouter, {
+    userId: options?.userId ?? "11111111-1111-4111-8111-111111111111",
+  });
 }
 
 beforeEach(() => {

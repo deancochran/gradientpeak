@@ -331,11 +331,11 @@ export async function updateTrainingPlanUseCase(input: {
         db,
         id,
         profileId: input.profileId,
-        name: updates.name,
-        description: updates.description,
+        ...(updates.name === undefined ? {} : { name: updates.name }),
+        ...(updates.description === undefined ? {} : { description: updates.description }),
         expectedStructureHash,
-        structure,
-        contentVisibility: content_visibility,
+        ...(structure === undefined ? {} : { structure }),
+        ...(content_visibility === undefined ? {} : { contentVisibility: content_visibility }),
       });
     },
   );

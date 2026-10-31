@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { requireFixtureValue } from "../../testing/requireFixtureValue";
 import { canonicalGoalFixtures } from "../__fixtures__/profile-goals";
 import {
   deriveGoalDemandProfile,
@@ -31,7 +32,10 @@ describe("canonical profile goal schemas", () => {
   });
 
   it("rejects mismatched objective activity categories", () => {
-    const fixture = canonicalGoalFixtures[0]!;
+    const fixture = requireFixtureValue(
+      canonicalGoalFixtures[0],
+      "expected first canonical goal fixture",
+    );
     const parsed = profileGoalRecordSchema.safeParse({
       ...fixture.record,
       target_payload: {
@@ -52,7 +56,10 @@ describe("canonical profile goal schemas", () => {
   });
 
   it("rejects event performance payloads without a deterministic target outcome", () => {
-    const fixture = canonicalGoalFixtures[0]!;
+    const fixture = requireFixtureValue(
+      canonicalGoalFixtures[0],
+      "expected first canonical goal fixture",
+    );
     const parsed = profileGoalRecordSchema.safeParse({
       ...fixture.record,
       target_payload: {
@@ -74,7 +81,10 @@ describe("canonical profile goal schemas", () => {
   });
 
   it("rejects completion payloads without distance or duration", () => {
-    const fixture = canonicalGoalFixtures[2]!;
+    const fixture = requireFixtureValue(
+      canonicalGoalFixtures[2],
+      "expected completion goal fixture",
+    );
     const parsed = profileGoalRecordSchema.safeParse({
       ...fixture.record,
       target_payload: {
@@ -95,7 +105,10 @@ describe("canonical profile goal schemas", () => {
   });
 
   it("rejects consistency payloads without week-based cadence fields", () => {
-    const fixture = canonicalGoalFixtures[3]!;
+    const fixture = requireFixtureValue(
+      canonicalGoalFixtures[3],
+      "expected consistency goal fixture",
+    );
     const parsed = profileGoalRecordSchema.safeParse({
       ...fixture.record,
       target_payload: {

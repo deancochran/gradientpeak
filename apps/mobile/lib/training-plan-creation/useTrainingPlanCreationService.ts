@@ -10,6 +10,7 @@ import { randomUUID } from "expo-crypto";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import { deriveActivityPlanPickerState } from "./activity-plan-picker";
 import {
   deriveTrainingPathChartFromBackendProjection,
@@ -42,6 +43,20 @@ import { useTrainingPlanCreationQueries } from "./useTrainingPlanCreationQueries
 const createLocalId = () => randomUUID();
 
 type TrainingPlanCommitRequest = inferRouterInputs<AppRouter>["trainingPlans"]["commit"];
+
+function isDefinitiveRejection(error: unknown) {
+  if (!error || typeof error !== "object" || !("data" in error)) return false;
+  const data = error.data;
+  return (
+    !!data &&
+    typeof data === "object" &&
+    "code" in data &&
+    (data.code === "BAD_REQUEST" ||
+      data.code === "UNAUTHORIZED" ||
+      data.code === "FORBIDDEN" ||
+      data.code === "NOT_FOUND")
+  );
+}
 
 function preserveLocalAthleteContextOverrides(
   current: AthletePlanningContext,
@@ -170,14 +185,52 @@ export function useTrainingPlanCreationService({
   onUpdated,
   onUpdateError,
   planId,
+  isFlowCurrent,
 }: UseTrainingPlanCreationServiceOptions = {}) {
   const utils = api.useUtils();
-  const [state, dispatch] = useReducer(trainingPlanBuilderReducer, undefined, () =>
+  const flow = useRef(isFlowCurrent);
+  flow.current = isFlowCurrent;
+  const accountId = useAuthStore((auth) => auth.session?.user.id ?? null);
+  const owner = useMemo(() => ({ mode, planId, accountId }), [mode, planId, accountId]);
+  const ownerRef = useRef(owner);
+  const mounted = useRef(true);
+  const saveGuard = useRef<object | null>(null);
+  const completedOwner = useRef<object | null>(null);
+  const [pendingOwner, setPendingOwner] = useState<object | null>(null);
+  const [editBase, setEditBase] = useState<{ revision: number; structureHash: string } | null>(
+    null,
+  );
+  const [state, rawDispatch] = useReducer(trainingPlanBuilderReducer, undefined, () =>
     createDefaultTrainingPlanBuilderState(),
   );
-  const [persistedPlanId, setPersistedPlanId] = useState<string | null>(null);
   const [projectionConflict, setProjectionConflict] = useState<string | null>(null);
   const retainedCommitRequestRef = useRef<TrainingPlanCommitRequest | null>(null);
+  const acknowledgedRequest = useRef<{ operationId: string; planId: string } | null>(null);
+  if (ownerRef.current !== owner) {
+    ownerRef.current = owner;
+    retainedCommitRequestRef.current = null;
+    saveGuard.current = null;
+    completedOwner.current = null;
+    acknowledgedRequest.current = null;
+  }
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      retainedCommitRequestRef.current = null;
+      acknowledgedRequest.current = null;
+    };
+  }, []);
+  const dispatch = useCallback<typeof rawDispatch>((action) => {
+    if (
+      flow.current?.() === false ||
+      saveGuard.current ||
+      retainedCommitRequestRef.current ||
+      completedOwner.current
+    )
+      return;
+    rawDispatch(action);
+  }, []);
   const hydratedCreationContextAsOfRef = useRef<string | null>(null);
   const hydratedEditPlanIdRef = useRef<string | null>(null);
   const {
@@ -199,10 +252,24 @@ export function useTrainingPlanCreationService({
     ...(planId !== undefined ? { planId } : {}),
   });
   const isEditMode = mode === "edit" && !!planId;
+  const stateOwner = useRef(owner);
+  useEffect(() => {
+    if (stateOwner.current === owner) return;
+    stateOwner.current = owner;
+    rawDispatch({ type: "state.replace", state: createDefaultTrainingPlanBuilderState() });
+    hydratedEditPlanIdRef.current = null;
+    hydratedCreationContextAsOfRef.current = null;
+    setEditBase(null);
+    setProjectionConflict(null);
+  }, [owner]);
 
   useEffect(() => {
     if (
       isEditMode ||
+      pendingOwner === owner ||
+      saveGuard.current !== null ||
+      retainedCommitRequestRef.current !== null ||
+      completedOwner.current !== null ||
       !creationContextQuery.data ||
       !creationContextQuery.data.currentBaseline ||
       !creationContextQuery.data.currentBaseline.planningContext ||
@@ -221,10 +288,17 @@ export function useTrainingPlanCreationService({
     });
     hydratedCreationContextAsOfRef.current =
       creationContextQuery.data.publishedState?.publishedAt ?? creationContextQuery.data.asOf;
-  }, [creationContextQuery.data, isEditMode, state.athleteContext]);
+  }, [creationContextQuery.data, isEditMode, state.athleteContext, dispatch, pendingOwner, owner]);
 
   useEffect(() => {
-    if (!isEditMode || !planId || !editPlanQuery.data) {
+    if (
+      !isEditMode ||
+      !planId ||
+      !editPlanQuery.data ||
+      editPlanQuery.data.id !== planId ||
+      saveGuard.current ||
+      retainedCommitRequestRef.current
+    ) {
       return;
     }
     if (hydratedEditPlanIdRef.current === planId) {
@@ -246,7 +320,8 @@ export function useTrainingPlanCreationService({
       }),
     });
     hydratedEditPlanIdRef.current = planId;
-  }, [editPlanQuery.data, isEditMode, linkedActivityPlansQuery.data, planId]);
+    setEditBase(editPlanQuery.data.editor ? { ...editPlanQuery.data.editor } : null);
+  }, [editPlanQuery.data, isEditMode, linkedActivityPlansQuery.data, planId, dispatch]);
 
   useEffect(() => {
     return subscribeToTrainingPlanGoalCreation((goal) => {
@@ -255,7 +330,7 @@ export function useTrainingPlanCreationService({
         goal: toSelectedGoalBlueprint({ anchorDate: state.anchorDate, createLocalId, goal }),
       });
     });
-  }, [state.anchorDate]);
+  }, [state.anchorDate, dispatch]);
 
   const authoritativePreviewInput = useMemo(() => {
     try {
@@ -265,7 +340,7 @@ export function useTrainingPlanCreationService({
         previewStartDate: state.scheduling.startDate,
       };
       if (mode !== "edit" || !planId) return { kind: "create" as const, draft: commonDraft };
-      const editor = editPlanQuery.data?.editor;
+      const editor = editBase;
       if (!editor) return null;
       return {
         kind: "update" as const,
@@ -279,7 +354,7 @@ export function useTrainingPlanCreationService({
     } catch {
       return null;
     }
-  }, [editPlanQuery.data?.editor, mode, planId, state]);
+  }, [editBase, mode, planId, state]);
   const authoritativePreviewFingerprint = JSON.stringify(authoritativePreviewInput);
   const debouncedAuthoritativePreviewFingerprint = useDebouncedValue(
     authoritativePreviewFingerprint,
@@ -424,20 +499,156 @@ export function useTrainingPlanCreationService({
   );
 
   const persistAndValidatePlan = useCallback(async () => {
-    setProjectionConflict(null);
-    let commitRequest = retainedCommitRequestRef.current;
-    if (commitRequest) {
-      // An interrupted write may have succeeded; only replay the exact idempotent request.
+    if (
+      !mounted.current ||
+      flow.current?.() === false ||
+      saveGuard.current ||
+      completedOwner.current === owner
+    )
+      return;
+    if (!accountId) return;
+    saveGuard.current = owner;
+    setPendingOwner(owner);
+    const current = () =>
+      mounted.current &&
+      flow.current?.() !== false &&
+      ownerRef.current === owner &&
+      useAuthStore.getState().session?.user.id === accountId;
+    let acknowledged = false;
+    const notifyFailure = (error: unknown) => {
+      if (acknowledged) return;
+      const failure = error instanceof Error ? error : new Error("Unable to save this plan.");
+      if (mode === "edit") onUpdateError?.(failure);
+      else onCreateError?.(failure);
+    };
+    try {
+      setProjectionConflict(null);
+      if (
+        !retainedCommitRequestRef.current &&
+        mode === "edit" &&
+        hydratedEditPlanIdRef.current !== planId
+      ) {
+        setProjectionConflict("Wait for this plan to finish loading before saving.");
+        return;
+      }
+      let commitRequest = retainedCommitRequestRef.current;
+      if (commitRequest) {
+        // An interrupted write may have succeeded; only replay the exact idempotent request.
+        try {
+          const knownId =
+            acknowledgedRequest.current?.operationId === commitRequest.operationId
+              ? acknowledgedRequest.current.planId
+              : null;
+          const result = knownId
+            ? { status: "saved" as const, planId: knownId }
+            : await commitPlanMutation.mutateAsync(commitRequest);
+          if (!current()) {
+            if (result.status === "saved") await utils.trainingPlans.invalidate();
+            return;
+          }
+          if (result.status === "stale") {
+            retainedCommitRequestRef.current = null;
+            setProjectionConflict(
+              result.reason === "state_revision"
+                ? "Athlete state changed while saving. Your changes were preserved and re-simulated against the refreshed baseline."
+                : "The saved plan changed while saving. Your changes were preserved. Close and reopen the editor to reload the saved plan before retrying.",
+            );
+            await Promise.allSettled([publishedStateQuery.refetch(), editPlanQuery.refetch()]);
+            return;
+          }
+          if (result.status === "operation_conflict") {
+            retainedCommitRequestRef.current = null;
+            setProjectionConflict(
+              "This save request conflicts with another operation. Review and retry.",
+            );
+            return;
+          }
+          acknowledged = true;
+          acknowledgedRequest.current = {
+            operationId: commitRequest.operationId,
+            planId: result.planId,
+          };
+          await utils.trainingPlans.invalidate();
+          if (!current()) return;
+          const savedPlan = { id: result.planId };
+          if (mode === "edit") await onUpdated?.(savedPlan);
+          else await onCreated?.(savedPlan);
+          if (current()) {
+            retainedCommitRequestRef.current = null;
+            acknowledgedRequest.current = null;
+            completedOwner.current = owner;
+          }
+        } catch (error) {
+          if (!current()) return;
+          // Even a rejected replay cannot prove that the earlier uncertain write failed.
+          setProjectionConflict(
+            `${error instanceof Error ? error.message : "Could not save and validate this plan."} ${acknowledged ? "The plan was saved. Retry to finish updating this view." : "The outcome is unknown; retrying will safely reconcile this save."}`,
+          );
+          notifyFailure(error);
+        }
+        return;
+      }
+      if (previewLifecycle.status !== "backend_preview_ready") {
+        setProjectionConflict("Wait for the authoritative preview before saving this plan.");
+        return;
+      }
+      const existingPlanId = mode === "edit" ? planId : undefined;
       try {
+        const draft = buildCanonicalTrainingPlanDraft(state);
+        const commonDraft = {
+          ...draft,
+          previewStartDate: state.scheduling.startDate,
+        };
+        const editor = editBase;
+        if (existingPlanId && !editor) {
+          setProjectionConflict("The persisted plan changed. Refresh before retrying.");
+          return;
+        }
+        const commitDraft =
+          existingPlanId && editor
+            ? {
+                kind: "update" as const,
+                draft: {
+                  ...commonDraft,
+                  planId: existingPlanId,
+                  expectedRevision: editor.revision,
+                  expectedStructureHash: editor.structureHash,
+                },
+              }
+            : { kind: "create" as const, draft: commonDraft };
+        const commitPreview = await utils.trainingPlans.preview.fetch(commitDraft);
+        if (!current()) return;
+        if (commitPreview.status !== "available") {
+          setProjectionConflict("The authoritative preview is unavailable. Refresh and retry.");
+          return;
+        }
+        if (!commitPreview.applicable) {
+          setProjectionConflict(
+            commitPreview.explanations.join(" ") ||
+              "One or more sessions need additional planning input before this plan can be saved.",
+          );
+          return;
+        }
+        commitRequest = {
+          ...commitDraft,
+          operationId: randomUUID(),
+          basePublishedRevision: commitPreview.basePublishedRevision,
+          previewFingerprint: commitPreview.previewFingerprint,
+        };
+        retainedCommitRequestRef.current = commitRequest;
         const result = await commitPlanMutation.mutateAsync(commitRequest);
+        if (!current()) {
+          if (result.status === "saved") await utils.trainingPlans.invalidate();
+          return;
+        }
         if (result.status === "stale") {
           retainedCommitRequestRef.current = null;
           setProjectionConflict(
             result.reason === "state_revision"
               ? "Athlete state changed while saving. Your changes were preserved and re-simulated against the refreshed baseline."
-              : "The saved plan changed while saving. Your changes were preserved; review the refreshed plan and retry.",
+              : "The saved plan changed while saving. Your changes were preserved. Close and reopen the editor to reload the saved plan before retrying.",
           );
-          await Promise.all([publishedStateQuery.refetch(), editPlanQuery.refetch()]);
+          await Promise.allSettled([publishedStateQuery.refetch(), editPlanQuery.refetch()]);
           return;
         }
         if (result.status === "operation_conflict") {
@@ -447,92 +658,35 @@ export function useTrainingPlanCreationService({
           );
           return;
         }
-        retainedCommitRequestRef.current = null;
-        setPersistedPlanId(result.planId);
+        acknowledged = true;
+        acknowledgedRequest.current = {
+          operationId: commitRequest.operationId,
+          planId: result.planId,
+        };
+        await utils.trainingPlans.invalidate();
+        if (!current()) return;
         const savedPlan = { id: result.planId };
-        if (mode === "edit") onUpdated?.(savedPlan);
-        else onCreated?.(savedPlan);
+        if (mode === "edit") await onUpdated?.(savedPlan);
+        else await onCreated?.(savedPlan);
+        if (current()) {
+          retainedCommitRequestRef.current = null;
+          acknowledgedRequest.current = null;
+          completedOwner.current = owner;
+        }
       } catch (error) {
+        if (!current()) return;
+        const rejected = !acknowledged && isDefinitiveRejection(error);
+        if (rejected) retainedCommitRequestRef.current = null;
         setProjectionConflict(
-          `${error instanceof Error ? error.message : "Could not save and validate this plan."} The outcome is unknown; retrying will safely reconcile this save.`,
+          `${error instanceof Error ? error.message : "Could not save and validate this plan."} ${acknowledged ? "The plan was saved. Retry to finish updating this view." : rejected ? "The save was rejected. Your draft is preserved for correction." : retainedCommitRequestRef.current ? "The outcome is unknown; retrying will safely reconcile this save." : "No commit was sent. Your draft is preserved; retry the preview."}`,
         );
+        notifyFailure(error);
       }
-      return;
-    }
-    if (previewLifecycle.status !== "backend_preview_ready") {
-      setProjectionConflict("Wait for the authoritative preview before saving this plan.");
-      return;
-    }
-    const existingPlanId = planId ?? persistedPlanId;
-    try {
-      const draft = buildCanonicalTrainingPlanDraft(state);
-      const commonDraft = {
-        ...draft,
-        previewStartDate: state.scheduling.startDate,
-      };
-      const editor = editPlanQuery.data?.editor;
-      if (existingPlanId && !editor) {
-        setProjectionConflict("The persisted plan changed. Refresh before retrying.");
-        return;
+    } finally {
+      if (current()) {
+        saveGuard.current = null;
+        setPendingOwner(null);
       }
-      const commitDraft =
-        existingPlanId && editor
-          ? {
-              kind: "update" as const,
-              draft: {
-                ...commonDraft,
-                planId: existingPlanId,
-                expectedRevision: editor.revision,
-                expectedStructureHash: editor.structureHash,
-              },
-            }
-          : { kind: "create" as const, draft: commonDraft };
-      const commitPreview = await utils.trainingPlans.preview.fetch(commitDraft);
-      if (commitPreview.status !== "available") {
-        setProjectionConflict("The authoritative preview is unavailable. Refresh and retry.");
-        return;
-      }
-      if (!commitPreview.applicable) {
-        setProjectionConflict(
-          commitPreview.explanations.join(" ") ||
-            "One or more sessions need additional planning input before this plan can be saved.",
-        );
-        return;
-      }
-      commitRequest = {
-        ...commitDraft,
-        operationId: randomUUID(),
-        basePublishedRevision: commitPreview.basePublishedRevision,
-        previewFingerprint: commitPreview.previewFingerprint,
-      };
-      retainedCommitRequestRef.current = commitRequest;
-      const result = await commitPlanMutation.mutateAsync(commitRequest);
-      if (result.status === "stale") {
-        retainedCommitRequestRef.current = null;
-        setProjectionConflict(
-          result.reason === "state_revision"
-            ? "Athlete state changed while saving. Your changes were preserved and re-simulated against the refreshed baseline."
-            : "The saved plan changed while saving. Your changes were preserved; review the refreshed plan and retry.",
-        );
-        await Promise.all([publishedStateQuery.refetch(), editPlanQuery.refetch()]);
-        return;
-      }
-      if (result.status === "operation_conflict") {
-        retainedCommitRequestRef.current = null;
-        setProjectionConflict(
-          "This save request conflicts with another operation. Review and retry.",
-        );
-        return;
-      }
-      retainedCommitRequestRef.current = null;
-      setPersistedPlanId(result.planId);
-      const savedPlan = { id: result.planId };
-      if (mode === "edit") onUpdated?.(savedPlan);
-      else onCreated?.(savedPlan);
-    } catch (error) {
-      setProjectionConflict(
-        `${error instanceof Error ? error.message : "Could not save and validate this plan."} The outcome is unknown; retrying will safely reconcile this save.`,
-      );
     }
   }, [
     commitPlanMutation,
@@ -540,17 +694,23 @@ export function useTrainingPlanCreationService({
     mode,
     onCreated,
     onUpdated,
-    persistedPlanId,
+    onCreateError,
+    onUpdateError,
     planId,
     previewLifecycle.status,
     publishedStateQuery,
     state,
-    utils.trainingPlans.preview,
+    utils.trainingPlans,
+    owner,
+    editBase,
+    accountId,
   ]);
 
+  const hasUncertainCommit = retainedCommitRequestRef.current !== null;
   const savePlan = useMemo(() => {
-    const hasUncertainCommit = retainedCommitRequestRef.current !== null;
-    const canSave = hasUncertainCommit || previewLifecycle.status === "backend_preview_ready";
+    const canSave =
+      completedOwner.current !== owner &&
+      (hasUncertainCommit || previewLifecycle.status === "backend_preview_ready");
     const readiness = canSave
       ? {
           detail: hasUncertainCommit
@@ -581,11 +741,12 @@ export function useTrainingPlanCreationService({
           };
     return {
       mode,
-      label: mode === "edit" ? "Save" : "Create",
+      label: hasUncertainCommit ? "Retry save" : mode === "edit" ? "Save" : "Create",
       canSave,
       blockers: canSave ? [] : [{ message: readiness.detail }],
       degradedReason: null,
-      isPending: commitPlanMutation.isPending,
+      isPending: pendingOwner === owner,
+      isLocked: pendingOwner === owner || hasUncertainCommit || completedOwner.current === owner,
       previewLifecycle,
       readiness: {
         ...readiness,
@@ -594,7 +755,7 @@ export function useTrainingPlanCreationService({
       route: "canonical" as const,
       execute: persistAndValidatePlan,
     };
-  }, [commitPlanMutation.isPending, mode, persistAndValidatePlan, previewLifecycle]);
+  }, [pendingOwner, owner, hasUncertainCommit, mode, persistAndValidatePlan, previewLifecycle]);
   const summary = useMemo(() => selectBuilderSummary(state), [state]);
   const builderPresentation = useMemo(() => deriveBuilderPlanPresentation(state), [state]);
   const athleteContextFields = useMemo(
@@ -629,7 +790,7 @@ export function useTrainingPlanCreationService({
         createSession,
         toSelectedGoalBlueprint: mapProfileGoalToSelectedBlueprint,
       }),
-    [mapProfileGoalToSelectedBlueprint, state],
+    [mapProfileGoalToSelectedBlueprint, state, dispatch],
   );
 
   return {

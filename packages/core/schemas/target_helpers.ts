@@ -101,6 +101,8 @@ export function isInTargetRange(value: number, target: ActivityTarget): boolean 
   let tolerance: number;
 
   switch (target.type) {
+    case "rest":
+      return false;
     case "%FTP":
     case "%MaxHR":
     case "%ThresholdHR":
@@ -135,6 +137,8 @@ export function getTargetRange(target: ActivityTarget): [number, number] {
   let tolerance: number;
 
   switch (target.type) {
+    case "rest":
+      throw new Error("Rest has no numeric target range.");
     case "%FTP":
     case "%MaxHR":
     case "%ThresholdHR":
@@ -162,6 +166,7 @@ export function getTargetRange(target: ActivityTarget): [number, number] {
 
 /** Returns a target intensity in the units used by live metrics and exports. */
 export function getRuntimeTargetIntensity(target: ActivityTarget): number {
+  if (target.type === "rest") throw new Error("Rest has no numeric target intensity.");
   return target.type === "speed"
     ? activityPlanSpeedKphToMetersPerSecond(target.intensity)
     : target.intensity;
@@ -172,6 +177,8 @@ export function getRuntimeTargetIntensity(target: ActivityTarget): number {
  */
 export function getTargetUnit(target: ActivityTarget): string {
   switch (target.type) {
+    case "rest":
+      return "rest";
     case "%FTP":
     case "%MaxHR":
     case "%ThresholdHR":
@@ -194,6 +201,8 @@ export function getTargetUnit(target: ActivityTarget): string {
  */
 export function getTargetDisplayName(type: ActivityTargetType): string {
   switch (type) {
+    case "rest":
+      return "Rest";
     case "%FTP":
       return "Power (FTP)";
     case "%MaxHR":
@@ -218,6 +227,8 @@ export function getTargetDisplayName(type: ActivityTargetType): string {
  */
 export function formatTargetValue(target: ActivityTarget): string {
   switch (target.type) {
+    case "rest":
+      return "Rest";
     case "%FTP":
     case "%MaxHR":
     case "%ThresholdHR":
@@ -245,6 +256,9 @@ export function getTargetGuidance(
   status: "below" | "within" | "above";
   message: string;
 } {
+  if (target.type === "rest") {
+    return { status: "within", message: "Rest period; no intensity target." };
+  }
   const inRange = isInTargetRange(current, target);
   const runtimeIntensity = getRuntimeTargetIntensity(target);
 
@@ -272,6 +286,8 @@ export function getTargetGuidance(
 
 export function formatIntensityTarget(target: ActivityTarget): string {
   switch (target.type) {
+    case "rest":
+      return "Rest";
     case "%FTP":
       return `${Math.round(target.intensity)}% FTP`;
     case "%MaxHR":

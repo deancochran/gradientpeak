@@ -11,12 +11,22 @@ import { observable } from "@trpc/server/observable";
 import { Platform } from "react-native";
 import { getSessionAuthHeaders } from "@/lib/auth/auth-headers";
 import { getMobileDeviceKind, logMobileAction } from "@/lib/logging/mobile-action-log";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { getServerConfig } from "@/lib/server-config";
 import { captureException } from "@/lib/services/sentry";
 
 export { api };
 
 const API_REQUEST_TIMEOUT_MS = 30000;
+
+type TrpcCompatibleRequestInit = Omit<RequestInit, "signal"> & {
+  signal?: AbortSignal | null | undefined;
+};
+
+type TrpcCompatibleFetch = (
+  input: RequestInfo | URL | string,
+  init?: TrpcCompatibleRequestInit,
+) => Promise<Response>;
 
 export class ApiRequestTimeoutError extends Error {
   readonly code = "API_REQUEST_TIMEOUT";
@@ -52,7 +62,7 @@ function getActionName(input: RequestInfo | URL) {
   }
 }
 
-export const fetchWithTimeout: typeof fetch = async (input, init) => {
+export const fetchWithTimeout: TrpcCompatibleFetch = async (input, init) => {
   const controller = new AbortController();
   let abortSource: "local_timeout" | "upstream_abort" | null = null;
   const startedAt = Date.now();
@@ -85,13 +95,18 @@ export const fetchWithTimeout: typeof fetch = async (input, init) => {
   try {
     logMobileAction(action, "attempt", { channel: "api", method });
 
-    const response = await fetch(input, {
-      ...init,
-      // Better Auth's Expo integration stores the session cookie outside the native cookie jar.
-      // Omitting native credentials prevents that jar from overriding the manually supplied cookie.
-      credentials: "omit",
-      signal: controller.signal,
-    });
+    const response = await fetch(
+      input,
+      omitUndefined({
+        body: init?.body,
+        headers: init?.headers,
+        method: init?.method,
+        // Better Auth's Expo integration stores the session cookie outside the native cookie jar.
+        // Omitting native credentials prevents that jar from overriding the manually supplied cookie.
+        credentials: "omit",
+        signal: controller.signal,
+      }),
+    );
 
     logMobileAction(action, response.ok ? "success" : "failure", {
       channel: "api",

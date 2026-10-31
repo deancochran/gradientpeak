@@ -4,8 +4,18 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./components/choice-field": {
+      "react-native": "./src/components/choice-field/index.native.tsx",
+      "default": "./src/components/choice-field/index.web.tsx"
+    },
     "./components/native-picker": {
       "react-native": "./src/components/native-picker/index.native.tsx"
+    },
+    "./components/native-quantity-input": {
+      "react-native": "./src/components/native-quantity-input/index.native.tsx"
+    },
+    "./components/native-distance-input": {
+      "react-native": "./src/components/native-distance-input/index.native.tsx"
     },
     "./components/segmented-duration-field": {
       "react-native": "./src/components/segmented-duration-field/index.native.tsx",
@@ -146,6 +156,7 @@
     "check:testing-artifacts": "tsx scripts/generate-testing-artifacts.ts --check"
   },
   "dependencies": {
+    "@expo/ui": "57.0.19",
     "@hookform/resolvers": "^5.9.1",
     "@react-native-community/datetimepicker": "9.1.0",
     "@react-native-community/slider": "5.2.1",
@@ -189,6 +200,7 @@
     "react-native": "0.86.3",
     "react-native-css": "^3.0.7",
     "react-native-reanimated": "~4.5.1",
+    "react-native-safe-area-context": "5.8.0",
     "react-native-screens": "~4.26.2",
     "react-native-worklets": "0.10.1",
     "react-resizable-panels": "^4.12.3",

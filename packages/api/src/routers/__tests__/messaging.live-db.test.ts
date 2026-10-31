@@ -311,6 +311,14 @@ describe("messaging participant cursors against PostgreSQL", () => {
     const empty = await caller(actorA).getOrCreateDM({ target_user_id: actorB });
     seededConversationIds.push(empty.id);
 
+    await expect(caller(actorA).getConversations()).resolves.toEqual([
+      expect.objectContaining({
+        id: empty.id,
+        is_group: false,
+        peer_profile: expect.objectContaining({ id: actorB }),
+      }),
+    ]);
+
     await expect(caller(actorA).markAsRead({ conversation_id: empty.id })).resolves.toEqual({
       success: true,
     });

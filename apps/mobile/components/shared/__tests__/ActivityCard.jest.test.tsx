@@ -613,7 +613,7 @@ describe("ActivityCard", () => {
     expect(
       screen
         .getByTestId("activity-share-card-action-region")
-        .queryAll((node) => node.props["testID"] === "activity-card-share-button-activity-share")
+        .queryAll((node) => node.props.testID === "activity-card-share-button-activity-share")
         .length,
     ).toBeGreaterThan(0);
     expect(share.props.accessibilityLabel).toBe("Share activity");
@@ -701,12 +701,12 @@ describe("ActivityCard", () => {
     expect(
       screen
         .getByTestId("activity-card-accessory-placement-action-region")
-        .queryAll((node) => node.props["testID"] === "activity-card-top-right-action").length,
+        .queryAll((node) => node.props.testID === "activity-card-top-right-action").length,
     ).toBeGreaterThan(0);
     expect(
       screen
         .getByTestId("activity-card-below-metrics-actions")
-        .queryAll((node) => node.props["testID"] === "activity-card-content-action").length,
+        .queryAll((node) => node.props.testID === "activity-card-content-action").length,
     ).toBeGreaterThan(0);
   });
 

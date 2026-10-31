@@ -235,8 +235,10 @@ export function createGoalsRouter(
         read: async (db) => {
           const conditions = buildGoalListConditions({
             profileId: input.profile_id,
-            search: input.search,
-            activityCategory: input.activity_category,
+            ...(input.search === undefined ? {} : { search: input.search }),
+            ...(input.activity_category === undefined
+              ? {}
+              : { activityCategory: input.activity_category }),
           });
 
           try {
@@ -244,8 +246,10 @@ export function createGoalsRouter(
               listProfileGoals({
                 db,
                 profileId: input.profile_id,
-                search: input.search,
-                activityCategory: input.activity_category,
+                ...(input.search === undefined ? {} : { search: input.search }),
+                ...(input.activity_category === undefined
+                  ? {}
+                  : { activityCategory: input.activity_category }),
                 sortBy: input.sort_by,
                 sortOrder: input.sort_order,
                 limit: input.limit,

@@ -1,6 +1,5 @@
 import { canonicalActivityCategorySchema } from "@repo/core";
 import {
-  activityPlanAdaptationSchema,
   activityPlanStructureSchema,
   activityPlanTrainingIntentSchema,
 } from "@repo/core/activity-plan";
@@ -133,17 +132,14 @@ export const publicActivityRoutesInsertSchema = createInsertSchema(activityRoute
 export const publicActivityRoutesUpdateSchema = createUpdateSchema(activityRoutes);
 
 export const publicActivityPlansRowSchema = createSelectSchema(activityPlans, {
-  adaptation: activityPlanAdaptationSchema.nullable(),
   structure: activityPlanStructureSchema,
   training_intent: activityPlanTrainingIntentSchema,
 });
 export const publicActivityPlansInsertSchema = createInsertSchema(activityPlans, {
-  adaptation: activityPlanAdaptationSchema.nullable().optional(),
   structure: activityPlanStructureSchema,
   training_intent: activityPlanTrainingIntentSchema.optional(),
 });
 export const publicActivityPlansUpdateSchema = createUpdateSchema(activityPlans, {
-  adaptation: activityPlanAdaptationSchema.nullable().optional(),
   structure: activityPlanStructureSchema.optional(),
   training_intent: activityPlanTrainingIntentSchema.optional(),
 });
@@ -242,10 +238,24 @@ export const publicThresholdEvidenceRowSchema = createSelectSchema(thresholdEvid
 export const publicThresholdEvidenceInsertSchema = createInsertSchema(thresholdEvidence);
 export const publicThresholdEvidenceUpdateSchema = createUpdateSchema(thresholdEvidence);
 export const publicPlannedSessionsRowSchema = createSelectSchema(plannedSessions, {
-  resolution_manifest: prescriptionResolutionManifestSchema,
+  resolution_manifest: prescriptionResolutionManifestSchema.nullable(),
 });
 export const publicPlannedSessionsInsertSchema = createInsertSchema(plannedSessions, {
-  resolution_manifest: prescriptionResolutionManifestSchema,
+  resolution_manifest: prescriptionResolutionManifestSchema.nullable().optional(),
+}).superRefine((row, context) => {
+  const legacyFields = [
+    row.activity_plan_revision,
+    row.resolution_manifest,
+    row.prescription_captured_at,
+  ];
+  const populated = legacyFields.filter((field) => field != null).length;
+  if (populated !== 0 && populated !== legacyFields.length) {
+    context.addIssue({
+      code: "custom",
+      path: ["resolution_manifest"],
+      message: "Legacy prescription metadata must be stored together or omitted",
+    });
+  }
 });
 const immutablePlannedSessionUpdateFieldSchema = z.never().optional();
 export const publicPlannedSessionsUpdateSchema = createUpdateSchema(plannedSessions).extend({
@@ -258,7 +268,6 @@ export const publicPlannedSessionsUpdateSchema = createUpdateSchema(plannedSessi
   training_plan_id: immutablePlannedSessionUpdateFieldSchema,
   training_plan_revision: immutablePlannedSessionUpdateFieldSchema,
   source_session_id: immutablePlannedSessionUpdateFieldSchema,
-  activity_plan_id: immutablePlannedSessionUpdateFieldSchema,
   activity_plan_revision: immutablePlannedSessionUpdateFieldSchema,
   resolution_manifest: immutablePlannedSessionUpdateFieldSchema,
   prescription_captured_at: immutablePlannedSessionUpdateFieldSchema,

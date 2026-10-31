@@ -1,12 +1,8 @@
 import { Duration, Target } from "../schemas/activity_payload";
-import {
-  createSystemActivityPlanAdaptationBuilder,
-  createSystemActivityPlanBuilder,
-  requiredSampleItem,
-} from "./activity-plan-builder";
+import { createSystemActivityPlanBuilder, requiredSampleItem } from "./activity-plan-builder";
 import type {
-  ActivityPlanIntensityBand,
   ActivityPlanPortfolioMetadata,
+  ActivityPlanStrengthEffortBand,
 } from "./activity-plan-portfolio";
 import type { SystemActivityPlanTemplate } from "./types";
 
@@ -16,10 +12,11 @@ type StrengthFamily = {
   name: string;
   description: string;
   purpose: string;
-  intensity: ActivityPlanIntensityBand;
+  intensity: ActivityPlanStrengthEffortBand;
   exercises: readonly [string, string];
   notes: readonly [string, string];
   reps: number;
+  firstExerciseSeconds?: number;
   restSeconds: number;
   workRpe: 5 | 6 | 7 | 8;
 };
@@ -30,7 +27,7 @@ const families: readonly StrengthFamily[] = [
     name: "Movement Capacity Strength",
     description: "Full-range squat and hinge practice builds durable foundational strength.",
     purpose: "movement-capacity",
-    intensity: "endurance",
+    intensity: "strength-light",
     exercises: ["Goblet Squat", "Romanian Deadlift"],
     notes: [
       "Use a load that permits a controlled descent and stable foot pressure.",
@@ -47,15 +44,15 @@ const families: readonly StrengthFamily[] = [
     description:
       "Lower-repetition compound lifting develops high-force strength with deliberate rest.",
     purpose: "max-strength",
-    intensity: "threshold",
+    intensity: "strength-hard",
     exercises: ["Front Squat", "Trap-Bar Deadlift"],
     notes: [
-      "Leave one or two repetitions in reserve; do not grind the final rep.",
-      "Reset between repetitions and maintain a neutral, braced trunk.",
+      "Choose a load that leaves about two clean reps in reserve; do not grind the final rep.",
+      "Leave about two clean reps in reserve; reset your brace between repetitions.",
     ],
     reps: 5,
-    restSeconds: 135,
-    workRpe: 7,
+    restSeconds: 180,
+    workRpe: 8,
   },
   {
     id: "e2a00000-0003-4000-8001-000000000009",
@@ -63,7 +60,7 @@ const families: readonly StrengthFamily[] = [
     name: "Single-Leg Control",
     description: "Unilateral leg work and anti-rotation control develop stable single-leg force.",
     purpose: "single-leg-stability",
-    intensity: "tempo",
+    intensity: "strength-moderate",
     exercises: ["Rear-Foot Elevated Split Squat", "Single-Leg Romanian Deadlift"],
     notes: [
       "Use support if needed; keep the working knee tracking over the middle toes.",
@@ -80,15 +77,15 @@ const families: readonly StrengthFamily[] = [
     description:
       "Low-repetition explosive movements develop force production while protecting landing quality.",
     purpose: "power-development",
-    intensity: "vo2max",
+    intensity: "strength-moderate",
     exercises: ["Kettlebell Swing", "Low Box Step-Up Drive"],
     notes: [
       "Use a light, familiar load and end the set before speed declines.",
       "Step down under control; replace the drive with a low step-up if landing is noisy.",
     ],
     reps: 6,
-    restSeconds: 105,
-    workRpe: 8,
+    restSeconds: 180,
+    workRpe: 6,
   },
   {
     id: "e2a00000-0005-4000-8001-000000000017",
@@ -97,13 +94,14 @@ const families: readonly StrengthFamily[] = [
     description:
       "Carries and trunk bracing develop posture and force transfer under controlled load.",
     purpose: "trunk-stability",
-    intensity: "tempo",
+    intensity: "strength-moderate",
     exercises: ["Farmer Carry", "Half-Kneeling Pallof Press"],
     notes: [
-      "Walk tall with quiet steps; reduce load before grip or posture fails.",
+      "Carry continuously for the prescribed time; walk tall with quiet steps and reduce load before grip or posture fails.",
       "Keep hips and ribs square rather than twisting toward the band.",
     ],
     reps: 10,
+    firstExerciseSeconds: 30,
     restSeconds: 60,
     workRpe: 6,
   },
@@ -122,18 +120,19 @@ function buildPlan(family: StrengthFamily): SystemActivityPlanTemplate {
       repeat: 3,
       steps: [
         {
-          duration: Duration.reps(family.reps),
+          duration:
+            index === 0 && family.firstExerciseSeconds !== undefined
+              ? Duration.seconds(family.firstExerciseSeconds)
+              : Duration.reps(family.reps),
           name: requiredSampleItem(family.exercises, index, "strength exercise"),
-          purpose: "work",
           notes: requiredSampleItem(family.notes, index, "strength exercise note"),
           targets: [Target.rpe(family.workRpe)],
         },
         {
           duration: Duration.seconds(family.restSeconds),
           name: "Rest",
-          purpose: "recovery",
           notes: "Recover fully enough to repeat precise movement.",
-          targets: [Target.rpe(2)],
+          targets: [{ type: "rest" }],
         },
       ],
     });
@@ -144,30 +143,12 @@ function buildPlan(family: StrengthFamily): SystemActivityPlanTemplate {
       notes: "Walk briefly, then use comfortable range-of-motion work for the trained areas.",
     })
     .build();
-  const segment = requiredSampleItem(structure.segments, 0, "strength activity segment");
-  if (segment.role !== "activity") throw new Error("Expected strength activity segment");
-  const adaptation = createSystemActivityPlanAdaptationBuilder(identity);
   return {
     id: family.id,
     name: family.name,
     description: family.description,
     gps_recording_enabled: false,
     structure,
-    adaptation: {
-      controls: [
-        adaptation.control({
-          key: "set_count",
-          label: "Set count",
-          kind: "interval_repetitions",
-          range: { minimum: 2, default: 3, maximum: 5, increment: 1 },
-          targets: segment.intervals.slice(1, 3).map((interval) => ({
-            type: "interval_repetitions",
-            activitySegmentId: segment.id,
-            intervalId: interval.id,
-          })),
-        }),
-      ],
-    },
   };
 }
 export const EXPANDED_ENDURANCE_STRENGTH_ACTIVITIES = families.map(buildPlan);

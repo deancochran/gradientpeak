@@ -123,21 +123,26 @@ export const profilesRouter = createTRPCRouter({
       try {
         await updateProfile(db, {
           profileId: ctx.session.user.id,
-          default_content_visibility: input.default_content_visibility,
-          bio: input.bio,
-          dob:
-            input.dob === undefined
-              ? undefined
-              : input.dob === null
-                ? null
-                : parseDateOfBirth(input.dob),
-          full_name: input.full_name,
-          is_public: input.is_public,
-          username: input.username == null ? input.username : input.username.toLowerCase(),
-          language: input.language,
-          planning_timezone: input.planning_timezone,
-          preferred_units: input.preferred_units,
-          weight_kg: input.weight_kg,
+          ...(input.default_content_visibility === undefined
+            ? {}
+            : { default_content_visibility: input.default_content_visibility }),
+          ...(input.bio === undefined ? {} : { bio: input.bio }),
+          ...(input.dob === undefined
+            ? {}
+            : { dob: input.dob === null ? null : parseDateOfBirth(input.dob) }),
+          ...(input.full_name === undefined ? {} : { full_name: input.full_name }),
+          ...(input.is_public === undefined ? {} : { is_public: input.is_public }),
+          ...(input.username === undefined
+            ? {}
+            : { username: input.username === null ? null : input.username.toLowerCase() }),
+          ...(input.language === undefined ? {} : { language: input.language }),
+          ...(input.planning_timezone === undefined
+            ? {}
+            : { planning_timezone: input.planning_timezone }),
+          ...(input.preferred_units === undefined
+            ? {}
+            : { preferred_units: input.preferred_units }),
+          ...(input.weight_kg === undefined ? {} : { weight_kg: input.weight_kg }),
         });
 
         const profile = await getSerializedProfile(db, ctx.session.user.id);

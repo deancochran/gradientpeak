@@ -2,6 +2,7 @@ import {
   SearchField as SharedSearchField,
   type SearchFieldProps as SharedSearchFieldProps,
 } from "@repo/ui/components/search-field";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 export type MobileSearchFieldProps = Omit<
   SharedSearchFieldProps,
@@ -33,7 +34,7 @@ export function SearchField({
         }
         onChangeText(value);
       }}
-      testId={testID}
+      {...omitUndefined({ testId: testID })}
     />
   );
 }

@@ -137,7 +137,9 @@ await withDisposableDatabase(
         );
       await insertSession(matchedSessionId, matchedPlanId, matchedSourceId, "2026-08-03");
       await insertSession(unmatchedSessionId, unmatchedPlanId, unmatchedSourceId, "2026-08-10");
-      await applySqlFile(target, migrations[targetIndex]!);
+      const targetMigrationPath = migrations[targetIndex];
+      assert.ok(targetMigrationPath, "target migration must be present");
+      await applySqlFile(target, targetMigrationPath);
       const rows = await pool.query<{
         id: string;
         training_plan_application_id: string | null;
@@ -148,8 +150,10 @@ await withDisposableDatabase(
          from public.planned_sessions where id = any($1::uuid[]) order by id`,
         [[matchedSessionId, unmatchedSessionId]],
       );
-      const matched = rows.rows.find((row) => row.id === matchedSessionId)!;
-      const unmatched = rows.rows.find((row) => row.id === unmatchedSessionId)!;
+      const matched = rows.rows.find((row) => row.id === matchedSessionId);
+      const unmatched = rows.rows.find((row) => row.id === unmatchedSessionId);
+      assert.ok(matched, "matched session must be present");
+      assert.ok(unmatched, "unmatched session must be present");
       assert.ok(matched.training_plan_application_id, "validated current revision must backfill");
       assert.deepEqual(matched.resolution_manifest, manifest);
       assert.equal(

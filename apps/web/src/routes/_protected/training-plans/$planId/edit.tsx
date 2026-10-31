@@ -11,6 +11,7 @@ function EditTrainingPlanPage() {
   const navigate = Route.useNavigate();
   return (
     <TrainingPlanEditor
+      onCancel={() => void navigate({ to: "/training-plans/$planId", params: { planId } })}
       onSaved={(savedId) =>
         void navigate({
           to: "/training-plans/$planId",

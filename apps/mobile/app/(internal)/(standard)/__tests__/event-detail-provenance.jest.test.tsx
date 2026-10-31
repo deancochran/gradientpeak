@@ -45,6 +45,13 @@ jest.mock("expo-router", () => ({
   }),
 }));
 
+jest.mock("@repo/api/react", () => ({
+  __esModule: true,
+  usePlannedSessionMutations: () => ({
+    changePlanOnly: { isPending: false, mutateAsync: jest.fn() },
+  }),
+}));
+
 jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
   useAppNavigate: () => mockNavigateTo,
@@ -160,6 +167,7 @@ jest.mock("@/lib/api", () => ({
         useQuery: () => ({ data: null, error: null, isLoading: false }),
       },
       skip: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
+      recordingLaunch: { useMutation: () => ({ mutateAsync: jest.fn() }) },
       linkCompletion: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
       completionCandidates: {
         useInfiniteQuery: () => ({
@@ -201,6 +209,9 @@ jest.mock("@/lib/api", () => ({
       },
     },
     activityPlans: {
+      getById: {
+        useQuery: () => ({ data: null, error: null, isLoading: false }),
+      },
       list: {
         useInfiniteQuery: () => ({
           data: { pages: [{ items: [] }] },

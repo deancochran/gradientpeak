@@ -9,6 +9,7 @@ export const activityTargetTypes = [
   "speed",
   "cadence",
   "RPE",
+  "rest",
 ] as const;
 
 export const activityTargetTypeSchema = z.enum(activityTargetTypes);
@@ -19,7 +20,8 @@ export type ActivityTargetDomain =
   | "heart_rate"
   | "perceived_effort"
   | "power"
-  | "speed";
+  | "speed"
+  | "rest";
 
 export type ActivityTargetUnit =
   | "beats_per_minute"
@@ -29,6 +31,7 @@ export type ActivityTargetUnit =
   | "percent_threshold_heart_rate"
   | "rating_of_perceived_exertion"
   | "revolutions_per_minute"
+  | "rest"
   | "watts";
 
 export const activityTargetDefinitionByType = {
@@ -85,19 +88,23 @@ export const activityTargetDefinitionByType = {
     maximum: 10,
     saveableMaximum: 10,
   },
+  rest: { domain: "rest", unit: "rest" },
 } as const satisfies Record<
   ActivityTargetType,
-  {
-    domain: ActivityTargetDomain;
-    unit: ActivityTargetUnit;
-    minimum: number;
-    maximum: number;
-    saveableMaximum: number;
-    exclusiveMinimum?: boolean;
-  }
+  | { domain: ActivityTargetDomain; unit: ActivityTargetUnit }
+  | {
+      domain: ActivityTargetDomain;
+      unit: ActivityTargetUnit;
+      minimum: number;
+      maximum: number;
+      saveableMaximum: number;
+      exclusiveMinimum?: boolean;
+    }
 >;
 
-const target = <T extends ActivityTargetType>(
+type NumericActivityTargetType = Exclude<ActivityTargetType, "rest">;
+
+const target = <T extends NumericActivityTargetType>(
   type: T,
   maximumKey: "maximum" | "saveableMaximum",
 ) => {
@@ -111,12 +118,44 @@ const target = <T extends ActivityTargetType>(
 };
 
 export const activityTargetMaximumByType = Object.fromEntries(
-  activityTargetTypes.map((type) => [type, activityTargetDefinitionByType[type].saveableMaximum]),
-) as Record<ActivityTargetType, number>;
+  activityTargetTypes
+    .filter((type): type is NumericActivityTargetType => type !== "rest")
+    .map((type) => [type, activityTargetDefinitionByType[type].saveableMaximum]),
+) as Record<NumericActivityTargetType, number>;
 
 export const activityTargetDomainByType = Object.fromEntries(
   activityTargetTypes.map((type) => [type, activityTargetDefinitionByType[type].domain]),
 ) as Record<ActivityTargetType, ActivityTargetDomain>;
+
+/** Authoring labels map directly to the persisted target discriminator; no new unit field exists. */
+export const activityTargetAuthoringGroups = [
+  { domain: "power", label: "Power", types: ["watts", "%FTP"] },
+  { domain: "heart_rate", label: "Heart rate", types: ["bpm", "%MaxHR", "%ThresholdHR"] },
+  { domain: "speed", label: "Speed", types: ["speed"] },
+  { domain: "cadence", label: "Cadence", types: ["cadence"] },
+  { domain: "perceived_effort", label: "Perceived effort", types: ["RPE"] },
+  { domain: "rest", label: "Rest", types: ["rest"] },
+] as const satisfies readonly {
+  domain: ActivityTargetDomain;
+  label: string;
+  types: readonly ActivityTargetType[];
+}[];
+
+export const activityTargetAuthoringUnitLabels: Record<ActivityTargetUnit, string> = {
+  beats_per_minute: "bpm",
+  kilometers_per_hour: "km/h",
+  percent_ftp: "% FTP",
+  percent_max_heart_rate: "% Max HR",
+  percent_threshold_heart_rate: "% Threshold HR",
+  rating_of_perceived_exertion: "RPE",
+  revolutions_per_minute: "rpm",
+  rest: "Rest",
+  watts: "W",
+};
+
+export function getActivityTargetTypesForAuthoringDomain(domain: ActivityTargetDomain) {
+  return activityTargetAuthoringGroups.find((group) => group.domain === domain)?.types ?? [];
+}
 
 /** Canonical target discriminator, units, and accepted domain bounds. */
 export const activityTargetSchema = z.discriminatedUnion("type", [
@@ -128,6 +167,7 @@ export const activityTargetSchema = z.discriminatedUnion("type", [
   target("speed", "maximum"),
   target("cadence", "maximum"),
   target("RPE", "maximum"),
+  z.object({ type: z.literal("rest") }).strict(),
 ]);
 export type ActivityTarget = z.infer<typeof activityTargetSchema>;
 
@@ -141,4 +181,5 @@ export const saveableActivityTargetSchema = z.discriminatedUnion("type", [
   target("speed", "saveableMaximum"),
   target("cadence", "saveableMaximum"),
   target("RPE", "saveableMaximum"),
+  z.object({ type: z.literal("rest") }).strict(),
 ]);

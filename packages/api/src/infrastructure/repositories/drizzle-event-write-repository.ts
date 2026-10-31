@@ -246,20 +246,20 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
 
     async updateOwnedEventsForScope({ anchorEvent, eventUpdates, profileId, scope }) {
       const now = new Date();
-      const eventType = eventUpdates["event_type"];
-      const notes = eventUpdates["notes"];
-      const status = eventUpdates["status"];
-      const title = eventUpdates["title"];
-      const description = eventUpdates["description"];
-      const allDay = eventUpdates["all_day"];
-      const timezone = eventUpdates["timezone"];
-      const startsAt = eventUpdates["starts_at"];
-      const endsAt = eventUpdates["ends_at"];
-      const scheduledDate = eventUpdates["scheduled_date"];
-      const routeId = eventUpdates["route_id"] as string | null | undefined;
-      const linkedActivityId = eventUpdates["linked_activity_id"] as string | null | undefined;
-      const recurrenceRule = eventUpdates["recurrence_rule"] as string | null | undefined;
-      const recurrenceTimezone = eventUpdates["recurrence_timezone"] as string | null | undefined;
+      const eventType = eventUpdates.event_type;
+      const notes = eventUpdates.notes;
+      const status = eventUpdates.status;
+      const title = eventUpdates.title;
+      const description = eventUpdates.description;
+      const allDay = eventUpdates.all_day;
+      const timezone = eventUpdates.timezone;
+      const startsAt = eventUpdates.starts_at;
+      const endsAt = eventUpdates.ends_at;
+      const scheduledDate = eventUpdates.scheduled_date;
+      const routeId = eventUpdates.route_id as string | null | undefined;
+      const linkedActivityId = eventUpdates.linked_activity_id as string | null | undefined;
+      const recurrenceRule = eventUpdates.recurrence_rule as string | null | undefined;
+      const recurrenceTimezone = eventUpdates.recurrence_timezone as string | null | undefined;
       const eventUpdateValues = {
         ...(eventType !== undefined
           ? { event_type: eventType as typeof schema.events.$inferInsert.event_type }

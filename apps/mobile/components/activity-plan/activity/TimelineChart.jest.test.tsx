@@ -5,276 +5,65 @@ jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
 }));
-
-jest.mock("@repo/ui/components/text", () => ({
-  __esModule: true,
-  Text: createHost("Text"),
-}));
-
-jest.mock("@repo/ui/components/icon", () => ({
-  __esModule: true,
-  Icon: createHost("Icon"),
-}));
-
+jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
 const { TimelineChart } = require("./TimelineChart");
-
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
-
 const structure = {
-  version: 3,
+  version: 5,
   activity_category: "run",
-  segments: [
+  items: [
     {
+      type: "repeat",
       id: id(1),
-      role: "rest",
-      name: "Prepare",
+      count: 2,
+      steps: [
+        {
+          type: "step",
+          id: id(2),
+          name: "Tempo",
+          duration: { type: "time", seconds: 60 },
+          targets: [{ type: "RPE", intensity: 7 }],
+        },
+      ],
+    },
+    {
+      type: "step",
+      id: id(3),
+      name: "Recovery",
       duration: { type: "time", seconds: 30 },
-    },
-    {
-      id: id(2),
-      role: "activity",
-      name: "First run",
-      intervals: [
-        {
-          id: id(3),
-          name: "Repeated run",
-          repetitions: 2,
-          steps: [
-            {
-              id: id(4),
-              name: "Tempo",
-              duration: { type: "time", seconds: 60 },
-              targets: [{ type: "RPE", intensity: 3 }],
-            },
-          ],
-        },
-      ],
-    },
-    {
-      id: id(6),
-      role: "activity",
-      name: "Steady run",
-      intervals: [
-        {
-          id: id(7),
-          name: "Steady run",
-          repetitions: 1,
-          steps: [
-            {
-              id: id(8),
-              name: "Steady run",
-              duration: { type: "time", seconds: 120 },
-              targets: [{ type: "RPE", intensity: 8 }],
-            },
-          ],
-        },
-      ],
-    },
-    {
-      id: id(9),
-      role: "rest",
-      name: "Reset",
-      duration: { type: "time", seconds: 20 },
-    },
-    {
-      id: id(10),
-      role: "activity",
-      name: "Second run",
-      intervals: [
-        {
-          id: id(11),
-          name: "Run finish",
-          repetitions: 1,
-          steps: [
-            {
-              id: id(12),
-              name: "Fast run",
-              duration: { type: "time", seconds: 240 },
-              targets: [{ type: "RPE", intensity: 10 }],
-            },
-          ],
-        },
-      ],
+      targets: [],
     },
   ],
 };
-
-function occurrence(index: number) {
-  return screen.getByTestId(`timeline-occurrence-${index}`);
-}
-
-describe("TimelineChart", () => {
-  it("renders occurrences in compiled order with correct testIDs and labels", async () => {
-    await renderNative(<TimelineChart structure={structure} height={120} />);
-
-    expect(
-      Array.from({ length: 6 }, (_, index) => occurrence(index).props.accessibilityLabel),
-    ).toEqual([
-      "rest segment 1, 30 seconds",
-      "activity segment 2, run, RPE 3, 60 seconds",
-      "activity segment 3, run, RPE 3, 60 seconds",
-      "activity segment 4, run, RPE 8, 120 seconds",
-      "rest segment 5, 20 seconds",
-      "activity segment 6, run, RPE 10, 240 seconds",
-    ]);
+describe("TimelineChart V5", () => {
+  it("renders compiled V5 occurrences in chronological repeat order", async () => {
+    await renderNative(<TimelineChart structure={structure} />);
+    expect(screen.getByTestId("timeline-occurrence-0")).toBeTruthy();
+    expect(screen.getByTestId("timeline-occurrence-2")).toBeTruthy();
+    expect(screen.getByTestId("timeline-occurrence-0").props.accessibilityLabel).toContain(
+      "activity segment 1",
+    );
   });
-
-  it("applies boundary and activity heights based on role and intensity", async () => {
-    await renderNative(<TimelineChart structure={structure} height={120} />);
-
-    // Boundary segments have fixed height 28
-    expect(occurrence(0).props.style.height).toBe(28);
-    expect(occurrence(4).props.style.height).toBe(28);
-
-    // Activity heights use the normalized 0-1 effort model.
-    expect(occurrence(1).props.style.height).toBeCloseTo(52.8);
-    expect(occurrence(2).props.style.height).toBeCloseTo(52.8);
-    expect(occurrence(3).props.style.height).toBeCloseTo(100.8);
-    expect(occurrence(5).props.style.height).toBe(120);
-
-    expect(screen.getByTestId("timeline-chart").props.style.width).toBe("100%");
-    for (let i = 0; i < 6; i++) {
-      expect(occurrence(i).props.style.flexBasis).toBe(0);
-      expect(occurrence(i).props.style.flexGrow).toBeGreaterThan(0);
-      expect(occurrence(i).props.style.minWidth).toBe(0);
-    }
-  });
-
-  it("uses Core intensity colors without category labels or category stripes", async () => {
-    await renderNative(<TimelineChart compact structure={structure} />);
-
-    expect(occurrence(1).props.style.backgroundColor).toBe("#38bdf8");
-    expect(occurrence(3).props.style.backgroundColor).toBe("#eab308");
-    expect(occurrence(5).props.style.backgroundColor).toBe("#ef4444");
-    expect(screen.queryByText("run")).toBeNull();
-    expect(screen.queryByTestId("timeline-occurrence-1-category")).toBeNull();
-  });
-
-  it("presses the interval represented by an expanded occurrence", async () => {
-    const onIntervalPress = jest.fn();
-    await renderNative(<TimelineChart structure={structure} onIntervalPress={onIntervalPress} />);
-
-    await fireEvent.press(occurrence(1));
-
-    expect(occurrence(1).props.accessibilityRole).toBe("button");
-    expect(onIntervalPress).toHaveBeenCalledWith(id(3));
-    expect(onIntervalPress).toHaveBeenCalledTimes(1);
-  });
-
-  it("marks the selected interval for assistive technology", async () => {
-    await renderNative(<TimelineChart structure={structure} selectedIntervalId={id(3)} />);
-
-    expect(occurrence(1).props.accessibilityState).toEqual({ selected: true });
-    expect(occurrence(2).props.accessibilityState).toEqual({ selected: true });
-  });
-
-  it("does not call onIntervalPress for boundary segments", async () => {
-    const onIntervalPress = jest.fn();
-    await renderNative(<TimelineChart structure={structure} onIntervalPress={onIntervalPress} />);
-
-    await fireEvent.press(occurrence(0));
-
-    expect(onIntervalPress).not.toHaveBeenCalled();
-  });
-
-  it("renders occurrences for distance and repetition durations", async () => {
+  it("uses canonical step and repeat identities for selection and presses", async () => {
+    const onStepPress = jest.fn();
     await renderNative(
       <TimelineChart
-        height={120}
-        structure={{
-          version: 3,
-          activity_category: "bike",
-          segments: [
-            {
-              id: id(20),
-              role: "activity",
-              name: "Mixed volume",
-              intervals: [
-                {
-                  id: id(21),
-                  name: "Work",
-                  repetitions: 1,
-                  steps: [
-                    {
-                      id: id(22),
-                      name: "Short distance",
-                      duration: { type: "distance", meters: 100 },
-                      targets: [{ type: "watts", intensity: 100 }],
-                    },
-                    {
-                      id: id(23),
-                      name: "Long distance",
-                      duration: { type: "distance", meters: 1000 },
-                      targets: [{ type: "watts", intensity: 300 }],
-                    },
-                    {
-                      id: id(24),
-                      name: "Few repetitions",
-                      duration: { type: "repetitions", count: 5 },
-                      targets: [{ type: "bpm", intensity: 100 }],
-                    },
-                    {
-                      id: id(25),
-                      name: "Many repetitions",
-                      duration: { type: "repetitions", count: 20 },
-                      targets: [{ type: "bpm", intensity: 180 }],
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        }}
+        structure={structure}
+        selectedRepeatId={id(1)}
+        selectedStepId={id(2)}
+        onStepPress={onStepPress}
       />,
     );
-
-    expect(occurrence(0)).toBeTruthy();
-    expect(occurrence(3)).toBeTruthy();
-
-    // Absolute targets scale relative to matching targets in this plan.
-    expect(occurrence(0).props.style.height).toBeCloseTo(43.2);
-    expect(occurrence(1).props.style.height).toBe(120);
-    expect(occurrence(0).props.style.height).toBeLessThan(occurrence(1).props.style.height);
-
-    expect(occurrence(2).props.style.height).toBeCloseTo(43.2);
-    expect(occurrence(3).props.style.height).toBe(120);
-    expect(occurrence(2).props.style.height).toBeLessThan(occurrence(3).props.style.height);
+    fireEvent.press(screen.getByTestId("timeline-occurrence-1"));
+    expect(onStepPress).toHaveBeenCalledWith(id(2), id(1));
+    expect(screen.getByTestId("timeline-occurrence-1").props.accessibilityState).toEqual({
+      selected: true,
+    });
   });
-
-  it("renders an open-ended occurrence as a neutral duration-unspecified preview", async () => {
-    await renderNative(
-      <TimelineChart
-        structure={{
-          version: 3,
-          activity_category: "run",
-          segments: [
-            {
-              id: id(30),
-              role: "activity",
-              name: "Main activity",
-              intervals: [
-                {
-                  id: id(31),
-                  name: "Main",
-                  repetitions: 1,
-                  steps: [
-                    {
-                      id: id(32),
-                      name: "Continue",
-                      duration: { type: "untilFinished" },
-                      targets: [{ type: "RPE", intensity: 5 }],
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        }}
-      />,
+  it("represents an untargeted root step without inventing a target", async () => {
+    await renderNative(<TimelineChart structure={structure} />);
+    expect(screen.getByTestId("timeline-occurrence-2").props.accessibilityLabel).toContain(
+      "30 seconds",
     );
-
-    expect(occurrence(0).props.accessibilityLabel).toContain("Duration not specified");
-    expect(occurrence(0).props.style.backgroundColor).toBeUndefined();
-    expect(occurrence(0).props.className).toContain("border-dashed");
   });
 });

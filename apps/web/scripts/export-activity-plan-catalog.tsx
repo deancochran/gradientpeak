@@ -1,3 +1,4 @@
+import "./catalog-fonts";
 import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,15 +8,18 @@ import { promisify } from "node:util";
 import { renderToBuffer } from "@react-pdf/renderer";
 import {
   ACTIVITY_PLAN_CATALOG_PRINT_GEOMETRY,
-  ACTIVITY_PLAN_CATALOG_TWO_UP_GEOMETRY,
+  type ActivityPlanCatalogEntry,
+  type ActivityPlanCatalogFragment,
   activityPlanCatalogNeedsBlankBeforeBackCover,
   assertActivityPlanCatalogLayout,
   buildActivityPlanCatalogLayout,
   buildActivityPlanCatalogModels,
-  estimateActivityPlanTwoUpHeight,
   getActivityPlanCatalogContentPageCount,
+  getActivityPlanCatalogInteriorMargins,
+  measureActivityPlanCatalogFragments,
 } from "../src/lib/activity-plan-export/activity-plan-catalog";
 import {
+  ActivityPlanCatalogMeasurementDocument,
   ActivityPlanCatalogPdfDocument,
   getActivityPlanCatalogExpectedPageCount,
 } from "../src/lib/activity-plan-export/activity-plan-catalog-pdf-document";
@@ -23,7 +27,10 @@ import {
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const worktreeRoot = resolve(scriptDirectory, "../../..");
 const projectRoot = resolve(worktreeRoot, "../..");
-const defaultOutputPath = resolve(projectRoot, "publisher-exports/activity-plan-catalog.pdf");
+const defaultOutputPath = resolve(
+  projectRoot,
+  "publisher-exports/activity-plan-catalog-a5-wireo-review.pdf",
+);
 const outputPath = process.env.ACTIVITY_PLAN_CATALOG_OUTPUT_PATH
   ? resolve(process.env.ACTIVITY_PLAN_CATALOG_OUTPUT_PATH)
   : defaultOutputPath;
@@ -59,6 +66,58 @@ function extractedPageContainsTitle(pageText: string, title: string): boolean {
     .every((token) => normalizedPage.includes(token.slice(0, Math.min(token.length, 5))));
 }
 
+async function measureRenderedFragmentFits(
+  fragment: ActivityPlanCatalogFragment,
+  measurementDirectory: string,
+): Promise<boolean> {
+  const pdfPath = join(measurementDirectory, `${fragment.key}.pdf`);
+  const bboxPath = join(measurementDirectory, `${fragment.key}.html`);
+  await writeFile(
+    pdfPath,
+    await renderToBuffer(<ActivityPlanCatalogMeasurementDocument fragment={fragment} />),
+  );
+  const { stdout: information } = await execFileAsync("pdfinfo", [pdfPath]);
+  if (Number(/Pages:\s+(\d+)/u.exec(information)?.[1] ?? 0) !== 1) return false;
+  const size = /Page size:\s+([\d.]+) x ([\d.]+)/u.exec(information);
+  if (
+    !size ||
+    Math.abs(Number(size[1]) - ACTIVITY_PLAN_CATALOG_PRINT_GEOMETRY.pageWidth) > 0.02 ||
+    Math.abs(Number(size[2]) - ACTIVITY_PLAN_CATALOG_PRINT_GEOMETRY.pageHeight) > 0.02
+  )
+    return false;
+  await execFileAsync("pdftotext", ["-bbox-layout", pdfPath, bboxPath]);
+  const markup = await readFile(bboxPath, "utf8");
+  const endMarker = `CATALOG-END-${fragment.key}`;
+  const match = new RegExp(
+    `<word\\b[^>]*yMin="([\\d.]+)"[^>]*yMax="([\\d.]+)"[^>]*>${endMarker}</word>`,
+    "u",
+  ).exec(markup);
+  const bodyOverflows = [
+    ...markup.matchAll(/<word\b[^>]*yMin="([\d.]+)"[^>]*yMax="([\d.]+)"[^>]*>/gu),
+  ].some((word) => Number(word[1]) >= 62 && Number(word[1]) < 571 && Number(word[2]) > 571);
+  return match !== null && Number(match[2]) <= 571 && !bodyOverflows;
+}
+
+async function measureCatalogFragments(
+  entries: readonly ActivityPlanCatalogEntry[],
+): Promise<Map<string, readonly ActivityPlanCatalogFragment[]>> {
+  const measurementDirectory = await mkdtemp(join(tmpdir(), "gradientpeak-catalog-measure-"));
+  try {
+    const fragments = new Map<string, readonly ActivityPlanCatalogFragment[]>();
+    for (const entry of entries) {
+      fragments.set(
+        entry.key,
+        await measureActivityPlanCatalogFragments(entry, (fragment) =>
+          measureRenderedFragmentFits(fragment, measurementDirectory),
+        ),
+      );
+    }
+    return fragments;
+  } finally {
+    await rm(measurementDirectory, { force: true, recursive: true });
+  }
+}
+
 async function preflightRenderedCatalog(
   pdfPath: string,
   layout: ReturnType<typeof buildActivityPlanCatalogLayout>,
@@ -91,7 +150,16 @@ async function preflightRenderedCatalog(
           Math.abs(Number(match[2]) - ACTIVITY_PLAN_CATALOG_PRINT_GEOMETRY.pageHeight) > 0.02,
       )
     ) {
-      throw new Error("Catalog preflight found a missing or non-bleed-size page");
+      throw new Error(
+        `Catalog preflight page geometry mismatch: expected ${expectedPageCount}, got ${reportedPageCount}; invalid sizes: ${pageSizes
+          .filter(
+            (m) =>
+              Math.abs(Number(m[1]) - ACTIVITY_PLAN_CATALOG_PRINT_GEOMETRY.pageWidth) > 0.02 ||
+              Math.abs(Number(m[2]) - ACTIVITY_PLAN_CATALOG_PRINT_GEOMETRY.pageHeight) > 0.02,
+          )
+          .map((m) => m[0])
+          .join(", ")}`,
+      );
     }
 
     await execFileAsync("pdftotext", ["-layout", pdfPath, textPath]);
@@ -119,8 +187,15 @@ async function preflightRenderedCatalog(
     for (let pageNumber = 2; pageNumber <= contentPageCount; pageNumber += 1) {
       if (pageNumber === layout.trainingPlanSection?.alignmentBlankPageNumber) continue;
       const renderedPage = renderedPages[pageNumber - 1] ?? "";
-      if (!renderedPage.includes("GRADIENTPEAK")) {
-        throw new Error(`Catalog preflight found no standard logo header on page ${pageNumber}`);
+      if (!/gradientpeak/iu.test(renderedPage)) {
+        const expected = layout.planPages.find((page) => page.pageNumber === pageNumber)
+          ?.entries[0];
+        throw new Error(
+          `Catalog preflight found no standard logo header on page ${pageNumber}${expected ? ` (expected ${expected.model.title}, fragment ${expected.key})` : ""}; preceding layout: ${layout.planPages
+            .filter((page) => page.pageNumber >= pageNumber - 3 && page.pageNumber <= pageNumber)
+            .map((page) => `${page.pageNumber}:${page.entries[0].key}`)
+            .join(", ")}`,
+        );
       }
       if (!new RegExp(`(^|\\s)${pageNumber}(\\s|$)`, "mu").test(renderedPage)) {
         throw new Error(`Catalog preflight found no page number on page ${pageNumber}`);
@@ -133,18 +208,22 @@ async function preflightRenderedCatalog(
       }
       for (const plan of layout.trainingPlanSection.plans) {
         const overviewText = renderedPages[plan.overviewPageNumber - 1] ?? "";
-        const scheduleText = renderedPages[plan.schedulePageNumber - 1] ?? "";
         if (!overviewText.includes(`TRAINING-PLAN-OVERVIEW-${plan.id}`)) {
           throw new Error(`Catalog preflight could not identify the overview for ${plan.name}`);
-        }
-        if (!scheduleText.includes(`TRAINING-PLAN-SCHEDULE-${plan.id}`)) {
-          throw new Error(`Catalog preflight could not identify the schedule for ${plan.name}`);
         }
         if (!overviewText.includes("Weekly session distribution")) {
           throw new Error(`Catalog preflight found no schedule visual for ${plan.name}`);
         }
-        if (!scheduleText.includes("Linked activity plans")) {
-          throw new Error(`Catalog preflight found no linked activity key for ${plan.name}`);
+        for (const schedulePageNumber of plan.schedulePageNumbers) {
+          const scheduleText = renderedPages[schedulePageNumber - 1] ?? "";
+          if (!scheduleText.includes(`TRAINING-PLAN-SCHEDULE-${plan.id}-${schedulePageNumber}`)) {
+            throw new Error(
+              `Catalog preflight could not identify a schedule page for ${plan.name}`,
+            );
+          }
+          if (!scheduleText.includes("Linked activity plans")) {
+            throw new Error(`Catalog preflight found no linked activity key for ${plan.name}`);
+          }
         }
       }
       if (layout.trainingPlanSection.alignmentBlankPageNumber) {
@@ -159,8 +238,11 @@ async function preflightRenderedCatalog(
     if (!backCoverText.includes("GRADIENTPEAK") || !backCoverText.includes("gradientpeak.app")) {
       throw new Error("Catalog preflight could not identify the back cover on the final page");
     }
-    if (activityPlanCatalogNeedsBlankBeforeBackCover(layout)) {
-      const blankPageText = renderedPages[expectedPageCount - 2] ?? "";
+    for (const blankIndex of [
+      expectedPageCount - 2,
+      ...(activityPlanCatalogNeedsBlankBeforeBackCover(layout) ? [expectedPageCount - 3] : []),
+    ]) {
+      const blankPageText = renderedPages[blankIndex] ?? "";
       if (normalizeExtractedText(blankPageText).length > 0) {
         throw new Error("Catalog preflight found content on the intentional duplex blank page");
       }
@@ -172,60 +254,7 @@ async function preflightRenderedCatalog(
     if (pageMarkup.length !== expectedPageCount) {
       throw new Error("Catalog preflight could not inspect every page boundary");
     }
-    for (const page of layout.planPages.filter((candidate) => candidate.entries.length === 2)) {
-      const markup = pageMarkup[page.pageNumber - 1]?.[1] ?? "";
-      const words = [
-        ...markup.matchAll(
-          /<word\b[^>]*yMin="([\d.]+)"[^>]*yMax="([\d.]+)"[^>]*>([\s\S]*?)<\/word>/gu,
-        ),
-      ].map((word) => ({
-        text: decodeXmlText(word[3] ?? ""),
-        yMax: Number(word[2]),
-        yMin: Number(word[1]),
-      }));
-      const crossesCenterBoundary = words.some(
-        (word) =>
-          word.yMin < ACTIVITY_PLAN_CATALOG_TWO_UP_GEOMETRY.secondContentTop &&
-          word.yMax > ACTIVITY_PLAN_CATALOG_TWO_UP_GEOMETRY.firstContentBottom,
-      );
-      const crossesLowerBoundary = words.some(
-        (word) =>
-          word.yMin >= 48 &&
-          word.yMin < ACTIVITY_PLAN_CATALOG_PRINT_GEOMETRY.pageHeight - 30 &&
-          word.yMax > ACTIVITY_PLAN_CATALOG_TWO_UP_GEOMETRY.secondContentBottom,
-      );
-      if (crossesCenterBoundary || crossesLowerBoundary) {
-        throw new Error(
-          `Catalog preflight found activity content outside its fixed slot on page ${page.pageNumber} (${page.entries.map((entry) => `${entry.model.title} [${estimateActivityPlanTwoUpHeight(entry.model)}]`).join(" / ")}; ${crossesCenterBoundary ? "center boundary" : "lower boundary"})`,
-        );
-      }
-      page.entries.forEach((entry, position) => {
-        const contentTop =
-          position === 0
-            ? 60 + ACTIVITY_PLAN_CATALOG_TWO_UP_GEOMETRY.slotPadding
-            : ACTIVITY_PLAN_CATALOG_TWO_UP_GEOMETRY.secondContentTop;
-        const contentBottom =
-          position === 0
-            ? ACTIVITY_PLAN_CATALOG_TWO_UP_GEOMETRY.firstContentBottom
-            : ACTIVITY_PLAN_CATALOG_TWO_UP_GEOMETRY.secondContentBottom;
-        const slotWords = words.filter(
-          (word) => word.yMin >= contentTop && word.yMax <= contentBottom,
-        );
-        const slotText = slotWords.map((word) => word.text).join(" ");
-        if (!extractedPageContainsTitle(slotText, entry.model.title)) {
-          throw new Error(
-            `Catalog preflight found ${entry.model.title} outside position ${position + 1} on page ${page.pageNumber}`,
-          );
-        }
-        const endMarker = slotWords.find((word) => word.text === `CATALOG-END-${entry.key}`);
-        if (!endMarker) {
-          throw new Error(
-            `Catalog preflight found incomplete activity content in position ${position + 1} on page ${page.pageNumber}`,
-          );
-        }
-      });
-    }
-    for (const page of layout.planPages.filter((candidate) => candidate.entries.length === 1)) {
+    for (const page of layout.planPages) {
       const entry = page.entries[0];
       const markup = pageMarkup[page.pageNumber - 1]?.[1] ?? "";
       const words = [
@@ -237,7 +266,7 @@ async function preflightRenderedCatalog(
         yMax: Number(word[2]),
         yMin: Number(word[1]),
       }));
-      const bodyWords = words.filter((word) => word.yMin >= 60 && word.yMax <= 770);
+      const bodyWords = words.filter((word) => word.yMin >= 62 && word.yMax <= 571);
       const bodyText = bodyWords.map((word) => word.text).join(" ");
       if (!extractedPageContainsTitle(bodyText, entry.model.title)) {
         throw new Error(
@@ -247,6 +276,36 @@ async function preflightRenderedCatalog(
       if (!bodyWords.some((word) => word.text === `CATALOG-END-${entry.key}`)) {
         throw new Error(
           `Catalog preflight found incomplete full-page content on page ${page.pageNumber}`,
+        );
+      }
+    }
+    for (let pageNumber = 1; pageNumber <= expectedPageCount; pageNumber += 1) {
+      const markup = pageMarkup[pageNumber - 1]?.[1] ?? "";
+      const words = [
+        ...markup.matchAll(
+          /<word\b[^>]*xMin="([\d.]+)"[^>]*yMin="([\d.]+)"[^>]*xMax="([\d.]+)"[^>]*yMax="([\d.]+)"[^>]*>([\s\S]*?)<\/word>/gu,
+        ),
+      ].map((word) => ({
+        text: decodeXmlText(word[5] ?? ""),
+        xMax: Number(word[3]),
+        xMin: Number(word[1]),
+        yMax: Number(word[4]),
+        yMin: Number(word[2]),
+      }));
+      const margins = getActivityPlanCatalogInteriorMargins(pageNumber);
+      if (
+        words.some(
+          (word) =>
+            !word.text.startsWith("CATALOG-END-") &&
+            !word.text.startsWith("TRAINING-PLAN-") &&
+            (word.xMin < margins.left - 0.15 ||
+              word.xMax > ACTIVITY_PLAN_CATALOG_PRINT_GEOMETRY.pageWidth - margins.right + 0.15 ||
+              word.yMin < 27 - 0.15 ||
+              word.yMax > ACTIVITY_PLAN_CATALOG_PRINT_GEOMETRY.pageHeight - 27 + 0.15),
+        )
+      ) {
+        throw new Error(
+          `Catalog preflight found text in the Wire-O punch or quiet area on page ${pageNumber}`,
         );
       }
     }
@@ -270,7 +329,15 @@ if (outputPath.startsWith(`${worktreeRoot}${sep}`)) {
 }
 
 const entries = buildActivityPlanCatalogModels();
-const layout = buildActivityPlanCatalogLayout(entries);
+const measuredFragments = await measureCatalogFragments(entries);
+const layout = buildActivityPlanCatalogLayout(entries, undefined, measuredFragments);
+if (process.env.ACTIVITY_PLAN_CATALOG_DIAGNOSTICS) {
+  await mkdir(process.env.ACTIVITY_PLAN_CATALOG_DIAGNOSTICS, { recursive: true });
+  await writeFile(
+    join(process.env.ACTIVITY_PLAN_CATALOG_DIAGNOSTICS, "layout.json"),
+    JSON.stringify(layout),
+  );
+}
 assertActivityPlanCatalogLayout(layout, entries);
 await mkdir(outputDirectory, { recursive: true });
 const buffer = await renderToBuffer(<ActivityPlanCatalogPdfDocument layout={layout} />);
@@ -279,6 +346,8 @@ const candidateDirectory = await mkdtemp(join(outputDirectory, ".activity-plan-c
 const candidateOutputPath = join(candidateDirectory, "candidate.pdf");
 try {
   await writeFile(candidateOutputPath, buffer);
+  if (process.env.ACTIVITY_PLAN_CATALOG_DIAGNOSTICS)
+    await writeFile(join(process.env.ACTIVITY_PLAN_CATALOG_DIAGNOSTICS, "candidate.pdf"), buffer);
   await preflightRenderedCatalog(candidateOutputPath, layout);
   await rename(candidateOutputPath, outputPath);
 } finally {
@@ -286,7 +355,6 @@ try {
   await rm(candidateDirectory, { force: true, recursive: true });
 }
 
-const twoUpPageCount = layout.planPages.filter((page) => page.entries.length === 2).length;
 console.log(
-  `Rendered ${entries.length} GradientPeak activity plans and ${layout.trainingPlanSection?.plans.length ?? 0} training templates across ${expectedPageCount} duplex-ready 8.75 × 11.25 inch pages (${twoUpPageCount} two-up pages) to ${outputPath}`,
+  `Rendered ${entries.length} GradientPeak activity plans and ${layout.trainingPlanSection?.plans.length ?? 0} training templates across ${expectedPageCount} A5 bleed-size pages to ${outputPath}`,
 );

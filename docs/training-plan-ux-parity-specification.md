@@ -1,5 +1,7 @@
 # GradientPeak training-plan builder: initial-release specification
 
+> Activity-plan supersession (2026-09-30): use the [fixed V4 activity-plan specification](activity-plan-simplification-specification.md) for candidate prescriptions. Authored adaptation controls and parameter enumeration described below are retired; training-plan selection uses fixed plans without silently scaling their quantities. Completed multisport summaries remain in scope and unchanged.
+
 Status: proposed requirements, not implemented-feature claims. Updated 2026-09-14.
 
 ### Binding authoring correction — 2026-09-17

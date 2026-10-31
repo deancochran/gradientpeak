@@ -76,7 +76,7 @@ export type FormNumberFieldProps<
   TName extends FieldPath<TFieldValues>,
 > = ControlledFieldProps<TFieldValues, TName> & {
   allowDecimal?: boolean;
-  /** Preserve out-of-range numeric drafts for schema validation instead of clamping them on blur. */
+  /** @deprecated Typed values are always validated without clamping. */
   clampOnBlur?: boolean;
   emptyValue?: FieldPathValue<TFieldValues, TName>;
   formatValue?: (value: FieldPathValue<TFieldValues, TName>) => string;
@@ -100,6 +100,7 @@ export type FormBoundedNumberFieldProps<
   TFieldValues extends FieldValues,
   TName extends FieldPath<TFieldValues>,
 > = ControlledFieldProps<TFieldValues, TName> & {
+  emptyValue?: FieldPathValue<TFieldValues, TName>;
   helperText?: string;
   min?: number;
   max?: number;
@@ -112,8 +113,9 @@ export type FormBoundedNumberFieldProps<
 export type FormIntegerStepperFieldProps<
   TFieldValues extends FieldValues,
   TName extends FieldPath<TFieldValues>,
-> = ControlledFieldProps<TFieldValues, TName> &
-  Omit<
+> = ControlledFieldProps<TFieldValues, TName> & {
+  emptyValue?: FieldPathValue<TFieldValues, TName> | null;
+} & Omit<
     IntegerStepperProps,
     "error" | "helperText" | "id" | "label" | "onChange" | "testId" | "value"
   >;
@@ -126,8 +128,11 @@ export type FormTextareaFieldProps<
   formatValue?: (value: FieldPathValue<TFieldValues, TName>) => string;
   maxLength?: TextInputProps["maxLength"];
   numberOfLines?: TextInputProps["numberOfLines"];
+  onContentSizeChange?: TextInputProps["onContentSizeChange"];
   parseValue?: (value: string) => FieldPathValue<TFieldValues, TName>;
   placeholder?: TextInputProps["placeholder"];
+  scrollEnabled?: TextInputProps["scrollEnabled"];
+  style?: TextInputProps["style"];
 };
 
 export type FormSelectFieldProps<
@@ -235,13 +240,15 @@ export type FormPercentSliderFieldProps<
 > = ControlledFieldProps<TFieldValues, TName> &
   Omit<PercentSliderInputProps, "error" | "helperText" | "id" | "label" | "onChange" | "value"> & {
     valueMode?: "percent" | "fraction";
+    emptyValue?: FieldPathValue<TFieldValues, TName>;
   };
 
 export type FormWeightInputFieldProps<
   TFieldValues extends FieldValues,
   TName extends FieldPath<TFieldValues>,
-> = ControlledFieldProps<TFieldValues, TName> &
-  Omit<
+> = ControlledFieldProps<TFieldValues, TName> & {
+  emptyValue?: FieldPathValue<TFieldValues, TName> | null;
+} & Omit<
     WeightInputFieldProps,
     "error" | "helperText" | "id" | "label" | "onChangeKg" | "required" | "valueKg"
   >;
@@ -309,3 +316,11 @@ export function defaultFormatValue(value: unknown): string {
 
   return "";
 }
+
+/**
+ * Omit absent optional props when forwarding them to an exact-optional
+ * component contract. `undefined` is not equivalent to an omitted prop for
+ * controlled form primitives (in particular when they distinguish clearing
+ * from retaining a value).
+ */
+export { omitUndefined } from "../../lib/omit-undefined";

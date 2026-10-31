@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import { createResolutionManifestFixture } from "../../test/builders/planned-session";
 import { assembleCalendarProjectionRange } from "./assemble-projection";
 
-const activityPlan = SYSTEM_TEMPLATES[0]!;
+const activityPlan = SYSTEM_TEMPLATES[0];
+if (!activityPlan) throw new Error("Expected a system activity-plan fixture");
 const plannedSession = {
   contractVersion: "planned-session-v1" as const,
   id: "11111111-1111-4111-8111-111111111111",
@@ -227,6 +228,7 @@ describe("assembleCalendarProjectionRange", () => {
     expect(projection.items[0]).toMatchObject({
       status: "completed",
       metrics: [],
+      navigation: { target: "activity", href: allDayManualDisplay.href },
       activity: { time: allDayManualDisplay.time },
       plannedActual: { actual: { state: "unknown", durationSeconds: null, distanceMeters: null } },
     });
@@ -294,6 +296,43 @@ describe("assembleCalendarProjectionRange", () => {
       partial: true,
       metrics: [],
       activity: null,
+    });
+  });
+
+  it("renders the current plan name and estimates for a future planned session", () => {
+    const projection = assembleCalendarProjectionRange({
+      viewerId: "profile-1",
+      startDate: "2026-08-01",
+      endDateExclusive: "2026-08-02",
+      timezone: "UTC",
+      events: [],
+      plannedSessions: [
+        {
+          session: { ...plannedSession, lifecycle: { status: "scheduled" as const } },
+          linkedActivityDisplay: null,
+          currentPlan: {
+            id: activityPlan.id,
+            name: "Edited current run",
+            structure: activityPlan.structure,
+            updatedAt: "2026-08-02T00:00:00.000Z",
+          },
+        },
+      ],
+      completedActivities: [],
+      goals: [],
+      groupEvents: [],
+      truncation: {
+        events: false,
+        plannedSessions: false,
+        completedActivities: false,
+        groupEvents: false,
+        goals: false,
+      },
+    });
+    expect(projection.items[0]).toMatchObject({
+      title: "Edited current run",
+      estimated: true,
+      metrics: expect.arrayContaining([expect.objectContaining({ key: "elapsed_duration" })]),
     });
   });
 

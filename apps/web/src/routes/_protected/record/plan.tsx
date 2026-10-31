@@ -47,9 +47,15 @@ export function RecordPlanPage() {
     { ownerScope: "all", limit: 50, ...(searchText.trim() ? { search: searchText.trim() } : {}) },
     { getNextPageParam: (lastPage) => lastPage.nextCursor },
   );
+  const selectedPlanId =
+    selected?.kind === "library"
+      ? selected.planId
+      : selected?.kind === "planned_session"
+        ? selected.session.activityPlanId
+        : undefined;
   const detailQuery = api.activityPlans.getById.useQuery(
-    { id: selected?.kind === "library" ? selected.planId : "", personalize: false },
-    { enabled: selected?.kind === "library", retry: false },
+    { id: selectedPlanId ?? "", personalize: false },
+    { enabled: Boolean(selectedPlanId), retry: false },
   );
 
   const todaySessions = (todayQuery.data?.projection.items ?? []).flatMap((item) =>
@@ -65,14 +71,10 @@ export function RecordPlanPage() {
   );
   const detail = detailQuery.data?.detail;
   const plannedSession = selected?.kind === "planned_session" ? selected.session : null;
-  const prescription = plannedSession?.prescription.resolutionManifest;
-  const selectedStructure = prescription?.resolved_structure ?? detail?.structure;
-  const selectedCategory =
-    prescription?.resolved_structure.activity_category ?? detail?.activityCategory;
+  const selectedStructure = detail?.structure;
+  const selectedCategory = detail?.activityCategory;
   const compiled = selectedStructure ? compileActivityPlan(selectedStructure) : null;
-  const selectedName = plannedSession
-    ? `Scheduled ${prescription?.resolved_structure.activity_category ?? "activity"} session`
-    : detail?.name;
+  const selectedName = plannedSession ? (detail?.name ?? "Scheduled activity plan") : detail?.name;
 
   const usePlan = () => {
     if (!selected || !selectedStructure || !selectedCategory) return;
@@ -83,7 +85,7 @@ export function RecordPlanPage() {
       return;
     if (selected.kind === "planned_session") {
       void navigate({
-        to: "/record",
+        to: "/record/session",
         search: {
           activity_category: selectedCategory,
           gps: "off",
@@ -96,7 +98,7 @@ export function RecordPlanPage() {
     }
     if (!detail?.capabilities.canRecord) return;
     void navigate({
-      to: "/record",
+      to: "/record/session",
       search: {
         activity_category: selectedCategory,
         gps: "off",
@@ -115,7 +117,9 @@ export function RecordPlanPage() {
         </CardHeader>
         <CardContent>
           <Button asChild>
-            <Link to="/record/session">Return to recording</Link>
+            <Link to="/record/session" search={launcher}>
+              Return to recording
+            </Link>
           </Button>
         </CardContent>
       </Card>
@@ -128,8 +132,8 @@ export function RecordPlanPage() {
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Choose an activity plan</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Scheduled sessions retain their immutable prescription. Library plans start without
-            inventing a scheduled identity.
+            Scheduled sessions use their current activity plan when recording starts. Library plans
+            start without inventing a scheduled identity.
           </p>
         </div>
         <Button asChild variant="outline">
@@ -143,7 +147,7 @@ export function RecordPlanPage() {
         <CardHeader>
           <CardTitle>Today&apos;s planned sessions</CardTitle>
           <CardDescription>
-            Choose a scheduled session to record its frozen prescription.
+            Choose a scheduled session to record its current activity plan.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2">
@@ -160,7 +164,6 @@ export function RecordPlanPage() {
             <p className="text-sm text-muted-foreground">No planned sessions today.</p>
           ) : null}
           {todaySessions.map((session) => {
-            const manifest = session.prescription.resolutionManifest;
             return (
               <button
                 aria-pressed={
@@ -172,13 +175,11 @@ export function RecordPlanPage() {
                 type="button"
               >
                 <div className="flex flex-wrap gap-2">
-                  <Badge>{manifest.resolved_structure.activity_category}</Badge>
+                  <Badge>{session.activityPlanId ? "Planned session" : "Plan unavailable"}</Badge>
                   <Badge variant="outline">{formatScheduledTime(session.planningDate)}</Badge>
                 </div>
-                <p className="mt-2 font-medium capitalize">
-                  {manifest.resolved_structure.activity_category} session
-                </p>
-                <p className="text-sm text-muted-foreground">Frozen scheduled prescription</p>
+                <p className="mt-2 font-medium capitalize">Scheduled activity plan</p>
+                <p className="text-sm text-muted-foreground">Uses the current plan at start</p>
               </button>
             );
           })}
@@ -189,7 +190,8 @@ export function RecordPlanPage() {
         <CardHeader>
           <CardTitle>All visible activity plans</CardTitle>
           <CardDescription>
-            Search plans you can see. Only plans with available private steps can be recorded.
+            Search plans you can see. Record any available plan, including public plans and
+            templates.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -282,7 +284,7 @@ export function RecordPlanPage() {
                 </div>
                 <p className="rounded-lg border p-3 text-sm text-muted-foreground">
                   {plannedSession
-                    ? "Recording uses this session's frozen prescription."
+                    ? "Recording captures the current plan when this session starts."
                     : "Recording uses the plan's authored targets. Session Flow personalization is display-only until it explicitly hands a selected target representation to the recorder."}
                 </p>
                 <ol className="space-y-2">

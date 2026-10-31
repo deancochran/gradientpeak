@@ -7,6 +7,7 @@ import { fireEvent, renderNative, screen } from "../../../test/render-native";
 const bottomSafeAreaInset = 34;
 const mockDismiss = jest.fn();
 const mockPresent = jest.fn();
+const mockSnapToIndex = jest.fn();
 
 jest.mock("react-native-safe-area-context", () => ({
   __esModule: true,
@@ -30,7 +31,11 @@ jest.mock("@gorhom/bottom-sheet", () => {
 
   const BottomSheetModal = React.forwardRef(
     ({ children, footerComponent, backdropComponent, ...props }: MockBottomSheetProps, ref) => {
-      React.useImperativeHandle(ref, () => ({ dismiss: mockDismiss, present: mockPresent }));
+      React.useImperativeHandle(ref, () => ({
+        dismiss: mockDismiss,
+        present: mockPresent,
+        snapToIndex: mockSnapToIndex,
+      }));
 
       return React.createElement(
         "BottomSheetModal",
@@ -41,9 +46,14 @@ jest.mock("@gorhom/bottom-sheet", () => {
       );
     },
   );
+  const BottomSheet = React.forwardRef(({ children, ...props }: MockBottomSheetProps, ref) => {
+    React.useImperativeHandle(ref, () => ({ snapToIndex: mockSnapToIndex }));
+    return React.createElement("BottomSheet", { testID: "bottom-sheet", ...props }, children);
+  });
 
   return {
     __esModule: true,
+    default: BottomSheet,
     BottomSheetModal,
     BottomSheetBackdrop: mockCreateHost("BottomSheetBackdrop"),
     BottomSheetFooter: ({ children, ...props }: MockHostProps) =>
@@ -74,6 +84,8 @@ jest.mock("@repo/ui/components/text", () => ({
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
   ChevronLeft: mockCreateHost("ChevronLeft"),
+  Pencil: mockCreateHost("Pencil"),
+  X: mockCreateHost("X"),
 }));
 jest.mock("@/lib/stores/theme-store", () => ({
   __esModule: true,
@@ -96,15 +108,18 @@ const {
 describe("AppBottomSheet safe-area spacing", () => {
   it("routes a guarded backdrop close request to the owner before dismissal", async () => {
     const close = jest.fn();
+    const attempt = jest.fn();
     const view = await renderNative(
-      <AppBottomSheet guardedClose onClose={close} title="Draft" visible>
+      <AppBottomSheet guardedClose onAttemptClose={attempt} onClose={close} title="Draft" visible>
         <Text>Draft retained</Text>
       </AppBottomSheet>,
     );
     expect(screen.getByTestId("bottom-sheet-modal").props.enablePanDownToClose).toBe(false);
     expect(screen.getByTestId("sheet-backdrop").props.pressBehavior).toBe("none");
-    await fireEvent.press(screen.getByTestId("sheet-backdrop"));
-    expect(close).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("bottom-sheet-modal").props.enableDismissOnClose).toBe(false);
+    await fireEvent.press(screen.getByTestId("guarded-sheet-backdrop"));
+    expect(attempt).toHaveBeenCalledTimes(1);
+    expect(close).not.toHaveBeenCalled();
     expect(mockDismiss).not.toHaveBeenCalled();
     expect(screen.getByText("Draft retained")).toBeTruthy();
     await view.rerender(
@@ -117,6 +132,83 @@ describe("AppBottomSheet safe-area spacing", () => {
   beforeEach(() => {
     mockDismiss.mockClear();
     mockPresent.mockClear();
+    mockSnapToIndex.mockClear();
+  });
+
+  it("restores a rejected modal pan and permits another distinct close attempt", async () => {
+    const attempt = jest.fn();
+    const change = jest.fn();
+    await renderNative(
+      <AppBottomSheet
+        guardedClose
+        guardedPanDownToClose
+        onAttemptClose={attempt}
+        onClose={jest.fn()}
+        onChange={change}
+        title="Interval"
+        visible
+      >
+        <Text>Retained edits</Text>
+      </AppBottomSheet>,
+    );
+    const sheet = screen.getByTestId("bottom-sheet-modal");
+    expect(sheet.props.enableDismissOnClose).toBe(false);
+    await fireEvent(sheet, "animate", 0, -1);
+    await fireEvent(sheet, "animate", 0, -1);
+    await fireEvent(sheet, "change", -1);
+    expect(attempt).toHaveBeenCalledTimes(1);
+    expect(mockDismiss).not.toHaveBeenCalled();
+    expect(mockSnapToIndex).toHaveBeenLastCalledWith(0);
+    expect(change).not.toHaveBeenCalledWith(-1);
+    await fireEvent(sheet, "change", 0);
+    await fireEvent(sheet, "animate", 0, -1);
+    expect(attempt).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not intercept or restore an accepted parent-controlled modal close", async () => {
+    const attempt = jest.fn();
+    const view = await renderNative(
+      <AppBottomSheet
+        guardedClose
+        guardedPanDownToClose
+        onAttemptClose={attempt}
+        onClose={jest.fn()}
+        title="Interval"
+        visible
+      >
+        <Text>Edits</Text>
+      </AppBottomSheet>,
+    );
+    await view.rerender(
+      <AppBottomSheet
+        guardedClose
+        guardedPanDownToClose
+        onAttemptClose={attempt}
+        onClose={jest.fn()}
+        title="Interval"
+        visible={false}
+      >
+        <Text>Edits</Text>
+      </AppBottomSheet>,
+    );
+    const sheet = screen.getByTestId("bottom-sheet-modal");
+    await fireEvent(sheet, "animate", 0, -1);
+    await fireEvent(sheet, "change", -1);
+    expect(mockDismiss).toHaveBeenCalledTimes(1);
+    expect(attempt).not.toHaveBeenCalled();
+    expect(mockSnapToIndex).not.toHaveBeenCalled();
+  });
+
+  it("retains onClose as the guarded scrim fallback for existing consumers", async () => {
+    const close = jest.fn();
+    await renderNative(
+      <AppBottomSheet guardedClose onClose={close} title="Draft" visible>
+        <Text>Edits</Text>
+      </AppBottomSheet>,
+    );
+    await fireEvent.press(screen.getByTestId("guarded-sheet-backdrop"));
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(mockDismiss).not.toHaveBeenCalled();
   });
 
   it("uses the global modal layer with replacement stacking", async () => {
@@ -128,6 +220,114 @@ describe("AppBottomSheet safe-area spacing", () => {
 
     expect(screen.getByTestId("bottom-sheet-modal").props.stackBehavior).toBe("replace");
     expect(mockPresent).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes one guarded inspector pan-close attempt through its owner and snaps back", async () => {
+    const onAttemptClose = jest.fn();
+    const onChange = jest.fn();
+    await renderNative(
+      <AppBottomSheet
+        guardedClose
+        initialSnapIndex={1}
+        onAttemptClose={onAttemptClose}
+        onChange={onChange}
+        onClose={jest.fn()}
+        presentation="inspector"
+        title="Interval"
+        visible
+      >
+        <Text>Content</Text>
+      </AppBottomSheet>,
+    );
+
+    const nativeSheet = screen.getByTestId("bottom-sheet");
+    expect(nativeSheet.props.enablePanDownToClose).toBe(true);
+    await fireEvent(nativeSheet, "animate", 1, -1);
+    await fireEvent(nativeSheet, "animate", 1, -1);
+    expect(onAttemptClose).toHaveBeenCalledTimes(1);
+    expect(mockSnapToIndex).toHaveBeenCalledWith(1);
+
+    await fireEvent(nativeSheet, "change", 1);
+    expect(onChange).toHaveBeenCalledWith(1);
+    await fireEvent(nativeSheet, "animate", 0, -1);
+    expect(onAttemptClose).toHaveBeenCalledTimes(2);
+    expect(mockSnapToIndex).toHaveBeenLastCalledWith(0);
+  });
+
+  it("suppresses an intercepted -1 change before forwarding the snap-back settlement", async () => {
+    const onAttemptClose = jest.fn();
+    const onChange = jest.fn();
+    await renderNative(
+      <AppBottomSheet
+        guardedClose
+        initialSnapIndex={1}
+        onAttemptClose={onAttemptClose}
+        onChange={onChange}
+        onClose={jest.fn()}
+        presentation="inspector"
+        title="Interval"
+        visible
+      >
+        <Text>Content</Text>
+      </AppBottomSheet>,
+    );
+
+    const nativeSheet = screen.getByTestId("bottom-sheet");
+    await fireEvent(nativeSheet, "animate", 1, -1);
+    await fireEvent(nativeSheet, "change", -1);
+    await fireEvent(nativeSheet, "change", 1);
+
+    expect(onAttemptClose).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith(1);
+  });
+
+  it("executes a nonce-controlled inspector snap request through the native ref", async () => {
+    const onAnimate = jest.fn();
+    const onChange = jest.fn();
+    const rendered = await renderNative(
+      <AppBottomSheet
+        onAnimate={onAnimate}
+        onChange={onChange}
+        onClose={jest.fn()}
+        presentation="inspector"
+        title="Interval"
+        visible
+      >
+        <Text>Content</Text>
+      </AppBottomSheet>,
+    );
+    const nativeSheet = screen.getByTestId("bottom-sheet");
+    await fireEvent(nativeSheet, "animate", 1, 0);
+    await fireEvent(nativeSheet, "change", 0);
+    expect(onAnimate).toHaveBeenCalledWith(1, 0);
+    expect(onChange).toHaveBeenCalledWith(0);
+
+    await rendered.rerender(
+      <AppBottomSheet
+        onClose={jest.fn()}
+        presentation="inspector"
+        snapRequest={{ index: 1, nonce: 1 }}
+        title="Interval"
+        visible
+      >
+        <Text>Content</Text>
+      </AppBottomSheet>,
+    );
+    expect(mockSnapToIndex).toHaveBeenCalledWith(1);
+
+    await rendered.rerender(
+      <AppBottomSheet
+        onClose={jest.fn()}
+        presentation="inspector"
+        snapRequest={{ index: 0, nonce: 1 }}
+        title="Interval"
+        visible
+      >
+        <Text>Content</Text>
+      </AppBottomSheet>,
+    );
+    expect(mockSnapToIndex).toHaveBeenCalledTimes(1);
   });
 
   it("does not dismiss an unopened modal before presenting it", async () => {
@@ -218,6 +418,28 @@ describe("AppBottomSheet safe-area spacing", () => {
 
     expect(screen.queryByTestId("app-bottom-sheet-close")).toBeNull();
     expect(screen.getByText("Default sheet").props.accessibilityRole).toBe("header");
+  });
+
+  it("supports an explicit neutral Cancel action without changing back callback ownership", async () => {
+    const onBack = jest.fn();
+    const onClose = jest.fn();
+    await renderNative(
+      <AppBottomSheet
+        backLabel="Cancel"
+        headerLayout="centered"
+        headerAction={<Text>Done</Text>}
+        onBack={onBack}
+        onClose={onClose}
+        title="Duration"
+        visible
+      >
+        <Text>Field editor</Text>
+      </AppBottomSheet>,
+    );
+    expect(screen.getByText("Cancel").props.className).toContain("text-foreground");
+    await fireEvent.press(screen.getByLabelText("Cancel editor"));
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("provides an explicit opt-in Close action and can place a custom header in normal layout", async () => {

@@ -1,4 +1,4 @@
-import type { ActivityPlanAdaptation, ActivityPlanTrainingIntent } from "@repo/core/activity-plan";
+import type { ActivityPlanTrainingIntent } from "@repo/core/activity-plan";
 import type { ActivityTrainingEffect } from "@repo/core/athlete-derived-state";
 import { GROUP_EVENT_RSVP_STATUSES } from "@repo/core/groups";
 import type { ResolutionManifest } from "@repo/core/plan";
@@ -890,7 +890,6 @@ export const activityPlans = pgTable(
       .notNull()
       .default("general_maintenance"),
     structure: jsonb("structure").notNull(),
-    adaptation: jsonb("adaptation").$type<ActivityPlanAdaptation>(),
     structure_hash: text("structure_hash").notNull(),
     semantic_hash: text("semantic_hash").notNull(),
     revision: integer("revision").notNull().default(1),
@@ -905,12 +904,12 @@ export const activityPlans = pgTable(
   },
   (table) => [
     check(
-      "activity_plans_structure_v3_check",
-      sql`jsonb_typeof(${table.structure}) = 'object' and ${table.structure}->>'version' = '3' and ${table.structure}->>'activity_category' in ('run', 'bike', 'swim', 'strength', 'other') and jsonb_typeof(${table.structure}->'segments') = 'array' and jsonb_array_length(${table.structure}->'segments') between 1 and 64 and pg_column_size(${table.structure}) <= 1048576`,
+      "activity_plans_structure_v5_check",
+      sql`jsonb_typeof(${table.structure}) = 'object' and ${table.structure}->>'version' = '5' and ${table.structure}->>'activity_category' in ('run', 'bike', 'swim', 'strength', 'other') and jsonb_typeof(${table.structure}->'items') = 'array' and jsonb_array_length(${table.structure}->'items') between 1 and 1000 and pg_column_size(${table.structure}) <= 1048576`,
     ),
     check(
       "activity_plans_structure_canonical_check",
-      sql`public.activity_plan_structure_is_canonical(${table.structure}) or public.activity_plan_authoring_structure_is_valid(${table.structure})`,
+      sql`public.activity_plan_v5_structure_is_valid(${table.structure})`,
     ),
     check(
       "activity_plans_structure_hash_check",
@@ -918,15 +917,11 @@ export const activityPlans = pgTable(
     ),
     check(
       "activity_plans_semantic_hash_check",
-      sql`${table.semantic_hash} ~ '^v1:sha256:[0-9a-f]{64}$'`,
+      sql`${table.semantic_hash} ~ '^v2:sha256:[0-9a-f]{64}$'`,
     ),
     check(
       "activity_plans_training_intent_check",
       sql`${table.training_intent} in ('recovery', 'aerobic_base', 'durable_endurance', 'threshold_development', 'race_specific', 'vo2max', 'anaerobic_capacity', 'muscular_endurance', 'speed_skill', 'technique', 'strength_support', 'general_maintenance')`,
-    ),
-    check(
-      "activity_plans_adaptation_check",
-      sql`${table.adaptation} is null or (jsonb_typeof(${table.adaptation}) = 'object' and pg_column_size(${table.adaptation}) <= 262144)`,
     ),
     check("activity_plans_revision_check", sql`${table.revision} >= 1`),
     check(
@@ -2182,6 +2177,135 @@ export const trainingPlanApplicationCommandReceipts = pgTable(
   ],
 );
 
+/**
+ * Backend-only receipt fence for chatbot commands.  Results are deliberately
+ * retained with the actor: an expiry would make a late lost-ack retry capable
+ * of repeating a command.
+ */
+export const chatbotOperationReceipts = pgTable(
+  "chatbot_operation_receipts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    operation_id: text("operation_id").notNull(),
+    command: text("command").notNull(),
+    request_fingerprint: text("request_fingerprint").notNull(),
+    result: jsonb("result").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("chatbot_operation_receipts_profile_operation_unique").on(
+      table.profile_id,
+      table.operation_id,
+    ),
+    check(
+      "chatbot_operation_receipts_operation_check",
+      sql`${table.operation_id} ~ '^[A-Za-z0-9_-]{32,128}$'`,
+    ),
+    check(
+      "chatbot_operation_receipts_command_check",
+      sql`${table.command} ~ '^chatbot[.][a-z0-9_.-]{2,80}$'`,
+    ),
+    check(
+      "chatbot_operation_receipts_fingerprint_check",
+      sql`${table.request_fingerprint} ~ '^v1:sha256:[0-9a-f]{64}$'`,
+    ),
+    check("chatbot_operation_receipts_result_check", sql`jsonb_typeof(${table.result}) = 'object'`),
+    index("chatbot_operation_receipts_profile_created_idx").on(table.profile_id, table.created_at),
+  ],
+);
+
+/** Private, server-owned conversation state. These rows are never a Supabase client API. */
+export const chatbotThreads = pgTable(
+  "chatbot_threads",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index("chatbot_threads_profile_updated_idx").on(table.profile_id, table.updated_at)],
+);
+
+export const chatbotTurns = pgTable(
+  "chatbot_turns",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    thread_id: uuid("thread_id")
+      .notNull()
+      .references(() => chatbotThreads.id, { onDelete: "cascade" }),
+    request_id: uuid("request_id").notNull(),
+    request_fingerprint: text("request_fingerprint").notNull(),
+    input: jsonb("input").notNull(),
+    output: jsonb("output"),
+    status: text("status").notNull().default("running"),
+    model_id: text("model_id"),
+    model_tier: text("model_tier"),
+    lease_expires_at: timestamp("lease_expires_at", { withTimezone: true, mode: "date" }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    completed_at: timestamp("completed_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [
+    unique("chatbot_turns_thread_request_unique").on(table.thread_id, table.request_id),
+    index("chatbot_turns_thread_created_idx").on(table.thread_id, table.created_at),
+    check(
+      "chatbot_turns_status_check",
+      sql`${table.status} in ('running', 'completed', 'failed', 'interrupted')`,
+    ),
+    check(
+      "chatbot_turns_fingerprint_check",
+      sql`${table.request_fingerprint} ~ '^v1:sha256:[0-9a-f]{64}$'`,
+    ),
+    check("chatbot_turns_input_check", sql`jsonb_typeof(${table.input}) = 'object'`),
+  ],
+);
+
+export const chatbotActions = pgTable(
+  "chatbot_actions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    turn_id: uuid("turn_id")
+      .notNull()
+      .references(() => chatbotTurns.id, { onDelete: "cascade" }),
+    action_id: uuid("action_id").notNull(),
+    tool_call_id: text("tool_call_id").notNull(),
+    tool_id: text("tool_id").notNull(),
+    input: jsonb("input").notNull(),
+    input_fingerprint: text("input_fingerprint").notNull(),
+    status: text("status").notNull().default("pending"),
+    result: jsonb("result"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    completed_at: timestamp("completed_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [
+    unique("chatbot_actions_turn_action_unique").on(table.turn_id, table.action_id),
+    unique("chatbot_actions_turn_tool_call_unique").on(table.turn_id, table.tool_call_id),
+    check(
+      "chatbot_actions_status_check",
+      sql`${table.status} in ('pending', 'completed', 'failed', 'unknown')`,
+    ),
+    check("chatbot_actions_input_check", sql`jsonb_typeof(${table.input}) = 'object'`),
+    check(
+      "chatbot_actions_fingerprint_check",
+      sql`${table.input_fingerprint} ~ '^v1:sha256:[0-9a-f]{64}$'`,
+    ),
+  ],
+);
+
 export const plannedSessions = pgTable(
   "planned_sessions",
   {
@@ -2206,12 +2330,15 @@ export const plannedSessions = pgTable(
     activity_plan_id: uuid("activity_plan_id")
       .notNull()
       .references(() => activityPlans.id, { onDelete: "restrict" }),
-    activity_plan_revision: integer("activity_plan_revision").notNull(),
-    resolution_manifest: jsonb("resolution_manifest").$type<ResolutionManifest>().notNull(),
+    // Legacy compatibility metadata only. New planned sessions are defined by
+    // their immutable source identity and durable activity-plan reference; a
+    // current plan is resolved when the session is read or started.
+    activity_plan_revision: integer("activity_plan_revision"),
+    resolution_manifest: jsonb("resolution_manifest").$type<ResolutionManifest>(),
     prescription_captured_at: timestamp("prescription_captured_at", {
       withTimezone: true,
       mode: "date",
-    }).notNull(),
+    }),
     status: plannedSessionStatusEnum("status").notNull().default("scheduled"),
     cancellation_reason: plannedSessionCancellationReasonEnum("cancellation_reason"),
     cancelled_at: timestamp("cancelled_at", { withTimezone: true, mode: "date" }),
@@ -2271,8 +2398,8 @@ export const plannedSessions = pgTable(
       sql`(${table.source_kind} = 'direct' and ${table.direct_operation_id} ~ '^[A-Za-z0-9_-]{32,128}$' and ${table.idempotency_key} = 'direct:' || ${table.direct_operation_id} and num_nonnulls(${table.training_plan_id}, ${table.training_plan_revision}, ${table.training_plan_application_id}, ${table.source_session_id}) = 0) or (${table.source_kind} = 'training_plan' and ${table.training_plan_id} is not null and ${table.training_plan_revision} > 0 and ${table.source_session_id} is not null and ((${table.training_plan_application_id} is not null and ${table.idempotency_key} = 'training-plan:' || ${table.training_plan_application_id}::text || ':' || ${table.training_plan_revision}::text || ':' || ${table.source_session_id}::text) or (${table.training_plan_application_id} is null and ${table.idempotency_key} = 'training-plan:' || ${table.training_plan_id}::text || ':' || ${table.training_plan_revision}::text || ':' || ${table.source_session_id}::text)) and ${table.direct_operation_id} is null)`,
     ),
     check(
-      "planned_sessions_prescription_check",
-      sql`${table.activity_plan_revision} > 0 and jsonb_typeof(${table.resolution_manifest}) = 'object' and pg_column_size(${table.resolution_manifest}) <= 1048576 and jsonb_typeof(${table.resolution_manifest}->'resolver_version') = 'string' and btrim(${table.resolution_manifest}->>'resolver_version') <> '' and jsonb_typeof(${table.resolution_manifest}->'policy_version') = 'string' and btrim(${table.resolution_manifest}->>'policy_version') <> '' and ${table.resolution_manifest}->>'activity_plan_id' = ${table.activity_plan_id}::text and ${table.resolution_manifest}->'activity_plan_revision' = to_jsonb(${table.activity_plan_revision}) and ${table.resolution_manifest}->>'activity_plan_semantic_hash' ~ '^v1:sha256:[0-9a-f]{64}$' and jsonb_typeof(${table.resolution_manifest}->'session_demand') = 'object' and jsonb_typeof(${table.resolution_manifest}->'adaptation_values') = 'object' and (${table.resolution_manifest}->'effective_target_duration_minutes' = 'null'::jsonb or jsonb_typeof(${table.resolution_manifest}->'effective_target_duration_minutes') = 'number') and (${table.resolution_manifest}->'effective_target_common_load' = 'null'::jsonb or jsonb_typeof(${table.resolution_manifest}->'effective_target_common_load') = 'number') and jsonb_typeof(${table.resolution_manifest}->'evidence_facts') = 'array' and jsonb_typeof(${table.resolution_manifest}->'reason_codes') = 'array' and jsonb_typeof(${table.resolution_manifest}->'resolved_structure') = 'object' and ${table.resolution_manifest}->>'resolved_structure_hash' ~ '^v1:sha256:[0-9a-f]{64}$' and jsonb_typeof(${table.resolution_manifest}->'prescription_estimate') = 'object' and ${table.resolution_manifest}->>'fingerprint' ~ '^v1:sha256:[0-9a-f]{64}$'`,
+      "planned_sessions_legacy_prescription_check",
+      sql`num_nonnulls(${table.activity_plan_revision}, ${table.resolution_manifest}, ${table.prescription_captured_at}) in (0, 3)`,
     ),
     check(
       "planned_sessions_lifecycle_check",
@@ -2517,6 +2644,51 @@ export const thresholdEvaluations = pgTable(
       table.source_revision,
       table.id,
     ),
+  ],
+);
+
+/** Durable, backend-only promotion queue for accepted activities observed in the future. */
+export const deferredThresholdCalibrations = pgTable(
+  "deferred_threshold_calibrations",
+  {
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    activity_id: uuid("activity_id").notNull(),
+    source_revision: integer("source_revision").notNull(),
+    due_at: timestamp("due_at", { withTimezone: true, mode: "date" }).notNull(),
+    status: text("status").notNull().default("pending"),
+    attempt_count: integer("attempt_count").notNull().default(0),
+    lease_token: uuid("lease_token"),
+    lease_expires_at: timestamp("lease_expires_at", { withTimezone: true, mode: "date" }),
+    retry_at: timestamp("retry_at", { withTimezone: true, mode: "date" }),
+    last_failure_code: text("last_failure_code"),
+    completed_at: timestamp("completed_at", { withTimezone: true, mode: "date" }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.profile_id, table.activity_id, table.source_revision] }),
+    foreignKey({
+      columns: [table.activity_id, table.profile_id],
+      foreignColumns: [activities.id, activities.profile_id],
+      name: "deferred_threshold_calibrations_activity_profile_fkey",
+    }).onDelete("cascade"),
+    check("deferred_threshold_calibrations_revision_check", sql`${table.source_revision} > 0`),
+    check(
+      "deferred_threshold_calibrations_status_check",
+      sql`${table.status} in ('pending', 'running', 'completed')`,
+    ),
+    check("deferred_threshold_calibrations_attempt_check", sql`${table.attempt_count} >= 0`),
+    check(
+      "deferred_threshold_calibrations_lease_check",
+      sql`(${table.status} = 'running') = (${table.lease_token} is not null and ${table.lease_expires_at} is not null)`,
+    ),
+    index("deferred_threshold_calibrations_due_idx").on(table.status, table.due_at, table.retry_at),
   ],
 );
 

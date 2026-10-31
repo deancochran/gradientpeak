@@ -29,8 +29,9 @@ import { getActivityQuantificationPresentation } from "@repo/ui/lib/activity-qua
 import { getNormalizedPowerPresentation } from "@repo/ui/lib/normalized-power-presentation";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Loader2, Lock, Share2, Trash2, UploadCloud } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { ActivityPlaybackCard } from "../../../../components/activity/activity-playback-card";
 import { SessionRpeCard } from "../../../../components/activity/session-rpe-card";
 import {
   ActivityStreamChartsCard,
@@ -91,6 +92,11 @@ function ActivityDetailPage() {
   const utils = api.useUtils();
   const navigate = Route.useNavigate();
   const { activityId } = Route.useParams();
+  const [streamSelection, setStreamSelection] = useState<{
+    activityId: string;
+    segmentId: string;
+  } | null>(null);
+  const streamSelectorId = useId();
   const [liked, setLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(0);
   const [failedLikeIntent, setFailedLikeIntent] = useState<boolean | null>(null);
@@ -135,10 +141,14 @@ function ActivityDetailPage() {
   const activityStreamSegments = (detail?.segments ?? [])
     .filter((segment) => segment.role === "activity")
     .sort((left, right) => left.ordinal - right.ordinal);
-  const primaryStreamSegment = activityStreamSegments[0];
+  const selectedStreamSegment =
+    activityStreamSegments.find(
+      (segment) =>
+        streamSelection?.activityId === activityId && segment.id === streamSelection.segmentId,
+    ) ?? activityStreamSegments[0];
   const streamScopeDescription =
-    activityStreamSegments.length > 1 && primaryStreamSegment?.activityCategory
-      ? `Showing the first ${getActivityBadgeLabel(primaryStreamSegment.activityCategory).toLowerCase()} segment from this multisport activity.`
+    activityStreamSegments.length > 1 && selectedStreamSegment?.activityCategory
+      ? `Showing recorded segment ${activityStreamSegments.indexOf(selectedStreamSegment) + 1} of ${activityStreamSegments.length} (${getActivityBadgeLabel(selectedStreamSegment.activityCategory).toLowerCase()}).`
       : undefined;
   const segmentQuantifications = activityQuery.data?.analysis.segmentLoads.map(
     (segment) => segment.observationQuantification,
@@ -187,7 +197,9 @@ function ActivityDetailPage() {
   );
   const canLoadStreamAnalysis = Boolean(
     detail?.currentArtifact &&
-      primaryStreamSegment &&
+      selectedStreamSegment &&
+      activity?.id === activityId &&
+      !activityQuery.isError &&
       isOwner &&
       !isStreamProcessing &&
       !hasFailedIngestion,
@@ -199,7 +211,7 @@ function ActivityDetailPage() {
   const streamsQuery = api.activityFiles.getStreams.useQuery(
     {
       activityId,
-      scope: { type: "segment", segmentId: primaryStreamSegment?.id ?? activityId },
+      scope: { type: "segment", segmentId: selectedStreamSegment?.id ?? activityId },
     },
     {
       enabled: canLoadStreamAnalysis,
@@ -214,14 +226,17 @@ function ActivityDetailPage() {
       ? "processing"
       : !isOwner
         ? "private"
-        : hasFailedIngestion || streamsQuery.isError
+        : hasFailedIngestion || streamsQuery.isError || !selectedStreamSegment
           ? "error"
-          : streamsQuery.isLoading
+          : streamsQuery.isLoading || streamsQuery.isPlaceholderData
             ? "loading"
             : "ready";
   const streamErrorMessage = hasFailedIngestion
     ? (ingestion?.lastErrorMessage ?? "Activity file processing failed.")
-    : streamsQuery.error?.message;
+    : !selectedStreamSegment
+      ? "No recorded activity segment is available."
+      : streamsQuery.error?.message;
+  const scopedStreams = streamArtifactState === "ready" ? streamsQuery.data : undefined;
   const retryLikeLabel =
     failedLikeIntent === null ? undefined : failedLikeIntent ? "Retry like" : "Retry unlike";
   const toggleLikeMutation = api.social.toggleLike.useMutation({
@@ -322,6 +337,7 @@ function ActivityDetailPage() {
     setLikesCount(activity?.engagement.likes ?? 0);
   }, [activity?.engagement.likes, activity?.engagement.viewerHasLiked]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: A new activity owns new retry state.
   useEffect(() => {
     setFailedLikeIntent(null);
     setDeleteFailed(false);
@@ -331,16 +347,17 @@ function ActivityDetailPage() {
   useEffect(() => {
     setSourceMoveTargets({});
     setSourceMoveStatus(null);
+    setStreamSelection(null);
     sourceMovePending.current = false;
   }, [activityId]);
 
   const coordinates = useMemo(
-    () => getActivityCoordinates(detail?.routePolyline, streamsQuery.data?.records),
-    [detail?.routePolyline, streamsQuery.data?.records],
+    () => getActivityCoordinates(detail?.routePolyline, scopedStreams?.records),
+    [detail?.routePolyline, scopedStreams?.records],
   );
   const streamHighlights = useMemo(
-    () => summarizeActivityStreams(streamsQuery.data?.records, unitSystem),
-    [streamsQuery.data?.records, unitSystem],
+    () => summarizeActivityStreams(scopedStreams?.records, unitSystem),
+    [scopedStreams?.records, unitSystem],
   );
   const contentVisibility = activity?.visibility ?? "private";
 
@@ -393,10 +410,31 @@ function ActivityDetailPage() {
     toast.success("Public activity link copied");
   };
 
-  if (activityQuery.isLoading) {
+  if (
+    activityQuery.isLoading ||
+    (!activityQuery.isError && activity && activity.id !== activityId)
+  ) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <Loader2 aria-hidden="true" className="h-8 w-8 animate-spin text-muted-foreground" />
+        <span role="status" className="sr-only">
+          Loading activity…
+        </span>
+      </div>
+    );
+  }
+
+  if (activityQuery.isError) {
+    return (
+      <div className="container mx-auto max-w-3xl py-10">
+        <Card>
+          <CardContent className="space-y-3 py-10">
+            <p role="alert">Activity could not be loaded.</p>
+            <Button type="button" variant="outline" onClick={() => void activityQuery.refetch()}>
+              Retry activity
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -816,35 +854,64 @@ function ActivityDetailPage() {
         </Card>
       </div>
 
+      {activityStreamSegments.length > 1 ? (
+        <div className="space-y-2">
+          <label className="block text-sm font-medium" htmlFor={streamSelectorId}>
+            Recorded segment
+          </label>
+          <select
+            id={streamSelectorId}
+            className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+            value={selectedStreamSegment?.id ?? ""}
+            onChange={(event) =>
+              setStreamSelection({ activityId, segmentId: event.currentTarget.value })
+            }
+          >
+            {activityStreamSegments.map((segment, index) => (
+              <option key={segment.id} value={segment.id}>
+                Segment {index + 1} · {getActivityBadgeLabel(segment.activityCategory ?? "other")}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+
+      <ActivityPlaybackCard
+        sourceKey={`${activityId}:${detail.currentArtifact?.id ?? "none"}:${selectedStreamSegment?.id ?? "none"}`}
+        availability={streamArtifactState}
+        {...(scopedStreams?.records ? { records: scopedStreams.records } : {})}
+        {...(streamErrorMessage ? { errorMessage: streamErrorMessage } : {})}
+        {...(canLoadStreamAnalysis
+          ? {
+              onRetry: () => {
+                void streamsQuery.refetch();
+              },
+            }
+          : {})}
+        {...(streamScopeDescription ? { scopeDescription: streamScopeDescription } : {})}
+      />
+
       <ActivityStreamChartsCard
-        {...(streamsQuery.data?.records === undefined
-          ? {}
-          : { records: streamsQuery.data.records })}
+        {...(scopedStreams?.records === undefined ? {} : { records: scopedStreams.records })}
         {...(streamScopeDescription ? { scopeDescription: streamScopeDescription } : {})}
       />
 
       <ActivityStreamAnalysisCard
-        {...(streamsQuery.data?.analysis === undefined
-          ? {}
-          : { analysis: streamsQuery.data.analysis })}
+        {...(scopedStreams?.analysis === undefined ? {} : { analysis: scopedStreams.analysis })}
         artifactState={streamArtifactState}
         {...(streamErrorMessage ? { errorMessage: streamErrorMessage } : {})}
         {...(streamScopeDescription ? { scopeDescription: streamScopeDescription } : {})}
       />
 
       <ActivitySwimDetailCards
-        {...(primaryStreamSegment?.activityCategory === undefined
+        {...(selectedStreamSegment?.activityCategory === undefined
           ? {}
-          : { activityCategory: primaryStreamSegment.activityCategory })}
-        {...(streamsQuery.data?.laps === undefined ? {} : { laps: streamsQuery.data.laps })}
-        {...(streamsQuery.data?.lengths === undefined
-          ? {}
-          : { lengths: streamsQuery.data.lengths })}
+          : { activityCategory: selectedStreamSegment.activityCategory })}
+        {...(scopedStreams?.laps === undefined ? {} : { laps: scopedStreams.laps })}
+        {...(scopedStreams?.lengths === undefined ? {} : { lengths: scopedStreams.lengths })}
         poolLengthMeters={detail.performance.poolLengthMeters}
         {...(streamScopeDescription ? { scopeDescription: streamScopeDescription } : {})}
-        {...(streamsQuery.data?.summary === undefined
-          ? {}
-          : { summary: streamsQuery.data.summary })}
+        {...(scopedStreams?.summary === undefined ? {} : { summary: scopedStreams.summary })}
       />
 
       {isOwner ? (

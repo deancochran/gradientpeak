@@ -3,27 +3,25 @@ import { PaceInput } from "../pace-input/index.web";
 import type { PaceSecondsFieldProps } from "./shared";
 import { usePaceSecondsField } from "./use-pace-seconds-field";
 
-function PaceSecondsField({
-  error,
-  formControl,
-  helperText,
-  id,
-  label,
-  onBlur,
-  onChangeSeconds,
-  placeholder,
-  required = false,
-  showAdjustmentButtons = true,
-  testId,
-  unitLabel,
-  valueSeconds,
-}: PaceSecondsFieldProps) {
-  const draft = usePaceSecondsField({ formControl, onBlur, onChangeSeconds, valueSeconds });
+function PaceSecondsField(props: PaceSecondsFieldProps) {
+  const {
+    error,
+    helperText,
+    id,
+    label,
+    placeholder,
+    required = false,
+    showAdjustmentButtons = true,
+    testId,
+    unitLabel,
+  } = props;
+  const draft = usePaceSecondsField(props);
 
   return (
     <div className="flex items-end gap-2">
       {showAdjustmentButtons ? (
         <Button
+          disabled={props.disabled}
           aria-label={`Decrease ${label}`}
           onClick={() => draft.adjust(-1)}
           size="sm"
@@ -34,6 +32,9 @@ function PaceSecondsField({
         </Button>
       ) : null}
       <PaceInput
+        ref={props.ref}
+        disabled={props.disabled}
+        resetKey={props.resetKey}
         error={error}
         helperText={helperText}
         id={id}
@@ -48,6 +49,7 @@ function PaceSecondsField({
       />
       {showAdjustmentButtons ? (
         <Button
+          disabled={props.disabled}
           aria-label={`Increase ${label}`}
           onClick={() => draft.adjust(1)}
           size="sm"

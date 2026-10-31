@@ -1,7 +1,12 @@
+import {
+  diffDateOnlyUtcDays,
+  formatDateOnlyInTimeZone,
+  isValidDateOnlyUtc,
+} from "@repo/core/calendar";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
 import { useEffect, useMemo, useState } from "react";
-import { TouchableOpacity, View } from "react-native";
+import { ScrollView, TouchableOpacity, View } from "react-native";
 import { Circle, Line, Polyline } from "react-native-svg";
 import { useProductAnalytics } from "@/lib/analytics/productAnalytics";
 import { parseDateKey } from "@/lib/calendar/dateMath";
@@ -34,20 +39,64 @@ function axisValue(value: number, unit: string | undefined) {
   return unit === "meters_per_second" ? value.toFixed(2) : Math.round(value).toString();
 }
 
+export function formatGoalTimeLeft(deadlineDate: string | null, todayDate: string) {
+  if (!deadlineDate || !isValidDateOnlyUtc(deadlineDate) || !isValidDateOnlyUtc(todayDate))
+    return "Unavailable";
+  const days = diffDateOnlyUtcDays(todayDate, deadlineDate);
+  if (days === 0) return "Due today";
+  const duration = `${Math.abs(days)} ${Math.abs(days) === 1 ? "day" : "days"}`;
+  return days < 0 ? `${duration} overdue` : `${duration} left`;
+}
+
+function evidenceDate(instant: string, timezone?: string) {
+  if (timezone === undefined) return instant.slice(0, 10);
+  try {
+    return formatDateOnlyInTimeZone(new Date(instant), timezone);
+  } catch {
+    return new Date(instant).toISOString().slice(0, 10);
+  }
+}
+
+function evidenceLabelDate(instant: string, timezone?: string) {
+  // Existing callers use device-local labels but UTC-sliced chart dates.
+  return timezone === undefined ? new Date(instant) : parseDateKey(evidenceDate(instant, timezone));
+}
+
+export function formatGoalGap(
+  progress: Exclude<PlanGoalProgressResult, { status: "unsupported" }>,
+) {
+  if (progress.metrics.remainingGap === null) return "Unavailable";
+  if (progress.target.unit === "watts") return `${Math.round(progress.metrics.remainingGap)} W`;
+  if (!progress.current) return "Unavailable";
+  const distance = progress.target.activityCategory === "swim" ? 100 : 1000;
+  const seconds =
+    progress.metrics.remainingGap === 0
+      ? 0
+      : Math.max(
+          0,
+          distance / progress.current.value - distance / progress.target.achievementValue,
+        );
+  return `${Math.round(seconds)} s/${distance === 100 ? "100m" : "km"}`;
+}
+
 export function PlanProgressInsight({
   deadlineDate,
   onOpenSourceActivity,
   progress,
+  showGoalSummary = false,
   todayKey,
   trend,
   window,
+  planningTimezone,
 }: {
   deadlineDate: string | null;
   onOpenSourceActivity: (activityId: string) => void;
   progress: PlanGoalProgressResult | null | undefined;
+  showGoalSummary?: boolean;
   todayKey: string;
   trend: PlanThresholdTrend | null;
   window: { end: string; start: string };
+  planningTimezone?: string;
 }) {
   const productAnalytics = useProductAnalytics();
   const { resolvedTheme } = useTheme();
@@ -55,11 +104,36 @@ export function PlanProgressInsight({
   const visiblePoints = useMemo(
     () =>
       (trend?.points ?? []).filter((point) => {
-        const date = point.effectiveAt.slice(0, 10);
-        return date >= window.start && date <= window.end;
+        const date = evidenceDate(point.effectiveAt, planningTimezone);
+        return (
+          date >= window.start &&
+          date <= window.end &&
+          (!showGoalSummary ||
+            !progress ||
+            progress.status === "unsupported" ||
+            !progress.assessedAt ||
+            Date.parse(point.effectiveAt) <= Date.parse(progress.assessedAt))
+        );
       }),
-    [trend?.points, window.end, window.start],
+    [trend?.points, window.end, window.start, showGoalSummary, progress, planningTimezone],
   );
+  const evidenceSegments = useMemo(() => {
+    const segments: PlanThresholdHistoryPoint[][] = [];
+    for (const point of visiblePoints) {
+      const segment = segments.at(-1);
+      const previous = segment?.at(-1);
+      if (
+        !segment ||
+        previous?.method !== point.method ||
+        previous?.policyVersion !== point.policyVersion
+      ) {
+        segments.push([point]);
+      } else {
+        segment.push(point);
+      }
+    }
+    return segments;
+  }, [visiblePoints]);
   const target = progress && progress.status !== "unsupported" ? progress.target.targetValue : null;
   const rawAchievement =
     progress && progress.status !== "unsupported" ? progress.target.achievementValue : null;
@@ -91,7 +165,9 @@ export function PlanProgressInsight({
   const positionForDate = (date: string) =>
     (millis(date.slice(0, 10)) - millis(window.start)) / timeSpan;
   const xForPoint = (point: PlanThresholdHistoryPoint, geometry: PlanChartGeometry) =>
-    geometry.left + positionForDate(point.effectiveAt) * (geometry.right - geometry.left);
+    geometry.left +
+    positionForDate(evidenceDate(point.effectiveAt, planningTimezone)) *
+      (geometry.right - geometry.left);
   const yForValue = (value: number, geometry: PlanChartGeometry) =>
     geometry.bottom - ((value - minimum) / valueSpan) * (geometry.bottom - geometry.top);
   const todayVisible = todayKey >= window.start && todayKey <= window.end;
@@ -99,7 +175,7 @@ export function PlanProgressInsight({
     deadlineDate !== null && deadlineDate >= window.start && deadlineDate <= window.end;
   const evidenceSummary =
     visiblePoints.length >= 2
-      ? `${visiblePoints.length} connected comparable threshold assessments from ${window.start} to ${window.end}.`
+      ? `${visiblePoints.length} threshold assessments from ${window.start} to ${window.end}.`
       : "A performance trend requires two or more comparable threshold assessments.";
   const deadlineSummary = deadlineDate
     ? deadlineVisible
@@ -113,6 +189,35 @@ export function PlanProgressInsight({
 
   return (
     <View className="gap-3" testID="plan-progress-insight">
+      {showGoalSummary && progress && progress.status !== "unsupported" ? (
+        <View className="flex-row flex-wrap gap-4 border-b border-border pb-4">
+          {[
+            [
+              "Current",
+              progress.current
+                ? formatPlanThresholdValue(progress.target.activityCategory, progress.current.value)
+                : "Unavailable",
+            ],
+            [
+              "Target",
+              formatPlanThresholdValue(
+                progress.target.activityCategory,
+                progress.target.targetValue,
+              ),
+            ],
+            [
+              progress.target.unit === "watts" ? "Remaining gap" : "Pace gap to achievement",
+              formatGoalGap(progress),
+            ],
+            ["Time left", formatGoalTimeLeft(deadlineDate, todayKey)],
+          ].map(([label, value]) => (
+            <View className="min-w-[40%] flex-1 gap-1" key={label}>
+              <Text className="text-xs text-muted-foreground">{label}</Text>
+              <Text className="text-xl font-semibold text-foreground">{value}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
       <ResponsivePlanChartShell
         axisLabel={axisUnit(visiblePoints[0] ?? trend?.current)}
         emptyLabel="A performance trend requires two or more comparable threshold assessments."
@@ -214,17 +319,25 @@ export function PlanProgressInsight({
                   y2={yForValue(achievement, geometry)}
                 />
               )}
-              {projected.length >= 2 ? (
-                <Polyline
-                  fill="none"
-                  points={projected.map(({ x, y }) => `${x},${y}`).join(" ")}
-                  stroke={theme.completed}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={3}
-                  testID="plan-progress-connected-line"
-                />
-              ) : null}
+              {evidenceSegments
+                .filter((segment) => segment.length >= 2)
+                .map((segment) => (
+                  <Polyline
+                    key={segment[0]?.thresholdId ?? segment[0]?.effectiveAt}
+                    fill="none"
+                    points={segment
+                      .map(
+                        (point) =>
+                          `${xForPoint(point, geometry)},${yForValue(point.value, geometry)}`,
+                      )
+                      .join(" ")}
+                    stroke={theme.completed}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={3}
+                    testID="plan-progress-connected-line"
+                  />
+                ))}
               {projected.map(({ point, x, y }) => {
                 const isSelected = point === selected;
                 return (
@@ -244,26 +357,32 @@ export function PlanProgressInsight({
           );
         }}
       </ResponsivePlanChartShell>
-      <View className="flex-row flex-wrap gap-2" testID="plan-progress-evidence-selectors">
-        {visiblePoints.map((point) => (
-          <TouchableOpacity
-            accessibilityLabel={`Select ${formatPlanThresholdValue(point.activityCategory, point.value)} threshold from ${format(new Date(point.effectiveAt), "MMMM d, yyyy")}`}
-            accessibilityRole="button"
-            accessibilityState={{ selected: point === selected }}
-            className="min-h-11 justify-center rounded-xl border border-border px-3"
-            key={point.thresholdId ?? point.effectiveAt}
-            onPress={() => {
-              productAnalytics.capture("plan.chart_engaged", { chart: "progress" });
-              setSelectedId(point.thresholdId ?? point.effectiveAt);
-            }}
-            testID={`plan-progress-point-${point.effectiveAt.slice(0, 10)}`}
-          >
-            <Text className="text-xs font-medium text-foreground">
-              {format(new Date(point.effectiveAt), "MMM d")}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator
+        testID="plan-progress-evidence-selectors"
+      >
+        <View className="flex-row gap-2">
+          {visiblePoints.map((point) => (
+            <TouchableOpacity
+              accessibilityLabel={`Select ${formatPlanThresholdValue(point.activityCategory, point.value)} threshold from ${format(evidenceLabelDate(point.effectiveAt, planningTimezone), "MMMM d, yyyy")}`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: point === selected }}
+              className="min-h-11 justify-center rounded-xl border border-border px-3"
+              key={point.thresholdId ?? point.effectiveAt}
+              onPress={() => {
+                productAnalytics.capture("plan.chart_engaged", { chart: "progress" });
+                setSelectedId(point.thresholdId ?? point.effectiveAt);
+              }}
+              testID={`plan-progress-point-${point.effectiveAt.slice(0, 10)}`}
+            >
+              <Text className="text-xs font-medium text-foreground">
+                {format(evidenceLabelDate(point.effectiveAt, planningTimezone), "MMM d")}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </ScrollView>
       <Text className="text-sm text-muted-foreground" testID="plan-progress-summary">
         {evidenceSummary}
       </Text>
@@ -274,17 +393,19 @@ export function PlanProgressInsight({
       ) : null}
       {selected ? (
         <View
-          accessibilityLabel={`Selected threshold ${formatPlanThresholdValue(selected.activityCategory, selected.value)}, ${Math.round((selected.confidence ?? 0) * 100)} percent confidence`}
+          accessibilityLabel={`Selected threshold ${formatPlanThresholdValue(selected.activityCategory, selected.value)}, ${selected.confidence == null ? "confidence unknown" : `${Math.round(selected.confidence * 100)} percent confidence`}`}
           className="gap-2 rounded-2xl border border-border bg-card p-4"
           testID="plan-progress-evidence-tray"
         >
           <Text accessibilityRole="header" className="font-semibold text-foreground">
             {formatPlanThresholdValue(selected.activityCategory, selected.value)} ·{" "}
-            {format(new Date(selected.effectiveAt), "MMM d, yyyy")}
+            {format(evidenceLabelDate(selected.effectiveAt, planningTimezone), "MMM d, yyyy")}
           </Text>
           <Text className="text-sm capitalize text-muted-foreground">
             {selected.method ? readable(selected.method) : "Calculated threshold"} ·{" "}
-            {Math.round((selected.confidence ?? 0) * 100)}% confidence
+            {selected.confidence == null
+              ? "Confidence unknown"
+              : `${Math.round(selected.confidence * 100)}% confidence`}
           </Text>
           {(selected.sourceActivities ?? []).map((activity) => (
             <TouchableOpacity
@@ -297,7 +418,8 @@ export function PlanProgressInsight({
             >
               <Text className="font-medium text-foreground">{activity.name}</Text>
               <Text className="text-xs text-muted-foreground">
-                Source activity · {format(new Date(activity.finishedAt), "MMM d, yyyy")}
+                Source activity ·{" "}
+                {format(evidenceLabelDate(activity.finishedAt, planningTimezone), "MMM d, yyyy")}
               </Text>
             </TouchableOpacity>
           ))}

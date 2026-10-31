@@ -67,7 +67,9 @@ test.describe("completed activities and imports", () => {
       await expect(athletePage.getByRole("img", { name: "Heart rate over time" })).toBeVisible();
       await expect(athletePage.getByRole("heading", { name: "Stream analysis" })).toBeVisible();
       await expect(athletePage.getByRole("heading", { name: "Session RPE" })).toBeVisible();
-      await expect(athletePage.getByLabel("Perceived exertion")).toHaveValue("5");
+      await expect(athletePage.getByText("No RPE recorded", { exact: true })).toBeVisible();
+      await expect(athletePage.getByLabel("Perceived exertion")).toHaveValue("");
+      await expect(athletePage.getByRole("button", { name: "Save RPE" })).toBeDisabled();
       await athletePage.getByLabel("Perceived exertion").fill("6");
       await athletePage.getByRole("button", { name: "Save RPE" }).click();
       await expect(athletePage.getByText("Session RPE saved.")).toBeVisible();
@@ -124,6 +126,9 @@ test.describe("completed activities and imports", () => {
       await activities.filter({ category: "run", sort: "distance", order: "asc" });
       await athletePage.getByRole("textbox", { name: "From", exact: true }).fill("2026-01-01");
       await athletePage.getByRole("textbox", { name: "To", exact: true }).fill("2026-01-01");
+      await athletePage.getByRole("button", { name: "Apply dates", exact: true }).click();
+      await expect(athletePage).toHaveURL(/from=2026-01-01/);
+      await expect(athletePage).toHaveURL(/to=2026-01-01/);
       await expect(athletePage.getByTestId(`activity-card-${activityId}`)).toBeVisible();
       await activities.openCard(activityId);
 

@@ -3,7 +3,7 @@ import { conversationParticipants, messages, publicMessagesRowSchema } from "@re
 import { TRPCError } from "@trpc/server";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
-import type { getRequiredDb } from "../../db";
+import type { DrizzleQueryExecutor } from "../../db";
 
 const timestampSchema = z.union([z.date(), z.string()]);
 
@@ -38,7 +38,7 @@ function toMessage(value: z.infer<typeof messageRowSchema>) {
 }
 
 export async function requireConversationParticipant(
-  db: ReturnType<typeof getRequiredDb>,
+  db: DrizzleQueryExecutor,
   input: {
     conversationId: string;
     userId: string;
@@ -63,8 +63,25 @@ export async function requireConversationParticipant(
   }
 }
 
+export async function isConversationParticipant(
+  db: DrizzleQueryExecutor,
+  input: { conversationId: string; userId: string },
+) {
+  const membership = await db
+    .select({ user_id: conversationParticipants.user_id })
+    .from(conversationParticipants)
+    .where(
+      and(
+        eq(conversationParticipants.conversation_id, input.conversationId),
+        eq(conversationParticipants.user_id, input.userId),
+      ),
+    )
+    .limit(1);
+  return Boolean(membership[0]);
+}
+
 export async function getConversationMessagesForViewer(
-  db: ReturnType<typeof getRequiredDb>,
+  db: DrizzleQueryExecutor,
   input: {
     conversationId: string;
     viewerId: string;

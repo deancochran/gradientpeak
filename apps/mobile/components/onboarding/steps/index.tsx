@@ -20,6 +20,7 @@ import {
   AthleteBaselineFields,
 } from "@/components/athlete-baseline";
 import { GoalEditorForm } from "@/components/goals";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { isValidOnboardingUsername } from "@/lib/onboarding/validation";
 import { PRIMARY_ACTIVITY_CATEGORY_OPTIONS } from "../onboarding-data";
 import type { OnboardingData, StepProps } from "../types";
@@ -339,7 +340,7 @@ export const ProfileAndIntentStep = (props: StepProps) => (
 );
 
 export const TrainingBaselineStep = ({ data, fieldSources, updateData }: StepProps) => {
-  const baselineSources: AthleteBaselineFieldSources = {
+  const baselineSources: AthleteBaselineFieldSources = omitUndefined({
     experience: fieldSources?.experience_level,
     dob: fieldSources?.dob,
     gender: fieldSources?.gender,
@@ -347,7 +348,7 @@ export const TrainingBaselineStep = ({ data, fieldSources, updateData }: StepPro
     weightDisplayUnit: fieldSources?.weight_unit,
     maxHr: fieldSources?.max_hr,
     restingHr: fieldSources?.resting_hr,
-  };
+  });
 
   const handleBaselineChange = (change: AthleteBaselineChange) => {
     const options = {
@@ -396,7 +397,7 @@ export const TrainingBaselineStep = ({ data, fieldSources, updateData }: StepPro
           restingHr: data.resting_hr,
         }}
         onChange={handleBaselineChange}
-        sources={baselineSources}
+        {...omitUndefined({ sources: baselineSources })}
         estimates={{
           maxHr: estimateMaxHRFromDOB(data.dob),
         }}
@@ -420,10 +421,10 @@ const AccountGoalsPreferencesStep = ({ data, updateData }: StepProps) => {
     : null;
 
   const addGoal = useCallback(() => {
-    const goalDraft = data.goal_draft ?? createEmptyGoalDraft();
+    const goalDraft = createEmptyGoalDraft();
     initialGoalDraftRef.current = goalDraft;
     updateData({ goal_draft: goalDraft, should_create_goal: true });
-  }, [data.goal_draft, updateData]);
+  }, [updateData]);
 
   return (
     <View className="gap-8">
@@ -446,7 +447,10 @@ const AccountGoalsPreferencesStep = ({ data, updateData }: StepProps) => {
               showSubmitAction={false}
             />
             <Button
-              onPress={() => updateData({ should_create_goal: false })}
+              onPress={() => {
+                initialGoalDraftRef.current = createEmptyGoalDraft();
+                updateData({ should_create_goal: false, goal_draft: null });
+              }}
               testID="onboarding-skip-goal"
               variant="ghost"
             >

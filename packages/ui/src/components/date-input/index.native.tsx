@@ -2,10 +2,15 @@ import DateTimePicker, {
   DateTimePickerAndroid,
   type DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
-import { formatDateOnly, parseDateOnlyToDate } from "@repo/core/utils/fitness-inputs";
+import { formatLocalDateOnly, parseDateOnlyToDate } from "@repo/core/utils/fitness-inputs";
 import { format } from "date-fns";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Modal, Platform, Pressable, View } from "react-native";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { AccessibilityInfo, findNodeHandle, Modal, Platform, Pressable, View } from "react-native";
+import {
+  type NativeInputSession,
+  useNativeInputHandoff,
+} from "../../hooks/use-native-input-handoff";
+import { omitUndefined } from "../../lib/omit-undefined";
 import { getNativeTestProps } from "../../lib/test-props";
 import { Button } from "../button/index.native";
 import { Label } from "../label/index.native";
@@ -13,6 +18,10 @@ import { Text } from "../text/index.native";
 import type { DateInputProps } from "./shared";
 
 function DateInput({
+  ref,
+  onBlur,
+  resetKey,
+  formControl,
   accessibilityHint,
   clearable = false,
   disabled = false,
@@ -22,7 +31,7 @@ function DateInput({
   label,
   maximumDate,
   minimumDate,
-  name: _name,
+  name,
   onChange,
   pickerPresentation = "modal",
   placeholder = "Select date",
@@ -32,11 +41,45 @@ function DateInput({
 }: DateInputProps) {
   const [isPickerVisible, setIsPickerVisible] = useState(false);
   const [draftDate, setDraftDate] = useState<Date | null>(() => parseDateOnlyToDate(value) ?? null);
-  const disabledRef = useRef(disabled);
-
+  const trigger = useRef<View>(null);
+  const focus = () => {
+    trigger.current?.focus?.();
+    const node = findNodeHandle(trigger.current);
+    if (node != null) AccessibilityInfo.setAccessibilityFocus(node);
+  };
+  useImperativeHandle(ref, () => ({ focus }));
+  const identity = JSON.stringify([resetKey, id, name, pickerPresentation]);
+  const handoff = useNativeInputHandoff({
+    disabled,
+    identity,
+    owner: formControl,
+    focus,
+    onSuperseded: () => {
+      if (Platform.OS === "android" && sessionRef.current)
+        void DateTimePickerAndroid.dismiss("date");
+      setIsPickerVisible(false);
+      setDraftDate(null);
+      setSession(null);
+    },
+  });
+  const usable = handoff.usable;
+  const [session, setSession] = useState<NativeInputSession | null>(null);
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const closePicker = (ticket: NativeInputSession) => {
+    if (sessionRef.current !== ticket) return;
+    ticket.close();
+    setIsPickerVisible(false);
+    if (usable()) onBlur?.();
+    if (Platform.OS === "android" || pickerPresentation !== "modal")
+      requestAnimationFrame(ticket.restoreFocus);
+  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: explicit reset invalidates an open picker even when the date is unchanged.
   useEffect(() => {
-    disabledRef.current = disabled;
-  }, [disabled]);
+    setIsPickerVisible(false);
+    setDraftDate(null);
+    setSession(null);
+  }, [identity, formControl]);
 
   const selectedDate = useMemo(() => parseDateOnlyToDate(value), [value]);
   const usesModalPresentation = pickerPresentation === "modal";
@@ -55,44 +98,50 @@ function DateInput({
     testId,
   });
 
-  const commitSelectedDate = (nextDate: Date) => {
-    if (disabledRef.current) {
+  const commitSelectedDate = (nextDate: Date, ticket: NativeInputSession) => {
+    if (!ticket.isCurrent()) {
       return;
     }
 
-    onChange(formatDateOnly(nextDate));
+    onChange(formatLocalDateOnly(nextDate));
   };
 
   const handleInlineDateChange = (event: DateTimePickerEvent, selected?: Date) => {
+    if (!session?.isCurrent()) return;
     if (event.type === "dismissed") {
-      setIsPickerVisible(false);
+      closePicker(session);
       return;
     }
 
     if (selected) {
-      commitSelectedDate(selected);
+      commitSelectedDate(selected, session);
     }
 
-    setIsPickerVisible(false);
+    closePicker(session);
   };
 
   const handleOpenPicker = () => {
-    if (disabled) {
+    if (!usable()) {
       return;
     }
 
+    const ticket = handoff.begin();
+    if (!ticket) return;
+    sessionRef.current = ticket;
+    setSession(ticket);
     const initialDate = selectedDate ?? new Date();
 
     if (usesModalPresentation && Platform.OS === "android") {
       DateTimePickerAndroid.open({
         value: initialDate,
         mode: "date",
-        minimumDate,
-        maximumDate,
-        onChange: (_event, nextDate) => {
-          if (nextDate) {
-            commitSelectedDate(nextDate);
+        ...omitUndefined({ minimumDate, maximumDate }),
+        onChange: (event, nextDate) => {
+          if (!ticket.isCurrent()) return;
+          if (event.type !== "dismissed" && nextDate) {
+            commitSelectedDate(nextDate, ticket);
           }
+          closePicker(ticket);
         },
       });
       return;
@@ -105,7 +154,7 @@ function DateInput({
 
   return (
     <View className="gap-2">
-      <Label nativeID={id}>
+      <Label {...omitUndefined({ nativeID: id })}>
         <Text className="text-sm font-medium text-foreground">
           {label}
           {required ? <Text className="text-destructive"> *</Text> : null}
@@ -113,6 +162,9 @@ function DateInput({
       </Label>
       <View className="flex-row items-center gap-2">
         <Pressable
+          ref={trigger}
+          focusable
+          onBlur={onBlur}
           accessibilityHint={fieldHint}
           aria-invalid={!!error}
           accessibilityRole="button"
@@ -132,8 +184,9 @@ function DateInput({
             variant="ghost"
             size="sm"
             onPress={() => {
-              if (!disabled) {
+              if (usable()) {
                 onChange(undefined);
+                onBlur?.();
               }
             }}
           >
@@ -141,51 +194,54 @@ function DateInput({
           </Button>
         ) : null}
       </View>
-      {isPickerVisible && !usesModalPresentation ? (
+      {isPickerVisible && handoff.presented && !usesModalPresentation ? (
         <DateTimePicker
           display="default"
-          maximumDate={maximumDate}
-          minimumDate={minimumDate}
+          {...omitUndefined({ maximumDate, minimumDate })}
           mode="date"
           onChange={handleInlineDateChange}
           value={draftDate ?? selectedDate ?? new Date()}
         />
       ) : null}
-      {usesModalPresentation && Platform.OS !== "android" && isPickerVisible ? (
+      {usesModalPresentation && Platform.OS !== "android" && session ? (
         <Modal
           animationType="fade"
-          onRequestClose={() => setIsPickerVisible(false)}
+          onRequestClose={() => closePicker(session)}
+          onDismiss={() => {
+            session.restoreFocus();
+            setSession((current) => (current === session && !session.isCurrent() ? null : current));
+          }}
           transparent
-          visible={isPickerVisible}
+          visible={isPickerVisible && handoff.presented}
         >
           <View className="flex-1 items-center justify-center bg-black/40 px-5">
             <View className="w-full max-w-md gap-4 rounded-2xl bg-background p-4">
               <DateTimePicker
                 display="spinner"
-                maximumDate={maximumDate}
-                minimumDate={minimumDate}
+                {...omitUndefined({ maximumDate, minimumDate })}
                 mode="date"
                 onChange={(_event, nextDate) => {
-                  if (!disabled && nextDate) {
+                  if (session.isCurrent() && nextDate) {
                     setDraftDate(nextDate);
                   }
                 }}
                 value={draftDate ?? selectedDate ?? new Date()}
               />
               <View className="flex-row justify-end gap-2">
-                <Button variant="outline" onPress={() => setIsPickerVisible(false)}>
+                <Button variant="outline" onPress={() => closePicker(session)}>
                   <Text>Cancel</Text>
                 </Button>
                 <Button
+                  disabled={disabled}
                   onPress={() => {
-                    if (disabled) {
+                    if (!session.isCurrent()) {
                       return;
                     }
 
                     if (draftDate) {
-                      onChange(formatDateOnly(draftDate));
+                      commitSelectedDate(draftDate, session);
                     }
-                    setIsPickerVisible(false);
+                    closePicker(session);
                   }}
                 >
                   <Text className="text-primary-foreground">Done</Text>

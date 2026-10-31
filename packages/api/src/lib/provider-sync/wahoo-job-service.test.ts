@@ -3,6 +3,7 @@ import type { WahooProjectionSnapshot } from "../integrations/wahoo/plan-convert
 import { WahooSyncJobService } from "./wahoo-job-service";
 
 const snapshot: WahooProjectionSnapshot = {
+  occurrenceIds: [],
   plan: {
     header: {
       name: "Resolved session",

@@ -1,3 +1,4 @@
+import type { NumericInputResult } from "@repo/core/utils/numeric-ux-policy";
 import React from "react";
 import { Pressable } from "react-native";
 import { createHost } from "../../../test/mock-components";
@@ -15,6 +16,10 @@ type MockHostProps = Record<string, unknown> & {
   onChange?: (value: string | undefined) => void;
   onChangeSeconds?: (value: number | null) => void;
   onNumberChange?: (value: number | undefined) => void;
+  onInputResult?: (result: NumericInputResult) => void;
+  min?: number;
+  max?: number;
+  decimals?: number;
   onPress?: () => void;
   testId?: string;
   value?: string | number | null;
@@ -31,14 +36,31 @@ jest.mock("react-native", () => ({
 
 jest.mock("@repo/ui/components/bounded-number-input", () => ({
   __esModule: true,
-  BoundedNumberInput: ({ id, onChange, onNumberChange, value, ...props }: MockHostProps) =>
+  BoundedNumberInput: ({
+    id,
+    onChange,
+    onNumberChange,
+    onInputResult,
+    value,
+    ...props
+  }: MockHostProps) =>
     React.createElement("TextInput", {
       ...props,
       testID: id,
       value,
       onChangeText: (text: string) => {
+        const { parseNumericInput } = jest.requireActual<
+          typeof import("@repo/core/utils/numeric-ux-policy")
+        >("@repo/core/utils/numeric-ux-policy");
+        const result = parseNumericInput(text, {
+          min: props.min,
+          max: props.max,
+          precision: props.decimals === 0 ? "integer" : "decimal",
+        });
         onChange?.(text);
-        onNumberChange?.(text.trim() ? Number(text) : undefined);
+        onInputResult?.(result);
+        if (result.status === "valid") onNumberChange?.(result.value);
+        else if (result.status === "empty") onNumberChange?.(undefined);
       },
     }),
 }));
@@ -116,6 +138,24 @@ function ControlledHarness({
 }
 
 describe("AthleteBaselineFields", () => {
+  it("propagates malformed optional numeric input without reverting to an earlier value", async () => {
+    const onChange = jest.fn();
+    await renderNative(
+      <AthleteBaselineFields value={{ ...baseValue, restingHr: 52 }} onChange={onChange} />,
+    );
+    await fireEvent.changeText(screen.getByTestId("athlete-baseline-resting-hr"), "52bpm");
+    expect(onChange).toHaveBeenLastCalledWith({
+      field: "restingHr",
+      value: Number.NaN,
+      source: "manual",
+    });
+    await fireEvent.changeText(screen.getByTestId("athlete-baseline-resting-hr"), "");
+    expect(onChange).toHaveBeenLastCalledWith({
+      field: "restingHr",
+      value: null,
+      source: "cleared",
+    });
+  });
   it("does not expose performance-threshold controls", async () => {
     await renderNative(<AthleteBaselineFields value={baseValue} onChange={jest.fn()} />);
 
@@ -236,7 +276,11 @@ describe("AthleteBaselineFields", () => {
     );
 
     await fireEvent.changeText(screen.getByTestId("athlete-baseline-weight"), "154.3");
-    expect(onChange).toHaveBeenCalledWith({ field: "weightKg", value: 70, source: "manual" });
+    expect(onChange).toHaveBeenCalledWith({
+      field: "weightKg",
+      value: 154.3 / 2.20462,
+      source: "manual",
+    });
   });
 
   it("shows canonical kilogram feedback for out-of-range weight", async () => {

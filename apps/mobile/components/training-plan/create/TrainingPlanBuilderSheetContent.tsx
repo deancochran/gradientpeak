@@ -2,6 +2,7 @@ import type {
   ActivityPlanPlanningEstimate,
   ActivityPlanSummary,
   ContentVisibility,
+  GoalEditorDraft,
   TrainingPlanPreferences,
   TrainingPlanPreferenceValidationIssue,
 } from "@repo/core";
@@ -15,13 +16,12 @@ import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
 import { useRouter } from "expo-router";
 import {
-  createContext,
   type Dispatch,
-  type ReactNode,
   type SetStateAction,
   useCallback,
-  useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { UseFormReturn } from "react-hook-form";
@@ -50,7 +50,12 @@ import {
 
 type TrainingPlanBuilderService = ReturnType<typeof useTrainingPlanCreationService>;
 
-type TrainingPlanBuilderSheetDraftsContextValue = {
+export type TrainingPlanBuilderSheetState = {
+  rawDrafts: Record<string, string>;
+  setRawDraft: (key: string, value: string) => void;
+  localGoalDraft: GoalEditorDraft | null;
+  setLocalGoalDraft: (draft: GoalEditorDraft | null) => void;
+  setLocalGoalDirty: (dirty: boolean) => void;
   canResetActivityFilters: boolean;
   canResetPlanningPreferences: boolean;
   canSavePlanningPreferences: boolean;
@@ -65,10 +70,9 @@ type TrainingPlanBuilderSheetDraftsContextValue = {
   metadataForm: UseFormReturn<TrainingPlanMetadataFormValues>;
   draftContentVisibility: ContentVisibility;
   applyActivityFiltersDraft: () => void;
-  applyPlanningPreferencesDraft: () => void;
+  applyPlanningPreferencesDraft: () => boolean;
   applyMetadataDraft: () => boolean;
   cancelDraftForSheet: (sheet: BuilderSheet | null) => void;
-  cancelSheetDrafts: () => void;
   prepareActivityFiltersDraft: () => void;
   preparePlanningPreferencesDraft: () => void;
   resetActivityFiltersDraft: () => void;
@@ -79,14 +83,10 @@ type TrainingPlanBuilderSheetDraftsContextValue = {
   reportNumericDraftError: (key: string, message: string | null) => void;
 };
 
-const TrainingPlanBuilderSheetDraftsContext =
-  createContext<TrainingPlanBuilderSheetDraftsContextValue | null>(null);
-
-type TrainingPlanBuilderSheetDraftsProviderProps = {
+type TrainingPlanBuilderSheetStateOptions = {
   activeSheet: BuilderSheet | null;
   activityPlanCategoryFilter: ActivityCategoryFilter;
   activityPlanSort: ActivityPlanSort;
-  children: ReactNode;
   planPreferences: TrainingPlanPreferences;
   planMetadata: {
     name: string;
@@ -104,18 +104,26 @@ type TrainingPlanBuilderSheetDraftsProviderProps = {
   onNumericDraftError?: (key: string, message: string | null) => void;
 };
 
-export function TrainingPlanBuilderSheetDraftsProvider({
-  activeSheet: _activeSheet,
+// In-memory state for one open sheet stack. Pass it explicitly through the
+// bottom-sheet portal, which renders outside the calling subtree's context.
+export function useTrainingPlanBuilderSheetState({
+  activeSheet,
   activityPlanCategoryFilter,
   activityPlanSort,
-  children,
   planPreferences,
   planMetadata,
   onApplyActivityFilters,
   onApplyPlanningPreferences,
   onApplyMetadata,
   onNumericDraftError = () => undefined,
-}: TrainingPlanBuilderSheetDraftsProviderProps) {
+}: TrainingPlanBuilderSheetStateOptions) {
+  const [rawDrafts, setRawDrafts] = useState<Record<string, string>>({});
+  const setRawDraft = useCallback(
+    (key: string, value: string) => setRawDrafts((current) => ({ ...current, [key]: value })),
+    [],
+  );
+  const [localGoalDraft, setLocalGoalDraft] = useState<GoalEditorDraft | null>(null);
+  const [localGoalDirty, setLocalGoalDirty] = useState(false);
   const metadataForm = useZodForm({
     schema: trainingPlanMetadataFormSchema,
     defaultValues: { name: planMetadata.name, description: planMetadata.description },
@@ -124,6 +132,7 @@ export function TrainingPlanBuilderSheetDraftsProvider({
   const [draftContentVisibility, setDraftContentVisibility] = useState(
     planMetadata.contentVisibility,
   );
+  const metadataBaseline = useRef(planMetadata);
   const planningPreferencesForm = useZodForm({
     schema: trainingPlanPreferencesSchema,
     defaultValues: planPreferences,
@@ -165,12 +174,34 @@ export function TrainingPlanBuilderSheetDraftsProvider({
   const canSavePlanningPreferences =
     planningPreferenceIssues.length === 0 && Object.keys(preferenceNumericErrors).length === 0;
   const metadataValues = metadataForm.watch();
+  const metadataDirty =
+    metadataForm.formState.isDirty ||
+    draftContentVisibility !== metadataBaseline.current.contentVisibility;
+  useEffect(() => {
+    onNumericDraftError(
+      "sheet:metadata",
+      metadataDirty ? "Apply or discard the plan settings edits before saving." : null,
+    );
+    onNumericDraftError(
+      "sheet:preferences",
+      canResetPlanningPreferences ? "Apply or discard the preference edits before saving." : null,
+    );
+    onNumericDraftError(
+      "sheet:localGoal",
+      localGoalDirty ? "Add or discard the new goal before saving." : null,
+    );
+  }, [metadataDirty, canResetPlanningPreferences, localGoalDirty, onNumericDraftError]);
   const canSaveMetadata = trainingPlanMetadataFormSchema.safeParse(metadataValues).success;
   const [draftActivityPlanCategoryFilter, setDraftActivityPlanCategoryFilter] =
     useState<ActivityCategoryFilter>(activityPlanCategoryFilter);
   const [draftActivityPlanSort, setDraftActivityPlanSort] = useState(activityPlanSort);
 
   const prepareMetadataDraft = useCallback(() => {
+    metadataBaseline.current = {
+      name: planMetadata.name,
+      description: planMetadata.description,
+      contentVisibility: planMetadata.contentVisibility,
+    };
     metadataForm.reset({ name: planMetadata.name, description: planMetadata.description });
     setDraftContentVisibility(planMetadata.contentVisibility);
   }, [metadataForm, planMetadata.description, planMetadata.name, planMetadata.contentVisibility]);
@@ -209,15 +240,13 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       if (sheet === "preferences") {
         preparePlanningPreferencesDraft();
       }
+      if (sheet === "localGoalCreate") {
+        setLocalGoalDraft(null);
+        setLocalGoalDirty(false);
+      }
     },
     [prepareActivityFiltersDraft, prepareMetadataDraft, preparePlanningPreferencesDraft],
   );
-
-  const cancelSheetDrafts = useCallback(() => {
-    prepareActivityFiltersDraft();
-    preparePlanningPreferencesDraft();
-    prepareMetadataDraft();
-  }, [prepareActivityFiltersDraft, prepareMetadataDraft, preparePlanningPreferencesDraft]);
 
   const applyActivityFiltersDraft = useCallback(() => {
     onApplyActivityFilters({
@@ -237,11 +266,13 @@ export function TrainingPlanBuilderSheetDraftsProvider({
 
   const applyPlanningPreferencesDraft = useCallback(() => {
     if (!canSavePlanningPreferences) {
-      return;
+      return false;
     }
-    onApplyPlanningPreferences(
-      trainingPlanPreferencesSchema.parse(planningPreferencesForm.getValues()),
-    );
+    const saved = trainingPlanPreferencesSchema.parse(planningPreferencesForm.getValues());
+    onApplyPlanningPreferences(saved);
+    planningPreferencesForm.reset(saved);
+    setPreferenceNumericDrafts({});
+    return true;
   }, [canSavePlanningPreferences, onApplyPlanningPreferences, planningPreferencesForm]);
 
   const applyMetadataDraft = useCallback(() => {
@@ -255,11 +286,32 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       return false;
     }
     onApplyMetadata({ ...result.data, contentVisibility: draftContentVisibility });
+    metadataBaseline.current = { ...result.data, contentVisibility: draftContentVisibility };
+    metadataForm.reset(result.data);
     return true;
   }, [draftContentVisibility, metadataForm, onApplyMetadata]);
 
-  const value = useMemo<TrainingPlanBuilderSheetDraftsContextValue>(
+  const previousSheet = useRef<BuilderSheet | null>(null);
+  useEffect(() => {
+    if (previousSheet.current === activeSheet) return;
+    previousSheet.current = activeSheet;
+    if (activeSheet === "activityFilters") prepareActivityFiltersDraft();
+    if (activeSheet === "metadata") prepareMetadataDraft();
+    if (activeSheet === "preferences") preparePlanningPreferencesDraft();
+  }, [
+    activeSheet,
+    prepareActivityFiltersDraft,
+    prepareMetadataDraft,
+    preparePlanningPreferencesDraft,
+  ]);
+
+  return useMemo<TrainingPlanBuilderSheetState>(
     () => ({
+      rawDrafts,
+      setRawDraft,
+      localGoalDraft,
+      setLocalGoalDraft,
+      setLocalGoalDirty,
       canResetActivityFilters:
         draftActivityPlanCategoryFilter !== null || draftActivityPlanSort !== "newest",
       canResetPlanningPreferences,
@@ -279,7 +331,6 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       applyPlanningPreferencesDraft,
       applyMetadataDraft,
       cancelDraftForSheet,
-      cancelSheetDrafts,
       prepareActivityFiltersDraft,
       preparePlanningPreferencesDraft,
       resetActivityFiltersDraft,
@@ -290,6 +341,9 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       setDraftActivityPlanSort,
     }),
     [
+      rawDrafts,
+      setRawDraft,
+      localGoalDraft,
       draftActivityPlanCategoryFilter,
       draftActivityPlanSort,
       draftPlanningPreferences,
@@ -306,7 +360,6 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       applyPlanningPreferencesDraft,
       applyMetadataDraft,
       cancelDraftForSheet,
-      cancelSheetDrafts,
       prepareActivityFiltersDraft,
       preparePlanningPreferencesDraft,
       resetActivityFiltersDraft,
@@ -314,25 +367,14 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       reportPreferenceNumericDraftError,
     ],
   );
-
-  return (
-    <TrainingPlanBuilderSheetDraftsContext.Provider value={value}>
-      {children}
-    </TrainingPlanBuilderSheetDraftsContext.Provider>
-  );
 }
 
-export function useTrainingPlanBuilderSheetDrafts() {
-  const context = useContext(TrainingPlanBuilderSheetDraftsContext);
-  if (!context) {
-    throw new Error("Missing training plan builder sheet drafts provider.");
-  }
-  return context;
-}
-
-function TrainingPlanBuilderMetadataSheetContent() {
-  const { draftContentVisibility, metadataForm, setDraftContentVisibility } =
-    useTrainingPlanBuilderSheetDrafts();
+function TrainingPlanBuilderMetadataSheetContent({
+  sheetState,
+}: {
+  sheetState: TrainingPlanBuilderSheetState;
+}) {
+  const { draftContentVisibility, metadataForm, setDraftContentVisibility } = sheetState;
 
   return (
     <Form {...metadataForm}>
@@ -402,6 +444,7 @@ function TrainingPlanBuilderMetadataSheetContent() {
 }
 
 type TrainingPlanBuilderSheetContentProps = {
+  sheetState: TrainingPlanBuilderSheetState;
   activeSheet: BuilderSheet | null;
   activityPlanCategoryFilter: ActivityCategoryFilter;
   activityPlanEstimateById: Map<string, ActivityPlanPlanningEstimate>;
@@ -420,6 +463,7 @@ type TrainingPlanBuilderSheetContentProps = {
 };
 
 export function TrainingPlanBuilderSheetContent({
+  sheetState: sheetDrafts,
   activeSheet,
   activityPlanCategoryFilter,
   activityPlanEstimateById,
@@ -437,7 +481,6 @@ export function TrainingPlanBuilderSheetContent({
   setSelectedSessionId,
 }: TrainingPlanBuilderSheetContentProps) {
   const router = useRouter();
-  const sheetDrafts = useTrainingPlanBuilderSheetDrafts();
   const { activityPlanItems, activityPlansQuery, state } = builder;
   const { athleteContextFields } = builder.derived;
   const selectedSession = selectedSessionId
@@ -505,9 +548,13 @@ export function TrainingPlanBuilderSheetContent({
   if (activeSheet === "localGoalCreate") {
     return (
       <BuilderLocalGoalCreateContent
+        draft={sheetDrafts.localGoalDraft ?? undefined}
+        onDraftChange={sheetDrafts.setLocalGoalDraft}
+        onDirtyChange={sheetDrafts.setLocalGoalDirty}
         planStartDate={state.scheduling.startDate}
         onSave={(goal) => {
           builder.actions.addLocalGoal(goal);
+          sheetDrafts.cancelDraftForSheet("localGoalCreate");
           goBackSheet();
         }}
       />
@@ -515,12 +562,19 @@ export function TrainingPlanBuilderSheetContent({
   }
 
   if (activeSheet === "metadata") {
-    return <TrainingPlanBuilderMetadataSheetContent />;
+    return <TrainingPlanBuilderMetadataSheetContent sheetState={sheetDrafts} />;
   }
 
   if (activeSheet === "athleteContext") {
     return (
       <BuilderAthleteContextForm
+        rawDrafts={Object.fromEntries(
+          Object.entries(sheetDrafts.rawDrafts)
+            .filter(([key]) => key.startsWith("athlete:"))
+            .map(([key, value]) => [key.slice(8), value]),
+        )}
+        onRawDraftChange={(key, value) => sheetDrafts.setRawDraft(`athlete:${key}`, value)}
+        onInvalidChange={(key, message) => onNumericDraftError(`athlete:${key}`, message)}
         fields={athleteContextFields}
         onAddField={(fieldKey) => {
           if (isAthletePlanningContextEditableFieldKey(fieldKey))
@@ -531,6 +585,8 @@ export function TrainingPlanBuilderSheetContent({
             builder.actions.overrideAthleteContextField({ key: fieldKey, value });
         }}
         onRemoveField={(fieldKey) => {
+          sheetDrafts.setRawDraft(`athlete:${fieldKey}`, "");
+          onNumericDraftError(`athlete:${fieldKey}`, null);
           if (isAthletePlanningContextEditableFieldKey(fieldKey))
             builder.actions.removeAthleteContextField(fieldKey);
         }}
@@ -541,6 +597,7 @@ export function TrainingPlanBuilderSheetContent({
   if (activeSheet === "preferences") {
     return (
       <BuilderPlanPreferencesContextForm
+        disabled={builder.derived.savePlan.isPending}
         numericDrafts={sheetDrafts.preferenceNumericDrafts}
         onNumericDraftChange={sheetDrafts.setPreferenceNumericDraft}
         issues={sheetDrafts.planningPreferenceIssues}
@@ -554,6 +611,9 @@ export function TrainingPlanBuilderSheetContent({
   if (activeSheet === "session" && selectedSession) {
     return (
       <BuilderSessionEditorContent
+        key={selectedSession.localId}
+        rawDrafts={sheetDrafts.rawDrafts}
+        onRawDraftChange={sheetDrafts.setRawDraft}
         activityPlan={
           selectedSession.activityPlan
             ? (activityPlansById[selectedSession.activityPlan.id] ?? null)

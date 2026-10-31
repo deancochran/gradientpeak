@@ -118,7 +118,7 @@ describe("router live-db smoke", () => {
     });
 
     const caller = routesRouter.createCaller(
-      createCallerContext(seedState.profileId, email) as any,
+      createCallerContext(seedState.profileId, email) as never,
     );
     const result = await caller.list({ direction: "forward", limit: 20 });
 
@@ -157,7 +157,7 @@ describe("router live-db smoke", () => {
     });
 
     const caller = calendarRouter.createCaller(
-      createCallerContext(seedState.profileId, email) as any,
+      createCallerContext(seedState.profileId, email) as never,
     );
     const result = await caller.range({
       includeAdhoc: true,

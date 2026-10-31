@@ -137,6 +137,13 @@ Email delivery for Better Auth:
 - `AUTH_SMTP_PASS`
 - `AUTH_SMTP_SECURE`
 
+Chatbot server routing:
+
+- `OPENAI_API_KEY`
+- `CHATBOT_OPENAI_FAST_MODEL`
+- `CHATBOT_OPENAI_REASONING_MODEL`
+- `CHATBOT_MODEL_ROUTING_MODE` (`fixed` by default; `jev` additionally requires `TYPESAFE_API_KEY`)
+
 For local Supabase Inbucket delivery, set `AUTH_EMAIL_MODE=smtp` and point SMTP to the local
 Inbucket listener. `AUTH_SMTP_USER` and `AUTH_SMTP_PASS` are optional for unauthenticated local
 SMTP sinks.

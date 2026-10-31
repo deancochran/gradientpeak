@@ -37,37 +37,31 @@ export function getActivityTargetCompatibilityIssues(input: {
   const issues: ActivityTargetCompatibilityIssue[] = [];
   const pathPrefix = input.pathPrefix ?? [];
 
-  input.structure.segments.forEach((segment, segmentIndex) => {
-    if (segment.role !== "activity") return;
-    segment.intervals.forEach((interval, intervalIndex) => {
-      interval.steps.forEach((step, stepIndex) => {
-        step.targets.forEach((target, targetIndex) => {
-          if (
-            isTargetTypePermittedForActivity({
-              activityCategory: input.structure.activity_category,
-              targetType: target.type,
-            })
-          ) {
-            return;
-          }
-
-          issues.push({
+  input.structure.items.forEach((item, itemIndex) => {
+    (item.type === "step" ? [item] : item.steps).forEach((step, stepIndex) => {
+      step.targets.forEach((target, targetIndex) => {
+        if (
+          isTargetTypePermittedForActivity({
             activityCategory: input.structure.activity_category,
             targetType: target.type,
-            path: [
-              ...pathPrefix,
-              "segments",
-              segmentIndex,
-              "intervals",
-              intervalIndex,
-              "steps",
-              stepIndex,
-              "targets",
-              targetIndex,
-              "type",
-            ],
-            message: `Target type ${target.type} is not permitted for ${input.structure.activity_category} activity plans. Allowed targets: ${getPermissibleTargetTypes(input.structure.activity_category).join(", ")}.`,
-          });
+          })
+        ) {
+          return;
+        }
+
+        issues.push({
+          activityCategory: input.structure.activity_category,
+          targetType: target.type,
+          path: [
+            ...pathPrefix,
+            "items",
+            itemIndex,
+            ...(item.type === "repeat" ? ["steps", stepIndex] : []),
+            "targets",
+            targetIndex,
+            "type",
+          ],
+          message: `Target type ${target.type} is not permitted for ${input.structure.activity_category} activity plans. Allowed targets: ${getPermissibleTargetTypes(input.structure.activity_category).join(", ")}.`,
         });
       });
     });

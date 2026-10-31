@@ -173,7 +173,7 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
     !isBusy &&
     retryAllowed;
 
-  const submitForm = useZodFormSubmit<ActivitySubmissionFormData>({
+  const submitForm = useZodFormSubmit({
     form,
     onSubmit: handleSubmit,
     submittingLabel: "Saving...",

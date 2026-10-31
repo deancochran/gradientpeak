@@ -3,7 +3,7 @@
 // ================================
 
 import {
-  type ActivityPlanIntervalStep,
+  type ActivityPlanStep,
   consolidateActivityPlanText,
   formatTargetValue,
   getStepIntensityColor,
@@ -15,7 +15,7 @@ import { memo } from "react";
 import { View } from "react-native";
 
 interface StepPreviewCardProps {
-  step: ActivityPlanIntervalStep;
+  step: ActivityPlanStep;
   isUpcoming?: boolean;
   showDuration?: boolean;
 }
@@ -23,7 +23,7 @@ interface StepPreviewCardProps {
 /**
  * Calculate duration in seconds for a single step
  */
-function getStepDurationSeconds(duration: ActivityPlanIntervalStep["duration"]): number {
+function getStepDurationSeconds(duration: ActivityPlanStep["duration"]): number {
   switch (duration.type) {
     case "time":
       return duration.seconds;
@@ -54,9 +54,9 @@ const StepPreviewCard = memo<StepPreviewCardProps>(function StepPreviewCard({
           >
             {step.name}
           </Text>
-          {consolidateActivityPlanText(step.notes, step.description, "Description") && (
+          {consolidateActivityPlanText(step.instructions, undefined, "Instructions") && (
             <Text className="text-xs text-muted-foreground mt-1">
-              {consolidateActivityPlanText(step.notes, step.description, "Description")}
+              {consolidateActivityPlanText(step.instructions, undefined, "Instructions")}
             </Text>
           )}
         </View>

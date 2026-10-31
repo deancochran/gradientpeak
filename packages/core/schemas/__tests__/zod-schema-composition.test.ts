@@ -8,34 +8,20 @@ import {
 } from "../index";
 
 const structure = {
-  version: 3 as const,
+  version: 5 as const,
   activity_category: "run" as const,
-  segments: [
+  items: [
     {
-      id: "00000000-0000-4000-8000-000000000001",
-      role: "activity" as const,
+      type: "step",
+      id: "00000000-0000-4000-8000-000000000003",
       name: "Run",
-      intervals: [
-        {
-          id: "00000000-0000-4000-8000-000000000002",
-          name: "Main Set",
-          repetitions: 1,
-          steps: [
-            {
-              id: "00000000-0000-4000-8000-000000000003",
-              name: "Run",
-              duration: { type: "untilFinished" as const },
-              targets: [{ type: "RPE" as const, intensity: 5 }],
-            },
-          ],
-        },
-      ],
+      duration: { type: "untilFinished" as const },
+      targets: [{ type: "RPE" as const, intensity: 5 }],
     },
   ],
 };
-
 describe("activity plan schema composition", () => {
-  it("accepts strict V3 create input with root activity_category authority", () => {
+  it("accepts strict V5 create input with root activity_category authority", () => {
     expect(activityPlanCreateSchema.safeParse({ name: "Tempo builder", structure }).success).toBe(
       true,
     );
@@ -46,59 +32,38 @@ describe("activity plan schema composition", () => {
       }).success,
     ).toBe(false);
   });
-
   it("allows partial activity plan updates", () => {
     expect(activityPlanUpdateSchema.parse({ name: "Updated tempo builder" })).toEqual({
       name: "Updated tempo builder",
     });
   });
-
   it("rejects mixed-category structures for create and recording consumers", () => {
-    const firstSegment = structure.segments[0];
-    if (!firstSegment) throw new Error("missing activity segment fixture");
-    const firstInterval = firstSegment.intervals[0];
-    if (!firstInterval) throw new Error("missing interval fixture");
-    const firstStep = firstInterval.steps[0];
-    if (!firstStep) throw new Error("missing step fixture");
-
-    const legacyStructure = {
+    const firstStep = structure.items[0];
+    if (!firstStep || firstStep.type !== "step") throw new Error("missing step fixture");
+    const invalidStructure = {
       ...structure,
-      segments: [
-        ...structure.segments,
+      items: [
+        ...structure.items,
         {
-          ...firstSegment,
           id: "00000000-0000-4000-8000-000000000011",
-          activity_category: "bike" as const,
-          intervals: [
-            {
-              ...firstInterval,
-              id: "00000000-0000-4000-8000-000000000012",
-              steps: [
-                {
-                  ...firstStep,
-                  id: "00000000-0000-4000-8000-000000000013",
-                },
-              ],
-            },
-          ],
+          type: "step" as const,
+          duration: firstStep.duration,
+          targets: [{ type: "watts" as const, intensity: 200 }],
         },
       ],
     };
-
     expect(
-      activityPlanCreateSchema.safeParse({ name: "New plan", structure: legacyStructure }).success,
+      activityPlanCreateSchema.safeParse({ name: "New plan", structure: invalidStructure }).success,
     ).toBe(false);
     expect(
       recordingServiceActivityPlanSchema.safeParse({
         name: "Legacy checkpoint",
-        structure: legacyStructure,
+        structure: invalidStructure,
       }).success,
     ).toBe(false);
   });
-
   it("rejects plan-owned route linkage for create, update, and recording contracts", () => {
     const route_id = "550e8400-e29b-41d4-a716-446655440000";
-
     expect(
       activityPlanCreateSchema.safeParse({ name: "Route plan", route_id, structure }).success,
     ).toBe(false);
@@ -112,7 +77,6 @@ describe("activity plan schema composition", () => {
     ).toBe(false);
   });
 });
-
 describe("activity plan form schema composition", () => {
   it("uses the same strict structure contract", () => {
     expect(
@@ -132,7 +96,6 @@ describe("activity plan form schema composition", () => {
       }).success,
     ).toBe(false);
   });
-
   it("allows partial form updates", () => {
     expect(
       activityPlanUpdateFormSchema.parse({
@@ -141,10 +104,8 @@ describe("activity plan form schema composition", () => {
       }),
     ).toMatchObject({ name: "Updated evening run" });
   });
-
   it("rejects plan-owned route linkage in strict form contracts", () => {
     const route_id = "550e8400-e29b-41d4-a716-446655440000";
-
     expect(
       activityPlanCreateFormSchema.safeParse({ name: "Route plan", route_id, structure }).success,
     ).toBe(false);

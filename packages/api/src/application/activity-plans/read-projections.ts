@@ -19,6 +19,7 @@ import {
 } from "@repo/core";
 import { z } from "zod";
 import { resolveProfileMediaUrl } from "../storage/profile-media-url";
+import { activityPlanCanonicalStructureHash } from "./structure-hash";
 
 const planProjectionSourceSchema = z.looseObject({
   id: z.string(),
@@ -291,8 +292,11 @@ function summaryValue(plan: PlanProjectionSource, viewerId: string) {
       canEdit: isOwner,
       canDelete: isOwner,
       canDuplicate: canDuplicateFullActivityPlan(plan, viewerId),
-      canSchedule: true,
-      canRecord: isOwner,
+      // Direct scheduling persists an owner- or system-scoped prescription;
+      // read access to a public plan is not enough to create one.
+      canSchedule: isOwner || plan.is_system_template,
+      // Callers authorize read access before projecting a validated executable prescription.
+      canRecord: true,
     },
   };
 }
@@ -310,6 +314,8 @@ export function toActivityPlanDetail(plan: unknown, viewerId: string): ActivityP
   return activityPlanDetailSchema.parse({
     ...summary,
     contractVersion: "activity-plan-detail-v1",
+    // Nonowners need an execution identity, not the owner's stored metadata.
+    structureHash: activityPlanCanonicalStructureHash(summary.structure),
     ...(isOwner
       ? {
           notes: parsedPlan.notes ?? null,

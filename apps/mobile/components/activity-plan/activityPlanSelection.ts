@@ -1,10 +1,12 @@
-import type { ActivityPlanActivitySegment } from "@repo/core";
+import type { ActivityPlanItem, ActivityPlanRepeat } from "@repo/core";
 
-export function findActivitySegmentForInterval(
-  segments: readonly ActivityPlanActivitySegment[],
-  intervalId: string,
-): ActivityPlanActivitySegment | undefined {
-  return segments.find((segment) =>
-    segment.intervals.some((interval) => interval.id === intervalId),
+/** Finds the authored repeat that owns a step; root steps deliberately have no wrapper. */
+export function findRepeatForStep(
+  items: readonly ActivityPlanItem[],
+  stepId: string,
+): ActivityPlanRepeat | undefined {
+  return items.find(
+    (item): item is ActivityPlanRepeat =>
+      item.type === "repeat" && item.steps.some((step) => step.id === stepId),
   );
 }

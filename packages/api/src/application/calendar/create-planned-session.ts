@@ -1,4 +1,8 @@
-import { type PlannedSession, plannedSessionSchema } from "@repo/core/calendar";
+import {
+  type PlannedSession,
+  plannedSessionActivityPlanId,
+  plannedSessionSchema,
+} from "@repo/core/calendar";
 import type { PlannedSessionRepositoryPort } from "../../repositories/planned-session-repository-port";
 import {
   PlannedSessionAccessError,
@@ -29,7 +33,7 @@ export async function createPlannedSession(input: {
   if (
     !(await input.repository.activityPlanExistsForProfile({
       profileId: input.profileId,
-      activityPlanId: session.prescription.resolutionManifest.activity_plan_id,
+      activityPlanId: plannedSessionActivityPlanId(session),
     }))
   ) {
     throw new PlannedSessionAccessError(

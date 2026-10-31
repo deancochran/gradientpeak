@@ -16,11 +16,9 @@ jest.mock("@/lib/services/ActivityRecorder", () => ({
   __esModule: true,
   ActivityRecorderService: class ActivityRecorderService {},
 }));
-
 const addCallbackMock = jest.fn();
 const removeCallbackMock = jest.fn();
 const getLastKnownLocationMock = jest.fn<Promise<unknown>, []>(async () => null);
-
 const baseContract = {
   authority: {
     activity_category: "user",
@@ -61,7 +59,6 @@ const baseContract = {
   },
   validation: { consequences: [] },
 } satisfies Omit<RecordingSessionContract, "ui">;
-
 const mockPlanPrevious = jest.fn();
 const mockPlanSkip = jest.fn();
 const mockPlanAdvance = jest.fn();
@@ -81,18 +78,17 @@ const mockProvisionalMetrics = calculateProvisionalRecordingMetrics({
     { timestampMs: Date.parse("2026-06-01T00:01:15.000Z"), distanceMeters: 1200 },
   ],
 });
-
 type DeepPartial<T> = T extends readonly unknown[]
   ? T
   : T extends object
-    ? { [Key in keyof T]?: DeepPartial<T[Key]> }
+    ? {
+        [Key in keyof T]?: DeepPartial<T[Key]>;
+      }
     : T;
-
 function buildContract(
   overrides: DeepPartial<RecordingSessionContract> = {},
 ): RecordingSessionContract {
   const uiOverrides = overrides.ui ?? {};
-
   return {
     ...baseContract,
     ...overrides,
@@ -120,11 +116,9 @@ function buildContract(
     },
   } satisfies RecordingSessionContract;
 }
-
 type RecordingServiceOverrides = Omit<Partial<ActivityRecorderService>, "currentRoute"> & {
   currentRoute?: Partial<NonNullable<ActivityRecorderService["currentRoute"]>> | null;
 };
-
 function buildService(overrides: RecordingServiceOverrides = {}): ActivityRecorderService {
   const service: ActivityRecorderService = Object.create(ActivityRecorderService.prototype);
   const { currentRoute, ...serviceOverrides } = overrides;
@@ -146,12 +140,14 @@ function buildService(overrides: RecordingServiceOverrides = {}): ActivityRecord
     isGpsRecordingEnabled: () => false,
     allSteps: [
       {
+        type: "step",
         id: "00000000-0000-4000-8000-000000000001",
         name: "Warmup",
         duration: { type: "time", seconds: 300 },
         targets: [{ type: "%FTP", intensity: 55 }],
       },
       {
+        type: "step",
         id: "00000000-0000-4000-8000-000000000002",
         name: "Tempo block",
         duration: { type: "time", seconds: 600 },
@@ -181,14 +177,12 @@ function buildService(overrides: RecordingServiceOverrides = {}): ActivityRecord
   });
   return service;
 }
-
 jest.mock("react-native-maps", () => {
   const React = require("react");
   const MapView = React.forwardRef((props: HostProps, ref: React.ForwardedRef<unknown>) => {
     React.useImperativeHandle(ref, () => ({ animateCamera: jest.fn() }));
     return React.createElement("MapView", props, props.children);
   });
-
   return {
     __esModule: true,
     default: MapView,
@@ -196,32 +190,29 @@ jest.mock("react-native-maps", () => {
     PROVIDER_DEFAULT: "default",
   };
 });
-
 jest.mock("react-native-safe-area-context", () => ({
   __esModule: true,
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
-
 jest.mock("@/lib/stores/theme-store", () => ({
   __esModule: true,
   useTheme: () => ({ resolvedTheme: "light" }),
 }));
-
 jest.mock("@gorhom/bottom-sheet", () => {
   const React = require("react");
   const BottomSheet = React.forwardRef(
     (
-      props: HostProps & { onChange?: (index: number) => void },
+      props: HostProps & {
+        onChange?: (index: number) => void;
+      },
       ref: React.ForwardedRef<unknown>,
     ) => {
       React.useImperativeHandle(ref, () => ({
         snapToIndex: (index: number) => props.onChange?.(index),
       }));
-
       return React.createElement("BottomSheet", props, props.children);
     },
   );
-
   return {
     __esModule: true,
     default: BottomSheet,
@@ -229,17 +220,14 @@ jest.mock("@gorhom/bottom-sheet", () => {
     BottomSheetView: createHost("BottomSheetView"),
   };
 });
-
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
   Text: createHost("Text"),
 }));
-
 jest.mock("@repo/ui/components/icon", () => ({
   __esModule: true,
   Icon: createHost("Icon"),
 }));
-
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
   Activity: createHost("Activity"),
@@ -263,7 +251,6 @@ jest.mock("lucide-react-native", () => ({
   Watch: createHost("Watch"),
   Zap: createHost("Zap"),
 }));
-
 jest.mock("@shopify/react-native-skia", () => ({
   __esModule: true,
   Circle: createHost("Circle"),
@@ -273,7 +260,6 @@ jest.mock("@shopify/react-native-skia", () => ({
   useFont: () => ({}),
   vec: (x: number, y: number) => ({ x, y }),
 }));
-
 jest.mock("victory-native", () => ({
   __esModule: true,
   Area: createHost("Area"),
@@ -282,7 +268,9 @@ jest.mock("victory-native", () => ({
     data,
   }: {
     children: (context: {
-      points: { elevation: unknown[] };
+      points: {
+        elevation: unknown[];
+      };
       chartBounds: HostProps;
     }) => React.ReactNode;
     data: unknown[];
@@ -297,17 +285,14 @@ jest.mock("victory-native", () => ({
     ),
   Line: createHost("Line"),
 }));
-
 jest.mock("@/assets/fonts/SpaceMono-Regular.ttf", () => ({
   __esModule: true,
   default: "mock-font",
 }));
-
 jest.mock("@/components/recording/footer", () => ({
   __esModule: true,
   RecordingControls: createHost("RecordingControls"),
 }));
-
 jest.mock("@/lib/hooks/useActivityRecorder", () => ({
   __esModule: true,
   useSessionView: () => ({
@@ -315,6 +300,7 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
     plan: {
       hasPlan: true,
       currentStep: {
+        type: "step",
         id: "00000000-0000-4000-8000-000000000002",
         occurrenceId: "activity:segment-1:interval-1:0:step-1",
         globalOrdinal: 1,
@@ -368,16 +354,13 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
     skipPlanStep: mockPlanSkip,
   }),
 }));
-
 const { RecordingBackdrop } = require("../RecordingBackdrop");
 const { RecordingControlSheet } = require("../RecordingControlSheet");
 const { RecordingFloatingPanel } = require("../RecordingFloatingPanel");
 const { TrainerInsightCard } = require("../cards/TrainerInsightCard");
-
 function findHostNodes(rendered: Awaited<ReturnType<typeof renderNative>>, type: string) {
   return rendered.container.queryAll((node: ReactTestInstance) => node.type === type);
 }
-
 function buildSessionStats(): ComponentProps<typeof TrainerInsightCardComponent>["stats"] {
   return {
     duration: 0,
@@ -400,7 +383,6 @@ function buildSessionStats(): ComponentProps<typeof TrainerInsightCardComponent>
     powerZones: [0, 0, 0, 0, 0, 0, 0],
   };
 }
-
 describe("recording cockpit", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -408,7 +390,6 @@ describe("recording cockpit", () => {
     mockCurrentTargets = [{ type: "%FTP", intensity: 88 }];
     getLastKnownLocationMock.mockResolvedValue(null);
   });
-
   it("renders a route elevation profile in the carousel without subscribing to GPS", async () => {
     const result = await renderNative(
       <>
@@ -455,7 +436,6 @@ describe("recording cockpit", () => {
         />
       </>,
     );
-
     expect(screen.queryByTestId("route-elevation-backdrop")).toBeNull();
     expect(screen.getByTestId("route-progress-insight-card")).toBeTruthy();
     expect(screen.getByTestId("route-profile-card-content")).toBeTruthy();
@@ -471,7 +451,6 @@ describe("recording cockpit", () => {
     expect(findHostNodes(result, "Polyline")[0] ?? null).toBeNull();
     expect(addCallbackMock).not.toHaveBeenCalled();
   });
-
   it("clamps route progress after the route is complete", async () => {
     await renderNative(
       <RecordingFloatingPanel
@@ -503,13 +482,11 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("route-profile-current-dot")).toBeTruthy();
     expect(screen.getByText("6.0 km / 6.0 km")).toBeTruthy();
     expect(screen.getAllByText("-1.8%").length).toBeGreaterThan(0);
     expect(screen.queryByText("120% complete")).toBeNull();
   });
-
   it("renders distance progress fallback when route elevation is unavailable", async () => {
     const result = await renderNative(
       <RecordingFloatingPanel
@@ -540,7 +517,6 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("route-distance-fallback")).toBeTruthy();
     expect(screen.getByTestId("route-distance-current-dot")).toBeTruthy();
     expect(screen.getByText("Route distance")).toBeTruthy();
@@ -548,7 +524,6 @@ describe("recording cockpit", () => {
     expect(screen.queryByText("Done")).toBeNull();
     expect(findHostNodes(result, "MapView")[0] ?? null).toBeNull();
   });
-
   it("shows sensor-derived virtual route progress without live location", async () => {
     await renderNative(
       <RecordingFloatingPanel
@@ -582,7 +557,6 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("route-elevation-chart")).toBeTruthy();
     expect(screen.getByTestId("route-profile-current-dot")).toBeTruthy();
     expect(screen.getAllByText("Distance").length).toBeGreaterThan(0);
@@ -592,7 +566,6 @@ describe("recording cockpit", () => {
     expect(screen.getByText("3.0 km")).toBeTruthy();
     expect(screen.getByText("+4.2%")).toBeTruthy();
   });
-
   it("renders a GPS-free recording focus when legacy GPS backdrop input is supplied", async () => {
     const result = await renderNative(
       <RecordingBackdrop
@@ -601,7 +574,6 @@ describe("recording cockpit", () => {
         sessionContract={buildContract({ ui: { backdropMode: "gps_map" } })}
       />,
     );
-
     expect(findHostNodes(result, "MapView")[0] ?? null).toBeNull();
     expect(screen.queryByText("GPS map")).toBeNull();
     expect(screen.queryByTestId("recording-map-pending-backdrop")).toBeNull();
@@ -610,7 +582,6 @@ describe("recording cockpit", () => {
     expect(screen.getByText(/connected sensor metrics without location/i)).toBeTruthy();
     expect(addCallbackMock).not.toHaveBeenCalled();
   });
-
   it("renders an attached route as a static preview without user location", async () => {
     const result = await renderNative(
       <RecordingBackdrop
@@ -629,13 +600,11 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     const map = findHostNodes(result, "MapView")[0];
     expect(map).toBeTruthy();
     expect(map?.props.showsUserLocation).toBe(false);
     expect(screen.getByTestId("recording-backdrop-map")).toBeTruthy();
   });
-
   it("renders route unavailable copy without a map when route geometry is missing", async () => {
     const result = await renderNative(
       <RecordingBackdrop
@@ -647,14 +616,12 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(findHostNodes(result, "MapView")[0] ?? null).toBeNull();
     expect(screen.getByText("Route unavailable")).toBeTruthy();
     expect(
       screen.getByText("The route is attached, but there is no map geometry to preview."),
     ).toBeTruthy();
   });
-
   it("renders live activity and metric context in the floating panel", async () => {
     await renderNative(
       <RecordingFloatingPanel
@@ -676,7 +643,6 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("recording-card-carousel")).toBeTruthy();
     expect(screen.getAllByText("Tempo block").length).toBeGreaterThan(0);
     expect(screen.getByText("10m @ 220W")).toBeTruthy();
@@ -702,17 +668,13 @@ describe("recording cockpit", () => {
     expect(screen.getByText("Power Zone")).toBeTruthy();
     expect(screen.getByText("Z3")).toBeTruthy();
     expect(screen.getByTestId("trainer-insight-card")).toBeTruthy();
-
     await fireEvent.press(screen.getByLabelText("Previous interval"));
     await fireEvent.press(screen.getByLabelText("Skip interval"));
-
     expect(mockPlanPrevious).toHaveBeenCalledTimes(1);
     expect(mockPlanSkip).toHaveBeenCalledTimes(1);
-
     expect(screen.getAllByLabelText("Expand recording cards").length).toBeGreaterThan(0);
     expect(screen.queryByLabelText("Minimize recording cards")).toBeNull();
   });
-
   it("keeps percentage targets relative when canonical targets are unavailable", async () => {
     const unavailable = createUnavailableAthletePerformanceTargetFacts("2026-06-01T00:00:00.000Z");
     await renderNative(
@@ -734,11 +696,9 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByText("10m @ 88% FTP")).toBeTruthy();
     expect(screen.queryByText("Target 176 W")).toBeNull();
   });
-
   it("resolves max-HR targets from max HR rather than LTHR", async () => {
     mockCurrentTargets = [{ type: "%MaxHR", intensity: 80 }];
     const performanceTargets = buildPerformanceTargetFactsFixture({
@@ -766,12 +726,10 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByText("10m @ 152 bpm")).toBeTruthy();
     expect(screen.getByText("Target 152 bpm")).toBeTruthy();
     expect(screen.queryByText("136 bpm")).toBeNull();
   });
-
   it("uses the normal advance action for a manual completion occurrence", async () => {
     mockManualAdvance = true;
     await renderNative(
@@ -793,7 +751,6 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     const advance = screen.getByLabelText("Advance interval");
     expect(advance.props.accessibilityState).toEqual({ disabled: false });
     expect(screen.queryByLabelText("Skip interval")).toBeNull();
@@ -801,7 +758,6 @@ describe("recording cockpit", () => {
     expect(mockPlanAdvance).toHaveBeenCalledTimes(1);
     expect(mockPlanSkip).not.toHaveBeenCalled();
   });
-
   it("shows every metric cell in the expanded metrics card", async () => {
     await renderNative(
       <RecordingFloatingPanel
@@ -822,7 +778,6 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByText("Time")).toBeTruthy();
     expect(screen.getByText("Distance")).toBeTruthy();
     expect(screen.getByText("HR")).toBeTruthy();
@@ -845,7 +800,6 @@ describe("recording cockpit", () => {
     expect(screen.getAllByText("--").length).toBeGreaterThan(0);
     expect(screen.queryByTestId("recording-card-page-indicator")).toBeNull();
   });
-
   it("expands the floating panel when the card surface is pressed and minimizes from the corner", async () => {
     await renderNative(
       <RecordingFloatingPanel
@@ -866,20 +820,14 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.queryByLabelText("Minimize recording cards")).toBeNull();
-
     await fireEvent.press(screen.getByTestId("recording-card-activity_interval-surface"));
-
     expect(screen.getByLabelText("Minimize recording cards")).toBeTruthy();
     expect(screen.getByLabelText("Skip interval")).toBeTruthy();
-
     await fireEvent.press(screen.getByLabelText("Minimize recording cards"));
-
     expect(screen.queryByLabelText("Minimize recording cards")).toBeNull();
     expect(screen.getByTestId("recording-card-activity_interval-surface")).toBeTruthy();
   });
-
   it("exposes accessible 44-point panel controls with expansion state and pressed feedback", async () => {
     await renderNative(
       <RecordingFloatingPanel
@@ -900,17 +848,12 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     const expandSurface = screen.getByTestId("recording-card-activity_interval-surface");
-
     expect(expandSurface.props.accessibilityHint).toBe("Shows the full recording cards view");
     expect(expandSurface.props.accessibilityState).toEqual({ expanded: false });
     expect(expandSurface.props.className).toContain("active:opacity-80");
-
     await fireEvent.press(expandSurface);
-
     const minimizeButton = screen.getByTestId("recording-card-minimize-button");
-
     expect(minimizeButton.props.accessibilityHint).toBe(
       "Returns to the compact recording cards view",
     );
@@ -919,7 +862,6 @@ describe("recording cockpit", () => {
     expect(minimizeButton.props.className).toContain("w-11");
     expect(minimizeButton.props.className).toContain("active:opacity-80");
   });
-
   it("renders route progress cards when route context is attached", async () => {
     await renderNative(
       <RecordingFloatingPanel
@@ -944,11 +886,9 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
     expect(screen.getByTestId("route-progress-insight-card")).toBeTruthy();
   });
-
   it("renders a stable plan metrics trainer carousel with optional route cards", async () => {
     await renderNative(
       <RecordingFloatingPanel
@@ -980,14 +920,12 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getAllByText("Tempo block").length).toBeGreaterThan(0);
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
     expect(screen.getByText("Auto Target")).toBeTruthy();
     expect(screen.getByText("88%")).toBeTruthy();
     expect(screen.getByTestId("route-progress-insight-card")).toBeTruthy();
   });
-
   it("does not re-notify expansion when live trainer updates rebuild parent callbacks", async () => {
     const firstExpandedChange = jest.fn();
     const secondExpandedChange = jest.fn();
@@ -1012,9 +950,7 @@ describe("recording cockpit", () => {
         onExpandedChange={firstExpandedChange}
       />,
     );
-
     expect(firstExpandedChange).toHaveBeenCalledTimes(1);
-
     await result.rerender(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
@@ -1036,10 +972,8 @@ describe("recording cockpit", () => {
         onExpandedChange={secondExpandedChange}
       />,
     );
-
     expect(secondExpandedChange).not.toHaveBeenCalled();
   });
-
   it("keeps trainer remote controls stable when BLE descriptors are rebuilt", async () => {
     const service = buildService();
     Object.assign(service, {
@@ -1095,17 +1029,12 @@ describe("recording cockpit", () => {
       sessionContract: buildContract({ devices: { hasTrainer: true, trainerControllable: true } }),
       stats: buildSessionStats(),
     };
-
     const result = await renderNative(<TrainerInsightCard {...props} />);
-
     expect(screen.getByTestId("trainer-insight-card")).toBeTruthy();
     expect(screen.getAllByText("Power").length).toBeGreaterThan(0);
-
     await result.rerender(<TrainerInsightCard {...props} />);
-
     expect(screen.getAllByText("Power").length).toBeGreaterThan(0);
   });
-
   it("centers expanded recording cards with interval momentum disabled", async () => {
     await renderNative(
       <RecordingFloatingPanel
@@ -1136,16 +1065,13 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     const carousel = screen.getByTestId("recording-card-carousel");
-
     expect(carousel.props.disableIntervalMomentum).toBe(true);
     expect(carousel.props.contentContainerStyle.paddingHorizontal).toBeGreaterThanOrEqual(28);
     expect(carousel.props.snapToInterval).toBeGreaterThan(
       screen.getByTestId("recording-card-activity_interval").props.style.width,
     );
   });
-
   it("hides unavailable plan and trainer cards from the carousel", async () => {
     await renderNative(
       <RecordingFloatingPanel
@@ -1167,13 +1093,11 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("recording-card-carousel")).toBeTruthy();
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
     expect(screen.queryByTestId("activity-interval-insight-card")).toBeNull();
     expect(screen.queryByTestId("trainer-insight-card")).toBeNull();
   });
-
   it("hides data-only trainer and route-without-geometry cards from the carousel", async () => {
     await renderNative(
       <RecordingFloatingPanel
@@ -1195,12 +1119,10 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
     expect(screen.queryByTestId("route-progress-insight-card")).toBeNull();
     expect(screen.queryByTestId("trainer-insight-card")).toBeNull();
   });
-
   it("forces expanded metrics when no route is attached and GPS is off", async () => {
     await renderNative(
       <RecordingFloatingPanel
@@ -1223,12 +1145,10 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
     expect(screen.queryByText("Compact")).toBeNull();
     expect(screen.queryByText("Expand")).toBeNull();
   });
-
   it("resets selected contextual card to metrics when route capability disappears", async () => {
     const routeService = buildService({
       routeDistance: 10000,
@@ -1254,10 +1174,8 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
     expect(screen.getByTestId("route-progress-insight-card")).toBeTruthy();
-
     await result.rerender(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
@@ -1277,11 +1195,9 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
     expect(screen.queryByTestId("route-progress-insight-card")).toBeNull();
   });
-
   it("renders current climb values from the recorder service", async () => {
     await renderNative(
       <RecordingFloatingPanel
@@ -1312,12 +1228,10 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByText("+4.3%")).toBeTruthy();
     expect(screen.getByText("Climbing")).toBeTruthy();
     expect(screen.getByText("6.0 km")).toBeTruthy();
   });
-
   it("hides climb cards when route elevation data is unavailable", async () => {
     await renderNative(
       <RecordingFloatingPanel
@@ -1342,11 +1256,9 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
     expect(screen.queryByTestId("climb-insight-card")).toBeNull();
   });
-
   it("disables locked secondary actions in the control sheet", async () => {
     const result = await renderNative(
       <RecordingControlSheet
@@ -1371,24 +1283,19 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     expect(screen.getByTestId("recording-activity-control-button")).toBeTruthy();
     expect(screen.getByTestId("recording-setup-action-rail")).toBeTruthy();
     expect(screen.queryByTestId("recording-gps-toggle")).toBeNull();
     expect(screen.queryByText("GPS")).toBeNull();
     expect(screen.queryByTestId("recording-session-mode-button")).toBeNull();
     expect(screen.getByText("Guidance")).toBeTruthy();
-
     expect(screen.getByText("Activity plan")).toBeTruthy();
     expect(screen.getAllByText("Add")).toHaveLength(2);
-
     const disabledActions = findHostNodes(result, "Pressable").filter(
       (node: ReactTestInstance) => node.props.accessibilityState?.disabled === true,
     );
-
     expect(disabledActions).toHaveLength(2);
   });
-
   it("resolves native control-sheet colors from semantic theme tokens", async () => {
     const result = await renderNative(
       <RecordingControlSheet
@@ -1413,15 +1320,18 @@ describe("recording cockpit", () => {
         })}
       />,
     );
-
     const getHostProps = (
       type: string,
-    ): { backgroundStyle?: { backgroundColor?: string }; color?: string } => {
+    ): {
+      backgroundStyle?: {
+        backgroundColor?: string;
+      };
+      color?: string;
+    } => {
       const node = findHostNodes(result, type)[0];
       if (!node) throw new Error(`Expected ${type} host node`);
       return node.props;
     };
-
     expect(getHostProps("BottomSheet").backgroundStyle).toEqual({
       backgroundColor: THEME.light.popover,
     });

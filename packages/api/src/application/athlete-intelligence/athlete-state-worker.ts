@@ -34,6 +34,7 @@ import {
 } from "../activity-analysis/reprocess-profile-activity-analysis";
 import { reconcileOnboardingStatus } from "../onboarding/readiness";
 import { createAthletePerformanceTargetFactsReader } from "../performance-model/get-athlete-performance-model-as-of";
+import { processDueDeferredThresholdCalibrations } from "../performance-model/reconcile-thresholds";
 import { publishAthleteDailyLoad } from "./publish-athlete-daily-load";
 import { readCachedPublishedAthletePerformanceTargets } from "./published-athlete-state";
 
@@ -567,6 +568,15 @@ export class AthleteStateWorkerService {
   async processDueJobs(input: { limit?: number; now?: Date } = {}) {
     const limit = Math.max(1, Math.min(input.limit ?? 5, 50));
     const result = { completed: 0, failed: 0, processed: 0 };
+    // This runtime is the already-configured durable server drain. Running the
+    // calibration promoter here gives direct recordings and every provider
+    // source an automatic consumer rather than a history-import-only helper.
+    if ("$client" in this.input.db) {
+      const deferred = await processDueDeferredThresholdCalibrations(this.input.db, { limit });
+      result.completed += deferred.completed;
+      result.failed += deferred.failed;
+      result.processed += deferred.processed;
+    }
     claimSlots: for (let index = 0; index < limit; index += 1) {
       const now = input.now ?? new Date();
       if ("$client" in this.input.db) {

@@ -14,6 +14,10 @@ import {
   completedActivitySegmentSetSchema,
 } from "@repo/core/activity-segments";
 import { calculateCyclingNormalizedPower, estimateVO2Max } from "@repo/core/calculations";
+import {
+  calculateIntervalWeightedMetric,
+  deriveClippedIntervalMetricEvidence,
+} from "@repo/core/recording-metrics";
 import { profileMetrics } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, lte } from "drizzle-orm";
@@ -158,6 +162,265 @@ function average(values: Array<number | undefined>): number | undefined {
     : undefined;
 }
 
+type ActiveInterval = { startSeconds: number; endSeconds: number };
+
+function activeIntervalsForSegment(input: {
+  startedAt: Date;
+  segment: CompletedActivitySegmentSet["segments"][number];
+  pauseRanges: readonly { startOffsetMs: number; endOffsetMs: number }[];
+}): ActiveInterval[] {
+  const originSeconds = input.startedAt.getTime() / 1_000;
+  const startSeconds = originSeconds + input.segment.startOffsetMs / 1_000;
+  const endSeconds = originSeconds + input.segment.endOffsetMs / 1_000;
+  let cursor = startSeconds;
+  const intervals: ActiveInterval[] = [];
+  for (const pause of input.pauseRanges) {
+    const pauseStart = Math.max(startSeconds, originSeconds + pause.startOffsetMs / 1_000);
+    const pauseEnd = Math.min(endSeconds, originSeconds + pause.endOffsetMs / 1_000);
+    if (pauseStart > cursor) intervals.push({ startSeconds: cursor, endSeconds: pauseStart });
+    cursor = Math.max(cursor, pauseEnd);
+  }
+  if (cursor < endSeconds) intervals.push({ startSeconds: cursor, endSeconds });
+  return intervals;
+}
+
+function intervalMetric(
+  records: ParsedActivityFileForAnalysis["records"],
+  activeIntervals: readonly ActiveInterval[],
+  metric: "heartRate" | "power" | "cadence" | "speed",
+) {
+  return calculateIntervalWeightedMetric({
+    samples: records.map((record) => ({
+      timestampSeconds:
+        record.timestamp?.getTime() === undefined ? Number.NaN : record.timestamp.getTime() / 1_000,
+      value: record[metric],
+    })),
+    activeIntervals,
+  });
+}
+
+function buildAcceptedRecordingSegmentCalculationTimeline(input: {
+  records: ParsedActivityFileForAnalysis["records"];
+  segment: CompletedActivitySegmentSet["segments"][number];
+  startedAt: Date;
+  activeIntervals: readonly ActiveInterval[];
+}) {
+  const source = (metric: "heartRate" | "power" | "cadence" | "speed") =>
+    deriveClippedIntervalMetricEvidence({
+      samples: input.records.map((record) => ({
+        timestampSeconds:
+          record.timestamp?.getTime() === undefined
+            ? Number.NaN
+            : record.timestamp.getTime() / 1_000,
+        value: record[metric],
+      })),
+      activeIntervals: input.activeIntervals,
+    });
+  const heartRate = source("heartRate");
+  const power = source("power");
+  const cadence = source("cadence");
+  const speed = source("speed");
+  const startSeconds = input.startedAt.getTime() / 1_000 + input.segment.startOffsetMs / 1_000;
+  const endSeconds = input.startedAt.getTime() / 1_000 + input.segment.endOffsetMs / 1_000;
+  const boundaries = [
+    startSeconds,
+    endSeconds,
+    ...input.activeIntervals.flatMap((interval) => [interval.startSeconds, interval.endSeconds]),
+    ...[heartRate, power, cadence, speed].flatMap((evidence) =>
+      evidence.flatMap((interval) => [interval.startSeconds, interval.endSeconds]),
+    ),
+  ]
+    .filter((timestamp) => timestamp >= startSeconds && timestamp <= endSeconds)
+    .sort((left, right) => left - right)
+    .filter((timestamp, index, all) => index === 0 || timestamp !== all[index - 1]);
+  const evidenceCursors = [heartRate, power, cadence, speed].map((evidence) => ({
+    evidence,
+    index: 0,
+  }));
+  let activeIntervalIndex = 0;
+  const records = boundaries.map((timestampSeconds, index) => {
+    const previous = boundaries[index - 1];
+    let values: Array<number | undefined> = [];
+    if (previous !== undefined) {
+      values = evidenceCursors.map((cursor) => {
+        while (true) {
+          const current = cursor.evidence[cursor.index];
+          if (current === undefined || current.endSeconds > previous) break;
+          cursor.index += 1;
+        }
+        const interval = cursor.evidence[cursor.index];
+        return interval !== undefined &&
+          interval.startSeconds <= previous &&
+          interval.endSeconds >= timestampSeconds
+          ? interval.value
+          : undefined;
+      });
+      while (true) {
+        const current = input.activeIntervals[activeIntervalIndex];
+        if (current === undefined || current.endSeconds > previous) break;
+        activeIntervalIndex += 1;
+      }
+    }
+    const activeInterval = input.activeIntervals[activeIntervalIndex];
+    const included =
+      previous !== undefined &&
+      activeInterval !== undefined &&
+      activeInterval.startSeconds <= previous &&
+      activeInterval.endSeconds >= timestampSeconds;
+    return {
+      timestamp: new Date(timestampSeconds * 1_000),
+      ...(previous === undefined
+        ? {}
+        : {
+            ...(values[0] === undefined ? {} : { heartRate: values[0] }),
+            ...(values[1] === undefined ? {} : { power: values[1] }),
+            ...(values[2] === undefined ? {} : { cadence: values[2] }),
+            ...(values[3] === undefined ? {} : { speed: values[3] }),
+          }),
+      included,
+    };
+  });
+  const metadata = collectActivityFileStreamMetadata(records);
+  return { metadata, includedTimeline: records.map((record) => record.included) };
+}
+
+/**
+ * Applies the imported-artifact stream calculators to a recording-owned
+ * execution timeline.  The caller supplies that timeline deliberately: an
+ * artifact may describe only the sensors, never the user's execution ranges.
+ * Raw altitude remains in the accepted artifact, but it is deliberately not
+ * adapted into this interval timeline. Therefore grade-dependent calculations
+ * are unavailable here rather than interpolating or claiming derived elevation.
+ */
+export function analyzeAcceptedRecordingArtifactStreams(input: {
+  activityId: string;
+  profileId: string;
+  startedAt: Date;
+  segmentSet: CompletedActivitySegmentSet;
+  records: ParsedActivityFileForAnalysis["records"];
+  artifactId?: string;
+  pauseRangesBySegment?: ReadonlyMap<
+    string,
+    readonly { startOffsetMs: number; endOffsetMs: number }[]
+  >;
+}) {
+  // A timing-only TCX is an accepted recording artifact, not evidence for
+  // zero-valued measurements or stream-derived performance observations.
+  if (input.records.length === 0) {
+    return {
+      segmentSet: input.segmentSet,
+      efforts: [],
+      detectedLTHR: null,
+      summary: {
+        avgHeartRate: null,
+        maxHeartRate: null,
+        avgPower: null,
+        maxPower: null,
+        avgCadence: null,
+        maxCadence: null,
+        avgSpeedMps: null,
+        maxSpeedMps: null,
+        normalizedSpeedMps: null,
+      },
+    };
+  }
+  const analyses = input.segmentSet.segments
+    .filter((segment) => segment.role === "activity")
+    .map((segment) => {
+      const pauseRanges = input.pauseRangesBySegment?.get(segment.id) ?? [];
+      const activeIntervals = activeIntervalsForSegment({
+        startedAt: input.startedAt,
+        segment,
+        pauseRanges,
+      });
+      const { metadata, includedTimeline } = buildAcceptedRecordingSegmentCalculationTimeline({
+        records: input.records,
+        segment,
+        startedAt: input.startedAt,
+        activeIntervals,
+      });
+      const heartRate = intervalMetric(input.records, activeIntervals, "heartRate");
+      const power = intervalMetric(input.records, activeIntervals, "power");
+      const cadence = intervalMetric(input.records, activeIntervals, "cadence");
+      const speed = intervalMetric(input.records, activeIntervals, "speed");
+      const calculation = calculateActivityFileStreamDerivedCalculations({
+        activityId: input.activityId,
+        profileId: input.profileId,
+        segmentId: segment.id,
+        activityStartedAt: input.startedAt,
+        segmentStartOffsetSeconds: segment.startOffsetMs / 1_000,
+        segmentEndOffsetSeconds: segment.endOffsetMs / 1_000,
+        ...(input.artifactId === undefined ? {} : { sourceArtifactId: input.artifactId }),
+        activityCategory: segment.activity_category,
+        // Execution-manifest distance may be explicitly manual. It is never
+        // eligible as stream distance for normalized speed or load derivation.
+        distance: 0,
+        duration: (segment.endOffsetMs - segment.startOffsetMs) / 1_000,
+        activeDuration:
+          "activeMs" in segment.summary.timing
+            ? (segment.summary.timing.activeMs ?? null) === null
+              ? null
+              : (segment.summary.timing.activeMs ?? 0) / 1_000
+            : null,
+        movingDuration:
+          "movingMs" in segment.summary.timing
+            ? (segment.summary.timing.movingMs ?? null) === null
+              ? null
+              : (segment.summary.timing.movingMs ?? 0) / 1_000
+            : null,
+        includedTimeline,
+        bestEffortMaxGapSeconds: 5,
+        streamMetadata: metadata,
+      });
+      return {
+        segmentId: segment.id,
+        calculation,
+        summary: buildActivityFileDerivedSegmentSummary({
+          summary: {
+            ...segment.summary,
+            ...(heartRate.average === null ? {} : { averageHeartRateBpm: heartRate.average }),
+            ...(power.average === null ? {} : { averagePowerWatts: power.average }),
+            ...(cadence.average === null ? {} : { averageCadenceRpm: cadence.average }),
+            ...(speed.average === null ? {} : { averageSpeedMetersPerSecond: speed.average }),
+          },
+          metrics: calculation,
+        }),
+        activeIntervals,
+      };
+    });
+  const activeIntervals = analyses.flatMap((analysis) => analysis.activeIntervals);
+  const heartRate = intervalMetric(input.records, activeIntervals, "heartRate");
+  const power = intervalMetric(input.records, activeIntervals, "power");
+  const cadence = intervalMetric(input.records, activeIntervals, "cadence");
+  const speed = intervalMetric(input.records, activeIntervals, "speed");
+  return {
+    segmentSet: completedActivitySegmentSetSchema.parse({
+      ...input.segmentSet,
+      segments: input.segmentSet.segments.map((segment) => {
+        const analysis = analyses.find((candidate) => candidate.segmentId === segment.id);
+        return analysis ? { ...segment, summary: analysis.summary } : segment;
+      }),
+    }),
+    efforts: analyses.flatMap((analysis) => analysis.calculation.effortsToInsert),
+    detectedLTHR:
+      analyses.find((analysis) => analysis.calculation.detectedLTHR !== null)?.calculation
+        .detectedLTHR ?? null,
+    summary: {
+      avgHeartRate: heartRate.average,
+      maxHeartRate: heartRate.maximum,
+      avgPower: power.average,
+      maxPower: power.maximum,
+      avgCadence: cadence.average,
+      maxCadence: cadence.maximum,
+      avgSpeedMps: speed.average,
+      maxSpeedMps: speed.maximum,
+      // No accepted recording distance stream is modeled here. Avoid turning a
+      // manually supplied distance and elapsed/manual timer into a sensor speed.
+      normalizedSpeedMps: null,
+    },
+  };
+}
+
 function positiveFiniteNumber(value: number | undefined): number | undefined {
   return value !== undefined && Number.isFinite(value) && value > 0 ? value : undefined;
 }
@@ -215,7 +478,9 @@ function swimTimingEvidence(input: {
   return calculateSwimTiming({
     elapsedDurationSeconds: input.elapsedSeconds,
     lengths: ownedSwimLengths(input.lengths, input.sessionMessageIndex),
-    expectedActiveLengthCount: input.session?.numActiveLengths,
+    ...(input.session?.numActiveLengths === undefined
+      ? {}
+      : { expectedActiveLengthCount: input.session.numActiveLengths }),
   });
 }
 
@@ -416,8 +681,8 @@ function buildCompletedSegmentSet(input: {
       return {
         sessionMessageIndex: session.messageIndex,
         ...identity,
-        rawSport: session.rawSport,
-        rawSubSport: session.rawSubSport,
+        ...(session.rawSport === undefined ? {} : { rawSport: session.rawSport }),
+        ...(session.rawSubSport === undefined ? {} : { rawSubSport: session.rawSubSport }),
         startTime: new Date(session.startTimeMs),
         endTime: new Date(session.endTimeMs),
       };

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { buildEffectiveCompletedObservationsByDate } from "@/lib/training-path/trainingTimelineAdapters";
 import {
   buildTrainingPathGoalMarkers,
@@ -154,7 +155,7 @@ describe("trainingPathUtils", () => {
         const date = `2026-06-0${index + 1}`;
         return {
           date,
-          completed_observation_state: effectiveCompleted.get(date)?.state,
+          ...omitUndefined({ completed_observation_state: effectiveCompleted.get(date)?.state }),
           recommended_common_load: 10,
           scheduled_common_load: index === 0 ? 40 : 0,
         };

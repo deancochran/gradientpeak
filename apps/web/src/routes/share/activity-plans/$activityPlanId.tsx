@@ -5,7 +5,6 @@ import { Dumbbell } from "lucide-react";
 
 import { ActivityPlanEstimateRow } from "../../../components/activity-plan/activity-plan-estimates";
 import { ActivityPlanSessionFlow } from "../../../components/activity-plan/activity-plan-session-flow";
-import { ActivityPlanStructure } from "../../../components/activity-plan/activity-plan-structure";
 import { getActivityBadgeLabel, getActivityEmoji } from "../../../lib/activity-route-helpers";
 import { loadPublicActivityPlan } from "../../../lib/public-share";
 
@@ -87,7 +86,6 @@ function PublicActivityPlanPage() {
         </CardContent>
       </Card>
       <ActivityPlanSessionFlow structure={activityPlan.structure} />
-      <ActivityPlanStructure structure={activityPlan.structure} />
     </main>
   );
 }

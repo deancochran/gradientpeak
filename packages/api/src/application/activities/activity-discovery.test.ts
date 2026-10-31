@@ -128,7 +128,8 @@ describe("activity discovery", () => {
       activity_category: "run",
       mode,
     });
-    const query = dialect.sqlToQuery(condition!).sql;
+    if (!condition) throw new Error("Expected an activity composition condition");
+    const query = dialect.sqlToQuery(condition).sql;
 
     expect(query).toMatch(/"activity_segments"\."activity_category" = \$\d+/);
     expect(query).toContain('"activity_segments"."role" = \'activity\'');
@@ -158,10 +159,13 @@ describe("activity discovery", () => {
   });
 
   it("combines matching multisport common Load while retaining aggregate coverage", () => {
-    const segments = [segment(0, "run"), segment(1, "bike"), segment(2, "run")];
+    const firstSegment = segment(0, "run");
+    const secondSegment = segment(1, "bike");
+    const thirdSegment = segment(2, "run");
+    const segments = [firstSegment, secondSegment, thirdSegment];
     const derived = [
-      { segment: segments[0]!, load: 64 },
-      { segment: segments[2]!, load: 64 },
+      { segment: firstSegment, load: 64 },
+      { segment: thirdSegment, load: 64 },
     ].map(({ segment: item, load }) => {
       const commonLoad = {
         status: "available" as const,
@@ -234,15 +238,26 @@ describe("activity discovery", () => {
               contributingDurationSeconds: null,
               reason: "threshold_missing",
             } satisfies CommonLoadResult;
+            const firstDerived = derived[0];
+            const firstSegment = segments[0];
+            const secondDerived = derived[1];
+            if (!firstDerived || !firstSegment || !secondDerived) {
+              throw new Error("Activity discovery fixture requires two derived segments");
+            }
             return {
-              ...derived[0]!,
+              ...firstDerived,
               common_load: commonLoad,
               observationQuantification: createObservationQuantificationBundle({
-                members: [observation(segments[0]!, commonLoad)],
+                members: [observation(firstSegment, commonLoad)],
               }),
             };
           })(),
-          derived[1]!,
+          (() => {
+            const secondDerived = derived[1];
+            if (!secondDerived)
+              throw new Error("Activity discovery fixture requires two derived segments");
+            return secondDerived;
+          })(),
         ],
       }),
     ).toMatchObject({ common_load: { status: "partial", load: 64, unavailableActivityCount: 1 } });

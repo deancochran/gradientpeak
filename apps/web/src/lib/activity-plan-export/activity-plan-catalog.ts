@@ -6,22 +6,100 @@ import {
   type SystemTrainingPlanTemplate,
   type TrainingPlanScheduleVisualModel,
 } from "@repo/core";
-import { type ActivityPlanPrintModel, buildActivityPlanPrintModel } from "@repo/core/activity-plan";
+
+/** Publisher-only exclusions for active templates omitted from the catalogue. */
+export const PUBLISHER_EXCLUDED_TEMPLATE_IDS = new Set([
+  "6a9b0c1d-2e3f-4a5b-ac7d-8e9f0a1b2c3d", // CrossFit WOD
+  "1f6ea8cb-5df9-42cb-9f04-3ca5a8a6d6d1", // Other Race Simulation
+]);
+
+import {
+  type ActivityPlanPrintGroup,
+  type ActivityPlanPrintModel,
+  buildActivityPlanPrintModel,
+} from "@repo/core/activity-plan";
+
+type CatalogInstructionStep = {
+  activityCategory: string;
+  instructions: string | null;
+  name: string | null;
+};
+
+function normalizedCatalogLabel(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/gu, " ");
+}
+
+/** Removes only observed V5 migration wrappers from athlete-facing catalog cues. */
+export function formatActivityPlanCatalogInstruction(step: CatalogInstructionStep): string | null {
+  const source = step.instructions?.trim();
+  if (!source) return null;
+  const paragraphs = source.split("\n\n");
+  const result: string[] = [];
+  for (let index = 0; index < paragraphs.length; index += 1) {
+    const paragraph = paragraphs[index];
+    if (paragraph === undefined) continue;
+    if (index === 0 && paragraph.startsWith("Notes:\n")) {
+      const cue = paragraph.slice("Notes:\n".length).trim();
+      if (cue) result.push(cue);
+      continue;
+    }
+    if (paragraph === `Block context:\nSegment: ${step.activityCategory} activity`) continue;
+    if (paragraph.startsWith("Interval:\n")) {
+      const interval = paragraph.slice("Interval:\n".length).trim();
+      // Generated ordinal names carry no coaching information.
+      if (/^Interval \d+$/u.test(interval)) continue;
+      if (step.name && normalizedCatalogLabel(interval) === normalizedCatalogLabel(step.name))
+        continue;
+    }
+    result.push(paragraph);
+  }
+  const formatted = result.join("\n\n").trim();
+  return formatted || null;
+}
+
+export function formatActivityPlanCatalogTotal(total: string): string {
+  const timed = /^(Time|Timed subtotal): (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?$/u.exec(total);
+  if (timed) {
+    const minutes = Number(timed[2] ?? 0) * 60 + Number(timed[3] ?? 0);
+    const seconds = Number(timed[4] ?? 0);
+    const prefix = timed[1] === "Timed subtotal" ? "Timed: " : "";
+    return `${prefix}${minutes ? `${minutes} min` : ""}${minutes && seconds ? " " : ""}${seconds ? `${seconds} sec` : ""}`;
+  }
+  return total
+    .replace(/^Time: /u, "")
+    .replace(/^Timed subtotal: /u, "Timed: ")
+    .replace(/(\d+)m\b/gu, "$1 min")
+    .replace(/(\d+)s\b/gu, "$1 sec");
+}
+
+/** Time labels from the print model have no space before m/s; distances do. */
+export function formatActivityPlanCatalogDuration(duration: string): string {
+  return duration.replace(/(\d+)m\b/gu, "$1 min").replace(/(\d+)s\b/gu, "$1 sec");
+}
+
+export function getActivityPlanCatalogTimedProfileWidths(
+  bars: readonly { durationSeconds?: number | null }[],
+): readonly number[] | null {
+  if (
+    bars.length === 0 ||
+    bars.some((bar) => bar.durationSeconds == null || bar.durationSeconds <= 0)
+  )
+    return null;
+  const totalSeconds = bars.reduce((total, bar) => total + (bar.durationSeconds ?? 0), 0);
+  if (totalSeconds <= 0) return null;
+  return bars.map((bar) => ((bar.durationSeconds ?? 0) / totalSeconds) * 100);
+}
 
 export type ActivityPlanCatalogEntry = {
-  adaptation: ActivityPlanCatalogAdaptation | null;
   key: string;
   model: ActivityPlanPrintModel;
 };
 
-export type ActivityPlanCatalogAdaptation = {
-  allowedStates: readonly string[] | null;
-  controls: readonly string[];
-};
-
-type ActivityPlanCatalogAdaptationControl = NonNullable<
-  SystemTemplate["adaptation"]
->["controls"][number];
+export function buildPublisherActivityPlanCatalogModels(): ActivityPlanCatalogEntry[] {
+  return buildActivityPlanCatalogModels(
+    SYSTEM_TEMPLATES.filter((template) => !PUBLISHER_EXCLUDED_TEMPLATE_IDS.has(template.id)),
+  );
+}
 
 export type ActivityPlanCatalogSection = {
   entries: readonly ActivityPlanCatalogEntry[];
@@ -30,12 +108,22 @@ export type ActivityPlanCatalogSection = {
 };
 
 export type ActivityPlanCatalogPage = {
-  entries:
-    | readonly [ActivityPlanCatalogEntry]
-    | readonly [ActivityPlanCatalogEntry, ActivityPlanCatalogEntry];
+  entries: readonly [ActivityPlanCatalogFragment];
   pageNumber: number;
   sectionKey: string;
   sectionTitle: string;
+};
+
+/** A renderable portion of one canonical catalog entry. */
+export type ActivityPlanCatalogFragment = {
+  continuedGroupIds: readonly string[];
+  continuesAfterGroupIds: readonly string[];
+  entry: ActivityPlanCatalogEntry;
+  key: string;
+  model: ActivityPlanPrintModel;
+  partCount: number;
+  partIndex: number;
+  showContext: boolean;
 };
 
 export type ActivityPlanCatalogLayout = {
@@ -86,7 +174,7 @@ export type ActivityPlanCatalogTrainingPlan = {
   id: string;
   name: string;
   overviewPageNumber: number;
-  schedulePageNumber: number;
+  schedulePageNumbers: readonly number[];
   scheduleVisual: TrainingPlanScheduleVisualModel;
   sessionsPerWeekTarget: number;
   weeks: readonly ActivityPlanCatalogTrainingWeek[];
@@ -101,29 +189,26 @@ export type ActivityPlanCatalogTrainingPlanSection = {
 /** Cover, publication information, finder, and the two reference pages. */
 export const ACTIVITY_PLAN_CATALOG_BASE_FRONT_MATTER_PAGES = 5;
 export const ACTIVITY_PLAN_CATALOG_INTERIOR_MARGINS = {
-  binding: 48,
-  outside: 30,
+  /** Mixam's 0.6 in wire-o gutter plus the 0.125 in bleed. */
+  binding: 52.2,
+  /** Mixam's 0.25 in quiet area plus the 0.125 in bleed. */
+  outside: 27,
 } as const;
 export const ACTIVITY_PLAN_CATALOG_PAGE_SIZE = {
-  height: 810,
-  width: 630,
+  height: 613.275591,
+  width: 437.527559,
 } as const;
 export const ACTIVITY_PLAN_CATALOG_PRINT_GEOMETRY = {
   bleedPoints: 9,
   pageHeight: ACTIVITY_PLAN_CATALOG_PAGE_SIZE.height,
   pageWidth: ACTIVITY_PLAN_CATALOG_PAGE_SIZE.width,
-  trimHeight: 792,
-  trimWidth: 612,
+  trimHeight: 595.275591,
+  trimWidth: 419.527559,
 } as const;
-const ACTIVITY_PLAN_CATALOG_CONTENTS_COLUMN_ROWS = 48;
-export const ACTIVITY_PLAN_CATALOG_TWO_UP_GEOMETRY = {
-  firstContentBottom: 403,
-  secondContentBottom: 768,
-  secondContentTop: 437,
-  slotGap: 10,
-  slotHeight: 355,
-  slotPadding: 12,
-} as const;
+const ACTIVITY_PLAN_CATALOG_CONTENTS_COLUMN_ROWS = 24;
+// A week can contain several long authored titles; one week per A5 schedule
+// page preserves the 8 pt minimum rather than relying on renderer overflow.
+const TRAINING_SCHEDULE_WEEKS_PER_PAGE = 1;
 
 const MULTISPORT_TEMPLATE_IDS = new Set([
   "73d53dd1-f8b8-4d7f-9ba7-dfa4de116201",
@@ -143,105 +228,143 @@ const CATALOG_SECTIONS = [
   { key: "multisport", title: "Multisport programmes" },
 ] as const;
 
-function wrappedLines(value: string | null, charactersPerLine: number): number {
-  if (!value) return 0;
-  return value
-    .split("\n")
-    .reduce((total, line) => total + Math.max(1, Math.ceil(line.length / charactersPerLine)), 0);
+function fragmentModel(
+  entry: ActivityPlanCatalogEntry,
+  groups: readonly ActivityPlanPrintGroup[],
+  includeNotes: boolean,
+): ActivityPlanPrintModel {
+  const firstSection = entry.model.sections[0];
+  if (!firstSection)
+    throw new Error(`Catalog entry has no printable section: ${entry.model.title}`);
+  return {
+    ...entry.model,
+    notes: includeNotes ? entry.model.notes : null,
+    sections: [{ ...firstSection, groups }],
+  };
 }
 
-/**
- * Conservative height budget for the fixed half-page catalog card. The exporter also preflights
- * the rendered PDF boundaries, so a continuation or slot crossing aborts before overwrite.
- */
-export function estimateActivityPlanTwoUpHeight(model: ActivityPlanPrintModel): number {
-  let height = 23;
-  height += wrappedLines(model.title, 34) * 16;
-  height += wrappedLines(model.description, 82) * 11;
-  height += model.intensityProfile.length > 0 ? 70 : 0;
+type FlattenedStep = { group: ActivityPlanPrintGroup; groupStepIndex: number };
 
-  for (const section of model.sections) {
-    const sectionHeading = [section.name, section.notes].filter(Boolean).join(" — ");
-    height += sectionHeading ? wrappedLines(sectionHeading, 78) * 12 : 4;
-    for (const group of section.groups) {
-      const groupHeading = [
-        group.repetitions > 1 ? `${group.repetitions}×` : null,
-        group.name,
-        group.notes,
-      ]
-        .filter(Boolean)
-        .join(" — ");
-      height += groupHeading ? wrappedLines(groupHeading, 78) * 10 : 2;
-      for (const step of group.steps) {
-        const redundantStepName =
-          step.name &&
-          group.name &&
-          step.name.trim().toLowerCase() === group.name.trim().toLowerCase();
-        const instruction = [
-          redundantStepName ? null : step.name,
-          step.instruction,
-          step.description,
-          step.notes,
-        ]
-          .filter(Boolean)
-          .join(" — ");
-        height += wrappedLines(instruction, 74) * 11 + 3;
+function createFragment(
+  entry: ActivityPlanCatalogEntry,
+  steps: readonly FlattenedStep[],
+  start: number,
+  end: number,
+): ActivityPlanCatalogFragment {
+  const selected = steps.slice(start, end);
+  const groups = selected.reduce<ActivityPlanPrintGroup[]>((result, item) => {
+    const step = item.group.steps[item.groupStepIndex];
+    if (!step) throw new Error(`Missing catalog step in ${entry.model.title}`);
+    const previous = result.at(-1);
+    if (previous?.id === item.group.id) {
+      previous.steps = [...previous.steps, step];
+    } else {
+      result.push({ ...item.group, steps: [step] });
+    }
+    return result;
+  }, []);
+  const first = selected[0];
+  const last = selected.at(-1);
+  if (!first || !last) throw new Error(`Catalog fragment has no steps: ${entry.model.title}`);
+  return {
+    continuedGroupIds: first.groupStepIndex > 0 ? [first.group.id] : [],
+    continuesAfterGroupIds:
+      last.groupStepIndex < last.group.steps.length - 1 ? [last.group.id] : [],
+    entry,
+    key: `${entry.key}-steps-${start}-${end}`,
+    model: fragmentModel(entry, groups, end === steps.length),
+    partCount: 0,
+    partIndex: 0,
+    showContext: start === 0,
+  };
+}
+
+export type ActivityPlanCatalogFragmentFits = (
+  fragment: ActivityPlanCatalogFragment,
+) => Promise<boolean>;
+
+export type ActivityPlanCatalogFragmentMeasurementOptions = {
+  /**
+   * Keep complete authored groups together when they fit. This is useful for
+   * large-format reading editions: a repeat label must not be separated from
+   * the recovery that completes its motif. Oversized groups still fall back to
+   * the existing step-level continuation behaviour.
+   */
+  preferWholeGroups?: boolean;
+};
+
+/** Uses the caller's rendered-page measurement; no text-height estimate participates in pagination. */
+export async function measureActivityPlanCatalogFragments(
+  entry: ActivityPlanCatalogEntry,
+  fits: ActivityPlanCatalogFragmentFits,
+  options: ActivityPlanCatalogFragmentMeasurementOptions = {},
+): Promise<readonly ActivityPlanCatalogFragment[]> {
+  const steps = entry.model.sections.flatMap((section) =>
+    section.groups.flatMap((group) =>
+      group.steps.map((_, groupStepIndex) => ({ group, groupStepIndex })),
+    ),
+  );
+  if (!steps.length) throw new Error(`Catalog entry has no printable steps: ${entry.model.title}`);
+  if (await fits(createFragment(entry, steps, 0, steps.length))) {
+    return [
+      {
+        ...createFragment(entry, steps, 0, steps.length),
+        key: `${entry.key}-part-1`,
+        partCount: 1,
+      },
+    ];
+  }
+  const fragments: ActivityPlanCatalogFragment[] = [];
+  let start = 0;
+  while (start < steps.length) {
+    let best = 0;
+    const groupEnds = options.preferWholeGroups
+      ? Array.from(
+          new Set(
+            steps
+              .map((step, index) =>
+                index === steps.length - 1 || steps[index + 1]?.group.id !== step.group.id
+                  ? index + 1
+                  : null,
+              )
+              .filter((end): end is number => end !== null && end > start),
+          ),
+        )
+      : [];
+    const candidateEnds = groupEnds.length
+      ? [...groupEnds].sort((left, right) => right - left)
+      : Array.from({ length: steps.length - start }, (_, index) => steps.length - index);
+    // Continuation notices disappear at group boundaries, so rendered fit is
+    // not necessarily monotonic. Try longest first rather than binary search.
+    for (const end of candidateEnds) {
+      if (await fits(createFragment(entry, steps, start, end))) {
+        best = end;
+        break;
       }
     }
-    height += 6;
-  }
-
-  height += wrappedLines(model.notes, 91) * 9;
-  return height;
-}
-
-export function isActivityPlanTwoUpEligible(model: ActivityPlanPrintModel): boolean {
-  return estimateActivityPlanTwoUpHeight(model) <= 300;
-}
-
-function isActivityPlanCatalogEntryTwoUpEligible(entry: ActivityPlanCatalogEntry): boolean {
-  return entry.adaptation === null && isActivityPlanTwoUpEligible(entry.model);
-}
-
-function formatAuthoredDuration(seconds: number): string {
-  const hours = Math.floor(seconds / 3_600);
-  const minutes = Math.floor((seconds % 3_600) / 60);
-  return [hours ? `${hours}h` : null, minutes ? `${minutes}m` : null].filter(Boolean).join(" ");
-}
-
-function buildActivityPlanCatalogAdaptation(
-  template: SystemTemplate,
-): ActivityPlanCatalogAdaptation | null {
-  const adaptation = template.adaptation;
-  if (!adaptation) return null;
-  const formatValue = (control: ActivityPlanCatalogAdaptationControl, value: number): string => {
-    if (control.kind === "interval_repetitions") return `${value} reps`;
-    if (control.kind === "target_intensity") {
-      const target = control.targets.find((candidate) => candidate.type === "target_intensity");
-      return target ? `${value} ${target.targetType}` : String(value);
+    // A single oversized group remains printable using the established
+    // step-level continuation semantics rather than omitting any content.
+    if (best === 0 && groupEnds.length) {
+      for (let end = steps.length; end > start; end -= 1) {
+        if (await fits(createFragment(entry, steps, start, end))) {
+          best = end;
+          break;
+        }
+      }
     }
-    const target = control.targets.find(
-      (candidate) => candidate.type === "step_quantity" || candidate.type === "recovery_step",
-    );
-    const quantityType = target?.quantityType ?? "time";
-    if (quantityType === "time") return formatAuthoredDuration(value);
-    if (quantityType === "distance") return value >= 1_000 ? `${value / 1_000} km` : `${value} m`;
-    return `${value} reps`;
-  };
-  const controls = adaptation.controls.map(
-    (control) =>
-      `${control.label}: default ${formatValue(control, control.range.default)}; range ${formatValue(control, control.range.minimum)}-${formatValue(control, control.range.maximum)}`,
-  );
-  const allowedStates = adaptation.allowedStates?.map((state) => {
-    const values = adaptation.controls
-      .map((control) => {
-        const value = state.values[control.key];
-        return value === undefined ? null : `${control.label} ${formatValue(control, value)}`;
-      })
-      .filter((value): value is string => value !== null);
-    return `${state.label}: ${values.join(", ")}`;
-  });
-  return { allowedStates: allowedStates ?? null, controls };
+    if (best === 0) {
+      const step = steps[start];
+      throw new Error(`Catalog step cannot fit on A5: ${entry.model.title} / ${step?.group.id}`);
+    }
+    fragments.push(createFragment(entry, steps, start, best));
+    start = best;
+  }
+  return fragments.map((fragment, partIndex) => ({
+    ...fragment,
+    key: `${entry.key}-part-${partIndex + 1}`,
+    partCount: fragments.length,
+    partIndex,
+  }));
 }
 
 export function buildActivityPlanCatalogModels(
@@ -251,13 +374,12 @@ export function buildActivityPlanCatalogModels(
     const model = buildActivityPlanPrintModel({
       format: "full-page",
       ...(template.description === undefined ? {} : { description: template.description }),
-      ...(template.notes === undefined ? {} : { notes: template.notes }),
       personalizeTargets: false,
       structure: template.structure,
       title: template.name,
     });
     if (!model) throw new Error(`Unable to render system activity plan: ${template.name}`);
-    return { adaptation: buildActivityPlanCatalogAdaptation(template), key: template.id, model };
+    return { key: template.id, model };
   });
 }
 
@@ -268,6 +390,7 @@ function getCatalogSectionKey(entry: ActivityPlanCatalogEntry): string {
 export function buildActivityPlanCatalogLayout(
   entries: readonly ActivityPlanCatalogEntry[],
   trainingPlans: readonly SystemTrainingPlanTemplate[] = ALL_SAMPLE_PLANS,
+  measuredFragments: ReadonlyMap<string, readonly ActivityPlanCatalogFragment[]> = new Map(),
 ): ActivityPlanCatalogLayout {
   const sections = CATALOG_SECTIONS.map(({ key, title }) => ({
     entries: entries.filter((entry) => getCatalogSectionKey(entry) === key),
@@ -317,27 +440,37 @@ export function buildActivityPlanCatalogLayout(
   const planPages: ActivityPlanCatalogPage[] = [];
   let pageNumber = ACTIVITY_PLAN_CATALOG_BASE_FRONT_MATTER_PAGES + contentsPages.length + 1;
   for (const section of sections) {
-    const remaining = [...section.entries];
-    while (remaining.length > 0) {
-      const first = remaining.shift();
-      if (!first) break;
-      const nextEligibleIndex = isActivityPlanCatalogEntryTwoUpEligible(first)
-        ? remaining.findIndex(isActivityPlanCatalogEntryTwoUpEligible)
-        : -1;
-      const second = nextEligibleIndex >= 0 ? remaining.splice(nextEligibleIndex, 1)[0] : undefined;
-      const pair = second ? ([first, second] as const) : ([first] as const);
-      planPages.push({
-        entries: pair,
-        pageNumber,
-        sectionKey: section.key,
-        sectionTitle: section.title,
-      });
-      pageNumber += 1;
+    for (const entry of section.entries) {
+      const allSteps = entry.model.sections.flatMap((section) =>
+        section.groups.flatMap((group) =>
+          group.steps.map((_, groupStepIndex) => ({ group, groupStepIndex })),
+        ),
+      );
+      const fragments = measuredFragments.get(entry.key) ?? [
+        {
+          ...createFragment(entry, allSteps, 0, allSteps.length),
+          key: `${entry.key}-part-1`,
+          partCount: 1,
+        },
+      ];
+      for (const first of fragments) {
+        planPages.push({
+          entries: [first],
+          pageNumber,
+          sectionKey: section.key,
+          sectionTitle: section.title,
+        });
+        pageNumber += 1;
+      }
     }
   }
 
   const activityPageNumbers = new Map(
-    planPages.flatMap((page) => page.entries.map((entry) => [entry.key, page.pageNumber])),
+    planPages.flatMap((page) =>
+      page.entries
+        .filter((fragment) => fragment.partIndex === 0)
+        .map((fragment) => [fragment.entry.key, page.pageNumber]),
+    ),
   );
   const activityTitles = new Map(entries.map((entry) => [entry.key, entry.model.title]));
   const finderSections = sections.map((section) => {
@@ -363,13 +496,13 @@ export function buildActivityPlanCatalogLayout(
   const alignmentBlankPageNumber =
     trainingPlans.length > 0 && nextPageNumber % 2 === 0 ? nextPageNumber : undefined;
   const openerPageNumber = nextPageNumber + (alignmentBlankPageNumber ? 1 : 0);
-  const trainingPlanSection =
+  const trainingPlanSection: ActivityPlanCatalogTrainingPlanSection | null =
     trainingPlans.length === 0
       ? null
       : {
           ...(alignmentBlankPageNumber ? { alignmentBlankPageNumber } : {}),
           openerPageNumber,
-          plans: trainingPlans.map((plan, index) => {
+          plans: trainingPlans.map((plan) => {
             const scheduleVisual = deriveTrainingPlanScheduleVisual({ structure: plan.structure });
             if (!scheduleVisual) {
               throw new Error(`Unable to visualize system training plan: ${plan.name}`);
@@ -420,14 +553,31 @@ export function buildActivityPlanCatalogLayout(
               experienceLevels: plan.structure.experienceLevel ?? [],
               id: plan.id,
               name: plan.name,
-              overviewPageNumber: openerPageNumber + 1 + index * 2,
-              schedulePageNumber: openerPageNumber + 2 + index * 2,
+              overviewPageNumber: 0,
+              schedulePageNumbers: [],
               scheduleVisual,
               sessionsPerWeekTarget: plan.sessions_per_week_target,
               weeks,
             };
           }),
         };
+
+  if (trainingPlanSection) {
+    let trainingPageNumber = openerPageNumber + 1;
+    trainingPlanSection.plans.forEach((plan) => {
+      plan.overviewPageNumber = trainingPageNumber;
+      trainingPageNumber += 1;
+      const schedulePageCount = Math.max(
+        1,
+        Math.ceil(plan.weeks.length / TRAINING_SCHEDULE_WEEKS_PER_PAGE),
+      );
+      plan.schedulePageNumbers = Array.from(
+        { length: schedulePageCount },
+        (_, index) => trainingPageNumber + index,
+      );
+      trainingPageNumber += schedulePageCount;
+    });
+  }
 
   return { contentsPages, finderSections, planPages, sections, trainingPlanSection };
 }
@@ -436,31 +586,59 @@ export function assertActivityPlanCatalogLayout(
   layout: ActivityPlanCatalogLayout,
   expectedEntries: readonly ActivityPlanCatalogEntry[],
 ): void {
-  const placed = layout.planPages.flatMap((page) => page.entries);
-  if (placed.length !== expectedEntries.length) {
-    throw new Error(`Catalog placed ${placed.length} of ${expectedEntries.length} activity plans`);
+  const fragments = layout.planPages.flatMap((page) => page.entries);
+  const sourceKeys = new Set(fragments.map((fragment) => fragment.entry.key));
+  if (
+    sourceKeys.size !== expectedEntries.length ||
+    expectedEntries.some((entry) => !sourceKeys.has(entry.key))
+  ) {
+    throw new Error(
+      `Catalog placed ${sourceKeys.size} of ${expectedEntries.length} activity plans`,
+    );
   }
-  if (new Set(placed.map((entry) => entry.key)).size !== placed.length) {
-    throw new Error("Catalog contains a duplicate activity plan");
-  }
-  if (placed.some((entry) => !expectedEntries.some((expected) => expected.key === entry.key))) {
+  if (
+    fragments.some(
+      (fragment) => !expectedEntries.some((expected) => expected.key === fragment.entry.key),
+    )
+  ) {
     throw new Error("Catalog contains an unexpected activity plan");
   }
-  for (const page of layout.planPages) {
-    if (page.entries.length < 1 || page.entries.length > 2) {
-      throw new Error(`Catalog page ${page.pageNumber} has an invalid activity count`);
-    }
+  for (const entry of expectedEntries) {
+    const expectedSteps = entry.model.sections.flatMap((section) =>
+      section.groups.flatMap((group) => group.steps.map((step) => step.id)),
+    );
+    const entryFragments = fragments
+      .filter((fragment) => fragment.entry.key === entry.key)
+      .sort((left, right) => left.partIndex - right.partIndex);
     if (
-      page.entries.length === 2 &&
-      page.entries.some((entry) => !isActivityPlanCatalogEntryTwoUpEligible(entry))
+      entryFragments.length === 0 ||
+      entryFragments.some(
+        (fragment, index) =>
+          fragment.partIndex !== index || fragment.partCount !== entryFragments.length,
+      ) ||
+      entryFragments
+        .flatMap((fragment) =>
+          fragment.model.sections.flatMap((section) =>
+            section.groups.flatMap((group) => group.steps.map((step) => step.id)),
+          ),
+        )
+        .join("\u0000") !== expectedSteps.join("\u0000")
     ) {
-      throw new Error(`Catalog page ${page.pageNumber} contains an unsafe two-up activity`);
+      throw new Error(
+        `Catalog continuation lost, reordered, or duplicated steps for ${entry.model.title}`,
+      );
     }
+  }
+  for (const page of layout.planPages) {
+    if (page.entries.length !== 1)
+      throw new Error(`Catalog page ${page.pageNumber} is not full-page`);
   }
 }
 
 export function getActivityPlanCatalogContentPageCount(layout: ActivityPlanCatalogLayout): number {
-  const finalTrainingPlanPage = layout.trainingPlanSection?.plans.at(-1)?.schedulePageNumber;
+  const finalTrainingPlanPage = layout.trainingPlanSection?.plans
+    .at(-1)
+    ?.schedulePageNumbers.at(-1);
   if (finalTrainingPlanPage) return finalTrainingPlanPage;
   return (
     layout.planPages.at(-1)?.pageNumber ??
@@ -471,7 +649,8 @@ export function getActivityPlanCatalogContentPageCount(layout: ActivityPlanCatal
 export function activityPlanCatalogNeedsBlankBeforeBackCover(
   layout: ActivityPlanCatalogLayout,
 ): boolean {
-  return getActivityPlanCatalogContentPageCount(layout) % 2 === 0;
+  // Align the separate inside-back-cover leaf to an odd physical page.
+  return getActivityPlanCatalogContentPageCount(layout) % 2 === 1;
 }
 
 /** Returns physical-page margins, putting the wider margin at the duplex binding edge. */

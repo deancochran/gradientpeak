@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef } from "react";
+import { omitUndefined } from "../../lib/omit-undefined";
 import { Button } from "../button/index.web";
 import { Input } from "../input/index.web";
 import { Label } from "../label/index.web";
@@ -138,7 +139,7 @@ function FileInput({
           accessibilityLabel={`${resolvedButtonLabel} for ${label}`}
           disabled={disabled}
           onClick={() => inputRef.current?.click()}
-          testId={testId || testID ? `${testId ?? testID}-pick` : undefined}
+          {...omitUndefined({ testId: testId || testID ? `${testId ?? testID}-pick` : undefined })}
           type="button"
         >
           {resolvedButtonLabel}
@@ -148,7 +149,9 @@ function FileInput({
             accessibilityLabel={clearLabel}
             disabled={disabled}
             onClick={() => updateFiles([], true)}
-            testId={testId || testID ? `${testId ?? testID}-clear` : undefined}
+            {...omitUndefined({
+              testId: testId || testID ? `${testId ?? testID}-clear` : undefined,
+            })}
             type="button"
             variant="outline"
           >
@@ -176,7 +179,9 @@ function FileInput({
                     true,
                   )
                 }
-                testId={testId || testID ? `${testId ?? testID}-remove-${index}` : undefined}
+                {...omitUndefined({
+                  testId: testId || testID ? `${testId ?? testID}-remove-${index}` : undefined,
+                })}
                 type="button"
                 variant="ghost"
               >

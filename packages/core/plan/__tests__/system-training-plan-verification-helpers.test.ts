@@ -4,42 +4,22 @@ import { aggregateWeeklyPlannedLoad } from "../verification/aggregateWeeklyPlann
 import { assertCoachingInvariants } from "../verification/assertCoachingInvariants";
 import { comparePlanLoadToHeuristic } from "../verification/comparePlanLoadToHeuristic";
 import { deriveFixtureBackedSystemPlanContracts } from "../verification/deriveFixtureBackedSystemPlanContracts";
+import { SYSTEM_PLAN_MAPPING_FIXTURES } from "../verification/fixtures/system-plan-mappings";
 
 describe("system training plan verification helpers", () => {
-  it("derives contract scenarios from verification fixtures without duplicating plan truth", () => {
-    const [exact5kContract] = deriveFixtureBackedSystemPlanContracts([
-      {
-        scenario_id: "exact_5k_speed_block",
-        enabled: true,
-        match_type: "exact",
-        expected_weekly_load: 140,
-        expected_mode: "target_seeking",
-      },
-    ]);
-
-    expect(exact5kContract).toBeDefined();
-
-    expect(exact5kContract).toMatchObject({
-      key: "exact_5k_speed_block",
-      plan_name: "5K Speed Block (8 weeks)",
-      tolerance_class: "tight",
-      current_longTermLoad: 34,
-      expected_mode: "target_seeking",
-    });
-    expect(exact5kContract?.goals).toHaveLength(1);
-    const firstGoal = exact5kContract?.goals.at(0);
-
-    expect(firstGoal?.targets).toHaveLength(1);
-
-    const firstTarget = firstGoal?.targets?.at(0);
-
-    expect(firstTarget).toBeDefined();
-    expect(firstTarget!).toMatchObject({
-      target_type: "race_performance",
-      distance_m: 5000,
-      target_time_s: 1140,
-      activity_category: "run",
-    });
+  it("makes retirement of production plan mappings explicit", () => {
+    expect(SYSTEM_PLAN_MAPPING_FIXTURES).toEqual([]);
+    expect(() =>
+      deriveFixtureBackedSystemPlanContracts([
+        {
+          scenario_id: "exact_5k_speed_block",
+          enabled: true,
+          match_type: "exact",
+          expected_weekly_load: 140,
+          expected_mode: "target_seeking",
+        },
+      ]),
+    ).toThrow(/Expected exactly one system plan mapping/);
   });
 
   it("aggregates weekly load into monday-based normalized buckets with gaps", () => {

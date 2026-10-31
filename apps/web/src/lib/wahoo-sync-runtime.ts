@@ -97,10 +97,11 @@ export function createWahooSyncRuntime() {
   const activityImportRepository = createActivityImportRepository(db);
   const getPerformanceTargets = ({ profileId }: { profileId: string }) =>
     readPublishedAthletePerformanceTargets({ db, profileId });
+  const allowedActivityFileHosts = process.env.WAHOO_ACTIVITY_FILE_ALLOWED_HOSTS?.split(",")
+    .map((host) => host.trim())
+    .filter(Boolean);
   const importer = createActivityImporter({
-    allowedActivityFileHosts: process.env.WAHOO_ACTIVITY_FILE_ALLOWED_HOSTS?.split(",")
-      .map((host) => host.trim())
-      .filter(Boolean),
+    ...(allowedActivityFileHosts === undefined ? {} : { allowedActivityFileHosts }),
     repository: wahooRepository,
     generationGuard: async (tx, expected) => {
       const [activeIntegration] = await tx

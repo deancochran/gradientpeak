@@ -45,6 +45,8 @@ export const metricProvenanceSchema = z.enum(["actual", "derived", "defaulted", 
 
 export const metricSourceTypeSchema = z.enum([
   "manual",
+  // The HR service alone cannot establish strap versus optical hardware.
+  "heart_rate_sensor",
   "chest_strap",
   "optical",
   "trainer_passthrough",
@@ -252,8 +254,10 @@ export const recordingPlanTargetPresentationEvidenceSchema = z
 /** Immutable, browser-portable plan input locked when a recording starts. */
 export const recordingPlanExecutionSnapshotSchema = z
   .object({
-    manifestVersion: z.literal(1),
-    compilerVersion: z.literal(1),
+    // Compiler V3 is coupled to V5 standalone steps and repeat groups. Older snapshots
+    // cannot be recovered safely because their occurrence identities differ.
+    manifestVersion: z.literal(2),
+    compilerVersion: z.literal(3),
     activityPlanId: z.string().uuid(),
     scheduledEventId: nullableUuidSchema,
     name: z.string().trim().min(1).max(200),
@@ -399,7 +403,10 @@ export const recordingOccurrenceResultSchema = z
   .object({
     occurrenceId: z.string().min(1),
     globalOrdinal: z.number().int().nonnegative(),
-    segmentId: z.string().uuid(),
+    // Unstructured recordings have no authored step; never invent a block identity.
+    stepId: z.string().uuid().nullable(),
+    repeatId: z.string().uuid().optional(),
+    repeatIteration: z.number().int().nonnegative(),
     role: z.enum(["activity", "transition", "rest"]),
     activity_category: recordingActivityCategorySchema.nullable(),
     startedAt: isoTimestampSchema,
@@ -407,6 +414,16 @@ export const recordingOccurrenceResultSchema = z
     activeSeconds: z.number().nonnegative(),
     movingSeconds: z.number().nonnegative(),
     distanceMeters: z.number().nonnegative(),
+    // Omitted means legacy/unknown evidence. Null explicitly records unfinished
+    // work; it must survive checkpoints/queues and must not be inferred completed.
+    completion: z
+      .object({
+        status: z.enum(["completed", "skipped"]),
+        method: z.enum(["automatic", "manual"]),
+      })
+      .strict()
+      .nullable()
+      .optional(),
   })
   .strict();
 
@@ -429,7 +446,7 @@ export const recordingTimerEventSchema = z
 export const recordingCheckpointSchema = z
   .object({
     schemaVersion: z.literal(2),
-    compilerVersion: z.number().int().positive(),
+    compilerVersion: z.literal(3),
     sessionId: z.string().min(1),
     profileId: z.string().min(1),
     lifecycle: z.enum(["recording", "paused", "finishing"]),
@@ -496,13 +513,6 @@ export const recordingCheckpointSchema = z
   });
 
 export const recordingExecutionManifestEntrySchema = recordingOccurrenceResultSchema.extend({
-  completion: z
-    .object({
-      status: z.enum(["completed", "skipped"]),
-      method: z.enum(["automatic", "manual"]),
-    })
-    .strict()
-    .optional(),
   timingEvidence: z
     .object({
       source: z.enum(["manual_timer", "sensor_samples"]),
@@ -532,7 +542,7 @@ export const recordingExecutionManifestEntrySchema = recordingOccurrenceResultSc
 export const recordingExecutionManifestSchema = z
   .object({
     version: z.literal(1),
-    compilerVersion: z.number().int().positive(),
+    compilerVersion: z.literal(3),
     planHash: sha256Schema,
     occurrences: z.array(recordingExecutionManifestEntrySchema),
   })

@@ -79,7 +79,7 @@ export const plannedSessionComparisonSummarySchema = z
 export type PlannedSessionComparisonSummary = z.infer<typeof plannedSessionComparisonSummarySchema>;
 
 type PlannedSessionComparisonSource = {
-  prescription: {
+  prescription?: {
     resolutionManifest: {
       prescription_estimate: { duration: { value_seconds: number | null } };
     };
@@ -91,8 +91,11 @@ export function buildPlannedSessionComparison(input: {
   session: PlannedSessionComparisonSource;
   actual: PlannedSessionActualObservation | null;
 }): PlannedSessionComparison {
+  // New reference-only sessions have no captured planned estimate. Current
+  // plan metrics are projected separately; do not invent historical intent.
   const durationSeconds =
-    input.session.prescription.resolutionManifest.prescription_estimate.duration.value_seconds;
+    input.session.prescription?.resolutionManifest.prescription_estimate.duration.value_seconds ??
+    null;
   const planned = { durationSeconds, distanceMeters: null };
   const lifecycle = input.session.lifecycle;
 

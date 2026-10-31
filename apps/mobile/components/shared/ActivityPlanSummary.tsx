@@ -93,7 +93,9 @@ export function ActivityPlanSummary({
         {headerAccessory}
       </View>
 
-      <ActivityPlanMetricsRow {...(projectionMetrics !== undefined ? { projectionMetrics } : {})} />
+      {projectionMetrics !== undefined ? (
+        <ActivityPlanMetricsRow projectionMetrics={projectionMetrics} />
+      ) : null}
 
       {showAttribution ? (
         <ResourceAttributionRow

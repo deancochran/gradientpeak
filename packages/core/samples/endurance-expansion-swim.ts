@@ -1,9 +1,5 @@
 import { Duration, Target } from "../schemas/activity_payload";
-import {
-  createSystemActivityPlanAdaptationBuilder,
-  createSystemActivityPlanBuilder,
-  requiredSampleItem,
-} from "./activity-plan-builder";
+import { createSystemActivityPlanBuilder } from "./activity-plan-builder";
 import type {
   ActivityPlanIntensityBand,
   ActivityPlanPortfolioMetadata,
@@ -31,7 +27,7 @@ const families: readonly SwimFamily[] = [
     primaryIntensity: "recovery",
     rpe: 3,
     workMeters: 200,
-    recoverySeconds: 25,
+    recoverySeconds: 15,
   },
   {
     id: "d1a00000-0002-4000-8001-000000000005",
@@ -54,7 +50,7 @@ const families: readonly SwimFamily[] = [
     primaryIntensity: "tempo",
     rpe: 6,
     workMeters: 200,
-    recoverySeconds: 35,
+    recoverySeconds: 20,
   },
   {
     id: "d1a00000-0004-4000-8001-000000000013",
@@ -65,7 +61,7 @@ const families: readonly SwimFamily[] = [
     primaryIntensity: "threshold",
     rpe: 7,
     workMeters: 150,
-    recoverySeconds: 40,
+    recoverySeconds: 20,
   },
   {
     id: "d1a00000-0005-4000-8001-000000000017",
@@ -76,7 +72,7 @@ const families: readonly SwimFamily[] = [
     primaryIntensity: "vo2max",
     rpe: 8,
     workMeters: 100,
-    recoverySeconds: 55,
+    recoverySeconds: 30,
   },
   {
     id: "d1a00000-0006-4000-8001-000000000021",
@@ -124,7 +120,7 @@ const families: readonly SwimFamily[] = [
     primaryIntensity: "tempo",
     rpe: 6,
     workMeters: 250,
-    recoverySeconds: 30,
+    recoverySeconds: 25,
   },
 ];
 function buildPlan(family: SwimFamily): SystemActivityPlanTemplate {
@@ -133,7 +129,8 @@ function buildPlan(family: SwimFamily): SystemActivityPlanTemplate {
   builder.warmup({
     duration: Duration.meters(350),
     targets: [Target.rpe(3)],
-    notes: "Swim easy with drills as needed to establish a long, relaxed stroke.",
+    notes:
+      "Swim easy freestyle; use catch-up drill for the first 50 m, then settle into a long, relaxed stroke.",
   });
   builder.interval({
     name: family.name,
@@ -142,16 +139,14 @@ function buildPlan(family: SwimFamily): SystemActivityPlanTemplate {
       {
         duration: Duration.meters(family.workMeters),
         name: "Work",
-        purpose: "work",
         notes: `${family.description} Hold the prescribed effort only while stroke length and breathing remain controlled.`,
         targets: [Target.rpe(family.rpe)],
       },
       {
         duration: Duration.seconds(family.recoverySeconds),
         name: "Recovery",
-        purpose: "recovery",
         notes: "Rest at the wall; start the next repeat with calm breathing and deliberate form.",
-        targets: [Target.rpe(1)],
+        targets: [{ type: "rest" }],
       },
     ],
   });
@@ -162,33 +157,12 @@ function buildPlan(family: SwimFamily): SystemActivityPlanTemplate {
       notes: "Swim down easily and finish before technique degrades.",
     })
     .build();
-  const segment = requiredSampleItem(structure.segments, 0, "swim activity segment");
-  if (segment.role !== "activity") throw new Error("Expected swim activity segment");
-  const interval = requiredSampleItem(segment.intervals, 1, "swim work interval");
-  const adaptation = createSystemActivityPlanAdaptationBuilder(identity);
   return {
     id: family.id,
     name: family.name,
     description: family.description,
     gps_recording_enabled: false,
     structure,
-    adaptation: {
-      controls: [
-        adaptation.control({
-          key: "work_repetitions",
-          label: "Work repetitions",
-          kind: "interval_repetitions",
-          range: { minimum: 3, default: 4, maximum: 6, increment: 1 },
-          targets: [
-            {
-              type: "interval_repetitions",
-              activitySegmentId: segment.id,
-              intervalId: interval.id,
-            },
-          ],
-        }),
-      ],
-    },
   };
 }
 export const EXPANDED_ENDURANCE_SWIM_ACTIVITIES = families.map(buildPlan);

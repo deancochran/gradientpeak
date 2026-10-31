@@ -9,8 +9,8 @@ import type { CanonicalActivityCategory } from "./schemas/activity-category";
 export type ActivityProfilePoint = {
   occurrenceId: string;
   globalOrdinal: number;
-  segmentId: string;
-  segmentIndex: number;
+  repeatId?: string;
+  repeatIteration: number;
   activity_category: CanonicalActivityCategory | null;
   role: CompiledActivityPlanOccurrence["role"];
   durationSeconds: number | null;
@@ -42,8 +42,8 @@ export function extractActivityProfile(plan: CompiledActivityPlan): ActivityProf
     const point: ActivityProfilePoint = {
       occurrenceId: occurrence.occurrenceId,
       globalOrdinal: occurrence.globalOrdinal,
-      segmentId: occurrence.segmentId,
-      segmentIndex: occurrence.segmentIndex,
+      ...(occurrence.repeatId ? { repeatId: occurrence.repeatId } : {}),
+      repeatIteration: occurrence.repeatIteration,
       activity_category: occurrence.activity_category,
       role: occurrence.role,
       durationSeconds,
@@ -70,7 +70,6 @@ export function calculateActivityPlanStats(plan: CompiledActivityPlan): Activity
     CompiledActivityStepOccurrence[]
   >();
   for (const occurrence of plan.occurrences) {
-    if (occurrence.role !== "activity") continue;
     const categoryOccurrences = occurrencesByCategory.get(occurrence.activity_category) ?? [];
     categoryOccurrences.push(occurrence);
     occurrencesByCategory.set(occurrence.activity_category, categoryOccurrences);

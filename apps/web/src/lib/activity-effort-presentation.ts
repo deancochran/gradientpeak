@@ -34,13 +34,13 @@ export function getEffortStatus(
 ): ActivityEffortObservationStatus {
   return getActivityEffortObservationStatus({
     activityCategory: effort.activity_category,
-    activityId: effort.activity_id,
+    ...(effort.activity_id === undefined ? {} : { activityId: effort.activity_id }),
     durationSeconds: effort.duration_seconds,
     effortType: effort.effort_type,
-    method: effort.method,
-    provenance: effort.provenance,
-    source: effort.source,
-    unit: effort.unit,
+    ...(effort.method === undefined ? {} : { method: effort.method }),
+    ...(effort.provenance === undefined ? {} : { provenance: effort.provenance }),
+    ...(effort.source === undefined ? {} : { source: effort.source }),
+    ...(effort.unit === undefined ? {} : { unit: effort.unit }),
     value: effort.value,
   });
 }

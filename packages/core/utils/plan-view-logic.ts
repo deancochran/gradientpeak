@@ -17,7 +17,7 @@ export function getRecordingViewConfig(
   routeId: string | null | undefined,
   gpsRecordingEnabled: boolean,
 ): RecordingViewConfig {
-  const hasSteps = plan.occurrences.some((occurrence) => occurrence.role === "activity");
+  const hasSteps = plan.occurrences.length > 0;
   const hasRoute = !!routeId;
   const canTrackLocation = gpsRecordingEnabled;
 
@@ -37,7 +37,6 @@ export function getRecordingViewConfig(
 export function canHaveRoute(plan: CompiledActivityPlan): boolean {
   return plan.occurrences.some(
     (occurrence) =>
-      occurrence.role === "activity" &&
-      (occurrence.activity_category === "run" || occurrence.activity_category === "bike"),
+      occurrence.activity_category === "run" || occurrence.activity_category === "bike",
   );
 }

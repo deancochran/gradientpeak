@@ -1,15 +1,13 @@
+import { formatLocalDateOnly } from "@repo/core/utils/fitness-inputs";
+import { useImperativeHandle, useRef } from "react";
 import { Button } from "../button/index.web";
 import { Input } from "../input/index.web";
 import { Label } from "../label/index.web";
 import type { DateInputProps } from "./shared";
 
-function formatLocalDate(date: Date) {
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
-}
-
 function DateInput({
+  ref,
+  onBlur,
   clearable = false,
   disabled = false,
   error,
@@ -25,6 +23,8 @@ function DateInput({
   testId,
   value,
 }: DateInputProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  useImperativeHandle(ref, () => ({ focus: () => inputRef.current?.focus() }), []);
   const inputId = `${id}-field`;
   const descriptionId = `${id}-description`;
   const errorId = `${id}-error`;
@@ -37,6 +37,8 @@ function DateInput({
       </Label>
       <div className="flex items-center gap-2">
         <Input
+          inputRef={inputRef}
+          onBlur={onBlur}
           accessibilityLabel={label}
           aria-describedby={
             [helperText ? descriptionId : undefined, error ? errorId : undefined]
@@ -48,8 +50,8 @@ function DateInput({
           className="flex-1"
           disabled={disabled}
           id={inputId}
-          max={maximumDate ? formatLocalDate(maximumDate) : undefined}
-          min={minimumDate ? formatLocalDate(minimumDate) : undefined}
+          max={maximumDate ? formatLocalDateOnly(maximumDate) : undefined}
+          min={minimumDate ? formatLocalDateOnly(minimumDate) : undefined}
           name={name}
           onChange={(event) => {
             if (!disabled) {

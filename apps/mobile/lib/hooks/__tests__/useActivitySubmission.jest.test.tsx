@@ -106,14 +106,16 @@ jest.mock("@/lib/api", () => ({
 
 const executionManifest = {
   version: 1 as const,
-  compilerVersion: 1,
+  compilerVersion: 3 as const,
   planHash: "0".repeat(64),
   occurrences: [
     {
       occurrenceId:
-        "activity:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000002:0:00000000-0000-4000-8000-000000000003",
+        "activity:repeat:00000000-0000-4000-8000-000000000002:0:step:00000000-0000-4000-8000-000000000003",
       globalOrdinal: 0,
-      segmentId: "00000000-0000-4000-8000-000000000001",
+      stepId: "00000000-0000-4000-8000-000000000003",
+      repeatId: "00000000-0000-4000-8000-000000000002",
+      repeatIteration: 0,
       role: "activity" as const,
       activity_category: "bike" as const,
       startedAt: "2026-01-01T10:00:00.000Z",

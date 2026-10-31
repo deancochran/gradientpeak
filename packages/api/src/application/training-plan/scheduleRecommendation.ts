@@ -45,11 +45,12 @@ export function buildScheduleRecommendation(input: {
     null;
   const targetDate =
     input.upcomingImpact[0]?.scheduled_at.slice(0, 10) ?? currentWeek?.week_start ?? input.today;
-  const hasLoadComparison =
-    currentWeek?.scheduled_load != null && currentWeek.recommended_load != null;
-  const loadDelta = hasLoadComparison
-    ? Math.round((currentWeek.recommended_load! - currentWeek.scheduled_load!) * 10) / 10
-    : null;
+  const scheduledLoad = currentWeek?.scheduled_load;
+  const recommendedLoad = currentWeek?.recommended_load;
+  const loadDelta =
+    scheduledLoad != null && recommendedLoad != null
+      ? Math.round((recommendedLoad - scheduledLoad) * 10) / 10
+      : null;
 
   if (loadDelta !== null && loadDelta < -15) {
     return {

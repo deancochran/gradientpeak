@@ -18,6 +18,7 @@ import {
   persistentIntegrationSourceIdValues,
   providerCapabilityRegistry,
   providerCapabilitySchema,
+  providerCapabilityValues,
   providerConnectionDescriptorSchema,
   providerConnectionModelSchema,
   providerExecutionSchema,
@@ -143,8 +144,14 @@ describe("provider capability registry", () => {
   });
 
   it("rejects incomplete, duplicate, and unsupported-operation manifests", () => {
-    const [wahoo, strava] = providerCapabilityRegistry;
+    const wahoo = providerCapabilityRegistry.find((provider) => provider.connectorId === "wahoo");
+    const strava = providerCapabilityRegistry.find((provider) => provider.connectorId === "strava");
     if (!wahoo || !strava) throw new Error("Expected Wahoo and Strava manifests");
+    // These fixtures deliberately violate the manifest contract to test runtime rejection.
+    const replaceStrava = (replacement: unknown) =>
+      providerCapabilityRegistry.map((provider) =>
+        provider.connectorId === "strava" ? replacement : provider,
+      );
     expect(() => certifyProviderManifestRegistry([wahoo, wahoo] as never)).toThrow(
       /duplicate|missing/i,
     );
@@ -159,19 +166,18 @@ describe("provider capability registry", () => {
         },
       },
     };
-    expect(() => certifyProviderManifestRegistry([wahoo, invalidUnsupported] as never)).toThrow(
-      /unsupported.*operations/i,
-    );
     expect(() =>
-      certifyProviderManifestRegistry([wahoo, { ...strava, id: "wahoo" }] as never),
+      certifyProviderManifestRegistry(replaceStrava(invalidUnsupported) as never),
+    ).toThrow(/unsupported.*operations/i);
+    expect(() =>
+      certifyProviderManifestRegistry(replaceStrava({ ...strava, id: "wahoo" }) as never),
     ).toThrow(/id.*connector/i);
     expect(() =>
-      certifyProviderManifestRegistry([wahoo, { ...strava, connection: "oauth2" }] as never),
+      certifyProviderManifestRegistry(replaceStrava({ ...strava, connection: "oauth2" }) as never),
     ).toThrow(/connection descriptor/i);
     expect(() =>
-      certifyProviderManifestRegistry([
-        wahoo,
-        {
+      certifyProviderManifestRegistry(
+        replaceStrava({
           ...strava,
           actions: [
             ...strava.actions,
@@ -181,8 +187,8 @@ describe("provider capability registry", () => {
               userFacing: false,
             },
           ],
-        },
-      ] as never),
+        }) as never,
+      ),
     ).toThrow(/action capability is unsupported/i);
   });
 
@@ -273,5 +279,24 @@ describe("provider capability registry", () => {
     expect(getProviderPlannedActivityCapability("strava").maturity).toBe("unavailable");
     expect(getConfigurableProviderActions("strava")).toEqual(["disconnect", "sync_now"]);
     expect(isProviderActivityHistoryReconciliationTarget("strava")).toBe(true);
+  });
+
+  it("declares Garmin's worker-backed scheduled activity-plan subset without data-ingestion claims", () => {
+    const garmin = providerCapabilityRegistry.find((provider) => provider.connectorId === "garmin");
+    expect(garmin?.connection).toEqual({ kind: "oauth2" });
+    expect(garmin?.workerRequirements).toEqual([
+      { operation: "planned_activity_push", worker: "garmin-training-sync" },
+    ]);
+    expect(garmin?.runtimeOperations).toEqual([
+      "oauth_authorization",
+      "oauth_callback",
+      "disconnect",
+    ]);
+    expect(providerHasCapability("garmin", "planned_activity_push")).toBe(true);
+    expect(
+      providerCapabilityValues
+        .filter((capability) => capability !== "planned_activity_push")
+        .every((capability) => !providerHasCapability("garmin", capability)),
+    ).toBe(true);
   });
 });

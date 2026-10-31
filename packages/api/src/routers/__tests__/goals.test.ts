@@ -1,6 +1,7 @@
 import type { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 import type { withAuthorizedAthleteReadAcrossOrganizations } from "../../application/organizations/authorize-athlete-read";
+import { createRouterCaller } from "../../test/router";
 import { createGoalsRouter, goalsRouter } from "../goals";
 
 type GoalRow = {
@@ -55,8 +56,14 @@ const OWNER_ID = "11111111-1111-4111-8111-111111111111";
 const COACH_ID = "22222222-2222-4222-8222-222222222222";
 const GOAL_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
-function getTableName(table: any): "profile_goals" | "training_plans" {
-  const name = String(table?.[Symbol.for("drizzle:Name")] ?? table?._?.name ?? "");
+function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function getTableName(table: unknown): "profile_goals" | "training_plans" {
+  if (!isRecord(table)) return "profile_goals";
+  const metadata = isRecord(table._) ? table._ : undefined;
+  const name = String(table[Symbol.for("drizzle:Name")] ?? metadata?.name ?? "");
   if (name.includes("training_plans")) return "training_plans";
   return "profile_goals";
 }
@@ -84,7 +91,7 @@ function createDbMock(queryMap: QueryMap = {}) {
   const callLog: CallLogEntry[] = [];
   let _activeTable: "profile_goals" | "training_plans" = "profile_goals";
 
-  const nextSelectResult = (isCountSelect = false): any[] => {
+  const nextSelectResult = (isCountSelect = false): unknown[] => {
     if (isCountSelect) {
       return (
         queryMap.profileGoalsCount ?? [
@@ -107,13 +114,31 @@ function createDbMock(queryMap: QueryMap = {}) {
     return (entry as GoalRow[][])[index] ?? (entry as GoalRow[][]).at(-1) ?? [];
   };
 
-  const createSelectBuilder = (isCountSelect = false) => {
+  type SelectBuilder = Promise<unknown[]> & {
+    from: (table: unknown) => SelectBuilder;
+    innerJoin: () => SelectBuilder;
+    where: () => SelectBuilder;
+    orderBy: () => SelectBuilder;
+    limit: () => SelectBuilder;
+    offset: () => SelectBuilder;
+    for: () => SelectBuilder;
+  };
+
+  const createSelectBuilder = (isCountSelect = false): SelectBuilder => {
     let isProfileAccess = false;
-    const builder: any = {
-      from: (table: any) => {
+    let builder: SelectBuilder;
+    const result = new Promise<unknown[]>((resolve) => {
+      queueMicrotask(() =>
+        resolve(isProfileAccess ? (queryMap.profileAccess ?? []) : nextSelectResult(isCountSelect)),
+      );
+    });
+    builder = Object.assign(result, {
+      from: (table: unknown) => {
         _activeTable = getTableName(table);
+        const tableRecord = isRecord(table) ? table : {};
+        const metadata = isRecord(tableRecord._) ? tableRecord._ : undefined;
         isProfileAccess = String(
-          table?.[Symbol.for("drizzle:Name")] ?? table?._?.name ?? "",
+          tableRecord[Symbol.for("drizzle:Name")] ?? metadata?.name ?? "",
         ).includes("coaching_assignments");
         return builder;
       },
@@ -123,22 +148,34 @@ function createDbMock(queryMap: QueryMap = {}) {
       limit: () => builder,
       offset: () => builder,
       for: () => builder,
-      then: (onFulfilled: (value: any[]) => unknown, onRejected?: (reason: unknown) => unknown) =>
-        Promise.resolve(
-          isProfileAccess ? (queryMap.profileAccess ?? []) : nextSelectResult(isCountSelect),
-        ).then(onFulfilled, onRejected),
-    };
+    });
 
     return builder;
   };
 
-  const db: any = {
-    transaction: async (callback: (tx: any) => Promise<unknown>) => callback(db),
+  type DbMock = {
+    transaction: (callback: (tx: DbMock) => Promise<unknown>) => Promise<unknown>;
+    execute: () => Promise<{ rows: Array<{ has_access: boolean }> }>;
+    select: (selection?: Record<string, unknown>) => SelectBuilder;
+    insert: (table: unknown) => {
+      values: (payload: Record<string, unknown>) => { returning: () => Promise<GoalRow[]> };
+    };
+    update: (table: unknown) => {
+      set: (payload: Record<string, unknown>) => {
+        where: () => { returning: () => Promise<GoalRow[]> };
+      };
+    };
+    delete: (table: unknown) => {
+      where: () => { returning: () => Promise<Array<{ id: string }>> };
+    };
+  };
+  const db: DbMock = {
+    transaction: async (callback) => callback(db),
     execute: async () => ({
       rows: queryMap.profileAccess ?? [{ has_access: false }],
     }),
     select: (selection?: Record<string, unknown>) => createSelectBuilder(Boolean(selection?.total)),
-    insert: (table: any) => ({
+    insert: (table) => ({
       values: (payload: Record<string, unknown>) => {
         const tableName = getTableName(table);
         if (tableName === "training_plans") {
@@ -154,7 +191,7 @@ function createDbMock(queryMap: QueryMap = {}) {
         };
       },
     }),
-    update: (table: any) => ({
+    update: (table) => ({
       set: (payload: Record<string, unknown>) => {
         const tableName = getTableName(table);
         if (tableName === "training_plans") {
@@ -169,7 +206,7 @@ function createDbMock(queryMap: QueryMap = {}) {
         };
       },
     }),
-    delete: (table: any) => ({
+    delete: (table) => ({
       where: () => {
         const tableName = getTableName(table);
         if (tableName === "training_plans") {
@@ -213,13 +250,7 @@ function createCaller(params?: {
   const { userId = OWNER_ID, queryMap, authorizeRead } = params ?? {};
   const { db, callLog } = createDbMock(queryMap);
   const router = authorizeRead ? createGoalsRouter(authorizeRead) : goalsRouter;
-  const caller = router.createCaller({
-    db: db as any,
-    session: { user: { id: userId } },
-    headers: new Headers(),
-    clientType: "test",
-    trpcSource: "vitest",
-  } as any);
+  const caller = createRouterCaller(router, { db, userId });
 
   return { caller, callLog };
 }
@@ -273,7 +304,7 @@ describe("goalsRouter", () => {
         profile_id: OWNER_ID,
         limit: 20,
         extra: true,
-      } as any),
+      } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
   });
 
@@ -294,7 +325,7 @@ describe("goalsRouter", () => {
           distance_m: 5000,
           target_time_s: 1500,
         },
-      } as any),
+      } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
   });
 
@@ -493,7 +524,7 @@ describe("goalsRouter", () => {
           title: "Updated Goal",
           extra: true,
         },
-      } as any),
+      } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
   });
 
@@ -538,7 +569,7 @@ describe("goalsRouter", () => {
       caller.delete({
         id: GOAL_ID,
         extra: true,
-      } as any),
+      } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
   });
 

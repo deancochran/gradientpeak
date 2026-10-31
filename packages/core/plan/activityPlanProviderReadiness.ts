@@ -81,17 +81,13 @@ function getMissingAnchorMessage(targetType: ActivityPlanTarget["type"]): string
 }
 
 function occurrencePath(occurrence: CompiledActivityPlanOccurrence): (string | number)[] {
-  return ["structure", "segments", occurrence.segmentIndex];
+  return ["structure", "items", occurrence.ordinal];
 }
 
 function stepPath(occurrence: CompiledActivityPlanOccurrence): (string | number)[] {
-  return [
-    ...occurrencePath(occurrence),
-    "intervals",
-    occurrence.intervalIndex ?? 0,
-    "steps",
-    occurrence.stepIndex ?? 0,
-  ];
+  return occurrence.repeatId
+    ? ["structure", "items", occurrence.repeatId, "steps", occurrence.stepId]
+    : occurrencePath(occurrence);
 }
 
 function dispositionFor(
@@ -100,6 +96,31 @@ function dispositionFor(
   if (findings.some((finding) => finding.disposition === "unsupported")) return "unsupported";
   if (findings.some((finding) => finding.disposition === "degraded")) return "degraded";
   return "compatible";
+}
+
+const targetTypeStartingValues = {
+  RPE: 5,
+  bpm: 120,
+  "%FTP": 75,
+  "%MaxHR": 75,
+  "%ThresholdHR": 75,
+  watts: 150,
+  speed: 10,
+  cadence: 80,
+} satisfies Record<Exclude<ActivityPlanTarget["type"], "rest">, number>;
+
+/** Starting values are editable suggestions, not conversions or athlete-specific prescriptions. */
+export function getActivityPlanTargetTypeDefault(
+  type: "rest",
+): Extract<ActivityPlanTarget, { type: "rest" }>;
+export function getActivityPlanTargetTypeDefault(
+  type: Exclude<ActivityPlanTarget["type"], "rest">,
+): Exclude<ActivityPlanTarget, { type: "rest" }>;
+export function getActivityPlanTargetTypeDefault(
+  type: ActivityPlanTarget["type"],
+): ActivityPlanTarget {
+  if (type === "rest") return { type };
+  return { type, intensity: targetTypeStartingValues[type] };
 }
 
 /** Selects a conservative composer target without inventing a relative metric anchor. */
@@ -187,27 +208,6 @@ export function getActivityPlanProviderProjection(input: {
 
   for (const occurrence of compiled.occurrences) {
     const basePath = occurrencePath(occurrence);
-    if (occurrence.role !== "activity") {
-      const supported = input.provider === "native" || capability?.supportsBoundaries === true;
-      findings.push({
-        disposition: supported ? "compatible" : "unsupported",
-        message: supported
-          ? `${occurrence.role} occurrence is preserved.`
-          : `${providerLabel} cannot preserve ${occurrence.role} boundaries.`,
-        path: [...basePath, "role"],
-        reasonCode: supported ? "boundary_preserved" : "unsupported_boundary",
-        semantic: "occurrence_role",
-      });
-      findings.push({
-        disposition: "compatible",
-        message: "Timed boundary duration is explicit.",
-        path: [...basePath, "duration"],
-        reasonCode: "duration_preserved",
-        semantic: "duration",
-      });
-      continue;
-    }
-
     findings.push({
       disposition: "compatible",
       message: "Activity occurrence role is preserved.",
@@ -251,11 +251,13 @@ export function getActivityPlanProviderProjection(input: {
     })?.index;
     occurrence.targets.forEach((target, targetIndex) => {
       const targetSupported =
-        isTargetTypePermittedForActivity({
-          activityCategory: occurrence.activity_category,
-          targetType: target.type,
-        }) &&
-        (input.provider === "native" || capability?.supportedTargets.includes(target.type));
+        target.type === "rest"
+          ? input.provider === "native" || input.provider === "garmin"
+          : isTargetTypePermittedForActivity({
+              activityCategory: occurrence.activity_category,
+              targetType: target.type,
+            }) &&
+            (input.provider === "native" || capability?.supportedTargets.includes(target.type));
       const anchorAvailable = hasTargetAnchor(target.type, anchors) !== false;
       const usesNativeDefault =
         input.provider === "native" && !anchorAvailable && input.nativeDefaultsAvailable !== false;

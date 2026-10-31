@@ -1,5 +1,4 @@
 import { getCalendarDateInIanaZone, scheduledDateTimeToIsoInstant } from "@repo/core/calendar";
-import { prescriptionResolutionManifestSchema } from "@repo/core/plan";
 import { type DrizzleDbClient, schema } from "@repo/db";
 import {
   and,
@@ -14,7 +13,6 @@ import {
   isNull,
   lt,
   lte,
-  ne,
   or,
   sql,
 } from "drizzle-orm";
@@ -64,7 +62,7 @@ function activityPlanViewerAccessCondition(profileId: string) {
   );
 }
 
-function serializeActivityPlanRow(activityPlan: typeof schema.activityPlans.$inferSelect | null) {
+function _serializeActivityPlanRow(activityPlan: typeof schema.activityPlans.$inferSelect | null) {
   if (!activityPlan) {
     return null;
   }
@@ -265,8 +263,22 @@ export function createEventReadRepository(
                 training_plan_id: schema.plannedSessions.training_plan_id,
                 training_plan_revision: schema.plannedSessions.training_plan_revision,
                 resolution_manifest: schema.plannedSessions.resolution_manifest,
+                activity_plan_id: schema.plannedSessions.activity_plan_id,
+                current_plan_name: schema.activityPlans.name,
+                current_plan_structure: schema.activityPlans.structure,
+                current_plan_updated_at: schema.activityPlans.updated_at,
               })
               .from(schema.plannedSessions)
+              .leftJoin(
+                schema.activityPlans,
+                and(
+                  eq(schema.plannedSessions.activity_plan_id, schema.activityPlans.id),
+                  or(
+                    eq(schema.activityPlans.profile_id, profileId),
+                    eq(schema.activityPlans.is_system_template, true),
+                  ),
+                ),
+              )
               .where(
                 and(
                   eq(schema.plannedSessions.profile_id, profileId),
@@ -291,8 +303,22 @@ export function createEventReadRepository(
             training_plan_id: schema.plannedSessions.training_plan_id,
             training_plan_revision: schema.plannedSessions.training_plan_revision,
             resolution_manifest: schema.plannedSessions.resolution_manifest,
+            activity_plan_id: schema.plannedSessions.activity_plan_id,
+            current_plan_name: schema.activityPlans.name,
+            current_plan_structure: schema.activityPlans.structure,
+            current_plan_updated_at: schema.activityPlans.updated_at,
           })
           .from(schema.plannedSessions)
+          .leftJoin(
+            schema.activityPlans,
+            and(
+              eq(schema.plannedSessions.activity_plan_id, schema.activityPlans.id),
+              or(
+                eq(schema.activityPlans.profile_id, profileId),
+                eq(schema.activityPlans.is_system_template, true),
+              ),
+            ),
+          )
           .where(
             and(
               eq(schema.plannedSessions.profile_id, profileId),
@@ -340,7 +366,20 @@ export function createEventReadRepository(
           trainingPlanId: row.training_plan_id,
           trainingPlanRevision: row.training_plan_revision,
         },
-        resolutionManifest: prescriptionResolutionManifestSchema.parse(row.resolution_manifest),
+        currentPlan:
+          row.current_plan_name === null ||
+          row.current_plan_structure === null ||
+          row.current_plan_updated_at === null
+            ? null
+            : {
+                id: row.activity_plan_id,
+                name: row.current_plan_name,
+                structure: row.current_plan_structure,
+                updatedAt: row.current_plan_updated_at,
+              },
+        // New planned sessions only retain their durable activity-plan reference.
+        // A legacy manifest is provenance, never the source for the current plan.
+        resolutionManifest: row.resolution_manifest,
       });
       const scheduledItemsStatus =
         plannedSessionRows.length === boundedLimit ? "partial" : "complete";
@@ -646,6 +685,28 @@ export function createEventReadRepository(
             activityPlanViewerAccessCondition(profileId),
           ),
         );
+    },
+
+    async listCurrentPlannedSessionPlans({ activityPlanIds, profileId }) {
+      if (activityPlanIds.length === 0) return [];
+      const rows = await db
+        .select({
+          id: schema.activityPlans.id,
+          name: schema.activityPlans.name,
+          structure: schema.activityPlans.structure,
+          updatedAt: schema.activityPlans.updated_at,
+        })
+        .from(schema.activityPlans)
+        .where(
+          and(
+            inArray(schema.activityPlans.id, activityPlanIds),
+            or(
+              eq(schema.activityPlans.profile_id, profileId),
+              eq(schema.activityPlans.is_system_template, true),
+            ),
+          ),
+        );
+      return rows;
     },
 
     async getValidateConstraintsInputs({ activityPlanId, profileId, trainingPlanId }) {

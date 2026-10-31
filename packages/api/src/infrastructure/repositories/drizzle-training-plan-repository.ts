@@ -12,6 +12,7 @@ import {
   exists,
   gt,
   gte,
+  ilike,
   inArray,
   isNotNull,
   isNull,
@@ -19,6 +20,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
+import { type DrizzleQueryExecutor, withRepeatableReadSnapshot } from "../../db";
 import type {
   CreateTrainingPlanRecordInput,
   TrainingPlanRepository,
@@ -40,7 +42,7 @@ function isUuidString(value: unknown): value is string {
 }
 
 export function createTrainingPlanRepository(db: DrizzleDbClient): TrainingPlanRepository {
-  const accessibleTo = (profileId: string) =>
+  const accessibleTo = (executor: DrizzleQueryExecutor, profileId: string) =>
     or(
       eq(schema.trainingPlans.profile_id, profileId),
       eq(schema.trainingPlans.is_system_template, true),
@@ -48,7 +50,7 @@ export function createTrainingPlanRepository(db: DrizzleDbClient): TrainingPlanR
       and(
         eq(schema.trainingPlans.content_visibility, "followers"),
         exists(
-          db
+          executor
             .select({ follower_id: schema.follows.follower_id })
             .from(schema.follows)
             .where(
@@ -61,7 +63,7 @@ export function createTrainingPlanRepository(db: DrizzleDbClient): TrainingPlanR
         ),
       ),
       exists(
-        db
+        executor
           .select({ id: schema.contentAccessGrants.id })
           .from(schema.contentAccessGrants)
           .where(
@@ -79,6 +81,36 @@ export function createTrainingPlanRepository(db: DrizzleDbClient): TrainingPlanR
           ),
       ),
     );
+  const listConditions = (
+    executor: DrizzleQueryExecutor,
+    input: {
+      ownerScope: "own" | "system" | "public" | "all";
+      profileId: string;
+      search?: string;
+      visibility?: "private" | "followers" | "public";
+    },
+  ) => {
+    const conditions = [];
+    if (input.ownerScope === "own")
+      conditions.push(eq(schema.trainingPlans.profile_id, input.profileId));
+    else if (input.ownerScope === "system")
+      conditions.push(eq(schema.trainingPlans.is_system_template, true));
+    else if (input.ownerScope === "public")
+      conditions.push(eq(schema.trainingPlans.content_visibility, "public"));
+    else conditions.push(accessibleTo(executor, input.profileId));
+    if (input.visibility)
+      conditions.push(eq(schema.trainingPlans.content_visibility, input.visibility));
+    if (input.search) {
+      const escaped = input.search.replace(/[\\%_]/g, "\\$&");
+      conditions.push(
+        or(
+          ilike(schema.trainingPlans.name, `%${escaped}%`),
+          ilike(schema.trainingPlans.description, `%${escaped}%`),
+        ),
+      );
+    }
+    return conditions;
+  };
   const parseTrainingPlanStructure = (value: unknown): Record<string, unknown> | null => {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
       return null;
@@ -172,7 +204,7 @@ export function createTrainingPlanRepository(db: DrizzleDbClient): TrainingPlanR
     const [row] = await db
       .select()
       .from(schema.trainingPlans)
-      .where(and(eq(schema.trainingPlans.id, input.id), accessibleTo(input.profileId)))
+      .where(and(eq(schema.trainingPlans.id, input.id), accessibleTo(db, input.profileId)))
       .limit(1);
     return row ?? null;
   };
@@ -381,27 +413,31 @@ export function createTrainingPlanRepository(db: DrizzleDbClient): TrainingPlanR
     },
 
     async listTrainingPlans(input): Promise<TrainingPlanRow[]> {
-      const conditions = [];
-
-      if (input.ownerScope === "own") {
-        conditions.push(eq(schema.trainingPlans.profile_id, input.profileId));
-      } else if (input.ownerScope === "system") {
-        conditions.push(eq(schema.trainingPlans.is_system_template, true));
-      } else if (input.ownerScope === "public") {
-        conditions.push(eq(schema.trainingPlans.content_visibility, "public"));
-      } else {
-        conditions.push(accessibleTo(input.profileId));
-      }
-
-      if (input.visibility) {
-        conditions.push(eq(schema.trainingPlans.content_visibility, input.visibility));
-      }
-
       return db
         .select()
         .from(schema.trainingPlans)
-        .where(and(...conditions))
+        .where(and(...listConditions(db, input)))
         .orderBy(desc(schema.trainingPlans.created_at));
+    },
+
+    async listTrainingPlansPage(input) {
+      return withRepeatableReadSnapshot(db, async (tx) => {
+        const conditions = listConditions(tx, input);
+        const [items, countRows] = await Promise.all([
+          tx
+            .select()
+            .from(schema.trainingPlans)
+            .where(and(...conditions))
+            .orderBy(desc(schema.trainingPlans.created_at), asc(schema.trainingPlans.id))
+            .limit(input.limit)
+            .offset(input.offset),
+          tx
+            .select({ total: count() })
+            .from(schema.trainingPlans)
+            .where(and(...conditions)),
+        ]);
+        return { items, total: Number(countRows[0]?.total ?? 0) };
+      });
     },
 
     async updateTrainingPlan(input: UpdateTrainingPlanRecordInput): Promise<TrainingPlanRow> {
@@ -454,7 +490,7 @@ export function createTrainingPlanRepository(db: DrizzleDbClient): TrainingPlanR
     async persistInferredStateSnapshot(input) {
       const plan = await resolveTargetPlan({
         profileId: input.profileId,
-        trainingPlanId: input.trainingPlanId,
+        ...(input.trainingPlanId === undefined ? {} : { trainingPlanId: input.trainingPlanId }),
       });
 
       if (!plan) {

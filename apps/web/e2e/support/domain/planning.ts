@@ -97,10 +97,27 @@ export class TrainingPlanFixtureBuilder {
     const structure = {
       id,
       version: 1,
+      plan_preferences: {
+        weekly_session_count: null,
+        target_weekly_duration_minutes: null,
+        maximum_session_duration_minutes: null,
+        preferred_weekdays: [],
+        rest_days: [],
+        progression_style: null,
+        recovery_priority: null,
+      },
       sessions: [
         {
+          id: this.identity.uuid(`${label}-session`),
           activity_plan_id: input.activityPlanId,
           offset_days: 0,
+          demand: {
+            activity_category: "bike",
+            training_intent: "aerobic_base",
+            target_duration_minutes: 60,
+            target_common_load: null,
+            importance: "normal",
+          },
           event_overrides: { title: "Playwright tempo" },
         },
       ],

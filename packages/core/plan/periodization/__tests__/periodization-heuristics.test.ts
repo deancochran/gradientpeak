@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultAthletePreferenceProfile } from "../../../schemas/settings/profile_settings";
+import { requireFixtureValue } from "../../../testing/requireFixtureValue";
 import {
   assessFeasibility,
   computeTaperWindow,
@@ -113,7 +114,9 @@ describe("periodization heuristics", () => {
     const normalizedGoals = fromProfileGoals(
       periodizationScenarioFixtures.boundaryFeasible.goals as never,
     );
-    const demandResult = resolveEventDemand(normalizedGoals[0]!);
+    const demandResult = resolveEventDemand(
+      requireFixtureValue(normalizedGoals[0], "expected boundary-feasible goal"),
+    );
 
     expect(demandResult.status).toBe("supported");
     if (demandResult.status === "supported") {
@@ -134,7 +137,9 @@ describe("periodization heuristics", () => {
     const stretchGoals = fromProfileGoals(
       periodizationScenarioFixtures.infeasibleBeginnerStretch.goals as never,
     );
-    const stretchDemand = resolveEventDemand(stretchGoals[0]!);
+    const stretchDemand = resolveEventDemand(
+      requireFixtureValue(stretchGoals[0], "expected infeasible-stretch goal"),
+    );
 
     expect(stretchDemand.status).toBe("supported");
     if (stretchDemand.status === "supported") {

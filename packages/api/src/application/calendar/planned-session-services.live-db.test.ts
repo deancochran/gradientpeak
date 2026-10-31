@@ -3,6 +3,7 @@ import { activityPlanSemanticHash, activityPlanStructureSchema } from "@repo/cor
 import { ATHLETE_DERIVED_STATE_PERSISTENCE_CONTRACT_VERSION } from "@repo/core/athlete-derived-state";
 import {
   PLANNED_SESSION_CONTRACT_VERSION,
+  plannedSessionActivityPlanId,
   plannedSessionIdempotencyKey,
   plannedSessionSchema,
 } from "@repo/core/calendar";
@@ -32,6 +33,7 @@ import { createRouterCaller } from "../../test/router";
 import { deleteActivityForProfile } from "../activities/activity-mutations";
 import { activityPlanStructureHash } from "../activity-plans/structure-hash";
 import { cancelPlannedSession } from "./cancel-planned-session";
+import { changePlannedSessionPlan } from "./change-planned-session-plan";
 import { createDirectPlannedSession } from "./create-direct-planned-session";
 import { createPlannedSession } from "./create-planned-session";
 import { linkPlannedSessionCompletion } from "./link-planned-session-completion";
@@ -40,6 +42,7 @@ import { movePlannedSession } from "./move-planned-session";
 import {
   PlannedSessionAccessError,
   PlannedSessionFutureDateError,
+  PlannedSessionNotFoundError,
   PlannedSessionStaleRevisionError,
   PlannedSessionStateConflictError,
 } from "./planned-session-errors";
@@ -65,41 +68,24 @@ function isDisposablePlannedSessionDatabase(): boolean {
     return false;
   }
 }
-
 const describeDisposable = isDisposablePlannedSessionDatabase() ? describe : describe.skip;
-
 const structure = activityPlanStructureSchema.parse({
-  version: 3,
+  version: 5,
   activity_category: "bike",
-  segments: [
+  items: [
     {
+      type: "step",
       id: randomUUID(),
-      role: "activity",
-      name: "Ride",
-      intervals: [
-        {
-          id: randomUUID(),
-          name: "Main",
-          repetitions: 1,
-          steps: [
-            {
-              id: randomUUID(),
-              name: "Steady",
-              duration: { type: "time", seconds: 1800 },
-              targets: [{ type: "%FTP", intensity: 75 }],
-            },
-          ],
-        },
-      ],
+      name: "Steady",
+      duration: { type: "time", seconds: 1800 },
+      targets: [{ type: "%FTP", intensity: 75 }],
     },
   ],
 });
 const semanticHash = activityPlanSemanticHash({
   structure,
-  adaptation: null,
   trainingIntent: "general_maintenance",
 });
-
 async function seedProfile(label: string) {
   const id = randomUUID();
   const email = `${id}@planned-session-services.test`;
@@ -115,7 +101,6 @@ async function seedProfile(label: string) {
   });
   return id;
 }
-
 function directSession(input: {
   id?: string;
   profileId: string;
@@ -153,7 +138,6 @@ function directSession(input: {
     lifecycle: { status: "scheduled" },
   });
 }
-
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
@@ -163,15 +147,16 @@ function deferred<T>() {
   });
   return { promise, reject, resolve };
 }
-
 async function waitForBackendBlockedBy(
   blockingPid: number,
   relationName: "group_events" | "group_memberships",
-  timeoutMs = 3_000,
+  timeoutMs = 3000,
 ) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const result = await pool.query<{ count: number }>(
+    const result = await pool.query<{
+      count: number;
+    }>(
       `
         select count(*)::int as count
         from pg_stat_activity
@@ -187,8 +172,7 @@ async function waitForBackendBlockedBy(
   }
   throw new Error(`Timed out waiting for a ${relationName} row lock`);
 }
-
-async function within<T>(promise: Promise<T>, timeoutMs = 5_000): Promise<T> {
+async function within<T>(promise: Promise<T>, timeoutMs = 5000): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
@@ -201,11 +185,9 @@ async function within<T>(promise: Promise<T>, timeoutMs = 5_000): Promise<T> {
     if (timeout) clearTimeout(timeout);
   }
 }
-
 afterAll(async () => {
   await pool.end();
 });
-
 describeDisposable("planned-session services against a disposable database", () => {
   it("enforces lifecycle, ownership, idempotency, associations, and deletion history", async () => {
     const profileId = await seedProfile("Planned session owner");
@@ -232,7 +214,7 @@ describeDisposable("planned-session services against a disposable database", () 
           profile_id: otherProfileId,
           name: "Other activity plan",
           structure,
-          structure_hash: `v1:sha256:${"2".repeat(64)}`,
+          structure_hash: activityPlanStructureHash(structure),
           semantic_hash: semanticHash,
         },
         {
@@ -246,7 +228,7 @@ describeDisposable("planned-session services against a disposable database", () 
           is_system_template: true,
           system_content_key: `planned-session-${systemActivityPlanId}`,
           system_content_version: 1,
-          system_content_hash: `v1:sha256:${"4".repeat(64)}`,
+          system_content_hash: activityPlanStructureHash(structure),
         },
       ]);
       const trainingStructure = (id: string) => ({
@@ -254,42 +236,45 @@ describeDisposable("planned-session services against a disposable database", () 
         version: 1 as const,
         sessions: [{ activity_plan_id: ownActivityPlanId, offset_days: 0 }],
       });
+      const ownTrainingStructure = trainingStructure(ownTrainingPlanId);
+      const otherTrainingStructure = trainingStructure(otherTrainingPlanId);
+      const systemTrainingStructure = trainingStructure(systemTrainingPlanId);
       await db.insert(trainingPlans).values([
         {
           id: ownTrainingPlanId,
           profile_id: profileId,
           name: "Owned training plan",
-          structure: trainingStructure(ownTrainingPlanId),
-          structure_hash: `v1:sha256:${"5".repeat(64)}`,
+          structure: ownTrainingStructure,
+          structure_hash: activityPlanStructureHash(ownTrainingStructure),
         },
         {
           id: otherTrainingPlanId,
           profile_id: otherProfileId,
           name: "Other training plan",
-          structure: trainingStructure(otherTrainingPlanId),
-          structure_hash: `v1:sha256:${"6".repeat(64)}`,
+          structure: otherTrainingStructure,
+          structure_hash: activityPlanStructureHash(otherTrainingStructure),
         },
         {
           id: systemTrainingPlanId,
           profile_id: null,
           name: "System training plan",
-          structure: trainingStructure(systemTrainingPlanId),
-          structure_hash: `v1:sha256:${"7".repeat(64)}`,
+          structure: systemTrainingStructure,
+          structure_hash: activityPlanStructureHash(systemTrainingStructure),
           content_visibility: "public",
           is_system_template: true,
           system_content_key: `planned-session-${systemTrainingPlanId}`,
           system_content_version: 1,
-          system_content_hash: `v1:sha256:${"8".repeat(64)}`,
+          system_content_hash: activityPlanStructureHash(systemTrainingStructure),
         },
       ]);
-
       const repository = createDrizzlePlannedSessionRepository(db);
+      const ownDirectSessionId = randomUUID();
       await expect(
         createDirectPlannedSession({
           db,
           repository,
           profileId,
-          sessionId: randomUUID(),
+          sessionId: ownDirectSessionId,
           planningDate: "2026-08-20",
           source: { kind: "direct", operationId: `direct_${"n".repeat(32)}` },
           activityPlanId: ownActivityPlanId,
@@ -299,17 +284,16 @@ describeDisposable("planned-session services against a disposable database", () 
       ).resolves.toMatchObject({
         status: "created",
         session: {
-          prescription: {
-            resolutionManifest: { fallback_level: "system_default_no_context" },
-          },
+          activityPlanId: ownActivityPlanId,
         },
       });
+      const systemDirectSessionId = randomUUID();
       await expect(
         createDirectPlannedSession({
           db,
           repository,
           profileId,
-          sessionId: randomUUID(),
+          sessionId: systemDirectSessionId,
           planningDate: "2026-08-20",
           source: { kind: "direct", operationId: `direct_${"s".repeat(32)}` },
           activityPlanId: systemActivityPlanId,
@@ -320,14 +304,34 @@ describeDisposable("planned-session services against a disposable database", () 
         status: "created",
         session: {
           profileId,
-          prescription: {
-            resolutionManifest: {
-              activity_plan_id: systemActivityPlanId,
-              fallback_level: "system_default_no_context",
-            },
-          },
+          activityPlanId: systemActivityPlanId,
         },
       });
+      const directWriteRows = await db
+        .select({
+          activityPlanId: plannedSessions.activity_plan_id,
+          activityPlanRevision: plannedSessions.activity_plan_revision,
+          prescriptionCapturedAt: plannedSessions.prescription_captured_at,
+          resolutionManifest: plannedSessions.resolution_manifest,
+        })
+        .from(plannedSessions)
+        .where(sql`${plannedSessions.id} in (${ownDirectSessionId}, ${systemDirectSessionId})`);
+      expect(directWriteRows).toEqual(
+        expect.arrayContaining([
+          {
+            activityPlanId: ownActivityPlanId,
+            activityPlanRevision: null,
+            prescriptionCapturedAt: null,
+            resolutionManifest: null,
+          },
+          {
+            activityPlanId: systemActivityPlanId,
+            activityPlanRevision: null,
+            prescriptionCapturedAt: null,
+            resolutionManifest: null,
+          },
+        ]),
+      );
       const first = directSession({
         profileId,
         activityPlanId: ownActivityPlanId,
@@ -343,7 +347,6 @@ describeDisposable("planned-session services against a disposable database", () 
           session: { ...first, id: randomUUID() },
         }),
       ).resolves.toMatchObject({ status: "unchanged", session: { id: first.id } });
-
       const pastSession = directSession({
         profileId,
         activityPlanId: ownActivityPlanId,
@@ -416,7 +419,6 @@ describeDisposable("planned-session services against a disposable database", () 
           now: new Date(skippedAt),
         }),
       ).rejects.toBeInstanceOf(PlannedSessionFutureDateError);
-
       const trainingSource = {
         kind: "training_plan" as const,
         trainingPlanId: ownTrainingPlanId,
@@ -439,7 +441,6 @@ describeDisposable("planned-session services against a disposable database", () 
           session: { ...training, id: randomUUID() },
         }),
       ).resolves.toMatchObject({ status: "unchanged", session: { id: training.id } });
-
       for (const mutation of [
         movePlannedSession({
           repository,
@@ -479,7 +480,6 @@ describeDisposable("planned-session services against a disposable database", () 
         sessionRevision: 2,
         lifecycle: { status: "cancelled", reason: "user_requested" },
       });
-
       const systemSource = {
         kind: "training_plan" as const,
         trainingPlanId: systemTrainingPlanId,
@@ -541,7 +541,6 @@ describeDisposable("planned-session services against a disposable database", () 
           }),
         }),
       ).rejects.toBeInstanceOf(PlannedSessionAccessError);
-
       await db.insert(groups).values({
         id: groupId,
         created_by_profile_id: profileId,
@@ -625,7 +624,6 @@ describeDisposable("planned-session services against a disposable database", () 
           planningDate: "2026-08-29",
         }),
       ).rejects.toBeInstanceOf(PlannedSessionStaleRevisionError);
-
       const activityId = randomUUID();
       await db.transaction(async (tx) => {
         await tx.execute(sql`set local session_replication_role = replica`);
@@ -635,7 +633,7 @@ describeDisposable("planned-session services against a disposable database", () 
           name: "Completed ride",
           started_at: new Date("2026-08-15T10:00:00.000Z"),
           finished_at: new Date("2026-08-15T11:00:00.000Z"),
-          elapsed_ms: 3_600_000,
+          elapsed_ms: 3600000,
           parser_version: "planned-session-live-v1",
           decoded_contract_version: "planned-session-live-v1",
           materializer_version: "planned-session-live-v1",
@@ -727,8 +725,8 @@ describeDisposable("planned-session services against a disposable database", () 
             name: "Imported ride",
             started_at: new Date("2026-08-20T10:00:00.000Z"),
             finished_at: new Date("2026-08-20T11:00:00.000Z"),
-            elapsed_ms: 3_600_000,
-            distance_meters: 20_000,
+            elapsed_ms: 3600000,
+            distance_meters: 20000,
             parser_version: "provider-v1",
             decoded_contract_version: "provider-v1",
             materializer_version: "provider-v1",
@@ -739,8 +737,8 @@ describeDisposable("planned-session services against a disposable database", () 
             name: "Imported run",
             started_at: new Date("2026-08-20T10:00:00.000Z"),
             finished_at: new Date("2026-08-20T11:00:00.000Z"),
-            elapsed_ms: 3_600_000,
-            distance_meters: 10_000,
+            elapsed_ms: 3600000,
+            distance_meters: 10000,
             parser_version: "provider-v1",
             decoded_contract_version: "provider-v1",
             materializer_version: "provider-v1",
@@ -755,12 +753,12 @@ describeDisposable("planned-session services against a disposable database", () 
             role: "activity",
             activity_category: "bike",
             start_offset_ms: 0,
-            end_offset_ms: 3_600_000,
+            end_offset_ms: 3600000,
             summary: { version: 1, timing: { timingCoverage: "complete" } },
             summary_version: 1,
             timing_coverage: "complete",
-            active_ms: 3_600_000,
-            moving_ms: 3_600_000,
+            active_ms: 3600000,
+            moving_ms: 3600000,
             segment_revision: 1,
             parser_version: "provider-v1",
             materializer_version: "provider-v1",
@@ -774,12 +772,12 @@ describeDisposable("planned-session services against a disposable database", () 
             role: "activity",
             activity_category: "run",
             start_offset_ms: 0,
-            end_offset_ms: 3_600_000,
+            end_offset_ms: 3600000,
             summary: { version: 1, timing: { timingCoverage: "complete" } },
             summary_version: 1,
             timing_coverage: "complete",
-            active_ms: 3_600_000,
-            moving_ms: 3_600_000,
+            active_ms: 3600000,
+            moving_ms: 3600000,
             segment_revision: 1,
             parser_version: "provider-v1",
             materializer_version: "provider-v1",
@@ -909,7 +907,6 @@ describeDisposable("planned-session services against a disposable database", () 
           },
         },
       });
-
       const range = await readPlannedSessionRange({
         repository,
         profileId,
@@ -934,7 +931,126 @@ describeDisposable("planned-session services against a disposable database", () 
       await db.delete(activityPlans).where(eq(activityPlans.id, systemActivityPlanId));
     }
   });
+  it("duplicates and repoints one scheduled occurrence atomically without changing execution evidence", async () => {
+    const profileId = await seedProfile("Single occurrence owner");
+    const otherProfileId = await seedProfile("Single occurrence outsider");
+    const sourcePlanId = randomUUID();
+    const unrelatedPlanId = randomUUID();
+    try {
+      await db.insert(activityPlans).values([
+        {
+          id: sourcePlanId,
+          profile_id: profileId,
+          name: "Source scheduled plan",
+          description: "Keep this authored description",
+          notes: "Keep this authored note",
+          structure,
+          structure_hash: activityPlanStructureHash(structure),
+          semantic_hash: semanticHash,
+          gps_recording_enabled: true,
+        },
+        {
+          id: unrelatedPlanId,
+          profile_id: profileId,
+          name: "Unrelated scheduled plan",
+          structure,
+          structure_hash: activityPlanStructureHash(structure),
+          semantic_hash: semanticHash,
+        },
+      ]);
+      const repository = createDrizzlePlannedSessionRepository(db);
+      const edited = directSession({
+        profileId,
+        activityPlanId: sourcePlanId,
+        operationId: `change_${randomUUID().replaceAll("-", "")}`,
+      });
+      const unrelated = directSession({
+        profileId,
+        activityPlanId: unrelatedPlanId,
+        operationId: `unrelated_${randomUUID().replaceAll("-", "")}`,
+      });
+      await createPlannedSession({ repository, profileId, session: edited });
+      await createPlannedSession({ repository, profileId, session: unrelated });
+      const capturedExecution = {
+        activityPlanId: sourcePlanId,
+        sessionId: edited.id,
+        sessionRevision: edited.sessionRevision,
+      };
 
+      const changed = await changePlannedSessionPlan({
+        db,
+        profileId,
+        sessionId: edited.id,
+        expectedRevision: 1,
+        newName: "Only this occurrence",
+      });
+      expect(changed).toMatchObject({
+        id: edited.id,
+        sessionRevision: 2,
+        source: edited.source,
+        lifecycle: { status: "scheduled" },
+      });
+      const duplicateActivityPlanId = plannedSessionActivityPlanId(changed);
+      expect(duplicateActivityPlanId).not.toBe(sourcePlanId);
+      expect(
+        (await repository.getOwned({ profileId, sessionId: unrelated.id }))?.activityPlanId,
+      ).toBe(unrelatedPlanId);
+      const duplicate = await db.query.activityPlans.findFirst({
+        where: eq(activityPlans.id, duplicateActivityPlanId),
+      });
+      expect(duplicate).toMatchObject({
+        profile_id: profileId,
+        name: "Only this occurrence",
+        description: "Keep this authored description",
+        notes: "Keep this authored note",
+        structure,
+        gps_recording_enabled: true,
+      });
+
+      await expect(
+        changePlannedSessionPlan({
+          db,
+          profileId: otherProfileId,
+          sessionId: edited.id,
+          expectedRevision: 2,
+        }),
+      ).rejects.toBeInstanceOf(PlannedSessionNotFoundError);
+      await expect(
+        changePlannedSessionPlan({
+          db,
+          profileId,
+          sessionId: edited.id,
+          expectedRevision: 1,
+        }),
+      ).rejects.toBeInstanceOf(PlannedSessionStaleRevisionError);
+      const duplicatesAfterStaleRetry = await db
+        .select({ id: activityPlans.id })
+        .from(activityPlans)
+        .where(eq(activityPlans.profile_id, profileId));
+      expect(duplicatesAfterStaleRetry).toHaveLength(3);
+
+      // The launch payload remains the original execution evidence. Its older
+      // lifecycle revision cannot link completion after this explicit edit.
+      expect(capturedExecution).toEqual({
+        activityPlanId: sourcePlanId,
+        sessionId: edited.id,
+        sessionRevision: 1,
+      });
+      await expect(
+        linkPlannedSessionCompletion({
+          repository,
+          profileId,
+          sessionId: capturedExecution.sessionId,
+          expectedRevision: capturedExecution.sessionRevision,
+          activityId: randomUUID(),
+          linkedAt: "2026-08-20T12:00:00.000Z",
+        }),
+      ).rejects.toBeInstanceOf(PlannedSessionStaleRevisionError);
+    } finally {
+      await db.delete(users).where(eq(users.id, profileId));
+      await db.delete(users).where(eq(users.id, otherProfileId));
+    }
+  });
   it("serializes group-event association with revocation, cancellation, and deletion", async () => {
     const profileId = await seedProfile("Concurrent planned session owner");
     const activityPlanId = randomUUID();
@@ -949,14 +1065,13 @@ describeDisposable("planned-session services against a disposable database", () 
       lateLinkEventId,
       lateCreateEventId,
     ];
-
     try {
       await db.insert(activityPlans).values({
         id: activityPlanId,
         profile_id: profileId,
         name: "Concurrent association plan",
         structure,
-        structure_hash: `v1:sha256:${"9".repeat(64)}`,
+        structure_hash: activityPlanStructureHash(structure),
         semantic_hash: semanticHash,
       });
       await db.insert(groups).values({
@@ -981,9 +1096,7 @@ describeDisposable("planned-session services against a disposable database", () 
           timezone: "UTC",
         })),
       );
-
       const repository = createDrizzlePlannedSessionRepository(db);
-
       const membershipRaceSession = directSession({
         profileId,
         activityPlanId,
@@ -1007,7 +1120,6 @@ describeDisposable("planned-session services against a disposable database", () 
           `,
           [groupId, profileId],
         );
-
         pendingCreate = createPlannedSession({
           repository,
           profileId,
@@ -1016,7 +1128,6 @@ describeDisposable("planned-session services against a disposable database", () 
         await waitForBackendBlockedBy(blockerPid, "group_memberships");
         await revokingConnection.query("commit");
         revocationCommitted = true;
-
         await expect(within(pendingCreate)).rejects.toBeInstanceOf(PlannedSessionAccessError);
       } finally {
         if (!revocationCommitted) {
@@ -1037,7 +1148,6 @@ describeDisposable("planned-session services against a disposable database", () 
         .where(
           and(eq(groupMemberships.group_id, groupId), eq(groupMemberships.profile_id, profileId)),
         );
-
       const cancellationRaceSession = directSession({
         profileId,
         activityPlanId,
@@ -1057,7 +1167,6 @@ describeDisposable("planned-session services against a disposable database", () 
           "update group_events set cancelled_at = now(), updated_at = now() where id = $1",
           [cancellationRaceEventId],
         );
-
         pendingLink = linkPlannedSessionGroupEvent({
           repository,
           profileId,
@@ -1068,7 +1177,6 @@ describeDisposable("planned-session services against a disposable database", () 
         await waitForBackendBlockedBy(blockerPid, "group_events");
         await cancellingConnection.query("commit");
         cancellationCommitted = true;
-
         await expect(within(pendingLink)).rejects.toBeInstanceOf(PlannedSessionAccessError);
       } finally {
         if (!cancellationCommitted) {
@@ -1080,7 +1188,6 @@ describeDisposable("planned-session services against a disposable database", () 
       await expect(
         repository.getOwned({ profileId, sessionId: cancellationRaceSession.id }),
       ).resolves.toMatchObject({ groupEventId: null, sessionRevision: 1 });
-
       const lateLinkSession = directSession({
         profileId,
         activityPlanId,
@@ -1131,7 +1238,6 @@ describeDisposable("planned-session services against a disposable database", () 
         cancellation = caller.cancel({ groupEventId: lateLinkEventId, scope: "single" });
         await waitForBackendBlockedBy(linkingPid, "group_events");
         releaseLink.resolve(undefined);
-
         const linked = await within(linking);
         expect(linked.replayed).toEqual(linked.linked);
         expect(linked.linked).toMatchObject({
@@ -1150,7 +1256,6 @@ describeDisposable("planned-session services against a disposable database", () 
       await expect(
         repository.getOwned({ profileId, sessionId: lateLinkSession.id }),
       ).resolves.toMatchObject({ groupEventId: null, sessionRevision: 3 });
-
       const lateCreateSession = directSession({
         profileId,
         activityPlanId,
@@ -1197,7 +1302,6 @@ describeDisposable("planned-session services against a disposable database", () 
         });
         await waitForBackendBlockedBy(creatingPid, "group_events");
         releaseCreate.resolve(undefined);
-
         await expect(within(creating)).resolves.toMatchObject({ status: "created" });
         await expect(within(deletion)).resolves.toBe(1);
       } finally {
@@ -1219,5 +1323,5 @@ describeDisposable("planned-session services against a disposable database", () 
       await db.delete(groups).where(eq(groups.id, groupId));
       await db.delete(users).where(eq(users.id, profileId));
     }
-  }, 30_000);
+  }, 30000);
 });

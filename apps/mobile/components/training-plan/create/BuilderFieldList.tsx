@@ -2,9 +2,11 @@ import { numericUxPolicies } from "@repo/core/utils/numeric-ux-policy";
 import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { useEffect, useState } from "react";
+import { useInputDraft } from "@repo/ui/hooks";
+import { useEffect, useRef } from "react";
 import { View } from "react-native";
 import { PlanningInputFieldRow } from "@/components/training-plan/PlanningInputFieldRow";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 export interface BuilderFieldDescriptor<TKey extends string = string> {
   key: TKey;
@@ -25,6 +27,7 @@ export interface BuilderFieldDescriptor<TKey extends string = string> {
   max?: number;
   min?: number;
   step?: number;
+  decimals?: number;
 }
 
 interface BuilderFieldListProps<TKey extends string> {
@@ -35,6 +38,9 @@ interface BuilderFieldListProps<TKey extends string> {
   onChangeField: (fieldKey: TKey, value: number | null) => void;
   onRemoveField: (fieldKey: TKey) => void;
   showSupportingText?: boolean;
+  rawDrafts?: Record<string, string> | undefined;
+  onRawDraftChange?: ((key: string, value: string) => void) | undefined;
+  onInvalidChange?: ((key: string, message: string | null) => void) | undefined;
 }
 
 function formatFieldSource(source: string, overridden?: boolean) {
@@ -70,6 +76,9 @@ export function BuilderFieldList<TKey extends string>({
   onChangeField,
   onRemoveField,
   showSupportingText = true,
+  rawDrafts,
+  onRawDraftChange,
+  onInvalidChange,
 }: BuilderFieldListProps<TKey>) {
   const visibleFields = fields.filter((field) => field.visible);
   const addableFields = fields.filter((field) => !field.visible && field.inputKind === "number");
@@ -84,16 +93,16 @@ export function BuilderFieldList<TKey extends string>({
               className={index < visibleFields.length - 1 ? "border-b border-border/70" : ""}
             >
               <PlanningInputFieldRow
-                label={field.label}
-                onClear={field.canRemove ? () => onRemoveField(field.key) : undefined}
-                supportingText={
-                  showSupportingText
+                {...omitUndefined({
+                  onClear: field.canRemove ? () => onRemoveField(field.key) : undefined,
+                  supportingText: showSupportingText
                     ? field.required
                       ? field.reason
                       : field.helperText ||
                         formatFieldSource(field.value.source, field.value.overridden)
-                    : undefined
-                }
+                    : undefined,
+                })}
+                label={field.label}
               >
                 {field.inputKind === "derived" ? (
                   <Text className="text-sm text-foreground">
@@ -101,12 +110,25 @@ export function BuilderFieldList<TKey extends string>({
                   </Text>
                 ) : (
                   <CompactNumberControl
+                    {...omitUndefined({
+                      max: field.max,
+                      min: field.min,
+                      step: field.step,
+                      decimals: field.decimals,
+                      rawValue: rawDrafts?.[field.key],
+                      unitLabel: field.value.unit ?? field.defaultUnit ?? undefined,
+                    })}
                     label={field.label}
-                    max={field.max}
-                    min={field.min}
-                    step={field.step}
+                    onRawChange={(value) => {
+                      onRawDraftChange?.(field.key, value);
+                    }}
+                    onInvalidChange={(invalid) => {
+                      onInvalidChange?.(
+                        field.key,
+                        invalid ? `Correct ${field.label} or clear it.` : null,
+                      );
+                    }}
                     value={field.value.value}
-                    unitLabel={field.value.unit ?? field.defaultUnit ?? undefined}
                     onChange={(value) => onChangeField(field.key, value)}
                   />
                 )}
@@ -148,6 +170,10 @@ function CompactNumberControl({
   step: providedStep,
   unitLabel,
   value,
+  decimals,
+  rawValue,
+  onRawChange,
+  onInvalidChange,
 }: {
   label: string;
   max?: number;
@@ -156,23 +182,42 @@ function CompactNumberControl({
   step?: number;
   unitLabel?: string;
   value: number | null;
+  decimals?: number | undefined;
+  rawValue?: string | undefined;
+  onRawChange: (value: string) => void;
+  onInvalidChange: (invalid: boolean) => void;
 }) {
-  const step = providedStep ?? getBuilderNumberStep({ unitLabel });
-  const [draft, setDraft] = useState(value === null ? "" : String(value));
-  useEffect(() => setDraft(value === null ? "" : String(value)), [value]);
+  const step = providedStep ?? getBuilderNumberStep(omitUndefined({ unitLabel }));
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const [draft, setDraft] = useInputDraft(rawValue ?? (value === null ? "" : String(value)));
   return (
     <BoundedNumberInput
       adjustmentStep={step}
-      decimals={step < 1 ? 3 : 0}
+      // Descriptors carry their semantic authoring precision. Do not invent a
+      // high-precision fallback that makes every metric look equally precise.
+      decimals={decimals ?? 2}
+      clampProjection={false}
+      onInvalidChange={(invalid) => {
+        if (mounted.current) onInvalidChange(invalid);
+      }}
       id={`builder-${label.replaceAll(/[^a-z0-9]+/gi, "-").toLowerCase()}`}
       label={label}
       {...(max === undefined ? {} : { max })}
       min={min}
       onChange={(nextValue) => {
+        if (!mounted.current) return;
         setDraft(nextValue);
+        onRawChange(nextValue);
         if (!nextValue.trim()) onChange(null);
       }}
       onNumberChange={(nextValue) => {
+        if (!mounted.current) return;
         // Invalid text is still being edited; it must not remove the optional field.
         if (nextValue !== undefined) onChange(nextValue);
       }}

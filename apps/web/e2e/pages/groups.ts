@@ -26,6 +26,11 @@ export class GroupsPage {
       await this.page.getByLabel("Title").fill(title);
       await this.page.getByRole("textbox", { name: "Starts", exact: true }).fill(`${date}T09:00`);
       await this.page.getByRole("textbox", { name: "Ends", exact: true }).fill(`${date}T10:00`);
+      // A new event starts without a persisted timezone. Choose one through the
+      // same timezone picker an athlete uses before submitting the schedule.
+      await this.page.getByRole("button", { name: "Event time zone" }).click();
+      await this.page.getByRole("combobox", { name: "Search timezones" }).fill("UTC");
+      await this.page.getByRole("option", { name: /^UTC/ }).first().click();
       await this.page
         .getByRole("textbox", { name: "Location", exact: true })
         .fill("Browser clubhouse");

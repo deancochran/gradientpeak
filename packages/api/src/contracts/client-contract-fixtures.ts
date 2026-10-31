@@ -19,24 +19,20 @@ import type {
 
 const PROFILE_ID = "00000000-0000-4000-8000-000000000001";
 const NOW = "2026-08-10T08:00:00.000Z";
-
 type PlannedSessionFixture = z.input<typeof plannedSessionDtoSchema>;
 type TrainingEffectsRequestFixture = z.input<typeof trainingEffectsRequestSchema>;
 type TrainingEffectsPageFixture = z.input<typeof trainingEffectsPageDtoSchema>;
 type ThresholdEvidenceRequestFixture = z.input<typeof thresholdEvidenceRequestSchema>;
 type ThresholdEvidencePageFixture = z.input<typeof thresholdEvidencePageDtoSchema>;
-
 type CursorContinuationFixture<TRequest, TPage> = {
   initialRequest: TRequest;
   firstPage: TPage;
   continuationRequest: TRequest;
   continuationPage: TPage;
 };
-
 function tuple<const T extends readonly unknown[]>(values: T): T {
   return values;
 }
-
 export const TRAINING_EFFECTS_CURSOR_CONTINUATION_V1_FIXTURE = {
   initialRequest: {
     profileId: PROFILE_ID,
@@ -54,7 +50,7 @@ export const TRAINING_EFFECTS_CURSOR_CONTINUATION_V1_FIXTURE = {
         activityCategory: "run",
         commonLoad: 42.5,
         evidenceConfidence: 0.8,
-        capabilityObservation: { distanceMeters: 10_000, durationMinutes: 50 },
+        capabilityObservation: { distanceMeters: 10000, durationMinutes: 50 },
       },
     ],
     hasMore: true,
@@ -80,16 +76,14 @@ export const TRAINING_EFFECTS_CURSOR_CONTINUATION_V1_FIXTURE = {
         activityCategory: "run",
         commonLoad: 30,
         evidenceConfidence: 0.75,
-        capabilityObservation: { distanceMeters: 5_000, durationMinutes: 25 },
+        capabilityObservation: { distanceMeters: 5000, durationMinutes: 25 },
       },
     ],
     hasMore: false,
   },
 } satisfies CursorContinuationFixture<TrainingEffectsRequestFixture, TrainingEffectsPageFixture>;
-
 export const TRAINING_EFFECTS_PAGE_V1_FIXTURE =
   TRAINING_EFFECTS_CURSOR_CONTINUATION_V1_FIXTURE.firstPage;
-
 export const THRESHOLD_EVIDENCE_CURSOR_CONTINUATION_V1_FIXTURE = {
   initialRequest: {
     profileId: PROFILE_ID,
@@ -145,10 +139,8 @@ export const THRESHOLD_EVIDENCE_CURSOR_CONTINUATION_V1_FIXTURE = {
   ThresholdEvidenceRequestFixture,
   ThresholdEvidencePageFixture
 >;
-
 export const THRESHOLD_EVIDENCE_PAGE_V1_FIXTURE =
   THRESHOLD_EVIDENCE_CURSOR_CONTINUATION_V1_FIXTURE.firstPage;
-
 export const ATHLETE_RECALCULATION_REPAIR_RECEIPT_V1_FIXTURE = {
   status: "accepted",
   profileId: PROFILE_ID,
@@ -158,7 +150,6 @@ export const ATHLETE_RECALCULATION_REPAIR_RECEIPT_V1_FIXTURE = {
     "home.getDashboard",
   ],
 } satisfies z.input<typeof athleteRecalculationRepairReceiptSchema>;
-
 const ingestionBase = {
   ingestionId: "00000000-0000-4000-8000-000000000020",
   profileId: PROFILE_ID,
@@ -168,7 +159,6 @@ const ingestionBase = {
   requestedAt: NOW,
   updatedAt: NOW,
 };
-
 /** The complete public direct-ingestion status state machine. */
 export const ACTIVITY_INGESTION_STATUS_V1_FIXTURES = [
   {
@@ -211,34 +201,19 @@ export const ACTIVITY_INGESTION_STATUS_V1_FIXTURES = [
     actions: { retry: false },
   },
 ] satisfies z.input<typeof activityIngestionSafeStatusDtoSchema>[];
-
 const prescriptionStructure = activityPlanStructureSchema.parse({
-  version: 3,
+  version: 5,
   activity_category: "run",
-  segments: [
+  items: [
     {
-      id: "00000000-0000-4000-8000-000000000031",
-      role: "activity",
-      name: "Run",
-      intervals: [
-        {
-          id: "00000000-0000-4000-8000-000000000032",
-          name: "Steady",
-          repetitions: 1,
-          steps: [
-            {
-              id: "00000000-0000-4000-8000-000000000033",
-              name: "Work",
-              duration: { type: "time", seconds: 1_800 },
-              targets: [{ type: "RPE", intensity: 5 }],
-            },
-          ],
-        },
-      ],
+      type: "step",
+      id: "00000000-0000-4000-8000-000000000033",
+      name: "Work",
+      duration: { type: "time", seconds: 1800 },
+      targets: [{ type: "RPE", intensity: 5 }],
     },
   ],
 });
-
 const prescription: PlannedSessionFixture["prescription"] = {
   resolutionManifest: createResolutionManifestFixture({
     activityPlanId: "00000000-0000-4000-8000-000000000030",
@@ -254,7 +229,6 @@ const prescription: PlannedSessionFixture["prescription"] = {
   }),
   capturedAt: NOW,
 };
-
 function plannedSessionFixture(input: {
   sequence: number;
   source: PlannedSessionFixture["source"];
@@ -268,11 +242,11 @@ function plannedSessionFixture(input: {
     originalTargetDate: "2026-08-10",
     source: input.source,
     groupEventId: null,
+    activityPlanId: "00000000-0000-4000-8000-000000000030",
     prescription,
     lifecycle: input.lifecycle,
   };
 }
-
 /** Source, cancellation reason, lifecycle, and completion variants for planned sessions. */
 export const PLANNED_SESSION_V1_FIXTURES = tuple([
   plannedSessionFixture({
@@ -323,16 +297,14 @@ export const PLANNED_SESSION_V1_FIXTURES = tuple([
     },
   }),
 ]) satisfies readonly PlannedSessionFixture[];
-
 export const PLANNED_SESSION_RANGE_V1_FIXTURE = {
   items: [...PLANNED_SESSION_V1_FIXTURES],
   truncated: false,
 } satisfies z.input<typeof plannedSessionRangeDtoSchema>;
-
 export const PLANNED_SESSION_TRUNCATED_RANGE_V1_FIXTURE = {
-  items: Array.from({ length: 5_000 }, (_, index) =>
+  items: Array.from({ length: 5000 }, (_, index) =>
     plannedSessionFixture({
-      sequence: 1_000 + index,
+      sequence: 1000 + index,
       source: {
         kind: "direct",
         operationId: `planned-truncated-operation-${index.toString().padStart(6, "0")}`,
@@ -342,12 +314,10 @@ export const PLANNED_SESSION_TRUNCATED_RANGE_V1_FIXTURE = {
   ),
   truncated: true,
 } satisfies z.input<typeof plannedSessionRangeDtoSchema>;
-
 export const PLANNED_SESSION_RANGE_V1_FIXTURES = tuple([
   PLANNED_SESSION_RANGE_V1_FIXTURE,
   PLANNED_SESSION_TRUNCATED_RANGE_V1_FIXTURE,
 ]);
-
 export const PLANNED_SESSION_MUTATION_RECEIPT_V1_FIXTURES = tuple([
   {
     outcome: "created",
@@ -401,7 +371,6 @@ export const PLANNED_SESSION_MUTATION_RECEIPT_V1_FIXTURES = tuple([
     ],
   },
 ]) satisfies readonly z.input<typeof plannedSessionMutationReceiptSchema>[];
-
 /** Procedure-to-response fixtures used by clients during the v1 migration. */
 export const API_CLIENT_CONTRACT_V1_RESPONSE_FIXTURES = {
   "athleteIntelligence.getTrainingEffects": [
@@ -419,6 +388,7 @@ export const API_CLIENT_CONTRACT_V1_RESPONSE_FIXTURES = {
   "plannedSessions.range": PLANNED_SESSION_RANGE_V1_FIXTURES,
   "plannedSessions.create": PLANNED_SESSION_MUTATION_RECEIPT_V1_FIXTURES,
   "plannedSessions.move": [PLANNED_SESSION_MUTATION_RECEIPT_V1_FIXTURES[2]],
+  "plannedSessions.changePlanOnly": [PLANNED_SESSION_MUTATION_RECEIPT_V1_FIXTURES[2]],
   "plannedSessions.cancel": [PLANNED_SESSION_MUTATION_RECEIPT_V1_FIXTURES[2]],
   "plannedSessions.linkCompletion": [PLANNED_SESSION_MUTATION_RECEIPT_V1_FIXTURES[2]],
   "plannedSessions.linkGroupEvent": [PLANNED_SESSION_MUTATION_RECEIPT_V1_FIXTURES[2]],

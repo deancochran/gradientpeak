@@ -417,7 +417,6 @@ async function deriveProjection(input: {
         structure: row.structure,
         structureHash: row.structure_hash,
         semanticHash: row.semantic_hash,
-        adaptation: row.adaptation,
         trainingIntent: row.training_intent,
       })),
       [...explicitIds],
@@ -484,6 +483,7 @@ async function deriveProjection(input: {
         sourceSessionId: session.id,
       }),
       groupEventId: null,
+      activityPlanId: resolution.manifest.activity_plan_id,
       prescription: {
         resolutionManifest: resolution.manifest,
         capturedAt: input.now.toISOString(),

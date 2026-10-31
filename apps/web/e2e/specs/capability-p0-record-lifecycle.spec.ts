@@ -27,14 +27,21 @@ test("[P0] athlete records from a selected plan through a persisted saved activi
     activityId = athletePage.url().match(/\/activities\/([0-9a-f-]+)/)?.[1] ?? "";
     if (!activityId) throw new Error("Saved plan recording did not expose an activity ID.");
 
-    const detailCard = athletePage.getByTestId(`activity-card-${activityId}`);
-    await expect(detailCard.getByText("Playwright Tempo Builder", { exact: true })).toBeVisible();
+    const savedActivityName = athletePage.getByRole("heading", {
+      name: "Playwright Tempo Builder",
+      exact: true,
+    });
+    await expect(savedActivityName).toBeVisible();
     await expect(athletePage.getByRole("heading", { name: "Activity" })).toBeVisible();
     await athletePage.reload();
-    await expect(detailCard.getByText("Playwright Tempo Builder", { exact: true })).toBeVisible();
+    await expect(savedActivityName).toBeVisible();
 
     await athletePage.goto("/activities");
-    await expect(athletePage.getByTestId(`activity-card-${activityId}`)).toBeVisible();
+    const savedActivity = athletePage.getByTestId(`activity-card-${activityId}`);
+    await expect(savedActivity).toBeVisible();
+    await expect(
+      savedActivity.getByText("Playwright Tempo Builder", { exact: true }),
+    ).toBeVisible();
   } finally {
     await deleteImportedActivity(athletePage, activityId);
   }

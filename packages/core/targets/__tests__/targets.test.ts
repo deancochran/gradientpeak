@@ -39,6 +39,7 @@ describe("modern target authority", () => {
       "%MaxHR",
       "cadence",
       "RPE",
+      "rest",
     ]);
     expect(isTargetTypePermittedForActivity({ activityCategory: "run", targetType: "speed" })).toBe(
       true,

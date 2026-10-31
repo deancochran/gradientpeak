@@ -96,7 +96,15 @@ const syncOverviewSchema = z.array(
           lastFailedAt: z.string().nullable(),
           lastSucceededAt: z.string().nullable(),
           queuedJobId: z.string().uuid().nullable(),
-          status: z.enum(["automatic", "queued", "syncing", "failed", "unsupported"]),
+          status: z.enum([
+            "automatic",
+            "queued",
+            "syncing",
+            "failed",
+            "recovery_required",
+            "unsupported_projection",
+            "unsupported",
+          ]),
         })
         .strict(),
       providerHealth: z

@@ -1,4 +1,5 @@
 import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
+import { formatLocalDateOnly } from "@repo/core/utils/fitness-inputs";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
@@ -43,7 +44,7 @@ type RemovalReview = {
 };
 
 function dateKey(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return formatLocalDateOnly(date);
 }
 
 export function TrainingPlanDetail({

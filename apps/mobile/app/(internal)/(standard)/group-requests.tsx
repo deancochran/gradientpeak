@@ -18,6 +18,7 @@ import { api } from "@/lib/api";
 import { useGroupDetailViewModel, useGroupInviteActions } from "@/lib/groups";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 
 function singleParam(value: string | string[] | undefined) {
@@ -340,7 +341,7 @@ export default function GroupRequestsScreen() {
   return (
     <>
       <Stack.Screen
-        options={{
+        options={omitUndefined({
           headerRight: canInvite
             ? () => (
                 <Button
@@ -353,7 +354,7 @@ export default function GroupRequestsScreen() {
               )
             : undefined,
           title: "Manage",
-        }}
+        })}
       />
       <ScrollView className="flex-1 bg-background" contentContainerClassName="gap-5 p-4 pb-8">
         <Text className="text-2xl font-semibold text-foreground">

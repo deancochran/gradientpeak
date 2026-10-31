@@ -41,7 +41,7 @@ function createCaller(userId = "11111111-1111-4111-8111-111111111111") {
     headers: new Headers(),
     clientType: "test",
     trpcSource: "vitest",
-  } as any);
+  } as never);
 }
 
 describe("storageRouter", () => {

@@ -1,181 +1,137 @@
 import type {
-  ActivityPlanActivitySegment,
-  ActivityPlanInterval,
-  ActivityPlanIntervalStep,
-  ActivityPlanSegment,
-  ActivityPlanStructure,
+  ActivityPlanDraftItem,
+  ActivityPlanDraftRepeat,
+  ActivityPlanDraftStep,
+  ActivityPlanDraftStructure,
   CanonicalActivityCategory,
-  EditableActivityPlanStructure,
 } from "@repo/core";
-import { activityPlanStructureSchema } from "@repo/core/activity-plan";
-import { isTargetTypePermittedForActivity } from "@repo/core/targets";
-
-export type ActivityPlanSegmentRole = ActivityPlanSegment["role"];
+import {
+  activityPlanStructureSchema,
+  duplicateActivityPlanItem,
+  insertActivityPlanItem,
+  moveActivityPlanItem,
+  removeActivityPlanItem,
+  ungroupActivityPlanRepeat,
+} from "@repo/core/activity-plan";
 
 function id() {
   return crypto.randomUUID();
 }
 
-export function createActivityPlanStep(
-  name = "Steady effort",
-  purpose: NonNullable<ActivityPlanIntervalStep["purpose"]> = "work",
-): ActivityPlanIntervalStep {
-  return {
-    id: id(),
-    name,
-    purpose,
-    duration: { type: "time", seconds: 600 },
-    targets: [{ type: "RPE", intensity: 5 }],
-  };
+/** New authoring starts deliberately incomplete; Core resolves it before persistence. */
+export function createActivityPlanStep(): ActivityPlanDraftStep {
+  return { type: "step", id: id(), duration: null, targets: [] };
 }
 
-export function createActivityPlanInterval(name = "Main set"): ActivityPlanInterval {
-  return {
-    id: id(),
-    name,
-    repetitions: 1,
-    steps: [createActivityPlanStep()],
-  };
-}
-
-export function duplicateActivityPlanInterval(
-  interval: ActivityPlanInterval,
-): ActivityPlanInterval {
-  return {
-    ...interval,
-    id: id(),
-    name: `${interval.name} (Copy)`,
-    steps: interval.steps.map((step) => ({ ...step, id: id() })),
-  };
-}
-
-export function createActivityPlanSegment(role: ActivityPlanSegmentRole): ActivityPlanSegment {
-  if (role === "activity") {
-    return {
-      id: id(),
-      role,
-      name: "Main activity",
-      intervals: [createActivityPlanInterval()],
-    };
-  }
-
-  return {
-    id: id(),
-    role,
-    name: "Rest",
-    duration: { type: "time", seconds: 60 },
-  };
-}
-
-export function getActivityPlanActivityCategory(
-  structure: EditableActivityPlanStructure,
-): CanonicalActivityCategory {
-  return structure.activity_category;
-}
-
-export function hasIncompatibleTargets(
-  structure: EditableActivityPlanStructure,
-  activity_category: CanonicalActivityCategory,
-) {
-  return structure.segments.some(
-    (segment) =>
-      segment.role === "activity" &&
-      segment.intervals.some((interval) =>
-        interval.steps.some((step) =>
-          step.targets.some(
-            (target) =>
-              !isTargetTypePermittedForActivity({
-                activityCategory: activity_category,
-                targetType: target.type,
-              }),
-          ),
-        ),
-      ),
-  );
-}
-
-export function applyActivityPlanActivityCategory(
-  structure: EditableActivityPlanStructure,
-  activity_category: CanonicalActivityCategory,
-): EditableActivityPlanStructure {
-  return {
-    version: 3,
-    activity_category,
-    segments: structure.segments,
-  };
+export function createActivityPlanRepeat(): ActivityPlanDraftRepeat {
+  return { type: "repeat", id: id(), count: 2, steps: [] };
 }
 
 export function createActivityPlanStructure(
-  activity_category: CanonicalActivityCategory = "run",
-): EditableActivityPlanStructure {
-  return { version: 3, activity_category, segments: [createActivityPlanSegment("activity")] };
+  _launchCategory?: CanonicalActivityCategory,
+): ActivityPlanDraftStructure {
+  return { version: 5, activity_category: null, items: [] };
 }
 
-export function parseActivityPlanStructure(value: unknown): ActivityPlanStructure {
+export function parseActivityPlanStructure(value: unknown) {
   return activityPlanStructureSchema.parse(value);
 }
 
-export function updateActivitySegment(
-  structure: EditableActivityPlanStructure,
-  segmentId: string,
-  update: (segment: ActivityPlanSegment) => ActivityPlanSegment,
-): EditableActivityPlanStructure {
+function resultItems(result: ReturnType<typeof insertActivityPlanItem<ActivityPlanDraftItem>>) {
+  if (!result.ok) {
+    const messages = {
+      not_found: "This step or repeat is no longer available.",
+      invalid_destination: "That move is not allowed. Repeats cannot contain other repeats.",
+      limit_exceeded:
+        "This change exceeds the activity plan's step, repeat, duration, or size limits.",
+      duplicate_id: "This change would create duplicate step identities.",
+    };
+    throw new Error(messages[result.reason]);
+  }
+  return result.items;
+}
+
+export function insertDraftItem(
+  structure: ActivityPlanDraftStructure,
+  item: ActivityPlanDraftItem,
+  location: { repeatId?: string; index: number },
+): ActivityPlanDraftStructure {
   return {
-    version: 3,
-    activity_category: structure.activity_category,
-    segments: structure.segments.map((segment) =>
-      segment.id === segmentId ? update(segment) : segment,
-    ),
+    ...structure,
+    items: resultItems(insertActivityPlanItem(structure.items, location, item)),
   };
 }
 
-export function updateActivityInterval(
-  structure: EditableActivityPlanStructure,
-  intervalId: string,
-  update: (interval: ActivityPlanInterval) => ActivityPlanInterval,
-): EditableActivityPlanStructure {
+export function moveDraftItem(
+  structure: ActivityPlanDraftStructure,
+  itemId: string,
+  location: { repeatId?: string; index: number },
+): ActivityPlanDraftStructure {
   return {
-    version: 3,
-    activity_category: structure.activity_category,
-    segments: structure.segments.map((segment) =>
-      segment.role === "activity"
-        ? {
-            ...segment,
-            intervals: segment.intervals.map((interval) =>
-              interval.id === intervalId ? update(interval) : interval,
-            ),
-          }
-        : segment,
-    ),
+    ...structure,
+    items: resultItems(moveActivityPlanItem(structure.items, itemId, location)),
   };
 }
 
-export function updateActivityStep(
-  structure: EditableActivityPlanStructure,
-  intervalId: string,
+export function removeDraftItem(
+  structure: ActivityPlanDraftStructure,
+  itemId: string,
+): ActivityPlanDraftStructure {
+  return {
+    ...structure,
+    items: resultItems(removeActivityPlanItem(structure.items, itemId)),
+  };
+}
+
+export function duplicateDraftItem(
+  structure: ActivityPlanDraftStructure,
+  itemId: string,
+): ActivityPlanDraftStructure {
+  return {
+    ...structure,
+    items: resultItems(duplicateActivityPlanItem(structure.items, itemId, id)),
+  };
+}
+
+export function ungroupDraftRepeat(
+  structure: ActivityPlanDraftStructure,
+  repeatId: string,
+): ActivityPlanDraftStructure {
+  return {
+    ...structure,
+    items: resultItems(ungroupActivityPlanRepeat(structure.items, repeatId, id)),
+  };
+}
+
+/** Step updates preserve its location and draft values, whether root or repeat child. */
+export function updateActivityPlanStep(
+  structure: ActivityPlanDraftStructure,
   stepId: string,
-  update: (step: ActivityPlanIntervalStep) => ActivityPlanIntervalStep,
-) {
-  return updateActivityInterval(structure, intervalId, (interval) => ({
-    ...interval,
-    steps: interval.steps.map((step) => (step.id === stepId ? update(step) : step)),
-  }));
+  update: (step: ActivityPlanDraftStep) => ActivityPlanDraftStep,
+): ActivityPlanDraftStructure {
+  return {
+    ...structure,
+    items: structure.items.map((item) => {
+      if (item.type === "step") return item.id === stepId ? update(item) : item;
+      return {
+        ...item,
+        steps: item.steps.map((step) => (step.id === stepId ? update(step) : step)),
+      };
+    }),
+  };
 }
 
-export function moveActivityPlanItem<T>(items: T[], index: number, offset: -1 | 1): T[] {
-  const target = index + offset;
-  if (target < 0 || target >= items.length) return items;
-  const next = [...items];
-  const item = next[index];
-  const targetItem = next[target];
-  if (item === undefined || targetItem === undefined) return items;
-  next[index] = targetItem;
-  next[target] = item;
-  return next;
-}
-
-export function isActivitySegment(
-  segment: ActivityPlanSegment,
-): segment is ActivityPlanActivitySegment {
-  return segment.role === "activity";
+export function updateActivityPlanRepeat(
+  structure: ActivityPlanDraftStructure,
+  repeatId: string,
+  update: (repeat: ActivityPlanDraftRepeat) => ActivityPlanDraftRepeat,
+): ActivityPlanDraftStructure {
+  const next = {
+    ...structure,
+    items: structure.items.map((item) =>
+      item.type === "repeat" && item.id === repeatId ? update(item) : item,
+    ),
+  };
+  const index = next.items.findIndex((item) => item.id === repeatId);
+  return { ...next, items: resultItems(moveActivityPlanItem(next.items, repeatId, { index })) };
 }

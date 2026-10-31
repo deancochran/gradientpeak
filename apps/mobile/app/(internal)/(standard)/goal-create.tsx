@@ -8,17 +8,22 @@ import {
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { View } from "react-native";
 import { GoalEditorForm, type GoalEditorFormHandle } from "@/components/goals";
 import { FormScreen } from "@/components/shared/FormScreen";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
-import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
+import { useCreationFlowActive } from "@/lib/hooks/useCreationFlowActive";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { publishTrainingPlanGoalCreation } from "@/lib/training-plan-creation/goalCreationHandoff";
 
 export default function GoalCreateScreen() {
+  const flow = useCreationFlowActive(["goal-create"]);
+  return flow.active ? <GoalCreateSession key={flow.key} isCurrent={flow.isCurrent} /> : null;
+}
+
+function GoalCreateSession({ isCurrent }: { isCurrent: () => boolean }) {
   const router = useRouter();
   const params = useLocalSearchParams<{ returnToTrainingPlanCreate?: string }>();
   const utils = api.useUtils();
@@ -28,15 +33,22 @@ export default function GoalCreateScreen() {
   const currentProfileId = useRef(profileId);
   currentProfileId.current = profileId;
   const initialDraft = useMemo(() => createEmptyGoalDraft(), []);
-  const [isDirty, setIsDirty] = useState(false);
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
   const createGoalMutation = api.goals.create.useMutation({
     onSuccess: async (goal, variables) => {
-      if (variables.profile_id !== currentProfileId.current) return;
+      if (!active.current || !isCurrent() || variables.profile_id !== currentProfileId.current)
+        return;
       await Promise.allSettled([
         Promise.resolve().then(() => invalidateGoalQueries(utils, { goalId: goal.id })),
       ]);
-      if (variables.profile_id !== currentProfileId.current) return;
-      allowNavigationAfterSuccess();
+      if (!active.current || !isCurrent() || variables.profile_id !== currentProfileId.current)
+        return;
       if (params.returnToTrainingPlanCreate === "1") {
         const parsedObjective = canonicalGoalObjectiveSchema.safeParse(goal.target_payload);
         publishTrainingPlanGoalCreation({
@@ -53,12 +65,9 @@ export default function GoalCreateScreen() {
       router.replace(ROUTES.GOALS.DETAIL(goal.id) as never);
     },
   });
-  const { allowNavigationAfterSuccess } = useDirtyNavigationGuard({
-    isDirty,
-    isPending: createGoalMutation.isPending,
-  });
 
   const handleSubmit = async (draft: GoalEditorDraft) => {
+    if (!active.current || !isCurrent()) return;
     if (!profileId) {
       throw new Error("Your profile is still loading. Please try again.");
     }
@@ -72,6 +81,7 @@ export default function GoalCreateScreen() {
         options={{
           headerRight: () => (
             <LoadingButton
+              testID="goal-create-submit"
               className="min-h-11"
               disabled={createGoalMutation.isPending}
               loading={createGoalMutation.isPending}
@@ -98,7 +108,6 @@ export default function GoalCreateScreen() {
           initialValue={initialDraft}
           submitLabel="Create Goal"
           isSubmitting={createGoalMutation.isPending}
-          onDirtyChange={setIsDirty}
           showSubmitAction={false}
           onSubmit={handleSubmit}
         />

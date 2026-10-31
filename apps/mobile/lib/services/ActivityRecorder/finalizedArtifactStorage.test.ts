@@ -52,7 +52,7 @@ const job: ActivitySubmissionQueueJob = {
   sessionId: "session",
   localActivityFilePath: "file:///documents/activity.fit",
   streamArtifactPaths: ["file:///documents/streams"],
-  executionManifest: { version: 1, compilerVersion: 1, planHash: "0".repeat(64), occurrences: [] },
+  executionManifest: { version: 1, compilerVersion: 3, planHash: "0".repeat(64), occurrences: [] },
   draft: {
     recordingSessionId: "operation",
     profileId: "profile",

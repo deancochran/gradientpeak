@@ -1,5 +1,5 @@
 import { activities, activitySessionRpeEvidence } from "@repo/db";
-import { and, asc, eq, inArray, lte, notExists, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, notExists, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import type { DrizzleQueryExecutor, getRequiredDb } from "../db";
@@ -65,24 +65,12 @@ function parseProjection(row: unknown): ActivitySessionRpeEvidenceProjection {
 
 export async function findOwnedCompletedActivity(
   tx: ActivitySessionRpeTransaction,
-  input: { activityId: string; now: Date; profileId: string },
+  input: { activityId: string; profileId: string },
 ) {
   const [activity] = await tx
     .select({ id: activities.id })
     .from(activities)
-    .where(
-      and(
-        eq(activities.id, input.activityId),
-        eq(activities.profile_id, input.profileId),
-        or(
-          lte(activities.finished_at, input.now),
-          and(
-            eq(activities.entry_provenance, "manual"),
-            lte(activities.diary_date, input.now.toISOString().slice(0, 10)),
-          ),
-        ),
-      ),
-    )
+    .where(and(eq(activities.id, input.activityId), eq(activities.profile_id, input.profileId)))
     .limit(1);
   return activity;
 }

@@ -7,6 +7,7 @@ import {
   resolveActivityOccurrenceTrainerIntents,
 } from "@repo/core";
 import { metersPerSecondToKph } from "@repo/core/units";
+import { omitUndefined } from "../../omitUndefined";
 import { PredictiveResistanceCalculator } from "./PredictiveResistanceCalculator";
 import type { ConnectedSensor, SensorsManager } from "./sensors";
 import type {
@@ -55,8 +56,17 @@ export class TrainerControl {
     const success = await this.deps.sensorsManager.resetTrainerControl(
       this.commandContext("step_change", "reset"),
     );
-    if (!success && this.lastCommandStatus?.outcome !== "superseded")
+    if (success) {
+      this.controlState = "controllable";
+      return true;
+    }
+    if (this.lastCommandStatus?.outcome !== "superseded") {
+      // A rejected reset leaves the prior load potentially active. Surface the
+      // control as unavailable rather than implying the automatic boundary is
+      // safe; the recorder will retain the current occurrence for retry.
+      this.controlState = "failed";
       this.deps.onError("Failed to reset trainer control at activity boundary.");
+    }
     return success;
   }
 
@@ -176,12 +186,14 @@ export class TrainerControl {
       return;
     }
 
-    const resolution = resolveActivityOccurrenceTrainerIntents({
-      occurrence,
-      performanceTargets: this.deps.getSessionSnapshot()?.performanceTargets,
-      intensityScale: this.deps.getSessionOverrideState().intensityScale,
-      source,
-    });
+    const resolution = resolveActivityOccurrenceTrainerIntents(
+      omitUndefined({
+        occurrence,
+        performanceTargets: this.deps.getSessionSnapshot()?.performanceTargets,
+        intensityScale: this.deps.getSessionOverrideState().intensityScale,
+        source,
+      }),
+    );
 
     for (const unresolved of resolution.unresolvedTargets) {
       this.deps.onError(`Unable to resolve activity target: ${unresolved.type}`);
@@ -318,12 +330,12 @@ export class TrainerControl {
       case "set_simulation":
         return trainer.ftmsFeatures?.indoorBikeSimulationSupported
           ? this.deps.sensorsManager.setSimulation(
-              {
+              omitUndefined({
                 grade: intent.gradePercent,
                 windSpeed: intent.windSpeedMps,
                 crr: intent.rollingResistanceCoefficient,
                 windResistance: intent.aerodynamicDragCoefficient,
-              },
+              }),
               {
                 ...this.commandContext(intent.source, intent.type),
               },
@@ -358,7 +370,7 @@ export class TrainerControl {
       return eligibleTrainer;
     }
 
-    this.lastCommandStatus = {
+    this.lastCommandStatus = omitUndefined({
       source,
       commandType,
       controlMode: null,
@@ -368,7 +380,7 @@ export class TrainerControl {
       resultCodeName: "Trainer control is not available.",
       queuedAt: Date.now(),
       completedAt: Date.now(),
-    };
+    });
     this.deps.onCommandStatus?.(this.lastCommandStatus);
 
     if (this.controlState === "requesting_control" || this.controlState === "recovering_control") {
@@ -384,6 +396,7 @@ export class TrainerControl {
   }
 
   private syncControlState(): void {
+    if (this.hasFailedControlState()) return;
     const trainer = this.deps.sensorsManager.getControllableTrainer();
     if (trainer) {
       this.controlState = "controllable";
@@ -397,7 +410,7 @@ export class TrainerControl {
     }
 
     if (this.hasEligibleTrainerCandidate()) {
-      if (this.controlState !== "control_rejected" && this.controlState !== "failed") {
+      if (this.controlState !== "control_rejected" && !this.hasFailedControlState()) {
         this.controlState = this.hadControllableTrainer ? "control_lost" : "eligible";
       }
       return;
@@ -412,6 +425,11 @@ export class TrainerControl {
     return this.deps.sensorsManager
       .getConnectedSensors()
       .some((sensor) => this.isFtmsCandidate(sensor) && Boolean(sensor.isControllable));
+  }
+
+  /** Read the current mutable state without relying on a narrowed prior read. */
+  private hasFailedControlState(): boolean {
+    return this.controlState === "failed";
   }
 
   private isFtmsCandidate(sensor: ConnectedSensor): boolean {
@@ -454,7 +472,7 @@ export class TrainerControl {
     intent: RecordingTrainerControlIntent,
     trainer: ConnectedSensor,
   ): boolean {
-    this.lastCommandStatus = {
+    this.lastCommandStatus = omitUndefined({
       source: intent.source,
       commandType: mapIntentToCommandType(intent),
       controlMode: trainer.ftmsController?.getCurrentMode() ?? trainer.currentControlMode ?? null,
@@ -465,7 +483,7 @@ export class TrainerControl {
       resultCodeName: `Trainer does not support ${intent.type}`,
       queuedAt: Date.now(),
       completedAt: Date.now(),
-    };
+    });
     this.deps.onCommandStatus?.(this.lastCommandStatus);
     return false;
   }

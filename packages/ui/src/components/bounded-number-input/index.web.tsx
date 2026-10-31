@@ -1,97 +1,48 @@
-import {
-  formatNumberForInput,
-  parseBoundedNumber,
-  parseNumberOrUndefined,
-} from "@repo/core/utils/fitness-inputs";
-import { nudgeNumberByStep } from "@repo/core/utils/numeric-ux-policy";
-import { useInputDraft } from "../../hooks/use-input-draft";
+import { useImperativeHandle, useRef } from "react";
 import { Button } from "../button/index.web";
 import { Input } from "../input/index.web";
 import { Label } from "../label/index.web";
 import type { BoundedNumberInputProps } from "./shared";
+import { useBoundedNumberInput } from "./use-bounded-number-input";
 
-function BoundedNumberInput({
-  accessibilityHint,
-  adjustmentStep,
-  clampProjection = true,
-  decimals = 2,
-  disabled = false,
-  error,
-  helperText,
-  id,
-  label,
-  max = Number.POSITIVE_INFINITY,
-  min = 0,
-  name,
-  onChange,
-  onInvalidChange,
-  onBlur,
-  onNumberChange,
-  placeholder,
-  presets,
-  required = false,
-  resetKey,
-  showAdjustmentButtons = false,
-  stepAnchor = 0,
-  testID,
-  testId,
-  unitLabel,
-  value,
-}: BoundedNumberInputProps) {
-  const [draftValue, setDraftValue] = useInputDraft(value, resetKey);
+function BoundedNumberInput(props: BoundedNumberInputProps) {
+  const {
+    ref,
+    accessibilityHint,
+    adjustmentStep,
+    decimals = 2,
+    disabled = false,
+    error: providedError,
+    helperText,
+    id,
+    label,
+    max = Number.POSITIVE_INFINITY,
+    min = 0,
+    name,
+    placeholder,
+    presets,
+    required = false,
+    showAdjustmentButtons = false,
+    testID,
+    testId,
+    unitLabel,
+    value,
+  } = props;
+  const inputRef = useRef<HTMLInputElement>(null);
+  const focus = () => inputRef.current?.focus();
+  useImperativeHandle(ref, () => ({ focus }));
+  const input = useBoundedNumberInput(props, focus);
+  const draftValue = input.text;
+  const parsedValue = input.parsedValue;
+  const error =
+    providedError ??
+    (input.result.status === "invalid"
+      ? "Enter a valid number within the allowed range."
+      : undefined);
   const descriptionId = `${id}-description`;
   const errorId = `${id}-error`;
-  const parseProjection = (nextValue: string) => {
-    const parsed = clampProjection
-      ? parseBoundedNumber(nextValue, { min, max, decimals })
-      : parseNumberOrUndefined(nextValue);
-    return parsed === undefined ||
-      (!clampProjection &&
-        (parsed < min || parsed > max || (decimals === 0 && !Number.isInteger(parsed))))
-      ? undefined
-      : parsed;
-  };
-  const parsedValue = parseProjection(draftValue);
-
-  const commitValue = (nextValue: string) => {
-    if (disabled) {
-      return;
-    }
-
-    const trimmed = nextValue.trim();
-    if (!trimmed) {
-      setDraftValue("");
-      onChange("");
-      onNumberChange?.(undefined);
-      onInvalidChange?.(false);
-      return;
-    }
-
-    const parsed = parseProjection(trimmed);
-    if (parsed === undefined) {
-      onInvalidChange?.(true);
-      return;
-    }
-
-    const normalized = clampProjection ? formatNumberForInput(parsed, decimals) : String(parsed);
-    setDraftValue(normalized);
-    onChange(normalized);
-    onNumberChange?.(parsed);
-    onInvalidChange?.(false);
-  };
-  const adjust = (direction: -1 | 1) => {
-    if (disabled || adjustmentStep === undefined || parsedValue === undefined) return;
-    commitValue(
-      String(
-        nudgeNumberByStep(parsedValue, direction, {
-          min,
-          max,
-          step: adjustmentStep,
-          anchor: stepAnchor,
-        }),
-      ),
-    );
-  };
+  const commitValue = input.change;
+  const adjust = input.adjust;
 
   return (
     <div className="grid gap-2">
@@ -120,6 +71,7 @@ function BoundedNumberInput({
           </Button>
         ) : null}
         <Input
+          ref={inputRef}
           accessibilityLabel={label}
           aria-describedby={
             [helperText ? descriptionId : undefined, error ? errorId : undefined]
@@ -133,22 +85,8 @@ function BoundedNumberInput({
           disabled={disabled}
           id={`${id}-field`}
           name={name}
-          onBlur={() => {
-            commitValue(draftValue);
-            onBlur?.();
-          }}
-          onChange={(event) => {
-            if (disabled) {
-              return;
-            }
-
-            const nextValue = event.currentTarget.value;
-            const parsed = parseProjection(nextValue);
-            setDraftValue(nextValue, [parsed === undefined ? "" : String(parsed)]);
-            onChange(nextValue);
-            onNumberChange?.(parsed);
-            onInvalidChange?.(nextValue.trim() !== "" && parsed === undefined);
-          }}
+          onBlur={input.blur}
+          onChange={(event) => input.change(event.currentTarget.value)}
           placeholder={placeholder}
           required={required}
           testId={testID ?? testId}

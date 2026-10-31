@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import {
-  activityPlanAdaptationSchema,
   activityPlanAuthoringContentSchema,
   activityPlanSemanticHash,
   activityPlanStructureSchema,
@@ -35,12 +34,13 @@ function activityPlanSeedStructureHash(structure: unknown) {
     .update(getCanonicalActivityPlanStructureHashInput(structure))
     .digest("hex")}`;
 }
-
 export async function seedOwnedActivityPlan(
   database: LocalE2EDatabase,
   profileId: string,
   isolatedNamespace: string,
-  options: { primaryContentVisibility?: "private" | "followers" | "public" } = {},
+  options: {
+    primaryContentVisibility?: "private" | "followers" | "public";
+  } = {},
 ) {
   const fixtureId = (label: string) => deterministicFixtureUuid(`${isolatedNamespace}|${label}`);
   const activityPlanId = fixtureId("primary");
@@ -51,29 +51,29 @@ export async function seedOwnedActivityPlan(
     notes: "Bring bottles",
     profileId,
     structure: {
-      version: 3,
+      version: 5,
       activity_category: "bike",
-      segments: [
+      items: [
         {
-          id: "e1000000-0000-4000-8000-000000000001",
-          role: "activity",
-          name: "Tempo ride",
-          intervals: [
-            {
-              id: "e2000000-0000-4000-8000-000000000001",
-              name: "Main set",
-              repetitions: 1,
-              steps: [
-                {
-                  id: "e3000000-0000-4000-8000-000000000001",
-                  name: "Tempo",
-                  purpose: "work",
-                  duration: { type: "time", seconds: 1_800 },
-                  targets: [{ type: "%FTP", intensity: 75 }],
-                },
-              ],
-            },
-          ],
+          type: "step",
+          id: "e3000000-0000-4000-8000-000000000001",
+          name: "Warm-up",
+          duration: { type: "time", seconds: 600 },
+          targets: [{ type: "%FTP", intensity: 60 }],
+        },
+        {
+          type: "step",
+          id: "e3000000-0000-4000-8000-000000000002",
+          name: "Tempo",
+          duration: { type: "time", seconds: 1800 },
+          targets: [{ type: "%FTP", intensity: 75 }],
+        },
+        {
+          type: "step",
+          id: "e3000000-0000-4000-8000-000000000003",
+          name: "Cool-down",
+          duration: { type: "time", seconds: 600 },
+          targets: [{ type: "%FTP", intensity: 55 }],
         },
       ],
     },
@@ -82,7 +82,6 @@ export async function seedOwnedActivityPlan(
       : { contentVisibility: options.primaryContentVisibility }),
   });
   await seedEstablishedBikePowerThreshold(database, profileId, fixtureId);
-
   for (let index = 1; index <= 21; index += 1) {
     const activityCategory = index % 2 === 0 ? "run" : "bike";
     await upsertActivityPlan(database, {
@@ -92,29 +91,15 @@ export async function seedOwnedActivityPlan(
       notes: null,
       profileId,
       structure: {
-        version: 3,
+        version: 5,
         activity_category: activityCategory,
-        segments: [
+        items: [
           {
-            id: `f1000000-0000-4000-8000-${String(index * 10).padStart(12, "0")}`,
-            role: "activity",
-            name: `${activityCategory} segment`,
-            intervals: [
-              {
-                id: `f2000000-0000-4000-8000-${String(index * 10).padStart(12, "0")}`,
-                name: "Steady work",
-                repetitions: 1,
-                steps: [
-                  {
-                    id: `f3000000-0000-4000-8000-${String(index * 10).padStart(12, "0")}`,
-                    name: "Steady",
-                    purpose: "work",
-                    duration: { type: "time", seconds: 600 },
-                    targets: [{ type: "RPE", intensity: 5 }],
-                  },
-                ],
-              },
-            ],
+            type: "step",
+            id: `f3000000-0000-4000-8000-${String(index * 10).padStart(12, "0")}`,
+            name: "Steady",
+            duration: { type: "time", seconds: 600 },
+            targets: [{ type: "RPE", intensity: 5 }],
           },
         ],
       },
@@ -122,7 +107,6 @@ export async function seedOwnedActivityPlan(
   }
   return { activityPlanId };
 }
-
 async function seedEstablishedBikePowerThreshold(
   database: LocalE2EDatabase,
   profileId: string,
@@ -187,11 +171,10 @@ async function seedEstablishedBikePowerThreshold(
   });
   const segmentSummary = completedSegmentSummarySchema.parse({
     version: 1,
-    timing: { timingCoverage: "complete", activeMs: 1_800_000, movingMs: 1_800_000 },
+    timing: { timingCoverage: "complete", activeMs: 1800000, movingMs: 1800000 },
     averagePowerWatts: 285,
     normalizedPowerResult: calculateCyclingNormalizedPower({ samples: [] }),
   });
-
   await database.typedTransaction(async (transaction) => {
     const [existingThreshold] = await transaction
       .select({ id: thresholds.id })
@@ -205,7 +188,6 @@ async function seedEstablishedBikePowerThreshold(
       )
       .limit(1);
     if (existingThreshold) return;
-
     await transaction
       .insert(activityArtifacts)
       .values({
@@ -228,9 +210,9 @@ async function seedEstablishedBikePowerThreshold(
         name: "Playwright threshold source",
         started_at: observedAt,
         finished_at: finishedAt,
-        elapsed_ms: 1_800_000,
-        active_ms: 1_800_000,
-        moving_ms: 1_800_000,
+        elapsed_ms: 1800000,
+        active_ms: 1800000,
+        moving_ms: 1800000,
         timing_coverage: "complete",
         parser_version: "e2e-fixture",
         decoded_contract_version: "e2e-fixture-v1",
@@ -265,13 +247,13 @@ async function seedEstablishedBikePowerThreshold(
         role: "activity",
         activity_category: "bike",
         start_offset_ms: 0,
-        end_offset_ms: 1_800_000,
+        end_offset_ms: 1800000,
         source_artifact_id: artifactId,
         summary: segmentSummary,
         summary_version: 1,
         timing_coverage: "complete",
-        active_ms: 1_800_000,
-        moving_ms: 1_800_000,
+        active_ms: 1800000,
+        moving_ms: 1800000,
         segment_revision: 1,
         parser_version: "e2e-fixture",
         materializer_version: "e2e-fixture",
@@ -293,7 +275,7 @@ async function seedEstablishedBikePowerThreshold(
         source_artifact_id: artifactId,
         source_revision: 1,
         start_offset_ms: 0,
-        end_offset_ms: 1_800_000,
+        end_offset_ms: 1800000,
         window_coverage: 1,
         max_gap_seconds: 1,
         unit: "watts",
@@ -358,7 +340,6 @@ async function seedEstablishedBikePowerThreshold(
       .onConflictDoNothing();
   });
 }
-
 export async function seedOwnedActivityRoute(
   database: LocalE2EDatabase,
   profileId: string,
@@ -398,12 +379,10 @@ export async function seedOwnedActivityRoute(
     });
   return { routeId };
 }
-
 function deterministicFixtureUuid(value: string) {
   const digest = createHash("sha256").update(value).digest("hex");
   return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-8${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
 }
-
 async function upsertActivityPlan(
   database: LocalE2EDatabase,
   plan: {
@@ -418,17 +397,15 @@ async function upsertActivityPlan(
   },
 ) {
   const structure = activityPlanStructureSchema.parse(plan.structure);
-  const adaptation = activityPlanAdaptationSchema.nullable().parse(null);
   const trainingIntent = activityPlanTrainingIntentSchema.parse(
     plan.trainingIntent ?? "general_maintenance",
   );
   // Seed writes must satisfy the authoring contract, not only the historical read shape.
   activityPlanAuthoringContentSchema.parse({
     structure,
-    adaptation,
     intent: { training_intent: trainingIntent },
   });
-  const semanticHash = activityPlanSemanticHash({ structure, adaptation, trainingIntent });
+  const semanticHash = activityPlanSemanticHash({ structure, trainingIntent });
   await database.db
     .insert(activityPlans)
     .values({
@@ -438,7 +415,6 @@ async function upsertActivityPlan(
       description: plan.description,
       notes: plan.notes,
       structure,
-      adaptation,
       structure_hash: activityPlanSeedStructureHash(structure),
       semantic_hash: semanticHash,
       training_intent: trainingIntent,
@@ -454,7 +430,6 @@ async function upsertActivityPlan(
         description: plan.description,
         notes: plan.notes,
         structure,
-        adaptation,
         structure_hash: activityPlanSeedStructureHash(structure),
         semantic_hash: semanticHash,
         training_intent: trainingIntent,

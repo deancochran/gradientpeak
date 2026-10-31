@@ -5,6 +5,7 @@ import { Textarea } from "@repo/ui/components/textarea";
 import { Send } from "lucide-react-native";
 import { View } from "react-native";
 import { EntityOwnerRow } from "@/components/shared/EntityOwnerRow";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 interface EntityCommentsSectionProps {
   addCommentPending: boolean;
@@ -81,7 +82,7 @@ export function EntityCommentsSection({
             >
               <View className="mb-2">
                 <EntityOwnerRow
-                  owner={comment.profile}
+                  {...omitUndefined({ owner: comment.profile })}
                   subtitle={new Date(comment.created_at).toLocaleDateString()}
                   testID={`${testIDPrefix}-comment-owner-${comment.id}`}
                 />

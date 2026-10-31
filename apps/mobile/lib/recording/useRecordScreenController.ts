@@ -4,7 +4,6 @@ import {
   activityPlanStructureSchema,
   createUnavailableAthletePerformanceTargetFacts,
   type RecordingActivityCategory,
-  type RecordingServiceActivityPlan,
   type RecordingState,
 } from "@repo/core";
 import { useRouter } from "expo-router";
@@ -18,6 +17,7 @@ import { useRecordingCommands } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useRecordingConfig } from "@/lib/hooks/useRecordingConfig";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { useActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
 import type { ActivityRecorderService, RecordingLifecycle } from "@/lib/services/ActivityRecorder";
 import {
@@ -104,12 +104,13 @@ export function useRecordScreenController() {
           "Duplicate this plan into your library before attaching it to a recording.",
         );
       }
-      const pendingPlan: RecordingServiceActivityPlan = {
-        id: planDetail.id,
-        name: planDetail.name,
-        structure: structure.data,
-      };
-      service.selectPlan(pendingPlan);
+      service.selectPlan(
+        omitUndefined({
+          id: planDetail.id,
+          name: planDetail.name,
+          structure: structure.data,
+        }),
+      );
       setPlanSelectionError(null);
       setPendingPlanId(null);
       setResourcePickerScope(null);

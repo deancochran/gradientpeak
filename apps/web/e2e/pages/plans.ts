@@ -16,6 +16,11 @@ export class TrainingPlansPage {
     await expect(this.page.getByRole("heading", { name: "Training plans" })).toBeVisible();
   }
 
+  async startCreate() {
+    await this.page.getByTestId("training-plan-create").click();
+    await expect(this.page.getByRole("heading", { name: "Create training plan" })).toBeVisible();
+  }
+
   async search(name: string) {
     await this.searchInput().fill(name);
     const card = this.card(name);
@@ -79,9 +84,19 @@ export class ActivityPlansPage {
 
   async openTarget(target = 1, interval = 1, step = 1) {
     const row = this.step(interval, step);
-    const trigger = row.getByRole("button", { name: new RegExp(`, target ${target}:`) });
-    if (!(await trigger.isVisible())) await row.getByRole("button", { name: /, details$/ }).click();
-    await trigger.click();
+    await row.getByRole("button", { name: new RegExp(`, target ${target} value:`) }).click();
+    return row;
+  }
+
+  async openTargetType(target = 1, interval = 1, step = 1) {
+    const row = this.step(interval, step);
+    await row.getByRole("button", { name: new RegExp(`, target ${target} type:`) }).click();
+    return row;
+  }
+
+  async openTargetUnit(target = 1, interval = 1, step = 1) {
+    const row = this.step(interval, step);
+    await row.getByRole("button", { name: new RegExp(`, target ${target} unit:`) }).click();
     return row;
   }
 
@@ -126,21 +141,22 @@ export class ActivityPlansPage {
       await this.startCreate(input.submit);
       await this.page.getByLabel("Plan name").fill(input.name);
       if (input.description) {
-        await this.page.getByText("Plan details and settings", { exact: true }).click();
-        await this.page.getByLabel("Description", { exact: true }).fill(input.description);
+        await this.page
+          .getByRole("button", { name: "Add description", exact: true })
+          .first()
+          .click();
+        await this.page.locator("#activity-plan-description").fill(input.description);
       }
       if (input.category)
         await this.page
           .getByLabel("Activity category", { exact: true })
           .selectOption(input.category);
       if (input.firstStep) {
-        await this.step()
-          .getByRole("button", { name: /, details$/ })
-          .click();
-        await this.step()
-          .getByRole("textbox", { name: /, name$/ })
-          .fill(input.firstStep);
-        await this.step().getByRole("button", { name: "Close editor" }).click();
+        await this.page.getByRole("button", { name: "Add step", exact: true }).click();
+        await this.page.getByRole("button", { name: "Add name", exact: true }).click();
+        await this.page.getByLabel("Name (optional)").fill(input.firstStep);
+        await this.page.getByLabel("Completion").selectOption("time");
+        await this.page.getByLabel("Quantity").fill("600");
       }
       const submit = this.page.getByRole("button", { name: /create plan/i });
       if (input.submit === "keyboard") await submit.press("Enter");

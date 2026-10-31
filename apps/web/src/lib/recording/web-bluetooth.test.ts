@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   decodeFitnessMachineFeature,
   decodeHeartRate,
@@ -28,7 +28,221 @@ class FakeCharacteristic extends EventTarget {
   }
 }
 
+function notificationRecorder(name = "Trainer") {
+  const indoor = new FakeCharacteristic();
+  const device = Object.assign(new EventTarget(), {
+    name,
+    gatt: {
+      connected: true,
+      disconnect: vi.fn(),
+      connect: async () => ({
+        getPrimaryService: async (uuid: string) => {
+          if (!uuid.includes("1826")) throw new Error("Unavailable");
+          return {
+            getCharacteristic: async (uuid: string) => {
+              if (!uuid.includes("2ad2")) throw new Error("Unavailable");
+              return indoor;
+            },
+          };
+        },
+      }),
+    },
+  });
+  const recorder = new WebBluetoothRecorder({ bluetooth: { requestDevice: async () => device } });
+  return { recorder, indoor, device };
+}
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
 describe("Web Bluetooth recorder", () => {
+  it.each([
+    "gatt",
+    "characteristic",
+    "feature",
+  ] as const)("does not let an obsolete %s completion replace or disconnect the current source", async (phase) => {
+    let waiting = false;
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const waitAt = async (point: typeof phase) => {
+      if (point === phase) {
+        waiting = true;
+        await gate;
+      }
+    };
+    const indoor = new FakeCharacteristic();
+    const control = new FakeCharacteristic();
+    const feature = new FakeCharacteristic();
+    feature.readValue.mockImplementation(async () => {
+      await waitAt("feature");
+      return new DataView(Uint8Array.of(0, 0, 0, 0, 8, 0, 0, 0).buffer);
+    });
+    const obsolete = Object.assign(new EventTarget(), {
+      name: "Obsolete",
+      gatt: {
+        connected: true,
+        disconnect: vi.fn(),
+        connect: async () => {
+          await waitAt("gatt");
+          return {
+            getPrimaryService: async (service: string) => {
+              if (!service.includes("1826")) throw new Error("Unavailable");
+              return {
+                getCharacteristic: async (characteristic: string) => {
+                  if (characteristic.includes("2ad2")) {
+                    await waitAt("characteristic");
+                    return indoor;
+                  }
+                  if (characteristic.includes("2ad9")) return control;
+                  if (characteristic.includes("2acc")) return feature;
+                  throw new Error("Unavailable");
+                },
+              };
+            },
+          };
+        },
+      },
+    });
+    const replacement = notificationRecorder("Replacement");
+    const requestDevice = vi
+      .fn()
+      .mockResolvedValueOnce(obsolete)
+      .mockResolvedValueOnce(replacement.device);
+    const recorder = new WebBluetoothRecorder({ bluetooth: { requestDevice } });
+    const notifications = vi.fn();
+    recorder.subscribeNotifications(notifications);
+    const oldConnect = recorder.connect();
+    await vi.waitFor(() => expect(waiting).toBe(true));
+    recorder.disconnect();
+    await recorder.connect();
+    release();
+    await oldConnect;
+    expect(recorder.getState()).toMatchObject({
+      status: "connected",
+      deviceName: "Replacement",
+      controlEligible: false,
+      targetPowerSupported: false,
+    });
+    expect(replacement.device.gatt.disconnect).not.toHaveBeenCalled();
+    replacement.indoor.emit([0, 0, 0x10, 0x0e]);
+    expect(notifications).toHaveBeenCalledOnce();
+    expect(recorder.getState().metrics.speedKph).toBe(36);
+    recorder.disconnect();
+  });
+  it("reports unavailable secure identities without starting a device connection", async () => {
+    vi.stubGlobal("crypto", {});
+    const requestDevice = vi.fn();
+    const recorder = new WebBluetoothRecorder({ bluetooth: { requestDevice } });
+    await recorder.connect();
+    expect(recorder.getState()).toMatchObject({
+      status: "error",
+      metrics: webBluetoothServerSnapshot().metrics,
+    });
+    expect(recorder.getState().error).toContain("Web Crypto");
+    expect(requestDevice).not.toHaveBeenCalled();
+  });
+  it("keeps sparse counters across continuous FTMS notifications without keeping their preview artificially fresh", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const { recorder, indoor } = notificationRecorder();
+    await recorder.connect();
+    recorder.beginSessionMetrics();
+    indoor.emit([0x11, 1, 0xe8, 3, 0, 100, 0, 0, 0, 0]);
+    for (let second = 1; second <= 7; second++) {
+      await vi.advanceTimersByTimeAsync(1000);
+      indoor.emit([0x41, 0, 250, 0]);
+    }
+    expect(recorder.getState().metrics.distanceMeters).toBeNull();
+    expect(recorder.getState().metrics.powerWatts).toBe(250);
+    indoor.emit([0x11, 1, 0xf2, 3, 0, 105, 0, 0, 0, 0]);
+    expect(recorder.getSessionMetricDeltas()).toEqual({ distanceMeters: 10, calories: 5 });
+    recorder.disconnect();
+  });
+  it("emits only real, unit-normalized notifications with source/time/sequence and expires stale previews", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-20T10:00:00Z"));
+    const { recorder, indoor } = notificationRecorder();
+    const samples = vi.fn();
+    recorder.subscribeNotifications(samples);
+    await recorder.connect();
+    indoor.emit([0x54, 3, 0x10, 0x0e, 180, 0, 0xe8, 3, 0, 250, 0, 100, 0, 0, 0, 0, 150]);
+    expect(samples).toHaveBeenCalledOnce();
+    const notification = samples.mock.calls[0]?.[0];
+    expect(notification).toMatchObject({
+      origin: "bluetooth_notification",
+      recordedAt: "2026-09-20T10:00:00.000Z",
+      sequenceNumber: 1,
+      caloriesCounterKcal: 100,
+    });
+    expect(notification.samples).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ metricFamily: "speed", value: 10, unit: "meters_per_second" }),
+        expect.objectContaining({
+          metricFamily: "power",
+          value: 250,
+          unit: "watts",
+          source: expect.objectContaining({ provenance: "actual", adapterId: "web-bluetooth" }),
+        }),
+      ]),
+    );
+    await vi.advanceTimersByTimeAsync(5001);
+    expect(recorder.getState().metrics).toEqual({
+      heartRateBpm: null,
+      cadenceRpm: null,
+      powerWatts: null,
+      speedKph: null,
+      distanceMeters: null,
+      calories: null,
+    });
+    expect(samples).toHaveBeenCalledOnce();
+    indoor.emit([0x54, 3, 1]);
+    expect(samples).toHaveBeenCalledOnce();
+    recorder.disconnect();
+  });
+
+  it("rebases paused, stale, and reconnected counters while preserving restored active totals", async () => {
+    vi.useFakeTimers();
+    const { recorder, indoor, device } = notificationRecorder();
+    await recorder.connect();
+    const emit = (distance: number, calories: number) =>
+      indoor.emit([
+        0x11,
+        1,
+        distance & 255,
+        (distance >> 8) & 255,
+        (distance >> 16) & 255,
+        calories & 255,
+        calories >> 8,
+        0,
+        0,
+        0,
+      ]);
+    recorder.beginSessionMetrics({ distanceMeters: 50, calories: 5 });
+    emit(1000, 100);
+    emit(1010, 101);
+    recorder.pauseSessionMetrics();
+    emit(2000, 900);
+    recorder.resumeSessionMetrics();
+    emit(3000, 1000);
+    emit(3010, 1002);
+    expect(recorder.getSessionMetricDeltas()).toEqual({ distanceMeters: 70, calories: 8 });
+    await vi.advanceTimersByTimeAsync(5001);
+    emit(5000, 2000);
+    emit(5005, 2001);
+    expect(recorder.getSessionMetricDeltas()).toEqual({ distanceMeters: 75, calories: 9 });
+    vi.spyOn(indoor, "stopNotifications").mockRejectedValueOnce(new Error("Already disconnected"));
+    device.dispatchEvent(new Event("gattserverdisconnected"));
+    expect(recorder.getState().metrics.distanceMeters).toBeNull();
+    await recorder.connect();
+    emit(9000, 3000);
+    emit(9002, 3001);
+    expect(recorder.getSessionMetricDeltas()).toEqual({ distanceMeters: 77, calories: 10 });
+    recorder.disconnect();
+  });
   it("detects browser support, keeps SSR unsupported, and serializes signed FTMS commands", () => {
     expect(isWebBluetoothSupported({})).toBe(false);
     expect(isWebBluetoothSupported({ bluetooth: { requestDevice: vi.fn() } })).toBe(true);
@@ -42,6 +256,8 @@ describe("Web Bluetooth recorder", () => {
   });
 
   it("decodes standard heart-rate and indoor-bike notifications", () => {
+    expect(decodeIndoorBikeData(new DataView(Uint8Array.of(3, 0, 0xe8, 3).buffer))).toEqual({});
+    expect(decodeIndoorBikeData(new DataView(Uint8Array.of(0x81, 0, 250, 0).buffer))).toEqual({});
     expect(decodeHeartRate(new DataView(Uint8Array.of(0, 155).buffer))).toEqual({
       heartRateBpm: 155,
     });
@@ -74,6 +290,7 @@ describe("Web Bluetooth recorder", () => {
             0,
             0,
             0,
+            155,
           ).buffer,
         ),
       ),
@@ -121,7 +338,7 @@ describe("Web Bluetooth recorder", () => {
       gatt: {
         connected: true,
         connect: vi.fn(async () => ({
-          getPrimaryService: async (uuid: string) => ({
+          getPrimaryService: async (_uuid: string) => ({
             getCharacteristic: async (uuid: string) =>
               uuid.includes("2ad2") ? indoor : new FakeCharacteristic(),
           }),
@@ -140,7 +357,9 @@ describe("Web Bluetooth recorder", () => {
     indoor.emit([0x11, 1, 0x7e, 4, 0, 140, 0, 0, 0, 0]);
     indoor.emit([0x11, 1, 10, 0, 0, 2, 0, 0, 0, 0]);
 
-    expect(recorder.getSessionMetricDeltas()).toEqual({ distanceMeters: 160, calories: 42 });
+    expect(recorder.getSessionMetricDeltas()).toEqual({ distanceMeters: 150, calories: 40 });
+    indoor.emit([0x11, 1, 20, 0, 0, 3, 0, 0, 0, 0]);
+    expect(recorder.getSessionMetricDeltas()).toEqual({ distanceMeters: 160, calories: 41 });
   });
 
   it("uses the explicit compatible-device chooser, validates GATT services, streams metrics, and controls an eligible trainer", async () => {

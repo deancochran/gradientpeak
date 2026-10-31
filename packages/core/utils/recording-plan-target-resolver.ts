@@ -35,6 +35,8 @@ function resolveTargetToIntent(
   unresolved?: ActivityTarget;
 } {
   switch (target.type) {
+    case "rest":
+      return { unresolved: target };
     case "%FTP": {
       const resolved = resolvePerformanceTargetValue({
         target,

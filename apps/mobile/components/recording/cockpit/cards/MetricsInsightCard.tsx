@@ -2,6 +2,7 @@ import { resolvePerformanceTargetValue } from "@repo/core";
 import type { ActivityTarget } from "@repo/core/schemas";
 import React from "react";
 import { View } from "react-native";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { formatSeconds } from "./format";
 import { MetricTile } from "./MetricTile";
 import type { InsightCardProps } from "./types";
@@ -58,26 +59,30 @@ export function MetricsInsightCard({
   const compact = mode === "compact";
   const expandedMetrics = React.useMemo(
     () =>
-      buildMetricInsights({
-        includeUnavailable: true,
-        targets: plan.hasPlan ? plan.currentStep?.targets : undefined,
-        readings,
-        service,
-        sessionContract,
-        stats,
-      }),
+      buildMetricInsights(
+        omitUndefined({
+          includeUnavailable: true,
+          targets: plan.hasPlan ? plan.currentStep?.targets : undefined,
+          readings,
+          service,
+          sessionContract,
+          stats,
+        }),
+      ),
     [plan, readings, service, sessionContract, stats],
   );
   const compactMetrics = React.useMemo(
     () =>
-      buildMetricInsights({
-        includeUnavailable: false,
-        targets: plan.hasPlan ? plan.currentStep?.targets : undefined,
-        readings,
-        service,
-        sessionContract,
-        stats,
-      }).slice(0, 6),
+      buildMetricInsights(
+        omitUndefined({
+          includeUnavailable: false,
+          targets: plan.hasPlan ? plan.currentStep?.targets : undefined,
+          readings,
+          service,
+          sessionContract,
+          stats,
+        }),
+      ).slice(0, 6),
     [plan, readings, service, sessionContract, stats],
   );
 

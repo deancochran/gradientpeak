@@ -46,11 +46,15 @@ test("public activity-plan and training-plan links render anonymous readers", as
         await page.goto(`/share/activity-plans/${activityPlanId}`);
         await expect(page.getByRole("heading", { name: "Playwright Tempo Builder" })).toBeVisible();
         await expect(page.getByText("Activity plan overview")).toBeVisible();
-        await expect(page.getByText("Activity structure")).toBeVisible();
+        await expect(page.getByTestId("activity-plan-session-flow")).toBeVisible();
+        await expect(page.getByRole("button", { name: /edit|delete|schedule/i })).toHaveCount(0);
 
         await trainingPage.goto(`/share/training-plans/${trainingPlanId}`);
         await expect(trainingPage.getByRole("heading", { name: trainingPlanName })).toBeVisible();
         await expect(trainingPage.getByText("Plan overview")).toBeVisible();
+        await expect(
+          trainingPage.getByRole("button", { name: /edit|delete|schedule/i }),
+        ).toHaveCount(0);
       },
     );
   } finally {
@@ -135,17 +139,15 @@ test("[variation:public-share:activity-plan-narrow] anonymous narrow reader scro
   await page.setViewportSize({ width: 390, height: 844 });
   await withPublicShareFixture(e2eData, athleteActor.email, async ({ activityPlanId }) => {
     await page.goto(`/share/activity-plans/${activityPlanId}`);
-    const structure = page.getByText("Activity structure");
-    await structure.scrollIntoViewIfNeeded();
-    await expect(structure).toBeVisible();
     const sessionFlow = page.getByTestId("activity-plan-session-flow");
-    await expect(
-      sessionFlow.getByRole("heading", { name: "Tempo ride", exact: true }),
-    ).toBeVisible();
+    await sessionFlow.scrollIntoViewIfNeeded();
+    await expect(sessionFlow).toBeVisible();
+    await expect(sessionFlow.getByText("Tempo", { exact: true })).toBeVisible();
+    await expect(sessionFlow.getByText("1800 sec · 180 W", { exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByRole("heading", { name: "Playwright Tempo Builder" })).toBeVisible();
-    await expect(sessionFlow.getByText("Main set", { exact: true })).toBeVisible();
     await expect(sessionFlow.getByText("Tempo", { exact: true })).toBeVisible();
+    await expect(sessionFlow.getByText("1800 sec · 180 W", { exact: true })).toBeVisible();
   });
 });
 

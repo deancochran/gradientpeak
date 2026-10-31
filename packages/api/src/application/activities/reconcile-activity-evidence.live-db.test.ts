@@ -6,6 +6,7 @@ import {
   activityArtifacts,
   activityEfforts,
   activitySegments,
+  deferredThresholdCalibrations,
   profiles,
   thresholdEvaluationEfforts,
   thresholdEvaluations,
@@ -18,8 +19,10 @@ import { reconcileThresholdsWithProfileLockHeld } from "../performance-model/rec
 import { reconcileGeneratedActivityEvidence } from "./reconcile-activity-evidence";
 
 const profileIds: string[] = [];
-const completedAt = new Date("2026-07-30T12:00:00.000Z");
-const createdAt = new Date("2026-07-30T12:01:00.000Z");
+// This deliberately follows PostgreSQL's live clock: a fixed calendar date
+// cannot prove future-clock protection once the calendar advances.
+const completedAt = new Date(Date.now() + 60_000);
+const createdAt = new Date(completedAt.getTime() + 60_000);
 
 async function seedBikeActivity() {
   const profileId = randomUUID();
@@ -227,6 +230,35 @@ describe("reconcileGeneratedActivityEvidence against PostgreSQL", () => {
     await expect(
       db.select().from(thresholds).where(eq(thresholds.profile_id, fixture.profileId)),
     ).resolves.toHaveLength(1);
+  });
+
+  it("defers evaluations when a device-recorded completion is ahead of the server clock", async () => {
+    const fixture = await seedBikeActivity();
+    await db.transaction((tx) =>
+      reconcileGeneratedActivityEvidence(tx, {
+        activityId: fixture.activityId,
+        profileId: fixture.profileId,
+        efforts: [exactBikeThresholdEffort(fixture)],
+        detectedLTHR: null,
+        now: new Date(completedAt.getTime() - 1_000),
+      }),
+    );
+
+    await expect(
+      db
+        .select()
+        .from(thresholdEvaluations)
+        .where(eq(thresholdEvaluations.source_activity_id, fixture.activityId)),
+    ).resolves.toEqual([]);
+    await expect(
+      db
+        .select({
+          dueAt: deferredThresholdCalibrations.due_at,
+          revision: deferredThresholdCalibrations.source_revision,
+        })
+        .from(deferredThresholdCalibrations)
+        .where(eq(deferredThresholdCalibrations.activity_id, fixture.activityId)),
+    ).resolves.toEqual([{ dueAt: completedAt, revision: 1 }]);
   });
 
   it("replays historical calibration from the exact persisted PostgreSQL real value", async () => {

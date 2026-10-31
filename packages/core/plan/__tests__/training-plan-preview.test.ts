@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { requireFixtureValue } from "../../testing/requireFixtureValue";
 import { buildDeterministicProjectionPayload } from "../projection/engine";
 import {
   buildPreviewReadinessSnapshot,
@@ -406,8 +407,11 @@ describe("deterministic projection safety behavior", () => {
     });
 
     for (let i = 1; i < projection.microcycles.length; i += 1) {
-      const previous = projection.microcycles[i - 1]!;
-      const current = projection.microcycles[i]!;
+      const previous = requireFixtureValue(
+        projection.microcycles[i - 1],
+        "expected previous microcycle",
+      );
+      const current = requireFixtureValue(projection.microcycles[i], "expected current microcycle");
       const nextStart = new Date(`${previous.week_end_date}T00:00:00.000Z`);
       nextStart.setUTCDate(nextStart.getUTCDate() + 1);
       expect(current.week_start_date).toBe(nextStart.toISOString().slice(0, 10));

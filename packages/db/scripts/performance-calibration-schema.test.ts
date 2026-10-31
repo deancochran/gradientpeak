@@ -11,6 +11,7 @@ import {
   thresholdMetricEnum,
 } from "../src/schema/enums";
 import {
+  deferredThresholdCalibrations,
   profilePerformanceEstimates,
   thresholdEvaluationEfforts,
   thresholdEvaluations,
@@ -123,6 +124,28 @@ for (const forbidden of ["freshness", "stale_at", "expires_at"] as const) {
   assert.ok(!(forbidden in thresholdColumns), `Thresholds must not persist ${forbidden}`);
 }
 assert.ok(!("threshold_id" in getTableColumns(profilePerformanceEstimates)));
+const deferredColumns = getTableColumns(deferredThresholdCalibrations);
+for (const name of [
+  "profile_id",
+  "activity_id",
+  "source_revision",
+  "due_at",
+  "status",
+  "attempt_count",
+  "lease_token",
+  "lease_expires_at",
+  "retry_at",
+  "completed_at",
+] as const) {
+  assert.ok(deferredColumns[name], `Missing deferred threshold calibration column ${name}`);
+}
+const deferredConfig = getTableConfig(deferredThresholdCalibrations);
+assert.ok(
+  deferredConfig.indexes.some(
+    (index) => index.config.name === "deferred_threshold_calibrations_due_idx",
+  ),
+  "Deferred threshold calibration promotions require a durable due index",
+);
 const evidenceColumns = getTableColumns(thresholdEvidence);
 assert.deepEqual(evidenceColumns.unit.enumValues, ["watts", "meters_per_second", "bpm"]);
 assert.deepEqual(evidenceColumns.method.enumValues, [
@@ -162,6 +185,8 @@ for (const required of [
   'CREATE TYPE "public"."activity_effort_source_series"',
   'CREATE TABLE "threshold_evaluation_efforts"',
   'CREATE TABLE "thresholds"',
+  "CREATE TABLE public.deferred_threshold_calibrations",
+  "CREATE INDEX deferred_threshold_calibrations_due_idx",
   'CONSTRAINT "threshold_evaluations_idempotency_unique"',
   'CONSTRAINT "threshold_evaluation_efforts_evaluation_ownership_fkey"',
   'CONSTRAINT "threshold_evaluation_efforts_effort_ownership_fkey"',
@@ -172,6 +197,7 @@ for (const required of [
   'ALTER TABLE "public"."threshold_evaluations" ENABLE ROW LEVEL SECURITY',
   'ALTER TABLE "public"."threshold_evaluation_efforts" ENABLE ROW LEVEL SECURITY',
   'ALTER TABLE "public"."thresholds" ENABLE ROW LEVEL SECURITY',
+  "ALTER TABLE public.deferred_threshold_calibrations ENABLE ROW LEVEL SECURITY",
   "CREATE FUNCTION public.enforce_threshold_truth_immutability()",
   "CREATE FUNCTION public.validate_threshold_evaluation_efforts()",
   "CREATE FUNCTION public.validate_threshold_insert()",

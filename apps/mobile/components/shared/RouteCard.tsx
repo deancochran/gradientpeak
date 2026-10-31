@@ -18,6 +18,7 @@ import { getActivityCategoryConfig } from "@/lib/constants/activities";
 import { formatDistanceMeters, formatElevationMeters } from "@/lib/display/formatters";
 import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { getPublicShareUrl } from "@/lib/share/public-share-url";
 
 type RouteCoordinate = {
@@ -97,12 +98,14 @@ export function RouteCard({
     isPending: internalLikePending,
     likeCount: internalLikesCount,
     toggleLike,
-  } = useResourceLike({
-    entityId: route.id,
-    entityType: "route",
-    initialCount: route.likes_count,
-    initialLiked: route.has_liked,
-  });
+  } = useResourceLike(
+    omitUndefined({
+      entityId: route.id,
+      entityType: "route",
+      initialCount: route.likes_count,
+      initialLiked: route.has_liked,
+    }),
+  );
 
   const resolvedLiked = isLiked ?? internalLiked;
   const resolvedLikesCount = likeCount ?? internalLikesCount;
@@ -145,7 +148,10 @@ export function RouteCard({
 
   return (
     <ResourceCardShell
-      accessibilityLabel={onPress ? `Open route ${route.name || "Untitled route"}` : undefined}
+      {...omitUndefined({
+        accessibilityLabel: onPress ? `Open route ${route.name || "Untitled route"}` : undefined,
+        onPress,
+      })}
       actionRegion={
         !isList || shouldShowAttribution ? (
           <ResourceOwnerActionRow
@@ -202,16 +208,17 @@ export function RouteCard({
               />
             ) : null}
           </View>
-        ) : undefined
+        ) : null
       }
       compact={isDense}
-      onPress={onPress}
       testID={testID ?? `route-card-${route.id}`}
     >
       <ResourceCardHeader
         compact={isDense}
-        description={isList ? undefined : route.description}
-        descriptionFallback={isList ? undefined : `${activityConfig.name} route`}
+        {...omitUndefined({
+          description: isList ? undefined : route.description,
+          descriptionFallback: isList ? undefined : `${activityConfig.name} route`,
+        })}
         detail={isDetail}
         title={route.name}
         titleFallback="Untitled route"

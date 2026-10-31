@@ -129,7 +129,8 @@ describe("workload", () => {
       expect(result.status).toBe("provisional");
       expect(result.requiredDays).toBe(7);
       expect(result.value).not.toBeNull();
-      expect(result.value!).toBeGreaterThan(0);
+      if (result.value === null) throw new Error("Expected a monotony value for variable load");
+      expect(result.value).toBeGreaterThan(0);
     });
 
     it("returns null for zero-variance data to avoid infinity", () => {

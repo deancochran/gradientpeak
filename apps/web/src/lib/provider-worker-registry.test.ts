@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+vi.mock("./garmin-training-sync-worker", () => ({ drainGarminTrainingSync: async () => ({}) }));
 vi.mock("./strava-sync-worker", () => ({ drainStravaProviderSync: async () => ({}) }));
 vi.mock("./wahoo-sync-worker", () => ({ drainWahooProviderSync: async () => ({}) }));
 

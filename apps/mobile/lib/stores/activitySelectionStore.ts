@@ -1,4 +1,5 @@
 import type { ActivityPayload, RecordingActivityCategory } from "@repo/core";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 export interface RecordingLaunchPayload extends ActivityPayload {
   launchSource: "record_tab" | "activity_plan" | "calendar_event" | "route" | "manual";
@@ -106,12 +107,12 @@ class ActivitySelectionStore {
     gpsRecordingEnabled?: boolean;
     hasPlan?: boolean;
   } {
-    return {
+    return omitUndefined({
       hasSelection: this.selection !== null,
       activity_category: this.selection?.activity_category,
       gpsRecordingEnabled: this.selection?.gpsRecordingEnabled,
       hasPlan: !!this.selection?.plan,
-    };
+    });
   }
 }
 

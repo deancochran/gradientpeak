@@ -316,7 +316,7 @@ function contractKind(node, name, initializer) {
       return "zod-schema";
     if (
       initializer &&
-      (ts.isArrayLiteralExpression(initializer) ||
+      ((ts.isArrayLiteralExpression(initializer) && initializer.elements.length > 0) ||
         (/^[A-Z][A-Z0-9_]+$/.test(name) && initializer.getText().includes("as const")))
     ) {
       return "literal-value";

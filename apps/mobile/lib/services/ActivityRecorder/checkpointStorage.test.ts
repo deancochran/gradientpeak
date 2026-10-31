@@ -15,7 +15,10 @@ import {
 } from "./checkpointStorage";
 
 const journalMocks = vi.hoisted(() => ({
-  row: null as { sessionId: string; checkpointJson: string } | null,
+  row: null as {
+    sessionId: string;
+    checkpointJson: string;
+  } | null,
   persist: vi.fn<(input: { sessionId: string; checkpoint: unknown }) => Promise<void>>(),
   read: vi.fn(async () => journalMocks.row),
   claim: vi.fn(async () => journalMocks.row),
@@ -41,46 +44,31 @@ vi.mock("./recordingEvidenceJournal", () => ({
   releaseRecordingEvidenceCheckpointClaim: journalMocks.release,
   hasQuarantinedRecordingEvidence: journalMocks.hasQuarantine,
 }));
-
 const ids = {
-  segment: "00000000-0000-4000-8000-000000000001",
-  interval: "00000000-0000-4000-8000-000000000002",
+  block: "00000000-0000-4000-8000-000000000001",
   step1: "00000000-0000-4000-8000-000000000003",
   step2: "00000000-0000-4000-8000-000000000004",
 };
 const plan = {
-  version: 3 as const,
+  version: 5 as const,
   activity_category: "run" as const,
-  segments: [
+  items: [
     {
-      id: ids.segment,
-      role: "activity" as const,
-      name: "Run",
-      intervals: [
-        {
-          id: ids.interval,
-          name: "Main",
-          repetitions: 1,
-          steps: [
-            {
-              id: ids.step1,
-              name: "One",
-              duration: { type: "time" as const, seconds: 30 },
-              targets: [{ type: "RPE" as const, intensity: 4 }],
-            },
-            {
-              id: ids.step2,
-              name: "Two",
-              duration: { type: "time" as const, seconds: 30 },
-              targets: [{ type: "RPE" as const, intensity: 5 }],
-            },
-          ],
-        },
-      ],
+      type: "step",
+      id: ids.step1,
+      name: "One",
+      duration: { type: "time" as const, seconds: 30 },
+      targets: [{ type: "RPE" as const, intensity: 4 }],
+    },
+    {
+      type: "step",
+      id: ids.step2,
+      name: "Two",
+      duration: { type: "time" as const, seconds: 30 },
+      targets: [{ type: "RPE" as const, intensity: 5 }],
     },
   ],
 };
-
 async function checkpoint(): Promise<ActivityRecorderCheckpoint> {
   const planHash = await hashRecordingPlan(plan);
   const performanceTargets = buildPerformanceTargetFactsFixture({
@@ -93,13 +81,13 @@ async function checkpoint(): Promise<ActivityRecorderCheckpoint> {
   return {
     schemaVersion: 5,
     variant: "planned",
-    compilerVersion: 1,
+    compilerVersion: 3,
     sessionId: "session-1",
     profileId: "profile-1",
     lifecycle: "recording",
     planSnapshot: plan as RecordingCheckpoint["planSnapshot"],
     planHash,
-    currentOccurrenceId: `activity:${ids.segment}:${ids.interval}:0:${ids.step2}`,
+    currentOccurrenceId: `activity:step:${ids.step2}`,
     occurrenceProgress: {
       startedAt: "2026-01-01T10:00:30.000Z",
       startMovingSeconds: 30,
@@ -107,9 +95,10 @@ async function checkpoint(): Promise<ActivityRecorderCheckpoint> {
     },
     completedOccurrences: [
       {
-        occurrenceId: `activity:${ids.segment}:${ids.interval}:0:${ids.step1}`,
+        occurrenceId: `activity:step:${ids.step1}`,
         globalOrdinal: 0,
-        segmentId: ids.segment,
+        stepId: ids.step1,
+        repeatIteration: 0,
         role: "activity",
         activity_category: "run",
         startedAt: "2026-01-01T10:00:00.000Z",
@@ -123,8 +112,8 @@ async function checkpoint(): Promise<ActivityRecorderCheckpoint> {
     boundaryJournal: [
       {
         revision: 2,
-        completedOccurrenceId: `activity:${ids.segment}:${ids.interval}:0:${ids.step1}`,
-        nextOccurrenceId: `activity:${ids.segment}:${ids.interval}:0:${ids.step2}`,
+        completedOccurrenceId: `activity:step:${ids.step1}`,
+        nextOccurrenceId: `activity:step:${ids.step2}`,
         committedAt: "2026-01-01T10:00:30.000Z",
       },
     ],
@@ -149,7 +138,6 @@ async function checkpoint(): Promise<ActivityRecorderCheckpoint> {
     revision: 2,
   };
 }
-
 describe("recording checkpoint recovery", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -164,7 +152,6 @@ describe("recording checkpoint recovery", () => {
     });
     journalMocks.quarantineSession.mockResolvedValue(true);
   });
-
   it("recovers a process death after the completed boundary was durably committed", async () => {
     const value = await checkpoint();
     await persistRecordingCheckpoint(value);
@@ -189,12 +176,11 @@ describe("recording checkpoint recovery", () => {
     });
     releaseRecordingCheckpointClaim("session-1");
   });
-
   it("recovers before a boundary and quarantines an impossible mid-boundary cursor", async () => {
     const value = await checkpoint();
     const beforeBoundary = {
       ...value,
-      currentOccurrenceId: `activity:${ids.segment}:${ids.interval}:0:${ids.step1}`,
+      currentOccurrenceId: `activity:step:${ids.step1}`,
       completedOccurrences: [],
       boundaryJournal: [],
       revision: 1,
@@ -205,23 +191,20 @@ describe("recording checkpoint recovery", () => {
     };
     expect((await loadAndClaimRecordingCheckpoint("profile-1")).status).toBe("recovered");
     releaseRecordingCheckpointClaim("session-1");
-
     journalMocks.row = {
       sessionId: value.sessionId,
       checkpointJson: JSON.stringify({
         ...value,
-        currentOccurrenceId: `activity:${ids.segment}:${ids.interval}:0:${ids.step1}`,
+        currentOccurrenceId: `activity:step:${ids.step1}`,
       }),
     };
     expect((await loadAndClaimRecordingCheckpoint("profile-1")).status).toBe("quarantined");
   });
-
   it("rejects stale checkpoint revisions", async () => {
     const value = await checkpoint();
     await persistRecordingCheckpoint(value);
     await expect(persistRecordingCheckpoint(value)).rejects.toThrow("revision must increase");
   });
-
   it("quarantines a hash mismatch without deleting the evidence payload", async () => {
     const value = await checkpoint();
     journalMocks.row = {
@@ -237,7 +220,6 @@ describe("recording checkpoint recovery", () => {
       }),
     );
   });
-
   it("recomputes and quarantines a forged scheduled prescription hash during recovery", async () => {
     const value = await checkpoint();
     if (value.variant !== "planned") throw new Error("Expected a planned checkpoint fixture");
@@ -260,8 +242,8 @@ describe("recording checkpoint recovery", () => {
       checkpointJson: JSON.stringify({
         ...value,
         planExecution: {
-          manifestVersion: 1,
-          compilerVersion: 1,
+          manifestVersion: 2,
+          compilerVersion: 3,
           activityPlanId: prescription.activityPlanId,
           scheduledEventId: null,
           name: "Tempo",
@@ -280,20 +262,17 @@ describe("recording checkpoint recovery", () => {
         },
       }),
     };
-
     await expect(loadAndClaimRecordingCheckpoint("profile-1")).resolves.toMatchObject({
       status: "quarantined",
     });
     expect(validStructureHash).not.toBe(prescription.structureHash);
     expect(journalMocks.quarantineSession).toHaveBeenCalled();
   });
-
   it("quarantines a cross-profile checkpoint", async () => {
     const value = await checkpoint();
     journalMocks.row = { sessionId: value.sessionId, checkpointJson: JSON.stringify(value) };
     expect((await loadAndClaimRecordingCheckpoint("profile-2")).status).toBe("quarantined");
   });
-
   it("quarantines corrupt serialized checkpoint data", async () => {
     journalMocks.row = { sessionId: "session-1", checkpointJson: "{not-json" };
     expect((await loadAndClaimRecordingCheckpoint("profile-1")).status).toBe("quarantined");
@@ -302,7 +281,6 @@ describe("recording checkpoint recovery", () => {
       expect.objectContaining({ sessionId: "session-1", profileId: "profile-1" }),
     );
   });
-
   it.each([
     2, 4,
   ])("quarantines complete checkpoints from pre-hard-cut schema version %s", async (schemaVersion) => {
@@ -311,7 +289,6 @@ describe("recording checkpoint recovery", () => {
       sessionId: value.sessionId,
       checkpointJson: JSON.stringify({ ...value, schemaVersion }),
     };
-
     await expect(loadAndClaimRecordingCheckpoint("profile-1")).resolves.toMatchObject({
       status: "quarantined",
     });
@@ -319,7 +296,20 @@ describe("recording checkpoint recovery", () => {
       expect.objectContaining({ sessionId: value.sessionId, profileId: "profile-1" }),
     );
   });
-
+  it("quarantines an old compiler checkpoint without deleting its evidence", async () => {
+    const value = await checkpoint();
+    journalMocks.row = {
+      sessionId: value.sessionId,
+      checkpointJson: JSON.stringify({ ...value, compilerVersion: 2 }),
+    };
+    await expect(loadAndClaimRecordingCheckpoint("profile-1")).resolves.toMatchObject({
+      status: "quarantined",
+    });
+    expect(journalMocks.quarantineSession).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: value.sessionId, profileId: "profile-1" }),
+    );
+    expect(journalMocks.clear).not.toHaveBeenCalled();
+  });
   it("quarantines a current-version checkpoint carrying pre-hard-cut target facts", async () => {
     const value = await checkpoint();
     const { thresholds: _thresholds, ...noncanonicalTargets } = value.performanceTargets;
@@ -333,29 +323,24 @@ describe("recording checkpoint recovery", () => {
         },
       }),
     };
-
     await expect(loadAndClaimRecordingCheckpoint("profile-1")).resolves.toMatchObject({
       status: "quarantined",
     });
   });
-
   it("fails closed when SQLite checkpoint digest validation fails", async () => {
     journalMocks.claim.mockRejectedValueOnce(new Error("sqlite-checkpoint-digest-invalid"));
-
     await expect(loadAndClaimRecordingCheckpoint("profile-1")).resolves.toMatchObject({
       status: "quarantined",
       reason: "sqlite-checkpoint-digest-invalid",
     });
     expect(journalMocks.quarantineOrphans).toHaveBeenCalledWith("profile-1", expect.any(Function));
   });
-
   it("quarantines the exact SQLite row when a checkpoint session is mismatched", async () => {
     const value = await checkpoint();
     journalMocks.row = {
       sessionId: "sqlite-session",
       checkpointJson: JSON.stringify(value),
     };
-
     await expect(loadAndClaimRecordingCheckpoint("profile-1")).resolves.toMatchObject({
       status: "quarantined",
     });
@@ -363,7 +348,6 @@ describe("recording checkpoint recovery", () => {
       expect.objectContaining({ sessionId: "sqlite-session", profileId: "profile-1" }),
     );
   });
-
   it("restores an exact unplanned allocation without inventing a plan", async () => {
     const unplanned = {
       schemaVersion: 5 as const,
@@ -385,25 +369,21 @@ describe("recording checkpoint recovery", () => {
       sessionId: unplanned.sessionId,
       checkpointJson: JSON.stringify(unplanned),
     };
-
     await expect(loadAndClaimRecordingCheckpoint("profile-1")).resolves.toEqual({
       status: "recovered",
       checkpoint: unplanned,
     });
     releaseRecordingCheckpointClaim(unplanned.sessionId);
   });
-
   it("uses the selected SQLite checkpoint", async () => {
     const value = await checkpoint();
     journalMocks.row = { sessionId: value.sessionId, checkpointJson: JSON.stringify(value) };
-
     await expect(loadAndClaimRecordingCheckpoint("profile-1")).resolves.toEqual({
       status: "recovered",
       checkpoint: value,
     });
     releaseRecordingCheckpointClaim(value.sessionId);
   });
-
   it.each([
     [
       "planned without its plan fields",
@@ -427,7 +407,6 @@ describe("recording checkpoint recovery", () => {
       status: "quarantined",
     });
   });
-
   it("inspects current SQLite checkpoint without claiming it", async () => {
     const value = await checkpoint();
     journalMocks.row = { sessionId: value.sessionId, checkpointJson: JSON.stringify(value) };
@@ -437,7 +416,6 @@ describe("recording checkpoint recovery", () => {
     });
     expect(journalMocks.claim).not.toHaveBeenCalled();
   });
-
   it.each([
     "planned",
     "unplanned",
@@ -466,7 +444,6 @@ describe("recording checkpoint recovery", () => {
           };
     const { performanceTargets: _performanceTargets, ...legacy } = value;
     journalMocks.row = { sessionId: value.sessionId, checkpointJson: JSON.stringify(legacy) };
-
     await expect(loadAndClaimRecordingCheckpoint("profile-1")).resolves.toMatchObject({
       status: "quarantined",
     });

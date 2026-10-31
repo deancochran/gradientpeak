@@ -142,7 +142,14 @@ export type ProviderOverviewEvidence = {
     lastFailedAt: string | null;
     lastSucceededAt: string | null;
     queuedJobId: string | null;
-    status: "automatic" | "queued" | "syncing" | "failed" | "unsupported";
+    status:
+      | "automatic"
+      | "queued"
+      | "syncing"
+      | "failed"
+      | "recovery_required"
+      | "unsupported_projection"
+      | "unsupported";
   };
   setupData: {
     lastError: string | null;
@@ -175,6 +182,8 @@ export type ProviderOAuthConnectionRuntime<TProvider extends string = string> = 
   resolveOAuthIdentity: (tokens: NormalizedProviderOAuthTokenResponse) => Promise<{
     externalId: string;
     requiresActivation: boolean;
+    /** Provider-owned per-user grants, when they are distinct from requested OAuth scopes. */
+    scope?: string;
   }>;
   activateOAuthCredential: (accessToken: string) => Promise<void>;
   classifyOAuthFailure: (error: unknown) => ProviderOAuthFailure;
@@ -229,6 +238,8 @@ export type ProviderSynchronizationRuntime = {
 };
 
 export type ProviderDisconnectionRuntime = {
+  /** Existing grants must remain removable after new connections are disabled. */
+  availableWhenDisabled?: boolean;
   disconnect: (input: { db: DrizzleDbClient; profileId: string }) => Promise<void>;
 };
 

@@ -4,7 +4,8 @@ export class RecordingPage {
   constructor(readonly page: Page) {}
 
   async openLauncher() {
-    await this.page.goto("/record");
+    // biome-ignore lint/security/noSecrets: Local route search parameters, not a credential.
+    await this.page.goto("/record/session?activity_category=run&gps=off");
   }
 
   async openRoutePreview(routeId: string) {
@@ -12,74 +13,73 @@ export class RecordingPage {
   }
 
   async startFromLauncher(input: "click" | "keyboard" = "click") {
-    const open = this.page.getByRole("button", { name: /^open recorder$/i });
-    if (input === "keyboard") {
-      await open.press("Enter");
-    } else {
-      await open.click();
-    }
+    if (new URL(this.page.url()).pathname !== "/record/session") await this.openLauncher();
     await this.startSession(input);
   }
 
   async startSession(input: "click" | "keyboard" = "click") {
     const start = this.page.getByRole("button", { name: /^start$/i });
+    await expect(start).toBeEnabled();
     if (input === "keyboard") await start.press("Enter");
     else await start.click();
+    await expect(this.page.getByRole("button", { name: /^pause$/i })).toBeEnabled();
   }
 
   async configureBikeTimer(input: "click" | "keyboard" = "click") {
     await test.step("Configure bike timer recording", async () => {
       await this.openLauncher();
+      await this.openGuidance();
       const bike = this.page.getByRole("button", { name: /^bike$/i });
-      const configure = this.page.getByRole("button", {
-        name: /^open recorder$|configure timer session/i,
-      });
-      if (input === "keyboard") {
-        await bike.press("Enter");
-        await configure.press("Enter");
-      } else {
-        await bike.click();
-        await configure.click();
-      }
-      await expect(this.page).toHaveURL(/\/record\/session$/);
+      if (input === "keyboard") await bike.press("Enter");
+      else await bike.click();
+      await expect(this.page.getByRole("heading", { name: /bike session/i })).toBeVisible();
     });
   }
 
   async chooseActivityPlan(name: string, input: "click" | "keyboard" = "click") {
     await test.step(`Choose recording plan: ${name}`, async () => {
       await this.openLauncher();
-      const choose = this.page.getByRole("link", { name: "Choose plan" });
-      if (input === "keyboard") await choose.press("Enter");
-      else await choose.click();
-      await expect(
-        this.page.getByRole("heading", { name: "Choose an activity plan" }),
-      ).toBeVisible();
-      const search = this.page.getByRole("searchbox", { name: "Search all activity plans" });
-      await search.fill(name);
-      if (input === "keyboard") await search.press("Enter");
-      const result = this.page.getByRole("button").filter({ hasText: name }).first();
+      await this.openGuidance();
+      await this.page.getByRole("searchbox", { name: "Search activity plans" }).fill(name);
+      const result = this.page.getByRole("button", { name, exact: true });
       await result.scrollIntoViewIfNeeded();
       if (input === "keyboard") await result.press("Enter");
       else await result.click();
-      const usePlan = this.page.getByRole("button", { name: "Use this plan" });
+      const usePlan = this.page.getByRole("button", { name: "Attach / replace" });
+      await expect(usePlan).toBeEnabled();
       if (input === "keyboard") await usePlan.press("Enter");
       else await usePlan.click();
-      const selectedPlanName = this.page
-        .getByRole("link", { name: "Change plan" })
-        .locator("..")
-        .getByText(name, { exact: true });
+      const selectedPlanName = this.page.getByText(`Current plan: ${name}`, { exact: true });
       await expect(selectedPlanName).toBeVisible();
     });
   }
 
+  async openGuidance() {
+    const setup = this.page.getByRole("navigation", { name: "Recording setup" });
+    await setup.getByRole("button", { name: "Plan", exact: true }).click();
+    await expect(
+      this.page.locator("details").filter({ hasText: "Plan & route setup" }),
+    ).toHaveAttribute("open", "");
+  }
+
+  async openDevices() {
+    const setup = this.page.getByRole("navigation", { name: "Recording setup" });
+    await setup.getByRole("button", { name: "Devices", exact: true }).click();
+    await expect(
+      this.page.locator("details").filter({ hasText: "Devices & trainer" }),
+    ).toHaveAttribute("open", "");
+  }
+
   async pause(input: "click" | "keyboard" = "click") {
     const button = this.page.getByRole("button", { name: /^pause$/i });
+    await expect(button).toBeEnabled();
     if (input === "keyboard") await button.press("Enter");
     else await button.click();
   }
 
   async resume(input: "click" | "keyboard" = "click") {
     const button = this.page.getByRole("button", { name: /^resume$/i });
+    await expect(button).toBeEnabled();
     if (input === "keyboard") await button.press("Enter");
     else await button.click();
   }
@@ -90,8 +90,10 @@ export class RecordingPage {
 
   async finish(input: "click" | "keyboard" = "click") {
     const finish = this.page.getByRole("button", { name: /^finish$/i });
+    await expect(finish).toBeEnabled();
     if (input === "keyboard") await finish.press("Enter");
     else await finish.click();
+    await expect(this.page.getByRole("heading", { name: /review recording/i })).toBeVisible();
   }
 
   async save() {
@@ -108,6 +110,6 @@ export class RecordingPage {
     await this.finish(input);
     await expect(this.page.getByRole("heading", { name: /review recording/i })).toBeVisible();
     await this.discard(input);
-    await expect(this.page.getByText(/no recording session/i)).toBeVisible();
+    await expect(this.page.getByRole("button", { name: /^start$/i })).toBeVisible();
   }
 }

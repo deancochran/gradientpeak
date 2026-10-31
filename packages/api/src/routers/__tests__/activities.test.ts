@@ -14,12 +14,12 @@ import {
 import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createRouterCaller } from "../../test/router";
 
 vi.mock("node:crypto", async (importOriginal) => ({
   ...(await importOriginal<typeof import("node:crypto")>()),
   randomUUID: () => "33333333-3333-4333-8333-333333333333",
 }));
-
 vi.mock("../../db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../db")>();
   return {
@@ -39,9 +39,7 @@ vi.mock("../../db", async (importOriginal) => {
       ),
   };
 });
-
 const pgDialect = new PgDialect();
-
 const mockActivityAnalysis = vi.hoisted(() => ({
   analyzeActivityDerivedMetrics: vi.fn(),
   buildActivityDerivedSummaryMap: vi.fn(),
@@ -79,8 +77,8 @@ const athleteDerivedRepository = vi.hoisted(() => ({
     publishedRevision: 1,
   })),
   coalesceRecalculationRequest: vi.fn(async ({ request }) => request),
+  replaceThresholdEvidenceForActivity: vi.fn(async () => undefined),
 }));
-
 vi.mock(
   "../../application/activity-file-ingestion/mobile-recording-upload",
   async (importOriginal) => ({
@@ -130,16 +128,13 @@ vi.mock("../../repositories/athlete-state-repository", async (importOriginal) =>
   ...(await importOriginal<typeof import("../../repositories/athlete-state-repository")>()),
   markAthleteStateDirty: vi.fn(async () => 1),
 }));
-
 vi.mock("@repo/core", async () => {
   const actual = await vi.importActual<typeof import("@repo/core")>("@repo/core");
-
   return {
     ...actual,
     analyzeActivityDerivedMetrics: mockActivityAnalysis.analyzeActivityDerivedMetrics,
   };
 });
-
 vi.mock("../../infrastructure/repositories", () => ({
   createActivityAnalysisStore: mockActivityAnalysis.createActivityAnalysisStore,
   createDrizzleAthleteDerivedStateRepository: vi.fn(() => athleteDerivedRepository),
@@ -163,7 +158,6 @@ vi.mock("../../infrastructure/repositories", () => ({
     },
   })),
 }));
-
 vi.mock("../../lib/activity-analysis", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/activity-analysis")>();
   return {
@@ -201,7 +195,6 @@ const ACCEPTED_ARTIFACT = {
   format: "fit" as const,
   originalName: "accepted.fit",
 };
-
 function activityPlanStructure(activity_category: "bike" | "run", segmentCount = 1) {
   return {
     version: 3 as const,
@@ -217,6 +210,7 @@ function activityPlanStructure(activity_category: "bike" | "run", segmentCount =
           repetitions: 1,
           steps: [
             {
+              type: "step",
               id: `30000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
               name: "Step",
               duration: { type: "time" as const, seconds: 600 },
@@ -228,17 +222,17 @@ function activityPlanStructure(activity_category: "bike" | "run", segmentCount =
     })),
   };
 }
-
 function recordingExecutionManifest(activity_category: "run" | "bike" | "swim" = "run") {
   return {
     version: 1 as const,
-    compilerVersion: 1,
+    compilerVersion: 3 as const,
     planHash: "b".repeat(64),
     occurrences: [
       {
         occurrenceId: "occurrence-1",
         globalOrdinal: 0,
-        segmentId: SEGMENT_ID,
+        stepId: null,
+        repeatIteration: 0,
         role: "activity" as const,
         activity_category,
         startedAt: "2026-01-15T09:00:00.000Z",
@@ -252,7 +246,6 @@ function recordingExecutionManifest(activity_category: "run" | "bike" | "swim" =
     ],
   };
 }
-
 function recordingCreateInput(profileId = OWNER_ID) {
   return {
     profileId,
@@ -299,7 +292,6 @@ function availableCommonLoad(load: number, activityCategory: "run" | "bike" = "r
       intensity,
     });
   }
-
   return calculateAvailableCommonLoad({
     activity_category: "run",
     method: "run_pace_threshold",
@@ -330,7 +322,6 @@ function availableCommonLoad(load: number, activityCategory: "run" | "bike" = "r
     intensity,
   });
 }
-
 function unavailableCommonLoad(reason: "private_data" | "threshold_missing" = "private_data") {
   return commonLoadResultSchema.parse({
     status: "unavailable",
@@ -346,7 +337,6 @@ function unavailableCommonLoad(reason: "private_data" | "threshold_missing" = "p
     reason,
   });
 }
-
 function observationQuantification(
   id: string,
   commonLoad: CommonLoadResult,
@@ -421,7 +411,6 @@ function observationQuantification(
     commonLoad,
   });
 }
-
 function parentDerivedSummary(
   id: string,
   commonLoad: CommonLoadResult,
@@ -435,7 +424,6 @@ function parentDerivedSummary(
     observationQuantification: observationBundle,
   };
 }
-
 function segmentDerivedSummary(input: {
   activityId: string;
   segmentId: string;
@@ -465,7 +453,6 @@ function segmentDerivedSummary(input: {
   };
 }
 const activityCategories = new Map<string, "bike" | "run" | "swim">();
-
 function buildActivityRow(overrides: Record<string, unknown> = {}) {
   const { activity_category = "run", ...rowOverrides } = overrides;
   const id = typeof rowOverrides.id === "string" ? rowOverrides.id : ACTIVITY_ID;
@@ -484,9 +471,9 @@ function buildActivityRow(overrides: Record<string, unknown> = {}) {
     diary_timezone: null,
     started_at: new Date("2026-01-10T08:00:00.000Z"),
     finished_at: new Date("2026-01-10T08:45:00.000Z"),
-    elapsed_ms: 2_700_000,
-    active_ms: 2_700_000,
-    moving_ms: 2_650_000,
+    elapsed_ms: 2700000,
+    active_ms: 2700000,
+    moving_ms: 2650000,
     timing_coverage: "complete",
     segments_revision: 1,
     parser_version: "test-parser-v1",
@@ -524,11 +511,9 @@ function buildActivityRow(overrides: Record<string, unknown> = {}) {
     content_visibility: rowOverrides.content_visibility ?? "public",
   };
 }
-
 function publicActivityRow(row: ReturnType<typeof buildActivityRow>) {
   return row;
 }
-
 function buildSegmentReadRow(
   activityId: string,
   ordinal: number,
@@ -541,8 +526,8 @@ function buildSegmentReadRow(
     ordinal,
     role: "activity" as const,
     activity_category,
-    start_offset_ms: ordinal * 1_000,
-    end_offset_ms: (ordinal + 1) * 1_000,
+    start_offset_ms: ordinal * 1000,
+    end_offset_ms: (ordinal + 1) * 1000,
     source_artifact_id: null,
     source_session_index: null,
     source_message_index: null,
@@ -553,13 +538,13 @@ function buildSegmentReadRow(
     raw_sub_sport_string: null,
     raw_sub_sport_integer: null,
     timing_coverage: "complete" as const,
-    active_ms: 1_000,
+    active_ms: 1000,
     moving_ms: 900,
     summary: {
       version: 1 as const,
       timing: {
         timingCoverage: "complete" as const,
-        activeMs: 1_000,
+        activeMs: 1000,
         movingMs: 900,
       },
       distanceMeters: 100,
@@ -568,7 +553,6 @@ function buildSegmentReadRow(
     ...overrides,
   };
 }
-
 function buildActivityPlanRow(overrides: Record<string, unknown> = {}) {
   return {
     id: PLAN_ID,
@@ -586,7 +570,6 @@ function buildActivityPlanRow(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
-
 function buildActivitySummaryRow(overrides: Record<string, unknown> = {}) {
   return {
     activity_id: ACTIVITY_ID,
@@ -618,7 +601,6 @@ function buildActivitySummaryRow(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
-
 function buildActivityImportRow(overrides: Record<string, unknown> = {}) {
   return {
     activity_id: ACTIVITY_ID,
@@ -637,7 +619,6 @@ function buildActivityImportRow(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
-
 function buildActivityFileIngestionRow(overrides: Record<string, unknown> = {}) {
   const status = overrides.status ?? "pending_upload";
   const accepted = status === "ready";
@@ -668,13 +649,11 @@ function buildActivityFileIngestionRow(overrides: Record<string, unknown> = {}) 
     ...overrides,
   };
 }
-
-function findInsertedValue(db: any, tableName: string) {
+function findInsertedValue(db: ReturnType<typeof createDbMock>, tableName: string) {
   return db.__spies.insertValues.mock.calls.find(
-    ([insertedTableName]: [string, unknown]) => insertedTableName === tableName,
+    ([insertedTableName]) => insertedTableName === tableName,
   )?.[1];
 }
-
 function buildActivityGeometryRow(overrides: Record<string, unknown> = {}) {
   return {
     activity_id: ACTIVITY_ID,
@@ -686,113 +665,101 @@ function buildActivityGeometryRow(overrides: Record<string, unknown> = {}) {
     ...overrides,
   };
 }
-
 function getTableName(table: unknown) {
   if (table && typeof table === "object") {
+    const tableRecord = table as Record<PropertyKey, unknown>;
+    const metadata = tableRecord._;
+    const metadataRecord =
+      metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>) : undefined;
+    const config = tableRecord.config;
+    const configRecord =
+      config && typeof config === "object" ? (config as Record<string, unknown>) : undefined;
     const candidate =
-      (table as any)?._?.name ??
-      (table as any)?._?.baseName ??
-      (table as any)?.config?.name ??
-      (table as any)?.name;
-
+      metadataRecord?.name ?? metadataRecord?.baseName ?? configRecord?.name ?? tableRecord.name;
     if (typeof candidate === "string") return candidate;
-
     for (const symbol of Object.getOwnPropertySymbols(table)) {
-      const value = (table as any)[symbol];
+      const value = tableRecord[symbol];
       if (typeof value === "string" && /^[a-z_]+$/i.test(value)) return value;
     }
   }
-
   return "unknown";
 }
-
 function toSql(fragment: unknown) {
-  return pgDialect.sqlToQuery(fragment as any).sql;
+  return pgDialect.sqlToQuery(fragment as never).sql;
 }
-
-function createCaller(db: any, userId = OWNER_ID) {
-  return activitiesRouter.createCaller({
-    db,
-    session: {
-      user: {
-        id: userId,
-      },
-    },
-    headers: new Headers(),
-    clientType: "test",
-    trpcSource: "vitest",
-  } as any);
+function createCaller(db: unknown, userId = OWNER_ID) {
+  return createRouterCaller(activitiesRouter, { db, userId });
 }
-
 function createSequencedFn(values: unknown[]) {
   const fn = vi.fn();
-
   for (const value of values) {
     fn.mockResolvedValueOnce(value);
   }
-
   return fn;
 }
-
 function createDbMock(options: {
-  activityRows?: any[];
-  activityEffortRows?: any[];
-  activityPlanRows?: any[];
-  likeRows?: Array<{ entity_id: string; likes_count: number; has_liked: boolean }>;
-  totalRows?: Array<{ total: number }>;
-  joinedRows?: any[];
-  activitySummaryRows?: any[];
-  activityImportRows?: any[];
-  activitySourceReferenceRows?: any[];
-  activityFileIngestionRows?: any[];
-  activityGeometryRows?: any[];
-  activityLapRows?: any[];
-  currentArtifactRows?: any[];
-  sessionRpeEvidenceRows?: any[];
-  profileRows?: any[];
-  integrationRows?: any[];
-  providerSyncRows?: any[];
-  queryActivitiesFindFirst?: any[];
-  queryActivityArtifactsFindFirst?: any[];
-  queryActivityFileIngestionsFindFirst?: any[];
-  queryActivityGeometryFindFirst?: any[];
-  queryActivityImportsFindFirst?: any[];
-  queryActivitySummariesFindFirst?: any[];
-  queryEventsFindFirst?: any[];
-  queryLikesFindFirst?: any[];
-  executeRows?: Array<{ id: string }>;
+  activityRows?: Array<ReturnType<typeof buildActivityRow>>;
+  activityEffortRows?: unknown[];
+  activityPlanRows?: unknown[];
+  likeRows?: Array<{
+    entity_id: string;
+    likes_count: number;
+    has_liked: boolean;
+  }>;
+  totalRows?: Array<{
+    total: number;
+  }>;
+  joinedRows?: unknown[];
+  activitySummaryRows?: unknown[];
+  activityImportRows?: unknown[];
+  activitySourceReferenceRows?: unknown[];
+  activityFileIngestionRows?: unknown[];
+  activityGeometryRows?: unknown[];
+  activityLapRows?: unknown[];
+  currentArtifactRows?: unknown[];
+  sessionRpeEvidenceRows?: unknown[];
+  profileRows?: unknown[];
+  integrationRows?: unknown[];
+  providerSyncRows?: unknown[];
+  queryActivitiesFindFirst?: unknown[];
+  queryActivityArtifactsFindFirst?: unknown[];
+  queryActivityFileIngestionsFindFirst?: unknown[];
+  queryActivityGeometryFindFirst?: unknown[];
+  queryActivityImportsFindFirst?: unknown[];
+  queryActivitySummariesFindFirst?: unknown[];
+  queryEventsFindFirst?: unknown[];
+  queryLikesFindFirst?: unknown[];
+  executeRows?: Array<{
+    id: string;
+  }>;
   insertedRowsByTable?: Record<string, unknown[]>;
-  updatedRows?: any[];
+  updatedRows?: unknown[];
   transactionError?: Error;
   onCommonLoadScanBatch?: (batchNumber: number) => void;
 }) {
   const insertValues = vi.fn();
-  const deleteBuilder = {
+  const deleteBuilder = Object.assign(Promise.resolve(undefined), {
     returning: vi.fn(() =>
       Promise.resolve([{ id: ACTIVITY_ID, finishedAt: new Date("2026-01-01T12:00:00.000Z") }]),
     ),
-    then: (onFulfilled: (value: undefined) => unknown) =>
-      Promise.resolve(undefined).then(onFulfilled),
-  };
+  });
   const deleteWhere = vi.fn(() => deleteBuilder);
   const offset = vi.fn();
   const selectWhere = vi.fn();
   const commonLoadLimit = vi.fn();
-  let transactionActivityRows: any[] | undefined;
+  let transactionActivityRows: Array<ReturnType<typeof buildActivityRow>> | undefined;
   let commonLoadScanIndex = 0;
   let commonLoadScanBatchNumber = 0;
   const limit = vi.fn((limitValue: number) => {
     const limitedRows = (options.activityRows ?? []).slice(0, limitValue);
-    return {
+    return Object.assign(Promise.resolve(limitedRows), {
       offset: (offsetValue: number) => {
         offset(offsetValue);
         return Promise.resolve(
           (options.activityRows ?? []).slice(offsetValue, offsetValue + limitValue),
         );
       },
-      then: (onFulfilled: (value: unknown[]) => unknown) =>
-        Promise.resolve(limitedRows).then(onFulfilled),
-    };
+    });
   });
   const orderBy = vi.fn((...args: unknown[]) => {
     if (transactionActivityRows !== undefined && args.length === 2) {
@@ -811,14 +778,10 @@ function createDbMock(options: {
         }),
       };
     }
-
-    return {
+    return Object.assign(Promise.resolve(options.activityRows ?? []), {
       limit,
-      then: (onFulfilled: (value: unknown[]) => unknown) =>
-        Promise.resolve(options.activityRows ?? []).then(onFulfilled),
-    };
+    });
   });
-
   function rowsForTable(tableName: string) {
     if (tableName === "profiles") {
       return options.profileRows ?? [{ planningTimezone: "America/New_York" }];
@@ -839,7 +802,6 @@ function createDbMock(options: {
     if (tableName === "events") return options.queryEventsFindFirst ?? [];
     return options.activityRows ?? [];
   }
-
   const db = {
     $client: {},
     select: vi.fn((fields?: Record<string, unknown>) => {
@@ -850,7 +812,6 @@ function createDbMock(options: {
           })),
         };
       }
-
       if (fields && "entity_id" in fields) {
         return {
           from: vi.fn(() => ({
@@ -860,7 +821,6 @@ function createDbMock(options: {
           })),
         };
       }
-
       if (fields && "payload" in fields) {
         return {
           from: vi.fn((table: unknown) => ({
@@ -870,7 +830,6 @@ function createDbMock(options: {
           })),
         };
       }
-
       if (fields && "resolutionStatus" in fields) {
         return {
           from: vi.fn(() => ({
@@ -880,7 +839,6 @@ function createDbMock(options: {
           })),
         };
       }
-
       if (fields && "activity" in fields) {
         const rows =
           options.joinedRows ?? (options.activityRows ?? []).map((activity) => ({ activity }));
@@ -918,7 +876,6 @@ function createDbMock(options: {
           })),
         };
       }
-
       return {
         from: vi.fn((table: unknown) => {
           const builder = {
@@ -928,7 +885,7 @@ function createDbMock(options: {
               selectWhere(condition);
               const rows = rowsForTable(getTableName(table));
               const resolveRows = () => Promise.resolve(rows);
-              return {
+              return Object.assign(resolveRows(), {
                 limit: vi.fn(resolveRows),
                 orderBy:
                   getTableName(table) === "activities"
@@ -938,12 +895,9 @@ function createDbMock(options: {
                       : getTableName(table) === "activity_session_rpe_evidence"
                         ? vi.fn(() => Promise.resolve(rows))
                         : vi.fn(() => ({ limit: vi.fn(resolveRows) })),
-                then: (onFulfilled: (value: unknown[]) => unknown) =>
-                  Promise.resolve(rows).then(onFulfilled),
-              };
+              });
             }),
           };
-
           return builder;
         }),
       };
@@ -953,7 +907,6 @@ function createDbMock(options: {
       values: vi.fn((values: unknown) => {
         const tableName = getTableName(table);
         insertValues(tableName, values);
-
         const insertBuilder = {
           onConflictDoUpdate: vi.fn(() => insertBuilder),
           onConflictDoNothing: vi.fn(() => insertBuilder),
@@ -1045,10 +998,8 @@ function createDbMock(options: {
       insertValues,
     },
   };
-
   return db;
 }
-
 beforeEach(() => {
   vi.clearAllMocks();
   activityCategories.clear();
@@ -1079,8 +1030,12 @@ beforeEach(() => {
     },
   });
   artifactFinalizer.finalizeActivityArtifactIngestion.mockImplementation(
-    async (_db: unknown, input: { submit: (value: unknown) => Promise<unknown> }) =>
-      input.submit({ parsedData: null, artifact: ACCEPTED_ARTIFACT }),
+    async (
+      _db: unknown,
+      input: {
+        submit: (value: unknown) => Promise<unknown>;
+      },
+    ) => input.submit({ parsedData: { records: [] }, artifact: ACCEPTED_ARTIFACT }),
   );
   mockActivityAnalysis.analyzeActivityDerivedMetrics.mockReturnValue({
     stress: {
@@ -1091,41 +1046,30 @@ beforeEach(() => {
     computed_as_of: "2026-01-01T00:00:00.000Z",
   });
 });
-
 describe("activitiesRouter", () => {
   it("rejects an effort-profile cache identity that does not match the session", async () => {
     const caller = createCaller({});
-
     await expect(
       caller.getEffortProfile({ id: ACTIVITY_ID, viewerId: OTHER_ID }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
-
   it("lists paginated owned activities with like and derived summaries", async () => {
     const rows = [buildActivityRow()];
     const firstRow = rows[0];
     if (!firstRow) throw new Error("Expected an activity row fixture");
     const derived = parentDerivedSummary(ACTIVITY_ID, availableCommonLoad(72));
-    const publicDerived = {
-      common_load: derived.common_load,
-      computed_as_of: derived.computed_as_of,
-      observationQuantification: derived.observationQuantification,
-    };
     const db = createDbMock({
       activityRows: rows,
       likeRows: [{ entity_id: ACTIVITY_ID, likes_count: 3, has_liked: true }],
     });
-
     mockActivityAnalysis.buildActivityDerivedSummaryMap.mockResolvedValue(
       new Map([[ACTIVITY_ID, derived]]),
     );
-
     const caller = createCaller(db);
     const result = await caller.listPaginated({
       date_from: "2026-01-01T00:00:00.000Z",
       date_to: "2026-01-31T23:59:59.999Z",
     });
-
     expect(result.items[0]).toMatchObject({
       contractVersion: "activity-display-v1",
       id: ACTIVITY_ID,
@@ -1150,32 +1094,31 @@ describe("activitiesRouter", () => {
     );
     expect(toSql(db.__spies.selectWhere.mock.calls[0]?.[0])).not.toContain("select count(*)");
   });
-
   it("filters by multisport composition and returns activity_category-safe discovery DTOs", async () => {
     const activity = buildActivityRow();
     const segments = [
       buildSegmentReadRow(ACTIVITY_ID, 0, "bike", {
         summary: {
           version: 1,
-          timing: { timingCoverage: "complete", activeMs: 1_000, movingMs: 900 },
-          distanceMeters: 1_000,
+          timing: { timingCoverage: "complete", activeMs: 1000, movingMs: 900 },
+          distanceMeters: 1000,
         },
       }),
       buildSegmentReadRow(ACTIVITY_ID, 1, "run", {
-        active_ms: 2_000,
-        moving_ms: 1_800,
+        active_ms: 2000,
+        moving_ms: 1800,
         summary: {
           version: 1,
-          timing: { timingCoverage: "complete", activeMs: 2_000, movingMs: 1_800 },
+          timing: { timingCoverage: "complete", activeMs: 2000, movingMs: 1800 },
           distanceMeters: 500,
         },
       }),
       buildSegmentReadRow(ACTIVITY_ID, 2, "run", {
-        active_ms: 3_000,
-        moving_ms: 2_700,
+        active_ms: 3000,
+        moving_ms: 2700,
         summary: {
           version: 1,
-          timing: { timingCoverage: "complete", activeMs: 3_000, movingMs: 2_700 },
+          timing: { timingCoverage: "complete", activeMs: 3000, movingMs: 2700 },
           distanceMeters: 700,
         },
       }),
@@ -1196,12 +1139,10 @@ describe("activitiesRouter", () => {
       ),
     );
     const db = createDbMock({ activityRows: [activity], totalRows: [{ total: 1 }] });
-
     const result = await createCaller(db).listPaginated({
       activity_category: "run",
       composition_mode: "multisport_only",
     });
-
     expect(result.items[0]).toMatchObject({
       contractVersion: "activity-display-v1",
       activityComposition: { kind: "multisport", categories: ["bike", "run", "run"] },
@@ -1213,7 +1154,6 @@ describe("activitiesRouter", () => {
     expect(whereSql).toContain("select count(*)");
     expect(whereSql).toContain("> 1");
   });
-
   it.each([
     { sort_by: "distance" as const, expected: [ACTIVITY_ID_2, ACTIVITY_ID, ACTIVITY_ID_3] },
     { sort_by: "duration" as const, expected: [ACTIVITY_ID_2, ACTIVITY_ID, ACTIVITY_ID_3] },
@@ -1232,11 +1172,11 @@ describe("activitiesRouter", () => {
         ACTIVITY_ID,
         [
           buildSegmentReadRow(ACTIVITY_ID, 0, "run", {
-            active_ms: 1_000,
+            active_ms: 1000,
             moving_ms: 900,
             summary: {
               version: 1,
-              timing: { timingCoverage: "complete", activeMs: 1_000, movingMs: 900 },
+              timing: { timingCoverage: "complete", activeMs: 1000, movingMs: 900 },
               distanceMeters: 100,
             },
           }),
@@ -1246,11 +1186,11 @@ describe("activitiesRouter", () => {
         ACTIVITY_ID_2,
         [
           buildSegmentReadRow(ACTIVITY_ID_2, 0, "run", {
-            active_ms: 2_000,
-            moving_ms: 1_800,
+            active_ms: 2000,
+            moving_ms: 1800,
             summary: {
               version: 1,
-              timing: { timingCoverage: "complete", activeMs: 2_000, movingMs: 1_800 },
+              timing: { timingCoverage: "complete", activeMs: 2000, movingMs: 1800 },
               distanceMeters: 200,
             },
           }),
@@ -1277,7 +1217,7 @@ describe("activitiesRouter", () => {
     mockActivityAnalysis.buildActivitySegmentDerivedSummaries.mockResolvedValue([
       segmentDerivedSummary({
         activityId: ACTIVITY_ID,
-        segmentId: segmentByActivityId.get(ACTIVITY_ID)![0]!.id,
+        segmentId: segmentByActivityId.get(ACTIVITY_ID)?.[0]?.id ?? "missing-segment",
         commonLoad: availableCommonLoad(30),
         distanceMeters: 100,
         activeSeconds: 1,
@@ -1285,7 +1225,7 @@ describe("activitiesRouter", () => {
       }),
       segmentDerivedSummary({
         activityId: ACTIVITY_ID_2,
-        segmentId: segmentByActivityId.get(ACTIVITY_ID_2)![0]!.id,
+        segmentId: segmentByActivityId.get(ACTIVITY_ID_2)?.[0]?.id ?? "missing-segment",
         commonLoad: availableCommonLoad(10),
         distanceMeters: 200,
         activeSeconds: 2,
@@ -1293,14 +1233,12 @@ describe("activitiesRouter", () => {
       }),
     ]);
     const db = createDbMock({ activityRows: rows, totalRows: [{ total: rows.length }] });
-
     const result = await createCaller(db).listPaginated({
       activity_category: "run",
       sort_by,
       sort_order: "desc",
       limit: 3,
     });
-
     expect(result.items.map((item) => item.id)).toEqual(expected);
     expect(result.items.at(-1)).not.toHaveProperty("matched_category_summary");
     expect(db.transaction).toHaveBeenCalledWith(expect.any(Function), {
@@ -1308,14 +1246,13 @@ describe("activitiesRouter", () => {
       accessMode: "read only",
     });
   });
-
   it("uses canonical parent values in paginated list responses", async () => {
     const rows = [
       buildActivityRow({
         distance_meters: 1,
-        elapsed_ms: 2_000,
-        active_ms: 2_000,
-        moving_ms: 1_900,
+        elapsed_ms: 2000,
+        active_ms: 2000,
+        moving_ms: 1900,
         polyline: "legacy-polyline",
         map_bounds: { legacy: true },
       }),
@@ -1341,13 +1278,11 @@ describe("activitiesRouter", () => {
         }),
       ],
     });
-
     const caller = createCaller(db);
     const result = await caller.listPaginated({
       date_from: "2026-01-01T00:00:00.000Z",
       date_to: "2026-01-31T23:59:59.999Z",
     });
-
     expect(result.items[0]).toMatchObject({
       capabilities: { hasRoute: true },
       metrics: expect.arrayContaining([
@@ -1358,7 +1293,6 @@ describe("activitiesRouter", () => {
       ]),
     });
   });
-
   it("sorts paginated distance and duration queries by canonical parent values", async () => {
     const db = createDbMock({
       activityRows: [buildActivityRow()],
@@ -1366,7 +1300,6 @@ describe("activitiesRouter", () => {
       activitySummaryRows: [buildActivitySummaryRow({ distance_meters: 5000 })],
     });
     const caller = createCaller(db);
-
     await caller.listPaginated({
       sort_by: "distance",
       sort_order: "asc",
@@ -1375,14 +1308,12 @@ describe("activitiesRouter", () => {
       sort_by: "duration",
       sort_order: "desc",
     });
-
     const orderSql = db.__spies.orderBy.mock.calls.flat().map(toSql).join("\n");
     expect(orderSql).toContain('"activities"."distance_meters"');
     expect(orderSql).toContain(
       'coalesce("activities"."active_ms", "activities"."elapsed_ms") desc',
     );
   });
-
   it("sorts paginated results by derived common_load before slicing", async () => {
     const rows = [
       buildActivityRow({
@@ -1409,7 +1340,6 @@ describe("activitiesRouter", () => {
       activityRows: rows,
       totalRows: [{ total: 3 }],
     });
-
     mockActivityAnalysis.buildActivityDerivedSummaryMap.mockResolvedValue(
       new Map([
         [ACTIVITY_ID, parentDerivedSummary(ACTIVITY_ID, availableCommonLoad(20))],
@@ -1417,7 +1347,6 @@ describe("activitiesRouter", () => {
         [ACTIVITY_ID_3, parentDerivedSummary(ACTIVITY_ID_3, availableCommonLoad(60))],
       ]),
     );
-
     const caller = createCaller(db);
     const result = await caller.listPaginated({
       limit: 2,
@@ -1425,20 +1354,18 @@ describe("activitiesRouter", () => {
       sort_by: "common_load",
       sort_order: "desc",
     });
-
     expect(result.total).toBe(3);
     expect(result.hasMore).toBe(false);
     expect(result.nextCursor).toBeUndefined();
-    expect(result.items.map((item: any) => item.id)).toEqual([ACTIVITY_ID_3, ACTIVITY_ID]);
+    expect(result.items.map((item) => item.id)).toEqual([ACTIVITY_ID_3, ACTIVITY_ID]);
     expect(db.__spies.commonLoadLimit).toHaveBeenCalledWith(3);
     expect(db.transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: "repeatable read",
       accessMode: "read only",
     });
   });
-
   it("deep-pages globally sorted common_load with keyset scan plans, bounded query counts, and stable ties", async () => {
-    const rows = Array.from({ length: 5_000 }, (_, index) =>
+    const rows = Array.from({ length: 5000 }, (_, index) =>
       buildActivityRow({
         id: `00000000-0000-4000-8000-${index.toString().padStart(12, "0")}`,
         name: `Activity ${index}`,
@@ -1482,8 +1409,13 @@ describe("activitiesRouter", () => {
       ]),
     );
     mockActivityAnalysis.buildActivityDerivedSummaryMap.mockImplementation(
-      async ({ activities: batch }: { activities: Array<{ id: string }> }) =>
-        new Map(batch.map((activity) => [activity.id, derivedSummaryById.get(activity.id)])),
+      async ({
+        activities: batch,
+      }: {
+        activities: Array<{
+          id: string;
+        }>;
+      }) => new Map(batch.map((activity) => [activity.id, derivedSummaryById.get(activity.id)])),
     );
     const expected = (sortOrder: "asc" | "desc") =>
       rows
@@ -1507,11 +1439,10 @@ describe("activitiesRouter", () => {
         })
         .map(({ activity }) => activity.id);
     const benchmarkSamples: number[] = [];
-
     for (const testCase of [
-      { offset: 4_900, limit: 20, sortOrder: "asc" as const },
-      { offset: 4_950, limit: 10, sortOrder: "desc" as const },
-      { offset: 4_975, limit: 15, sortOrder: "desc" as const },
+      { offset: 4900, limit: 20, sortOrder: "asc" as const },
+      { offset: 4950, limit: 10, sortOrder: "desc" as const },
+      { offset: 4975, limit: 15, sortOrder: "desc" as const },
     ]) {
       const db = createDbMock({ activityRows: rows, totalRows: [{ total: rows.length }] });
       // CPU time keeps this regression budget stable when the workspace test runner
@@ -1524,15 +1455,14 @@ describe("activitiesRouter", () => {
         sort_order: testCase.sortOrder,
       });
       const elapsedCpu = process.threadCpuUsage(benchmarkStart);
-      benchmarkSamples.push((elapsedCpu.user + elapsedCpu.system) / 1_000);
-
+      benchmarkSamples.push((elapsedCpu.user + elapsedCpu.system) / 1000);
       expect(result.items.map((item) => item.id)).toEqual(
         expected(testCase.sortOrder).slice(testCase.offset, testCase.offset + testCase.limit),
       );
-      expect(result.total).toBe(5_000);
-      expect(result.hasMore).toBe(testCase.offset + testCase.limit < 5_000);
+      expect(result.total).toBe(5000);
+      expect(result.hasMore).toBe(testCase.offset + testCase.limit < 5000);
       expect(result.nextCursor).toBe(
-        testCase.offset + testCase.limit < 5_000
+        testCase.offset + testCase.limit < 5000
           ? `index:${testCase.offset + testCase.limit}`
           : undefined,
       );
@@ -1551,15 +1481,13 @@ describe("activitiesRouter", () => {
       expect(keysetWhereSql).toContain('"activities"."started_at" <');
       expect(keysetWhereSql).toContain('"activities"."id" <');
     }
-
     benchmarkSamples.sort((a, b) => a - b);
     const p95 = benchmarkSamples[Math.ceil(benchmarkSamples.length * 0.95) - 1] ?? 0;
     expect(mockActivityAnalysis.buildActivityDerivedSummaryMap).toHaveBeenCalledTimes(3);
     expect(p95, `5,000-row deep common_load pagination CPU p95=${p95.toFixed(2)}ms`).toBeLessThan(
       750,
     );
-  }, 15_000);
-
+  }, 15000);
   it("keeps an internal common_load scan on one snapshot when an activity is inserted concurrently", async () => {
     const rows = Array.from({ length: 401 }, (_, index) =>
       buildActivityRow({
@@ -1570,8 +1498,8 @@ describe("activitiesRouter", () => {
     );
     const concurrentlyInserted = buildActivityRow({
       id: "99999999-9999-4999-8999-999999999999",
-      started_at: new Date(Date.UTC(2026, 0, 1) + 150_500),
-      finished_at: new Date(Date.UTC(2026, 0, 1) + 151_000),
+      started_at: new Date(Date.UTC(2026, 0, 1) + 150500),
+      finished_at: new Date(Date.UTC(2026, 0, 1) + 151000),
     });
     const db = createDbMock({
       activityRows: rows,
@@ -1581,7 +1509,13 @@ describe("activitiesRouter", () => {
       },
     });
     mockActivityAnalysis.buildActivityDerivedSummaryMap.mockImplementation(
-      async ({ activities: candidates }: { activities: Array<{ id: string }> }) =>
+      async ({
+        activities: candidates,
+      }: {
+        activities: Array<{
+          id: string;
+        }>;
+      }) =>
         new Map(
           candidates.map((activity, index) => [
             activity.id,
@@ -1593,16 +1527,16 @@ describe("activitiesRouter", () => {
           ]),
         ),
     );
-
     const result = await createCaller(db).listPaginated({
       limit: 50,
       cursor: "index:350",
       sort_by: "common_load",
       sort_order: "asc",
     });
-
     const derivedCandidates = mockActivityAnalysis.buildActivityDerivedSummaryMap.mock.calls[0]?.[0]
-      .activities as Array<{ id: string }>;
+      .activities as Array<{
+      id: string;
+    }>;
     expect(derivedCandidates).toHaveLength(401);
     expect(new Set(derivedCandidates.map(({ id }) => id)).size).toBe(401);
     expect(derivedCandidates.map(({ id }) => id)).not.toContain(concurrentlyInserted.id);
@@ -1613,10 +1547,8 @@ describe("activitiesRouter", () => {
       accessMode: "read only",
     });
   });
-
   it("rejects unbounded exact common_load sorts above the documented history ceiling", async () => {
-    const db = createDbMock({ totalRows: [{ total: 10_001 }] });
-
+    const db = createDbMock({ totalRows: [{ total: 10001 }] });
     await expect(
       createCaller(db).listPaginated({ sort_by: "common_load", sort_order: "desc" }),
     ).rejects.toMatchObject({
@@ -1627,7 +1559,6 @@ describe("activitiesRouter", () => {
     expect(db.__spies.orderBy).not.toHaveBeenCalled();
     expect(mockActivityAnalysis.buildActivityDerivedSummaryMap).not.toHaveBeenCalled();
   });
-
   it("rejects a sessionless accepted-artifact recording submission", async () => {
     const createdActivity = buildActivityRow({
       id: ACTIVITY_ID,
@@ -1656,7 +1587,6 @@ describe("activitiesRouter", () => {
         }),
       ],
     });
-
     const caller = createCaller(db);
     await expect(
       caller.createFromRecordingSummary({
@@ -1673,11 +1603,7 @@ describe("activitiesRouter", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(db.transaction).not.toHaveBeenCalled();
   });
-
-  it("persists an ordered multisport execution manifest without parent activity_category transport", async () => {
-    const bikeSegmentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
-    const transitionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
-    const runSegmentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3";
+  it("preserves genuine multisport role/category changes without parent activity_category transport", async () => {
     const createdActivity = buildActivityRow({ id: ACTIVITY_ID, activity_category: "bike" });
     const ingestion = buildActivityFileIngestionRow({ status: "ready" });
     const db = createDbMock({
@@ -1689,24 +1615,31 @@ describe("activitiesRouter", () => {
       queryActivityFileIngestionsFindFirst: [undefined, ingestion],
       activityFileIngestionRows: [{ id: INGESTION_ID }],
     });
-
+    const [bikeOccurrence] = recordingExecutionManifest("bike").occurrences;
+    const [transitionOccurrence] = recordingExecutionManifest().occurrences;
+    const [runOccurrence] = recordingExecutionManifest("run").occurrences;
+    if (!bikeOccurrence || !transitionOccurrence || !runOccurrence) {
+      throw new Error("Expected recording execution fixture occurrences");
+    }
     await createCaller(db).createFromRecordingSummary({
       ...recordingCreateInput(),
       executionManifest: {
         ...recordingExecutionManifest(),
         occurrences: [
           {
-            ...recordingExecutionManifest("bike").occurrences[0]!,
-            segmentId: bikeSegmentId,
+            ...bikeOccurrence,
+            stepId: null,
+            repeatIteration: 0,
             completedAt: "2026-01-15T09:25:00.000Z",
             activeSeconds: 1500,
             movingSeconds: 1450,
           },
           {
-            ...recordingExecutionManifest().occurrences[0]!,
+            ...transitionOccurrence,
             occurrenceId: "occurrence-transition",
             globalOrdinal: 1,
-            segmentId: transitionId,
+            stepId: null,
+            repeatIteration: 0,
             role: "transition",
             activity_category: null,
             startedAt: "2026-01-15T09:25:00.000Z",
@@ -1716,10 +1649,11 @@ describe("activitiesRouter", () => {
             distanceMeters: 0,
           },
           {
-            ...recordingExecutionManifest("run").occurrences[0]!,
+            ...runOccurrence,
             occurrenceId: "occurrence-run",
             globalOrdinal: 2,
-            segmentId: runSegmentId,
+            stepId: null,
+            repeatIteration: 0,
             startedAt: "2026-01-15T09:30:00.000Z",
             completedAt: "2026-01-15T10:00:00.000Z",
             activeSeconds: 1800,
@@ -1728,29 +1662,24 @@ describe("activitiesRouter", () => {
         ],
       },
     });
-
     expect(findInsertedValue(db, "activity_segments")).toEqual([
       expect.objectContaining({
-        id: bikeSegmentId,
         ordinal: 0,
         role: "activity",
         activity_category: "bike",
       }),
       expect.objectContaining({
-        id: transitionId,
         ordinal: 1,
         role: "transition",
         activity_category: null,
       }),
       expect.objectContaining({
-        id: runSegmentId,
         ordinal: 2,
         role: "activity",
         activity_category: "run",
       }),
     ]);
   });
-
   it("rejects a legacy segment-category recording plan before persistence", async () => {
     const createdActivity = buildActivityRow({
       id: ACTIVITY_ID,
@@ -1781,7 +1710,6 @@ describe("activitiesRouter", () => {
       queryActivitiesFindFirst: [undefined, createdActivity],
       queryActivityFileIngestionsFindFirst: [undefined, ingestion],
     });
-
     await expect(
       createCaller(db).createFromRecordingSummary({
         ...recordingCreateInput(),
@@ -1792,10 +1720,8 @@ describe("activitiesRouter", () => {
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(findInsertedValue(db, "activities")).toBeUndefined();
   });
-
   it("rejects recording summary creation for another profile", async () => {
     const caller = createCaller(createDbMock({}));
-
     await expect(
       caller.createFromRecordingSummary({
         ...recordingCreateInput(OTHER_ID),
@@ -1803,7 +1729,6 @@ describe("activitiesRouter", () => {
       }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
-
   it("returns the existing activity for a repeated recording session", async () => {
     const createdActivity = buildActivityRow({ id: ACTIVITY_ID, profile_id: OWNER_ID });
     const ingestion = buildActivityFileIngestionRow({
@@ -1816,19 +1741,16 @@ describe("activitiesRouter", () => {
       queryActivityFileIngestionsFindFirst: [ingestion],
     });
     const caller = createCaller(db);
-
     const result = await caller.createFromRecordingSummary({
       ...recordingCreateInput(),
       recordingSessionId: ACTIVITY_ID,
     });
-
     expect(result).toMatchObject({
       id: ACTIVITY_ID,
       ingestion: { id: ingestion.id, source: ingestion.source, status: "succeeded" },
     });
     expect(db.transaction).not.toHaveBeenCalled();
   });
-
   it("returns the committed activity when concurrent creation loses the insert race", async () => {
     const createdActivity = buildActivityRow({ id: ACTIVITY_ID, profile_id: OWNER_ID });
     const ingestion = buildActivityFileIngestionRow({
@@ -1842,19 +1764,16 @@ describe("activitiesRouter", () => {
       transactionError: new Error("duplicate key"),
     });
     const caller = createCaller(db);
-
     const result = await caller.createFromRecordingSummary({
       ...recordingCreateInput(),
       recordingSessionId: "profile-activity-session",
     });
-
     expect(result).toMatchObject({
       id: ACTIVITY_ID,
       ingestion: { id: ingestion.id },
     });
     expect(db.transaction).toHaveBeenCalledTimes(1);
   });
-
   it("rejects the removed accepted-artifact recording transport", async () => {
     await expect(
       createCaller(createDbMock({})).createFromRecordingSummary({
@@ -1864,10 +1783,8 @@ describe("activitiesRouter", () => {
       } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
-
   it("rejects recording manifests outside the parent time range", async () => {
     const caller = createCaller(createDbMock({}));
-
     await expect(
       caller.createFromRecordingSummary({
         ...recordingCreateInput(),
@@ -1875,7 +1792,6 @@ describe("activitiesRouter", () => {
         executionManifest: { ...recordingExecutionManifest(), occurrences: [] },
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-
     await expect(
       caller.createFromRecordingSummary({
         ...recordingCreateInput(),
@@ -1885,7 +1801,6 @@ describe("activitiesRouter", () => {
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
-
   it("redacts derived load for an accessible activity owned by another athlete", async () => {
     const finishedAt = new Date("2026-01-09T08:45:00.000Z");
     const activity = buildActivityRow({
@@ -1926,13 +1841,11 @@ describe("activitiesRouter", () => {
         },
       ],
     });
-
     mockActivityAnalysis.resolveActivityContextAsOf.mockResolvedValue({
       baseline: "context",
     });
     const caller = createCaller(db, OWNER_ID);
     const result = await caller.getById({ id: ACTIVITY_ID });
-
     expect(result.detail.summary).toMatchObject({
       contractVersion: "activity-display-v1",
       id: ACTIVITY_ID,
@@ -1993,7 +1906,6 @@ describe("activitiesRouter", () => {
     expect(mockActivityAnalysis.resolveActivityContextAsOf).not.toHaveBeenCalled();
     expect(mockActivityAnalysis.analyzeActivityDerivedMetrics).not.toHaveBeenCalled();
   });
-
   it("returns immutable derived efforts through the authorized activity view", async () => {
     const activity = buildActivityRow({ profile_id: OWNER_ID });
     const effort = {
@@ -2011,7 +1923,7 @@ describe("activitiesRouter", () => {
       source_artifact_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
       source_revision: 1,
       start_offset_ms: 0,
-      end_offset_ms: 1_200_000,
+      end_offset_ms: 1200000,
       window_coverage: 1,
       max_gap_seconds: 2,
       unit: "meters_per_second",
@@ -2027,11 +1939,9 @@ describe("activitiesRouter", () => {
       joinedRows: [{ activity, activityPlan: null }],
       activityEffortRows: [effort],
     });
-
     await expect(createCaller(db).getEfforts({ id: ACTIVITY_ID })).resolves.toEqual([effort]);
     expect(db.__spies.selectWhere).toHaveBeenCalled();
   });
-
   it("keeps owner analysis metadata outside the strict stress DTO", async () => {
     const activity = buildActivityRow({ profile_id: OWNER_ID });
     const derived = parentDerivedSummary(ACTIVITY_ID, availableCommonLoad(72));
@@ -2042,9 +1952,7 @@ describe("activitiesRouter", () => {
     mockActivityAnalysis.buildActivityDerivedSummaryMap.mockResolvedValue(
       new Map([[ACTIVITY_ID, derived]]),
     );
-
     const result = await createCaller(db).getById({ id: ACTIVITY_ID });
-
     expect(result.analysis.derived).toMatchObject({
       computed_as_of: derived.computed_as_of,
       observationQuantification: derived.observationQuantification,
@@ -2053,14 +1961,13 @@ describe("activitiesRouter", () => {
     expect(result.analysis.derived.stress).not.toHaveProperty("computed_as_of");
     expect(result.analysis.derived.stress).not.toHaveProperty("observationQuantification");
   });
-
   it("does not expose internal athlete-state columns in activity detail", async () => {
     const activity = buildActivityRow({
       profile_id: OWNER_ID,
       athlete_state_common_load: 72,
       athlete_state_activity_category: "run",
       athlete_state_evidence_confidence: 0.9,
-      athlete_state_capability_distance_meters: 10_000,
+      athlete_state_capability_distance_meters: 10000,
       athlete_state_capability_duration_minutes: 45,
       athlete_state_input_version: 1,
       athlete_state_computed_at: new Date("2026-01-10T09:00:00.000Z"),
@@ -2070,9 +1977,7 @@ describe("activitiesRouter", () => {
       queryActivitiesFindFirst: [{ profile_id: OWNER_ID, content_visibility: "private" }],
       joinedRows: [{ activity, activityPlan: null }],
     });
-
     const result = await createCaller(db).getById({ id: ACTIVITY_ID });
-
     expect(result.detail).not.toHaveProperty("canonical_evidence_tier");
     expect(result.detail).not.toHaveProperty("athlete_state_common_load");
     expect(result.detail).not.toHaveProperty("athlete_state_activity_category");
@@ -2082,7 +1987,6 @@ describe("activitiesRouter", () => {
     expect(result.detail).not.toHaveProperty("athlete_state_input_version");
     expect(result.detail).not.toHaveProperty("athlete_state_computed_at");
   });
-
   it("returns ordered completed multisport source identity to the owner without raw payloads", async () => {
     const activity = buildActivityRow({ profile_id: OWNER_ID });
     const sourceArtifactId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -2134,9 +2038,7 @@ describe("activitiesRouter", () => {
       queryActivitiesFindFirst: [{ profile_id: OWNER_ID, content_visibility: "private" }],
       joinedRows: [{ activity, activityPlan: null }],
     });
-
     const result = await createCaller(db).getById({ id: ACTIVITY_ID });
-
     expect(result.detail.segments.map((segment) => segment.ordinal)).toEqual([0, 1, 2]);
     expect(result.detail.segments).not.toContainEqual(
       expect.objectContaining({ raw_payload: expect.anything() }),
@@ -2148,7 +2050,6 @@ describe("activitiesRouter", () => {
       expect.objectContaining({ raw_sub_sport_string: expect.anything() }),
     );
   });
-
   it("does not expose internal analysis metadata in activity detail segments", async () => {
     const activity = buildActivityRow({ profile_id: OWNER_ID });
     const segment = buildSegmentReadRow(ACTIVITY_ID, 0, "run", {
@@ -2164,16 +2065,13 @@ describe("activitiesRouter", () => {
       queryActivitiesFindFirst: [{ profile_id: OWNER_ID, content_visibility: "private" }],
       joinedRows: [{ activity, activityPlan: null }],
     });
-
     const result = await createCaller(db).getById({ id: ACTIVITY_ID });
-
     expect(result.detail.segments).toHaveLength(1);
     expect(result.detail.segments[0]).not.toHaveProperty("summary_version");
     expect(result.detail.segments[0]).not.toHaveProperty("segment_revision");
     expect(result.detail.segments[0]).not.toHaveProperty("parser_version");
     expect(result.detail.segments[0]).not.toHaveProperty("materializer_version");
   });
-
   it("returns the unique effective session RPE evidence only to the activity owner", async () => {
     const activity = buildActivityRow({ profile_id: OWNER_ID });
     const firstEvidenceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -2203,9 +2101,7 @@ describe("activitiesRouter", () => {
         },
       ],
     });
-
     const result = await createCaller(db).getById({ id: ACTIVITY_ID });
-
     expect(result.detail.effectiveSessionRpe).toEqual({
       id: effectiveEvidenceId,
       rpe: 7,
@@ -2216,7 +2112,6 @@ describe("activitiesRouter", () => {
       correctedAt: new Date("2026-01-10T08:48:00.000Z").toISOString(),
     });
   });
-
   it("uses canonical parent detail values and preserves lap order", async () => {
     const normalizedPowerResult = calculateCyclingNormalizedPower({
       samples: [
@@ -2235,9 +2130,9 @@ describe("activitiesRouter", () => {
       id: ACTIVITY_ID,
       profile_id: OWNER_ID,
       distance_meters: 1,
-      elapsed_ms: 2_000,
-      active_ms: 2_000,
-      moving_ms: 1_900,
+      elapsed_ms: 2000,
+      active_ms: 2000,
+      moving_ms: 1900,
       polyline: "legacy-polyline",
       map_bounds: { legacy: true },
       laps: [{ legacy: true }],
@@ -2245,7 +2140,7 @@ describe("activitiesRouter", () => {
     const canonicalSegment = buildSegmentReadRow(ACTIVITY_ID, 0, "run", {
       summary: {
         version: 1,
-        timing: { timingCoverage: "complete", activeMs: 1_000, movingMs: 900 },
+        timing: { timingCoverage: "complete", activeMs: 1000, movingMs: 900 },
         normalizedPowerResult,
       },
     });
@@ -2291,10 +2186,8 @@ describe("activitiesRouter", () => {
         },
       ],
     });
-
     const caller = createCaller(db);
     const result = await caller.getById({ id: ACTIVITY_ID });
-
     expect(result.detail).toMatchObject({
       performance: {
         distanceMeters: 1,
@@ -2328,7 +2221,6 @@ describe("activitiesRouter", () => {
       categories: ["run"],
     });
   });
-
   it("updates an owned activity", async () => {
     const updated = buildActivityRow({
       id: ACTIVITY_ID,
@@ -2339,24 +2231,21 @@ describe("activitiesRouter", () => {
     const db = createDbMock({
       updatedRows: [updated],
     });
-
     const caller = createCaller(db);
     const result = await caller.update({
       id: ACTIVITY_ID,
       name: "Renamed Run",
       notes: "Felt strong",
     });
-
     expect(result).toEqual(publicActivityRow(updated));
     expect(db.update).toHaveBeenCalledTimes(1);
   });
-
   it("does not expose internal athlete-state columns after updating an activity", async () => {
     const updated = buildActivityRow({
       athlete_state_common_load: 72,
       athlete_state_activity_category: "run",
       athlete_state_evidence_confidence: 0.9,
-      athlete_state_capability_distance_meters: 10_000,
+      athlete_state_capability_distance_meters: 10000,
       athlete_state_capability_duration_minutes: 45,
       athlete_state_input_version: 1,
       athlete_state_computed_at: new Date("2026-01-10T09:00:00.000Z"),
@@ -2367,7 +2256,6 @@ describe("activitiesRouter", () => {
       id: ACTIVITY_ID,
       content_visibility: "private",
     });
-
     expect(result).toMatchObject({ content_visibility: "private" });
     expect(result).not.toHaveProperty("canonical_evidence_tier");
     expect(result).not.toHaveProperty("athlete_state_common_load");
@@ -2378,17 +2266,14 @@ describe("activitiesRouter", () => {
     expect(result).not.toHaveProperty("athlete_state_input_version");
     expect(result).not.toHaveProperty("athlete_state_computed_at");
   });
-
   it("rejects the removed legacy privacy field without persisting it", async () => {
     const db = createDbMock({ updatedRows: [buildActivityRow()] });
     const legacyPrivacyField = ["is", "private"].join("_");
-
     await expect(
       createCaller(db).update({ id: ACTIVITY_ID, [legacyPrivacyField]: true } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(db.update).not.toHaveBeenCalled();
   });
-
   it("deletes an owned activity", async () => {
     const db = createDbMock({
       queryActivitiesFindFirst: [
@@ -2398,10 +2283,8 @@ describe("activitiesRouter", () => {
         },
       ],
     });
-
     const caller = createCaller(db);
     const result = await caller.delete({ id: ACTIVITY_ID });
-
     expect(result).toEqual({ success: true, deletedActivityId: ACTIVITY_ID });
     expect(db.delete.mock.calls.map(([table]) => getTableName(table))).toEqual([
       "comments",
@@ -2410,10 +2293,8 @@ describe("activitiesRouter", () => {
     ]);
     expect(db.__spies.deleteWhere).toHaveBeenCalledTimes(3);
   });
-
   it("rejects non-ISO paginated list date filters at the router boundary", async () => {
     const caller = createCaller(createDbMock({}));
-
     await expect(
       caller.listPaginated({
         date_from: "not-a-date",
@@ -2421,7 +2302,6 @@ describe("activitiesRouter", () => {
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
-
   it("rejects malformed activity rows before returning paginated list results", async () => {
     const db = createDbMock({
       activityRows: [
@@ -2432,7 +2312,6 @@ describe("activitiesRouter", () => {
       ],
     });
     const caller = createCaller(db);
-
     await expect(
       caller.listPaginated({
         date_from: "2026-01-01T00:00:00.000Z",

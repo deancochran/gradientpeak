@@ -331,7 +331,7 @@ export class WahooClient {
 
   constructor(config: WahooClientConfig) {
     this.accessToken = config.accessToken;
-    this.refreshToken = config.refreshToken;
+    if (config.refreshToken !== undefined) this.refreshToken = config.refreshToken;
     this.requestTimeoutMs = boundedRequestTimeoutMs(config.requestTimeoutMs);
   }
 

@@ -1,6 +1,7 @@
 appId: com.deancochran.gradientpeak.dev
-name: App launch smoke
+name: App launch smoke against an already installed development build
 ---
+# Setup boundary: this optional smoke clears only local app state and uses no fixture.
 - launchApp:
     clearState: true
 - assertVisible:

@@ -133,6 +133,17 @@ jest.mock("react-native-gesture-handler", () => ({
   ScrollView: mockCreateHost("GestureHandlerScrollView"),
 }));
 
+jest.mock("react-native-draggable-flatlist", () => {
+  const { MockDraggableFlatList } =
+    jest.requireActual<typeof import("./draggable-flat-list")>("./draggable-flat-list");
+  return {
+    __esModule: true,
+    default: MockDraggableFlatList,
+    NestableDraggableFlatList: MockDraggableFlatList,
+    NestableScrollContainer: mockCreateHost("NestableScrollContainer"),
+  };
+});
+
 jest.mock("react-native-maps", () => ({
   __esModule: true,
   default: mockCreateHost("MapView"),

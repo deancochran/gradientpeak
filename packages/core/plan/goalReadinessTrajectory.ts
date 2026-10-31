@@ -78,7 +78,10 @@ export function buildGoalReadinessTrajectory({
     return [];
   }
 
-  const firstPoint = visiblePoints[0]!;
+  const firstPoint = visiblePoints.at(0);
+  if (!firstPoint) {
+    return [];
+  }
   const firstReadiness =
     typeof currentGoalReadiness === "number" && Number.isFinite(currentGoalReadiness)
       ? currentGoalReadiness

@@ -24,6 +24,8 @@ import {
   loadActivitySegmentsByActivityId,
 } from "../../lib/activity-analysis";
 import type { EventReadRepository } from "../../repositories";
+import { estimateActivityPlans } from "../activity-plans/estimate-activity-plans";
+import { materializeCurrentPlannedSessionProjection } from "../calendar/current-planned-session-projection";
 import {
   composeEffectivePlanDto,
   effectivePlanCompositionDtoSchema,
@@ -175,25 +177,20 @@ function parseQuantificationBundle<TSchema extends z.ZodType>(
     : { status: "unavailable", reason: "invalid_quantification" };
 }
 
-/** Converts the immutable manifest estimate into one validated scheduled-load aggregate. */
-function manifestCommonLoad(estimate: {
-  common_load: { status: "complete" | "partial" | "unavailable"; value: number | null };
-  duration: { value_seconds: number | null };
+/** Converts a current authored-plan estimate into one validated scheduled-load aggregate. */
+function currentPlanCommonLoad(input: {
+  commonLoad: number | null;
+  durationSeconds: number | null;
 }): CommonLoadAggregate {
-  const durationSeconds = estimate.duration.value_seconds;
-  if (
-    estimate.common_load.status === "complete" &&
-    estimate.common_load.value !== null &&
-    durationSeconds !== null &&
-    durationSeconds > 0
-  ) {
-    const intensity = Math.sqrt((estimate.common_load.value * 3600) / (durationSeconds * 100));
+  const durationSeconds = input.durationSeconds;
+  if (input.commonLoad !== null && durationSeconds !== null && durationSeconds > 0) {
+    const intensity = Math.sqrt((input.commonLoad * 3600) / (durationSeconds * 100));
     if (Number.isFinite(intensity) && intensity <= 1.5) {
       return commonLoadAggregateSchema.parse({
         status: "complete",
         model: COMMON_RELATIVE_LOAD_MODEL,
         version: COMMON_RELATIVE_LOAD_VERSION,
-        load: estimate.common_load.value,
+        load: input.commonLoad,
         intensity,
         contributingDurationSeconds: durationSeconds,
         knownDurationSeconds: durationSeconds,
@@ -270,6 +267,26 @@ export async function getEffectivePlanLoad(input: {
   const recommendationSessions = facts.recommendationPlannedSessions.filter(
     (session) => session.originalTargetDate >= startDate && session.originalTargetDate <= endDate,
   );
+  const currentPlans = [
+    ...facts.plannedSessions.map((session) => session.currentPlan),
+    ...recommendationSessions.map((session) => session.currentPlan),
+  ].filter((plan): plan is NonNullable<typeof plan> => plan !== null);
+  const estimatedPlans = await estimateActivityPlans(
+    currentPlans.map((plan) => ({
+      id: plan.id,
+      profile_id: input.profileId,
+      name: plan.name,
+      description: null,
+      structure: plan.structure,
+      gps_recording_enabled: false,
+      structure_hash: "current-planned-session",
+      updated_at: plan.updatedAt,
+    })),
+    input.db,
+    input.profileId,
+    { asOf, personalize: true },
+  );
+  const currentPlanById = new Map(estimatedPlans.map((plan) => [plan.id, plan]));
 
   const segments = await loadActivitySegmentsByActivityId(
     input.db,
@@ -318,6 +335,15 @@ export async function getEffectivePlanLoad(input: {
     ];
   });
   const scheduledItems = facts.plannedSessions.map((session) => {
+    const estimated = session.currentPlan ? currentPlanById.get(session.currentPlan.id) : null;
+    const currentPlan = materializeCurrentPlannedSessionProjection(
+      estimated && session.currentPlan
+        ? {
+            ...session.currentPlan,
+            prescriptionQuantification: estimated.prescriptionQuantification,
+          }
+        : session.currentPlan,
+    );
     return {
       scheduledItemId: session.id,
       scheduledDate: session.planningDate,
@@ -327,7 +353,9 @@ export async function getEffectivePlanLoad(input: {
           ? ("cancelled" as const)
           : ("active" as const),
       linkedCompletedActivityId: session.completedActivityId,
-      commonLoad: manifestCommonLoad(session.resolutionManifest.prescription_estimate),
+      commonLoad: currentPlan
+        ? currentPlanCommonLoad(currentPlan)
+        : currentPlanCommonLoad({ commonLoad: null, durationSeconds: null }),
       resolutionManifest: session.resolutionManifest,
     };
   });
@@ -403,11 +431,24 @@ export async function getEffectivePlanLoad(input: {
     sourceStatus: facts.recommendationSource.status,
     trainingPlanId: facts.recommendationSource.trainingPlanId,
     scheduleBatchId: null,
-    items: recommendationSessions.map((session) => ({
-      scheduledItemId: session.id,
-      recommendationDate: session.originalTargetDate,
-      commonLoad: manifestCommonLoad(session.resolutionManifest.prescription_estimate),
-    })),
+    items: recommendationSessions.map((session) => {
+      const estimated = session.currentPlan ? currentPlanById.get(session.currentPlan.id) : null;
+      const currentPlan = materializeCurrentPlannedSessionProjection(
+        estimated && session.currentPlan
+          ? {
+              ...session.currentPlan,
+              prescriptionQuantification: estimated.prescriptionQuantification,
+            }
+          : session.currentPlan,
+      );
+      return {
+        scheduledItemId: session.id,
+        recommendationDate: session.originalTargetDate,
+        commonLoad: currentPlan
+          ? currentPlanCommonLoad(currentPlan)
+          : currentPlanCommonLoad({ commonLoad: null, durationSeconds: null }),
+      };
+    }),
   });
   return effectivePlanLoadDtoSchema.parse({
     status: "available",

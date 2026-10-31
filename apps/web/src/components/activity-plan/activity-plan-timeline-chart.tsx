@@ -21,12 +21,12 @@ function occurrenceWeight(duration: TimelineOccurrence["duration"]): number {
 
 function occurrenceHeight(occurrence: TimelineOccurrence, chartHeight: number): number {
   const minimumHeight = Math.min(24, chartHeight);
-  if (occurrence.role === "rest" || occurrence.visualIntensity === null) return minimumHeight;
+  if (occurrence.visualIntensity === null) return minimumHeight;
   return minimumHeight + occurrence.visualIntensity * Math.max(0, chartHeight - minimumHeight);
 }
 
 function occurrenceColor(occurrence: TimelineOccurrence): string | undefined {
-  if (occurrence.role === "rest" || occurrence.visualIntensity === null) return undefined;
+  if (occurrence.visualIntensity === null) return undefined;
   return INTENSITY_ZONES[getIntensityZone(occurrence.visualIntensity * 100)].color;
 }
 
@@ -49,6 +49,7 @@ export function ActivityPlanTimelineChart({
   label = "Activity prescription timeline",
   presentation,
   onOccurrenceSelect,
+  occurrenceActionLabel = "Edit",
   selectedOccurrenceId,
   structure,
   testIDPrefix = "activity-plan-timeline",
@@ -58,6 +59,7 @@ export function ActivityPlanTimelineChart({
   label?: string;
   presentation?: ActivityPlanPresentationModel | null;
   onOccurrenceSelect?: (occurrence: TimelineOccurrence) => void;
+  occurrenceActionLabel?: string;
   selectedOccurrenceId?: string | null;
   structure?: unknown;
   testIDPrefix?: string;
@@ -66,8 +68,7 @@ export function ActivityPlanTimelineChart({
   if (!model || model.occurrences.length === 0) return null;
 
   const workCount = model.occurrences.filter((occurrence) => occurrence.role === "activity").length;
-  const recoveryCount = model.occurrences.length - workCount;
-  const summary = `${label} with ${workCount} work block${workCount === 1 ? "" : "s"} and ${recoveryCount} recovery block${recoveryCount === 1 ? "" : "s"}. Bar widths are normalized and capped from authored duration, distance, or repetitions; bar height and color reflect authored intensity.`;
+  const summary = `${label} with ${workCount} work step${workCount === 1 ? "" : "s"}. Bar widths are normalized and capped from authored duration, distance, or repetitions; bar height and color reflect authored intensity.`;
 
   return (
     <figure
@@ -79,10 +80,10 @@ export function ActivityPlanTimelineChart({
       {model.occurrences.map((occurrence, index) => {
         const interactive = Boolean(onOccurrenceSelect && occurrence.role === "activity");
         const sharedProps = {
-          className: `min-w-1 rounded-sm border border-border ${occurrence.role === "rest" || occurrence.visualIntensity === null ? "bg-muted-foreground/35" : ""}`,
+          className: `min-w-1 rounded-sm border border-border ${occurrence.visualIntensity === null ? "bg-muted-foreground/35" : ""} ${selectedOccurrenceId === occurrence.occurrenceId ? "ring-2 ring-inset ring-foreground" : ""}`,
           "data-duration": durationLabel(occurrence.duration),
           "data-intensity": occurrence.intensityLabel ?? "unavailable",
-          "data-kind": occurrence.role === "rest" ? "recovery" : "work",
+          "data-kind": "work",
           style: {
             backgroundColor: occurrenceColor(occurrence),
             flexBasis: 0,
@@ -97,7 +98,7 @@ export function ActivityPlanTimelineChart({
         };
         return interactive ? (
           <button
-            aria-label={`Edit ${occurrence.intensityLabel ?? "work"}, ${durationLabel(occurrence.duration)}`}
+            aria-label={`${occurrenceActionLabel} ${occurrence.intensityLabel ?? "work"}, ${durationLabel(occurrence.duration)}`}
             aria-pressed={selectedOccurrenceId === occurrence.occurrenceId}
             data-testid={`${testIDPrefix}-bar-${index}`}
             key={occurrence.occurrenceId}

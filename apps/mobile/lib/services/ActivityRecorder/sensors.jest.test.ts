@@ -177,12 +177,16 @@ jest.mock("react-native-ble-plx", () => ({
   __esModule: true,
   BleManager: class MockBleManager {
     onStateChange() {
-      return () => undefined;
+      return { remove: () => undefined };
     }
 
     stopDeviceScan() {}
 
     startDeviceScan() {}
+
+    destroy() {
+      return Promise.resolve();
+    }
   },
   BleError: class MockBleError extends Error {},
   Characteristic: class MockCharacteristic {},
@@ -203,6 +207,7 @@ interface KnownSensorFixture {
 }
 
 interface SensorsManagerInternals {
+  bleManager: { destroy(): Promise<void> };
   knownSensorRegistry: {
     sensors: Map<string, KnownSensorFixture>;
     autoReconnectSuppressedSensorIds: Set<string>;
@@ -252,6 +257,17 @@ describe("SensorsManager QA regressions", () => {
   afterEach(() => {
     jest.restoreAllMocks();
     jest.clearAllMocks();
+  });
+
+  it("awaits Bluetooth manager teardown so a native rejection cannot escape cleanup", async () => {
+    const manager = new SensorsManager();
+    const destroy = jest
+      .spyOn(getManagerInternals(manager).bleManager, "destroy")
+      .mockResolvedValue(undefined);
+
+    await manager.cleanup();
+
+    expect(destroy).toHaveBeenCalledTimes(1);
   });
 
   it("reconnects both disconnected known sensors and persisted-only sensors", async () => {
@@ -1006,6 +1022,7 @@ describe("SensorsManager QA regressions", () => {
       writeCharacteristicWithResponseForService: jest.fn(
         async (_service, _characteristic, value) => {
           const opcode = Buffer.from(value, "base64")[0];
+          if (opcode === undefined) throw new Error("FTMS command has no opcode");
           writtenOpcodes.push(opcode);
           controlPointCallback?.(null, { value: Buffer.from([128, opcode, 1]).toString("base64") });
           return {};

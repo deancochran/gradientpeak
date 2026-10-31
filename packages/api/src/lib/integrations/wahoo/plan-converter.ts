@@ -87,6 +87,8 @@ export type WahooCompatibilityResult = {
 };
 
 export type WahooProjectionSnapshot = {
+  /** Canonical V5 occurrence identity is retained alongside provider intervals for replay/audit. */
+  occurrenceIds: string[];
   plan: WahooPlanJson;
 };
 
@@ -131,7 +133,7 @@ const wahooPlanJsonSchema: z.ZodType<WahooPlanJson> = z
   .strict();
 
 export const wahooProjectionSnapshotSchema: z.ZodType<WahooProjectionSnapshot> = z
-  .object({ plan: wahooPlanJsonSchema })
+  .object({ occurrenceIds: z.array(z.string().min(1)), plan: wahooPlanJsonSchema })
   .strict();
 
 export interface ConvertOptions {
@@ -176,6 +178,12 @@ export function calculateWorkoutDuration(structure: ActivityPlanStructure): numb
   let seconds = 0;
   let unknown = false;
   for (const occurrence of compileWahooOccurrences(structure)) {
+    if (occurrence.targets.length === 0) {
+      throw new WahooPlanConversionError(
+        "unsupported_segment",
+        "Wahoo cannot calculate an activity-plan duration for a step without a target.",
+      );
+    }
     if (occurrence.duration.type === "time") seconds += occurrence.duration.seconds;
     else unknown = true;
   }
@@ -251,12 +259,10 @@ export function convertToWahooPlan(
   }
 
   const stepNames = new Map(
-    structure.segments.flatMap((segment) =>
-      segment.role === "activity"
-        ? segment.intervals.flatMap((interval) =>
-            interval.steps.map((step) => [step.id, step.name] as const),
-          )
-        : [],
+    structure.items.flatMap((item) =>
+      item.type === "step"
+        ? [[item.id, item.name] as const]
+        : item.steps.map((step) => [step.id, step.name] as const),
     ),
   );
   plan.intervals = activityOccurrences.map((occurrence) =>
@@ -482,6 +488,10 @@ function convertTarget(target: ActivityPlanTarget, options: ConvertOptions): Wah
 
     case "RPE":
       throw new Error("Cannot convert RPE target to Wahoo: RPE targets are not supported by Wahoo");
+    case "rest":
+      throw new Error(
+        "Cannot convert rest target to Wahoo: rest targets are not supported by Wahoo",
+      );
   }
 }
 
@@ -563,12 +573,37 @@ export function validateWahooCompatibility(
     ...(finding.targetType !== undefined ? { targetType: finding.targetType } : {}),
   }));
   const compiled = compileActivityPlan(structure);
+  const stepPaths = new Map(
+    structure.items.flatMap((item, itemIndex) =>
+      item.type === "step"
+        ? [[item.id, ["structure", "items", itemIndex] as (string | number)[]] as const]
+        : item.steps.map(
+            (step, stepIndex) =>
+              [
+                step.id,
+                ["structure", "items", itemIndex, "steps", stepIndex] as (string | number)[],
+              ] as const,
+          ),
+    ),
+  );
+  for (const occurrence of compiled.occurrences) {
+    if (occurrence.targets.length === 0) {
+      findings.push({
+        code: "unsupported_target",
+        disposition: "unsupported",
+        message: "Wahoo requires every exported step to contain a target.",
+        path: stepPaths.get(occurrence.stepId) ?? ["structure", "items"],
+        reasonCode: "untargeted_step",
+        semantic: "provider",
+      });
+    }
+  }
   if (compiled.occurrences.length > 100) {
     findings.push({
       code: "invalid_plan",
       disposition: "unsupported",
       message: `Activity plan has ${compiled.occurrences.length} compiled occurrences; Wahoo supports at most 100.`,
-      path: ["structure", "segments"],
+      path: ["structure", "items"],
       reasonCode: "provider_occurrence_limit_exceeded",
       semantic: "provider",
     });
@@ -595,7 +630,12 @@ export function getWahooProjectionSnapshot(
   structure: ActivityPlanStructure,
   options: ConvertOptions,
 ): WahooProjectionSnapshot {
-  return { plan: convertToWahooPlan(structure, options) };
+  return {
+    occurrenceIds: compileActivityPlan(structure).occurrences.map(
+      (occurrence) => occurrence.occurrenceId,
+    ),
+    plan: convertToWahooPlan(structure, options),
+  };
 }
 
 export function validateWahooPlanContract(plan: WahooPlanJson): WahooPlanContractValidation {

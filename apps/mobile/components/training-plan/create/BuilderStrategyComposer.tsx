@@ -40,11 +40,7 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
   saveReadiness,
   state,
 }: BuilderStrategyComposerProps) {
-  const actions = {
-    onOpenAthleteContext,
-    onOpenGoals,
-    onOpenPlanningConstraints,
-  };
+  const actions = { onOpenAthleteContext, onOpenGoals, onOpenPlanningConstraints };
   const scheduleStatus = getScheduleStatus(state);
   const { fontScale, width } = useWindowDimensions();
   const useVerticalLayout = shouldUseAccessibleBuilderLayout({ fontScale, width });
@@ -55,7 +51,6 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
   const configurationRows = useVerticalLayout
     ? planningBriefRows.map((row) => [row])
     : [planningBriefRows.slice(0, 2), planningBriefRows.slice(2, 4)];
-
   return (
     <View className="flex-1 gap-4" testID="builder-strategy-composer">
       <Pressable
@@ -79,7 +74,6 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
           {planDescription}
         </Text>
       </Pressable>
-
       <View className="gap-2" testID="builder-configuration-grid">
         {configurationRows.map((rows, rowIndex) => (
           <View
@@ -101,7 +95,6 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
           </View>
         ))}
       </View>
-
       <View
         className={
           useVerticalLayout
@@ -118,7 +111,6 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
           {saveReadiness.label}
         </Text>
       </View>
-
       <View
         className={useVerticalLayout ? "gap-2" : "flex-row gap-2"}
         testID="builder-schedule-actions"
@@ -127,7 +119,6 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
           <Text>Add activity</Text>
         </Button>
       </View>
-
       <BuilderProjectionOverview chartReview={chartReview} renderBelowChart={renderBelowChart} />
     </View>
   );
@@ -151,7 +142,6 @@ function ConfigurationTile({
       : status.tone === "needs-attention"
         ? "bg-destructive"
         : "bg-muted-foreground";
-
   return (
     <Pressable
       accessibilityLabel={`${row.label}: ${row.value}. ${status.label}`}
@@ -203,26 +193,19 @@ type ConfigurationStatus = {
   label: "Default" | "Needs assignment" | "Needs setup" | "Optional" | "Ready";
   tone: "needs-attention" | "optional" | "ready";
 };
-
 function getConfigurationStatus(row: BuilderPlanningBriefRowViewModel): ConfigurationStatus {
-  if (row.key === "goals" && row.value === "No goals selected") {
+  if (row.key === "goals" && row.value === "No goals selected")
     return { label: "Optional", tone: "optional" };
-  }
-  if (row.key === "planningConstraints" && row.value === "No constraints selected") {
+  if (row.key === "planningConstraints" && row.value === "No constraints selected")
     return { label: "Optional", tone: "optional" };
-  }
-  if (row.key === "athleteContext" && row.value === "Using current profile defaults") {
+  if (row.key === "athleteContext" && row.value === "Using current profile defaults")
     return { label: "Default", tone: "ready" };
-  }
   return { label: "Ready", tone: "ready" };
 }
-
 function getScheduleStatus(state: TrainingPlanBuilderState): ConfigurationStatus {
-  if (state.structure.sessions.length === 0) {
+  if (state.structure.sessions.length === 0)
     return { label: "Needs setup", tone: "needs-attention" };
-  }
-  if (state.structure.sessions.some((session) => session.activityPlan === null)) {
+  if (state.structure.sessions.some((session) => session.activityPlan === null))
     return { label: "Needs assignment", tone: "needs-attention" };
-  }
   return { label: "Ready", tone: "ready" };
 }

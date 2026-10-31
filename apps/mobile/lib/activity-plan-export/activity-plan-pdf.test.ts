@@ -18,29 +18,26 @@ const model: ActivityPlanPrintModel = {
     },
   ],
   intensityReferences: ["7 RPE"],
-  notes: "Bring a pace clock card",
+  notes: null,
   sections: [
     {
       groups: [
         {
           id: "group-1",
-          name: null,
-          notes: "Leave from the wall together",
           repetitions: 4,
           steps: [
             {
-              description: null,
               id: "step-1",
               instruction: "100 m at 7 RPE",
               name: "Freestyle",
-              notes: null,
+              instructions:
+                "Use the pace clock. Leave from the wall together. Bring a pace clock card.",
             },
           ],
         },
       ],
       id: "section-1",
       name: "Main set",
-      notes: "Use the pace clock",
     },
   ],
   title: "Threshold & speed",
@@ -57,6 +54,11 @@ describe("mobile activity plan PDF HTML", () => {
     expect(html).toContain("Threshold &amp; speed");
     expect(html).toContain('href="https://gradientpeak.app"');
     expect(html).toContain('viewBox="0 0 1024 1024"');
+    expect(html).toContain('transform="translate(-9 9)"');
+    expect(html).toContain('circle cx="467" cy="557" r="147"');
+    expect(html).toContain(
+      "M370 256 H756 Q768 256 768 268 V654 Q768 660 764 664 L686 742 Q674 754 674 738 V362 Q674 350 662 350 H286 Q270 350 282 338 L360 260 Q364 256 370 256 Z",
+    );
     expect(html).toContain("Repeat 4×");
     expect(html).not.toContain("Intensity reference");
     expect(html).not.toContain(">Intensity profile");

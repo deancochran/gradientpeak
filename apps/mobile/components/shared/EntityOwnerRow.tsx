@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Pressable, View } from "react-native";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
@@ -71,7 +72,7 @@ export function EntityOwnerRow({
     <>
       <Avatar alt={displayName} className={compact ? "h-6 w-6" : minimal ? "h-7 w-7" : "h-10 w-10"}>
         {avatarUri ? <AvatarImage key={avatarUri} source={{ uri: avatarUri }} /> : null}
-        <AvatarFallback className={fallbackClassName}>
+        <AvatarFallback {...omitUndefined({ className: fallbackClassName })}>
           <Text
             className={
               compact || minimal

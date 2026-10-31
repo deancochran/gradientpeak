@@ -2,6 +2,7 @@ export * from "./activities";
 export * from "./assertions";
 export * from "./auth";
 export * from "./calendar";
+export * from "./goals";
 export * from "./groups";
 export * from "./messaging";
 export * from "./network";

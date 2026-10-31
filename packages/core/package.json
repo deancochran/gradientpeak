@@ -18,6 +18,7 @@
     "./bluetooth": "./bluetooth/index.ts",
     "./bluetooth/*": "./bluetooth/*.ts",
     "./calendar": "./calendar/index.ts",
+    "./chatbot": "./chatbot/index.ts",
     "./calculations": "./calculations/index.ts",
     "./calculations/normalized-power": "./calculations/normalized-power.ts",
     "./constants": "./constants/index.ts",
@@ -99,7 +100,7 @@
     "watch": "pnpm exec concurrently \"tsc --noEmit --watch --preserveWatchOutput\" \"pnpm exec chokidar '**/*.{ts,tsx,js,jsx,json}' -c 'biome lint .'\""
   },
   "dependencies": {
-    "@deancochran/ftms": "0.2.0",
+    "@deancochran/ftms": "0.4.0",
     "@garmin/fitsdk": "^21.213.0",
     "@mapbox/polyline": "^1.2.1",
     "@xmldom/xmldom": "^0.8.15",

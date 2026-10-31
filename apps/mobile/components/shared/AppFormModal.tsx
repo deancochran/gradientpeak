@@ -13,8 +13,11 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 interface AppFormModalProps {
+  /** Full-screen editors opt in; other forms retain their sheet presentation. */
+  presentationStyle?: "pageSheet" | "fullScreen";
   /** Opt in when this caller has a single compact header primary action. */
   actionPlacement?: "footer" | "header";
   children: React.ReactNode;
@@ -31,6 +34,7 @@ interface AppFormModalProps {
 }
 
 export function AppFormModal({
+  presentationStyle = "pageSheet",
   actionPlacement = "footer",
   children,
   description,
@@ -44,7 +48,7 @@ export function AppFormModal({
   tertiaryAction,
   title,
 }: AppFormModalProps) {
-  const { bottom: bottomSafeAreaInset } = useSafeAreaInsets();
+  const { bottom: bottomSafeAreaInset, top: topSafeAreaInset } = useSafeAreaInsets();
   const { contentContainerStyle, ...resolvedScrollProps } = scrollProps ?? {};
   const footerPaddingBottom = 16 + bottomSafeAreaInset;
   const hasFooterActions =
@@ -61,7 +65,7 @@ export function AppFormModal({
     <Modal
       accessibilityViewIsModal
       animationType="slide"
-      presentationStyle="pageSheet"
+      presentationStyle={presentationStyle}
       visible
       onRequestClose={handleClose}
     >
@@ -69,6 +73,7 @@ export function AppFormModal({
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         className="flex-1 bg-background"
         testID={testID}
+        style={presentationStyle === "fullScreen" ? { paddingTop: topSafeAreaInset } : undefined}
       >
         <View className="flex-1 bg-background">
           <View className="border-b border-border">
@@ -138,7 +143,13 @@ export function AppFormModal({
             contentContainerClassName="p-4 gap-4"
             contentContainerStyle={[
               {
+                // ScrollView does not consistently receive NativeWind's content-container
+                // utilities on native. Keep the modal's single content inset here so every
+                // caller gets the same readable edge spacing.
+                paddingHorizontal: 16,
+                paddingTop: 16,
                 paddingBottom: footerContent || hasFooterActions ? 16 : footerPaddingBottom,
+                rowGap: 16,
               },
               contentContainerStyle,
             ]}
@@ -206,13 +217,15 @@ function renderConfirmButton(action: AppConfirmAction, fill = false) {
 
   return (
     <LoadingButton
-      className={buttonClassName}
-      disabled={action.disabled}
-      loading={action.loading}
+      {...omitUndefined({
+        className: buttonClassName,
+        disabled: action.disabled,
+        loading: action.loading,
+        testId: action.testID,
+      })}
       loadingLabel={`${action.label}...`}
       loadingTextClassName={textClassName}
       onPress={action.onPress}
-      testId={action.testID}
       variant={variant === "default" && !fill ? "outline" : variant}
     >
       <Text className={textClassName}>{action.label}</Text>
@@ -231,13 +244,15 @@ export function AppConfirmModal({
 }: AppConfirmModalProps) {
   return (
     <AppFormModal
+      {...omitUndefined({
+        testID,
+        tertiaryAction: tertiaryAction ? renderConfirmButton(tertiaryAction) : undefined,
+        secondaryAction: secondaryAction ? renderConfirmButton(secondaryAction) : undefined,
+      })}
       description={description}
       onClose={onClose}
-      testID={testID}
       title={title}
-      tertiaryAction={tertiaryAction ? renderConfirmButton(tertiaryAction) : undefined}
       primaryAction={renderConfirmButton(primaryAction, true)}
-      secondaryAction={secondaryAction ? renderConfirmButton(secondaryAction) : undefined}
     >
       <View className="gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-4">
         <Text className="text-sm leading-5 text-muted-foreground">{description}</Text>

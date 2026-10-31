@@ -169,7 +169,8 @@ export function IntegrationProviderList({
         {visibleIntegrations.map((integration) => {
           const pendingAction = pendingByProvider[integration.provider];
           const isDisconnecting = integration.providerHealth.status === "disconnecting";
-          const isPending = pendingAction !== undefined || isDisconnecting;
+          const canRetryDisconnect = isDisconnecting && integration.primaryAction === "disconnect";
+          const isPending = pendingAction !== undefined || (isDisconnecting && !canRetryDisconnect);
           const error = getProviderError(integration);
           const statusTone = getStatusTone(integration.summary.health);
 
@@ -287,7 +288,7 @@ export function IntegrationProviderList({
                       </Button>
                     ) : null}
                     <Button
-                      accessibilityLabel={`Disconnect ${integration.label}`}
+                      accessibilityLabel={`${canRetryDisconnect ? "Retry disconnect" : "Disconnect"} ${integration.label}`}
                       accessibilityState={{ disabled: false }}
                       className="rounded-full border border-border bg-background"
                       onPress={() => onDisconnect(integration)}

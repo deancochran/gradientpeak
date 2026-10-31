@@ -9,6 +9,7 @@ import type {
 import type { BuilderSheet } from "@/components/training-plan/create/BuilderSheetTypes";
 import { useBuilderSheetStack } from "@/components/training-plan/create/useBuilderSheetStack";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { diffDateOnlyDays } from "@/lib/training-plan-creation/date-utils";
 import type { TrainingPlanActivityPlanFacts } from "@/lib/training-plan-creation/types";
 import { useTrainingPlanCreationService } from "@/lib/training-plan-creation/useTrainingPlanCreationService";
@@ -20,6 +21,7 @@ type TrainingPlanBuilderControllerOptions = {
   planId?: string;
   onDirtyChange?: (isDirty: boolean) => void;
   onPersisted?: () => void;
+  isFlowCurrent?: (() => boolean) | undefined;
 };
 
 function toActivityPlanFacts(activityPlan: ActivityPlanListItem): TrainingPlanActivityPlanFacts {
@@ -49,6 +51,7 @@ export function useTrainingPlanBuilderController({
   planId,
   onDirtyChange,
   onPersisted,
+  isFlowCurrent,
 }: TrainingPlanBuilderControllerOptions) {
   const router = useRouter();
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -59,13 +62,14 @@ export function useTrainingPlanBuilderController({
   const [activityPlanSort, setActivityPlanSort] = useState<ActivityPlanSort>("newest");
   const [pendingSessionDraftId, setPendingSessionDraftId] = useState<string | null>(null);
   const [numericDraftErrors, setNumericDraftErrors] = useState<Record<string, string>>({});
+  const numericDraftErrorsRef = useRef<Record<string, string>>({});
   const [selectedWeekStart, setSelectedWeekStart] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const sheetStack = useBuilderSheetStack<BuilderSheet>();
 
   const builder = useTrainingPlanCreationService({
     mode,
-    planId,
+    ...omitUndefined({ planId, isFlowCurrent }),
     activityPlanPicker: {
       enabled: selectedSessionId !== null,
       searchQuery: debouncedActivityPlanSearchQuery,
@@ -208,7 +212,7 @@ export function useTrainingPlanBuilderController({
   );
 
   const handleSave = useCallback(async () => {
-    const numericErrors = Object.values(numericDraftErrors);
+    const numericErrors = Object.values(numericDraftErrorsRef.current);
     if (numericErrors.length > 0) {
       Alert.alert("Plan needs attention", numericErrors.join("\n"));
       return;
@@ -222,24 +226,29 @@ export function useTrainingPlanBuilderController({
     }
 
     await builder.derived.savePlan.execute();
-  }, [builder.derived.savePlan, numericDraftErrors]);
+  }, [builder.derived.savePlan]);
   const setNumericDraftError = useCallback((key: string, message: string | null) => {
-    setNumericDraftErrors((current) => {
-      if (message === null) {
-        if (!(key in current)) return current;
-        const { [key]: _removed, ...next } = current;
-        return next;
-      }
-      return current[key] === message ? current : { ...current, [key]: message };
-    });
+    const current = numericDraftErrorsRef.current;
+    if (message === null) {
+      if (!(key in current)) return;
+      const { [key]: _removed, ...next } = current;
+      numericDraftErrorsRef.current = next;
+      setNumericDraftErrors(next);
+      return;
+    }
+    if (current[key] === message) return;
+    const next = { ...current, [key]: message };
+    numericDraftErrorsRef.current = next;
+    setNumericDraftErrors(next);
   }, []);
   const clearNumericDraftErrors = useCallback((prefix: string) => {
-    setNumericDraftErrors((current) => {
-      const next = Object.fromEntries(
-        Object.entries(current).filter(([key]) => !key.startsWith(prefix)),
-      );
-      return Object.keys(next).length === Object.keys(current).length ? current : next;
-    });
+    const current = numericDraftErrorsRef.current;
+    const next = Object.fromEntries(
+      Object.entries(current).filter(([key]) => !key.startsWith(prefix)),
+    );
+    if (Object.keys(next).length === Object.keys(current).length) return;
+    numericDraftErrorsRef.current = next;
+    setNumericDraftErrors(next);
   }, []);
 
   const selectActivityPlan = useCallback(
@@ -370,8 +379,19 @@ export function useTrainingPlanBuilderController({
       cancelPendingSessionDraft,
       confirmRemoveSession,
       handleSave,
+      openActivityPicker: (sessionId: string) => {
+        setSelectedSessionId(sessionId);
+        sheetStack.openSheet("activityAssignment");
+      },
     }),
-    [addSession, addSessionAtOffset, cancelPendingSessionDraft, confirmRemoveSession, handleSave],
+    [
+      addSession,
+      addSessionAtOffset,
+      cancelPendingSessionDraft,
+      confirmRemoveSession,
+      handleSave,
+      sheetStack.openSheet,
+    ],
   );
 
   return {

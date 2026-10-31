@@ -3,6 +3,7 @@ import { events } from "@repo/db/schema";
 import { eq } from "drizzle-orm";
 
 import { expect, test } from "../fixtures";
+import { CalendarPage } from "../pages";
 import { withCalendarEventFixture } from "../planning/data";
 import { withLocalE2EDatabase } from "../support/database";
 import { cleanupOwnedActivityPlans, e2eArtifactIdentity } from "../utils/testData";
@@ -32,15 +33,8 @@ async function createEvent(page: Page, title: string) {
   const eventDate = new Date();
   eventDate.setDate(eventDate.getDate() + 7);
   const dateKey = eventDate.toISOString().slice(0, 10);
-  await page.goto(`/calendar/new?date=${dateKey}`);
-  await page.getByLabel("Title").fill(title);
-  await page.getByRole("button", { name: /^create$/i }).press("Enter");
-  await expect(page.getByRole("heading", { name: title })).toBeVisible();
-  const eventId = await page.getByText("Event id").locator("..").locator("p").last().textContent();
-  if (!eventId || !/^[0-9a-f-]{36}$/i.test(eventId)) {
-    throw new Error("Created event detail did not expose a valid event ID.");
-  }
-  return eventId;
+  const calendar = new CalendarPage(page);
+  return calendar.createEvent({ date: dateKey, title });
 }
 
 test("[P0] routes.attach-to-calendar-event is visible when the event is reopened", async ({

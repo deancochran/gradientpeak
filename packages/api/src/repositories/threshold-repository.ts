@@ -19,6 +19,7 @@ import {
   activityArtifactLinks,
   activityArtifacts,
   activitySegments,
+  deferredThresholdCalibrations,
   thresholdEvaluationEfforts,
   thresholdEvaluations,
   thresholds,
@@ -268,7 +269,7 @@ export function thresholdEffortId(input: {
 /** Accepted, current, profile-owned activity segments used by threshold qualification. */
 export async function readThresholdEvidenceSources(
   db: DrizzleQueryExecutor,
-  input: { profileId: string; activityId: string },
+  input: { profileId: string; activityId: string; eligibleAtDatabaseNow?: boolean },
 ) {
   return db
     .select({
@@ -307,8 +308,126 @@ export async function readThresholdEvidenceSources(
         eq(activityArtifacts.availability, "accepted"),
       ),
     )
-    .where(and(eq(activities.id, input.activityId), eq(activities.profile_id, input.profileId)))
+    .where(
+      and(
+        eq(activities.id, input.activityId),
+        eq(activities.profile_id, input.profileId),
+        input.eligibleAtDatabaseNow
+          ? sql`${activities.finished_at} <= clock_timestamp()`
+          : undefined,
+      ),
+    )
     .orderBy(asc(activitySegments.ordinal));
+}
+
+/**
+ * Persists an immutable source revision when its activity clock is still ahead
+ * of PostgreSQL. The INSERT SELECT deliberately takes its due timestamp and
+ * eligibility decision from the database rather than a caller clock.
+ */
+export async function enqueueDeferredThresholdCalibration(
+  tx: DrizzleTransactionClient,
+  input: { profileId: string; activityId: string },
+) {
+  await tx.execute(sql`
+    insert into ${deferredThresholdCalibrations} (
+      profile_id, activity_id, source_revision, due_at, status, attempt_count, created_at, updated_at
+    )
+    select activity.profile_id, activity.id, activity.segments_revision, activity.finished_at,
+      'pending', 0, clock_timestamp(), clock_timestamp()
+    from ${activities} activity
+    where activity.id = ${input.activityId}::uuid
+      and activity.profile_id = ${input.profileId}::uuid
+      and activity.finished_at > clock_timestamp()
+    on conflict (profile_id, activity_id, source_revision) do nothing
+  `);
+}
+
+export type DeferredThresholdCalibrationClaim = {
+  profileId: string;
+  activityId: string;
+  sourceRevision: number;
+  claimToken: string;
+};
+
+/** Atomically claims one DB-due promotion, recovering expired leases. */
+export async function claimDeferredThresholdCalibration(
+  db: DrizzleQueryExecutor,
+  input: { leaseMilliseconds: number },
+): Promise<DeferredThresholdCalibrationClaim | null> {
+  const claimToken = crypto.randomUUID();
+  const result = await db.execute(sql`
+    with candidate as (
+      select profile_id, activity_id, source_revision
+      from ${deferredThresholdCalibrations}
+      where due_at <= clock_timestamp()
+        and (status = 'pending' or (status = 'running' and lease_expires_at <= clock_timestamp()))
+        and (retry_at is null or retry_at <= clock_timestamp())
+      order by due_at, profile_id, activity_id, source_revision
+      limit 1
+      for update skip locked
+    )
+    update ${deferredThresholdCalibrations} deferred
+    set status = 'running', lease_token = ${claimToken}::uuid,
+      lease_expires_at = clock_timestamp() + (${input.leaseMilliseconds} * interval '1 millisecond'),
+      retry_at = null, updated_at = clock_timestamp()
+    from candidate
+    where deferred.profile_id = candidate.profile_id
+      and deferred.activity_id = candidate.activity_id
+      and deferred.source_revision = candidate.source_revision
+    returning deferred.profile_id, deferred.activity_id, deferred.source_revision
+  `);
+  const row = result.rows[0] as
+    | { profile_id?: unknown; activity_id?: unknown; source_revision?: unknown }
+    | undefined;
+  if (
+    typeof row?.profile_id !== "string" ||
+    typeof row.activity_id !== "string" ||
+    typeof row.source_revision !== "number"
+  ) {
+    return null;
+  }
+  return {
+    profileId: row.profile_id,
+    activityId: row.activity_id,
+    sourceRevision: row.source_revision,
+    claimToken,
+  };
+}
+
+export async function completeDeferredThresholdCalibration(
+  db: DrizzleQueryExecutor,
+  claim: DeferredThresholdCalibrationClaim,
+) {
+  const result = await db.execute(sql`
+    update ${deferredThresholdCalibrations}
+    set status = 'completed', lease_token = null, lease_expires_at = null,
+      retry_at = null, last_failure_code = null, completed_at = clock_timestamp(), updated_at = clock_timestamp()
+    where profile_id = ${claim.profileId}::uuid and activity_id = ${claim.activityId}::uuid
+      and source_revision = ${claim.sourceRevision} and status = 'running'
+      and lease_token = ${claim.claimToken}::uuid and lease_expires_at > clock_timestamp()
+    returning activity_id
+  `);
+  return result.rows.length === 1;
+}
+
+export async function retryDeferredThresholdCalibration(
+  db: DrizzleQueryExecutor,
+  claim: DeferredThresholdCalibrationClaim,
+  failureCode: string,
+) {
+  const result = await db.execute(sql`
+    update ${deferredThresholdCalibrations}
+    set status = 'pending', lease_token = null, lease_expires_at = null,
+      attempt_count = attempt_count + 1,
+      retry_at = clock_timestamp() + least(60, power(2, least(10, attempt_count + 1))) * interval '1 minute',
+      last_failure_code = left(${failureCode}, 120), updated_at = clock_timestamp()
+    where profile_id = ${claim.profileId}::uuid and activity_id = ${claim.activityId}::uuid
+      and source_revision = ${claim.sourceRevision} and status = 'running'
+      and lease_token = ${claim.claimToken}::uuid and lease_expires_at > clock_timestamp()
+    returning activity_id
+  `);
+  return result.rows.length === 1;
 }
 
 export async function readQualifiedThresholdEvidence(

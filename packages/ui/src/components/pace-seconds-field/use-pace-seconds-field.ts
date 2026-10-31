@@ -1,117 +1,51 @@
-import {
-  formatSecondsToMmSs,
-  normalizePaceInput,
-  parseMmSsToSeconds,
-} from "@repo/core/utils/fitness-inputs";
-import { useEffect, useRef, useState } from "react";
-import { usePendingFormDraft } from "../../hooks/pending-form-drafts";
+import { formatSecondsToMmSs, parseMmSsToSeconds } from "@repo/core/utils/fitness-inputs";
+import type { NumericInputResult } from "@repo/core/utils/numeric-ux-policy";
+import { useFormDraftResetKey } from "../../hooks/pending-form-drafts";
+import { useSemanticInput } from "../../hooks/use-semantic-input";
 import type { PaceSecondsFieldProps } from "./shared";
 
-type PaceSecondsDraftProps = Pick<
-  PaceSecondsFieldProps,
-  "formControl" | "onBlur" | "onChangeSeconds" | "valueSeconds"
->;
-
-const NO_IGNORED_VALUE = Symbol("no ignored pace seconds value");
-
 function formatValue(value: number | null | undefined) {
-  return value == null ? "" : formatSecondsToMmSs(value);
+  return value == null || !Number.isFinite(value) ? "" : formatSecondsToMmSs(value);
 }
 
-function usePaceSecondsField({
-  formControl,
-  onBlur,
-  onChangeSeconds,
-  valueSeconds,
-}: PaceSecondsDraftProps) {
-  const [draftValue, setDraftValue] = useState(() => formatValue(valueSeconds));
-  const draftValueRef = useRef(draftValue);
-  const isDraftPendingRef = useRef(false);
-  const valueSecondsRef = useRef(valueSeconds);
-  const ignoredValueSyncRef = useRef<number | null | typeof NO_IGNORED_VALUE>(NO_IGNORED_VALUE);
-  valueSecondsRef.current = valueSeconds;
-
-  const updateDraftValue = (value: string, pending: boolean) => {
-    draftValueRef.current = value;
-    isDraftPendingRef.current = pending;
-    setDraftValue(value);
+export function usePaceSecondsField(props: PaceSecondsFieldProps) {
+  const reset = useFormDraftResetKey(props.formControl);
+  const display = formatValue(props.valueSeconds);
+  const parse = (raw: string): NumericInputResult => {
+    if (!raw.trim()) return { status: "empty" };
+    const value = parseMmSsToSeconds(raw);
+    if (value === undefined || !Number.isFinite(value) || value <= 0)
+      return { status: "invalid", reason: "syntax" };
+    return {
+      status: "valid",
+      value: raw.trim() === display && props.valueSeconds != null ? props.valueSeconds : value,
+    };
   };
-
-  useEffect(() => {
-    if (Object.is(ignoredValueSyncRef.current, valueSeconds)) {
-      ignoredValueSyncRef.current = NO_IGNORED_VALUE;
-      return;
-    }
-
-    ignoredValueSyncRef.current = NO_IGNORED_VALUE;
-    const nextValue = formatValue(valueSeconds);
-    draftValueRef.current = nextValue;
-    isDraftPendingRef.current = false;
-    setDraftValue(nextValue);
-  }, [valueSeconds]);
-
-  const commitDraft = (markTouched: boolean) => {
-    const raw = draftValueRef.current.trim();
-
-    if (!raw) {
-      isDraftPendingRef.current = false;
-      onChangeSeconds(null);
-    } else {
-      const normalized = normalizePaceInput(raw);
-      const seconds = parseMmSsToSeconds(normalized);
-
-      if (normalized && seconds !== undefined) {
-        updateDraftValue(normalized, false);
-        onChangeSeconds(seconds);
-      } else {
-        if (valueSecondsRef.current !== null) {
-          ignoredValueSyncRef.current = null;
-        }
-        onChangeSeconds(null);
-      }
-    }
-
-    if (markTouched) {
-      onBlur?.();
-    }
-  };
-
-  usePendingFormDraft(formControl, {
-    commit: () => {
-      if (isDraftPendingRef.current) {
-        commitDraft(false);
-      }
+  const input = useSemanticInput({
+    value: display,
+    identity: `${props.resetKey ?? ""}:${reset}`,
+    disabled: props.disabled,
+    required: props.required,
+    formControl: props.formControl,
+    fieldName: props.fieldName,
+    label: props.label,
+    parse,
+    onBlur: props.onBlur,
+    onResult: (result) => {
+      props.onInputResult?.(result);
+      props.onChangeSeconds(
+        result.status === "valid" ? result.value : result.status === "empty" ? null : Number.NaN,
+      );
     },
-    discard: () => updateDraftValue(formatValue(valueSecondsRef.current), false),
+    echoes: (result) => [result.status === "valid" ? formatValue(result.value) : ""],
   });
-
   return {
-    draftValue,
-    onBlur: () => commitDraft(true),
-    onChange: (value: string) => {
-      const isEmpty = !value.trim();
-      updateDraftValue(value, !isEmpty);
-      if (isEmpty) {
-        onChangeSeconds(null);
-        return;
-      }
-
-      const seconds = parseMmSsToSeconds(value);
-      if (seconds !== undefined) {
-        if (valueSecondsRef.current !== seconds) {
-          ignoredValueSyncRef.current = seconds;
-        }
-        onChangeSeconds(seconds);
-      }
-    },
+    draftValue: input.text,
+    onBlur: input.blur,
+    onChange: input.change,
     adjust: (direction: -1 | 1) => {
-      const seconds = parseMmSsToSeconds(draftValueRef.current) ?? valueSecondsRef.current;
-      if (seconds == null) return;
-      const next = Math.max(1, seconds + direction * 5);
-      updateDraftValue(formatSecondsToMmSs(next), false);
-      onChangeSeconds(next);
+      if (input.result.status !== "valid") return;
+      input.change(formatSecondsToMmSs(Math.max(1, input.result.value + direction * 5)));
     },
   };
 }
-
-export { usePaceSecondsField };

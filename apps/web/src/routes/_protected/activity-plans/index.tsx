@@ -9,7 +9,7 @@ import {
 import { SearchField } from "@repo/ui/components/search-field";
 import { createFileRoute } from "@tanstack/react-router";
 import { ClipboardList, Loader2, Plus } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { ActivityPlanCard } from "../../../components/activity-plan/activity-plan-card";
@@ -46,6 +46,19 @@ function ActivityPlansPage() {
   const utils = api.useUtils();
   const [creating, setCreating] = useState(false);
   const createdPlanId = useRef<string | null>(null);
+  const creationOwner = useRef(0);
+  useEffect(() => {
+    const leave = () => {
+      creationOwner.current += 1;
+      createdPlanId.current = null;
+      setCreating(false);
+    };
+    window.addEventListener("pagehide", leave);
+    return () => {
+      creationOwner.current += 1;
+      window.removeEventListener("pagehide", leave);
+    };
+  }, []);
   const plansQuery = api.activityPlans.list.useInfiniteQuery(
     {
       activityCategories: activity_category === "all" ? undefined : [activity_category],
@@ -58,28 +71,37 @@ function ActivityPlansPage() {
   const plans = plansQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const createMutation = api.activityPlans.create.useMutation({
     retry: false,
-    onSuccess: async (plan) => {
+    onSuccess: async () => {
       await Promise.allSettled([Promise.resolve().then(() => utils.activityPlans.invalidate())]);
-      createdPlanId.current = plan.id;
-      toast.success("Activity plan created");
     },
-    onError: (error) => toast.error(error.message || "Activity plan could not be created"),
   });
 
   if (creating) {
+    const owner = creationOwner.current;
     return (
       <div className="container mx-auto max-w-6xl space-y-6 py-4">
         <ActivityPlanComposer
           mode="create"
-          onCancel={() => setCreating(false)}
-          onSave={(values) => createMutation.mutateAsync(values).then(() => undefined)}
-          pending={createMutation.isPending}
+          onCancel={() => {
+            creationOwner.current += 1;
+            createdPlanId.current = null;
+            setCreating(false);
+          }}
+          onSave={async (values) => {
+            const owner = creationOwner.current;
+            const result = await createMutation.mutateAsync(values);
+            if (creationOwner.current !== owner) return;
+            createdPlanId.current = result.id;
+            toast.success("Activity plan created");
+          }}
           onSaved={async () => {
-            if (createdPlanId.current)
-              await navigate({
-                to: "/activity-plans/$activityPlanId",
-                params: { activityPlanId: createdPlanId.current },
-              } as never);
+            if (creationOwner.current !== owner || !createdPlanId.current) return;
+            const activityPlanId = createdPlanId.current;
+            await navigate({
+              to: "/activity-plans/$activityPlanId",
+              params: { activityPlanId },
+            } as never);
+            if (creationOwner.current !== owner) return;
           }}
         />
       </div>
@@ -92,7 +114,11 @@ function ActivityPlansPage() {
         actions={
           <Button
             data-testid="activity-plan-create"
-            onClick={() => setCreating(true)}
+            onClick={() => {
+              creationOwner.current += 1;
+              createdPlanId.current = null;
+              setCreating(true);
+            }}
             type="button"
           >
             <Plus className="mr-2 h-4 w-4" />

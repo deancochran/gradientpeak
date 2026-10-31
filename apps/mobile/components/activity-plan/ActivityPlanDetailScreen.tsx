@@ -40,6 +40,7 @@ import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
 import { returnToRecordScreen } from "@/lib/navigation/recordingNavigation";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { useOptionalActivityRecorderService } from "@/lib/providers/ActivityRecorderProvider";
 import {
   handleRecordingObjectAction,
@@ -48,6 +49,7 @@ import {
 } from "@/lib/recording/recordingObjectActions";
 import { getPublicShareUrl } from "@/lib/share/public-share-url";
 import { ActivityPlanContentPreview } from "./ActivityPlanContentPreview";
+import { resolveMobileActivityPlanEstimateMetrics } from "./resolveMobileActivityPlanEstimateMetrics";
 import { useActivityPlanDetailViewModel } from "./useActivityPlanDetailViewModel";
 import { useActivityPlanSchedulingActions } from "./useActivityPlanSchedulingActions";
 
@@ -104,7 +106,7 @@ export function ActivityPlanDetailScreen({
     { enabled: !!eventId && !isRedirecting },
   );
   React.useEffect(() => {
-    redirectOnNotFound(plannedActivityError);
+    redirectOnNotFound(plannedActivityError ? { data: plannedActivityError.data ?? null } : null);
   }, [plannedActivityError, redirectOnNotFound]);
 
   const activePlannedActivity = eventId ? plannedActivity : null;
@@ -138,6 +140,17 @@ export function ActivityPlanDetailScreen({
   const activityPlanNotes =
     activityPlan?.contractVersion === "activity-plan-detail-v1" ? activityPlan.notes : null;
   const performanceTargets = viewerReadModel?.publishedState?.performanceTargets;
+  const estimateMetrics = React.useMemo(
+    () =>
+      activityPlan
+        ? resolveMobileActivityPlanEstimateMetrics({
+            structure: activityPlan.structure,
+            performanceTargets,
+            persistedMetrics: activityPlan.metrics,
+          })
+        : [],
+    [activityPlan, performanceTargets],
+  );
   const personalizationEligibility = React.useMemo(
     () =>
       resolveActivityPlanSessionFlow({
@@ -147,8 +160,27 @@ export function ActivityPlanDetailScreen({
       }).eligibility,
     [activityPlan?.structure, performanceTargets],
   );
+  // Only threshold-relative prescriptions have a distinct athlete-specific
+  // interpretation. RPE and absolute targets remain authored values, even
+  // when the athlete read model happens to be available.
+  const hasAdaptiveTarget = React.useMemo(
+    () =>
+      Boolean(
+        activityPlan?.structure?.items.some((item) =>
+          (item.type === "step" ? [item] : item.steps).some((step) =>
+            step.targets.some(
+              (target) =>
+                target.type === "%FTP" ||
+                target.type === "%MaxHR" ||
+                target.type === "%ThresholdHR",
+            ),
+          ),
+        ),
+      ),
+    [activityPlan?.structure],
+  );
   const personalizeTargets = Boolean(
-    personalizationEligibility.eligible && (personalizationChoice ?? true),
+    hasAdaptiveTarget && personalizationEligibility.eligible && (personalizationChoice ?? true),
   );
   const printModel = activityPlan
     ? buildActivityPlanPrintModel({
@@ -156,7 +188,6 @@ export function ActivityPlanDetailScreen({
         ...(activityPlan.description !== undefined
           ? { description: activityPlan.description }
           : {}),
-        ...(activityPlanNotes !== null ? { notes: activityPlanNotes } : {}),
         ...(performanceTargets ? { performanceTargets } : {}),
         personalizeTargets,
         structure: activityPlan.structure,
@@ -164,6 +195,9 @@ export function ActivityPlanDetailScreen({
       })
     : null;
   React.useEffect(() => {
+    // Reset this screen-local choice when either route identity changes.
+    void eventId;
+    void planId;
     setPersonalizationChoice(null);
   }, [eventId, planId]);
 
@@ -219,7 +253,7 @@ export function ActivityPlanDetailScreen({
     activityPlan,
     beginRedirect,
     plannedActivity,
-    planId,
+    ...omitUndefined({ planId }),
     queryClient,
     router,
     utils,
@@ -484,7 +518,7 @@ export function ActivityPlanDetailScreen({
                 "Notes",
               )}
               presentation={presentation}
-              projectionMetrics={activityPlan.metrics}
+              projectionMetrics={estimateMetrics}
               structure={activityPlan.structure}
               title={activityPlan.name}
               variant="standalone"
@@ -545,6 +579,7 @@ export function ActivityPlanDetailScreen({
           {presentation?.structure ? (
             <ActivityPlanContentPreview
               personalizeTargets={personalizeTargets}
+              personalizationAvailable={hasAdaptiveTarget && personalizationEligibility.eligible}
               personalizationFactsLoading={viewerReadModelLoading}
               performanceTargets={performanceTargets ?? null}
               onPersonalizeTargetsChange={setPersonalizationChoice}

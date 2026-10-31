@@ -20,8 +20,9 @@ describe("notification helpers", () => {
     });
 
     expect(notification).not.toBeNull();
+    if (!notification) throw new Error("Expected normalized notification");
     expect(notification?.type).toBe("follow_request");
-    expect(isNotificationUnread(notification!)).toBe(true);
+    expect(isNotificationUnread(notification)).toBe(true);
   });
 
   it("builds deterministic list item copy", () => {
@@ -35,7 +36,8 @@ describe("notification helpers", () => {
       type: "new_message",
     });
 
-    expect(getNotificationViewModel(notification!)).toMatchObject({
+    if (!notification) throw new Error("Expected normalized notification");
+    expect(getNotificationViewModel(notification)).toMatchObject({
       title: "New Message",
       description: "You have a new message in your inbox.",
       isUnread: true,
@@ -54,7 +56,8 @@ describe("notification helpers", () => {
       type: "group_event_cancelled",
     });
 
-    expect(getNotificationViewModel(notification!)).toMatchObject({
+    if (!notification) throw new Error("Expected normalized notification");
+    expect(getNotificationViewModel(notification)).toMatchObject({
       title: "Group Event Cancelled",
       description: "A group event on your calendar was cancelled.",
       isUnread: true,
@@ -108,7 +111,8 @@ describe("notification helpers", () => {
     });
 
     expect(notification).not.toBeNull();
-    expect(getNotificationViewModel(notification!)).toMatchObject({
+    if (!notification) throw new Error("Expected normalized notification");
+    expect(getNotificationViewModel(notification)).toMatchObject({
       title: "Notification",
       description: "Tap to view details.",
       type: "future_backend_type",

@@ -1,3 +1,4 @@
+import { usePlannedSessionMutations } from "@repo/api/react";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -96,7 +97,7 @@ function EventDetailPage() {
   );
   const profileQuery = api.profiles.get.useQuery(undefined, { enabled: isPlannedSession });
   const plannedSession = plannedSessionQuery.data;
-  const activityPlanId = plannedSession?.prescription.resolutionManifest.activity_plan_id ?? "";
+  const activityPlanId = plannedSession?.activityPlanId ?? "";
   const activityPlanQuery = api.activityPlans.getById.useQuery(
     { id: activityPlanId, personalize: false },
     { enabled: isPlannedSession && Boolean(activityPlanId) },
@@ -106,6 +107,9 @@ function EventDetailPage() {
     retry: false,
   });
   const skipPlannedSession = api.plannedSessions.skip.useMutation({ retry: false });
+  const changePlanOnly = usePlannedSessionMutations({
+    onConflict: () => plannedSessionQuery.refetch(),
+  }).changePlanOnly;
   const linkPlannedSessionCompletion = api.plannedSessions.linkCompletion.useMutation({
     retry: false,
   });
@@ -117,6 +121,7 @@ function EventDetailPage() {
   });
   const [completionError, setCompletionError] = useState<string | null>(null);
   const [completionStatus, setCompletionStatus] = useState<string | null>(null);
+  const [sessionEditError, setSessionEditError] = useState<string | null>(null);
   const [actualDetailsOpen, setActualDetailsOpen] = useState(false);
   const completionRequestRef = useRef<
     | {
@@ -181,8 +186,17 @@ function EventDetailPage() {
   }
 
   if (isPlannedSession && plannedSession) {
-    const manifest = plannedSession.prescription.resolutionManifest;
-    const activityCategory = manifest.resolved_structure.activity_category;
+    const activityCategory = activityPlanQuery.data?.detail?.activityCategory;
+    if (!activityCategory) {
+      return (
+        <div role="alert" className="space-y-3">
+          <p className="text-sm">The current activity plan for this session is unavailable.</p>
+          <Button variant="outline" onClick={() => void activityPlanQuery.refetch()}>
+            Retry activity plan
+          </Button>
+        </div>
+      );
+    }
     const planningTimezone = profileQuery.data?.planning_timezone ?? null;
     const today = planningTimezone ? getDateKeyInTimeZone(planningTimezone) : null;
     const canComplete =
@@ -196,6 +210,28 @@ function EventDetailPage() {
         ? plannedSession.lifecycle.completion.activityId
         : null;
     const completedTitle = activityPlanQuery.data?.detail?.name ?? "Completed activity";
+    const editThisSessionOnly = async () => {
+      if (plannedSession.lifecycle.status !== "scheduled" || changePlanOnly.isPending) return;
+      setSessionEditError(null);
+      try {
+        const receipt = await changePlanOnly.mutateAsync({
+          expectedRevision: plannedSession.sessionRevision,
+          profileId: plannedSession.profileId,
+          sessionId: plannedSession.id,
+        });
+        await navigate({
+          to: "/activity-plans/$activityPlanId",
+          params: { activityPlanId: receipt.session.activityPlanId },
+          search: { edit: true },
+        });
+      } catch (error) {
+        setSessionEditError(
+          error instanceof Error
+            ? error.message
+            : "This session could not be prepared for editing. Refresh and try again.",
+        );
+      }
+    };
 
     const submitCompletion = async (outcome: "full" | "partial") => {
       if (!canComplete || !planningTimezone || completionInFlightRef.current) return;
@@ -452,6 +488,39 @@ function EventDetailPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {plannedSession.lifecycle.status === "scheduled" ? (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      disabled={changePlanOnly.isPending}
+                      onClick={() => void editThisSessionOnly()}
+                      type="button"
+                      variant="outline"
+                    >
+                      <Pencil className="mr-2 h-4 w-4" />
+                      {changePlanOnly.isPending ? "Preparing session..." : "Edit this session only"}
+                    </Button>
+                    <Button asChild type="button" variant="ghost">
+                      <Link
+                        to="/activity-plans/$activityPlanId"
+                        params={{ activityPlanId: plannedSession.activityPlanId }}
+                        search={{ edit: true }}
+                      >
+                        Edit plan for all sessions
+                      </Link>
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Editing this session creates a private copy first. Editing the plan applies to
+                    all future sessions that reference it.
+                  </p>
+                  {sessionEditError ? (
+                    <p role="alert" className="text-sm text-destructive">
+                      {sessionEditError}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
               {plannedSession.lifecycle.status === "scheduled" ? (
                 <>
                   {!planningTimezone ? (

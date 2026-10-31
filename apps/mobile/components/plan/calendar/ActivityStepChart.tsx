@@ -1,6 +1,6 @@
 import {
   type ActivityPlanDuration,
-  type ActivityPlanIntervalStep,
+  type ActivityPlanStep,
   type ActivityTarget,
   getStepIntensityColor,
 } from "@repo/core";
@@ -8,7 +8,7 @@ import { Text } from "@repo/ui/components/text";
 import { Dimensions, ScrollView, TouchableOpacity, View } from "react-native";
 
 interface ActivityStepChartProps {
-  steps: ActivityPlanIntervalStep[];
+  steps: ActivityPlanStep[];
   selectedStepIndex: number | null;
   onStepPress: (index: number) => void;
   onStepLongPress: (index: number) => void;
@@ -51,10 +51,10 @@ function getDurationMs(duration: ActivityPlanDuration): number {
  * Flatten steps for chart visualization
  * Steps are already flat within a compiled interval; add visualization properties.
  */
-function flattenStepsForChart(steps: ActivityPlanIntervalStep[]): FlattenedChartStep[] {
+function flattenStepsForChart(steps: ActivityPlanStep[]): FlattenedChartStep[] {
   return steps.map((step, index) => ({
     index,
-    name: step.name,
+    name: step.name ?? "Step",
     duration: step.duration,
     targets: step.targets,
     durationMs: getDurationMs(step.duration),
@@ -83,6 +83,7 @@ function getIntensityPercentage(targets: ActivityTarget[]): number {
   if (!targets || targets.length === 0) return 0;
 
   const primaryTarget = targets[0];
+  if (primaryTarget === undefined) return 0;
 
   switch (primaryTarget.type) {
     case "%FTP":
@@ -127,6 +128,7 @@ function formatTarget(targets: ActivityTarget[]): string {
   if (!targets || targets.length === 0) return "Rest";
 
   const primary = targets[0];
+  if (primary === undefined) return "Rest";
 
   switch (primary.type) {
     case "%FTP":

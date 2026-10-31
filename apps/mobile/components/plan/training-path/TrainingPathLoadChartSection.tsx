@@ -4,6 +4,7 @@ import { Info, Plus } from "lucide-react-native";
 import type { ComponentProps, ReactNode } from "react";
 import { memo, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, TouchableOpacity, View } from "react-native";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { DailyTrainingAdjustmentChart } from "./DailyTrainingAdjustmentChart";
 import {
   formatPlanChartDateLabel,
@@ -151,19 +152,22 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
         <ChartEmptyState
           {...resolvedEmptyState}
           minHeight={chartHeight}
-          onCreateGoal={!emptyState && modelEmptyState === "noGoal" ? onCreateGoal : undefined}
+          {...omitUndefined({
+            onCreateGoal: !emptyState && modelEmptyState === "noGoal" ? onCreateGoal : undefined,
+          })}
           testID="training-path-empty-state"
         />
       ) : canRenderDailyChart ? (
         <DailyTrainingAdjustmentChart
-          formatDateLabel={dailyDateLabelFormatter}
-          goalDates={goalDates}
+          {...omitUndefined({ formatDateLabel: dailyDateLabelFormatter, goalDates })}
           height={chartHeight}
           points={dailyPoints ?? []}
-          selectedDate={selectedDate ?? model?.todayKey}
-          todayDate={model?.todayKey}
+          {...omitUndefined({
+            selectedDate: selectedDate ?? model?.todayKey,
+            todayDate: model?.todayKey,
+          })}
           onPreviewSelectedDateChange={setPreviewSelectedDate}
-          onSelectedDateChange={onSelectedDateChange}
+          {...omitUndefined({ onSelectedDateChange })}
           testID={dailyTestID}
         />
       ) : canRenderWeeklyChart ? (
@@ -171,7 +175,7 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
           height={chartHeight}
           model={model}
           scrollX
-          onDisplayedWeekChange={onDisplayedWeekChange}
+          {...omitUndefined({ onDisplayedWeekChange })}
           onSelectedWeekChange={onSelectedWeekChange}
         />
       ) : (

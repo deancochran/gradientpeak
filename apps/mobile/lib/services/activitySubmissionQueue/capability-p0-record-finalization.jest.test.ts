@@ -20,7 +20,7 @@ describe("record finalization queue outcomes", () => {
             streamArtifactPaths: [],
             executionManifest: {
               version: 1,
-              compilerVersion: 1,
+              compilerVersion: 3,
               planHash: "0".repeat(64),
               occurrences: [],
             },

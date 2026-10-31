@@ -95,6 +95,7 @@ describe("mobile provider action registry", () => {
     expect(providerManifestRegistry.map((manifest) => manifest.connectorId)).toEqual([
       "wahoo",
       "strava",
+      "garmin",
     ]);
     for (const manifest of providerManifestRegistry) {
       expect(productionMobileProviderActionRegistry.get(manifest.connectorId)).not.toBeNull();

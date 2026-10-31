@@ -1,5 +1,6 @@
 import { buildDailyLoadByDateSeries, replayCommonLoadFitnessByDate } from "@repo/core/load";
 import { isCanonicalDateKey } from "@/lib/calendar/dateMath";
+import { omitUndefined } from "@/lib/omitUndefined";
 import {
   type CommonLoadIdentity,
   sameCommonLoadIdentity,
@@ -116,10 +117,10 @@ function getRangeBounds(
 
   const lastGoal =
     upcomingGoals[upcomingGoals.length - 1] ?? goalMarkers[goalMarkers.length - 1] ?? null;
-  return {
+  return omitUndefined({
     start: addDays(weekStart, -84),
     end: lastGoal ? addDays(lastGoal.weekStart, 28) : addDays(weekStart, 180),
-  };
+  });
 }
 
 export function resolveTrainingPathRiskZone(form: number | null): TrainingPathRiskZone | null {
@@ -321,12 +322,12 @@ export function buildScrollableTrainingPathWindow(input: {
   const currentWeekStart = getWeekStartDateKey(input.todayKey);
   const markers = buildTrainingPathGoalMarkers(input.goalMarkers ?? []);
   const lastGoal = markers[markers.length - 1] ?? null;
-  return {
+  return omitUndefined({
     start: addDays(currentWeekStart, -(input.pastWeeks ?? 12) * 7),
     end: lastGoal
       ? addDays(lastGoal.weekStart, (input.futureWeeksAfterLastGoal ?? 8) * 7)
       : addDays(currentWeekStart, (input.fallbackFutureWeeks ?? 52) * 7),
-  };
+  });
 }
 
 function chooseSelectedWeek(
@@ -389,7 +390,7 @@ export function buildTrainingPathWeekSummary(input: {
     ? (input.targetFitnessByWeek.get(nextGoal.weekStart)?.longTermLoad ?? null)
     : null;
 
-  return {
+  return omitUndefined({
     weekStart: input.week.weekStart,
     weekEnd: input.week.weekEnd,
     dateLabel: formatTrainingPathDateRange(input.week.weekStart, input.week.weekEnd),
@@ -410,7 +411,7 @@ export function buildTrainingPathWeekSummary(input: {
     freshnessLabel: freshnessCopy(input.week.form),
     projectedFitnessAtGoal,
     targetFitnessAtGoal,
-  };
+  });
 }
 
 function computeDomain(values: Array<number | null>, fallback: [number, number]) {
@@ -454,7 +455,7 @@ function resolveEmptyState(
 }
 
 function normalizeTrainingPathInput(input: BuildTrainingPathInput): NormalizedTrainingPathInput {
-  return {
+  return omitUndefined({
     timeline: input.timeline ?? [],
     fitnessHistory: input.fitnessHistory ?? [],
     projectedFitness: input.projectedFitness ?? [],
@@ -464,7 +465,7 @@ function normalizeTrainingPathInput(input: BuildTrainingPathInput): NormalizedTr
     range: input.range,
     weekWindow: input.weekWindow,
     todayKey: input.todayKey,
-  };
+  });
 }
 
 function buildSourceMaps(input: NormalizedTrainingPathInput): TrainingPathSourceMaps {

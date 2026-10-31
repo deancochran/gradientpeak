@@ -12,7 +12,7 @@ type ActivityDetailTestSegment = ActivitySegmentAnalysis & {
   id: string;
   ordinal: number;
   role: "activity";
-  activity_category: "run" | "bike";
+  activity_category: "run" | "bike" | "swim";
   startOffsetMs: number;
   endOffsetMs: number;
 };
@@ -21,7 +21,7 @@ const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ sampl
 
 function activitySegment(
   status: "available" | "processing" | "failed" = "available",
-  activity_category: "run" | "bike" = "run",
+  activity_category: "run" | "bike" | "swim" = "run",
 ): ActivityDetailTestSegment {
   const identity = {
     id: "22222222-2222-4222-8222-222222222222",
@@ -57,7 +57,7 @@ const activityData = {
     id: "11111111-1111-4111-8111-111111111111",
     profile_id: "profile-1",
     profile: { id: "profile-1", username: "runner", avatar_url: null },
-    activity_kind: "single",
+    activity_kind: "single" as "single" | "multisport",
     segments: activitySegments,
     name: "Morning Threshold",
     started_at: "2026-03-23T09:00:00.000Z",
@@ -70,6 +70,9 @@ const activityData = {
     max_heart_rate: 181,
     avg_speed_mps: 3.33,
     avg_power: 278,
+    pool_length_meters: null as number | null,
+    total_strokes: null as number | null,
+    avg_swolf: null as number | null,
     likes_count: 0,
     notes: "Steady through the middle block.",
     current_artifact: {
@@ -186,7 +189,12 @@ function toActivityProjection(data: typeof activityData) {
           avatarUrl: data.activity.profile.avatar_url,
         },
         time: { startedAt: data.activity.started_at, finishedAt: null },
-        activityComposition: { kind: "single", categories: ["run"] },
+        activityComposition: {
+          kind: data.activity.activity_kind,
+          categories: data.activity.segments
+            .filter((segment) => segment.role === "activity")
+            .map((segment) => segment.activity_category),
+        },
         title: data.activity.name,
         notes: data.activity.notes,
         metrics: [
@@ -259,9 +267,9 @@ function toActivityProjection(data: typeof activityData) {
         maximumPower: null,
         averageSpeedMetersPerSecond: data.activity.avg_speed_mps,
         maximumSpeedMetersPerSecond: null,
-        poolLengthMeters: null,
-        totalStrokes: null,
-        averageSwolf: null,
+        poolLengthMeters: data.activity.pool_length_meters,
+        totalStrokes: data.activity.total_strokes,
+        averageSwolf: data.activity.avg_swolf,
       },
       routePolyline: data.activity.polyline,
       laps: streamsData.laps,
@@ -363,9 +371,9 @@ let effortsQueryState: {
 } = { data: [], isError: false, isLoading: false };
 const streamsData = {
   records: [
-    { timestamp: "2026-03-23T09:00:00.000Z", heartRate: 142 },
-    { timestamp: "2026-03-23T09:01:00.000Z", heartRate: 158 },
-    { timestamp: "2026-03-23T09:02:00.000Z", heartRate: 171 },
+    { timestamp: "2026-03-23T09:00:00.000Z", heartRate: 142, latitude: 40, longitude: -75 },
+    { timestamp: "2026-03-23T09:01:00.000Z", heartRate: 158, latitude: 40.1, longitude: -75.1 },
+    { timestamp: "2026-03-23T09:02:00.000Z", heartRate: 171, latitude: 40.2, longitude: -75.2 },
   ],
   laps: [] as Array<{ totalDistance: number; totalTimerTime: number }>,
   analysis: {
@@ -454,6 +462,8 @@ const streamsData = {
     },
   },
 };
+let scopedStreamsBySegment: Record<string, typeof streamsData> = {};
+let loadingStreamSegmentId: string | null = null;
 
 type StackScreenProps = {
   options?: { headerRight?: () => React.ReactNode };
@@ -739,7 +749,13 @@ jest.mock("@/lib/api", () => ({
       getStreams: {
         useQuery: (...args: unknown[]) => {
           getStreamsUseQueryMock(...args);
-          return { data: streamsData, isLoading: false, error: null };
+          const input = args[0] as { scope?: { type?: string; segmentId?: string } } | undefined;
+          const segmentId = input?.scope?.type === "segment" ? input.scope.segmentId : undefined;
+          return {
+            data: segmentId ? (scopedStreamsBySegment[segmentId] ?? streamsData) : streamsData,
+            isLoading: segmentId === loadingStreamSegmentId,
+            error: null,
+          };
         },
       },
     },
@@ -829,6 +845,10 @@ describe("activity detail screen", () => {
     (ReactNative.Alert.alert as jest.Mock).mockClear();
     authState.user.id = "profile-1";
     activitySegments.splice(0, activitySegments.length, activitySegment());
+    activityData.activity.activity_kind = "single";
+    activityData.activity.pool_length_meters = null;
+    activityData.activity.total_strokes = null;
+    activityData.activity.avg_swolf = null;
     activityData.activity.ingestion = null;
     activityData.activity.activity_routes = null;
     delete (activityData.activity as { content_visibility?: string }).content_visibility;
@@ -841,6 +861,8 @@ describe("activity detail screen", () => {
     completedActivityProviders = [];
     effortsQueryState = { data: [], isError: false, isLoading: false };
     streamsData.laps = [];
+    scopedStreamsBySegment = {};
+    loadingStreamSegmentId = null;
     mockUsePreferredUnitSystem.mockReturnValue("metric");
   });
 
@@ -895,22 +917,20 @@ describe("activity detail screen", () => {
     expect(
       summaryActionRegion.queryAll(
         (node) =>
-          node.props["testID"] ===
-          "activity-card-share-button-11111111-1111-4111-8111-111111111111",
+          node.props.testID === "activity-card-share-button-11111111-1111-4111-8111-111111111111",
       ).length,
     ).toBeGreaterThan(0);
     expect(
       summary.queryAll(
         (node) =>
-          node.props["testID"] ===
-          "activity-card-share-button-11111111-1111-4111-8111-111111111111",
+          node.props.testID === "activity-card-share-button-11111111-1111-4111-8111-111111111111",
       ),
     ).toHaveLength(0);
     expect(
-      summary.queryAll((node) => node.props["testID"] === "activity-card-metrics").length,
+      summary.queryAll((node) => node.props.testID === "activity-card-metrics").length,
     ).toBeGreaterThan(0);
     expect(
-      summary.queryAll((node) => node.props["testID"] === "activity-card-social-actions").length,
+      summary.queryAll((node) => node.props.testID === "activity-card-social-actions").length,
     ).toBeGreaterThan(0);
     expect(summary.queryAll((node) => String(node.type) === "StaticRouteMapPreview")).toHaveLength(
       0,
@@ -920,8 +940,7 @@ describe("activity detail screen", () => {
         .getByTestId("activity-detail-navigation-header")
         .queryAll(
           (node) =>
-            node.props["testID"] ===
-            "activity-card-share-button-11111111-1111-4111-8111-111111111111",
+            node.props.testID === "activity-card-share-button-11111111-1111-4111-8111-111111111111",
         ),
     ).toHaveLength(0);
     const shareButton = screen.getByTestId(
@@ -932,9 +951,9 @@ describe("activity detail screen", () => {
       accessibilityRole: "button",
     });
     expect(shareButton.props.className).toContain("min-h-11");
-    expect(
-      shareButton.queryAll((node) => node.props["children"] === "Share").length,
-    ).toBeGreaterThan(0);
+    expect(shareButton.queryAll((node) => node.props.children === "Share").length).toBeGreaterThan(
+      0,
+    );
     expect(likeButton.props.accessibilityLabel).toBe("Like, 0 likes");
     expect(commentButton.props.accessibilityLabel).toBe("Comment, 0 comments");
     expect(commentButton.props.accessibilityRole).toBe("button");
@@ -1097,6 +1116,143 @@ describe("activity detail screen", () => {
       }),
       expect.anything(),
     );
+  });
+
+  it("orders multisport legs and transitions, then scopes streams and metrics to the selected leg", async () => {
+    const swimSegment = {
+      ...activitySegment("available", "swim"),
+      id: "swim-leg",
+      ordinal: 0,
+      summary: {
+        ...activitySegment("available", "swim").summary,
+        swim: { poolLengthMeters: 25, strokeCount: 32, averageSwolf: 41 },
+      },
+    } as ActivityDetailTestSegment;
+    activitySegments.splice(
+      0,
+      activitySegments.length,
+      { ...activitySegment(), id: "run-leg", ordinal: 2 },
+      {
+        id: "transition-one",
+        ordinal: 1,
+        role: "transition",
+        activity_category: null,
+        status: "available",
+        summary: activitySegment().summary,
+      } as unknown as ActivityDetailTestSegment,
+      swimSegment,
+    );
+    activityData.activity.activity_kind = "multisport";
+    scopedStreamsBySegment = {
+      "swim-leg": {
+        ...streamsData,
+        records: [
+          {
+            timestamp: "2026-03-23T09:00:00.000Z",
+            heartRate: 142,
+            latitude: 10,
+            longitude: 20,
+          },
+        ],
+      },
+      "run-leg": {
+        ...streamsData,
+        records: [
+          {
+            timestamp: "2026-03-23T09:30:00.000Z",
+            heartRate: 158,
+            latitude: 30,
+            longitude: 40,
+          },
+        ],
+      },
+    };
+
+    const rendered = await renderNative(<ActivityDetailScreen />);
+
+    expect(screen.getByTestId("activity-segment-selector")).toBeTruthy();
+    expect(screen.getByText("Leg 1 · Swim")).toBeTruthy();
+    expect(screen.getByTestId("activity-segment-boundary-transition-one")).toBeTruthy();
+    expect(screen.getByText("Leg 2 · Run")).toBeTruthy();
+    expect(screen.getByTestId("activity-segment-select-swim-leg").props.accessibilityState).toEqual(
+      {
+        selected: true,
+      },
+    );
+    expect(getStreamsUseQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ scope: { type: "segment", segmentId: "swim-leg" } }),
+      expect.anything(),
+    );
+    expect(
+      rendered.container.queryAll((node) => node.type === "ActivityRouteMap")[0]?.props.coordinates,
+    ).toEqual([{ latitude: 10, longitude: 20 }]);
+    expect(screen.getAllByText("Active 52:00")).toHaveLength(3);
+    const parentDistanceCount = screen.getAllByText("10.4 km").length;
+
+    await fireEvent.press(screen.getByTestId("activity-detail-tab-breakdown"));
+    expect(screen.getByText("Swim Metrics")).toBeTruthy();
+    expect(screen.getByText("32")).toBeTruthy();
+    expect(screen.getAllByText("Load & Intensity")).toHaveLength(1);
+
+    await fireEvent.press(screen.getByTestId("activity-detail-tab-overview"));
+    await fireEvent.press(screen.getByTestId("activity-segment-select-run-leg"));
+
+    expect(screen.getByTestId("activity-segment-select-run-leg").props.accessibilityState).toEqual({
+      selected: true,
+    });
+    expect(getStreamsUseQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ scope: { type: "segment", segmentId: "run-leg" } }),
+      expect.anything(),
+    );
+    expect(
+      rendered.container.queryAll((node) => node.type === "ActivityRouteMap")[0]?.props.coordinates,
+    ).toEqual([{ latitude: 30, longitude: 40 }]);
+
+    await fireEvent.press(screen.getByTestId("activity-segment-select-swim-leg"));
+    loadingStreamSegmentId = "run-leg";
+    await fireEvent.press(screen.getByTestId("activity-segment-select-run-leg"));
+    expect(screen.getByText("Loading route data...")).toBeTruthy();
+    expect(rendered.container.queryAll((node) => node.type === "ActivityRouteMap")).toHaveLength(0);
+
+    await fireEvent.press(screen.getByTestId("activity-detail-tab-breakdown"));
+    expect(screen.queryByText("Swim Metrics")).toBeNull();
+    expect(screen.getAllByText("Load & Intensity")).toHaveLength(1);
+    expect(screen.getAllByText("10.4 km")).toHaveLength(parentDistanceCount);
+  });
+
+  it("does not query streams when a completed activity has no selectable activity-category legs", async () => {
+    activitySegments.splice(0, activitySegments.length, {
+      id: "transition-only",
+      ordinal: 0,
+      role: "transition",
+      activity_category: null,
+      status: "available",
+      summary: activitySegment().summary,
+    } as unknown as ActivityDetailTestSegment);
+
+    await renderNative(<ActivityDetailScreen />);
+
+    expect(screen.getByTestId("activity-no-recorded-segment")).toBeTruthy();
+    expect(getStreamsUseQueryMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ scope: expect.anything() }),
+      expect.anything(),
+    );
+  });
+
+  it("keeps parent swim metrics as a single-leg fallback when segment swim details are absent", async () => {
+    activitySegments.splice(0, activitySegments.length, activitySegment("available", "swim"));
+    activityData.activity.activity_kind = "single";
+    activityData.activity.pool_length_meters = 25;
+    activityData.activity.total_strokes = 48;
+    activityData.activity.avg_swolf = 39;
+
+    await renderNative(<ActivityDetailScreen />);
+    await fireEvent.press(screen.getByTestId("activity-detail-tab-breakdown"));
+
+    expect(screen.getByText("Swim Metrics")).toBeTruthy();
+    expect(screen.getByText("25.0 m")).toBeTruthy();
+    expect(screen.getByText("48")).toBeTruthy();
+    expect(screen.getByText("39")).toBeTruthy();
   });
 
   it("keeps unavailable aggregate metrics explicit when segment diagnostics are unavailable", async () => {

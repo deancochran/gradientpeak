@@ -16,6 +16,7 @@ jest.mock("@repo/ui/components/icon", () => ({ Icon: createHost("Icon") }));
 jest.mock("@repo/ui/components/text", () => ({ Text: createHost("Text") }));
 jest.mock("lucide-react-native", () => ({
   Bell: createHost("Bell"),
+  Bot: createHost("Bot"),
   ChevronRight: createHost("ChevronRight"),
   MessageSquare: createHost("MessageSquare"),
 }));
@@ -43,5 +44,7 @@ describe("InboxScreen", () => {
     expect(navigateMock).toHaveBeenCalledWith("/messages");
     await fireEvent.press(screen.getByTestId("inbox-notifications"));
     expect(navigateMock).toHaveBeenCalledWith("/notifications");
+    await fireEvent.press(screen.getByTestId("inbox-assistant"));
+    expect(navigateMock).toHaveBeenCalledWith("./chat");
   });
 });

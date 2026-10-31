@@ -47,12 +47,12 @@ test("[variation:routes.preview:detail-history] route detail preview launches re
   try {
     const id = await routes.upload(routeFile, name, "keyboard");
     await recording.openRoutePreview(id);
-    await expect(athletePage.getByText(name, { exact: true })).toBeVisible();
+    await expect(athletePage.getByRole("heading", { name, exact: true })).toBeVisible();
     await athletePage.goBack();
     await expect(athletePage.getByText("Map preview", { exact: true })).toBeVisible();
     await expect(athletePage.getByText("Elevation profile", { exact: true })).toBeVisible();
     await athletePage.goForward();
-    await expect(athletePage).toHaveURL((url) => url.pathname === "/record");
+    await expect(athletePage).toHaveURL((url) => url.pathname === "/record/session");
     await expect(athletePage).toHaveURL(
       (url) =>
         new URLSearchParams([...url.searchParams].sort()).toString() ===
@@ -74,12 +74,12 @@ test("[variation:routes.preview:narrow-launcher] narrow route preview retains th
     const id = await routes.upload(routeFile, name, "keyboard");
     await athletePage.setViewportSize({ width: 390, height: 844 });
     await recording.openRoutePreview(id);
-    const route = athletePage.getByText(name, { exact: true });
+    const route = athletePage.getByRole("heading", { name, exact: true });
     await route.scrollIntoViewIfNeeded();
     await expect(route).toBeVisible();
     await athletePage.reload();
     await expect(route).toBeVisible();
-    await expect(athletePage.getByRole("button", { name: /^open recorder$/i })).toBeVisible();
+    await expect(athletePage.getByRole("button", { name: /^start$/i })).toBeVisible();
   } finally {
     await routes.deleteByNameIfPresent(name);
   }
@@ -100,7 +100,7 @@ test("[variation:routes.recording:keyboard-review] keyboard route handoff reache
     await recording.finish("keyboard");
     await expect(athletePage.getByText(name, { exact: true })).toBeVisible();
     await recording.discard("keyboard");
-    await expect(athletePage.getByText(/no recording session/i)).toBeVisible();
+    await expect(athletePage.getByRole("button", { name: /^start$/i })).toBeVisible();
   } finally {
     await routes.deleteByNameIfPresent(name);
   }

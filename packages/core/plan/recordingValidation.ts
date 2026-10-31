@@ -46,7 +46,6 @@ export function validatePlanRequirements(
 
   const missingMetrics = new Map<string, MissingMetric>();
   for (const occurrence of compiled.occurrences) {
-    if (occurrence.role !== "activity") continue;
     for (const target of occurrence.targets) {
       if (
         (target.type === "%FTP" || target.type === "%ThresholdHR" || target.type === "%MaxHR") &&

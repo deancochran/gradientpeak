@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { activityPlanSemanticHash, activityPlanStructureSchema } from "../activity-plan";
 import { stringifyCanonicalJson } from "../athlete-intelligence/canonical-json";
 import { sha256Hex } from "../utils/sha256";
 import {
@@ -11,44 +12,33 @@ import {
 } from "./planned-session";
 
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
-
-const structure = {
-  version: 3 as const,
+const structure = activityPlanStructureSchema.parse({
+  version: 5 as const,
   activity_category: "run" as const,
-  segments: [
+  items: [
     {
-      id: id(1),
-      role: "activity" as const,
-      name: "Run",
-      intervals: [
-        {
-          id: id(2),
-          name: "Work",
-          repetitions: 1,
-          steps: [
-            {
-              id: id(3),
-              name: "Steady",
-              duration: { type: "time" as const, seconds: 1_800 },
-              targets: [{ type: "RPE" as const, intensity: 5 }],
-            },
-          ],
-        },
-      ],
+      type: "step",
+      id: id(3),
+      name: "Steady",
+      duration: { type: "time" as const, seconds: 1800 },
+      targets: [{ type: "RPE" as const, intensity: 5 }],
     },
   ],
-};
+});
 const structureHash = `v1:sha256:${sha256Hex(stringifyCanonicalJson(structure))}`;
 const resolutionManifest = {
-  resolver_version: "prescription-resolver-v1",
-  policy_version: "training-plan-policy-v1",
+  resolver_version: "prescription-resolver-v2",
+  policy_version: "training-plan-policy-v2",
   training_plan_id: null,
   training_plan_revision: null,
   training_plan_hash: null,
   athlete_context_revision: null,
   activity_plan_id: id(102),
   activity_plan_revision: 1,
-  activity_plan_semantic_hash: `v1:sha256:${"a".repeat(64)}`,
+  activity_plan_semantic_hash: activityPlanSemanticHash({
+    structure,
+    trainingIntent: "aerobic_base",
+  }),
   effective_target_duration_minutes: null,
   effective_target_common_load: null,
   evidence_facts: [],
@@ -59,7 +49,6 @@ const resolutionManifest = {
     target_common_load: null,
     importance: "normal" as const,
   },
-  adaptation_values: {},
   fallback_level: "system_default_no_context" as const,
   reason_codes: [],
   resolved_structure: structure,
@@ -74,7 +63,6 @@ const resolutionManifest = {
   },
   fingerprint: `v1:sha256:${"b".repeat(64)}`,
 };
-
 const baseSession = (overrides: Record<string, unknown> = {}) => {
   const source = { kind: "direct" as const, operationId: "a".repeat(32) };
   return {
@@ -95,7 +83,6 @@ const baseSession = (overrides: Record<string, unknown> = {}) => {
     ...overrides,
   };
 };
-
 describe("planned session contract", () => {
   it("represents a skip without an activity identity", () => {
     expect(
@@ -116,7 +103,6 @@ describe("planned session contract", () => {
       },
     });
   });
-
   it("retains target date when a training-plan session moves", () => {
     const source = {
       kind: "training_plan" as const,
@@ -150,7 +136,6 @@ describe("planned session contract", () => {
       plannedSessionSchema.safeParse({ ...session, idempotencyKey: "caller-controlled" }).success,
     ).toBe(false);
   });
-
   it("accepts every valid completion-linkage shape", () => {
     const cancelled = baseSession({
       lifecycle: {
@@ -179,19 +164,16 @@ describe("planned session contract", () => {
         },
       },
     });
-
     expect(plannedSessionSchema.safeParse(cancelled).success).toBe(true);
     expect(plannedSessionSchema.safeParse(linked).success).toBe(true);
     expect(plannedSessionSchema.safeParse(activityDeleted).success).toBe(true);
   });
-
   it("rejects invalid completion-linkage and schedule-status shapes", () => {
     const linkedCompletion = {
       state: "linked",
       activityId: id(103),
       linkedAt: "2026-08-10T12:00:00.000Z",
     };
-
     expect(
       plannedSessionSchema.safeParse({
         ...baseSession(),
@@ -255,7 +237,6 @@ describe("planned session contract", () => {
       }).success,
     ).toBe(false);
   });
-
   it("preserves direct source identity, positive revisions, and prescription snapshots", () => {
     const session = baseSession();
     expect(plannedSessionSchema.safeParse(session).success).toBe(true);
@@ -318,17 +299,14 @@ describe("planned session contract", () => {
       }).success,
     ).toBe(false);
   });
-
   it("rejects duplicate group-event associations for the same profile", () => {
     const groupEventId = id(104);
     const first = baseSession({ groupEventId });
     const duplicate = baseSession({ id: id(105), groupEventId });
     const anotherProfile = baseSession({ id: id(106), profileId: id(107), groupEventId });
-
     expect(plannedSessionCollectionSchema.safeParse([first, duplicate]).success).toBe(false);
     expect(plannedSessionCollectionSchema.safeParse([first, anotherProfile]).success).toBe(true);
   });
-
   it("models unlinking as an activity-deleted completion that keeps its link history", () => {
     const unlinked = baseSession({
       lifecycle: {
@@ -340,7 +318,6 @@ describe("planned session contract", () => {
         },
       },
     });
-
     expect(plannedSessionSchema.parse(unlinked).lifecycle).toEqual({
       status: "completed",
       completion: {

@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import {
   organizationMembershipRoleGrants,
   organizationMemberships,
@@ -58,16 +59,23 @@ async function seedCoachOrganization(
       );
     },
     cleanup: async () => {
+      // Role grants are retained audit records and the database deliberately
+      // rejects deletes. Revoke only this synthetic coach grant; the uniquely
+      // identified fixture remains as a closed-over historical record.
       await withLocalE2EDatabase((database) =>
         database.typedTransaction(async (transaction) => {
           await deferConstraints(transaction);
           await transaction
-            .delete(organizationMembershipRoleGrants)
-            .where(eq(organizationMembershipRoleGrants.organization_id, organizationId));
-          await transaction.delete(organizations).where(eq(organizations.id, organizationId));
-          await transaction
-            .delete(organizationMemberships)
-            .where(eq(organizationMemberships.organization_id, organizationId));
+            .update(organizationMembershipRoleGrants)
+            .set({ revoked_at: new Date() })
+            .where(
+              and(
+                eq(organizationMembershipRoleGrants.organization_id, organizationId),
+                eq(organizationMembershipRoleGrants.membership_id, coachMembershipId),
+                eq(organizationMembershipRoleGrants.role_key, "coach"),
+                isNull(organizationMembershipRoleGrants.revoked_at),
+              ),
+            );
         }),
       );
     },
@@ -76,6 +84,18 @@ async function seedCoachOrganization(
 
 async function deferConstraints(transaction: E2EDrizzleTransaction) {
   await transaction.execute(sql`set constraints all deferred`);
+}
+
+function timezoneLabel(timezone: string) {
+  return timezone.replaceAll("_", " ").replaceAll("/", " / ");
+}
+
+async function choosePlanningTimezone(page: Page, timezone: string) {
+  await page.getByRole("button", { name: "Planning Timezone" }).click();
+  await page.getByRole("combobox", { name: "Search timezones" }).fill(timezone);
+  await page
+    .getByRole("option", { name: timezone ? timezoneLabel(timezone) : "Not set", exact: true })
+    .click();
 }
 
 test("settings.select-theme persists a chosen theme across reloads", async ({ athletePage }) => {
@@ -124,7 +144,8 @@ test("[P2] profile and privacy settings persist together and can be restored", a
   const units = profilePage.getByLabel("Preferred units");
   const language = profilePage.getByLabel("Language");
   const openProfile = profilePage.getByRole("switch", { name: "Open profile" });
-  const planningTimezone = profilePage.getByLabel("Planning Timezone");
+  const planningTimezone = profilePage.getByRole("button", { name: "Planning Timezone" });
+  const planningTimezoneValue = profilePage.locator('input[name="planning_timezone"]');
   const visibility = profilePage.getByLabel("Default activity visibility");
   const original = {
     bio: await bio.inputValue(),
@@ -132,7 +153,7 @@ test("[P2] profile and privacy settings persist together and can be restored", a
     fullName: await fullName.inputValue(),
     language: await language.inputValue(),
     open: await openProfile.isChecked(),
-    planningTimezone: await planningTimezone.inputValue(),
+    planningTimezone: await planningTimezoneValue.inputValue(),
     units: await units.inputValue(),
     visibility: await visibility.inputValue(),
   };
@@ -149,7 +170,7 @@ test("[P2] profile and privacy settings persist together and can be restored", a
     await dateOfBirth.fill(nextDateOfBirth);
     await units.selectOption(original.units === "metric" ? "imperial" : "metric");
     await language.fill("fr");
-    await planningTimezone.fill(nextPlanningTimezone);
+    await choosePlanningTimezone(profilePage, nextPlanningTimezone);
     if ((await openProfile.isChecked()) === original.open) await openProfile.click();
     await visibility.selectOption(original.visibility === "public" ? "private" : "public");
     await profilePage.getByRole("button", { name: "Update Profile" }).click();
@@ -163,7 +184,7 @@ test("[P2] profile and privacy settings persist together and can be restored", a
     await expect(dateOfBirth).toHaveValue(nextDateOfBirth);
     await expect(units).toHaveValue(original.units === "metric" ? "imperial" : "metric");
     await expect(language).toHaveValue("fr");
-    await expect(planningTimezone).toHaveValue(nextPlanningTimezone);
+    await expect(planningTimezone).toHaveText(timezoneLabel(nextPlanningTimezone));
     await expect(openProfile).toBeChecked({ checked: !original.open });
     await expect(visibility).toHaveValue(original.visibility === "public" ? "private" : "public");
   } finally {
@@ -173,7 +194,7 @@ test("[P2] profile and privacy settings persist together and can be restored", a
     await dateOfBirth.fill(original.dateOfBirth);
     await units.selectOption(original.units);
     await language.fill(original.language);
-    await planningTimezone.fill(original.planningTimezone);
+    await choosePlanningTimezone(profilePage, original.planningTimezone);
     if ((await openProfile.isChecked()) !== original.open) await openProfile.click();
     await visibility.selectOption(original.visibility);
     const restoreProfile = profilePage.getByRole("button", { name: "Update Profile" });

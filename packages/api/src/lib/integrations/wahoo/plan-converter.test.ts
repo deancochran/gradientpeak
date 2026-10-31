@@ -16,31 +16,24 @@ import {
 const options = { activityType: "bike" as const, name: "Fixture" };
 function plan(durations: ActivityPlanDuration[], repetitions = 3) {
   return activityPlanStructureSchema.parse({
-    version: 3,
+    version: 5,
     activity_category: "bike",
-    segments: [
+    items: [
       {
+        type: "repeat",
         id: "11111111-1111-4111-8111-111111111111",
-        role: "activity",
-        name: "Bike",
-        intervals: [
-          {
-            id: "22222222-2222-4222-8222-222222222222",
-            name: "Main",
-            repetitions,
-            steps: durations.map((duration, index) => ({
-              id: `33333333-3333-4333-8333-${String(index + 1).padStart(12, "0")}`,
-              name: "Step",
-              duration,
-              targets: [{ type: "watts", intensity: 200 }],
-            })),
-          },
-        ],
+        count: repetitions,
+        steps: durations.map((duration, index) => ({
+          type: "step",
+          id: `33333333-3333-4333-8333-${String(index + 1).padStart(12, "0")}`,
+          name: "Step",
+          duration,
+          targets: [{ type: "watts", intensity: 200 }],
+        })),
       },
     ],
   });
 }
-
 describe("Wahoo plan converter", () => {
   it("exports the pure plan converter", () => {
     expect(convertToWahooPlan).toBeTypeOf("function");
@@ -111,14 +104,27 @@ describe("Wahoo plan converter", () => {
   });
   it("does not report rest-boundary time while silently dropping it from export", () => {
     const structure = plan([{ type: "time", seconds: 60 }]);
-    structure.segments.push({
-      id: "44444444-4444-4444-8444-444444444444",
-      role: "rest",
+    structure.items.push({
+      type: "step",
+      id: "55555555-5555-4555-8555-555555555555",
       name: "Rest",
       duration: { type: "time", seconds: 30 },
+      targets: [],
     });
     expect(validateWahooCompatibility(structure, options).compatible).toBe(false);
-    expect(() => convertToWahooPlan(structure, options)).toThrow(/rest boundaries/);
-    expect(() => calculateWorkoutDuration(structure)).toThrow(/rest boundaries/);
+    expect(() => convertToWahooPlan(structure, options)).toThrow(/without a target/);
+    expect(() => calculateWorkoutDuration(structure)).toThrow(/without a target/);
+  });
+  it("rejects explicit passive rest rather than exporting it as numeric intensity", () => {
+    const structure = plan([{ type: "time", seconds: 60 }]);
+    structure.items.push({
+      type: "step",
+      id: "55555555-5555-4555-8555-555555555555",
+      name: "Rest",
+      duration: { type: "time", seconds: 30 },
+      targets: [{ type: "rest" }],
+    });
+    expect(validateWahooCompatibility(structure, options).compatible).toBe(false);
+    expect(() => convertToWahooPlan(structure, options)).toThrow(/rest targets are not supported/);
   });
 });

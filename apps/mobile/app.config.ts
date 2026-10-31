@@ -71,11 +71,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
         "android.permission.POST_NOTIFICATIONS",
       ],
-      config: {
-        googleMaps: {
-          apiKey: process.env.EXPO_PUBLIC_GOOGLE_API_KEY,
-        },
-      },
+      config:
+        process.env.EXPO_PUBLIC_GOOGLE_API_KEY === undefined
+          ? {}
+          : { googleMaps: { apiKey: process.env.EXPO_PUBLIC_GOOGLE_API_KEY } },
     },
     updates:
       environment === "development"
@@ -168,10 +167,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
 
   return withSentry(expoConfig, {
     disableAutoUpload: !(sentryOrganization && sentryProject && hasSentryAuthToken),
-    organization: sentryOrganization,
-    project: sentryProject,
+    ...(sentryOrganization === undefined ? {} : { organization: sentryOrganization }),
+    ...(sentryProject === undefined ? {} : { project: sentryProject }),
     useNativeInit: Boolean(sentryDsn),
-    options: sentryDsn ? createMobileSentryOptions(process.env, environment) : undefined,
+    ...(sentryDsn ? { options: createMobileSentryOptions(process.env, environment) } : {}),
   });
 };
 

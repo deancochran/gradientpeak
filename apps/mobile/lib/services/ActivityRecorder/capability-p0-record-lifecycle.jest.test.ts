@@ -53,6 +53,7 @@ jest.mock("../activitySubmissionQueue/localArtifact", () => ({
 }));
 
 import { ActivityRecorderService } from "./index";
+import { PlanExecution } from "./planExecution";
 
 function createRecorder() {
   const recorder = Object.create(ActivityRecorderService.prototype) as ActivityRecorderService;
@@ -78,6 +79,46 @@ function createRecorder() {
 
 describe("record lifecycle capability boundary", () => {
   beforeEach(() => jest.clearAllMocks());
+
+  it("advances stationary rest using the session clock, excluding an explicit pause", async () => {
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(1000);
+      const recorder = createRecorder();
+      Object.assign(recorder, { startTime: 1000 });
+      const execution = new PlanExecution();
+      execution.loadPlan({
+        name: "Stationary rest",
+        structure: {
+          version: 5,
+          activity_category: "run",
+          items: [
+            {
+              type: "step",
+              id: "00000000-0000-4000-8000-000000000001",
+              name: "Rest",
+              duration: { type: "time", seconds: 10 },
+              targets: [{ type: "rest" }],
+            },
+          ],
+        },
+      });
+      // Neither distance nor sensor data changes during this entire interval.
+      jest.setSystemTime(5000);
+      await recorder.pauseRecording();
+      jest.setSystemTime(31000);
+      expect(execution.getStepProgress(recorder.getMovingTime(), 0)?.progress).toBe(0.4);
+      expect(execution.advance(recorder.getMovingTime(), 0)).toBe(false);
+      await recorder.resumeRecording();
+      jest.setSystemTime(36999);
+      expect(execution.advance(recorder.getMovingTime(), 0)).toBe(false);
+      jest.setSystemTime(37000);
+      expect(execution.advance(recorder.getMovingTime(), 0)).toBe(true);
+      expect(execution.isFinished()).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 
   it("pauses and resumes the current recorder through its public commands", async () => {
     const recorder = createRecorder();

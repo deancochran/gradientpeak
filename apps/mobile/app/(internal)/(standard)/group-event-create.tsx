@@ -67,6 +67,9 @@ export default function GroupEventCreateRoute() {
                     groupId,
                   });
             allowNavigationAfterSuccess();
+            if (result.event === undefined) {
+              throw new Error("Event creation completed without an event to open.");
+            }
             router.replace({
               pathname: "/group-event-detail",
               params: { groupEventId: result.event.id },

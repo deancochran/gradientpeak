@@ -1,11 +1,11 @@
-import type { ActivityPlanIntervalStep } from "@repo/core";
+import type { ActivityPlanStep } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { memo } from "react";
 import { ScrollView, View } from "react-native";
 import StepPreviewCard from "./StepPreviewCard";
 
 interface UpcomingStepsPreviewProps {
-  steps: ActivityPlanIntervalStep[];
+  steps: ActivityPlanStep[];
   title?: string;
 }
 

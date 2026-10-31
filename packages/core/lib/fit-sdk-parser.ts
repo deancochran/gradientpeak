@@ -347,13 +347,17 @@ function decodeFitActivityArtifactFromResult(decoded: FitDecodeResult): DecodedA
 
   const rawSessions = messagesOf(decoded.messages, "sessionMesgs");
   if (rawSessions.length === 0) throw new Error("No session message found in FIT file.");
-  const sessions: SessionEvidence[] = rawSessions.map((source, index) => ({
-    source,
-    messageIndex: messageIndex(source, index, "session"),
-    ...sessionBounds(source, index),
-    rawSport: rawValue(source.sport),
-    rawSubSport: rawValue(source.subSport),
-  }));
+  const sessions: SessionEvidence[] = rawSessions.map((source, index) => {
+    const rawSport = rawValue(source.sport);
+    const rawSubSport = rawValue(source.subSport);
+    return {
+      source,
+      messageIndex: messageIndex(source, index, "session"),
+      ...sessionBounds(source, index),
+      ...(rawSport === undefined ? {} : { rawSport }),
+      ...(rawSubSport === undefined ? {} : { rawSubSport }),
+    };
+  });
   sessions.forEach((session, index) => {
     const previous = sessions[index - 1];
     if (previous && session.startTimeMs < previous.endTimeMs) {
@@ -690,27 +694,49 @@ export function projectFitArtifactSemantics(artifactInput: unknown): ActivityArt
 function normalizedRecord(record: {
   messageIndex: number;
   sessionMessageIndex: number;
-  lapMessageIndex?: number;
-  timestampMs?: number;
-  extensions?: DecodedArtifactExtensions;
+  lapMessageIndex?: number | undefined;
+  timestampMs?: number | undefined;
+  extensions?: DecodedArtifactExtensions | undefined;
 }): ActivityRecord {
   if (record.timestampMs === undefined) throw new Error(`FIT record ${record.messageIndex} has no timestamp.`);
   const positionLat = extensionNumber(record.extensions, "positionLat");
   const positionLong = extensionNumber(record.extensions, "positionLong");
+  const normalizedPositionLat =
+    positionLat === undefined
+      ? undefined
+      : Math.abs(positionLat) > 180
+        ? positionLat * SEMICIRCLE_TO_DEGREES
+        : positionLat;
+  const normalizedPositionLong =
+    positionLong === undefined
+      ? undefined
+      : Math.abs(positionLong) > 180
+        ? positionLong * SEMICIRCLE_TO_DEGREES
+        : positionLong;
+  const distance = extensionNumber(record.extensions, "distance");
+  const altitude =
+    extensionNumber(record.extensions, "enhancedAltitude") ??
+    extensionNumber(record.extensions, "altitude");
+  const speed =
+    extensionNumber(record.extensions, "enhancedSpeed") ?? extensionNumber(record.extensions, "speed");
+  const heartRate = extensionNumber(record.extensions, "heartRate");
+  const cadence = extensionNumber(record.extensions, "cadence");
+  const power = extensionNumber(record.extensions, "power");
+  const temperature = extensionNumber(record.extensions, "temperature");
   return {
     messageIndex: record.messageIndex,
     sessionMessageIndex: record.sessionMessageIndex,
-    lapMessageIndex: record.lapMessageIndex,
+    ...(record.lapMessageIndex === undefined ? {} : { lapMessageIndex: record.lapMessageIndex }),
     timestamp: new Date(record.timestampMs),
-    positionLat: positionLat === undefined ? undefined : Math.abs(positionLat) > 180 ? positionLat * SEMICIRCLE_TO_DEGREES : positionLat,
-    positionLong: positionLong === undefined ? undefined : Math.abs(positionLong) > 180 ? positionLong * SEMICIRCLE_TO_DEGREES : positionLong,
-    distance: extensionNumber(record.extensions, "distance"),
-    altitude: extensionNumber(record.extensions, "enhancedAltitude") ?? extensionNumber(record.extensions, "altitude"),
-    speed: extensionNumber(record.extensions, "enhancedSpeed") ?? extensionNumber(record.extensions, "speed"),
-    heartRate: extensionNumber(record.extensions, "heartRate"),
-    cadence: extensionNumber(record.extensions, "cadence"),
-    power: extensionNumber(record.extensions, "power"),
-    temperature: extensionNumber(record.extensions, "temperature"),
+    ...(normalizedPositionLat === undefined ? {} : { positionLat: normalizedPositionLat }),
+    ...(normalizedPositionLong === undefined ? {} : { positionLong: normalizedPositionLong }),
+    ...(distance === undefined ? {} : { distance }),
+    ...(altitude === undefined ? {} : { altitude }),
+    ...(speed === undefined ? {} : { speed }),
+    ...(heartRate === undefined ? {} : { heartRate }),
+    ...(cadence === undefined ? {} : { cadence }),
+    ...(power === undefined ? {} : { power }),
+    ...(temperature === undefined ? {} : { temperature }),
   };
 }
 
@@ -730,17 +756,23 @@ export function parseFitFileWithSDK(
   const allRecords = artifact.recordCollections.flatMap((collection) =>
     collection.storage === "inline" ? collection.records.map(normalizedRecord) : [],
   );
-  const allLaps: ActivityLap[] = artifact.laps.map((lap) => ({
-    messageIndex: lap.messageIndex,
-    sessionMessageIndex: lap.sessionMessageIndex,
-    startTime: new Date(lap.startTimeMs ?? 0),
-    totalTime: extensionNumber(lap.extensions, "totalTimerTime") ?? 0,
-    totalDistance: extensionNumber(lap.extensions, "totalDistance") ?? 0,
-    avgSpeed: extensionNumber(lap.extensions, "avgSpeed"),
-    avgHeartRate: extensionNumber(lap.extensions, "avgHeartRate"),
-    avgCadence: extensionNumber(lap.extensions, "avgCadence"),
-    avgPower: extensionNumber(lap.extensions, "avgPower"),
-  }));
+  const allLaps: ActivityLap[] = artifact.laps.map((lap) => {
+    const avgSpeed = extensionNumber(lap.extensions, "avgSpeed");
+    const avgHeartRate = extensionNumber(lap.extensions, "avgHeartRate");
+    const avgCadence = extensionNumber(lap.extensions, "avgCadence");
+    const avgPower = extensionNumber(lap.extensions, "avgPower");
+    return {
+      messageIndex: lap.messageIndex,
+      sessionMessageIndex: lap.sessionMessageIndex,
+      startTime: new Date(lap.startTimeMs ?? 0),
+      totalTime: extensionNumber(lap.extensions, "totalTimerTime") ?? 0,
+      totalDistance: extensionNumber(lap.extensions, "totalDistance") ?? 0,
+      ...(avgSpeed === undefined ? {} : { avgSpeed }),
+      ...(avgHeartRate === undefined ? {} : { avgHeartRate }),
+      ...(avgCadence === undefined ? {} : { avgCadence }),
+      ...(avgPower === undefined ? {} : { avgPower }),
+    };
+  });
   const lengths = (decodedMessages ? messagesOf(decodedMessages, "lengthMesgs") : []).map(
     (length, index) => {
       const startTimeMs = dateMs(length.startTime, `length ${index} start_time`);
@@ -764,26 +796,38 @@ export function parseFitFileWithSDK(
           startTimeMs >= item.startTimeMs &&
           startTimeMs <= item.endTimeMs,
       );
+      const sessionMessageIndex = owner?.messageIndex;
+      const lapMessageIndex = lap?.messageIndex;
+      const startTime = startTimeMs === undefined ? undefined : new Date(startTimeMs);
+      const totalElapsedTime = finiteNumber(length.totalElapsedTime);
+      const totalTimerTime = finiteNumber(length.totalTimerTime);
+      const totalStrokes = finiteNumber(length.totalStrokes);
+      const avgSpeed = finiteNumber(length.avgSpeed);
+      const lengthType =
+        profileLabel("lengthType", rawValue(length.lengthType)) ??
+        rawValue(length.lengthType)?.toString();
+      const swimStroke =
+        profileLabel("swimStroke", rawValue(length.swimStroke)) ??
+        rawValue(length.swimStroke)?.toString();
+      const avgSwimmingCadence = finiteNumber(length.avgSwimmingCadence);
+      const event = profileLabel("event", rawValue(length.event)) ?? rawValue(length.event)?.toString();
+      const eventType =
+        profileLabel("eventType", rawValue(length.eventType)) ??
+        rawValue(length.eventType)?.toString();
       return {
         messageIndex: messageIndex(length, index, "length"),
-        sessionMessageIndex: owner?.messageIndex,
-        lapMessageIndex: lap?.messageIndex,
-        startTime: startTimeMs === undefined ? undefined : new Date(startTimeMs),
-        totalElapsedTime: finiteNumber(length.totalElapsedTime),
-        totalTimerTime: finiteNumber(length.totalTimerTime),
-        totalStrokes: finiteNumber(length.totalStrokes),
-        avgSpeed: finiteNumber(length.avgSpeed),
-        lengthType:
-          profileLabel("lengthType", rawValue(length.lengthType)) ??
-          rawValue(length.lengthType)?.toString(),
-        swimStroke:
-          profileLabel("swimStroke", rawValue(length.swimStroke)) ??
-          rawValue(length.swimStroke)?.toString(),
-        avgSwimmingCadence: finiteNumber(length.avgSwimmingCadence),
-        event: profileLabel("event", rawValue(length.event)) ?? rawValue(length.event)?.toString(),
-        eventType:
-          profileLabel("eventType", rawValue(length.eventType)) ??
-          rawValue(length.eventType)?.toString(),
+        ...(sessionMessageIndex === undefined ? {} : { sessionMessageIndex }),
+        ...(lapMessageIndex === undefined ? {} : { lapMessageIndex }),
+        ...(startTime === undefined ? {} : { startTime }),
+        ...(totalElapsedTime === undefined ? {} : { totalElapsedTime }),
+        ...(totalTimerTime === undefined ? {} : { totalTimerTime }),
+        ...(totalStrokes === undefined ? {} : { totalStrokes }),
+        ...(avgSpeed === undefined ? {} : { avgSpeed }),
+        ...(lengthType === undefined ? {} : { lengthType }),
+        ...(swimStroke === undefined ? {} : { swimStroke }),
+        ...(avgSwimmingCadence === undefined ? {} : { avgSwimmingCadence }),
+        ...(event === undefined ? {} : { event }),
+        ...(eventType === undefined ? {} : { eventType }),
       };
     },
   );
@@ -791,23 +835,31 @@ export function parseFitFileWithSDK(
     if (session.startTimeMs === undefined || session.endTimeMs === undefined) throw new Error("Decoded FIT session bounds are missing.");
     const semanticSegment = semantics.segments[index];
     if (!semanticSegment) throw new Error(`Decoded FIT session ${session.messageIndex} has no semantic segment.`);
+    const totalTimerTime =
+      semanticSegment.activeMs === undefined ? undefined : semanticSegment.activeMs / 1000;
+    const totalMovingTime =
+      semanticSegment.movingMs === undefined ? undefined : semanticSegment.movingMs / 1000;
+    const totalDistance = extensionNumber(session.extensions, "totalDistance");
+    const avgSpeed = extensionNumber(session.extensions, "avgSpeed");
+    const poolLengthMeters = fitPoolLengthMeters(session.extensions);
+    const numLengths = extensionNumber(session.extensions, "numLengths");
+    const numActiveLengths = extensionNumber(session.extensions, "numActiveLengths");
+    const totalStrokes = extensionNumber(session.extensions, "totalStrokes");
     return {
       messageIndex: session.messageIndex,
-      rawSport: session.rawSport,
-      rawSubSport: session.rawSubSport,
+      ...(session.rawSport === undefined ? {} : { rawSport: session.rawSport }),
+      ...(session.rawSubSport === undefined ? {} : { rawSubSport: session.rawSubSport }),
       startTime: new Date(session.startTimeMs),
       endTime: new Date(session.endTimeMs),
       totalElapsedTime: (session.endTimeMs - session.startTimeMs) / 1000,
-      totalTimerTime:
-        semanticSegment.activeMs === undefined ? undefined : semanticSegment.activeMs / 1000,
-      totalMovingTime:
-        semanticSegment.movingMs === undefined ? undefined : semanticSegment.movingMs / 1000,
-      totalDistance: extensionNumber(session.extensions, "totalDistance"),
-      avgSpeed: extensionNumber(session.extensions, "avgSpeed"),
-      poolLengthMeters: fitPoolLengthMeters(session.extensions),
-      numLengths: extensionNumber(session.extensions, "numLengths"),
-      numActiveLengths: extensionNumber(session.extensions, "numActiveLengths"),
-      totalStrokes: extensionNumber(session.extensions, "totalStrokes"),
+      ...(totalTimerTime === undefined ? {} : { totalTimerTime }),
+      ...(totalMovingTime === undefined ? {} : { totalMovingTime }),
+      ...(totalDistance === undefined ? {} : { totalDistance }),
+      ...(avgSpeed === undefined ? {} : { avgSpeed }),
+      ...(poolLengthMeters === undefined ? {} : { poolLengthMeters }),
+      ...(numLengths === undefined ? {} : { numLengths }),
+      ...(numActiveLengths === undefined ? {} : { numActiveLengths }),
+      ...(totalStrokes === undefined ? {} : { totalStrokes }),
       laps: allLaps.filter((lap) => lap.sessionMessageIndex === session.messageIndex),
       records: allRecords.filter((record) => record.sessionMessageIndex === session.messageIndex),
     };
@@ -821,8 +873,8 @@ export function parseFitFileWithSDK(
       sessionMessageIndex: artifactSession.messageIndex,
       role: segment.role,
       ...(segment.role === "activity" ? { activity_category: segment.activity_category } : {}),
-      rawSport: segment.rawSport,
-      rawSubSport: segment.rawSubSport,
+      ...(segment.rawSport === undefined ? {} : { rawSport: segment.rawSport }),
+      ...(segment.rawSubSport === undefined ? {} : { rawSubSport: segment.rawSubSport }),
       startTime: new Date((artifact.activity.startTimeMs ?? 0) + segment.startOffsetMs),
       endTime: new Date((artifact.activity.startTimeMs ?? 0) + segment.endOffsetMs),
     };
@@ -835,43 +887,60 @@ export function parseFitFileWithSDK(
   const activityExtensions = artifact.activity.extensions;
   const fileExtensions = artifact.extensions;
   const totalDistance = semantics.totals.distanceMeters ?? 0;
+  const subType =
+    profileLabel("subSport", firstArtifactSession.rawSubSport) ??
+    (firstArtifactSession.rawSubSport === undefined
+      ? undefined
+      : String(firstArtifactSession.rawSubSport));
+  const manufacturer =
+    profileLabel("manufacturer", rawValue(fileExtensions?.["fit.manufacturer"])) ??
+    (fileExtensions?.["fit.manufacturer"] === undefined
+      ? undefined
+      : String(fileExtensions["fit.manufacturer"]));
+  const product =
+    fileExtensions?.["fit.product"] === undefined
+      ? undefined
+      : String(fileExtensions["fit.product"]);
+  const poolLengthMeters = fitPoolLengthMeters(firstArtifactSession.extensions);
+  const totalStrokes = extensionNumber(firstArtifactSession.extensions, "totalStrokes");
+  const avgStrokeDistance = extensionNumber(firstArtifactSession.extensions, "avgStrokeDistance");
+  const avgSpeed = extensionNumber(firstArtifactSession.extensions, "avgSpeed");
+  const maxSpeed = extensionNumber(firstArtifactSession.extensions, "maxSpeed");
+  const avgHeartRate = extensionNumber(firstArtifactSession.extensions, "avgHeartRate");
+  const maxHeartRate = extensionNumber(firstArtifactSession.extensions, "maxHeartRate");
+  const avgCadence = extensionNumber(firstArtifactSession.extensions, "avgCadence");
+  const maxCadence = extensionNumber(firstArtifactSession.extensions, "maxCadence");
+  const avgPower = extensionNumber(firstArtifactSession.extensions, "avgPower");
+  const maxPower = extensionNumber(firstArtifactSession.extensions, "maxPower");
   return {
     metadata: {
       startTime: firstSession.startTime,
       type: sessions.length === 1 ? sportLabel(firstSession.rawSport) : "multisport",
-      subType:
-        profileLabel("subSport", firstArtifactSession.rawSubSport) ??
-        (firstArtifactSession.rawSubSport === undefined
-          ? undefined
-          : String(firstArtifactSession.rawSubSport)),
-      manufacturer:
-        profileLabel("manufacturer", rawValue(fileExtensions?.["fit.manufacturer"])) ??
-        (fileExtensions?.["fit.manufacturer"] === undefined
-          ? undefined
-          : String(fileExtensions["fit.manufacturer"])),
-      product: fileExtensions?.["fit.product"] === undefined ? undefined : String(fileExtensions["fit.product"]),
+      ...(subType === undefined ? {} : { subType }),
+      ...(manufacturer === undefined ? {} : { manufacturer }),
+      ...(product === undefined ? {} : { product }),
     },
     summary: {
       totalTime: semantics.totals.elapsedMs / 1000,
       totalDistance,
       ...(sessions.length === 1
         ? {
-            avgSpeed: extensionNumber(firstArtifactSession.extensions, "avgSpeed"),
-            maxSpeed: extensionNumber(firstArtifactSession.extensions, "maxSpeed"),
-            avgHeartRate: extensionNumber(firstArtifactSession.extensions, "avgHeartRate"),
-            maxHeartRate: extensionNumber(firstArtifactSession.extensions, "maxHeartRate"),
-            avgCadence: extensionNumber(firstArtifactSession.extensions, "avgCadence"),
-            maxCadence: extensionNumber(firstArtifactSession.extensions, "maxCadence"),
-            avgPower: extensionNumber(firstArtifactSession.extensions, "avgPower"),
-            maxPower: extensionNumber(firstArtifactSession.extensions, "maxPower"),
+            ...(avgSpeed === undefined ? {} : { avgSpeed }),
+            ...(maxSpeed === undefined ? {} : { maxSpeed }),
+            ...(avgHeartRate === undefined ? {} : { avgHeartRate }),
+            ...(maxHeartRate === undefined ? {} : { maxHeartRate }),
+            ...(avgCadence === undefined ? {} : { avgCadence }),
+            ...(maxCadence === undefined ? {} : { maxCadence }),
+            ...(avgPower === undefined ? {} : { avgPower }),
+            ...(maxPower === undefined ? {} : { maxPower }),
           }
         : {}),
       totalAscent: sessions.reduce((sum, session) => sum + (extensionNumber(artifact.sessions.find((item) => item.messageIndex === session.messageIndex)?.extensions, "totalAscent") ?? 0), 0),
       totalDescent: sessions.reduce((sum, session) => sum + (extensionNumber(artifact.sessions.find((item) => item.messageIndex === session.messageIndex)?.extensions, "totalDescent") ?? 0), 0),
       calories: sessions.reduce((sum, session) => sum + (extensionNumber(artifact.sessions.find((item) => item.messageIndex === session.messageIndex)?.extensions, "totalCalories") ?? 0), 0),
-      poolLengthMeters: fitPoolLengthMeters(firstArtifactSession.extensions),
-      totalStrokes: extensionNumber(firstArtifactSession.extensions, "totalStrokes"),
-      avgStrokeDistance: extensionNumber(firstArtifactSession.extensions, "avgStrokeDistance"),
+      ...(poolLengthMeters === undefined ? {} : { poolLengthMeters }),
+      ...(totalStrokes === undefined ? {} : { totalStrokes }),
+      ...(avgStrokeDistance === undefined ? {} : { avgStrokeDistance }),
     },
     laps: allLaps,
     lengths,

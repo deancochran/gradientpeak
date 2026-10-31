@@ -40,8 +40,10 @@ import {
   ENDPOINT_PERFORMANCE_TIMEOUT_MS,
   getEndpointCaller,
   getEndpointPerformanceBudgets,
+  getEndpointPerformanceProcedure,
   measureEndpointPerformance,
 } from "../../test/performance";
+import { createRouterCaller } from "../../test/router";
 import { appRouter } from "../index";
 
 const SESSION_USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -96,23 +98,21 @@ function createPerformanceDb() {
 }
 
 function createPerformanceCaller() {
-  return appRouter.createCaller({
+  return createRouterCaller(appRouter, {
     db: createPerformanceDb(),
     headers: new Headers(),
     session: {
       user: {
         id: SESSION_USER_ID,
-        email: "athlete@example.com",
-        emailVerified: true,
       },
     },
     clientType: "test",
     trpcSource: "vitest-performance",
-  } as any);
+  });
 }
 
 describe("backend endpoint performance", () => {
-  const budgets = getEndpointPerformanceBudgets(appRouter as any);
+  const budgets = getEndpointPerformanceBudgets(appRouter);
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
 
@@ -132,7 +132,7 @@ describe("backend endpoint performance", () => {
   });
 
   it("discovers every app router endpoint for performance coverage", () => {
-    expect(budgets).toHaveLength(Object.keys((appRouter as any)._def.procedures).length);
+    expect(budgets).toHaveLength(getEndpointPerformanceBudgets(appRouter).length);
     expect(budgets).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ path: "profiles.get", type: "query" }),
@@ -148,7 +148,7 @@ describe("backend endpoint performance", () => {
   it.each(budgets)("$path settles within $budgetMs ms", {
     timeout: ENDPOINT_PERFORMANCE_TIMEOUT_MS + 1_000,
   }, async ({ budgetMs, path }) => {
-    const procedure = (appRouter as any)._def.procedures[path];
+    const procedure = getEndpointPerformanceProcedure(appRouter, path);
     const input = createMockInputForProcedure(procedure);
     const caller = createPerformanceCaller();
     const endpoint = getEndpointCaller(caller, path);

@@ -1,64 +1,33 @@
-import { clampInteger, parseBoundedInteger } from "@repo/core/utils/fitness-inputs";
-import { useEffect, useState } from "react";
+import { useImperativeHandle, useRef } from "react";
 import { Button } from "../button/index.web";
 import { Input } from "../input/index.web";
 import { Label } from "../label/index.web";
 import type { IntegerStepperProps } from "./shared";
+import { useIntegerStepper } from "./use-integer-stepper";
 
-function IntegerStepper({
-  accessibilityHint,
-  disabled = false,
-  error,
-  helperText,
-  id,
-  label,
-  max = 20,
-  min = 0,
-  onChange,
-  step = 1,
-  testId,
-  value,
-}: IntegerStepperProps) {
+function IntegerStepper(props: IntegerStepperProps) {
+  const {
+    ref,
+    accessibilityHint,
+    disabled = false,
+    error: providedError,
+    helperText,
+    id,
+    label,
+    max = 20,
+    min = 0,
+    testId,
+  } = props;
   const labelText = label || "value";
-  const normalizedStep = Number.isInteger(step) && step > 0 ? step : 1;
-  const [draftValue, setDraftValue] = useState(String(value));
+  const input = useRef<HTMLInputElement>(null);
+  const focus = () => input.current?.focus();
+  useImperativeHandle(ref, () => ({ focus }));
+  const state = useIntegerStepper(props, focus);
+  const { text: draftValue, currentValue, decreaseDisabled, increaseDisabled } = state;
+  const error =
+    providedError ?? (state.invalid ? `Enter a whole number from ${min} to ${max}.` : undefined);
   const descriptionId = `${id}-description`;
   const errorId = `${id}-error`;
-
-  useEffect(() => {
-    setDraftValue(String(value));
-  }, [value]);
-
-  const commitDraft = (nextDraft: string) => {
-    if (disabled) {
-      return;
-    }
-
-    const parsed = parseBoundedInteger(nextDraft, { min, max });
-    if (parsed === undefined) {
-      setDraftValue(String(value));
-      return;
-    }
-
-    const normalized = clampInteger(parsed, min, max);
-    setDraftValue(String(normalized));
-    onChange(normalized);
-  };
-
-  const parsedDraft = parseBoundedInteger(draftValue, { min, max });
-  const currentValue = parsedDraft ?? value;
-  const decreaseValue = clampInteger(currentValue - normalizedStep, min, max);
-  const increaseValue = clampInteger(currentValue + normalizedStep, min, max);
-  const decreaseDisabled = disabled || decreaseValue === currentValue;
-  const increaseDisabled = disabled || increaseValue === currentValue;
-  const changeValue = (nextValue: number, isChangeDisabled: boolean) => {
-    if (isChangeDisabled) {
-      return;
-    }
-
-    setDraftValue(String(nextValue));
-    onChange(nextValue);
-  };
 
   return (
     <div className="grid gap-2">
@@ -72,13 +41,14 @@ function IntegerStepper({
           disabled={decreaseDisabled}
           onClick={() => {
             if (!decreaseDisabled) {
-              changeValue(decreaseValue, decreaseDisabled);
+              state.decrease();
             }
           }}
         >
           -
         </Button>
         <Input
+          ref={input}
           accessibilityLabel={labelText}
           aria-description={accessibilityHint}
           aria-describedby={
@@ -94,19 +64,15 @@ function IntegerStepper({
           aria-valuemax={max}
           aria-valuemin={min}
           aria-valuenow={currentValue}
-          onBlur={() => commitDraft(draftValue)}
-          onChange={(event) => {
-            if (!disabled) {
-              setDraftValue(event.currentTarget.value);
-            }
-          }}
+          onBlur={state.blur}
+          onChange={(event) => state.change(event.currentTarget.value)}
           onKeyDown={(event) => {
             if (event.key === "ArrowDown") {
               event.preventDefault();
-              changeValue(decreaseValue, decreaseDisabled);
+              if (!decreaseDisabled) state.decrease();
             } else if (event.key === "ArrowUp") {
               event.preventDefault();
-              changeValue(increaseValue, increaseDisabled);
+              if (!increaseDisabled) state.increase();
             }
           }}
           role="spinbutton"
@@ -122,7 +88,7 @@ function IntegerStepper({
           disabled={increaseDisabled}
           onClick={() => {
             if (!increaseDisabled) {
-              changeValue(increaseValue, increaseDisabled);
+              state.increase();
             }
           }}
         >

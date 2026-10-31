@@ -283,10 +283,12 @@ export const onboardingRouter = createTRPCRouter({
     .output(completeLifecycleSetupOutputSchema)
     .mutation(async ({ ctx, input }) => {
       try {
+        const { goal, ...lifecycleInput } = input;
         return await completeLifecycleSetup({
           db: getRequiredDb(ctx),
           profileId: ctx.session.user.id,
-          ...input,
+          ...lifecycleInput,
+          ...(goal === undefined ? {} : { goal }),
         });
       } catch (error) {
         throwOnboardingError(error);

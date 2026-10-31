@@ -13,7 +13,7 @@ const objective = (value = 2_439 / 3_500): SemanticMetric => ({
 });
 
 describe("getActivityPlanEstimateItems", () => {
-  it("formats the canonical objective ratio independently of unavailable totals", () => {
+  it("filters unknown totals from the headline while retaining an available objective ratio", () => {
     const metrics: SemanticMetric[] = [
       {
         key: "elapsed_duration",
@@ -38,8 +38,6 @@ describe("getActivityPlanEstimateItems", () => {
 
     expect(getActivityPlanEstimateItems(metrics)).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ key: "elapsed_duration", value: "—" }),
-        expect.objectContaining({ key: "common_load", value: "—" }),
         expect.objectContaining({
           key: "objective_intensity",
           label: "Intensity",
@@ -69,12 +67,10 @@ describe("getActivityPlanEstimateItems", () => {
         reason: null,
       },
     ];
-    expect(getActivityPlanEstimateItems(metrics)).toEqual(
-      expect.arrayContaining([expect.objectContaining({ key: "objective_intensity", value: "—" })]),
-    );
+    expect(getActivityPlanEstimateItems(metrics)).toEqual([]);
   });
 
-  it("renders an unavailable objective result as an em dash", () => {
+  it("omits an unavailable objective result from the headline", () => {
     expect(
       getActivityPlanEstimateItems([
         {
@@ -85,9 +81,7 @@ describe("getActivityPlanEstimateItems", () => {
           provenance: null,
         },
       ]),
-    ).toEqual(
-      expect.arrayContaining([expect.objectContaining({ key: "objective_intensity", value: "—" })]),
-    );
+    ).toEqual([]);
   });
 
   it("renders exact authored values normally and hides partial numeric evidence", () => {
@@ -113,10 +107,25 @@ describe("getActivityPlanEstimateItems", () => {
         },
       ]),
     ).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ key: "elapsed_duration", value: "1h" }),
-        expect.objectContaining({ key: "distance", value: "—" }),
+      expect.arrayContaining([expect.objectContaining({ key: "elapsed_duration", value: "1h" })]),
+    );
+  });
+
+  it("retains an available zero rather than treating it as unknown", () => {
+    expect(
+      getActivityPlanEstimateItems([
+        {
+          key: "common_load",
+          label: "Load",
+          status: "available",
+          value: 0,
+          unit: "score",
+          reason: null,
+          provenance: "authored",
+        },
       ]),
+    ).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: "common_load", value: "0" })]),
     );
   });
 });

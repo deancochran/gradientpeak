@@ -195,8 +195,6 @@ export function AthleteBaselineFields({
       value: nextValue,
       source: nextValue === null ? "cleared" : "manual",
     } as AthleteBaselineChange);
-  const numberField = (field: "maxHr" | "restingHr", nextValue: number | undefined) =>
-    emit(field, nextValue == null ? null : Math.round(nextValue));
   const weightError =
     value.weightKg !== null && !isProfileMetricValueWithinRange("weight_kg", value.weightKg)
       ? `Enter a weight from ${metric.weight.min} to ${metric.weight.max} kg.`
@@ -213,7 +211,10 @@ export function AthleteBaselineFields({
           testIdPrefix="athlete-baseline-experience"
           onChange={(nextValue) => emit("experience", nextValue)}
         />
-        <SourceText field="experience" source={sources.experience} />
+        <SourceText
+          field="experience"
+          {...(sources.experience === undefined ? {} : { source: sources.experience })}
+        />
         <DateInput
           id="athlete-baseline-dob"
           label="Date of birth (Optional)"
@@ -225,7 +226,7 @@ export function AthleteBaselineFields({
           accessibilityHint="Choose your date of birth"
           clearable
         />
-        <SourceText field="dob" source={sources.dob} />
+        <SourceText field="dob" {...(sources.dob === undefined ? {} : { source: sources.dob })} />
         <ChoiceField
           label="Gender (Optional)"
           options={["male", "female", "other"] as const}
@@ -233,22 +234,28 @@ export function AthleteBaselineFields({
           testIdPrefix="athlete-baseline-gender"
           onChange={(nextValue) => emit("gender", nextValue)}
         />
-        <SourceText field="gender" source={sources.gender} />
+        <SourceText
+          field="gender"
+          {...(sources.gender === undefined ? {} : { source: sources.gender })}
+        />
         <WeightInputField
           id="athlete-baseline-weight"
           label={`${metric.weight.label} (Optional)`}
           valueKg={value.weightKg}
           onChangeKg={(nextValue) => emit("weightKg", nextValue)}
+          onInputResult={(result) => {
+            if (result.status === "invalid") emit("weightKg", Number.NaN);
+          }}
           unit={value.weightDisplayUnit}
           onUnitChange={(nextUnit) => emit("weightDisplayUnit", nextUnit)}
           helperText="Switch units without changing the canonical kilogram value."
-          error={weightError}
+          {...(weightError === undefined ? {} : { error: weightError })}
           placeholder={value.weightDisplayUnit === "kg" ? "70.0" : "154.3"}
         />
         <MetricSourceRow
           field="weightKg"
           hasValue={value.weightKg !== null}
-          source={sources.weightKg}
+          {...(sources.weightKg === undefined ? {} : { source: sources.weightKg })}
           onChange={onChange}
         />
       </View>
@@ -263,7 +270,16 @@ export function AthleteBaselineFields({
             onChange={(text) => {
               if (!text.trim()) emit("maxHr", null);
             }}
-            onNumberChange={(nextValue) => numberField("maxHr", nextValue)}
+            onInputResult={(result) =>
+              emit(
+                "maxHr",
+                result.status === "valid"
+                  ? result.value
+                  : result.status === "empty"
+                    ? null
+                    : Number.NaN,
+              )
+            }
             min={metric.maxHr.min}
             max={metric.maxHr.max}
             decimals={metric.maxHr.decimals}
@@ -272,8 +288,8 @@ export function AthleteBaselineFields({
           <MetricSourceRow
             field="maxHr"
             hasValue={value.maxHr !== null}
-            source={sources.maxHr}
-            estimate={estimates?.maxHr}
+            {...(sources.maxHr === undefined ? {} : { source: sources.maxHr })}
+            {...(estimates?.maxHr === undefined ? {} : { estimate: estimates.maxHr })}
             unit={metric.maxHr.unit}
             onChange={onChange}
           />
@@ -285,7 +301,16 @@ export function AthleteBaselineFields({
           onChange={(text) => {
             if (!text.trim()) emit("restingHr", null);
           }}
-          onNumberChange={(nextValue) => numberField("restingHr", nextValue)}
+          onInputResult={(result) =>
+            emit(
+              "restingHr",
+              result.status === "valid"
+                ? result.value
+                : result.status === "empty"
+                  ? null
+                  : Number.NaN,
+            )
+          }
           min={metric.restingHr.min}
           max={metric.restingHr.max}
           decimals={metric.restingHr.decimals}
@@ -294,7 +319,7 @@ export function AthleteBaselineFields({
         <MetricSourceRow
           field="restingHr"
           hasValue={value.restingHr !== null}
-          source={sources.restingHr}
+          {...(sources.restingHr === undefined ? {} : { source: sources.restingHr })}
           onChange={onChange}
         />
       </View>

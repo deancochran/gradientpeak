@@ -5,6 +5,7 @@ import { describeActivityPlanDuration } from "./seconds";
 export type ActivityPlanCategoryDuration = {
   activity_category: CanonicalActivityCategory;
   timedActiveSeconds: number;
+  restSeconds: number;
   distanceMeters: number;
   repetitionCount: number;
   openOccurrenceCount: number;
@@ -20,7 +21,7 @@ export type ActivityPlanDurationSummary = {
   activity_categories: ActivityPlanCategoryDuration[];
 };
 
-/** Summarizes compiled occurrences while keeping active, rest, and open time distinct. */
+/** Summarizes V4 compiled step occurrences. V4 encodes recovery as ordinary steps. */
 export function summarizeActivityPlanDuration(
   plan: Pick<CompiledActivityPlan, "occurrences"> | readonly CompiledActivityPlanOccurrence[],
 ): ActivityPlanDurationSummary {
@@ -36,14 +37,13 @@ export function summarizeActivityPlanDuration(
   let allTimed = true;
 
   for (const occurrence of occurrences) {
-    if (occurrence.role === "rest") {
-      restSeconds += occurrence.duration.seconds;
-      continue;
-    }
-    const semantics = describeActivityPlanDuration(occurrence.duration);
+    const semantics = describeActivityPlanDuration(occurrence.duration, {
+      isRest: occurrence.targets.some((target) => target.type === "rest"),
+    });
     if (occurrence.activity_category === null) continue;
     allTimed &&= semantics.exactElapsedSeconds !== null;
     timedActiveSeconds += semantics.timedSeconds;
+    restSeconds += semantics.restSeconds;
     distanceMeters += semantics.distanceMeters;
     repetitionCount += semantics.repetitionCount;
     openOccurrenceCount += semantics.open ? 1 : 0;
@@ -51,11 +51,13 @@ export function summarizeActivityPlanDuration(
     const activity_category = byCategory.get(occurrence.activity_category) ?? {
       activity_category: occurrence.activity_category,
       timedActiveSeconds: 0,
+      restSeconds: 0,
       distanceMeters: 0,
       repetitionCount: 0,
       openOccurrenceCount: 0,
     };
     activity_category.timedActiveSeconds += semantics.timedSeconds;
+    activity_category.restSeconds += semantics.restSeconds;
     activity_category.distanceMeters += semantics.distanceMeters;
     activity_category.repetitionCount += semantics.repetitionCount;
     activity_category.openOccurrenceCount += semantics.open ? 1 : 0;

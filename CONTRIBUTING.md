@@ -40,7 +40,7 @@ pnpm run doctor -- --lane web
 pnpm dev:web:local
    ```
 
-    This starts the web app and Wahoo worker. Open http://localhost:3000 for the web app. On the first
+    This starts the web app and the Wahoo/Garmin provider drain worker. Open http://localhost:3000 for the web app. On the first
     local Supabase start, run `pnpm db:status` and copy the local API keys into both app environment
     files before restarting the graph.
 

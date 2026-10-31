@@ -27,11 +27,9 @@ export function materializeSystemActivityTemplateSeedValues(
   const trainingIntent = template.training_intent ?? "general_maintenance";
   const validated = activityPlanAuthoringContentSchema.parse({
     structure: template.structure,
-    adaptation: template.adaptation ?? null,
     intent: { training_intent: trainingIntent },
   });
   const structure = validated.structure;
-  const adaptation = validated.adaptation ?? null;
   return {
     id: template.id,
     profile_id: null,
@@ -46,13 +44,11 @@ export function materializeSystemActivityTemplateSeedValues(
     structure_hash: structureHash(structure),
     semantic_hash: activityPlanSemanticHash({
       structure,
-      adaptation,
       trainingIntent,
     }),
     gps_recording_enabled: template.gps_recording_enabled ?? true,
     notes: template.notes ?? null,
     training_intent: trainingIntent,
-    adaptation,
   };
 }
 

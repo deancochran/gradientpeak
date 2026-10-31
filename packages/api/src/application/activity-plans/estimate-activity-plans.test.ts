@@ -9,39 +9,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const publishedState = vi.hoisted(() => ({
   readPublishedAthletePerformanceTargets: vi.fn(),
 }));
-
 vi.mock("../athlete-intelligence/published-athlete-state", () => publishedState);
 
 import { estimateActivityPlans } from "./estimate-activity-plans";
 
 const asOf = new Date("2026-08-01T12:00:00.000Z");
 const structure = activityPlanStructureSchema.parse({
-  version: 3,
+  version: 5,
   activity_category: "bike",
-  segments: [
+  items: [
     {
-      role: "activity",
-      id: "70000000-0000-4000-8000-000000000001",
-      name: "Scheduled bike",
-      intervals: [
-        {
-          id: "70000000-0000-4000-8000-000000000002",
-          name: "Main",
-          repetitions: 1,
-          steps: [
-            {
-              id: "70000000-0000-4000-8000-000000000003",
-              name: "Steady",
-              duration: { type: "time", seconds: 1_800 },
-              targets: [{ type: "%FTP", intensity: 75 }],
-            },
-          ],
-        },
-      ],
+      type: "step",
+      id: "70000000-0000-4000-8000-000000000003",
+      name: "Steady",
+      duration: { type: "time", seconds: 1800 },
+      targets: [{ type: "%FTP", intensity: 75 }],
     },
   ],
 });
-
 const plan = {
   id: "80000000-0000-4000-8000-000000000001",
   profile_id: "90000000-0000-4000-8000-000000000001",
@@ -52,12 +37,10 @@ const plan = {
   gps_recording_enabled: true,
   updated_at: asOf,
 };
-
 describe("estimateActivityPlans", () => {
   beforeEach(() => {
     publishedState.readPublishedAthletePerformanceTargets.mockReset();
   });
-
   it("estimates through the current published athlete-state snapshot", async () => {
     const targets = createUnavailableAthletePerformanceTargetFacts(
       asOf.toISOString(),
@@ -67,12 +50,10 @@ describe("estimateActivityPlans", () => {
       status: "available",
       targets,
     });
-
     const [estimated] = await estimateActivityPlans([plan], {} as never, plan.profile_id, {
       asOf,
       personalize: true,
     });
-
     expect(publishedState.readPublishedAthletePerformanceTargets).toHaveBeenCalledWith({
       db: {},
       profileId: plan.profile_id,
@@ -80,7 +61,7 @@ describe("estimateActivityPlans", () => {
     });
     expect(estimated?.prescriptionQuantification.summary.duration.elapsed).toMatchObject({
       status: "complete",
-      value: 1_800,
+      value: 1800,
       unit: "seconds",
     });
     expect(estimated?.prescriptionQuantification.members).toHaveLength(1);
@@ -90,7 +71,7 @@ describe("estimateActivityPlans", () => {
         expect.objectContaining({
           completionPolicy: "time",
           weightingBasis: "duration_seconds",
-          weight: 1_800,
+          weight: 1800,
         }),
       ],
       objectiveIntensity: {
@@ -102,15 +83,12 @@ describe("estimateActivityPlans", () => {
       },
     });
   });
-
   it("keeps unanchored relative plan intent when athlete facts are unavailable", async () => {
     publishedState.readPublishedAthletePerformanceTargets.mockResolvedValue({
       status: "stale",
       targets: createUnavailableAthletePerformanceTargetFacts(asOf.toISOString(), plan.profile_id),
     });
-
     const [estimated] = await estimateActivityPlans([plan], {} as never, plan.profile_id, { asOf });
-
     expect(estimated?.prescriptionQuantification.summary.commonLoad).toMatchObject({
       status: "complete",
       intensity: 0.75,
@@ -121,7 +99,6 @@ describe("estimateActivityPlans", () => {
     expect(estimated).not.toHaveProperty("estimation_warnings");
     expect(publishedState.readPublishedAthletePerformanceTargets).not.toHaveBeenCalled();
   });
-
   it.each([
     ["confirmed", "complete"],
     ["provisional", "complete"],
@@ -153,27 +130,24 @@ describe("estimateActivityPlans", () => {
       status: state === "stale" ? "stale" : "available",
       targets,
     });
-
     const [estimated] = await estimateActivityPlans([plan], {} as never, plan.profile_id, {
       asOf,
       personalize: true,
     });
     expect(estimated?.prescriptionQuantification.summary.commonLoad.status).toBe(expectedStatus);
   });
-
   it("skips snapshot I/O for an empty batch", async () => {
     await expect(
       estimateActivityPlans([], {} as never, plan.profile_id, { asOf }),
     ).resolves.toEqual([]);
     expect(publishedState.readPublishedAthletePerformanceTargets).not.toHaveBeenCalled();
   });
-
   it("reads personalization facts for the authenticated viewer, never the plan author", async () => {
     const viewerId = "viewer-profile-1";
     const absoluteStructure = structuredClone(structure);
-    const segment = absoluteStructure.segments[0];
-    if (!segment || segment.role !== "activity") throw new Error("Expected activity segment");
-    const step = segment.intervals[0]?.steps[0];
+    const step = absoluteStructure.items.flatMap((item) =>
+      item.type === "step" ? [item] : item.steps,
+    )[0];
     if (!step) throw new Error("Expected activity step");
     step.targets = [{ type: "watts", intensity: 150 }];
     const authoredBySomeoneElse = {
@@ -191,14 +165,12 @@ describe("estimateActivityPlans", () => {
       targets: viewerTargets,
       publishedRevision: 1,
     });
-
     const [estimated] = await estimateActivityPlans(
       [authoredBySomeoneElse],
       {} as never,
       viewerId,
       { asOf, personalize: true },
     );
-
     expect(publishedState.readPublishedAthletePerformanceTargets).toHaveBeenCalledWith({
       db: {},
       profileId: viewerId,
@@ -220,22 +192,19 @@ describe("estimateActivityPlans", () => {
       provenance: "personalized",
     });
   });
-
   it("keeps viewer-derived absolute-target metrics unavailable and skips fact I/O by default", async () => {
     const absoluteStructure = structuredClone(structure);
-    const segment = absoluteStructure.segments[0];
-    if (!segment || segment.role !== "activity") throw new Error("Expected activity segment");
-    const step = segment.intervals[0]?.steps[0];
+    const step = absoluteStructure.items.flatMap((item) =>
+      item.type === "step" ? [item] : item.steps,
+    )[0];
     if (!step) throw new Error("Expected activity step");
     step.targets = [{ type: "watts", intensity: 150 }];
-
     const [estimated] = await estimateActivityPlans(
       [{ ...plan, structure: absoluteStructure }],
       {} as never,
       "viewer-profile-1",
       { asOf },
     );
-
     expect(publishedState.readPublishedAthletePerformanceTargets).not.toHaveBeenCalled();
     expect(estimated?.prescriptionQuantification.summary.commonLoad).toMatchObject({
       status: "unavailable",

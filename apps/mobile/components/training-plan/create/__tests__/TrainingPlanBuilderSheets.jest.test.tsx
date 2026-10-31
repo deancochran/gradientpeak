@@ -36,8 +36,8 @@ jest.mock("../BuilderSessionEditorSheetContent", () => ({
 }));
 
 import {
-  TrainingPlanBuilderSheetDraftsProvider,
-  useTrainingPlanBuilderSheetDrafts,
+  type TrainingPlanBuilderSheetState,
+  useTrainingPlanBuilderSheetState,
 } from "../TrainingPlanBuilderSheetContent";
 
 const basePlanPreferences = {
@@ -50,8 +50,7 @@ const basePlanPreferences = {
   recovery_priority: null,
 };
 
-function DraftHarness() {
-  const drafts = useTrainingPlanBuilderSheetDrafts();
+function DraftHarness({ drafts }: { drafts: TrainingPlanBuilderSheetState }) {
   const preferenceDraft = drafts.planningPreferencesForm.watch();
   const [metadataApplyResult, setMetadataApplyResult] = useState<string | null>(null);
 
@@ -132,6 +131,11 @@ function DraftHarness() {
   );
 }
 
+function SheetStateHarness(props: Parameters<typeof useTrainingPlanBuilderSheetState>[0]) {
+  const drafts = useTrainingPlanBuilderSheetState(props);
+  return <DraftHarness drafts={drafts} />;
+}
+
 async function renderDraftHarness({
   activeSheet = "activityFilters",
   categoryFilter = "bike",
@@ -148,7 +152,7 @@ async function renderDraftHarness({
   onApplyMetadata?: jest.Mock;
 } = {}) {
   await renderNative(
-    <TrainingPlanBuilderSheetDraftsProvider
+    <SheetStateHarness
       activeSheet={activeSheet}
       activityPlanCategoryFilter={categoryFilter}
       activityPlanSort={sort}
@@ -157,15 +161,13 @@ async function renderDraftHarness({
       onApplyActivityFilters={onApplyActivityFilters}
       onApplyPlanningPreferences={onApplyPlanningPreferences}
       onApplyMetadata={onApplyMetadata}
-    >
-      <DraftHarness />
-    </TrainingPlanBuilderSheetDraftsProvider>,
+    />,
   );
 
   return { onApplyActivityFilters, onApplyPlanningPreferences, onApplyMetadata };
 }
 
-describe("TrainingPlanBuilderSheetDraftsProvider", () => {
+describe("useTrainingPlanBuilderSheetState", () => {
   it("resets, applies, and cancels activity filter drafts without committing stale values", async () => {
     const { onApplyActivityFilters } = await renderDraftHarness();
 

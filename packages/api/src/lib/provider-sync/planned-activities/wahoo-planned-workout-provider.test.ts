@@ -9,10 +9,9 @@ const SESSION_ID = "22222222-2222-4222-8222-222222222222";
 function resolvedStructure() {
   const structure = structuredClone(SYSTEM_TEMPLATES[0]?.structure);
   if (!structure) throw new Error("Missing system template fixture");
-  for (const segment of structure.segments) {
-    if (segment.role !== "activity") continue;
-    for (const interval of segment.intervals) {
-      for (const step of interval.steps) step.targets = [{ type: "watts", intensity: 180 }];
+  for (const item of structure.items) {
+    for (const step of item.type === "step" ? [item] : item.steps) {
+      step.targets = [{ type: "watts", intensity: 180 }];
     }
   }
   return structure;
@@ -52,7 +51,7 @@ function fixture(existingLink: { externalId: string; id: string } | null = null)
 }
 
 describe("WahooPlannedActivityProvider", () => {
-  it("queues an immutable planned-session prescription under the planned-session identity", async () => {
+  it("queues the current planned-session plan under the durable planned-session identity", async () => {
     const { enqueueJob, provider, wahooRepository } = fixture();
 
     await expect(
@@ -77,6 +76,44 @@ describe("WahooPlannedActivityProvider", () => {
       }),
     );
     expect(enqueueJob.mock.calls[0]?.[0].payload).not.toHaveProperty("eventId");
+    expect(enqueueJob.mock.calls[0]?.[0].payload).toMatchObject({
+      performanceModelAsOf: "2026-07-28T10:00:00.000Z",
+    });
+  });
+
+  it("reprojects a later publish from the current plan rather than a scheduling snapshot", async () => {
+    const { enqueueJob, provider, wahooRepository } = fixture();
+    await provider.enqueuePublishPlannedSession({
+      plannedSessionId: SESSION_ID,
+      profileId: PROFILE_ID,
+    });
+    const first = enqueueJob.mock.calls[0]?.[0];
+    const current = wahooRepository.getPlannedSessionForSync.mock.results[0]?.value;
+    const firstPlan = await current;
+    if (!firstPlan?.activityPlan) throw new Error("Expected planned session plan");
+    const editedStructure = structuredClone(firstPlan.activityPlan.structure);
+    const firstStep = editedStructure.items.find(
+      (item: (typeof editedStructure.items)[number]) => item.type === "step",
+    );
+    if (!firstStep) throw new Error("Expected editable step");
+    firstStep.name = "Edited current workout";
+    wahooRepository.getPlannedSessionForSync.mockResolvedValue({
+      ...firstPlan,
+      activityPlan: {
+        ...firstPlan.activityPlan,
+        structure: editedStructure,
+        updatedAt: "2026-07-29T10:00:00.000Z",
+      },
+    });
+
+    await provider.enqueuePublishPlannedSession({
+      plannedSessionId: SESSION_ID,
+      profileId: PROFILE_ID,
+    });
+    const second = enqueueJob.mock.calls[1]?.[0];
+
+    expect(second.payload).toMatchObject({ performanceModelAsOf: "2026-07-29T10:00:00.000Z" });
+    expect(second?.payloadHash).not.toBe(first?.payloadHash);
   });
 
   it("queues an unsync only with a durable planned-session link", async () => {

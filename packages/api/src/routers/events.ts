@@ -15,6 +15,7 @@ import {
   addDaysDateOnlyUtc,
   getCalendarDateInIanaZone,
   parseDateOnlyUtc,
+  plannedSessionActivityPlanId,
   scheduledDateTimeToIsoInstant,
 } from "@repo/core/calendar";
 import type { ActivityRow, EventRow, PublicEventStatus, PublicEventType } from "@repo/db";
@@ -731,6 +732,43 @@ async function readPersonalCalendarRange(
     profileId,
   );
   const groupActivityPlanById = new Map(groupActivityPlans.map((plan) => [plan.id, plan]));
+  const calendarPlannedSessions = plannedSessionRange.items.slice(
+    0,
+    CALENDAR_PROJECTION_SOURCE_LIMIT,
+  );
+  const currentPlans = await repository.listCurrentPlannedSessionPlans({
+    activityPlanIds: Array.from(
+      new Set(calendarPlannedSessions.map((session) => plannedSessionActivityPlanId(session))),
+    ),
+    profileId,
+  });
+  const estimatedCurrentPlans = await estimateActivityPlans(
+    currentPlans.map((plan) => ({
+      id: plan.id,
+      profile_id: profileId,
+      name: plan.name,
+      description: null,
+      structure: plan.structure,
+      gps_recording_enabled: false,
+      structure_hash: "current-planned-session",
+      updated_at: plan.updatedAt,
+    })),
+    getRequiredDb(ctx),
+    profileId,
+    { personalize: true },
+  );
+  const estimatedCurrentPlanById = new Map(estimatedCurrentPlans.map((plan) => [plan.id, plan]));
+  const currentPlanById = new Map(
+    currentPlans.map((plan) => {
+      const estimated = estimatedCurrentPlanById.get(plan.id);
+      return [
+        plan.id,
+        estimated
+          ? { ...plan, prescriptionQuantification: estimated.prescriptionQuantification }
+          : plan,
+      ] as const;
+    }),
+  );
   const groupEvents = selectedGroupEvents.items.map((event) => {
     const selectedActivityPlan = event.activity_plan_id
       ? (groupActivityPlanById.get(event.activity_plan_id) ?? null)
@@ -758,17 +796,16 @@ async function readPersonalCalendarRange(
         ? (activityDisplayById.get(event.linked_activity_id) ?? null)
         : null,
     })),
-    plannedSessions: plannedSessionRange.items
-      .slice(0, CALENDAR_PROJECTION_SOURCE_LIMIT)
-      .map((session) => ({
-        session,
-        linkedActivityDisplay:
-          session.lifecycle.status === "completed" &&
-          session.lifecycle.completion.state === "linked" &&
-          session.lifecycle.completion.activityId
-            ? (activityDisplayById.get(session.lifecycle.completion.activityId) ?? null)
-            : null,
-      })),
+    plannedSessions: calendarPlannedSessions.map((session) => ({
+      session,
+      currentPlan: currentPlanById.get(plannedSessionActivityPlanId(session)) ?? null,
+      linkedActivityDisplay:
+        session.lifecycle.status === "completed" &&
+        session.lifecycle.completion.state === "linked" &&
+        session.lifecycle.completion.activityId
+          ? (activityDisplayById.get(session.lifecycle.completion.activityId) ?? null)
+          : null,
+    })),
     completedActivities,
     goals,
     groupEvents,

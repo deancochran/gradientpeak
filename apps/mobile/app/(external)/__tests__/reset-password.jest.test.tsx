@@ -102,7 +102,7 @@ describe("reset-password screen", () => {
   });
 
   it("explains a missing token inline and offers recovery with Save disabled", async () => {
-    paramsState.token = undefined;
+    delete paramsState.token;
 
     await renderNative(<ResetPasswordScreen />);
 

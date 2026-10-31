@@ -53,7 +53,7 @@ function createSummary(overrides: Partial<WahooWorkoutSummary> = {}): WahooWorko
 function activityFileResponse(bytes: Uint8Array, headers?: HeadersInit): Response {
   const body = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(body).set(bytes);
-  return new Response(body, { headers, status: 200 });
+  return new Response(body, { status: 200, ...(headers === undefined ? {} : { headers }) });
 }
 
 function sha256(bytes: Uint8Array) {
@@ -1545,16 +1545,11 @@ describe("activity-importer", () => {
       submitActivity: repository.submitActivity,
       activityFileParser,
     });
+    const { started_at: _startedAt, ...summaryWithoutStartTime } = createSummary({
+      duration_total_accum: 900,
+    });
 
-    await expect(
-      importer.importWorkoutSummary(
-        77,
-        createSummary({
-          started_at: undefined,
-          duration_total_accum: 900,
-        }),
-      ),
-    ).resolves.toEqual({
+    await expect(importer.importWorkoutSummary(77, summaryWithoutStartTime)).resolves.toEqual({
       success: false,
       error: "Wahoo workout summary is missing its start time",
       errorCode: "missing_started_at",

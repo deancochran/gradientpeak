@@ -35,7 +35,11 @@ function GoalEditPage() {
           <CardTitle>Edit goal</CardTitle>
         </CardHeader>
         <CardContent>
-          <PlanGoalForm goal={goalQuery.data} redirectTo={`/goals/${goalId}`} />
+          <PlanGoalForm
+            key={goalQuery.data.id}
+            goal={goalQuery.data}
+            redirectTo={`/goals/${goalId}`}
+          />
         </CardContent>
       </Card>
     </div>

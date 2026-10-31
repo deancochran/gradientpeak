@@ -2,13 +2,22 @@ import type { InferredStateSnapshot } from "@repo/core";
 import type { TrainingPlanRow } from "@repo/db";
 import type { DrizzleDbClient } from "@repo/db/client";
 import type { TRPCError } from "@trpc/server";
-import { describe, expect, it } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { describe, expect, it, vi } from "vitest";
 import { activityPlanStructureHash } from "../../../application/activity-plans/structure-hash";
 import { createQueryMapDbMock } from "../../../test/mock-query-db";
 import { createTrainingPlanRepository } from "../drizzle-training-plan-repository";
 
 function createRepository(db: unknown) {
   return createTrainingPlanRepository(db as DrizzleDbClient);
+}
+
+function addRepeatableReadTransaction<T extends { db: Record<string, unknown> }>(mock: T): T {
+  Object.assign(mock.db, {
+    $client: {},
+    transaction: async (read: (tx: typeof mock.db) => Promise<unknown>) => read(mock.db),
+  });
+  return mock;
 }
 
 function createSnapshot(overrides: Partial<InferredStateSnapshot> = {}): InferredStateSnapshot {
@@ -82,6 +91,94 @@ function createMissingReturningDb(method: "insert" | "update") {
 }
 
 describe("drizzle-training-plan-repository", () => {
+  it("reads a bounded page and an exact count through the same owner/search filter", async () => {
+    const row = createTrainingPlanRow({ id: "page-plan" });
+    const { db } = addRepeatableReadTransaction(
+      createQueryMapDbMock({
+        training_plans: [
+          { data: [row], error: null },
+          { data: [{ total: 2 }], error: null },
+        ],
+      }),
+    );
+
+    await expect(
+      createRepository(db).listTrainingPlansPage({
+        profileId: "profile-1",
+        ownerScope: "own",
+        search: "Base%_\\plan",
+        offset: 20,
+        limit: 10,
+      }),
+    ).resolves.toEqual({ items: [row], total: 2 });
+  });
+
+  it("applies the same owner, visibility, and escaped literal search predicate to page and count", async () => {
+    const pageWhere = vi.fn();
+    const countWhere = vi.fn();
+    const limit = vi.fn();
+    const offset = vi.fn();
+    const pageBuilder = {
+      from: vi.fn(() => pageBuilder),
+      where: vi.fn((condition) => {
+        pageWhere(condition);
+        return pageBuilder;
+      }),
+      orderBy: vi.fn(() => pageBuilder),
+      limit: vi.fn((value) => {
+        limit(value);
+        return pageBuilder;
+      }),
+      offset: vi.fn((value) => {
+        offset(value);
+        return Promise.resolve([]);
+      }),
+    };
+    const countBuilder = {
+      from: vi.fn(() => countBuilder),
+      where: vi.fn((condition) => {
+        countWhere(condition);
+        return Promise.resolve([{ total: 0 }]);
+      }),
+    };
+    const tx = {
+      select: vi.fn().mockReturnValueOnce(pageBuilder).mockReturnValueOnce(countBuilder),
+    };
+    const transaction = vi.fn(async (read: (executor: typeof tx) => Promise<unknown>) => read(tx));
+    const db = { $client: {}, select: vi.fn(), transaction };
+
+    await createRepository(db).listTrainingPlansPage({
+      profileId: "00000000-0000-4000-8000-000000000001",
+      ownerScope: "own",
+      visibility: "private",
+      search: "Base%_\\plan",
+      offset: 20,
+      limit: 10,
+    });
+
+    expect(limit).toHaveBeenCalledWith(10);
+    expect(offset).toHaveBeenCalledWith(20);
+    expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
+      accessMode: "read only",
+      isolationLevel: "repeatable read",
+    });
+    expect(db.select).not.toHaveBeenCalled();
+    const dialect = new PgDialect();
+    const pageQuery = dialect.sqlToQuery(pageWhere.mock.calls[0]?.[0] as never);
+    const countQuery = dialect.sqlToQuery(countWhere.mock.calls[0]?.[0] as never);
+    expect(pageQuery.sql).toBe(countQuery.sql);
+    expect(pageQuery.params).toEqual(countQuery.params);
+    expect(pageQuery.sql).toContain('"training_plans"."profile_id" = $1');
+    expect(pageQuery.sql).toContain('"training_plans"."content_visibility" = $2');
+    expect(pageQuery.sql).toContain("ilike");
+    expect(pageQuery.params).toEqual([
+      "00000000-0000-4000-8000-000000000001",
+      "private",
+      "%Base\\%\\_\\\\plan%",
+      "%Base\\%\\_\\\\plan%",
+    ]);
+  });
+
   it("returns schema-derived timestamp rows", async () => {
     const validatedAt = "2026-04-02T03:04:05.000Z";
     const row = createTrainingPlanRow({

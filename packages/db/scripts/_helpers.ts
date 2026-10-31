@@ -12,6 +12,8 @@ import {
 } from "./_local-database-config";
 
 const safeSupabaseCliEnvironment = () => ({ ...process.env });
+const supabaseCliDebugEnabled = () => process.env.SUPABASE_CLI_DEBUG === "1";
+const supabaseCliMaxBuffer = 20 * 1024 * 1024;
 const require = createRequire(import.meta.url);
 const supabaseCliEntryPoint = resolve(
   dirname(require.resolve("supabase/package.json")),
@@ -20,6 +22,31 @@ const supabaseCliEntryPoint = resolve(
 );
 
 export { dbPackageRoot, defaultLocalDatabaseUrl, repoRoot, supabaseCliRoot };
+
+function redactSupabaseCliOutput(value: string) {
+  return value
+    .replace(/([a-z][a-z\d+.-]*:\/\/[^\s:@/]+):[^\s@/]+@/gi, "$1:***@")
+    .replace(/\b(password|token|api[_-]?key|access[_-]?token)=([^\s&]+)/gi, "$1=***");
+}
+
+/** Retains CLI failure evidence without allowing connection credentials into CI logs. */
+export function formatSupabaseCliFailure(error: unknown): string {
+  const result = error as {
+    code?: number | string;
+    signal?: string;
+    stderr?: string | Buffer;
+    stdout?: string | Buffer;
+    killed?: boolean;
+  };
+  const details = [
+    `exit=${result.code ?? "unknown"}`,
+    result.signal ? `signal=${result.signal}` : null,
+    result.killed ? "killed=true" : null,
+    result.stderr?.toString() ? `stderr:\n${result.stderr.toString()}` : null,
+    result.stdout?.toString() ? `stdout:\n${result.stdout.toString()}` : null,
+  ].filter((detail): detail is string => detail !== null);
+  return redactSupabaseCliOutput(details.join("\n")).slice(-supabaseCliMaxBuffer);
+}
 
 const defaultEnvFiles = [
   resolve(dbPackageRoot, ".env.local"),
@@ -53,12 +80,20 @@ export function runSupabaseCli(
   workdir = dbPackageRoot,
   encoding: "utf8" | undefined = undefined,
 ) {
+  const cliArgs = [
+    supabaseCliEntryPoint,
+    ...(supabaseCliDebugEnabled() ? ["--debug"] : []),
+    "--workdir",
+    workdir,
+    ...args,
+  ];
   try {
-    return execFileSync(process.execPath, [supabaseCliEntryPoint, "--workdir", workdir, ...args], {
+    return execFileSync(process.execPath, cliArgs, {
       cwd: supabaseCliRoot,
       env: safeSupabaseCliEnvironment(),
       encoding,
       stdio: encoding ? "pipe" : "inherit",
+      maxBuffer: supabaseCliMaxBuffer,
     });
   } catch (error) {
     const result = error as { stderr?: string | Buffer; stdout?: string | Buffer };
@@ -69,7 +104,7 @@ export function runSupabaseCli(
       // flushing analytics. Preserve the completed command output for its caller.
       return stdout;
     }
-    throw error;
+    throw new Error(`Supabase CLI failed:\n${formatSupabaseCliFailure(error)}`, { cause: error });
   }
 }
 

@@ -1,10 +1,18 @@
 import React from "react";
 
 import { createHost as mockCreateHost } from "../../../../test/mock-components";
-import { fireEvent, renderNative, screen } from "../../../../test/render-native";
+import { act, fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
 const navigateMock = jest.fn();
-const assessmentUseQueryMock = jest.fn(() => ({ data: undefined, isLoading: false }));
+const assessmentUseQueryMock = jest.fn(() => ({
+  data: undefined,
+  isLoading: false,
+  refetch: jest.fn(async () => undefined),
+}));
+const progressUseQueryMock = jest.fn();
+const mockRecordedMount = jest.fn();
+const mockScaffoldProps = jest.fn();
+let mockGoalObjective: Record<string, unknown> = {};
 const originalDateTimeFormat = Intl.DateTimeFormat;
 
 type StackScreenProps = {
@@ -65,7 +73,10 @@ jest.mock("@repo/core", () => ({
   __esModule: true,
   createEmptyGoalDraft: jest.fn(() => ({ title: "", objective: null })),
   buildGoalDraftFromGoal: jest.fn(() => ({ title: "Spring 5K" })),
-  parseProfileGoalRecord: jest.fn((goal: unknown) => goal),
+  parseProfileGoalRecord: jest.fn((goal: Record<string, unknown>) => ({
+    ...goal,
+    objective: goal.target_payload,
+  })),
   buildGoalUpdatePayload: jest.fn(({ draft }: { draft: GoalDraft }) => ({
     target_date: draft.targetDate,
     title: draft.title,
@@ -178,6 +189,7 @@ jest.mock("@/components/charts/PlanReadinessComparisonChart", () => ({
 }));
 jest.mock("@/components/plan/insights/PlanProgressInsight", () => ({
   __esModule: true,
+  formatGoalTimeLeft: () => "47 days left",
   PlanProgressInsight: mockCreateHost("PlanProgressInsight"),
 }));
 jest.mock("@/components/plan/training-path/planDashboardPresentation", () => ({
@@ -189,6 +201,27 @@ jest.mock("@/components/plan/training-path/planDashboardPresentation", () => ({
   })),
   mergeGoalProgressThresholdEvidence: jest.fn(() => []),
 }));
+jest.mock("@/components/goals/RecordedGoalHistory", () => ({
+  RecordedGoalHistory: (props: HostProps) => {
+    React.useEffect(() => {
+      mockRecordedMount();
+    }, []);
+    return React.createElement(mockCreateHost("RecordedGoalHistory"), {
+      ...props,
+      testID: "recorded-goal-history",
+    });
+  },
+}));
+jest.mock("@/components/shared/detail", () => {
+  const actual = jest.requireActual("@/components/shared/detail");
+  return {
+    ...actual,
+    DetailScaffold: (props: HostProps) => {
+      mockScaffoldProps(props);
+      return React.createElement(actual.DetailScaffold, props);
+    },
+  };
+});
 jest.mock("@/components/plan/training-path/trainingPathPlanningTime", () => ({
   getTrainingPathTodayKey: () => "2026-04-15",
 }));
@@ -242,12 +275,7 @@ jest.mock("@/lib/api", () => ({
             title: "Spring 5K",
             priority: 8,
             activity_category: "run",
-            target_payload: {
-              type: "event_performance",
-              activity_category: "run",
-              distance_m: 5000,
-              target_time_s: 1500,
-            },
+            target_payload: mockGoalObjective,
           },
           isLoading: false,
           refetch: jest.fn(async () => undefined),
@@ -262,9 +290,14 @@ jest.mock("@/lib/api", () => ({
     },
     athleteIntelligence: {
       getGoalAssessment: { useQuery: assessmentUseQueryMock },
-      getGoalProgress: { useQuery: () => ({ data: undefined, isError: false, isLoading: false }) },
+      getGoalProgress: { useQuery: progressUseQueryMock },
       getThresholdOverview: {
-        useQuery: () => ({ data: undefined, isError: false, isLoading: false }),
+        useQuery: () => ({
+          data: undefined,
+          isError: false,
+          isLoading: false,
+          refetch: jest.fn(async () => undefined),
+        }),
       },
     },
   },
@@ -276,6 +309,15 @@ describe("goal detail persistence", () => {
   beforeEach(() => {
     navigateMock.mockClear();
     assessmentUseQueryMock.mockClear();
+    progressUseQueryMock.mockReturnValue({
+      data: undefined,
+      isError: false,
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    });
+    mockRecordedMount.mockClear();
+    mockScaffoldProps.mockClear();
+    mockGoalObjective = { type: "threshold", metric: "pace", value: 4, activity_category: "run" };
     Object.defineProperty(Intl, "DateTimeFormat", {
       configurable: true,
       value: function DateTimeFormat() {
@@ -314,6 +356,17 @@ describe("goal detail persistence", () => {
   });
 
   it("hands the athlete planning day to Advanced analysis", async () => {
+    progressUseQueryMock.mockReturnValue({
+      data: {
+        result: {
+          status: "insufficient",
+          target: { activityCategory: "bike", metric: "power", unit: "watts" },
+          deadlineAt: "2026-06-01T00:00:00Z",
+        },
+      },
+      isLoading: false,
+      isError: false,
+    });
     await renderNative(<GoalDetailScreen />);
 
     await fireEvent.press(screen.getByTestId("goal-detail-analyze"));
@@ -337,5 +390,62 @@ describe("goal detail persistence", () => {
     expect(screen.queryByText(/completion likelihood|finish prediction|medical|risk/i)).toBeNull();
     expect(screen.queryByText("72%")).toBeNull();
     expect(screen.queryByText(/\b(?:[0-9]|[1-9][0-9]|100)\s*\/\s*100\b/)).toBeNull();
+    expect(
+      screen.queryByText(
+        /What influences your assessment|Your approach|Next step|Evidence and assumptions/,
+      ),
+    ).toBeNull();
+  });
+
+  it("shows an unsupported state rather than another activity category's threshold history", async () => {
+    mockGoalObjective = { type: "threshold", metric: "hr", value: 170 };
+    const presentation = require("@/components/plan/training-path/planDashboardPresentation");
+    presentation.buildComparableThresholdTrend.mockClear();
+    progressUseQueryMock.mockReturnValue({
+      data: { result: { status: "unsupported", reason: "non_threshold_goal" } },
+      isLoading: false,
+      isError: false,
+    });
+    await renderNative(<GoalDetailScreen />);
+    expect(screen.getByText("Progress charts are not available for this goal type.")).toBeTruthy();
+    const {
+      buildComparableThresholdTrend,
+    } = require("@/components/plan/training-path/planDashboardPresentation");
+    expect(buildComparableThresholdTrend).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("goal-detail-analyze")).toBeNull();
+  });
+
+  it.each([
+    { type: "event_performance", activity_category: "run", distance_m: 5000, target_time_s: 1500 },
+    { type: "completion", distance_m: 10000, duration_s: 3600 },
+    { type: "consistency", target_sessions_per_week: 3, target_weeks: 8 },
+  ])("routes $type goals to recorded history with the athlete timezone", async (objective) => {
+    mockGoalObjective = objective;
+    await renderNative(<GoalDetailScreen />);
+    const history = screen.getByTestId("recorded-goal-history");
+    expect(history.props.goal.objective).toEqual(objective);
+    expect(history.props.timezone).toBe("America/Los_Angeles");
+    expect(screen.queryByTestId("goal-detail-progress")).toBeNull();
+  });
+
+  it("refreshes the recorded-history window on pull to refresh", async () => {
+    mockGoalObjective = { type: "consistency", target_sessions_per_week: 3 };
+    await renderNative(<GoalDetailScreen />);
+    expect(mockRecordedMount).toHaveBeenCalledTimes(1);
+    // The host ScrollView fixture does not mount its native refresh-control prop.
+    await act(async () => {
+      mockScaffoldProps.mock.calls.at(-1)?.[0].refreshControl.props.onRefresh();
+    });
+    await waitFor(() => expect(mockRecordedMount).toHaveBeenCalledTimes(2));
+  });
+
+  it("distinguishes loading and failed progress", async () => {
+    progressUseQueryMock.mockReturnValue({ data: undefined, isLoading: true, isError: false });
+    const view = await renderNative(<GoalDetailScreen />);
+    expect(screen.getByText("Loading threshold evidence…")).toBeTruthy();
+    progressUseQueryMock.mockReturnValue({ data: undefined, isLoading: false, isError: true });
+    await view.rerender(<GoalDetailScreen />);
+    expect(screen.getByText("Goal progress could not be loaded.")).toBeTruthy();
+    expect(screen.getByText("Retry progress")).toBeTruthy();
   });
 });

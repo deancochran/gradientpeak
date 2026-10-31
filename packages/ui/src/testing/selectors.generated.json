@@ -16,6 +16,20 @@
   },
   "avatar-stack": {
     "team": {
+      "avatars": [
+        {
+          "id": "alex-morgan"
+        },
+        {
+          "id": "jordan-lee"
+        },
+        {
+          "id": "sam-patel"
+        },
+        {
+          "id": "casey-nguyen"
+        }
+      ],
       "maxAvatarsAmount": 3
     }
   },
@@ -64,6 +78,23 @@
       "testId": "accept-terms-checkbox"
     }
   },
+  "choice-field": {
+    "binary": {
+      "testId": "choice-binary"
+    },
+    "catalog": {
+      "testId": "choice-catalog"
+    },
+    "progression": {
+      "testId": "choice-progression"
+    },
+    "empty": {
+      "testId": "choice-empty"
+    },
+    "unavailable": {
+      "testId": "choice-unavailable"
+    }
+  },
   "command": {
     "search": {
       "accessibilityLabel": "Search commands"
@@ -81,6 +112,14 @@
     }
   },
   "duration-input": {
+    "testTime": {
+      "id": "test-duration",
+      "testId": "test-time-duration-input"
+    },
+    "longGoal": {
+      "id": "long-goal-duration",
+      "testId": "long-goal-duration-input"
+    },
     "activity": {
       "id": "activity-duration",
       "testId": "activity-duration-input"
@@ -215,6 +254,13 @@
       ]
     }
   },
+  "native-quantity-input": {
+    "distance": {
+      "decimals": 3,
+      "max": 1000,
+      "min": 0.001
+    }
+  },
   "number-slider-input": {
     "intensity": {
       "id": "activity-intensity-range",
@@ -264,6 +310,14 @@
     "long": {
       "id": "segmented-duration-long",
       "valueSeconds": 3661
+    },
+    "zero": {
+      "id": "segmented-duration-zero",
+      "valueSeconds": 0
+    },
+    "dayLimit": {
+      "id": "segmented-duration-day-limit",
+      "valueSeconds": 86400
     },
     "incomplete": {
       "id": "segmented-duration-incomplete",

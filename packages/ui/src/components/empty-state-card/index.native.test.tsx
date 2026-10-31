@@ -12,7 +12,7 @@ describe("EmptyStateCard native", () => {
     );
 
     expect(getByText(emptyStateCardFixtures.generic.title)).toBeTruthy();
-    await fireEvent.press(getByText(emptyStateCardFixtures.generic.actionLabel!));
+    await fireEvent.press(getByText(emptyStateCardFixtures.generic.actionLabel));
     expect(onAction).toHaveBeenCalled();
   });
 });

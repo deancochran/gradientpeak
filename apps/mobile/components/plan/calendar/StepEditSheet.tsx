@@ -1,9 +1,4 @@
-import {
-  type ActivityPlanDuration,
-  type ActivityPlanIntervalStep,
-  type ActivityTarget,
-  consolidateActivityPlanText,
-} from "@repo/core";
+import type { ActivityPlanDuration, ActivityPlanStep, ActivityTarget } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import {
   Form,
@@ -24,10 +19,10 @@ import { AppConfirmModal, AppFormModal } from "@/components/shared/AppFormModal"
 
 interface StepEditSheetProps {
   isVisible: boolean;
-  step: ActivityPlanIntervalStep | null;
+  step: ActivityPlanStep | null;
   stepIndex: number | null;
   onClose: () => void;
-  onSave: (updatedStep: ActivityPlanIntervalStep) => void;
+  onSave: (updatedStep: ActivityPlanStep) => void;
   onDelete: () => void;
   onDuplicate: () => void;
 }
@@ -106,9 +101,8 @@ export function StepEditSheet({
   useEffect(() => {
     if (step) {
       const nextValues: StepEditFormValues = {
-        name: step.name || "",
-        instructions:
-          consolidateActivityPlanText(step.notes, step.description, "Description") ?? "",
+        name: step.name ?? "",
+        instructions: step.instructions ?? "",
         durationType: step.duration.type,
         durationValue: "",
         durationUnit: "minutes",
@@ -146,8 +140,10 @@ export function StepEditSheet({
 
       if (step.targets && step.targets.length > 0) {
         const target = step.targets[0];
-        nextValues.targetType = target.type as StepEditFormValues["targetType"];
-        nextValues.targetIntensity = String(target.intensity);
+        if (target !== undefined) {
+          nextValues.targetType = target.type as StepEditFormValues["targetType"];
+          nextValues.targetIntensity = target.type === "rest" ? "" : String(target.intensity);
+        }
       }
 
       form.reset(nextValues);
@@ -199,7 +195,7 @@ export function StepEditSheet({
       duration = { type: "repetitions", count: Math.round(Number(values.durationValue)) };
     }
 
-    let targets: ActivityTarget[] = [{ type: "RPE", intensity: 5 }];
+    let targets: ActivityTarget[] = [];
 
     if (values.targetIntensity.trim()) {
       const target: ActivityTarget = {
@@ -209,10 +205,11 @@ export function StepEditSheet({
       targets = [target];
     }
 
-    const updatedStep: ActivityPlanIntervalStep = {
+    const updatedStep: ActivityPlanStep = {
+      type: "step",
       id: step?.id ?? crypto.randomUUID(),
-      name: values.name.trim(),
-      notes: values.instructions.trim() || undefined,
+      ...(values.name.trim() ? { name: values.name.trim() } : {}),
+      ...(values.instructions.trim() ? { instructions: values.instructions.trim() } : {}),
       duration,
       targets,
     };

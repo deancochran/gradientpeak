@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-
 import {
   DRAFT_PLAN_PROJECTION_ALGORITHM_VERSION,
   prescriptionResolutionManifestSchema,
@@ -42,7 +41,6 @@ import { commitTrainingPlan, previewTrainingPlan } from "./projection-planning";
 
 const seededProfileIds: string[] = [];
 const previewStartDate = "2026-08-03";
-
 function projectionSemantics(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(projectionSemantics);
   if (!value || typeof value !== "object") return value;
@@ -52,7 +50,6 @@ function projectionSemantics(value: unknown): unknown {
       .map(([key, nested]) => [key, projectionSemantics(nested)]),
   );
 }
-
 async function seedFixture() {
   const profileId = randomUUID();
   const activityPlanId = randomUUID();
@@ -104,9 +101,9 @@ async function seedFixture() {
       name: "Canonical bike threshold source",
       started_at: new Date("2026-07-31T00:30:00.000Z"),
       finished_at: publishedAt,
-      elapsed_ms: 1_800_000,
-      active_ms: 1_800_000,
-      moving_ms: 1_800_000,
+      elapsed_ms: 1800000,
+      active_ms: 1800000,
+      moving_ms: 1800000,
       timing_coverage: "complete",
       segments_revision: 1,
       parser_version: "projection-planning-fixture-v1",
@@ -121,7 +118,7 @@ async function seedFixture() {
       profile_id: profileId,
       digest_algorithm: "sha256",
       digest: sourceDigest,
-      byte_size: 1_024,
+      byte_size: 1024,
       bucket: "activity-files",
       path: `artifacts/sha256/${profileId}/${sourceDigest}`,
       media_type: "application/vnd.ant.fit",
@@ -147,17 +144,17 @@ async function seedFixture() {
       role: "activity",
       activity_category: "bike",
       start_offset_ms: 0,
-      end_offset_ms: 1_800_000,
+      end_offset_ms: 1800000,
       source_artifact_id: sourceArtifactId,
       source_session_index: 0,
       summary: {
         version: 1,
-        timing: { timingCoverage: "complete", activeMs: 1_800_000, movingMs: 1_800_000 },
+        timing: { timingCoverage: "complete", activeMs: 1800000, movingMs: 1800000 },
       },
       summary_version: 1,
       timing_coverage: "complete",
-      active_ms: 1_800_000,
-      moving_ms: 1_800_000,
+      active_ms: 1800000,
+      moving_ms: 1800000,
       segment_revision: 1,
       parser_version: "projection-planning-fixture-v1",
       materializer_version: "projection-planning-fixture-v1",
@@ -173,11 +170,11 @@ async function seedFixture() {
       activity_category: "bike",
       effort_type: "power",
       source_series: "power",
-      duration_seconds: 1_800,
+      duration_seconds: 1800,
       source_artifact_id: sourceArtifactId,
       source_revision: 1,
       start_offset_ms: 0,
-      end_offset_ms: 1_800_000,
+      end_offset_ms: 1800000,
       window_coverage: 1,
       max_gap_seconds: 2,
       unit: "watts",
@@ -192,13 +189,12 @@ async function seedFixture() {
         derived_from: "activity_file_stream",
         source_series: "power",
         interval_convention: "current_sample_applies_to_preceding_interval",
-        exact_window_start_timestamp_seconds:
-          new Date("2026-07-31T00:30:00.000Z").getTime() / 1_000,
-        exact_window_end_timestamp_seconds: publishedAt.getTime() / 1_000,
+        exact_window_start_timestamp_seconds: new Date("2026-07-31T00:30:00.000Z").getTime() / 1000,
+        exact_window_end_timestamp_seconds: publishedAt.getTime() / 1000,
         exact_window_start_offset_seconds: 0,
-        exact_window_end_offset_seconds: 1_800,
-        duration_seconds: 1_800,
-        contributing_duration_seconds: 1_800,
+        exact_window_end_offset_seconds: 1800,
+        duration_seconds: 1800,
+        contributing_duration_seconds: 1800,
         window_coverage: 1,
         source_time_coverage: 1,
         extraction_status: "available",
@@ -256,28 +252,15 @@ async function seedFixture() {
     created_at: now,
   });
   const activityStructure = activityPlanStructureSchema.parse({
-    version: 3 as const,
+    version: 5 as const,
     activity_category: "bike" as const,
-    segments: [
+    items: [
       {
+        type: "step",
         id: randomUUID(),
-        role: "activity" as const,
-        name: "Projected ride",
-        intervals: [
-          {
-            id: randomUUID(),
-            name: "Main",
-            repetitions: 1,
-            steps: [
-              {
-                id: randomUUID(),
-                name: "Steady ride",
-                duration: { type: "time" as const, seconds: 3_600 },
-                targets: [{ type: "%FTP" as const, intensity: 80 }],
-              },
-            ],
-          },
-        ],
+        name: "Steady ride",
+        duration: { type: "time" as const, seconds: 3600 },
+        targets: [{ type: "%FTP" as const, intensity: 80 }],
       },
     ],
   });
@@ -291,7 +274,6 @@ async function seedFixture() {
     structure_hash: activityPlanStructureHash(activityStructure),
     semantic_hash: activityPlanSemanticHash({
       structure: activityStructure,
-      adaptation: null,
       trainingIntent: "aerobic_base",
     }),
   });
@@ -332,7 +314,6 @@ async function seedFixture() {
   });
   return { activityPlanId, planId, profileId, structure, structureHash };
 }
-
 afterEach(async () => {
   while (seededProfileIds.length > 0) {
     const profileId = seededProfileIds.pop();
@@ -370,9 +351,7 @@ afterEach(async () => {
     await db.delete(users).where(eq(users.id, profileId));
   }
 });
-
 afterAll(async () => pool.end());
-
 describe("atomic training-plan preview and commit against PostgreSQL", () => {
   it("isolates repeated applications and replays one operation without touching today or completed work", async () => {
     const fixture = await seedFixture();
@@ -400,26 +379,25 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
         },
       });
     };
-
     const first = await apply("2026-08-03", "application_isolation_operation_0001");
     const second = await apply("2026-08-10", "application_isolation_operation_0002");
     expect(first).toMatchObject({ status: "applied", created: 1 });
     expect(second).toMatchObject({ status: "applied", created: 1 });
     if (first.status !== "applied" || second.status !== "applied")
       throw new Error("Expected applications");
+    const firstPlannedSessionId = first.plannedSessionIds[0];
+    const completedId = second.plannedSessionIds[0];
+    if (!firstPlannedSessionId || !completedId) throw new Error("Expected planned sessions");
     expect(first.applicationId).not.toBe(second.applicationId);
-
     const retry = await apply("2026-08-03", "application_isolation_operation_0001");
     expect(retry).toEqual(first);
     await expect(apply("2026-08-17", "application_isolation_operation_0001")).resolves.toEqual({
       status: "operation_conflict",
     });
-
     await db
       .update(plannedSessions)
       .set({ planning_date: "2026-08-01" })
-      .where(eq(plannedSessions.id, first.plannedSessionIds[0]!));
-    const completedId = second.plannedSessionIds[0]!;
+      .where(eq(plannedSessions.id, firstPlannedSessionId));
     await db
       .update(plannedSessions)
       .set({
@@ -430,7 +408,6 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
         linked_at: now,
       })
       .where(eq(plannedSessions.id, completedId));
-
     const third = await apply("2026-08-24", "application_isolation_operation_0003");
     if (third.status !== "applied") throw new Error("Expected removable application");
     const removalPreview = await previewRemoveAppliedScheduleUseCase({
@@ -534,7 +511,6 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
       }),
     ).resolves.toMatchObject({ status: "stale", reason: "preview_drift" });
   });
-
   it("previews and commits the same resolved prescription without athlete context", async () => {
     const fixture = await seedFixture();
     await db
@@ -558,14 +534,12 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
       },
       previewStartDate,
     };
-
     const preview = await previewTrainingPlan({
       db,
       profileId: fixture.profileId,
       now: projectionNow,
       values: { kind: "create", draft },
     });
-
     expect(preview).toMatchObject({ status: "available", applicable: true });
     if (preview.status !== "available") throw new Error("Expected no-context preview");
     expect(preview.basePublishedRevision).toBeNull();
@@ -578,7 +552,6 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
         evidence_facts: [],
       },
     });
-
     const committed = await commitTrainingPlan({
       db,
       profileId: fixture.profileId,
@@ -591,7 +564,6 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
         previewFingerprint: preview.previewFingerprint,
       },
     });
-
     expect(committed).toMatchObject({
       status: "saved",
       previewFingerprint: preview.previewFingerprint,
@@ -601,7 +573,6 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
       projectionSemantics(preview.simulation),
     );
   });
-
   it("previews and commits supported default drafts while published state is stale", async () => {
     const fixture = await seedFixture();
     const projectionNow = new Date("2026-08-01T12:00:00.000Z");
@@ -624,14 +595,12 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
     };
     const imports = createActivityImportRepository(db);
     await imports.create({ profileId: fixture.profileId, kind: "manual_sync" });
-
     const preview = await previewTrainingPlan({
       db,
       profileId: fixture.profileId,
       now: projectionNow,
       values: { kind: "create", draft },
     });
-
     expect(preview).toMatchObject({ status: "available", applicable: true });
     if (preview.status !== "available") throw new Error("Expected stale no-context preview");
     expect(preview.sessionResults[0]).toMatchObject({
@@ -642,7 +611,6 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
         evidence_facts: [],
       },
     });
-
     await expect(
       commitTrainingPlan({
         db,
@@ -658,7 +626,6 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
       }),
     ).resolves.toMatchObject({ status: "saved" });
   });
-
   it("recalculates create, update, and duplicate commits and rejects a concurrent stale update", async () => {
     const fixture = await seedFixture();
     const projectionNow = new Date("2026-08-01T12:00:00.000Z");
@@ -709,7 +676,6 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
         },
       }),
     ).resolves.toEqual(created);
-
     const updateDraft = {
       planId: fixture.planId,
       expectedRevision: 1,
@@ -750,7 +716,6 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
         .from(trainingPlans)
         .where(eq(trainingPlans.id, fixture.planId)),
     ).resolves.toEqual([{ name: "Projection plan updated", revision: 2 }]);
-
     const duplicateDraft = {
       sourcePlanId: fixture.planId,
       name: "Projection plan copy",
@@ -812,7 +777,6 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
       }),
     ).resolves.toEqual({ status: "operation_conflict" });
   });
-
   it("rejects preview drift, published revision conflicts, and unavailable linked plans", async () => {
     const fixture = await seedFixture();
     const duplicateDraft = {
@@ -825,30 +789,16 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
       values: { kind: "duplicate", draft: duplicateDraft },
     });
     if (preview.status !== "available") throw new Error("Expected duplicate preview");
-
     const changedActivityStructure = activityPlanStructureSchema.parse({
-      version: 3,
+      version: 5,
       activity_category: "bike",
-      segments: [
+      items: [
         {
+          type: "step",
           id: randomUUID(),
-          role: "activity",
-          name: "Changed projected ride",
-          intervals: [
-            {
-              id: randomUUID(),
-              name: "Main",
-              repetitions: 1,
-              steps: [
-                {
-                  id: randomUUID(),
-                  name: "Changed steady ride",
-                  duration: { type: "time", seconds: 3_600 },
-                  targets: [{ type: "%FTP", intensity: 81 }],
-                },
-              ],
-            },
-          ],
+          name: "Changed steady ride",
+          duration: { type: "time", seconds: 3600 },
+          targets: [{ type: "%FTP", intensity: 81 }],
         },
       ],
     });
@@ -860,7 +810,6 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
         structure_hash: activityPlanStructureHash(changedActivityStructure),
         semantic_hash: activityPlanSemanticHash({
           structure: changedActivityStructure,
-          adaptation: null,
           trainingIntent: "aerobic_base",
         }),
       })
@@ -893,7 +842,6 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
         },
       }),
     ).resolves.toMatchObject({ status: "stale", reason: "preview_drift" });
-
     const imports = createActivityImportRepository(db);
     await imports.create({ profileId: fixture.profileId, kind: "manual_sync" });
     await expect(
@@ -914,7 +862,6 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
       reason: "preview_drift",
       currentPublishedRevision: preview.basePublishedRevision,
     });
-
     await db.delete(activityImportRuns).where(eq(activityImportRuns.profile_id, fixture.profileId));
     await db.delete(activityPlans).where(eq(activityPlans.id, fixture.activityPlanId));
     await expect(
@@ -930,7 +877,6 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
         },
       }),
     ).resolves.toMatchObject({ status: "stale", reason: "linked_plan_unavailable" });
-
     await db
       .update(profileAthleteState)
       .set({ source_revision: 2, published_revision: 2, dirty_from_at: null })
@@ -948,7 +894,6 @@ describe("atomic training-plan preview and commit against PostgreSQL", () => {
         },
       }),
     ).resolves.toMatchObject({ status: "stale", reason: "state_revision" });
-
     const rows = await db
       .select({ algorithm: trainingPlans.projection_algorithm_version })
       .from(trainingPlans)

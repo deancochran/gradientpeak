@@ -4,6 +4,7 @@ import {
   TrainingPathLoadChartSection,
 } from "@/components/plan/training-path/TrainingPathLoadChartSection";
 import type { TrainingPlanBuilderController } from "@/components/training-plan/create/useTrainingPlanBuilderController";
+import { omitUndefined } from "@/lib/omitUndefined";
 
 function resolveDayOffset(dateKey: string, startDateKey: string | undefined) {
   if (!startDateKey) return undefined;
@@ -33,6 +34,7 @@ export function BuilderTrainingPathReviewSection({
 
   return (
     <TrainingPathLoadChartSection
+      {...omitUndefined({ renderBelowChart })}
       dailyPoints={chartReview.chart.dailyPoints}
       chartHeight={chartHeight}
       dailyDateLabelFormatter={(dateKey, index) =>
@@ -40,7 +42,6 @@ export function BuilderTrainingPathReviewSection({
       }
       model={chartReview.chart}
       onDisplayedWeekChange={chartReview.selectWeekStart}
-      renderBelowChart={renderBelowChart}
       selectedDate={chartReview.selectedDate}
       onSelectedDateChange={chartReview.selectDate}
       onSelectedWeekChange={chartReview.selectWeekStart}

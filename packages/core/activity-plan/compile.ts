@@ -1,91 +1,69 @@
 import type { CanonicalActivityCategory } from "../schemas/activity-category";
+import { type CompiledActivityPlanOccurrence, createActivityStepOccurrenceId } from "./occurrence";
 import {
-  type CompiledActivityPlanOccurrence,
-  createActivityStepOccurrenceId,
-  createBoundaryOccurrenceId,
-} from "./occurrence";
-import { type ActivityPlanStructure, activityPlanStructureSchema } from "./structure-schema";
-
-export const ACTIVITY_PLAN_COMPILER_VERSION = 1 as const;
-
+  type ActivityPlanStep,
+  type ActivityPlanStructure,
+  activityPlanStructureSchema,
+} from "./structure-schema";
+import { ACTIVITY_PLAN_LIMITS } from "./structure-validation";
+export const ACTIVITY_PLAN_COMPILER_VERSION = 3 as const;
 export type CompiledActivityPlan = {
   compilerVersion: typeof ACTIVITY_PLAN_COMPILER_VERSION;
-  structureVersion: 3;
+  structureVersion: 5;
   activity_category: CanonicalActivityCategory;
   occurrences: readonly CompiledActivityPlanOccurrence[];
   explicitTimedDurationSeconds: number;
 };
-
-/** Parses once and expands the plan into stable recorder/calculation occurrences. */
+/** Parses once and expands V5 steps/repeats in chronological order. */
 export function compileActivityPlan(input: unknown): CompiledActivityPlan {
-  const structure = activityPlanStructureSchema.parse(input);
-  return compileValidatedActivityPlan(structure);
+  return compileValidatedActivityPlan(activityPlanStructureSchema.parse(input));
 }
-
-/** Compiles a previously parsed value without introducing runtime state or randomness. */
 export function compileValidatedActivityPlan(
   structure: ActivityPlanStructure,
 ): CompiledActivityPlan {
+  // Validation already establishes this bound; retain the check before output allocation for callers of this public helper.
+  const expanded = structure.items.reduce(
+    (total, item) => total + (item.type === "step" ? 1 : item.steps.length * item.count),
+    0,
+  );
+  if (expanded > ACTIVITY_PLAN_LIMITS.maxExpandedStepOccurrences)
+    throw new Error("Activity plan expansion exceeds its safety limit.");
   const occurrences: CompiledActivityPlanOccurrence[] = [];
   let explicitTimedDurationSeconds = 0;
-
-  structure.segments.forEach((segment, segmentIndex) => {
-    if (segment.role !== "activity") {
-      explicitTimedDurationSeconds += segment.duration.seconds;
-      occurrences.push({
-        occurrenceId: createBoundaryOccurrenceId(segment.id),
-        globalOrdinal: occurrences.length,
-        segmentId: segment.id,
-        segmentIndex,
-        role: segment.role,
-        activity_category: null,
-        intervalId: null,
-        intervalIndex: null,
-        stepId: null,
-        stepIndex: null,
-        repeatIteration: null,
-        completionPolicy: "time",
-        duration: segment.duration,
-        targets: [],
-      });
-      return;
-    }
-
-    segment.intervals.forEach((interval, intervalIndex) => {
-      for (let repeatIteration = 0; repeatIteration < interval.repetitions; repeatIteration += 1) {
-        interval.steps.forEach((step, stepIndex) => {
-          if (step.duration.type === "time") {
-            explicitTimedDurationSeconds += step.duration.seconds;
-          }
-          occurrences.push({
-            occurrenceId: createActivityStepOccurrenceId({
-              segmentId: segment.id,
-              intervalId: interval.id,
-              repeatIteration,
-              stepId: step.id,
-            }),
-            globalOrdinal: occurrences.length,
-            segmentId: segment.id,
-            segmentIndex,
-            role: "activity",
-            activity_category: structure.activity_category,
-            intervalId: interval.id,
-            intervalIndex,
-            stepId: step.id,
-            stepIndex,
-            repeatIteration,
-            completionPolicy: step.duration.type,
-            duration: step.duration,
-            targets: step.targets,
-          });
-        });
-      }
+  const append = (
+    step: ActivityPlanStep,
+    repeatId: string | undefined,
+    repeatIteration: number,
+  ) => {
+    if (step.duration.type === "time") explicitTimedDurationSeconds += step.duration.seconds;
+    const ordinal = occurrences.length;
+    occurrences.push({
+      occurrenceId: createActivityStepOccurrenceId({
+        stepId: step.id,
+        ...(repeatId ? { repeatId } : {}),
+        repeatIteration,
+      }),
+      ordinal,
+      globalOrdinal: ordinal,
+      stepId: step.id,
+      ...(repeatId ? { repeatId } : {}),
+      repeatIteration,
+      role: "activity",
+      activity_category: structure.activity_category,
+      completionPolicy: step.duration.type,
+      duration: step.duration,
+      targets: step.targets,
     });
-  });
-
+  };
+  for (const item of structure.items) {
+    if (item.type === "step") append(item, undefined, 0);
+    else
+      for (let iteration = 0; iteration < item.count; iteration += 1)
+        for (const step of item.steps) append(step, item.id, iteration);
+  }
   return {
     compilerVersion: ACTIVITY_PLAN_COMPILER_VERSION,
-    structureVersion: 3,
+    structureVersion: 5,
     activity_category: structure.activity_category,
     occurrences,
     explicitTimedDurationSeconds,

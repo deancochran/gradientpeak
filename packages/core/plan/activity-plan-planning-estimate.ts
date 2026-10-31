@@ -72,6 +72,7 @@ export type ActivityPlanAuthoredTargetEvidence = {
 export type ActivityPlanCategoryPlanningDose = {
   activity_category: CanonicalActivityCategory;
   timedActiveSeconds: number;
+  restSeconds?: number;
   distanceMeters: number;
   repetitionCount: number;
   openOccurrenceCount: number;
@@ -131,6 +132,7 @@ type OccurrenceResolution = {
   prescribedIntensity: PrescribedActivityIntensity;
   speed: PrescriptionSpeedResolution;
   activeSeconds: number | null;
+  restSeconds: number;
   durationEvidenceRole: "prescribed" | "estimated" | "derived";
   distance: ActivityDistance;
 };
@@ -154,8 +156,10 @@ function durationFingerprint(duration: CompiledActivityStepOccurrence["duration"
   };
 }
 
-function targetFingerprint(target: ActivityPlanTarget): { type: string; intensity: number } {
-  return { type: target.type, intensity: target.intensity };
+function targetFingerprint(target: ActivityPlanTarget): { type: string; intensity?: number } {
+  return target.type === "rest"
+    ? { type: target.type }
+    : { type: target.type, intensity: target.intensity };
 }
 
 function targetFingerprints(targets: readonly ActivityPlanTarget[]) {
@@ -163,7 +167,7 @@ function targetFingerprints(targets: readonly ActivityPlanTarget[]) {
     .map(targetFingerprint)
     .sort((left, right) =>
       left.type === right.type
-        ? left.intensity - right.intensity
+        ? (left.intensity ?? 0) - (right.intensity ?? 0)
         : left.type.localeCompare(right.type),
     );
 }
@@ -411,39 +415,45 @@ export function resolvePrescriptionSpeedMetersPerSecond(input: {
 }
 
 function nativeIntensityForTarget(target: ActivityPlanTarget): ActivityNativeIntensityValue | null {
-  const magnitude = { kind: "point" as const, value: target.intensity };
   switch (target.type) {
-    case "%FTP":
-      return {
-        metric: "relative_threshold",
-        reference: "ftp",
-        unit: "percent",
-        magnitude,
-      };
-    case "%MaxHR":
-      return {
-        metric: "relative_threshold",
-        reference: "unspecified_threshold",
-        unit: "percent",
-        magnitude,
-      };
-    case "%ThresholdHR":
-      return {
-        metric: "relative_threshold",
-        reference: "lthr",
-        unit: "percent",
-        magnitude,
-      };
-    case "watts":
-      return { metric: "power", unit: "watts", magnitude };
-    case "bpm":
-      return { metric: "heart_rate", unit: "beats_per_minute", magnitude };
-    case "speed":
-      return { metric: "speed", unit: "kilometers_per_hour", magnitude };
-    case "RPE":
-      return { metric: "perceived_exertion", unit: "rpe_0_10", magnitude };
-    case "cadence":
-      return { metric: "cadence", unit: "revolutions_per_minute", magnitude };
+    case "rest":
+      return null;
+    default: {
+      const magnitude = { kind: "point" as const, value: target.intensity };
+      switch (target.type) {
+        case "%FTP":
+          return {
+            metric: "relative_threshold",
+            reference: "ftp",
+            unit: "percent",
+            magnitude,
+          };
+        case "%MaxHR":
+          return {
+            metric: "relative_threshold",
+            reference: "unspecified_threshold",
+            unit: "percent",
+            magnitude,
+          };
+        case "%ThresholdHR":
+          return {
+            metric: "relative_threshold",
+            reference: "lthr",
+            unit: "percent",
+            magnitude,
+          };
+        case "watts":
+          return { metric: "power", unit: "watts", magnitude };
+        case "bpm":
+          return { metric: "heart_rate", unit: "beats_per_minute", magnitude };
+        case "speed":
+          return { metric: "speed", unit: "kilometers_per_hour", magnitude };
+        case "RPE":
+          return { metric: "perceived_exertion", unit: "rpe_0_10", magnitude };
+        case "cadence":
+          return { metric: "cadence", unit: "revolutions_per_minute", magnitude };
+      }
+    }
   }
 }
 
@@ -484,12 +494,30 @@ function resolveOccurrence(
     prescribedIntensity,
     performanceTargets,
   });
+  if (occurrence.duration.type === "time" && occurrence.targets[0]?.type === "rest") {
+    return {
+      occurrence,
+      prescribedIntensity,
+      speed,
+      activeSeconds: 0,
+      restSeconds: occurrence.duration.seconds,
+      durationEvidenceRole: "prescribed",
+      distance: activityDistanceSchema.parse({
+        status: "unavailable",
+        evidenceRole: "prescribed",
+        value: null,
+        unit: "meters",
+        reason: "not_applicable",
+      }),
+    };
+  }
   if (occurrence.duration.type === "time") {
     return {
       occurrence,
       prescribedIntensity,
       speed,
       activeSeconds: occurrence.duration.seconds,
+      restSeconds: 0,
       durationEvidenceRole: "prescribed",
       distance: activityDistanceSchema.parse(
         speed.status === "available"
@@ -520,6 +548,7 @@ function resolveOccurrence(
       prescribedIntensity,
       speed,
       activeSeconds: speed.status === "available" ? occurrence.duration.meters / speed.value : null,
+      restSeconds: 0,
       durationEvidenceRole: "derived",
       distance: activityDistanceSchema.parse({
         status: "available",
@@ -536,6 +565,7 @@ function resolveOccurrence(
       speed,
       activeSeconds:
         occurrence.duration.count * getActivityCategorySecondsPerRep(occurrence.activity_category),
+      restSeconds: 0,
       durationEvidenceRole: "estimated",
       distance: activityDistanceSchema.parse({
         status: "unavailable",
@@ -551,6 +581,7 @@ function resolveOccurrence(
     prescribedIntensity,
     speed,
     activeSeconds: null,
+    restSeconds: 0,
     durationEvidenceRole: "prescribed",
     distance: activityDistanceSchema.parse({
       status: "unavailable",
@@ -638,9 +669,13 @@ function selectLoadDrivingTarget(
   if (!first) return { status: "none" };
   const equivalent = finalists.every(
     (candidate) =>
-      candidate.domain === first.domain &&
-      candidate.target.type === first.target.type &&
-      candidate.target.intensity === first.target.intensity,
+      (candidate.domain === first.domain &&
+        candidate.target.type === first.target.type &&
+        candidate.target.type === "rest" &&
+        first.target.type === "rest") ||
+      ("intensity" in candidate.target &&
+        "intensity" in first.target &&
+        candidate.target.intensity === first.target.intensity),
   );
   return equivalent ? { status: "selected", target: first.target } : { status: "ambiguous" };
 }
@@ -714,6 +749,16 @@ function commonLoadSelection(
     };
   }
   const target = resolvedTarget.target;
+  if (target.type === "rest") {
+    return {
+      target: null,
+      method: null,
+      fact: null,
+      thresholdType: null,
+      thresholdValue: null,
+      unavailableReason: null,
+    };
+  }
   if (
     occurrence.activity_category !== "bike" &&
     occurrence.activity_category !== "run" &&
@@ -979,7 +1024,7 @@ function buildPlannedDose(input: {
   };
 }
 
-function occurrenceDuration(resolution: OccurrenceResolution, assignedRestSeconds: number) {
+function occurrenceDuration(resolution: OccurrenceResolution) {
   const open = resolution.occurrence.duration.type === "untilFinished";
   const unavailableReason = open
     ? "open_ended"
@@ -1006,14 +1051,14 @@ function occurrenceDuration(resolution: OccurrenceResolution, assignedRestSecond
       ? {
           status: "available" as const,
           evidenceRole: resolution.durationEvidenceRole,
-          value: resolution.activeSeconds + assignedRestSeconds,
+          value: resolution.activeSeconds + resolution.restSeconds,
           unit: "seconds" as const,
         }
-      : assignedRestSeconds > 0
+      : resolution.restSeconds > 0
         ? {
             status: "partial" as const,
             evidenceRole: "prescribed" as const,
-            value: assignedRestSeconds,
+            value: resolution.restSeconds,
             unit: "seconds" as const,
             reason: open ? ("open_ended" as const) : ("source_incomplete" as const),
           }
@@ -1332,9 +1377,7 @@ export function estimateActivityPlanForTrainingContext(
     ...(input.planId === undefined ? {} : { planId: input.planId }),
     ...(input.scheduledEventId === undefined ? {} : { scheduledEventId: input.scheduledEventId }),
   });
-  const activities = compiled.occurrences.filter(
-    (occurrence): occurrence is CompiledActivityStepOccurrence => occurrence.role === "activity",
-  );
+  const activities: readonly CompiledActivityStepOccurrence[] = compiled.occurrences;
   const resolutions = activities.map((occurrence) =>
     resolveOccurrence(occurrence, performanceTargets),
   );
@@ -1353,7 +1396,6 @@ export function estimateActivityPlanForTrainingContext(
   const occurrenceQuantifications = resolutions.map((resolution, index) => {
     const commonLoad = envelope.doses[index];
     if (!commonLoad) throw new Error("Missing planned Common Load result for compiled occurrence");
-    const assignedRestSeconds = index === 0 ? durationSummary.restSeconds : 0;
     const subjectIdentity = createPlanOccurrenceActivityQuantificationSubjectIdentity({
       occurrenceId: resolution.occurrence.occurrenceId,
       parentSubjectIdentity: identities.subjectIdentity,
@@ -1383,7 +1425,7 @@ export function estimateActivityPlanForTrainingContext(
         calibrationEvidenceFingerprint: commonLoad.evidenceFingerprint,
       }),
       activity_category: resolution.occurrence.activity_category,
-      duration: occurrenceDuration(resolution, assignedRestSeconds),
+      duration: occurrenceDuration(resolution),
       distance: resolution.distance,
       intensity: {
         prescribed: resolution.prescribedIntensity,
@@ -1462,6 +1504,7 @@ export function estimateActivityPlanForTrainingContext(
   const categoryDose: ActivityPlanCategoryPlanningDose = {
     activity_category: compiled.activity_category,
     timedActiveSeconds: durationSummary.timedActiveSeconds,
+    restSeconds: durationSummary.restSeconds,
     distanceMeters: durationSummary.distanceMeters,
     repetitionCount: durationSummary.repetitionCount,
     openOccurrenceCount: durationSummary.openOccurrenceCount,

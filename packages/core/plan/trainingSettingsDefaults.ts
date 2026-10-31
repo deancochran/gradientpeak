@@ -35,7 +35,6 @@ export function mapAthletePreferencesToCreationDefaults(
   const progressionPace = clamp01(preferences.training_style.progression_pace);
   const weekPattern = clamp01(preferences.training_style.week_pattern_preference);
   const keySessionDensity = clamp01(preferences.training_style.key_session_density_preference);
-  const strengthPriority = clamp01(preferences.training_style.strength_integration_priority);
   const recoveryPriority = clamp01(preferences.recovery_preferences.recovery_priority);
   const systemicFatigueTolerance = clamp01(
     preferences.recovery_preferences.systemic_fatigue_tolerance,

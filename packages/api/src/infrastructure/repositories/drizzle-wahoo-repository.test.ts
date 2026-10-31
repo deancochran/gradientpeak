@@ -15,7 +15,6 @@ type RepositoryHasDirectActivityCreate = "createImportedActivity" extends keyof 
   ? true
   : false;
 const repositoryHasDirectActivityCreate: RepositoryHasDirectActivityCreate = false;
-
 type SelectQueryBuilder = {
   from: () => SelectQueryBuilder;
   innerJoin: () => SelectQueryBuilder;
@@ -23,7 +22,6 @@ type SelectQueryBuilder = {
   where: () => SelectQueryBuilder;
   limit: () => Promise<Record<string, unknown>[]>;
 };
-
 describe("Wahoo repository activity persistence boundary", () => {
   it("preserves the provider account binding when reading Wahoo resource metadata", () => {
     expect(
@@ -42,20 +40,17 @@ describe("Wahoo repository activity persistence boundary", () => {
       },
     });
   });
-
   it("does not expose a direct imported-activity creation path", () => {
     const repository = createWahooRepository({ db: {} as never });
     expect(repositoryHasDirectActivityCreate).toBe(false);
     expect(repository).not.toHaveProperty("createImportedActivity");
   });
-
   it("uses source references as the sole imported-activity identity", () => {
     const repository = createWahooRepository({ db: {} as never });
     expect(repository).toHaveProperty("findImportedActivityByProviderExternalId");
     expect(repository).not.toHaveProperty("migrateLegacyImportedActivityLink");
     expect(repository).not.toHaveProperty("createImportedActivityResourceLink");
   });
-
   it("queries the current terminal ingestion status for analysis readiness", async () => {
     let selection: Record<string, unknown> | undefined;
     const db = {
@@ -74,18 +69,15 @@ describe("Wahoo repository activity persistence boundary", () => {
         };
       }),
     };
-
     await createWahooRepository({ db: db as never }).findImportedActivityByProviderExternalId({
       externalId: "wahoo-activity-1",
       profileId: "00000000-0000-4000-8000-000000000001",
       provider: "wahoo",
     });
-
     const query = new PgDialect().sqlToQuery(selection?.analysisReady as never);
     expect(query.sql).toContain('"activity_file_ingestions"."status" = \'succeeded\'');
     expect(query.sql).not.toContain("'ready'");
   });
-
   it("binds planned-activity link writes to the active profile integration generation", () => {
     const query = new PgDialect().sqlToQuery(
       wahooActiveIntegrationGenerationPredicate({
@@ -94,7 +86,6 @@ describe("Wahoo repository activity persistence boundary", () => {
         profileId: "00000000-0000-4000-8000-000000000002",
       }) as never,
     );
-
     expect(query.sql).toContain('"integrations"."id" = $1');
     expect(query.sql).toContain('"integrations"."profile_id" = $2');
     expect(query.sql).toContain('"integrations"."provider" = $3');
@@ -108,7 +99,6 @@ describe("Wahoo repository activity persistence boundary", () => {
       4,
     ]);
   });
-
   it("scopes planned-session link update and delete predicates to owned Wahoo planned sessions", () => {
     const query = new PgDialect().sqlToQuery(
       wahooEventResourceLinkOwnershipPredicate({
@@ -118,7 +108,6 @@ describe("Wahoo repository activity persistence boundary", () => {
         profileId: "00000000-0000-4000-8000-000000000002",
       }) as never,
     );
-
     expect(query.sql).toContain('"integration_resource_links"."id" = $1');
     expect(query.sql).toContain('"integration_resource_links"."integration_id" = $2');
     expect(query.sql).toContain('"integration_resource_links"."profile_id" = $3');
@@ -132,7 +121,6 @@ describe("Wahoo repository activity persistence boundary", () => {
       "planned_session",
     ]);
   });
-
   it("scopes owned-route link update and delete predicates to the active Wahoo route link", () => {
     const query = new PgDialect().sqlToQuery(
       wahooRouteResourceLinkOwnershipPredicate({
@@ -142,7 +130,6 @@ describe("Wahoo repository activity persistence boundary", () => {
         profileId: "00000000-0000-4000-8000-000000000002",
       }) as never,
     );
-
     expect(query.sql).toContain('"integration_resource_links"."id" = $1');
     expect(query.sql).toContain('"integration_resource_links"."integration_id" = $2');
     expect(query.sql).toContain('"integration_resource_links"."profile_id" = $3');
@@ -156,7 +143,6 @@ describe("Wahoo repository activity persistence boundary", () => {
       "activity_route",
     ]);
   });
-
   it("scopes group-event route delivery links to the recipient integration and event resource kind", () => {
     const query = new PgDialect().sqlToQuery(
       wahooGroupEventRouteDeliveryResourceLinkOwnershipPredicate({
@@ -166,7 +152,6 @@ describe("Wahoo repository activity persistence boundary", () => {
         profileId: "00000000-0000-4000-8000-000000000002",
       }) as never,
     );
-
     expect(query.sql).toContain('"integration_resource_links"."integration_id" = $2');
     expect(query.sql).toContain('"integration_resource_links"."profile_id" = $3');
     expect(query.params).toEqual([
@@ -177,7 +162,6 @@ describe("Wahoo repository activity persistence boundary", () => {
       "group_event_route_delivery",
     ]);
   });
-
   it("fails closed rather than attributing an ambiguous Wahoo account", async () => {
     const limit = vi.fn().mockResolvedValue([
       { integrationGeneration: 1, integrationId: "integration-1", profileId: "profile-1" },
@@ -188,7 +172,6 @@ describe("Wahoo repository activity persistence boundary", () => {
         from: vi.fn(() => ({ where: vi.fn(() => ({ limit })) })),
       })),
     };
-
     await expect(
       createWahooRepository({ db: db as never }).findWahooIntegrationByExternalId(
         "provider-account",
@@ -196,7 +179,6 @@ describe("Wahoo repository activity persistence boundary", () => {
     ).resolves.toBeNull();
     expect(limit).toHaveBeenCalledWith(2);
   });
-
   it("scopes sync route lookup to owned, public, or system routes", async () => {
     let whereCondition: unknown;
     const limit = vi.fn(async () => []);
@@ -211,12 +193,10 @@ describe("Wahoo repository activity persistence boundary", () => {
       })),
     };
     const repository = createWahooRepository({ db: db as never });
-
     await repository.getRouteForSync({
       profileId: "00000000-0000-4000-8000-000000000001",
       routeId: "00000000-0000-4000-8000-000000000002",
     });
-
     const query = new PgDialect().sqlToQuery(whereCondition as never);
     expect(query.sql).toContain('"activity_routes"."id" = $1');
     expect(query.sql).toContain('"activity_routes"."profile_id" = $2');
@@ -230,7 +210,6 @@ describe("Wahoo repository activity persistence boundary", () => {
       true,
     ]);
   });
-
   it("requires a default-going current group event, opt-in, and viewable source route for delivery", async () => {
     let whereCondition: unknown;
     const publicSource = {
@@ -263,7 +242,6 @@ describe("Wahoo repository activity persistence boundary", () => {
         })),
       })),
     };
-
     await expect(
       createWahooRepository({ db: db as never }).getGroupEventRouteForDelivery({
         groupEventId: "00000000-0000-4000-8000-000000000010",
@@ -274,7 +252,6 @@ describe("Wahoo repository activity persistence boundary", () => {
       filePath: "owner/public-route.gpx",
       id: publicSource.id,
     });
-
     const query = new PgDialect().sqlToQuery(whereCondition as never);
     expect(query.sql).toContain('"group_events"."id" = $1');
     expect(query.sql).toContain('"group_events"."cancelled_at" is null');
@@ -285,7 +262,6 @@ describe("Wahoo repository activity persistence boundary", () => {
     expect(query.sql).toContain('"activity_routes"."is_public" = $');
     expect(query.sql).toContain('"activity_routes"."is_system_template" = $');
   });
-
   it("lists one bounded page of eligible one-off group-event route deliveries", async () => {
     let whereCondition: unknown;
     const limit = vi.fn().mockResolvedValue([
@@ -317,7 +293,6 @@ describe("Wahoo repository activity persistence boundary", () => {
         })),
       })),
     };
-
     await expect(
       createWahooRepository({ db: db as never }).listEligibleGroupEventRouteDeliveries({
         limit: 100,
@@ -333,7 +308,6 @@ describe("Wahoo repository activity persistence boundary", () => {
       },
     ]);
     expect(limit).toHaveBeenCalledWith(100);
-
     const query = new PgDialect().sqlToQuery(whereCondition as never);
     expect(query.sql).toContain('"group_events"."series_id" is null');
     expect(query.sql).toContain('"group_events"."recurrence_rule" is null');
@@ -341,7 +315,6 @@ describe("Wahoo repository activity persistence boundary", () => {
       'coalesce("group_event_rsvps"."status", "group_event_series_rsvps"."status", \'going\') = \'going\'',
     );
   });
-
   it("loads only a profile-owned non-template route for automatic library mirroring", async () => {
     let selected: Record<string, unknown> | undefined;
     let whereCondition: unknown;
@@ -361,7 +334,7 @@ describe("Wahoo repository activity persistence boundary", () => {
                     name: "Owned Route",
                     totalAscent: 10,
                     totalDescent: 9,
-                    totalDistance: 1_000,
+                    totalDistance: 1000,
                     updatedAt: new Date("2026-07-29T12:00:00.000Z"),
                   },
                 ]),
@@ -371,7 +344,6 @@ describe("Wahoo repository activity persistence boundary", () => {
         };
       }),
     };
-
     await expect(
       createWahooRepository({ db: db as never }).getOwnedRouteForMirror({
         profileId: "00000000-0000-4000-8000-000000000001",
@@ -381,7 +353,6 @@ describe("Wahoo repository activity persistence boundary", () => {
       filePath: "profile/route.gpx",
       updatedAt: "2026-07-29T12:00:00.000Z",
     });
-
     expect(selected?.filePath).toBe(schema.activityRoutes.file_path);
     const query = new PgDialect().sqlToQuery(whereCondition as never);
     expect(query.sql).toContain('"activity_routes"."id" = $1');
@@ -393,29 +364,22 @@ describe("Wahoo repository activity persistence boundary", () => {
       false,
     ]);
   });
-
   it("loads a planned session for sync from its canonical resolution manifest", async () => {
     const structure = {
-      version: 3,
+      version: 5,
       activity_category: "bike",
-      segments: [
+      items: [
         {
+          type: "repeat",
           id: "10000000-0000-4000-8000-000000000001",
-          name: "Bike",
-          role: "activity",
-          intervals: [
+          count: 2,
+          steps: [
             {
-              id: "20000000-0000-4000-8000-000000000001",
-              name: "Work",
-              repetitions: 2,
-              steps: [
-                {
-                  id: "30000000-0000-4000-8000-000000000001",
-                  name: "Steady",
-                  duration: { type: "time", seconds: 600 },
-                  targets: [{ type: "RPE", intensity: 5 }],
-                },
-              ],
+              type: "step",
+              id: "30000000-0000-4000-8000-000000000001",
+              name: "Steady",
+              duration: { type: "time", seconds: 600 },
+              targets: [{ type: "RPE", intensity: 5 }],
             },
           ],
         },
@@ -431,27 +395,30 @@ describe("Wahoo repository activity persistence boundary", () => {
           id: "event-1",
           planningDate: "2026-07-18",
           timezone: "America/New_York",
-          manifest: {
-            activity_plan_id: "plan-1",
-            resolved_structure: structure,
-          },
-          capturedAt: new Date("2026-07-17T08:00:00.000Z"),
+          activityPlanId: "plan-1",
+          description: "Steady bike session",
+          name: "Steady Ride",
+          structure,
+          updatedAt: new Date("2026-07-17T08:00:00.000Z"),
         },
       ],
     };
     const db = { select: vi.fn(() => builder) };
-
     const result = await createWahooRepository({ db: db as never }).getPlannedSessionForSync({
       plannedSessionId: "event-1",
       profileId: "profile-1",
     });
-
     expect(result?.activityPlan).not.toHaveProperty("activityCategory");
     expect(result?.plannedSessionId).toBe("event-1");
     expect(result?.timezone).toBe("America/New_York");
-    expect(result?.activityPlan).toMatchObject({ id: "plan-1", structure });
+    expect(result?.activityPlan).toMatchObject({
+      description: "Steady bike session",
+      id: "plan-1",
+      name: "Steady Ride",
+      structure,
+      updatedAt: "2026-07-17T08:00:00.000Z",
+    });
   });
-
   it("preserves validated Wahoo projection metadata for reconciliation", async () => {
     const row = {
       externalId: "42",
@@ -473,7 +440,6 @@ describe("Wahoo repository activity persistence boundary", () => {
       limit: async () => [row],
     };
     const db = { select: vi.fn(() => builder) };
-
     await expect(
       createWahooRepository({ db: db as never }).getEventResourceLink({
         eventId: "event-1",

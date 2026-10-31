@@ -103,7 +103,6 @@ export async function updateEventUseCase<
   dependencies.assertRestDayWritesBlocked(existingEventType, "update");
 
   const { patch, scheduledDate } = dependencies.normalizeEventUpdatePatch(input.input);
-  const targetEventType = existingEventType;
 
   if (
     scope !== "single" &&
@@ -127,9 +126,6 @@ export async function updateEventUseCase<
   const isMoveRescheduleUpdate = hasScheduledDateMove || hasStartsAtMove || hasEndsAtMove;
   const hasCompletionLinkage =
     existingEvent.linked_activity_id !== null || existingEvent.status === "completed";
-
-  const nextRouteId =
-    patch.route_id !== undefined ? patch.route_id : (existingEvent.route_id ?? null);
 
   if (typeof patch.route_id === "string") {
     if (permissions) {

@@ -78,7 +78,7 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
               min={COMMON_LOAD_MIN}
               max={COMMON_LOAD_MAX}
               onChange={handleMinLoadChange}
-              error={errors.load_min}
+              {...(errors.load_min === undefined ? {} : { error: errors.load_min })}
             />
           </View>
           <View className="flex-1">
@@ -89,7 +89,7 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
               min={COMMON_LOAD_MIN}
               max={COMMON_LOAD_MAX}
               onChange={handleMaxLoadChange}
-              error={errors.load_max}
+              {...(errors.load_max === undefined ? {} : { error: errors.load_max })}
             />
           </View>
         </View>
@@ -113,7 +113,9 @@ export function WeeklyTargetsForm({ data, onChange, errors }: WeeklyTargetsFormP
           max={14}
           onChange={(nextActivities) => onChange({ target_activities_per_week: nextActivities })}
           helperText="Typical range is 3 to 6 sessions"
-          error={errors.activities_per_week}
+          {...(errors.activities_per_week === undefined
+            ? {}
+            : { error: errors.activities_per_week })}
         />
 
         {/* Validation indicator */}

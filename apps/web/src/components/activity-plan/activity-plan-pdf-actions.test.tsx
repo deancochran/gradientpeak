@@ -2,7 +2,6 @@
 import { buildActivityPlanPrintModel } from "@repo/core/activity-plan";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { createActivityPlanStructure } from "../../lib/activity-plan-authoring";
 import { ActivityPlanPdfActions } from "./activity-plan-pdf-actions";
 
 const mocks = vi.hoisted(() => ({ download: vi.fn() }));
@@ -18,7 +17,18 @@ it("retains the selected export format after failure and single-flights export p
     title: "Pool plan",
     format: "full-page",
     personalizeTargets: false,
-    structure: createActivityPlanStructure("swim"),
+    structure: {
+      version: 5,
+      activity_category: "swim",
+      items: [
+        {
+          type: "step",
+          id: "22222222-2222-4222-8222-222222222222",
+          duration: { type: "time", seconds: 60 },
+          targets: [],
+        },
+      ],
+    },
   });
   if (!model) throw new Error("Missing print-model fixture");
   let reject!: (error: Error) => void;

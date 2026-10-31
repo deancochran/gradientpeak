@@ -13,6 +13,7 @@ import { HeaderTextAction } from "@/components/shared/HeaderAction";
 import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 import { formatRelativeTime } from "@/lib/utils";
 
@@ -171,7 +172,13 @@ export default function MessagesScreen() {
           }
           renderItem={({ item }) => (
             <ConversationItem
-              conversation={item}
+              conversation={omitUndefined({
+                ...item,
+                last_message: item.last_message ? omitUndefined(item.last_message) : null,
+                peer_profile: item.peer_profile
+                  ? { ...omitUndefined(item.peer_profile), id: item.peer_profile.id }
+                  : null,
+              })}
               onPress={() => navigateTo(`/messages/${item.id}`)}
             />
           )}
