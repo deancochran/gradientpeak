@@ -69,15 +69,18 @@ pnpm quality:agent
 
 ## Development workflow
 
-1. Work from the shared `dev` checkout for normal focused changes.
-2. Make the smallest change that solves the problem.
-3. Run the relevant checks locally.
-4. Commit to `dev` after checks pass; open a PR only for explicit review, release, or hotfix flows.
+1. Fetch `origin/main` and create a dedicated feature branch/worktree from its current commit.
+2. Make and verify the smallest coherent change in that feature worktree; never edit the main preview checkout.
+3. Push the feature branch and open a pull request targeting `main` within the user's authorized task.
+4. After local verification and independent review, enable GitHub auto-merge for that PR. Required CI/security checks and resolved review conversations remain mandatory; never bypass them.
+5. Refresh the local main preview only from remotely merged `origin/main`, using the coordination workspace's `refresh-main-preview` command. No local feature merges, automatic stashes, resets, or database migrations.
+
+The former shared `dev` branch and old worktrees are recovery sources, not the integration lane. During the one-time baseline transition, new work must not assume the reconciliation candidate is already merged.
 
 ## Multi-Agent Workflow
 
-- Keep orchestration and review in the root checkout.
-- For medium and large efforts, use one worktree per bounded lane under `~/GradientPeak/.worktrees/<branch>`.
+- Keep orchestration and review in the coordination workspace.
+- Use one worktree per feature under the coordination workspace's `.worktrees/` directory, based on current `origin/main`.
 - Keep all GradientPeak worktrees inside the repo-local `.worktrees/` directory.
 - Use branch names shaped like `spec/<spec-slug>/<lane>` for multi-lane efforts.
 - Require merge packets and a fan-in owner before integrating parallel lane outputs.

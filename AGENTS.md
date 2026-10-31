@@ -14,6 +14,8 @@ Use this file when working anywhere inside the product repo.
 
 ## Working Rules
 
+- Develop on a dedicated feature branch/worktree based on current `origin/main`; preserve existing legacy worktrees. Never edit or locally integrate features into the main preview checkout.
+- Integrate through GitHub pull requests. Within an authorized implementation task, agents may commit, push, open the PR and enable auto-merge after local verification and independent review. Required CI/security checks must pass; never bypass protections. Database changes, deployments and destructive cleanup require separate authority.
 - Prefer the smallest correct change.
 - Reuse existing package boundaries before creating new ones.
 - Keep reusable UI in `packages/ui`, not app-local component trees.
