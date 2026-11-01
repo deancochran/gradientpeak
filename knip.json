@@ -50,9 +50,7 @@
         "@tanstack/react-router-ssr-query",
         "@tanstack/router-plugin",
         "tailwindcss",
-        "@tailwindcss/typography",
-        "@testing-library/dom",
-        "@testing-library/react"
+        "@tailwindcss/typography"
       ]
     },
     "packages/core": {
