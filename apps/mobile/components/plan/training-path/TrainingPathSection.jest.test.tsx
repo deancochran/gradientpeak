@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React from "react";
 
 import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
@@ -244,6 +244,7 @@ function renderSection(overrides: Partial<React.ComponentProps<typeof TrainingPa
   return renderNative(
     <TrainingPathSection
       model={buildModel("2026-04-13")}
+      selectedDate="2026-04-15"
       selectedWeekGoals={[]}
       selectedWeekEvents={[]}
       selectedWeekGroupEvents={[]}
@@ -265,49 +266,19 @@ describe("TrainingPathSection", () => {
     noop.mockClear();
   });
 
-  it("shows the group activity when a user selects the outlined week on the chart", () => {
-    function Harness() {
-      const [selectedWeekStart, setSelectedWeekStart] =
-        useState<keyof typeof weekSummaries>("2026-04-06");
-      const model = useMemo(() => buildModel(selectedWeekStart), [selectedWeekStart]);
-      const selectedWeekGroupEvents =
-        selectedWeekStart === "2026-04-13"
-          ? [
-              {
-                id: "scheduled-group-1",
-                title: "Saturday Group Ride",
-                date: "2026-04-14",
-                groupEvent: { id: "group-event-1", title: "Saturday Group Ride" },
-              } as any,
-            ]
-          : [];
+  it("shows the group activity scheduled for the selected day", () => {
+    renderSection({
+      selectedWeekGroupEvents: [
+        {
+          id: "scheduled-group-1",
+          title: "Saturday Group Ride",
+          date: "2026-04-15",
+          groupEvent: { id: "group-event-1", title: "Saturday Group Ride" },
+        } as any,
+      ],
+    });
 
-      return (
-        <TrainingPathSection
-          model={model}
-          selectedWeekGoals={[]}
-          selectedWeekEvents={[]}
-          selectedWeekGroupEvents={selectedWeekGroupEvents}
-          selectedWeekCompletedActivities={[]}
-          selectedWeekLoading={false}
-          onOpenActivity={noop}
-          onOpenGoal={noop}
-          onOpenGroupEvent={noop}
-          onOpenScheduledEvent={noop}
-          onOpenSettings={noop}
-          onSelectedWeekChange={(weekStart) =>
-            setSelectedWeekStart(weekStart as keyof typeof weekSummaries)
-          }
-        />
-      );
-    }
-
-    renderNative(<Harness />);
-
-    expect(screen.queryByText("Saturday Group Ride")).toBeNull();
-    fireEvent.press(screen.getByTestId("training-path-week-2026-04-13"));
-
-    expect(screen.getByTestId("training-path-week-group-event-scheduled-group-1")).toBeTruthy();
+    expect(screen.getByTestId("training-path-day-group-event-scheduled-group-1")).toBeTruthy();
     expect(screen.getByText("Saturday Group Ride")).toBeTruthy();
   });
 
@@ -322,7 +293,7 @@ describe("TrainingPathSection", () => {
         {
           id: "goal-1",
           label: "Race goal",
-          targetDate: "2026-04-19",
+          targetDate: "2026-04-15",
           readinessPercent: 72,
         },
       ],
@@ -338,7 +309,7 @@ describe("TrainingPathSection", () => {
         {
           id: "scheduled-group-1",
           title: "Saturday Group Ride",
-          date: "2026-04-14",
+          date: "2026-04-15",
           groupEvent: { id: "group-event-1", title: "Saturday Group Ride" } as any,
         },
       ],
@@ -346,7 +317,7 @@ describe("TrainingPathSection", () => {
         {
           id: "activity-1",
           title: "Morning Run",
-          date: "2026-04-17",
+          date: "2026-04-15",
           activity: { id: "activity-1", name: "Morning Run" } as any,
         },
       ],
@@ -356,10 +327,10 @@ describe("TrainingPathSection", () => {
       onOpenScheduledEvent,
     });
 
-    fireEvent.press(screen.getByTestId("training-path-week-goal-goal-1"));
-    fireEvent.press(screen.getByTestId("training-path-week-group-event-scheduled-group-1"));
+    fireEvent.press(screen.getByTestId("training-path-day-goal-goal-1"));
+    fireEvent.press(screen.getByTestId("training-path-day-group-event-scheduled-group-1"));
     fireEvent.press(screen.getByTestId("calendar-event-card-event-1"));
-    fireEvent.press(screen.getByTestId("training-path-week-activity-activity-1"));
+    fireEvent.press(screen.getByTestId("training-path-day-activity-activity-1"));
 
     expect(onOpenGoal).toHaveBeenCalledWith("goal-1");
     expect(onOpenGroupEvent).toHaveBeenCalledWith("group-event-1");
@@ -373,7 +344,7 @@ describe("TrainingPathSection", () => {
         {
           id: "goal-1",
           label: "Race goal",
-          targetDate: "2026-04-19",
+          targetDate: "2026-04-15",
           readinessPercent: 72,
         },
       ],
@@ -389,7 +360,7 @@ describe("TrainingPathSection", () => {
         {
           id: "scheduled-group-1",
           title: "Track Tuesday",
-          date: "2026-04-16",
+          date: "2026-04-15",
           groupEvent: { id: "group-event-1", title: "Track Tuesday" } as any,
         },
       ],
@@ -397,7 +368,7 @@ describe("TrainingPathSection", () => {
         {
           id: "activity-1",
           title: "Morning Run",
-          date: "2026-04-17",
+          date: "2026-04-15",
           activity: { id: "activity-1", name: "Morning Run" } as any,
         },
       ],
@@ -438,7 +409,7 @@ describe("TrainingPathSection", () => {
       onOpenScheduledEvent,
     });
 
-    fireEvent.press(screen.getByTestId("training-path-week-event-activity-plan-scheduled-event-1"));
+    fireEvent.press(screen.getByTestId("training-path-day-event-activity-plan-scheduled-event-1"));
 
     expect(screen.getByText("Runner")).toBeTruthy();
     expect(screen.getByText("Marathon Pace Long Run")).toBeTruthy();
@@ -448,6 +419,7 @@ describe("TrainingPathSection", () => {
 
   it("does not show the activity icon for all-day planned rows without an activity plan id", () => {
     renderSection({
+      selectedDate: "2026-05-19",
       selectedWeekEvents: [
         {
           id: "scheduled-event-1",
@@ -470,7 +442,7 @@ describe("TrainingPathSection", () => {
       "CalendarDays",
     );
     expect(
-      screen.queryByTestId("training-path-week-event-activity-plan-scheduled-event-1"),
+      screen.queryByTestId("training-path-day-event-activity-plan-scheduled-event-1"),
     ).toBeNull();
   });
 
@@ -478,6 +450,7 @@ describe("TrainingPathSection", () => {
     const onOpenGroupEvent = jest.fn();
 
     renderSection({
+      selectedDate: "2026-04-16",
       selectedWeekGroupEvents: [
         {
           id: "scheduled-group-1",
@@ -503,13 +476,13 @@ describe("TrainingPathSection", () => {
     });
 
     fireEvent.press(
-      screen.getByTestId("training-path-week-group-event-activity-plan-scheduled-group-1"),
+      screen.getByTestId("training-path-day-group-event-activity-plan-scheduled-group-1"),
     );
 
     expect(
-      screen.getByTestId("training-path-week-group-event-activity-plan-scheduled-group-1"),
+      screen.getByTestId("training-path-day-group-event-activity-plan-scheduled-group-1"),
     ).toBeTruthy();
-    expect(screen.queryByTestId("training-path-week-group-event-scheduled-group-1")).toBeNull();
+    expect(screen.queryByTestId("training-path-day-group-event-scheduled-group-1")).toBeNull();
     expect(screen.getByText("GP Open Long Run Crew")).toBeTruthy();
     expect(screen.getAllByText("Track Yasso 800s").length).toBeGreaterThan(0);
     expect(onOpenGroupEvent).toHaveBeenCalledWith("group-event-1");
@@ -517,6 +490,7 @@ describe("TrainingPathSection", () => {
 
   it("does not render group event activity plan cards before RSVP", () => {
     renderSection({
+      selectedDate: "2026-04-16",
       selectedWeekGroupEvents: [
         {
           id: "scheduled-group-1",
@@ -538,22 +512,19 @@ describe("TrainingPathSection", () => {
       ],
     });
 
-    expect(screen.getByTestId("training-path-week-group-event-scheduled-group-1")).toBeTruthy();
+    expect(screen.getByTestId("training-path-day-group-event-scheduled-group-1")).toBeTruthy();
     expect(
-      screen.queryByTestId("training-path-week-group-event-activity-plan-scheduled-group-1"),
+      screen.queryByTestId("training-path-day-group-event-activity-plan-scheduled-group-1"),
     ).toBeNull();
   });
 
-  it("shows a stable loading state while a selected week is settling or refetching", () => {
+  it("shows a stable loading state while the selected day is settling or refetching", () => {
     renderSection({ selectedWeekLoading: true });
 
-    expect(screen.getByTestId("training-path-week-summary-loading")).toBeTruthy();
-    expect(screen.getByTestId("training-path-week-summary-loading-indicator")).toBeTruthy();
-    expect(screen.getByText("Loading goals.")).toBeTruthy();
-    expect(screen.getByText("Loading events.")).toBeTruthy();
-    expect(screen.getByText("Loading group events.")).toBeTruthy();
-    expect(screen.getByText("Loading activities.")).toBeTruthy();
-    expect(screen.queryByText("GOALS THIS WEEK")).toBeNull();
+    expect(screen.getByTestId("training-path-selected-day-summary-loading")).toBeTruthy();
+    expect(screen.getByTestId("training-path-selected-day-summary-loading-indicator")).toBeTruthy();
+    expect(screen.getByText("Loading selected day.")).toBeTruthy();
+    expect(screen.queryByText("Goals due this day")).toBeNull();
   });
 
   it("shows loading as soon as scrolling starts without selecting a new week", () => {
@@ -562,18 +533,18 @@ describe("TrainingPathSection", () => {
 
     renderSection({ onSelectedWeekChange, onWeekScrollStart });
 
-    expect(screen.queryByTestId("training-path-week-summary-loading")).toBeNull();
+    expect(screen.queryByTestId("training-path-selected-day-summary-loading")).toBeNull();
     fireEvent.press(screen.getByTestId("training-path-chart-scroll-start"));
     fireEvent.press(screen.getByTestId("training-path-display-week-2026-04-06"));
 
-    expect(screen.getByTestId("training-path-week-summary-loading")).toBeTruthy();
+    expect(screen.getByTestId("training-path-selected-day-summary-loading")).toBeTruthy();
     expect(screen.getAllByText("Apr 6 - Apr 12").length).toBeGreaterThan(0);
     expect(onWeekScrollStart).toHaveBeenCalledTimes(1);
     expect(onSelectedWeekChange).not.toHaveBeenCalled();
 
     fireEvent.press(screen.getByTestId("training-path-chart-scroll-settled"));
 
-    expect(screen.queryByTestId("training-path-week-summary-loading")).toBeNull();
+    expect(screen.queryByTestId("training-path-selected-day-summary-loading")).toBeNull();
     expect(onSelectedWeekChange).not.toHaveBeenCalled();
   });
 
@@ -589,8 +560,8 @@ describe("TrainingPathSection", () => {
 
     fireEvent.press(screen.getByTestId("training-path-week-2026-04-13"));
 
-    expect(screen.getByTestId("training-path-week-summary-loading")).toBeTruthy();
-    expect(screen.getByTestId("training-path-week-summary-loading-indicator")).toBeTruthy();
+    expect(screen.getByTestId("training-path-selected-day-summary-loading")).toBeTruthy();
+    expect(screen.getByTestId("training-path-selected-day-summary-loading-indicator")).toBeTruthy();
     expect(screen.getAllByText("Apr 13 - Apr 19").length).toBeGreaterThan(0);
     expect(onWeekScrollStart).toHaveBeenCalledTimes(1);
     expect(onSelectedWeekChange).toHaveBeenCalledWith("2026-04-13");
@@ -605,7 +576,7 @@ describe("TrainingPathSection", () => {
     fireEvent.press(screen.getByTestId("training-path-display-week-2026-04-06"));
     fireEvent.press(screen.getByTestId("training-path-display-week-2026-04-13"));
 
-    expect(screen.getByTestId("training-path-week-summary-loading")).toBeTruthy();
+    expect(screen.getByTestId("training-path-selected-day-summary-loading")).toBeTruthy();
     expect(screen.getAllByText("Apr 13 - Apr 19").length).toBeGreaterThan(0);
     expect(onSelectedWeekChange).not.toHaveBeenCalled();
 

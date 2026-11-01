@@ -118,12 +118,12 @@ describe("RecordControlDock", () => {
       onOpenSensors,
     });
 
-    fireEvent.press(screen.getByTestId("button-activity-locked"));
-    fireEvent.press(screen.getByTestId("button-gps-on"));
-    fireEvent.press(screen.getByTestId("button-plan-attached"));
-    fireEvent.press(screen.getByTestId("button-route-attached"));
-    fireEvent.press(screen.getByTestId("button-trainer"));
-    fireEvent.press(screen.getByTestId("button-sensors"));
+    fireEvent.press(screen.getByText("Activity locked"));
+    fireEvent.press(screen.getByText("GPS on"));
+    fireEvent.press(screen.getByText("Plan attached"));
+    fireEvent.press(screen.getByText("Route attached"));
+    fireEvent.press(screen.getByText("Trainer"));
+    fireEvent.press(screen.getByText("Sensors"));
 
     expect(onOpenActivity).toHaveBeenCalledTimes(1);
     expect(onGpsPress).toHaveBeenCalledTimes(1);
