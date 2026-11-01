@@ -163,3 +163,30 @@ Before claiming deletion is disabled in a deployed environment, replace/drain al
 old auth-handler instances; this is a process configuration gate, not a durable
 remote feature flag. Already-issued deletion links intentionally stop working.
 No deployment is included in this delivery.
+# Subtraction-first follow-up (2026-11-01)
+
+The acceptance framework described below is superseded by the smaller path in
+`packages/db/ACCEPTANCE.md`. Existing candidate branches and preserved databases
+are unchanged.
+
+- Removed duplicate `ci.yml`; one validation workflow owns quality/build, mobile,
+  and database/browser acceptance, with the same fail-closed `Basic checks` name.
+- Replaced the proposed arbitrary-child DB runner with a dedicated local Compose
+  project and a CI-owned PostgreSQL service. The DB command only verifies and
+  prepares an empty owned target. No custom process groups or descendant runner.
+- One browser preflight verifies and seeds before sanitized Vite startup. The old
+  Supabase Auth fixture path is removed; its journeys use the same synthetic
+  Better Auth fixture as the reliability suite, without credential-based skips.
+- Fresh SQL export matches the preserved reviewed candidate byte-for-byte.
+  Actual Compose preparation and both API live-DB smoke tests passed. Owned
+  containers/networks were removed after each attempt.
+- Browser execution exposed duplicate React instances in externalized tRPC and
+  Better Auth. Both now pass through Vite's app React deduplication. Server
+  startup then succeeded; browser execution required installing Chromium.
+- CI severity configuration explicitly retains its declared CRITICAL/HIGH SARIF
+  filter: trivy-action otherwise unsets it. Exit-code enforcement remains enabled.
+
+This is not upgrade acceptance. Existing-target replay at migration 0016,
+preserved-preview compatibility, physical-device acceptance, and final remote
+security checks remain separate gates. The PR must remain draft until actual
+combined acceptance is established; preview timer activation remains deferred.

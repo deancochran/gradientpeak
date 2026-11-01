@@ -89,6 +89,8 @@ jobs:
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH
+          # SARIF otherwise unsets the severity filter and changes the exit gate.
+          limit-severities-for-sarif: true
           ignore-unfixed: true
           exit-code: "1"
 

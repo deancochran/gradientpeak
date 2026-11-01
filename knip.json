@@ -46,7 +46,8 @@
       }
     },
     "apps/web": {
-      "entry": ["e2e/acceptance/setup.ts", "e2e/acceptance/server-launcher.mjs"],
+      "playwright": false,
+      "entry": ["e2e/**/*.spec.ts", "e2e/acceptance/server-preflight.mjs"],
       "ignoreDependencies": [
         "@tanstack/react-router-ssr-query",
         "@tanstack/router-plugin",

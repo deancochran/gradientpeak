@@ -1,6 +1,6 @@
 import { test as base, type Page } from "@playwright/test";
 
-import { loginAs } from "./utils/loginHelper";
+import { login } from "./acceptance/helpers";
 
 type WebStartFixtures = {
   athletePage: Page;
@@ -9,11 +9,12 @@ type WebStartFixtures = {
 
 export const test = base.extend<WebStartFixtures>({
   athletePage: async ({ page }, use) => {
-    await loginAs(page, "athlete");
+    await login(page);
     await use(page);
   },
   coachPage: async ({ page }, use) => {
-    await loginAs(page, "coach");
+    // Coaching is a route, not a distinct auth role; the old fixture only changed email.
+    await login(page);
     await use(page);
   },
 });

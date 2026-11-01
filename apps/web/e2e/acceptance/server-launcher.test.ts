@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,52 @@ import { describe, expect, it } from "vitest";
 const launcher = fileURLToPath(new URL("./server-launcher.mjs", import.meta.url));
 
 describe("acceptance server launcher", () => {
+  it("rejects mismatched target mapping before starting the app", () => {
+    const directory = mkdtempSync(join(tmpdir(), "gradientpeak-acceptance-preflight-"));
+    const started = join(directory, "app-started");
+    const id = "0123456789abcdef";
+    const databaseUrl = `postgresql://postgres:fixture@127.0.0.1:65432/gradientpeak_fresh_${id}`;
+    writeFileSync(join(directory, "pnpm"), `#!/bin/sh\necho started > '${started}'\n`, {
+      mode: 0o755,
+    });
+    writeFileSync(
+      join(directory, "docker"),
+      `#!/bin/sh\nprintf '%s' '${JSON.stringify([
+        {
+          Config: {
+            Labels: { "com.gradientpeak.disposable": "true", "com.gradientpeak.target-id": id },
+          },
+          NetworkSettings: { Ports: { "5432/tcp": [{ HostIp: "127.0.0.1", HostPort: "65433" }] } },
+        },
+      ])}'\n`,
+      { mode: 0o755 },
+    );
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [fileURLToPath(new URL("./server-preflight.mjs", import.meta.url))],
+        {
+          encoding: "utf8",
+          timeout: 5_000,
+          env: {
+            PATH: directory,
+            DATABASE_URL: databaseUrl,
+            POSTGRES_URL: databaseUrl,
+            DB_DISPOSABLE_TARGET: "1",
+            DB_DISPOSABLE_TARGET_ID: id,
+            DB_DISPOSABLE_DATABASE: `gradientpeak_fresh_${id}`,
+          },
+        },
+      );
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("server preflight refused");
+      expect(existsSync(started)).toBe(false);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("does not pass poisoned parent credentials to the Vite child process", () => {
     const directory = mkdtempSync(join(tmpdir(), "gradientpeak-acceptance-launcher-"));
     const fakePnpm = join(directory, "pnpm");

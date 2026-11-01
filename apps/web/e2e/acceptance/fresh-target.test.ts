@@ -1,10 +1,9 @@
-import { describe, expect, it } from "vitest";
-
 import {
   assertFreshContainerIdentity,
   type DockerContainerInspection,
   readFreshAcceptanceTarget,
-} from "./fresh-target";
+} from "@repo/db/acceptance-target";
+import { describe, expect, it } from "vitest";
 
 const targetId = "0123456789abcdef";
 const databaseName = `gradientpeak_fresh_${targetId}`;
@@ -58,6 +57,21 @@ describe("fresh acceptance target guard", () => {
         }),
       ),
     ).toThrow("required disposable labels");
+  });
+
+  it("rejects preserved ports, remote hosts, and connection-parameter redirects", () => {
+    for (const url of [
+      databaseUrl.replace(":65432/", ":54322/"),
+      databaseUrl.replace("127.0.0.1", "example.com"),
+      `${databaseUrl}?host=example.com`,
+    ]) {
+      expect(() =>
+        readFreshAcceptanceTarget(fixtureEnvironment({ DATABASE_URL: url, POSTGRES_URL: url })),
+      ).toThrow();
+    }
+    expect(() =>
+      readFreshAcceptanceTarget(fixtureEnvironment({ DB_DISPOSABLE_TARGET: undefined })),
+    ).toThrow();
   });
 
   it("rejects a URL port that is not the container's loopback mapping", () => {

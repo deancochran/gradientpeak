@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { validationFailures, validationJobs } from "./validation-gate.mjs";
 
@@ -49,6 +49,22 @@ test("workflow wires every required job into the always-running Basic checks gat
   assert.match(mobile, /EXPO_NO_DOTENV: "1"/);
 });
 
+test("one quality job owns monorepo validation without duplicate installation", () => {
+  assert.equal(existsSync(new URL("../workflows/ci.yml", import.meta.url)), false);
+  const source = readFileSync(new URL("../workflows/validate.yml", import.meta.url), "utf8");
+  const quality = source.split("  quality-and-build:\n")[1].split("  api-live-db:\n")[0];
+  assert.equal(quality.match(/pnpm install --frozen-lockfile/g)?.length, 1);
+  for (const command of [
+    "pnpm check:ci",
+    "pnpm check-types",
+    "pnpm build",
+    "pnpm test",
+    "pnpm knip",
+  ]) {
+    assert.ok(quality.includes(`run: ${command}\n`), `Missing quality command: ${command}`);
+  }
+});
+
 test("security checks cannot be advisory on pull requests", () => {
   const source = readFileSync(new URL("../workflows/security.yml", import.meta.url), "utf8");
   for (const name of ["Dependency review", "PNPM audit", "Web image vulnerability scan"]) {
@@ -57,4 +73,18 @@ test("security checks cannot be advisory on pull requests", () => {
   assert.ok(!source.includes("continue-on-error"));
   assert.match(source, /pnpm audit --audit-level high/);
   assert.match(source, /exit-code: "1"/);
+  assert.match(source, /severity: CRITICAL,HIGH/);
+  assert.match(source, /limit-severities-for-sarif: true/);
+});
+
+test("acceptance uses an owned fresh service and actually runs browser journeys", () => {
+  const source = readFileSync(new URL("../workflows/validate.yml", import.meta.url), "utf8");
+  const acceptance = source.split("  api-live-db:\n")[1].split("  mobile-component-and-jest:\n")[0];
+  assert.match(acceptance, /image: postgres:17-alpine/);
+  assert.match(acceptance, /--label com.gradientpeak.disposable=true/);
+  assert.match(acceptance, /--publish 127\.0\.0\.1:54329:5432/);
+  assert.match(acceptance, /db:acceptance:prepare/);
+  assert.match(acceptance, /playwright test --config playwright.acceptance.config.ts/);
+  assert.ok(!acceptance.includes("db:reset"));
+  assert.ok(!acceptance.includes("db:push"));
 });

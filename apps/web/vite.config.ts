@@ -26,7 +26,9 @@ const config = defineConfig(({ mode }) => {
       host: "0.0.0.0",
       port: Number(process.env.PORT ?? 3000),
     },
-    resolve: { tsconfigPaths: true },
+    resolve: { tsconfigPaths: true, dedupe: ["react", "react-dom"] },
+    // Both packages have hoisted React peers; SSR must use the app's React copy.
+    ssr: { noExternal: ["@trpc/react-query", "better-auth"] },
     plugins: [
       devtools(),
       tailwindcss(),

@@ -12,6 +12,8 @@ export type FreshAcceptanceTarget = {
 };
 
 export type DockerContainerInspection = {
+  HostConfig?: { Tmpfs?: Record<string, string> };
+  Mounts?: Array<{ Type?: string; Destination?: string }>;
   Config?: { Labels?: Record<string, string> };
   NetworkSettings?: {
     Ports?: Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;
@@ -55,6 +57,8 @@ export function readFreshAcceptanceTarget(
     !["postgres:", "postgresql:"].includes(parsedUrl.protocol) ||
     parsedUrl.hostname !== "127.0.0.1" ||
     !parsedUrl.port ||
+    parsedUrl.port === "54322" ||
+    parsedUrl.search !== "" ||
     decodeURIComponent(parsedUrl.pathname) !== `/${databaseName}`
   ) {
     fail("DATABASE_URL must address the generated disposable database over 127.0.0.1.");
@@ -88,7 +92,11 @@ export function assertFreshContainerIdentity(
 }
 
 export async function verifyFreshAcceptanceTarget(target: FreshAcceptanceTarget) {
-  const containerName = `gradientpeak_db_fresh_${target.targetId}`;
+  if (process.env.DB_ACCEPTANCE_CONTAINER_ID && process.env.GITHUB_ACTIONS !== "true") {
+    fail("an explicit service container id is allowed only in GitHub Actions.");
+  }
+  const containerName =
+    process.env.DB_ACCEPTANCE_CONTAINER_ID || `gradientpeak_db_fresh_${target.targetId}`;
 
   try {
     const output = execFileSync("docker", ["inspect", containerName], {
@@ -100,6 +108,15 @@ export async function verifyFreshAcceptanceTarget(target: FreshAcceptanceTarget)
       fail(`could not read exactly one inspection result for ${containerName}.`);
     }
     assertFreshContainerIdentity(target, inspection[0]);
+    if (!process.env.DB_ACCEPTANCE_CONTAINER_ID) {
+      const container = inspection[0];
+      if (
+        !Object.hasOwn(container.HostConfig?.Tmpfs ?? {}, "/var/lib/postgresql/data") ||
+        container.Mounts?.some((mount) => mount.Type !== "tmpfs")
+      ) {
+        fail("local acceptance requires tmpfs PGDATA and no persistent mounts.");
+      }
+    }
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("[acceptance]")) throw error;
     fail(`could not verify the task-owned container ${containerName}.`);

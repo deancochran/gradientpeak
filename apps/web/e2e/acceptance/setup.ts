@@ -3,8 +3,6 @@ import { randomUUID } from "node:crypto";
 import { hash } from "bcryptjs";
 import { Pool } from "pg";
 
-import { readFreshAcceptanceTarget, verifyFreshAcceptanceTarget } from "./fresh-target";
-
 export const acceptanceUser = {
   email: "browser-acceptance@gradientpeak.test",
   id: "8a944448-6e74-4ee8-94f0-93621c212dc0",
@@ -12,7 +10,7 @@ export const acceptanceUser = {
   password: ["browser", "acceptance", "password"].join("-"),
 } as const;
 
-async function seedAcceptanceUser(databaseUrl: string) {
+export async function seedAcceptanceUser(databaseUrl: string) {
   const pool = new Pool({ connectionString: databaseUrl });
   try {
     const passwordHash = await hash(acceptanceUser.password, 10);
@@ -36,10 +34,4 @@ async function seedAcceptanceUser(databaseUrl: string) {
   } finally {
     await pool.end();
   }
-}
-
-export default async function globalSetup() {
-  const target = readFreshAcceptanceTarget();
-  await verifyFreshAcceptanceTarget(target);
-  await seedAcceptanceUser(target.databaseUrl);
 }

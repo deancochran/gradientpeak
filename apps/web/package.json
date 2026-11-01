@@ -15,7 +15,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:serve": "vite dev --host 127.0.0.1 --port 3000",
-    "test:e2e": "playwright test",
+    "test:e2e": "playwright test --config playwright.acceptance.config.ts",
     "format": "biome format --write .",
     "lint": "biome lint .",
     "check": "biome check"

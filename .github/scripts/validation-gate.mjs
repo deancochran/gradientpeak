@@ -1,14 +1,6 @@
 import { pathToFileURL } from "node:url";
 
-export const validationJobs = [
-  "format-and-lint",
-  "typecheck",
-  "build",
-  "unit-and-integration",
-  "db-schema-parity",
-  "api-live-db",
-  "mobile-component-and-jest",
-];
+export const validationJobs = ["quality-and-build", "api-live-db", "mobile-component-and-jest"];
 
 export function validationFailures(needs) {
   if (needs.changes?.result !== "success") return ["changes"];

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import { defineConfig, devices } from "@playwright/test";
 
-import { readFreshAcceptanceTarget } from "./e2e/acceptance/fresh-target";
+import { readFreshAcceptanceTarget } from "@repo/db/acceptance-target";
 
 const target = readFreshAcceptanceTarget();
 const port = 3100;
@@ -26,10 +26,9 @@ const serverEnv = {
 export default defineConfig({
   forbidOnly: true,
   fullyParallel: false,
-  globalSetup: "./e2e/acceptance/setup.ts",
   outputDir: "test-results/acceptance",
   retries: 0,
-  testDir: "./e2e/acceptance",
+  testDir: "./e2e",
   testMatch: "**/*.spec.ts",
   timeout: 45 * 1000,
   use: {
@@ -41,7 +40,7 @@ export default defineConfig({
   webServer: {
     // Playwright merges webServer.env with its own process environment. The launcher
     // creates the actual Vite child with only these acceptance-safe values.
-    command: "node e2e/acceptance/server-launcher.mjs",
+    command: "node e2e/acceptance/server-preflight.mjs",
     env: serverEnv,
     reuseExistingServer: false,
     timeout: 120 * 1000,
