@@ -224,6 +224,9 @@ jobs:
       - name: Run unit and integration tests
         run: pnpm test
 
+      - name: Verify browser acceptance isolation
+        run: pnpm --filter web exec vitest run --config e2e/acceptance/vitest.config.ts
+
   db-schema-parity:
     name: DB Schema Parity
     runs-on: ubuntu-latest

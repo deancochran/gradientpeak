@@ -13,13 +13,13 @@ const serverEnv = {
   AUTH_EMAIL_MODE: "log",
   BETTER_AUTH_SECRET: randomBytes(32).toString("base64url"),
   DATABASE_URL: target.databaseUrl,
-  HOME: process.env.HOME,
+  ...(process.env.HOME ? { HOME: process.env.HOME } : {}),
   NEXT_PRIVATE_SUPABASE_SECRET_KEY: randomBytes(32).toString("base64url"),
   NEXT_PRIVATE_SUPABASE_URL: syntheticStorageUrl,
   NODE_ENV: "development",
-  PATH: process.env.PATH,
+  PATH: process.env.PATH ?? "",
   POSTGRES_URL: target.databaseUrl,
-  TMPDIR: process.env.TMPDIR,
+  ...(process.env.TMPDIR ? { TMPDIR: process.env.TMPDIR } : {}),
   WEB_ACCEPTANCE: "1",
 };
 

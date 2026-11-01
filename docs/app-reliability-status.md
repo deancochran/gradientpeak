@@ -131,6 +131,23 @@ Acceptance continuation evidence:
 
 No merge or successful local-preview refresh is claimed at this stage.
 
+Latest acceptance preparation:
+
+- The isolated Better Auth browser suite is integrated, with matching Docker
+  label/loopback-port checks before seeding. Four guard/subprocess environment
+  tests pass. The actual Vite child receives only allowlisted settings and skips
+  environment-file loading. Integrated web typecheck and production build pass;
+  authenticated browser journeys remain unrun pending the reviewed DB harness.
+- CI's build, unit and monorepo jobs failed at dependency installation with the
+  same hoisted `unplugin/esbuild` relative-path rename error. The pinned pnpm
+  code contains the patch/build cwd race described in pnpm issue 13627. Setting
+  `child-concurrency=1` serializes the affected work without disabling lifecycle
+  scripts or dependency patches. Two fresh serialized frozen installs pass;
+  confirmation from GitHub CI remains pending.
+- The versioned DB harness remains unintegrated: review required stronger
+  artifact verification and interruption/descendant cleanup tests. Fresh-only
+  baseline results must not be presented as existing-database upgrade evidence.
+
 ## Deferred work and release considerations
 
 The full recording durability/native CI, provider lifecycle, privileged-function
