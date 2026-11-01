@@ -84,8 +84,8 @@ export const getApiUrl = () => {
   return url;
 };
 
-function createMobileHeaders() {
-  const authHeaders = getSessionAuthHeaders();
+async function createMobileHeaders() {
+  const authHeaders = await getSessionAuthHeaders();
   authHeaders.set("x-client-type", "mobile");
   authHeaders.set("x-api-source", "react-native");
   authHeaders.set("x-mobile-platform", Platform.OS);

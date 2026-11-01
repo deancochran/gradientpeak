@@ -1,13 +1,12 @@
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { getAuthClient } from "./auth-client";
-import { getCachedAuthCookieHeader } from "./secure-session-cache";
 
 export type MobileAuthBootstrapSource = "better-auth-expo" | "supabase-bridge";
 export type MobileAuthTransport = "cookie" | "bearer";
 
 export async function getAuthHeaders() {
   const headers = new Headers();
-  const cookieHeader = (await getAuthClient().getCookie()) || (await getCachedAuthCookieHeader());
+  const cookieHeader = await getAuthClient().getCookie();
 
   if (cookieHeader) {
     headers.set("Cookie", cookieHeader);
@@ -24,7 +23,7 @@ export async function getAuthHeaders() {
 }
 
 export async function getAuthTransport(): Promise<MobileAuthTransport | null> {
-  const cookieHeader = (await getAuthClient().getCookie()) || (await getCachedAuthCookieHeader());
+  const cookieHeader = await getAuthClient().getCookie();
 
   if (cookieHeader) {
     return "cookie";

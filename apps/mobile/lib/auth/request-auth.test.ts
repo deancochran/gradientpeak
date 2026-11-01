@@ -1,21 +1,14 @@
-import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  clearCachedAuthCookieHeader,
-  setCachedAuthCookieHeader,
-} from "@/lib/auth/secure-session-cache";
-
-const secureStoreMock = SecureStore as typeof SecureStore & {
-  __store: Map<string, string>;
-};
 
 let mockedSession: { bearerToken?: string } | null = null;
+let mockedCookie: string | null = null;
+const getCookieMock = vi.fn(async () => mockedCookie);
 
 async function loadRequestAuthModule() {
   vi.resetModules();
   vi.doMock("@/lib/auth/auth-client", () => ({
     getAuthClient: () => ({
-      getCookie: () => null,
+      getCookie: getCookieMock,
     }),
   }));
   vi.doMock("@/lib/stores/auth-store", () => ({
@@ -30,24 +23,24 @@ async function loadRequestAuthModule() {
 describe("request auth headers", () => {
   beforeEach(async () => {
     mockedSession = null;
-    await clearCachedAuthCookieHeader();
-    secureStoreMock.__store.clear();
+    mockedCookie = null;
+    getCookieMock.mockClear();
   });
 
-  it("prefers a cached cookie header over the bearer bridge", async () => {
+  it("uses Better Auth's cookie on a cookie-only cold start", async () => {
     const { getAuthHeaders, getAuthTransport } = await loadRequestAuthModule();
 
-    mockedSession = { bearerToken: "bridge-token" };
-    await setCachedAuthCookieHeader("better-auth.session=abc123");
+    mockedCookie = "better-auth.session=abc123";
 
     const headers = await getAuthHeaders();
 
     expect(headers.get("Cookie")).toBe("better-auth.session=abc123");
     expect(headers.get("Authorization")).toBeNull();
+    expect(getCookieMock).toHaveBeenCalledTimes(1);
     await expect(getAuthTransport()).resolves.toBe("cookie");
   });
 
-  it("falls back to the bearer bridge when no cookie cache exists", async () => {
+  it("falls back to the bearer bridge when Better Auth has no cookie", async () => {
     const { getAuthHeaders, getAuthTransport } = await loadRequestAuthModule();
 
     mockedSession = { bearerToken: "bridge-token" };
@@ -57,5 +50,19 @@ describe("request auth headers", () => {
     expect(headers.get("Authorization")).toBe("Bearer bridge-token");
     expect(headers.get("Cookie")).toBeNull();
     await expect(getAuthTransport()).resolves.toBe("bearer");
+  });
+
+  it("does not retain an old cookie after logout or a server change", async () => {
+    const { getAuthHeaders } = await loadRequestAuthModule();
+
+    mockedCookie = "better-auth.session=old-server";
+    expect((await getAuthHeaders()).get("Cookie")).toBe("better-auth.session=old-server");
+
+    mockedCookie = null;
+    mockedSession = null;
+
+    const headers = await getAuthHeaders();
+    expect(headers.get("Cookie")).toBeNull();
+    expect(headers.get("Authorization")).toBeNull();
   });
 });
