@@ -78,8 +78,9 @@ not treated as an upstream integration requirement or overwritten by refresh.
 
 The user subsequently authorized continuing through acceptance, pipeline repairs,
 and a narrowly scoped fresh-install migration repair tested only on a new owned
-disposable database. Existing databases must not be migrated or reset. A broader
-baseline cutover requires a separate decision.
+disposable database. The user then approved broader migration-history
+reconciliation, including a reviewed fresh-baseline strategy. Existing databases
+must not be migrated or reset; fresh-install evidence is not upgrade evidence.
 
 Acceptance continuation evidence:
 
@@ -119,6 +120,14 @@ Acceptance continuation evidence:
   web harness seeds Supabase Auth rather than the
   product's Better Auth users and can skip setup silently; it must not be used
   to claim authenticated acceptance without repair and disposable-target guards.
+- Production image `05be57ba` builds from tracked source. The initial image scan
+  found six high findings in bundled npm only; the runtime now omits that unused
+  package manager. The unchanged Trivy high/critical, ignore-unfixed gate reports
+  zero findings and zero secrets. A network-isolated smoke returned HTTP 200 from
+  `/api/health` with synthetic runtime storage/auth settings; npm absence was
+  verified and the owned container removed. The initial smoke's HTTP 500 was
+  missing storage configuration, not a Nitro startup failure. This health probe
+  does not establish authenticated or database-backed behavior.
 
 No merge or successful local-preview refresh is claimed at this stage.
 
