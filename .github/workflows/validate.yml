@@ -5,6 +5,8 @@ on:
     branches:
       - main
   pull_request:
+  merge_group:
+    types: [checks_requested]
 
 concurrency:
   group: validate-${{ github.workflow }}-${{ github.ref }}
@@ -47,13 +49,11 @@ jobs:
               - '**/*.md'
               - '**/*.mdx'
               - 'docs/**'
-              - '.github/workflows/validate.yml'
             non_docs:
               - '**'
               - '!**/*.md'
               - '!**/*.mdx'
               - '!docs/**'
-              - '!.github/workflows/validate.yml'
             mobile_runtime_related:
               - 'apps/mobile/**'
               - '!apps/mobile/.maestro/**'
@@ -72,8 +72,14 @@ jobs:
               - 'packages/db/**'
             api_live_db_related:
               - 'packages/api/**'
+              - 'packages/auth/**'
+              - 'packages/core/**'
               - 'packages/db/**'
-              - 'packages/db/supabase/**'
+              - 'apps/web/**'
+              - '.github/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
             web_related:
               - 'apps/web/**'
               - 'packages/api/**'
@@ -127,6 +133,9 @@ jobs:
 
       - name: Run Biome CI
         run: pnpm check:ci
+
+      - name: Test validation gate contract
+        run: node --test .github/scripts/validation-gate.test.mjs
 
   typecheck:
     name: Typecheck
@@ -319,7 +328,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-    if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.mobile_runtime_related == 'true'
+    if: needs.changes.outputs.docs_only != 'true'
 
     steps:
       - name: Checkout
@@ -343,19 +352,25 @@ jobs:
         run: pnpm --filter mobile test:jest
 
   full-validation-suite:
-    name: Full Validation Suite
+    name: Basic checks
     runs-on: ubuntu-latest
     needs:
       - changes
+      - docs-only
       - format-and-lint
       - typecheck
       - build
       - unit-and-integration
       - db-schema-parity
       - api-live-db
-    if: needs.changes.outputs.docs_only != 'true'
+      - mobile-component-and-jest
+    if: always()
 
     steps:
-      - name: Validation gate passed
-        run: |
-          printf 'All prerequisite validation jobs passed.\n'
+      - name: Checkout gate implementation
+        uses: actions/checkout@v4
+
+      - name: Require successful validation jobs
+        env:
+          VALIDATION_NEEDS: ${{ toJSON(needs) }}
+        run: node .github/scripts/validation-gate.mjs

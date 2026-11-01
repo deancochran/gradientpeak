@@ -72,11 +72,34 @@ changes, real account deletion, or deployment were performed.
 
 ## Delivery status
 
-Runtime acceptance remains blocked by migration `0006`, so this implementation
-is not merge-ready. It is published for review as a draft PR only; the
-successful checks recorded above apply to the `c7072ca` baseline and are not
-evidence of compatibility with the independently advanced local main commit
-`85bb736c`.
+Published as draft PR #112. Remote `origin/main` remains at `c7072ca` after a
+fresh fetch; local preview commit `85bb736c` is local-only and must be preserved,
+not treated as an upstream integration requirement or overwritten by refresh.
+
+The user subsequently authorized continuing through acceptance, pipeline repairs,
+and a narrowly scoped fresh-install migration repair tested only on a new owned
+disposable database. Existing databases must not be migrated or reset. A broader
+baseline cutover requires a separate decision.
+
+Acceptance continuation evidence:
+
+- The full mobile Jest suite initially reproduced four failing suites (16 tests).
+  After fixture/gesture repairs, the integrated branch passes 102 suites and
+  442 tests, with the existing one skipped suite/two skipped tests unchanged.
+- CI's old aggregate omitted mobile Jest and reported success despite that job
+  failing. The replacement `Basic checks` gate explicitly evaluates required
+  results, rejecting failures, cancellation and unexpected skips. Workflow edits
+  no longer qualify as docs-only changes.
+- GitHub's Security workflow had been disabled for inactivity; it is re-enabled.
+  PR-only advisory bypasses are removed. Current dependency audit still reports
+  24 critical and 166 high findings; dependency remediation is a prerequisite,
+  not passing security evidence.
+- Fresh migration replay and authenticated browser/native runtime acceptance
+  remain pending. The legacy web harness seeds Supabase Auth rather than the
+  product's Better Auth users and can skip setup silently; it must not be used
+  to claim authenticated acceptance without repair and disposable-target guards.
+
+No merge or successful local-preview refresh is claimed at this stage.
 
 ## Deferred work and release considerations
 
