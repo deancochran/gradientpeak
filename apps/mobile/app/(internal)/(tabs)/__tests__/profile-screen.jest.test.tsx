@@ -122,18 +122,26 @@ jest.mock("@repo/ui/components/settings-group", () => ({
     onValueChange,
     value,
     children,
+    disabled,
     ...props
   }: any) =>
-    React.createElement(
-      "Pressable",
-      { onPress: onPress ?? (() => onValueChange?.(!value)), ...props },
-      [
-        React.createElement("Text", { key: "label" }, label),
-        React.createElement("Text", { key: "description" }, description),
-        React.createElement("Text", { key: "buttonLabel" }, buttonLabel),
-        children,
-      ],
-    ),
+    React.createElement("View", props, [
+      React.createElement(
+        "Pressable",
+        {
+          key: "button",
+          testID: props.testID ? `${props.testID}-button` : undefined,
+          disabled,
+          onPress: disabled ? undefined : (onPress ?? (() => onValueChange?.(!value))),
+        },
+        [
+          React.createElement("Text", { key: "label" }, label),
+          React.createElement("Text", { key: "description" }, description),
+          React.createElement("Text", { key: "buttonLabel" }, buttonLabel),
+          children,
+        ],
+      ),
+    ]),
 }));
 
 jest.mock("@repo/ui/components/text", () => ({
@@ -316,9 +324,19 @@ describe("ProfileTabScreen", () => {
 
     renderNative(<ProfileTabScreen />);
 
-    expect(screen.getByText("Unavailable")).toBeTruthy();
+    expect(screen.getByTestId("profile-tab-update-email")).toBeTruthy();
     expect(screen.queryByTestId("profile-tab-email-input")).toBeNull();
     expect(updateEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the unavailable account-deletion control disabled without invoking deletion", () => {
+    renderNative(<ProfileTabScreen />);
+
+    expect(screen.getByText("Unavailable")).toBeTruthy();
+    const deleteButton = screen.getByTestId("profile-tab-delete-account-button");
+    expect(deleteButton.props.disabled).toBe(true);
+    fireEvent.press(deleteButton);
+    expect(deleteAccountMock).not.toHaveBeenCalled();
   });
 
   it("blocks invalid email updates before calling the profile capability", async () => {
@@ -408,7 +426,7 @@ describe("ProfileTabScreen", () => {
   it("toggles dark mode from profile settings", () => {
     renderNative(<ProfileTabScreen />);
 
-    fireEvent.press(screen.getByTestId("profile-tab-dark-mode"));
+    fireEvent.press(screen.getByTestId("profile-tab-dark-mode-button"));
 
     expect(setThemeMock).toHaveBeenCalledWith("dark");
   });

@@ -114,9 +114,7 @@ export const useAuth = () => {
   // FIX: Delete account - stable callback
   const deleteAccount = useCallback(async () => {
     try {
-      const result = await deleteMobileAccount();
-      if (result.error) throw result.error;
-      await useAuthStore.getState().clearSession();
+      await deleteMobileAccount();
     } catch (e) {
       console.error("Error deleting account:", e);
       throw e;

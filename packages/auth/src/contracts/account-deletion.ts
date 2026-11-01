@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+/**
+ * Account deletion remains unavailable until its complete, durable cleanup
+ * workflow is implemented. Keep this copy shared so clients do not imply that
+ * a destructive operation can succeed.
+ */
+export const accountDeletionUnavailableTitle = "Account deletion is unavailable";
+export const accountDeletionUnavailableReason =
+  "Account deletion is unavailable while we complete the safeguards required to remove account data safely.";
+
 export const accountDeletionStageSchema = z.enum([
   "requested",
   "sessions-revoked",

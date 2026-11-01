@@ -1,5 +1,9 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
+  accountDeletionUnavailableReason,
+  accountDeletionUnavailableTitle,
+} from "@repo/auth/account-deletion";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -429,11 +433,8 @@ function DangerZoneCard() {
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Account deletion is temporarily unavailable</AlertDialogTitle>
-              <AlertDialogDescription>
-                We are finishing our authentication migration. If you need your account removed
-                right now, please contact support and we will handle it manually.
-              </AlertDialogDescription>
+              <AlertDialogTitle>{accountDeletionUnavailableTitle}</AlertDialogTitle>
+              <AlertDialogDescription>{accountDeletionUnavailableReason}</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>

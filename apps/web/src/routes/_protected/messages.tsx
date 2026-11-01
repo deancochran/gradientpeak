@@ -15,7 +15,7 @@ import { Separator } from "@repo/ui/components/separator";
 import { cn } from "@repo/ui/lib/cn";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { Loader2, Plus, Search, Send, X } from "lucide-react";
+import { Loader2, Plus, RotateCcw, Search, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -102,7 +102,7 @@ export const Route = createFileRoute("/_protected/messages")({
   component: MessagesPage,
 });
 
-function MessagesPage() {
+export function MessagesPage() {
   const { user } = useAuth();
   const utils = api.useUtils();
   const sendMessage = useServerFn(sendMessageAction);
@@ -116,19 +116,21 @@ function MessagesPage() {
     flash,
     flashType,
   } = Route.useSearch();
-  const { data: conversations = [] } = api.messaging.getConversations.useQuery(undefined, {
+  const conversationsQuery = api.messaging.getConversations.useQuery(undefined, {
     refetchInterval: 5000,
   });
+  const conversations = conversationsQuery.data ?? [];
   const selectedConversation = compose
     ? null
-    : (conversations.find((conversation) => conversation.id === conversationId) ??
-      conversations[0] ??
-      null);
+    : conversationId
+      ? (conversations.find((conversation) => conversation.id === conversationId) ?? null)
+      : null;
   const selectedId = selectedConversation?.id ?? null;
-  const { data: messages = [] } = api.messaging.getMessages.useQuery(
-    { conversation_id: selectedId! },
+  const messagesQuery = api.messaging.getMessages.useQuery(
+    { conversation_id: selectedId ?? "" },
     { enabled: Boolean(selectedId), refetchInterval: 5000 },
   );
+  const messages = messagesQuery.data ?? [];
   const trimmedComposeQuery = composeQuery?.trim() ?? "";
   const { data: searchedUsers, isLoading: searchUsersLoading } = api.social.searchUsers.useQuery(
     {
@@ -147,16 +149,13 @@ function MessagesPage() {
   const [groupName, setGroupName] = useState(composeGroup ?? "");
   const [composeError, setComposeError] = useState<string | null>(null);
   const lastMarkedConversationRef = useRef<string | null>(null);
+  const draftConversationIdRef = useRef<string | undefined>(conversationId);
   const form = useForm<MessageComposerValues>({
     resolver: zodResolver(messageComposerSchema),
     defaultValues: {
       content: "",
     },
   });
-
-  useEffect(() => {
-    form.reset({ content: "" });
-  }, [form]);
 
   useEffect(() => {
     if (!selectedId || !selectedConversation || messages.length === 0) {
@@ -189,6 +188,15 @@ function MessagesPage() {
   useEffect(() => {
     setGroupName(composeGroup ?? "");
   }, [composeGroup]);
+
+  useEffect(() => {
+    if (draftConversationIdRef.current === conversationId) {
+      return;
+    }
+
+    draftConversationIdRef.current = conversationId;
+    form.reset({ content: "" });
+  }, [conversationId, form]);
 
   const handleSend = form.handleSubmit(async (values) => {
     if (!selectedId) {
@@ -224,7 +232,7 @@ function MessagesPage() {
         composeGroup: updates.composeGroup ?? (groupName || undefined),
         composeQuery,
         composeRecipients: updates.composeRecipients ?? selectedRecipients,
-        conversationId: undefined,
+        conversationId,
         flash: undefined,
         flashType: undefined,
       },
@@ -329,9 +337,21 @@ function MessagesPage() {
               <div>
                 <div className="font-semibold">Messages</div>
                 <div className="text-xs text-muted-foreground">
-                  {conversations.length}{" "}
-                  {conversations.length === 1 ? "conversation" : "conversations"}
+                  {conversationsQuery.isLoading && !conversationsQuery.data
+                    ? "Loading conversations…"
+                    : conversationsQuery.isError && !conversationsQuery.data
+                      ? "Conversations unavailable"
+                      : `${conversations.length} ${conversations.length === 1 ? "conversation" : "conversations"}`}
                 </div>
+                {conversationsQuery.isFetching && conversationsQuery.data ? (
+                  <div
+                    className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"
+                    role="status"
+                  >
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Refreshing conversations…
+                  </div>
+                ) : null}
               </div>
               <Button asChild size="sm" variant={compose ? "default" : "outline"}>
                 <Link
@@ -341,7 +361,7 @@ function MessagesPage() {
                     composeGroup: undefined,
                     composeQuery: undefined,
                     composeRecipients: [],
-                    conversationId: undefined,
+                    conversationId,
                     flash: undefined,
                     flashType: undefined,
                   }}
@@ -354,6 +374,29 @@ function MessagesPage() {
             <Separator />
             <ScrollArea className="flex-1">
               <div className="flex flex-col gap-2 p-4">
+                {conversationsQuery.isLoading && !conversationsQuery.data ? (
+                  <div
+                    className="flex items-center gap-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
+                    role="status"
+                  >
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading conversations…
+                  </div>
+                ) : null}
+                {conversationsQuery.isError && !conversationsQuery.data ? (
+                  <QueryRetry
+                    message="Conversations could not be loaded."
+                    isRetrying={conversationsQuery.isFetching}
+                    onRetry={() => void conversationsQuery.refetch()}
+                  />
+                ) : null}
+                {conversationsQuery.isError && conversationsQuery.data ? (
+                  <QueryRetry
+                    message="Showing last loaded conversations."
+                    isRetrying={conversationsQuery.isFetching}
+                    onRetry={() => void conversationsQuery.refetch()}
+                  />
+                ) : null}
                 {conversations.map((conversation) => {
                   const unreadCount = conversation.unread_count ?? 0;
 
@@ -417,7 +460,7 @@ function MessagesPage() {
                     </Link>
                   );
                 })}
-                {conversations.length === 0 ? (
+                {conversationsQuery.isSuccess && conversations.length === 0 ? (
                   <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
                     No conversations yet. Start a new message to create one.
                   </div>
@@ -427,6 +470,31 @@ function MessagesPage() {
           </div>
         </div>
         <div className="flex-1">
+          {(conversationsQuery.isLoading && !conversationsQuery.data) ||
+          conversationsQuery.isError ? (
+            <div className="border-b p-3 xl:hidden">
+              {conversationsQuery.isLoading && !conversationsQuery.data ? (
+                <div
+                  className="flex items-center gap-2 text-sm text-muted-foreground"
+                  role="status"
+                >
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading conversations…
+                </div>
+              ) : null}
+              {conversationsQuery.isError ? (
+                <QueryRetry
+                  message={
+                    conversationsQuery.data
+                      ? "Showing last loaded conversations."
+                      : "Conversations could not be loaded."
+                  }
+                  isRetrying={conversationsQuery.isFetching}
+                  onRetry={() => void conversationsQuery.refetch()}
+                />
+              ) : null}
+            </div>
+          ) : null}
           {!compose && conversations.length > 1 ? (
             <div className="border-b p-3 xl:hidden">
               <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -476,7 +544,7 @@ function MessagesPage() {
                       composeGroup: undefined,
                       composeQuery: undefined,
                       composeRecipients: [],
-                      conversationId: conversationId ?? conversations[0]?.id,
+                      conversationId,
                       flash: undefined,
                       flashType: undefined,
                     }}
@@ -491,6 +559,9 @@ function MessagesPage() {
                   <form method="get" action="/messages" className="flex gap-2">
                     <input type="hidden" name="compose" value="true" />
                     <input type="hidden" name="composeGroup" value={groupName} />
+                    {conversationId ? (
+                      <input type="hidden" name="conversationId" value={conversationId} />
+                    ) : null}
                     <input
                       type="hidden"
                       name="composeRecipients"
@@ -652,21 +723,53 @@ function MessagesPage() {
               </div>
               <ScrollArea className="flex-1 p-4">
                 <div className="flex flex-col gap-4">
-                  {messages.map((message) => {
-                    const isMe = message.sender_id === user?.id;
-                    return (
-                      <div
-                        key={message.id}
-                        className={cn(
-                          "flex w-max max-w-[75%] flex-col gap-2 rounded-lg px-3 py-2 text-sm",
-                          isMe ? "ml-auto bg-primary text-primary-foreground" : "bg-muted",
-                        )}
-                      >
-                        {message.content}
-                      </div>
-                    );
-                  })}
-                  {messages.length === 0 ? (
+                  {messagesQuery.isLoading && !messagesQuery.data ? (
+                    <div
+                      className="flex items-center gap-2 text-sm text-muted-foreground"
+                      role="status"
+                    >
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading messages…
+                    </div>
+                  ) : messagesQuery.isError && !messagesQuery.data ? (
+                    <QueryRetry
+                      message="Messages could not be loaded."
+                      isRetrying={messagesQuery.isFetching}
+                      onRetry={() => void messagesQuery.refetch()}
+                    />
+                  ) : (
+                    messages.map((message) => {
+                      const isMe = message.sender_id === user?.id;
+                      return (
+                        <div
+                          key={message.id}
+                          className={cn(
+                            "flex w-max max-w-[75%] flex-col gap-2 rounded-lg px-3 py-2 text-sm",
+                            isMe ? "ml-auto bg-primary text-primary-foreground" : "bg-muted",
+                          )}
+                        >
+                          {message.content}
+                        </div>
+                      );
+                    })
+                  )}
+                  {messagesQuery.isFetching && messagesQuery.data ? (
+                    <div
+                      className="flex items-center gap-2 text-xs text-muted-foreground"
+                      role="status"
+                    >
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Refreshing messages…
+                    </div>
+                  ) : null}
+                  {messagesQuery.isError && messagesQuery.data ? (
+                    <QueryRetry
+                      message="Showing last loaded messages."
+                      isRetrying={messagesQuery.isFetching}
+                      onRetry={() => void messagesQuery.refetch()}
+                    />
+                  ) : null}
+                  {messagesQuery.isSuccess && messages.length === 0 ? (
                     <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
                       No messages yet. Send one to start the conversation.
                     </div>
@@ -740,6 +843,34 @@ function MessagesPage() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function QueryRetry({
+  message,
+  isRetrying,
+  onRetry,
+}: {
+  message: string;
+  isRetrying: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
+      role="alert"
+    >
+      <span>{message}</span>
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 font-medium text-foreground underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+        disabled={isRetrying}
+        onClick={onRetry}
+      >
+        <RotateCcw className={isRetrying ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} />
+        {isRetrying ? "Retrying…" : "Retry"}
+      </button>
     </div>
   );
 }

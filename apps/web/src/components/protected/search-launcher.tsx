@@ -11,18 +11,22 @@ import { cn } from "@repo/ui/lib/cn";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   Activity,
+  Bell,
   Calendar,
   Circle,
   Home,
-  Map,
+  Map as MapIcon,
   MessageSquare,
   Search,
   Settings,
   Target,
   TrendingUp,
+  UserRound,
   Users,
 } from "lucide-react";
 import { useState } from "react";
+
+import { useAuth } from "../providers/auth-provider";
 
 type SearchLauncherProps = {
   className?: string;
@@ -40,6 +44,7 @@ type SearchDestination = {
     | "/calendar"
     | "/coaching"
     | "/messages"
+    | "/notifications"
     | "/plan"
     | "/profile-metrics"
     | "/record"
@@ -52,11 +57,17 @@ const SEARCH_DESTINATIONS: SearchDestination[] = [
   { icon: Activity, label: "Activities", to: "/activities" },
   { icon: Activity, label: "Activity Efforts", to: "/activity-efforts" },
   { icon: TrendingUp, label: "Profile Metrics", to: "/profile-metrics" },
-  { icon: Map, label: "Routes", to: "/routes" },
+  { icon: MapIcon, label: "Routes", to: "/routes" },
   { icon: Circle, label: "Record", to: "/record" },
   { icon: Target, label: "Plan", to: "/plan" },
   { icon: Calendar, label: "Calendar", to: "/calendar" },
   { icon: Users, label: "Coaching", to: "/coaching" },
+  {
+    icon: Bell,
+    label: "Notifications",
+    to: "/notifications",
+    search: { flash: undefined, flashType: undefined, view: "all" },
+  },
   {
     icon: MessageSquare,
     label: "Messages",
@@ -68,6 +79,7 @@ const SEARCH_DESTINATIONS: SearchDestination[] = [
 
 export function SearchLauncher({ className, mode = "icon" }: SearchLauncherProps) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
 
@@ -122,17 +134,7 @@ export function SearchLauncher({ className, mode = "icon" }: SearchLauncherProps
     <>
       {trigger}
       <CommandDialog open={open} onOpenChange={setOpen} title="Search GradientPeak">
-        <CommandInput
-          placeholder="Search the web app..."
-          value={query}
-          onValueChange={setQuery}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              void submitSearch();
-            }
-          }}
-        />
+        <CommandInput placeholder="Search the web app..." value={query} onValueChange={setQuery} />
         <CommandList>
           <CommandEmpty>No direct match. Press Enter to open search.</CommandEmpty>
           <CommandGroup heading="Navigate">
@@ -163,6 +165,24 @@ export function SearchLauncher({ className, mode = "icon" }: SearchLauncherProps
               <span>{query.trim() ? `Search for "${query.trim()}"` : "Open search page"}</span>
             </CommandItem>
           </CommandGroup>
+          {user?.id ? (
+            <CommandGroup heading="Account">
+              <CommandItem
+                value="profile"
+                onSelect={() => {
+                  void navigate({
+                    to: "/user/$userId",
+                    params: { userId: user.id },
+                    search: { flash: undefined, flashType: undefined },
+                  });
+                  setOpen(false);
+                }}
+              >
+                <UserRound className="h-4 w-4" />
+                <span>Profile</span>
+              </CommandItem>
+            </CommandGroup>
+          ) : null}
         </CommandList>
       </CommandDialog>
     </>

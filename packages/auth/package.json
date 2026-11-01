@@ -24,6 +24,7 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
+    "test": "vitest run --config vitest.config.ts",
     "generate": "pnpx @better-auth/cli generate --config script/auth-cli.ts --output ../db/src/auth-schema.ts"
   },
   "dependencies": {
