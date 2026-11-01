@@ -29,6 +29,9 @@ jobs:
   changes:
     name: Changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       docs_only: ${{ steps.filter.outputs.docs == 'true' && steps.filter.outputs.non_docs != 'true' }}
       api_live_db_related: ${{ steps.filter.outputs.api_live_db_related }}

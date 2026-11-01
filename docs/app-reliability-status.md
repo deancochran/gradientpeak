@@ -84,8 +84,12 @@ baseline cutover requires a separate decision.
 Acceptance continuation evidence:
 
 - The full mobile Jest suite initially reproduced four failing suites (16 tests).
-  After fixture/gesture repairs, the integrated branch passes 102 suites and
+  After fixture repairs, the integrated branch passes 102 suites and
   442 tests, with the existing one skipped suite/two skipped tests unchanged.
+  Independent review rejected an unsupported gesture option introduced during
+  that repair; it is removed, retaining Victory's default long-press behavior.
+  The mock-only test now asserts that the default is not overridden; native
+  gesture arbitration remains unverified on a device.
 - CI's old aggregate omitted mobile Jest and reported success despite that job
   failing. The replacement `Basic checks` gate explicitly evaluates required
   results, rejecting failures, cancellation and unexpected skips. Workflow edits

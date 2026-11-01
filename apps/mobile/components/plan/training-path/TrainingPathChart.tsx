@@ -781,15 +781,6 @@ export function TrainingPathChart({
           lineWidth: { bottom: 1, left: scrollX ? 0 : 1, right: 0, top: 0 },
         }}
         chartPressState={reviewWeeks ? chartPressState : undefined}
-        chartPressConfig={
-          reviewWeeks && scrollX
-            ? ({
-                pan: {
-                  simultaneousWithExternalGesture: scrollViewRef,
-                },
-              } as any)
-            : undefined
-        }
       >
         {({ points, chartBounds }) => (
           <>

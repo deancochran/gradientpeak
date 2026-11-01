@@ -39,6 +39,8 @@ test("workflow wires every required job into the always-running Basic checks gat
   assert.match(gate, /VALIDATION_NEEDS: \$\{\{ toJSON\(needs\) \}\}/);
   assert.ok(!source.includes("- '.github/workflows/validate.yml'"));
   assert.ok(!source.includes("- '!.github/workflows/validate.yml'"));
+  const changes = source.split("  changes:\n")[1].split("    outputs:")[0];
+  assert.match(changes, /pull-requests: read/);
 });
 
 test("security checks cannot be advisory on pull requests", () => {
