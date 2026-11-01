@@ -39,7 +39,9 @@ export default defineConfig({
     video: "retain-on-failure",
   },
   webServer: {
-    command: `pnpm exec vite dev --host 127.0.0.1 --port ${port} --strictPort`,
+    // Playwright merges webServer.env with its own process environment. The launcher
+    // creates the actual Vite child with only these acceptance-safe values.
+    command: "node e2e/acceptance/server-launcher.mjs",
     env: serverEnv,
     reuseExistingServer: false,
     timeout: 120 * 1000,
