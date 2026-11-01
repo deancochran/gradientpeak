@@ -99,11 +99,6 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   useAppNavigate: () => pushMock,
 }));
 
-jest.mock("@/lib/auth/auth-headers", () => ({
-  __esModule: true,
-  hasSessionAuthCredentials: () => true,
-}));
-
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
   useAuthStore: (selector: any) =>

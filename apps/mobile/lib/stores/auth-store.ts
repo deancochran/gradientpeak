@@ -117,8 +117,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   },
   clearSession: async () => {
     try {
-      await signOutMobileAuth().catch(() => {});
-    } finally {
+      await signOutMobileAuth();
       set({
         session: null,
         user: null,
@@ -128,6 +127,9 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         error: null,
         loading: false,
       });
+    } catch (error) {
+      set({ error: error instanceof Error ? error : new Error(String(error)), loading: false });
+      throw error;
     }
   },
 }));

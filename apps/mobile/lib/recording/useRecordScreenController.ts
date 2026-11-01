@@ -4,7 +4,6 @@ import React from "react";
 import { Alert } from "react-native";
 import type { ResourcePickerItem, ResourcePickerScope } from "@/components/shared/resource-picker";
 import { api } from "@/lib/api";
-import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import {
   useActivityStatus,
   usePlan,
@@ -49,7 +48,7 @@ export function useRecordScreenController() {
   const sessionContract = useRecordingSessionContract(service);
 
   const { data: zones } = api.profiles.getZones.useQuery(undefined, {
-    enabled: !!user && !!service && hasSessionAuthCredentials(),
+    enabled: !!user && !!service,
     staleTime: 1000 * 60 * 5,
   });
 

@@ -6,7 +6,7 @@ import {
 } from "@repo/auth/forms";
 import type { FieldValues, Path, UseFormReturn } from "react-hook-form";
 import { AuthRequestTimeoutError, getAuthRequestTimeoutMessage } from "@/lib/auth/request-timeout";
-import { getHostedApiUrl, setServerUrlOverride } from "@/lib/server-config";
+import { getHostedApiUrl, getServerConfig, setServerUrlOverride } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
 type FormErrorTarget<TFieldValues extends FieldValues> = {
@@ -43,13 +43,25 @@ export async function applyPendingAuthServerOverride(params: {
 
   const nextUrl = params.serverUrlInput.trim();
   const hostedApiUrl = getHostedApiUrl();
-  const { changed } = await setServerUrlOverride(
-    nextUrl.length === 0 || nextUrl === hostedApiUrl ? null : nextUrl,
-  );
+  const requestedOverride = nextUrl.length === 0 || nextUrl === hostedApiUrl ? null : nextUrl;
+  const normalizedRequestedOverride = requestedOverride
+    ? (() => {
+        const parsed = new URL(requestedOverride);
+        if (!parsed.protocol.startsWith("http")) {
+          throw new Error("Please enter a valid URL (include http:// or https://)");
+        }
+        const path = parsed.pathname.replace(/\/+$/, "");
+        return `${parsed.origin}${path === "/" ? "" : path}`;
+      })()
+    : null;
 
-  if (changed) {
+  // Clear the old origin's native session before publishing a new API origin.
+  // clearSession fails closed locally even when remote sign-out cannot complete.
+  if (normalizedRequestedOverride !== getServerConfig().overrideUrl) {
     await useAuthStore.getState().clearSession();
   }
+
+  await setServerUrlOverride(requestedOverride);
 }
 
 export function getAuthFormUnexpectedErrorMessage(error: unknown) {

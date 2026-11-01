@@ -3,15 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => {
   const createApiBatchLink = vi.fn((options) => options);
   const createClient = vi.fn();
-  const getCookie = vi.fn<() => Promise<string | null>>();
+  const getMobileAuthHeaders = vi.fn<() => Promise<Headers>>();
 
   return {
     createApiBatchLink,
     createClient,
-    getCookie,
-    session: {
-      current: null as { bearerToken?: string; user?: { id: string } } | null,
-    },
+    getMobileAuthHeaders,
+    apiUrl: { current: "http://127.0.0.1:3000" },
   };
 });
 
@@ -25,12 +23,8 @@ vi.mock("@repo/api/react", () => ({
 
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
-vi.mock("@/lib/auth/auth-client", () => ({
-  getAuthClient: () => ({ getCookie: mocks.getCookie }),
-}));
-
-vi.mock("@/lib/stores/auth-store", () => ({
-  useAuthStore: { getState: () => ({ session: mocks.session.current }) },
+vi.mock("@/lib/auth/client", () => ({
+  getMobileAuthHeaders: mocks.getMobileAuthHeaders,
 }));
 
 vi.mock("@/lib/logging/mobile-action-log", () => ({
@@ -39,51 +33,39 @@ vi.mock("@/lib/logging/mobile-action-log", () => ({
 }));
 
 vi.mock("@/lib/server-config", () => ({
-  getServerConfig: () => ({ apiUrl: "http://127.0.0.1:3000" }),
+  getServerConfig: () => ({ apiUrl: mocks.apiUrl.current }),
 }));
 
 import { createApiClient } from "./api";
-import { hasSessionAuthCredentials } from "./auth/auth-headers";
 
 describe("mobile tRPC auth headers", () => {
   beforeEach(() => {
     mocks.createApiBatchLink.mockClear();
     mocks.createClient.mockClear();
-    mocks.getCookie.mockReset();
-    mocks.session.current = null;
+    mocks.getMobileAuthHeaders.mockReset();
+    mocks.apiUrl.current = "http://127.0.0.1:3000";
   });
 
   it("awaits Better Auth's cookie for the first cookie-only request", async () => {
-    mocks.session.current = { user: { id: "user-1" } };
-    mocks.getCookie.mockResolvedValue("better-auth.session=cold-start");
+    mocks.getMobileAuthHeaders.mockResolvedValue(
+      new Headers({ Cookie: "better-auth.session=cold-start" }),
+    );
 
     createApiClient();
 
     const headers = mocks.createApiBatchLink.mock.calls[0]?.[0].headers as () => Promise<Headers>;
     const resolvedHeaders = await headers();
 
-    expect(mocks.getCookie).toHaveBeenCalledTimes(1);
+    expect(mocks.getMobileAuthHeaders).toHaveBeenCalledTimes(1);
     expect(resolvedHeaders.get("Cookie")).toBe("better-auth.session=cold-start");
     expect(resolvedHeaders.get("Authorization")).toBeNull();
     expect(resolvedHeaders.get("x-client-type")).toBe("mobile");
-    expect(hasSessionAuthCredentials()).toBe(true);
-  });
-
-  it("falls back to the bearer bridge only when Better Auth has no cookie", async () => {
-    mocks.session.current = { bearerToken: "bridge-token" };
-    mocks.getCookie.mockResolvedValue(null);
-
-    createApiClient();
-
-    const headers = mocks.createApiBatchLink.mock.calls[0]?.[0].headers as () => Promise<Headers>;
-    const resolvedHeaders = await headers();
-
-    expect(resolvedHeaders.get("Cookie")).toBeNull();
-    expect(resolvedHeaders.get("Authorization")).toBe("Bearer bridge-token");
   });
 
   it("does not reuse a cookie after logout or a server switch", async () => {
-    mocks.getCookie.mockResolvedValueOnce("better-auth.session=old-server").mockResolvedValue(null);
+    mocks.getMobileAuthHeaders
+      .mockResolvedValueOnce(new Headers({ Cookie: "better-auth.session=old-server" }))
+      .mockResolvedValueOnce(new Headers());
 
     createApiClient();
     const oldHeaders = mocks.createApiBatchLink.mock.calls[0]?.[0]

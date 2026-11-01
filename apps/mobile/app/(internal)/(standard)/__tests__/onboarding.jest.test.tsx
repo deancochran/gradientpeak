@@ -65,11 +65,6 @@ jest.mock("@/lib/hooks/useAuth", () => ({
   }),
 }));
 
-jest.mock("@/lib/auth/auth-headers", () => ({
-  __esModule: true,
-  hasSessionAuthCredentials: () => true,
-}));
-
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {

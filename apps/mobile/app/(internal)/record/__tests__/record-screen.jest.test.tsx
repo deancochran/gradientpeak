@@ -129,11 +129,6 @@ jest.mock("@/lib/hooks/useAuth", () => ({
   useAuth: () => ({ user: { id: "user-1" } }),
 }));
 
-jest.mock("@/lib/auth/auth-headers", () => ({
-  __esModule: true,
-  hasSessionAuthCredentials: () => true,
-}));
-
 jest.mock("@/lib/performance", () => ({
   __esModule: true,
   markNavigationStart: jest.fn(),

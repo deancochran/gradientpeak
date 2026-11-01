@@ -12,7 +12,6 @@ import {
 import { GroupEventCard } from "@/components/groups/GroupEventCards";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
-import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { parseDateKey, toDateKey } from "@/lib/calendar/dateMath";
 import { buildOpenEventRoute } from "@/lib/calendar/eventRouting";
 import {
@@ -122,9 +121,7 @@ export default function CalendarDayScreen() {
     [params.planSuggestionDescription, params.planSuggestionTssDelta, params.planSuggestionType],
   );
   const setActiveDate = useCalendarStore((state) => state.setActiveDate);
-  const eventsQueryEnabled = useAuthStore(
-    (state) => state.ready && !!state.session && hasSessionAuthCredentials(),
-  );
+  const eventsQueryEnabled = useAuthStore((state) => state.ready && !!state.session);
 
   useEffect(() => {
     setActiveDate(dateKey);

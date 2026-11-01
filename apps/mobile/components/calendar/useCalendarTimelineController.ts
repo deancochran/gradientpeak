@@ -4,7 +4,6 @@ import { format } from "date-fns";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
-import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { addDaysToDateKey, toDateKey } from "@/lib/calendar/dateMath";
 import { buildOpenEventRoute } from "@/lib/calendar/eventRouting";
 import {
@@ -146,9 +145,7 @@ export function useCalendarTimelineController() {
   const persistedVisibleAnchor = useCalendarStore((state) => state.visibleAnchor);
   const setActiveDate = useCalendarStore((state) => state.setActiveDate);
   const setVisibleAnchor = useCalendarStore((state) => state.setVisibleAnchor);
-  const eventsQueryEnabled = useAuthStore(
-    (state) => state.ready && !!state.session && hasSessionAuthCredentials(),
-  );
+  const eventsQueryEnabled = useAuthStore((state) => state.ready && !!state.session);
 
   const [initializedToday, setInitializedToday] = useState(false);
   const activeDate = initializedToday ? (persistedActiveDate ?? todayKey) : todayKey;
