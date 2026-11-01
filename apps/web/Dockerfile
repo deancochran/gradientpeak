@@ -68,6 +68,11 @@ RUN pnpm --filter web build
 
 FROM node:24-bookworm-slim AS runner
 
+# Nitro starts directly with node; keep the unused package manager and its
+# dependency tree out of the runtime image, rather than suppressing scan results.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx
+
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
