@@ -8,13 +8,15 @@ import { nitro } from "nitro/vite";
 import { defineConfig, loadEnv } from "vite";
 
 const config = defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "");
+  const acceptanceMode = process.env.WEB_ACCEPTANCE === "1";
+  const env = acceptanceMode ? {} : loadEnv(mode, process.cwd(), "");
 
   for (const [key, value] of Object.entries(env)) {
     process.env[key] ??= value;
   }
 
   return {
+    envDir: acceptanceMode ? false : undefined,
     server: {
       allowedHosts: ["outgoing-ape-repeatedly.ngrok-free.app"],
       host: "0.0.0.0",

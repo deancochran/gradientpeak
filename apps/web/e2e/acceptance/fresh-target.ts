@@ -7,7 +7,15 @@ const targetIdPattern = /^[a-f0-9]{16}$/;
 export type FreshAcceptanceTarget = {
   databaseName: string;
   databaseUrl: string;
+  databasePort: string;
   targetId: string;
+};
+
+export type DockerContainerInspection = {
+  Config?: { Labels?: Record<string, string> };
+  NetworkSettings?: {
+    Ports?: Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;
+  };
 };
 
 function fail(message: string): never {
@@ -52,26 +60,46 @@ export function readFreshAcceptanceTarget(
     fail("DATABASE_URL must address the generated disposable database over 127.0.0.1.");
   }
 
-  return { databaseName, databaseUrl, targetId };
+  return { databaseName, databaseUrl, databasePort: parsedUrl.port, targetId };
+}
+
+export function assertFreshContainerIdentity(
+  target: FreshAcceptanceTarget,
+  inspection: DockerContainerInspection,
+) {
+  const labels = inspection.Config?.Labels;
+  if (
+    labels?.["com.gradientpeak.disposable"] !== "true" ||
+    labels["com.gradientpeak.target-id"] !== target.targetId
+  ) {
+    fail(
+      `container gradientpeak_db_fresh_${target.targetId} does not carry the required disposable labels.`,
+    );
+  }
+
+  const postgresPort = inspection.NetworkSettings?.Ports?.["5432/tcp"];
+  if (
+    postgresPort?.length !== 1 ||
+    postgresPort[0]?.HostIp !== "127.0.0.1" ||
+    postgresPort[0]?.HostPort !== target.databasePort
+  ) {
+    fail("DATABASE_URL does not match the disposable container's 127.0.0.1:5432 host mapping.");
+  }
 }
 
 export async function verifyFreshAcceptanceTarget(target: FreshAcceptanceTarget) {
   const containerName = `gradientpeak_db_fresh_${target.targetId}`;
 
   try {
-    const labels = execFileSync(
-      "docker",
-      [
-        "inspect",
-        "--format",
-        '{{index .Config.Labels "com.gradientpeak.disposable"}} {{index .Config.Labels "com.gradientpeak.target-id"}}',
-        containerName,
-      ],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-    ).trim();
-    if (labels !== `true ${target.targetId}`) {
-      fail(`container ${containerName} does not carry the required disposable labels.`);
+    const output = execFileSync("docker", ["inspect", containerName], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const inspection = JSON.parse(output) as DockerContainerInspection[];
+    if (inspection.length !== 1 || !inspection[0]) {
+      fail(`could not read exactly one inspection result for ${containerName}.`);
     }
+    assertFreshContainerIdentity(target, inspection[0]);
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("[acceptance]")) throw error;
     fail(`could not verify the task-owned container ${containerName}.`);
