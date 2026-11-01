@@ -82,7 +82,7 @@
   "dependencies": {
     "@garmin/fitsdk": "^21.188.0",
     "@mapbox/polyline": "^1.2.1",
-    "@xmldom/xmldom": "^0.8.11",
+    "@xmldom/xmldom": "^0.8.15",
     "zod": "^4.2.1"
   },
   "devDependencies": {
@@ -92,6 +92,6 @@
     "chokidar-cli": "^3.0.0",
     "concurrently": "^9.2.1",
     "typescript": "^5.5.2",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.11"
   }
 }

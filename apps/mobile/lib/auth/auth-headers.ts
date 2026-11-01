@@ -1,10 +1,10 @@
-import { authClient } from "@/lib/auth/client";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { peekCachedAuthCookieHeader } from "./secure-session-cache";
 
 export const getSessionAuthHeaders = () => {
   const session = useAuthStore.getState().session;
   const headers = new Headers();
-  const cookie = (authClient as { getCookie?: () => string } | undefined)?.getCookie?.();
+  const cookie = peekCachedAuthCookieHeader();
 
   if (cookie) {
     headers.set("cookie", cookie);
@@ -19,7 +19,7 @@ export const getSessionAuthHeaders = () => {
 
 export const hasSessionAuthCredentials = () => {
   const session = useAuthStore.getState().session;
-  const cookie = (authClient as { getCookie?: () => string } | undefined)?.getCookie?.();
+  const cookie = peekCachedAuthCookieHeader();
 
   return Boolean(cookie || session?.bearerToken);
 };

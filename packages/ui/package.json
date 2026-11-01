@@ -216,8 +216,8 @@
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
-    "@storybook/react": "^8.6.18",
-    "@storybook/test": "^8.6.18",
+    "@storybook/react": "^8.6.19",
+    "@storybook/test": "^8.6.19",
     "@swc/core": "^1.13.12",
     "@swc/jest": "^0.2.39",
     "@testing-library/jest-dom": "^6.9.1",
@@ -230,9 +230,9 @@
     "lightningcss": "1.30.1",
     "react-dom": "19.1.0",
     "react-test-renderer": "19.1.0",
-    "storybook": "^8.6.18",
+    "storybook": "^8.6.19",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.11"
   }
 }

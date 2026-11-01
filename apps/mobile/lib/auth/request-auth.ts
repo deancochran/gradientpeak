@@ -7,7 +7,7 @@ export type MobileAuthTransport = "cookie" | "bearer";
 
 export async function getAuthHeaders() {
   const headers = new Headers();
-  const cookieHeader = getAuthClient().getCookie() || (await getCachedAuthCookieHeader());
+  const cookieHeader = (await getAuthClient().getCookie()) || (await getCachedAuthCookieHeader());
 
   if (cookieHeader) {
     headers.set("Cookie", cookieHeader);
@@ -24,7 +24,7 @@ export async function getAuthHeaders() {
 }
 
 export async function getAuthTransport(): Promise<MobileAuthTransport | null> {
-  const cookieHeader = getAuthClient().getCookie() || (await getCachedAuthCookieHeader());
+  const cookieHeader = (await getAuthClient().getCookie()) || (await getCachedAuthCookieHeader());
 
   if (cookieHeader) {
     return "cookie";

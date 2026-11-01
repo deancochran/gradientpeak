@@ -150,7 +150,7 @@ function buildVerifyEmailRedirectHref(
 }
 
 export const signInWithEmailAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeLoginServerActionInput(data))
+  .validator((data) => normalizeLoginServerActionInput(data))
   .handler(async ({ data }) => {
     const auth = getGradientPeakAuth();
 
@@ -181,7 +181,7 @@ export const signInWithEmailAction = createServerFn({ method: "POST" })
   });
 
 export const signUpWithEmailAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeSignUpServerActionInput(data))
+  .validator((data) => normalizeSignUpServerActionInput(data))
   .handler(async ({ data }) => {
     const auth = getGradientPeakAuth();
 
@@ -214,7 +214,7 @@ export const signUpWithEmailAction = createServerFn({ method: "POST" })
   });
 
 export const requestPasswordResetAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeForgotPasswordServerActionInput(data))
+  .validator((data) => normalizeForgotPasswordServerActionInput(data))
   .handler(async ({ data }) => {
     const auth = getGradientPeakAuth();
 
@@ -245,7 +245,7 @@ export const requestPasswordResetAction = createServerFn({ method: "POST" })
   });
 
 export const resetPasswordAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeUpdatePasswordServerActionInput(data))
+  .validator((data) => normalizeUpdatePasswordServerActionInput(data))
   .handler(async ({ data }) => {
     const auth = getGradientPeakAuth();
 
@@ -276,7 +276,7 @@ export const resetPasswordAction = createServerFn({ method: "POST" })
   });
 
 export const sendVerificationEmailAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeVerifyEmailServerActionInput(data))
+  .validator((data) => normalizeVerifyEmailServerActionInput(data))
   .handler(async ({ data }) => {
     const auth = getGradientPeakAuth();
 

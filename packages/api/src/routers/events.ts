@@ -241,10 +241,11 @@ const eventCreateInputSchema = z.unknown().transform((value, ctx): EventCreateMu
 
   ctx.addIssue({
     code: "custom",
-    message:
-      parsedEventCreate.error.issues[0]?.message ??
+    message: `Invalid event create payload: ${
       parsedLegacyPlannedCreate.error.issues[0]?.message ??
-      "Invalid event create payload",
+      parsedEventCreate.error.issues[0]?.message ??
+      "invalid input"
+    }`,
   });
 
   return z.NEVER;
@@ -271,7 +272,7 @@ const eventUpdateInputSchema = z.unknown().transform((value, ctx): EventUpdateMu
 
   ctx.addIssue({
     code: "custom",
-    message: parsed.error.issues[0]?.message ?? "Invalid event update payload",
+    message: `Invalid event update payload: ${parsed.error.issues[0]?.message ?? "invalid input"}`,
   });
 
   return z.NEVER;

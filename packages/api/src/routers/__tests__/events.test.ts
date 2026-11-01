@@ -1659,7 +1659,9 @@ describe("eventsRouter generalization", () => {
           exceptions: [],
         },
       }),
-    ).rejects.toThrow(/Recurrence exdates\/exceptions are not yet supported|Invalid input/);
+    ).rejects.toThrow(
+      /Recurrence exdates\/exceptions are not yet supported|exdates are not supported for persisted recurrence yet|Invalid input/,
+    );
   });
 
   it("creates materialized weekly planned activity occurrences for bounded recurrence", async () => {
