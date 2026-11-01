@@ -95,11 +95,25 @@ Acceptance continuation evidence:
   results, rejecting failures, cancellation and unexpected skips. Workflow edits
   no longer qualify as docs-only changes.
 - GitHub's Security workflow had been disabled for inactivity; it is re-enabled.
-  PR-only advisory bypasses are removed. Current dependency audit still reports
-  24 critical and 166 high findings; dependency remediation is a prerequisite,
-  not passing security evidence.
-- Fresh migration replay and authenticated browser/native runtime acceptance
-  remain pending. The legacy web harness seeds Supabase Auth rather than the
+  PR-only advisory bypasses are removed. The dependency audit initially reported
+  24 critical and 166 high findings. After integrating the scoped dependency
+  repair, a fresh frozen install passes and the integrated audit reports zero
+  critical/high findings (18 moderate, 4 low remain). Expo stays on SDK 54 and
+  React Native on 0.81. Production web build and full native Jest checks exposed
+  additional route-generator/ESM compatibility gaps. Removing four unsupported
+  route-ID casts and regenerating the route tree restored the production web
+  build and web typecheck; repeat generation is stable. Native ESM decoder tests
+  pass after the precise Jest transform repair. A narrow Metro adapter preserves
+  Expo 54's pinned Metro while supplying bytes to the fixed image decoder; two
+  real-asset regression tests and a complete local iOS Hermes export pass.
+  This is bundle evidence, not a native-device run. Independent review also found
+  the upgraded mobile tRPC cookie path used an unpopulated cache; an authoritative
+  async cookie-path repair and regressions are still required before acceptance.
+- Fresh replay passes the repaired `0006` but exposed missing group-table history
+  at `0016`. The user explicitly approved reconciling the current main migration
+  history on new disposable targets, without mutating existing databases.
+  Authenticated browser/native runtime acceptance remains pending. The legacy
+  web harness seeds Supabase Auth rather than the
   product's Better Auth users and can skip setup silently; it must not be used
   to claim authenticated acceptance without repair and disposable-target guards.
 

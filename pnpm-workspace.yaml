@@ -27,16 +27,16 @@ overrides:
   browserslist: 4.28.8
   caniuse-lite: 1.0.30001809
   compression@<1.8.2: 1.8.2
+  defu@<6.1.5: 6.1.5
   dompurify@<3.4.17: 3.4.17
   drizzle-orm@<0.45.2: 0.45.2
-  defu@<6.1.5: 6.1.5
   esbuild@<=0.24.2: 0.25.0
   esbuild@>=0.27.3 <0.28.1: 0.28.1
   fast-uri@<3.1.7: 3.1.7
   glob@>=10.2.0 <10.5.0: 10.5.0
+  image-size@<2.0.3: 2.0.3
   js-yaml@<3.15.2: 3.15.2
   js-yaml@>=4.0.0 <4.3.2: 4.3.2
-  image-size@<2.0.3: 2.0.3
   kysely@>=0.26.0 <0.28.17: 0.28.17
   launch-editor@<2.14.2: 2.14.2
   lightningcss: 1.30.1
@@ -50,11 +50,11 @@ overrides:
   picomatch@>=4.0.0 <4.0.4: 4.0.4
   postcss@<8.5.23: 8.5.23
   query-string@7.1.3>decode-uri-component: 0.5.1
-  react-native-safe-area-context: 5.6.2
   react-native-calendars>react-native-safe-area-context: 5.6.2
+  react-native-safe-area-context: 5.6.2
   seroval@<1.6.8: 1.6.8
-  shell-quote@<1.12.0: 1.12.0
   sharp@<0.35.5: 0.35.5
+  shell-quote@<1.12.0: 1.12.0
   smol-toml@<1.7.1: 1.7.1
   source-map-js@<1.2.2: 1.2.2
   tar@<7.5.21: 7.5.21
@@ -67,4 +67,5 @@ overrides:
   yaml@>=2.0.0 <2.8.3: 2.8.3
   zod: ^4.6.7
 patchedDependencies:
+  metro@0.83.3: patches/metro@0.83.3.patch
   query-string@7.1.3: patches/query-string@7.1.3.patch

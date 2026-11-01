@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { isInternalProviderSyncAuthorized } from "../../../../../lib/internal-provider-sync-auth";
 import { createWahooSyncRuntime } from "../../../../../lib/wahoo-sync-runtime";
 
-export const Route = createFileRoute("/api/internal/provider-sync/wahoo/drain" as never)({
+export const Route = createFileRoute("/api/internal/provider-sync/wahoo/drain")({
   server: {
     handlers: {
       POST: async ({ request }) => {
