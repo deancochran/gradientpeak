@@ -39,6 +39,12 @@ export const safeSecureStore = {
     }
   },
 
+  // Auth credential retirement must observe persistence failures instead of
+  // treating a failed tombstone write as a completed logout.
+  async setItemAsyncStrict(key: string, value: string): Promise<void> {
+    await SecureStore.setItemAsync(key, value);
+  },
+
   async deleteItemAsync(key: string): Promise<void> {
     try {
       await SecureStore.deleteItemAsync(key);

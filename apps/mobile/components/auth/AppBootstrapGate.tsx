@@ -17,6 +17,7 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
     profileLoading,
     profileError,
     refreshProfile,
+    error,
   } = useAuth();
   const segments = useSegments();
   const rootSegment = segments[0];
@@ -54,6 +55,10 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
         to: "/(external)/verify" as const,
         params: { email: user?.email || "" },
       };
+    }
+
+    if (error) {
+      return { type: "profile-error" as const, message: error.message };
     }
 
     if (onboardingStatus === null) {
@@ -95,6 +100,7 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
     isOnboardingScreen,
     isVerificationScreen,
     onboardingStatus,
+    error,
     profileError,
     profileLoading,
     user,

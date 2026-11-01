@@ -165,7 +165,9 @@ describe("TrainingPathChart interactions", () => {
 
     const chart = (screen as any).UNSAFE_getByType("CartesianChart");
     expect(chart.props.chartPressState).toBeTruthy();
-    expect(chart.props.chartPressConfig?.pan?.simultaneousWithExternalGesture).toBeTruthy();
+    // No custom pan config: retain Victory's long-press default so the parent
+    // horizontal scroll view is not preempted by an immediately active chart pan.
+    expect(chart.props.chartPressConfig).toBeUndefined();
     expect(screen.queryByTestId("training-path-week-2026-04-13")).toBeNull();
   });
 

@@ -1,3 +1,4 @@
+import type { Transporter } from "nodemailer";
 import nodemailer from "nodemailer";
 import type { AuthRuntimeEnv } from "./env";
 
@@ -15,7 +16,7 @@ export interface AuthMailer {
   send(input: SendAuthEmailInput): Promise<void>;
 }
 
-let transporterSingleton: nodemailer.Transporter | null = null;
+let transporterSingleton: Transporter | null = null;
 
 function getTransporter(env: AuthRuntimeEnv) {
   if (transporterSingleton) return transporterSingleton;

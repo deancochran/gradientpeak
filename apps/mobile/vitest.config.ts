@@ -36,7 +36,12 @@ export default defineConfig({
     exclude: ["**/*.jest.test.ts", "**/*.jest.test.tsx", "**/node_modules/**", "../../packages/**"],
     server: {
       deps: {
-        inline: ["@testing-library/react-native"],
+        inline: [
+          "@testing-library/react-native",
+          "@better-auth/expo",
+          "better-auth",
+          "@better-auth/core",
+        ],
       },
     },
     setupFiles: [path.resolve(__dirname, "test/setup.ts")],

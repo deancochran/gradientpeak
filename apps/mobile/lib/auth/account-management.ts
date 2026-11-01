@@ -1,3 +1,4 @@
+import { accountDeletionUnavailableReason } from "@repo/auth/account-deletion";
 import { authClient, getEmailVerificationCallbackUrl } from "@/lib/auth/client";
 
 export async function updateMobileEmail(input: { newEmail: string }) {
@@ -15,5 +16,5 @@ export async function updateMobilePassword(input: {
 }
 
 export async function deleteMobileAccount() {
-  return authClient.deleteUser({});
+  throw new Error(accountDeletionUnavailableReason);
 }

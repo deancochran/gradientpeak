@@ -6,7 +6,7 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { createFileRoute } from "@tanstack/react-router";
-import { Activity, CalendarDays, Target } from "lucide-react";
+import { Activity, CalendarDays, RotateCcw, Target } from "lucide-react";
 
 import { SearchLauncher } from "../../components/protected/search-launcher";
 import { useAuth } from "../../components/providers/auth-provider";
@@ -16,12 +16,16 @@ export const Route = createFileRoute("/_protected/")({
   component: DashboardPage,
 });
 
-function DashboardPage() {
+export function DashboardPage() {
   const { user } = useAuth();
   const dashboardQuery = api.home.getDashboard.useQuery();
 
   const dashboard = dashboardQuery.data;
   const schedule = dashboard?.schedule.slice(0, 4) ?? [];
+  const isInitialLoading = dashboardQuery.isLoading && !dashboard;
+  const isRefreshing = dashboardQuery.isFetching && Boolean(dashboard);
+
+  const retryDashboard = () => void dashboardQuery.refetch();
 
   return (
     <div className="space-y-8">
@@ -36,31 +40,54 @@ function DashboardPage() {
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <MetricCard
           title="Current Form"
-          value={dashboard ? dashboard.currentStatus.form : "..."}
+          value={
+            dashboard ? dashboard.currentStatus.form : isInitialLoading ? "Loading" : "Unavailable"
+          }
           description={
             dashboard
               ? `CTL ${dashboard.currentStatus.ctl} / ATL ${dashboard.currentStatus.atl}`
-              : "Loading dashboard status"
+              : isInitialLoading
+                ? "Loading dashboard status"
+                : "Dashboard status could not be loaded"
           }
           icon={<Activity className="h-4 w-4" />}
         />
         <MetricCard
           title="Consistency"
-          value={dashboard ? `${dashboard.consistency.streak} days` : "..."}
+          value={
+            dashboard
+              ? `${dashboard.consistency.streak} days`
+              : isInitialLoading
+                ? "Loading"
+                : "Unavailable"
+          }
           description={
             dashboard
               ? `${dashboard.consistency.weeklyCount} activities this week`
-              : "Loading consistency"
+              : isInitialLoading
+                ? "Loading consistency"
+                : "Consistency could not be loaded"
           }
           icon={<CalendarDays className="h-4 w-4" />}
         />
         <MetricCard
           title="Active Plan"
-          value={dashboard?.activePlan?.name ?? "No active plan"}
+          value={
+            dashboard?.activePlan?.name ??
+            (isInitialLoading
+              ? "Loading"
+              : dashboardQuery.isError
+                ? "Unavailable"
+                : "No active plan")
+          }
           description={
             dashboard?.activePlan?.phase
               ? `Phase: ${dashboard.activePlan.phase}`
-              : "Create or assign a plan to see progress here"
+              : isInitialLoading
+                ? "Loading active plan"
+                : dashboardQuery.isError
+                  ? "Active plan could not be loaded"
+                  : "Create or assign a plan to see progress here"
           }
           icon={<CalendarDays className="h-4 w-4" />}
         />
@@ -73,8 +100,14 @@ function DashboardPage() {
             <CardDescription>Your next planned sessions.</CardDescription>
           </CardHeader>
           <CardContent>
-            {dashboardQuery.isLoading ? (
+            {isInitialLoading ? (
               <p className="text-sm text-muted-foreground">Loading upcoming activities...</p>
+            ) : dashboardQuery.isError && !dashboard ? (
+              <QueryRetry
+                message="Upcoming activities could not be loaded."
+                isRetrying={dashboardQuery.isFetching}
+                onRetry={retryDashboard}
+              />
             ) : schedule.length > 0 ? (
               <div className="space-y-3">
                 {schedule.map((item) => (
@@ -107,6 +140,12 @@ function DashboardPage() {
             <CardDescription>Keep the home surface lightweight and task-oriented.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {isRefreshing ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
+                <RotateCcw className="h-3.5 w-3.5 animate-spin" />
+                Refreshing dashboard…
+              </div>
+            ) : null}
             <div className="rounded-lg border p-4">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <Target className="h-4 w-4 text-muted-foreground" />
@@ -121,9 +160,41 @@ function DashboardPage() {
             <p className="text-xs text-muted-foreground">
               Search is now the primary jump-off point for deeper areas of the web app.
             </p>
+            {dashboardQuery.isError && dashboard ? (
+              <QueryRetry
+                message="Showing your last loaded dashboard data."
+                isRetrying={dashboardQuery.isFetching}
+                onRetry={retryDashboard}
+              />
+            ) : null}
           </CardContent>
         </Card>
       </section>
+    </div>
+  );
+}
+
+function QueryRetry({
+  message,
+  isRetrying,
+  onRetry,
+}: {
+  message: string;
+  isRetrying: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground" role="alert">
+      <span>{message}</span>
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 font-medium text-foreground underline-offset-4 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+        disabled={isRetrying}
+        onClick={onRetry}
+      >
+        <RotateCcw className={isRetrying ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} />
+        {isRetrying ? "Retrying…" : "Retry"}
+      </button>
     </div>
   );
 }

@@ -1,3 +1,7 @@
+import {
+  accountDeletionUnavailableReason,
+  accountDeletionUnavailableTitle,
+} from "@repo/auth/account-deletion";
 import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";
 import { SettingItem, SettingsGroup } from "@repo/ui/components/settings-group";
@@ -61,7 +65,6 @@ export default function ProfileTabScreen() {
     profile,
     updateEmail,
     updatePassword,
-    deleteAccount,
     canUpdateEmail,
     updateEmailUnavailableReason,
   } = useAuth();
@@ -147,28 +150,6 @@ export default function ProfileTabScreen() {
       .catch((error: unknown) => {
         Alert.alert("Error", error instanceof Error ? error.message : "Failed to update password");
       });
-  };
-
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      "Delete Account",
-      "This permanently deletes your account and data. This cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            void deleteAccount().catch((error: unknown) => {
-              Alert.alert(
-                "Error",
-                error instanceof Error ? error.message : "Failed to delete account",
-              );
-            });
-          },
-        },
-      ],
-    );
   };
 
   return (
@@ -351,10 +332,13 @@ export default function ProfileTabScreen() {
           <SettingItem
             type="button"
             label="Delete Account"
-            description="Permanently delete your account and all data."
-            buttonLabel="Delete"
+            description={accountDeletionUnavailableReason}
+            buttonLabel="Unavailable"
             variant="destructive"
-            onPress={handleDeleteAccount}
+            onPress={() =>
+              Alert.alert(accountDeletionUnavailableTitle, accountDeletionUnavailableReason)
+            }
+            disabled
             testID="profile-tab-delete-account"
           />
         </SettingsGroup>

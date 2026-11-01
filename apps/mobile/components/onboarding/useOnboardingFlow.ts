@@ -2,7 +2,6 @@ import { estimateConservativeFTPFromWeight, estimateMaxHRFromDOB } from "@repo/c
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { buildCompleteOnboardingInput } from "@/lib/onboarding/complete-onboarding-input";
 import { isValidOnboardingUsername } from "@/lib/onboarding/validation";
@@ -28,7 +27,7 @@ export function useOnboardingFlow() {
     null,
   );
   const { completeOnboarding, isAuthenticated, isFullyLoaded } = useAuth();
-  const profileQueryEnabled = isFullyLoaded && isAuthenticated && hasSessionAuthCredentials();
+  const profileQueryEnabled = isFullyLoaded && isAuthenticated;
   const { data: profile } = api.profiles.get.useQuery(undefined, {
     enabled: profileQueryEnabled,
   });

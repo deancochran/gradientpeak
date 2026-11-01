@@ -36,7 +36,7 @@ function normalizeNotificationInput(data: unknown) {
 }
 
 export const markNotificationsReadAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeNotificationInput(data))
+  .validator((data) => normalizeNotificationInput(data))
   .handler(async ({ data }) => {
     try {
       const caller = await createServerActionCaller();

@@ -51,15 +51,6 @@ function createTrustedOrigins(appUrl: string, mobileScheme: string, trustedOrigi
   );
 }
 
-function createDeleteCleanupHook() {
-  return async (user: { id: string; email: string }) => {
-    console.warn("[auth] delete-user cleanup hook not configured", {
-      userId: user.id,
-      email: user.email,
-    });
-  };
-}
-
 function createAdapterSchema() {
   return schema as any;
 }
@@ -180,8 +171,7 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
         },
       },
       deleteUser: {
-        enabled: true,
-        afterDelete: createDeleteCleanupHook(),
+        enabled: false,
       },
     },
     trustedOrigins: createTrustedOrigins(env.appUrl, env.mobileScheme, options.trustedOrigins),

@@ -37,7 +37,7 @@ function normalizeSettingsProfileInput(data: unknown) {
 }
 
 export const updateSettingsProfileAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeSettingsProfileInput(data))
+  .validator((data) => normalizeSettingsProfileInput(data))
   .handler(async ({ data }) => {
     try {
       const caller = await createServerActionCaller();
@@ -102,7 +102,7 @@ function getAvatarFileExtension(fileName: string) {
 }
 
 export const uploadProfileAvatarAction = createServerFn({ method: "POST" })
-  .inputValidator((data) => normalizeAvatarUploadInput(data))
+  .validator((data) => normalizeAvatarUploadInput(data))
   .handler(async ({ data }) => {
     const headers = getRequestHeaders();
     const session = await resolveAuthSessionFromHeaders(headers);

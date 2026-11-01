@@ -1,10 +1,5 @@
 import { expect, test } from "../fixtures";
 
-test.skip(
-  !process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY,
-  "web smoke E2E requires a service-role credential to seed confirmed test users.",
-);
-
 test("athlete can open migrated protected routes", async ({ athletePage }) => {
   await expect(athletePage.getByRole("heading", { name: /welcome back/i })).toBeVisible();
 

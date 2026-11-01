@@ -72,6 +72,7 @@ export interface AuthOperations {
     input: z.infer<typeof resendVerificationInputSchema>,
   ): Promise<{ success: true }>;
   verifyEmail(input: z.infer<typeof verifyEmailInputSchema>): Promise<{ success: true }>;
+  /** @deprecated Account deletion is unavailable until durable cleanup safeguards are implemented. */
   deleteAccount(
     input: z.infer<typeof deleteAccountInputSchema>,
   ): Promise<z.infer<typeof accountDeletionResultSchema>>;

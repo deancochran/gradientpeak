@@ -14,7 +14,7 @@ const retryBodySchema = z
   })
   .strict();
 
-export const Route = createFileRoute("/api/internal/provider-sync/wahoo/retry" as never)({
+export const Route = createFileRoute("/api/internal/provider-sync/wahoo/retry")({
   server: {
     handlers: {
       POST: async ({ request }) => {

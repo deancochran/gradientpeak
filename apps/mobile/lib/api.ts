@@ -6,7 +6,7 @@ import {
   loggerLink,
 } from "@repo/api/react";
 import { Platform } from "react-native";
-import { getSessionAuthHeaders } from "@/lib/auth/auth-headers";
+import { getMobileAuthHeaders } from "@/lib/auth/client";
 import { getMobileDeviceKind, logMobileAction } from "@/lib/logging/mobile-action-log";
 import { getServerConfig } from "@/lib/server-config";
 
@@ -84,8 +84,8 @@ export const getApiUrl = () => {
   return url;
 };
 
-function createMobileHeaders() {
-  const authHeaders = getSessionAuthHeaders();
+async function createMobileHeaders(apiUrl: string) {
+  const authHeaders = await getMobileAuthHeaders(apiUrl);
   authHeaders.set("x-client-type", "mobile");
   authHeaders.set("x-api-source", "react-native");
   authHeaders.set("x-mobile-platform", Platform.OS);
@@ -102,7 +102,7 @@ export function getVanillaApiClient() {
     vanillaApiClient = createVanillaApiClient({
       url: currentUrl,
       fetch: fetchWithTimeout,
-      headers: createMobileHeaders,
+      headers: () => createMobileHeaders(currentUrl),
     });
     vanillaApiUrl = currentUrl;
   }
@@ -111,6 +111,8 @@ export function getVanillaApiClient() {
 }
 
 export function createApiClient() {
+  const url = getApiUrl();
+
   return api.createClient({
     links: [
       loggerLink({
@@ -118,9 +120,9 @@ export function createApiClient() {
         colorMode: "none",
       }),
       createApiBatchLink({
-        url: getApiUrl(),
+        url,
         fetch: fetchWithTimeout,
-        headers: createMobileHeaders,
+        headers: () => createMobileHeaders(url),
       }),
     ],
   });

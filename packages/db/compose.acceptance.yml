@@ -1,0 +1,23 @@
+# Acceptance-only PostgreSQL. No preserved data or named volumes are attached.
+# Supply a fresh hexadecimal DB_DISPOSABLE_TARGET_ID for each run.
+name: gradientpeak-acceptance-${DB_DISPOSABLE_TARGET_ID:?required}
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: gradientpeak_db_fresh_${DB_DISPOSABLE_TARGET_ID:?required}
+    labels:
+      com.gradientpeak.disposable: "true"
+      com.gradientpeak.target-id: ${DB_DISPOSABLE_TARGET_ID:?required}
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: acceptance-only
+      POSTGRES_DB: gradientpeak_fresh_${DB_DISPOSABLE_TARGET_ID:?required}
+    ports:
+      - "127.0.0.1::5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d $$POSTGRES_DB"]
+      interval: 1s
+      timeout: 5s
+      retries: 60

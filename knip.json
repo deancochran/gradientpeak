@@ -46,13 +46,13 @@
       }
     },
     "apps/web": {
+      "playwright": false,
+      "entry": ["e2e/**/*.spec.ts", "e2e/acceptance/server-preflight.mjs"],
       "ignoreDependencies": [
         "@tanstack/react-router-ssr-query",
         "@tanstack/router-plugin",
         "tailwindcss",
-        "@tailwindcss/typography",
-        "@testing-library/dom",
-        "@testing-library/react"
+        "@tailwindcss/typography"
       ]
     },
     "packages/core": {

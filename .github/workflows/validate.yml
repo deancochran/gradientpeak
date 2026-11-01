@@ -5,6 +5,8 @@ on:
     branches:
       - main
   pull_request:
+  merge_group:
+    types: [checks_requested]
 
 concurrency:
   group: validate-${{ github.workflow }}-${{ github.ref }}
@@ -27,6 +29,9 @@ jobs:
   changes:
     name: Changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       docs_only: ${{ steps.filter.outputs.docs == 'true' && steps.filter.outputs.non_docs != 'true' }}
       api_live_db_related: ${{ steps.filter.outputs.api_live_db_related }}
@@ -47,13 +52,11 @@ jobs:
               - '**/*.md'
               - '**/*.mdx'
               - 'docs/**'
-              - '.github/workflows/validate.yml'
             non_docs:
               - '**'
               - '!**/*.md'
               - '!**/*.mdx'
               - '!docs/**'
-              - '!.github/workflows/validate.yml'
             mobile_runtime_related:
               - 'apps/mobile/**'
               - '!apps/mobile/.maestro/**'
@@ -72,8 +75,14 @@ jobs:
               - 'packages/db/**'
             api_live_db_related:
               - 'packages/api/**'
+              - 'packages/auth/**'
+              - 'packages/core/**'
               - 'packages/db/**'
-              - 'packages/db/supabase/**'
+              - 'apps/web/**'
+              - '.github/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
             web_related:
               - 'apps/web/**'
               - 'packages/api/**'
@@ -100,8 +109,8 @@ jobs:
         run: |
           printf 'Docs-only change detected; skipping full validation suite.\n'
 
-  format-and-lint:
-    name: Format And Lint
+  quality-and-build:
+    name: Quality And Build
     runs-on: ubuntu-latest
     needs:
       - changes
@@ -128,134 +137,55 @@ jobs:
       - name: Run Biome CI
         run: pnpm check:ci
 
-  typecheck:
-    name: Typecheck
-    runs-on: ubuntu-latest
-    needs:
-      - changes
-    if: needs.changes.outputs.docs_only != 'true'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.33.0
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Test validation gate contract
+        run: node --test .github/scripts/validation-gate.test.mjs
 
       - name: Run type checks
         run: pnpm check-types
 
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    needs:
-      - changes
-    if: needs.changes.outputs.docs_only != 'true'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.33.0
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
       - name: Run builds
         run: pnpm build
-
-  unit-and-integration:
-    name: Unit And Integration
-    runs-on: ubuntu-latest
-    needs:
-      - changes
-    if: needs.changes.outputs.docs_only != 'true'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.33.0
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
 
       - name: Run unit and integration tests
         run: pnpm test
 
-  db-schema-parity:
-    name: DB Schema Parity
-    runs-on: ubuntu-latest
-    needs:
-      - changes
-    if: needs.changes.outputs.docs_only != 'true'
+      - name: Check unused code
+        run: pnpm knip
 
-    steps:
-      - name: Checkout
-        if: needs.changes.outputs.db_schema_related == 'true'
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        if: needs.changes.outputs.db_schema_related == 'true'
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.33.0
-
-      - name: Setup Node
-        if: needs.changes.outputs.db_schema_related == 'true'
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        if: needs.changes.outputs.db_schema_related == 'true'
-        run: pnpm install --frozen-lockfile
+      - name: Verify browser acceptance isolation
+        run: pnpm --filter web exec vitest run --config e2e/acceptance/vitest.config.ts
 
       - name: Run static DB verification
         if: needs.changes.outputs.db_schema_related == 'true'
         run: pnpm --filter @repo/db db:verify:static
 
-      - name: Skip schema parity when DB schema is unchanged
-        if: needs.changes.outputs.db_schema_related != 'true'
-        run: |
-          printf 'No packages/db changes detected; skipping schema parity check.\n'
-
   api-live-db:
-    name: API Live DB Smoke
+    name: Database And Browser Acceptance
     runs-on: ubuntu-latest
     needs:
       - changes
     if: needs.changes.outputs.docs_only != 'true'
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: acceptance-only
+          POSTGRES_DB: gradientpeak_fresh_0123456789abcdef
+        options: >-
+          --publish 127.0.0.1:54329:5432
+          --label com.gradientpeak.disposable=true
+          --label com.gradientpeak.target-id=0123456789abcdef
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres"
+          --health-interval 1s --health-timeout 5s --health-retries 60
+    env:
+      DB_DISPOSABLE_TARGET: "1"
+      DB_DISPOSABLE_TARGET_ID: "0123456789abcdef"
+      DB_DISPOSABLE_DATABASE: gradientpeak_fresh_0123456789abcdef
+      DATABASE_URL: postgresql://postgres:acceptance-only@127.0.0.1:54329/gradientpeak_fresh_0123456789abcdef
+      POSTGRES_URL: postgresql://postgres:acceptance-only@127.0.0.1:54329/gradientpeak_fresh_0123456789abcdef
+      SUPABASE_DB_URL: postgresql://postgres:acceptance-only@127.0.0.1:54329/gradientpeak_fresh_0123456789abcdef
 
     steps:
       - name: Checkout
@@ -279,35 +209,25 @@ jobs:
         if: needs.changes.outputs.api_live_db_related == 'true'
         run: pnpm install --frozen-lockfile
 
-      - name: Setup Supabase CLI
+      - name: Prepare verified fresh database
         if: needs.changes.outputs.api_live_db_related == 'true'
-        uses: supabase/setup-cli@v1
-        with:
-          version: latest
-
-      - name: Start local Supabase
-        if: needs.changes.outputs.api_live_db_related == 'true'
-        run: pnpm run self-host:up
-
-      - name: Wait for Supabase
-        if: needs.changes.outputs.api_live_db_related == 'true'
-        run: |
-          for i in $(seq 1 180); do
-            nc -z 127.0.0.1 54321 && exit 0
-            sleep 1
-          done
-          echo "Timed out waiting for supabase on 127.0.0.1:54321" >&2
-          exit 1
-
-      - name: Apply local database schema
-        if: needs.changes.outputs.api_live_db_related == 'true'
-        run: |
-          pnpm --filter @repo/db db:reset
-          pnpm --filter @repo/db db:push:local
+        env:
+          DB_ACCEPTANCE_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: pnpm --filter @repo/db db:acceptance:prepare
 
       - name: Run API live DB smoke tests
         if: needs.changes.outputs.api_live_db_related == 'true'
         run: pnpm --filter @repo/api test:live-db
+
+      - name: Install Chromium
+        if: needs.changes.outputs.api_live_db_related == 'true'
+        run: pnpm --filter web exec playwright install --with-deps chromium
+
+      - name: Run authenticated browser acceptance
+        if: needs.changes.outputs.api_live_db_related == 'true'
+        env:
+          DB_ACCEPTANCE_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: pnpm --filter web exec playwright test --config playwright.acceptance.config.ts
 
       - name: Skip live DB smoke when API and DB are unchanged
         if: needs.changes.outputs.api_live_db_related != 'true'
@@ -319,7 +239,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-    if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.mobile_runtime_related == 'true'
+    if: needs.changes.outputs.docs_only != 'true'
 
     steps:
       - name: Checkout
@@ -342,20 +262,30 @@ jobs:
       - name: Run mobile Jest tests
         run: pnpm --filter mobile test:jest
 
+      - name: Bundle iOS with Metro
+        env:
+          CI: "1"
+          EXPO_NO_DOTENV: "1"
+          EXPO_PUBLIC_API_URL: http://127.0.0.1:3100
+          EXPO_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+        run: pnpm --filter mobile exec expo export --platform ios --output-dir ../../.tmp/ci-ios-export
+
   full-validation-suite:
-    name: Full Validation Suite
+    name: Basic checks
     runs-on: ubuntu-latest
     needs:
       - changes
-      - format-and-lint
-      - typecheck
-      - build
-      - unit-and-integration
-      - db-schema-parity
+      - docs-only
+      - quality-and-build
       - api-live-db
-    if: needs.changes.outputs.docs_only != 'true'
+      - mobile-component-and-jest
+    if: always()
 
     steps:
-      - name: Validation gate passed
-        run: |
-          printf 'All prerequisite validation jobs passed.\n'
+      - name: Checkout gate implementation
+        uses: actions/checkout@v4
+
+      - name: Require successful validation jobs
+        env:
+          VALIDATION_NEEDS: ${{ toJSON(needs) }}
+        run: node .github/scripts/validation-gate.mjs

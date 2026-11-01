@@ -1,7 +1,6 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
-import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import {
   attachSelectedGroupEventActivityPlans,
   getSelectedGroupEventActivityPlanIds,
@@ -57,9 +56,7 @@ export function usePlanTrainingPathData() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [pendingSelectedWeekStart, setPendingSelectedWeekStart] = useState<string | null>(null);
   const lastProjectionRefreshKeyRef = useRef<string | null>(null);
-  const eventsQueryEnabled = useAuthStore(
-    (state) => state.ready && !!state.session && hasSessionAuthCredentials(),
-  );
+  const eventsQueryEnabled = useAuthStore((state) => state.ready && !!state.session);
 
   const activePlanQuery = api.trainingPlans.getActivePlan.useQuery(undefined, {
     ...scheduleAwareReadQueryOptions,

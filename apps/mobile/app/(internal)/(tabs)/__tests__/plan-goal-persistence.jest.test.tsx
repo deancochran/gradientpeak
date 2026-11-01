@@ -27,11 +27,6 @@ jest.mock("@react-navigation/native", () => ({
   useFocusEffect: (callback: () => void) => callback(),
 }));
 
-jest.mock("@/lib/auth/auth-headers", () => ({
-  __esModule: true,
-  hasSessionAuthCredentials: () => true,
-}));
-
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
   useAuthStore: (selector?: any) => {

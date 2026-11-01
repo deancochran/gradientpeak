@@ -1,5 +1,17 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
+import React from "react";
 import { DailyTrainingAdjustmentChart } from "./DailyTrainingAdjustmentChart";
+
+jest.mock("react-native-reanimated", () => ({
+  __esModule: true,
+  runOnJS: (callback: (...args: unknown[]) => unknown) => callback,
+  useAnimatedReaction: jest.fn(),
+}));
+
+jest.mock("react-native-gesture-handler", () => ({
+  __esModule: true,
+  ScrollView: ({ children, ...props }: any) => React.createElement("ScrollView", props, children),
+}));
 
 describe("DailyTrainingAdjustmentChart", () => {
   it("renders the selected daily adjustment tray", () => {

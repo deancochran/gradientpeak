@@ -8,13 +8,15 @@ import { nitro } from "nitro/vite";
 import { defineConfig, loadEnv } from "vite";
 
 const config = defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "");
+  const acceptanceMode = process.env.WEB_ACCEPTANCE === "1";
+  const env = acceptanceMode ? {} : loadEnv(mode, process.cwd(), "");
 
   for (const [key, value] of Object.entries(env)) {
     process.env[key] ??= value;
   }
 
   return {
+    envDir: acceptanceMode ? false : undefined,
     server: {
       allowedHosts: ["outgoing-ape-repeatedly.ngrok-free.app"],
       host: "0.0.0.0",
@@ -24,7 +26,9 @@ const config = defineConfig(({ mode }) => {
       host: "0.0.0.0",
       port: Number(process.env.PORT ?? 3000),
     },
-    resolve: { tsconfigPaths: true },
+    resolve: { tsconfigPaths: true, dedupe: ["react", "react-dom"] },
+    // Both packages have hoisted React peers; SSR must use the app's React copy.
+    ssr: { noExternal: ["@trpc/react-query", "better-auth"] },
     plugins: [
       devtools(),
       tailwindcss(),

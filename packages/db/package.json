@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./acceptance-target": "./scripts/acceptance-target.ts",
     ".": {
       "types": "./index.ts",
       "default": "./index.ts"
@@ -22,6 +23,7 @@
     }
   },
   "scripts": {
+    "db:acceptance:prepare": "tsx scripts/prepare-acceptance.ts",
     "build": "tsc",
     "check-types": "tsc --noEmit",
     "dev": "tsc",

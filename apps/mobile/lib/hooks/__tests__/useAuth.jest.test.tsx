@@ -6,6 +6,10 @@ const refetchProfileMock = jest.fn();
 const invalidateProfileMock = jest.fn();
 const refreshMobileAuthSessionMock = jest.fn(async () => null);
 const profileQueryUseQueryMock = jest.fn();
+const deleteMobileAccountMock = jest.fn(async () => {
+  throw new Error("Account deletion is unavailable");
+});
+const clearSessionMock = jest.fn(async () => undefined);
 
 const authStoreState = {
   session: { user: { id: "user-1" } },
@@ -22,6 +26,7 @@ const authStoreState = {
   },
   setProfile: setProfileMock,
   setOnboardingStatus: setOnboardingStatusMock,
+  clearSession: clearSessionMock,
 };
 
 const profileQueryResult = {
@@ -54,7 +59,7 @@ jest.mock("react-native/Libraries/AppState/AppState", () => ({
 
 jest.mock("@/lib/auth/account-management", () => ({
   __esModule: true,
-  deleteMobileAccount: jest.fn(async () => ({ error: null })),
+  deleteMobileAccount: () => deleteMobileAccountMock(),
   updateMobileEmail: jest.fn(async () => ({ error: null })),
   updateMobilePassword: jest.fn(async () => ({ error: null })),
 }));
@@ -96,6 +101,8 @@ describe("useAuth optimistic onboarding precedence", () => {
     refetchProfileMock.mockClear();
     invalidateProfileMock.mockClear();
     refreshMobileAuthSessionMock.mockClear();
+    deleteMobileAccountMock.mockClear();
+    clearSessionMock.mockClear();
     profileQueryUseQueryMock.mockReset();
     profileQueryUseQueryMock.mockReturnValue(profileQueryResult);
     authStoreState.user = { id: "user-1", email: "athlete@test.com", emailVerified: true };
@@ -152,5 +159,21 @@ describe("useAuth optimistic onboarding precedence", () => {
       avatar_url: "https://new.example/avatar.png",
       updated_at: "2026-04-23T00:00:00.000Z",
     });
+  });
+
+  it("preserves the local session when account deletion is unavailable", async () => {
+    const { result } = renderHook(() => useAuth());
+    const consoleError = jest.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      await expect(result.current.deleteAccount()).rejects.toThrow(
+        "Account deletion is unavailable",
+      );
+
+      expect(deleteMobileAccountMock).toHaveBeenCalledTimes(1);
+      expect(clearSessionMock).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });

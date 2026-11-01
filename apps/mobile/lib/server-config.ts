@@ -3,7 +3,8 @@ import { safeSecureStore } from "@/lib/storage/safe-secure-store";
 
 const SERVER_URL_OVERRIDE_KEY = "server_url_override";
 const useLocalE2EHost = process.env.EXPO_PUBLIC_MAESTRO_E2E === "1";
-const appEnvironment = process.env.APP_ENV ?? "development";
+const appEnvironment = process.env.APP_ENV;
+const isDevelopmentRuntime = (globalThis as { __DEV__?: boolean }).__DEV__ === true;
 
 const hostedApiUrl = useLocalE2EHost
   ? requireUrl(
@@ -38,7 +39,7 @@ const listeners = new Set<() => void>();
 let initializePromise: Promise<void> | null = null;
 
 export function isServerUrlOverrideEnabled() {
-  return appEnvironment !== "production" || process.env.EXPO_PUBLIC_ENABLE_SERVER_OVERRIDE === "1";
+  return isDevelopmentRuntime && appEnvironment === "development";
 }
 
 function emit() {

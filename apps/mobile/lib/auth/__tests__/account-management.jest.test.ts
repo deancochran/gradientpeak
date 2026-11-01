@@ -46,9 +46,9 @@ describe("account-management mobile auth boundary", () => {
     });
   });
 
-  it("delegates account deletion through the auth client adapter", async () => {
-    await deleteMobileAccount();
+  it("fails closed without calling the auth client deletion endpoint", async () => {
+    await expect(deleteMobileAccount()).rejects.toThrow("Account deletion is unavailable");
 
-    expect(deleteUserMock).toHaveBeenCalledWith({});
+    expect(deleteUserMock).not.toHaveBeenCalled();
   });
 });
