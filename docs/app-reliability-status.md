@@ -109,6 +109,9 @@ Acceptance continuation evidence:
   This is bundle evidence, not a native-device run. Independent review also found
   the upgraded mobile tRPC cookie path used an unpopulated cache; an authoritative
   async cookie-path repair and regressions are still required before acceptance.
+  The first async repair passed mocked transport tests but further review found
+  distinct login/request SecureStore namespaces and unsafe server switching;
+  real storage-adapter and cross-origin tests are required before acceptance.
 - Fresh replay passes the repaired `0006` but exposed missing group-table history
   at `0016`. The user explicitly approved reconciling the current main migration
   history on new disposable targets, without mutating existing databases.

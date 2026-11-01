@@ -41,6 +41,12 @@ test("workflow wires every required job into the always-running Basic checks gat
   assert.ok(!source.includes("- '!.github/workflows/validate.yml'"));
   const changes = source.split("  changes:\n")[1].split("    outputs:")[0];
   assert.match(changes, /pull-requests: read/);
+  const mobile = source
+    .split("  mobile-component-and-jest:\n")[1]
+    .split("  full-validation-suite:\n")[0];
+  assert.match(mobile, /pnpm --filter mobile test:jest/);
+  assert.match(mobile, /expo export --platform ios/);
+  assert.match(mobile, /EXPO_NO_DOTENV: "1"/);
 });
 
 test("security checks cannot be advisory on pull requests", () => {

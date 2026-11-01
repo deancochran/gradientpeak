@@ -354,6 +354,14 @@ jobs:
       - name: Run mobile Jest tests
         run: pnpm --filter mobile test:jest
 
+      - name: Bundle iOS with Metro
+        env:
+          CI: "1"
+          EXPO_NO_DOTENV: "1"
+          EXPO_PUBLIC_API_URL: http://127.0.0.1:3100
+          EXPO_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+        run: pnpm --filter mobile exec expo export --platform ios --output-dir ../../.tmp/ci-ios-export
+
   full-validation-suite:
     name: Basic checks
     runs-on: ubuntu-latest
