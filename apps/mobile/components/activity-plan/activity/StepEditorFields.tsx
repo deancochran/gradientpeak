@@ -20,6 +20,7 @@ import {
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { ChoiceField } from "@repo/ui/components/choice-field";
+import { Disclosure } from "@repo/ui/components/disclosure";
 import { Form, FormTextField } from "@repo/ui/components/form";
 import { NativeQuantityInput } from "@repo/ui/components/native-quantity-input";
 import { PaceInput } from "@repo/ui/components/pace-input";
@@ -97,6 +98,7 @@ export function StepEditorFields({
   activityCategory,
 }: StepEditorFieldsProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(Boolean(step.name || step.instructions));
   const invalidExactEntries = useRef(new Set<string>());
   const targetDrafts = useRef(new Map<string, string>());
   const durationDraft = useRef<StepDurationDraft>({});
@@ -155,16 +157,8 @@ export function StepEditorFields({
       next === "rest" ? { type: "rest" as const } : getActivityPlanTargetTypeDefault(next);
     if (next === "rest") {
       form.setValue("targets", [replacement], { shouldDirty: true, shouldValidate: true });
-      if (duration?.type !== "time") {
-        form.setValue(
-          "duration",
-          { type: "time", seconds: 60 },
-          {
-            shouldDirty: true,
-            shouldValidate: true,
-          },
-        );
-      }
+      // Keep the author's chosen duration visible. Rest requires time at validation,
+      // but selecting it must not silently replace a distance/repetition prescription.
     } else {
       form.setValue(`targets.${index}` as never, replacement as never, {
         shouldDirty: true,
@@ -506,27 +500,33 @@ export function StepEditorFields({
         ) : null}
       </View>
       <Form {...form}>
-        <View className="gap-3 border-t border-border pt-4" testID="step-details-section">
-          <FormTextField
-            control={form.control}
-            label="Name (optional)"
-            name="name"
-            placeholder="Step name"
-          />
-        </View>
-        <View className="gap-3 border-t border-border pt-4" testID="step-notes-section">
-          <Text className="text-xs font-semibold tracking-wide text-muted-foreground">NOTES</Text>
-          <View testID="step-notes-field">
+        <Disclosure
+          label={step.name || step.instructions ? "Step details" : "Add name or coaching cue"}
+          open={detailsOpen}
+          onOpenChange={setDetailsOpen}
+          testId="step-details-disclosure"
+        >
+          <View className="gap-3 border-t border-border pt-4" testID="step-details-section">
             <FormTextField
               control={form.control}
-              label="Notes (optional)"
-              name="instructions"
-              placeholder="One short cue, up to 160 characters"
-              testId="step-notes-input"
-              description="One line, up to 160 characters. Put details in the activity plan description."
+              label="Name (optional)"
+              name="name"
+              placeholder="Step name"
             />
           </View>
-        </View>
+          <View className="gap-3" testID="step-notes-section">
+            <View testID="step-notes-field">
+              <FormTextField
+                control={form.control}
+                label="Coaching cue (optional)"
+                name="instructions"
+                placeholder="One short cue, up to 160 characters"
+                testId="step-notes-input"
+                description="One line, up to 160 characters. Put details in the activity plan description."
+              />
+            </View>
+          </View>
+        </Disclosure>
       </Form>
       {saveError ? (
         <Text accessibilityRole="alert" className="text-destructive">

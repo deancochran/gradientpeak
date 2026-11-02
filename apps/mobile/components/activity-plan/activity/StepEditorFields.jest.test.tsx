@@ -40,12 +40,12 @@ describe("StepEditorFields screen form", () => {
       });
     });
   });
-  it("orders Duration, Intensity, optional details, then Notes with persistent current-value rows", async () => {
+  it("keeps populated optional step details open with persistent current-value rows", async () => {
     const { container } = await renderNative(
       <StepEditorFields activityCategory="bike" onDirtyChange={() => undefined} step={step} />,
     );
     expect(screen.getByLabelText("Name (optional)")).toBeTruthy();
-    expect(screen.getByLabelText("Notes (optional)")).toBeTruthy();
+    expect(screen.getByLabelText("Coaching cue (optional)")).toBeTruthy();
     expect(screen.getByLabelText("Duration type: Time")).toBeTruthy();
     expect(screen.getByLabelText("Duration value").props.accessibilityValue.text).toBe("0:01:00");
     expect(screen.getByText("Duration value")).toBeTruthy();
@@ -64,7 +64,6 @@ describe("StepEditorFields screen form", () => {
     expect(screen.getByText("90 rpm")).toBeTruthy();
     expect(screen.getByText("DURATION")).toBeTruthy();
     expect(screen.getByText("INTENSITY")).toBeTruthy();
-    expect(screen.getByText("NOTES")).toBeTruthy();
     expect(
       container
         .queryAll(
@@ -103,11 +102,25 @@ describe("StepEditorFields screen form", () => {
       <StepEditorFields activityCategory="bike" onDirtyChange={() => undefined} step={step} />,
     );
     await fireEvent.changeText(screen.getByLabelText("Name (optional)"), "Warm up");
-    await fireEvent.changeText(screen.getByLabelText("Notes (optional)"), "Easy cadence.");
+    await fireEvent.changeText(screen.getByLabelText("Coaching cue (optional)"), "Easy cadence.");
     expect(screen.getByLabelText("Name (optional)").props.value).toBe("Warm up");
-    expect(screen.getByLabelText("Notes (optional)").props.value).toBe("Easy cadence.");
+    expect(screen.getByLabelText("Coaching cue (optional)").props.value).toBe("Easy cadence.");
     expect(screen.getByTestId("target-row-0").props.className).toContain("gap-2");
     expect(screen.getByLabelText("Remove target 1").props.className).toContain("min-h-12");
+  });
+
+  it("keeps empty optional details collapsed until explicitly opened", async () => {
+    await renderNative(
+      <StepEditorFields
+        activityCategory="bike"
+        onDirtyChange={() => undefined}
+        step={{ ...step, name: undefined, instructions: undefined }}
+      />,
+    );
+    expect(screen.queryByLabelText("Name (optional)")).toBeNull();
+    await fireEvent.press(screen.getByText("Add name or coaching cue"));
+    expect(screen.getByLabelText("Name (optional)")).toBeTruthy();
+    expect(screen.getByLabelText("Coaching cue (optional)")).toBeTruthy();
   });
 
   it("uses single-line notes and rejects pasted paragraphs without discarding the draft", async () => {

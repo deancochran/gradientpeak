@@ -25,6 +25,7 @@ import {
 import { parseNumericInput } from "@repo/core/utils/numeric-ux-policy";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
+import { Disclosure } from "@repo/ui/components/disclosure";
 import { Input } from "@repo/ui/components/input";
 import { Textarea } from "@repo/ui/components/textarea";
 import { Copy, GripVertical, Plus, Trash2 } from "lucide-react";
@@ -403,26 +404,7 @@ export function ActivityPlanComposer({
       }}
     >
       <fieldset className="space-y-5 border-0 p-0" disabled={busy || persisted.current}>
-        <section className="space-y-3" aria-label="Plan details">
-          <label className="block text-sm font-medium" htmlFor="activity-plan-category">
-            Activity category
-          </label>
-          <select
-            id="activity-plan-category"
-            className="h-10 w-full rounded-md border bg-background px-3"
-            value={structure.activity_category ?? ""}
-            onChange={(event) => {
-              if (event.target.value)
-                changeCategory(event.target.value as CanonicalActivityCategory);
-            }}
-          >
-            <option value="">Choose an activity</option>
-            {categories.map((category) => (
-              <option key={category} value={category}>
-                {category}
-              </option>
-            ))}
-          </select>
+        <section className="space-y-3 rounded-2xl border bg-card p-4" aria-label="Plan details">
           <label className="block text-sm font-medium" htmlFor="activity-plan-name">
             Plan name
           </label>
@@ -437,28 +419,43 @@ export function ActivityPlanComposer({
           {submitAttempted && !name.trim() ? (
             <p className="text-sm text-destructive">Enter a plan name before saving.</p>
           ) : null}
-          {descriptionOpen ? (
-            <>
-              <label className="block text-sm font-medium" htmlFor="activity-plan-description">
-                Description
-              </label>
-              <Textarea
-                id="activity-plan-description"
-                maxLength={3000}
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-              />
-            </>
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setDescriptionOpen(true)}
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="sr-only" htmlFor="activity-plan-category">
+              Activity category
+            </label>
+            <select
+              id="activity-plan-category"
+              className="h-9 rounded-full border bg-secondary px-3 text-sm font-medium"
+              value={structure.activity_category ?? ""}
+              onChange={(event) => {
+                if (event.target.value)
+                  changeCategory(event.target.value as CanonicalActivityCategory);
+              }}
             >
-              Add description
-            </Button>
-          )}
+              <option value="">Choose an activity</option>
+              {categories.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Disclosure
+            label={description ? "Plan details" : "Add description"}
+            open={descriptionOpen}
+            onOpenChange={setDescriptionOpen}
+            testId="activity-plan-description-disclosure"
+          >
+            <label className="block text-sm font-medium" htmlFor="activity-plan-description">
+              Description
+            </label>
+            <Textarea
+              id="activity-plan-description"
+              maxLength={3000}
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+            />
+          </Disclosure>
           <div className="flex flex-wrap items-center gap-3">
             <label className="text-sm" htmlFor="activity-plan-visibility">
               Visibility
@@ -1226,10 +1223,6 @@ function StepEditor({
                     type === "rest"
                       ? {
                           ...item,
-                          duration:
-                            item.duration?.type === "time"
-                              ? item.duration
-                              : { type: "time", seconds: 60 },
                           targets: [{ type: "rest" }],
                         }
                       : {

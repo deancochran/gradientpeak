@@ -44,6 +44,7 @@ type ActivityPlanContentPreviewProps = {
   onPersonalizeTargetsChange?: (enabled: boolean) => void;
   showPersonalizationControl?: boolean;
   size?: "small" | "medium" | "large";
+  timelineHeight?: number;
   testIDPrefix?: string;
 };
 
@@ -380,6 +381,7 @@ export function ActivityPlanContentPreview({
   presentation,
   showPersonalizationControl = false,
   size,
+  timelineHeight,
   testIDPrefix,
 }: ActivityPlanContentPreviewProps) {
   const resolvedSize = size ?? (compact ? "small" : "large");
@@ -424,7 +426,10 @@ export function ActivityPlanContentPreview({
           {structure ? (
             <TimelineChart
               presentation={timelinePresentation}
-              height={resolvedSize === "small" ? 72 : resolvedSize === "medium" ? 92 : 104}
+              height={
+                timelineHeight ??
+                (resolvedSize === "small" ? 72 : resolvedSize === "medium" ? 92 : 104)
+              }
               compact={resolvedSize !== "large"}
             />
           ) : null}

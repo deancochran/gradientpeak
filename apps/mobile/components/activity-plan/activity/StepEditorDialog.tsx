@@ -85,11 +85,11 @@ function StepDialogSession(props: StepEditorDialogProps) {
           onPress={() => void save()}
           variant="ghost"
         >
-          <Text className="font-semibold">{isNew ? "Add" : "Save"}</Text>
+          <Text className="font-semibold">{isNew ? "Add step" : "Apply changes"}</Text>
         </Button>
       }
       testID="step-editor-modal"
-      title={isNew ? "Add Step" : "Edit Step"}
+      title={isNew ? "Add step" : "Edit step"}
     >
       <StepEditorFields
         ref={fields}

@@ -50,7 +50,7 @@ describe("ActivityPlanComposer draft boundary", () => {
     expect(onSave).not.toHaveBeenCalled();
     expect((input as HTMLInputElement).value).toHaveLength(161);
   });
-  it("selects sole timed rest without reinterpreting distance as seconds or requiring intensity", () => {
+  it("keeps an explicit duration when selecting rest and requires an intentional timed repair", () => {
     const onSave = renderCreate();
     fireEvent.change(screen.getByLabelText("Activity category"), { target: { value: "run" } });
     fireEvent.change(screen.getByLabelText("Plan name"), { target: { value: "Rest" } });
@@ -63,9 +63,13 @@ describe("ActivityPlanComposer draft boundary", () => {
     expect(screen.queryByLabelText("Target type 2")).toBeNull();
     expect(screen.queryByLabelText("Target intensity 1")).toBeNull();
     expect(screen.queryByRole("button", { name: "Add target" })).toBeNull();
-    expect((screen.getByLabelText("Completion") as HTMLSelectElement).value).toBe("time");
+    expect((screen.getByLabelText("Completion") as HTMLSelectElement).value).toBe("distance");
     fireEvent.submit(screen.getByTestId("activity-plan-composer"));
-    expect(screen.queryAllByRole("alert").map((alert) => alert.textContent)).toEqual([]);
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("rest target requires a positive time");
+    fireEvent.change(screen.getByLabelText("Completion"), { target: { value: "time" } });
+    fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "60" } });
+    fireEvent.submit(screen.getByTestId("activity-plan-composer"));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
         structure: expect.objectContaining({

@@ -41,7 +41,7 @@ describe("StepEditorDialog", () => {
     );
     expect(screen.getByTestId("step-editor-modal").props.presentationStyle).toBe("fullScreen");
     expect(screen.getByLabelText("Name (optional)")).toBeTruthy();
-    expect(screen.getByLabelText("Notes (optional)")).toBeTruthy();
+    expect(screen.getByLabelText("Coaching cue (optional)")).toBeTruthy();
     expect(screen.getByLabelText("Duration type: Time")).toBeTruthy();
     expect(screen.getByLabelText("Duration value")).toBeTruthy();
     expect(screen.getByLabelText("Target type: RPE")).toBeTruthy();

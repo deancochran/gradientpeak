@@ -1,4 +1,5 @@
 import { Button } from "@repo/ui/components/button";
+import { Disclosure } from "@repo/ui/components/disclosure";
 import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -114,7 +115,13 @@ export function ActivityPlanBasicsSection({
           </Text>
         ) : null}
 
-        {descriptionOpen ? (
+        <Disclosure
+          disabled={disabled}
+          label={description ? "Plan details" : "Add description"}
+          open={descriptionOpen}
+          onOpenChange={setDescriptionOpen}
+          testId="activity-plan-description-disclosure"
+        >
           <View className="gap-1">
             <FormTextareaField
               disabled={disabled}
@@ -140,30 +147,19 @@ export function ActivityPlanBasicsSection({
               >
                 <Text className="text-muted-foreground">Clear</Text>
               </Button>
-              {!description ? (
-                <Button
-                  accessibilityLabel="Cancel description"
-                  disabled={disabled}
-                  size="sm"
-                  variant="ghost"
-                  className="min-h-10 self-start px-1"
-                  onPress={() => setDescriptionOpen(false)}
-                >
-                  <Text className="text-muted-foreground">Cancel</Text>
-                </Button>
-              ) : null}
+              <Button
+                accessibilityLabel={description ? "Hide plan details" : "Cancel description"}
+                disabled={disabled}
+                size="sm"
+                variant="ghost"
+                className="min-h-10 self-start px-1"
+                onPress={() => setDescriptionOpen(false)}
+              >
+                <Text className="text-muted-foreground">{description ? "Hide" : "Cancel"}</Text>
+              </Button>
             </View>
           </View>
-        ) : (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="self-start px-1"
-            onPress={() => setDescriptionOpen(true)}
-          >
-            <Text>Add description</Text>
-          </Button>
-        )}
+        </Disclosure>
       </View>
     </Form>
   );
