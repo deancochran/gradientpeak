@@ -292,8 +292,7 @@ export function StepEditorFields({
 
   return (
     <View className="gap-4" testID="step-editor-fields">
-      <View className="gap-3" testID="step-duration-section">
-        <Text className="text-xs font-semibold tracking-wide text-muted-foreground">DURATION</Text>
+      <View testID="step-duration-section">
         <Form {...form}>
           <StepDurationField
             ref={durationRef}
@@ -304,8 +303,7 @@ export function StepEditorFields({
           />
         </Form>
       </View>
-      <View className="gap-3 border-t border-border pt-4" testID="step-intensity-section">
-        <Text className="text-xs font-semibold tracking-wide text-muted-foreground">INTENSITY</Text>
+      <View className="gap-3" testID="step-intensity-section">
         {targetFields.map((targetField, index) => {
           const target = targets[index];
           if (!target) return null;
@@ -314,18 +312,27 @@ export function StepEditorFields({
               <View
                 key={targetField.id}
                 testID={`target-row-${index}`}
-                className="gap-2 border-b border-border pb-3"
+                className="gap-3 rounded-xl bg-card p-3.5"
               >
-                <ChoiceField
-                  required
-                  label="Target type"
-                  nativePresentation="menu"
-                  value="rest"
-                  options={[
-                    { value: "rest", label: targetTypePresentationLabel("rest", activityCategory) },
-                  ]}
-                  onChange={() => undefined}
-                />
+                <View className="flex-row items-start gap-3">
+                  <Text className="min-h-11 flex-1 pt-2 text-sm font-semibold">Target</Text>
+                  <View className="min-w-[148px] flex-1">
+                    <ChoiceField
+                      density="compact"
+                      required
+                      label="Target type"
+                      nativePresentation="menu"
+                      value="rest"
+                      options={[
+                        {
+                          value: "rest",
+                          label: targetTypePresentationLabel("rest", activityCategory),
+                        },
+                      ]}
+                      onChange={() => undefined}
+                    />
+                  </View>
+                </View>
                 <Text className="text-sm text-muted-foreground">Rest has no intensity target.</Text>
               </View>
             );
@@ -340,20 +347,26 @@ export function StepEditorFields({
             <View
               key={targetField.id}
               testID={`target-row-${index}`}
-              className="gap-2 border-b border-border pb-3"
+              className="gap-3 rounded-xl bg-card p-3.5"
             >
-              <View>
-                <ChoiceField
-                  required
-                  label={targetFields.length === 1 ? "Target type" : `Target ${index + 1} type`}
-                  nativePresentation="menu"
-                  value={target.type}
-                  options={permittedTargetTypes.map((type) => ({
-                    value: type,
-                    label: targetTypePresentationLabel(type, activityCategory),
-                  }))}
-                  onChange={(value) => changeTargetType(index, value)}
-                />
+              <View className="flex-row items-start gap-3">
+                <Text className="min-h-11 flex-1 pt-2 text-sm font-semibold">
+                  {index === 0 ? "Target" : `Target ${index + 1}`}
+                </Text>
+                <View className="min-w-[148px] flex-1">
+                  <ChoiceField
+                    density="compact"
+                    required
+                    label={targetFields.length === 1 ? "Target type" : `Target ${index + 1} type`}
+                    nativePresentation="menu"
+                    value={target.type}
+                    options={permittedTargetTypes.map((type) => ({
+                      value: type,
+                      label: targetTypePresentationLabel(type, activityCategory),
+                    }))}
+                    onChange={(value) => changeTargetType(index, value)}
+                  />
+                </View>
               </View>
               <View>
                 <Controller
@@ -474,13 +487,12 @@ export function StepEditorFields({
               <View className="items-end">
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="min-h-12"
+                  size="icon"
+                  className="min-h-11 min-w-11"
                   accessibilityLabel={`Remove target ${index + 1}`}
                   onPress={() => removeTarget(index)}
                 >
                   <X size={18} />
-                  <Text>Remove</Text>
                 </Button>
               </View>
             </View>
@@ -491,7 +503,7 @@ export function StepEditorFields({
           <Button
             variant="ghost"
             size="sm"
-            className="self-start"
+            className="min-h-11 self-start px-2"
             accessibilityLabel="Add target"
             onPress={addTarget}
           >

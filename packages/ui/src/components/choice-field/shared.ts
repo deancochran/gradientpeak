@@ -31,6 +31,8 @@ export interface ChoiceFieldProps<T extends ChoiceValue> extends TestProps {
   resetKey?: string | number | undefined;
   formControl?: object | undefined;
   fieldName?: string | undefined;
+  /** Keeps semantic label/control pairing compact inside dense authoring panels. */
+  density?: "default" | "compact" | undefined;
 }
 
 export function resolveChoice<T extends ChoiceValue>(

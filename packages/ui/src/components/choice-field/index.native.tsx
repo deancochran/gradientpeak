@@ -191,7 +191,10 @@ export function ChoiceField<T extends ChoiceValue>(props: ChoiceFieldProps<T>) {
     );
   const ownsSearchSheet = policy === "searchable" && !panel;
   return (
-    <View className="gap-2" onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
+    <View
+      className={props.density === "compact" ? "gap-1" : "gap-2"}
+      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+    >
       {ownsSearchSheet ? (
         <Pressable
           ref={trigger}
@@ -229,7 +232,7 @@ export function ChoiceField<T extends ChoiceValue>(props: ChoiceFieldProps<T>) {
           accessibilityState={{ disabled: Boolean(props.disabled) }}
           testID={props.testId}
         >
-          <Text className="font-medium">
+          <Text className={props.density === "compact" ? "text-xs font-medium" : "font-medium"}>
             {props.label}
             {props.required ? " *" : ""}
           </Text>

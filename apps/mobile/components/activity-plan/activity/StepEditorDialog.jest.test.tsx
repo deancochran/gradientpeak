@@ -29,7 +29,7 @@ const step: ActivityPlanStep = {
 };
 
 describe("StepEditorDialog", () => {
-  it("is one full-screen save transaction with all applicable form inputs visible", async () => {
+  it("uses one keyboard-aware page-sheet transaction with all applicable form inputs visible", async () => {
     await renderNative(
       <StepEditorDialog
         open
@@ -39,7 +39,7 @@ describe("StepEditorDialog", () => {
         step={step}
       />,
     );
-    expect(screen.getByTestId("step-editor-modal").props.presentationStyle).toBe("fullScreen");
+    expect(screen.getByTestId("step-editor-modal").props.presentationStyle).toBe("pageSheet");
     expect(screen.getByLabelText("Name (optional)")).toBeTruthy();
     expect(screen.getByLabelText("Coaching cue (optional)")).toBeTruthy();
     expect(screen.getByLabelText("Duration type: Time")).toBeTruthy();

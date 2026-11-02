@@ -96,7 +96,7 @@ test("V5 authoring persists zero targets, recovers invalid drafts, and schedules
     await firstStep.getByLabel("Target type 2").selectOption("cadence");
     await expect(athletePage.getByRole("button", { name: "Create plan" })).toBeDisabled();
     await cadenceTarget.fill("90");
-    await firstStep.getByRole("button", { name: "Close editor for step 1" }).click();
+    await firstStep.getByRole("button", { name: /Close editor for/ }).click();
     await firstItem.getByRole("button", { name: "Add step", exact: true }).click();
     const secondStep = firstItem.locator('[id^="activity-plan-step-"]').nth(1);
     await secondStep.getByRole("button", { name: "Add name", exact: true }).click();
@@ -105,12 +105,14 @@ test("V5 authoring persists zero targets, recovers invalid drafts, and schedules
     await secondStep.getByLabel("Instructions (optional)").fill("Easy spin.");
     await secondStep.getByLabel("Completion").selectOption("time");
     await secondStep.getByLabel("Quantity").fill("60");
-    await secondStep.getByRole("button", { name: "Close editor for step 2" }).click();
-    await firstItem.getByRole("button", { name: "Duplicate item" }).click();
+    await secondStep.getByRole("button", { name: /Close editor for/ }).click();
+    await firstItem.getByRole("button", { name: "More actions for repeat 1" }).click();
+    await athletePage.getByRole("menuitem", { name: "Duplicate" }).click();
     await expect(athletePage.getByTestId(/^activity-plan-item-/)).toHaveCount(2);
     const lastItem = athletePage.getByTestId("activity-plan-item-1");
     athletePage.once("dialog", (dialog) => dialog.accept());
-    await lastItem.getByRole("button", { name: "Delete item" }).click();
+    await lastItem.getByRole("button", { name: "More actions for repeat 2" }).click();
+    await athletePage.getByRole("menuitem", { name: "Delete" }).click();
     await expect(athletePage.getByTestId(/^activity-plan-item-/)).toHaveCount(1);
     await captureAuthoring(athletePage, testInfo, "v5-authoring-recovered");
     await athletePage.getByRole("button", { name: "Create plan" }).click();

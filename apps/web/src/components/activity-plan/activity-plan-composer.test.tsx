@@ -6,6 +6,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ActivityPlanComposer } from "./activity-plan-composer";
 
 afterEach(cleanup);
+function openOutlineActions(label: string) {
+  fireEvent.pointerDown(screen.getByRole("button", { name: label }), { button: 0 });
+}
 const strictStructure = activityPlanStructureSchema.parse({
   version: 5,
   activity_category: "run",
@@ -183,16 +186,14 @@ describe("ActivityPlanComposer draft boundary", () => {
         onSave={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Duplicate step" }));
+    openOutlineActions("More actions for step 1");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate" }));
     expect(document.querySelectorAll('[id^="step-editor-"]')).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: /Drag step/ })).toHaveLength(2);
-    const getFirstDeleteStep = () => {
-      const [deleteStep] = screen.getAllByRole("button", { name: "Delete step" });
-      if (!deleteStep) throw new Error("Expected a delete-step action.");
-      return deleteStep;
-    };
-    fireEvent.click(getFirstDeleteStep());
-    fireEvent.click(getFirstDeleteStep());
+    openOutlineActions("More actions for step 1");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+    openOutlineActions("More actions for step 1");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
     expect(screen.getByText(/Choose an activity, then add a step or repeat/)).toBeTruthy();
     expect((screen.getByRole("button", { name: "Add step" }) as HTMLButtonElement).disabled).toBe(
       false,
@@ -219,6 +220,47 @@ describe("ActivityPlanComposer draft boundary", () => {
     expect(screen.getByText(/Keep them and repair/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Keep and repair" }));
     expect((screen.getByLabelText("Target type 1") as HTMLSelectElement).value).toBe("watts");
+  });
+  it("collapses a repeat without changing its authored child or count", async () => {
+    const onSave = vi.fn();
+    const repeated = activityPlanStructureSchema.parse({
+      ...strictStructure,
+      items: [
+        {
+          type: "repeat",
+          id: "44444444-4444-4444-8444-444444444444",
+          count: 2,
+          steps: strictStructure.items,
+        },
+      ],
+    });
+    render(
+      <ActivityPlanComposer
+        initial={{ name: "Existing", structure: repeated }}
+        mode="edit"
+        onCancel={vi.fn()}
+        onSave={onSave}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Collapse repeat 1" }));
+    const childList = document.querySelector('[aria-label="Repeat 1 steps"]');
+    expect((childList as HTMLOListElement | null)?.hidden).toBe(true);
+    fireEvent.change(screen.getByLabelText("Repeat count"), { target: { value: "3" } });
+    fireEvent.submit(screen.getByTestId("activity-plan-composer"));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          structure: expect.objectContaining({
+            items: [
+              expect.objectContaining({
+                count: 3,
+                steps: [expect.objectContaining({ name: "Warm up" })],
+              }),
+            ],
+          }),
+        }),
+      ),
+    );
   });
   it("restores its live generation after Strict Mode's setup probe and saves once", async () => {
     const onSave = vi.fn().mockResolvedValue(undefined);
@@ -461,12 +503,15 @@ describe("ActivityPlanComposer draft boundary", () => {
     );
     fireEvent.change(screen.getByLabelText("Repeat count"), { target: { value: "1.5" } });
     fireEvent.change(screen.getByLabelText("Target intensity 1"), { target: { value: "5.25" } });
-    expect(
-      (screen.getByRole("button", { name: "Duplicate item" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
-    expect(
-      (screen.getByRole("button", { name: "Duplicate step" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    openOutlineActions("More actions for repeat 1");
+    expect(screen.getByRole("menuitem", { name: "Duplicate" }).hasAttribute("data-disabled")).toBe(
+      true,
+    );
+    fireEvent.keyDown(document, { key: "Escape" });
+    openOutlineActions("More actions for step 1");
+    expect(screen.getByRole("menuitem", { name: "Duplicate" }).hasAttribute("data-disabled")).toBe(
+      true,
+    );
     expect(screen.getByDisplayValue("1.5")).toBeTruthy();
     expect(screen.getByDisplayValue("5.25")).toBeTruthy();
   });
@@ -486,12 +531,11 @@ describe("ActivityPlanComposer draft boundary", () => {
       />,
     );
     fireEvent.change(screen.getByLabelText("Target intensity 1"), { target: { value: "5.25" } });
-    expect(
-      screen
-        .getAllByRole("button", { name: "Duplicate step" })
-        .every((button) => button.hasAttribute("disabled")),
-    ).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "Move step 1 later" }));
+    openOutlineActions("More actions for step 1");
+    expect(screen.getByRole("menuitem", { name: "Duplicate" }).hasAttribute("data-disabled")).toBe(
+      true,
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Move later" }));
     expect((screen.getByLabelText("Target intensity 1") as HTMLInputElement).value).toBe("5.25");
     expect(
       screen.getAllByRole("listitem").filter((item) => item.id.startsWith("activity-plan-step-"))[0]

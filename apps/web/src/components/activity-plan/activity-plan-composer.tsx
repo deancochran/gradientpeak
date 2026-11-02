@@ -26,9 +26,15 @@ import { parseNumericInput } from "@repo/core/utils/numeric-ux-policy";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Disclosure } from "@repo/ui/components/disclosure";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@repo/ui/components/dropdown-menu";
 import { Input } from "@repo/ui/components/input";
 import { Textarea } from "@repo/ui/components/textarea";
-import { Copy, GripVertical, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Ellipsis, GripVertical, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createActivityPlanRepeat,
@@ -515,6 +521,8 @@ export function ActivityPlanComposer({
           <ActivityPlanEstimateRow metrics={metrics} />
           {structure.activity_category ? (
             <ActivityPlanTimelineChart
+              compact
+              height={40}
               label="Plan timeline"
               presentation={null}
               structure={lastResolved ?? undefined}
@@ -671,12 +679,13 @@ function ItemEditor({
 }) {
   const isRepeat = item.type === "repeat";
   const itemSteps = isRepeat ? item.steps : [item];
+  const [expanded, setExpanded] = useState(true);
   const move = (id: string, repeatId: string | undefined, targetIndex: number) =>
     onStructureChange((current) =>
       moveDraftItem(current, id, { ...(repeatId ? { repeatId } : {}), index: targetIndex }),
     );
   return (
-    <li className="rounded-xl border p-4" data-testid={`activity-plan-item-${index}`}>
+    <li className="rounded-xl border bg-card p-3" data-testid={`activity-plan-item-${index}`}>
       {draggingId ? (
         <DropTarget
           label={`Drop before item ${index + 1}`}
@@ -684,15 +693,61 @@ function ItemEditor({
         />
       ) : null}
       {isRepeat ? (
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="font-semibold">
-            {isRepeat ? `Repeat ${index + 1}` : `Step ${index + 1}`}
-          </h3>
-          <div className="flex gap-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            aria-expanded={expanded}
+            aria-label={`${expanded ? "Collapse" : "Expand"} repeat ${index + 1}`}
+            className="h-11 w-11 shrink-0"
+            onClick={() => setExpanded((current) => !current)}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <ChevronDown
+              className={`h-4 w-4 transition-transform ${expanded ? "" : "-rotate-90"}`}
+            />
+          </Button>
+          <h3 className="min-w-0 flex-1 font-semibold">{item.count}× repeat</h3>
+          <label
+            className="flex min-h-11 items-center gap-2 text-sm"
+            htmlFor={`repeat-count-${item.id}`}
+          >
+            <span className="sr-only">Repeat count</span>
+            <Input
+              id={`repeat-count-${item.id}`}
+              aria-label="Repeat count"
+              className="h-11 w-16"
+              type="text"
+              inputMode="numeric"
+              value={drafts[`${item.id}:count`] ?? String(item.count)}
+              aria-invalid={
+                parseNumericInput(drafts[`${item.id}:count`] ?? String(item.count), {
+                  min: 2,
+                  max: 50,
+                  precision: "integer",
+                }).status !== "valid"
+              }
+              onChange={(event) => {
+                const raw = event.target.value;
+                setDrafts((current) => ({ ...current, [`${item.id}:count`]: raw }));
+                const parsed = parseNumericInput(raw, { min: 2, max: 50, precision: "integer" });
+                if (parsed.status === "valid")
+                  onStructureChange((current) =>
+                    updateActivityPlanRepeat(current, item.id, (repeat) => ({
+                      ...repeat,
+                      count: parsed.value,
+                    })),
+                  );
+              }}
+            />
+            <span aria-hidden="true">×</span>
+          </label>
+          <div className="flex items-center gap-1">
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              className="h-11 w-11 cursor-grab"
+              size="icon"
               draggable
               aria-label={`Drag repeat ${index + 1}`}
               onDragStart={(event) => {
@@ -704,121 +759,67 @@ function ItemEditor({
             >
               <GripVertical className="h-4 w-4" />
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              aria-label="Move item earlier"
-              onClick={() => move(item.id, undefined, index - 1)}
-            >
-              ↑
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              aria-label="Move item later"
-              onClick={() => move(item.id, undefined, index + 1)}
-            >
-              ↓
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              aria-label="Duplicate item"
-              disabled={!canDuplicate}
-              title={!canDuplicate ? "Correct incomplete fields before duplicating." : undefined}
-              onClick={() => onStructureChange((current) => duplicateDraftItem(current, item.id))}
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-            {isRepeat ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                aria-label="Ungroup repeat"
+            <OutlineOverflowMenu label={`repeat ${index + 1}`}>
+              <DropdownMenuItem onSelect={() => move(item.id, undefined, index - 1)}>
+                Move earlier
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => move(item.id, undefined, index + 1)}>
+                Move later
+              </DropdownMenuItem>
+              <DropdownMenuItem
                 disabled={!canDuplicate}
-                onClick={() => onStructureChange((current) => ungroupDraftRepeat(current, item.id))}
+                onSelect={() =>
+                  onStructureChange((current) => duplicateDraftItem(current, item.id))
+                }
+              >
+                Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!canDuplicate}
+                onSelect={() =>
+                  onStructureChange((current) => ungroupDraftRepeat(current, item.id))
+                }
               >
                 Ungroup
-              </Button>
-            ) : null}
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              aria-label="Delete item"
-              onClick={() => {
-                if (
-                  isRepeat &&
-                  item.steps.length > 0 &&
-                  !window.confirm(
-                    "Delete this repeat and all its steps? Use Ungroup to keep the full sequence.",
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="text-destructive"
+                onSelect={() => {
+                  if (
+                    item.steps.length > 0 &&
+                    !window.confirm(
+                      "Delete this repeat and all its steps? Use Ungroup to keep the full sequence.",
+                    )
                   )
-                )
-                  return;
-                setDrafts((current) => removeRepeatDrafts(current, item));
-                onStructureChange((current) => removeDraftItem(current, item.id));
-              }}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+                    return;
+                  setDrafts((current) => removeRepeatDrafts(current, item));
+                  onStructureChange((current) => removeDraftItem(current, item.id));
+                }}
+              >
+                Delete
+              </DropdownMenuItem>
+            </OutlineOverflowMenu>
           </div>
         </div>
       ) : null}
-      {isRepeat ? (
-        <label className="mt-3 block text-sm" htmlFor={`repeat-count-${item.id}`}>
-          Repeat count
-          <Input
-            id={`repeat-count-${item.id}`}
-            className="mt-1 max-w-24"
-            type="text"
-            inputMode="numeric"
-            value={drafts[`${item.id}:count`] ?? String(item.count)}
-            aria-invalid={
-              parseNumericInput(drafts[`${item.id}:count`] ?? String(item.count), {
-                min: 2,
-                max: 50,
-                precision: "integer",
-              }).status !== "valid"
-            }
-            onChange={(event) => {
-              const raw = event.target.value;
-              setDrafts((current) => ({ ...current, [`${item.id}:count`]: raw }));
-              const parsed = parseNumericInput(event.target.value, {
-                min: 2,
-                max: 50,
-                precision: "integer",
-              });
-              if (parsed.status === "valid")
-                onStructureChange((current) =>
-                  updateActivityPlanRepeat(current, item.id, (repeat) => ({
-                    ...repeat,
-                    count: parsed.value,
-                  })),
-                );
-            }}
-          />
-          {parseNumericInput(drafts[`${item.id}:count`] ?? String(item.count), {
-            min: 2,
-            max: 50,
-            precision: "integer",
-          }).status !== "valid" ? (
-            <span role="alert">Enter a whole repeat count from 2 to 50.</span>
-          ) : null}
-        </label>
+      {isRepeat &&
+      parseNumericInput(drafts[`${item.id}:count`] ?? String(item.count), {
+        min: 2,
+        max: 50,
+        precision: "integer",
+      }).status !== "valid" ? (
+        <span role="alert">Enter a whole repeat count from 2 to 50.</span>
       ) : null}
       <ol
         aria-label={isRepeat ? `Repeat ${index + 1} steps` : `Step ${index + 1}`}
-        className="mt-3 space-y-2"
+        className={isRepeat ? "mt-3 space-y-2 border-l-2 border-border pl-3" : "space-y-2"}
+        hidden={isRepeat && !expanded}
       >
         {itemSteps.map((step, stepIndex) => (
           <li
             key={step.id}
             id={`activity-plan-step-${step.id}`}
-            className="rounded-lg bg-muted/30 p-3"
+            className="min-h-16 rounded-xl bg-secondary/50 px-3 py-2"
           >
             {draggingId && isRepeat ? (
               <DropTarget
@@ -826,8 +827,15 @@ function ItemEditor({
                 onDrop={() => onDropAt(item.id, stepIndex)}
               />
             ) : null}
-            <div className="flex items-center justify-between gap-2">
-              <div>
+            <div className="flex items-center gap-2">
+              <button
+                className="min-h-11 min-w-0 flex-1 text-left"
+                type="button"
+                aria-controls={`step-editor-${step.id}`}
+                aria-expanded={activeStepId === step.id}
+                aria-label={`${activeStepId === step.id ? "Close editor for" : "Edit"} ${step.name || `step ${isRepeat ? stepIndex + 1 : index + 1}`}`}
+                onClick={() => onActiveStepChange(activeStepId === step.id ? null : step.id)}
+              >
                 <span>{step.name || `Step ${isRepeat ? stepIndex + 1 : index + 1}`}</span>
                 <p className="text-sm text-muted-foreground">
                   {step.duration ? formatActivityPlanDuration(step.duration) : "Set duration"}
@@ -835,12 +843,9 @@ function ItemEditor({
                     ? ` · ${step.targets.map((target) => (target.type === "rest" ? "Rest" : `${target.intensity ?? "Set"} ${activityTargetAuthoringUnitLabels[activityTargetDefinitionByType[target.type].unit]}`)).join(", ")}`
                     : ""}
                 </p>
-              </div>
+              </button>
               <StepActions
                 index={isRepeat ? stepIndex : index}
-                stepId={step.id}
-                editing={activeStepId === step.id}
-                onEdit={() => onActiveStepChange(activeStepId === step.id ? null : step.id)}
                 onDelete={() => {
                   setDrafts((current) => removeStepDrafts(current, step.id));
                   onStructureChange((current) => removeDraftItem(current, step.id));
@@ -856,6 +861,27 @@ function ItemEditor({
                     (isRepeat ? stepIndex : index) + offset,
                   )
                 }
+                destinations={[
+                  {
+                    label: "Move to end of activity plan",
+                    onSelect: () =>
+                      move(
+                        step.id,
+                        undefined,
+                        allItems.length - (isRepeat && item.steps.length > 1 ? 0 : 1),
+                      ),
+                  },
+                  ...allItems.flatMap((candidate, repeatIndex) =>
+                    candidate.type === "repeat" && (!isRepeat || candidate.id !== item.id)
+                      ? [
+                          {
+                            label: `Move to repeat ${repeatIndex + 1}`,
+                            onSelect: () => move(step.id, candidate.id, candidate.steps.length),
+                          },
+                        ]
+                      : [],
+                  ),
+                ]}
                 onDragStart={(event) => {
                   event.dataTransfer.setData("text/plain", step.id);
                   event.dataTransfer.effectAllowed = "move";
@@ -864,39 +890,6 @@ function ItemEditor({
                 onDragEnd={() => onDraggingChange(null)}
               />
             </div>
-            <label className="mt-2 block text-sm">
-              Move {step.name || `step ${isRepeat ? stepIndex + 1 : index + 1}`} to
-              <select
-                className="ml-2 rounded border bg-background p-1"
-                value=""
-                onChange={(event) => {
-                  const destination = event.target.value;
-                  if (!destination) return;
-                  if (destination === "root")
-                    move(
-                      step.id,
-                      undefined,
-                      allItems.length - (isRepeat && item.steps.length > 1 ? 0 : 1),
-                    );
-                  else {
-                    const repeat = allItems.find(
-                      (candidate) => candidate.type === "repeat" && candidate.id === destination,
-                    );
-                    if (repeat?.type === "repeat") move(step.id, repeat.id, repeat.steps.length);
-                  }
-                }}
-              >
-                <option value="">Choose destination</option>
-                <option value="root">End of activity plan</option>
-                {allItems.map((candidate, repeatIndex) =>
-                  candidate.type === "repeat" && (!isRepeat || candidate.id !== item.id) ? (
-                    <option key={candidate.id} value={candidate.id}>
-                      Repeat {repeatIndex + 1}
-                    </option>
-                  ) : null,
-                )}
-              </select>
-            </label>
             {activeStepId === step.id ? (
               <StepEditor
                 step={step}
@@ -938,43 +931,28 @@ function ItemEditor({
 
 function StepActions({
   index,
-  stepId,
-  editing,
-  onEdit,
   onDelete,
   onDuplicate,
   onMove,
   onDragStart,
   onDragEnd,
   canDuplicate,
+  destinations,
 }: {
   index: number;
-  stepId: string;
-  editing: boolean;
-  onEdit: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
   onMove: (offset: -1 | 1) => void;
   onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
   onDragEnd: () => void;
   canDuplicate: boolean;
+  destinations: { label: string; onSelect: () => void }[];
 }) {
   return (
-    <div className="flex items-center justify-center gap-1">
-      <Button
-        aria-label={`${editing ? "Close editor for" : "Edit"} step ${index + 1}`}
-        aria-controls={`step-editor-${stepId}`}
-        aria-expanded={editing}
-        onClick={onEdit}
-        size="sm"
-        type="button"
-        variant="ghost"
-      >
-        {editing ? "Close" : "Edit"}
-      </Button>
+    <div className="flex shrink-0 items-center gap-1">
       <Button
         aria-label={`Drag step ${index + 1}`}
-        className="cursor-grab"
+        className="h-11 w-11 cursor-grab"
         draggable
         onDragEnd={onDragEnd}
         onDragStart={onDragStart}
@@ -988,45 +966,47 @@ function StepActions({
             onMove(1);
           }
         }}
-        size="sm"
+        size="icon"
         type="button"
         variant="ghost"
       >
         <GripVertical className="h-4 w-4" />
       </Button>
-      <Button
-        aria-label={`Move step ${index + 1} earlier`}
-        onClick={() => onMove(-1)}
-        size="sm"
-        type="button"
-        variant="ghost"
-      >
-        ↑
-      </Button>
-      <Button
-        aria-label={`Move step ${index + 1} later`}
-        onClick={() => onMove(1)}
-        size="sm"
-        type="button"
-        variant="ghost"
-      >
-        ↓
-      </Button>
-      <Button
-        aria-label="Duplicate step"
-        disabled={!canDuplicate}
-        title={!canDuplicate ? "Correct incomplete fields before duplicating." : undefined}
-        onClick={onDuplicate}
-        size="sm"
-        type="button"
-        variant="ghost"
-      >
-        <Copy className="h-4 w-4" />
-      </Button>
-      <Button aria-label="Delete step" onClick={onDelete} size="sm" type="button" variant="ghost">
-        <Trash2 className="h-4 w-4" />
-      </Button>
+      <OutlineOverflowMenu label={`step ${index + 1}`}>
+        <DropdownMenuItem onSelect={() => onMove(-1)}>Move earlier</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onMove(1)}>Move later</DropdownMenuItem>
+        {destinations.map((destination) => (
+          <DropdownMenuItem key={destination.label} onSelect={destination.onSelect}>
+            {destination.label}
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuItem disabled={!canDuplicate} onSelect={onDuplicate}>
+          Duplicate
+        </DropdownMenuItem>
+        <DropdownMenuItem className="text-destructive" onSelect={onDelete}>
+          Delete
+        </DropdownMenuItem>
+      </OutlineOverflowMenu>
     </div>
+  );
+}
+
+function OutlineOverflowMenu({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          aria-label={`More actions for ${label}`}
+          className="h-11 w-11"
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <Ellipsis className="h-5 w-5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">{children}</DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

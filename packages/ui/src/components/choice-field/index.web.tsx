@@ -25,8 +25,8 @@ export function ChoiceField<T extends ChoiceValue>(props: ChoiceFieldProps<T>) {
   }, [props.disabled, props.isCurrent]);
   const index = props.options.findIndex((option) => option.value === props.value);
   return (
-    <div className="grid gap-2">
-      <Label htmlFor={id}>
+    <div className={props.density === "compact" ? "grid gap-1" : "grid gap-2"}>
+      <Label className={props.density === "compact" ? "text-xs" : undefined} htmlFor={id}>
         {props.label}
         {props.required ? " *" : ""}
       </Label>

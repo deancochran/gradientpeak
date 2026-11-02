@@ -63,7 +63,7 @@ checkpoint `a4ed7ea22b2b52272908a3e2cf7311abd63c290d` is merged as a prerequisit
 at `69469b0ffaa689578e2d962d064be274be104e49`; this is not a claim that the
 reconciliation has reached remote main. Preview is never a feature source.
 
-Status: implementation in progress, not live. Coordinator owns review, exact
+Status: first slice live in preview; full redesign still in progress. Coordinator owns review, exact
 checkpoint integration under SHARED-PREVIEW.md, affected-runtime verification,
 publication and final evidence. Workers must not mutate preview or its services.
 
@@ -84,3 +84,47 @@ added and the structure gate passed. Broad rerun in progress.
 
 No attached adb device; shared browser is signed out. Neither native visual
 fidelity nor authenticated end-to-end save is claimed from component evidence.
+
+### First checkpoint preview disposition
+
+Checkpoint `1154370ad3e5dbeb4429cebfab2b055ab28fd1f1` integrated under the preview
+lock from `f6e1eab3535b16f567c92b541e4bafd7963156e4` to
+`a5430a6f2f59ca513ca36e23a217ba7a0d74d9da`. Ancestry checker passed, integrated
+native51/web22 tests passed, API health and Metro status passed. Actual served iOS
+bundle contains the overflow action and optional-detail markers. No data/schema,
+native binary, environment, or dependency version changes.
+
+Independent review findings: mobile repeat width and missing expanded state fixed
+in1154370a; optional detail label now reads current draft fields. Shared Disclosure
+web coverage and shared type/export were repaired before integration. Web outline
+action parity remains a second-slice requirement, not accepted as complete.
+
+Broad quality retry passed static checks and all eight package type checks but
+the command timed out at120seconds during the strictness ratchet. This is not a
+passing broad gate; rerun with adequate time after the next stable checkpoint.
+
+Second slice in progress: compact semantic field pairs, contextual guarded step
+editor, compact meaningful metadata, and web overflow/collapse parity. Coordinator
+owns its review, integration and publication; no final mobile fidelity claim yet.
+
+### Second slice acceptance in progress
+
+Implemented web overflow actions/repeat collapse, compact 40px timeline, mobile
+duration/target panels, compact ChoiceField density shared across platforms,
+pageSheet editing using the existing keyboard-aware modal, and available-only
+inline estimates (including legitimate zero). Existing full-height Android native
+modal behavior differs from iOS pageSheet and is not claimed pixel-identical.
+
+Worker verification: mobile62 tests, UI native18 tests, web23 tests and all three
+owning type checks passed. Coordinator disposable browser acceptance run
+`acceptance-1672091-1793657043058` passed4 journeys on Desktop Chrome and Mobile
+Chrome390x844, including invalid draft recovery, zero-target persistence and
+scheduling the UI-edited plan. Runner owned all synthetic DB/storage/server
+resources and cleanup; preserved/shared data was not mutated.
+
+Native preparation: designated gradientpeak-e2e emulator started with retained
+data. Current Expo prebuild generated ignored Android source without package
+changes. Two CLI flag attempts failed before compilation (device selector and
+mutually exclusive port/no-bundler); reassessed using installed help and switched
+to generated Gradle assembleDebug, x86_64 only, two workers, dev port8083. No shared
+Metro restart or native installation is implied by build preparation.

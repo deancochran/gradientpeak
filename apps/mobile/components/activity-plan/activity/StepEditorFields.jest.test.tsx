@@ -40,6 +40,25 @@ describe("StepEditorFields screen form", () => {
       });
     });
   });
+  it("keeps a chosen distance visible when rest is selected and requires an intentional timed repair", async () => {
+    const ref = createRef<StepEditorFieldsHandle>();
+    await renderNative(
+      <StepEditorFields
+        ref={ref}
+        activityCategory="bike"
+        onDirtyChange={() => undefined}
+        step={{
+          ...step,
+          duration: { type: "distance", meters: 800 },
+          targets: [{ type: "bpm", intensity: 120 }],
+        }}
+      />,
+    );
+    await fireEvent.press(screen.getByLabelText("Target type"));
+    await fireEvent(screen.getByTestId("Target type-picker"), "valueChange", "rest");
+    expect(screen.getByText("800 m")).toBeTruthy();
+    await act(() => expect(ref.current?.validate()).toBeNull());
+  });
   it("keeps populated optional step details open with persistent current-value rows", async () => {
     const { container } = await renderNative(
       <StepEditorFields activityCategory="bike" onDirtyChange={() => undefined} step={step} />,
@@ -62,8 +81,8 @@ describe("StepEditorFields screen form", () => {
     expect(screen.getByLabelText("Target 2 value")).toBeTruthy();
     expect(screen.getByText("Target 2 value")).toBeTruthy();
     expect(screen.getByText("90 rpm")).toBeTruthy();
-    expect(screen.getByText("DURATION")).toBeTruthy();
-    expect(screen.getByText("INTENSITY")).toBeTruthy();
+    expect(screen.getByText("Duration")).toBeTruthy();
+    expect(screen.getByText("Target")).toBeTruthy();
     expect(
       container
         .queryAll(
@@ -105,8 +124,8 @@ describe("StepEditorFields screen form", () => {
     await fireEvent.changeText(screen.getByLabelText("Coaching cue (optional)"), "Easy cadence.");
     expect(screen.getByLabelText("Name (optional)").props.value).toBe("Warm up");
     expect(screen.getByLabelText("Coaching cue (optional)").props.value).toBe("Easy cadence.");
-    expect(screen.getByTestId("target-row-0").props.className).toContain("gap-2");
-    expect(screen.getByLabelText("Remove target 1").props.className).toContain("min-h-12");
+    expect(screen.getByTestId("target-row-0").props.className).toContain("rounded-xl");
+    expect(screen.getByLabelText("Remove target 1").props.className).toContain("min-h-11");
   });
 
   it("keeps empty optional details collapsed until explicitly opened", async () => {

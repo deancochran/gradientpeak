@@ -156,23 +156,27 @@ export function StepDurationField({
     }));
 
   return (
-    <View className="gap-3" testID="step-duration-field">
+    <View className="gap-3 rounded-xl bg-card p-3.5" testID="step-duration-field">
       {duration && !permitted.some((type) => type === duration.type) ? (
         <Text accessibilityRole="alert" className="text-destructive">
           {duration.type} is not permitted for new {activityCategory} activity plans. Choose a
           supported completion type; the existing value is retained.
         </Text>
       ) : null}
-      <View testID="completion-type-row">
-        <ChoiceField
-          required={false}
-          label="Duration type"
-          nativePresentation="menu"
-          value={selectedType ?? ""}
-          options={options}
-          disabled={!active}
-          onChange={chooseType}
-        />
+      <View className="flex-row items-start gap-3" testID="completion-type-row">
+        <Text className="min-h-11 flex-1 pt-2 text-sm font-semibold">Duration</Text>
+        <View className="min-w-[148px] flex-1">
+          <ChoiceField
+            density="compact"
+            required={false}
+            label="Duration type"
+            nativePresentation="menu"
+            value={selectedType ?? ""}
+            options={options}
+            disabled={!active}
+            onChange={chooseType}
+          />
+        </View>
       </View>
       {invalid ? (
         <Text accessibilityRole="alert" className="text-destructive">
@@ -298,6 +302,7 @@ export function StepDurationField({
           </View>
           <View className="min-w-[120px] flex-1">
             <ChoiceField
+              density="compact"
               label="Distance unit"
               nativePresentation="menu"
               value={unit === "km" ? "km" : "meters"}
