@@ -322,8 +322,9 @@ export async function readThresholdEvidenceSources(
 
 /**
  * Persists an immutable source revision when its activity clock is still ahead
- * of PostgreSQL. The INSERT SELECT deliberately takes its due timestamp and
- * eligibility decision from the database rather than a caller clock.
+ * of PostgreSQL. Callers must hold the profile-scoped transaction fence across
+ * the SELECT and INSERT. Eligibility and timestamps use the database clock;
+ * a row that becomes due between statements is safe for the fenced worker.
  */
 export async function enqueueDeferredThresholdCalibration(
   tx: DrizzleTransactionClient,

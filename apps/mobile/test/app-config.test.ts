@@ -5,6 +5,14 @@ import { describe, expect, it } from "vitest";
 import getAppConfig, { getDevelopmentTransportSecurity } from "../app.config";
 
 describe("app config", () => {
+  it("assigns distinct remote build numbers to iOS development clients", async () => {
+    const root = path.resolve(import.meta.dirname, "..");
+    const eas = JSON.parse(await readFile(path.join(root, "eas.json"), "utf8"));
+    expect(eas.cli.appVersionSource).toBe("remote");
+    expect(eas.build.development.developmentClient).toBe(true);
+    expect(eas.build.development.distribution).toBe("internal");
+    expect(eas.build.development.ios.autoIncrement).toBe("buildNumber");
+  });
   it("uses a stable runtime for development builds where updates are disabled", () => {
     const config = getAppConfig({ config: {} } as ConfigContext);
 
