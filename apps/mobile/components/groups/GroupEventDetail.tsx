@@ -1,23 +1,23 @@
-import type { GroupEventRsvpStatus } from "@repo/core/groups";
+import { type GroupEventRsvpStatus, resolveGroupEventRsvpStatus } from "@repo/core/groups";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { useState } from "react";
 import { View } from "react-native";
-import { type ActivityPlan, ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppFormModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import type { GroupEventDetail, GroupEventSeriesOccurrence } from "@/lib/groups";
 import {
-  formatAcceptedRsvpCount,
+  formatGoingCount,
   formatGroupEventDateRange,
   GroupEventCard,
   GroupEventOwnerRow,
 } from "./GroupEventCards";
 
 function formatRsvpStatus(status: GroupEventRsvpStatus | null) {
-  if (status === "accepted") return "Going";
+  if (status === null) return "No response";
   if (status === "declined") return "Declined";
-  return "Tentative";
+  return "Going";
 }
 
 export function GroupEventActivityPlanOptionsSection({
@@ -27,47 +27,37 @@ export function GroupEventActivityPlanOptionsSection({
   event: GroupEventDetail;
   onActivityPlanPress?: (activityPlanId: string) => void;
 }) {
-  const activityPlanIds = event.activityPlanOptions.map((option) => option.activity_plan_id);
+  const activityPlanId = event.activity_plan_id;
   const activityPlansQuery = api.activityPlans.getManyByIds.useQuery(
-    { ids: activityPlanIds },
-    { enabled: activityPlanIds.length > 0 },
+    { ids: activityPlanId ? [activityPlanId] : [] },
+    {
+      enabled: Boolean(activityPlanId),
+    },
   );
-  const activityPlansById = new Map(
-    (activityPlansQuery.data?.items ?? []).map((plan) => [plan.id, plan]),
-  );
-  const missingCount = activityPlanIds.length - activityPlansById.size;
+  const activityPlan = activityPlansQuery.data?.items[0] ?? null;
 
-  if (event.activityPlanOptions.length === 0) return null;
+  if (!activityPlanId) return null;
 
   return (
     <View className="gap-3 rounded-2xl bg-card p-4">
       <View className="gap-0.5">
-        <Text className="text-base font-semibold text-foreground">Workout options</Text>
+        <Text className="text-base font-semibold text-foreground">Activity plan</Text>
         <Text className="text-sm text-muted-foreground">
-          Choose a plan when you RSVP, or open one to review the work.
+          Open the group event activity plan to review the work.
         </Text>
       </View>
       {activityPlansQuery.isLoading ? (
-        <Text className="text-sm text-muted-foreground">Loading activity plans...</Text>
+        <Text className="text-sm text-muted-foreground">Loading activity plan...</Text>
       ) : null}
-      {event.activityPlanOptions.map((option) => {
-        const activityPlan = activityPlansById.get(option.activity_plan_id);
-        if (!activityPlan) return null;
-
-        return (
-          <ActivityPlanCard
-            activityPlan={activityPlan as unknown as ActivityPlan}
-            key={option.id}
-            onPress={() => onActivityPlanPress?.(activityPlan.id)}
-            variant="compact"
-          />
-        );
-      })}
-      {!activityPlansQuery.isLoading && missingCount > 0 ? (
+      {activityPlan ? (
+        <ActivityPlanCard
+          plan={activityPlan}
+          onPress={() => onActivityPlanPress?.(activityPlan.id)}
+          variant="compact"
+        />
+      ) : !activityPlansQuery.isLoading ? (
         <Text className="text-sm text-muted-foreground">
-          {missingCount === activityPlanIds.length
-            ? "Activity plans are not available to view."
-            : `${missingCount} activity plan${missingCount === 1 ? " is" : "s are"} not available to view.`}
+          Activity plan is not available to view.
         </Text>
       ) : null}
     </View>
@@ -81,13 +71,12 @@ export function GroupEventRsvpPanel({
 }: {
   event: GroupEventDetail;
   isSubmitting?: boolean;
-  onRsvp?: (
-    status: GroupEventRsvpStatus | null,
-    selectedGroupEventActivityPlanId?: string | null,
-  ) => void;
+  onRsvp?: (status: GroupEventRsvpStatus | null) => void;
 }) {
-  const selectedId = event.viewerRsvp?.selected_group_event_activity_plan_id ?? null;
-  const status = event.viewerRsvp?.status ?? null;
+  const status = resolveGroupEventRsvpStatus({
+    occurrenceStatus: event.viewerRsvp?.status,
+    seriesStatus: event.viewerSeriesRsvp?.status,
+  });
 
   return (
     <View className="gap-3 rounded-2xl bg-card p-4">
@@ -96,68 +85,38 @@ export function GroupEventRsvpPanel({
           <Text className="text-base font-semibold text-foreground">Your RSVP</Text>
           <Text className="text-sm text-muted-foreground">{formatRsvpStatus(status)}</Text>
         </View>
-        {status ? (
+        {status === "declined" ? (
           <Button
             disabled={isSubmitting || Boolean(event.cancelled_at)}
-            onPress={() => onRsvp?.(null, null)}
+            onPress={() => onRsvp?.("going")}
             size="sm"
             variant="ghost"
           >
-            <Text className="text-xs font-semibold text-muted-foreground">Clear</Text>
+            <Text className="text-xs font-semibold text-muted-foreground">Restore Going</Text>
           </Button>
         ) : null}
       </View>
-      {event.activityPlanOptions.length > 1 ? (
-        <View className="gap-2">
-          {event.activityPlanOptions.map((option, index) => (
-            <Button
-              key={option.id}
-              disabled={isSubmitting || Boolean(event.cancelled_at)}
-              onPress={() => onRsvp?.("accepted", option.id)}
-              variant={selectedId === option.id && status === "accepted" ? "default" : "outline"}
-            >
-              <Text
-                className={
-                  selectedId === option.id && status === "accepted"
-                    ? "text-sm font-semibold text-primary-foreground"
-                    : "text-sm font-semibold text-foreground"
-                }
-              >
-                {option.label?.trim() || `Activity plan ${index + 1}`}
-              </Text>
-            </Button>
-          ))}
-        </View>
-      ) : null}
       <View className="flex-row gap-3">
         <Button
           className="flex-1"
           disabled={isSubmitting || Boolean(event.cancelled_at)}
-          onPress={() => onRsvp?.("tentative", null)}
-          variant={status === "tentative" || !status ? "secondary" : "outline"}
-        >
-          <Text className="text-sm font-semibold text-foreground">Tentative</Text>
-        </Button>
-        <Button
-          className="flex-1"
-          disabled={isSubmitting || Boolean(event.cancelled_at)}
-          onPress={() => onRsvp?.("accepted", event.activityPlanOptions[0]?.id ?? null)}
-          variant={status === "accepted" ? "default" : "outline"}
+          onPress={() => onRsvp?.("going")}
+          variant={status !== "declined" ? "default" : "outline"}
         >
           <Text
             className={
-              status === "accepted"
+              status !== "declined"
                 ? "text-sm font-semibold text-primary-foreground"
                 : "text-sm font-semibold text-foreground"
             }
           >
-            {isSubmitting ? "Saving..." : "Going"}
+            Going
           </Text>
         </Button>
         <Button
           className="flex-1"
           disabled={isSubmitting || Boolean(event.cancelled_at)}
-          onPress={() => onRsvp?.("declined", null)}
+          onPress={() => onRsvp?.("declined")}
           variant={status === "declined" ? "destructive" : "outline"}
         >
           <Text
@@ -186,7 +145,10 @@ export function GroupEventSeriesRsvpPanel({
 }) {
   const [applyOpen, setApplyOpen] = useState(false);
   const status = event.viewerSeriesRsvp?.status ?? null;
-  const eventStatus = event.viewerRsvp?.status ?? null;
+  const eventStatus = resolveGroupEventRsvpStatus({
+    occurrenceStatus: event.viewerRsvp?.status,
+    seriesStatus: event.viewerSeriesRsvp?.status,
+  });
 
   if (!event.is_recurring_series && !event.is_recurring_occurrence) return null;
 
@@ -227,24 +189,17 @@ export function GroupEventSeriesRsvpPanel({
             </Text>
             <Button
               disabled={isSubmitting || Boolean(event.cancelled_at)}
-              onPress={() => handleSeriesRsvp("tentative")}
-              variant={status === "tentative" || !status ? "secondary" : "outline"}
-            >
-              <Text className="text-sm font-semibold text-foreground">Tentative for series</Text>
-            </Button>
-            <Button
-              disabled={isSubmitting || Boolean(event.cancelled_at)}
-              onPress={() => handleSeriesRsvp("accepted")}
-              variant={status === "accepted" ? "default" : "outline"}
+              onPress={() => handleSeriesRsvp("going")}
+              variant={status !== "declined" ? "default" : "outline"}
             >
               <Text
                 className={
-                  status === "accepted"
+                  status !== "declined"
                     ? "text-sm font-semibold text-primary-foreground"
                     : "text-sm font-semibold text-foreground"
                 }
               >
-                {isSubmitting ? "Saving..." : "Going to series"}
+                Going to series
               </Text>
             </Button>
             <Button
@@ -262,14 +217,14 @@ export function GroupEventSeriesRsvpPanel({
                 Decline series
               </Text>
             </Button>
-            {status ? (
+            {status === "declined" ? (
               <Button
                 disabled={isSubmitting || Boolean(event.cancelled_at)}
-                onPress={() => handleSeriesRsvp(null)}
+                onPress={() => handleSeriesRsvp("going")}
                 variant="ghost"
               >
                 <Text className="text-sm font-semibold text-muted-foreground">
-                  Clear series RSVP
+                  Restore Going for series
                 </Text>
               </Button>
             ) : null}
@@ -281,18 +236,44 @@ export function GroupEventSeriesRsvpPanel({
 }
 
 export function GroupEventFutureOccurrencesSection({
+  errorDescription,
+  isError,
   isLoading,
+  isRetrying,
   occurrences,
   onGroupPress,
   onOccurrencePress,
+  onRetry,
 }: {
+  errorDescription?: string;
+  isError?: boolean;
   isLoading?: boolean;
+  isRetrying?: boolean;
   occurrences: GroupEventSeriesOccurrence[];
   onGroupPress?: (group: NonNullable<GroupEventDetail["group"]>) => void;
   onOccurrencePress?: (event: GroupEventSeriesOccurrence) => void;
+  onRetry?: () => void;
 }) {
   if (isLoading) {
     return <Text className="text-sm text-muted-foreground">Loading future dates...</Text>;
+  }
+
+  if (isError) {
+    return (
+      <View className="gap-3 rounded-2xl border border-destructive/30 bg-destructive/10 p-4">
+        <Text className="text-base font-semibold text-destructive">
+          Unable to load future dates
+        </Text>
+        <Text className="text-sm text-muted-foreground">
+          {errorDescription ?? "Please try again."}
+        </Text>
+        {onRetry ? (
+          <Button disabled={isRetrying} onPress={onRetry} size="sm" variant="outline">
+            <Text className="text-foreground">{isRetrying ? "Retrying" : "Try again"}</Text>
+          </Button>
+        ) : null}
+      </View>
+    );
   }
 
   if (occurrences.length === 0) {
@@ -306,8 +287,8 @@ export function GroupEventFutureOccurrencesSection({
         <GroupEventCard
           event={occurrence}
           key={occurrence.id}
-          onGroupPress={onGroupPress}
-          onPress={onOccurrencePress}
+          {...(onGroupPress !== undefined ? { onGroupPress } : {})}
+          {...(onOccurrencePress !== undefined ? { onPress: onOccurrencePress } : {})}
         />
       ))}
     </View>
@@ -317,37 +298,50 @@ export function GroupEventFutureOccurrencesSection({
 export function GroupEventDetailScreen({
   canManage = false,
   event,
+  futureOccurrencesError,
+  isErrorFutureOccurrences = false,
+  futureOccurrences,
+  isLoadingFutureOccurrences = false,
+  isRetryingFutureOccurrences = false,
   isWorking = false,
   onActivityPlanPress,
   onCancel,
-  onCopySeriesPlans,
   onEdit,
   onGroupPress,
+  onOccurrencePress,
+  onRetryFutureOccurrences,
   onRsvp,
   onRsvpSeries,
 }: {
   canManage?: boolean;
   event: GroupEventDetail;
+  futureOccurrencesError?: string;
+  isErrorFutureOccurrences?: boolean;
   futureOccurrences?: GroupEventSeriesOccurrence[];
   isLoadingFutureOccurrences?: boolean;
+  isRetryingFutureOccurrences?: boolean;
   isWorking?: boolean;
   onActivityPlanPress?: (activityPlanId: string) => void;
   onCancel?: () => void;
-  onCopySeriesPlans?: () => void;
   onEdit?: () => void;
   onGroupPress?: (group: NonNullable<GroupEventDetail["group"]>) => void;
   onOccurrencePress?: (event: GroupEventSeriesOccurrence) => void;
-  onRsvp?: (
-    status: GroupEventRsvpStatus | null,
-    selectedGroupEventActivityPlanId?: string | null,
-  ) => void;
+  onRetryFutureOccurrences?: () => void;
+  onRsvp?: (status: GroupEventRsvpStatus | null) => void;
   onRsvpSeries?: (status: GroupEventRsvpStatus | null) => void;
 }) {
+  if (!event) return null;
+
   return (
     <View className="gap-4">
       <View className="gap-4 rounded-3xl bg-card p-5">
         <View className="gap-4">
-          {event.group ? <GroupEventOwnerRow group={event.group} onPress={onGroupPress} /> : null}
+          {event.group ? (
+            <GroupEventOwnerRow
+              group={event.group}
+              {...(onGroupPress !== undefined ? { onPress: onGroupPress } : {})}
+            />
+          ) : null}
           <View className="gap-2">
             {event.cancelled_at ? (
               <View className="self-start rounded-full bg-destructive/10 px-2.5 py-1">
@@ -374,20 +368,13 @@ export function GroupEventDetailScreen({
             </View>
             <View className="shrink-0 rounded-full bg-muted px-3 py-1">
               <Text className="text-sm font-semibold text-muted-foreground">
-                {formatAcceptedRsvpCount(event.acceptedRsvpCount)}
+                {formatGoingCount(event.acceptedRsvpCount)}
               </Text>
             </View>
           </View>
         </View>
         {canManage ? (
           <View className="gap-3">
-            {event.is_recurring_occurrence && event.series_id ? (
-              <Button disabled={isWorking} onPress={onCopySeriesPlans} variant="outline">
-                <Text className="text-sm font-semibold text-foreground">
-                  Copy series plans to occurrence
-                </Text>
-              </Button>
-            ) : null}
             <View className="flex-row gap-3">
               <Button className="flex-1" disabled={isWorking} onPress={onEdit} variant="outline">
                 <Text className="text-sm font-semibold text-foreground">Edit</Text>
@@ -409,16 +396,36 @@ export function GroupEventDetailScreen({
         ) : null}
       </View>
 
-      <GroupEventRsvpPanel event={event} isSubmitting={isWorking} onRsvp={onRsvp} />
+      <GroupEventActivityPlanOptionsSection
+        event={event}
+        {...(onActivityPlanPress !== undefined ? { onActivityPlanPress } : {})}
+      />
+      <GroupEventRsvpPanel
+        event={event}
+        isSubmitting={isWorking}
+        {...(onRsvp !== undefined ? { onRsvp } : {})}
+      />
       <GroupEventSeriesRsvpPanel
         event={event}
         isSubmitting={isWorking}
-        onRsvpSeries={onRsvpSeries}
+        {...(onRsvpSeries !== undefined ? { onRsvpSeries } : {})}
       />
-      <GroupEventActivityPlanOptionsSection
-        event={event}
-        onActivityPlanPress={onActivityPlanPress}
-      />
+      {event.is_recurring_series || event.is_recurring_occurrence ? (
+        <GroupEventFutureOccurrencesSection
+          {...(futureOccurrencesError === undefined
+            ? {}
+            : { errorDescription: futureOccurrencesError })}
+          isError={isErrorFutureOccurrences}
+          isLoading={isLoadingFutureOccurrences}
+          isRetrying={isRetryingFutureOccurrences}
+          occurrences={(futureOccurrences ?? [])
+            .filter((occurrence) => occurrence.id !== event.id)
+            .sort((left, right) => left.starts_at.localeCompare(right.starts_at))}
+          {...(onGroupPress === undefined ? {} : { onGroupPress })}
+          {...(onOccurrencePress === undefined ? {} : { onOccurrencePress })}
+          {...(onRetryFutureOccurrences === undefined ? {} : { onRetry: onRetryFutureOccurrences })}
+        />
+      ) : null}
     </View>
   );
 }

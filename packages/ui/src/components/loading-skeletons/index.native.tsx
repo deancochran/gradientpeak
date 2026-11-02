@@ -4,6 +4,8 @@ import { Card, CardContent, CardHeader } from "../card/index.native";
 import { Skeleton } from "../skeleton/index.native";
 import type { ChartSkeletonProps, ListSkeletonProps } from "./shared";
 
+const TREND_SKELETON_KEYS = ["current", "previous"] as const;
+
 function CardSkeleton() {
   return (
     <Card className="border-border bg-card">
@@ -30,6 +32,17 @@ function ListItemSkeleton() {
       </View>
       <Skeleton className="h-8 w-8 rounded" />
     </View>
+  );
+}
+
+function ListSkeletonItems({ count }: { count: number }) {
+  if (count <= 0) return null;
+
+  return (
+    <>
+      <ListItemSkeleton />
+      <ListSkeletonItems count={count - 1} />
+    </>
   );
 }
 
@@ -124,8 +137,8 @@ function TrendsOverviewSkeleton() {
           <Skeleton className="h-6 w-40" />
         </CardHeader>
         <CardContent className="gap-3">
-          {Array.from({ length: 2 }).map((_, index) => (
-            <View key={index}>
+          {TREND_SKELETON_KEYS.map((key) => (
+            <View key={key}>
               <View className="flex-row items-center justify-between">
                 <View className="flex-1">
                   <Skeleton className="mb-1 h-4 w-32" />
@@ -165,9 +178,7 @@ function PlanCalendarSkeleton() {
 function ListSkeleton({ count = 5 }: ListSkeletonProps) {
   return (
     <View className="gap-3">
-      {Array.from({ length: count }).map((_, i) => (
-        <ListItemSkeleton key={i} />
-      ))}
+      <ListSkeletonItems count={count} />
     </View>
   );
 }

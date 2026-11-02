@@ -1,14 +1,8 @@
 import { renderHook } from "@testing-library/react-native";
-
-jest.mock("@repo/core", () => ({
-  __esModule: true,
-  buildEstimationContext: ({ activityPlan }: any) => ({ activityPlan }),
-  decodePolyline: jest.fn(() => [
-    { latitude: 10, longitude: 20 },
-    { latitude: 11, longitude: 21 },
-  ]),
-  estimateActivity: jest.fn(() => ({ duration: 3600, tss: 42.4, intensityFactor: 0.83 })),
-}));
+import {
+  createActivityPlanDetail,
+  createActivityPlanSummary,
+} from "../../../test/activity-plan-projection-fixture";
 
 jest.mock("@/lib/utils/durationConversion", () => ({
   __esModule: true,
@@ -18,57 +12,71 @@ jest.mock("@/lib/utils/durationConversion", () => ({
 import { useActivityPlanDetailViewModel } from "../useActivityPlanDetailViewModel";
 
 describe("useActivityPlanDetailViewModel", () => {
-  it("prefers planned activity plan over other sources and derives overview data", () => {
-    const { result } = renderHook(() =>
+  it("prefers planned activity plan over other sources and derives overview data", async () => {
+    const { result } = await renderHook(() =>
       useActivityPlanDetailViewModel({
         activityPlanParam: JSON.stringify({
           id: "param-plan",
-          activity_category: "ride",
+          activity_category: "bike",
           structure: {},
         }),
-        fetchedPlan: { id: "db-plan", activity_category: "swim", structure: {} },
+        fetchedPlan: createActivityPlanDetail({ id: "db-plan", activityCategory: "swim" }),
         formatDuration: (seconds) => `${seconds / 60}m`,
         isScheduled: true,
         plannedActivity: {
-          activity_plan: {
+          activityPlanSummary: createActivityPlanSummary({
             id: "planned-plan",
-            activity_category: "run",
-            profile_id: "profile-1",
-            estimated_tss: 30,
-            authoritative_metrics: {
-              estimated_duration: 3600,
-              estimated_tss: 42,
-              intensity_factor: 0.83,
-            },
+            activityCategory: "run",
+            metrics: [
+              {
+                key: "elapsed_duration",
+                label: "Duration",
+                value: 3_600,
+                unit: "seconds",
+                status: "available",
+                reason: null,
+                provenance: "authored",
+              },
+            ],
             structure: {
-              intervals: [
+              version: 5,
+              activity_category: "run",
+              items: [
                 {
-                  repetitions: 2,
+                  type: "repeat",
+                  id: "00000000-0000-4000-8000-000000000001",
+                  count: 2,
                   steps: [
-                    { id: "step-1", duration: { type: "time", seconds: 600 }, name: "Tempo" },
+                    {
+                      type: "step",
+                      id: "00000000-0000-4000-8000-000000000003",
+                      duration: { type: "time", seconds: 600 },
+                      name: "Tempo",
+                      targets: [{ type: "RPE", intensity: 6 }],
+                    },
                   ],
                 },
               ],
             },
-          },
+          }),
         },
         profile: { id: "profile-1" },
-        route: { polyline: "abc" },
-        template: JSON.stringify({ id: "template-plan", activity_category: "hike", structure: {} }),
+        template: JSON.stringify({
+          id: "template-plan",
+          activity_category: "other",
+          structure: {},
+        }),
       }),
     );
 
-    expect(result.current.activityPlan.id).toBe("planned-plan");
+    expect(result.current.activityPlan?.id).toBe("planned-plan");
     expect(result.current.durationLabel).toBe("60m");
-    expect(result.current.tss).toBe(42);
-    expect(result.current.intensityFactor).toBe(0.83);
     expect(result.current.steps).toHaveLength(2);
     expect(result.current.detailBadges).toEqual(["run", "Scheduled"]);
-    expect(result.current.routePreview?.coordinates).toHaveLength(2);
   });
 
-  it("falls back through malformed params without crashing", () => {
-    const { result } = renderHook(() =>
+  it("falls back through malformed params without crashing", async () => {
+    const { result } = await renderHook(() =>
       useActivityPlanDetailViewModel({
         activityPlanParam: "{bad json",
         fetchedPlan: null,
@@ -76,13 +84,38 @@ describe("useActivityPlanDetailViewModel", () => {
         isScheduled: false,
         plannedActivity: null,
         profile: { id: "profile-1" },
-        route: null,
         template: "{still bad",
       }),
     );
 
     expect(result.current.activityPlan).toBeNull();
     expect(result.current.detailBadges).toEqual([]);
-    expect(result.current.routePreview).toBeNull();
+  });
+
+  it("keeps unavailable duration unavailable instead of using an explicit timed fragment", async () => {
+    const { result } = await renderHook(() =>
+      useActivityPlanDetailViewModel({
+        fetchedPlan: createActivityPlanDetail({
+          metrics: [
+            {
+              key: "elapsed_duration",
+              label: "Duration",
+              status: "unavailable",
+              value: null,
+              unit: "seconds",
+              reason: "incomplete_members",
+              provenance: null,
+            },
+          ],
+        }),
+        formatDuration: (seconds) => `${seconds / 60}m`,
+        isScheduled: false,
+        plannedActivity: null,
+        profile: null,
+      }),
+    );
+
+    expect(result.current.durationMinutes).toBeNull();
+    expect(result.current.durationLabel).toBe("—");
   });
 });
