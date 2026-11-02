@@ -329,18 +329,35 @@ export async function enqueueDeferredThresholdCalibration(
   tx: DrizzleTransactionClient,
   input: { profileId: string; activityId: string },
 ) {
-  await tx.execute(sql`
-    insert into ${deferredThresholdCalibrations} (
-      profile_id, activity_id, source_revision, due_at, status, attempt_count, created_at, updated_at
-    )
-    select activity.profile_id, activity.id, activity.segments_revision, activity.finished_at,
-      'pending', 0, clock_timestamp(), clock_timestamp()
-    from ${activities} activity
-    where activity.id = ${input.activityId}::uuid
-      and activity.profile_id = ${input.profileId}::uuid
-      and activity.finished_at > clock_timestamp()
-    on conflict (profile_id, activity_id, source_revision) do nothing
-  `);
+  const [activity] = await tx
+    .select({
+      profileId: activities.profile_id,
+      activityId: activities.id,
+      sourceRevision: activities.segments_revision,
+      dueAt: activities.finished_at,
+    })
+    .from(activities)
+    .where(
+      and(
+        eq(activities.id, input.activityId),
+        eq(activities.profile_id, input.profileId),
+        sql`${activities.finished_at} > clock_timestamp()`,
+      ),
+    );
+  if (!activity || !activity.dueAt) return;
+  await tx
+    .insert(deferredThresholdCalibrations)
+    .values({
+      profile_id: activity.profileId,
+      activity_id: activity.activityId,
+      source_revision: activity.sourceRevision,
+      due_at: activity.dueAt,
+      status: "pending",
+      attempt_count: 0,
+      created_at: sql`clock_timestamp()`,
+      updated_at: sql`clock_timestamp()`,
+    })
+    .onConflictDoNothing();
 }
 
 export type DeferredThresholdCalibrationClaim = {
@@ -399,16 +416,29 @@ export async function completeDeferredThresholdCalibration(
   db: DrizzleQueryExecutor,
   claim: DeferredThresholdCalibrationClaim,
 ) {
-  const result = await db.execute(sql`
-    update ${deferredThresholdCalibrations}
-    set status = 'completed', lease_token = null, lease_expires_at = null,
-      retry_at = null, last_failure_code = null, completed_at = clock_timestamp(), updated_at = clock_timestamp()
-    where profile_id = ${claim.profileId}::uuid and activity_id = ${claim.activityId}::uuid
-      and source_revision = ${claim.sourceRevision} and status = 'running'
-      and lease_token = ${claim.claimToken}::uuid and lease_expires_at > clock_timestamp()
-    returning activity_id
-  `);
-  return result.rows.length === 1;
+  const [completed] = await db
+    .update(deferredThresholdCalibrations)
+    .set({
+      status: "completed",
+      lease_token: null,
+      lease_expires_at: null,
+      retry_at: null,
+      last_failure_code: null,
+      completed_at: sql`clock_timestamp()`,
+      updated_at: sql`clock_timestamp()`,
+    })
+    .where(
+      and(
+        eq(deferredThresholdCalibrations.profile_id, claim.profileId),
+        eq(deferredThresholdCalibrations.activity_id, claim.activityId),
+        eq(deferredThresholdCalibrations.source_revision, claim.sourceRevision),
+        eq(deferredThresholdCalibrations.status, "running"),
+        eq(deferredThresholdCalibrations.lease_token, claim.claimToken),
+        sql`${deferredThresholdCalibrations.lease_expires_at} > clock_timestamp()`,
+      ),
+    )
+    .returning({ activityId: deferredThresholdCalibrations.activity_id });
+  return Boolean(completed);
 }
 
 export async function retryDeferredThresholdCalibration(
@@ -416,18 +446,49 @@ export async function retryDeferredThresholdCalibration(
   claim: DeferredThresholdCalibrationClaim,
   failureCode: string,
 ) {
-  const result = await db.execute(sql`
-    update ${deferredThresholdCalibrations}
-    set status = 'pending', lease_token = null, lease_expires_at = null,
-      attempt_count = attempt_count + 1,
-      retry_at = clock_timestamp() + least(60, power(2, least(10, attempt_count + 1))) * interval '1 minute',
-      last_failure_code = left(${failureCode}, 120), updated_at = clock_timestamp()
-    where profile_id = ${claim.profileId}::uuid and activity_id = ${claim.activityId}::uuid
-      and source_revision = ${claim.sourceRevision} and status = 'running'
-      and lease_token = ${claim.claimToken}::uuid and lease_expires_at > clock_timestamp()
-    returning activity_id
-  `);
-  return result.rows.length === 1;
+  const [retried] = await db
+    .update(deferredThresholdCalibrations)
+    .set({
+      status: "pending",
+      lease_token: null,
+      lease_expires_at: null,
+      attempt_count: sql`${deferredThresholdCalibrations.attempt_count} + 1`,
+      retry_at: sql`clock_timestamp() + least(60, power(2, least(10, ${deferredThresholdCalibrations.attempt_count} + 1))) * interval '1 minute'`,
+      last_failure_code: sql`left(${failureCode}, 120)`,
+      updated_at: sql`clock_timestamp()`,
+    })
+    .where(
+      and(
+        eq(deferredThresholdCalibrations.profile_id, claim.profileId),
+        eq(deferredThresholdCalibrations.activity_id, claim.activityId),
+        eq(deferredThresholdCalibrations.source_revision, claim.sourceRevision),
+        eq(deferredThresholdCalibrations.status, "running"),
+        eq(deferredThresholdCalibrations.lease_token, claim.claimToken),
+        sql`${deferredThresholdCalibrations.lease_expires_at} > clock_timestamp()`,
+      ),
+    )
+    .returning({ activityId: deferredThresholdCalibrations.activity_id });
+  return Boolean(retried);
+}
+
+/** Reads transaction-scoped PostgreSQL time while the claimed queue item still exists. */
+export async function readDeferredThresholdCalibrationDatabaseNow(
+  tx: DrizzleTransactionClient,
+  claim: DeferredThresholdCalibrationClaim,
+) {
+  const [clock] = await tx
+    .select({ now: sql<Date>`clock_timestamp()` })
+    .from(deferredThresholdCalibrations)
+    .where(
+      and(
+        eq(deferredThresholdCalibrations.profile_id, claim.profileId),
+        eq(deferredThresholdCalibrations.activity_id, claim.activityId),
+        eq(deferredThresholdCalibrations.source_revision, claim.sourceRevision),
+      ),
+    )
+    .limit(1);
+  if (!(clock?.now instanceof Date)) throw new Error("Database clock did not return a timestamp");
+  return clock.now;
 }
 
 export async function readQualifiedThresholdEvidence(

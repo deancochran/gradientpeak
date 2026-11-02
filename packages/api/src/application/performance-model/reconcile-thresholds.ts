@@ -32,6 +32,7 @@ import {
   enqueueDeferredThresholdCalibration,
   insertThresholdEvaluation,
   planThresholdEvaluationPersistence,
+  readDeferredThresholdCalibrationDatabaseNow,
   readThresholdEvidenceSources,
   rebuildThresholdChainWithProfileLockHeld,
   retryDeferredThresholdCalibration,
@@ -799,9 +800,7 @@ export async function processDueDeferredThresholdCalibrations(
               eq(activityEfforts.source_revision, claim.sourceRevision),
             ),
           );
-        const clock = await tx.execute(sql`select clock_timestamp() as now`);
-        const now = clock.rows[0]?.now;
-        if (!(now instanceof Date)) throw new Error("Database clock did not return a timestamp");
+        const now = await readDeferredThresholdCalibrationDatabaseNow(tx, claim);
         await reconcileThresholdsWithProfileLockHeld(tx, {
           profileId: claim.profileId,
           activityId: claim.activityId,
