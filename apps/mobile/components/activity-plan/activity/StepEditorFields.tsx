@@ -123,6 +123,7 @@ export function StepEditorFields({
   } = useFieldArray({ control: form.control, name: "targets" });
   const duration = form.watch("duration");
   const targets = form.watch("targets");
+  const hasDetails = Boolean(form.watch("name") || form.watch("instructions"));
   const dirty = form.formState.isDirty || invalidExactEntries.current.size > 0;
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
   const permittedTargetTypes: readonly ActivityPlanDraftTarget["type"][] =
@@ -501,7 +502,7 @@ export function StepEditorFields({
       </View>
       <Form {...form}>
         <Disclosure
-          label={step.name || step.instructions ? "Step details" : "Add name or coaching cue"}
+          label={hasDetails ? "Step details" : "Add name or coaching cue"}
           open={detailsOpen}
           onOpenChange={setDetailsOpen}
           testId="step-details-disclosure"

@@ -126,5 +126,14 @@ describe("StructureBuilderCard V5 controls", () => {
     expect(screen.getByLabelText("More actions for Repeat 1, step 1")).toBeTruthy();
     expect(screen.getByLabelText("Reorder repeat 1").props.className).toContain("min-w-11");
     expect(screen.getByLabelText("Reorder Repeat 1, step 1").props.className).toContain("min-h-11");
+    const collapse = screen.getByLabelText("Collapse repeat 1");
+    expect(collapse.props.accessibilityState.expanded).toBe(true);
+    await fireEvent.press(collapse);
+    expect(screen.queryByTestId("step-row-one")).toBeNull();
+    const expand = screen.getByLabelText("Expand repeat 1");
+    expect(expand.props.accessibilityState.expanded).toBe(false);
+    await fireEvent.press(expand);
+    expect(screen.getByTestId("step-row-one")).toBeTruthy();
+    expect(items).toEqual([repeat("repeat", [step("one")])]);
   });
 });

@@ -146,10 +146,10 @@ function RepeatRow({
       testID={`repeat-row-${item.id}`}
     >
       <View
-        className="flex-row items-center justify-between gap-2"
+        className="flex-row flex-wrap items-center justify-between gap-2"
         testID={`repeat-header-${item.id}`}
       >
-        <View className="min-w-0 flex-1 flex-row items-center gap-1">
+        <View className="min-w-0 basis-full flex-row items-center gap-1">
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`Reorder repeat ${rootIndex + 1}`}
@@ -159,13 +159,12 @@ function RepeatRow({
           >
             <Icon as={GripVertical} size={16} className="text-muted-foreground" />
           </Pressable>
-          <Repeat2 size={16} />
-          <Text className="flex-1 font-semibold" numberOfLines={1}>
-            {item.count}× repeat
-          </Text>
+          <Icon as={Repeat2} size={16} className="text-muted-foreground" />
+          <Text className="flex-1 font-semibold">{item.count}× repeat</Text>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`${expanded ? "Collapse" : "Expand"} repeat ${rootIndex + 1}`}
+            accessibilityState={{ expanded }}
             className="min-h-11 min-w-11 items-center justify-center"
             onPress={() => setExpanded((value) => !value)}
           >
