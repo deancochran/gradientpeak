@@ -1,5 +1,52 @@
 # Activity plan editor redesign
 
+## User corrections — authoritative over the earlier concept
+
+Correction checkpoint evidence: mobile plan metadata now uses always-visible
+semantic fields; creation state supplies a real New plan title once and permits
+clearing. Step metadata is first; duration/target selectors and values share rows.
+Required targets are enforced by Core and API write boundaries; legacy structures
+remain readable/editable for repair, with save blocked until targets are supplied.
+Review found and repaired legacy web initialization and API consolidation using
+strict authoring too early (which prevented repair and misclassified validation
+as server errors). Pace value-only triggers retain their unit and accessible value.
+
+Coordinator checks on the correction: mobile activity-plan100 tests, store6 tests,
+UI native58 tests, Core activity-plan141 tests, API router86 tests, web activity-plan
+42 tests passed; mobile/API types and UI exact-optional types passed. Disposable
+browser run acceptance-1890618-1793662948355 passed4 desktop/mobile-width journeys,
+including directly editable fields, targetless save rejection, zero intensity and
+timed Rest persistence. Native fixture now supplies explicit Rest rather than an
+invalid targetless step; native runtime remains unverified due prior startup block.
+These checks do not establish actual iPhone geometry; fresh iPhone comparison is
+still required. No preserved data, schema, dependencies or native modules changed.
+
+- Direct editing is the default. Routine fields must not require an Edit button
+  or disclosure before typing. Plan name is an always-visible controlled input
+  with a real prefilled new-plan value; existing names/user edits must never be
+  overwritten by that default. Step name, description and coaching cue are compact
+  directly editable inputs too. Keep them near the top. Reserve disclosure for
+  optional complexity or repeat-group navigation, not ordinary field access.
+  This supersedes the earlier recommendations to collapse plan/step metadata.
+- Actual iPhone screenshot showed the duration selector far right, its value on
+  another line, and optional step metadata at the bottom. This is NOT accepted
+  reference fidelity. Move step info first; align Name/value and Cue/value as
+  compact rows. Put duration type and value on the SAME line, and target type and
+  value on the SAME line, removing redundant visible labels but preserving
+  semantic accessibility labels. Large accessibility text may wrap intentionally.
+- A step MUST have at least one target to be valid. No-target drafts may be edited
+  but cannot be committed as valid steps/plans. Rest targets are valid ONLY with
+  Time duration, never Distance or Repetitions. Enforce in shared validation and
+  both clients; do not silently invent a target or change an explicit duration.
+- Existing targetless data should remain readable for repair; no data migration
+  or rewriting existing saved plans is authorized by this correction. All new or
+  edited saves must meet the new invariant. Earlier acceptance of targetless
+  timed steps is superseded, including relevant fixture expectations.
+- Previous push attempt was cancelled before applying these corrections so a
+  moving source tree is not presented as verified. Whole-repo unit tasks had
+  passed9/9 serially before this new behavior change; that evidence does not cover
+  the correction. Coordinator owns fresh review, focused acceptance and preview.
+
 ## Approved reference and scope
 
 The user approved the coordinator's two-panel outline/editor concept on November

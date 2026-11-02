@@ -228,7 +228,7 @@ describe("StepEditorDialog", () => {
   it.each([
     "time",
     "distance",
-  ] as const)("saves a blank step after choosing and entering %s", async (kind) => {
+  ] as const)("requires a target after choosing and entering %s", async (kind) => {
     const onSave = jest.fn();
     await renderNative(
       <StepEditorDialog
@@ -244,6 +244,9 @@ describe("StepEditorDialog", () => {
     if (kind === "time")
       await fireEvent(screen.getByLabelText("Duration value minutes"), "valueChange", 5);
     else await fireEvent(screen.getByLabelText("Duration value units"), "valueChange", 1);
+    await fireEvent.press(screen.getByTestId("step-editor-save-button"));
+    expect(onSave).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByLabelText("Add target"));
     await fireEvent.press(screen.getByTestId("step-editor-save-button"));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({

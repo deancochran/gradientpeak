@@ -14,7 +14,7 @@ const structure = {
       id: "00000000-0000-4000-8000-000000000001",
       instructions: "Sustained uphill efforts.",
       duration: { type: "time" as const, seconds: 60 },
-      targets: [],
+      targets: [{ type: "RPE" as const, intensity: 5 }],
     },
   ],
 };

@@ -48,6 +48,7 @@ export interface SegmentedDurationFieldProps extends SegmentedDurationValueProps
 export function SegmentedDurationField(props: SegmentedDurationFieldProps) {
   const label = props.label ?? "Duration";
   const rowTrigger = props.triggerVariant === "row";
+  const valueTrigger = props.triggerVariant === "value";
   const theme = getResolvedNativeTheme(useColorScheme());
   const formReset = useFormDraftResetKey(props.formControl);
   const overlay = props.presentation === "native-overlay";
@@ -155,7 +156,7 @@ export function SegmentedDurationField(props: SegmentedDurationFieldProps) {
   const triggerValue =
     input.result.status === "empty"
       ? "Not set"
-      : `${triggerDisplay()}${rowTrigger && props.unitLabel ? ` ${props.unitLabel}` : ""}`;
+      : `${triggerDisplay()}${(rowTrigger || valueTrigger) && props.unitLabel ? ` ${props.unitLabel}` : ""}`;
   const allowed = (session?: NativeInputSession) =>
     input.isCurrent() && (!session || session.isCurrent()) && (props.isCurrent?.() ?? true);
   const wheelValue = (part: (typeof input.keys)[number]) => {
@@ -249,13 +250,15 @@ export function SegmentedDurationField(props: SegmentedDurationFieldProps) {
         testID={props.testId ?? props.id}
         onPress={open}
         className={
-          rowTrigger
+          rowTrigger || valueTrigger
             ? "min-h-12 flex-row items-center justify-between border-b border-border py-3"
             : "min-h-12 rounded-md border border-input p-3"
         }
       >
         {rowTrigger ? <Text className="text-sm font-medium">{label}</Text> : null}
-        <Text {...(rowTrigger ? { className: "text-sm text-muted-foreground" } : {})}>
+        <Text
+          {...(rowTrigger || valueTrigger ? { className: "text-sm text-muted-foreground" } : {})}
+        >
           {triggerValue}
         </Text>
       </Pressable>

@@ -24,10 +24,10 @@ name: Native athlete opens their plan library and creates an executable easy act
 - tapOn:
     id: activity-plans-list-create-trigger
 - extendedWaitUntil:
-    visible: "Edit plan name"
+    visible: "Plan name"
     timeout: 30000
-- tapOn: "Edit plan name"
 - tapOn: "Plan name"
+- eraseText: 200
 - inputText: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
 - hideKeyboard
 - tapOn:
@@ -57,6 +57,9 @@ name: Native athlete opens their plan library and creates an executable easy act
 - tapOn: "Duration value minutes"
 - tapOn: "1"
 - tapOn: "Done Duration value"
+- tapOn: "Add target"
+- tapOn: "Target type"
+- tapOn: "Rest"
 - tapOn:
     id: step-editor-save-button
 - extendedWaitUntil:

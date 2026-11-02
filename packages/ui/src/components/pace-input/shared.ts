@@ -24,5 +24,5 @@ export interface PaceInputProps extends TestProps {
   unitLabel?: string | undefined;
   accessibilityHint?: string | undefined;
   /** Compact, labelled summary row for a form that owns the surrounding section. */
-  triggerVariant?: "input" | "row" | undefined;
+  triggerVariant?: "input" | "row" | "value" | undefined;
 }

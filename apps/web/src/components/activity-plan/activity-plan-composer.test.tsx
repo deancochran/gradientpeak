@@ -42,7 +42,6 @@ describe("ActivityPlanComposer draft boundary", () => {
     fireEvent.change(screen.getByLabelText("Activity category"), { target: { value: "run" } });
     fireEvent.change(screen.getByLabelText("Plan name"), { target: { value: "Short cues" } });
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add instructions" }));
     const input = screen.getByLabelText(/^Instructions \(optional\)/);
     expect(input.tagName).toBe("INPUT");
     fireEvent.paste(input, { clipboardData: { getData: () => "Easy\n\nStay relaxed." } });
@@ -106,8 +105,8 @@ describe("ActivityPlanComposer draft boundary", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
     expect((screen.getByLabelText("Completion") as HTMLSelectElement).value).toBe("");
     expect(screen.queryByLabelText("Target intensity 1")).toBeNull();
-    expect(screen.getByText("Add name")).toBeTruthy();
-    expect(screen.getByText("Add instructions")).toBeTruthy();
+    expect(screen.getByLabelText("Name (optional)")).toBeTruthy();
+    expect(screen.getByLabelText("Instructions (optional)")).toBeTruthy();
   });
   it("keeps provisional completion and target intensity blank and rejects save until the user supplies them", () => {
     const onSave = renderCreate();
@@ -126,6 +125,16 @@ describe("ActivityPlanComposer draft boundary", () => {
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({ structure: expect.objectContaining({ activity_category: "run" }) }),
     );
+  });
+  it("rejects a completed targetless step until a semantic target is added", () => {
+    const onSave = renderCreate();
+    fireEvent.change(screen.getByLabelText("Activity category"), { target: { value: "run" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    fireEvent.change(screen.getByLabelText("Completion"), { target: { value: "time" } });
+    fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "60" } });
+    fireEvent.submit(screen.getByTestId("activity-plan-composer"));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("Choose a target before saving");
   });
   it("accepts an explicit zero-power target with a supplemental cadence target after repairing raw input", () => {
     const onSave = renderCreate();
@@ -170,11 +179,62 @@ describe("ActivityPlanComposer draft boundary", () => {
       />,
     );
     expect((screen.getByLabelText("Activity category") as HTMLSelectElement).value).toBe("run");
-    expect((screen.getByLabelText("Description") as HTMLTextAreaElement).value).toBe("Keep this");
+    expect((screen.getByLabelText("Description (optional)") as HTMLTextAreaElement).value).toBe(
+      "Keep this",
+    );
     expect(screen.getByText("Warm up")).toBeTruthy();
     fireEvent.submit(screen.getByTestId("activity-plan-composer"));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({ name: "Existing", structure: strictStructure }),
+    );
+  });
+  it("opens a targetless legacy step for repair, preserves its content, and saves only after a target is added", () => {
+    const onSave = vi.fn();
+    const [strictStep] = strictStructure.items;
+    if (strictStep?.type !== "step") throw new Error("Expected root step fixture");
+    const legacyTargetlessStructure = {
+      ...strictStructure,
+      items: [
+        {
+          ...strictStep,
+          name: "Legacy steady",
+          duration: { type: "time" as const, seconds: 90 },
+          targets: [],
+        },
+      ],
+    };
+    render(
+      <ActivityPlanComposer
+        initial={{ name: "Legacy plan", structure: legacyTargetlessStructure }}
+        mode="edit"
+        onCancel={vi.fn()}
+        onSave={onSave}
+      />,
+    );
+    expect(screen.queryByText("This plan has an unsupported activity structure.")).toBeNull();
+    expect(screen.getByText("Legacy steady")).toBeTruthy();
+    expect((screen.getByLabelText("Completion") as HTMLSelectElement).value).toBe("time");
+    expect((screen.getByLabelText("Quantity") as HTMLInputElement).value).toBe("90");
+    fireEvent.submit(screen.getByTestId("activity-plan-composer"));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("Choose a target before saving");
+    fireEvent.click(screen.getByRole("button", { name: "Add target" }));
+    fireEvent.change(screen.getByLabelText("Target type 1"), { target: { value: "RPE" } });
+    fireEvent.change(screen.getByLabelText("Target intensity 1"), { target: { value: "5" } });
+    fireEvent.submit(screen.getByTestId("activity-plan-composer"));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Legacy plan",
+        structure: expect.objectContaining({
+          items: [
+            expect.objectContaining({
+              name: "Legacy steady",
+              duration: { type: "time", seconds: 90 },
+              targets: [{ type: "RPE", intensity: 5 }],
+            }),
+          ],
+        }),
+      }),
     );
   });
   it("does not auto-open a duplicate and keeps a sole-step drag and delete action available", () => {

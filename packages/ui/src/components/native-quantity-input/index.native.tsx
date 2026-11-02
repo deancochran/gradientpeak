@@ -38,7 +38,7 @@ export interface NativeQuantityInputProps extends BoundedNumberInputProps {
   /** Semantic name for the fractional column when this quantity deliberately permits fractions. */
   fractionLabel?: string;
   /** Compact, labelled summary row for a form that owns the surrounding section. */
-  triggerVariant?: "input" | "row";
+  triggerVariant?: "input" | "row" | "value";
 }
 
 type PickerParts = { fraction: string; groups: number[]; sign: "+" | "-" };
@@ -226,6 +226,7 @@ export function NativeQuantityInput(props: NativeQuantityInputProps) {
   };
   const display = parsed.status === "empty" ? "Not set" : input.text;
   const rowTrigger = props.triggerVariant === "row";
+  const valueTrigger = props.triggerVariant === "value";
   const needsRepresentationRepair =
     parsed.status === "invalid" &&
     (parsed.reason !== "range" || (positiveOnly && input.text.trim().startsWith("-")));
@@ -382,13 +383,15 @@ export function NativeQuantityInput(props: NativeQuantityInputProps) {
           testID={props.testId}
           onPress={open}
           className={
-            rowTrigger
+            rowTrigger || valueTrigger
               ? "min-h-12 flex-row items-center justify-between border-b border-border py-3"
               : "min-h-12 rounded-md border border-input p-3"
           }
         >
           {rowTrigger ? <Text className="text-sm font-medium">{props.label}</Text> : null}
-          <Text {...(rowTrigger ? { className: "text-sm text-muted-foreground" } : {})}>
+          <Text
+            {...(rowTrigger || valueTrigger ? { className: "text-sm text-muted-foreground" } : {})}
+          >
             {display}
             {props.unitLabel ? ` ${props.unitLabel}` : ""}
           </Text>

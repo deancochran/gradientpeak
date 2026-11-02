@@ -21,6 +21,19 @@ const step: ActivityPlanStep = {
 };
 
 describe("StepEditorFields screen form", () => {
+  it("keeps a targetless draft editable but rejects it on save", async () => {
+    const ref = createRef<StepEditorFieldsHandle>();
+    await renderNative(
+      <StepEditorFields
+        ref={ref}
+        activityCategory="bike"
+        onDirtyChange={() => undefined}
+        step={{ ...step, targets: [] }}
+      />,
+    );
+    await act(() => expect(ref.current?.validate()).toBeNull());
+    expect(screen.getByText(/Choose a target before saving this step\./)).toBeTruthy();
+  });
   it("validates timed rest without an intensity input or another target", async () => {
     const ref = createRef<StepEditorFieldsHandle>();
     await renderNative(
@@ -67,22 +80,17 @@ describe("StepEditorFields screen form", () => {
     expect(screen.getByLabelText("Coaching cue (optional)")).toBeTruthy();
     expect(screen.getByLabelText("Duration type: Time")).toBeTruthy();
     expect(screen.getByLabelText("Duration value").props.accessibilityValue.text).toBe("0:01:00");
-    expect(screen.getByText("Duration value")).toBeTruthy();
     expect(screen.getByText("0:01:00")).toBeTruthy();
     expect(screen.getByLabelText("Target 1 type").props.accessibilityValue.text).toBe(
       "Power · watts",
     );
     expect(screen.getByLabelText("Target 1 value").props.accessibilityValue.text).toBe("250");
-    expect(screen.getByText("Target 1 value")).toBeTruthy();
     expect(screen.getByText("250 watts")).toBeTruthy();
     expect(screen.getByLabelText("Target 2 type").props.accessibilityValue.text).toBe(
       "Cadence · rpm",
     );
     expect(screen.getByLabelText("Target 2 value")).toBeTruthy();
-    expect(screen.getByText("Target 2 value")).toBeTruthy();
     expect(screen.getByText("90 rpm")).toBeTruthy();
-    expect(screen.getByText("Duration")).toBeTruthy();
-    expect(screen.getByText("Target")).toBeTruthy();
     expect(
       container
         .queryAll(
@@ -90,10 +98,10 @@ describe("StepEditorFields screen form", () => {
         )
         .map((node) => node.props.testID),
     ).toEqual([
-      "step-duration-section",
-      "step-intensity-section",
       "step-details-section",
       "step-notes-section",
+      "step-duration-section",
+      "step-intensity-section",
     ]);
     expect(screen.queryByLabelText("Duration value minutes")).toBeNull();
     expect(screen.queryByTestId("step-picker-modal")).toBeNull();
@@ -108,10 +116,10 @@ describe("StepEditorFields screen form", () => {
       <StepEditorFields
         activityCategory={duration.type === "repetitions" ? "strength" : "bike"}
         onDirtyChange={() => undefined}
-        step={{ ...step, duration, targets: [] }}
+        step={{ ...step, duration, targets: [{ type: "RPE", intensity: 5 }] }}
       />,
     );
-    expect(screen.getByText("Duration value")).toBeTruthy();
+    expect(screen.getByLabelText("Duration value")).toBeTruthy();
     expect(screen.getByText(value)).toBeTruthy();
     expect(screen.queryByLabelText("Duration value minutes")).toBeNull();
   });
@@ -124,11 +132,11 @@ describe("StepEditorFields screen form", () => {
     await fireEvent.changeText(screen.getByLabelText("Coaching cue (optional)"), "Easy cadence.");
     expect(screen.getByLabelText("Name (optional)").props.value).toBe("Warm up");
     expect(screen.getByLabelText("Coaching cue (optional)").props.value).toBe("Easy cadence.");
-    expect(screen.getByTestId("target-row-0").props.className).toContain("rounded-xl");
+    expect(screen.getByTestId("target-controls-0").props.className).toContain("flex-row");
     expect(screen.getByLabelText("Remove target 1").props.className).toContain("min-h-11");
   });
 
-  it("keeps empty optional details collapsed until explicitly opened", async () => {
+  it("keeps empty optional details directly editable", async () => {
     await renderNative(
       <StepEditorFields
         activityCategory="bike"
@@ -136,8 +144,6 @@ describe("StepEditorFields screen form", () => {
         step={{ ...step, name: undefined, instructions: undefined }}
       />,
     );
-    expect(screen.queryByLabelText("Name (optional)")).toBeNull();
-    await fireEvent.press(screen.getByText("Add name or coaching cue"));
     expect(screen.getByLabelText("Name (optional)")).toBeTruthy();
     expect(screen.getByLabelText("Coaching cue (optional)")).toBeTruthy();
   });

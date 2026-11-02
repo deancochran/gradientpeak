@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { ContentVisibility } from "@repo/core";
 import {
+  activityPlanAuthoringStructureSchema,
   activityPlanSemanticHash,
   activityPlanStructureSchema,
   activityPlanTrainingIntentSchema,
@@ -182,13 +183,15 @@ function consolidateActivityPlanSave(input: {
   }
   return {
     ...consolidated.value,
+    // Consolidation also reads the old revision for comparison during repair.
+    // Authoring validation belongs to the write boundary, not that legacy read.
     structure: activityPlanStructureSchema.parse(consolidated.value.structure),
   };
 }
 
 export const createActivityPlanInput = activityPlanCreateSchema.safeExtend({
   gps_recording_enabled: z.boolean().default(true),
-  structure: activityPlanStructureSchema,
+  structure: activityPlanAuthoringStructureSchema,
   content_visibility: contentVisibilitySchema.optional(),
   training_intent: activityPlanTrainingIntentSchema.default("general_maintenance"),
   operationId: z
@@ -199,7 +202,7 @@ export const createActivityPlanInput = activityPlanCreateSchema.safeExtend({
 
 const updateActivityPlanInput = activityPlanUpdateSchema.safeExtend({
   gps_recording_enabled: z.boolean().optional(),
-  structure: activityPlanStructureSchema.optional(),
+  structure: activityPlanAuthoringStructureSchema.optional(),
   content_visibility: contentVisibilitySchema.optional(),
   training_intent: activityPlanTrainingIntentSchema.optional(),
 });

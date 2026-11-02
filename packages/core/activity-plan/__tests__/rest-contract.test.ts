@@ -73,7 +73,7 @@ describe("activity-plan rest target", () => {
     ).toBe(false);
   });
 
-  it("keeps empty and low-RPE targets active while preserving legacy multi-target steps", () => {
+  it("keeps targetless legacy steps readable but requires a target for authoring", () => {
     const structure = activityPlanStructureSchema.parse(
       plan([
         activeStep(1, []),
@@ -84,8 +84,10 @@ describe("activity-plan rest target", () => {
         ]),
       ]),
     );
-    expect(activityPlanAuthoringStructureSchema.safeParse(structure).success).toBe(true);
-    expect(getActivityPlanAuthoringIssues(structure)).toEqual([]);
+    expect(activityPlanAuthoringStructureSchema.safeParse(structure).success).toBe(false);
+    expect(getActivityPlanAuthoringIssues(structure)).toContainEqual(
+      expect.objectContaining({ code: "ACTIVITY_PLAN_AUTHORING_MISSING_TARGET" }),
+    );
   });
 
   it("accounts for rest separately from active time and presents it without an intensity", () => {

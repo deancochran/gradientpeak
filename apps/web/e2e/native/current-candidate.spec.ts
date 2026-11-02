@@ -116,7 +116,7 @@ test("current Android candidate onboards and creates an executable activity plan
         items: [
           expect.objectContaining({
             duration: { seconds: 60, type: "time" },
-            targets: [],
+            targets: [{ type: "rest" }],
             type: "step",
           }),
         ],

@@ -33,6 +33,8 @@ export interface ChoiceFieldProps<T extends ChoiceValue> extends TestProps {
   fieldName?: string | undefined;
   /** Keeps semantic label/control pairing compact inside dense authoring panels. */
   density?: "default" | "compact" | undefined;
+  /** Hide the visible label while retaining the control's accessible name. */
+  hideVisibleLabel?: boolean | undefined;
 }
 
 export function resolveChoice<T extends ChoiceValue>(

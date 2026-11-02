@@ -11,6 +11,7 @@ import type {
 } from "@repo/core";
 import {
   activityPlanDraftMetrics,
+  activityPlanDraftStructureSchema,
   activityPlanStepNoteSchema,
   createUnavailableAthletePerformanceTargetFacts,
   normalizeActivityPlanAuthoringStructure,
@@ -25,7 +26,6 @@ import {
 import { parseNumericInput } from "@repo/core/utils/numeric-ux-policy";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
-import { Disclosure } from "@repo/ui/components/disclosure";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -172,14 +172,17 @@ export function ActivityPlanComposer({
   onSaved,
   pending = false,
 }: Props) {
-  const initialResolution = initial ? resolveActivityPlanDraft(initial.structure) : null;
-  const initialStructure =
-    initialResolution?.status === "valid" ? initialResolution.structure : null;
-  const [name, setName] = useState(initial?.name ?? "");
+  // Saved legacy structures can be structurally sound while failing current
+  // authoring requirements (for example, a targetless step). Load those into
+  // the repairable draft UI; the strict resolver remains the save boundary.
+  const initialDraft = initial
+    ? activityPlanDraftStructureSchema.safeParse(initial.structure)
+    : null;
+  const initialStructure = initialDraft?.success ? initialDraft.data : null;
+  const initialResolution = initialStructure ? resolveActivityPlanDraft(initialStructure) : null;
+  // The creation title is an editable default, never a display-only placeholder.
+  const [name, setName] = useState(initial?.name ?? "New plan");
   const [description, setDescription] = useState(initial?.description ?? initial?.notes ?? "");
-  const [descriptionOpen, setDescriptionOpen] = useState(
-    Boolean(initial?.description ?? initial?.notes),
-  );
   const [visibility, setVisibility] = useState<ActivityPlanAuthoringValues["content_visibility"]>(
     initial?.content_visibility === "public" || initial?.content_visibility === "followers"
       ? initial.content_visibility
@@ -242,7 +245,9 @@ export function ActivityPlanComposer({
     });
   };
   const [postSaveError, setPostSaveError] = useState<string | null>(null);
-  const [lastResolved, setLastResolved] = useState<ActivityPlanStructure | null>(initialStructure);
+  const [lastResolved, setLastResolved] = useState<ActivityPlanStructure | null>(
+    initialResolution?.status === "valid" ? initialResolution.structure : null,
+  );
   const inFlight = useRef(false);
   const persisted = useRef(false);
   const alive = useRef(true);
@@ -446,22 +451,16 @@ export function ActivityPlanComposer({
               ))}
             </select>
           </div>
-          <Disclosure
-            label={description ? "Plan details" : "Add description"}
-            open={descriptionOpen}
-            onOpenChange={setDescriptionOpen}
-            testId="activity-plan-description-disclosure"
-          >
-            <label className="block text-sm font-medium" htmlFor="activity-plan-description">
-              Description
-            </label>
-            <Textarea
-              id="activity-plan-description"
-              maxLength={3000}
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-            />
-          </Disclosure>
+          <label className="block text-sm font-medium" htmlFor="activity-plan-description">
+            Description (optional)
+          </label>
+          <Textarea
+            id="activity-plan-description"
+            maxLength={3000}
+            placeholder="Describe the activity plan"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+          />
           <div className="flex flex-wrap items-center gap-3">
             <label className="text-sm" htmlFor="activity-plan-visibility">
               Visibility
@@ -1046,8 +1045,6 @@ function StepEditor({
   setDrafts: React.Dispatch<React.SetStateAction<RawDrafts>>;
   onChange: (update: (step: ActivityPlanDraftStep) => ActivityPlanDraftStep) => void;
 }) {
-  const [nameOpen, setNameOpen] = useState(Boolean(step.name));
-  const [instructionsOpen, setInstructionsOpen] = useState(Boolean(step.instructions));
   const [notePasteError, setNotePasteError] = useState<string | null>(null);
   const noteValidation = activityPlanStepNoteSchema.safeParse(step.instructions);
   const noteError =
@@ -1068,121 +1065,119 @@ function StepEditor({
   return (
     <fieldset id={`step-editor-${step.id}`} className="mt-3 space-y-3 border-t pt-3">
       <legend className="sr-only">Edit step</legend>
-      {nameOpen ? (
-        <label className="block text-sm" htmlFor={`step-name-${step.id}`}>
-          Name (optional)
-          <Input
-            id={`step-name-${step.id}`}
-            value={step.name ?? ""}
-            onChange={(event) =>
-              onChange((item) => ({ ...item, name: event.target.value || undefined }))
-            }
-          />
-        </label>
-      ) : (
-        <Button type="button" variant="ghost" size="sm" onClick={() => setNameOpen(true)}>
-          Add name
-        </Button>
-      )}
-      {instructionsOpen ? (
-        <div className="block text-sm">
-          <label htmlFor={`step-instructions-${step.id}`}>Instructions (optional)</label>
-          <Input
-            id={`step-instructions-${step.id}`}
-            value={step.instructions ?? ""}
-            placeholder="One short cue, up to 160 characters"
-            aria-invalid={Boolean(noteError)}
-            aria-describedby={`step-instructions-help-${step.id}`}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.preventDefault();
-            }}
-            onPaste={(event) => {
-              const pasted = activityPlanStepNoteSchema.safeParse(
-                event.clipboardData.getData("text"),
-              );
-              if (!pasted.success) {
-                event.preventDefault();
-                setNotePasteError(
-                  pasted.error.issues[0]?.message ?? "Paste a short single-line cue.",
-                );
-              }
-            }}
-            onChange={(event) => {
-              setNotePasteError(null);
-              onChange((item) => ({ ...item, instructions: event.target.value || undefined }));
-            }}
-          />
-          <span id={`step-instructions-help-${step.id}`} role={noteError ? "alert" : undefined}>
-            {noteError ??
-              "One line, up to 160 characters. Put details in the activity plan description."}
-          </span>
-        </div>
-      ) : (
-        <Button type="button" variant="ghost" size="sm" onClick={() => setInstructionsOpen(true)}>
-          Add instructions
-        </Button>
-      )}
-      <label className="block text-sm" htmlFor={`step-completion-${step.id}`}>
-        Completion
-        <select
-          id={`step-completion-${step.id}`}
-          className="mt-1 h-10 w-full rounded border bg-background px-2"
-          aria-describedby={durationUnavailable ? durationErrorId : undefined}
-          aria-invalid={durationUnavailable}
-          value={selectedDurationType}
-          onChange={(event) => {
-            const type = event.target.value as ActivityPlanDuration["type"] | "";
-            setDrafts((current) => ({ ...current, [completionTypeKey(step.id)]: type }));
-            onChange((item) => ({
-              ...item,
-              duration: type === "untilFinished" ? durationFrom(type, 1) : null,
-            }));
-          }}
-        >
-          <option value="">Choose completion</option>
-          {durationUnavailable ? (
-            <option value={selectedDurationType}>
-              {selectedDurationType} (not available for {category})
-            </option>
-          ) : null}
-          {durations.map((type) => (
-            <option key={type} value={type}>
-              {type}
-            </option>
-          ))}
-        </select>
-        {durationUnavailable ? (
-          <p id={durationErrorId} className="mt-1 text-sm text-destructive">
-            This completion condition is not available for {category}. Choose an available
-            condition.
-          </p>
-        ) : null}
+      <label className="flex flex-wrap items-center gap-3 text-sm" htmlFor={`step-name-${step.id}`}>
+        <span className="min-w-24">Name (optional)</span>
+        <Input
+          id={`step-name-${step.id}`}
+          className="min-w-40 flex-1"
+          placeholder="Step name"
+          value={step.name ?? ""}
+          onChange={(event) =>
+            onChange((item) => ({ ...item, name: event.target.value || undefined }))
+          }
+        />
       </label>
-      {selectedDurationType && selectedDurationType !== "untilFinished" ? (
-        <label className="block text-sm" htmlFor={`step-quantity-${step.id}`}>
-          Quantity
-          <Input
-            id={`step-quantity-${step.id}`}
-            type="text"
-            inputMode="numeric"
-            value={quantityRaw}
-            aria-invalid={Boolean(numericError(quantityRaw))}
-            onChange={(event) => {
-              const raw = event.target.value;
-              setDrafts((current) => ({ ...current, [quantityKey]: raw }));
-              const parsed = parseNumericInput(raw, { min: 1, precision: "integer" });
-              if (parsed.status === "valid")
-                onChange((item) => ({
-                  ...item,
-                  duration: durationFrom(
-                    selectedDurationType as Exclude<ActivityPlanDuration["type"], "untilFinished">,
-                    parsed.value,
-                  ),
-                }));
-            }}
-          />
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <label className="min-w-24" htmlFor={`step-instructions-${step.id}`}>
+          Instructions (optional)
         </label>
-      ) : null}
+        <Input
+          id={`step-instructions-${step.id}`}
+          className="min-w-40 flex-1"
+          value={step.instructions ?? ""}
+          placeholder="One short cue, up to 160 characters"
+          aria-invalid={Boolean(noteError)}
+          aria-describedby={`step-instructions-help-${step.id}`}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.preventDefault();
+          }}
+          onPaste={(event) => {
+            const pasted = activityPlanStepNoteSchema.safeParse(
+              event.clipboardData.getData("text"),
+            );
+            if (!pasted.success) {
+              event.preventDefault();
+              setNotePasteError(
+                pasted.error.issues[0]?.message ?? "Paste a short single-line cue.",
+              );
+            }
+          }}
+          onChange={(event) => {
+            setNotePasteError(null);
+            onChange((item) => ({ ...item, instructions: event.target.value || undefined }));
+          }}
+        />
+        <span id={`step-instructions-help-${step.id}`} role={noteError ? "alert" : undefined}>
+          {noteError ??
+            "One line, up to 160 characters. Put details in the activity plan description."}
+        </span>
+      </div>
+      <div className="flex flex-wrap items-end gap-3" data-testid={`step-duration-row-${step.id}`}>
+        <label className="min-w-32 flex-1 text-sm" htmlFor={`step-completion-${step.id}`}>
+          <span className="sr-only">Completion</span>
+          <select
+            id={`step-completion-${step.id}`}
+            className="mt-1 h-10 w-full rounded border bg-background px-2"
+            aria-describedby={durationUnavailable ? durationErrorId : undefined}
+            aria-invalid={durationUnavailable}
+            value={selectedDurationType}
+            onChange={(event) => {
+              const type = event.target.value as ActivityPlanDuration["type"] | "";
+              setDrafts((current) => ({ ...current, [completionTypeKey(step.id)]: type }));
+              onChange((item) => ({
+                ...item,
+                duration: type === "untilFinished" ? durationFrom(type, 1) : null,
+              }));
+            }}
+          >
+            <option value="">Choose completion</option>
+            {durationUnavailable ? (
+              <option value={selectedDurationType}>
+                {selectedDurationType} (not available for {category})
+              </option>
+            ) : null}
+            {durations.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+          {durationUnavailable ? (
+            <p id={durationErrorId} className="mt-1 text-sm text-destructive">
+              This completion condition is not available for {category}. Choose an available
+              condition.
+            </p>
+          ) : null}
+        </label>
+        {selectedDurationType && selectedDurationType !== "untilFinished" ? (
+          <label className="min-w-28 flex-1 text-sm" htmlFor={`step-quantity-${step.id}`}>
+            <span className="sr-only">Quantity</span>
+            <Input
+              id={`step-quantity-${step.id}`}
+              type="text"
+              inputMode="numeric"
+              value={quantityRaw}
+              aria-invalid={Boolean(numericError(quantityRaw))}
+              onChange={(event) => {
+                const raw = event.target.value;
+                setDrafts((current) => ({ ...current, [quantityKey]: raw }));
+                const parsed = parseNumericInput(raw, { min: 1, precision: "integer" });
+                if (parsed.status === "valid")
+                  onChange((item) => ({
+                    ...item,
+                    duration: durationFrom(
+                      selectedDurationType as Exclude<
+                        ActivityPlanDuration["type"],
+                        "untilFinished"
+                      >,
+                      parsed.value,
+                    ),
+                  }));
+              }}
+            />
+          </label>
+        ) : null}
+      </div>
       <div className="space-y-2">
         <span className="text-sm font-medium">Targets</span>
         {step.targets.map((target, index) => {

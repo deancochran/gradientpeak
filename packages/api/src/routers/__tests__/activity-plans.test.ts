@@ -399,6 +399,11 @@ describe("activityPlansRouter", () => {
   });
   const invalidSteps = [
     {
+      label: "missing target",
+      change: { targets: [] },
+      code: activityPlanAuthoringIssueCodes.missingTarget,
+    },
+    {
       label: "open ended",
       change: { duration: { type: "untilFinished" } },
       code: activityPlanAuthoringIssueCodes.durationNotPermitted,

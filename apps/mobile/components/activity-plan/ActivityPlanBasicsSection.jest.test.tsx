@@ -94,35 +94,24 @@ describe("ActivityPlanBasicsSection", () => {
     );
   });
 
-  it("adds, cancels, and clears an optional description without retaining an empty field", async () => {
+  it("keeps an empty description directly editable after entering and clearing it", async () => {
     await renderNative(<EmptyBasicsHarness />);
 
-    expect(screen.queryByLabelText("Description")).toBeNull();
-    await fireEvent.press(screen.getByText("Add description"));
     expect(screen.getByLabelText("Description")).toBeTruthy();
-    await fireEvent.press(screen.getByLabelText("Cancel description"));
-    expect(screen.queryByLabelText("Description")).toBeNull();
-
-    await fireEvent.press(screen.getByText("Add description"));
     await fireEvent.changeText(screen.getByLabelText("Description"), "Draft notes");
-    await fireEvent.press(screen.getByLabelText("Clear description"));
-    expect(screen.queryByLabelText("Description")).toBeNull();
-    expect(screen.getByText("Add description")).toBeTruthy();
+    await fireEvent.changeText(screen.getByLabelText("Description"), "");
+    expect(screen.getByLabelText("Description").props.value).toBe("");
+    expect(screen.queryByText("Add description")).toBeNull();
   });
 
-  it("uses New plan only as a blank-title placeholder and restores or clears a title explicitly", async () => {
+  it("keeps a deliberately blank title editable without replacing it with a default", async () => {
     await renderNative(<BlankNameHarness />);
 
-    expect(screen.getByText("New plan")).toBeTruthy();
-    expect(screen.queryByLabelText("Plan name")).toBeNull();
-    await fireEvent.press(screen.getByLabelText("Edit plan name"));
+    expect(screen.getByPlaceholderText("Plan name").props.value).toBe("");
+    expect(screen.queryByLabelText("Edit plan name")).toBeNull();
     await fireEvent.changeText(screen.getByPlaceholderText("Plan name"), "Lunch run");
-    await fireEvent.press(screen.getByLabelText("Cancel plan name"));
-    expect(screen.getByText("New plan")).toBeTruthy();
-
-    await fireEvent.press(screen.getByLabelText("Edit plan name"));
-    await fireEvent.changeText(screen.getByPlaceholderText("Plan name"), "Lunch run");
-    await fireEvent.press(screen.getByLabelText("Clear plan name"));
+    expect(screen.getByPlaceholderText("Plan name").props.value).toBe("Lunch run");
+    await fireEvent.changeText(screen.getByPlaceholderText("Plan name"), "");
     expect(screen.getByPlaceholderText("Plan name").props.value).toBe("");
   });
 });

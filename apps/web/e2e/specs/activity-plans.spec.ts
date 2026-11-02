@@ -39,7 +39,7 @@ test("athlete can discover and open the canonical V5 activity plan library", asy
   await expect(sessionFlow).not.toContainText(/segment|adapt/i);
   await expectNoHorizontalOverflow(athletePage);
 });
-test("V5 authoring persists zero targets, recovers invalid drafts, and schedules its UI-edited RPE plan reference", async ({
+test("V5 authoring persists zero intensity and timed rest, recovers invalid drafts, and schedules its UI-edited RPE plan reference", async ({
   athleteActor,
   athletePage,
   e2eDatabase,
@@ -58,7 +58,7 @@ test("V5 authoring persists zero targets, recovers invalid drafts, and schedules
   await runWithE2ECleanup(testInfo, cleanup, async () => {
     await plans.openLibrary();
     await plans.startCreate();
-    await expect(athletePage.getByLabel("Plan name")).toHaveValue("");
+    await expect(athletePage.getByLabel("Plan name")).toHaveValue("New plan");
     await expect(athletePage.getByTestId(/^activity-plan-item-/)).toHaveCount(0);
     await expect(athletePage.getByText(/segment|training intent|adaptation/i)).toHaveCount(0);
     await athletePage.getByLabel("Plan name").fill(createdName);
@@ -68,13 +68,9 @@ test("V5 authoring persists zero targets, recovers invalid drafts, and schedules
     await expect(firstItem.getByLabel("Repeat count")).toHaveValue("2");
     await firstItem.getByRole("button", { name: "Add step", exact: true }).click();
     const firstStep = firstItem.locator('[id^="activity-plan-step-"]').first();
-    await expect(firstStep.getByRole("button", { name: "Add name", exact: true })).toBeVisible();
-    await expect(
-      firstStep.getByRole("button", { name: "Add instructions", exact: true }),
-    ).toBeVisible();
-    await firstStep.getByRole("button", { name: "Add name", exact: true }).click();
+    await expect(firstStep.getByLabel("Name (optional)")).toBeVisible();
+    await expect(firstStep.getByLabel("Instructions (optional)")).toBeVisible();
     await firstStep.getByLabel("Name (optional)").fill("Zero-power work");
-    await firstStep.getByRole("button", { name: "Add instructions", exact: true }).click();
     await firstStep.getByLabel("Instructions (optional)").fill("Keep the cadence smooth.");
     await firstStep.getByLabel("Completion").selectOption("time");
     await firstStep.getByLabel("Quantity").fill("600");
@@ -99,12 +95,13 @@ test("V5 authoring persists zero targets, recovers invalid drafts, and schedules
     await firstStep.getByRole("button", { name: /Close editor for/ }).click();
     await firstItem.getByRole("button", { name: "Add step", exact: true }).click();
     const secondStep = firstItem.locator('[id^="activity-plan-step-"]').nth(1);
-    await secondStep.getByRole("button", { name: "Add name", exact: true }).click();
     await secondStep.getByLabel("Name (optional)").fill("Recovery");
-    await secondStep.getByRole("button", { name: "Add instructions", exact: true }).click();
     await secondStep.getByLabel("Instructions (optional)").fill("Easy spin.");
     await secondStep.getByLabel("Completion").selectOption("time");
     await secondStep.getByLabel("Quantity").fill("60");
+    await expect(athletePage.getByRole("button", { name: "Create plan" })).toBeDisabled();
+    await secondStep.getByRole("button", { name: "Add target", exact: true }).click();
+    await secondStep.getByLabel("Target type 1").selectOption("rest");
     await secondStep.getByRole("button", { name: /Close editor for/ }).click();
     await firstItem.getByRole("button", { name: "More actions for repeat 1" }).click();
     await athletePage.getByRole("menuitem", { name: "Duplicate" }).click();
@@ -153,6 +150,7 @@ test("V5 authoring persists zero targets, recovers invalid drafts, and schedules
                 name: "Recovery",
                 instructions: "Easy spin.",
                 duration: { type: "time", seconds: 60 },
+                targets: [{ type: "rest" }],
               },
             ],
           },

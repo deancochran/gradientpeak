@@ -15,7 +15,6 @@ it("authors root and repeated steps, moves across boundaries, duplicates and ung
   fireEvent.change(screen.getByLabelText("Plan name"), { target: { value: "V5 journey" } });
   fireEvent.change(screen.getByLabelText("Activity category"), { target: { value: "run" } });
   fireEvent.click(screen.getByRole("button", { name: "Add step" }));
-  fireEvent.click(screen.getByRole("button", { name: "Add name" }));
   fireEvent.change(screen.getByLabelText("Name (optional)"), { target: { value: "Work" } });
   fireEvent.change(screen.getByLabelText("Completion"), { target: { value: "distance" } });
   fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "800" } });
@@ -30,10 +29,11 @@ it("authors root and repeated steps, moves across boundaries, duplicates and ung
   fireEvent.click(
     within(screen.getByTestId("activity-plan-item-0")).getByRole("button", { name: "Add step" }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Add name" }));
   fireEvent.change(screen.getByLabelText("Name (optional)"), { target: { value: "Recovery" } });
   fireEvent.change(screen.getByLabelText("Completion"), { target: { value: "time" } });
   fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "60" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add target" }));
+  fireEvent.change(screen.getByLabelText("Target intensity 1"), { target: { value: "4" } });
   fireEvent.pointerDown(screen.getByRole("button", { name: "More actions for step 1" }), {
     button: 0,
   });

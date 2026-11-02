@@ -218,10 +218,12 @@ export function ChoiceField<T extends ChoiceValue>(props: ChoiceFieldProps<T>) {
           }}
           className="min-h-12 rounded-md border border-input p-3"
         >
-          <Text className="text-sm font-medium">
-            {props.label}
-            {props.required ? " *" : ""}
-          </Text>
+          {!props.hideVisibleLabel ? (
+            <Text className="text-sm font-medium">
+              {props.label}
+              {props.required ? " *" : ""}
+            </Text>
+          ) : null}
           <Text>{choice.display}</Text>
         </Pressable>
       ) : (
@@ -232,10 +234,12 @@ export function ChoiceField<T extends ChoiceValue>(props: ChoiceFieldProps<T>) {
           accessibilityState={{ disabled: Boolean(props.disabled) }}
           testID={props.testId}
         >
-          <Text className={props.density === "compact" ? "text-xs font-medium" : "font-medium"}>
-            {props.label}
-            {props.required ? " *" : ""}
-          </Text>
+          {!props.hideVisibleLabel ? (
+            <Text className={props.density === "compact" ? "text-xs font-medium" : "font-medium"}>
+              {props.label}
+              {props.required ? " *" : ""}
+            </Text>
+          ) : null}
           {choice.result.status === "invalid" ? <Text>{choice.display}</Text> : null}
         </View>
       )}
