@@ -9,7 +9,7 @@ function HomeScreen() {
 
   return (
     <View className="flex-1 bg-background" testID="home-screen">
-      <AppHeader title="Feed" />
+      <AppHeader title="Home" />
       <FeedList />
     </View>
   );

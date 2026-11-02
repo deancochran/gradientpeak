@@ -1,75 +1,156 @@
 import { describe, expect, it } from "vitest";
+import { compileActivityPlan } from "../../activity-plan";
+import type { ActivityTarget } from "../../targets";
+import { buildPerformanceTargetFactsFixture } from "../../testing/performance-model";
+import {
+  resolveActivityOccurrenceTrainerIntents,
+  resolvePerformanceTargetValue,
+} from "../recording-plan-target-resolver";
 
-import { resolvePlanStepTrainerIntents } from "../recording-plan-target-resolver";
-
-describe("recording plan target resolver", () => {
-  it("converts FTP targets into canonical power intents", () => {
-    const resolution = resolvePlanStepTrainerIntents({
-      step: {
-        targets: [{ type: "%FTP", intensity: 90 }],
-      },
-      profileSnapshot: {
-        ftp: 300,
-      },
-    });
-
-    expect(resolution.intents).toEqual([
+const asOf = "2026-06-01T00:00:00.000Z";
+function targets(
+  input: {
+    power?: number;
+    powerState?: "provisional" | "confirmed" | "stale";
+    runLthr?: number;
+    runMaxHr?: number;
+  } = {},
+) {
+  const facts = buildPerformanceTargetFactsFixture({
+    asOf,
+    thresholdEffectiveAt: "2026-05-30T00:00:00.000Z",
+    ...(input.power === undefined ? {} : { bikeThresholdWatts: input.power }),
+    lthrBpm: input.runLthr === undefined ? {} : { run: input.runLthr },
+    maxHrBpm: input.runMaxHr === undefined ? {} : { run: input.runMaxHr },
+  });
+  if (facts.thresholds.bike.status === "available" && input.powerState) {
+    facts.thresholds.bike.state = input.powerState === "stale" ? "confirmed" : input.powerState;
+    facts.thresholds.bike.freshness = input.powerState === "stale" ? "stale" : "fresh";
+  }
+  return facts;
+}
+function occurrence(activity_category: "run" | "bike" | "swim", targets: ActivityTarget[]) {
+  const compiled = compileActivityPlan({
+    version: 5,
+    activity_category,
+    items: [
       {
-        type: "set_power",
-        source: "step_change",
-        watts: 270,
+        type: "step",
+        id: "50000000-0000-4000-8000-000000000003",
+        name: "Step",
+        duration: { type: "time", seconds: 60 },
+        targets,
       },
+    ],
+  });
+  const value = compiled.occurrences[0];
+  if (!value) throw new Error("Expected activity occurrence");
+  return value;
+}
+describe("resolveActivityOccurrenceTrainerIntents", () => {
+  it("resolves cycling power against the occurrence activity_category", () => {
+    const performanceTargets = targets({ power: 250 });
+    expect(
+      resolveActivityOccurrenceTrainerIntents({
+        occurrence: occurrence("bike", [{ type: "%FTP", intensity: 80 }]),
+        performanceTargets,
+      }).intents,
+    ).toEqual([expect.objectContaining({ type: "set_power", watts: 200 })]);
+    expect(
+      resolveActivityOccurrenceTrainerIntents({
+        occurrence: occurrence("bike", [{ type: "%FTP", intensity: 80 }]),
+        performanceTargets,
+        intensityScale: 0.9,
+      }).intents,
+    ).toEqual([expect.objectContaining({ type: "set_power", watts: 180 })]);
+  });
+  it("keeps the recording-start target snapshot stable after a later calibration", () => {
+    const recordingOccurrence = occurrence("bike", [{ type: "%FTP", intensity: 80 }]);
+    const capturedAtStart = targets({ power: 250 });
+    const started = resolveActivityOccurrenceTrainerIntents({
+      occurrence: recordingOccurrence,
+      performanceTargets: capturedAtStart,
+    });
+    const afterRecalibration = resolveActivityOccurrenceTrainerIntents({
+      occurrence: recordingOccurrence,
+      performanceTargets: targets({ power: 300 }),
+    });
+    expect(started.intents).toEqual([expect.objectContaining({ type: "set_power", watts: 200 })]);
+    expect(afterRecalibration.intents).toEqual([
+      expect.objectContaining({ type: "set_power", watts: 240 }),
+    ]);
+    expect(started.intents).toEqual([expect.objectContaining({ type: "set_power", watts: 200 })]);
+  });
+  it.each([
+    "provisional",
+    "stale",
+  ] as const)("exports a structured bike target from a %s valid calibration", (powerState) => {
+    const performanceTargets = targets({ power: 250, powerState });
+    expect(
+      resolveActivityOccurrenceTrainerIntents({
+        occurrence: occurrence("bike", [{ type: "%FTP", intensity: 80 }]),
+        performanceTargets,
+      }),
+    ).toMatchObject({
+      intents: [expect.objectContaining({ type: "set_power", watts: 200 })],
+      unresolvedTargets: [],
+    });
+  });
+  it("fails closed for missing FTP and accepts an absolute watts target", () => {
+    expect(
+      resolveActivityOccurrenceTrainerIntents({
+        occurrence: occurrence("bike", [{ type: "%FTP", intensity: 80 }]),
+        performanceTargets: targets(),
+      }).unresolvedTargets,
+    ).toEqual([{ type: "%FTP", intensity: 80 }]);
+    const performanceTargets = targets();
+    const resolution = resolveActivityOccurrenceTrainerIntents({
+      occurrence: occurrence("bike", [{ type: "watts", intensity: 210 }]),
+      performanceTargets,
+    });
+    expect(resolution.intents).toEqual([
+      expect.objectContaining({ type: "set_power", watts: 210 }),
     ]);
     expect(resolution.unresolvedTargets).toEqual([]);
   });
-
-  it("keeps heart-rate and RPE targets informational instead of mapping them to trainer commands", () => {
-    const resolution = resolvePlanStepTrainerIntents({
-      step: {
-        targets: [
-          { type: "%ThresholdHR", intensity: 95 },
-          { type: "RPE", intensity: 7 },
-        ],
-      },
-    });
-
-    expect(resolution.intents).toEqual([]);
-    expect(resolution.informationalTargets).toHaveLength(2);
+  it("does not export a bike threshold into a mismatched activity-category target", () => {
+    expect(
+      resolvePerformanceTargetValue({
+        target: { type: "%FTP", intensity: 80 },
+        activityCategory: "run",
+        performanceTargets: targets({ power: 250, powerState: "provisional" }),
+      }),
+    ).toBeNull();
   });
-
-  it("maps cadence and speed targets into canonical trainer intents", () => {
-    const resolution = resolvePlanStepTrainerIntents({
-      step: {
-        targets: [
-          { type: "cadence", intensity: 92 },
-          { type: "speed", intensity: 8.5 },
-        ],
-      },
-      source: "periodic_refinement",
-    });
-
-    expect(resolution.intents).toEqual([
-      {
-        type: "set_cadence",
-        source: "periodic_refinement",
-        rpm: 92,
-      },
-      {
-        type: "set_speed",
-        source: "periodic_refinement",
-        metersPerSecond: 8.5,
-      },
-    ]);
+  it("requires activity-category-specific eligible LTHR and max HR", () => {
+    const performanceTargets = targets({ runLthr: 170, runMaxHr: 190 });
+    const thresholdTarget = { type: "%ThresholdHR", intensity: 90 } as const;
+    const maxHrTarget = { type: "%MaxHR", intensity: 80 } as const;
+    expect(
+      resolveActivityOccurrenceTrainerIntents({
+        occurrence: occurrence("run", [thresholdTarget]),
+        performanceTargets,
+      }),
+    ).toMatchObject({ informationalTargets: [thresholdTarget], unresolvedTargets: [] });
+    expect(
+      resolveActivityOccurrenceTrainerIntents({
+        occurrence: occurrence("swim", [thresholdTarget]),
+        performanceTargets,
+      }).unresolvedTargets,
+    ).toEqual([thresholdTarget]);
+    expect(
+      resolvePerformanceTargetValue({
+        target: maxHrTarget,
+        activityCategory: "run",
+        performanceTargets,
+      }),
+    ).toEqual({ value: 152, unit: "bpm" });
   });
-
-  it("marks percentage-based power targets unresolved when FTP is unavailable", () => {
-    const resolution = resolvePlanStepTrainerIntents({
-      step: {
-        targets: [{ type: "%FTP", intensity: 105 }],
-      },
-    });
-
-    expect(resolution.intents).toEqual([]);
-    expect(resolution.unresolvedTargets).toEqual([{ type: "%FTP", intensity: 105 }]);
+  it("normalizes run speed from persisted km/h to m/s", () => {
+    expect(
+      resolveActivityOccurrenceTrainerIntents({
+        occurrence: occurrence("run", [{ type: "speed", intensity: 18 }]),
+      }).intents,
+    ).toEqual([expect.objectContaining({ type: "set_speed", metersPerSecond: 5 })]);
   });
 });

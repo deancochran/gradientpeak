@@ -1,4 +1,6 @@
 export interface AvatarStackAvatar {
+  /** Stable identity used when the stack is reordered or members share display data. */
+  id: string;
   name: string;
   image: string;
 }
