@@ -8,10 +8,3 @@ export interface MetricEstimationResult {
 }
 
 export type ExperienceLevel = "beginner" | "intermediate" | "advanced";
-
-export interface ValidationResult {
-  isValid: boolean;
-  warnings: string[];
-  confidence: "high" | "medium" | "low";
-  percentileEstimate?: number;
-}

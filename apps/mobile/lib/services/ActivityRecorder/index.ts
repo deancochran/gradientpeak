@@ -3,7 +3,7 @@
  *
  * Core responsibilities:
  * 1. Coordinate recording lifecycle (start/pause/resume/finish)
- * 2. Manage sub-systems (sensors, location, metrics, plan)
+ * 2. Manage sub-systems (sensors, metrics, plan)
  * 3. Emit 4 core events for UI updates
  *
  * Key simplifications:
@@ -13,47 +13,84 @@
  * - 4 core events instead of 12+
  */
 
+import type { FTMSFeatures, FtmsMachineType } from "@deancochran/ftms";
 import {
+  ACTIVITY_PLAN_COMPILER_VERSION,
+  ActivityPayloadSchema,
+  type AthletePerformanceTargetFacts,
+  activityPlanStructureSchema,
+  athletePerformanceTargetFactsSchema,
   type CurrentMetricValue,
-  type FTMSFeatures,
-  type FtmsAvailableMode,
+  compileActivityPlan,
+  createUnavailableAthletePerformanceTargetFacts,
   type FtmsControlMode,
-  type FtmsMachineType,
-  GLOBAL_DEFAULTS,
-  type IntervalStepV2,
   type MetricFamily,
   type MetricSourceCandidate,
   type MetricSourceSelection,
   type MetricSourceType,
-  type PerformanceMetrics,
   type RecordingActivityCategory,
+  type RecordingBoundaryJournalEntry,
   RecordingConfigResolver,
   type RecordingConfiguration,
+  type RecordingExecutionManifest,
   type RecordingLaunchIntent,
-  type RecordingServiceActivityPlan,
+  type RecordingOccurrenceResult,
+  type RecordingPlannedSessionLaunch,
   type RecordingSessionContract,
+  type RecordingSessionLifecycleState,
   type RecordingTrainerIntentSource,
   type RecordingTrainerMachineType,
   resolveMetricSources as resolveCoreMetricSources,
+  type StandardBleMetric,
 } from "@repo/core";
 import { EventEmitter } from "expo";
-import type { LocationObject } from "expo-location";
 import { AppState, type AppStateStatus } from "react-native";
-import { type FitRecord, GarminFitEncoder } from "../fit/GarminFitEncoder";
+import { omitUndefined } from "../../omitUndefined";
+import { getLocalActivityArtifactMetadata } from "../activitySubmissionQueue/localArtifact";
 import {
-  type AllPermissionsStatus,
-  areAllPermissionsGranted,
-  areRecordingPermissionsGranted,
-  checkAllPermissions,
-} from "../permissions-check";
+  type FitSessionData,
+  GarminFitEncoder,
+  validateFinalizedFitFile,
+} from "../fit/GarminFitEncoder";
 import { shouldApplyAutoFollowAuthority } from "./autoFollowRuntime";
-import { persistPendingFinalizedArtifact } from "./finalizedArtifactStorage";
-import { getNextGpsRecordingEnabled, shouldStartGpsTracking } from "./gpsRuntime";
+import {
+  type ActivityRecorderCheckpoint,
+  assertRecordingPlanExecutionStructureHashes,
+  clearRecordingCheckpoint,
+  hashRecordingPlan,
+  MOBILE_RECORDING_CHECKPOINT_SCHEMA_VERSION,
+  type PlannedRecordingCheckpoint,
+  persistRecordingCheckpoint,
+  releaseRecordingCheckpointClaim,
+} from "./checkpointStorage";
+import { DEFAULT_RECORDING_WEIGHT_KG } from "./config";
+import { deleteFinalizedArtifactFiles } from "./finalizedArtifactStorage";
+import {
+  appendActivityRecorderFitRecord,
+  rebaseRecordingDistance,
+  rebaseRetainedFitRecordDistances,
+} from "./fitRecordWriter";
 import { LiveMetricsManager } from "./LiveMetricsManager";
-import { LocationManager } from "./location";
 import { NotificationsManager } from "./notification";
+import {
+  type CompiledRecordingPlan,
+  compileRecordingPlan,
+  createFreeRecordingExecutionPlan,
+  type RecordingActivityPlanInput,
+  type RecordingPlanOccurrence,
+} from "./plan";
 import { PlanExecution } from "./planExecution";
+import { getMobileRecordingPlanSupport } from "./planSupport";
 import { type PlanValidationResult, validatePlanRequirements } from "./planValidation";
+import {
+  allocateRecordingEvidenceSession,
+  commitFinalizedArtifactAndHandoff,
+  createRecordingStreamJournalAdapter,
+  discardFinalizedRecordingEvidence,
+  fenceRecordingEvidenceSession,
+  quarantineRecordingEvidenceSession,
+  rollbackRecordingEvidenceSession,
+} from "./recordingEvidenceJournal";
 import {
   getTrainerSensorIdsToDisconnect,
   isFtmsModeAllowedForMachine,
@@ -67,10 +104,12 @@ import {
   RouteController,
 } from "./routeController";
 import type { SimplifiedMetrics } from "./SimplifiedMetrics";
-import { type ConnectedSensor, SensorsManager } from "./sensors";
+import { type DurableStreamReplay, StreamBuffer } from "./StreamBuffer";
+import { type ConnectedSensor, SENSOR_READING_STALE_AFTER_MS, SensorsManager } from "./sensors";
 import { RecordingSessionController } from "./sessionController";
 import { inferTrainerMachineType, TrainerControl } from "./trainerControl";
 import type {
+  FtmsAvailableMode,
   RecorderProfileRef,
   RecordingMetadata,
   RecordingPlanView,
@@ -91,29 +130,32 @@ export type { SimplifiedMetrics };
 // Types
 // ================================
 
-export type RecordingState =
-  | "pending"
-  | "ready"
-  | "recording"
-  | "paused"
-  | "finishing"
-  | "finished";
+export type RecordingState = RecordingSessionLifecycleState;
 
 export type RecordingLifecycle = "idle" | "setup" | "active";
 export type { RecordingRouteAttachmentSource, RecordingRouteAttachmentView };
+
+export interface RecordingStartReservation {
+  profileId: string;
+  sessionId: string;
+  markStarted: () => Promise<void>;
+}
 
 export interface StepProgress {
   movingTime: number;
   duration: number;
   progress: number;
   requiresManualAdvance: boolean;
+  canAutoAdvance: boolean;
+  canManualAdvance: boolean;
   canAdvance: boolean;
 }
 
 export interface StepInfo {
   index: number;
   total: number;
-  current: IntervalStepV2 | undefined;
+  current: RecordingPlanOccurrence | undefined;
+  next: RecordingPlanOccurrence | undefined;
   progress: StepProgress | null;
   isLast: boolean;
   isFinished: boolean;
@@ -209,26 +251,30 @@ function buildFtmsAvailableModes(
   ];
 
   if (features.powerTargetSettingSupported && isFtmsModeAllowedForMachine("erg", machineType)) {
-    modes.push({
-      id: "erg",
-      label: "Target Power",
-      enabled: true,
-      range: toFtmsRange(features.powerRange, "W", 5),
-      safetyLevel: "none",
-    });
+    modes.push(
+      omitUndefined({
+        id: "erg",
+        label: "Target Power",
+        enabled: true,
+        range: toFtmsRange(features.powerRange, "W", 5),
+        safetyLevel: "none",
+      }),
+    );
   }
 
   if (
     features.resistanceTargetSettingSupported &&
     isFtmsModeAllowedForMachine("resistance", machineType)
   ) {
-    modes.push({
-      id: "resistance",
-      label: "Resistance",
-      enabled: true,
-      range: toFtmsRange(features.resistanceRange, "level", 1),
-      safetyLevel: "none",
-    });
+    modes.push(
+      omitUndefined({
+        id: "resistance",
+        label: "Resistance",
+        enabled: true,
+        range: toFtmsRange(features.resistanceRange, "level", 1),
+        safetyLevel: "none",
+      }),
+    );
   }
 
   if (features.indoorBikeSimulationSupported && isFtmsModeAllowedForMachine("grade", machineType)) {
@@ -244,36 +290,42 @@ function buildFtmsAvailableModes(
     features.inclinationTargetSettingSupported &&
     isFtmsModeAllowedForMachine("inclination", machineType)
   ) {
-    modes.push({
-      id: "inclination",
-      label: "Inclination",
-      enabled: true,
-      range: toFtmsRange(features.inclinationRange, "%", 0.5),
-      safetyLevel: "confirm",
-    });
+    modes.push(
+      omitUndefined({
+        id: "inclination",
+        label: "Inclination",
+        enabled: true,
+        range: toFtmsRange(features.inclinationRange, "%", 0.5),
+        safetyLevel: "confirm",
+      }),
+    );
   }
 
   if (features.speedTargetSettingSupported && isFtmsModeAllowedForMachine("speed", machineType)) {
-    modes.push({
-      id: "speed",
-      label: "Speed",
-      enabled: true,
-      range: toFtmsRange(features.speedRange, "kph", 0.1),
-      safetyLevel: "strong_confirm",
-    });
+    modes.push(
+      omitUndefined({
+        id: "speed",
+        label: "Speed",
+        enabled: true,
+        range: toFtmsRange(features.speedRange, "kph", 0.1),
+        safetyLevel: "strong_confirm",
+      }),
+    );
   }
 
   if (
     features.heartRateTargetSettingSupported &&
     isFtmsModeAllowedForMachine("target_heart_rate", machineType)
   ) {
-    modes.push({
-      id: "target_heart_rate",
-      label: "Target Heart Rate",
-      enabled: true,
-      range: toFtmsRange(features.heartRateRange, "bpm", 1),
-      safetyLevel: "confirm",
-    });
+    modes.push(
+      omitUndefined({
+        id: "target_heart_rate",
+        label: "Target Heart Rate",
+        enabled: true,
+        range: toFtmsRange(features.heartRateRange, "bpm", 1),
+        safetyLevel: "confirm",
+      }),
+    );
   }
 
   if (
@@ -292,7 +344,7 @@ function buildFtmsAvailableModes(
     id: "free_ride",
     label: "Free Ride",
     enabled: selectedMode !== "status",
-    disabledReason: selectedMode === "status" ? "No active target to clear" : undefined,
+    ...(selectedMode === "status" ? { disabledReason: "No active target to clear" } : {}),
     safetyLevel: "confirm",
   });
 
@@ -333,9 +385,47 @@ function mapFtmsMachineTypeToRecordingMachineType(
   }
 }
 
+function getFinalizationRecoveryCutoff(checkpoint: ActivityRecorderCheckpoint): number | null {
+  if (checkpoint.lifecycle !== "finishing") return null;
+  const timestamp =
+    checkpoint.variant === "planned" ? checkpoint.timing.updatedAt : checkpoint.start.updatedAt;
+  const cutoff = Date.parse(timestamp);
+  if (!Number.isFinite(cutoff))
+    throw new Error("Finalization checkpoint has an invalid finish time");
+  return cutoff;
+}
+
+function limitRecoveredReplayToFinish(
+  replay: DurableStreamReplay,
+  finishTimestamp: number | null,
+): DurableStreamReplay {
+  if (finishTimestamp === null) return replay;
+  return {
+    sensorReadings: replay.sensorReadings.filter((reading) => reading.timestamp <= finishTimestamp),
+    fitRecords: replay.fitRecords.filter((record) => record.timestamp <= finishTimestamp),
+  };
+}
+
+function assertGpsFreeReplay(replay: DurableStreamReplay): DurableStreamReplay {
+  const legacyLocations = "locations" in replay ? replay.locations : undefined;
+  const hasCoordinateRecord = replay.fitRecords.some(
+    (record) => "latitude" in record || "longitude" in record,
+  );
+  if ((Array.isArray(legacyLocations) && legacyLocations.length > 0) || hasCoordinateRecord) {
+    throw new Error("Coordinate-bearing in-app recording recovery is not supported");
+  }
+  return replay;
+}
+
 // ================================
 // Core Events (minimal, focused)
 // ================================
+type EventArguments = Parameters<typeof console.log>;
+
+function boundedErrorCategory(error: unknown, fallback: string): string {
+  return error instanceof Error && error.name ? error.name.slice(0, 80) : fallback;
+}
+
 export interface ServiceEvents {
   // Recording state changed (pending/ready/recording/paused/finished)
   stateChanged: (state: RecordingState) => void;
@@ -350,7 +440,7 @@ export interface ServiceEvents {
 
   // Unplanned activity was selected
   activitySelected: (data: {
-    category: RecordingActivityCategory;
+    activity_category: RecordingActivityCategory;
     gpsRecordingEnabled: boolean;
   }) => void;
 
@@ -361,7 +451,7 @@ export interface ServiceEvents {
   sensorsChanged: (sensors: ConnectedSensor[]) => void;
 
   // Plan events
-  planSelected: (data: { plan: RecordingServiceActivityPlan; eventId?: string }) => void;
+  planSelected: (data: { plan: RecordingActivityPlanInput; eventId?: string }) => void;
   stepChanged: (info: StepInfo) => void;
   planCleared: () => void;
   planCompleted: () => void;
@@ -372,9 +462,6 @@ export interface ServiceEvents {
   // Error events
   error: (message: string) => void;
 
-  // GPS tracking events
-  gpsTrackingChanged: (enabled: boolean) => void;
-
   // Performance metrics updated (base values or scale)
   metricsUpdated: () => void;
 
@@ -383,9 +470,7 @@ export interface ServiceEvents {
 
   // Immutable snapshot changed (created/reset)
   snapshotUpdated: (snapshot: RecordingSessionSnapshot | null) => void;
-
-  // Index signature for EventsMap
-  [key: string]: (...args: any[]) => void;
+  [key: string]: (...args: EventArguments) => void;
 }
 
 // ================================
@@ -396,52 +481,69 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // === Public State ===
   public state: RecordingState = "pending";
   public selectedActivityCategory: RecordingActivityCategory = "run";
-  private _gpsRecordingEnabled: boolean = true;
   private hasConfiguredSetup: boolean = false;
   private currentLaunchSource: RecordingConfiguration["input"]["launchSource"] = "manual";
-  public recordingMetadata?: RecordingMetadata;
+  public recordingMetadata?: RecordingMetadata | undefined;
   private finalizedArtifact: RecordingSessionArtifact | null = null;
   private readonly sessionController = new RecordingSessionController();
 
   // === Public Managers (direct access - no forwarding) ===
   public readonly liveMetricsManager: LiveMetricsManager;
-  public readonly locationManager: LocationManager;
   public readonly sensorsManager: SensorsManager;
   private readonly planExecution = new PlanExecution();
+  private completedOccurrences: RecordingOccurrenceResult[] = [];
+  private boundaryJournal: RecordingBoundaryJournalEntry[] = [];
+  private rewindJournal: NonNullable<PlannedRecordingCheckpoint["rewindJournal"]> = [];
+  private checkpointRevision = 0;
+  private planHash: string | null = null;
+  /** In-memory-only execution contract for the active free recording. */
+  private freeRecordingExecutionPlan: RecordingActivityPlanInput | undefined;
+  private freeRecordingCompiledPlan: CompiledRecordingPlan | null = null;
+  private occurrenceStartedAt: number | null = null;
+  private occurrenceStartStats = { movingSeconds: 0, distanceMeters: 0 };
+  private timerEvents: Array<{ type: "pause" | "resume"; timestamp: number }> = [];
+  private planBoundaryTransition: Promise<void> = Promise.resolve();
+  private checkpointDirty = false;
+  private checkpointWriteInFlight: Promise<void> | null = null;
+  private checkpointWriteTimer?: ReturnType<typeof setTimeout> | undefined;
+  private lastCheckpointWriteAt = 0;
+  private recoveredCheckpoint: ActivityRecorderCheckpoint | null = null;
+  private recoveredReplay: DurableStreamReplay | null = null;
   private readonly trainerControl: TrainerControl;
-  private _permissionsStatus: AllPermissionsStatus = {
-    bluetooth: null,
-    location: null,
-    locationBackground: null,
-  };
 
   // === Plan State (minimal tracking) ===
-  private _plan?: RecordingServiceActivityPlan;
-  private _eventId?: string;
-
-  // === GPS Availability Cache ===
-  private _gpsAvailable: boolean = false;
+  private _plan: RecordingActivityPlanInput | undefined;
+  private _eventId?: string | undefined;
+  private _plannedSession?: RecordingPlannedSessionLaunch | undefined;
 
   private readonly routeController = new RouteController();
-  private lastHandledLocationKey: string | null = null;
 
   // === Private Managers ===
-  private notificationsManager?: NotificationsManager;
-  private fitEncoder?: GarminFitEncoder;
+  private notificationsManager?: NotificationsManager | undefined;
+  private fitEncoder?: GarminFitEncoder | undefined;
 
   // === App State Management ===
   private appState: AppStateStatus = AppState.currentState;
-  private appStateSubscription?: { remove: () => void };
+  private appStateSubscription?: { remove: () => void } | undefined;
 
   // === Timing ===
-  private startTime?: number;
+  private startTime?: number | undefined;
   private pausedTime: number = 0;
-  private lastPauseTime?: number;
-  private elapsedTimeInterval?: ReturnType<typeof setInterval> | number;
-  private sessionUpdateTimer?: ReturnType<typeof setTimeout> | number;
+  private lastPauseTime?: number | undefined;
+  private elapsedTimeInterval?: ReturnType<typeof setInterval> | number | undefined;
+  private sessionUpdateTimer: ReturnType<typeof setTimeout> | number | undefined;
   private lastSessionUpdateAt = 0;
   private fitRecordingUpdateInFlight = false;
   private fitRecordingUpdatePending = false;
+  private lastFitDistanceMeters = 0;
+  private lifecycleTransition: Promise<void> = Promise.resolve();
+  private recordingEndTime?: number | undefined;
+  private liveMetricsFinalized = false;
+  private fitFinalized = false;
+  private finalizationFailed = false;
+  /** Closes foreground producer scheduling before the durable SQLite fence. */
+  private producerFenceClosed = false;
+  private evidenceFenced = false;
 
   // === Lap Tracking ===
   private laps: number[] = []; // Array of lap times (moving time in seconds)
@@ -449,54 +551,32 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   // === Profile ===
   private profile: RecorderProfileRef;
-  private ftp?: number;
-  private _baseFtp?: number;
   private _ftpScale: number = 1.0;
-
-  private thresholdHr?: number;
-  private _baseThresholdHr?: number;
 
   private weightKg?: number;
   private _baseWeightKg?: number;
-
-  private thresholdPaceSecondsPerKm?: number;
-  private _baseThresholdPaceSecondsPerKm?: number;
+  private performanceTargets?: AthletePerformanceTargetFacts;
 
   constructor(
     profile: RecorderProfileRef,
     metrics?: {
-      ftp?: number;
-      thresholdHr?: number;
       weightKg?: number;
-      thresholdPaceSecondsPerKm?: number;
     },
   ) {
     super();
     // Note: expo-modules-core EventEmitter doesn't have setMaxListeners
     // If you need more listeners, consider using Node.js EventEmitter instead
     this.profile = profile;
-
-    // Initialize base values from passed metrics or defaults
-    this._baseFtp = metrics?.ftp ?? GLOBAL_DEFAULTS.ftp;
-    this._baseThresholdHr = metrics?.thresholdHr ?? GLOBAL_DEFAULTS.thresholdHr;
-    this._baseWeightKg = metrics?.weightKg ?? GLOBAL_DEFAULTS.weightKg;
-    this._baseThresholdPaceSecondsPerKm =
-      metrics?.thresholdPaceSecondsPerKm ?? GLOBAL_DEFAULTS.thresholdPaceSecondsPerKm;
+    // Threshold-dependent values remain unavailable until canonical target facts are supplied.
+    this._baseWeightKg = metrics?.weightKg ?? DEFAULT_RECORDING_WEIGHT_KG;
 
     this._ftpScale = 1.0;
 
-    // Apply initial scale to FTP
-    this.ftp = Math.round((this._baseFtp || 0) * this._ftpScale);
-    this.thresholdHr = this._baseThresholdHr;
     this.weightKg = this._baseWeightKg;
-    this.thresholdPaceSecondsPerKm = this._baseThresholdPaceSecondsPerKm;
 
     // Initialize managers
     this.liveMetricsManager = new LiveMetricsManager(profile, {
-      ftp: this.ftp,
-      thresholdHr: this.thresholdHr,
       weightKg: this.weightKg,
-      thresholdPaceSecondsPerKm: this.thresholdPaceSecondsPerKm,
     });
     this.liveMetricsManager.addListener("sensorUpdate", () => {
       this.scheduleSessionUpdate();
@@ -508,7 +588,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.liveMetricsManager.addListener("metricsUpdated", () => {
       this.publishSessionUpdate();
     });
-    this.locationManager = new LocationManager();
     this.sensorsManager = new SensorsManager();
     this.trainerControl = new TrainerControl({
       sensorsManager: this.sensorsManager,
@@ -518,11 +597,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       onCommandStatus: () => this.publishSessionUpdate(),
       onError: (message) => this.emit("error", message),
     });
-
-    // Note: Location tracking is started conditionally when GPS recording is enabled
-
-    // Check permissions on initialization
-    this.checkPermissions();
 
     // Setup sensor data listeners
     this.sensorsManager.subscribe((reading) => this.handleSensorData(reading));
@@ -544,9 +618,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       }
     });
 
-    // Setup location listeners
-    this.locationManager.addCallback((location) => this.handleLocationData(location));
-
     // No permission listeners needed - permissions are checked independently
 
     // Setup app state listener
@@ -554,39 +625,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this.handleAppStateChange(nextState),
     );
 
-    console.log("[ActivityRecorderService] Initialized", {
-      profileId: profile.id,
-    });
+    console.log("[ActivityRecorderService] Initialized");
     this.sessionController.setLifecycle(this.state);
     this.publishSessionUpdate();
-  }
-
-  // ================================
-  // Permissions
-  // ================================
-
-  async checkPermissions(forceRefresh = false): Promise<void> {
-    this._permissionsStatus = await checkAllPermissions(forceRefresh);
-  }
-
-  getPermissionsStatus(): AllPermissionsStatus {
-    return this._permissionsStatus;
-  }
-
-  /**
-   * Refresh permissions and return whether all are granted
-   * Useful before starting a recording
-   */
-  async refreshAndCheckAllPermissions(): Promise<boolean> {
-    await this.checkPermissions(true); // Force refresh
-    return await areAllPermissionsGranted();
-  }
-
-  async refreshAndCheckRecordingPermissions(
-    gpsRequired = this._gpsRecordingEnabled,
-  ): Promise<boolean> {
-    await this.checkPermissions(true);
-    return await areRecordingPermissionsGranted(gpsRequired);
   }
 
   public getSimplifiedMetrics(): SimplifiedMetrics {
@@ -610,7 +651,14 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return;
     }
 
-    if (this.shouldAutoFollowPlanTargets() && this.currentStep) {
+    if (this.shouldAutoFollowPlanTargets() && this.currentStep?.role === "activity") {
+      // An activity occurrence with no target is an explicit automatic-control
+      // boundary, not an invitation to retain the preceding ERG/resistance
+      // command (or to fall through to route simulation).
+      if (this.currentStep.targets.length === 0) {
+        await this.trainerControl.neutralizeForBoundary();
+        return;
+      }
       await this.trainerControl.applyStepTargets(this.currentStep, source);
       return;
     }
@@ -623,51 +671,51 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   /**
    * Update performance metrics reactively
    * Updates internal values and LiveMetricsManager calculations.
-   * If recording with a plan, re-applies ERG targets to trainer.
    */
-  public updateMetrics(metrics: Partial<PerformanceMetrics>): void {
+  public updateMetrics(metrics: { weightKg?: number }): void {
     console.log("[Service] Updating metrics:", metrics);
 
-    if (metrics.ftp !== undefined) {
-      this._baseFtp = metrics.ftp;
-      this.ftp = Math.round(this._baseFtp * this._ftpScale);
-    }
-    if (metrics.thresholdHr !== undefined) {
-      this._baseThresholdHr = metrics.thresholdHr;
-      this.thresholdHr = metrics.thresholdHr;
-    }
     if (metrics.weightKg !== undefined) {
       this._baseWeightKg = metrics.weightKg;
       this.weightKg = metrics.weightKg;
     }
-    if (metrics.thresholdPaceSecondsPerKm !== undefined) {
-      this._baseThresholdPaceSecondsPerKm = metrics.thresholdPaceSecondsPerKm;
-      this.thresholdPaceSecondsPerKm = Math.round(
-        this._baseThresholdPaceSecondsPerKm / this._ftpScale,
-      );
-    }
 
     // Update LiveMetricsManager
-    this.liveMetricsManager.updateMetrics({
-      ftp: this.ftp,
-      thresholdHr: this.thresholdHr,
-      weightKg: this.weightKg,
-      thresholdPaceSecondsPerKm: this.thresholdPaceSecondsPerKm,
-    });
-
-    // If recording and has a plan, re-apply targets (e.g. for %FTP targets in ERG mode)
-    if (this.state === "recording") {
-      console.log("[Service] Re-applying targets with new metrics");
-      this.syncAutomaticTrainerControl("periodic_refinement").catch(console.error);
-    }
+    this.liveMetricsManager.updateMetrics(
+      this.weightKg === undefined ? {} : { weightKg: this.weightKg },
+    );
 
     this.emit("metricsUpdated");
     this.publishSessionUpdate();
   }
 
+  /** Stages owner-only target facts for the next immutable recording session snapshot. */
+  public updatePerformanceTargets(snapshot: AthletePerformanceTargetFacts): void {
+    const parsed = athletePerformanceTargetFactsSchema.parse(snapshot);
+    this.performanceTargets = parsed;
+    this.applyPerformanceTargetsToLiveMetrics(
+      this.getSessionSnapshot()?.performanceTargets ?? parsed,
+    );
+    this.emit("metricsUpdated");
+    this.publishSessionUpdate();
+  }
+
+  private applyPerformanceTargetsToLiveMetrics(
+    snapshot: AthletePerformanceTargetFacts | undefined,
+  ): void {
+    this.liveMetricsManager.updatePerformanceTargets(snapshot ?? null);
+  }
+
+  private syncSelectedActivityCategoryTargets(
+    snapshot = this.getSessionSnapshot()?.performanceTargets ?? this.performanceTargets,
+  ): void {
+    this.liveMetricsManager.setActivityCategory(this.selectedActivityCategory);
+    this.applyPerformanceTargetsToLiveMetrics(snapshot);
+  }
+
   /**
    * Scale the activity intensity for this session.
-   * Affects FTP and Threshold Pace reactively.
+   * Changes target intent while leaving the immutable target-facts snapshot unchanged.
    */
   public setIntensityScale(scale: number): void {
     console.log(`[Service] Setting intensity scale: ${scale * 100}%`);
@@ -677,27 +725,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       intensityScale: scale,
     }));
 
-    const updates: Partial<PerformanceMetrics> = {};
-
-    if (this._baseFtp) {
-      this.ftp = Math.round(this._baseFtp * scale);
-      updates.ftp = this.ftp;
-    }
-
-    if (this._baseThresholdPaceSecondsPerKm) {
-      // Pace is seconds per km. Higher intensity = lower pace (faster).
-      this.thresholdPaceSecondsPerKm = Math.round(this._baseThresholdPaceSecondsPerKm / scale);
-      updates.thresholdPaceSecondsPerKm = this.thresholdPaceSecondsPerKm;
-    }
-
-    // Update LiveMetricsManager
-    if (Object.keys(updates).length > 0) {
-      this.liveMetricsManager.updateMetrics(updates);
-
-      // Re-apply targets if recording with plan
-      if (this.state === "recording") {
-        this.syncAutomaticTrainerControl("periodic_refinement").catch(console.error);
-      }
+    if (this.state === "recording") {
+      this.syncAutomaticTrainerControl("periodic_refinement").catch(console.error);
     }
 
     if (this.getSessionSnapshot()) {
@@ -717,20 +746,12 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this._ftpScale;
   }
 
-  public getBaseFtp(): number | undefined {
-    return this._baseFtp;
-  }
-
-  public getBaseThresholdPace(): number | undefined {
-    return this._baseThresholdPaceSecondsPerKm;
-  }
-
-  public getBaseThresholdHr(): number | undefined {
-    return this._baseThresholdHr;
-  }
-
   public getBaseWeight(): number | undefined {
     return this._baseWeightKg;
+  }
+
+  public getPerformanceTargets(): AthletePerformanceTargetFacts | undefined {
+    return this.getSessionSnapshot()?.performanceTargets ?? this.performanceTargets;
   }
 
   public getSessionSnapshot(): RecordingSessionSnapshot | null {
@@ -751,14 +772,14 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   public getSessionStats() {
     const stats = this.liveMetricsManager.getSessionStats();
-    const recordingMetrics = this.liveMetricsManager.getRecordingMetricsSnapshot();
+    const provisionalMetrics = this.liveMetricsManager.getProvisionalMetricsSnapshot();
 
     return {
       ...stats,
       duration: Math.floor(this.getElapsedTime() / 1000),
       movingTime: Math.floor(this.getMovingTime() / 1000),
       pausedTime: Math.floor(this.pausedTime / 1000),
-      recordingMetrics,
+      provisionalMetrics,
     };
   }
 
@@ -872,7 +893,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   private buildTrainerView(): RecordingTrainerView {
-    const trainer = this.sensorsManager.getControllableTrainer();
+    const trainer = this.sensorsManager.getSelectedFTMSTrainer();
     const trainerState = this.sensorsManager.getTrainerState();
     const controller = trainer?.ftmsController;
     const ftmsCandidates = Array.from(this.sensorsManager.getFTMSCandidates().values());
@@ -916,11 +937,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   public selectFTMSControlTarget(deviceId: string | null): boolean {
-    if (!this.shouldUseTrainerDataAndControl() && deviceId) {
-      this.emit("error", "Trainer control is unavailable while GPS recording is enabled.");
-      return false;
-    }
-
     const selected = this.sensorsManager.selectFTMSControlTarget(deviceId);
     if (selected) {
       this.publishSessionUpdate();
@@ -1004,9 +1020,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           provenance: selection?.provenance ?? "unavailable",
           recordedAt: readings.lastUpdated?.speed
             ? new Date(readings.lastUpdated.speed).toISOString()
-            : readings.lastUpdated?.position
-              ? new Date(readings.lastUpdated.position).toISOString()
-              : null,
+            : null,
         };
       case "distance":
         return {
@@ -1015,9 +1029,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           provenance: selection?.provenance ?? "unavailable",
           recordedAt: readings.lastUpdated?.speed
             ? new Date(readings.lastUpdated.speed).toISOString()
-            : readings.lastUpdated?.position
-              ? new Date(readings.lastUpdated.position).toISOString()
-              : null,
+            : null,
         };
       default:
         return {
@@ -1032,7 +1044,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private buildMetricSourceCandidates(): MetricSourceCandidate[] {
     const connectedSensors = this.sensorsManager.getConnectedSensors();
     const disabledSources = this.getSessionOverrideState().disabledSources;
-    const candidates: MetricSourceCandidate[] = connectedSensors.flatMap((sensor) =>
+    const sensorCandidates: MetricSourceCandidate[] = connectedSensors.flatMap((sensor) =>
       this.getMetricSourceTypesForSensor(sensor)
         .filter((sourceType) => this.shouldUseMetricSourceType(sourceType))
         .flatMap((sourceType) =>
@@ -1043,62 +1055,44 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
             provenance: "actual" as const,
             isAvailable:
               sensor.connectionState === "connected" &&
+              this.isSensorMetricObserved(sensor, metricFamily) &&
+              this.isSensorMetricFlowing(sensor, metricFamily, sourceType) &&
               !(disabledSources[metricFamily] ?? []).includes(sensor.id),
           })),
         ),
     );
-
-    if (this._gpsRecordingEnabled) {
-      candidates.push(
-        {
-          metricFamily: "speed",
-          sourceId: "gps-runtime",
-          sourceType: "gps",
-          provenance: "actual",
-          isAvailable: this._gpsAvailable,
-        },
-        {
-          metricFamily: "distance",
-          sourceId: "gps-runtime",
-          sourceType: "gps",
-          provenance: "actual",
-          isAvailable: this._gpsAvailable,
-        },
-        {
-          metricFamily: "position",
-          sourceId: "gps-runtime",
-          sourceType: "gps",
-          provenance: "actual",
-          isAvailable: this._gpsAvailable,
-        },
-        {
-          metricFamily: "elevation",
-          sourceId: "gps-runtime",
-          sourceType: "gps",
-          provenance: "actual",
-          isAvailable: this._gpsAvailable,
-        },
-      );
+    const candidatesByMetricAndDevice = new Map<string, MetricSourceCandidate>();
+    for (const candidate of sensorCandidates) {
+      const key = `${candidate.metricFamily}:${candidate.sourceId}`;
+      const existing = candidatesByMetricAndDevice.get(key);
+      if (
+        !existing ||
+        (candidate.isAvailable && !existing.isAvailable) ||
+        (candidate.isAvailable === existing.isAvailable &&
+          this.isTrainerMetricSourceType(candidate.sourceType) &&
+          !this.isTrainerMetricSourceType(existing.sourceType))
+      ) {
+        candidatesByMetricAndDevice.set(key, candidate);
+      }
     }
+    const candidates = [...candidatesByMetricAndDevice.values()];
 
-    if (!this._gpsRecordingEnabled) {
-      candidates.push(
-        {
-          metricFamily: "speed",
-          sourceId: "derived-runtime",
-          sourceType: "derived",
-          provenance: "derived",
-          isAvailable: true,
-        },
-        {
-          metricFamily: "distance",
-          sourceId: "derived-runtime",
-          sourceType: "derived",
-          provenance: "derived",
-          isAvailable: true,
-        },
-      );
-    }
+    candidates.push(
+      {
+        metricFamily: "speed",
+        sourceId: "derived-runtime",
+        sourceType: "derived",
+        provenance: "derived",
+        isAvailable: true,
+      },
+      {
+        metricFamily: "distance",
+        sourceId: "derived-runtime",
+        sourceType: "derived",
+        provenance: "derived",
+        isAvailable: true,
+      },
+    );
 
     return candidates;
   }
@@ -1112,7 +1106,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       case "trainer_passthrough":
         return ["heart_rate"];
       case "power_meter":
-        return ["power", "cadence"];
+        return ["power"];
       case "trainer_power":
         return ["power"];
       case "cadence_sensor":
@@ -1135,7 +1129,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       ["heart_rate", "power", "cadence", "speed", "distance", "position", "elevation"],
       this.buildMetricSourceCandidates(),
       {
-        isIndoor: !this._gpsRecordingEnabled,
+        isIndoor: true,
         preferredSourceIds: this.getSessionOverrideState().preferredSources,
         selectedAt,
       },
@@ -1154,8 +1148,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         return "speed";
       case "altitude":
         return "elevation";
-      case "latlng":
-        return "position";
       default:
         return null;
     }
@@ -1289,6 +1281,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         hasPlan: false,
         stepIndex: 0,
         stepCount: 0,
+        currentSegment: null,
+        nextSegment: null,
         progress: null,
         isLast: false,
         isFinished: false,
@@ -1305,10 +1299,29 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       hasPlan: true,
       name: this._plan?.name,
       description: this._plan?.description,
-      activityType: this._plan?.activity_category,
+      activityCategory: this._plan
+        ? compileActivityPlan(this._plan.structure).occurrences.find(
+            (occurrence) => occurrence.role === "activity",
+          )?.activity_category
+        : undefined,
       stepIndex: info.index,
       stepCount: info.total,
       currentStep: info.current,
+      nextStep: info.next,
+      currentSegment: info.current
+        ? {
+            id: info.current.occurrenceId,
+            role: info.current.role,
+            activity_category: info.current.activity_category,
+          }
+        : null,
+      nextSegment: info.next
+        ? {
+            id: info.next.occurrenceId,
+            role: info.next.role,
+            activity_category: info.next.activity_category,
+          }
+        : null,
       progress: info.progress,
       isLast: info.isLast,
       isFinished: info.isFinished,
@@ -1324,15 +1337,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   private shouldUseTrainerDataAndControl(): boolean {
-    return !this._gpsRecordingEnabled;
+    return true;
   }
 
   private shouldUseMetricSourceType(sourceType: MetricSourceType): boolean {
     return this.shouldUseTrainerDataAndControl() || !this.isTrainerMetricSourceType(sourceType);
-  }
-
-  private isActiveGpsSession(): boolean {
-    return this.recordingLifecycle === "active" && this._gpsRecordingEnabled;
   }
 
   private isKnownTrainerDevice(deviceId: string): boolean {
@@ -1393,7 +1402,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return {
       activityCategory: this.selectedActivityCategory,
       mode: this.hasPlan ? "planned" : "free",
-      gpsMode: this._gpsRecordingEnabled ? "on" : "off",
+      gpsMode: "off",
       eventId: this._eventId ?? null,
       activityPlanId: this._plan?.id ?? null,
       routeId: this.getAttachedRouteId(),
@@ -1436,7 +1445,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       deviceName: sensor.name,
       role: this.getConnectedDeviceRole(sensor),
       sourceTypes,
-      controllable: Boolean(sensor.isControllable),
+      controllable: Boolean(sensor.ftmsController?.hasControlPermission()),
     };
   }
 
@@ -1453,36 +1462,32 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return "heart_rate_monitor";
     }
 
-    return "gps";
+    return "generic_sensor";
   }
 
   private getMetricSourceTypesForSensor(sensor: ConnectedSensor): MetricSourceType[] {
     const sourceTypes = new Set<MetricSourceType>();
     const observedMetrics = sensor.observedMetrics ?? new Set();
+    const profileIds = new Set(sensor.profiles?.map(({ id }) => id) ?? []);
 
-    if (observedMetrics.has("heartrate")) {
+    if (profileIds.has("heart_rate")) {
       sourceTypes.add("chest_strap");
     }
-    if (observedMetrics.has("power")) {
+    if (profileIds.has("cycling_power")) {
       sourceTypes.add("power_meter");
     }
-    if (sensor.characteristics.has("00002a5b-0000-1000-8000-00805f9b34fb")) {
-      if (observedMetrics.has("cadence")) {
-        sourceTypes.add("cadence_sensor");
-      }
-      if (observedMetrics.has("speed")) {
-        sourceTypes.add("speed_sensor");
-      }
+    if (profileIds.has("cycling_power") && observedMetrics.has("cadence")) {
+      sourceTypes.add("cadence_sensor");
     }
-    if (sensor.characteristics.has("00002a53-0000-1000-8000-00805f9b34fb")) {
-      if (observedMetrics.has("speed")) {
-        sourceTypes.add("speed_sensor");
-      }
-      if (observedMetrics.has("cadence")) {
-        sourceTypes.add("cadence_sensor");
-      }
+    if (profileIds.has("cycling_speed_and_cadence")) {
+      if (observedMetrics.has("cadence")) sourceTypes.add("cadence_sensor");
+      if (observedMetrics.has("speed")) sourceTypes.add("speed_sensor");
     }
-    if (sensor.characteristics.has("00002ad2-0000-1000-8000-00805f9b34fb")) {
+    if (profileIds.has("running_speed_and_cadence")) {
+      sourceTypes.add("speed_sensor");
+      sourceTypes.add("cadence_sensor");
+    }
+    if (sensor.isTrainer) {
       if (observedMetrics.has("power")) {
         sourceTypes.add("trainer_power");
       }
@@ -1500,49 +1505,126 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return [...sourceTypes];
   }
 
+  private isSensorMetricObserved(sensor: ConnectedSensor, metricFamily: MetricFamily): boolean {
+    const observedMetrics = sensor.observedMetrics ?? new Set();
+
+    switch (metricFamily) {
+      case "heart_rate":
+        return observedMetrics.has("heartrate");
+      case "power":
+        return observedMetrics.has("power");
+      case "cadence":
+        return observedMetrics.has("cadence");
+      case "speed":
+      case "distance":
+        return observedMetrics.has("speed") || observedMetrics.has("distance");
+      case "position":
+        return false;
+      case "elevation":
+        return observedMetrics.has("altitude");
+    }
+  }
+
+  private isSensorMetricFlowing(
+    sensor: ConnectedSensor,
+    metricFamily: MetricFamily,
+    sourceType: MetricSourceType,
+  ): boolean {
+    const profileMetric: StandardBleMetric | null =
+      metricFamily === "heart_rate"
+        ? "heart_rate"
+        : metricFamily === "distance"
+          ? "speed"
+          : metricFamily === "power" || metricFamily === "cadence" || metricFamily === "speed"
+            ? metricFamily
+            : null;
+    if (!profileMetric) return true;
+
+    if (this.isTrainerMetricSourceType(sourceType)) {
+      const sensorMetric = profileMetric === "heart_rate" ? "heartrate" : profileMetric;
+      const timestamp = sensor.ftmsMetricLastDataTimestamps?.[sensorMetric];
+      return (
+        typeof timestamp === "number" && Date.now() - timestamp <= SENSOR_READING_STALE_AFTER_MS
+      );
+    }
+    const profilesForMetric = (sensor.profiles ?? []).filter((profile) =>
+      profile.metrics.some(({ metric }) => metric === profileMetric),
+    );
+
+    if (profilesForMetric.length === 0) {
+      return true;
+    }
+
+    const now = Date.now();
+    return profilesForMetric.some(
+      ({ streamState, metricLastDataTimestamps }) =>
+        streamState === "flowing" &&
+        typeof metricLastDataTimestamps?.[profileMetric] === "number" &&
+        now - metricLastDataTimestamps[profileMetric] <= SENSOR_READING_STALE_AFTER_MS,
+    );
+  }
+
   private buildProfileSnapshot(): RecordingSessionSnapshot["profileSnapshot"] {
-    const defaultsApplied: string[] = [];
-
-    if (!this._baseFtp) defaultsApplied.push("ftp");
-    if (!this._baseThresholdHr) defaultsApplied.push("thresholdHr");
-    if (!this._baseThresholdPaceSecondsPerKm) defaultsApplied.push("thresholdPaceSecondsPerKm");
-    if (!this._baseWeightKg) defaultsApplied.push("weightKg");
-
     return {
-      ftp: this._baseFtp,
-      thresholdHr: this._baseThresholdHr,
-      thresholdPaceSecondsPerKm: this._baseThresholdPaceSecondsPerKm,
       weightKg: this._baseWeightKg,
-      defaultsApplied,
     };
   }
 
-  private buildSessionSnapshot(startedAt: string): RecordingSessionSnapshot {
+  private buildSessionSnapshot(
+    startedAt: string,
+    performanceTargets?: AthletePerformanceTargetFacts,
+    reservedSessionId?: string,
+  ): RecordingSessionSnapshot {
     const devices = this.buildConnectedDevicesSnapshot();
     const intent = this.buildRecordingLaunchIntent();
     const configuration = RecordingConfigResolver.resolveFromLaunchIntent(intent, {
       plan: this.buildPlanConfigInput(),
       routeGeometryAvailable: this.hasCurrentRouteGeometry(),
       devices: this.buildConfigDevicesInput(),
-      gpsAvailable: this._gpsAvailable,
+      gpsAvailable: false,
     });
+
+    const planExecution =
+      this._plan && this._plannedSession
+        ? {
+            manifestVersion: 2 as const,
+            compilerVersion: ACTIVITY_PLAN_COMPILER_VERSION,
+            activityPlanId: this._plannedSession.prescription.resolutionManifest.activity_plan_id,
+            scheduledEventId: this._eventId ?? null,
+            name: this._plan.name,
+            description: this._plan.description ?? null,
+            activityPlanRevision:
+              this._plannedSession.prescription.resolutionManifest.activity_plan_revision,
+            structureHash:
+              this._plannedSession.prescription.resolutionManifest.resolved_structure_hash,
+            structure: this._plannedSession.prescription.resolutionManifest.resolved_structure,
+            plannedSession: this._plannedSession,
+            personalizationEnabled: false,
+            targetPresentations: [],
+          }
+        : undefined;
 
     return deepFreeze({
       identity: {
-        sessionId: `${this.profile.id}:${Date.now()}`,
+        sessionId: reservedSessionId ?? `${this.profile.id}:${Date.now()}`,
         revision: 1,
         startedAt,
         appBuild: "mobile-recorder-v1",
       },
       activity: {
-        category: this.selectedActivityCategory,
+        activity_category: this.selectedActivityCategory,
         mode: this.hasPlan ? "planned" : "free",
-        gpsMode: this._gpsRecordingEnabled ? "on" : "off",
+        gpsMode: "off",
         eventId: this._eventId ?? null,
         activityPlanId: this._plan?.id ?? null,
         routeId: this.getAttachedRouteId(),
       },
       profileSnapshot: this.buildProfileSnapshot(),
+      performanceTargets:
+        performanceTargets ??
+        this.performanceTargets ??
+        createUnavailableAthletePerformanceTargetFacts(startedAt, this.profile.id),
+      ...(planExecution ? { planExecution } : {}),
       devices,
       capabilities: configuration.capabilities,
       policies: {
@@ -1568,10 +1650,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     return {
       hasStructure: this.stepCount > 0,
-      hasRoute: Boolean(this.getAttachedRouteId()),
       stepCount: this.stepCount,
       requiresManualAdvance: this.planExecution.hasManualAdvanceSteps(),
-      structure: this._plan?.structure ?? null,
+      structure: (this._plan?.structure ?? null) as never,
     };
   }
 
@@ -1582,16 +1663,16 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         this.shouldUseMetricSourceType(sourceType),
       ),
     );
-    const ftmsTrainer = this.sensorsManager.getControllableTrainer();
+    const ftmsTrainer = this.sensorsManager.getSelectedFTMSTrainer();
 
     return {
-      ftmsTrainer: ftmsTrainer
+      ...(ftmsTrainer
         ? {
             deviceId: ftmsTrainer.id,
             autoControlEnabled: !this.isTrainerManualMode(),
-            controlReady: Boolean(ftmsTrainer.isControllable && ftmsTrainer.ftmsController),
+            controlReady: Boolean(ftmsTrainer.ftmsController?.hasControlPermission()),
           }
-        : undefined,
+        : {}),
       hasPowerMeter: sourceTypes.includes("power_meter") || sourceTypes.includes("trainer_power"),
       hasHeartRateMonitor:
         sourceTypes.includes("chest_strap") ||
@@ -1619,7 +1700,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     // Returning to foreground - reconnect sensors
     if (prevState.match(/inactive|background/) && nextState === "active") {
-      this.reconnectDisconnectedSensors();
+      void this.reconnectDisconnectedSensors().catch((error) => {
+        console.error("[Service] Failed to reconnect sensors after foregrounding:", error);
+      });
     }
   }
 
@@ -1640,7 +1723,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this._plan !== undefined;
   }
 
-  get plan(): RecordingServiceActivityPlan | undefined {
+  get plan(): RecordingActivityPlanInput | undefined {
     return this._plan;
   }
 
@@ -1672,15 +1755,15 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this.planExecution.getStepCount();
   }
 
-  get currentStep(): IntervalStepV2 | undefined {
+  get currentStep(): RecordingPlanOccurrence | undefined {
     return this.planExecution.getCurrentStep();
   }
 
-  get nextStep(): IntervalStepV2 | undefined {
+  get nextStep(): RecordingPlanOccurrence | undefined {
     return this.planExecution.getNextStep();
   }
 
-  get allSteps(): IntervalStepV2[] {
+  get allSteps(): RecordingPlanOccurrence[] {
     return this.planExecution.getAllSteps();
   }
 
@@ -1709,7 +1792,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   get routeAttachment(): RecordingRouteAttachmentView {
-    return this.routeController.getRouteAttachment(this._plan?.route_id);
+    return this.routeController.getRouteAttachment();
   }
 
   get routeDistance(): number {
@@ -1721,7 +1804,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   get isOnRoute(): boolean {
-    return this.routeController.isOnRoute(this._gpsRecordingEnabled);
+    return this.routeController.isOnRoute();
   }
 
   get distanceFromRouteMeters(): number | null {
@@ -1733,27 +1816,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   private getAttachedRouteId(): string | null {
-    return this.routeController.getAttachedRouteId(this._plan?.route_id);
+    return this.routeController.getAttachedRouteId();
   }
 
   private clearCurrentRouteState(): void {
     this.routeController.clearCurrentRouteState();
-  }
-
-  /**
-   * Get recorded GPS path (all location points recorded so far)
-   * Returns array of coordinates for displaying user's path on map
-   */
-  get recordedGpsPath(): Array<{ latitude: number; longitude: number }> {
-    if (!this.liveMetricsManager?.streamBuffer) return [];
-
-    // Get all locations from StreamBuffer's persistent array (not cleared on flush)
-    const allLocations = this.liveMetricsManager.streamBuffer.getAllLocations();
-
-    return allLocations.map((loc: any) => ({
-      latitude: loc.latitude,
-      longitude: loc.longitude,
-    }));
   }
 
   /**
@@ -1765,32 +1832,50 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   get stepProgress(): StepProgress {
-    const progress = this.planExecution.getStepProgress(this.getMovingTime());
+    const progress = this.planExecution.getStepProgress(
+      this.getMovingTime(),
+      this.getSessionStats().distance,
+    );
     if (!progress) throw new Error("No plan or current step");
     return progress;
   }
 
   getStepInfo(): StepInfo {
-    return this.planExecution.getStepInfo(this.getMovingTime());
+    return this.planExecution.getStepInfo(this.getMovingTime(), this.getSessionStats().distance);
   }
   get planTimeRemaining(): number {
     if (!this.hasPlan) return 0;
-    return this.planExecution.getPlanTimeRemaining(this.getMovingTime());
+    return this.planExecution.getPlanTimeRemaining(
+      this.getMovingTime(),
+      this.getSessionStats().distance,
+    );
   }
 
   // ================================
   // Plan Actions
   // ================================
 
-  selectPlan(plan: RecordingServiceActivityPlan, eventId?: string): void {
-    if (
-      this.isSessionIdentityLocked() &&
-      plan.activity_category !== this.selectedActivityCategory
-    ) {
-      const message = "Plan selection must match the active recording activity category.";
-      console.warn(`[Service] ${message}`);
-      this.emit("error", message);
-      return;
+  selectPlan(
+    plan: RecordingActivityPlanInput,
+    eventId?: string,
+    plannedSession?: RecordingPlannedSessionLaunch,
+  ): void {
+    if (this.recoveredCheckpoint !== null) {
+      throw new Error("Resume or discard the recovered recording before selecting a new plan.");
+    }
+    if (!this.ensureMutableSessionIdentity("Plan selection")) return;
+    const support = getMobileRecordingPlanSupport(plan);
+    if (!support.supported) {
+      throw new Error(support.message);
+    }
+    if (plannedSession) {
+      ActivityPayloadSchema.parse({
+        activity_category: support.activity_category,
+        gpsRecordingEnabled: false,
+        ...(eventId === undefined ? {} : { eventId }),
+        plan,
+        plannedSession,
+      });
     }
 
     console.log("[Service] Selected plan:", plan.name);
@@ -1799,24 +1884,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.hasConfiguredSetup = true;
     this._plan = plan;
     this._eventId = eventId;
-    if (!plan.activity_category) {
-      throw new Error("no plan category found");
-    }
-
-    // Load route if plan has one
-    if (plan.route_id) {
-      console.log("[Service] Plan has route, loading route data:", plan.route_id);
-      const operationId = this.routeController.beginPlanRouteAttachment();
-      this.loadRoute(plan.route_id, operationId).catch((error) => {
-        console.error("[Service] Failed to load route:", error);
-        // Continue without route - don't fail the whole plan selection
-      });
-    } else {
-      this.routeController.beginPlanRouteAttachment();
-    }
-
+    this._plannedSession = plannedSession;
     try {
-      this.planExecution.loadPlan(plan, eventId);
+      this.planExecution.loadPlan(plan);
 
       console.log(`[Service] Loaded ${this.planExecution.getStepCount()} steps from plan manager`);
 
@@ -1832,10 +1902,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this.planExecution.clear();
     }
 
-    this.selectedActivityCategory = plan.activity_category;
-    this.syncGpsTrackingForCurrentState();
-
-    this.emit("planSelected", { plan, eventId });
+    this.selectedActivityCategory =
+      this.currentStep?.activity_category ?? support.activity_category;
+    this.syncSelectedActivityCategoryTargets();
+    this.emit("planSelected", omitUndefined({ plan, eventId }));
 
     // Emit step changed immediately so UI shows the first step
     this.emit("stepChanged", this.getStepInfo());
@@ -1850,8 +1920,13 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.hasConfiguredSetup = true;
     this._plan = undefined;
     this._eventId = undefined;
-    this.routeController.clearPlanAttachment();
+    this._plannedSession = undefined;
+    this.freeRecordingExecutionPlan = undefined;
+    this.freeRecordingCompiledPlan = null;
     this.planExecution.clear();
+    this.completedOccurrences = [];
+    this.boundaryJournal = [];
+    this.rewindJournal = [];
 
     this.emit("planCleared");
     this.publishSessionUpdate();
@@ -1897,7 +1972,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   public detachRoute(): void {
     this.hasConfiguredSetup = true;
-    this.routeController.detachRoute(this._plan?.route_id);
+    this.routeController.detachRoute();
     this.publishSessionUpdate();
   }
 
@@ -1925,7 +2000,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         return;
       }
 
-      if (!this.routeController.loadRoute(route, operationId)) {
+      const loadedRoute = omitUndefined({
+        ...route,
+        coordinates: route.coordinates.map((coordinate) => omitUndefined(coordinate)),
+      });
+      if (!this.routeController.loadRoute(loadedRoute, operationId)) {
         return;
       }
 
@@ -1943,24 +2022,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
   }
 
-  /**
-   * Update current position along route
-   * Called from location updates
-   */
-  private updateRouteProgress(latitude: number, longitude: number): void {
-    if (
-      this.routeController.updateRouteProgress(latitude, longitude) &&
-      this.shouldUseTrainerDataAndControl() &&
-      this.state === "recording" &&
-      !this.isTrainerManualMode() &&
-      this.shouldAutoFollowRouteSimulation()
-    ) {
-      this.trainerControl.applyRouteGrade(this.currentRouteGrade).catch(console.error);
-    }
-  }
-
   private updateIndoorRouteProgressFromSessionDistance(): void {
-    if (this._gpsRecordingEnabled || !this.hasRoute || this.routeDistance <= 0) return;
+    if (!this.hasRoute || this.routeDistance <= 0) return;
 
     const stats = this.liveMetricsManager.getSessionStats();
     const nextDistance = Math.min(this.routeDistance, Math.max(0, stats.distance ?? 0));
@@ -1979,87 +2042,25 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
   }
 
-  private getFitSport(
-    category: RecordingActivityCategory,
-    gpsRecordingEnabled: boolean,
-  ): { sport: string; subSport: string } {
-    switch (category) {
+  private getFitSport(activityCategory: RecordingActivityCategory): {
+    sport: string;
+    subSport: string;
+  } {
+    switch (activityCategory) {
       case "bike":
         return {
           sport: "cycling",
-          subSport: gpsRecordingEnabled ? "road" : "indoor_cycling",
+          subSport: "indoor_cycling",
         };
       case "run":
         return {
           sport: "running",
-          subSport: gpsRecordingEnabled ? "road" : "treadmill",
+          subSport: "treadmill",
         };
       case "swim":
         return { sport: "swimming", subSport: "lap_swimming" };
       default:
         return { sport: "generic", subSport: "generic" };
-    }
-  }
-
-  /**
-   * Start GPS location tracking early (before recording starts)
-   * This allows the map to show the user's location in pending state
-   */
-  private async startEarlyLocationTracking(): Promise<void> {
-    if (!this._gpsRecordingEnabled) {
-      return;
-    }
-
-    try {
-      console.log("[Service] Starting early location tracking for GPS map preview");
-      await this.locationManager.startForegroundTracking();
-      this._gpsAvailable = true;
-      console.log("[Service] Early location tracking started successfully");
-      this.publishSessionUpdate();
-    } catch (error) {
-      console.error("[Service] Failed to start early location tracking:", error);
-      // Don't throw - this is a nice-to-have for map preview
-    }
-  }
-
-  /**
-   * Stop early GPS location tracking
-   */
-  private async stopEarlyLocationTracking(): Promise<void> {
-    try {
-      await this.locationManager.stopForegroundTracking();
-      this._gpsAvailable = false;
-      console.log("[Service] Early location tracking stopped");
-      this.publishSessionUpdate();
-    } catch (error) {
-      console.error("[Service] Failed to stop early location tracking:", error);
-    }
-  }
-
-  private async syncGpsTrackingForCurrentState(): Promise<void> {
-    if (!this._gpsRecordingEnabled) {
-      await this.stopEarlyLocationTracking();
-      if (this._gpsAvailable) {
-        await this.locationManager.stopHeadingTracking();
-        await this.locationManager.stopForegroundTracking();
-        await this.locationManager.stopBackgroundTracking();
-        this._gpsAvailable = false;
-        this.publishSessionUpdate();
-      }
-      return;
-    }
-
-    if (shouldStartGpsTracking(this.state, this._gpsRecordingEnabled)) {
-      await this.locationManager.startForegroundTracking();
-      await this.locationManager.startBackgroundTracking();
-      await this.locationManager.startHeadingTracking();
-      this._gpsAvailable = true;
-      this.publishSessionUpdate();
-      return;
-    }
-
-    if (this.state === "pending" || this.state === "ready") {
-      await this.startEarlyLocationTracking();
     }
   }
 
@@ -2074,21 +2075,18 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
    *
    * Timed steps advance automatically when their duration is reached
    */
-  advanceStep(): void {
+  advanceStep(origin: "manual" | "automatic" = "manual"): void {
     if (!this.hasPlan || !this.currentStep) {
       console.warn("[Service] Cannot advance step - no plan active");
       return;
     }
 
-    const progress = this.stepProgress;
-    if (!progress?.canAdvance) {
-      console.warn("[Service] Cannot advance step");
-      return;
-    }
-
-    console.log(`[Service] Advancing to step ${this.stepIndex + 1}`);
-
-    this.navigatePlanStep(() => this.planExecution.advance(this.getMovingTime()), "advance");
+    void this.navigatePlanStep(
+      this.stepIndex + 1,
+      "advance",
+      this.currentStep.occurrenceId,
+      origin,
+    );
   }
 
   skipStep(): void {
@@ -2097,9 +2095,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return;
     }
 
-    if (!this.navigatePlanStep(() => this.planExecution.skip(this.getMovingTime()), "skip")) {
-      console.warn("[Service] Cannot skip step");
-    }
+    void this.navigatePlanStep(this.stepIndex + 1, "skip", this.currentStep.occurrenceId);
   }
 
   previousStep(): void {
@@ -2108,11 +2104,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return;
     }
 
-    if (
-      !this.navigatePlanStep(() => this.planExecution.previous(this.getMovingTime()), "previous")
-    ) {
-      console.warn("[Service] Cannot go back");
-    }
+    void this.navigatePlanStep(this.stepIndex - 1, "previous", this.currentStep.occurrenceId);
   }
 
   goToStep(index: number): void {
@@ -2121,47 +2113,523 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return;
     }
 
-    if (
-      !this.navigatePlanStep(
-        () => this.planExecution.goToStep(index, this.getMovingTime()),
-        "go_to",
-      )
-    ) {
-      console.warn(`[Service] Cannot change to step ${index}`);
+    void this.navigatePlanStep(index, "go_to", this.currentStep.occurrenceId);
+  }
+
+  private async persistCurrentCheckpoint() {
+    const snapshot = this.getSessionSnapshot();
+    const structureResult = activityPlanStructureSchema.safeParse(this._plan?.structure);
+    if (!snapshot) return;
+    this.checkpointRevision += 1;
+    const checkpointUpdatedAt = new Date(
+      this.state === "finishing" && this.recordingEndTime !== undefined
+        ? this.recordingEndTime
+        : Date.now(),
+    ).toISOString();
+    if (!structureResult.success || !this.planHash) {
+      await persistRecordingCheckpoint({
+        schemaVersion: MOBILE_RECORDING_CHECKPOINT_SCHEMA_VERSION,
+        variant: "unplanned",
+        sessionId: snapshot.identity.sessionId,
+        profileId: this.profile.id,
+        lifecycle:
+          this.state === "paused"
+            ? "paused"
+            : this.state === "finishing"
+              ? "finishing"
+              : "recording",
+        revision: this.checkpointRevision,
+        start: { startedAt: snapshot.identity.startedAt, updatedAt: checkpointUpdatedAt },
+        draft: {
+          activity_category: this.selectedActivityCategory,
+          gpsMode: "off",
+        },
+        summary: {
+          elapsedSeconds: this.getElapsedTime() / 1000,
+          movingSeconds: this.getMovingTime() / 1000,
+          distanceMeters: this.getSessionStats().distance,
+        },
+        executionState: {
+          timerEvents: this.timerEvents.map((event) => ({
+            type: event.type,
+            timestamp: new Date(event.timestamp).toISOString(),
+          })),
+          manualLapsMs: this.getLaps(),
+        },
+        performanceTargets: snapshot.performanceTargets,
+        streamArtifactPaths: [this.liveMetricsManager.streamBuffer.getBufferStatus().storageDir],
+      });
+      return;
     }
+    await persistRecordingCheckpoint({
+      schemaVersion: MOBILE_RECORDING_CHECKPOINT_SCHEMA_VERSION,
+      variant: "planned",
+      compilerVersion: ACTIVITY_PLAN_COMPILER_VERSION,
+      sessionId: snapshot.identity.sessionId,
+      profileId: this.profile.id,
+      lifecycle:
+        this.state === "paused" ? "paused" : this.state === "finishing" ? "finishing" : "recording",
+      planSnapshot: structureResult.data,
+      planHash: this.planHash,
+      currentOccurrenceId: this.currentStep?.occurrenceId ?? null,
+      occurrenceProgress: {
+        startedAt: new Date(this.occurrenceStartedAt ?? this.startTime ?? Date.now()).toISOString(),
+        startMovingSeconds: this.occurrenceStartStats.movingSeconds,
+        startDistanceMeters: this.occurrenceStartStats.distanceMeters,
+      },
+      completedOccurrences: this.completedOccurrences,
+      boundaryJournal: this.boundaryJournal,
+      rewindJournal: this.rewindJournal,
+      eventJournal: this.timerEvents.map((event) => ({
+        type: event.type,
+        timestamp: new Date(event.timestamp).toISOString(),
+      })),
+      manualLapsMs: this.getLaps(),
+      timing: {
+        startedAt: snapshot.identity.startedAt,
+        updatedAt: checkpointUpdatedAt,
+        elapsedSeconds: this.getElapsedTime() / 1000,
+        movingSeconds: this.getMovingTime() / 1000,
+        pausedAt: this.lastPauseTime ? new Date(this.lastPauseTime).toISOString() : null,
+        accumulatedPauseSeconds: this.pausedTime / 1000,
+      },
+      policy: {
+        activity_category: this.currentStep?.activity_category ?? null,
+        gpsMode: "off",
+        activityGpsMode: "off",
+        selectedSources: this.getRuntimeSourceState().selectedSources,
+        trainerMode: this.getSessionOverrideState().trainerMode,
+      },
+      performanceTargets: snapshot.performanceTargets,
+      ...(snapshot.planExecution ? { planExecution: snapshot.planExecution } : {}),
+      streamArtifactPaths: [this.liveMetricsManager.streamBuffer.getBufferStatus().storageDir],
+      revision: this.checkpointRevision,
+    });
+  }
+
+  private clearCheckpointWriteTimer(): void {
+    if (!this.checkpointWriteTimer) return;
+    clearTimeout(this.checkpointWriteTimer);
+    this.checkpointWriteTimer = undefined;
+  }
+
+  private async writeCheckpointWithinFence(): Promise<void> {
+    this.clearCheckpointWriteTimer();
+    this.checkpointDirty = false;
+    try {
+      await this.liveMetricsManager.streamBuffer.flushToFiles();
+      await this.persistCurrentCheckpoint();
+      this.lastCheckpointWriteAt = Date.now();
+    } catch (error) {
+      this.checkpointDirty = true;
+      throw error;
+    }
+  }
+
+  private startCheckpointWrite(): Promise<void> {
+    if (this.checkpointWriteInFlight !== null) return this.checkpointWriteInFlight;
+    const write = this.planBoundaryTransition.then(async () => {
+      if (!this.checkpointDirty) return;
+      await this.writeCheckpointWithinFence();
+    });
+    this.planBoundaryTransition = write.catch((error) =>
+      this.emit("error", error instanceof Error ? error.message : String(error)),
+    );
+    const tracked = write.finally(() => {
+      if (this.checkpointWriteInFlight === tracked) this.checkpointWriteInFlight = null;
+      if (this.checkpointDirty) this.scheduleRecoveryCheckpoint();
+    });
+    this.checkpointWriteInFlight = tracked;
+    return tracked;
+  }
+
+  private async forceRecoveryCheckpoint(): Promise<void> {
+    this.checkpointDirty = true;
+    this.clearCheckpointWriteTimer();
+    while (this.checkpointDirty || this.checkpointWriteInFlight !== null) {
+      if (this.checkpointWriteInFlight !== null) await this.checkpointWriteInFlight;
+      else await this.startCheckpointWrite();
+    }
+  }
+
+  private completeCurrentOccurrence(
+    completedAt: number,
+    occurrence = this.currentStep,
+    completion: RecordingOccurrenceResult["completion"] = null,
+  ): RecordingOccurrenceResult | null {
+    if (!this._plan) return null;
+    if (
+      !occurrence ||
+      this.completedOccurrences.some((item) => item.occurrenceId === occurrence.occurrenceId)
+    ) {
+      return null;
+    }
+    const stats = this.getSessionStats();
+    const occurrenceMovingSeconds = Math.max(
+      0,
+      stats.movingTime - this.occurrenceStartStats.movingSeconds,
+    );
+    const result: RecordingOccurrenceResult = {
+      occurrenceId: occurrence.occurrenceId,
+      globalOrdinal: occurrence.globalOrdinal,
+      stepId: occurrence.stepId,
+      ...(occurrence.repeatId ? { repeatId: occurrence.repeatId } : {}),
+      repeatIteration: occurrence.repeatIteration,
+      role: occurrence.role,
+      activity_category: occurrence.activity_category,
+      startedAt: new Date(this.occurrenceStartedAt ?? this.startTime ?? completedAt).toISOString(),
+      completedAt: new Date(completedAt).toISOString(),
+      activeSeconds: occurrenceMovingSeconds,
+      movingSeconds: occurrenceMovingSeconds,
+      distanceMeters: Math.max(0, stats.distance - this.occurrenceStartStats.distanceMeters),
+      completion,
+    };
+    this.completedOccurrences.push(result);
+    this.occurrenceStartStats = { movingSeconds: stats.movingTime, distanceMeters: stats.distance };
+    return result;
+  }
+
+  private buildExecutionManifest(): RecordingExecutionManifest | null {
+    const compiled = this._plan
+      ? this.planExecution.getCompiledPlan()
+      : this.freeRecordingCompiledPlan;
+    if (!compiled || !this.planHash) return null;
+    const stats = this.getSessionStats();
+    const startedAt = new Date(this.startTime ?? Date.now()).toISOString();
+    const completedAt = new Date(this.recordingEndTime ?? Date.now()).toISOString();
+    let occurrences: RecordingOccurrenceResult[];
+    if (this._plan) {
+      occurrences = this.completedOccurrences;
+    } else {
+      const freeRecordingOccurrence = compiled.occurrences[0];
+      if (!freeRecordingOccurrence || freeRecordingOccurrence.role !== "activity") return null;
+      occurrences = [
+        {
+          occurrenceId: freeRecordingOccurrence.occurrenceId,
+          globalOrdinal: freeRecordingOccurrence.globalOrdinal,
+          stepId: null,
+          repeatIteration: freeRecordingOccurrence.repeatIteration,
+          role: freeRecordingOccurrence.role,
+          activity_category: this.selectedActivityCategory,
+          startedAt,
+          completedAt,
+          activeSeconds: stats.movingTime,
+          movingSeconds: stats.movingTime,
+          distanceMeters: stats.distance,
+          completion: { status: "completed", method: "manual" },
+        },
+      ];
+    }
+    return {
+      version: 1,
+      compilerVersion: compiled.compilerVersion,
+      planHash: this.planHash,
+      occurrences: occurrences.map((result) => ({
+        ...result,
+        timerEvents: this.timerEvents
+          .filter((event) => {
+            const timestamp = new Date(event.timestamp).toISOString();
+            return timestamp >= result.startedAt && timestamp <= result.completedAt;
+          })
+          .map((event) => ({ ...event, timestamp: new Date(event.timestamp).toISOString() })),
+        laps: [
+          {
+            lapNumber: 1,
+            startedAt: result.startedAt,
+            endedAt: result.completedAt,
+            activeSeconds: result.activeSeconds,
+            distanceMeters: result.distanceMeters,
+          },
+        ],
+      })),
+    };
+  }
+
+  private isRestEvidenceTimestamp(_timestamp: number): boolean {
+    // Fixed V4 plans compile exclusively to activity occurrences.
+    return false;
+  }
+
+  private async prepareFitEncoderForRewind(
+    rewindJournal: NonNullable<PlannedRecordingCheckpoint["rewindJournal"]>,
+    retainsCompletedPrefix: boolean,
+  ): Promise<{ encoder: GarminFitEncoder; lastDistanceMeters: number } | undefined> {
+    if (!this.fitEncoder || !this.startTime) return undefined;
+    const sessionId = this.getSessionSnapshot()?.identity.sessionId;
+    if (!sessionId) throw new Error("Recording evidence session is unavailable");
+    const { replay } = await StreamBuffer.reopenForRecovery(
+      this.liveMetricsManager.streamBuffer.getBufferStatus().storageDir,
+      createRecordingStreamJournalAdapter({
+        sessionId,
+        profileId: this.profile.id,
+      }),
+    );
+    const retainedRecords = rebaseRetainedFitRecordDistances(
+      replay.fitRecords.filter((record) => !this.isRestEvidenceTimestamp(record.timestamp)),
+      rewindJournal,
+    );
+    const replacement = new GarminFitEncoder(sessionId, this.profile.id);
+    const replacementStart = retainsCompletedPrefix
+      ? this.startTime
+      : Date.parse(rewindJournal.at(-1)?.rewoundAt ?? new Date(this.startTime).toISOString());
+    await replacement.initialize([], new Date(replacementStart));
+    if (retainedRecords.length > 0) await replacement.addRecords(retainedRecords);
+    if (this.state === "paused") await replacement.pause();
+    return {
+      encoder: replacement,
+      lastDistanceMeters: retainedRecords.at(-1)?.distance ?? 0,
+    };
+  }
+
+  private buildFitSessions(manifest: RecordingExecutionManifest): FitSessionData[] {
+    const occurrences = manifest.occurrences;
+    const first = occurrences[0];
+    const last = occurrences.at(-1);
+    const firstActivity = occurrences.find((occurrence) => occurrence.role === "activity");
+    if (!first || !last || !firstActivity?.activity_category) return [];
+    const startTime = Date.parse(first.startedAt);
+    const endedAt = Date.parse(last.completedAt);
+    const totalMovingSeconds = occurrences.reduce(
+      (total, occurrence) => total + occurrence.movingSeconds,
+      0,
+    );
+    const distance = occurrences.reduce(
+      (total, occurrence) => total + occurrence.distanceMeters,
+      0,
+    );
+    const fitSport = this.getFitSport(firstActivity.activity_category);
+    const timerEvents: RecordingExecutionManifest["occurrences"][number]["timerEvents"] = [];
+    for (const event of occurrences.flatMap((occurrence) => occurrence.timerEvents)) {
+      const paused = timerEvents.at(-1)?.type === "pause";
+      if ((event.type === "pause" && !paused) || (event.type === "resume" && paused)) {
+        timerEvents.push(event);
+      }
+    }
+    if (timerEvents.at(-1)?.type === "pause") timerEvents.pop();
+    const pausedMilliseconds = timerEvents.reduce(
+      (total, event, index) =>
+        event.type === "resume"
+          ? total +
+            Math.max(
+              0,
+              Date.parse(event.timestamp) -
+                Date.parse(timerEvents[index - 1]?.timestamp ?? event.timestamp),
+            )
+          : total,
+      0,
+    );
+    let lapNumber = 0;
+    return [
+      {
+        startTime,
+        endedAt,
+        // FIT session time covers the full planned recording timeline. A
+        // timed untargeted recovery is still activity evidence even when it
+        // contributes no moving samples.
+        totalTime: Math.max(0, endedAt - startTime - pausedMilliseconds),
+        movingTime: totalMovingSeconds * 1000,
+        distance,
+        avgSpeed: totalMovingSeconds > 0 ? distance / totalMovingSeconds : 0,
+        maxSpeed: 0,
+        sport: fitSport.sport,
+        subSport: fitSport.subSport,
+        // A scheduled mobile recording is one FIT activity. Block and step
+        // boundaries remain laps rather than being emitted as multisport legs.
+        role: "activity" as const,
+        timerEvents: timerEvents.map((event) => ({
+          type: event.type,
+          timestamp: Date.parse(event.timestamp),
+        })),
+        laps: occurrences.flatMap((occurrence) =>
+          occurrence.laps.map((lap) => ({
+            lapNumber: ++lapNumber,
+            startTime: Date.parse(lap.startedAt),
+            endedAt: Date.parse(lap.endedAt),
+            totalTime: lap.activeSeconds * 1000,
+            totalElapsedTime: Date.parse(lap.endedAt) - Date.parse(lap.startedAt),
+            distance: lap.distanceMeters,
+            avgSpeed: lap.activeSeconds > 0 ? lap.distanceMeters / lap.activeSeconds : 0,
+            maxSpeed: 0,
+          })),
+        ),
+      },
+    ];
+  }
+
+  private requiresAutomaticTrainerRelease(target: RecordingPlanOccurrence | undefined): boolean {
+    return (
+      !this.isTrainerManualMode() &&
+      target !== undefined &&
+      (target.role !== "activity" ||
+        (this.shouldAutoFollowPlanTargets() && target.targets.length === 0))
+    );
   }
 
   private navigatePlanStep(
-    navigate: () => boolean,
+    targetIndex: number,
     reason: "advance" | "skip" | "previous" | "go_to",
-  ): boolean {
-    const changed = navigate();
-    if (!changed) {
-      return false;
+    expectedOccurrenceId: string,
+    advanceOrigin: "manual" | "automatic" = "manual",
+  ): Promise<boolean> {
+    const transition = this.planBoundaryTransition.then(async () => {
+      const previous = this.currentStep;
+      if (!previous || previous.occurrenceId !== expectedOccurrenceId) return false;
+      const sourceIndex = this.stepIndex;
+      const target = this.allSteps[targetIndex];
+      const completesPlan = reason === "advance" && targetIndex === this.stepCount;
+      if ((!target && !completesPlan) || targetIndex === sourceIndex) return false;
+      if (reason === "go_to" && targetIndex > sourceIndex) return false;
+
+      const movingTime = this.getMovingTime();
+      const distanceMeters = this.getSessionStats().distance;
+      const completesCurrent = reason === "advance" || reason === "skip";
+      if (
+        completesCurrent &&
+        this.completedOccurrences.some((item) => item.occurrenceId === expectedOccurrenceId)
+      ) {
+        return false;
+      }
+      if (
+        reason === "advance" &&
+        !(advanceOrigin === "manual"
+          ? this.planExecution.getStepProgress(movingTime, distanceMeters)?.canManualAdvance
+          : this.planExecution.getStepProgress(movingTime, distanceMeters)?.canAutoAdvance)
+      ) {
+        return false;
+      }
+
+      await this.liveMetricsManager.streamBuffer.flushToFiles();
+      const rewindBoundary =
+        targetIndex < sourceIndex
+          ? (() => {
+              const destinationResult = this.completedOccurrences[targetIndex];
+              if (!destinationResult) return null;
+              const rewoundAt = new Date().toISOString();
+              return {
+                attemptId: `${this.getSessionSnapshot()?.identity.sessionId ?? "recording"}:attempt:${this.rewindJournal.length + 1}`,
+                destinationOccurrenceId: destinationResult.occurrenceId,
+                sourceDistanceMeters: distanceMeters,
+                destinationDistanceMeters: this.completedOccurrences
+                  .slice(0, targetIndex)
+                  .reduce((total, occurrence) => total + occurrence.distanceMeters, 0),
+                supersededFrom: destinationResult.startedAt,
+                rewoundAt,
+              };
+            })()
+          : null;
+      if (targetIndex < sourceIndex && !rewindBoundary) return false;
+      const rewindEncoder = rewindBoundary
+        ? await this.prepareFitEncoderForRewind(
+            [...this.rewindJournal, rewindBoundary],
+            targetIndex > 0,
+          )
+        : undefined;
+      const requiresTrainerRelease = this.requiresAutomaticTrainerRelease(target);
+      if (requiresTrainerRelease && !(await this.trainerControl.neutralizeForBoundary())) {
+        // The outgoing command is still potentially active. Do not commit a
+        // boundary into an automatic untargeted/rest occurrence until the FTMS
+        // reset is confirmed; the controller has already published the error.
+        return false;
+      }
+      const navigated =
+        reason === "advance"
+          ? this.planExecution.advance(movingTime, distanceMeters, advanceOrigin)
+          : reason === "skip"
+            ? this.planExecution.skip(movingTime, distanceMeters)
+            : reason === "previous"
+              ? this.planExecution.previous(movingTime, distanceMeters)
+              : this.planExecution.goToStep(targetIndex, movingTime, distanceMeters);
+      if (!navigated) {
+        await rewindEncoder?.encoder.cleanup();
+        return false;
+      }
+
+      const committedAt = Date.now();
+      const completed = completesCurrent
+        ? this.completeCurrentOccurrence(committedAt, previous, {
+            status: reason === "skip" ? "skipped" : "completed",
+            method: reason === "skip" ? "manual" : advanceOrigin,
+          })
+        : null;
+      if (targetIndex < sourceIndex && rewindBoundary) {
+        this.rewindJournal.push(rewindBoundary);
+        this.completedOccurrences = this.completedOccurrences.slice(0, targetIndex);
+        const retainedIds = new Set(this.completedOccurrences.map((item) => item.occurrenceId));
+        this.boundaryJournal = this.boundaryJournal.filter(
+          (entry) =>
+            entry.completedOccurrenceId !== null && retainedIds.has(entry.completedOccurrenceId),
+        );
+        if (rewindEncoder) {
+          const supersededEncoder = this.fitEncoder;
+          this.fitEncoder = rewindEncoder.encoder;
+          this.lastFitDistanceMeters = rewindEncoder.lastDistanceMeters;
+          if (supersededEncoder) {
+            try {
+              await supersededEncoder.cleanup();
+            } catch (error) {
+              console.warn("[Service] Failed to clean superseded rewind encoder", error);
+            }
+          }
+        } else {
+          this.lastFitDistanceMeters = rewindBoundary.destinationDistanceMeters ?? 0;
+        }
+      }
+      this.occurrenceStartedAt = committedAt;
+      this.occurrenceStartStats = {
+        movingSeconds: this.getSessionStats().movingTime,
+        distanceMeters,
+      };
+      if (target && previous.occurrenceId !== target.occurrenceId) {
+        this.trainerControl.resetAdaptiveState();
+      }
+      if (target) {
+        this.selectedActivityCategory = target.activity_category ?? this.selectedActivityCategory;
+        this.syncSelectedActivityCategoryTargets();
+      }
+      this.boundaryJournal.push({
+        revision: this.checkpointRevision + 1,
+        completedOccurrenceId: completed?.occurrenceId ?? null,
+        nextOccurrenceId: target?.occurrenceId ?? null,
+        committedAt: new Date(committedAt).toISOString(),
+      });
+      await this.writeCheckpointWithinFence();
+      if (!requiresTrainerRelease) {
+        await this.syncAutomaticTrainerControl("step_change");
+      }
+      this.emit("stepChanged", this.getStepInfo());
+      this.publishSessionUpdate();
+      if (completesPlan) this.emit("planCompleted");
+      console.log(`[Service] Plan occurrence navigation completed: ${reason}`);
+      return true;
+    });
+    this.planBoundaryTransition = transition.then(
+      () => undefined,
+      (error) => this.emit("error", error instanceof Error ? error.message : String(error)),
+    );
+    return transition;
+  }
+
+  private scheduleRecoveryCheckpoint(): void {
+    if (this.state !== "recording") return;
+    this.checkpointDirty = true;
+    if (this.checkpointWriteInFlight || this.checkpointWriteTimer) return;
+    const delay = Math.max(0, 5_000 - (Date.now() - this.lastCheckpointWriteAt));
+    if (delay === 0) {
+      void this.startCheckpointWrite().catch(() => undefined);
+      return;
     }
-
-    this.emit("stepChanged", this.getStepInfo());
-    this.publishSessionUpdate();
-
-    if (this.state === "recording") {
-      this.syncAutomaticTrainerControl("step_change").catch(console.error);
-    }
-
-    if (this.isFinished) {
-      console.log("[Service] Plan completed!");
-      this.emit("planCompleted");
-    }
-
-    console.log(`[Service] Plan step navigation completed: ${reason}`);
-    return true;
+    this.checkpointWriteTimer = setTimeout(() => {
+      this.checkpointWriteTimer = undefined;
+      void this.startCheckpointWrite().catch(() => undefined);
+    }, delay);
   }
 
   public getTrainerMachineType() {
-    return inferTrainerMachineType(this.sensorsManager.getControllableTrainer());
+    return inferTrainerMachineType(this.sensorsManager.getSelectedFTMSTrainer());
   }
 
   public getTrainerFeatures(): FTMSFeatures | null {
-    return this.sensorsManager.getControllableTrainer()?.ftmsFeatures ?? null;
+    return this.sensorsManager.getSelectedFTMSTrainer()?.ftmsFeatures ?? null;
   }
 
   public getBleState(): string {
@@ -2169,11 +2637,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   public async connectSensorForRecording(deviceId: string): Promise<ConnectedSensor | null> {
-    if (this.isActiveGpsSession() && this.isKnownTrainerDevice(deviceId)) {
-      this.emit("error", "Trainer devices cannot be connected during a GPS recording.");
-      return null;
-    }
-
     if (this.isKnownTrainerDevice(deviceId)) {
       await this.disconnectTrainerSensors({ exceptDeviceId: deviceId });
     }
@@ -2188,20 +2651,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return sensor;
     }
 
-    if (this.isActiveGpsSession()) {
-      await this.sensorsManager.disconnectSensor(sensor.id, { suppressAutoReconnect: true });
-      this.emit("error", "Trainer devices cannot be connected during a GPS recording.");
-      this.publishSessionUpdate();
-      return null;
-    }
-
     await this.disconnectTrainerSensors({ exceptDeviceId: sensor.id });
-
-    if (this._gpsRecordingEnabled) {
-      await this.disableGpsRecording();
-    } else {
-      this.publishSessionUpdate();
-    }
+    this.publishSessionUpdate();
 
     return sensor;
   }
@@ -2279,61 +2730,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   // ================================
-  // GPS Recording Control
-  // ================================
-
-  public isGpsRecordingEnabled(): boolean {
-    return this._gpsRecordingEnabled;
-  }
-
-  public async enableGpsRecording(): Promise<void> {
-    if (!this.ensureMutableSessionIdentity("GPS mode")) {
-      return;
-    }
-
-    if (this._gpsRecordingEnabled) {
-      return;
-    }
-
-    await this.disconnectTrainerSensors();
-    this._gpsRecordingEnabled = true;
-    this.emit("gpsTrackingChanged", true);
-    this.emit("activitySelected", {
-      category: this.selectedActivityCategory,
-      gpsRecordingEnabled: true,
-    });
-    await this.syncGpsTrackingForCurrentState();
-    this.publishSessionUpdate();
-  }
-
-  public async disableGpsRecording(): Promise<void> {
-    if (!this.ensureMutableSessionIdentity("GPS mode")) {
-      return;
-    }
-
-    if (!this._gpsRecordingEnabled) {
-      return;
-    }
-
-    this._gpsRecordingEnabled = false;
-    this.emit("gpsTrackingChanged", false);
-    this.emit("activitySelected", {
-      category: this.selectedActivityCategory,
-      gpsRecordingEnabled: false,
-    });
-    await this.syncGpsTrackingForCurrentState();
-    this.publishSessionUpdate();
-  }
-
-  public async toggleGpsRecording(): Promise<void> {
-    if (getNextGpsRecordingEnabled(this._gpsRecordingEnabled)) {
-      await this.enableGpsRecording();
-    } else {
-      await this.disableGpsRecording();
-    }
-  }
-
-  // ================================
   // Recording Lifecycle
   // ================================
 
@@ -2341,16 +2737,18 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
    * Validate plan requirements before starting recording
    * Returns validation result with missing metrics and warnings
    */
-  public validatePlanRequirements(): PlanValidationResult | null {
+  public validatePlanRequirements(
+    performanceTargets = this.getPerformanceTargets(),
+  ): PlanValidationResult | null {
     if (!this._plan) {
       return null; // No plan, no validation needed
     }
 
-    return validatePlanRequirements(this._plan, this.profile, {
-      ftp: this.ftp,
-      thresholdHr: this.thresholdHr,
-      weightKg: this.weightKg,
-    });
+    return validatePlanRequirements(
+      this._plan,
+      this.profile,
+      omitUndefined({ performanceTargets }),
+    );
   }
 
   // ================================
@@ -2369,7 +2767,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           routeId: this.getAttachedRouteId(),
           plan: this.buildPlanConfigInput(),
           routeGeometryAvailable: this.hasCurrentRouteGeometry(),
-          gpsAvailable: this._gpsAvailable,
+          gpsAvailable: false,
           session: { identityLocked: this.isSessionIdentityLocked() },
         })
       : RecordingConfigResolver.resolveFromLaunchIntent(this.buildRecordingLaunchIntent(), {
@@ -2377,7 +2775,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           plan: this.buildPlanConfigInput(),
           routeGeometryAvailable: this.hasCurrentRouteGeometry(),
           devices: this.buildConfigDevicesInput(),
-          gpsAvailable: this._gpsAvailable,
+          gpsAvailable: false,
           session: { identityLocked: this.isSessionIdentityLocked() },
         });
 
@@ -2427,265 +2825,841 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this.getRecordingConfiguration().session;
   }
 
-  async startRecording() {
-    console.log("[Service] Starting recording");
+  public get hasRecoveredCheckpoint(): boolean {
+    return this.recoveredCheckpoint !== null;
+  }
 
-    // Prevent concurrent recordings
-    if (this.state === "recording") {
-      const error = "Cannot start recording: A recording is already in progress";
-      console.error(`[Service] ${error}`);
-      throw new Error(error);
+  /** Revalidates and stages a claimed checkpoint without starting hardware side effects. */
+  public async stageRecoveredCheckpoint(checkpoint: ActivityRecorderCheckpoint): Promise<void> {
+    if (checkpoint.profileId !== this.profile.id) throw new Error("Checkpoint profile mismatch");
+    const finalizationCutoffMs = getFinalizationRecoveryCutoff(checkpoint);
+    if (finalizationCutoffMs !== null) {
+      // Stop headless producers before reading replay. A Finish action is a hard
+      // boundary: evidence accepted after it must never enter the saved activity.
+      await fenceRecordingEvidenceSession(checkpoint.sessionId);
     }
-
-    if (this.state === "paused") {
-      const error = "Cannot start recording: Please resume the paused recording first";
-      console.error(`[Service] ${error}`);
-      throw new Error(error);
-    }
-
-    // Check all necessary permissions
-    const allGranted = await areRecordingPermissionsGranted(this._gpsRecordingEnabled);
-    if (!allGranted) {
-      console.error("[Service] Cannot start recording - missing permissions");
-      throw new Error(
-        this._gpsRecordingEnabled
-          ? "Bluetooth, Location, and Background Location permissions are required to start GPS recording"
-          : "Bluetooth permission is required to start indoor recording",
+    if ("variant" in checkpoint && checkpoint.variant === "unplanned") {
+      // The durable unplanned checkpoint intentionally stores only the selected
+      // activity category. Rebuild the deterministic execution-only contract
+      // so finalization emits the same manifest as an uninterrupted recording.
+      const freeRecordingExecutionPlan = createFreeRecordingExecutionPlan(
+        checkpoint.draft.activity_category,
       );
+      const freeRecordingCompiledPlan = compileRecordingPlan(freeRecordingExecutionPlan);
+      const freeRecordingPlanHash = await hashRecordingPlan(freeRecordingExecutionPlan.structure);
+      const { streamBuffer, replay: streamReplay } = await StreamBuffer.reopenForRecovery(
+        checkpoint.streamArtifactPaths,
+        createRecordingStreamJournalAdapter({
+          sessionId: checkpoint.sessionId,
+          profileId: this.profile.id,
+        }),
+      );
+      const replay = limitRecoveredReplayToFinish(
+        assertGpsFreeReplay(streamReplay),
+        finalizationCutoffMs,
+      );
+      this._plan = undefined;
+      this._eventId = undefined;
+      this._plannedSession = undefined;
+      this.planExecution.clear();
+      this.freeRecordingExecutionPlan = freeRecordingExecutionPlan;
+      this.freeRecordingCompiledPlan = freeRecordingCompiledPlan;
+      this.planHash = freeRecordingPlanHash;
+      this.selectedActivityCategory = checkpoint.draft.activity_category;
+      this.timerEvents = checkpoint.executionState.timerEvents.map((event) => ({
+        type: event.type,
+        timestamp: Date.parse(event.timestamp),
+      }));
+      this.laps = [...(checkpoint.executionState.manualLapsMs ?? [])];
+      this.lastLapTime = this.laps.reduce((total, lap) => total + lap, 0);
+      this.checkpointRevision = checkpoint.revision;
+      this.startTime = Date.parse(checkpoint.start.startedAt);
+      this.pausedTime =
+        Math.max(0, checkpoint.summary.elapsedSeconds - checkpoint.summary.movingSeconds) * 1000;
+      this.lastPauseTime = Date.parse(checkpoint.start.updatedAt);
+      this.performanceTargets = checkpoint.performanceTargets;
+      this.syncSelectedActivityCategoryTargets(this.performanceTargets);
+      const rebuilt = this.buildSessionSnapshot(checkpoint.start.startedAt);
+      const snapshot = deepFreeze({
+        ...rebuilt,
+        identity: {
+          ...rebuilt.identity,
+          sessionId: checkpoint.sessionId,
+          revision: checkpoint.revision,
+        },
+      });
+      this.sessionController.resetForNewSession(snapshot);
+      await this.liveMetricsManager.stageRecoveredRecording({
+        sessionId: checkpoint.sessionId,
+        streamBuffer,
+        replay,
+        startedAt: this.startTime,
+        accumulatedPauseMs: this.pausedTime,
+        recoveryPausedAt: this.lastPauseTime,
+        elapsedSeconds: checkpoint.summary.elapsedSeconds,
+        movingSeconds: checkpoint.summary.movingSeconds,
+      });
+      this.recordingMetadata = {
+        startedAt: checkpoint.start.startedAt,
+        activityCategory: this.selectedActivityCategory,
+        gpsRecordingEnabled: false,
+        profileId: this.profile.id,
+        profile: this.profile,
+      };
+      this.recoveredCheckpoint = checkpoint;
+      this.recoveredReplay = replay;
+      if (finalizationCutoffMs === null) {
+        this.state = "paused";
+        this.sessionController.setLifecycle("paused");
+      } else {
+        this.recordingEndTime = finalizationCutoffMs;
+        this.producerFenceClosed = true;
+        this.evidenceFenced = true;
+        this.finalizationFailed = true;
+        this.state = "finishing";
+        this.sessionController.setLifecycle("finishing");
+      }
+      this.hasConfiguredSetup = true;
+      this.emit("stateChanged", this.state);
+      this.publishSnapshotUpdate();
+      this.publishSessionUpdate();
+      return;
+    }
+    if (checkpoint.compilerVersion !== ACTIVITY_PLAN_COMPILER_VERSION) {
+      throw new Error("Checkpoint compiler version mismatch");
+    }
+    if ((await hashRecordingPlan(checkpoint.planSnapshot)) !== checkpoint.planHash) {
+      throw new Error("Checkpoint plan hash mismatch");
+    }
+    await assertRecordingPlanExecutionStructureHashes(checkpoint.planExecution);
+    const parsedPlanSnapshot = activityPlanStructureSchema.safeParse(checkpoint.planSnapshot);
+    if (!parsedPlanSnapshot.success) {
+      throw new Error("Checkpoint plan structure is invalid");
+    }
+    const compiled = compileActivityPlan(parsedPlanSnapshot.data);
+    const compiledIds = compiled.occurrences.map((occurrence) => occurrence.occurrenceId);
+    const completedIds = checkpoint.completedOccurrences.map(
+      (occurrence) => occurrence.occurrenceId,
+    );
+    if (
+      completedIds.some((occurrenceId, index) => compiledIds[index] !== occurrenceId) ||
+      checkpoint.currentOccurrenceId !== (compiledIds[completedIds.length] ?? null)
+    ) {
+      throw new Error("Checkpoint occurrence journal mismatch");
     }
 
-    const startedAt = new Date().toISOString();
-    this.finalizedArtifact = null;
-    const sessionSnapshot = this.buildSessionSnapshot(startedAt);
-    this.sessionController.resetForNewSession(sessionSnapshot);
-    this.publishSnapshotUpdate();
+    const { streamBuffer, replay: streamReplay } = await StreamBuffer.reopenForRecovery(
+      checkpoint.streamArtifactPaths,
+      createRecordingStreamJournalAdapter({
+        sessionId: checkpoint.sessionId,
+        profileId: this.profile.id,
+      }),
+    );
+    const replay = limitRecoveredReplayToFinish(
+      assertGpsFreeReplay(streamReplay),
+      finalizationCutoffMs,
+    );
+    const lockedExecution = checkpoint.planExecution;
+    const plan: RecordingActivityPlanInput = {
+      ...(lockedExecution ? { id: lockedExecution.activityPlanId } : {}),
+      name: lockedExecution?.name ?? "Recovered activity plan",
+      description: lockedExecution?.description ?? null,
+      ...(lockedExecution
+        ? {
+            revision: lockedExecution.activityPlanRevision,
+            structure_hash: lockedExecution.structureHash,
+          }
+        : {}),
+      gps_recording_enabled: false,
+      structure: parsedPlanSnapshot.data,
+    };
+    this._plan = plan;
+    this._eventId = lockedExecution?.scheduledEventId ?? undefined;
+    this._plannedSession = lockedExecution?.plannedSession ?? undefined;
+    this.planExecution.loadPlan(plan);
+    this.planExecution.restoreOccurrence(
+      checkpoint.currentOccurrenceId,
+      checkpoint.occurrenceProgress.startMovingSeconds * 1000,
+      checkpoint.occurrenceProgress.startDistanceMeters,
+    );
+    this.completedOccurrences = [...checkpoint.completedOccurrences];
+    this.boundaryJournal = [...checkpoint.boundaryJournal];
+    this.rewindJournal = [...(checkpoint.rewindJournal ?? [])];
+    this.timerEvents = checkpoint.eventJournal.map((event) => ({
+      type: event.type,
+      timestamp: Date.parse(event.timestamp),
+    }));
+    this.laps = [...(checkpoint.manualLapsMs ?? [])];
+    this.lastLapTime = this.laps.reduce((total, lap) => total + lap, 0);
+    const recoveryPauseAt = Date.parse(checkpoint.timing.updatedAt);
+    if (this.timerEvents.at(-1)?.type !== "pause") {
+      this.timerEvents.push({ type: "pause", timestamp: recoveryPauseAt });
+    }
+    this.checkpointRevision = checkpoint.revision;
+    this.planHash = checkpoint.planHash;
+    this.selectedActivityCategory =
+      this.currentStep?.activity_category ??
+      checkpoint.policy.activity_category ??
+      compiled.occurrences.find((occurrence) => occurrence.role === "activity")
+        ?.activity_category ??
+      "other";
+    this.startTime = Date.parse(checkpoint.timing.startedAt);
+    this.pausedTime = checkpoint.timing.accumulatedPauseSeconds * 1000;
+    this.lastPauseTime = recoveryPauseAt;
+    this.occurrenceStartedAt = Date.parse(checkpoint.occurrenceProgress.startedAt);
+    this.occurrenceStartStats = {
+      movingSeconds: checkpoint.occurrenceProgress.startMovingSeconds,
+      distanceMeters: checkpoint.occurrenceProgress.startDistanceMeters,
+    };
+    this.performanceTargets = checkpoint.performanceTargets;
+    this.syncSelectedActivityCategoryTargets(this.performanceTargets);
 
-    // Create recording metadata (in-memory)
+    const rebuiltSnapshot = this.buildSessionSnapshot(checkpoint.timing.startedAt);
+    const snapshot = deepFreeze({
+      ...rebuiltSnapshot,
+      identity: {
+        ...rebuiltSnapshot.identity,
+        sessionId: checkpoint.sessionId,
+        revision: checkpoint.revision,
+      },
+    });
+    this.sessionController.resetForNewSession(snapshot);
+    this.sessionController.updateOverrideState((state) => ({
+      ...state,
+      trainerMode: checkpoint.policy.trainerMode,
+    }));
+    this.sessionController.setRuntimeSourceState({
+      selectedSources: checkpoint.policy.selectedSources,
+      currentMetrics: {},
+      degradedState: { isDegraded: false, metrics: [] },
+      sourceChanges: [],
+    });
+    await this.liveMetricsManager.stageRecoveredRecording({
+      sessionId: checkpoint.sessionId,
+      streamBuffer,
+      replay,
+      startedAt: this.startTime,
+      accumulatedPauseMs: this.pausedTime,
+      recoveryPausedAt: recoveryPauseAt,
+      elapsedSeconds: checkpoint.timing.elapsedSeconds,
+      movingSeconds: checkpoint.timing.movingSeconds,
+    });
     this.recordingMetadata = {
-      startedAt,
-      activityCategory: sessionSnapshot.activity.category,
-      gpsRecordingEnabled: sessionSnapshot.activity.gpsMode === "on",
+      startedAt: checkpoint.timing.startedAt,
+      activityCategory: snapshot.activity.activity_category,
+      gpsRecordingEnabled: false,
       profileId: this.profile.id,
       profile: this.profile,
-      eventId: sessionSnapshot.activity.eventId ?? undefined,
-      activityPlan: this._plan,
+      activityPlan: plan,
+      eventId: snapshot.activity.eventId ?? undefined,
     };
-
-    this.state = "recording";
-    this.sessionController.setLifecycle(this.state);
-    this.sensorsManager.setAutoReconnectEnabled(true);
-    void this.sensorsManager.reconnectAll();
-
-    // Configure LiveMetricsManager before starting
-    this.liveMetricsManager.setGpsRecordingEnabled(this._gpsRecordingEnabled);
-    this.liveMetricsManager.setActivityCategory(this.selectedActivityCategory);
-
-    // Start LiveMetricsManager (initializes StreamBuffer)
-    await this.liveMetricsManager.startRecording();
-
-    // Initialize timing
-    this.startTime = Date.now();
-    this.pausedTime = 0;
-    this.lastPauseTime = undefined;
-
-    this.planExecution.resetForRecordingStart(0);
-
-    // If we have a plan, emit the initial step info now that recording has started
-    if (this.hasPlan && this.currentStep) {
-      console.log("[Service] Recording started with plan, step:", this.currentStep.name);
-      this.emit("stepChanged", this.getStepInfo());
-    }
-
-    this.syncAutomaticTrainerControl("step_change").catch(console.error);
-
-    this.startElapsedTimeUpdates();
-
-    if (this._gpsRecordingEnabled) {
-      await this.locationManager.startForegroundTracking();
-      await this.locationManager.startBackgroundTracking();
-      await this.locationManager.startHeadingTracking();
-      this._gpsAvailable = true;
+    this.recoveredCheckpoint = checkpoint;
+    this.recoveredReplay = replay;
+    if (finalizationCutoffMs === null) {
+      this.state = "paused";
+      this.sessionController.setLifecycle("paused");
     } else {
-      this._gpsAvailable = false;
+      this.recordingEndTime = finalizationCutoffMs;
+      this.producerFenceClosed = true;
+      this.evidenceFenced = true;
+      this.finalizationFailed = true;
+      this.state = "finishing";
+      this.sessionController.setLifecycle("finishing");
     }
+    this.hasConfiguredSetup = true;
+    this.emit("stateChanged", this.state);
+    this.emit("stepChanged", this.getStepInfo());
+    this.publishSnapshotUpdate();
+    this.publishSessionUpdate();
+  }
 
-    // Start foreground service notification
-    const activityName =
-      this._plan?.name ||
-      `${this.selectedActivityCategory} (${this._gpsRecordingEnabled ? "GPS ON" : "GPS OFF"})`;
-    this.notificationsManager = new NotificationsManager(activityName);
-    await this.notificationsManager.startForegroundService();
+  public async resumeRecoveredRecording(): Promise<void> {
+    return this.runLifecycleTransition(async () => {
+      if (
+        !this.recoveredCheckpoint ||
+        this.recoveredCheckpoint.lifecycle === "finishing" ||
+        !this.recoveredReplay ||
+        this.state !== "paused"
+      ) {
+        throw new Error("No recovered recording is ready to resume");
+      }
+      const recoveredStartedAt = this.recordingMetadata?.startedAt;
+      if (!recoveredStartedAt) throw new Error("Recovered recording metadata is unavailable");
 
-    // Initialize FIT Encoder
-    try {
-      const encoder = new GarminFitEncoder(`${Date.now()}`, this.profile.id);
-      await encoder.initialize(this.sensorsManager.getConnectedSensors());
+      const encoder = new GarminFitEncoder(this.recoveredCheckpoint.sessionId, this.profile.id);
+      const recoveredEncoderStart =
+        this.completedOccurrences.length === 0 && this.rewindJournal.length > 0
+          ? Date.parse(this.rewindJournal.at(-1)?.rewoundAt ?? recoveredStartedAt)
+          : Date.parse(recoveredStartedAt);
+      await encoder.initialize(
+        this.sensorsManager.getConnectedSensors(),
+        new Date(recoveredEncoderStart),
+      );
+      const recoveredFitRecords = rebaseRetainedFitRecordDistances(
+        this.recoveredReplay.fitRecords.filter(
+          (record) => !this.isRestEvidenceTimestamp(record.timestamp),
+        ),
+        this.rewindJournal,
+      );
+      if (recoveredFitRecords.length > 0) {
+        await encoder.addRecords(recoveredFitRecords);
+      }
+      this.lastFitDistanceMeters = recoveredFitRecords.at(-1)?.distance ?? 0;
       this.fitEncoder = encoder;
-      console.log("[Service] FIT encoder initialized");
-
-      // Write initial FIT record immediately to ensure file has data
-      // This prevents "No data recorded" errors for very short recordings
-      await this.updateFitRecording();
-      console.log("[Service] Initial FIT record written");
-    } catch (error) {
-      console.error("[Service] Failed to initialize FIT encoder:", error);
-      // Don't fail the whole recording if FIT encoding fails
-    }
-
-    // Emit initial sensor state
-    this.emit("sensorsChanged", this.sensorsManager.getConnectedSensors());
-    this.emit("stateChanged", this.state);
-    this.publishSessionUpdate();
-    console.log("[Service] Recording started successfully");
+      this.fitFinalized = false;
+      this.producerFenceClosed = false;
+      this.evidenceFenced = false;
+      this.liveMetricsFinalized = false;
+      this.liveMetricsManager.resumeRecording({ preserveHistory: true });
+      if (this.lastPauseTime) {
+        this.pausedTime += Date.now() - this.lastPauseTime;
+        this.lastPauseTime = undefined;
+      }
+      this.timerEvents.push({ type: "resume", timestamp: Date.now() });
+      this.state = "recording";
+      this.sessionController.setLifecycle("recording");
+      this.sensorsManager.setAutoReconnectEnabled(true);
+      await this.sensorsManager.reconnectAll();
+      this.notificationsManager = new NotificationsManager(
+        this._plan?.name ?? "Recovered activity",
+      );
+      await this.notificationsManager.startForegroundService();
+      this.recoveredCheckpoint = null;
+      this.recoveredReplay = null;
+      this.startElapsedTimeUpdates();
+      await this.forceRecoveryCheckpoint();
+      await this.syncAutomaticTrainerControl("reconnect_recovery");
+      this.emit("stateChanged", this.state);
+      this.publishSessionUpdate();
+    });
   }
 
-  async pauseRecording() {
-    if (this.state !== "recording") {
-      throw new Error("Cannot pause - not recording");
-    }
+  /**
+   * Completes a recording that was interrupted after Finish was chosen. This rebuilds
+   * only the FIT encoder from durable samples; it deliberately never reopens sensors,
+   * GPS, notifications, or the elapsed-time clock.
+   */
+  public async retryRecoveredFinalization(): Promise<void> {
+    return this.runLifecycleTransition(async () => {
+      const checkpoint = this.recoveredCheckpoint;
+      if (
+        !checkpoint ||
+        checkpoint.lifecycle !== "finishing" ||
+        !this.recoveredReplay ||
+        (this.state !== "paused" && this.state !== "finishing")
+      ) {
+        throw new Error("No interrupted finalization is available to retry");
+      }
+      const recoveredStartedAt = this.recordingMetadata?.startedAt;
+      if (!recoveredStartedAt) throw new Error("Recovered recording metadata is unavailable");
 
-    console.log("[Service] Pausing recording");
+      if (!this.fitEncoder) {
+        const encoder = new GarminFitEncoder(checkpoint.sessionId, this.profile.id);
+        const recoveredEncoderStart =
+          this.completedOccurrences.length === 0 && this.rewindJournal.length > 0
+            ? Date.parse(this.rewindJournal.at(-1)?.rewoundAt ?? recoveredStartedAt)
+            : Date.parse(recoveredStartedAt);
+        await encoder.initialize(
+          this.sensorsManager.getConnectedSensors(),
+          new Date(recoveredEncoderStart),
+        );
+        const recoveredFitRecords = rebaseRetainedFitRecordDistances(
+          this.recoveredReplay.fitRecords.filter(
+            (record) => !this.isRestEvidenceTimestamp(record.timestamp),
+          ),
+          this.rewindJournal,
+        );
+        if (recoveredFitRecords.length > 0) await encoder.addRecords(recoveredFitRecords);
+        this.lastFitDistanceMeters = recoveredFitRecords.at(-1)?.distance ?? 0;
+        this.fitEncoder = encoder;
+      }
 
-    const pauseTimestamp = Date.now();
-    this.state = "paused";
-    this.sessionController.setLifecycle(this.state);
-    this.sensorsManager.setAutoReconnectEnabled(true);
-    this.lastPauseTime = pauseTimestamp;
+      this.recordingEndTime ??= getFinalizationRecoveryCutoff(checkpoint) ?? undefined;
+      this.producerFenceClosed = true;
+      this.finalizationFailed = true;
+      this.state = "finishing";
+      this.sessionController.setLifecycle("finishing");
+      this.emit("stateChanged", this.state);
+      this.publishSessionUpdate();
 
-    // Pause LiveMetricsManager
-    this.liveMetricsManager.pauseRecording();
+      await this.finishRecordingTransition();
+      this.recoveredCheckpoint = null;
+      this.recoveredReplay = null;
+    });
+  }
 
-    // Pause FIT encoder timer
-    if (this.fitEncoder) {
-      await this.fitEncoder.pause();
-    }
-
-    this.stopElapsedTimeUpdates();
-
+  public async discardRecoveredRecording(): Promise<void> {
+    const checkpoint = this.recoveredCheckpoint;
+    if (!checkpoint) throw new Error("No recovered recording is available to discard");
+    await quarantineRecordingEvidenceSession({
+      sessionId: checkpoint.sessionId,
+      profileId: this.profile.id,
+      reason: "recovered-recording-discarded",
+    });
+    await clearRecordingCheckpoint(checkpoint.sessionId);
+    StreamBuffer.deleteDurableDirectories(checkpoint.streamArtifactPaths, checkpoint.sessionId);
+    releaseRecordingCheckpointClaim(checkpoint.sessionId);
+    this.recoveredCheckpoint = null;
+    this.recoveredReplay = null;
+    this.recordingMetadata = undefined;
+    this.planExecution.clear();
+    this._plan = undefined;
+    this._eventId = undefined;
+    this._plannedSession = undefined;
+    this.state = "pending";
+    this.sessionController.resetAll();
+    this.hasConfiguredSetup = false;
     this.emit("stateChanged", this.state);
+    this.publishSnapshotUpdate();
     this.publishSessionUpdate();
   }
 
-  async resumeRecording() {
-    if (this.state !== "paused") {
-      throw new Error("Cannot resume - not paused");
+  async startRecording(
+    performanceTargets?: AthletePerformanceTargetFacts,
+    reservation?: RecordingStartReservation,
+  ): Promise<void> {
+    const parsedTargets = performanceTargets
+      ? athletePerformanceTargetFactsSchema.parse(performanceTargets)
+      : undefined;
+    if (reservation) {
+      if (
+        reservation.profileId !== this.profile.id ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+          reservation.sessionId,
+        ) ||
+        typeof reservation.markStarted !== "function"
+      ) {
+        throw new Error("Recording start reservation does not match this profile");
+      }
+    }
+    return this.runLifecycleTransition(() =>
+      this.startRecordingTransition(parsedTargets, reservation),
+    );
+  }
+
+  private runLifecycleTransition<T>(transition: () => Promise<T>): Promise<T> {
+    const result = this.lifecycleTransition.then(transition);
+    this.lifecycleTransition = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  private async startRecordingTransition(
+    performanceTargets?: AthletePerformanceTargetFacts,
+    reservation?: RecordingStartReservation,
+  ): Promise<void> {
+    console.log("[Service] Starting recording");
+
+    if (this.state === "recording") {
+      throw new Error("Cannot start recording: A recording is already in progress");
+    }
+    if (this.state === "paused") {
+      throw new Error("Cannot start recording: Please resume the paused recording first");
+    }
+    if (this.state === "finishing") {
+      throw new Error("Cannot start recording while finalization is pending");
+    }
+    if (this.state === "finished") {
+      throw new Error("Cannot start recording before cleaning up the finished recording");
     }
 
-    console.log("[Service] Resuming recording");
+    const previousState = this.state;
+    let liveMetricsStarted = false;
+    let attemptEncoder: GarminFitEncoder | undefined;
+    let allocatedSessionId: string | undefined;
 
-    const resumeTimestamp = Date.now();
-    this.state = "recording";
-    this.sessionController.setLifecycle(this.state);
-    this.sensorsManager.setAutoReconnectEnabled(true);
+    try {
+      const startedAt = new Date().toISOString();
+      this.finalizedArtifact = null;
+      this.liveMetricsFinalized = false;
+      this.fitFinalized = false;
+      this.lastFitDistanceMeters = 0;
+      this.finalizationFailed = false;
+      this.recordingEndTime = undefined;
+      this.completedOccurrences = [];
+      this.boundaryJournal = [];
+      this.rewindJournal = [];
+      this.checkpointRevision = 0;
+      this.freeRecordingExecutionPlan = this._plan
+        ? undefined
+        : createFreeRecordingExecutionPlan(this.selectedActivityCategory);
+      this.freeRecordingCompiledPlan = this.freeRecordingExecutionPlan
+        ? compileRecordingPlan(this.freeRecordingExecutionPlan)
+        : null;
+      const executionPlan = this._plan ?? this.freeRecordingExecutionPlan;
+      if (!executionPlan) throw new Error("Free recording execution structure is unavailable");
+      if (this._plannedSession) {
+        await assertRecordingPlanExecutionStructureHashes({
+          manifestVersion: 2,
+          compilerVersion: ACTIVITY_PLAN_COMPILER_VERSION,
+          activityPlanId: this._plannedSession.prescription.resolutionManifest.activity_plan_id,
+          scheduledEventId: this._eventId ?? null,
+          name: this._plan?.name ?? "Scheduled activity plan",
+          description: this._plan?.description ?? null,
+          activityPlanRevision:
+            this._plannedSession.prescription.resolutionManifest.activity_plan_revision,
+          structureHash:
+            this._plannedSession.prescription.resolutionManifest.resolved_structure_hash,
+          structure: activityPlanStructureSchema.parse(executionPlan.structure),
+          plannedSession: this._plannedSession,
+          personalizationEnabled: false,
+          targetPresentations: [],
+        });
+      }
+      this.planHash = await hashRecordingPlan(executionPlan.structure);
+      this.occurrenceStartedAt = Date.now();
+      this.occurrenceStartStats = { movingSeconds: 0, distanceMeters: 0 };
+      this.timerEvents = [];
 
-    // Resume LiveMetricsManager
-    this.liveMetricsManager.resumeRecording();
+      const sessionSnapshot = this.buildSessionSnapshot(
+        startedAt,
+        performanceTargets,
+        reservation?.sessionId,
+      );
+      this.sessionController.resetForNewSession(sessionSnapshot);
+      // Allocate the sole profile-owned SQLite session before any sensor producer.
+      await allocateRecordingEvidenceSession({
+        sessionId: sessionSnapshot.identity.sessionId,
+        profileId: this.profile.id,
+      });
+      allocatedSessionId = sessionSnapshot.identity.sessionId;
+      this.liveMetricsManager.bindEvidenceSession(
+        sessionSnapshot.identity.sessionId,
+        this.profile.id,
+      );
+      this.recordingMetadata = {
+        startedAt,
+        activityCategory: sessionSnapshot.activity.activity_category,
+        gpsRecordingEnabled: false,
+        profileId: this.profile.id,
+        profile: this.profile,
+        eventId: sessionSnapshot.activity.eventId ?? undefined,
+        activityPlan: this._plan,
+      };
 
-    // Update paused time accumulator
-    if (this.lastPauseTime) {
-      const pauseDuration = resumeTimestamp - this.lastPauseTime;
-      this.pausedTime += pauseDuration;
+      // This is the allocation-time recovery manifest. It must be committed
+      // before reconnect, BLE, or timer producers can publish a sample.
+      // If SQLite rejects it, the outer transition tears down without ever
+      // starting those producers.
+      this.startTime = Date.now();
+      this.pausedTime = 0;
       this.lastPauseTime = undefined;
+      this.planExecution.resetForRecordingStart(0);
+
+      // Some recording subsystems inspect the active state while initializing. Do not publish
+      // this state until every required subsystem, including FIT, has started successfully.
+      this.state = "recording";
+      this.sessionController.setLifecycle(this.state);
+      await this.persistCurrentCheckpoint();
+      this.publishSnapshotUpdate();
+      this.sensorsManager.setAutoReconnectEnabled(true);
+      // Reconnection can subscribe BLE producers. Keep it inside the start
+      // transaction so a setup failure cannot escape the rollback fence.
+      await this.sensorsManager.reconnectAll();
+
+      this.syncSelectedActivityCategoryTargets(sessionSnapshot.performanceTargets);
+      // A producer can subscribe before its async setup rejects; mark it owned
+      // before awaiting so rollback always tears down that partial start.
+      liveMetricsStarted = true;
+      await this.liveMetricsManager.startRecording();
+
+      this.startElapsedTimeUpdates();
+
+      const activityName = this._plan?.name || this.selectedActivityCategory;
+      const notificationsManager = new NotificationsManager(activityName);
+      this.notificationsManager = notificationsManager;
+      await notificationsManager.startForegroundService();
+
+      attemptEncoder = new GarminFitEncoder(sessionSnapshot.identity.sessionId, this.profile.id);
+      await attemptEncoder.initialize(this.sensorsManager.getConnectedSensors());
+      this.fitEncoder = attemptEncoder;
+      await this.updateFitRecording();
+      await this.forceRecoveryCheckpoint();
+
+      if (this.hasPlan && this.currentStep) {
+        this.emit("stepChanged", this.getStepInfo());
+      }
+      this.syncAutomaticTrainerControl("step_change").catch(console.error);
+      await reservation?.markStarted();
+      this.emit("sensorsChanged", this.sensorsManager.getConnectedSensors());
+      this.emit("stateChanged", this.state);
+      this.publishSessionUpdate();
+      console.log("[Service] Recording started successfully");
+    } catch (error) {
+      const errorCategory = boundedErrorCategory(error, "recording-start-failed");
+      console.error("[Service] Recording start failed", { category: errorCategory });
+      this.stopElapsedTimeUpdates();
+      this.sensorsManager.setAutoReconnectEnabled(false);
+
+      const rollbackTasks: Promise<unknown>[] = [];
+      // A reconnect may have subscribed a BLE producer before it rejected.
+      // Disconnect it inside the same rollback fence as metrics.
+      rollbackTasks.push(this.sensorsManager.disconnectAll());
+      if (this.notificationsManager) {
+        rollbackTasks.push(this.notificationsManager.stopForegroundService());
+      }
+      if (liveMetricsStarted) {
+        rollbackTasks.push(this.liveMetricsManager.finishRecording());
+      }
+      if (attemptEncoder) {
+        rollbackTasks.push(attemptEncoder.cleanup());
+      }
+      await Promise.allSettled(rollbackTasks);
+      if (allocatedSessionId) {
+        await rollbackRecordingEvidenceSession(allocatedSessionId, errorCategory).catch(
+          () => undefined,
+        );
+      }
+
+      this.notificationsManager = undefined;
+      this.fitEncoder = undefined;
+      this.recordingMetadata = undefined;
+      this.startTime = undefined;
+      this.recordingEndTime = undefined;
+      this.pausedTime = 0;
+      this.lastPauseTime = undefined;
+      this.state = previousState;
+      this.sessionController.resetAll();
+      this.publishSnapshotUpdate();
+      this.emit("stateChanged", this.state);
+      this.publishSessionUpdate();
+      throw error;
     }
-
-    // Resume FIT encoder timer
-    if (this.fitEncoder) {
-      await this.fitEncoder.resume();
-    }
-
-    this.startElapsedTimeUpdates();
-
-    this.emit("stateChanged", this.state);
-    this.publishSessionUpdate();
   }
 
-  async finishRecording() {
+  async pauseRecording(): Promise<void> {
+    return this.runLifecycleTransition(async () => {
+      if (this.state !== "recording") {
+        throw new Error("Cannot pause - not recording");
+      }
+
+      console.log("[Service] Pausing recording");
+      const pauseTimestamp = Date.now();
+      this.timerEvents.push({ type: "pause", timestamp: pauseTimestamp });
+
+      this.liveMetricsManager.pauseRecording();
+      if (this.fitEncoder) {
+        await this.fitEncoder.pause();
+      }
+
+      this.state = "paused";
+      this.sessionController.setLifecycle(this.state);
+      this.sensorsManager.setAutoReconnectEnabled(true);
+      this.lastPauseTime = pauseTimestamp;
+      this.stopElapsedTimeUpdates();
+      await this.forceRecoveryCheckpoint();
+      this.emit("stateChanged", this.state);
+      this.publishSessionUpdate();
+    });
+  }
+
+  async resumeRecording(): Promise<void> {
+    return this.runLifecycleTransition(async () => {
+      if (this.state !== "paused") {
+        throw new Error("Cannot resume - not paused");
+      }
+
+      console.log("[Service] Resuming recording");
+      const resumeTimestamp = Date.now();
+      this.timerEvents.push({ type: "resume", timestamp: resumeTimestamp });
+
+      this.liveMetricsManager.resumeRecording();
+      if (this.fitEncoder) {
+        await this.fitEncoder.resume();
+      }
+
+      if (this.lastPauseTime) {
+        this.pausedTime += resumeTimestamp - this.lastPauseTime;
+        this.lastPauseTime = undefined;
+      }
+      this.state = "recording";
+      this.sessionController.setLifecycle(this.state);
+      this.sensorsManager.setAutoReconnectEnabled(true);
+      this.startElapsedTimeUpdates();
+      await this.forceRecoveryCheckpoint();
+      this.emit("stateChanged", this.state);
+      this.publishSessionUpdate();
+    });
+  }
+
+  async finishRecording(): Promise<void> {
+    return this.runLifecycleTransition(() => this.finishRecordingTransition());
+  }
+
+  private async stopActiveRecordingResources(): Promise<void> {
+    this.stopElapsedTimeUpdates();
+    this.sensorsManager.setAutoReconnectEnabled(false);
+
+    const teardownResults = await Promise.allSettled([
+      // BLE notifications are producers too. Stop/unsubscribe them before the
+      // final metrics flush; the intake gate rejects any callback already queued.
+      this.sensorsManager.disconnectAll({ suppressAutoReconnect: true }),
+      this.notificationsManager?.stopForegroundService() ?? Promise.resolve(),
+    ]);
+    const failure = teardownResults.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failure) {
+      throw failure.reason;
+    }
+  }
+
+  private async finishRecordingTransition(): Promise<void> {
     if (!this.recordingMetadata) {
       throw new Error("No active recording to finish");
     }
 
-    if (this.state === "finishing") {
+    const isRetry = this.state === "finishing" && this.finalizationFailed;
+    if (this.state === "finishing" && !isRetry) {
       throw new Error("Recording finalization is already in progress");
     }
+    if (this.state !== "recording" && this.state !== "paused" && !isRetry) {
+      throw new Error("No active recording to finish");
+    }
 
-    console.log("[Service] Finishing recording");
+    console.log(
+      isRetry ? "[Service] Retrying recording finalization" : "[Service] Finishing recording",
+    );
 
-    const previousState = this.state;
+    if (!isRetry) {
+      const finishTimestamp = Date.now();
+      this.recordingEndTime = finishTimestamp;
+      if (this.state === "paused" && this.lastPauseTime) {
+        this.pausedTime += finishTimestamp - this.lastPauseTime;
+        this.lastPauseTime = undefined;
+      }
+    }
+
+    this.finalizationFailed = false;
+    // Close local producers before the SQLite transaction closes headless producers.
+    // Calls already inside a FIT append are awaited below; no drain timeout is allowed.
+    this.producerFenceClosed = true;
     this.state = "finishing";
     this.sessionController.setLifecycle(this.state);
     this.emit("stateChanged", this.state);
     this.publishSessionUpdate();
 
     try {
-      // Finish LiveMetricsManager (flushes final data to files)
-      await this.liveMetricsManager.finishRecording();
-      await this.waitForFitRecordingWritesToDrain();
+      const evidenceSessionId = this.getSessionSnapshot()?.identity.sessionId;
+      if (!evidenceSessionId) throw new Error("Recording evidence session is unavailable");
+      await this.planBoundaryTransition;
+      const finalStep = this.currentStep;
+      const finalProgress =
+        finalStep && this._plan
+          ? this.planExecution.getStepProgress(
+              this.getMovingTime(),
+              this.getSessionStats().distance,
+            )
+          : null;
+      // Finish closes an observation, not necessarily the prescribed work. Open
+      // steps end by user intent; measurable targets must actually be reached.
+      const finalCompletion: RecordingOccurrenceResult["completion"] =
+        finalStep?.duration.type === "untilFinished"
+          ? { status: "completed", method: "manual" }
+          : finalProgress?.canAutoAdvance
+            ? { status: "completed", method: "automatic" }
+            : null;
+      const finalOccurrence = this.completeCurrentOccurrence(
+        this.recordingEndTime ?? Date.now(),
+        finalStep,
+        finalCompletion,
+      );
+      if (finalOccurrence) {
+        this.planExecution.completeForFinalization();
+        this.boundaryJournal.push({
+          revision: this.checkpointRevision + 1,
+          completedOccurrenceId: finalOccurrence.occurrenceId,
+          nextOccurrenceId: this.currentStep?.occurrenceId ?? null,
+          committedAt: new Date().toISOString(),
+        });
+      }
+      await this.forceRecoveryCheckpoint();
+      await this.stopActiveRecordingResources();
 
-      // Check StreamBuffer status before finalizing
-      const bufferStatus = this.liveMetricsManager.streamBuffer.getBufferStatus();
-      console.log("[Service] StreamBuffer status:", bufferStatus);
-
-      // Finalize FIT file
-      if (this.fitEncoder) {
-        try {
-          const stats = this.getSessionStats();
-
-          // VALIDATION: Ensure we have some data
-          const status = this.fitEncoder.getStatus();
-          if (status.recordCount === 0) {
-            throw new Error(
-              "No data recorded. FIT file would be invalid without any records. Please ensure sensors are connected and recording for at least a few seconds.",
-            );
-          }
-
-          console.log(
-            `[Service] Finalizing FIT file with ${status.recordCount} records, ${stats.duration}s duration`,
-          );
-
-          const { sport, subSport } = this.getFitSport(
-            this.selectedActivityCategory,
-            this._gpsRecordingEnabled,
-          );
-          await this.fitEncoder.finalize({
-            startTime: this.startTime || Date.now(),
-            totalTime: stats.duration * 1000, // Convert to milliseconds
-            distance: stats.distance,
-            avgSpeed: stats.avgSpeed,
-            maxSpeed: stats.maxSpeed,
-            avgPower: stats.avgPower,
-            maxPower: stats.maxPower,
-            avgHeartRate: stats.avgHeartRate,
-            maxHeartRate: stats.maxHeartRate,
-            avgCadence: stats.avgCadence,
-            totalAscent: stats.ascent,
-            totalDescent: stats.descent,
-            calories: stats.calories,
-            sport,
-            subSport,
-          });
-
-          // Add file path to metadata
-          this.recordingMetadata.activityFilePath = this.fitEncoder.getFilePath();
-          console.log(
-            "[Service] Activity file finalized:",
-            this.recordingMetadata.activityFilePath,
-          );
-        } catch (error) {
-          console.error("[Service] Failed to finalize FIT file:", error);
-          // Re-throw so UI can show proper error
-          throw new Error(
-            `FIT file creation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-          );
-        }
+      if (!this.liveMetricsFinalized) {
+        await this.liveMetricsManager.finishRecording();
+        await this.waitForFitRecordingWritesToDrain();
+        await this.liveMetricsManager.streamBuffer.flushToFiles();
+        this.liveMetricsFinalized = true;
       }
 
-      // Update recording metadata with end time
-      this.recordingMetadata.endedAt = new Date().toISOString();
+      // Producers are stopped and every pre-gate append has drained/flushed while SQLite remains
+      // writable. The durable fence is deliberately last: late callbacks are rejected by both the
+      // recorder intake gate and SQLite, without losing already accepted in-memory samples.
+      if (!this.evidenceFenced) {
+        await fenceRecordingEvidenceSession(evidenceSessionId);
+        this.evidenceFenced = true;
+      }
 
-      const sessionSnapshot = this.getSessionSnapshot();
-      if (sessionSnapshot) {
-        this.finalizedArtifact = {
+      if (!this.fitEncoder) {
+        throw new Error("FIT encoder is unavailable; recording cannot be finalized");
+      }
+
+      if (!this.fitFinalized) {
+        const stats = this.getSessionStats();
+        const status = this.fitEncoder.getStatus();
+        if (status.recordCount === 0) {
+          throw new Error(
+            "No data recorded. FIT file would be invalid without any records. Please ensure sensors are connected and recording for at least a few seconds.",
+          );
+        }
+
+        const executionManifest = this.buildExecutionManifest();
+        // Free recordings retain the established single FIT session behavior;
+        // their canonical occurrence is for the queue/API execution manifest.
+        const fitSessions =
+          this._plan && executionManifest ? this.buildFitSessions(executionManifest) : [];
+        const fallbackSport = this.getFitSport(this.selectedActivityCategory);
+        await this.fitEncoder.finalize(
+          fitSessions.length > 0
+            ? fitSessions
+            : omitUndefined({
+                startTime: this.startTime || Date.now(),
+                endedAt: this.recordingEndTime,
+                totalTime: stats.movingTime * 1000,
+                distance: stats.distance,
+                avgSpeed: stats.avgSpeed,
+                maxSpeed: stats.maxSpeed,
+                avgPower: stats.avgPower,
+                maxPower: stats.maxPower,
+                avgHeartRate: stats.avgHeartRate,
+                maxHeartRate: stats.maxHeartRate,
+                avgCadence: stats.avgCadence,
+                totalAscent: stats.ascent,
+                totalDescent: stats.descent,
+                calories: stats.calories,
+                sport: fallbackSport.sport,
+                subSport: fallbackSport.subSport,
+              }),
+        );
+        this.recordingMetadata.activityFilePath = this.fitEncoder.getFilePath();
+        await validateFinalizedFitFile(this.recordingMetadata.activityFilePath, {
+          ...(this.startTime === undefined ? {} : { startTime: this.startTime }),
+          ...(this.recordingEndTime === undefined ? {} : { endedAt: this.recordingEndTime }),
+          ...(this.startTime === undefined || this.recordingEndTime === undefined
+            ? {}
+            : { durationMs: this.recordingEndTime - this.startTime }),
+          distanceMeters: stats.distance,
+        });
+        const artifactMetadata = await getLocalActivityArtifactMetadata(
+          this.recordingMetadata.activityFilePath,
+        );
+        this.recordingMetadata.endedAt ??= new Date(
+          this.recordingEndTime ?? Date.now(),
+        ).toISOString();
+        const sessionSnapshot = this.getSessionSnapshot();
+        if (!sessionSnapshot) {
+          throw new Error("Recording session snapshot is unavailable");
+        }
+        // Build and validate the complete queue-handoff payload *before* the
+        // SQLite finalization transaction. A process can therefore never see a
+        // finalized FIT reference without a recoverable handoff payload.
+        const artifact: RecordingSessionArtifact = {
+          schemaVersion: 2,
           sessionId: sessionSnapshot.identity.sessionId,
+          profileId: this.profile.id,
           snapshot: sessionSnapshot,
           overrides: this.getSessionOverrides(),
           finalStats: {
@@ -2693,41 +3667,51 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
             movingSeconds: this.getSessionStats().movingTime,
             distanceMeters: this.getSessionStats().distance,
             calories: this.getSessionStats().calories,
+            manualLapsMs: this.getLaps(),
           },
           activityFilePath: this.recordingMetadata.activityFilePath ?? null,
           streamArtifactPaths: [this.liveMetricsManager.streamBuffer.getBufferStatus().storageDir],
+          executionManifest: this.buildExecutionManifest(),
           completedAt: this.recordingMetadata.endedAt,
           runtimeSourceState: this.getRuntimeSourceState(),
         };
 
-        await persistPendingFinalizedArtifact(this.finalizedArtifact);
-        this.emit("artifactReady", this.finalizedArtifact);
+        await commitFinalizedArtifactAndHandoff({
+          sessionId: evidenceSessionId,
+          path: this.recordingMetadata.activityFilePath,
+          byteSize: artifactMetadata.byteSize,
+          sha256: artifactMetadata.sha256,
+          artifact,
+        });
+        this.finalizedArtifact = artifact;
+        this.fitFinalized = true;
       }
 
-      // Update state
+      if (this.finalizedArtifact) {
+        this.emit("artifactReady", this.finalizedArtifact);
+        await clearRecordingCheckpoint(this.finalizedArtifact.sessionId);
+      }
+
       this.state = "finished";
       this.sessionController.setLifecycle(this.state);
-      this.sensorsManager.setAutoReconnectEnabled(false);
+      this.notificationsManager = undefined;
       this.emit("stateChanged", this.state);
       this.publishSessionUpdate();
-
-      // Emit completion event to signal data is ready for processing
       this.emit("recordingComplete");
-
-      // Clean up resources
-      if (this.notificationsManager) {
-        await this.notificationsManager.stopForegroundService();
-      }
-
       console.log("[Service] Recording finished successfully");
-    } catch (err) {
-      console.error("[Service] Failed to finish recording:", err);
-      this.state = previousState;
+    } catch (error) {
+      console.error("[Service] Recording finalization failed", {
+        category: boundedErrorCategory(error, "recording-finalization-failed"),
+      });
+      this.finalizationFailed = true;
+      // Finalization has stopped active resources and may have finalized files. Never return to
+      // recording/paused; keeping `finishing` makes the non-active error state explicit and retryable.
+      this.state = "finishing";
       this.sessionController.setLifecycle(this.state);
       this.emit("stateChanged", this.state);
       this.publishSessionUpdate();
       this.emit("error", "Failed to save recording data.");
-      throw err;
+      throw error;
     }
   }
 
@@ -2736,39 +3720,34 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // ================================
 
   updateActivityConfiguration(
-    category: RecordingActivityCategory,
+    activity_category: RecordingActivityCategory,
     gpsRecordingEnabled: boolean,
   ): void {
     if (!this.ensureMutableSessionIdentity("Activity configuration")) {
       return;
     }
 
-    this.selectedActivityCategory = category;
-    if (gpsRecordingEnabled && !this._gpsRecordingEnabled) {
-      void this.disconnectTrainerSensors();
-    }
-    this._gpsRecordingEnabled = gpsRecordingEnabled;
-    this.syncGpsTrackingForCurrentState().catch(console.error);
-    this.emit("gpsTrackingChanged", gpsRecordingEnabled);
-    this.emit("activitySelected", { category, gpsRecordingEnabled });
+    this.selectedActivityCategory = activity_category;
+    this.syncSelectedActivityCategoryTargets();
+    void gpsRecordingEnabled;
+    this.emit("activitySelected", { activity_category, gpsRecordingEnabled: false });
     this.publishSessionUpdate();
   }
 
-  selectUnplannedActivity(category: RecordingActivityCategory, gpsRecordingEnabled: boolean): void {
+  selectUnplannedActivity(
+    activity_category: RecordingActivityCategory,
+    gpsRecordingEnabled: boolean,
+  ): void {
     if (!this.ensureMutableSessionIdentity("Activity selection")) {
       return;
     }
 
     this.hasConfiguredSetup = true;
-    this.selectedActivityCategory = category;
-    if (gpsRecordingEnabled && !this._gpsRecordingEnabled) {
-      void this.disconnectTrainerSensors();
-    }
-    this._gpsRecordingEnabled = gpsRecordingEnabled;
+    this.selectedActivityCategory = activity_category;
+    this.syncSelectedActivityCategoryTargets();
+    void gpsRecordingEnabled;
     this.clearPlan();
-    this.syncGpsTrackingForCurrentState().catch(console.error);
-    this.emit("gpsTrackingChanged", gpsRecordingEnabled);
-    this.emit("activitySelected", { category, gpsRecordingEnabled });
+    this.emit("activitySelected", { activity_category, gpsRecordingEnabled: false });
     this.publishSessionUpdate();
   }
 
@@ -2776,12 +3755,37 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
    * Initialize activity recording from an ActivityPayload.
    * Handles both planned activities (with structure) and quick-start activities.
    *
-   * @param payload - ActivityPayload containing activity type and optional plan
+   * @param payload - ActivityPayload containing an activity category and optional plan
    */
   selectActivityFromPayload(payload: import("@repo/core").ActivityPayload): void {
     console.log("[Service] Initializing from payload:", payload);
 
     try {
+      if (this.recoveredCheckpoint !== null) {
+        throw new Error("Resume or discard the recovered recording before selecting a new plan.");
+      }
+      const parsedPayload = ActivityPayloadSchema.parse({
+        activity_category: payload.activity_category,
+        gpsRecordingEnabled: payload.gpsRecordingEnabled,
+        ...(payload.eventId === undefined ? {} : { eventId: payload.eventId }),
+        ...(payload.plan === undefined ? {} : { plan: payload.plan }),
+        ...(payload.plannedSession === undefined ? {} : { plannedSession: payload.plannedSession }),
+      });
+      const plan: RecordingActivityPlanInput | null = parsedPayload.plan
+        ? {
+            name: parsedPayload.plan.name,
+            description: parsedPayload.plan.description || "",
+            structure: parsedPayload.plan.structure,
+            ...(parsedPayload.plan.id === undefined ? {} : { id: parsedPayload.plan.id }),
+          }
+        : null;
+      if (plan) {
+        const support = getMobileRecordingPlanSupport(plan);
+        if (!support.supported) {
+          throw new Error(support.message);
+        }
+      }
+
       this.currentLaunchSource =
         (payload as { launchSource?: RecordingConfiguration["input"]["launchSource"] })
           .launchSource ?? "manual";
@@ -2791,25 +3795,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         return;
       }
 
-      if (payload.plan) {
+      if (plan) {
         // Template or planned activity with structure
-        const plan: RecordingServiceActivityPlan = {
-          name: payload.plan.name,
-          description: payload.plan.description || "",
-          activity_category: payload.plan.activity_category || payload.category,
-          structure: payload.plan.structure,
-          route_id: payload.plan.route_id || null,
-        };
-
-        if (payload.gpsRecordingEnabled && !this._gpsRecordingEnabled) {
-          void this.disconnectTrainerSensors();
-        }
-        this._gpsRecordingEnabled = payload.gpsRecordingEnabled;
-        this.syncGpsTrackingForCurrentState().catch(console.error);
-        this.emit("gpsTrackingChanged", payload.gpsRecordingEnabled);
-
         console.log("[Service] Selecting plan from payload:", plan.name);
-        this.selectPlan(plan, payload.eventId);
+        this.selectPlan(plan, parsedPayload.eventId, parsedPayload.plannedSession);
       } else {
         // Quick start activity - only clear plan if this is truly initial setup
         // Check if there's an existing plan to determine if this is initial setup
@@ -2818,20 +3807,26 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           // True initial setup: no plan exists, state is pending
           console.log(
             "[Service] Selecting unplanned activity from payload (initial):",
-            payload.category,
-            payload.gpsRecordingEnabled,
+            parsedPayload.activity_category,
+            parsedPayload.gpsRecordingEnabled,
           );
-          this.selectUnplannedActivity(payload.category, payload.gpsRecordingEnabled);
+          this.selectUnplannedActivity(
+            parsedPayload.activity_category,
+            parsedPayload.gpsRecordingEnabled,
+          );
         } else {
           // Plan exists OR recording has started: preserve plan and just update config
           console.log(
             "[Service] Updating activity configuration from payload:",
-            payload.category,
-            payload.gpsRecordingEnabled,
+            parsedPayload.activity_category,
+            parsedPayload.gpsRecordingEnabled,
             "hasPlan:",
             this.hasPlan,
           );
-          this.updateActivityConfiguration(payload.category, payload.gpsRecordingEnabled);
+          this.updateActivityConfiguration(
+            parsedPayload.activity_category,
+            parsedPayload.gpsRecordingEnabled,
+          );
         }
       }
 
@@ -2887,6 +3882,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // ================================
 
   private handleSensorData(reading: SensorReading) {
+    if (this.producerFenceClosed) return;
     if (!this.isAuthoritativeSensorReading(reading)) {
       return;
     }
@@ -2907,66 +3903,15 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       const metrics = this.liveMetricsManager.getMetrics();
       const progress = this.hasPlan && this.currentStep ? this.stepProgress : null;
       this.notificationsManager
-        .update({
-          elapsedInStep: progress?.movingTime || 0,
-          heartRate: metrics.avgHeartRate || undefined,
-          power: metrics.avgPower || undefined,
-        })
+        .update(
+          omitUndefined({
+            elapsedInStep: progress?.movingTime || 0,
+            heartRate: metrics.avgHeartRate || undefined,
+            power: metrics.avgPower || undefined,
+          }),
+        )
         .catch(console.error);
     }
-  }
-
-  private handleLocationData(location: LocationObject) {
-    if (!this._gpsRecordingEnabled) {
-      return;
-    }
-
-    const timestamp = location.timestamp || Date.now();
-    const locationKey = [
-      timestamp,
-      location.coords.latitude.toFixed(7),
-      location.coords.longitude.toFixed(7),
-    ].join(":");
-
-    if (locationKey === this.lastHandledLocationKey) {
-      return;
-    }
-
-    this.lastHandledLocationKey = locationKey;
-    this.liveMetricsManager.setGpsSpeedFallbackEnabled(this.isGpsAuthoritativeForMetric("speed"));
-
-    // Ingest location data for real-time display (even in pending state for map preview)
-    // The LiveMetricsManager will only persist data when recording is active
-    this.liveMetricsManager.ingestLocationData(
-      {
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-        altitude: location.coords.altitude || undefined,
-        accuracy: location.coords.accuracy || undefined,
-        heading: location.coords.heading || undefined,
-        timestamp: timestamp,
-      },
-      {
-        updateDistance: this.isGpsAuthoritativeForMetric("distance"),
-      },
-    );
-
-    // Only process for recording logic when actually recording/paused
-    if (this.state !== "recording" && this.state !== "paused") return;
-
-    // Update route progress if a route is loaded
-    if (this.hasRoute) {
-      this.updateRouteProgress(location.coords.latitude, location.coords.longitude);
-    }
-  }
-
-  private isGpsAuthoritativeForMetric(metricFamily: MetricFamily): boolean {
-    this.syncRuntimeSourceState({ recordChanges: false });
-    const selection = this.sessionController
-      .getRuntimeSourceState()
-      .selectedSources.find((source) => source.metricFamily === metricFamily);
-
-    return selection?.sourceType === "gps";
   }
 
   // ================================
@@ -3009,14 +3954,15 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     // Auto-advance plan steps when recording
     if (this.state === "recording") {
       // Update FIT recording every second
-      this.updateFitRecording();
+      void this.updateFitRecording();
 
       if (this.hasPlan && this.currentStep) {
         const progress = this.stepProgress;
         if (progress && !progress.requiresManualAdvance && progress.progress >= 1) {
-          this.advanceStep();
+          this.advanceStep("automatic");
         }
       }
+      this.scheduleRecoveryCheckpoint();
     }
   }
 
@@ -3025,7 +3971,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
    * Called every second by updateElapsedTime
    */
   private async updateFitRecording() {
-    if (!this.fitEncoder || this.state !== "recording") return;
+    if (this.producerFenceClosed || !this.fitEncoder || this.state !== "recording") return;
 
     if (this.fitRecordingUpdateInFlight) {
       this.fitRecordingUpdatePending = true;
@@ -3046,12 +3992,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   private async writeFitRecordingRecord() {
     const encoder = this.fitEncoder;
-    if (!encoder || this.state !== "recording") return;
+    if (this.producerFenceClosed || !encoder || this.state !== "recording") return;
 
     try {
       const initialStatus = encoder.getStatus();
       if (!initialStatus.isInitialized || initialStatus.isFinalized) return;
-
       if (this.selectedActivityCategory === "swim") {
         // TODO: Implement swim logic
         return;
@@ -3061,25 +4006,24 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       const readings = this.liveMetricsManager.getCurrentReadings();
       const stats = this.liveMetricsManager.getSessionStats();
 
-      const record: FitRecord = {
-        timestamp: Date.now(),
-        distance: stats.distance,
-        speed: readings.speed,
-        heartRate: readings.heartRate,
-        cadence: readings.cadence,
-        power: readings.power,
-        temperature: readings.temperature,
-      };
-
-      if (readings.position) {
-        record.latitude = readings.position.lat;
-        record.longitude = readings.position.lng;
-        record.altitude = readings.position.alt;
-      }
-
-      if (this.state !== "recording") return;
-
-      await encoder.addRecord(record);
+      if (this.producerFenceClosed || this.state !== "recording") return;
+      const timestamp = Date.now();
+      const distance = rebaseRecordingDistance(
+        stats.distance,
+        timestamp,
+        this.rewindJournal,
+        this.lastFitDistanceMeters,
+      );
+      const emitted = await appendActivityRecorderFitRecord({
+        encoder,
+        hasPlan: this.hasPlan,
+        currentOccurrence: this.currentStep,
+        timestamp,
+        distance,
+        readings,
+      });
+      if (!emitted) return;
+      this.lastFitDistanceMeters = distance;
 
       // Log periodically (every 10 seconds) to track recording progress
       const status = encoder.getStatus();
@@ -3097,14 +4041,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   private async waitForFitRecordingWritesToDrain(): Promise<void> {
     this.fitRecordingUpdatePending = false;
-
-    const timeoutAt = Date.now() + 2000;
-    while (this.fitRecordingUpdateInFlight && Date.now() < timeoutAt) {
+    while (this.fitRecordingUpdateInFlight) {
       await new Promise((resolve) => setTimeout(resolve, 25));
-    }
-
-    if (this.fitRecordingUpdateInFlight) {
-      console.warn("[Service] Timed out waiting for FIT write to finish before finalization");
     }
   }
 
@@ -3117,6 +4055,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
    */
   getElapsedTime(): number {
     if (!this.startTime) return 0;
+    if (this.recordingEndTime) {
+      return this.recordingEndTime - this.startTime;
+    }
     if (this.state === "paused" && this.lastPauseTime) {
       return this.lastPauseTime - this.startTime;
     }
@@ -3124,7 +4065,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   /**
-   * Get moving time in milliseconds (excludes paused time)
+   * Get running-session time in milliseconds (excludes explicit pauses).
+   * The legacy name does not mean sensor-detected motion: stationary rest
+   * counts, so timed steps must use this clock rather than GPS moving time.
    */
   getMovingTime(): number {
     if (!this.startTime) return 0;
@@ -3150,6 +4093,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.laps.push(lapTime);
     this.lastLapTime = movingTime;
 
+    void this.forceRecoveryCheckpoint().catch((error) =>
+      this.emit("error", error instanceof Error ? error.message : String(error)),
+    );
     this.emit("lapRecorded");
   }
 
@@ -3167,26 +4113,122 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   /**
    * Clean up all resources
    */
-  cleanup() {
+  async cleanup(options: { dispose?: boolean } = {}): Promise<void> {
+    return this.runLifecycleTransition(() => this.cleanupTransition(options));
+  }
+
+  /**
+   * Commits the user's discard decision before removing the finalized FIT or
+   * stream directories. A failed transition leaves both the in-memory artifact
+   * and its files intact so the submit screen can retry without resurrecting it
+   * through startup recovery.
+   */
+  async discardFinalizedArtifact(): Promise<void> {
+    return this.runLifecycleTransition(async () => {
+      const artifact = this.finalizedArtifact;
+      if (!artifact) return;
+      if (artifact.profileId !== this.profile.id) {
+        throw new Error("Finalized recording belongs to a different profile");
+      }
+      await discardFinalizedRecordingEvidence({
+        sessionId: artifact.sessionId,
+        profileId: this.profile.id,
+        activityFilePath: artifact.activityFilePath,
+        streamArtifactPaths: artifact.streamArtifactPaths,
+      });
+      await deleteFinalizedArtifactFiles(artifact);
+    });
+  }
+
+  private async cleanupTransition({ dispose = false }: { dispose?: boolean }): Promise<void> {
     console.log("[Service] Cleaning up...");
 
-    const preserveFinalizedArtifact = this.finalizedArtifact !== null;
+    if (this.finalizationFailed) {
+      await this.stopActiveRecordingResources();
+      throw new Error("Recording finalization must be retried before cleanup");
+    }
 
+    const preserveFinalizedFiles = this.finalizedArtifact !== null || this.fitFinalized;
     this.stopElapsedTimeUpdates();
-    this.liveMetricsManager.cleanup().catch(console.error);
-    this.locationManager.cleanup();
-    this.sensorsManager.cleanup();
-    if (this.notificationsManager) {
-      this.notificationsManager.stopForegroundService().catch(console.error);
+    this.clearCheckpointWriteTimer();
+    this.checkpointDirty = false;
+    this.sensorsManager.setAutoReconnectEnabled(false);
+
+    const teardownResults = await Promise.allSettled([
+      this.sensorsManager.disconnectAll({ suppressAutoReconnect: true }),
+      this.notificationsManager?.stopForegroundService() ?? Promise.resolve(),
+    ]);
+
+    if (
+      !this.liveMetricsFinalized &&
+      (this.state === "recording" || this.state === "paused" || this.state === "finishing")
+    ) {
+      try {
+        await this.liveMetricsManager.finishRecording();
+        await this.waitForFitRecordingWritesToDrain();
+      } catch (reason) {
+        teardownResults.push({ status: "rejected", reason });
+      }
     }
-    if (this.fitEncoder && !preserveFinalizedArtifact) {
-      this.fitEncoder.cleanup().catch(console.error);
-    }
-    if (this.appStateSubscription) {
-      this.appStateSubscription.remove();
+    if (this.fitEncoder && !preserveFinalizedFiles) {
+      try {
+        await this.fitEncoder.cleanup();
+      } catch (reason) {
+        teardownResults.push({ status: "rejected", reason });
+      }
     }
 
+    this.state = "pending";
+    this.recordingMetadata = undefined;
+    this.finalizedArtifact = null;
+    this.notificationsManager = undefined;
+    this.fitEncoder = undefined;
+    this.startTime = undefined;
+    this.recordingEndTime = undefined;
+    this.pausedTime = 0;
+    this.lastPauseTime = undefined;
+    this.liveMetricsFinalized = false;
+    this.fitFinalized = false;
+    this.producerFenceClosed = false;
+    this.evidenceFenced = false;
+    this.finalizationFailed = false;
+    this.fitRecordingUpdateInFlight = false;
+    this.fitRecordingUpdatePending = false;
+    this.lastFitDistanceMeters = 0;
+    this.laps = [];
+    this.lastLapTime = 0;
+    this.hasConfiguredSetup = false;
+    this.currentLaunchSource = "manual";
+    this.selectedActivityCategory = "run";
+    this._plan = undefined;
+    this._eventId = undefined;
+    this._plannedSession = undefined;
+    this.freeRecordingExecutionPlan = undefined;
+    this.freeRecordingCompiledPlan = null;
+    this.planExecution.clear();
+    this.clearCurrentRouteState();
     this.sessionController.resetAll();
     this.publishSnapshotUpdate();
+    this.emit("stateChanged", this.state);
+    this.publishSessionUpdate();
+
+    if (dispose) {
+      const disposalResults = await Promise.allSettled([
+        this.liveMetricsManager.cleanup(),
+        this.sensorsManager.cleanup(),
+      ]);
+      teardownResults.push(...disposalResults);
+      if (this.appStateSubscription) {
+        this.appStateSubscription.remove();
+        this.appStateSubscription = undefined;
+      }
+    }
+
+    const failure = teardownResults.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failure) {
+      throw failure.reason;
+    }
   }
 }

@@ -1,14 +1,15 @@
 import type { z } from "zod";
+import { canonicalActivityCategoryValues } from "../schemas/activity-category";
 import {
   completionTimeHmsToSecondsSchema,
   distanceKmToMetersSchema,
   paceMmSsToMpsSchema,
 } from "../schemas/form-schemas";
 import {
-  type GoalTargetV2,
-  type TrainingGoal,
-  trainingGoalSchema,
-} from "../schemas/training_plan_structure";
+  type TrainingPlanGoal,
+  type TrainingPlanGoalTarget,
+  trainingPlanGoalSchema,
+} from "../schemas/training-plan-structure";
 
 type RacePerformanceTargetInput =
   | {
@@ -71,7 +72,7 @@ export interface GoalInputLike {
   target_date: string;
   priority?: number;
   targets: Array<
-    | GoalTargetV2
+    | TrainingPlanGoalTarget
     | RacePerformanceTargetInput
     | PaceThresholdTargetInput
     | PowerThresholdTargetInput
@@ -129,7 +130,7 @@ function fnv1a32(value: string): number {
 export function normalizeGoalInput(
   input: GoalInputLike,
   options?: NormalizeGoalInputOptions,
-): TrainingGoal {
+): TrainingPlanGoal {
   const priority = input.priority ?? 1;
   const normalizedTargets = input.targets.map((target) => normalizeGoalTargetInput(target));
   const seedParts = [
@@ -141,7 +142,7 @@ export function normalizeGoalInput(
     JSON.stringify(normalizedTargets),
   ];
 
-  const candidate: z.input<typeof trainingGoalSchema> = {
+  const candidate: z.input<typeof trainingPlanGoalSchema> = {
     id: input.id ?? deterministicUuidFromSeed(seedParts.join("|")),
     name: input.name,
     target_date: input.target_date,
@@ -149,10 +150,12 @@ export function normalizeGoalInput(
     targets: normalizedTargets,
   };
 
-  return trainingGoalSchema.parse(candidate);
+  return trainingPlanGoalSchema.parse(candidate);
 }
 
-function normalizeGoalTargetInput(target: GoalInputLike["targets"][number]): GoalTargetV2 {
+function normalizeGoalTargetInput(
+  target: GoalInputLike["targets"][number],
+): TrainingPlanGoalTarget {
   const resolvedWeight = "weight" in target ? getPositiveNumber(target.weight) : null;
   const normalizedWeight = resolvedWeight === null ? undefined : resolvedWeight;
   const withWeight = normalizedWeight === undefined ? {} : { weight: normalizedWeight };
@@ -321,7 +324,7 @@ function normalizeGoalTargetInput(target: GoalInputLike["targets"][number]): Goa
 }
 
 export function deriveActivityCategoriesFromGoalTargets(
-  goals: Array<Pick<TrainingGoal, "targets">>,
+  goals: Array<Pick<TrainingPlanGoal, "targets">>,
 ): string[] {
   const categories = new Set<string>();
 
@@ -349,8 +352,11 @@ export function deriveActivityCategoriesFromGoalTargets(
     return ["run"];
   }
 
-  const order = ["run", "bike", "swim", "strength", "other"];
-  return Array.from(categories).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const order = canonicalActivityCategoryValues;
+  return Array.from(categories).sort(
+    (a, b) =>
+      order.indexOf(a as (typeof order)[number]) - order.indexOf(b as (typeof order)[number]),
+  );
 }
 
 function getPositiveNumber(value: unknown): number | null {

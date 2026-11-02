@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { secondsPerKilometerToMetersPerSecond } from "../../units";
 
 /** Preprocessor to convert empty strings to null for optional numeric fields. */
 export const emptyStringToNull = (val: unknown) => {
@@ -72,7 +73,7 @@ export const paceMmSsSchema = z
 export const paceMmSsToMpsSchema = paceMmSsSchema.transform((value) => {
   const [minutes = 0, seconds = 0] = value.split(":").map(Number);
   const totalSecondsPerKm = minutes * 60 + seconds;
-  return 1000 / totalSecondsPerKm;
+  return secondsPerKilometerToMetersPerSecond(totalSecondsPerKm);
 });
 
 /** Email validation pattern. */
