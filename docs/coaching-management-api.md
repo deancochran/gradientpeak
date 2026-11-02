@@ -159,3 +159,43 @@ sharing; no email delivery is implemented or claimed. Later staff lifecycle,
 ownership transfer, invitation listing/decline, consent management, assignments,
 organization-group management, rosters and audit querying remain unfinished.
 No UI/UX or schema changes in this checkpoint.
+
+### Live preview and publication separation
+
+Setup/invitation checkpoint `8fd54c29bcf4ec34dc8cc7fe97f3346c0a5b6b58` is live at
+preview `dd26a95235ce02d60659395b8aaac5d294062c7f`. Locked integration preserved
+other features; ancestry, web health and Metro checks passed. All four write
+procedures reject unauthenticated HTTP requests with 401 using contract epoch 3.
+The initial probe omitted that required header and received 412; it was corrected
+without changing code or data. Authenticated mutations were tested only against
+disposable databases, not preserved preview data. No email delivery claimed.
+
+Normal push was attempted but its whole-worktree hook overlapped the next group
+implementation lane and encountered unfinished group DTO/union type errors. This
+is not a valid quality result for the frozen setup checkpoint and no publication
+success is claimed. Coordinator will serialize further publication with a stable
+worker handoff; hooks remain enabled. Group implementation continues independently
+and is not live. No remote PR has been created yet.
+
+### Private organization-group checkpoint accepted
+
+Implemented `organizations.organizationGroups.list/get/create/archive`,
+`athletes.list/add/remove` and `coaches.list/assign/remove` with typed DTOs,
+organization-first mutation locks and owner/admin authorization. No metadata edit,
+community-group authorization reuse, private training projection or schema change.
+Active-link retries are stable; ended links are never revived. Existing triggers
+retain actor attribution and audit ownership.
+
+Review caught future-effective manager membership and unscoped cursor anchors.
+Both were fixed: current-time predicates apply to management and targets, and
+each cursor anchor must belong to the requested tenant/group, retaining ended or
+archived anchors for continuation. Final independent review found no remaining
+concrete blocker. Coordinator reran both disposable integration journeys and
+architecture successfully; worker API types and Biome passed. Tests include
+ordinary admin success, future-member read/write denial, scoped cursors,
+multi-page traversal, retries and archive behavior.
+
+The full quality run before these fixes was deliberately cancelled to avoid
+mixing code versions; it had passed all eight workspace typechecks. It is not a
+complete release-gate result. This useful group checkpoint is proceeding to
+locked preview integration before renewed publication on a stable checkout.

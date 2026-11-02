@@ -3,6 +3,8 @@ import { createDbClient, type DrizzleDbClient } from "@repo/db/client";
 import {
   athleteDataSharingConsents,
   coachingEngagements,
+  organizationGroupAthletes,
+  organizationGroupCoachAssignments,
   organizationInvitations,
   organizationMembershipRoleGrants,
   organizationMemberships,
@@ -543,6 +545,297 @@ describe("organization management against a disposable migrated PostgreSQL datab
               .from(organizations)
               .where(eq(organizations.id, rollbackOrganizationId)),
           ).resolves.toHaveLength(0);
+        } finally {
+          await client.close();
+        }
+      },
+    );
+  }, 90_000);
+
+  it("manages tenant-scoped organization groups without granting athletes private access", async () => {
+    await withDisposableDatabase(
+      ["--disposable", "--local"],
+      "organization_groups",
+      async (pool, url) => {
+        await bootstrapSupabaseSchemas(pool);
+        for (const migration of requireFreshBaseline().migrationPaths)
+          await applySqlFile(pool, migration);
+        const client = createDbClient({ url });
+        try {
+          const owner = await person(client.db, "group-owner");
+          const coach = await person(client.db, "group-coach");
+          const athlete = await person(client.db, "group-athlete");
+          const outsider = await person(client.db, "group-outsider");
+          const administrator = await person(client.db, "group-administrator");
+          const futureAdministrator = await person(client.db, "group-future-administrator");
+          const ownerCaller = caller(client.db, owner.id);
+          const organizationId = randomUUID();
+          const otherOrganizationId = randomUUID();
+          const created = await ownerCaller.create({
+            organizationId,
+            name: "Groups",
+            slug: `groups-${organizationId}`,
+            timezone: "UTC",
+          });
+          await ownerCaller.create({
+            organizationId: otherOrganizationId,
+            name: "Other groups",
+            slug: `other-groups-${otherOrganizationId}`,
+            timezone: "UTC",
+          });
+          const coachMembershipId = randomUUID();
+          await client.db.insert(organizationMemberships).values({
+            id: coachMembershipId,
+            organization_id: organizationId,
+            profile_id: coach.id,
+          });
+          await client.db.insert(organizationMembershipRoleGrants).values({
+            organization_id: organizationId,
+            membership_id: coachMembershipId,
+            role_key: "coach",
+          });
+          const administratorMembershipId = randomUUID();
+          await client.db.insert(organizationMemberships).values({
+            id: administratorMembershipId,
+            organization_id: organizationId,
+            profile_id: administrator.id,
+          });
+          await client.db.insert(organizationMembershipRoleGrants).values({
+            organization_id: organizationId,
+            membership_id: administratorMembershipId,
+            role_key: "admin",
+          });
+          const futureMembershipId = randomUUID();
+          await client.db.insert(organizationMemberships).values({
+            id: futureMembershipId,
+            organization_id: organizationId,
+            profile_id: futureAdministrator.id,
+            created_at: new Date(Date.now() + 60_000),
+          });
+          await client.db.insert(organizationMembershipRoleGrants).values({
+            organization_id: organizationId,
+            membership_id: futureMembershipId,
+            role_key: "admin",
+          });
+          const engagementId = randomUUID();
+          await client.db.insert(coachingEngagements).values({
+            id: engagementId,
+            organization_id: organizationId,
+            athlete_profile_id: athlete.id,
+          });
+          const coachEngagementId = randomUUID();
+          await client.db.insert(coachingEngagements).values({
+            id: coachEngagementId,
+            organization_id: organizationId,
+            athlete_profile_id: coach.id,
+          });
+          const groupId = randomUUID();
+          const secondGroupId = randomUUID();
+          const foreignGroupId = randomUUID();
+          await expect(
+            ownerCaller.organizationGroups.create({
+              organizationId,
+              groupId,
+              name: "Morning",
+              description: "Intervals",
+            }),
+          ).resolves.toEqual({ id: groupId, status: "created" });
+          await ownerCaller.organizationGroups.create({
+            organizationId,
+            groupId: secondGroupId,
+            name: "Evening",
+            description: null,
+          });
+          await ownerCaller.organizationGroups.create({
+            organizationId: otherOrganizationId,
+            groupId: foreignGroupId,
+            name: "Foreign",
+            description: null,
+          });
+          await expect(
+            ownerCaller.organizationGroups.create({
+              organizationId,
+              groupId,
+              name: "Morning",
+              description: "Intervals",
+            }),
+          ).resolves.toEqual({ id: groupId, status: "created" });
+          await expect(
+            ownerCaller.organizationGroups.create({
+              organizationId,
+              groupId,
+              name: "Changed",
+              description: "Intervals",
+            }),
+          ).rejects.toMatchObject({ code: "CONFLICT" });
+          await expect(
+            caller(client.db, coach.id).organizationGroups.list({ organizationId }),
+          ).rejects.toMatchObject({ code: "FORBIDDEN" });
+          await expect(
+            caller(client.db, administrator.id).organizationGroups.list({ organizationId }),
+          ).resolves.toMatchObject({ items: expect.any(Array) });
+          await expect(
+            caller(client.db, futureAdministrator.id).organizationGroups.list({ organizationId }),
+          ).rejects.toMatchObject({ code: "FORBIDDEN" });
+          await expect(
+            caller(client.db, futureAdministrator.id).organizationGroups.create({
+              organizationId,
+              groupId: randomUUID(),
+              name: "Future",
+              description: null,
+            }),
+          ).rejects.toMatchObject({ code: "FORBIDDEN" });
+          await expect(
+            caller(client.db, athlete.id).organizationGroups.get({ organizationId, groupId }),
+          ).rejects.toMatchObject({ code: "FORBIDDEN" });
+          await expect(
+            caller(client.db, outsider.id).organizationGroups.list({ organizationId }),
+          ).rejects.toMatchObject({ code: "FORBIDDEN" });
+          await expect(
+            ownerCaller.organizationGroups.get({ organizationId: otherOrganizationId, groupId }),
+          ).rejects.toMatchObject({ code: "NOT_FOUND" });
+          const firstGroupPage = await ownerCaller.organizationGroups.list({
+            organizationId,
+            limit: 1,
+          });
+          expect(firstGroupPage.nextCursor).not.toBeNull();
+          const secondGroupPage = await ownerCaller.organizationGroups.list({
+            organizationId,
+            limit: 1,
+            cursor: firstGroupPage.nextCursor,
+          });
+          expect(
+            [...firstGroupPage.items, ...secondGroupPage.items].map((item) => item.id).sort(),
+          ).toEqual([groupId, secondGroupId].sort());
+          await expect(
+            ownerCaller.organizationGroups.list({ organizationId, cursor: foreignGroupId }),
+          ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+          const athleteLinkId = "00000000-0000-4000-8000-000000000001";
+          await expect(
+            ownerCaller.organizationGroups.athletes.add({
+              organizationId,
+              groupId,
+              linkId: athleteLinkId,
+              engagementId,
+            }),
+          ).resolves.toEqual({ id: athleteLinkId, status: "active" });
+          const duplicateAthleteLinkId = randomUUID();
+          await expect(
+            ownerCaller.organizationGroups.athletes.add({
+              organizationId,
+              groupId,
+              linkId: duplicateAthleteLinkId,
+              engagementId,
+            }),
+          ).resolves.toEqual({ id: athleteLinkId, status: "active" });
+          const coachLinkId = randomUUID();
+          await expect(
+            ownerCaller.organizationGroups.coaches.assign({
+              organizationId,
+              groupId,
+              linkId: coachLinkId,
+              membershipId: coachMembershipId,
+            }),
+          ).resolves.toEqual({ id: coachLinkId, status: "active" });
+          await expect(
+            ownerCaller.organizationGroups.athletes.list({
+              organizationId,
+              groupId: secondGroupId,
+              cursor: athleteLinkId,
+            }),
+          ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+          await expect(
+            ownerCaller.organizationGroups.coaches.list({
+              organizationId,
+              groupId: secondGroupId,
+              cursor: coachLinkId,
+            }),
+          ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+          const overlapLinkId = "00000000-0000-4000-8000-000000000002";
+          await expect(
+            ownerCaller.organizationGroups.athletes.add({
+              organizationId,
+              groupId,
+              linkId: overlapLinkId,
+              engagementId: coachEngagementId,
+            }),
+          ).resolves.toEqual({ id: overlapLinkId, status: "active" });
+          await expect(
+            ownerCaller.organizationGroups.athletes.list({ organizationId, groupId }),
+          ).resolves.toEqual(
+            expect.objectContaining({
+              items: expect.arrayContaining([
+                { id: athleteLinkId, engagementId },
+                { id: overlapLinkId, engagementId: coachEngagementId },
+              ]),
+            }),
+          );
+          const firstAthletePage = await ownerCaller.organizationGroups.athletes.list({
+            organizationId,
+            groupId,
+            limit: 1,
+          });
+          expect(firstAthletePage.nextCursor).not.toBeNull();
+          const secondAthletePage = await ownerCaller.organizationGroups.athletes.list({
+            organizationId,
+            groupId,
+            limit: 1,
+            cursor: firstAthletePage.nextCursor,
+          });
+          expect(
+            [...firstAthletePage.items, ...secondAthletePage.items].map((item) => item.id).sort(),
+          ).toEqual([athleteLinkId, overlapLinkId].sort());
+          await expect(
+            ownerCaller.organizationGroups.coaches.list({ organizationId, groupId }),
+          ).resolves.toMatchObject({
+            items: [{ id: coachLinkId, membershipId: coachMembershipId }],
+          });
+          await expect(
+            ownerCaller.organizationGroups.athletes.remove({
+              organizationId,
+              groupId,
+              linkId: athleteLinkId,
+            }),
+          ).resolves.toEqual({ id: athleteLinkId, status: "ended" });
+          await expect(
+            ownerCaller.organizationGroups.athletes.list({
+              organizationId,
+              groupId,
+              cursor: athleteLinkId,
+            }),
+          ).resolves.toMatchObject({ items: [{ id: overlapLinkId }] });
+          await expect(
+            ownerCaller.organizationGroups.athletes.remove({
+              organizationId,
+              groupId,
+              linkId: athleteLinkId,
+            }),
+          ).resolves.toEqual({ id: athleteLinkId, status: "ended" });
+          await expect(
+            ownerCaller.organizationGroups.archive({ organizationId, groupId }),
+          ).resolves.toEqual({ id: groupId, status: "archived" });
+          await expect(
+            ownerCaller.organizationGroups.archive({ organizationId, groupId }),
+          ).resolves.toEqual({ id: groupId, status: "archived" });
+          await expect(
+            ownerCaller.organizationGroups.coaches.remove({
+              organizationId,
+              groupId,
+              linkId: coachLinkId,
+            }),
+          ).rejects.toMatchObject({ code: "NOT_FOUND" });
+          await expect(
+            ownerCaller.organizationGroups.athletes.list({ organizationId, groupId }),
+          ).rejects.toMatchObject({ code: "NOT_FOUND" });
+          await expect(
+            client.db.select({ id: organizationGroupAthletes.id }).from(organizationGroupAthletes),
+          ).resolves.toHaveLength(2);
+          await expect(
+            client.db
+              .select({ id: organizationGroupCoachAssignments.id })
+              .from(organizationGroupCoachAssignments),
+          ).resolves.toHaveLength(1);
+          expect(created.membershipId).toBeDefined();
         } finally {
           await client.close();
         }

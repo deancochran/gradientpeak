@@ -27,6 +27,7 @@ import {
   type OrganizationAccessRepository,
 } from "../repositories/organization-access-repository";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { organizationGroupsRouter } from "./organization-groups";
 
 const organizationIdInputSchema = z.object({ organizationId: z.string().uuid() }).strict();
 const organizationListInputSchema = z
@@ -252,6 +253,7 @@ export function createOrganizationsRouter(
           }
         }),
     }),
+    organizationGroups: organizationGroupsRouter,
     listMine: protectedProcedure
       .input(organizationListInputSchema)
       .output(organizationListPageSchema)
