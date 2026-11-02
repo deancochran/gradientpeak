@@ -13,6 +13,18 @@ GradientPeak is a product monorepo for the web app, mobile app, shared UI, backe
 
 ## Getting started
 
+### Existing shared development preview
+
+When using the shared `preview` worktree, follow the coordination workspace's
+`.opencode/SHARED-PREVIEW.md` and `cache/shared-preview.md` activation record instead
+of bootstrapping another stack. Its integration owner manages the stable web/API
+and Metro services. Feature worktrees supply committed checkpoints; they do not
+take over preview ports, start provider workers or reset the existing database.
+The full-stack commands below are for deliberately prepared environments, not
+automatic maintenance of a preserved shared preview.
+
+### New development environment
+
 For the supported full development environment, install dependencies and start the Turbo task graph:
 
 Activate mise in your shell first so every command uses the versions in `mise.toml`. For Bash, add
