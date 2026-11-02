@@ -10,7 +10,7 @@ export type { DisclosureProps } from "./shared";
 /** A compact, controlled progressive-disclosure section shared by app forms. */
 export function Disclosure({
   children,
-  className,
+  className = "",
   disabled,
   label,
   onOpenChange,
