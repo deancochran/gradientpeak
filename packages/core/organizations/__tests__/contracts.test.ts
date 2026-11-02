@@ -12,6 +12,8 @@ import {
   athleteReadScopeProjectionSchemas,
   basicProfileScopeProjectionSchema,
   calendarScopeProjectionSchema,
+  coachingAssignmentKindSchema,
+  evaluateOrganizationLifecycleTransition,
   evaluateOrganizationOperationRoleEligibility,
   goalsScopeProjectionSchema,
   metricsScopeProjectionSchema,
@@ -19,6 +21,8 @@ import {
   ORGANIZATION_OPERATIONS,
   organizationAccessDecisionSchema,
   organizationContextSchema,
+  organizationGroupSummarySchema,
+  organizationInvitationSummarySchema,
   organizationOperationRoleEligibilityDecisionSchema,
   organizationStaffMembershipSummarySchema,
   scopedConsentSummarySchema,
@@ -31,13 +35,91 @@ const instant = "2026-07-29T12:00:00.000Z";
 
 describe("fixed organization authority", () => {
   it("has a closed role and operation matrix", () => {
-    expect(ORGANIZATION_OPERATIONS).toHaveLength(16);
+    expect(ORGANIZATION_OPERATIONS).toHaveLength(17);
     expect(ORGANIZATION_OPERATION_REQUIREMENTS.transfer_root_ownership).toBe("root_owner");
     expect(ORGANIZATION_OPERATION_REQUIREMENTS.manage_administrators).toBe("root_owner");
     expect(ORGANIZATION_OPERATION_REQUIREMENTS.manage_coaches).toBe("admin");
     expect(ORGANIZATION_OPERATION_REQUIREMENTS.read_assigned_roster).toBe("coach");
     expect(ATHLETE_READ_SCOPES).toHaveLength(6);
     expect(ATHLETE_READ_SCOPE_OPERATIONS.metrics).toBe("read_athlete_metrics");
+  });
+
+  it("keeps invitation, private-group, and lifecycle vocabulary closed and token-free", () => {
+    expect(
+      organizationInvitationSummarySchema.safeParse({
+        invitationId: id,
+        organizationId: otherId,
+        kind: "staff",
+        requestedRole: "coach",
+        status: "pending",
+        expiresAt: instant,
+        createdAt: instant,
+        tokenDigest: "must never be public",
+      }).success,
+    ).toBe(false);
+    expect(
+      organizationGroupSummarySchema.parse({
+        groupId: id,
+        organizationId: otherId,
+        name: "Endurance squad",
+        description: null,
+        status: "active",
+        createdAt: instant,
+        archivedAt: null,
+      }),
+    ).toMatchObject({ status: "active" });
+    expect(coachingAssignmentKindSchema.safeParse("observer").success).toBe(false);
+
+    expect(
+      evaluateOrganizationLifecycleTransition({
+        organizationActive: true,
+        relationshipState: "active",
+        transition: "end",
+        isRootOwner: true,
+      }),
+    ).toEqual({ outcome: "denied", reason: "root_owner_protected" });
+    expect(
+      evaluateOrganizationLifecycleTransition({
+        organizationActive: true,
+        relationshipState: "paused",
+        transition: "resume",
+      }),
+    ).toEqual({ outcome: "allowed" });
+    expect(
+      evaluateOrganizationLifecycleTransition({
+        organizationActive: false,
+        relationshipState: "active",
+        transition: "archive",
+      }),
+    ).toEqual({ outcome: "denied", reason: "organization_not_active" });
+    expect(
+      evaluateOrganizationLifecycleTransition({
+        organizationActive: true,
+        relationshipState: "ended",
+        transition: "resume",
+      }),
+    ).toEqual({ outcome: "denied", reason: "relationship_not_active" });
+  });
+
+  it("protects the root staff relationship without coupling independent athlete participation", () => {
+    for (const transition of ["pause", "end", "archive"] as const) {
+      expect(
+        evaluateOrganizationLifecycleTransition({
+          organizationActive: true,
+          relationshipState: "active",
+          transition,
+          isRootOwner: true,
+        }),
+      ).toEqual({ outcome: "denied", reason: "root_owner_protected" });
+    }
+    expect(
+      evaluateOrganizationLifecycleTransition({
+        organizationActive: true,
+        relationshipState: "active",
+        transition: "end",
+        isRootOwner: false,
+      }),
+    ).toEqual({ outcome: "allowed" });
   });
 
   it("evaluates root, admin, and coach role eligibility without claiming athlete authorization", () => {

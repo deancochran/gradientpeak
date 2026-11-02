@@ -7,6 +7,10 @@ import { preferredUnitSystemSchema } from "../units";
 import {
   ATHLETE_READ_ACCESS_DENIAL_REASONS,
   ATHLETE_READ_SCOPES,
+  COACHING_ASSIGNMENT_KINDS,
+  ORGANIZATION_GROUP_STATUSES,
+  ORGANIZATION_INVITATION_KINDS,
+  ORGANIZATION_INVITATION_STATUSES,
   ORGANIZATION_OPERATION_REQUIREMENTS,
   ORGANIZATION_OPERATIONS,
   ORGANIZATION_ROLE_KEYS,
@@ -18,6 +22,10 @@ const instantSchema = z.string().datetime({ offset: true });
 export const organizationRoleKeySchema = z.enum(ORGANIZATION_ROLE_KEYS);
 export const organizationOperationSchema = z.enum(ORGANIZATION_OPERATIONS);
 export const athleteReadScopeSchema = z.enum(ATHLETE_READ_SCOPES);
+export const organizationInvitationKindSchema = z.enum(ORGANIZATION_INVITATION_KINDS);
+export const organizationInvitationStatusSchema = z.enum(ORGANIZATION_INVITATION_STATUSES);
+export const coachingAssignmentKindSchema = z.enum(COACHING_ASSIGNMENT_KINDS);
+export const organizationGroupStatusSchema = z.enum(ORGANIZATION_GROUP_STATUSES);
 
 export const organizationContextSchema = z
   .object({
@@ -74,6 +82,88 @@ export const scopedConsentSummarySchema = z
   .strict()
   .readonly();
 export type ScopedConsentSummary = z.infer<typeof scopedConsentSummarySchema>;
+
+/** A recipient-safe invitation projection. Token material and email are intentionally absent. */
+export const organizationInvitationSummarySchema = z
+  .object({
+    invitationId: uuidSchema,
+    organizationId: uuidSchema,
+    kind: organizationInvitationKindSchema,
+    requestedRole: organizationRoleKeySchema.nullable(),
+    status: organizationInvitationStatusSchema,
+    expiresAt: instantSchema,
+    createdAt: instantSchema,
+  })
+  .strict()
+  .readonly();
+export type OrganizationInvitationSummary = z.infer<typeof organizationInvitationSummarySchema>;
+
+/** Private organization groups are distinct from community groups and have immutable metadata. */
+export const organizationGroupSummarySchema = z
+  .object({
+    groupId: uuidSchema,
+    organizationId: uuidSchema,
+    name: z.string().trim().min(1).max(200),
+    description: z.string().trim().max(2_000).nullable(),
+    status: organizationGroupStatusSchema,
+    createdAt: instantSchema,
+    archivedAt: instantSchema.nullable(),
+  })
+  .strict()
+  .readonly();
+export type OrganizationGroupSummary = z.infer<typeof organizationGroupSummarySchema>;
+
+export const effectiveCoachRosterEntrySchema = z
+  .object({
+    engagementId: uuidSchema,
+    athleteProfileId: uuidSchema,
+    directAssignmentKinds: z.array(coachingAssignmentKindSchema).readonly(),
+    groupIds: z.array(uuidSchema).readonly(),
+  })
+  .strict()
+  .readonly();
+export type EffectiveCoachRosterEntry = z.infer<typeof effectiveCoachRosterEntrySchema>;
+
+export const organizationLifecycleFailureSchema = z.enum([
+  "organization_not_active",
+  "relationship_not_active",
+  "invalid_transition",
+  "root_owner_protected",
+  "consent_required",
+]);
+export type OrganizationLifecycleFailure = z.infer<typeof organizationLifecycleFailureSchema>;
+
+export type OrganizationLifecycleDecision =
+  | { readonly outcome: "allowed" }
+  | { readonly outcome: "denied"; readonly reason: OrganizationLifecycleFailure };
+
+/**
+ * Shared advisory lifecycle policy. Persistence still must recheck authority and
+ * current state under the organization transaction lock.
+ */
+export function evaluateOrganizationLifecycleTransition(input: {
+  readonly organizationActive: boolean;
+  readonly relationshipState: "active" | "paused" | "ended";
+  readonly transition: "pause" | "resume" | "end" | "archive" | "grant_consent" | "revoke_consent";
+  /** True only when the affected relationship is the root-owner staff membership,
+   * not when an owner acts on their independent athlete engagement. */
+  readonly isRootOwner?: boolean;
+}): OrganizationLifecycleDecision {
+  if (!input.organizationActive) return { outcome: "denied", reason: "organization_not_active" };
+  if (input.relationshipState === "ended") {
+    return { outcome: "denied", reason: "relationship_not_active" };
+  }
+  if (input.transition === "resume" && input.relationshipState === "active") {
+    return { outcome: "denied", reason: "invalid_transition" };
+  }
+  if (input.transition === "pause" && input.relationshipState === "paused") {
+    return { outcome: "denied", reason: "invalid_transition" };
+  }
+  if (["pause", "end", "archive"].includes(input.transition) && input.isRootOwner) {
+    return { outcome: "denied", reason: "root_owner_protected" };
+  }
+  return { outcome: "allowed" };
+}
 
 export const assignedAthleteSummarySchema = z
   .object({

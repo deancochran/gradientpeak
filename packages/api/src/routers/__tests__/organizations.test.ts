@@ -130,6 +130,36 @@ describe("organizationsRouter", () => {
       await expect(caller.coachingAccess({ organizationId: ORGANIZATION_ID })).resolves.toEqual({
         status: "forbidden",
       });
+      await expect(
+        caller.managementCapabilities({ organizationId: ORGANIZATION_ID }),
+      ).resolves.toEqual({ status: "forbidden" });
     }
+  });
+
+  it("reports closed advisory management capabilities without treating an admin as a coach", async () => {
+    const caller = createRouterCaller(
+      createHarness({
+        contextRow: row({ rootOwnerMembershipId: OTHER_PROFILE_ID, roleKeys: ["admin"] }),
+      }).router,
+      { userId: SESSION_PROFILE_ID },
+    );
+    const result = await caller.managementCapabilities({ organizationId: ORGANIZATION_ID });
+    expect(result).toMatchObject({ status: "granted", isRootOwner: false });
+    if (result.status !== "granted") throw new Error("expected capability summary");
+    expect(result.operations).toContainEqual({
+      outcome: "eligible",
+      operation: "manage_organization_groups",
+      requiresFullAthleteAuthorization: false,
+    });
+    expect(result.operations).toContainEqual({
+      outcome: "ineligible",
+      operation: "read_athlete_activities",
+      reason: "missing_required_role",
+    });
+    expect(result.operations).toContainEqual({
+      outcome: "ineligible",
+      operation: "transfer_root_ownership",
+      reason: "not_root_owner",
+    });
   });
 });

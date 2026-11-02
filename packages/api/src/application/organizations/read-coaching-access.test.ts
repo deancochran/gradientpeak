@@ -71,7 +71,12 @@ describe("organization context reads", () => {
       findActiveMembershipContext: async () => null,
     };
     await expect(
-      listMyOrganizationContexts({ repository, profileId, limit: 20, cursor: null }),
+      listMyOrganizationContexts({
+        repository,
+        profileId,
+        limit: 20,
+        cursor: null,
+      }),
     ).resolves.toMatchObject({ hasMore: false, nextCursor: null });
   });
 
@@ -107,21 +112,60 @@ describe("organization context reads", () => {
       findActiveMembershipContext: async () => null,
     };
     await expect(
-      listMyOrganizationContexts({ repository, profileId, limit: 20, cursor: null }),
+      listMyOrganizationContexts({
+        repository,
+        profileId,
+        limit: 20,
+        cursor: null,
+      }),
     ).rejects.toThrow();
   });
 
   it("fails closed when the repository returns a roleless membership", async () => {
     const repository = {
-      listActiveMembershipContexts: async () => [row({ roleKeys: [] })],
-      findActiveMembershipContext: async () => row({ roleKeys: [] }),
+      listActiveMembershipContexts: async () => [
+        row({
+          roleKeys: [],
+          rootOwnerMembershipId: "44444444-4444-4444-8444-444444444444",
+        }),
+      ],
+      findActiveMembershipContext: async () =>
+        row({
+          roleKeys: [],
+          rootOwnerMembershipId: "44444444-4444-4444-8444-444444444444",
+        }),
     };
     await expect(
-      listMyOrganizationContexts({ repository, profileId, limit: 20, cursor: null }),
+      listMyOrganizationContexts({
+        repository,
+        profileId,
+        limit: 20,
+        cursor: null,
+      }),
     ).rejects.toThrow("roleless organization context");
     await expect(
       readOrganizationContext({ repository, organizationId, profileId }),
     ).resolves.toBeNull();
+  });
+
+  it("includes an active root owner even before a role grant exists", async () => {
+    const repository = {
+      listActiveMembershipContexts: async () => [row({ roleKeys: [] })],
+      findActiveMembershipContext: async () => row({ roleKeys: [] }),
+    };
+    await expect(
+      listMyOrganizationContexts({
+        repository,
+        profileId,
+        limit: 20,
+        cursor: null,
+      }),
+    ).resolves.toMatchObject({
+      items: [{ isRootOwner: true, membership: { roles: [] } }],
+    });
+    await expect(
+      readOrganizationContext({ repository, organizationId, profileId }),
+    ).resolves.toMatchObject({ isRootOwner: true });
   });
 
   it("fails closed when a list row violates an active lifecycle fence", async () => {
@@ -130,7 +174,12 @@ describe("organization context reads", () => {
       findActiveMembershipContext: async () => null,
     };
     await expect(
-      listMyOrganizationContexts({ repository, profileId, limit: 20, cursor: null }),
+      listMyOrganizationContexts({
+        repository,
+        profileId,
+        limit: 20,
+        cursor: null,
+      }),
     ).rejects.toThrow("inactive or roleless organization context");
   });
 
@@ -150,7 +199,12 @@ describe("organization context reads", () => {
       findActiveMembershipContext: async () => null,
     };
     await expect(
-      listMyOrganizationContexts({ repository, profileId, limit: 20, cursor: null }),
+      listMyOrganizationContexts({
+        repository,
+        profileId,
+        limit: 20,
+        cursor: null,
+      }),
     ).resolves.toMatchObject({
       items: [
         { organization: { organizationId }, membership: { roles: ["coach"] } },

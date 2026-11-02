@@ -37,7 +37,10 @@ export type OrganizationListPage = {
 };
 
 export type OrganizationCoachingAccess =
-  | { status: "granted"; organization: { id: string; name: string; slug: string } }
+  | {
+      status: "granted";
+      organization: { id: string; name: string; slug: string };
+    }
   | { status: "forbidden" };
 
 export function decodeOrganizationListCursor(value: string): OrganizationListCursor | null {
@@ -58,7 +61,12 @@ export function decodeOrganizationListCursor(value: string): OrganizationListCur
 
 function encodeOrganizationListCursor(row: OrganizationMembershipContextRow): string {
   return Buffer.from(
-    JSON.stringify({ v: cursorVersion, n: row.name, s: row.slug, i: row.organizationId }),
+    JSON.stringify({
+      v: cursorVersion,
+      n: row.name,
+      s: row.slug,
+      i: row.organizationId,
+    }),
   ).toString("base64url");
 }
 
@@ -107,7 +115,7 @@ function isActiveContextRow(row: OrganizationMembershipContextRow): boolean {
 }
 
 function hasEffectiveShellCapability(row: OrganizationMembershipContextRow): boolean {
-  return row.roleKeys.length > 0;
+  return row.roleKeys.length > 0 || row.rootOwnerMembershipId === row.membershipId;
 }
 
 export async function listMyOrganizationContexts({
@@ -121,7 +129,11 @@ export async function listMyOrganizationContexts({
   limit: number;
   cursor: OrganizationListCursor | null;
 }): Promise<OrganizationListPage> {
-  const rows = await repository.listActiveMembershipContexts({ profileId, limit, cursor });
+  const rows = await repository.listActiveMembershipContexts({
+    profileId,
+    limit,
+    cursor,
+  });
   if (rows.some((row) => !isActiveContextRow(row) || !hasEffectiveShellCapability(row))) {
     throw new Error("Repository returned an inactive or roleless organization context");
   }
@@ -144,7 +156,10 @@ export async function readOrganizationContext({
   organizationId: string;
   profileId: string;
 }): Promise<OrganizationMembershipContext | null> {
-  const row = await repository.findActiveMembershipContext({ organizationId, profileId });
+  const row = await repository.findActiveMembershipContext({
+    organizationId,
+    profileId,
+  });
   if (!row || !isActiveContextRow(row) || !hasEffectiveShellCapability(row)) {
     return null;
   }
@@ -160,7 +175,11 @@ export async function readOrganizationCoachingAccess({
   organizationId: string;
   profileId: string;
 }): Promise<OrganizationCoachingAccess> {
-  const context = await readOrganizationContext({ repository, organizationId, profileId });
+  const context = await readOrganizationContext({
+    repository,
+    organizationId,
+    profileId,
+  });
   return context
     ? {
         status: "granted",

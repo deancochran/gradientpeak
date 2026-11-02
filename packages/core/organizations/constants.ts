@@ -19,6 +19,7 @@ export const ORGANIZATION_OPERATIONS = [
   "read_athlete_metrics",
   "read_athlete_goals",
   "read_athlete_calendar",
+  "manage_organization_groups",
 ] as const;
 export type OrganizationOperation = (typeof ORGANIZATION_OPERATIONS)[number];
 
@@ -63,6 +64,7 @@ export const ORGANIZATION_OPERATION_REQUIREMENTS = {
   read_athlete_metrics: "coach",
   read_athlete_goals: "coach",
   read_athlete_calendar: "coach",
+  manage_organization_groups: "admin",
 } as const satisfies Record<OrganizationOperation, "member" | "root_owner" | OrganizationRoleKey>;
 export type OrganizationOperationRequirement =
   (typeof ORGANIZATION_OPERATION_REQUIREMENTS)[OrganizationOperation];
@@ -81,3 +83,22 @@ export type OrganizationMembershipStatus = (typeof ORGANIZATION_MEMBERSHIP_STATU
 
 export const ORGANIZATION_ROLE_GRANT_STATUSES = ["active", "inactive"] as const;
 export type OrganizationRoleGrantStatus = (typeof ORGANIZATION_ROLE_GRANT_STATUSES)[number];
+
+/** Invitation kinds deliberately do not imply one another or athlete consent. */
+export const ORGANIZATION_INVITATION_KINDS = ["staff", "athlete"] as const;
+export type OrganizationInvitationKind = (typeof ORGANIZATION_INVITATION_KINDS)[number];
+
+export const ORGANIZATION_INVITATION_STATUSES = [
+  "pending",
+  "accepted",
+  "declined",
+  "revoked",
+  "expired",
+] as const;
+export type OrganizationInvitationStatus = (typeof ORGANIZATION_INVITATION_STATUSES)[number];
+
+export const COACHING_ASSIGNMENT_KINDS = ["primary", "supporting"] as const;
+export type CoachingAssignmentKind = (typeof COACHING_ASSIGNMENT_KINDS)[number];
+
+export const ORGANIZATION_GROUP_STATUSES = ["active", "archived"] as const;
+export type OrganizationGroupStatus = (typeof ORGANIZATION_GROUP_STATUSES)[number];

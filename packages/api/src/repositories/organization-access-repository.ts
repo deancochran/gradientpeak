@@ -60,11 +60,13 @@ export function createOrganizationAccessRepository(
         profileId: organizationMemberships.profile_id,
         membershipSuspendedAt: organizationMemberships.suspended_at,
         membershipEndedAt: organizationMemberships.ended_at,
-        roleKeys: sql<string[]>`array_agg(${organizationMembershipRoleGrants.role_key})`,
+        roleKeys: sql<
+          string[]
+        >`coalesce(array_agg(${organizationMembershipRoleGrants.role_key}) filter (where ${organizationMembershipRoleGrants.role_key} is not null), array[]::text[])`,
       })
       .from(organizationMemberships)
       .innerJoin(organizations, eq(organizations.id, organizationMemberships.organization_id))
-      .innerJoin(
+      .leftJoin(
         organizationMembershipRoleGrants,
         and(
           eq(organizationMembershipRoleGrants.organization_id, organizations.id),
