@@ -31,10 +31,9 @@ export function TrainerInsightCard({
     [descriptorState, plan, trainer],
   );
   const manualControlEnabled = controllable && trainerMode === "manual";
-  const remoteModesKey = getRemoteModesKey(descriptorState.availableModes);
   const remoteModes = React.useMemo(
     () => buildRemoteModes(descriptorState.availableModes),
-    [remoteModesKey],
+    [descriptorState.availableModes],
   );
   const [remoteModeId, setRemoteModeId] = React.useState<RemoteModeId>(() =>
     getInitialRemoteModeId(descriptorState.modeId, remoteModes),
@@ -376,15 +375,6 @@ const fallbackRemoteModes: RemoteMode[] = [
     icon: SlidersHorizontal,
   },
 ];
-
-function getRemoteModesKey(modes: DescriptorMode[]) {
-  return modes
-    .map(
-      (mode) =>
-        `${mode.id}:${mode.enabled !== false}:${mode.range?.min ?? ""}:${mode.range?.max ?? ""}:${mode.range?.increment ?? ""}:${mode.range?.unit ?? ""}`,
-    )
-    .join("|");
-}
 
 function buildRemoteModes(descriptorModes: DescriptorMode[]): RemoteMode[] {
   const modes = descriptorModes
@@ -858,7 +848,13 @@ function CompactRemoteSummary({
 
   return (
     <View className="flex-row items-center gap-2">
-      <TrainerControlButton disabled={disabled} icon="minus" label="-" onPress={onDecrease} />
+      <TrainerControlButton
+        accessibilityLabel={`Decrease ${mode.label} target from ${formatRemoteTarget(target ?? mode.defaultValue, mode)}`}
+        disabled={disabled}
+        icon="minus"
+        label="-"
+        onPress={onDecrease}
+      />
       <View className="flex-1 rounded-2xl bg-muted/60 px-3 py-2">
         <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
           {mode.label}
@@ -867,7 +863,13 @@ function CompactRemoteSummary({
           {formatRemoteTarget(target ?? mode.defaultValue, mode)}
         </Text>
       </View>
-      <TrainerControlButton disabled={disabled} icon="plus" label="+" onPress={onIncrease} />
+      <TrainerControlButton
+        accessibilityLabel={`Increase ${mode.label} target from ${formatRemoteTarget(target ?? mode.defaultValue, mode)}`}
+        disabled={disabled}
+        icon="plus"
+        label="+"
+        onPress={onIncrease}
+      />
     </View>
   );
 }
@@ -924,7 +926,13 @@ function TrainerRemoteControl({
         </View>
 
         <View className="mt-5 flex-row items-center justify-between gap-4">
-          <TrainerControlButton disabled={disabled} icon="minus" label="-" onPress={onDecrease} />
+          <TrainerControlButton
+            accessibilityLabel={`Decrease ${mode.label} target from ${formatRemoteTarget(target ?? mode.defaultValue, mode)}`}
+            disabled={disabled}
+            icon="minus"
+            label="-"
+            onPress={onDecrease}
+          />
           <View className="flex-1 items-center">
             <Text className="text-5xl font-black text-foreground">
               {mode ? formatRemoteTargetValue(target ?? mode.defaultValue, mode) : "--"}
@@ -933,7 +941,13 @@ function TrainerRemoteControl({
               {mode?.unit ?? "target"}
             </Text>
           </View>
-          <TrainerControlButton disabled={disabled} icon="plus" label="+" onPress={onIncrease} />
+          <TrainerControlButton
+            accessibilityLabel={`Increase ${mode.label} target from ${formatRemoteTarget(target ?? mode.defaultValue, mode)}`}
+            disabled={disabled}
+            icon="plus"
+            label="+"
+            onPress={onIncrease}
+          />
         </View>
       </View>
 
@@ -962,14 +976,16 @@ function RemoteModeButton({
 }) {
   return (
     <Pressable
+      accessibilityLabel={`Select remote target mode ${mode.label}. ${active ? "Currently selected." : "Not selected."}`}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       className={
         active
-          ? "flex-row items-center gap-2 rounded-full bg-foreground px-3 py-2 active:opacity-80"
-          : "flex-row items-center gap-2 rounded-full border border-border bg-card px-3 py-2 active:opacity-80"
+          ? "min-h-11 flex-row items-center gap-2 rounded-full bg-foreground px-3 py-2"
+          : "min-h-11 flex-row items-center gap-2 rounded-full border border-border bg-card px-3 py-2"
       }
       onPress={onPress}
+      style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
     >
       <Icon as={mode.icon} size={14} className={active ? "text-background" : "text-foreground"} />
       <Text
@@ -1006,15 +1022,19 @@ function TrainerCandidateChip({
   label: string;
   onPress: () => void;
 }) {
+  const isDisabled = Boolean(disabled) || active;
+
   return (
     <Pressable
+      accessibilityLabel={`Select trainer ${label}. ${active ? "Currently selected." : "Not selected."}`}
       accessibilityRole="button"
-      accessibilityState={{ selected: active, disabled: Boolean(disabled) }}
-      className={`rounded-full border px-3 py-2 ${
+      accessibilityState={{ selected: active, disabled: isDisabled }}
+      className={`min-h-11 rounded-full border px-3 py-2 ${
         active ? "border-primary bg-primary/15" : "border-border bg-background"
       } ${disabled ? "opacity-50" : ""}`}
-      disabled={disabled || active}
+      disabled={isDisabled}
       onPress={onPress}
+      style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
     >
       <Text
         className={`text-xs font-semibold ${active ? "text-primary" : "text-foreground"}`}
@@ -1039,15 +1059,17 @@ function ModeChip({
 }) {
   return (
     <Pressable
+      accessibilityLabel={`Set trainer control mode to ${label}. ${active ? "Currently selected." : "Not selected."}`}
       accessibilityRole="button"
       accessibilityState={{ disabled, selected: active }}
       disabled={disabled}
       onPress={onPress}
       className={
         active
-          ? "flex-1 rounded-full bg-foreground px-4 py-2 active:opacity-80"
-          : "flex-1 rounded-full border border-border bg-background px-4 py-2 active:opacity-80"
+          ? "min-h-11 flex-1 justify-center rounded-full bg-foreground px-4 py-2"
+          : "min-h-11 flex-1 justify-center rounded-full border border-border bg-background px-4 py-2"
       }
+      style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
     >
       <Text
         className={
@@ -1063,11 +1085,13 @@ function ModeChip({
 }
 
 function TrainerControlButton({
+  accessibilityLabel,
   disabled,
   icon,
   label,
   onPress,
 }: {
+  accessibilityLabel: string;
   disabled: boolean;
   icon?: "minus" | "plus";
   label: string;
@@ -1077,15 +1101,17 @@ function TrainerControlButton({
 
   return (
     <Pressable
+      accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
       className={
         disabled
-          ? "h-11 w-11 items-center justify-center rounded-full bg-muted"
-          : "h-11 w-11 items-center justify-center rounded-full bg-foreground active:opacity-80"
+          ? "min-h-11 min-w-11 h-11 w-11 items-center justify-center rounded-full bg-muted"
+          : "min-h-11 min-w-11 h-11 w-11 items-center justify-center rounded-full bg-foreground"
       }
+      style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
     >
       {IconComponent ? (
         <Icon

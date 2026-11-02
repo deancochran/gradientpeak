@@ -28,8 +28,8 @@ function SignUpPage() {
   return (
     <div className="flex min-h-[70vh] items-center justify-center py-6 md:py-10">
       <RouteFlashToast
-        message={flash}
-        type={flashType}
+        {...(flash === undefined ? {} : { message: flash })}
+        {...(flashType === undefined ? {} : { type: flashType })}
         clear={() =>
           void navigate({
             to: "/auth/sign-up",

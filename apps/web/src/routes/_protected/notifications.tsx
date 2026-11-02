@@ -18,6 +18,7 @@ import { Bell, Mail, UserPlus } from "lucide-react";
 
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
+import { contractEpochFormInputProps } from "../../lib/contract-epoch";
 import { markNotificationsReadAction } from "../../lib/notifications/server-actions";
 import {
   acceptFollowRequestAction,
@@ -39,9 +40,10 @@ export const Route = createFileRoute("/_protected/notifications")({
 function NotificationsPage() {
   const navigate = Route.useNavigate();
   const { flash, flashType, view } = Route.useSearch();
-  const { data: notifications = [], isLoading } = api.notifications.getRecent.useQuery({
+  const notificationsQuery = api.notifications.getRecent.useQuery({
     limit: 50,
   });
+  const notifications = notificationsQuery.data ?? [];
   const normalizedNotifications = notifications
     .map((notification) => normalizeNotificationListItem(notification))
     .filter(
@@ -59,8 +61,8 @@ function NotificationsPage() {
   return (
     <div className="flex h-full flex-1 flex-col space-y-8">
       <RouteFlashToast
-        message={flash}
-        type={flashType}
+        {...(flash === undefined ? {} : { message: flash })}
+        {...(flashType === undefined ? {} : { type: flashType })}
         clear={() =>
           void navigate({
             to: "/notifications",
@@ -75,6 +77,7 @@ function NotificationsPage() {
           <p className="text-muted-foreground">Open, review, and clear the latest activity.</p>
         </div>
         <form action={markNotificationsReadAction.url} method="post">
+          <input {...contractEpochFormInputProps} />
           <input type="hidden" name="redirectTo" value="/notifications" />
           {unreadIds.map((notificationId) => (
             <input
@@ -93,7 +96,8 @@ function NotificationsPage() {
         <CardHeader>
           <CardTitle>Your Notifications</CardTitle>
           <CardDescription>
-            You have {unreadNotifications.length} unread notifications.
+            You have {unreadNotifications.length} unread{" "}
+            {unreadNotifications.length === 1 ? "notification" : "notifications"}.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -116,8 +120,19 @@ function NotificationsPage() {
             </Button>
           </div>
           <ScrollArea className="h-[calc(100vh-22rem)]">
-            {isLoading ? (
+            {notificationsQuery.isLoading ? (
               <div className="p-8 text-center text-muted-foreground">Loading...</div>
+            ) : notificationsQuery.isError ? (
+              <div className="space-y-3 p-8 text-center" role="alert">
+                <p>Notifications could not be loaded.</p>
+                <Button
+                  onClick={() => void notificationsQuery.refetch()}
+                  type="button"
+                  variant="outline"
+                >
+                  Retry
+                </Button>
+              </div>
             ) : visibleNotifications.length > 0 ? (
               visibleNotifications.map((notification) => (
                 <NotificationItem
@@ -154,7 +169,7 @@ function getNotificationTargetHref(
     case "coaching_invitation":
     case "coaching_invitation_accepted":
     case "coaching_invitation_declined":
-      return item.actorId ? `/user/${item.actorId}` : "/coaching";
+      return item.actorId ? `/user/${item.actorId}` : "/notifications";
     default:
       return "/notifications";
   }
@@ -200,6 +215,7 @@ function NotificationItem({
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {item.isUnread ? (
             <form action={markNotificationsReadAction.url} method="post">
+              <input {...contractEpochFormInputProps} />
               <input type="hidden" name="notification_ids" value={notification.id} />
               <input type="hidden" name="redirectTo" value={targetHref} />
               <input type="hidden" name="successMessage" value="Notification marked as read" />
@@ -216,6 +232,7 @@ function NotificationItem({
             item.actorId ? (
               <>
                 <form action={acceptFollowRequestAction.url} method="post">
+                  <input {...contractEpochFormInputProps} />
                   <input type="hidden" name="follower_id" value={item.actorId} />
                   <input type="hidden" name="notification_id" value={notification.id} />
                   <input type="hidden" name="redirectTo" value={redirectTo} />
@@ -224,6 +241,7 @@ function NotificationItem({
                   </Button>
                 </form>
                 <form action={rejectFollowRequestAction.url} method="post">
+                  <input {...contractEpochFormInputProps} />
                   <input type="hidden" name="follower_id" value={item.actorId} />
                   <input type="hidden" name="notification_id" value={notification.id} />
                   <input type="hidden" name="redirectTo" value={redirectTo} />

@@ -1,6 +1,6 @@
 import { getNativeTestProps } from "../../lib/test-props";
 import { Switch as RegistrySwitch } from "../../registry/native/switch";
-import type { SwitchTestProps } from "./shared";
+import { SWITCH_NATIVE_MINIMUM_HIT_SLOP, type SwitchTestProps } from "./shared";
 
 type SwitchProps = Omit<React.ComponentProps<typeof RegistrySwitch>, "nativeID" | "testID"> &
   SwitchTestProps;
@@ -13,7 +13,13 @@ function Switch({ accessibilityLabel, id, role, testId, ...props }: SwitchProps)
     testId,
   });
 
-  return <RegistrySwitch {...nativeTestProps} {...props} />;
+  return (
+    <RegistrySwitch
+      hitSlop={props.hitSlop ?? SWITCH_NATIVE_MINIMUM_HIT_SLOP}
+      {...nativeTestProps}
+      {...props}
+    />
+  );
 }
 
 export type { SwitchProps };
