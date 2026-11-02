@@ -33,7 +33,10 @@ export async function withDisposableDatabase<T>(
   } finally {
     await target?.end().catch(() => undefined);
     await admin.query(
-      "select pg_terminate_backend(pid) from pg_stat_activity where datname = $1 and pid <> pg_backend_pid()",
+      // Supabase maintenance/autovacuum workers may run as a higher-privilege
+      // role. Only terminate this disposable target's client sessions; DROP
+      // DATABASE handles its internal workers without broad process privileges.
+      "select pg_terminate_backend(pid) from pg_stat_activity where datname = $1 and backend_type = 'client backend' and pid <> pg_backend_pid()",
       [database],
     );
     await admin.query(`drop database if exists "${database}"`);

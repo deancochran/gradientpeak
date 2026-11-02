@@ -46,7 +46,7 @@ function fingerprintDiff(expected: Record<string, unknown>, actual: Record<strin
   });
 }
 
-export async function createSchemaFingerprint(pool: Pool) {
+export async function createSchemaFingerprint(pool: Pick<Pool, "query">) {
   await pool.query("set search_path = public, pg_catalog");
   const tables = managedTableNames();
   const result = await pool.query(

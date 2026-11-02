@@ -1,5 +1,6 @@
 #!/usr/bin/env tsx
 
+import { pathToFileURL } from "node:url";
 import { athleteReadAccessDecisionSchema, athleteReadScopeSchema } from "@repo/core/organizations";
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
 import {
@@ -543,6 +544,298 @@ async function proveDecisionMatrix(pool: Pool) {
     });
   } finally {
     client.release();
+  }
+}
+
+async function proveGroupDerivedAuthorization(pool: Pool) {
+  const graph = await seedAuthorityGraph(pool, 2_500);
+  const groupId = id(2_550);
+  const athleteLinkId = id(2_551);
+  const coachAssignmentId = id(2_552);
+  const client = await pool.connect();
+  try {
+    await withRollback(client, "group-derived athlete access", async () => {
+      await client.query(
+        "update public.coaching_assignments set ended_at=transaction_timestamp() where id=$1",
+        [graph.assignment],
+      );
+      await client.query(
+        `insert into public.organization_groups(id,organization_id,name,created_by_membership_id)
+         values($1,$2,'Private roster',$3)`,
+        [groupId, graph.org, graph.adminMembership],
+      );
+      await client.query(
+        `insert into public.organization_group_athletes(
+          id,organization_id,group_id,engagement_id,added_by_membership_id
+        ) values($1,$2,$3,$4,$5)`,
+        [athleteLinkId, graph.org, groupId, graph.engagement, graph.adminMembership],
+      );
+      await client.query(
+        `insert into public.organization_group_coach_assignments(
+          id,organization_id,group_id,coach_membership_id,assigned_by_membership_id
+        ) values($1,$2,$3,$4,$5)`,
+        [coachAssignmentId, graph.org, groupId, graph.coachMembership, graph.adminMembership],
+      );
+      await assertDecision(client, "allow", graph);
+      await client.query(
+        "update public.organization_group_athletes set ended_at=transaction_timestamp(), ended_by_membership_id=$2 where id=$1",
+        [athleteLinkId, graph.adminMembership],
+      );
+      await assertDecision(client, "assignment_missing", graph);
+    });
+    await withRollback(client, "group archive denies athlete access", async () => {
+      await client.query(
+        "update public.coaching_assignments set ended_at=transaction_timestamp() where id=$1",
+        [graph.assignment],
+      );
+      await client.query(
+        `insert into public.organization_groups(id,organization_id,name,created_by_membership_id)
+         values($1,$2,'Archive roster',$3)`,
+        [groupId, graph.org, graph.adminMembership],
+      );
+      await client.query(
+        `insert into public.organization_group_athletes(id,organization_id,group_id,engagement_id,added_by_membership_id)
+         values($1,$2,$3,$4,$5)`,
+        [athleteLinkId, graph.org, groupId, graph.engagement, graph.adminMembership],
+      );
+      await client.query(
+        `insert into public.organization_group_coach_assignments(id,organization_id,group_id,coach_membership_id,assigned_by_membership_id)
+         values($1,$2,$3,$4,$5)`,
+        [coachAssignmentId, graph.org, groupId, graph.coachMembership, graph.adminMembership],
+      );
+      await client.query(
+        "update public.organization_groups set archived_at=transaction_timestamp(), archived_by_membership_id=$2 where id=$1",
+        [groupId, graph.adminMembership],
+      );
+      await assertDecision(client, "assignment_missing", graph);
+    });
+    await expectFailure(
+      () =>
+        client.query(
+          `insert into public.organization_group_athletes(organization_id,group_id,engagement_id,added_by_membership_id)
+           values($1,$2,$3,$4)`,
+          [graph.org, id(999_500), graph.engagement, graph.adminMembership],
+        ),
+      "cross-organization group reference",
+    );
+  } finally {
+    client.release();
+  }
+}
+
+async function seedGroupGraph(pool: Pool, base: number) {
+  const graph = await seedAuthorityGraph(pool, base);
+  const group = id(base + 70),
+    athlete = id(base + 71),
+    coach = id(base + 72);
+  await pool.query(
+    "update public.coaching_assignments set ended_at=transaction_timestamp() where id=$1",
+    [graph.assignment],
+  );
+  await pool.query(
+    "insert into public.organization_groups(id,organization_id,name,created_by_membership_id) values($1,$2,'Test group',$3)",
+    [group, graph.org, graph.adminMembership],
+  );
+  await pool.query(
+    "insert into public.organization_group_athletes(id,organization_id,group_id,engagement_id,added_by_membership_id) values($1,$2,$3,$4,$5)",
+    [athlete, graph.org, group, graph.engagement, graph.adminMembership],
+  );
+  await pool.query(
+    "insert into public.organization_group_coach_assignments(id,organization_id,group_id,coach_membership_id,assigned_by_membership_id) values($1,$2,$3,$4,$5)",
+    [coach, graph.org, group, graph.coachMembership, graph.adminMembership],
+  );
+  return { ...graph, group, athlete, coach };
+}
+
+async function proveGroupInvariants(pool: Pool) {
+  const graph = await seedGroupGraph(pool, 3_000);
+  const client = await pool.connect();
+  try {
+    const invalid = [
+      {
+        label: "coach cannot archive",
+        sql: "update public.organization_groups set archived_at=transaction_timestamp(), archived_by_membership_id=$2 where id=$1",
+        values: [graph.group, graph.coachMembership],
+      },
+      {
+        label: "coach cannot remove athlete",
+        sql: "update public.organization_group_athletes set ended_at=transaction_timestamp(), ended_by_membership_id=$2 where id=$1",
+        values: [graph.athlete, graph.coachMembership],
+      },
+      {
+        label: "coach cannot remove coach",
+        sql: "update public.organization_group_coach_assignments set ended_at=transaction_timestamp(), ended_by_membership_id=$2 where id=$1",
+        values: [graph.coach, graph.coachMembership],
+      },
+      {
+        label: "future athlete link rejected",
+        sql: "insert into public.organization_group_athletes(organization_id,group_id,engagement_id,added_by_membership_id,joined_at) values($1,$2,$3,$4,transaction_timestamp()+interval '1 day')",
+        values: [graph.org, graph.group, graph.engagement, graph.adminMembership],
+      },
+      {
+        label: "duplicate active athlete rejected",
+        sql: "insert into public.organization_group_athletes(organization_id,group_id,engagement_id,added_by_membership_id) values($1,$2,$3,$4)",
+        values: [graph.org, graph.group, graph.engagement, graph.adminMembership],
+      },
+    ];
+    for (const item of invalid)
+      await withRollback(client, item.label, () =>
+        expectFailure(() => client.query(item.sql, item.values), item.label),
+      );
+    await withRollback(client, "same person coach and athlete", async () => {
+      await client.query(
+        "insert into public.coaching_engagements(id,organization_id,athlete_profile_id) values($1,$2,$3)",
+        [id(3_080), graph.org, profiles.coach],
+      );
+      await client.query(
+        "insert into public.organization_group_athletes(organization_id,group_id,engagement_id,added_by_membership_id) values($1,$2,$3,$4)",
+        [graph.org, graph.group, id(3_080), graph.adminMembership],
+      );
+    });
+    await withRollback(client, "group grant still requires consent", async () => {
+      await client.query(
+        "update public.athlete_data_sharing_consents set ended_at=transaction_timestamp() where id=$1",
+        [graph.consents.activities],
+      );
+      await assertDecision(client, "consent_ended", graph);
+    });
+    await withRollback(client, "group grant still requires coach role", async () => {
+      await client.query(
+        "update public.organization_membership_role_grants set revoked_at=transaction_timestamp() where membership_id=$1 and role_key='coach'",
+        [graph.coachMembership],
+      );
+      await assertDecision(client, "missing_coach_role", graph);
+    });
+    await withRollback(client, "direct grant survives group removal", async () => {
+      await client.query(
+        "insert into public.coaching_assignments(organization_id,engagement_id,coach_membership_id,assignment_kind) values($1,$2,$3,'primary')",
+        [graph.org, graph.engagement, graph.coachMembership],
+      );
+      await client.query(
+        "update public.organization_group_athletes set ended_at=transaction_timestamp(), ended_by_membership_id=$2 where id=$1",
+        [graph.athlete, graph.adminMembership],
+      );
+      await assertDecision(client, "allow", graph);
+    });
+  } finally {
+    client.release();
+  }
+  const audit = await pool.query(
+    "select count(*)::int as total from public.organization_audit_events where organization_id=$1 and action='group_relationship_created'",
+    [graph.org],
+  );
+  assert(audit.rows[0]?.total === 3, "group creation audit missing");
+  // Admin athlete invitations must work with a NULL requested staff role.
+  const invitation = id(3_081);
+  await pool.query(
+    "insert into public.organization_invitations(id,organization_id,invited_by_membership_id,invitation_kind,invited_profile_id,token_digest,expires_at) values($1,$2,$3,'athlete',$4,'test-invite-digest',transaction_timestamp()+interval '1 hour')",
+    [invitation, graph.org, graph.adminMembership, profiles.athlete],
+  );
+  await expectFailure(
+    () =>
+      pool.query(
+        "update public.organization_invitations set status='accepted',accepted_by_profile_id=$2,accepted_at=transaction_timestamp() where id=$1",
+        [invitation, profiles.outsider],
+      ),
+    "wrong invitation recipient",
+  );
+  await pool.query(
+    "update public.organization_invitations set status='accepted',accepted_by_profile_id=$2,accepted_at=transaction_timestamp() where id=$1",
+    [invitation, profiles.athlete],
+  );
+  await expectFailure(
+    () =>
+      pool.query(
+        "update public.organization_invitations set status='pending',accepted_by_profile_id=null,accepted_at=null where id=$1",
+        [invitation],
+      ),
+    "invitation replay",
+  );
+  const revocable = id(3_082);
+  await pool.query(
+    "insert into public.organization_invitations(id,organization_id,invited_by_membership_id,invitation_kind,invited_profile_id,token_digest,expires_at) values($1,$2,$3,'athlete',$4,'revocable-invite-digest',transaction_timestamp()+interval '1 hour')",
+    [revocable, graph.org, graph.adminMembership, profiles.athlete],
+  );
+  await pool.query(
+    "update public.organization_membership_role_grants set revoked_at=transaction_timestamp() where membership_id=$1 and role_key='admin'",
+    [graph.adminMembership],
+  );
+  await expectFailure(
+    () =>
+      pool.query(
+        "update public.organization_invitations set status='accepted',accepted_by_profile_id=$2,accepted_at=transaction_timestamp() where id=$1",
+        [revocable, profiles.athlete],
+      ),
+    "departed inviter cannot authorize acceptance",
+  );
+  await pool.query(
+    "update public.organization_invitations set status='revoked',closed_by_membership_id=$2 where id=$1",
+    [revocable, graph.ownerMembership],
+  );
+}
+
+async function proveGroupReadConcurrency(url: string, pool: Pool) {
+  const sessions = new Pool({ connectionString: url, max: 3 });
+  const reader = await sessions.connect(),
+    writer = await sessions.connect(),
+    observer = await sessions.connect();
+  const mutations = [
+    {
+      sql: "update public.organization_groups set archived_at=transaction_timestamp(),archived_by_membership_id=$2 where id=$1",
+      target: "group",
+    },
+    {
+      sql: "update public.organization_group_athletes set ended_at=transaction_timestamp(),ended_by_membership_id=$2 where id=$1",
+      target: "athlete",
+    },
+    {
+      sql: "update public.organization_group_coach_assignments set ended_at=transaction_timestamp(),ended_by_membership_id=$2 where id=$1",
+      target: "coach",
+    },
+  ] as const;
+  try {
+    for (const [index, mutation] of mutations.entries()) {
+      for (const readFirst of [true, false]) {
+        const graph = await seedGroupGraph(pool, 4_000 + index * 200 + (readFirst ? 0 : 100));
+        await reader.query("begin; set local lock_timeout='5s'; set local statement_timeout='10s'");
+        await writer.query("begin; set local lock_timeout='5s'; set local statement_timeout='10s'");
+        if (readFirst) {
+          await assertDecision(reader, "allow", graph);
+          const pid = (await writer.query("select pg_backend_pid() as pid")).rows[0].pid;
+          const pending = writer.query(mutation.sql, [
+            graph[mutation.target],
+            graph.adminMembership,
+          ]);
+          await waitForLock(observer, pid, `${mutation.target} read-first`);
+          await reader.query("commit");
+          await pending;
+          await writer.query("commit");
+        } else {
+          await writer.query(mutation.sql, [graph[mutation.target], graph.adminMembership]);
+          const pid = (await reader.query("select pg_backend_pid() as pid")).rows[0].pid;
+          const pending = reader.query(decisionSql, [
+            profiles.coach,
+            graph.org,
+            profiles.athlete,
+            "activities",
+          ]);
+          await waitForLock(observer, pid, `${mutation.target} writer-first`);
+          await writer.query("commit");
+          assert(
+            (await pending).rows[0]?.decision === "assignment_missing",
+            "group writer-first read must deny",
+          );
+          await reader.query("commit");
+        }
+        await assertDecision(pool, "assignment_missing", graph);
+      }
+    }
+  } finally {
+    await Promise.allSettled([reader.query("rollback"), writer.query("rollback")]);
+    reader.release();
+    writer.release();
+    observer.release();
+    await sessions.end();
   }
 }
 
@@ -1197,6 +1490,20 @@ async function proveAclDenials(pool: Pool, url: string) {
   }
 }
 
+export async function proveCoachingAuthorization(pool: Pool, targetUrl: string) {
+  await seedProfiles(pool);
+  await proveDecisionMatrix(pool);
+  await proveGroupDerivedAuthorization(pool);
+  await proveGroupInvariants(pool);
+  await proveMembershipCommands(pool);
+  await proveEngagementCommands(pool);
+  await proveConsentCommands(pool);
+  await proveClosureCommands(pool);
+  await proveEngagementReadConcurrency(targetUrl, pool);
+  await proveGroupReadConcurrency(targetUrl, pool);
+  await proveAclDenials(pool, targetUrl);
+}
+
 async function main() {
   await withDisposableDatabase(
     process.argv.slice(2),
@@ -1206,14 +1513,7 @@ async function main() {
       for (const migrationPath of requireFreshBaseline().migrationPaths) {
         await applySqlFile(pool, migrationPath);
       }
-      await seedProfiles(pool);
-      await proveDecisionMatrix(pool);
-      await proveMembershipCommands(pool);
-      await proveEngagementCommands(pool);
-      await proveConsentCommands(pool);
-      await proveClosureCommands(pool);
-      await proveEngagementReadConcurrency(targetUrl, pool);
-      await proveAclDenials(pool, targetUrl);
+      await proveCoachingAuthorization(pool, targetUrl);
       console.log(
         "[db:coaching:authorization] guarded disposable denial matrix, terminal commands, audit/idempotency, ACL, and two-order concurrency proof passed; functions remain ungranted and this is not deployed-role, RLS-identity, or athlete-projection proof",
       );
@@ -1221,9 +1521,10 @@ async function main() {
   );
 }
 
-main().catch((error) => {
-  console.error(
-    `[db:coaching:authorization] ${error instanceof Error ? error.message : String(error)}`,
-  );
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
+  main().catch((error) => {
+    console.error(
+      `[db:coaching:authorization] ${error instanceof Error ? error.message : String(error)}`,
+    );
+    process.exit(1);
+  });

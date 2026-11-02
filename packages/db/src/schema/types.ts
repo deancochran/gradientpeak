@@ -43,6 +43,10 @@ import type {
   notifications,
   oauthStates,
   organizationAuditEvents,
+  organizationGroupAthletes,
+  organizationGroupCoachAssignments,
+  organizationGroups,
+  organizationInvitations,
   organizationMembershipRoleGrants,
   organizationMemberships,
   organizations,
@@ -80,6 +84,18 @@ export type OrganizationInsert = InferInsertModel<typeof organizations>;
 
 export type OrganizationMembershipRow = InferSelectModel<typeof organizationMemberships>;
 export type OrganizationMembershipInsert = InferInsertModel<typeof organizationMemberships>;
+export type OrganizationInvitationRow = InferSelectModel<typeof organizationInvitations>;
+export type OrganizationInvitationInsert = InferInsertModel<typeof organizationInvitations>;
+export type OrganizationGroupRow = InferSelectModel<typeof organizationGroups>;
+export type OrganizationGroupInsert = InferInsertModel<typeof organizationGroups>;
+export type OrganizationGroupAthleteRow = InferSelectModel<typeof organizationGroupAthletes>;
+export type OrganizationGroupAthleteInsert = InferInsertModel<typeof organizationGroupAthletes>;
+export type OrganizationGroupCoachAssignmentRow = InferSelectModel<
+  typeof organizationGroupCoachAssignments
+>;
+export type OrganizationGroupCoachAssignmentInsert = InferInsertModel<
+  typeof organizationGroupCoachAssignments
+>;
 
 export type OrganizationMembershipRoleGrantRow = InferSelectModel<
   typeof organizationMembershipRoleGrants

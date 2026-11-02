@@ -17,6 +17,10 @@ The semantic usage contract for athlete observations and effort curves is docume
 - Drizzle schema in `src/schema/**` is the relational source of truth.
 - `supabase/migrations/` contains exactly one transactional fresh-only MVP baseline.
 - This development baseline is replaced as one artifact; there is no migration ledger, forward path, or data backfill.
+- **Narrow preserved-target exception — coaching group foundation:** a one-time, reviewed
+  preview upgrade may be applied separately by the preview coordinator under its
+  lock after a backup and preflight. It is not an ordinary migration lane, must not reset or
+  reseed a target, and does not change the fresh-only baseline workflow for later work.
 - Drizzle has no deploy command. Its config points at the Supabase authority, while Studio remains available for inspection.
 
 ## Common commands
@@ -63,6 +67,52 @@ The dedicated `gradientpeak_e2e` project uses ports 55320–55329 and durable da
 The checked-in fingerprint covers every public relation and sequence (including unmanaged extras), managed columns/defaults/indexes/constraints/enums, RLS and ACL state, default privileges for policy-declared owners, policy-declared extensions, public/auth functions and triggers, and owned storage buckets/policies. Supabase platform extensions and platform-role default privileges are intentionally outside repository ownership and are not serialized as environment noise. Update the fingerprint only with `db:fresh:verify -- --write-fingerprint`; direct edits and unguarded writers are unsupported.
 
 `db:verify:static` needs no database. `db:verify` builds fresh disposable targets twice, fingerprints all owned surfaces, checks storage/security, lints them, verifies empty diffs, and rejects zero, multiple, stale, or mismatched active baseline artifacts.
+
+### Approved coaching-foundation preview upgrade
+
+The one-time exception lives in `supabase/approved-upgrades/coaching-foundation/`,
+outside the fresh-install migration directory. `db:coaching:upgrade:materialize`
+extracts only the four new tables, related constraints/indexes/triggers, new
+invoker trigger functions and the replaced coaching read decision from the fresh
+baseline. It copies the immutable prerequisite fingerprint from source checkpoint
+`1d5ac63ab7ad7a89b25bdfd1dec9a63f5b770ce4`; this is provenance, not a fingerprint
+writer. Changes require rematerialization and independent review.
+
+`db:coaching:upgrade:test` builds that prerequisite in a guarded disposable
+database, upgrades it, compares the entire resulting fingerprint, proves an
+existing profile is unchanged, rejects unexpected schema/replay, and runs the
+coaching authorization and concurrency suite. It is part of `test:db`/`db:verify`.
+
+Only the preview coordinator may run `db:coaching:upgrade:preview`, under the
+shared-preview lock, with `COACHING_PREVIEW_DATABASE_URL` supplied privately from
+the verified preview environment and `COACHING_PREVIEW_BACKUP` pointing to a
+private custom-format PostgreSQL recovery archive. The runner accepts only
+an archive with a private adjacent `.manifest.json` attesting the archive SHA-256,
+target `127.0.0.1:54322/postgres`, creation time within one hour, and SHA-256 of the
+canonical prerequisite fingerprint JSON. The coordinator creates this manifest
+from the verified target under the activation lock. This attestation does not
+replace a restore rehearsal. The runner byte-compares upgrade.sql to the bounded
+authoritative baseline extraction before executing it, rejecting hand edits or
+stale artifacts. The runner accepts only
+loopback port 54322/database postgres, locks organizations, checks the exact
+pre-upgrade fingerprint, applies the bounded SQL transactionally, and rolls back
+unless the complete post-upgrade fingerprint matches. It never resets or seeds.
+Do not run upgrade.sql directly: the runner supplies the fingerprint guards.
+Stop owned request/worker services during activation, verify post-upgrade security
+and health, and restart only those services that were previously active.
+
+Before commit, transaction rollback is the recovery path. After commit, there is
+no automatic destructive down migration: preserve the compatible additive schema
+and use a reviewed forward repair. Restoring a recovery archive would overwrite
+newer data and requires a separate operator decision; never restore it silently.
+
+The tables are backend-owned with service-role SELECT-only ACLs and no direct
+client policies. Group writes carry scoped administrative actors and audit facts;
+the privileged API must authenticate those actors. Invitation email verification,
+atomic acceptance/enrollment, idempotent application commands, and athlete-facing
+notice delivery belong to the next API phase. Database rows alone do not deliver
+notifications or create coaching consent. Group names are currently immutable
+after creation; metadata-edit commands remain a deliberate API/schema follow-up.
 
 ### Activity-plan authoring and revision ownership
 

@@ -27,6 +27,10 @@ const coachingAuthorityReadOnlyTables = [
   "athlete_consent_policy_versions",
   "athlete_data_sharing_consents",
   "organization_audit_events",
+  "organization_invitations",
+  "organization_groups",
+  "organization_group_athletes",
+  "organization_group_coach_assignments",
 ] as const;
 const coachingAuthorityReadOnlyTableSet = new Set<string>(coachingAuthorityReadOnlyTables);
 const immutableDerivedTables = [

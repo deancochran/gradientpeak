@@ -517,6 +517,231 @@ export const coachingAssignments = pgTable(
   ],
 );
 
+export const organizationInvitations = pgTable(
+  "organization_invitations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "restrict" }),
+    invited_by_membership_id: uuid("invited_by_membership_id").notNull(),
+    invitation_kind: text("invitation_kind", { enum: ["staff", "athlete"] }).notNull(),
+    invited_profile_id: uuid("invited_profile_id").references(() => profiles.id, {
+      onDelete: "restrict",
+    }),
+    invited_email: text("invited_email"),
+    requested_role_key: text("requested_role_key", {
+      enum: organizationRoleKeyDbValues,
+    }),
+    token_digest: text("token_digest").notNull(),
+    expires_at: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
+    status: text("status", { enum: ["pending", "accepted", "declined", "revoked", "expired"] })
+      .notNull()
+      .default("pending"),
+    accepted_by_profile_id: uuid("accepted_by_profile_id").references(() => profiles.id, {
+      onDelete: "restrict",
+    }),
+    accepted_at: timestamp("accepted_at", { withTimezone: true, mode: "date" }),
+    closed_by_membership_id: uuid("closed_by_membership_id"),
+    declined_by_profile_id: uuid("declined_by_profile_id").references(() => profiles.id, {
+      onDelete: "restrict",
+    }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.organization_id, table.invited_by_membership_id],
+      foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
+      name: "organization_invitations_inviter_fkey",
+    }).onDelete("restrict"),
+    unique("organization_invitations_organization_id_id_unique").on(
+      table.organization_id,
+      table.id,
+    ),
+    uniqueIndex("organization_invitations_token_digest_unique").on(table.token_digest),
+    foreignKey({
+      columns: [table.organization_id, table.closed_by_membership_id],
+      foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
+      name: "organization_invitations_closer_fkey",
+    }).onDelete("restrict"),
+    check(
+      "organization_invitations_closer_check",
+      sql`(${table.status} in ('revoked','expired')) = (${table.closed_by_membership_id} is not null)`,
+    ),
+    check(
+      "organization_invitations_decline_check",
+      sql`(${table.status} = 'declined') = (${table.declined_by_profile_id} is not null) and (${table.declined_by_profile_id} is null or ${table.invited_profile_id} is null or ${table.declined_by_profile_id} = ${table.invited_profile_id})`,
+    ),
+    index("organization_invitations_pending_recipient_idx")
+      .on(table.organization_id, table.invited_profile_id)
+      .where(sql`${table.status} = 'pending' and ${table.invited_profile_id} is not null`),
+    check(
+      "organization_invitations_recipient_check",
+      sql`(${table.invited_profile_id} is null) <> (${table.invited_email} is null)`,
+    ),
+    check(
+      "organization_invitations_email_non_empty",
+      sql`${table.invited_email} is null or btrim(${table.invited_email}) <> ''`,
+    ),
+    check(
+      "organization_invitations_token_digest_non_empty",
+      sql`btrim(${table.token_digest}) <> ''`,
+    ),
+    check(
+      "organization_invitations_role_check",
+      sql`(${table.invitation_kind} = 'staff' and ${table.requested_role_key} is not null and ${table.requested_role_key} in ('admin', 'coach')) or (${table.invitation_kind} = 'athlete' and ${table.requested_role_key} is null)`,
+    ),
+    check(
+      "organization_invitations_acceptance_check",
+      sql`(${table.status} = 'accepted' and ${table.accepted_by_profile_id} is not null and ${table.accepted_at} is not null and ${table.accepted_at} >= ${table.created_at} and ${table.accepted_at} < ${table.expires_at} and (${table.invited_profile_id} is null or ${table.accepted_by_profile_id} = ${table.invited_profile_id})) or (${table.status} <> 'accepted' and ${table.accepted_by_profile_id} is null and ${table.accepted_at} is null)`,
+    ),
+    check("organization_invitations_expiry_check", sql`${table.expires_at} >= ${table.created_at}`),
+  ],
+);
+
+export const organizationGroups = pgTable(
+  "organization_groups",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    created_by_membership_id: uuid("created_by_membership_id").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    archived_at: timestamp("archived_at", { withTimezone: true, mode: "date" }),
+    archived_by_membership_id: uuid("archived_by_membership_id"),
+  },
+  (table) => [
+    unique("organization_groups_organization_id_id_unique").on(table.organization_id, table.id),
+    foreignKey({
+      columns: [table.organization_id, table.created_by_membership_id],
+      foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
+      name: "organization_groups_creator_fkey",
+    }).onDelete("restrict"),
+    index("organization_groups_active_organization_idx")
+      .on(table.organization_id, table.id)
+      .where(sql`${table.archived_at} is null`),
+    check("organization_groups_name_non_empty", sql`btrim(${table.name}) <> ''`),
+    foreignKey({
+      columns: [table.organization_id, table.archived_by_membership_id],
+      foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
+      name: "organization_groups_archiver_fkey",
+    }).onDelete("restrict"),
+    check(
+      "organization_groups_archive_check",
+      sql`(${table.archived_at} is null) = (${table.archived_by_membership_id} is null) and (${table.archived_at} is null or ${table.archived_at} >= ${table.created_at})`,
+    ),
+  ],
+);
+
+export const organizationGroupAthletes = pgTable(
+  "organization_group_athletes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id").notNull(),
+    group_id: uuid("group_id").notNull(),
+    engagement_id: uuid("engagement_id").notNull(),
+    added_by_membership_id: uuid("added_by_membership_id").notNull(),
+    joined_at: timestamp("joined_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+    ended_at: timestamp("ended_at", { withTimezone: true, mode: "date" }),
+    ended_by_membership_id: uuid("ended_by_membership_id"),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.organization_id, table.group_id],
+      foreignColumns: [organizationGroups.organization_id, organizationGroups.id],
+      name: "organization_group_athletes_group_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organization_id, table.engagement_id],
+      foreignColumns: [coachingEngagements.organization_id, coachingEngagements.id],
+      name: "organization_group_athletes_engagement_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organization_id, table.added_by_membership_id],
+      foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
+      name: "organization_group_athletes_actor_fkey",
+    }).onDelete("restrict"),
+    uniqueIndex("organization_group_athletes_current_unique")
+      .on(table.group_id, table.engagement_id)
+      .where(sql`${table.ended_at} is null`),
+    index("organization_group_athletes_active_engagement_idx")
+      .on(table.organization_id, table.engagement_id)
+      .where(sql`${table.ended_at} is null`),
+    check(
+      "organization_group_athletes_chronology_check",
+      sql`${table.ended_at} is null or ${table.ended_at} >= ${table.joined_at}`,
+    ),
+    foreignKey({
+      columns: [table.organization_id, table.ended_by_membership_id],
+      foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
+      name: "organization_group_athletes_ender_fkey",
+    }).onDelete("restrict"),
+    check(
+      "organization_group_athletes_end_actor_check",
+      sql`(${table.ended_at} is null) = (${table.ended_by_membership_id} is null)`,
+    ),
+  ],
+);
+
+export const organizationGroupCoachAssignments = pgTable(
+  "organization_group_coach_assignments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id").notNull(),
+    group_id: uuid("group_id").notNull(),
+    coach_membership_id: uuid("coach_membership_id").notNull(),
+    assigned_by_membership_id: uuid("assigned_by_membership_id").notNull(),
+    assigned_at: timestamp("assigned_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    ended_at: timestamp("ended_at", { withTimezone: true, mode: "date" }),
+    ended_by_membership_id: uuid("ended_by_membership_id"),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.organization_id, table.group_id],
+      foreignColumns: [organizationGroups.organization_id, organizationGroups.id],
+      name: "organization_group_coach_assignments_group_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organization_id, table.coach_membership_id],
+      foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
+      name: "organization_group_coach_assignments_coach_fkey",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.organization_id, table.assigned_by_membership_id],
+      foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
+      name: "organization_group_coach_assignments_actor_fkey",
+    }).onDelete("restrict"),
+    uniqueIndex("organization_group_coach_assignments_current_unique")
+      .on(table.group_id, table.coach_membership_id)
+      .where(sql`${table.ended_at} is null`),
+    index("organization_group_coach_assignments_active_coach_idx")
+      .on(table.organization_id, table.coach_membership_id)
+      .where(sql`${table.ended_at} is null`),
+    check(
+      "organization_group_coach_assignments_chronology_check",
+      sql`${table.ended_at} is null or ${table.ended_at} >= ${table.assigned_at}`,
+    ),
+    foreignKey({
+      columns: [table.organization_id, table.ended_by_membership_id],
+      foreignColumns: [organizationMemberships.organization_id, organizationMemberships.id],
+      name: "organization_group_coach_assignments_ender_fkey",
+    }).onDelete("restrict"),
+    check(
+      "organization_group_coach_assignments_end_actor_check",
+      sql`(${table.ended_at} is null) = (${table.ended_by_membership_id} is null)`,
+    ),
+  ],
+);
+
 export const athleteConsentPolicyVersions = pgTable(
   "athlete_consent_policy_versions",
   {
