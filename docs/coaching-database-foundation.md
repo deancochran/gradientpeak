@@ -145,3 +145,34 @@ Invitation closure now records a current administrative actor independently of
 the inviter, so the owner can revoke invitations after an inviter loses authority;
 acceptance still requires the inviter's current authority. The final DB gate is
 being rerun after these fixes. No preview schema change has yet occurred.
+
+## Verified preview delivery
+
+The final `pnpm --filter @repo/db db:verify` passed after all review fixes. Its
+cleanup was narrowed to terminate only disposable-target client sessions, avoiding
+permission failures on internal PostgreSQL maintenance workers. Independent final
+review found no remaining actionable blockers in the scoped database/upgrade work.
+
+- Source checkpoint: `0cefa21e9adc64aebf3eef03a2ba17f30be11b88`.
+- Preview before: `f0b572c9f17a4777d5c8b7290b116a57a5189061`.
+- Preview after: `5fd68cd24055617f1b50122ffb1e13b79c20b3b5`.
+- Exclusive shared-preview lock covered integration, archive attestation,
+  transaction, data/fingerprint checks and service health. Ancestry checker passed.
+- Approved one-time data-preserving upgrade committed; all 79 managed tables
+  match the final fingerprint. No reset, reseed or fresh-baseline replay occurred.
+- All 72 pre-existing public tables retained identical row counts and content
+  digests before runtime services resumed. Recovery archive, private bound
+  manifest and before/after data digests remain outside Git in the coordinator
+  cache referenced by the shared activation record. Archive inventory is readable;
+  a full restore rehearsal was not performed.
+- Initial backup inventory invocation hit Node stdin EPIPE before any migration;
+  using file-descriptor input fixed it. The archive and unchanged pre-upgrade data
+  were verified before continuing. No database rollback or reset was needed.
+- Previously active web/provider worker services restored; web health HTTP 200 and
+  Metro running. No native or dependency changes. New tables remain backend-owned;
+  no management UI/endpoints or new direct-client grants are claimed.
+
+Database phase is complete and live in preview. API/Core implementation has not
+started. Subsequent work is a read-only evaluation of domain contracts and API
+management workflows. Remote publication is a separate delivery gate and must not
+be inferred from successful preview activation.
