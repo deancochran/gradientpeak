@@ -176,3 +176,22 @@ Database phase is complete and live in preview. API/Core implementation has not
 started. Subsequent work is a read-only evaluation of domain contracts and API
 management workflows. Remote publication is a separate delivery gate and must not
 be inferred from successful preview activation.
+
+### Remote publication blocked by prerequisite API architecture
+
+Normal `git push -u origin feat/coaching-database-foundation` was attempted with
+hooks enabled. The required pre-push gate stopped at four raw-SQL architecture
+violations in unchanged prerequisite API files:
+
+- `packages/api/src/application/performance-model/reconcile-thresholds.ts`
+  (stored-function call, reported line 802).
+- `packages/api/src/repositories/threshold-repository.ts`
+  (ordinary CRUD, reported lines 332, 402 and 419).
+
+These files are byte-identical to prerequisite source `1d5ac63a` and were not
+modified by the database feature. The branch was not published and no PR could
+be created; no hook bypass or auto-merge was used. Resolving the prerequisite API
+checkpoint is outside the current database-only implementation boundary. Next:
+reconcile an approved source checkpoint containing that prerequisite repair, then
+rerun normal publication gates. The database foundation remains independently
+verified and live in preview; this blocker does not revoke that delivery status.
