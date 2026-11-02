@@ -1,5 +1,6 @@
 import type React from "react";
 import { type RefreshControl, ScrollView, type ScrollViewProps, View } from "react-native";
+import { omitUndefined } from "@/lib/omitUndefined";
 import { DetailLoadingState, DetailNotFoundState } from "./DetailState";
 
 type DetailScaffoldProps = {
@@ -42,16 +43,20 @@ export function DetailScaffold({
   const { Stack } = require("expo-router") as typeof import("expo-router");
 
   if (isLoading) {
-    return <DetailLoadingState label={loadingLabel} testID={loadingTestID} />;
+    return (
+      <DetailLoadingState {...omitUndefined({ label: loadingLabel, testID: loadingTestID })} />
+    );
   }
 
   if (notFound) {
     return (
       <DetailNotFoundState
-        actionLabel={notFoundActionLabel}
-        description={notFoundDescription}
-        onActionPress={notFoundOnActionPress}
-        testID={notFoundTestID}
+        {...omitUndefined({
+          actionLabel: notFoundActionLabel,
+          description: notFoundDescription,
+          onActionPress: notFoundOnActionPress,
+          testID: notFoundTestID,
+        })}
         title={notFoundTitle}
       />
     );
@@ -59,7 +64,7 @@ export function DetailScaffold({
 
   return (
     <View className="flex-1 bg-background" testID={screenTestID}>
-      <Stack.Screen options={{ headerRight }} />
+      <Stack.Screen options={omitUndefined({ headerRight })} />
       <ScrollView
         className="flex-1 bg-background"
         contentContainerClassName={contentContainerClassName}

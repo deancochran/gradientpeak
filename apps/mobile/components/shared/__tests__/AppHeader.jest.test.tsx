@@ -1,0 +1,24 @@
+import { createHost } from "../../../test/mock-components";
+import { renderNative, screen } from "../../../test/render-native";
+import { AppHeader } from "../AppHeader";
+
+jest.mock("../HeaderButtons", () => ({
+  __esModule: true,
+  InboxHeaderButton: createHost("InboxHeaderButton"),
+  MeHeaderButton: createHost("MeHeaderButton"),
+}));
+
+describe("AppHeader", () => {
+  it("renders the caller-supplied destination title", async () => {
+    await renderNative(<AppHeader title="Calendar" />);
+
+    expect(screen.getByText("Calendar")).toBeTruthy();
+    expect(screen.queryByText("GradientPeak")).toBeNull();
+  });
+
+  it("keeps the product title as a fallback", async () => {
+    await renderNative(<AppHeader />);
+
+    expect(screen.getByText("GradientPeak")).toBeTruthy();
+  });
+});
