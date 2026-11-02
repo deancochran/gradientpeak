@@ -14,7 +14,8 @@ Use this file when working anywhere inside the product repo.
 
 ## Working Rules
 
-- Develop on a dedicated feature branch/worktree based on current `origin/main`; preserve existing legacy worktrees. Never edit or locally integrate features into the main preview checkout.
+- Develop on a dedicated feature branch/worktree based on current `origin/main`; preserve existing legacy worktrees. Never edit or locally integrate features into the protected main reference checkout.
+- The separate shared `preview` worktree may combine useful partial-feature checkpoints before release gates pass. Feature worktrees own edits; one integration owner merges exact commits under the coordination workspace's shared-preview lock and verifies affected runtime health. Never merge preview back into features/main, overwrite another writer's edits, or reset preserved data. Follow the coordination workspace's `.opencode/SHARED-PREVIEW.md` and activation record; do not start a competing Turbo stack in the shared preview.
 - Integrate through GitHub pull requests. Within an authorized implementation task, agents may commit, push, open the PR and enable auto-merge after local verification and independent review. Required CI/security checks must pass; never bypass protections. Database changes, deployments and destructive cleanup require separate authority.
 - Prefer the smallest correct change.
 - Reuse existing package boundaries before creating new ones.

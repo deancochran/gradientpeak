@@ -9,7 +9,7 @@ import {
   SheetTrigger,
 } from "@repo/ui/components/sheet";
 import { cn } from "@repo/ui/lib/cn";
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link, useHydrated, useLocation } from "@tanstack/react-router";
 import { Menu } from "lucide-react";
 import { ChatbotLauncher } from "../chatbot/chatbot-panel";
 import { useAuth } from "../providers/auth-provider";
@@ -19,6 +19,7 @@ import { SearchLauncher } from "./search-launcher";
 import { UserNav } from "./user-nav";
 
 export function ProtectedHeader() {
+  const hydrated = useHydrated();
   const location = useLocation();
   const { user } = useAuth();
   const primaryLinks = [
@@ -33,7 +34,11 @@ export function ProtectedHeader() {
   return (
     <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="mx-auto flex h-16 w-full max-w-7xl items-center gap-2 px-3 sm:gap-4 sm:px-6 lg:px-8">
-        <MobileNavigation primaryLinks={primaryLinks} pathname={location.pathname} />
+        <MobileNavigation
+          hydrated={hydrated}
+          primaryLinks={primaryLinks}
+          pathname={location.pathname}
+        />
         <Link
           to="/"
           className="flex min-w-0 items-center gap-2 text-lg font-semibold tracking-tight"
@@ -101,16 +106,24 @@ function isActivePath(pathname: string, to: PrimaryLink["to"]) {
 }
 
 function MobileNavigation({
+  hydrated,
   primaryLinks,
   pathname,
 }: {
+  hydrated: boolean;
   primaryLinks: readonly PrimaryLink[];
   pathname: string;
 }) {
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <Button variant="ghost" size="icon" className="md:hidden" aria-label="Open navigation">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="md:hidden"
+          aria-label="Open navigation"
+          disabled={!hydrated}
+        >
           <Menu className="h-5 w-5" />
         </Button>
       </SheetTrigger>
