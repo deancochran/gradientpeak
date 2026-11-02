@@ -128,3 +128,52 @@ changes. Two CLI flag attempts failed before compilation (device selector and
 mutually exclusive port/no-bundler); reassessed using installed help and switched
 to generated Gradle assembleDebug, x86_64 only, two workers, dev port8083. No shared
 Metro restart or native installation is implied by build preparation.
+
+### Second checkpoint preview disposition
+
+Checkpoint `30e87d89b92ed1a6286e2a5df51c86b1e9d5aee4` integrated at preview
+`d9f621efbf88f24bb93b03b507d62b5995aa258f`. Initial post-merge checks timed out
+under host memory contention. After stopping only this task's broad quality
+process tree, a locked rerun passed integrated native62/web23 tests, ancestry,
+API/Metro health and served iOS compact-panel marker. Second independent source
+review found no additional actionable findings. This checkpoint is live in preview.
+
+Native Gradle build succeeded (x86_64,776 tasks). The designated emulator crashed
+while host memory/swap were saturated; restarted with two cores after build
+completion, retained its data, verified boot and installed current APK with `-r`.
+The guarded native acceptance runner is executing separately; build/install is
+not native authoring or visual acceptance. Broad gate was deliberately interrupted
+to relieve memory contention after static checks and all package types passed;
+strictness/full suites/publication still require an uninterrupted serial run.
+
+### Native startup diagnosis
+
+Runs `acceptance-1699419-1793658479001` and
+`acceptance-1710394-1793658715115` stopped at the sign-in visibility assertion,
+before entering credentials or activity-plan UI. First cold bundle had not
+finished by the UI deadline. Warming the runner-owned Android bundle alone did
+not resolve the second run: native logs show React `main` starting about44seconds
+after openLink, after the existing30second startup wait. Blank startup screenshots
+are not editor failures or visual acceptance.
+
+Reassessment: retain the compile readiness check in the disposable runner and
+allow90seconds only for cold initial sign-in startup. Subsequent interaction
+timeouts and all data assertions remain unchanged. Third guarded run is in
+progress; no claims about editor runtime until it reaches and verifies that UI.
+
+Native run `acceptance-1717389-1793658879713` also failed before sign-in,
+this time with the outer Maestro process timeout. Review identified the outer
+150second budget could preempt the startup plus onboarding waits; it is now
+240seconds for onboarding only (other flow limits remain150seconds). That final
+timeout adjustment has not been runtime verified. No further blind retries:
+native acceptance remains blocked on reliable emulator app startup. All three
+runs retained their semantic assertions, and none proves editor behavior.
+Runner-owned ports3100/8083 and ADB reverse mappings were confirmed cleaned;
+task-owned emulator stopped without clearing app data. A current debug APK is
+retained in the ignored Android output directory for the next bounded diagnosis.
+
+Owner: activity-plan editor coordinator. Next native evidence required: stable
+synthetic sign-in startup, then completion of the maintained native authoring
+flow and screenshot comparison. Physical iOS page-sheet/keyboard fidelity is
+still unverified. Publication is attempted through the normal push gate; no hook
+bypass or preserved database repair is authorized by this UI task.

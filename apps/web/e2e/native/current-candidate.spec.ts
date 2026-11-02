@@ -58,7 +58,9 @@ test("current Android candidate onboards and creates an executable activity plan
       ],
       {
         encoding: "utf8",
-        timeout: 150_000,
+        // Cold startup has its own 90s visibility budget; leave room for the
+        // onboarding/home waits and actions without relaxing editor flow bounds.
+        timeout: flow === "profile-onboarding.yaml" ? 240_000 : 150_000,
         env: {
           ...process.env,
           MAESTRO_ACCEPTANCE_EMAIL: actor.email,

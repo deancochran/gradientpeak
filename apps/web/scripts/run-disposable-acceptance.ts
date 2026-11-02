@@ -235,6 +235,19 @@ await withDisposableDatabase(
                 await new Promise((done) => setTimeout(done, 500));
               }
               if (!metroReady) throw new Error("Acceptance Metro readiness timed out");
+              // /status only proves the listener is ready. Compile the isolated
+              // candidate before Maestro's UI waits begin; a cold native bundle
+              // otherwise consumes the sign-in screen's entire timeout.
+              const candidateBundle = await fetch(
+                "http://127.0.0.1:8083/node_modules/expo-router/entry.bundle?platform=android&dev=true&minify=false",
+                { signal: AbortSignal.timeout(180_000) },
+              );
+              if (!candidateBundle.ok) {
+                await candidateBundle.body?.cancel();
+                throw new Error("Acceptance Android bundle failed to compile");
+              }
+              await candidateBundle.arrayBuffer();
+              requireActive();
             }
             const tests = spawn(
               process.execPath,
