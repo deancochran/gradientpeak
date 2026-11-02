@@ -28,6 +28,7 @@ import {
 } from "../repositories/organization-access-repository";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { organizationGroupsRouter } from "./organization-groups";
+import { organizationLifecycleRouter } from "./organization-lifecycle";
 
 const organizationIdInputSchema = z.object({ organizationId: z.string().uuid() }).strict();
 const organizationListInputSchema = z
@@ -254,6 +255,7 @@ export function createOrganizationsRouter(
         }),
     }),
     organizationGroups: organizationGroupsRouter,
+    lifecycle: organizationLifecycleRouter,
     listMine: protectedProcedure
       .input(organizationListInputSchema)
       .output(organizationListPageSchema)

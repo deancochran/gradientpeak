@@ -199,3 +199,40 @@ The full quality run before these fixes was deliberately cancelled to avoid
 mixing code versions; it had passed all eight workspace typechecks. It is not a
 complete release-gate result. This useful group checkpoint is proceeding to
 locked preview integration before renewed publication on a stable checkout.
+
+Group checkpoint `1ee02d00a1d78f3b1d26ed15045a7e8c6a040531` is live at preview
+`2dadcc9ce145dc53a0a83a58539faedadb9296c4`. Locked ancestry and web/Metro health
+passed; all ten group procedures registered and rejected anonymous requests401.
+No preserved data writes, schema changes, or runtime restarts were needed.
+
+Two stable-checkout publication attempts failed in unchanged UI suites: first a
+native form timeout (isolated file subsequently passed17/17), then web timeouts
+and fork-worker startup failures. Host observation after the latter: load average
+346.59 and swap nearly full. Resource contention is a hypothesis being tested
+with the unchanged UI suite limited to two workers; no assertions/timeouts/hooks
+are weakened. No remote branch/PR publication is claimed. Blind retries stopped.
+
+Independent next implementation slice: metadata-only staff/admin roster lists
+and wrappers for existing end-membership, end-engagement and withdraw-consent
+database commands. These remain in progress, not live. Publication will again
+wait for a stable handoff; no whole-worktree gate overlaps active implementation.
+
+### Lifecycle checkpoint accepted
+
+Implemented `organizations.lifecycle.staff.list`, `adminRoster.list`,
+`endMembership`, `endEngagement`, and `withdrawConsent`. Lists expose bounded,
+tenant-scoped administrative metadata only. Commands derive actors from sessions
+and invoke existing database functions once, retaining durable correlation replay,
+atomic audit/cascade and exact-athlete consent authority. Missing organizations
+fail closed. Command persistence resides in the lifecycle repository, not the
+athlete-read repository. No schema or shared-data changes.
+
+Final independent review found no remaining checkpoint blocker after explicit
+non-root admin root-owner and consent-impersonation denial tests were added.
+Coordinator final lifecycle live test and architecture passed; worker API types,
+Biome and disposable DB coaching authorization matrix/concurrency passed. Full
+API unit suite passed2,318 tests before the final relocation/test additions.
+Direct assignments, grant/consent setup, role/suspension workflows, audit queries
+and invitation listing/decline remain incomplete; no full-management completion
+claim. Unchanged UI web suite passed202 tests with maxWorkers2, supporting a
+reduced-concurrency publication attempt without relaxing test assertions.
