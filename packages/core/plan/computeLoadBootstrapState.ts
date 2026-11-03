@@ -1,4 +1,4 @@
-import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "../load/replay";
+import { buildDailyLoadByDateSeries, replayCommonLoadFitnessByDate } from "../load/replay";
 import { resolveNoHistoryStartingPrior } from "./calibration-constants";
 import { addDaysDateOnlyUtc, formatDateOnlyUtc } from "./dateOnlyUtc";
 
@@ -7,7 +7,7 @@ const DEFAULT_STALE_AFTER_DAYS = 10;
 
 export interface LoadBootstrapActivitySignal {
   occurred_at: string;
-  tss?: number | null;
+  load?: number | null;
   duration_seconds?: number | null;
 }
 
@@ -22,9 +22,9 @@ export interface LoadBootstrapConfidenceMetadata {
 }
 
 export interface LoadBootstrapState {
-  starting_ctl: number;
-  starting_atl: number;
-  starting_tsb: number;
+  starting_longTermLoad: number;
+  starting_recentLoad: number;
+  starting_loadBalance: number;
   confidence: LoadBootstrapConfidenceMetadata;
 }
 
@@ -66,9 +66,9 @@ function daysBetween(a: Date, b: Date): number {
   return Math.floor((a.getTime() - b.getTime()) / dayMs);
 }
 
-function toDailyTss(activity: LoadBootstrapActivitySignal): number {
-  if (typeof activity.tss === "number" && Number.isFinite(activity.tss)) {
-    return Math.max(0, activity.tss);
+function toDailyLoad(activity: LoadBootstrapActivitySignal): number {
+  if (typeof activity.load === "number" && Number.isFinite(activity.load)) {
+    return Math.max(0, activity.load);
   }
 
   const durationSeconds = activity.duration_seconds ?? 0;
@@ -99,7 +99,7 @@ export function computeLoadBootstrapState(
   );
   const windowStartDate = addDaysDateOnlyUtc(asOfDate, -(windowDays - 1));
 
-  const dailyTssByDate = new Map<string, number>();
+  const dailyLoadByDate = new Map<string, number>();
   let latestActivityDate: Date | null = null;
 
   for (const activity of input.activities ?? []) {
@@ -113,21 +113,21 @@ export function computeLoadBootstrapState(
       continue;
     }
 
-    const currentTss = dailyTssByDate.get(occurredDate) ?? 0;
-    dailyTssByDate.set(occurredDate, currentTss + toDailyTss(activity));
+    const currentLoad = dailyLoadByDate.get(occurredDate) ?? 0;
+    dailyLoadByDate.set(occurredDate, currentLoad + toDailyLoad(activity));
 
     if (!latestActivityDate || occurredAt > latestActivityDate) {
       latestActivityDate = occurredAt;
     }
   }
 
-  const normalizedDailyTss = buildDailyTssByDateSeries({
+  const normalizedDailyLoad = buildDailyLoadByDateSeries({
     startDate: windowStartDate,
     endDate: asOfDate,
-    tssByDate: dailyTssByDate,
+    loadByDate: dailyLoadByDate,
   });
 
-  const activeDays = normalizedDailyTss.filter((entry) => entry.tss > 0).length;
+  const activeDays = normalizedDailyLoad.filter((entry) => entry.load > 0).length;
   const zeroFillDays = windowDays - activeDays;
   const historyState = deriveHistoryState(activeDays);
 
@@ -135,11 +135,13 @@ export function computeLoadBootstrapState(
     latestActivityDate === null ? null : daysBetween(safeAsOf, latestActivityDate);
 
   if (activeDays === 0) {
-    const prior = resolveNoHistoryStartingPrior({ age: input.profile_age });
+    const prior = resolveNoHistoryStartingPrior({
+      ...(input.profile_age === undefined ? {} : { age: input.profile_age }),
+    });
     return {
-      starting_ctl: prior.starting_ctl,
-      starting_atl: prior.starting_ctl,
-      starting_tsb: 0,
+      starting_longTermLoad: prior.starting_longTermLoad,
+      starting_recentLoad: prior.starting_longTermLoad,
+      starting_loadBalance: 0,
       confidence: {
         confidence: 0,
         history_state: "none",
@@ -152,23 +154,23 @@ export function computeLoadBootstrapState(
     };
   }
 
-  const loadSeries = replayTrainingLoadByDate({
-    dailyTss: normalizedDailyTss,
-    initialCTL: 0,
-    initialATL: 0,
-    userAge: input.profile_age,
+  const loadSeries = replayCommonLoadFitnessByDate({
+    dailyLoad: normalizedDailyLoad,
+    initialLongTermLoad: 0,
+    initialRecentLoad: 0,
+    ...(input.profile_age === undefined ? {} : { userAge: input.profile_age }),
   });
   const lastPoint = loadSeries[loadSeries.length - 1];
-  const rawCtl = lastPoint?.ctl ?? 0;
-  const rawAtl = lastPoint?.atl ?? 0;
+  const rawLongTermLoad = lastPoint?.longTermLoad ?? 0;
+  const rawRecentLoad = lastPoint?.recentLoad ?? 0;
 
   const staleDays = Math.max(0, (daysSinceLastActivity ?? 0) - staleAfterDays);
-  const ctlDecay = staleDays > 0 ? Math.exp(-staleDays / 42) : 1;
-  const atlDecay = staleDays > 0 ? Math.exp(-staleDays / 14) : 1;
+  const longTermLoadDecay = staleDays > 0 ? Math.exp(-staleDays / 42) : 1;
+  const recentLoadDecay = staleDays > 0 ? Math.exp(-staleDays / 14) : 1;
 
-  const startingCtl = round1(rawCtl * ctlDecay);
-  const startingAtl = round1(rawAtl * atlDecay);
-  const startingTsb = round1(startingCtl - startingAtl);
+  const startingLongTermLoad = round1(rawLongTermLoad * longTermLoadDecay);
+  const startingRecentLoad = round1(rawRecentLoad * recentLoadDecay);
+  const startingLoadBalance = round1(startingLongTermLoad - startingRecentLoad);
 
   const coverageScore = clamp(activeDays / windowDays, 0, 1);
   const recencyScore =
@@ -182,9 +184,9 @@ export function computeLoadBootstrapState(
   ];
 
   return {
-    starting_ctl: startingCtl,
-    starting_atl: startingAtl,
-    starting_tsb: startingTsb,
+    starting_longTermLoad: startingLongTermLoad,
+    starting_recentLoad: startingRecentLoad,
+    starting_loadBalance: startingLoadBalance,
     confidence: {
       confidence,
       history_state: historyState,

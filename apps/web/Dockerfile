@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim AS builder
+FROM node:24.19.0-bookworm-slim AS builder
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
@@ -10,7 +10,6 @@ WORKDIR /app
 COPY . .
 
 ARG APP_URL=http://localhost:3000
-ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
 ARG DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
 ARG POSTGRES_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
 ARG BETTER_AUTH_SECRET=container-build-secret-gradientpeak-2026
@@ -27,17 +26,15 @@ ARG WAHOO_CLIENT_SECRET=dummy
 ARG WAHOO_WEBHOOK_TOKEN=dummy
 ARG TRAININGPEAKS_CLIENT_ID=dummy
 ARG TRAININGPEAKS_CLIENT_SECRET=dummy
-ARG GARMIN_CLIENT_ID=dummy
-ARG GARMIN_CLIENT_SECRET=dummy
+# Garmin credentials are runtime-only secrets, never image build arguments.
 ARG ZWIFT_CLIENT_ID=dummy
 ARG ZWIFT_CLIENT_SECRET=dummy
-ARG NEXT_PUBLIC_MOBILE_AUTH_REDIRECT_URI=gradientpeak://sign-in
-ARG NEXT_PUBLIC_MOBILE_REDIRECT_URI=gradientpeak://integrations
-ARG NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK=gradientpeak://integrations
+ARG AUTH_MOBILE_CALLBACK_URL=gradientpeak://callback?intent=post-sign-in
+ARG AUTH_MOBILE_SCHEME=gradientpeak
+ARG OAUTH_MOBILE_CALLBACK_URL=gradientpeak://integrations
 ARG AUTH_ALLOWED_DEEP_LINK_PREFIXES=gradientpeak://,gradientpeak-dev://,gradientpeak-prev://
 
 ENV APP_URL=$APP_URL
-ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 ENV DATABASE_URL=$DATABASE_URL
 ENV POSTGRES_URL=$POSTGRES_URL
 ENV BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET
@@ -54,19 +51,17 @@ ENV WAHOO_CLIENT_SECRET=$WAHOO_CLIENT_SECRET
 ENV WAHOO_WEBHOOK_TOKEN=$WAHOO_WEBHOOK_TOKEN
 ENV TRAININGPEAKS_CLIENT_ID=$TRAININGPEAKS_CLIENT_ID
 ENV TRAININGPEAKS_CLIENT_SECRET=$TRAININGPEAKS_CLIENT_SECRET
-ENV GARMIN_CLIENT_ID=$GARMIN_CLIENT_ID
-ENV GARMIN_CLIENT_SECRET=$GARMIN_CLIENT_SECRET
 ENV ZWIFT_CLIENT_ID=$ZWIFT_CLIENT_ID
 ENV ZWIFT_CLIENT_SECRET=$ZWIFT_CLIENT_SECRET
-ENV NEXT_PUBLIC_MOBILE_AUTH_REDIRECT_URI=$NEXT_PUBLIC_MOBILE_AUTH_REDIRECT_URI
-ENV NEXT_PUBLIC_MOBILE_REDIRECT_URI=$NEXT_PUBLIC_MOBILE_REDIRECT_URI
-ENV NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK=$NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK
+ENV AUTH_MOBILE_CALLBACK_URL=$AUTH_MOBILE_CALLBACK_URL
+ENV AUTH_MOBILE_SCHEME=$AUTH_MOBILE_SCHEME
+ENV OAUTH_MOBILE_CALLBACK_URL=$OAUTH_MOBILE_CALLBACK_URL
 ENV AUTH_ALLOWED_DEEP_LINK_PREFIXES=$AUTH_ALLOWED_DEEP_LINK_PREFIXES
 
 RUN pnpm install --frozen-lockfile --ignore-scripts
 RUN pnpm --filter web build
 
-FROM node:24-bookworm-slim AS runner
+FROM node:24.19.0-bookworm-slim AS runner
 
 ENV NODE_ENV=production
 ENV PORT=3000
@@ -75,6 +70,13 @@ ENV NITRO_PORT=3000
 ENV NITRO_HOST=0.0.0.0
 
 RUN useradd --uid 1001 --create-home --shell /usr/sbin/nologin nodeapp
+
+# The production runtime only executes the built Nitro server with `node`.
+# Remove the bundled npm/npx toolchain from the final image to reduce attack
+# surface and avoid shipping npm's transitive dependencies in production.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+  /usr/local/bin/npm \
+  /usr/local/bin/npx
 
 WORKDIR /app
 
@@ -87,4 +89,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:3000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-CMD ["node", ".output/server/index.mjs"]
+CMD ["node", "--import", "./.output/server/instrument.server.mjs", ".output/server/index.mjs"]

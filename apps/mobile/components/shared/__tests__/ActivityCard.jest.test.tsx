@@ -1,23 +1,30 @@
-import { decodePolyline } from "@repo/core";
-import { fireEvent } from "@testing-library/react-native";
+import type { ActivityDisplayModel, SemanticMetric } from "@repo/core";
+import { formatDurationSec } from "@repo/core/utils/dates";
+import { fireEvent, waitFor } from "@testing-library/react-native";
+import type { ComponentProps } from "react";
+import { Alert, Pressable, View } from "react-native";
+import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
+import { createActivityDisplay } from "../../../test/activity-display-fixture";
 import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
-import { ActivityCard } from "../ActivityCard";
+import { ActivityCard as ProjectionActivityCard } from "../ActivityCard";
 
 const toggleLikeMutateMock = jest.fn();
+const shareMock = jest.fn();
+const getPublicShareUrlMock = jest.fn((path: string) => `https://share.gradientpeak.test${path}`);
 
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   Pressable: mockCreateHost("Pressable"),
+  Share: { share: shareMock },
   TouchableOpacity: mockCreateHost("TouchableOpacity"),
   View: mockCreateHost("View"),
 }));
 
-jest.mock("react-native-svg", () => ({
+jest.mock("@/lib/share/public-share-url", () => ({
   __esModule: true,
-  default: mockCreateHost("Svg"),
-  Polyline: mockCreateHost("Polyline"),
+  getPublicShareUrl: (path: string) => getPublicShareUrlMock(path),
 }));
 
 jest.mock("@repo/ui/components/avatar", () => ({
@@ -34,11 +41,13 @@ jest.mock("@repo/ui/components/card", () => ({
 }));
 
 jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: mockCreateHost("Icon") }));
-jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreateHost("Text") }));
+jest.mock("@repo/ui/components/text", () => {
+  const { createHost } = jest.requireActual("../../../test/mock-components");
+  return { __esModule: true, Text: createHost("Text") };
+});
 
-jest.mock("@repo/core", () => ({
+jest.mock("@repo/core/utils/dates", () => ({
   __esModule: true,
-  decodePolyline: jest.fn(() => []),
   formatDurationSec: jest.fn(() => "60 min"),
 }));
 
@@ -51,13 +60,8 @@ jest.mock("lucide-react-native", () => ({
   Footprints: mockCreateHost("Footprints"),
   Heart: mockCreateHost("Heart"),
   MessageCircle: mockCreateHost("MessageCircle"),
-  Route: mockCreateHost("Route"),
+  Share2: mockCreateHost("Share2"),
   Waves: mockCreateHost("Waves"),
-}));
-
-jest.mock("@/components/shared/StaticRouteMapPreview", () => ({
-  __esModule: true,
-  StaticRouteMapPreview: mockCreateHost("StaticRouteMapPreview"),
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -76,96 +80,459 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   useAppNavigate: () => jest.fn(),
 }));
 
+jest.mock("@/lib/hooks/usePreferredUnitSystem", () => ({
+  __esModule: true,
+  usePreferredUnitSystem: jest.fn(() => "metric"),
+}));
+
+const mockUsePreferredUnitSystem = jest.mocked(usePreferredUnitSystem);
+
+const availableMetrics: SemanticMetric[] = [
+  {
+    key: "common_load",
+    label: "Load",
+    status: "available",
+    value: 64,
+    unit: "score",
+    reason: null,
+  },
+  {
+    key: "normalized_intensity",
+    label: "Intensity",
+    status: "available",
+    value: 0.8,
+    unit: "ratio",
+    reason: null,
+  },
+];
+const unavailableMetrics: SemanticMetric[] = [
+  {
+    key: "common_load",
+    label: "Load",
+    status: "unavailable",
+    value: null,
+    unit: "score",
+    reason: "unavailable",
+  },
+  {
+    key: "normalized_intensity",
+    label: "Intensity",
+    status: "unavailable",
+    value: null,
+    unit: "ratio",
+    reason: "unavailable",
+  },
+];
+
+function ActivityCard({
+  activity,
+  owner,
+  ...props
+}: Omit<ComponentProps<typeof ProjectionActivityCard>, "activity"> & {
+  activity: Partial<ActivityDisplayModel>;
+  owner?: { id?: string | null; username?: string | null; avatar_url?: string | null } | null;
+}) {
+  return (
+    <ProjectionActivityCard
+      {...props}
+      activity={createActivityDisplay({
+        ...activity,
+        ...(owner
+          ? {
+              owner: {
+                id: owner.id ?? "owner-1",
+                username: owner.username ?? null,
+                avatarUrl: owner.avatar_url ?? null,
+              },
+            }
+          : {}),
+      })}
+    />
+  );
+}
+
 describe("ActivityCard", () => {
   beforeEach(() => {
+    shareMock.mockReset();
+    getPublicShareUrlMock.mockClear();
     toggleLikeMutateMock.mockReset();
-    jest.mocked(decodePolyline).mockReturnValue([]);
+    mockUsePreferredUnitSystem.mockReturnValue("metric");
   });
 
-  it("shows a like action by default in list mode", () => {
-    renderNative(
-      <ActivityCard
-        activity={{
-          id: "activity-1",
-          name: "Morning Run",
-          type: "run",
-          started_at: "2026-03-21T12:00:00.000Z",
-          likes_count: 2,
-          has_liked: false,
-        }}
-        variant="list"
-      />,
-    );
+  it("uses one canonical notes and metrics layout across interaction contexts", async () => {
+    const activity = {
+      id: "activity-1",
+      title: "Morning Run",
+      notes: "Steady aerobic work.",
+      activityComposition: { kind: "single" as const, categories: ["run" as const] },
+      time: { startedAt: "2026-03-21T12:00:00.000Z", finishedAt: null },
+      metrics: [
+        {
+          key: "elapsed_duration" as const,
+          label: "Elapsed",
+          status: "available" as const,
+          value: 3600,
+          unit: "seconds",
+          reason: null,
+        },
+      ],
+      engagement: { likes: 2, comments: 0, viewerHasLiked: false },
+    };
+    const rendered = await renderNative(<ActivityCard activity={activity} />);
 
     expect(screen.getByText("Morning Run")).toBeTruthy();
+    expect(screen.getByText("Steady aerobic work.").props.numberOfLines).toBe(2);
+    expect(screen.getByTestId("activity-card-metrics").props.className).toBe(
+      "flex-row flex-wrap items-start gap-x-5 gap-y-2 px-1",
+    );
+    expect(screen.getByTestId("activity-card-like-button-activity-1")).toBeTruthy();
+    expect(screen.getByTestId("activity-card-comment-button-activity-1")).toBeTruthy();
+    expect(screen.getByTestId("activity-card-share-button-activity-1")).toBeTruthy();
+
+    await rendered.rerender(<ActivityCard activity={activity} onPress={jest.fn()} />);
+
+    expect(screen.getByText("Morning Run")).toBeTruthy();
+    expect(screen.getByText("Steady aerobic work.").props.numberOfLines).toBe(2);
+    expect(screen.getByTestId("activity-card-metrics").props.className).toBe(
+      "flex-row flex-wrap items-start gap-x-5 gap-y-2 px-1",
+    );
     expect(screen.getByTestId("activity-card-like-button-activity-1")).toBeTruthy();
   });
 
-  it("shows activity summary metrics in list mode", () => {
-    renderNative(
+  it("shows an icon and label for every unique multisport category", async () => {
+    await renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-multisport",
+          title: "Brick activity",
+          activityComposition: { kind: "multisport", categories: ["run", "bike", "run"] },
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("resource-category-items").props.accessibilityLabel).toBe(
+      "Run, Bike",
+    );
+    expect(screen.getByText("Run")).toBeTruthy();
+    expect(screen.getAllByText("Bike").length).toBeGreaterThan(0);
+  });
+
+  it("does not show the legacy activity-category-specific breakdown for multisport activities", async () => {
+    await renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-multisport-load",
+          title: "Brick activity",
+          activityComposition: { kind: "multisport", categories: ["bike", "run"] },
+          metrics: [
+            ...unavailableMetrics,
+            {
+              key: "distance",
+              label: "Distance",
+              status: "available",
+              value: 20_000,
+              unit: "meters",
+              reason: null,
+            },
+            {
+              key: "elapsed_duration",
+              label: "Elapsed",
+              status: "available",
+              value: 4500,
+              unit: "seconds",
+              reason: null,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.queryByText("ActivityCategory-specific load")).toBeNull();
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("shows the canonical activity summary metrics", async () => {
+    await renderNative(
       <ActivityCard
         activity={{
           id: "activity-1",
-          name: "Morning Run",
-          type: "run",
-          distance_meters: 10000,
-          duration_seconds: 3600,
-          avg_speed_mps: 2.78,
-          avg_power: 240,
-          avg_heart_rate: 148,
-          derived: { stress: { tss: 72, intensity_factor: 0.82 } },
+          title: "Morning Run",
+          activityComposition: { kind: "single", categories: ["run"] },
+          metrics: [
+            ...availableMetrics,
+            {
+              key: "distance",
+              label: "Distance",
+              status: "available",
+              value: 10_000,
+              unit: "meters",
+              reason: null,
+            },
+            {
+              key: "elapsed_duration",
+              label: "Elapsed",
+              status: "available",
+              value: 3600,
+              unit: "seconds",
+              reason: null,
+            },
+          ],
         }}
-        variant="list"
       />,
     );
 
     expect(screen.getByText("Distance")).toBeTruthy();
-    expect(screen.getByText("10.00 km")).toBeTruthy();
-    expect(screen.getByText("Duration")).toBeTruthy();
+    expect(screen.getByText("10.0 km")).toBeTruthy();
+    expect(screen.getByText("Elapsed")).toBeTruthy();
     expect(screen.getByText("60 min")).toBeTruthy();
-    expect(screen.getByText("TSS")).toBeTruthy();
-    expect(screen.getByText("~72")).toBeTruthy();
-    expect(screen.getByText("IF")).toBeTruthy();
-    expect(screen.getByText("~0.82")).toBeTruthy();
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("64")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
+    expect(screen.getByText("0.80")).toBeTruthy();
+    expect(
+      screen.queryByText("Derived. Common Load is available using Run pace threshold."),
+    ).toBeNull();
+    expect(screen.queryByText("Observed intensity: RPE 7/10 · Observed")).toBeNull();
     expect(screen.queryByText("Avg Pace")).toBeNull();
     expect(screen.queryByText("Avg Power")).toBeNull();
     expect(screen.queryByText("Avg HR")).toBeNull();
   });
 
-  it("keeps load metric slots visible when derived values are unavailable", () => {
-    renderNative(
+  it("uses elapsed time before active time for the Elapsed metric", async () => {
+    await renderNative(
       <ActivityCard
         activity={{
-          id: "activity-1",
-          name: "Morning Run",
-          type: "run",
-          distance_meters: 1000,
-          duration_seconds: 600,
-          derived: null,
+          id: "activity-elapsed",
+          title: "Paused Ride",
+          metrics: [
+            {
+              key: "elapsed_duration",
+              label: "Elapsed",
+              status: "available",
+              value: 3600,
+              unit: "seconds",
+              reason: null,
+            },
+          ],
         }}
-        variant="list"
       />,
     );
 
-    expect(screen.getByText("TSS")).toBeTruthy();
-    expect(screen.getByText("IF")).toBeTruthy();
-    expect(screen.getAllByText("--")).toHaveLength(2);
+    expect(jest.mocked(formatDurationSec)).toHaveBeenCalledWith(3600);
+    expect(screen.getByText("Elapsed")).toBeTruthy();
+    expect(screen.queryByText("Active")).toBeNull();
   });
 
-  it("toggles likes using the activity entity type", () => {
-    renderNative(
+  it("labels active-only timing as Active", async () => {
+    await renderNative(
       <ActivityCard
         activity={{
-          id: "activity-1",
-          name: "Morning Run",
-          likes_count: 2,
-          has_liked: false,
+          id: "activity-active-only",
+          title: "Indoor Ride",
+          metrics: [
+            {
+              key: "active_duration",
+              label: "Active",
+              status: "available",
+              value: 3000,
+              unit: "seconds",
+              reason: null,
+            },
+          ],
         }}
-        variant="list"
       />,
     );
 
-    fireEvent.press(screen.getByTestId("activity-card-like-button-activity-1"));
+    expect(jest.mocked(formatDurationSec)).toHaveBeenCalledWith(3000);
+    expect(screen.getByText("Active")).toBeTruthy();
+    expect(screen.queryByText("Elapsed")).toBeNull();
+  });
+
+  it("marks partial Load and Intensity values as estimates", async () => {
+    await renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-partial",
+          title: "Partial Run",
+          metrics: [
+            {
+              key: "common_load",
+              label: "Load",
+              status: "partial",
+              value: 32,
+              unit: "score",
+              reason: "partial",
+            },
+            {
+              key: "normalized_intensity",
+              label: "Intensity",
+              status: "partial",
+              value: 0.8,
+              unit: "ratio",
+              reason: "partial",
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
+    expect(screen.queryByText("Load (partial)")).toBeNull();
+    expect(screen.queryByText("Intensity (partial)")).toBeNull();
+    expect(screen.getByText("~32")).toBeTruthy();
+    expect(screen.getByText("~0.80")).toBeTruthy();
+    expect(screen.queryByText(/Derived · Partial/)).toBeNull();
+  });
+
+  it("does not render an unavailable-load diagnostic in the card", async () => {
+    await renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-unsupported",
+          title: "Strength session",
+          activityComposition: { kind: "single", categories: ["strength"] },
+          metrics: unavailableMetrics,
+        }}
+      />,
+    );
+
+    expect(
+      screen.queryByText(
+        "This activity category is not supported for canonical Load. Canonical Load is not available for this activity category.",
+      ),
+    ).toBeNull();
+  });
+
+  it("formats activity distance in the viewer's imperial units", async () => {
+    mockUsePreferredUnitSystem.mockReturnValue("imperial");
+
+    await renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-1",
+          title: "Morning Run",
+          activityComposition: { kind: "single", categories: ["run"] },
+          metrics: [
+            {
+              key: "distance",
+              label: "Distance",
+              status: "available",
+              value: 5000,
+              unit: "meters",
+              reason: null,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("3.1 mi")).toBeTruthy();
+  });
+
+  it("keeps load metric slots visible when derived values are unavailable", async () => {
+    await renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-1",
+          title: "Morning Run",
+          activityComposition: { kind: "single", categories: ["run"] },
+          metrics: [
+            ...unavailableMetrics,
+            {
+              key: "distance",
+              label: "Distance",
+              status: "available",
+              value: 1000,
+              unit: "meters",
+              reason: null,
+            },
+            {
+              key: "elapsed_duration",
+              label: "Elapsed",
+              status: "available",
+              value: 600,
+              unit: "seconds",
+              reason: null,
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("0")).toBeNull();
+  });
+
+  it("distinguishes absent canonical evidence from an unavailable canonical bundle", async () => {
+    const { rerender } = await renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-1",
+          title: "Strength Session",
+          activityComposition: { kind: "single", categories: ["strength"] },
+          metrics: unavailableMetrics,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
+
+    await rerender(
+      <ActivityCard
+        activity={{
+          id: "activity-1",
+          title: "Strength Session",
+          activityComposition: { kind: "single", categories: ["strength"] },
+          metrics: unavailableMetrics,
+        }}
+      />,
+    );
+
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(2);
+    expect(
+      screen.queryByText(
+        "This activity category is not supported for canonical Load. Canonical Load is not available for this activity category.",
+      ),
+    ).toBeNull();
+  });
+
+  it("emits canonical fields without retired metric aliases", async () => {
+    const rendered = await renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-1",
+          title: "Morning Run",
+          activityComposition: { kind: "single", categories: ["run"] },
+          time: { startedAt: "2026-07-21T00:00:00.000Z", finishedAt: null },
+          metrics: availableMetrics,
+        }}
+      />,
+    );
+
+    expect(JSON.stringify(rendered.toJSON())).not.toMatch(
+      /TSS|\bIF\b|intensityFactor|category_load|heart_rate_threshold/,
+    );
+  });
+
+  it("toggles likes using the activity entity type", async () => {
+    await renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-1",
+          title: "Morning Run",
+          engagement: { likes: 2, comments: 0, viewerHasLiked: false },
+        }}
+      />,
+    );
+
+    await fireEvent.press(screen.getByTestId("activity-card-like-button-activity-1"));
 
     expect(toggleLikeMutateMock).toHaveBeenCalledWith({
       entity_id: "activity-1",
@@ -173,39 +540,234 @@ describe("ActivityCard", () => {
     });
   });
 
-  it("renders the shared static map preview for list route thumbnails", () => {
-    jest.mocked(decodePolyline).mockReturnValue([
-      { latitude: 35.1, longitude: -80.1 },
-      { latitude: 35.2, longitude: -80.2 },
-    ]);
+  it("keeps the shared social action layout and navigation independent", async () => {
+    const onCommentPress = jest.fn();
+    const onLikePress = jest.fn();
+    const onPress = jest.fn();
+    const onTopRightActionPress = jest.fn();
 
-    renderNative(
+    await renderNative(
       <ActivityCard
         activity={{
-          id: "activity-1",
-          name: "Morning Run",
-          polyline: "encoded-route",
+          id: "activity-boundaries",
+          title: "Boundary Run",
+          engagement: { likes: 2, comments: 4, viewerHasLiked: false },
         }}
-        variant="list"
+        isLiked={false}
+        likeCount={2}
+        onCommentPress={onCommentPress}
+        onLikePress={onLikePress}
+        onPress={onPress}
+        testID="activity-boundary-card"
+        topRightAction={
+          <Pressable accessibilityLabel="Activity context action" onPress={onTopRightActionPress} />
+        }
       />,
     );
 
-    expect(screen.UNSAFE_getByType("StaticRouteMapPreview" as any)).toBeTruthy();
+    const navigation = screen.getByLabelText("Open activity Boundary Run");
+    const comment = screen.getByLabelText("Comment, 4 comments");
+    const like = screen.getByLabelText("Like, 2 likes");
+    const topRightAction = screen.getByLabelText("Activity context action");
+
+    expect(navigation.props.accessibilityRole).toBe("button");
+    expect(comment.props.accessibilityRole).toBe("button");
+    expect(comment.props.className).toContain("min-h-11");
+    expect(comment.props.className).toContain("min-w-11");
+    expect(like.props.accessibilityRole).toBe("button");
+    expect(screen.getByTestId("activity-card-social-actions")).toBeTruthy();
+
+    await fireEvent.press(navigation);
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(onCommentPress).not.toHaveBeenCalled();
+    expect(onLikePress).not.toHaveBeenCalled();
+
+    await fireEvent.press(comment);
+    expect(onCommentPress).toHaveBeenCalledTimes(1);
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(onLikePress).not.toHaveBeenCalled();
+
+    await fireEvent.press(like);
+    expect(onLikePress).toHaveBeenCalledTimes(1);
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(onCommentPress).toHaveBeenCalledTimes(1);
+
+    await fireEvent.press(topRightAction);
+    expect(onTopRightActionPress).toHaveBeenCalledTimes(1);
+    expect(onPress).toHaveBeenCalledTimes(1);
   });
 
-  it("shows lightweight ingestion state for feed and list cards", () => {
-    renderNative(
+  it("uses the same share placement as the activity detail header", async () => {
+    const onSharePress = jest.fn();
+
+    await renderNative(
       <ActivityCard
-        activity={{
-          id: "activity-1",
-          name: "Morning Run",
-          ingestion: { status: "pending_upload" },
-        }}
-        variant="list"
+        activity={{ id: "activity-share", title: "Shareable Run" }}
+        onSharePress={onSharePress}
+        testID="activity-share-card"
       />,
     );
 
-    expect(screen.getByTestId("activity-card-ingestion-status-activity-1")).toBeTruthy();
-    expect(screen.getByText("Queued for upload")).toBeTruthy();
+    const share = screen.getByTestId("activity-card-share-button-activity-share");
+
+    expect(
+      screen
+        .getByTestId("activity-share-card-action-region")
+        .queryAll((node) => node.props.testID === "activity-card-share-button-activity-share")
+        .length,
+    ).toBeGreaterThan(0);
+    expect(share.props.accessibilityLabel).toBe("Share activity");
+
+    await fireEvent.press(share);
+
+    expect(onSharePress).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Share visible and explains when a private activity cannot be shared", async () => {
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    await renderNative(
+      <ActivityCard
+        activity={{ id: "activity-private", title: "Private Run", visibility: "private" }}
+      />,
+    );
+
+    await fireEvent.press(screen.getByTestId("activity-card-share-button-activity-private"));
+
+    expect(alert).toHaveBeenCalledWith(
+      "Not public",
+      "Only public activities have a share link. Change visibility to Public first.",
+    );
+  });
+
+  it("explains when native sharing fails", async () => {
+    shareMock.mockRejectedValueOnce(new Error("share failed"));
+    const alert = jest.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    await renderNative(
+      <ActivityCard
+        activity={{ id: "activity-public", title: "Public Run", visibility: "public" }}
+      />,
+    );
+
+    await fireEvent.press(screen.getByTestId("activity-card-share-button-activity-public"));
+
+    await waitFor(() =>
+      expect(alert).toHaveBeenCalledWith(
+        "Unable to share",
+        "The activity could not be shared. Try again.",
+      ),
+    );
+  });
+
+  it("shares public activities from the configured public web origin", async () => {
+    process.env.EXPO_PUBLIC_API_URL = "https://api.gradientpeak.test";
+    process.env.EXPO_PUBLIC_WEB_URL = "https://share.gradientpeak.test";
+    await renderNative(
+      <ActivityCard
+        activity={{ id: "activity-public-share", title: "Public Run", visibility: "public" }}
+      />,
+    );
+
+    await fireEvent.press(screen.getByTestId("activity-card-share-button-activity-public-share"));
+
+    await waitFor(() =>
+      expect(getPublicShareUrlMock).toHaveBeenCalledWith("/share/activities/activity-public-share"),
+    );
+    delete process.env.EXPO_PUBLIC_API_URL;
+    delete process.env.EXPO_PUBLIC_WEB_URL;
+  });
+
+  it("keeps top-right actions in the owner region and below-metrics actions after metrics", async () => {
+    await renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-accessory",
+          metrics: [
+            {
+              key: "elapsed_duration",
+              label: "Elapsed",
+              status: "available",
+              value: 60,
+              unit: "seconds",
+              reason: null,
+            },
+          ],
+        }}
+        belowMetricsActions={<View testID="activity-card-content-action" />}
+        testID="activity-card-accessory-placement"
+        topRightAction={<View testID="activity-card-top-right-action" />}
+      />,
+    );
+
+    expect(
+      screen
+        .getByTestId("activity-card-accessory-placement-action-region")
+        .queryAll((node) => node.props.testID === "activity-card-top-right-action").length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen
+        .getByTestId("activity-card-below-metrics-actions")
+        .queryAll((node) => node.props.testID === "activity-card-content-action").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("keeps owner profile and card navigation independent", async () => {
+    const onOwnerPress = jest.fn();
+    const onPress = jest.fn();
+
+    await renderNative(
+      <ActivityCard
+        activity={{ id: "activity-owner-boundary", title: "Owner Run" }}
+        onOwnerPress={onOwnerPress}
+        onPress={onPress}
+        owner={{ id: "owner-1", username: "Coach Kim" }}
+      />,
+    );
+
+    const owner = screen.getByLabelText("Open profile for Coach Kim");
+    const navigation = screen.getByLabelText("Open activity Owner Run");
+
+    await fireEvent.press(owner);
+    expect(onOwnerPress).toHaveBeenCalledTimes(1);
+    expect(onPress).not.toHaveBeenCalled();
+
+    await fireEvent.press(navigation);
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(onOwnerPress).toHaveBeenCalledTimes(1);
+  });
+
+  it("never renders route previews or route indicators", async () => {
+    await renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-1",
+          title: "Morning Run",
+          capabilities: {
+            canLike: true,
+            canComment: true,
+            canShare: false,
+            canEdit: true,
+            canDelete: true,
+            hasRoute: true,
+          },
+        }}
+      />,
+    );
+
+    expect(screen.queryByTestId("activity-card-route-preview-activity-1")).toBeNull();
+    expect(screen.queryByText("Route available")).toBeNull();
+  });
+
+  it("does not show ingestion text in feed and list cards", async () => {
+    await renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-1",
+          title: "Morning Run",
+        }}
+      />,
+    );
+
+    expect(screen.queryByTestId("activity-card-ingestion-status-activity-1")).toBeNull();
+    expect(screen.queryByText("Queued for upload")).toBeNull();
   });
 });

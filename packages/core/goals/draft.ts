@@ -1,10 +1,11 @@
 import { formatPace, paceToSpeed, speedToPace } from "../calculations/speed-curve";
-import { formatSecondsToHms, parseHmsToSeconds, parseMmSsToSeconds } from "../forms/input-parsers";
+import { dateOnlySchema } from "../schemas/date-only";
 import {
   type CanonicalGoalActivityCategory,
   type ProfileGoal,
   profileGoalCreateSchema,
 } from "../schemas/goals/profile_goals";
+import { formatSecondsToHms, parseHmsToSeconds, parseMmSsToSeconds } from "../utils/fitness-inputs";
 
 export type GoalEditorGoalType =
   | "race_performance"
@@ -17,20 +18,22 @@ export type GoalEditorGoalType =
 export type GoalEditorRaceTargetMode = "time" | "pace";
 
 export interface GoalEditorDraft {
+  /** Retains canonical precision and unexposed optional fields for unchanged objectives. */
+  originalGoal?: ProfileGoal | undefined;
   title: string;
   targetDate: string;
   importance: number;
   goalType: GoalEditorGoalType;
   activityCategory: CanonicalGoalActivityCategory;
-  raceDistanceKm?: number | null;
-  raceTargetMode?: GoalEditorRaceTargetMode;
-  targetDuration?: string;
-  targetPace?: string;
-  targetWatts?: number | null;
-  targetBpm?: number | null;
-  thresholdTestDuration?: string;
-  consistencySessionsPerWeek?: number | null;
-  consistencyWeeks?: number | null;
+  raceDistanceKm?: number | null | undefined;
+  raceTargetMode?: GoalEditorRaceTargetMode | undefined;
+  targetDuration?: string | undefined;
+  targetPace?: string | undefined;
+  targetWatts?: number | null | undefined;
+  targetBpm?: number | null | undefined;
+  thresholdTestDuration?: string | undefined;
+  consistencySessionsPerWeek?: number | null | undefined;
+  consistencyWeeks?: number | null | undefined;
 }
 
 const THRESHOLD_TEST_DURATION_DEFAULT = "0:20:00";
@@ -39,12 +42,12 @@ function toPositiveNumber(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 
-function toRoundedDistanceKm(distanceMeters: number | undefined): number | null {
+function toDistanceKm(distanceMeters: number | undefined): number | null {
   if (typeof distanceMeters !== "number" || !Number.isFinite(distanceMeters)) {
     return null;
   }
 
-  return Math.round((distanceMeters / 1000) * 10) / 10;
+  return distanceMeters / 1000;
 }
 
 function formatFriendlyDuration(seconds: number): string {
@@ -77,7 +80,7 @@ function requirePositiveNumber(value: number | null | undefined, message: string
 
 function requireDurationSeconds(value: string | undefined, message: string): number {
   const seconds = parseHmsToSeconds(value) ?? parseMmSsToSeconds(value);
-  if (!seconds || seconds <= 0) {
+  if (!seconds || !Number.isFinite(seconds) || seconds <= 0) {
     throw new Error(message);
   }
 
@@ -86,126 +89,187 @@ function requireDurationSeconds(value: string | undefined, message: string): num
 
 function requirePaceSpeed(value: string | undefined, message: string): number {
   const paceSeconds = parseMmSsToSeconds(value);
-  if (!paceSeconds || paceSeconds <= 0) {
+  if (!paceSeconds || !Number.isFinite(paceSeconds) || paceSeconds <= 0) {
     throw new Error(message);
   }
 
   return paceToSpeed(paceSeconds);
 }
 
-function resolveGoalActivityCategory(draft: GoalEditorDraft): CanonicalGoalActivityCategory {
-  if (draft.goalType === "pace_threshold") {
-    return "run";
-  }
+function optionalDurationSeconds(value: string | undefined, message: string): number | undefined {
+  return value?.trim() ? requireDurationSeconds(value, message) : undefined;
+}
 
-  if (draft.goalType === "power_threshold") {
-    return "bike";
-  }
-
+export function resolveGoalActivityCategory(draft: GoalEditorDraft): CanonicalGoalActivityCategory {
+  // Category is explicit domain data. UI creation presets choose run/bike defaults.
   return draft.activityCategory;
 }
 
-function buildGoalTargetPayload(input: {
+export function buildGoalTargetPayload(input: {
   draft: GoalEditorDraft;
   activityCategory: CanonicalGoalActivityCategory;
 }) {
+  const { draft, activityCategory } = input;
+  const baseline = draft.originalGoal ? hydrateGoalDraft({ goal: draft.originalGoal }) : undefined;
+  const original =
+    baseline?.goalType === draft.goalType &&
+    draft.originalGoal?.activity_category === activityCategory
+      ? draft.originalGoal.objective
+      : undefined;
+  // Each domain field explicitly maps to its editor input. A presentation conversion
+  // must never rewrite a different, untouched canonical field.
+  function retain<T>(field: keyof GoalEditorDraft, value: T, edited: () => T): T {
+    return original && baseline && draft[field] === baseline[field] ? value : edited();
+  }
+
   switch (input.draft.goalType) {
     case "race_performance": {
-      const distanceKm = requirePositiveNumber(
-        input.draft.raceDistanceKm,
-        "Choose a race distance before saving this goal.",
+      const source = original?.type === "event_performance" ? original : undefined;
+      const distance = retain(
+        "raceDistanceKm",
+        source?.distance_m,
+        () =>
+          requirePositiveNumber(
+            draft.raceDistanceKm,
+            "Choose a race distance before saving this goal.",
+          ) * 1000,
       );
-      const distanceMeters = Math.round(distanceKm * 1000);
-
-      if ((input.draft.raceTargetMode ?? "time") === "pace") {
-        return {
-          type: "event_performance" as const,
-          activity_category: input.activityCategory,
-          distance_m: distanceMeters,
-          target_speed_mps: requirePaceSpeed(
-            input.draft.targetPace,
-            "Set a goal pace before saving this goal.",
-          ),
-        };
-      }
-
+      const sameMode = source && draft.raceTargetMode === baseline?.raceTargetMode;
+      const time =
+        (draft.raceTargetMode ?? "time") === "time"
+          ? sameMode && draft.targetDuration === baseline?.targetDuration
+            ? source.target_time_s
+            : requireDurationSeconds(
+                draft.targetDuration,
+                "Set a goal time before saving this goal.",
+              )
+          : sameMode
+            ? source.target_time_s
+            : undefined;
+      const speed =
+        draft.raceTargetMode === "pace"
+          ? sameMode && draft.targetPace === baseline?.targetPace
+            ? source.target_speed_mps
+            : requirePaceSpeed(draft.targetPace, "Set a goal pace before saving this goal.")
+          : sameMode
+            ? source.target_speed_mps
+            : undefined;
       return {
+        ...(source?.environment === undefined ? {} : { environment: source.environment }),
+        ...(source?.tolerance_pct === undefined ? {} : { tolerance_pct: source.tolerance_pct }),
         type: "event_performance" as const,
-        activity_category: input.activityCategory,
-        distance_m: distanceMeters,
-        target_time_s: requireDurationSeconds(
-          input.draft.targetDuration,
-          "Set a goal time before saving this goal.",
-        ),
+        activity_category: activityCategory,
+        distance_m: distance,
+        ...(time === undefined ? {} : { target_time_s: time }),
+        ...(speed === undefined ? {} : { target_speed_mps: speed }),
       };
     }
     case "completion": {
-      const distanceKm = toPositiveNumber(input.draft.raceDistanceKm);
-      const durationSeconds =
-        parseHmsToSeconds(input.draft.targetDuration) ??
-        parseMmSsToSeconds(input.draft.targetDuration);
-
-      if (!distanceKm && !durationSeconds) {
+      const source = original?.type === "completion" ? original : undefined;
+      const distance = retain("raceDistanceKm", source?.distance_m, () =>
+        draft.raceDistanceKm == null
+          ? undefined
+          : requirePositiveNumber(draft.raceDistanceKm, "Set a positive distance or clear it.") *
+            1000,
+      );
+      const duration = retain("targetDuration", source?.duration_s, () =>
+        optionalDurationSeconds(
+          draft.targetDuration,
+          "Set a valid duration before saving this goal.",
+        ),
+      );
+      if (distance === undefined && duration === undefined) {
         throw new Error("Add a distance, a duration, or both before saving this goal.");
       }
 
       return {
         type: "completion" as const,
-        activity_category: input.activityCategory,
-        distance_m: distanceKm ? Math.round(distanceKm * 1000) : undefined,
-        duration_s: durationSeconds,
+        ...(source
+          ? source.activity_category === undefined
+            ? {}
+            : { activity_category: source.activity_category }
+          : { activity_category: activityCategory }),
+        ...(distance === undefined ? {} : { distance_m: distance }),
+        ...(duration === undefined ? {} : { duration_s: duration }),
       };
     }
     case "pace_threshold":
-      return {
-        type: "threshold" as const,
-        metric: "pace" as const,
-        activity_category: "run" as const,
-        value: requirePaceSpeed(
-          input.draft.targetPace,
-          "Set a threshold pace before saving this goal.",
-        ),
-        test_duration_s: requireDurationSeconds(
-          input.draft.thresholdTestDuration,
-          "Set the test duration before saving this goal.",
-        ),
-      };
     case "power_threshold":
+    case "hr_threshold": {
+      const source = original?.type === "threshold" ? original : undefined;
+      const metric =
+        draft.goalType === "pace_threshold"
+          ? "pace"
+          : draft.goalType === "power_threshold"
+            ? "power"
+            : "hr";
+      const value =
+        metric === "pace"
+          ? retain("targetPace", source?.value, () =>
+              requirePaceSpeed(draft.targetPace, "Set a threshold pace before saving this goal."),
+            )
+          : metric === "power"
+            ? retain("targetWatts", source?.value, () =>
+                requirePositiveNumber(
+                  draft.targetWatts,
+                  "Set a target power before saving this goal.",
+                ),
+              )
+            : retain("targetBpm", source?.value, () =>
+                requirePositiveNumber(
+                  draft.targetBpm,
+                  "Set a target heart rate before saving this goal.",
+                ),
+              );
+      const duration = retain("thresholdTestDuration", source?.test_duration_s, () =>
+        optionalDurationSeconds(
+          draft.thresholdTestDuration,
+          "Set a valid test duration or clear it before saving this goal.",
+        ),
+      );
       return {
+        ...(source?.tolerance_pct === undefined ? {} : { tolerance_pct: source.tolerance_pct }),
         type: "threshold" as const,
-        metric: "power" as const,
-        activity_category: "bike" as const,
-        value: requirePositiveNumber(
-          input.draft.targetWatts,
-          "Set a target power before saving this goal.",
-        ),
-        test_duration_s: requireDurationSeconds(
-          input.draft.thresholdTestDuration,
-          "Set the test duration before saving this goal.",
-        ),
+        metric,
+        ...(source
+          ? source.activity_category === undefined
+            ? {}
+            : { activity_category: source.activity_category }
+          : { activity_category: activityCategory }),
+        value,
+        ...(duration === undefined ? {} : { test_duration_s: duration }),
       };
-    case "hr_threshold":
-      return {
-        type: "threshold" as const,
-        metric: "hr" as const,
-        activity_category: input.activityCategory,
-        value: requirePositiveNumber(
-          input.draft.targetBpm,
-          "Set a target heart rate before saving this goal.",
-        ),
-      };
+    }
     case "consistency": {
-      const sessions = toPositiveNumber(input.draft.consistencySessionsPerWeek);
-      const weeks = toPositiveNumber(input.draft.consistencyWeeks);
+      const sessions =
+        draft.consistencySessionsPerWeek == null
+          ? null
+          : requirePositiveNumber(
+              draft.consistencySessionsPerWeek,
+              "Set positive weekly sessions or clear the field.",
+            );
+      const weeks =
+        draft.consistencyWeeks == null
+          ? null
+          : requirePositiveNumber(
+              draft.consistencyWeeks,
+              "Set positive planned weeks or clear the field.",
+            );
 
       if (!sessions && !weeks) {
         throw new Error("Set weekly sessions, planned weeks, or both before saving this goal.");
       }
+      if (sessions !== null && !Number.isInteger(sessions)) {
+        throw new Error("Weekly sessions must be a positive whole number or empty.");
+      }
+      if (weeks !== null && !Number.isInteger(weeks)) {
+        throw new Error("Planned weeks must be a positive whole number or empty.");
+      }
 
       return {
         type: "consistency" as const,
-        target_sessions_per_week: sessions ? Math.round(sessions) : undefined,
-        target_weeks: weeks ? Math.round(weeks) : undefined,
+        ...(sessions === null ? {} : { target_sessions_per_week: sessions }),
+        ...(weeks === null ? {} : { target_weeks: weeks }),
       };
     }
   }
@@ -231,6 +295,10 @@ export function createEmptyGoalDraft(): GoalEditorDraft {
 }
 
 export function buildGoalDraftFromGoal(input: { goal: ProfileGoal }): GoalEditorDraft {
+  return { ...hydrateGoalDraft(input), originalGoal: input.goal };
+}
+
+function hydrateGoalDraft(input: { goal: ProfileGoal }): GoalEditorDraft {
   const { goal } = input;
 
   if (goal.objective.type === "event_performance") {
@@ -240,7 +308,7 @@ export function buildGoalDraftFromGoal(input: { goal: ProfileGoal }): GoalEditor
       importance: goal.priority,
       goalType: "race_performance",
       activityCategory: goal.activity_category,
-      raceDistanceKm: toRoundedDistanceKm(goal.objective.distance_m),
+      raceDistanceKm: toDistanceKm(goal.objective.distance_m),
       raceTargetMode: typeof goal.objective.target_time_s === "number" ? "time" : "pace",
       targetDuration:
         typeof goal.objective.target_time_s === "number"
@@ -265,12 +333,12 @@ export function buildGoalDraftFromGoal(input: { goal: ProfileGoal }): GoalEditor
         targetDate: goal.target_date,
         importance: goal.priority,
         goalType: "pace_threshold",
-        activityCategory: "run",
+        activityCategory: goal.activity_category,
         targetPace: formatPace(speedToPace(goal.objective.value)),
         thresholdTestDuration:
           typeof goal.objective.test_duration_s === "number"
             ? formatFriendlyDuration(goal.objective.test_duration_s)
-            : THRESHOLD_TEST_DURATION_DEFAULT,
+            : "",
         raceDistanceKm: null,
         raceTargetMode: "time",
         targetDuration: "",
@@ -287,12 +355,12 @@ export function buildGoalDraftFromGoal(input: { goal: ProfileGoal }): GoalEditor
         targetDate: goal.target_date,
         importance: goal.priority,
         goalType: "power_threshold",
-        activityCategory: "bike",
+        activityCategory: goal.activity_category,
         targetWatts: goal.objective.value,
         thresholdTestDuration:
           typeof goal.objective.test_duration_s === "number"
             ? formatFriendlyDuration(goal.objective.test_duration_s)
-            : THRESHOLD_TEST_DURATION_DEFAULT,
+            : "",
         raceDistanceKm: null,
         raceTargetMode: "time",
         targetDuration: "",
@@ -315,7 +383,10 @@ export function buildGoalDraftFromGoal(input: { goal: ProfileGoal }): GoalEditor
       targetDuration: "",
       targetPace: "",
       targetWatts: null,
-      thresholdTestDuration: THRESHOLD_TEST_DURATION_DEFAULT,
+      thresholdTestDuration:
+        typeof goal.objective.test_duration_s === "number"
+          ? formatFriendlyDuration(goal.objective.test_duration_s)
+          : "",
       consistencySessionsPerWeek: 4,
       consistencyWeeks: 8,
     };
@@ -328,7 +399,7 @@ export function buildGoalDraftFromGoal(input: { goal: ProfileGoal }): GoalEditor
       importance: goal.priority,
       goalType: "completion",
       activityCategory: goal.activity_category,
-      raceDistanceKm: toRoundedDistanceKm(goal.objective.distance_m),
+      raceDistanceKm: toDistanceKm(goal.objective.distance_m),
       targetDuration:
         typeof goal.objective.duration_s === "number"
           ? formatFriendlyDuration(goal.objective.duration_s)
@@ -349,8 +420,8 @@ export function buildGoalDraftFromGoal(input: { goal: ProfileGoal }): GoalEditor
     importance: goal.priority,
     goalType: "consistency",
     activityCategory: goal.activity_category,
-    consistencySessionsPerWeek: goal.objective.target_sessions_per_week ?? 4,
-    consistencyWeeks: goal.objective.target_weeks ?? 8,
+    consistencySessionsPerWeek: goal.objective.target_sessions_per_week ?? null,
+    consistencyWeeks: goal.objective.target_weeks ?? null,
     raceDistanceKm: null,
     raceTargetMode: "time",
     targetDuration: "",
@@ -362,6 +433,18 @@ export function buildGoalDraftFromGoal(input: { goal: ProfileGoal }): GoalEditor
 }
 
 export function buildGoalCreatePayload(input: { draft: GoalEditorDraft; profileId: string }) {
+  if (!input.draft.title.trim()) throw new Error("Enter a goal title.");
+  if (input.draft.title.trim().length > 100)
+    throw new Error("Goal title must be 100 characters or fewer.");
+  if (!dateOnlySchema.safeParse(input.draft.targetDate).success)
+    throw new Error("Choose a valid target date.");
+  if (
+    !Number.isInteger(input.draft.importance) ||
+    input.draft.importance < 0 ||
+    input.draft.importance > 10
+  ) {
+    throw new Error("Priority must be a whole number from 0 to 10.");
+  }
   const activityCategory = resolveGoalActivityCategory(input.draft);
   const targetPayload = buildGoalTargetPayload({
     draft: input.draft,
@@ -372,7 +455,7 @@ export function buildGoalCreatePayload(input: { draft: GoalEditorDraft; profileI
     profile_id: input.profileId,
     target_date: input.draft.targetDate,
     title: input.draft.title.trim(),
-    priority: Math.max(0, Math.min(10, input.draft.importance)),
+    priority: input.draft.importance,
     activity_category: activityCategory,
     target_payload: targetPayload,
   });
