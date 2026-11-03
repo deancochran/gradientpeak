@@ -58,7 +58,11 @@ export const Route = createFileRoute("/_protected/activities/")({
     const input = getActivitiesInput(deps);
     return loadRouteQuery(
       () => context.apiUtils.activities.listPaginated.getInfiniteData(input),
-      () => context.apiUtils.activities.listPaginated.fetchInfinite(input),
+      () =>
+        context.apiUtils.activities.listPaginated.fetchInfinite(input, {
+          getNextPageParam: (page) => page.nextCursor,
+          pages: Infinity,
+        }),
     );
   },
   component: ActivitiesPage,

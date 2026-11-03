@@ -7,6 +7,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/components/ta
 import { useRef, useState } from "react";
 
 import { api } from "../../lib/api/client";
+import {
+  getOwnedTrainingPlansInput,
+  getTemplateTrainingPlansInput,
+} from "./training-plan-library-inputs";
 import { summarizeTrainingPlan } from "./training-plan-model";
 import { TrainingPlanPlannedPreview } from "./training-plan-planned-preview";
 
@@ -137,17 +141,13 @@ export function TrainingPlanLibrary({
     pending: boolean;
     error: string | null;
   } | null>(null);
-  const owned = api.trainingPlans.list.useInfiniteQuery(
-    {
-      ownerScope: "own",
-      search: search.trim() || undefined,
-      limit: 25,
-    },
-    { getNextPageParam: (page) => page.nextCursor },
-  );
+  const owned = api.trainingPlans.list.useInfiniteQuery(getOwnedTrainingPlansInput(search), {
+    enabled: tab === "owned",
+    getNextPageParam: (page) => page.nextCursor,
+  });
   const templates = api.trainingPlans.listTemplates.useInfiniteQuery(
-    { search: search.trim() || undefined, limit: 25 },
-    { getNextPageParam: (page) => page.nextCursor },
+    getTemplateTrainingPlansInput(search),
+    { enabled: tab === "templates", getNextPageParam: (page) => page.nextCursor },
   );
   const ownedPlans = owned.data?.pages.flatMap((page) => page.items) ?? [];
   const templatePlans = templates.data?.pages.flatMap((page) => page.items) ?? [];

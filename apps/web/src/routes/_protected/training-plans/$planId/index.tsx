@@ -1,8 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { TrainingPlanDetail } from "../../../../components/training-plan/training-plan-detail";
+import { loadRouteQuery } from "../../../../lib/api/route-loading";
 
 export const Route = createFileRoute("/_protected/training-plans/$planId/")({
+  loader: ({ context, params }) => {
+    const input = { id: params.planId };
+    return loadRouteQuery(
+      () => context.apiUtils.trainingPlans.get.getData(input),
+      () => context.apiUtils.trainingPlans.get.fetch(input),
+    );
+  },
   component: TrainingPlanDetailPage,
 });
 

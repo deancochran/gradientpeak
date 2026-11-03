@@ -49,7 +49,11 @@ export const Route = createFileRoute("/_protected/goals/")({
     };
     await loadRouteQuery(
       () => context.apiUtils.goals.list.getInfiniteData(input),
-      () => context.apiUtils.goals.list.fetchInfinite(input),
+      () =>
+        context.apiUtils.goals.list.fetchInfinite(input, {
+          getNextPageParam: (page) => page.nextCursor ?? undefined,
+          pages: Infinity,
+        }),
     );
   },
   component: GoalsPage,

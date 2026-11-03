@@ -29,6 +29,7 @@ import { z } from "zod";
 
 import { RouteFlashToast, type RouteFlashType } from "../../../../../components/route-flash-toast";
 import { api } from "../../../../../lib/api/client";
+import { loadRouteQuery } from "../../../../../lib/api/route-loading";
 import { contractEpochFormInputProps } from "../../../../../lib/contract-epoch";
 import {
   formatDayLabel,
@@ -78,6 +79,22 @@ export const Route = createFileRoute("/_protected/calendar/events/$eventId/")({
       view: search.view === "agenda" || search.view === "week" ? search.view : "month",
       ...(search.resourceType === "planned_session" ? { resourceType: "planned_session" } : {}),
     };
+  },
+  loaderDeps: ({ search }) => ({ resourceType: search.resourceType }),
+  loader: ({ context, deps, params }) => {
+    if (deps.resourceType === "planned_session") {
+      const input = { id: params.eventId };
+      return loadRouteQuery(
+        () => context.apiUtils.plannedSessions.getById.getData(input),
+        () => context.apiUtils.plannedSessions.getById.fetch(input),
+      );
+    }
+
+    const input = { id: params.eventId, personalize: false };
+    return loadRouteQuery(
+      () => context.apiUtils.events.getById.getData(input),
+      () => context.apiUtils.events.getById.fetch(input),
+    );
   },
   component: EventDetailPage,
 });
