@@ -14,6 +14,29 @@ or its servers. Coordinator owns verification, commits, preview and publication.
 
 ## Coaching queue
 
+### Approved remaining workflow policies
+
+The user approved the conservative policy proposal during execution:
+
+- Root owners manage administrator roles; root owners and administrators manage
+  coach roles. Protect the root owner; prohibit self-demotion and self-suspension.
+- Suspension blocks access and ends affected assignments. Resume does not restore
+  assignments or consent automatically.
+- Administrators manage assignments only between eligible people in the same
+  organization. Consent remains athlete-controlled.
+- Audit visibility is root/admin-only with allowlisted fields, never raw details,
+  recipient email addresses, invitation tokens or hashes.
+- Initial editable settings are name/timezone only. Slugs remain immutable;
+  timezone changes do not rewrite existing scheduled data.
+- Ownership transfer design requires acceptance by an active same-organization
+  administrator and leaves the former owner an administrator. Implementation
+  still requires separate atomic-design review.
+- This approval does not authorize schema application or preserved-data mutation.
+
+W08 read-only implementation uses the existing recipient-safe summary, canonical
+verified recipient identity, bounded scoped keyset pagination, and effective
+expired projection for elapsed pending invitations without writing expiration.
+
 | Item | State | Evidence / dependency |
 | --- | --- | --- |
 | W00 | Established | Typed submission contract in approved plan; SSR prerequisite `153791a6` live |
