@@ -20,7 +20,7 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { DateInput } from "@repo/ui/components/date-input";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import type { inferRouterInputs } from "@trpc/server";
 import { ArrowLeft, CalendarDays, Copy, Loader2, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -289,6 +289,20 @@ function ActivityPlanDetailPage() {
         actions={
           <div className="flex flex-wrap gap-2 print:hidden">
             {printModel ? <ActivityPlanPdfActions key={detail.id} model={printModel} /> : null}
+            {detail.capabilities.canRecord ? (
+              <Button asChild>
+                <Link
+                  to="/record/plan"
+                  search={{
+                    activityPlanId: detail.id,
+                    activity_category: detail.activityCategory,
+                    gps: "off",
+                  }}
+                >
+                  Record this plan
+                </Link>
+              </Button>
+            ) : null}
             <LikeToggleButton
               count={likesCount}
               liked={liked}
@@ -417,9 +431,9 @@ function ActivityPlanDetailPage() {
                 <dt className="text-muted-foreground">Recording</dt>
                 <dd className="font-medium">
                   {detail.gpsRecordingEnabled === undefined
-                    ? detail.capabilities.canDuplicate
-                      ? "Available after duplicating this system template"
-                      : "Available only to the plan owner"
+                    ? detail.capabilities.canRecord
+                      ? "Available to record"
+                      : "Not available for recording"
                     : detail.gpsRecordingEnabled
                       ? "GPS-capable on supported devices"
                       : "Timer only"}

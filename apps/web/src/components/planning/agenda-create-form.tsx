@@ -16,7 +16,13 @@ import { useUnsavedChangesGuard } from "../../lib/use-unsaved-changes-guard";
 
 const agendaTimezoneSchema = z.object({ timezone: z.string().nullable() });
 
-export function AgendaCreateForm({ initialDate }: { initialDate?: string }) {
+export function AgendaCreateForm({
+  initialDate,
+  redirectTo,
+}: {
+  initialDate?: string;
+  redirectTo?: string;
+}) {
   const [date, setDate] = useState(initialDate ?? getTodayDateKey());
   const [time, setTime] = useState("");
   const [allDay, setAllDay] = useState(false);
@@ -76,6 +82,7 @@ export function AgendaCreateForm({ initialDate }: { initialDate?: string }) {
       >
         <input {...contractEpochFormInputProps} />
         <input name="event_type" type="hidden" value="custom" />
+        {redirectTo ? <input name="redirectTo" type="hidden" value={redirectTo} /> : null}
         <input type="hidden" name="timezone" value={timezone ?? ""} />
 
         <div className="space-y-2">

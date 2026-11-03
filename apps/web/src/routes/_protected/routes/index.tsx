@@ -1,7 +1,7 @@
 import { MAX_ROUTE_LIST_OFFSET } from "@repo/core/route-files";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Upload } from "lucide-react";
 import {
   DetailPageIntro,
@@ -95,10 +95,18 @@ function RoutesLibraryPage() {
             Upload route
           </Button>
         }
-        description="Search, compare, and reuse GPX, TCX, and XML routes for training and events."
+        description="Manage routes in your library. Use Discover to search routes shared by the wider community."
         eyebrow="Route library"
         title="Routes"
       />
+
+      <Link
+        className="inline-flex text-sm font-medium text-primary underline underline-offset-4"
+        search={{ scope: "routes" }}
+        to="/search"
+      >
+        Discover shared routes
+      </Link>
 
       <Card>
         <CardHeader>

@@ -406,8 +406,14 @@ function ActivityDetailPage() {
     }
 
     const url = new URL(`/share/activities/${activity.id}`, window.location.origin).toString();
-    await navigator.clipboard.writeText(url);
-    toast.success("Public activity link copied");
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Public activity link copied");
+    } catch {
+      toast.error(
+        "The public activity link could not be copied. Copy it from the address bar instead.",
+      );
+    }
   };
 
   if (

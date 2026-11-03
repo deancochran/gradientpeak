@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   goalsRefetch: vi.fn(),
+  fetchNextPage: vi.fn(),
   navigate: vi.fn(() => Promise.resolve()),
   profile: {
     data: { id: "profile-1" },
@@ -19,6 +20,11 @@ const state = vi.hoisted(() => ({
     flashType: undefined,
     q: "marathon",
     sort: "priority",
+  },
+  goals: {
+    data: { pages: [{ items: [], nextCursor: null as string | null, total: 0 }] },
+    hasNextPage: false,
+    isFetchingNextPage: false,
   },
 }));
 
@@ -39,8 +45,11 @@ vi.mock("../../../lib/api/client", () => ({
     profiles: { get: { useQuery: () => state.profile } },
     goals: {
       list: {
-        useQuery: () => ({
-          data: { items: [], total: 0 },
+        useInfiniteQuery: () => ({
+          data: state.goals.data,
+          fetchNextPage: state.fetchNextPage,
+          hasNextPage: state.goals.hasNextPage,
+          isFetchingNextPage: state.goals.isFetchingNextPage,
           isError: false,
           isLoading: false,
           refetch: state.goalsRefetch,
@@ -55,6 +64,7 @@ import { GoalsPage } from "./index";
 afterEach(() => {
   cleanup();
   state.goalsRefetch.mockReset();
+  state.fetchNextPage.mockReset();
   state.navigate.mockReset();
   state.navigate.mockResolvedValue(undefined);
   state.profile = {
@@ -70,6 +80,11 @@ afterEach(() => {
     flashType: undefined,
     q: "marathon",
     sort: "priority",
+  };
+  state.goals = {
+    data: { pages: [{ items: [], nextCursor: null as string | null, total: 0 }] },
+    hasNextPage: false,
+    isFetchingNextPage: false,
   };
 });
 
@@ -134,5 +149,17 @@ describe("GoalsPage query controls", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("requests the next cursor page from the visible pagination control", () => {
+    state.goals = {
+      data: { pages: [{ items: [], nextCursor: "50", total: 51 }] },
+      hasNextPage: true,
+      isFetchingNextPage: false,
+    };
+    render(<GoalsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Load more goals" }));
+    expect(state.fetchNextPage).toHaveBeenCalledOnce();
   });
 });

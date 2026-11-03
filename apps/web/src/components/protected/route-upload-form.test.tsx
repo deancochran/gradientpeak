@@ -56,7 +56,7 @@ function renderForm(props: Partial<React.ComponentProps<typeof RouteUploadForm>>
       {...props}
     />,
   );
-  const fileInput = () => screen.getByLabelText("GPX or TCX file") as HTMLInputElement;
+  const fileInput = () => screen.getByLabelText("GPX, TCX, or XML file") as HTMLInputElement;
   const form = () => fileInput().closest("form") as HTMLFormElement;
   const selectFile = (file: File) => fireEvent.change(fileInput(), { target: { files: [file] } });
   const submit = () => fireEvent.submit(form());

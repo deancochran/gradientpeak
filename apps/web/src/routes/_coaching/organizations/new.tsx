@@ -27,7 +27,11 @@ function CreateOrganizationPage() {
         </CardHeader>
         <CardContent className="space-y-5">
           <OrganizationCreateForm />
-          <Button asChild variant="outline" className="border-slate-700 text-slate-100">
+          <Button
+            asChild
+            variant="outline"
+            className="border-slate-700 bg-transparent text-slate-100 hover:bg-slate-800 hover:text-white"
+          >
             <Link to="/organizations">Cancel</Link>
           </Button>
         </CardContent>

@@ -23,6 +23,17 @@ const mocks = vi.hoisted(() => ({
   changePlanOnly: vi.fn(),
   navigate: vi.fn(),
   plannedSessionMutationOptions: undefined as unknown,
+  activityPlanQuery: {
+    data: { detail: { activityCategory: "run" } },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  } as {
+    data: { detail: { activityCategory: string } } | undefined;
+    isError: boolean;
+    isLoading: boolean;
+    refetch: ReturnType<typeof vi.fn>;
+  },
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -83,7 +94,7 @@ vi.mock("../../../../lib/api/client", () => ({
     profiles: { get: { useQuery: () => ({ data: { planning_timezone: "UTC" } }) } },
     activityPlans: {
       getById: {
-        useQuery: () => ({ data: { detail: { activityCategory: "run" } }, refetch: vi.fn() }),
+        useQuery: () => mocks.activityPlanQuery,
       },
     },
     activities: {
@@ -114,6 +125,12 @@ afterEach(() => {
   mocks.search = { month: "2026-07", view: "month" };
   mocks.completionCandidates = { canAssociate: true, items: [], nextCursor: null };
   mocks.plannedSessionMutationOptions = undefined;
+  mocks.activityPlanQuery = {
+    data: { detail: { activityCategory: "run" } },
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  };
   vi.clearAllMocks();
 });
 
@@ -204,6 +221,33 @@ describe("EventDetailPage", () => {
     expect(firstInput.observation.elapsedMs).toBe(1_800_000);
     expect(firstInput.observation).not.toHaveProperty("distanceMeters");
     expect(firstInput.observation).not.toHaveProperty("rpe");
+  });
+
+  it("keeps a planned session in a dependent-plan loading or retryable error state", () => {
+    mocks.search = { month: "2026-07", resourceType: "planned_session", view: "month" };
+    mocks.plannedSession = {
+      id: "00000000-0000-4000-8000-000000000001",
+      profileId: "00000000-0000-4000-8000-000000000002",
+      sessionRevision: 1,
+      planningDate: "2000-01-01",
+      lifecycle: { status: "scheduled" },
+      activityPlanId: "00000000-0000-4000-8000-000000000003",
+    };
+    mocks.activityPlanQuery = {
+      data: undefined,
+      isError: false,
+      isLoading: true,
+      refetch: vi.fn(),
+    };
+    const EventDetailPage = (Route as unknown as { component: React.ComponentType }).component;
+    const { rerender } = render(<EventDetailPage />);
+
+    expect(screen.getByText("Loading the activity plan...")).toBeTruthy();
+    const refetch = vi.fn();
+    mocks.activityPlanQuery = { data: undefined, isError: true, isLoading: false, refetch };
+    rerender(<EventDetailPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Retry activity plan" }));
+    expect(refetch).toHaveBeenCalledOnce();
   });
 
   it("duplicates and edits only a reference-based scheduled session before opening its returned copy", async () => {

@@ -8,7 +8,7 @@ import {
 } from "@repo/core";
 import { profileGoals } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, desc, eq, ilike } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike } from "drizzle-orm";
 import { z } from "zod";
 import {
   getProfileGoalById,
@@ -52,6 +52,7 @@ const goalsListInputSchema = z
     profile_id: z.string().uuid(),
     search: z.string().trim().max(80).optional(),
     activity_category: canonicalGoalActivityCategorySchema.optional(),
+    target_date_on_or_after: dateOnlySchema.optional(),
     sort_by: z.enum(["created_at", "target_date", "priority"]).default("created_at"),
     sort_order: z.enum(["asc", "desc"]).default("desc"),
     limit: z.number().int().min(1).max(50).default(25),
@@ -85,6 +86,7 @@ function buildGoalListConditions(input: {
   profileId: string;
   search?: string;
   activityCategory?: z.infer<typeof canonicalGoalActivityCategorySchema>;
+  targetDateOnOrAfter?: string;
 }) {
   const conditions = [eq(profileGoals.profile_id, input.profileId)];
 
@@ -95,6 +97,9 @@ function buildGoalListConditions(input: {
   if (input.activityCategory) {
     conditions.push(eq(profileGoals.activity_category, input.activityCategory));
   }
+  if (input.targetDateOnOrAfter) {
+    conditions.push(gte(profileGoals.target_date, input.targetDateOnOrAfter));
+  }
 
   return conditions;
 }
@@ -104,6 +109,7 @@ async function listProfileGoals(input: {
   profileId: string;
   search?: string;
   activityCategory?: z.infer<typeof canonicalGoalActivityCategorySchema>;
+  targetDateOnOrAfter?: string;
   sortBy: "created_at" | "target_date" | "priority";
   sortOrder: "asc" | "desc";
   limit: number;
@@ -239,6 +245,9 @@ export function createGoalsRouter(
             ...(input.activity_category === undefined
               ? {}
               : { activityCategory: input.activity_category }),
+            ...(input.target_date_on_or_after === undefined
+              ? {}
+              : { targetDateOnOrAfter: input.target_date_on_or_after }),
           });
 
           try {
@@ -250,6 +259,9 @@ export function createGoalsRouter(
                 ...(input.activity_category === undefined
                   ? {}
                   : { activityCategory: input.activity_category }),
+                ...(input.target_date_on_or_after === undefined
+                  ? {}
+                  : { targetDateOnOrAfter: input.target_date_on_or_after }),
                 sortBy: input.sort_by,
                 sortOrder: input.sort_order,
                 limit: input.limit,

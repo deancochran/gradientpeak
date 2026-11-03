@@ -16,8 +16,9 @@ import {
 import { SearchField } from "@repo/ui/components/search-field";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { CalendarDays, Loader2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { ActivityPlanCard } from "../../../components/activity-plan/activity-plan-card";
+import { RecordingPlanReview } from "../../../components/recording/recording-plan-review";
 import { api } from "../../../lib/api/client";
 import { getTodayDateKey } from "../../../lib/planning";
 import { useTimerOnlyRecording } from "../../../lib/recording/provider";
@@ -75,6 +76,8 @@ export function RecordPlanPage() {
   const selectedCategory = detail?.activityCategory;
   const compiled = selectedStructure ? compileActivityPlan(selectedStructure) : null;
   const selectedName = plannedSession ? (detail?.name ?? "Scheduled activity plan") : detail?.name;
+  const selectedLibraryPlanIsVisible =
+    selected?.kind === "library" && visiblePlans.some((plan) => plan.id === selected.planId);
 
   const usePlan = () => {
     if (!selected || !selectedStructure || !selectedCategory) return;
@@ -126,6 +129,86 @@ export function RecordPlanPage() {
     );
   }
 
+  const selectedReview = selected ? (
+    <RecordingPlanReview
+      description="Review the prescription before locking it into this recording."
+      onChooseAnother={() => setSelected(null)}
+      onRecordWithoutPlan={() =>
+        void navigate({
+          to: "/record",
+          search: {
+            activity_category: launcher.activity_category,
+            gps: "off",
+            ...(launcher.routeId ? { routeId: launcher.routeId } : {}),
+          },
+        })
+      }
+      onUse={usePlan}
+      title={selectedName ?? "Plan setup"}
+      useDisabled={
+        selected.kind === "library" &&
+        (detailQuery.isLoading || detailQuery.isError || !detail?.capabilities.canRecord)
+      }
+    >
+      {selected.kind === "library" && detailQuery.isLoading ? (
+        <Loader2 aria-label="Loading plan setup" className="h-5 w-5 animate-spin" />
+      ) : null}
+      {selected.kind === "library" &&
+      (detailQuery.isError || (detail && !detail.capabilities.canRecord)) ? (
+        <div role="alert" className="text-sm text-destructive">
+          This plan&apos;s executable steps are unavailable for recording.
+          {detailQuery.isError ? (
+            <Button type="button" variant="outline" onClick={() => void detailQuery.refetch()}>
+              Retry selected plan
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {selectedStructure && selectedCategory && compiled ? (
+        <>
+          <div className="flex flex-wrap gap-2">
+            <Badge>{selectedCategory}</Badge>
+            <Badge variant="outline">{compiled.occurrences.length} steps</Badge>
+            {(detail?.metrics ?? [])
+              .filter((metric) => metric.status !== "unavailable")
+              .map((metric) => (
+                <Badge key={metric.key} variant="outline">
+                  {metric.label}: {metric.value} {metric.unit}
+                </Badge>
+              ))}
+          </div>
+          <p className="rounded-lg border p-3 text-sm text-muted-foreground">
+            {plannedSession
+              ? "Recording captures the current plan when this session starts."
+              : "Recording uses the plan's authored targets. Session Flow personalization is display-only until it explicitly hands a selected target representation to the recorder."}
+          </p>
+          <ol className="space-y-2">
+            {compiled.occurrences.map((occurrence, index) => (
+              <li className="rounded-lg border p-3 text-sm" key={occurrence.occurrenceId}>
+                <p className="font-medium">
+                  Step {index + 1} of {compiled.occurrences.length} ·{" "}
+                  {durationLabel(occurrence.duration)}
+                </p>
+                <p className="text-muted-foreground">
+                  {orderActivityPlanTargetsForPresentation(occurrence.targets)
+                    .map(
+                      (target) =>
+                        resolveActivityPlanTargetPresentation({
+                          target,
+                          activityCategory: selectedCategory,
+                          asOf: new Date().toISOString(),
+                        }).label,
+                    )
+                    .join(" · ") || "No target"}
+                </p>
+              </li>
+            ))}
+          </ol>
+        </>
+      ) : null}
+    </RecordingPlanReview>
+  ) : null;
+
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 py-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -164,23 +247,25 @@ export function RecordPlanPage() {
             <p className="text-sm text-muted-foreground">No planned sessions today.</p>
           ) : null}
           {todaySessions.map((session) => {
+            const isSelected =
+              selected?.kind === "planned_session" && selected.session.id === session.id;
             return (
-              <button
-                aria-pressed={
-                  selected?.kind === "planned_session" && selected.session.id === session.id
-                }
-                className="rounded-lg border p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                key={session.id}
-                onClick={() => setSelected({ kind: "planned_session", session })}
-                type="button"
-              >
-                <div className="flex flex-wrap gap-2">
-                  <Badge>{session.activityPlanId ? "Planned session" : "Plan unavailable"}</Badge>
-                  <Badge variant="outline">{formatScheduledTime(session.planningDate)}</Badge>
-                </div>
-                <p className="mt-2 font-medium capitalize">Scheduled activity plan</p>
-                <p className="text-sm text-muted-foreground">Uses the current plan at start</p>
-              </button>
+              <Fragment key={session.id}>
+                <button
+                  aria-pressed={isSelected}
+                  className="rounded-lg border p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => setSelected({ kind: "planned_session", session })}
+                  type="button"
+                >
+                  <div className="flex flex-wrap gap-2">
+                    <Badge>{session.activityPlanId ? "Planned session" : "Plan unavailable"}</Badge>
+                    <Badge variant="outline">{formatScheduledTime(session.planningDate)}</Badge>
+                  </div>
+                  <p className="mt-2 font-medium capitalize">Scheduled activity plan</p>
+                  <p className="text-sm text-muted-foreground">Uses the current plan at start</p>
+                </button>
+                {isSelected ? <div className="sm:col-span-2">{selectedReview}</div> : null}
+              </Fragment>
             );
           })}
         </CardContent>
@@ -218,17 +303,23 @@ export function RecordPlanPage() {
           {!plansQuery.isLoading && !plansQuery.isError && visiblePlans.length === 0 ? (
             <p>No activity plans match your search.</p>
           ) : null}
+          {selected?.kind === "library" && !selectedLibraryPlanIsVisible ? selectedReview : null}
           <div className="grid gap-3 sm:grid-cols-2">
-            {visiblePlans.map((plan) => (
-              <ActivityPlanCard
-                disabled={!plan.capabilities.canRecord}
-                key={plan.id}
-                onOpen={() => setSelected({ kind: "library", planId: plan.id })}
-                openLabel={`Select ${plan.name}${plan.capabilities.canRecord ? "" : " (view only)"}`}
-                selected={selected?.kind === "library" && selected.planId === plan.id}
-                plan={plan}
-              />
-            ))}
+            {visiblePlans.map((plan) => {
+              const isSelected = selected?.kind === "library" && selected.planId === plan.id;
+              return (
+                <Fragment key={plan.id}>
+                  <ActivityPlanCard
+                    disabled={!plan.capabilities.canRecord}
+                    onOpen={() => setSelected({ kind: "library", planId: plan.id })}
+                    openLabel={`Select ${plan.name}${plan.capabilities.canRecord ? "" : " (view only)"}`}
+                    selected={isSelected}
+                    plan={plan}
+                  />
+                  {isSelected ? <div className="sm:col-span-2">{selectedReview}</div> : null}
+                </Fragment>
+              );
+            })}
           </div>
           {plansQuery.hasNextPage ? (
             <Button
@@ -242,121 +333,14 @@ export function RecordPlanPage() {
         </CardContent>
       </Card>
 
-      {selected ? (
-        <Card aria-live="polite">
-          <CardHeader>
-            <CardTitle>{selectedName ?? "Plan setup"}</CardTitle>
-            <CardDescription>
-              Review the prescription before locking it into this recording.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {selected.kind === "library" && detailQuery.isLoading ? (
-              <Loader2 aria-label="Loading plan setup" className="h-5 w-5 animate-spin" />
-            ) : null}
-            {selected.kind === "library" &&
-            (detailQuery.isError || (detail && !detail.capabilities.canRecord)) ? (
-              <div role="alert" className="text-sm text-destructive">
-                This plan&apos;s executable steps are unavailable for recording.
-                {detailQuery.isError ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => void detailQuery.refetch()}
-                  >
-                    Retry selected plan
-                  </Button>
-                ) : null}
-              </div>
-            ) : null}
-            {selectedStructure && selectedCategory && compiled ? (
-              <>
-                <div className="flex flex-wrap gap-2">
-                  <Badge>{selectedCategory}</Badge>
-                  <Badge variant="outline">{compiled.occurrences.length} steps</Badge>
-                  {(detail?.metrics ?? [])
-                    .filter((metric) => metric.status !== "unavailable")
-                    .map((metric) => (
-                      <Badge key={metric.key} variant="outline">
-                        {metric.label}: {metric.value} {metric.unit}
-                      </Badge>
-                    ))}
-                </div>
-                <p className="rounded-lg border p-3 text-sm text-muted-foreground">
-                  {plannedSession
-                    ? "Recording captures the current plan when this session starts."
-                    : "Recording uses the plan's authored targets. Session Flow personalization is display-only until it explicitly hands a selected target representation to the recorder."}
-                </p>
-                <ol className="space-y-2">
-                  {compiled.occurrences.map((occurrence, index) => (
-                    <li className="rounded-lg border p-3 text-sm" key={occurrence.occurrenceId}>
-                      <p className="font-medium">
-                        Step {index + 1} of {compiled.occurrences.length} ·{" "}
-                        {durationLabel(occurrence.duration)}
-                      </p>
-                      <p className="text-muted-foreground">
-                        {orderActivityPlanTargetsForPresentation(occurrence.targets)
-                          .map(
-                            (target) =>
-                              resolveActivityPlanTargetPresentation({
-                                target,
-                                activityCategory: selectedCategory,
-                                asOf: new Date().toISOString(),
-                              }).label,
-                          )
-                          .join(" · ") || "No target"}
-                      </p>
-                    </li>
-                  ))}
-                </ol>
-                <div className="flex flex-wrap gap-3">
-                  <Button
-                    disabled={
-                      selected.kind === "library" &&
-                      (detailQuery.isLoading ||
-                        detailQuery.isError ||
-                        !detail?.capabilities.canRecord)
-                    }
-                    onClick={usePlan}
-                  >
-                    Use this plan
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setSelected(null);
-                    }}
-                  >
-                    Choose another
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    onClick={() =>
-                      void navigate({
-                        to: "/record",
-                        search: {
-                          activity_category: launcher.activity_category,
-                          gps: "off",
-                          ...(launcher.routeId ? { routeId: launcher.routeId } : {}),
-                        },
-                      })
-                    }
-                  >
-                    Record without a plan
-                  </Button>
-                </div>
-              </>
-            ) : null}
-          </CardContent>
-        </Card>
-      ) : (
+      {!selected ? (
         <Card>
           <CardContent className="flex items-center gap-3 py-6 text-sm text-muted-foreground">
             <CalendarDays className="h-5 w-5" />
             Select a scheduled or library plan to review its steps.
           </CardContent>
         </Card>
-      )}
+      ) : null}
     </div>
   );
 }

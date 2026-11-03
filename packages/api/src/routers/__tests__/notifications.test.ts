@@ -64,6 +64,64 @@ describe("notificationsRouter", () => {
     expect(select).toHaveBeenCalledOnce();
   });
 
+  it("accepts tRPC's forward direction and reads a stable timestamp-and-id history page", async () => {
+    const createdAt = new Date("2026-04-03T10:00:00.000Z");
+    const limit = vi.fn().mockResolvedValue([
+      {
+        id: NOTIFICATION_ID_2,
+        user_id: USER_ID,
+        actor_id: ACTOR_ID,
+        type: "new_message",
+        entity_id: ENTITY_ID,
+        read_at: null,
+        created_at: createdAt,
+      },
+      {
+        id: NOTIFICATION_ID,
+        user_id: USER_ID,
+        actor_id: ACTOR_ID,
+        type: "new_message",
+        entity_id: ENTITY_ID,
+        read_at: null,
+        created_at: createdAt,
+      },
+      {
+        id: "66666666-6666-4666-8666-666666666666",
+        user_id: USER_ID,
+        actor_id: ACTOR_ID,
+        type: "new_message",
+        entity_id: ENTITY_ID,
+        read_at: null,
+        created_at: createdAt,
+      },
+    ]);
+    const orderBy = vi.fn(() => ({ limit }));
+    const select = vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ orderBy })) })) }));
+    const { caller } = createCaller({ select });
+
+    const page = await caller.getHistory({ direction: "forward", limit: 2, view: "all" });
+    expect(page.items.map((item) => item.id)).toEqual([NOTIFICATION_ID_2, NOTIFICATION_ID]);
+    expect(page.nextCursor).toEqual({ createdAt: createdAt.toISOString(), id: NOTIFICATION_ID });
+    expect(limit).toHaveBeenCalledWith(3);
+  });
+
+  it("rejects invalid cursors and profile-like input rather than allowing another profile scope", async () => {
+    const { caller } = createCaller();
+
+    await expect(
+      caller.getHistory({ cursor: { createdAt: "not-a-date", id: NOTIFICATION_ID } }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    await expect(caller.getHistory({ limit: 101 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.getHistory({ direction: "backward" } as never)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    await expect(caller.getHistory({ profileId: ACTOR_ID } as never)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+  });
+
   it("marks the requested notifications as read", async () => {
     const where = vi.fn().mockResolvedValue([]);
     const update = vi.fn(() => ({ set: vi.fn(() => ({ where })) }));

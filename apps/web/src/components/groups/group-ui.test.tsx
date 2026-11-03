@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  canRenderRemoveMemberControl,
   GroupCard,
   GroupEventCard,
   type GroupEventSummary,
@@ -79,5 +80,17 @@ describe("group web presentation", () => {
 
     expect(screen.getByRole("alert").textContent).toContain("Unable to load");
     expect(screen.queryByText("Empty")).toBeNull();
+  });
+});
+
+describe("canRenderRemoveMemberControl", () => {
+  it("keeps peer administrators from receiving an unavailable removal control", () => {
+    const admin = { canRemoveMembers: true, relationshipState: "admin" as const };
+    const owner = { canRemoveMembers: true, relationshipState: "owner" as const };
+
+    expect(canRenderRemoveMemberControl(admin, "member")).toBe(true);
+    expect(canRenderRemoveMemberControl(admin, "admin")).toBe(false);
+    expect(canRenderRemoveMemberControl(owner, "admin")).toBe(true);
+    expect(canRenderRemoveMemberControl(owner, "owner")).toBe(false);
   });
 });

@@ -37,7 +37,7 @@ function DashboardPage() {
   const dashboardQuery = api.home.getDashboard.useQuery(undefined, { retry: false });
   const thresholdOverviewQuery = api.athleteIntelligence.getThresholdOverview.useQuery({});
 
-  if (dashboardQuery.isError) {
+  if (dashboardQuery.isError && !dashboardQuery.data) {
     return (
       <div className="space-y-8">
         <h1 className="text-3xl font-semibold tracking-tight">Welcome back</h1>
@@ -69,6 +69,20 @@ function DashboardPage() {
         <SearchLauncher mode="bar" />
       </section>
 
+      {dashboardQuery.isError ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/40 p-4"
+        >
+          <p className="text-sm">
+            Dashboard updates are unavailable. Showing the most recent data.
+          </p>
+          <Button type="button" variant="outline" onClick={() => void dashboardQuery.refetch()}>
+            Retry dashboard
+          </Button>
+        </div>
+      ) : null}
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <MetricCard
           title="Fitness"
@@ -78,9 +92,9 @@ function DashboardPage() {
           description={
             dashboard?.currentLoadStatus
               ? `Long-term load · ${dashboard.currentLoadStatus.maturity} maturity`
-              : dashboard
-                ? "Complete Common Load history is unavailable"
-                : "Loading Common Load history"
+              : dashboardQuery.isLoading
+                ? "Loading Common Load history"
+                : "Complete Common Load history is unavailable"
           }
           icon={<Activity className="h-4 w-4" />}
         />
@@ -92,7 +106,9 @@ function DashboardPage() {
           description={
             dashboard?.currentLoadStatus
               ? "Recent load"
-              : "Complete Common Load history is unavailable"
+              : dashboardQuery.isLoading
+                ? "Loading Common Load history"
+                : "Complete Common Load history is unavailable"
           }
           icon={<Activity className="h-4 w-4" />}
         />
@@ -104,7 +120,9 @@ function DashboardPage() {
           description={
             dashboard?.currentLoadStatus
               ? `Load balance · ${dashboard.currentLoadStatus.coverageStatus} coverage`
-              : "Complete Common Load history is unavailable"
+              : dashboardQuery.isLoading
+                ? "Loading Common Load history"
+                : "Complete Common Load history is unavailable"
           }
           icon={<Activity className="h-4 w-4" />}
         />
@@ -120,8 +138,12 @@ function DashboardPage() {
         />
         <MetricCard
           title="Active Plan"
-          value={dashboard?.activePlan?.name ?? "No active plan"}
-          description="Create or assign a plan to see progress here"
+          value={dashboard?.activePlan?.name ?? (dashboardQuery.isLoading ? "…" : "No active plan")}
+          description={
+            dashboardQuery.isLoading
+              ? "Loading active plan"
+              : "Create or assign a plan to see progress here"
+          }
           icon={<CalendarDays className="h-4 w-4" />}
         />
         <Card>
@@ -130,9 +152,11 @@ function DashboardPage() {
             <CardDescription>
               {thresholdOverviewQuery.isLoading
                 ? "Loading calculated thresholds"
-                : thresholdOverviewQuery.data?.publication.status === "unavailable"
-                  ? "Calculated thresholds are not available yet"
-                  : "Calculated thresholds are available"}
+                : thresholdOverviewQuery.isError
+                  ? "Threshold status is unavailable"
+                  : thresholdOverviewQuery.data?.publication.status === "unavailable"
+                    ? "Calculated thresholds are not available yet"
+                    : "Calculated thresholds are available"}
             </CardDescription>
           </CardHeader>
           <CardContent>

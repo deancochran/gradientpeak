@@ -221,13 +221,24 @@ function ActivitiesPage() {
           {activitiesQuery.isError ? (
             <div className="space-y-3 py-8 text-center" role="alert">
               <p>Activity history could not be loaded.</p>
-              <Button
-                onClick={() => void activitiesQuery.refetch()}
-                type="button"
-                variant="outline"
-              >
-                Try again
-              </Button>
+              <div className="flex justify-center gap-2">
+                <Button
+                  onClick={() => void activitiesQuery.refetch()}
+                  type="button"
+                  variant="outline"
+                >
+                  Try again
+                </Button>
+                {search.sort || search.order ? (
+                  <Button
+                    onClick={() => updateSearch({}, ["sort", "order"])}
+                    type="button"
+                    variant="ghost"
+                  >
+                    Reset sort
+                  </Button>
+                ) : null}
+              </div>
             </div>
           ) : null}
           {!activitiesQuery.isLoading && !activitiesQuery.isError && activities.length === 0 ? (
@@ -240,12 +251,7 @@ function ActivitiesPage() {
                 <ActivityListCard
                   key={activity.id}
                   activity={activity}
-                  onOpen={() =>
-                    void navigate({
-                      to: "/activities/$activityId",
-                      params: { activityId: activity.id },
-                    })
-                  }
+                  href={`/activities/${activity.id}`}
                 />
               ))
             : null}

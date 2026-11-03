@@ -229,16 +229,35 @@ function TrainingPlanEditorSession({
       : Math.floor(Math.max(...sessions.map((session) => session.offsetDays)) / 7) + 1,
   );
   const weekIndexes = Array.from({ length: weekCount }, (_, weekIndex) => weekIndex);
+  const sourceWeekHasSessions = preview.structure?.sessions.some(
+    (session) => Math.floor(session.offset_days / 7) === copySourceWeek,
+  );
+  const durationWeeks = preview.structure?.durationWeeks?.recommended;
+  const destinationWeekIndexes =
+    durationWeeks === undefined ? [...weekIndexes, weekCount] : weekIndexes;
+  useEffect(() => {
+    if (!destinationWeekIndexes.includes(copyDestinationWeek)) {
+      setCopyDestinationWeek(destinationWeekIndexes[0] ?? -1);
+    }
+  }, [copyDestinationWeek, destinationWeekIndexes]);
   const copyWeek = () => {
     if (!preview.structure) {
       setFormError("Complete the current activities before copying a week.");
+      return;
+    }
+    if (!sourceWeekHasSessions) {
+      setFormError("Choose a source week with at least one activity.");
+      return;
+    }
+    if (!destinationWeekIndexes.includes(copyDestinationWeek)) {
+      setFormError("Choose a destination within the current plan duration.");
       return;
     }
     const result = copyTrainingPlanWeek({
       sessions: preview.structure.sessions,
       sourceWeekIndex: copySourceWeek,
       destinationWeekIndex: copyDestinationWeek,
-      createId: crypto.randomUUID,
+      createId: () => crypto.randomUUID(),
       ...(preview.structure.durationWeeks?.recommended !== undefined
         ? { durationWeeks: preview.structure.durationWeeks.recommended }
         : {}),
@@ -592,7 +611,7 @@ function TrainingPlanEditorSession({
                     onChange={(event) => setCopyDestinationWeek(Number(event.target.value))}
                     value={copyDestinationWeek}
                   >
-                    {weekIndexes.map((weekIndex) => (
+                    {destinationWeekIndexes.map((weekIndex) => (
                       <option key={`destination-week-${weekIndex}`} value={weekIndex}>
                         Week {weekIndex + 1}
                       </option>
@@ -600,7 +619,7 @@ function TrainingPlanEditorSession({
                   </select>
                 </label>
                 <Button
-                  disabled={hasUncertainCommit}
+                  disabled={hasUncertainCommit || !sourceWeekHasSessions}
                   onClick={copyWeek}
                   type="button"
                   variant="outline"

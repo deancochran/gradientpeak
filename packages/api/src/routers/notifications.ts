@@ -6,6 +6,21 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 const getRecentInputSchema = z.object({ limit: z.number().min(1).max(100).default(20) }).strict();
 
+const notificationHistoryInputSchema = z
+  .object({
+    // tRPC's infinite-query adapter appends this transport field. History only
+    // exposes descending keyset pagination, so backward traversal is rejected.
+    direction: z.literal("forward").optional(),
+    cursor: z
+      .object({ createdAt: z.string().datetime(), id: z.string().uuid() })
+      .strict()
+      .nullable()
+      .optional(),
+    limit: z.number().min(1).max(100).default(50),
+    view: z.enum(["all", "unread"]).default("all"),
+  })
+  .strict();
+
 const markReadInputSchema = Schemas.MarkNotificationReadSchema.strict();
 
 export const notificationsRouter = createTRPCRouter({
@@ -15,6 +30,19 @@ export const notificationsRouter = createTRPCRouter({
       limit: input.limit,
     });
   }),
+
+  getHistory: protectedProcedure
+    .input(notificationHistoryInputSchema)
+    .query(async ({ ctx, input }) => {
+      return createNotificationOperations(getRequiredDb(ctx)).getHistory({
+        recipientProfileId: ctx.session.user.id,
+        limit: input.limit,
+        cursor: input.cursor
+          ? { createdAt: new Date(input.cursor.createdAt), id: input.cursor.id }
+          : null,
+        view: input.view,
+      });
+    }),
 
   getUnreadCount: protectedProcedure.query(async ({ ctx }) => {
     return createNotificationOperations(getRequiredDb(ctx)).getUnreadCount({

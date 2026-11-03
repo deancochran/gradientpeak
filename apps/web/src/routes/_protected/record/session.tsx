@@ -745,15 +745,23 @@ export function RecordSessionPage() {
             />
           ) : null}
 
-          <div className="grid grid-cols-2 gap-4 text-center">
-            <TimeStat label="Elapsed" seconds={recording.elapsedSeconds} />
-            <TimeStat label="Active time" seconds={recording.activeSeconds} />
-            {planStatus ? (
-              <TimeStat label="Current lap" seconds={planStatus.currentLapElapsedSeconds} />
-            ) : null}
-            {currentOccurrence ? (
-              <TimeStat label="Current step" seconds={planStatus?.currentStepElapsedSeconds ?? 0} />
-            ) : null}
+          <div className="space-y-2 text-center">
+            <p className="text-sm text-muted-foreground">
+              Elapsed time is shown in the cockpit. Active time excludes pauses, so compare it with
+              elapsed time to see paused time.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <TimeStat label="Active time" seconds={recording.activeSeconds} />
+              {planStatus ? (
+                <TimeStat label="Current lap" seconds={planStatus.currentLapElapsedSeconds} />
+              ) : null}
+              {currentOccurrence ? (
+                <TimeStat
+                  label="Current step"
+                  seconds={planStatus?.currentStepElapsedSeconds ?? 0}
+                />
+              ) : null}
+            </div>
           </div>
 
           {lifecycle !== "finished" ? (

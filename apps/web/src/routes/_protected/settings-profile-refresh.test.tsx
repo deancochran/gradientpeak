@@ -122,6 +122,28 @@ afterEach(() => {
 });
 
 describe("SettingsPage profile synchronization", () => {
+  it("renders named semantic settings regions with their matching headings", () => {
+    render(<SettingsPage />);
+
+    expect(screen.getByRole("heading", { name: "Settings", level: 1 })).toBeTruthy();
+    expect(
+      screen
+        .getByRole("region", { name: "Profile Information" })
+        .contains(screen.getByRole("heading", { name: "Profile Information" })),
+    ).toBe(true);
+    expect(
+      screen
+        .getByRole("region", { name: "Account Information" })
+        .contains(screen.getByRole("heading", { name: "Account Information" })),
+    ).toBe(true);
+    expect(screen.getByRole("region", { name: "Preferences" })).toBeTruthy();
+    expect(
+      screen
+        .getByRole("region", { name: "Password and sessions" })
+        .contains(screen.getByRole("heading", { name: "Password and sessions" })),
+    ).toBe(true);
+  });
+
   it("preserves dirty values, refreshes untouched values, and clears the prior account draft", async () => {
     state.profile = profile("account-a", "Server A", "Original bio");
     const rendered = render(<SettingsPage />);

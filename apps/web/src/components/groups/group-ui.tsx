@@ -2,6 +2,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar"
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 export type WebGroupSummary = {
@@ -68,6 +69,76 @@ export type GroupEventSummary = {
   viewerSeriesRsvp: { status: "going" | "declined" } | null;
   group?: Pick<WebGroupSummary, "id" | "name" | "slug" | "avatar_url"> | null;
 };
+
+export function canRenderRemoveMemberControl(
+  viewer: Pick<GroupViewer, "canRemoveMembers" | "relationshipState">,
+  targetRole: "owner" | "admin" | "member",
+) {
+  return (
+    viewer.canRemoveMembers &&
+    targetRole !== "owner" &&
+    (viewer.relationshipState === "owner" || targetRole === "member")
+  );
+}
+
+export function GroupManagementShell({
+  activeTab,
+  children,
+  description,
+  groupId,
+  heading,
+  viewer,
+}: {
+  activeTab: "members" | "requests";
+  children: ReactNode;
+  description: string;
+  groupId: string;
+  heading: string;
+  viewer: GroupViewer;
+}) {
+  const canManageRequests = viewer.canInvite || viewer.canManageJoinRequests;
+
+  return (
+    <>
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight">{heading}</h1>
+          <p className="text-sm text-muted-foreground">{description}</p>
+        </div>
+        <Button asChild type="button" variant="outline">
+          <Link to="/groups/$groupId" params={{ groupId }}>
+            Back to group
+          </Link>
+        </Button>
+      </header>
+      <nav aria-label="Group management" className="flex flex-wrap gap-2">
+        {viewer.canViewMembers ? (
+          <Button asChild variant={activeTab === "members" ? "default" : "outline"}>
+            <Link
+              aria-current={activeTab === "members" ? "page" : undefined}
+              to="/groups/$groupId/members"
+              params={{ groupId }}
+            >
+              Members
+            </Link>
+          </Button>
+        ) : null}
+        {canManageRequests ? (
+          <Button asChild variant={activeTab === "requests" ? "default" : "outline"}>
+            <Link
+              aria-current={activeTab === "requests" ? "page" : undefined}
+              to="/groups/$groupId/requests"
+              params={{ groupId }}
+            >
+              Requests and invitations
+            </Link>
+          </Button>
+        ) : null}
+      </nav>
+      {children}
+    </>
+  );
+}
 
 function initials(name: string) {
   return (

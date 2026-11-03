@@ -15,6 +15,8 @@ type TrainingPlanLibraryProps = {
   onOpen: (id: string) => void;
   onSearchChange?: (value: string) => void;
   searchValue?: string;
+  tab?: "owned" | "templates";
+  onTabChange?: (tab: "owned" | "templates") => void;
 };
 
 function QueryState({
@@ -124,6 +126,8 @@ export function TrainingPlanLibrary({
   onOpen,
   onSearchChange,
   searchValue,
+  tab,
+  onTabChange,
 }: TrainingPlanLibraryProps) {
   const [localSearch, setLocalSearch] = useState("");
   const search = searchValue ?? localSearch;
@@ -201,7 +205,13 @@ export function TrainingPlanLibrary({
           value={search}
         />
       </label>
-      <Tabs defaultValue="owned">
+      <Tabs
+        defaultValue="owned"
+        {...(tab ? { value: tab } : {})}
+        onValueChange={(nextTab) => {
+          if (nextTab === "owned" || nextTab === "templates") onTabChange?.(nextTab);
+        }}
+      >
         <TabsList aria-label="Training plan libraries">
           <TabsTrigger value="owned">My plans</TabsTrigger>
           <TabsTrigger value="templates">Templates</TabsTrigger>

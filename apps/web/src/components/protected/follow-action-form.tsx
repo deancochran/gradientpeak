@@ -2,7 +2,7 @@ import { invalidateRelationshipQueries } from "@repo/api/react";
 import { Button } from "@repo/ui/components/button";
 import { useServerFn } from "@tanstack/react-start";
 import { UserCheck, UserMinus, UserPlus } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { api } from "../../lib/api/client";
 import { contractEpochFormInputProps } from "../../lib/contract-epoch";
@@ -25,17 +25,20 @@ export function FollowActionForm({
   const unfollowUser = useServerFn(unfollowUserAction);
   const utils = api.useUtils();
   const [isPendingSubmit, setIsPendingSubmit] = useState(false);
+  const pendingSubmitRef = useRef(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const action = isFollowing || isPending ? unfollowUserAction : followUserAction;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (pendingSubmitRef.current) return;
+
+    pendingSubmitRef.current = true;
     setIsPendingSubmit(true);
     setSubmitError(null);
 
     try {
-      event.preventDefault();
-
       if (isFollowing || isPending) {
         await unfollowUser({ data: { redirectTo, target_user_id: targetUserId } });
         return;
@@ -45,6 +48,7 @@ export function FollowActionForm({
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Unable to update follow state");
     } finally {
+      pendingSubmitRef.current = false;
       setIsPendingSubmit(false);
       // Server actions change the profile query's relationship status. Refresh the
       // tRPC cache so the control reflects the persisted follow state immediately.

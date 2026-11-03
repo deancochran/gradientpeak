@@ -14,11 +14,36 @@ const DISCOVERY_SCOPES = new Set<WebDiscoverScope>([
   "users",
   "groups",
 ]);
+const ACTIVITY_CATEGORIES = new Set(["run", "bike", "swim", "strength", "other"]);
+const ACTIVITY_PLAN_SORTS = new Set(["newest", "oldest"]);
+const TRAINING_PLAN_SORTS = new Set([
+  "newest",
+  "oldest",
+  "duration_desc",
+  "duration_asc",
+  "sessions_desc",
+  "sessions_asc",
+]);
+const ROUTE_SORTS = new Set(["newest", "oldest", "distance_desc", "distance_asc"]);
+const PROFILE_SORTS = new Set(["newest", "oldest", "username_asc", "username_desc"]);
+const EXPERIENCE_LEVELS = new Set(["beginner", "intermediate", "advanced"]);
+
+type DiscoverySearch = {
+  q?: string;
+  scope?: WebDiscoverScope;
+  minDistanceKm?: string;
+  maxDistanceKm?: string;
+  activityCategory?: string;
+  activitySort?: string;
+  trainingPlanCategory?: string;
+  experience?: string;
+  routeSort?: string;
+  profileSort?: string;
+  trainingSort?: string;
+};
 
 export const Route = createFileRoute("/_protected/search")({
-  validateSearch: (
-    search: Record<string, unknown>,
-  ): { q?: string; scope?: WebDiscoverScope; minDistanceKm?: string; maxDistanceKm?: string } => {
+  validateSearch: (search: Record<string, unknown>): DiscoverySearch => {
     const minDistanceKm = optionalNonnegativeNumber(search.minDistanceKm);
     const maxDistanceKm = optionalNonnegativeNumber(search.maxDistanceKm);
     return {
@@ -34,13 +59,32 @@ export const Route = createFileRoute("/_protected/search")({
             ...(minDistanceKm !== undefined ? { minDistanceKm: String(minDistanceKm) } : {}),
             ...(maxDistanceKm !== undefined ? { maxDistanceKm: String(maxDistanceKm) } : {}),
           }),
+      ...optionalSetValue(search.activityCategory, ACTIVITY_CATEGORIES, "activityCategory"),
+      ...optionalSetValue(search.trainingPlanCategory, ACTIVITY_CATEGORIES, "trainingPlanCategory"),
+      ...optionalSetValue(search.experience, EXPERIENCE_LEVELS, "experience"),
+      ...optionalSetValue(search.activitySort, ACTIVITY_PLAN_SORTS, "activitySort"),
+      ...optionalSetValue(search.trainingSort, TRAINING_PLAN_SORTS, "trainingSort"),
+      ...optionalSetValue(search.routeSort, ROUTE_SORTS, "routeSort"),
+      ...optionalSetValue(search.profileSort, PROFILE_SORTS, "profileSort"),
     };
   },
   component: SearchPage,
 });
 
 function SearchPage() {
-  const { maxDistanceKm, minDistanceKm, q, scope } = Route.useSearch();
+  const {
+    activityCategory,
+    activitySort,
+    experience,
+    maxDistanceKm,
+    minDistanceKm,
+    profileSort,
+    q,
+    routeSort,
+    scope,
+    trainingPlanCategory,
+    trainingSort,
+  } = Route.useSearch();
   return (
     <div className="space-y-6">
       <header>
@@ -59,6 +103,13 @@ function SearchPage() {
         initialMaxDistanceKm={maxDistanceKm ?? ""}
         initialMinDistanceKm={minDistanceKm ?? ""}
         initialQuery={q ?? ""}
+        initialActivityCategory={activityCategory ?? ""}
+        initialActivitySort={activitySort ?? "newest"}
+        initialExperience={experience ?? ""}
+        initialProfileSort={profileSort ?? "newest"}
+        initialRouteSort={routeSort ?? "newest"}
+        initialTrainingPlanCategory={trainingPlanCategory ?? ""}
+        initialTrainingSort={trainingSort ?? "newest"}
         {...(scope ? { initialScope: scope } : {})}
       />
     </div>
@@ -69,4 +120,8 @@ function optionalNonnegativeNumber(value: unknown) {
   if (typeof value !== "string" || value.trim() === "") return undefined;
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+function optionalSetValue(value: unknown, values: Set<string>, key: string) {
+  return typeof value === "string" && values.has(value) ? { [key]: value } : {};
 }

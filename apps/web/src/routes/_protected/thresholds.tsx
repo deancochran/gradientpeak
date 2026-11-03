@@ -12,10 +12,17 @@ export const Route = createFileRoute("/_protected/thresholds")({
   component: ThresholdsPage,
 });
 
-function formatThreshold(value: number, unit: "watts" | "meters_per_second" | "bpm") {
+function formatThreshold(
+  value: number,
+  unit: "watts" | "meters_per_second" | "bpm",
+  category: "bike" | "run" | "swim",
+) {
   if (unit === "watts") return `${Math.round(value)} W`;
   if (unit === "bpm") return `${Math.round(value)} bpm`;
-  return `${value.toFixed(2)} m/s`;
+  if (value <= 0) return "—";
+  const distance = category === "swim" ? 100 : 1_000;
+  const seconds = Math.round(distance / value);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} /${distance === 100 ? "100m" : "km"}`;
 }
 
 function ThresholdsPage() {
@@ -56,7 +63,7 @@ function ThresholdsPage() {
                   <CardContent>
                     <p className="text-2xl font-semibold">
                       {threshold.status === "available"
-                        ? formatThreshold(threshold.value, threshold.unit)
+                        ? formatThreshold(threshold.value, threshold.unit, activityCategory)
                         : "—"}
                     </p>
                   </CardContent>
@@ -81,7 +88,7 @@ function ThresholdsPage() {
                       <div>
                         <p className="font-medium capitalize">{item.activityCategory}</p>
                         <p className="text-sm text-muted-foreground">
-                          {formatThreshold(item.value, item.unit)} ·{" "}
+                          {formatThreshold(item.value, item.unit, item.activityCategory)} ·{" "}
                           {new Date(item.effectiveAt).toLocaleDateString()}
                         </p>
                       </div>
@@ -104,7 +111,16 @@ function ThresholdsPage() {
             )}
           </section>
         </>
-      ) : null}
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Build your threshold history</CardTitle>
+            <CardDescription>
+              Record eligible completed activities to calculate thresholds and pace zones here.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      )}
     </div>
   );
 }

@@ -186,6 +186,19 @@ function EventDetailPage() {
   }
 
   if (isPlannedSession && plannedSession) {
+    if (activityPlanQuery.isLoading) {
+      return <p className="text-sm text-muted-foreground">Loading the activity plan...</p>;
+    }
+    if (activityPlanQuery.isError) {
+      return (
+        <div role="alert" className="space-y-3">
+          <p className="text-sm">The current activity plan could not be loaded.</p>
+          <Button variant="outline" onClick={() => void activityPlanQuery.refetch()}>
+            Retry activity plan
+          </Button>
+        </div>
+      );
+    }
     const activityCategory = activityPlanQuery.data?.detail?.activityCategory;
     if (!activityCategory) {
       return (

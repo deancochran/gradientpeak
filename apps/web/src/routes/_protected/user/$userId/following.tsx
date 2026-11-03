@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { FollowActionForm } from "../../../../components/protected/follow-action-form";
 import { RelationshipList } from "../../../../components/protected/relationship-list";
+import { RelationshipPageShell } from "../../../../components/protected/relationship-page-shell";
 import { useAuth } from "../../../../components/providers/auth-provider";
 import { RouteFlashToast, type RouteFlashType } from "../../../../components/route-flash-toast";
 import { api } from "../../../../lib/api/client";
@@ -27,7 +28,7 @@ function FollowingPage() {
   const limit = 20;
   const followingQuery = api.social.getFollowing.useQuery(
     { user_id: userId, limit, cursor },
-    { enabled: Boolean(userId) },
+    { enabled: Boolean(userId), retry: 2 },
   );
 
   const users = useMemo(() => followingQuery.data?.users ?? [], [followingQuery.data]);
@@ -36,7 +37,7 @@ function FollowingPage() {
   const hasMore = Boolean(followingQuery.data?.nextCursor);
 
   return (
-    <div className="container max-w-3xl space-y-6 py-8">
+    <RelationshipPageShell activeTab="following" userId={userId}>
       <RouteFlashToast
         {...(flash === undefined ? {} : { message: flash })}
         {...(flashType === undefined ? {} : { type: flashType })}
@@ -49,18 +50,6 @@ function FollowingPage() {
           })
         }
       />
-      <div className="flex justify-end">
-        <Button asChild variant="ghost">
-          <Link
-            to="/user/$userId"
-            params={{ userId }}
-            search={{ flash: undefined, flashType: undefined }}
-          >
-            Back
-          </Link>
-        </Button>
-      </div>
-
       <RelationshipList
         title="{count} following"
         total={total}
@@ -128,6 +117,6 @@ function FollowingPage() {
           </Button>
         </div>
       ) : null}
-    </div>
+    </RelationshipPageShell>
   );
 }

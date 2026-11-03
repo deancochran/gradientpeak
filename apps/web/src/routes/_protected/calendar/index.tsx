@@ -75,7 +75,15 @@ function CalendarIndexPage() {
   const view = search.view === "agenda" || search.view === "week" ? search.view : "month";
   const monthWindow = useMemo(() => getMonthWindow(month), [month]);
   const weekWindow = useMemo(() => getWeekWindow(date), [date]);
-  const { startKey, endKey } = view === "week" ? weekWindow : monthWindow;
+  const gridDays = useMemo(() => getCalendarGrid(month), [month]);
+  const visibleMonthWindow = useMemo(() => {
+    const firstDay = gridDays[0];
+    const lastDay = gridDays.at(-1);
+    return firstDay && lastDay
+      ? { endKey: toDateKey(lastDay), startKey: toDateKey(firstDay) }
+      : monthWindow;
+  }, [gridDays, monthWindow]);
+  const { startKey, endKey } = view === "week" ? weekWindow : visibleMonthWindow;
   const todayKey = getTodayDateKey();
   const eventsQuery = api.calendar.range.useQuery({
     startDate: startKey,
@@ -90,7 +98,14 @@ function CalendarIndexPage() {
   const projectionItems = useMemo(() => {
     return [...(eventsQuery.data?.items ?? [])].sort(compareCalendarProjectionItems);
   }, [eventsQuery.data?.items]);
-  const plannedSessions = projectionItems.flatMap((item) =>
+  const visibleProjectionItems = useMemo(
+    () =>
+      view === "week"
+        ? projectionItems
+        : projectionItems.filter((item) => item.calendarDate.startsWith(month)),
+    [month, projectionItems, view],
+  );
+  const plannedSessions = visibleProjectionItems.flatMap((item) =>
     item.plannedSession ? [{ session: item.plannedSession, title: item.title }] : [],
   );
   const weekComparison = useMemo(
@@ -109,7 +124,6 @@ function CalendarIndexPage() {
     }
     return grouped;
   }, [projectionItems]);
-  const gridDays = useMemo(() => getCalendarGrid(month), [month]);
   const formatDistance = (value: number | null) =>
     value === null
       ? null
@@ -138,7 +152,7 @@ function CalendarIndexPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
           <Button asChild>
-            <Link to="/calendar/new" search={{ date }}>
+            <Link to="/calendar/new" search={{ date, month, view }}>
               <Plus className="mr-2 h-4 w-4" />
               Create
             </Link>
@@ -200,7 +214,10 @@ function CalendarIndexPage() {
           className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/40 p-4"
         >
           <p className="text-sm">
-            Some calendar data could not be loaded. Existing results remain visible.
+            Some calendar data could not be loaded.
+            {eventsQuery.data
+              ? " Available results remain visible."
+              : " Retry to load the calendar."}
           </p>
           <Button size="sm" variant="outline" onClick={() => void eventsQuery.refetch()}>
             Retry
@@ -217,10 +234,10 @@ function CalendarIndexPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {eventsQuery.data?.truncation.plannedSessions ? (
+          {eventsQuery.data && Object.values(eventsQuery.data.truncation).some(Boolean) ? (
             <p role="alert" className="text-sm text-destructive">
-              This range is too large to show completely. Narrow the calendar period before making
-              decisions from this list.
+              This calendar period could not be shown completely. Narrow the period before making
+              decisions from these results.
             </p>
           ) : null}
           {eventsQuery.isLoading ? (
@@ -258,6 +275,10 @@ function CalendarIndexPage() {
                 </div>
               ))}
             </div>
+          ) : eventsQuery.isError && !eventsQuery.data ? (
+            <p className="text-sm text-muted-foreground">
+              Personal planned sessions are unavailable until the calendar can be loaded.
+            </p>
           ) : (
             <p className="text-sm text-muted-foreground">
               No personal planned sessions in this period.
@@ -272,7 +293,7 @@ function CalendarIndexPage() {
           void navigate({
             to: "/calendar",
             search: {
-              date,
+              date: nextView === "week" && !date.startsWith(month) ? monthWindow.startKey : date,
               month,
               view: nextView === "agenda" || nextView === "week" ? nextView : "month",
             },
@@ -398,12 +419,16 @@ function CalendarIndexPage() {
             <CardContent>
               {eventsQuery.isLoading ? (
                 <p className="text-sm text-muted-foreground">Loading agenda...</p>
-              ) : projectionItems.length > 0 ? (
+              ) : visibleProjectionItems.length > 0 ? (
                 <div className="space-y-3">
-                  {projectionItems.map((item) => (
+                  {visibleProjectionItems.map((item) => (
                     <CalendarProjectionCard item={item} key={`${item.kind}-${item.id}`} />
                   ))}
                 </div>
+              ) : eventsQuery.isError && !eventsQuery.data ? (
+                <p className="text-sm text-muted-foreground">
+                  The agenda is unavailable until the calendar can be loaded.
+                </p>
               ) : (
                 <p className="text-sm text-muted-foreground">No events scheduled this month.</p>
               )}

@@ -81,6 +81,47 @@ describe("simplified web onboarding", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("keeps the identity draft and explains an unconfirmed submit after a server-function rejection", async () => {
+    mocks.complete.mockRejectedValueOnce(new Error("Network unavailable"));
+    render(<OnboardingPage />);
+
+    fireEvent.change(screen.getByLabelText("Full name"), { target: { value: "Updated Athlete" } });
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "updated_athlete" } });
+    fireEvent.click(screen.getByRole("button", { name: "Finish setup" }));
+
+    expect(
+      await screen.findByText(
+        "We couldn't confirm whether setup finished. Your details are still here. Refresh this page before trying again.",
+      ),
+    ).toBeTruthy();
+    expect((screen.getByLabelText("Full name") as HTMLInputElement).value).toBe("Updated Athlete");
+    expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe("updated_athlete");
+    expect(screen.getByRole("button", { name: "Finish setup" }).hasAttribute("disabled")).toBe(
+      false,
+    );
+  });
+
+  it("does not start a second submit while the first server-function call is pending", async () => {
+    let resolveCompletion: ((result: { status: string }) => void) | undefined;
+    mocks.complete.mockImplementationOnce(
+      () =>
+        new Promise<{ status: string }>((resolve) => {
+          resolveCompletion = resolve;
+        }),
+    );
+    render(<OnboardingPage />);
+
+    const button = screen.getByRole("button", { name: "Finish setup" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    expect(mocks.complete).toHaveBeenCalledTimes(1);
+    expect(button.hasAttribute("disabled")).toBe(true);
+
+    resolveCompletion?.({ status: "ok" });
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false));
+  });
+
   it("renders identity, optional provider controls, and no removed initial setup sections", async () => {
     render(<OnboardingPage />);
 

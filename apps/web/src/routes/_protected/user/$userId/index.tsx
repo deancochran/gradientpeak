@@ -11,6 +11,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Clock, Loader2, Lock } from "lucide-react";
 import { FollowActionForm } from "../../../../components/protected/follow-action-form";
 import { MessageActionForm } from "../../../../components/protected/message-action-form";
+import { isNotFoundError } from "../../../../components/protected/profile-query-state";
 import { useAuth } from "../../../../components/providers/auth-provider";
 import { RouteFlashToast, type RouteFlashType } from "../../../../components/route-flash-toast";
 import { api } from "../../../../lib/api/client";
@@ -53,7 +54,25 @@ function UserProfilePage() {
     );
   }
 
-  if (profileQuery.error || !profile) {
+  if (profileQuery.error && !isNotFoundError(profileQuery.error)) {
+    return (
+      <div className="container max-w-3xl py-8">
+        <Card>
+          <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
+            <div role="alert">
+              <h2 className="mb-2 text-xl font-semibold">Unable to load this profile</h2>
+              <p className="text-muted-foreground">Check your connection and try again.</p>
+            </div>
+            <Button type="button" variant="outline" onClick={() => void profileQuery.refetch()}>
+              Try again
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (isNotFoundError(profileQuery.error) || !profile) {
     return (
       <div className="container max-w-3xl py-8">
         <Card>

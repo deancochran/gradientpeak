@@ -49,7 +49,7 @@ export function PlanDashboard() {
       startDate: today,
       endDate: shiftDateKey(today, 89),
     },
-    { enabled: profileQuery.data !== undefined },
+    { enabled: Boolean(profileQuery.data) },
   );
   const trainingPlansQuery = api.trainingPlans.list.useQuery({ ownerScope: "own", limit: 6 });
   const upcomingEventsQuery = api.calendar.range.useQuery({
@@ -59,17 +59,27 @@ export function PlanDashboard() {
     limit: 12,
   });
   const goalsQuery = api.goals.list.useQuery(
-    { profile_id: profileQuery.data?.id ?? "00000000-0000-0000-0000-000000000000", limit: 200 },
-    { enabled: Boolean(profileQuery.data?.id) },
+    {
+      profile_id: profileQuery.data?.id ?? "00000000-0000-0000-0000-000000000000",
+      limit: 1,
+      sort_by: "target_date",
+      sort_order: "asc",
+      target_date_on_or_after: today,
+    },
+    {
+      enabled: Boolean(profileQuery.data?.id),
+    },
   );
   const upcomingEvents = useMemo(
     () => getUpcomingScheduledWorkItems(upcomingEventsQuery.data?.items ?? []),
     [upcomingEventsQuery.data?.items],
   );
-  const nextGoal = useMemo(() => {
-    const goals = [...(goalsQuery.data?.items ?? [])];
-    return goals.sort((a, b) => a.target_date.localeCompare(b.target_date))[0] ?? null;
-  }, [goalsQuery.data?.items]);
+  const nextGoal = goalsQuery.data?.items[0] ?? null;
+  const profileUnavailable = profileQuery.isError || (profileQuery.isSuccess && !profileQuery.data);
+  const profileLoading = profileQuery.isLoading;
+  const trainingPathLoading = profileLoading || planTabQuery.isLoading;
+  const trainingPathUnavailable =
+    profileUnavailable || (planTabQuery.isError && !planTabQuery.data);
 
   return (
     <>
@@ -91,9 +101,16 @@ export function PlanDashboard() {
         </div>
       ) : null}
       <TrainingLoadPath
-        isError={planTabQuery.isError}
-        isLoading={planTabQuery.isLoading}
-        onRetry={() => void planTabQuery.refetch()}
+        {...(profileUnavailable
+          ? {
+              errorMessage:
+                "Training path is unavailable because your planning profile could not be loaded.",
+              retryLabel: "Retry planning profile",
+            }
+          : {})}
+        isError={trainingPathUnavailable}
+        isLoading={trainingPathLoading}
+        onRetry={() => void (profileUnavailable ? profileQuery.refetch() : planTabQuery.refetch())}
         projection={planTabQuery.data}
       />
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
@@ -118,6 +135,10 @@ export function PlanDashboard() {
                   </Badge>
                 </div>
               </>
+            ) : profileLoading || planTabQuery.isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading active plan...</p>
+            ) : profileUnavailable || (planTabQuery.isError && !planTabQuery.data) ? (
+              <p className="text-sm text-muted-foreground">Active plan is unavailable.</p>
             ) : (
               <p className="text-sm text-muted-foreground">
                 No active plan detected from future planned sessions.
@@ -130,7 +151,11 @@ export function PlanDashboard() {
             <CardTitle>Next goal anchor</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {nextGoal ? (
+            {profileQuery.isLoading || goalsQuery.isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading goals...</p>
+            ) : profileUnavailable || (goalsQuery.isError && !goalsQuery.data) ? (
+              <p className="text-sm text-muted-foreground">Goal anchors are unavailable.</p>
+            ) : nextGoal ? (
               <>
                 <div className="rounded-xl border p-4">
                   <p className="font-medium">{nextGoal.title}</p>
@@ -144,7 +169,7 @@ export function PlanDashboard() {
                 </div>
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">No goals created yet.</p>
+              <p className="text-sm text-muted-foreground">No upcoming goals.</p>
             )}
           </CardContent>
         </Card>
@@ -160,6 +185,8 @@ export function PlanDashboard() {
           <CardContent>
             {upcomingEventsQuery.isLoading ? (
               <p className="text-sm text-muted-foreground">Loading scheduled work...</p>
+            ) : upcomingEventsQuery.isError && !upcomingEventsQuery.data ? (
+              <p className="text-sm text-muted-foreground">Scheduled work is unavailable.</p>
             ) : upcomingEvents.length > 0 ? (
               <div className="space-y-3">
                 {upcomingEvents.slice(0, 8).map((event) => (
@@ -224,30 +251,30 @@ export function PlanDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            {goalsQuery.isLoading ? (
+            {profileQuery.isLoading || goalsQuery.isLoading ? (
               <p className="text-sm text-muted-foreground">Loading goals...</p>
-            ) : goalsQuery.data?.items?.length ? (
+            ) : profileUnavailable || (goalsQuery.isError && !goalsQuery.data) ? (
+              <p className="text-sm text-muted-foreground">Goals are unavailable.</p>
+            ) : nextGoal ? (
               <div className="space-y-3">
-                {goalsQuery.data.items.map((goal) => (
-                  <div key={goal.id} className="rounded-xl border p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-medium">{goal.title}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {formatShortDayLabel(goal.target_date)}
-                        </p>
-                      </div>
-                      <Badge variant="outline">{goal.priority}/10</Badge>
+                <div className="rounded-xl border p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium">{nextGoal.title}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {formatShortDayLabel(nextGoal.target_date)}
+                      </p>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Badge>{goal.activity_category}</Badge>
-                    </div>
+                    <Badge variant="outline">{nextGoal.priority}/10</Badge>
                   </div>
-                ))}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge>{nextGoal.activity_category}</Badge>
+                  </div>
+                </div>
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">
-                No goals yet. Add one to anchor your plan.
+                No upcoming goals. Add one to anchor your plan.
               </p>
             )}
           </CardContent>
@@ -258,7 +285,11 @@ export function PlanDashboard() {
           <CardTitle>Available training plans</CardTitle>
         </CardHeader>
         <CardContent>
-          {trainingPlansQuery.data?.items?.length ? (
+          {trainingPlansQuery.isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading training plans...</p>
+          ) : trainingPlansQuery.isError && !trainingPlansQuery.data ? (
+            <p className="text-sm text-muted-foreground">Training plans are unavailable.</p>
+          ) : trainingPlansQuery.data?.items?.length ? (
             <div className="flex flex-wrap gap-2">
               {trainingPlansQuery.data.items.map((plan) => (
                 <Badge key={plan.id} variant="outline">
@@ -272,6 +303,11 @@ export function PlanDashboard() {
         </CardContent>
       </Card>
       <div className="flex flex-wrap gap-2">
+        <Button asChild variant="outline">
+          <Link to="/training-plans" search={{ tab: "owned" }}>
+            Open training-plan library
+          </Link>
+        </Button>
         <Button asChild variant="outline">
           <Link to="/calendar" search={{ month: getMonthKey(new Date()), view: "month" }}>
             Open calendar

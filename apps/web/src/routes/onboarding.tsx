@@ -167,6 +167,10 @@ export function OnboardingPage() {
         setPendingOAuthBlocked("code" in result && result.code === "pending_oauth");
         setSubmissionError(result.message);
       }
+    } catch {
+      setSubmissionError(
+        "We couldn't confirm whether setup finished. Your details are still here. Refresh this page before trying again.",
+      );
     } finally {
       setIsSubmitting(false);
       pendingActionRef.current = false;

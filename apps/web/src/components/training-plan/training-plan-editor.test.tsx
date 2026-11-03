@@ -160,6 +160,25 @@ afterEach(() => {
 });
 
 describe("TrainingPlanEditor", () => {
+  it("copies a one-week source into the visible next week and permits additive occupied-week copies", async () => {
+    await renderReady(<TrainingPlanEditor onSaved={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add activity" }));
+
+    const destination = screen.getByLabelText("To week") as HTMLSelectElement;
+    expect([...destination.options].map((option) => option.text)).toContain("Week 2");
+    fireEvent.change(destination, { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Copy week" }));
+    expect(
+      screen.getAllByLabelText("Day offset").map((input) => input.getAttribute("value")),
+    ).toEqual(["0", "7"]);
+
+    fireEvent.change(destination, { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: "Copy week" }));
+    expect(
+      screen.getAllByLabelText("Day offset").map((input) => input.getAttribute("value")),
+    ).toEqual(["0", "7", "0"]);
+  });
+
   it("retains an open form during backgrounding but drops it on page exit and browser cached return", async () => {
     await renderReady(<TrainingPlanEditor onSaved={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("Name"), {

@@ -96,11 +96,15 @@ export function TrainingLoadPath({
   isLoading = false,
   onRetry,
   projection,
+  errorMessage = "Training path could not be refreshed. No client-side estimate is shown.",
+  retryLabel = "Retry training path",
 }: {
+  errorMessage?: string;
   isError?: boolean;
   isLoading?: boolean;
   onRetry?: () => void;
   projection: PlanTabProjection | undefined;
+  retryLabel?: string;
 }) {
   const timeline = projection?.timeline;
   const completedItems =
@@ -157,10 +161,10 @@ export function TrainingLoadPath({
           </p>
         ) : isError ? (
           <div className="space-y-2 rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-            <p>Training path could not be refreshed. No client-side estimate is shown.</p>
+            <p>{errorMessage}</p>
             {onRetry ? (
               <Button onClick={onRetry} size="sm" type="button" variant="outline">
-                Retry training path
+                {retryLabel}
               </Button>
             ) : null}
           </div>

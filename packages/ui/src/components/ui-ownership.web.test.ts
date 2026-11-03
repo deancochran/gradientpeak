@@ -99,6 +99,10 @@ describe("UI ownership guardrails", () => {
       "groups/group-form.tsx",
       "groups/group-ui.tsx",
       "login-form.tsx",
+      // Inbox retry/compose navigation uses the messages route search contract.
+      "messages/messages-inbox-state.tsx",
+      // Notification copy and state are specific to product activity views.
+      "notifications/notifications-empty-state.tsx",
       "onboarding/provider-onboarding.tsx",
       "planning/agenda-create-form.tsx",
       "planning/goal-card.tsx",
@@ -124,8 +128,12 @@ describe("UI ownership guardrails", () => {
       "protected/notifications-button.tsx",
       "protected/performance-model-summary.tsx",
       "protected/plan-goal-form.tsx",
+      // Protected profile route error classification.
+      "protected/profile-query-state.ts",
       "protected/protected-header.tsx",
       "protected/relationship-list.tsx",
+      // Profile relationship route shell and TanStack Router navigation.
+      "protected/relationship-page-shell.tsx",
       "protected/route-upload-form.tsx",
       "protected/search-launcher.tsx",
       "protected/user-nav.tsx",
@@ -133,14 +141,18 @@ describe("UI ownership guardrails", () => {
       "providers/auth-provider.tsx",
       "providers/recording-storage-boundary.tsx",
       "providers/theme-provider.tsx",
-      // Recording feature composition and app-owned opt-in street-map policy.
+      // Recording feature composition, including plan-review actions, and app-owned opt-in street-map policy.
       "recording/geographic-route-map.tsx",
       "recording/recording-cockpit.tsx",
+      "recording/recording-plan-review.tsx",
       "recording/route-preview-map.tsx",
       "route-flash-toast.tsx",
       "routes/route-edit-form.tsx",
       "routes/route-event-attachment.tsx",
       "routes/route-library-controls.tsx",
+      // Settings-specific analytics consent, theme state, and section anchors.
+      "settings/settings-preferences-cards.tsx",
+      "settings/settings-section-navigation.tsx",
       "sign-up-form.tsx",
       "training-plan/training-plan-detail.tsx",
       "training-plan/training-plan-editor.tsx",
