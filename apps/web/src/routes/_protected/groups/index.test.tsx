@@ -9,11 +9,20 @@ const mocks = vi.hoisted(() => ({
   upcomingInputs: [] as Array<Record<string, unknown>>,
 }));
 
+vi.mock("../../../lib/api/route-loading", () => ({
+  loadRouteQuery: async (
+    getCached: () => unknown,
+    fetch: () => Promise<unknown>,
+  ): Promise<void> => {
+    if (getCached() === undefined) await fetch();
+  },
+}));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
     useNavigate: () => mocks.navigate,
     useSearch: () => mocks.search,
+    useLoaderData: () => ({ upcomingWindowStart: "2026-11-03T00:00:00.000Z" }),
   }),
 }));
 vi.mock("../../../components/groups/group-ui", () => ({
@@ -86,6 +95,43 @@ describe("Groups library URL state", () => {
       q: undefined,
       tab: undefined,
     });
+  });
+
+  it("prefetches only the active tab with the component query key", async () => {
+    const getInfiniteData = vi.fn(() => undefined);
+    const fetchInfinite = vi.fn(() => Promise.resolve({ pages: [], pageParams: [] }));
+    const loader = (
+      Route as unknown as {
+        loader: (options: {
+          context: { apiUtils: object };
+          deps: { q?: string; tab: string };
+        }) => Promise<unknown>;
+      }
+    ).loader;
+
+    await loader({
+      context: {
+        apiUtils: {
+          groups: {
+            listDiscoverable: { fetchInfinite, getInfiniteData },
+          },
+        },
+      },
+      deps: { q: "local club", tab: "discover" },
+    });
+
+    expect(getInfiniteData).toHaveBeenCalledWith({ limit: 30, search: "local club" });
+    expect(fetchInfinite).toHaveBeenCalledWith(
+      { limit: 30, search: "local club" },
+      { getNextPageParam: expect.any(Function), pages: 1 },
+    );
+    const calls = fetchInfinite.mock.calls as unknown as Array<
+      [unknown, { getNextPageParam: (page: { nextCursor: string | null }) => string | null }]
+    >;
+    const options = calls[0]?.[1] as {
+      getNextPageParam: (page: { nextCursor: string | null }) => string | null;
+    };
+    expect(options.getNextPageParam({ nextCursor: "next-page" })).toBe("next-page");
   });
 
   it("debounces discovery search into replacement URL state", () => {

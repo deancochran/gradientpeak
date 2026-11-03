@@ -4,8 +4,27 @@ import { toast } from "sonner";
 import { GroupEventForm } from "../../../../../components/groups/group-event-form";
 import { type GroupEventSummary, QueryState } from "../../../../../components/groups/group-ui";
 import { api } from "../../../../../lib/api/client";
+import { loadRouteQuery } from "../../../../../lib/api/route-loading";
+import {
+  createGroupDetailInput,
+  createGroupEventDetailInput,
+} from "../../../../../lib/groups-query-inputs";
 
 export const Route = createFileRoute("/_protected/groups/events/$groupEventId/edit")({
+  loader: async ({ context, params }) => {
+    const eventInput = createGroupEventDetailInput(params.groupEventId);
+    await loadRouteQuery(
+      () => context.apiUtils.groups.events.detail.getData(eventInput),
+      () => context.apiUtils.groups.events.detail.fetch(eventInput),
+    );
+    const event = context.apiUtils.groups.events.detail.getData(eventInput)?.event;
+    if (!event) return;
+    const groupInput = createGroupDetailInput(event.group_id);
+    await loadRouteQuery(
+      () => context.apiUtils.groups.detail.getData(groupInput),
+      () => context.apiUtils.groups.detail.fetch(groupInput),
+    );
+  },
   component: EditGroupEventPage,
 });
 
@@ -13,10 +32,10 @@ function EditGroupEventPage() {
   const { groupEventId } = Route.useParams();
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
-  const detail = api.groups.events.detail.useQuery({ groupEventId });
+  const detail = api.groups.events.detail.useQuery(createGroupEventDetailInput(groupEventId));
   const event = detail.data?.event as GroupEventSummary | undefined;
   const group = api.groups.detail.useQuery(
-    { groupId: event?.group_id ?? "00000000-0000-4000-8000-000000000000" },
+    createGroupDetailInput(event?.group_id ?? "00000000-0000-4000-8000-000000000000"),
     { enabled: Boolean(event) },
   );
   const updateMutation = api.groups.events.update.useMutation();

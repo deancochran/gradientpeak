@@ -15,6 +15,7 @@ vi.mock("@tanstack/react-router", () => ({
   }) => <a href={to.replace("$activityPlanId", params.activityPlanId)}>{children}</a>,
   createFileRoute: () => (options: object) => ({
     ...options,
+    useLoaderData: () => ({ occurrencesStart: "2026-11-03T00:00:00.000Z" }),
     useNavigate: () => vi.fn(),
     useParams: () => ({ groupEventId: "event-1" }),
   }),

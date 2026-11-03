@@ -1,7 +1,7 @@
 import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   GroupCard,
@@ -10,10 +10,20 @@ import {
   type WebGroupSummary,
 } from "../../../components/groups/group-ui";
 import { api } from "../../../lib/api/client";
+import { loadRouteQuery } from "../../../lib/api/route-loading";
+import {
+  createDiscoverableGroupsInput,
+  createMyGroupsInput,
+  createMyInvitationsInput,
+  createMyJoinRequestsInput,
+  createUpcomingGroupEventsInput,
+  type GroupLibraryTab,
+  getInfiniteQueryPageCount,
+  isGroupLibraryTab,
+} from "../../../lib/groups-query-inputs";
 import { GROUP_SEARCH_MAX_LENGTH, normalizeGroupSearch } from "../../../lib/groups-search";
 
-const libraryTabs = ["upcoming", "joined", "owned", "discover", "invitations", "requests"] as const;
-type LibraryTab = (typeof libraryTabs)[number];
+type LibraryTab = GroupLibraryTab;
 
 const tabs: Array<[LibraryTab, string]> = [
   ["upcoming", "Upcoming events"],
@@ -24,15 +34,66 @@ const tabs: Array<[LibraryTab, string]> = [
   ["requests", "Requests"],
 ];
 
-function isLibraryTab(value: unknown): value is LibraryTab {
-  return typeof value === "string" && libraryTabs.includes(value as LibraryTab);
-}
-
 export const Route = createFileRoute("/_protected/groups/")({
   validateSearch: (search: Record<string, unknown>) => ({
     q: normalizeGroupSearch(search.q),
-    tab: isLibraryTab(search.tab) ? search.tab : undefined,
+    tab: isGroupLibraryTab(search.tab) ? search.tab : undefined,
   }),
+  loaderDeps: ({ search }) => ({
+    q: search.q,
+    tab: search.tab ?? "upcoming",
+  }),
+  loader: async ({ context, deps }) => {
+    const upcomingWindowStart = new Date().toISOString();
+    if (deps.tab === "discover") {
+      const input = createDiscoverableGroupsInput(deps.q);
+      const getCached = () => context.apiUtils.groups.listDiscoverable.getInfiniteData(input);
+      await loadRouteQuery(getCached, () =>
+        context.apiUtils.groups.listDiscoverable.fetchInfinite(input, {
+          pages: getInfiniteQueryPageCount(getCached()),
+          getNextPageParam: (page) => page.nextCursor,
+        }),
+      );
+    } else if (deps.tab === "joined" || deps.tab === "owned") {
+      const input = createMyGroupsInput();
+      const getCached = () => context.apiUtils.groups.myGroups.getInfiniteData(input);
+      await loadRouteQuery(getCached, () =>
+        context.apiUtils.groups.myGroups.fetchInfinite(input, {
+          pages: getInfiniteQueryPageCount(getCached()),
+          getNextPageParam: (page) => page.nextCursor,
+        }),
+      );
+    } else if (deps.tab === "invitations") {
+      const input = createMyInvitationsInput();
+      const getCached = () => context.apiUtils.groups.myInvitations.getInfiniteData(input);
+      await loadRouteQuery(getCached, () =>
+        context.apiUtils.groups.myInvitations.fetchInfinite(input, {
+          pages: getInfiniteQueryPageCount(getCached()),
+          getNextPageParam: (page) => page.nextCursor,
+        }),
+      );
+    } else if (deps.tab === "requests") {
+      const input = createMyJoinRequestsInput();
+      const getCached = () => context.apiUtils.groups.myJoinRequests.getInfiniteData(input);
+      await loadRouteQuery(getCached, () =>
+        context.apiUtils.groups.myJoinRequests.fetchInfinite(input, {
+          pages: getInfiniteQueryPageCount(getCached()),
+          getNextPageParam: (page) => page.nextCursor,
+        }),
+      );
+    } else {
+      const input = createUpcomingGroupEventsInput(upcomingWindowStart);
+      const getCached = () =>
+        context.apiUtils.groups.events.myUpcomingGroupEvents.getInfiniteData(input);
+      await loadRouteQuery(getCached, () =>
+        context.apiUtils.groups.events.myUpcomingGroupEvents.fetchInfinite(input, {
+          pages: getInfiniteQueryPageCount(getCached()),
+          getNextPageParam: (page) => page.nextCursor,
+        }),
+      );
+    }
+    return { upcomingWindowStart };
+  },
   component: GroupsLibraryPage,
 });
 
@@ -42,7 +103,7 @@ function GroupsLibraryPage() {
   const { q: search, tab: selectedTab } = Route.useSearch();
   const tab = selectedTab ?? "upcoming";
   const [searchDraft, setSearchDraft] = useState(search ?? "");
-  const upcomingWindowStart = useMemo(() => new Date().toISOString(), []);
+  const { upcomingWindowStart } = Route.useLoaderData();
 
   useEffect(() => {
     setSearchDraft(search ?? "");
@@ -59,24 +120,23 @@ function GroupsLibraryPage() {
     }, 300);
     return () => window.clearTimeout(timeout);
   }, [navigate, search, searchDraft, tab]);
-  const mine = api.groups.myGroups.useInfiniteQuery(
-    { limit: 30 },
-    { getNextPageParam: (page) => page.nextCursor },
-  );
+  const mine = api.groups.myGroups.useInfiniteQuery(createMyGroupsInput(), {
+    getNextPageParam: (page) => page.nextCursor,
+  });
   const discover = api.groups.listDiscoverable.useInfiniteQuery(
-    { limit: 30, search },
+    createDiscoverableGroupsInput(search),
     { enabled: tab === "discover", getNextPageParam: (page) => page.nextCursor },
   );
-  const invitations = api.groups.myInvitations.useInfiniteQuery(
-    { limit: 30 },
-    { enabled: tab === "invitations", getNextPageParam: (page) => page.nextCursor },
-  );
-  const requests = api.groups.myJoinRequests.useInfiniteQuery(
-    { limit: 30 },
-    { enabled: tab === "requests", getNextPageParam: (page) => page.nextCursor },
-  );
+  const invitations = api.groups.myInvitations.useInfiniteQuery(createMyInvitationsInput(), {
+    enabled: tab === "invitations",
+    getNextPageParam: (page) => page.nextCursor,
+  });
+  const requests = api.groups.myJoinRequests.useInfiniteQuery(createMyJoinRequestsInput(), {
+    enabled: tab === "requests",
+    getNextPageParam: (page) => page.nextCursor,
+  });
   const upcoming = api.groups.events.myUpcomingGroupEvents.useInfiniteQuery(
-    { limit: 30, startsAfter: upcomingWindowStart },
+    createUpcomingGroupEventsInput(upcomingWindowStart),
     { enabled: tab === "upcoming", getNextPageParam: (page) => page.nextCursor, retry: 2 },
   );
   const joinMutation = api.groups.joinOrRequest.useMutation({

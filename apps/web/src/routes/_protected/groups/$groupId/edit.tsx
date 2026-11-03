@@ -4,8 +4,17 @@ import { toast } from "sonner";
 import { GroupForm } from "../../../../components/groups/group-form";
 import { QueryState, type WebGroupSummary } from "../../../../components/groups/group-ui";
 import { api } from "../../../../lib/api/client";
+import { loadRouteQuery } from "../../../../lib/api/route-loading";
+import { createGroupDetailInput } from "../../../../lib/groups-query-inputs";
 
 export const Route = createFileRoute("/_protected/groups/$groupId/edit")({
+  loader: ({ context, params }) => {
+    const input = createGroupDetailInput(params.groupId);
+    return loadRouteQuery(
+      () => context.apiUtils.groups.detail.getData(input),
+      () => context.apiUtils.groups.detail.fetch(input),
+    );
+  },
   component: EditGroupPage,
 });
 
@@ -13,7 +22,7 @@ function EditGroupPage() {
   const { groupId } = Route.useParams();
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
-  const detail = api.groups.detail.useQuery({ groupId });
+  const detail = api.groups.detail.useQuery(createGroupDetailInput(groupId));
   const updateMutation = api.groups.update.useMutation();
   return (
     <main className="container mx-auto max-w-3xl space-y-6 py-4">
