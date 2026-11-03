@@ -43,8 +43,7 @@ export const Route = createFileRoute("/_protected/notifications")({
       () =>
         context.apiUtils.notifications.getHistory.fetchInfinite(input, {
           getNextPageParam: (page) => page.nextCursor ?? undefined,
-          pages: Infinity,
-        }),
+        } as never),
     );
   },
   component: NotificationsPage,

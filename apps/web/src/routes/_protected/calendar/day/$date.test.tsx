@@ -104,11 +104,13 @@ vi.mock("@tanstack/react-router", () => ({
     params,
     search,
     to,
+    ...props
   }: {
     children: React.ReactNode;
     params?: { eventId?: string };
     search?: Record<string, unknown>;
     to: string;
+    [key: string]: unknown;
   }) => {
     mocks.linkProps.push({ params, search, to });
     return (
@@ -118,6 +120,7 @@ vi.mock("@tanstack/react-router", () => ({
           event.preventDefault();
           mocks.linkClick();
         }}
+        {...props}
       >
         {children}
       </a>

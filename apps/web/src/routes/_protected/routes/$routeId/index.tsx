@@ -37,17 +37,12 @@ import { api } from "../../../../lib/api/client";
 import { loadRouteQuery } from "../../../../lib/api/route-loading";
 
 export const Route = createFileRoute("/_protected/routes/$routeId/")({
-  loader: async ({ context, params }) => {
+  loader: ({ context, params }) => {
     const input = { id: params.routeId };
-    const fullRoute = loadRouteQuery(
-      () => context.apiUtils.routes.loadFull.getData(input),
-      () => context.apiUtils.routes.loadFull.fetch(input),
-    );
-    await loadRouteQuery(
+    return loadRouteQuery(
       () => context.apiUtils.routes.get.getData(input),
       () => context.apiUtils.routes.get.fetch(input),
     );
-    await fullRoute;
   },
   component: RouteDetailPage,
 });
