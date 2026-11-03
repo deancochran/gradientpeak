@@ -51,7 +51,7 @@ function NewGoalPage() {
       <Card>
         <CardHeader>
           <CardTitle>Create goal</CardTitle>
-          <CardDescription>Create a persisted consistency target for planning.</CardDescription>
+          <CardDescription>Create a persisted goal to guide your planning.</CardDescription>
         </CardHeader>
         <CardContent>
           <PlanGoalForm

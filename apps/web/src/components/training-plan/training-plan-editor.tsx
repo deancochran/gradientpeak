@@ -229,9 +229,32 @@ function TrainingPlanEditorSession({
       : Math.floor(Math.max(...sessions.map((session) => session.offsetDays)) / 7) + 1,
   );
   const weekIndexes = Array.from({ length: weekCount }, (_, weekIndex) => weekIndex);
+  const sourceWeekHasSessions = preview.structure?.sessions.some(
+    (session) => Math.floor(session.offset_days / 7) === copySourceWeek,
+  );
+  const emptyDestinationWeekIndexes = weekIndexes.filter(
+    (weekIndex) =>
+      weekIndex !== copySourceWeek &&
+      !preview.structure?.sessions.some(
+        (session) => Math.floor(session.offset_days / 7) === weekIndex,
+      ),
+  );
+  useEffect(() => {
+    if (!emptyDestinationWeekIndexes.includes(copyDestinationWeek)) {
+      setCopyDestinationWeek(emptyDestinationWeekIndexes[0] ?? -1);
+    }
+  }, [copyDestinationWeek, emptyDestinationWeekIndexes]);
   const copyWeek = () => {
     if (!preview.structure) {
       setFormError("Complete the current activities before copying a week.");
+      return;
+    }
+    if (!sourceWeekHasSessions) {
+      setFormError("Choose a source week with at least one activity.");
+      return;
+    }
+    if (!emptyDestinationWeekIndexes.includes(copyDestinationWeek)) {
+      setFormError("Choose an empty destination week. Existing activities are never overwritten.");
       return;
     }
     const result = copyTrainingPlanWeek({
@@ -247,7 +270,11 @@ function TrainingPlanEditorSession({
       setFormError(
         result.reason === "session_limit"
           ? "A training plan can contain at most 366 activities."
-          : "Choose a destination within the current plan duration.",
+          : result.reason === "source_empty"
+            ? "Choose a source week with at least one activity."
+            : result.reason === "destination_not_empty"
+              ? "Choose an empty destination week. Existing activities are never overwritten."
+              : "Choose a destination within the current plan duration.",
       );
       return;
     }
@@ -592,7 +619,10 @@ function TrainingPlanEditorSession({
                     onChange={(event) => setCopyDestinationWeek(Number(event.target.value))}
                     value={copyDestinationWeek}
                   >
-                    {weekIndexes.map((weekIndex) => (
+                    {emptyDestinationWeekIndexes.length === 0 ? (
+                      <option value={-1}>No empty weeks available</option>
+                    ) : null}
+                    {emptyDestinationWeekIndexes.map((weekIndex) => (
                       <option key={`destination-week-${weekIndex}`} value={weekIndex}>
                         Week {weekIndex + 1}
                       </option>
@@ -600,7 +630,11 @@ function TrainingPlanEditorSession({
                   </select>
                 </label>
                 <Button
-                  disabled={hasUncertainCommit}
+                  disabled={
+                    hasUncertainCommit ||
+                    !sourceWeekHasSessions ||
+                    emptyDestinationWeekIndexes.length === 0
+                  }
                   onClick={copyWeek}
                   type="button"
                   variant="outline"

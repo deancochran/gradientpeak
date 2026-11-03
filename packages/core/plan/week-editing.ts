@@ -4,7 +4,14 @@ export const MAX_TRAINING_PLAN_SESSIONS = 366;
 
 export type TrainingPlanWeekCopyResult =
   | { status: "copied"; sessions: CanonicalTrainingPlanStructureSession[] }
-  | { status: "rejected"; reason: "destination_outside_plan_span" | "session_limit" };
+  | {
+      status: "rejected";
+      reason:
+        | "destination_not_empty"
+        | "destination_outside_plan_span"
+        | "session_limit"
+        | "source_empty";
+    };
 
 /** Copies one authored week with fresh identities; it never creates a repeating schedule. */
 export function copyTrainingPlanWeek(input: {
@@ -23,8 +30,18 @@ export function copyTrainingPlanWeek(input: {
   if (input.durationWeeks !== undefined && input.destinationWeekIndex >= input.durationWeeks) {
     return { status: "rejected", reason: "destination_outside_plan_span" };
   }
-  const copied = input.sessions
-    .filter((session) => Math.floor(session.offset_days / 7) === input.sourceWeekIndex)
+  const sourceSessions = input.sessions.filter(
+    (session) => Math.floor(session.offset_days / 7) === input.sourceWeekIndex,
+  );
+  if (sourceSessions.length === 0) return { status: "rejected", reason: "source_empty" };
+  if (
+    input.sessions.some(
+      (session) => Math.floor(session.offset_days / 7) === input.destinationWeekIndex,
+    )
+  ) {
+    return { status: "rejected", reason: "destination_not_empty" };
+  }
+  const copied = sourceSessions
     .sort((left, right) => left.offset_days - right.offset_days || left.id.localeCompare(right.id))
     .map((session) => ({
       ...session,
