@@ -70,6 +70,17 @@ export type GroupEventSummary = {
   group?: Pick<WebGroupSummary, "id" | "name" | "slug" | "avatar_url"> | null;
 };
 
+export function canRenderRemoveMemberControl(
+  viewer: Pick<GroupViewer, "canRemoveMembers" | "relationshipState">,
+  targetRole: "owner" | "admin" | "member",
+) {
+  return (
+    viewer.canRemoveMembers &&
+    targetRole !== "owner" &&
+    (viewer.relationshipState === "owner" || targetRole === "member")
+  );
+}
+
 export function GroupManagementShell({
   activeTab,
   children,

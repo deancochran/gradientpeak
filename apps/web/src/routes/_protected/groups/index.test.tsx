@@ -24,8 +24,9 @@ vi.mock("../../../lib/api/client", () => {
         declineInvite: { useMutation: () => mutation },
         events: {
           myUpcomingGroupEvents: {
-            useInfiniteQuery: (input: Record<string, unknown>) => {
+            useInfiniteQuery: (input: Record<string, unknown>, options: { retry?: number }) => {
               mocks.upcomingInputs.push(input);
+              expect(options.retry).toBe(2);
               return { ...page, refetch: vi.fn() };
             },
           },

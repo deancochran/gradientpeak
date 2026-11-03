@@ -11,6 +11,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Clock, Loader2, Lock } from "lucide-react";
 import { FollowActionForm } from "../../../../components/protected/follow-action-form";
 import { MessageActionForm } from "../../../../components/protected/message-action-form";
+import { isNotFoundError } from "../../../../components/protected/profile-query-state";
 import { useAuth } from "../../../../components/providers/auth-provider";
 import { RouteFlashToast, type RouteFlashType } from "../../../../components/route-flash-toast";
 import { api } from "../../../../lib/api/client";
@@ -53,7 +54,7 @@ function UserProfilePage() {
     );
   }
 
-  if (profileQuery.error) {
+  if (profileQuery.error && !isNotFoundError(profileQuery.error)) {
     return (
       <div className="container max-w-3xl py-8">
         <Card>

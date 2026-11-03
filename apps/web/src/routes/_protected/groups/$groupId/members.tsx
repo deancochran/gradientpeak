@@ -3,6 +3,7 @@ import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { createFileRoute } from "@tanstack/react-router";
 import {
+  canRenderRemoveMemberControl,
   GroupManagementShell,
   MutationError,
   QueryState,
@@ -148,7 +149,7 @@ function GroupMembersPage() {
                             Transfer ownership
                           </Button>
                         ) : null}
-                        {viewer.canRemoveMembers ? (
+                        {canRenderRemoveMemberControl(viewer, member.role) ? (
                           <Button
                             disabled={removeMutation.isPending}
                             onClick={() => {
