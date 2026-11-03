@@ -88,6 +88,9 @@ describe("UI ownership guardrails", () => {
       "chatbot/use-chatbot.ts",
       "coaching/coach-access-denied.tsx",
       "coaching/coach-shell.tsx",
+      // Web-only organization creation and API-backed administrative composition.
+      "coaching/organization-create-form.tsx",
+      "coaching/organization-management-overview.tsx",
       "coaching/organization-selector.tsx",
       "discover/discovery-explorer.tsx",
       "feed/activity-feed.tsx",
