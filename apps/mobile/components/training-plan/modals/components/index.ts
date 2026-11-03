@@ -5,4 +5,3 @@ export {
   ConstraintIndicator,
   type ConstraintStatus,
 } from "./ConstraintIndicator";
-export { ConstraintValidator } from "./ConstraintValidator";

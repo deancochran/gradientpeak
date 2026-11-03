@@ -1,40 +1,56 @@
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
-import { type RefObject, useEffect, useMemo, useRef } from "react";
-import { Alert } from "react-native";
+import type { NavigationAction } from "expo-router/react-navigation";
+import type { ReactNode } from "react";
+import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { useDirtyNavigationGuard } from "@/lib/hooks/useDirtyNavigationGuard";
 
 type ActivityPlanComposerProcessParams = {
   activityCategory: string;
   allowNavigationRef: RefObject<boolean>;
-  canSubmit: boolean;
   description: string;
   isEditMode: boolean;
+  isEditBlocked: boolean;
+  hydrationVersion: number;
   isLoading: boolean;
   isSubmitting: boolean;
   name: string;
-  navigation: any;
-  notes: string;
-  routeId: string | null;
+  navigation: {
+    addListener: (
+      eventName: "beforeRemove",
+      listener: (event: { data: { action: NavigationAction }; preventDefault: () => void }) => void,
+    ) => () => void;
+    dispatch: (action: NavigationAction) => void;
+    setOptions: (options: { headerRight: () => ReactNode; title: string }) => void;
+  };
   structure: unknown;
   submit: () => undefined | Promise<unknown>;
+  onAttempt: () => void;
 };
 
 export function useActivityPlanComposerProcess({
   activityCategory,
   allowNavigationRef,
-  canSubmit,
   description,
   isEditMode,
+  isEditBlocked,
+  hydrationVersion,
   isLoading,
   isSubmitting,
   name,
   navigation,
-  notes,
-  routeId,
   structure,
   submit,
+  onAttempt,
 }: ActivityPlanComposerProcessParams) {
-  const initialSignatureRef = useRef<string | null>(null);
+  const appliedHydrationVersionRef = useRef<number | null>(null);
+  const [baselineSignature, setBaselineSignature] = useState<string | null>(null);
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
+  const attemptRef = useRef(onAttempt);
+  attemptRef.current = onAttempt;
+  // This is set synchronously from Save, before mutation state can cause a re-render.
+  const pendingSubmitRef = useRef(false);
   const formSignature = useMemo(
     () =>
       JSON.stringify({
@@ -42,63 +58,60 @@ export function useActivityPlanComposerProcess({
         description,
         activityCategory,
         structure,
-        routeId,
-        notes,
       }),
-    [activityCategory, description, name, notes, routeId, structure],
+    [activityCategory, description, name, structure],
   );
 
   useEffect(() => {
-    if (isLoading || initialSignatureRef.current) {
+    if (isLoading) {
       return;
     }
-    initialSignatureRef.current = formSignature;
-  }, [isLoading, formSignature]);
+    if (baselineSignature === null || appliedHydrationVersionRef.current !== hydrationVersion) {
+      setBaselineSignature(formSignature);
+      appliedHydrationVersionRef.current = hydrationVersion;
+    }
+  }, [baselineSignature, formSignature, hydrationVersion, isLoading]);
 
-  const isDirty =
-    initialSignatureRef.current !== null && initialSignatureRef.current !== formSignature;
-
+  const isDirty = baselineSignature !== null && baselineSignature !== formSignature;
+  useDirtyNavigationGuard({
+    isDirty,
+    isPending: isSubmitting,
+    allowNavigationRef,
+    pendingRef: pendingSubmitRef,
+    navigation,
+  });
+  const previousSignature = useRef(formSignature);
   useEffect(() => {
-    const unsubscribe = navigation.addListener("beforeRemove", (event: any) => {
-      if (allowNavigationRef.current || !isDirty || isSubmitting) {
-        return;
-      }
-
-      event.preventDefault();
-      Alert.alert("Discard changes?", "Your edits will be lost.", [
-        { text: "Keep Editing", style: "cancel" },
-        {
-          text: "Discard",
-          style: "destructive",
-          onPress: () => {
-            allowNavigationRef.current = true;
-            navigation.dispatch(event.data.action);
-          },
-        },
-      ]);
-    });
-
-    return unsubscribe;
-  }, [allowNavigationRef, navigation, isDirty, isSubmitting]);
+    if (previousSignature.current !== formSignature && !isSubmitting)
+      allowNavigationRef.current = false;
+    previousSignature.current = formSignature;
+  }, [allowNavigationRef, formSignature, isSubmitting]);
 
   useEffect(() => {
     navigation.setOptions({
       title: isEditMode ? "Edit Activity Plan" : "Create Activity Plan",
-      headerRight: () => (
-        <LoadingButton
-          variant="ghost"
-          size="sm"
-          onPress={submit}
-          disabled={!canSubmit || isLoading || isSubmitting}
-          loading={isSubmitting}
-          loadingLabel="Saving..."
-          loadingTextClassName="text-primary"
-        >
-          <Text className="text-primary font-semibold">Save</Text>
-        </LoadingButton>
-      ),
+      headerRight: () =>
+        isEditBlocked ? null : (
+          <LoadingButton
+            variant="ghost"
+            size="sm"
+            onPress={() => {
+              pendingSubmitRef.current = true;
+              attemptRef.current();
+              void Promise.resolve(submitRef.current()).finally(() => {
+                pendingSubmitRef.current = false;
+              });
+            }}
+            disabled={isLoading || isSubmitting}
+            loading={isSubmitting}
+            loadingLabel="Saving..."
+            loadingTextClassName="text-primary"
+          >
+            <Text className="text-primary font-semibold">Save</Text>
+          </LoadingButton>
+        ),
     });
-  }, [navigation, isEditMode, submit, canSubmit, isLoading, isSubmitting]);
+  }, [navigation, isEditMode, isEditBlocked, isLoading, isSubmitting]);
 
   return {
     isDirty,

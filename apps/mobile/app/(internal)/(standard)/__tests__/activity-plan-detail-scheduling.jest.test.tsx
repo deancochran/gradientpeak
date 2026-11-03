@@ -1,10 +1,23 @@
+import { getActivityPlanPrintFormatLabel } from "@repo/core/activity-plan";
+import { buildPerformanceTargetFactsFixture } from "@repo/core/testing/performance-model";
 import { act, waitFor } from "@testing-library/react-native";
 import React from "react";
+import {
+  createActivityPlanDetail,
+  createActivityPlanStructure,
+  createActivityPlanSummary,
+} from "../../../../test/activity-plan-projection-fixture";
 import { createHost } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
 
 var alertMock = jest.fn();
 var duplicateMutateMock = jest.fn();
+const sharePdfMock = jest.fn();
+const printPdfMock = jest.fn();
+jest.mock("@/lib/activity-plan-export/activity-plan-pdf", () => ({
+  shareActivityPlanPdf: (...args: unknown[]) => sharePdfMock(...args),
+  printActivityPlanPdf: (...args: unknown[]) => printPdfMock(...args),
+}));
 type ActivityPlanMock = {
   id?: string;
   name?: string;
@@ -26,20 +39,15 @@ type DuplicateMutationOptions = {
   onSuccess?: (result: { id: string }) => void;
 };
 
-type TestNode = {
-  props?: { children?: React.ReactNode };
-};
-
-type UnsafeTypeQuery = {
-  UNSAFE_getAllByType: (type: string) => TestNode[];
-};
-
 var fetchedPlanMock = {
   current: null as ActivityPlanMock | null,
 };
 var plannedActivityMock = {
   current: null as PlannedActivityMock | null,
 };
+var activityPlanQueryInputs = [] as unknown[];
+var eventQueryInputs = [] as unknown[];
+var readModelQueryOptions = [] as unknown[];
 var localSearchParamsMock = {} as Record<string, string | undefined>;
 var routerMock = {
   back: jest.fn(),
@@ -81,9 +89,14 @@ jest.mock("react-native-maps", () => ({
   PROVIDER_DEFAULT: "default",
 }));
 
-jest.mock("@/components/activity-plan/workout/TimelineChart", () => ({
+jest.mock("@/components/activity-plan/activity/TimelineChart", () => ({
   __esModule: true,
   TimelineChart: createHost("TimelineChart"),
+}));
+
+jest.mock("@/components/shared/ProfilePreviewChart", () => ({
+  __esModule: true,
+  ProfilePreviewChart: createHost("ProfilePreviewChart"),
 }));
 
 jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
@@ -171,7 +184,13 @@ jest.mock("@/lib/api", () => ({
     }),
     activityPlans: {
       getById: {
-        useQuery: () => ({ data: fetchedPlanMock.current, isLoading: false }),
+        useQuery: (input: unknown) => {
+          activityPlanQueryInputs.push(input);
+          return {
+            data: fetchedPlanMock.current ? { detail: fetchedPlanMock.current, edit: null } : null,
+            isLoading: false,
+          };
+        },
       },
       duplicate: {
         useMutation: (options: DuplicateMutationOptions) => ({
@@ -189,9 +208,33 @@ jest.mock("@/lib/api", () => ({
         useMutation: () => ({ mutate: jest.fn(), isPending: false }),
       },
     },
+    athleteIntelligence: {
+      getReadModel: {
+        useQuery: (_input: unknown, options: unknown) => {
+          readModelQueryOptions.push(options);
+          return {
+            data:
+              (options as { enabled?: boolean }).enabled === true
+                ? {
+                    publishedState: {
+                      performanceTargets: buildPerformanceTargetFactsFixture({
+                        asOf: "2026-08-18T12:00:00.000Z",
+                        athleteId: "profile-1",
+                        bikeThresholdWatts: 300,
+                      }),
+                    },
+                  }
+                : undefined,
+          };
+        },
+      },
+    },
     events: {
       getById: {
-        useQuery: () => ({ data: plannedActivityMock.current, error: null, isLoading: false }),
+        useQuery: (input: unknown) => {
+          eventQueryInputs.push(input);
+          return { data: plannedActivityMock.current, error: null, isLoading: false };
+        },
       },
       delete: {
         useMutation: () => ({ mutate: jest.fn(), isPending: false }),
@@ -232,9 +275,8 @@ jest.mock("@/lib/utils/durationConversion", () => ({
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
-  buildEstimationContext: () => ({}),
+  ...jest.requireActual("@repo/core"),
   decodePolyline: () => null,
-  estimateActivity: () => null,
   formatDurationSec: (seconds: number) => `${seconds}s`,
   getStepIntensityColor: () => "#000000",
 }));
@@ -278,7 +320,7 @@ const getTextContent = (children: React.ReactNode): string => {
 
 const getAllByTypeOrEmpty = (type: string) => {
   try {
-    return (screen as unknown as UnsafeTypeQuery).UNSAFE_getAllByType(type);
+    return screen.container.queryAll((node) => node.type === type);
   } catch {
     return [];
   }
@@ -290,9 +332,14 @@ const _findButton = (matcher: (label: string) => boolean) =>
 const resetTestState = () => {
   fetchedPlanMock.current = null;
   plannedActivityMock.current = null;
+  activityPlanQueryInputs = [];
+  eventQueryInputs = [];
+  readModelQueryOptions = [];
   alertMock.mockReset();
   nativeAlertMock.mockReset();
   duplicateMutateMock.mockReset();
+  sharePdfMock.mockReset().mockResolvedValue(undefined);
+  printPdfMock.mockReset().mockResolvedValue(undefined);
   routerMock.back.mockReset();
   routerMock.navigate.mockReset();
   routerMock.push.mockReset();
@@ -307,69 +354,70 @@ describe("activity plan detail scheduling", () => {
     resetTestState();
   });
 
-  it("opens event creation for a schedulable template plan", () => {
-    localSearchParamsMock.template = JSON.stringify({
-      id: "11111111-1111-1111-1111-111111111111",
-      name: "Tempo Builder",
-      activity_category: "run",
-      profile_id: "profile-1",
-      structure: { intervals: [] },
-    });
-
-    renderNative(<ActivityPlanDetail />);
-
-    act(() => {
-      screen.getByTestId("activity-plan-options-schedule").props.onPress();
-    });
-
-    expect(nativeAlertMock).not.toHaveBeenCalled();
-    expect(routerMock.navigate).toHaveBeenCalledWith({
-      pathname: "/event-detail",
-      params: {
-        activityPlanId: "11111111-1111-1111-1111-111111111111",
-        mode: "create",
-      },
-    });
-  });
-
-  it("shows a visible alert instead of silently doing nothing for an unsaved template", () => {
-    localSearchParamsMock.template = JSON.stringify({
-      name: "Draft Template",
-      activity_category: "run",
-      profile_id: "profile-1",
-      structure: { intervals: [] },
-    });
-
-    renderNative(<ActivityPlanDetail />);
-
-    act(() => {
-      screen.getByTestId("activity-plan-options-schedule").props.onPress();
-    });
-
-    expect(nativeAlertMock).toHaveBeenCalledWith(
-      "Scheduling unavailable",
-      "Create this activity plan first, then schedule it from its detail screen.",
+  it("routes the selected PDF format to mocked sharing and printing with failure feedback", async () => {
+    localSearchParamsMock.template = JSON.stringify(
+      createActivityPlanSummary({
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "Pool plan",
+        activityCategory: "swim",
+        structure: createActivityPlanStructure("swim"),
+      }),
     );
-    expect(routerMock.navigate).not.toHaveBeenCalled();
+    sharePdfMock.mockRejectedValueOnce(new Error("Share unavailable"));
+    await renderNative(<ActivityPlanDetail />);
+    const selectFormat = async () => {
+      if (!screen.queryByTestId("activity-plan-options-export-pdf"))
+        await act(() => screen.getByTestId("activity-plan-options-trigger").props.onPress());
+      await act(() => screen.getByTestId("activity-plan-options-export-pdf").props.onPress());
+      const formats = nativeAlertMock.mock.calls.at(-1)?.[2] as Array<{
+        text: string;
+        onPress?: () => void;
+      }>;
+      await act(() =>
+        formats
+          .find((choice) => choice.text === getActivityPlanPrintFormatLabel("swim-deck-card"))
+          ?.onPress?.(),
+      );
+    };
+    await selectFormat();
+    const actions = nativeAlertMock.mock.calls.at(-1)?.[2] as Array<{
+      text: string;
+      onPress?: () => void;
+    }>;
+    await act(async () => actions.find((choice) => choice.text === "Share PDF")?.onPress?.());
+    expect(sharePdfMock).toHaveBeenCalledWith(
+      expect.objectContaining({ format: "swim-deck-card", title: "Pool plan" }),
+    );
+    expect(nativeAlertMock).toHaveBeenCalledWith("Share failed", expect.any(String));
+    await selectFormat();
+    const retryActions = nativeAlertMock.mock.calls.at(-1)?.[2] as Array<{
+      text: string;
+      onPress?: () => void;
+    }>;
+    await act(async () => retryActions.find((choice) => choice.text === "Print")?.onPress?.());
+    expect(printPdfMock).toHaveBeenCalledWith(
+      expect.objectContaining({ format: "swim-deck-card", title: "Pool plan" }),
+    );
   });
 
-  it("opens event creation directly for a shared public template", async () => {
-    localSearchParamsMock.template = JSON.stringify({
-      id: "11111111-1111-1111-1111-111111111111",
-      name: "Shared Builder",
-      activity_category: "run",
-      profile_id: "another-profile",
-      structure: { intervals: [] },
+  it("opens event creation for a schedulable template plan", async () => {
+    localSearchParamsMock.template = JSON.stringify(
+      createActivityPlanSummary({
+        id: "11111111-1111-1111-1111-111111111111",
+        name: "Tempo Builder",
+      }),
+    );
+
+    await renderNative(<ActivityPlanDetail />);
+
+    await act(() => {
+      screen.getByTestId("activity-plan-options-trigger").props.onPress();
     });
-
-    renderNative(<ActivityPlanDetail />);
-
-    act(() => {
+    await act(() => {
       screen.getByTestId("activity-plan-options-schedule").props.onPress();
     });
 
     expect(nativeAlertMock).not.toHaveBeenCalled();
-    expect(duplicateMutateMock).not.toHaveBeenCalled();
     expect(routerMock.navigate).toHaveBeenCalledWith({
       pathname: "/event-detail",
       params: {
@@ -379,17 +427,72 @@ describe("activity plan detail scheduling", () => {
     });
   });
 
-  it("duplicates a shared activity plan into the owned detail flow", async () => {
-    localSearchParamsMock.template = JSON.stringify({
-      id: "11111111-1111-1111-1111-111111111111",
-      name: "Tempo Builder",
-      activity_category: "run",
-      profile_id: "template-owner",
-      structure: { intervals: [] },
+  it("keeps shared-plan scheduling available and exposes an unavailable conversion toggle", async () => {
+    localSearchParamsMock.template = JSON.stringify(
+      createActivityPlanSummary({
+        id: "11111111-1111-1111-1111-111111111111",
+        name: "Shared Builder",
+        capabilities: {
+          canLike: true,
+          canEdit: false,
+          canDelete: false,
+          canDuplicate: false,
+          canSchedule: true,
+          canRecord: false,
+        },
+      }),
+    );
+
+    await renderNative(<ActivityPlanDetail />);
+
+    await act(() => {
+      screen.getByTestId("activity-plan-options-trigger").props.onPress();
+    });
+    expect(screen.getByTestId("activity-plan-options-schedule")).toBeTruthy();
+    expect(screen.getByTestId("activity-plan-options-export-pdf")).toBeTruthy();
+    expect(screen.queryByTestId("activity-plan-options-duplicate")).toBeNull();
+    expect(screen.queryByTestId("activity-plan-options-start")).toBeNull();
+    expect(screen.getByTestId("activity-plan-personalize-targets").props.checked).toBe(false);
+    expect(screen.getByTestId("activity-plan-personalize-targets").props.disabled).toBe(true);
+    expect(screen.getByTestId("activity-plan-content-preview")).toBeTruthy();
+    expect(screen.getByText("5min at 5 RPE")).toBeTruthy();
+
+    await act(() => {
+      screen.getByTestId("activity-plan-options-schedule").props.onPress();
     });
 
-    renderNative(<ActivityPlanDetail />);
+    expect(routerMock.navigate).toHaveBeenCalledWith({
+      pathname: "/event-detail",
+      params: {
+        activityPlanId: "11111111-1111-1111-1111-111111111111",
+        mode: "create",
+      },
+    });
+  });
 
+  it("duplicates a public system template into the owned detail flow", async () => {
+    localSearchParamsMock.template = JSON.stringify(
+      createActivityPlanSummary({
+        id: "11111111-1111-1111-1111-111111111111",
+        name: "Tempo Builder",
+        visibility: "public",
+        isSystemTemplate: true,
+        capabilities: {
+          canLike: true,
+          canEdit: false,
+          canDelete: false,
+          canDuplicate: true,
+          canSchedule: true,
+          canRecord: false,
+        },
+      }),
+    );
+
+    await renderNative(<ActivityPlanDetail />);
+
+    await act(async () => {
+      screen.getByTestId("activity-plan-options-trigger").props.onPress();
+    });
     await act(async () => {
       screen.getByTestId("activity-plan-options-duplicate").props.onPress();
       await Promise.resolve();
@@ -409,7 +512,7 @@ describe("activity plan detail scheduling", () => {
     const duplicateAlertButtons = nativeAlertMock.mock.calls.at(-1)?.[2] as
       | Array<{ onPress?: () => void }>
       | undefined;
-    act(() => {
+    await act(() => {
       duplicateAlertButtons?.[0]?.onPress?.();
     });
     await waitFor(() => {
@@ -421,17 +524,14 @@ describe("activity plan detail scheduling", () => {
   });
 
   it("opens event creation immediately for a routed owned plan", async () => {
-    fetchedPlanMock.current = {
+    fetchedPlanMock.current = createActivityPlanDetail({
       id: "owned-plan-1",
       name: "Owned Builder",
-      activity_category: "run",
-      profile_id: "profile-1",
-      structure: { intervals: [] },
-    };
+    });
     localSearchParamsMock.planId = "owned-plan-1";
     localSearchParamsMock.action = "schedule";
 
-    renderNative(<ActivityPlanDetail />);
+    await renderNative(<ActivityPlanDetail />);
 
     await waitFor(() => {
       expect(routerMock.navigate).toHaveBeenCalledWith({
@@ -446,19 +546,16 @@ describe("activity plan detail scheduling", () => {
   });
 
   it("opens event editing immediately for a routed scheduled activity", async () => {
-    fetchedPlanMock.current = {
+    fetchedPlanMock.current = createActivityPlanDetail({
       id: "owned-plan-1",
       name: "Owned Builder",
-      activity_category: "run",
-      profile_id: "profile-1",
-      structure: { intervals: [] },
-    };
+    });
     localSearchParamsMock.planId = "owned-plan-1";
     localSearchParamsMock.eventId = "event-1";
     localSearchParamsMock.action = "schedule";
     plannedActivityMock.current = { id: "event-1", scheduled_date: "2026-05-21" };
 
-    renderNative(<ActivityPlanDetail />);
+    await renderNative(<ActivityPlanDetail />);
 
     await waitFor(() => {
       expect(routerMock.navigate).toHaveBeenCalledWith("/event-detail-update?id=event-1");
@@ -466,18 +563,18 @@ describe("activity plan detail scheduling", () => {
     expect(nativeAlertMock).not.toHaveBeenCalled();
   });
 
-  it("navigates to event creation when scheduling a fetched plan", () => {
-    fetchedPlanMock.current = {
+  it("navigates to event creation when scheduling a fetched plan", async () => {
+    fetchedPlanMock.current = createActivityPlanDetail({
       id: "owned-plan-1",
       name: "Owned Builder",
-      activity_category: "run",
-      profile_id: "profile-1",
-      structure: { intervals: [] },
-    };
+    });
 
-    renderNative(<ActivityPlanDetail />);
+    await renderNative(<ActivityPlanDetail />);
 
-    act(() => {
+    await act(() => {
+      screen.getByTestId("activity-plan-options-trigger").props.onPress();
+    });
+    await act(() => {
       screen.getByTestId("activity-plan-options-schedule").props.onPress();
     });
 
@@ -490,40 +587,100 @@ describe("activity plan detail scheduling", () => {
     });
   });
 
-  it("hides schedule actions when the plan is opened from an event", () => {
-    fetchedPlanMock.current = {
+  it("hides schedule actions when the plan is opened from an event", async () => {
+    fetchedPlanMock.current = createActivityPlanDetail({
       id: "owned-plan-1",
       name: "Owned Builder",
-      activity_category: "run",
-      profile_id: "profile-1",
-      structure: { intervals: [] },
-    };
+    });
     localSearchParamsMock.planId = "owned-plan-1";
     localSearchParamsMock.eventId = "event-1";
 
-    renderNative(<ActivityPlanDetail />);
+    await renderNative(<ActivityPlanDetail />);
 
     expect(screen.queryByTestId("activity-plan-options-schedule")).toBeNull();
     expect(screen.queryByTestId("activity-plan-options-open-event")).toBeNull();
     expect(screen.queryByTestId("activity-plan-options-remove-schedule")).toBeNull();
   });
 
-  it("shows the new summary-first detail context and hides placeholder share UI", () => {
-    localSearchParamsMock.template = JSON.stringify({
-      id: "11111111-1111-1111-1111-111111111111",
-      name: "Tempo Builder",
-      activity_category: "run",
-      profile_id: "profile-1",
-      description: "Controlled tempo intervals.",
-      notes: "Keep the recoveries honest.",
-      structure: { intervals: [] },
+  it("shows the new summary-first detail context and attribution-row share action", async () => {
+    localSearchParamsMock.template = JSON.stringify(
+      createActivityPlanDetail({
+        id: "11111111-1111-1111-1111-111111111111",
+        name: "Tempo Builder",
+        description: "Controlled tempo intervals.",
+        notes: "Keep the recoveries honest.",
+      }),
+    );
+
+    await renderNative(<ActivityPlanDetail />);
+
+    expect(screen.getByText(/Controlled tempo intervals\./)).toBeTruthy();
+    expect(screen.getByText(/Keep the recoveries honest\./)).toBeTruthy();
+    expect(screen.getByTestId("activity-plan-comments-button")).toBeTruthy();
+    expect(screen.getByTestId("activity-plan-share-button")).toBeTruthy();
+  });
+
+  it("defaults an eligible owner session flow on without changing the authored API projection", async () => {
+    const plan = createActivityPlanDetail({ id: "bike-plan-1", activityCategory: "bike" });
+    if (!plan.structure) throw new Error("Expected owner authoring structure");
+    const structure = structuredClone(plan.structure);
+    structure.activity_category = "bike";
+    const firstItem = structure.items[0];
+    const step =
+      firstItem?.type === "step"
+        ? firstItem
+        : firstItem?.type === "repeat"
+          ? firstItem.steps[0]
+          : undefined;
+    if (!step) throw new Error("Expected activity step");
+    step.targets = [{ type: "%FTP", intensity: 80 }];
+    fetchedPlanMock.current = createActivityPlanDetail({
+      id: "bike-plan-1",
+      activityCategory: "bike",
+      structure,
     });
 
-    renderNative(<ActivityPlanDetail />);
+    const view = await renderNative(<ActivityPlanDetail />);
 
-    expect(screen.getByText("Controlled tempo intervals.")).toBeTruthy();
-    expect(screen.getByText("Keep the recoveries honest.")).toBeTruthy();
-    expect(screen.getByText("Comments (0)")).toBeTruthy();
-    expect(screen.queryByText("Share")).toBeNull();
+    const toggle = screen.getByTestId("activity-plan-personalize-targets");
+    expect(toggle.props.checked).toBe(true);
+    expect(screen.getByText(/240 W/)).toBeTruthy();
+    expect(activityPlanQueryInputs).toContainEqual(expect.objectContaining({ personalize: false }));
+    expect(eventQueryInputs).toContainEqual(expect.objectContaining({ personalize: false }));
+    expect(readModelQueryOptions).toContainEqual(
+      expect.objectContaining({ enabled: true, refetchOnWindowFocus: false }),
+    );
+
+    await act(() => toggle.props.onCheckedChange(false));
+
+    expect(screen.getByText(/80% FTP/)).toBeTruthy();
+    expect(screen.queryByText(/240 W/)).toBeNull();
+    expect(activityPlanQueryInputs).not.toContainEqual(
+      expect.objectContaining({ personalize: true }),
+    );
+    expect(eventQueryInputs).not.toContainEqual(expect.objectContaining({ personalize: true }));
+
+    fetchedPlanMock.current = createActivityPlanDetail({
+      id: "bike-plan-2",
+      activityCategory: "bike",
+      structure,
+    });
+    localSearchParamsMock.planId = "bike-plan-2";
+    await view.rerender(<ActivityPlanDetail />);
+    expect(screen.getByTestId("activity-plan-personalize-targets").props.checked).toBe(true);
+  });
+
+  it("keeps an owner RPE session flow off and explains why it cannot be personalized", async () => {
+    fetchedPlanMock.current = createActivityPlanDetail({
+      id: "rpe-plan-1",
+      activityCategory: "run",
+    });
+
+    await renderNative(<ActivityPlanDetail />);
+
+    const toggle = screen.getByTestId("activity-plan-personalize-targets");
+    expect(toggle.props.checked).toBe(false);
+    expect(toggle.props.disabled).toBe(true);
+    expect(screen.getByText(/5 RPE/)).toBeTruthy();
   });
 });
