@@ -1,4 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
+import { createTRPCQueryUtils } from "@trpc/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { loadRouteQuery } from "./route-loading";
 
@@ -35,5 +36,36 @@ describe("loadRouteQuery", () => {
         () => Promise.reject(error),
       ),
     ).rejects.toMatchObject({ isNotFound: true });
+  });
+
+  it("uses tRPC infinite cache keys and refreshes only cached pages", async () => {
+    const queryClient = new QueryClient();
+    const query = vi.fn(async (_path: string, input: { cursor?: string | null }) => ({
+      items: [input.cursor ?? "first"],
+      nextCursor: input.cursor === "second" ? undefined : "second",
+    }));
+    const apiUtils = createTRPCQueryUtils({
+      queryClient,
+      client: { [Symbol.for("trpc_untypedClient")]: { query } } as never,
+    });
+    const input = { limit: 20 };
+    const options = { getNextPageParam: (page: { nextCursor?: string }) => page.nextCursor };
+
+    await apiUtils.activities.listPaginated.fetchInfinite(input, options);
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(apiUtils.activities.listPaginated.getInfiniteData(input)?.pages).toHaveLength(1);
+
+    apiUtils.activities.listPaginated.setInfiniteData(input, {
+      pages: [
+        { items: ["first"], nextCursor: "second" },
+        { items: ["second"], nextCursor: undefined },
+      ],
+      pageParams: [null, "second"],
+    });
+    query.mockClear();
+
+    await apiUtils.activities.listPaginated.fetchInfinite(input, options);
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(apiUtils.activities.listPaginated.getInfiniteData(input)?.pages).toHaveLength(2);
   });
 });

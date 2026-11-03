@@ -24,8 +24,7 @@ export const Route = createFileRoute("/_protected/training-plans/")({
         () =>
           context.apiUtils.trainingPlans.listTemplates.fetchInfinite(input, {
             getNextPageParam: (page) => page.nextCursor,
-            pages: Infinity,
-          }),
+          } as never),
       );
     }
     const input = getOwnedTrainingPlansInput(search);
@@ -34,8 +33,7 @@ export const Route = createFileRoute("/_protected/training-plans/")({
       () =>
         context.apiUtils.trainingPlans.list.fetchInfinite(input, {
           getNextPageParam: (page) => page.nextCursor,
-          pages: Infinity,
-        }),
+        } as never),
     );
   },
   component: TrainingPlansPage,
