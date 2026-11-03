@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 
 import { loadingSkeletonFixtures } from "./fixtures";
 import { ChartSkeleton, ListSkeleton, TrendsOverviewSkeleton } from "./index.web";

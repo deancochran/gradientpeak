@@ -7,32 +7,127 @@ function createDeps() {
       importWorkoutSummary: vi.fn(),
     },
     providerSyncRepository: {
+      bindJobImportRun: vi.fn().mockResolvedValue(true),
       claimDueJobs: vi.fn(),
       enqueueJob: vi.fn(),
+      finalizeWebhookReceiptJob: vi.fn().mockResolvedValue(true),
       getWebhookReceipt: vi.fn(),
+      isIntegrationGenerationActive: vi.fn(),
       listWebhookReceipts: vi.fn().mockResolvedValue([]),
       markJobFailed: vi.fn(),
       markJobSucceeded: vi.fn(),
+      renewJobLease: vi.fn().mockResolvedValue(true),
       markWebhookReceiptProcessed: vi.fn(),
       setWebhookReceiptJob: vi.fn(),
       storeWebhookReceipt: vi.fn(),
     },
     wahooRepository: {
       findWahooIntegrationByExternalId: vi.fn(),
+      findWahooIntegrationByIdAndGeneration: vi.fn(),
     },
   };
 }
 
 describe("WahooWebhookJobService", () => {
+  it.each([
+    ["stale parser", "unsupported_persisted_version"],
+    ["stale decoded contract", "unsupported_persisted_version"],
+    ["stale materializer", "unsupported_persisted_version"],
+    ["missing provider start time", "missing_started_at"],
+    ["invalid provider start time", "invalid_started_at"],
+  ] as const)("dead-letters a %s result on its first attempt without retrying", async (_, reason) => {
+    const deps = createDeps();
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
+      {
+        attempt: 1,
+        id: "job-1",
+        integrationId: "integration-1",
+        integrationGeneration: 1,
+        jobType: "wahoo.process_webhook_receipt",
+        maxAttempts: 5,
+        payload: { receiptId: "receipt-1" },
+        profileId: "profile-1",
+        provider: "wahoo",
+        runAt: "2026-04-01T12:00:00.000Z",
+        status: "running",
+      },
+    ]);
+    deps.providerSyncRepository.getWebhookReceipt.mockResolvedValue({
+      id: "receipt-1",
+      payload: { event_type: "workout_summary", user: { id: 42 }, workout_summary: { id: 99 } },
+    });
+    deps.importer.importWorkoutSummary.mockResolvedValue({
+      success: false,
+      error: "Wahoo activity cannot be imported",
+      failureReason: reason,
+    });
+
+    await expect(
+      new WahooWebhookJobService(deps as never).processDueJobs({ workerId: "worker-1" }),
+    ).resolves.toEqual({ completed: 0, failed: 1, processed: 1 });
+
+    expect(deps.importer.importWorkoutSummary).toHaveBeenCalledOnce();
+    expect(deps.providerSyncRepository.finalizeWebhookReceiptJob).toHaveBeenCalledWith({
+      jobId: "job-1",
+      jobStatus: "dead_lettered",
+      lastError: reason,
+      receiptId: "receipt-1",
+      receiptStatus: "failed",
+      workerId: expect.stringMatching(/^worker-1:/),
+    });
+  });
+
+  it("retries a transient importer failure", async () => {
+    const deps = createDeps();
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
+      {
+        attempt: 1,
+        id: "job-1",
+        integrationId: "integration-1",
+        integrationGeneration: 1,
+        jobType: "wahoo.process_webhook_receipt",
+        maxAttempts: 5,
+        payload: { receiptId: "receipt-1" },
+        profileId: "profile-1",
+        provider: "wahoo",
+        runAt: "2026-04-01T12:00:00.000Z",
+        status: "running",
+      },
+    ]);
+    deps.providerSyncRepository.getWebhookReceipt.mockResolvedValue({
+      id: "receipt-1",
+      payload: { event_type: "workout_summary", user: { id: 42 }, workout_summary: { id: 99 } },
+    });
+    deps.importer.importWorkoutSummary.mockResolvedValue({
+      success: false,
+      error: "Wahoo activity import failed",
+    });
+
+    await expect(
+      new WahooWebhookJobService(deps as never).processDueJobs({ workerId: "worker-1" }),
+    ).resolves.toEqual({ completed: 0, failed: 1, processed: 1 });
+
+    expect(deps.providerSyncRepository.finalizeWebhookReceiptJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobStatus: "failed",
+        lastError: "webhook_import_failed",
+        nextRunAt: expect.any(String),
+        receiptStatus: "failed",
+      }),
+    );
+  });
+
   it("stores and enqueues a webhook receipt for a known Wahoo integration", async () => {
     const deps = createDeps();
     deps.wahooRepository.findWahooIntegrationByExternalId.mockResolvedValue({
       integrationId: "integration-1",
+      integrationGeneration: 1,
       profileId: "profile-1",
     });
     deps.providerSyncRepository.storeWebhookReceipt.mockResolvedValue({
       id: "receipt-1",
       inserted: true,
+      captured: true,
     });
     deps.providerSyncRepository.enqueueJob.mockResolvedValue({ id: "job-1", status: "queued" });
 
@@ -64,7 +159,38 @@ describe("WahooWebhookJobService", () => {
     });
   });
 
-  it("processes queued workout summary receipts through the importer", async () => {
+  it("acknowledges a durable receipt when immediate enqueue fails", async () => {
+    const deps = createDeps();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    deps.wahooRepository.findWahooIntegrationByExternalId.mockResolvedValue({
+      integrationId: "integration-1",
+      generation: 1,
+      profileId: "profile-1",
+    });
+    deps.providerSyncRepository.storeWebhookReceipt.mockResolvedValue({
+      id: "receipt-1",
+      inserted: true,
+      captured: true,
+    });
+    deps.providerSyncRepository.enqueueJob.mockRejectedValue(new Error("queue unavailable"));
+
+    const service = new WahooWebhookJobService(deps as never);
+
+    await expect(
+      service.storeAndEnqueueReceipt({
+        event_type: "workout_summary",
+        user: { id: 42 },
+        workout_summary: { id: 99 },
+      }),
+    ).resolves.toEqual({
+      jobId: null,
+      queued: false,
+      receiptId: "receipt-1",
+    });
+    expect(deps.providerSyncRepository.setWebhookReceiptJob).not.toHaveBeenCalled();
+  });
+
+  it("completes an exact-redelivery importer result without retrying", async () => {
     const deps = createDeps();
     deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
       {
@@ -72,6 +198,7 @@ describe("WahooWebhookJobService", () => {
         dedupeKey: "wahoo:webhook:receipt-1",
         id: "job-1",
         integrationId: "integration-1",
+        integrationGeneration: 1,
         internalResourceId: null,
         jobType: "wahoo.process_webhook_receipt",
         maxAttempts: 5,
@@ -98,6 +225,8 @@ describe("WahooWebhookJobService", () => {
     });
     deps.importer.importWorkoutSummary.mockResolvedValue({
       success: true,
+      skipped: true,
+      reason: "Activity already imported",
       activityId: "activity-1",
     });
 
@@ -109,15 +238,151 @@ describe("WahooWebhookJobService", () => {
       processed: 1,
     });
 
-    expect(deps.importer.importWorkoutSummary).toHaveBeenCalledWith(42, {
-      id: 99,
-      duration_total_accum: 1200,
+    expect(deps.importer.importWorkoutSummary).toHaveBeenCalledWith(
+      42,
+      { id: 99, duration_total_accum: 1200 },
+      {
+        integrationGeneration: 1,
+        integrationId: "integration-1",
+        signal: expect.any(AbortSignal),
+      },
+    );
+    expect(deps.providerSyncRepository.finalizeWebhookReceiptJob).toHaveBeenCalledWith({
+      jobId: "job-1",
+      jobStatus: "completed",
+      receiptId: "receipt-1",
+      receiptStatus: "processed",
+      workerId: expect.stringMatching(/^worker-1:/),
     });
-    expect(deps.providerSyncRepository.markWebhookReceiptProcessed).toHaveBeenCalledWith({
+    expect(deps.providerSyncRepository.markWebhookReceiptProcessed).not.toHaveBeenCalled();
+  });
+
+  it("retries from receipt/job durability when finalization fails after a material commit", async () => {
+    const deps = createDeps();
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
+      {
+        attempt: 1,
+        id: "job-1",
+        integrationId: "integration-1",
+        integrationGeneration: 1,
+        jobType: "wahoo.process_webhook_receipt",
+        maxAttempts: 5,
+        payload: { receiptId: "receipt-1" },
+        profileId: "profile-1",
+        provider: "wahoo",
+        runAt: "2026-04-01T12:00:00.000Z",
+        status: "running",
+      },
+    ]);
+    deps.providerSyncRepository.getWebhookReceipt.mockResolvedValue({
       id: "receipt-1",
-      status: "processed",
+      payload: {
+        event_type: "workout_summary",
+        user: { id: 42 },
+        workout_summary: { id: 99, started_at: "2026-04-01T10:00:00.000Z" },
+      },
     });
-    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith("job-1", "worker-1");
+    deps.importer.importWorkoutSummary.mockResolvedValue({
+      success: true,
+      activityId: "activity-1",
+    });
+    deps.providerSyncRepository.finalizeWebhookReceiptJob.mockRejectedValueOnce(
+      new Error("receipt_finalization_failed"),
+    );
+
+    await expect(
+      new WahooWebhookJobService(deps as never).processDueJobs({ workerId: "worker-1" }),
+    ).resolves.toEqual({ completed: 0, failed: 1, processed: 1 });
+    expect(deps.importer.importWorkoutSummary).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ id: 99 }),
+      {
+        integrationGeneration: 1,
+        integrationId: "integration-1",
+        signal: expect.any(AbortSignal),
+      },
+    );
+    expect(deps.providerSyncRepository.finalizeWebhookReceiptJob).toHaveBeenLastCalledWith(
+      expect.objectContaining({ jobStatus: "failed", receiptStatus: "failed" }),
+    );
+  });
+
+  it("fences a receipt when disconnect commits while the receipt is being loaded", async () => {
+    const deps = createDeps();
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
+      {
+        attempt: 1,
+        dedupeKey: "wahoo:webhook:receipt-1",
+        id: "job-1",
+        integrationId: "integration-1",
+        integrationGeneration: 1,
+        internalResourceId: null,
+        jobType: "wahoo.process_webhook_receipt",
+        maxAttempts: 5,
+        payload: { receiptId: "receipt-1" },
+        profileId: "profile-1",
+        provider: "wahoo",
+        resourceKind: null,
+        runAt: "2026-04-01T12:00:00.000Z",
+        status: "running",
+      },
+    ]);
+    deps.providerSyncRepository.isIntegrationGenerationActive
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    deps.providerSyncRepository.getWebhookReceipt.mockResolvedValue({
+      id: "receipt-1",
+      payload: { event_type: "workout_summary", user: { id: 42 }, workout_summary: { id: 99 } },
+    });
+
+    await expect(
+      new WahooWebhookJobService(deps as never).processDueJobs({ workerId: "worker-1" }),
+    ).resolves.toEqual({ completed: 1, failed: 0, processed: 1 });
+
+    expect(deps.importer.importWorkoutSummary).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepository.finalizeWebhookReceiptJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobStatus: "completed",
+        lastError: "integration_generation_inactive",
+        receiptStatus: "processed",
+      }),
+    );
+  });
+
+  it("converges a stale job and receipt when finalization already won the race", async () => {
+    const deps = createDeps();
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
+      {
+        attempt: 1,
+        id: "job-1",
+        integrationGeneration: 1,
+        integrationId: "integration-1",
+        jobType: "wahoo.process_webhook_receipt",
+        maxAttempts: 5,
+        payload: { receiptId: "receipt-1" },
+        profileId: "profile-1",
+        provider: "wahoo",
+        runAt: "2026-04-01T12:00:00.000Z",
+        status: "running",
+      },
+    ]);
+    deps.providerSyncRepository.getWebhookReceipt.mockResolvedValue({ id: "receipt-1" });
+    deps.providerSyncRepository.isIntegrationGenerationActive.mockResolvedValue(false);
+    deps.providerSyncRepository.finalizeWebhookReceiptJob.mockResolvedValue(false);
+
+    await expect(
+      new WahooWebhookJobService(deps as never).processDueJobs({ workerId: "worker-1" }),
+    ).resolves.toEqual({ completed: 1, failed: 0, processed: 1 });
+
+    expect(deps.providerSyncRepository.finalizeWebhookReceiptJob).toHaveBeenCalledWith({
+      jobId: "job-1",
+      jobStatus: "completed",
+      lastError: "integration_generation_inactive",
+      receiptId: "receipt-1",
+      receiptStatus: "processed",
+      workerId: expect.stringMatching(/^worker-1:/),
+    });
+    expect(deps.importer.importWorkoutSummary).not.toHaveBeenCalled();
   });
 
   it("recovers pending receipts without jobs before processing due jobs", async () => {
@@ -127,6 +392,7 @@ describe("WahooWebhookJobService", () => {
         eventType: "workout_summary",
         id: "receipt-1",
         integrationId: "integration-1",
+        integrationGeneration: 1,
         jobId: null,
         payload: {
           event_type: "workout_summary",
@@ -139,8 +405,7 @@ describe("WahooWebhookJobService", () => {
         providerEventId: "99",
       },
     ]);
-    deps.wahooRepository.findWahooIntegrationByExternalId.mockResolvedValue({
-      integrationId: "integration-1",
+    deps.wahooRepository.findWahooIntegrationByIdAndGeneration.mockResolvedValue({
       profileId: "profile-1",
     });
     deps.providerSyncRepository.enqueueJob.mockResolvedValue({ id: "job-1", status: "queued" });
@@ -158,6 +423,7 @@ describe("WahooWebhookJobService", () => {
       expect.objectContaining({
         dedupeKey: "wahoo:webhook:receipt-1",
         integrationId: "integration-1",
+        integrationGeneration: 1,
         jobType: "wahoo.process_webhook_receipt",
         payload: { receiptId: "receipt-1" },
         profileId: "profile-1",

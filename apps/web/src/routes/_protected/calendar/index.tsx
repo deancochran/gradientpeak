@@ -1,4 +1,10 @@
-import { Badge } from "@repo/ui/components/badge";
+import { usePlannedSessionMutations } from "@repo/api/react";
+import { type CalendarProjectionItem, compareCalendarProjectionItems } from "@repo/core";
+import {
+  deriveCalendarDayVisualState,
+  describeCalendarDayVisualState,
+  summarizePlannedSessionComparisons,
+} from "@repo/core/calendar";
 import { Button } from "@repo/ui/components/button";
 import {
   Card,
@@ -10,92 +16,115 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/components/tabs";
 import { cn } from "@repo/ui/lib/cn";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { CalendarDays, ChevronLeft, ChevronRight, List } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, List, Plus } from "lucide-react";
 import { useMemo } from "react";
 
+import { CalendarProjectionCard } from "../../../components/calendar/calendar-projection-card";
 import { RouteFlashToast, type RouteFlashType } from "../../../components/route-flash-toast";
 import { api } from "../../../lib/api/client";
 import {
-  compareEventsByStart,
-  formatEventTimeRange,
   formatMonthLabel,
+  formatShortDayLabel,
   getCalendarGrid,
-  getEventTitle,
   getMonthKey,
   getMonthWindow,
   getTodayDateKey,
+  getWeekWindow,
+  isValidDateKey,
   isValidMonthKey,
-  type PlanningEvent,
+  shiftDateKey,
   shiftMonthKey,
   toDateKey,
 } from "../../../lib/planning";
+import { CalendarDayVisual } from "./CalendarDayVisual";
 
 export const Route = createFileRoute("/_protected/calendar/")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    flash: typeof search.flash === "string" ? search.flash : undefined,
-    flashType:
-      search.flashType === "success" || search.flashType === "error" || search.flashType === "info"
-        ? (search.flashType as RouteFlashType)
-        : undefined,
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): {
+    date?: string;
+    flash?: string;
+    flashType?: RouteFlashType;
+    month: string;
+    view: "agenda" | "month" | "week";
+  } => ({
+    ...(typeof search.flash === "string" ? { flash: search.flash } : {}),
+    ...(search.flashType === "success" ||
+    search.flashType === "error" ||
+    search.flashType === "info"
+      ? { flashType: search.flashType as RouteFlashType }
+      : {}),
     month:
       typeof search.month === "string" && isValidMonthKey(search.month)
         ? search.month
         : getMonthKey(new Date()),
-    view: search.view === "agenda" ? "agenda" : "month",
+    ...(typeof search.date === "string" && isValidDateKey(search.date)
+      ? { date: search.date }
+      : {}),
+    view: search.view === "agenda" || search.view === "week" ? search.view : "month",
   }),
   component: CalendarIndexPage,
 });
 
 function CalendarIndexPage() {
   const navigate = Route.useNavigate();
-  const { flash, flashType, month, view } = Route.useSearch();
-  const { startKey, endKey } = useMemo(() => getMonthWindow(month), [month]);
+  const search = Route.useSearch();
+  const { flash, flashType } = search;
+  const month = isValidMonthKey(search.month) ? search.month : getMonthKey(new Date());
+  const date = search.date && isValidDateKey(search.date) ? search.date : getTodayDateKey();
+  const view = search.view === "agenda" || search.view === "week" ? search.view : "month";
+  const monthWindow = useMemo(() => getMonthWindow(month), [month]);
+  const weekWindow = useMemo(() => getWeekWindow(date), [date]);
+  const { startKey, endKey } = view === "week" ? weekWindow : monthWindow;
   const todayKey = getTodayDateKey();
-  const profileQuery = api.profiles.get.useQuery();
-  const eventsQuery = api.events.list.useQuery({
-    date_from: startKey,
-    date_to: endKey,
-    include_adhoc: true,
+  const eventsQuery = api.calendar.range.useQuery({
+    startDate: startKey,
+    endDateExclusive: shiftDateKey(endKey, 1),
+    includeAdhoc: true,
     limit: 500,
   });
-  const goalsQuery = api.goals.list.useQuery(
-    {
-      profile_id: profileQuery.data?.id ?? "00000000-0000-0000-0000-000000000000",
-      limit: 200,
-    },
-    { enabled: Boolean(profileQuery.data?.id) },
-  );
+  const plannedSessionMutations = usePlannedSessionMutations({
+    onConflict: () => eventsQuery.refetch(),
+  });
 
-  const events = useMemo(
-    () => ((eventsQuery.data?.items ?? []) as PlanningEvent[]).slice().sort(compareEventsByStart),
-    [eventsQuery.data?.items],
+  const projectionItems = useMemo(() => {
+    return [...(eventsQuery.data?.items ?? [])].sort(compareCalendarProjectionItems);
+  }, [eventsQuery.data?.items]);
+  const plannedSessions = projectionItems.flatMap((item) =>
+    item.plannedSession ? [{ session: item.plannedSession, title: item.title }] : [],
   );
-  const eventsByDate = useMemo(() => {
-    const grouped = new Map<string, PlanningEvent[]>();
-    for (const event of events) {
-      const dateKey = event.scheduled_date ?? toDateKey(new Date(event.starts_at ?? Date.now()));
-      const bucket = grouped.get(dateKey) ?? [];
-      bucket.push(event);
-      grouped.set(dateKey, bucket);
+  const weekComparison = useMemo(
+    () =>
+      summarizePlannedSessionComparisons(
+        projectionItems.flatMap((item) => (item.plannedActual ? [item.plannedActual] : [])),
+      ),
+    [projectionItems],
+  );
+  const projectionItemsByDate = useMemo(() => {
+    const grouped = new Map<string, CalendarProjectionItem[]>();
+    for (const item of projectionItems) {
+      const bucket = grouped.get(item.calendarDate) ?? [];
+      bucket.push(item);
+      grouped.set(item.calendarDate, bucket);
     }
     return grouped;
-  }, [events]);
-  const goalDates = useMemo(
-    () => new Set((goalsQuery.data?.items ?? []).map((goal) => goal.target_date)),
-    [goalsQuery.data?.items],
-  );
+  }, [projectionItems]);
   const gridDays = useMemo(() => getCalendarGrid(month), [month]);
-  const monthEventDays = eventsByDate.size;
-
+  const formatDistance = (value: number | null) =>
+    value === null
+      ? null
+      : value >= 1_000
+        ? `${(value / 1_000).toFixed(1)} km`
+        : `${Math.round(value)} m`;
   return (
     <div className="space-y-6">
       <RouteFlashToast
-        message={flash}
-        type={flashType}
+        {...(flash !== undefined ? { message: flash } : {})}
+        {...(flashType !== undefined ? { type: flashType } : {})}
         clear={() =>
           void navigate({
             to: "/calendar",
-            search: { flash: undefined, flashType: undefined, month, view },
+            search: { date, month, view },
             replace: true,
           })
         }
@@ -107,17 +136,26 @@ function CalendarIndexPage() {
             Your monthly schedule and agenda, backed by real events and goals.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+          <Button asChild>
+            <Link to="/calendar/new" search={{ date }}>
+              <Plus className="mr-2 h-4 w-4" />
+              Create
+            </Link>
+          </Button>
           <Button
+            aria-label="Previous calendar period"
             variant="outline"
             size="icon"
             onClick={() =>
               void navigate({
                 to: "/calendar",
                 search: {
-                  flash: undefined,
-                  flashType: undefined,
-                  month: shiftMonthKey(month, -1),
+                  date: view === "week" ? shiftDateKey(date, -7) : date,
+                  month:
+                    view === "week"
+                      ? getMonthKey(new Date(`${shiftDateKey(date, -7)}T12:00:00`))
+                      : shiftMonthKey(month, -1),
                   view,
                 },
               })
@@ -125,17 +163,27 @@ function CalendarIndexPage() {
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <div className="min-w-40 text-center text-sm font-medium">{formatMonthLabel(month)}</div>
+          <div
+            aria-live="polite"
+            className="min-w-0 flex-1 text-center text-sm font-medium sm:min-w-40"
+          >
+            {view === "week"
+              ? `${weekWindow.startKey} – ${weekWindow.endKey}`
+              : formatMonthLabel(month)}
+          </div>
           <Button
+            aria-label="Next calendar period"
             variant="outline"
             size="icon"
             onClick={() =>
               void navigate({
                 to: "/calendar",
                 search: {
-                  flash: undefined,
-                  flashType: undefined,
-                  month: shiftMonthKey(month, 1),
+                  date: view === "week" ? shiftDateKey(date, 7) : date,
+                  month:
+                    view === "week"
+                      ? getMonthKey(new Date(`${shiftDateKey(date, 7)}T12:00:00`))
+                      : shiftMonthKey(month, 1),
                   view,
                 },
               })
@@ -146,26 +194,77 @@ function CalendarIndexPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <SummaryCard
-          title="Scheduled events"
-          value={events.length}
-          description="Across this month"
-        />
-        <SummaryCard
-          title="Active days"
-          value={monthEventDays}
-          description="Days with at least one event"
-        />
-        <SummaryCard
-          title="Goal markers"
-          value={
-            Array.from(goalDates).filter((dateKey) => dateKey >= startKey && dateKey <= endKey)
-              .length
-          }
-          description="Targets landing this month"
-        />
-      </div>
+      {eventsQuery.isError ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/40 p-4"
+        >
+          <p className="text-sm">
+            Some calendar data could not be loaded. Existing results remain visible.
+          </p>
+          <Button size="sm" variant="outline" onClick={() => void eventsQuery.refetch()}>
+            Retry
+          </Button>
+        </div>
+      ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Personal planned sessions</CardTitle>
+          <CardDescription>
+            Current activity-plan details for your scheduled sessions. Event-specific calendar items
+            stay in the calendar views below.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {eventsQuery.data?.truncation.plannedSessions ? (
+            <p role="alert" className="text-sm text-destructive">
+              This range is too large to show completely. Narrow the calendar period before making
+              decisions from this list.
+            </p>
+          ) : null}
+          {eventsQuery.isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading personal planned sessions...</p>
+          ) : plannedSessions.length > 0 ? (
+            <div className="space-y-2">
+              {plannedSessions.map(({ session, title }) => (
+                <div
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3"
+                  key={session.id}
+                >
+                  <div>
+                    <p className="font-medium capitalize">{title}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {session.planningDate} · {session.lifecycle.status}
+                    </p>
+                  </div>
+                  {session.lifecycle.status === "scheduled" ? (
+                    <Button
+                      disabled={plannedSessionMutations.cancel.isPending}
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        plannedSessionMutations.cancel.mutate({
+                          profileId: session.profileId,
+                          sessionId: session.id,
+                          expectedRevision: session.sessionRevision,
+                          reason: "user_requested",
+                        })
+                      }
+                    >
+                      Cancel session
+                    </Button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No personal planned sessions in this period.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       <Tabs
         value={view}
@@ -173,10 +272,9 @@ function CalendarIndexPage() {
           void navigate({
             to: "/calendar",
             search: {
-              flash: undefined,
-              flashType: undefined,
+              date,
               month,
-              view: nextView === "agenda" ? "agenda" : "month",
+              view: nextView === "agenda" || nextView === "week" ? nextView : "month",
             },
           })
         }
@@ -190,26 +288,29 @@ function CalendarIndexPage() {
             <List className="h-4 w-4" />
             Agenda
           </TabsTrigger>
+          <TabsTrigger value="week" className="gap-2">
+            <CalendarDays className="h-4 w-4" />
+            Week
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="month">
           <Card>
             <CardHeader>
-              <CardTitle>Month view</CardTitle>
-              <CardDescription>Open a day to inspect its agenda and goal anchors.</CardDescription>
+              <h2 className="leading-none font-semibold">Month view</h2>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-7 gap-2 text-center text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((label) => (
                   <div key={label}>{label}</div>
                 ))}
               </div>
-              <div className="grid grid-cols-7 gap-2">
+              <div className="grid grid-cols-7 gap-1">
                 {gridDays.map((date) => {
                   const dateKey = toDateKey(date);
-                  const dayEvents = eventsByDate.get(dateKey) ?? [];
+                  const dayEvents = projectionItemsByDate.get(dateKey) ?? [];
                   const isCurrentMonth = date.getMonth() === parseInt(month.slice(5, 7), 10) - 1;
-                  const hasGoal = goalDates.has(dateKey);
+                  const visualState = deriveCalendarDayVisualState(dayEvents);
 
                   return (
                     <Link
@@ -217,31 +318,70 @@ function CalendarIndexPage() {
                       to="/calendar/day/$date"
                       params={{ date: dateKey }}
                       search={{ month, view }}
+                      aria-label={`${dateKey}. ${describeCalendarDayVisualState(visualState)} Open day.`}
                       className={cn(
-                        "rounded-xl border p-2 transition-colors hover:border-primary hover:bg-accent/40",
-                        !isCurrentMonth && "bg-muted/30 text-muted-foreground",
-                        dateKey === todayKey && "border-primary",
+                        "flex min-h-16 items-center justify-center rounded-xl p-1 transition-colors hover:bg-accent/40",
+                        !isCurrentMonth && "text-muted-foreground",
                       )}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-medium">{date.getDate()}</span>
-                        {hasGoal ? <Badge variant="secondary">Goal</Badge> : null}
-                      </div>
-                      <div className="mt-3 space-y-1">
-                        {dayEvents.slice(0, 2).map((event) => (
-                          <div
-                            key={event.id}
-                            className="truncate rounded-md bg-muted px-2 py-1 text-xs"
-                          >
-                            {getEventTitle(event)}
-                          </div>
-                        ))}
-                        {dayEvents.length > 2 ? (
-                          <div className="text-xs text-muted-foreground">
-                            +{dayEvents.length - 2} more
-                          </div>
-                        ) : null}
-                      </div>
+                      <CalendarDayVisual
+                        day={date.getDate()}
+                        decorative
+                        muted={!isCurrentMonth}
+                        state={visualState}
+                        today={dateKey === todayKey}
+                      />
+                    </Link>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="week">
+          <Card>
+            <CardHeader>
+              <h2 className="leading-none font-semibold">Week view</h2>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {weekComparison.planned.durationSeconds.value !== null ? (
+                <p className="text-sm text-muted-foreground">
+                  Planned duration: {Math.round(weekComparison.planned.durationSeconds.value / 60)}{" "}
+                  min · Actual duration:{" "}
+                  {weekComparison.actual.durationSeconds.value === null
+                    ? "Unknown"
+                    : `${Math.round(weekComparison.actual.durationSeconds.value / 60)} min${weekComparison.actual.durationSeconds.missingCount ? " (partial)" : ""}`}
+                  {formatDistance(weekComparison.actual.distanceMeters.value)
+                    ? ` · Actual distance: ${formatDistance(weekComparison.actual.distanceMeters.value)}${weekComparison.actual.distanceMeters.missingCount ? " (partial)" : ""}`
+                    : ""}
+                </p>
+              ) : null}
+              <div className="grid grid-cols-7 gap-1 text-center text-xs text-muted-foreground">
+                {weekWindow.days.map((dateKey) => (
+                  <div key={`week-label-${dateKey}`}>{formatShortDayLabel(dateKey)}</div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {weekWindow.days.map((dateKey) => {
+                  const visualState = deriveCalendarDayVisualState(
+                    projectionItemsByDate.get(dateKey) ?? [],
+                  );
+                  return (
+                    <Link
+                      aria-label={`${dateKey}. ${describeCalendarDayVisualState(visualState)} Open day.`}
+                      className="flex min-h-20 items-center justify-center rounded-xl p-1 transition-colors hover:bg-accent/40"
+                      key={dateKey}
+                      params={{ date: dateKey }}
+                      search={{ month, view }}
+                      to="/calendar/day/$date"
+                    >
+                      <CalendarDayVisual
+                        day={Number(dateKey.slice(8, 10))}
+                        decorative
+                        state={visualState}
+                        today={dateKey === todayKey}
+                      />
                     </Link>
                   );
                 })}
@@ -253,44 +393,15 @@ function CalendarIndexPage() {
         <TabsContent value="agenda">
           <Card>
             <CardHeader>
-              <CardTitle>Month agenda</CardTitle>
-              <CardDescription>
-                Every scheduled event for {formatMonthLabel(month)}.
-              </CardDescription>
+              <h2 className="leading-none font-semibold">Month agenda</h2>
             </CardHeader>
             <CardContent>
               {eventsQuery.isLoading ? (
                 <p className="text-sm text-muted-foreground">Loading agenda...</p>
-              ) : events.length > 0 ? (
+              ) : projectionItems.length > 0 ? (
                 <div className="space-y-3">
-                  {events.map((event) => (
-                    <Link
-                      key={event.id}
-                      to="/calendar/events/$eventId"
-                      params={{ eventId: event.id }}
-                      search={{ flash: undefined, flashType: undefined, month, view }}
-                      className="block rounded-xl border p-4 transition-colors hover:border-primary hover:bg-accent/40"
-                    >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <p className="font-medium">{getEventTitle(event)}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {event.scheduled_date} · {formatEventTimeRange(event)}
-                          </p>
-                          {event.activity_plan?.activity_category ? (
-                            <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">
-                              {event.activity_plan.activity_category}
-                            </p>
-                          ) : null}
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <Badge variant="outline">{event.event_type ?? "event"}</Badge>
-                          {goalDates.has(event.scheduled_date ?? "") ? (
-                            <Badge>Goal day</Badge>
-                          ) : null}
-                        </div>
-                      </div>
-                    </Link>
+                  {projectionItems.map((item) => (
+                    <CalendarProjectionCard item={item} key={`${item.kind}-${item.id}`} />
                   ))}
                 </div>
               ) : (
@@ -301,27 +412,5 @@ function CalendarIndexPage() {
         </TabsContent>
       </Tabs>
     </div>
-  );
-}
-
-function SummaryCard({
-  title,
-  value,
-  description,
-}: {
-  title: string;
-  value: number;
-  description: string;
-}) {
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-semibold tracking-tight">{value}</div>
-        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-      </CardContent>
-    </Card>
   );
 }

@@ -1,4 +1,5 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
+import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Link } from "@tanstack/react-router";
 import { Loader2, Lock, UserRound } from "lucide-react";
@@ -14,16 +15,19 @@ type RelationshipProfile = {
 export function RelationshipList({
   action,
   emptyMessage,
+  errorMessage,
   getProfileLink,
   hasMore,
   isLoading,
   loadMoreLink,
+  onRetry,
   title,
   total,
   users,
 }: {
   action?: (profile: RelationshipProfile) => React.ReactNode;
   emptyMessage: string;
+  errorMessage?: string;
   getProfileLink: (userId: string) => {
     params: { userId: string };
     search: { flash: undefined; flashType: undefined };
@@ -32,6 +36,7 @@ export function RelationshipList({
   hasMore: boolean;
   isLoading: boolean;
   loadMoreLink?: React.ReactNode;
+  onRetry?: () => void;
   title: string;
   total: number;
   users: readonly RelationshipProfile[];
@@ -44,11 +49,42 @@ export function RelationshipList({
     );
   }
 
+  if (errorMessage && users.length === 0) {
+    return (
+      <Card>
+        <CardContent className="flex min-h-52 flex-col items-center justify-center gap-4 text-center">
+          <div role="alert">
+            <p className="font-medium">{errorMessage}</p>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Check your connection or profile access and try again.
+          </p>
+          {onRetry ? (
+            <Button type="button" variant="outline" onClick={onRetry}>
+              Try again
+            </Button>
+          ) : null}
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <CardContent className="pt-6">
         <div className="mb-4 flex items-center justify-between">
           <h1 className="text-xl font-bold">{title.replace("{count}", String(total))}</h1>
+          {onRetry ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-label={`Refresh ${title.replace("{count} ", "")}`}
+              onClick={onRetry}
+            >
+              Refresh
+            </Button>
+          ) : null}
         </div>
 
         {users.length === 0 ? (
@@ -86,6 +122,17 @@ export function RelationshipList({
             ))}
           </div>
         )}
+
+        {errorMessage && users.length > 0 ? (
+          <div role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="font-medium">{errorMessage}</p>
+            {onRetry ? (
+              <Button type="button" variant="outline" onClick={onRetry}>
+                Try again
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
 
         {hasMore && loadMoreLink ? <div className="mt-4 text-center">{loadMoreLink}</div> : null}
       </CardContent>

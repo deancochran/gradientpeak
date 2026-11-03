@@ -1,3 +1,4 @@
+import type { ProfileGoal } from "@repo/core";
 import { describe, expect, it } from "vitest";
 import { buildGoalOverlays, filterGoalOverlaysByDateRange } from "../goalOverlays";
 
@@ -8,20 +9,27 @@ describe("goal overlays", () => {
       goals: [
         {
           id: "goal-1",
+          profile_id: "00000000-0000-4000-8000-000000000001",
           title: "Spring marathon",
           target_date: "2026-05-09",
           activity_category: "run",
           priority: 8,
-          objective: { type: "event_performance", target_time_s: 10800 },
-        } as any,
+          objective: {
+            type: "event_performance",
+            activity_category: "run",
+            distance_m: 42_195,
+            target_time_s: 10_800,
+          },
+        } satisfies ProfileGoal,
         {
           id: "goal-2",
+          profile_id: "00000000-0000-4000-8000-000000000001",
           title: "Old FTP",
           target_date: "2026-04-01",
           activity_category: "bike",
           priority: 4,
-          objective: { type: "threshold", metric: "power" },
-        } as any,
+          objective: { type: "threshold", metric: "power", value: 300 },
+        } satisfies ProfileGoal,
       ],
     });
 
