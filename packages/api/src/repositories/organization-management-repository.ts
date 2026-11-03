@@ -7,8 +7,24 @@ import {
   profiles,
   users,
 } from "@repo/db";
-import { and, eq, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type { DrizzleQueryExecutor } from "../db";
+
+export type OrganizationInvitationListCursor = {
+  createdAtCursor: string;
+  invitationId: string;
+};
+
+export type OrganizationInvitationSummaryRow = {
+  invitationId: string;
+  organizationId: string;
+  kind: "staff" | "athlete";
+  requestedRole: "admin" | "coach" | null;
+  status: "pending" | "accepted" | "declined" | "revoked" | "expired";
+  expiresAt: Date;
+  createdAt: Date;
+  createdAtCursor: string;
+};
 
 export function createOrganizationManagementRepository(db: DrizzleQueryExecutor) {
   return {
@@ -74,6 +90,129 @@ export function createOrganizationManagementRepository(db: DrizzleQueryExecutor)
             isNull(organizationMembershipRoleGrants.revoked_at),
           ),
         ),
+    findActiveAdminMembership: async (organizationId: string, profileId: string) =>
+      (
+        await db
+          .select({ membershipId: organizationMemberships.id })
+          .from(organizationMemberships)
+          .innerJoin(organizations, eq(organizations.id, organizationMemberships.organization_id))
+          .leftJoin(
+            organizationMembershipRoleGrants,
+            and(
+              eq(organizationMembershipRoleGrants.organization_id, organizations.id),
+              eq(organizationMembershipRoleGrants.membership_id, organizationMemberships.id),
+              eq(organizationMembershipRoleGrants.role_key, "admin"),
+              lte(organizationMembershipRoleGrants.granted_at, sql`transaction_timestamp()`),
+              isNull(organizationMembershipRoleGrants.revoked_at),
+            ),
+          )
+          .where(
+            and(
+              eq(organizations.id, organizationId),
+              eq(organizationMemberships.profile_id, profileId),
+              isNull(organizations.suspended_at),
+              isNull(organizations.closed_at),
+              isNull(organizationMemberships.suspended_at),
+              isNull(organizationMemberships.ended_at),
+              or(
+                eq(organizations.root_owner_membership_id, organizationMemberships.id),
+                eq(organizationMembershipRoleGrants.role_key, "admin"),
+              ),
+            ),
+          )
+          .limit(1)
+      )[0] ?? null,
+    listOrganizationInvitations: ({
+      organizationId,
+      limit,
+      cursor,
+    }: {
+      organizationId: string;
+      limit: number;
+      cursor: OrganizationInvitationListCursor | null;
+    }): Promise<OrganizationInvitationSummaryRow[]> =>
+      db
+        .select({
+          invitationId: organizationInvitations.id,
+          organizationId: organizationInvitations.organization_id,
+          kind: organizationInvitations.invitation_kind,
+          requestedRole: organizationInvitations.requested_role_key,
+          status: sql<
+            OrganizationInvitationSummaryRow["status"]
+          >`case when ${organizationInvitations.status} = 'pending' and ${organizationInvitations.expires_at} <= transaction_timestamp() then 'expired' else ${organizationInvitations.status} end`,
+          expiresAt: organizationInvitations.expires_at,
+          createdAt: organizationInvitations.created_at,
+          createdAtCursor: sql<string>`to_char(${organizationInvitations.created_at} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+        })
+        .from(organizationInvitations)
+        .where(
+          and(
+            eq(organizationInvitations.organization_id, organizationId),
+            ...(cursor
+              ? [
+                  or(
+                    sql`${organizationInvitations.created_at} < ${cursor.createdAtCursor}::timestamptz`,
+                    and(
+                      sql`${organizationInvitations.created_at} = ${cursor.createdAtCursor}::timestamptz`,
+                      lt(organizationInvitations.id, cursor.invitationId),
+                    ),
+                  ),
+                ]
+              : []),
+          ),
+        )
+        .orderBy(desc(organizationInvitations.created_at), desc(organizationInvitations.id))
+        .limit(limit + 1),
+    listRecipientInvitations: ({
+      profileId,
+      limit,
+      cursor,
+    }: {
+      profileId: string;
+      limit: number;
+      cursor: OrganizationInvitationListCursor | null;
+    }): Promise<OrganizationInvitationSummaryRow[]> =>
+      db
+        .select({
+          invitationId: organizationInvitations.id,
+          organizationId: organizationInvitations.organization_id,
+          kind: organizationInvitations.invitation_kind,
+          requestedRole: organizationInvitations.requested_role_key,
+          status: sql<
+            OrganizationInvitationSummaryRow["status"]
+          >`case when ${organizationInvitations.status} = 'pending' and ${organizationInvitations.expires_at} <= transaction_timestamp() then 'expired' else ${organizationInvitations.status} end`,
+          expiresAt: organizationInvitations.expires_at,
+          createdAt: organizationInvitations.created_at,
+          createdAtCursor: sql<string>`to_char(${organizationInvitations.created_at} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+        })
+        .from(profiles)
+        .innerJoin(users, eq(users.id, profiles.id))
+        .innerJoin(
+          organizationInvitations,
+          or(
+            eq(organizationInvitations.invited_profile_id, profiles.id),
+            sql`lower(${organizationInvitations.invited_email}) = lower(${users.email})`,
+          ),
+        )
+        .where(
+          and(
+            eq(profiles.id, profileId),
+            eq(users.emailVerified, true),
+            ...(cursor
+              ? [
+                  or(
+                    sql`${organizationInvitations.created_at} < ${cursor.createdAtCursor}::timestamptz`,
+                    and(
+                      sql`${organizationInvitations.created_at} = ${cursor.createdAtCursor}::timestamptz`,
+                      lt(organizationInvitations.id, cursor.invitationId),
+                    ),
+                  ),
+                ]
+              : []),
+          ),
+        )
+        .orderBy(desc(organizationInvitations.created_at), desc(organizationInvitations.id))
+        .limit(limit + 1),
     createOrganization: (v: {
       id: string;
       membershipId: string;

@@ -1,9 +1,11 @@
 import type { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
+import { mapOrganizationInvitationSummary } from "../../application/organizations/manage-organizations";
 import type {
   OrganizationAccessRepository,
   OrganizationMembershipContextRow,
 } from "../../repositories/organization-access-repository";
+import type { OrganizationInvitationSummaryRow } from "../../repositories/organization-management-repository";
 import { createRouterCaller } from "../../test/router";
 import { createOrganizationsRouter } from "../organizations";
 
@@ -62,6 +64,30 @@ function createHarness({
 }
 
 describe("organizationsRouter", () => {
+  it("drops the repository cursor key from strict public invitation summaries", () => {
+    const row: OrganizationInvitationSummaryRow = {
+      invitationId: "11111111-1111-4111-8111-111111111111",
+      organizationId: ORGANIZATION_ID,
+      kind: "athlete",
+      requestedRole: null,
+      status: "pending",
+      expiresAt: new Date("2026-01-01T00:01:00.000Z"),
+      createdAt: new Date("2026-01-01T00:00:00.123Z"),
+      createdAtCursor: "2026-01-01T00:00:00.123456Z",
+    };
+
+    expect(mapOrganizationInvitationSummary(row)).toEqual({
+      invitationId: row.invitationId,
+      organizationId: row.organizationId,
+      kind: "athlete",
+      requestedRole: null,
+      status: "pending",
+      expiresAt: "2026-01-01T00:01:00.000Z",
+      createdAt: "2026-01-01T00:00:00.123Z",
+    });
+    expect(mapOrganizationInvitationSummary(row)).not.toHaveProperty("createdAtCursor");
+  });
+
   it("denies unauthenticated, malformed, extra, and unsupported-cursor input before persistence", async () => {
     const harness = createHarness();
     const anonymous = createRouterCaller(harness.router, { session: null });
@@ -89,6 +115,49 @@ describe("organizationsRouter", () => {
         name: "Peak Coaching",
         slug: "peak-coaching",
         timezone: "Mars/Olympus",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
+    expect(harness.getAccessRepository).not.toHaveBeenCalled();
+  });
+
+  it("rejects unauthenticated, malformed, and cross-scope invitation discovery cursors", async () => {
+    const harness = createHarness();
+    const anonymous = createRouterCaller(harness.router, { session: null });
+    await expect(anonymous.invitations.listMine({})).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    } satisfies Partial<TRPCError>);
+    const caller = createRouterCaller(harness.router, { userId: SESSION_PROFILE_ID });
+    await expect(caller.invitations.listMine({ limit: 51 })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    } satisfies Partial<TRPCError>);
+    const organizationCursor = cursor({
+      v: 1,
+      s: "organization",
+      o: ORGANIZATION_ID,
+      c: now.toISOString().replace("Z", "000Z"),
+      i: MEMBERSHIP_ID,
+    });
+    await expect(caller.invitations.listMine({ cursor: organizationCursor })).rejects.toMatchObject(
+      {
+        code: "BAD_REQUEST",
+      } satisfies Partial<TRPCError>,
+    );
+    await expect(
+      caller.invitations.listForOrganization({
+        organizationId: OTHER_ORGANIZATION_ID,
+        cursor: organizationCursor,
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
+    await expect(
+      caller.invitations.listForOrganization({
+        organizationId: ORGANIZATION_ID,
+        cursor: cursor({
+          v: 1,
+          s: "organization",
+          o: ORGANIZATION_ID,
+          c: now.toISOString(),
+          i: MEMBERSHIP_ID,
+        }),
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
     expect(harness.getAccessRepository).not.toHaveBeenCalled();
