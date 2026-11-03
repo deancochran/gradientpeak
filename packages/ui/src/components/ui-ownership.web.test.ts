@@ -124,8 +124,12 @@ describe("UI ownership guardrails", () => {
       "protected/notifications-button.tsx",
       "protected/performance-model-summary.tsx",
       "protected/plan-goal-form.tsx",
+      // Protected profile route error classification.
+      "protected/profile-query-state.ts",
       "protected/protected-header.tsx",
       "protected/relationship-list.tsx",
+      // Profile relationship route shell and TanStack Router navigation.
+      "protected/relationship-page-shell.tsx",
       "protected/route-upload-form.tsx",
       "protected/search-launcher.tsx",
       "protected/user-nav.tsx",
