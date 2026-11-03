@@ -1,4 +1,135 @@
-const DAY_MS = 86_400_000;
+import { addDaysDateKey } from "@repo/core/plan/trainingLoadTimeline";
+import { omitUndefined } from "@/lib/omitUndefined";
+import type {
+  CommonLoadIdentity,
+  CompletedObservationState,
+} from "./completedCommonLoadObservation";
+
+type DailyTrainingLoadAdjustment = {
+  date: string;
+  plannedLoad: number | null;
+  completedLoad: number | null;
+  targetLoad: number | null;
+  actualOrScheduledLoad: number | null;
+  loadDelta: number | null;
+  plannedDelta: number | null;
+};
+
+type DailyTrainingLoadAdjustmentInput = Partial<
+  Omit<DailyTrainingLoadAdjustment, "actualOrScheduledLoad" | "date" | "loadDelta" | "plannedDelta">
+> & {
+  actualOrScheduledLoad?: number | null;
+  date: string;
+  remainingScheduledLoad?: number | null;
+};
+
+type WeeklyTrainingLoadAdjustment = {
+  weekStartDate: string;
+  weekEndDate: string;
+  points: DailyTrainingLoadAdjustment[];
+  plannedLoad: number | null;
+  completedLoad: number | null;
+  targetLoad: number | null;
+  actualOrScheduledLoad: number | null;
+  loadDelta: number | null;
+  plannedDelta: number | null;
+};
+
+function finiteNonnegativeNumber(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function deriveLoad(
+  values: readonly (number | null)[],
+  calculation: (...knownValues: number[]) => number,
+): number | null {
+  return values.some((value) => value === null)
+    ? null
+    : calculation(...values.filter((value): value is number => value !== null));
+}
+
+function normalizeDailyTrainingLoadAdjustments(input: {
+  startDate: string;
+  endDate: string;
+  points?: DailyTrainingLoadAdjustmentInput[];
+}): DailyTrainingLoadAdjustment[] {
+  const pointsByDate = new Map((input.points ?? []).map((point) => [point.date, point]));
+  const dates: string[] = [];
+  let cursor = input.startDate;
+  for (let guard = 0; cursor <= input.endDate && guard < 3700; guard += 1) {
+    dates.push(cursor);
+    cursor = addDaysDateKey(cursor, 1);
+  }
+
+  return dates.map((date) => {
+    const raw = pointsByDate.get(date);
+    const plannedLoad = finiteNonnegativeNumber(raw?.plannedLoad);
+    const completedLoad = finiteNonnegativeNumber(raw?.completedLoad);
+    const targetLoad = finiteNonnegativeNumber(raw?.targetLoad);
+    const remainingScheduledLoad =
+      raw?.remainingScheduledLoad === undefined
+        ? deriveLoad([plannedLoad, completedLoad], (planned, completed) =>
+            Math.max(0, planned - completed),
+          )
+        : finiteNonnegativeNumber(raw.remainingScheduledLoad);
+    const actualOrScheduledLoad =
+      raw?.actualOrScheduledLoad === undefined
+        ? deriveLoad(
+            [completedLoad, remainingScheduledLoad],
+            (completed, remaining) => completed + remaining,
+          )
+        : finiteNonnegativeNumber(raw.actualOrScheduledLoad);
+
+    return omitUndefined({
+      date,
+      plannedLoad,
+      completedLoad,
+      targetLoad,
+      actualOrScheduledLoad,
+      loadDelta: deriveLoad(
+        [actualOrScheduledLoad, targetLoad],
+        (actual, target) => actual - target,
+      ),
+      plannedDelta: deriveLoad([plannedLoad, targetLoad], (planned, target) => planned - target),
+    });
+  });
+}
+
+function aggregateDailyTrainingLoadAdjustmentsToWeeks(
+  points: DailyTrainingLoadAdjustment[],
+): WeeklyTrainingLoadAdjustment[] {
+  const buckets: WeeklyTrainingLoadAdjustment[] = [];
+  for (let index = 0; index < points.length; index += 7) {
+    const weekPoints = points.slice(index, index + 7);
+    const weekStartDate = weekPoints[0]?.date;
+    const weekEndDate = weekPoints.at(-1)?.date;
+    if (!weekStartDate || !weekEndDate) continue;
+
+    const sum = (selector: (point: DailyTrainingLoadAdjustment) => number | null) =>
+      deriveLoad(weekPoints.map(selector), (...values) =>
+        values.reduce((total, value) => total + value, 0),
+      );
+    const plannedLoad = sum((point) => point.plannedLoad);
+    const targetLoad = sum((point) => point.targetLoad);
+    const actualOrScheduledLoad = sum((point) => point.actualOrScheduledLoad);
+
+    buckets.push({
+      weekStartDate,
+      weekEndDate,
+      points: weekPoints,
+      plannedLoad,
+      completedLoad: sum((point) => point.completedLoad),
+      targetLoad,
+      actualOrScheduledLoad,
+      loadDelta: deriveLoad(
+        [actualOrScheduledLoad, targetLoad],
+        (actual, target) => actual - target,
+      ),
+      plannedDelta: deriveLoad([plannedLoad, targetLoad], (planned, target) => planned - target),
+    });
+  }
+  return buckets;
+}
 
 export type DailyTrainingAdjustmentSeverity = "info" | "warning" | "risk";
 
@@ -8,100 +139,66 @@ export type DailyTrainingAdjustmentAnnotation = {
   message?: string;
 };
 
-export type DailyTrainingAdjustmentPoint = {
-  date: string;
-  plannedLoadTss: number;
-  tentativePlannedLoadTss: number;
-  completedLoadTss: number;
-  targetLoadTss: number;
-  actualOrScheduledLoadTss: number;
-  loadDeltaTss: number;
-  plannedDeltaTss: number;
+type DailyTrainingAdjustmentPresentation = {
+  completedObservationState?: CompletedObservationState;
+  completedCommonLoadIdentity?: CommonLoadIdentity | null;
+  effectiveCompletedLoadStatus?: "complete" | "partial" | "known_zero" | "unavailable";
+  hasCompletedActivityWithoutLoad?: boolean;
+  hasTargetLoad?: boolean;
   fitnessCtl?: number | null;
   targetFitnessCtl?: number | null;
   scheduledFitnessCtl?: number | null;
   fatigueAtl?: number | null;
+  actualFatigueAtl?: number | null;
+  scheduledFatigueAtl?: number | null;
   formTsb?: number | null;
+  scheduledFormTsb?: number | null;
   readinessScore?: number | null;
   annotations: DailyTrainingAdjustmentAnnotation[];
 };
 
-export type DailyTrainingAdjustmentPointInput = Partial<
-  Omit<
-    DailyTrainingAdjustmentPoint,
-    "actualOrScheduledLoadTss" | "annotations" | "date" | "loadDeltaTss" | "plannedDeltaTss"
-  >
-> & {
-  actualOrScheduledLoadTss?: number | null;
-  annotations?: DailyTrainingAdjustmentAnnotation[];
-  date: string;
-};
+export type DailyTrainingAdjustmentPoint = DailyTrainingLoadAdjustment &
+  DailyTrainingAdjustmentPresentation;
+
+export type DailyTrainingAdjustmentPointInput = DailyTrainingLoadAdjustmentInput &
+  Partial<Omit<DailyTrainingAdjustmentPresentation, "annotations">> & {
+    annotations?: DailyTrainingAdjustmentAnnotation[];
+  };
 
 export type DailyTrainingAdjustmentSummary = {
   date: string;
   point: DailyTrainingAdjustmentPoint;
-  loadDeltaLabel: string;
-  plannedDeltaLabel: string;
-  loadDeltaTone: "neutral" | "increase" | "reduce";
+  loadDeltaLabel: string | null;
+  plannedDeltaLabel: string | null;
+  loadDeltaTone: "neutral" | "increase" | "reduce" | null;
 };
 
-export type WeeklyTrainingAdjustmentBucket = {
-  weekStartDate: string;
-  weekEndDate: string;
+export type WeeklyTrainingAdjustmentBucket = Omit<WeeklyTrainingLoadAdjustment, "points"> & {
   points: DailyTrainingAdjustmentPoint[];
-  plannedLoadTss: number;
-  completedLoadTss: number;
-  targetLoadTss: number;
-  actualOrScheduledLoadTss: number;
-  loadDeltaTss: number;
-  plannedDeltaTss: number;
 };
 
 export type TrainingPathDailyLoadInput = {
   date: string;
-  completed_load_tss?: number | null;
-  scheduled_load_tss?: number | null;
-  tentative_scheduled_load_tss?: number | null;
-  recommended_load_tss?: number | null;
-  ideal_tss?: number | null;
-  actual_tss?: number | null;
-  scheduled_tss?: number | null;
+  completed_common_load?: number | null;
+  scheduled_common_load?: number | null;
+  recommended_common_load?: number | null;
 };
 
 export type TrainingPathDailyFitnessInput = {
   date: string;
-  ctl?: number | null;
-  atl?: number | null;
-  tsb?: number | null;
+  longTermLoad?: number | null;
+  recentLoad?: number | null;
+  loadBalance?: number | null;
 };
 
-function parseDateKey(dateKey: string) {
-  const [year, month, day] = dateKey.split("-").map(Number);
-  return new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1));
+function normalizeLoad(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-function toDateKey(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function addDays(dateKey: string, days: number) {
-  const date = parseDateKey(dateKey);
-  date.setUTCDate(date.getUTCDate() + days);
-  return toDateKey(date);
-}
-
-function diffDays(startDate: string, endDate: string) {
-  return Math.round((parseDateKey(endDate).getTime() - parseDateKey(startDate).getTime()) / DAY_MS);
-}
-
-function normalizeNumber(value: number | null | undefined, fallback = 0) {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-function formatSignedTss(value: number) {
+function formatSignedLoad(value: number) {
   const rounded = Math.round(value);
   if (rounded === 0) return "On target";
-  return `${rounded > 0 ? "+" : ""}${rounded} TSS`;
+  return `${rounded > 0 ? "+" : ""}${rounded} Load`;
 }
 
 function getDeltaTone(value: number): DailyTrainingAdjustmentSummary["loadDeltaTone"] {
@@ -114,40 +211,28 @@ export function normalizeDailyTrainingAdjustmentPoints(input: {
   endDate: string;
   points?: DailyTrainingAdjustmentPointInput[];
 }): DailyTrainingAdjustmentPoint[] {
-  const dayCount = diffDays(input.startDate, input.endDate) + 1;
-  if (dayCount <= 0) return [];
-
   const pointsByDate = new Map((input.points ?? []).map((point) => [point.date, point]));
 
-  return Array.from({ length: dayCount }, (_, index) => {
-    const date = addDays(input.startDate, index);
-    const raw = pointsByDate.get(date);
-    const plannedLoadTss = normalizeNumber(raw?.plannedLoadTss);
-    const tentativePlannedLoadTss = normalizeNumber(raw?.tentativePlannedLoadTss);
-    const completedLoadTss = normalizeNumber(raw?.completedLoadTss);
-    const targetLoadTss = normalizeNumber(raw?.targetLoadTss);
-    const actualOrScheduledLoadTss = normalizeNumber(
-      raw?.actualOrScheduledLoadTss,
-      completedLoadTss + plannedLoadTss,
-    );
-
-    return {
-      date,
-      plannedLoadTss,
-      tentativePlannedLoadTss,
-      completedLoadTss,
-      targetLoadTss,
-      actualOrScheduledLoadTss,
-      loadDeltaTss: actualOrScheduledLoadTss - targetLoadTss,
-      plannedDeltaTss: plannedLoadTss + tentativePlannedLoadTss - targetLoadTss,
+  return normalizeDailyTrainingLoadAdjustments(input).map((point) => {
+    const raw = pointsByDate.get(point.date);
+    return omitUndefined({
+      ...point,
+      completedObservationState: raw?.completedObservationState,
+      completedCommonLoadIdentity: raw?.completedCommonLoadIdentity ?? null,
+      effectiveCompletedLoadStatus: raw?.effectiveCompletedLoadStatus,
+      hasCompletedActivityWithoutLoad: raw?.hasCompletedActivityWithoutLoad === true,
+      hasTargetLoad: raw?.hasTargetLoad !== false,
       fitnessCtl: raw?.fitnessCtl ?? null,
       targetFitnessCtl: raw?.targetFitnessCtl ?? null,
       scheduledFitnessCtl: raw?.scheduledFitnessCtl ?? null,
       fatigueAtl: raw?.fatigueAtl ?? null,
+      actualFatigueAtl: raw?.actualFatigueAtl ?? null,
+      scheduledFatigueAtl: raw?.scheduledFatigueAtl ?? null,
       formTsb: raw?.formTsb ?? null,
+      scheduledFormTsb: raw?.scheduledFormTsb ?? null,
       readinessScore: raw?.readinessScore ?? null,
       annotations: raw?.annotations ?? [],
-    };
+    });
   });
 }
 
@@ -162,42 +247,35 @@ export function getDailyTrainingAdjustmentSummary(input: {
   return {
     date: point.date,
     point,
-    loadDeltaLabel: formatSignedTss(point.loadDeltaTss),
-    plannedDeltaLabel: formatSignedTss(point.plannedDeltaTss),
-    loadDeltaTone: getDeltaTone(point.loadDeltaTss),
+    loadDeltaLabel:
+      point.hasTargetLoad === false || point.loadDelta === null
+        ? null
+        : formatSignedLoad(point.loadDelta),
+    plannedDeltaLabel:
+      point.hasTargetLoad === false || point.plannedDelta === null
+        ? null
+        : formatSignedLoad(point.plannedDelta),
+    loadDeltaTone:
+      point.hasTargetLoad === false || point.loadDelta === null
+        ? null
+        : getDeltaTone(point.loadDelta),
   };
 }
 
 export function aggregateDailyTrainingAdjustmentsToWeeks(
   points: DailyTrainingAdjustmentPoint[],
 ): WeeklyTrainingAdjustmentBucket[] {
-  const buckets: WeeklyTrainingAdjustmentBucket[] = [];
-  for (let index = 0; index < points.length; index += 7) {
-    const weekPoints = points.slice(index, index + 7);
-    const weekStartDate = weekPoints[0]?.date;
-    const weekEndDate = weekPoints[weekPoints.length - 1]?.date;
-    if (!weekStartDate || !weekEndDate) continue;
-
-    const sum = (selector: (point: DailyTrainingAdjustmentPoint) => number) =>
-      weekPoints.reduce((total, point) => total + selector(point), 0);
-    const plannedLoadTss = sum((point) => point.plannedLoadTss);
-    const tentativePlannedLoadTss = sum((point) => point.tentativePlannedLoadTss);
-    const targetLoadTss = sum((point) => point.targetLoadTss);
-    const actualOrScheduledLoadTss = sum((point) => point.actualOrScheduledLoadTss);
-
-    buckets.push({
-      weekStartDate,
-      weekEndDate,
-      points: weekPoints,
-      plannedLoadTss,
-      completedLoadTss: sum((point) => point.completedLoadTss),
-      targetLoadTss,
-      actualOrScheduledLoadTss,
-      loadDeltaTss: actualOrScheduledLoadTss - targetLoadTss,
-      plannedDeltaTss: plannedLoadTss + tentativePlannedLoadTss - targetLoadTss,
-    });
-  }
-  return buckets;
+  const pointsByDate = new Map(points.map((point) => [point.date, point]));
+  return aggregateDailyTrainingLoadAdjustmentsToWeeks(points).map((bucket) => ({
+    ...bucket,
+    points: bucket.points.map(
+      (point) =>
+        pointsByDate.get(point.date) ?? {
+          ...point,
+          annotations: [],
+        },
+    ),
+  }));
 }
 
 export function buildDailyTrainingAdjustmentPointsFromTrainingPathData(input: {
@@ -238,23 +316,20 @@ export function buildDailyTrainingAdjustmentPointsFromTrainingPathData(input: {
       const fitness = fitnessByDate.get(date);
       const targetFitness = targetFitnessByDate.get(date);
       const scheduledFitness = scheduledFitnessByDate.get(date);
-      const plannedLoadTss = normalizeNumber(load?.scheduled_load_tss ?? load?.scheduled_tss);
-      const tentativePlannedLoadTss = normalizeNumber(load?.tentative_scheduled_load_tss);
-      const completedLoadTss = normalizeNumber(load?.completed_load_tss ?? load?.actual_tss);
-      const targetLoadTss = normalizeNumber(load?.recommended_load_tss ?? load?.ideal_tss);
+      const plannedLoad = normalizeLoad(load?.scheduled_common_load);
+      const completedLoad = normalizeLoad(load?.completed_common_load);
+      const targetLoad = normalizeLoad(load?.recommended_common_load);
 
       return {
         date,
-        plannedLoadTss,
-        tentativePlannedLoadTss,
-        completedLoadTss,
-        targetLoadTss,
-        actualOrScheduledLoadTss: completedLoadTss + plannedLoadTss + tentativePlannedLoadTss,
-        fitnessCtl: fitness?.ctl ?? null,
-        targetFitnessCtl: targetFitness?.ctl ?? null,
-        scheduledFitnessCtl: scheduledFitness?.ctl ?? null,
-        fatigueAtl: scheduledFitness?.atl ?? fitness?.atl ?? null,
-        formTsb: scheduledFitness?.tsb ?? fitness?.tsb ?? null,
+        plannedLoad,
+        completedLoad,
+        targetLoad,
+        fitnessCtl: fitness?.longTermLoad ?? null,
+        targetFitnessCtl: targetFitness?.longTermLoad ?? null,
+        scheduledFitnessCtl: scheduledFitness?.longTermLoad ?? null,
+        fatigueAtl: scheduledFitness?.recentLoad ?? fitness?.recentLoad ?? null,
+        formTsb: scheduledFitness?.loadBalance ?? fitness?.loadBalance ?? null,
       };
     }),
   });

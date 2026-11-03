@@ -1,0 +1,666 @@
+{
+  "owners": {
+    "core": {
+      "roots": ["packages/core"],
+      "packageJson": "packages/core/package.json",
+      "verification": {
+        "lint": { "script": "lint", "patterns": ["packages/core/**/*"] },
+        "typecheck": {
+          "script": "check-types",
+          "tsconfig": "packages/core/tsconfig.json",
+          "patterns": ["packages/core/**/*.ts", "packages/core/**/*.tsx"]
+        },
+        "test": {
+          "script": "test",
+          "patterns": [
+            "packages/core/**/*.test.ts",
+            "packages/core/**/*.test.tsx",
+            "packages/core/**/__tests__/**/*"
+          ]
+        }
+      }
+    },
+    "db": {
+      "roots": ["packages/db"],
+      "packageJson": "packages/db/package.json",
+      "verification": {
+        "lint": { "script": "lint", "patterns": ["packages/db/**/*"] },
+        "static": {
+          "script": "db:verify:static",
+          "patterns": [
+            "packages/db/**/*.sql",
+            "packages/db/**/*.backup",
+            "packages/db/scripts/fixtures/**/*"
+          ]
+        },
+        "typecheck": [
+          {
+            "script": "check-types",
+            "tsconfig": "packages/db/tsconfig.json",
+            "patterns": ["packages/db/**/*.ts", "packages/db/**/*.tsx"]
+          },
+          {
+            "script": "check-types:supabase",
+            "tsconfig": "packages/db/supabase/tsconfig.json",
+            "patterns": [
+              "packages/db/supabase/functions/**/*.ts",
+              "packages/db/supabase/functions/**/*.tsx",
+              "packages/db/supabase/functions/**/*.js",
+              "packages/db/supabase/functions/**/*.jsx"
+            ]
+          }
+        ],
+        "test": {
+          "script": "test",
+          "patterns": [
+            "packages/db/**/*.test.ts",
+            "packages/db/scripts/verify-edge-function-safety.test.ts",
+            "packages/db/scripts/storage-assets-contract.test.ts"
+          ]
+        }
+      }
+    },
+    "auth": {
+      "roots": ["packages/auth"],
+      "packageJson": "packages/auth/package.json",
+      "verification": {
+        "lint": { "script": "lint", "patterns": ["packages/auth/**/*"] },
+        "typecheck": {
+          "script": "check-types",
+          "tsconfig": "packages/auth/tsconfig.json",
+          "patterns": ["packages/auth/**/*.ts", "packages/auth/**/*.tsx"]
+        },
+        "test": {
+          "script": "test",
+          "patterns": ["packages/auth/**/*.test.ts", "packages/auth/**/*.test.tsx"]
+        }
+      }
+    },
+    "api": {
+      "roots": ["packages/api"],
+      "packageJson": "packages/api/package.json",
+      "verification": {
+        "lint": { "script": "lint", "patterns": ["packages/api/**/*"] },
+        "typecheck": {
+          "script": "check-types",
+          "tsconfig": "packages/api/tsconfig.json",
+          "patterns": ["packages/api/**/*.ts", "packages/api/**/*.tsx"]
+        },
+        "test": {
+          "script": "test",
+          "patterns": [
+            "packages/api/**/*.test.ts",
+            "packages/api/**/*.test.tsx",
+            "packages/api/**/__tests__/**/*",
+            "packages/api/src/test/**/*"
+          ]
+        }
+      }
+    },
+    "ui": {
+      "roots": ["packages/ui"],
+      "packageJson": "packages/ui/package.json",
+      "verification": {
+        "lint": { "script": "lint", "patterns": ["packages/ui/**/*"] },
+        "typecheck": {
+          "script": "check-types",
+          "tsconfig": "packages/ui/tsconfig.json",
+          "patterns": ["packages/ui/**/*.ts", "packages/ui/**/*.tsx"]
+        },
+        "test": {
+          "script": "test",
+          "patterns": [
+            "packages/ui/**/*.test.ts",
+            "packages/ui/**/*.test.tsx",
+            "packages/ui/**/__tests__/**/*",
+            "packages/ui/src/test/**/*"
+          ]
+        }
+      }
+    },
+    "web": {
+      "roots": ["apps/web"],
+      "packageJson": "apps/web/package.json",
+      "aliases": { "@": "apps/web/src" },
+      "verification": {
+        "lint": { "script": "lint", "patterns": ["apps/web/**/*"] },
+        "typecheck": {
+          "script": "check-types",
+          "tsconfig": "apps/web/tsconfig.json",
+          "patterns": ["apps/web/**/*.ts", "apps/web/**/*.tsx"]
+        },
+        "test": [
+          {
+            "script": "test",
+            "patterns": [
+              "apps/web/**/*.test.ts",
+              "apps/web/**/*.test.tsx",
+              "apps/web/**/__tests__/**/*"
+            ]
+          },
+          {
+            "script": "test:e2e",
+            "patterns": ["apps/web/e2e/**/*.spec.ts", "apps/web/e2e/**/*.spec.tsx"]
+          }
+        ]
+      }
+    },
+    "mobile": {
+      "roots": ["apps/mobile"],
+      "packageJson": "apps/mobile/package.json",
+      "aliases": { "@": "apps/mobile" },
+      "verification": {
+        "lint": { "script": "lint", "patterns": ["apps/mobile/**/*"] },
+        "typecheck": {
+          "script": "check-types",
+          "tsconfig": "apps/mobile/tsconfig.json",
+          "patterns": ["apps/mobile/**/*.ts", "apps/mobile/**/*.tsx"]
+        },
+        "test": {
+          "script": "test",
+          "patterns": [
+            "apps/mobile/**/*.test.ts",
+            "apps/mobile/**/*.test.tsx",
+            "apps/mobile/**/*.jest.test.ts",
+            "apps/mobile/**/*.jest.test.tsx",
+            "apps/mobile/**/__tests__/**/*",
+            "apps/mobile/test/**/*"
+          ]
+        }
+      }
+    },
+    "tailwindcss": {
+      "roots": ["tooling/tailwindcss"],
+      "packageJson": "tooling/tailwindcss/package.json",
+      "verification": {
+        "lint": {
+          "packageJson": "package.json",
+          "script": "lint",
+          "patterns": ["tooling/tailwindcss/**/*"]
+        },
+        "typecheck": {
+          "script": "check-types",
+          "tsconfig": "tooling/tailwindcss/tsconfig.json",
+          "patterns": ["tooling/tailwindcss/**/*.ts", "tooling/tailwindcss/**/*.tsx"]
+        }
+      }
+    },
+    "typescript-config": {
+      "roots": ["tooling/typescript"],
+      "packageJson": "tooling/typescript/package.json",
+      "verification": {
+        "lint": {
+          "packageJson": "package.json",
+          "script": "lint",
+          "patterns": ["tooling/typescript/**/*"]
+        },
+        "test": {
+          "script": "test",
+          "patterns": ["tooling/typescript/**/*.test.mjs"]
+        }
+      }
+    },
+    "root": {
+      "roots": ["."],
+      "packageJson": "package.json",
+      "verification": {
+        "lint": { "script": "lint", "patterns": ["**/*"] },
+        "static": { "script": "check", "patterns": ["**/*"] },
+        "test": [
+          {
+            "script": "test",
+            "patterns": [
+              "tests/parity/**/*.test.ts",
+              "tooling/architecture/**/*.test.mjs",
+              "tooling/testing/**/*.test.mjs"
+            ]
+          },
+          {
+            "script": "test:architecture",
+            "patterns": [
+              "tooling/e2e/**/*.test.mjs",
+              "tooling/qa/profiles.test.mjs",
+              "tooling/qa/prepare-runtime-web-e2e.test.mjs"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "allowedDependencies": {
+    "core": [],
+    "db": ["core"],
+    "auth": ["db"],
+    "api": ["auth", "core", "db"],
+    "ui": ["core"],
+    "web": ["api", "auth", "core", "db", "tailwindcss", "ui"],
+    "mobile": ["api", "auth", "core", "tailwindcss", "ui"],
+    "tailwindcss": [],
+    "typescript-config": [],
+    "root": ["core", "mobile", "web"]
+  },
+  "coverage": {
+    "lint": [
+      "apps/**/*",
+      "packages/**/*",
+      "tooling/**/*",
+      "tests/**/*",
+      ".github/**/*",
+      "vitest.parity.config.ts"
+    ],
+    "lintExcludes": [
+      "apps/web/src/routeTree.gen.ts",
+      "tooling/architecture/architecture-baseline.json",
+      "packages/ui/src/testing/selectors.generated.json",
+      "packages/ui/src/testing/ui-preview/manifest.generated.json"
+    ],
+    "typecheck": [
+      "apps/**/*.ts",
+      "apps/**/*.tsx",
+      "packages/**/*.ts",
+      "packages/**/*.tsx",
+      "tooling/**/*.ts",
+      "vitest.parity.config.ts",
+      "packages/db/supabase/functions/**/*.js",
+      "packages/db/supabase/functions/**/*.jsx"
+    ],
+    "test": [
+      "apps/**/*",
+      "packages/**/*",
+      "tooling/architecture/**/*.test.mjs",
+      "tooling/e2e/**/*.test.mjs",
+      "tooling/qa/profiles.test.mjs",
+      "tooling/qa/prepare-runtime-web-e2e.test.mjs",
+      "tooling/testing/**/*.test.mjs",
+      "tooling/typescript/**/*.test.mjs",
+      "tests/parity/**/*.test.ts"
+    ],
+    "categories": {
+      "source": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs"],
+      "configuration": ["**/*.json", "**/*.jsonc", "**/*.yaml", "**/*.yml", "**/*.toml"],
+      "styles": ["**/*.css", "**/*.scss"],
+      "database": ["**/*.sql", "**/*.backup"],
+      "templates": ["**/*.html", "**/*.xml", "**/*.svg"],
+      "documentation": ["**/*.md"],
+      "scripts": ["**/*.sh", "**/*.py"],
+      "ui-platform-marker": [
+        "packages/ui/src/components/*/.native-only",
+        "packages/ui/src/components/*/.web-only"
+      ],
+      "repository-metadata": [
+        "Dockerfile",
+        "**/Dockerfile",
+        ".gitignore",
+        "**/.gitignore",
+        ".dockerignore",
+        ".npmrc",
+        "**/*.env",
+        "**/*.example",
+        "**/*.webmanifest",
+        "**/*.txt",
+        "**/*.pdf",
+        "**/*.zip",
+        "**/*.fixture",
+        "**/.feature-id",
+        "**/CODEOWNERS",
+        "**/.gitkeep"
+      ],
+      "test-fixture": ["**/fixtures/**/*"]
+    },
+    "categoryCommands": {
+      "source": "pnpm check-types && pnpm lint",
+      "configuration": "pnpm check",
+      "styles": "pnpm check",
+      "database": "pnpm verify:db",
+      "templates": "pnpm check && pnpm verify:db",
+      "documentation": "pnpm check",
+      "scripts": "pnpm check",
+      "ui-platform-marker": "pnpm check:test-structure",
+      "repository-metadata": "pnpm check",
+      "test-fixture": "pnpm test"
+    }
+  },
+  "generatedOwners": [
+    {
+      "path": "apps/web/src/routeTree.gen.ts",
+      "owner": "web-router-plugin",
+      "packageJson": "apps/web/package.json",
+      "script": "build",
+      "freshnessCommand": "pnpm --filter web build"
+    },
+    {
+      "path": "packages/ui/src/testing/selectors.generated.json",
+      "owner": "ui-testing-artifact-generator",
+      "packageJson": "packages/ui/package.json",
+      "script": "check:testing-artifacts",
+      "freshnessCommand": "pnpm --filter @repo/ui check:testing-artifacts"
+    },
+    {
+      "path": "packages/ui/src/testing/ui-preview/manifest.generated.json",
+      "owner": "ui-testing-artifact-generator",
+      "packageJson": "packages/ui/package.json",
+      "script": "check:testing-artifacts",
+      "freshnessCommand": "pnpm --filter @repo/ui check:testing-artifacts"
+    },
+    {
+      "path": "tooling/tailwindcss/src/tokens.css",
+      "owner": "tailwind-theme-generator",
+      "packageJson": "tooling/tailwindcss/package.json",
+      "script": "check:theme",
+      "freshnessCommand": "pnpm --filter @repo/tailwindcss check:theme"
+    },
+    {
+      "path": "tooling/tailwindcss/src/web.css",
+      "owner": "tailwind-theme-generator",
+      "packageJson": "tooling/tailwindcss/package.json",
+      "script": "check:theme",
+      "freshnessCommand": "pnpm --filter @repo/tailwindcss check:theme"
+    },
+    {
+      "path": "tooling/tailwindcss/src/native.css",
+      "owner": "tailwind-theme-generator",
+      "packageJson": "tooling/tailwindcss/package.json",
+      "script": "check:theme",
+      "freshnessCommand": "pnpm --filter @repo/tailwindcss check:theme"
+    },
+    {
+      "path": "tooling/tailwindcss/src/native.ts",
+      "owner": "tailwind-theme-generator",
+      "packageJson": "tooling/tailwindcss/package.json",
+      "script": "check:theme",
+      "freshnessCommand": "pnpm --filter @repo/tailwindcss check:theme"
+    },
+    {
+      "path": "packages/ui/src/lib/native-theme.ts",
+      "owner": "tailwind-theme-generator",
+      "packageJson": "tooling/tailwindcss/package.json",
+      "script": "check:theme",
+      "freshnessCommand": "pnpm --filter @repo/tailwindcss check:theme"
+    }
+  ],
+  "enumParity": [
+    {
+      "id": "activity-category",
+      "db": {
+        "file": "packages/db/src/schema/canonical-activity-categories.ts",
+        "symbol": "canonicalActivityCategoryDbValues"
+      },
+      "core": {
+        "file": "packages/core/schemas/activity-category.ts",
+        "symbol": "canonicalActivityCategorySchema"
+      }
+    },
+    {
+      "id": "effort-type",
+      "db": { "file": "packages/db/src/schema/enums.ts", "symbol": "effortTypeEnum" },
+      "core": {
+        "file": "packages/core/athlete-inputs/activity-efforts.ts",
+        "symbol": "activityEffortTypeSchema"
+      }
+    },
+    {
+      "id": "gender-persistence-form",
+      "db": { "file": "packages/db/src/schema/enums.ts", "symbol": "genderEnum" },
+      "core": { "file": "packages/core/schemas/forms/profile.ts", "symbol": "genderSchema" },
+      "allowedCoreOnly": ["prefer_not_to_say"],
+      "owner": "core",
+      "expiresOn": "2027-07-01",
+      "reason": "The form-only privacy choice maps to null before persistence."
+    }
+  ],
+  "forbiddenSourcePatterns": [
+    {
+      "id": "removed-training-load-timeline-compatibility",
+      "patterns": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "packages/**/*.tsx"],
+      "terms": [
+        "ideal_tss",
+        "scheduled_tss",
+        "actual_tss",
+        "LegacyTrainingLoadTimelinePoint",
+        "TrainingLoadTimelinePointWithLegacyAliases",
+        "withLegacyTrainingLoadAliases",
+        "allowLegacyTssProjection",
+        "buildScheduledFitnessTrend"
+      ]
+    },
+    {
+      "id": "removed-performance-calibration-local-authorities",
+      "patterns": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "packages/**/*.tsx"],
+      "terms": [
+        "GLOBAL_DEFAULTS",
+        "withDefaults",
+        "getProfileStats",
+        "materializeSystemPlanLoad",
+        "convertTargetToAbsolute",
+        "estimateFTPFromRecentActivities",
+        "estimateLTHRFromRecentActivities",
+        "estimateThresholdPaceFromRecentRuns",
+        "estimateCriticalVelocity",
+        "safeFallbackHrThresholdBpm",
+        "buildSafeHrThresholdFallbackTarget"
+      ]
+    },
+    {
+      "id": "removed-legacy-performance-model-authorities",
+      "patterns": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "packages/**/*.tsx"],
+      "terms": [
+        "PerformanceCalibrationSnapshot",
+        "performanceCalibrationSnapshotSchema",
+        "createUnavailablePerformanceCalibrationSnapshot",
+        "getPerformanceCalibration",
+        "updatePerformanceCalibration",
+        "resolveCalibratedActivityTargetValue",
+        "CRITICAL_POWER_CANONICAL_DURATIONS",
+        "selectCanonicalCriticalPowerEfforts",
+        "evaluateCriticalPower",
+        "calculateSeasonBestCurve",
+        "critical_power_threshold",
+        "critical_power_watts",
+        "persistCssTest",
+        "CssTestForm"
+      ]
+    },
+    {
+      "id": "api-calibration-context-must-not-resolve-thresholds",
+      "patterns": [
+        "packages/api/src/routers/activity-files.ts",
+        "packages/api/src/lib/activity-analysis/context.ts"
+      ],
+      "terms": [
+        "resolveCanonicalThresholds",
+        "PERFORMANCE_CALIBRATION_FRESHNESS_WINDOW_MS",
+        "getEligibleThresholdValue"
+      ]
+    },
+    {
+      "id": "removed-metric-evidence-calibration-authority",
+      "patterns": ["packages/api/src/application/athlete-intelligence/**/*.ts"],
+      "terms": ["MetricEvidenceAdapter", "MetricEvidencePolicy", "freshnessHalfLifeDays"]
+    },
+    {
+      "id": "removed-onboarding-calibration-defaults",
+      "patterns": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "packages/**/*.tsx"],
+      "terms": [
+        "getBaselineProfile",
+        "mergeWithBaseline",
+        "estimateConservativeFTPFromWeight",
+        "estimateFTPFromWeight",
+        "estimateFTPFromWeightByProfile",
+        "estimateLTHRFromMaxHR",
+        "estimateLTHR",
+        "estimateThresholdPaceFromFitnessLevel",
+        "estimateThresholdPaceFromGender",
+        "estimateCSSFromGender",
+        "validateActivityCategoryMetrics",
+        "ftpSchema",
+        "optionalFtpSchema",
+        "thresholdHrSchema",
+        "optionalThresholdHrSchema"
+      ]
+    },
+    {
+      "id": "removed-onboarding-threshold-dto-fields",
+      "patterns": [
+        "packages/core/schemas/onboarding.ts",
+        "packages/api/src/application/onboarding/complete-onboarding.ts",
+        "apps/mobile/components/onboarding/**/*.ts",
+        "apps/mobile/components/onboarding/**/*.tsx",
+        "apps/web/src/lib/onboarding/**/*.ts",
+        "apps/web/src/routes/onboarding.tsx"
+      ],
+      "terms": [
+        "lthr",
+        "ftp",
+        "threshold_pace",
+        "threshold_pace_seconds_per_km",
+        "thresholdPaceSecondsPerKm",
+        "css_seconds_per_hundred_meters",
+        "cssSecondsPer100m"
+      ]
+    },
+    {
+      "id": "removed-generic-profile-threshold-fields",
+      "patterns": [
+        "packages/core/schemas/forms/profile.ts",
+        "packages/api/src/routers/profiles.ts"
+      ],
+      "terms": ["ftp", "threshold_hr"]
+    },
+    {
+      "id": "removed-recording-threshold-dto-compatibility",
+      "patterns": [
+        "packages/core/schemas/recording-session.ts",
+        "apps/mobile/lib/services/ActivityRecorder/checkpointStorage.ts",
+        "apps/web/src/lib/recording/**/*.ts"
+      ],
+      "terms": [
+        "ftp",
+        "thresholdHr",
+        "thresholdPaceSecondsPerKm",
+        "defaultsApplied",
+        "performanceCalibrationSnapshotSchema.optional()"
+      ]
+    }
+  ],
+  "typedPersistence": {
+    "scopePatterns": [
+      "apps/mobile/**/*.ts",
+      "apps/mobile/**/*.tsx",
+      "apps/web/e2e/**/*.ts",
+      "apps/web/e2e/**/*.tsx",
+      "apps/web/src/**/*.ts",
+      "apps/web/src/**/*.tsx",
+      "packages/api/src/**/*.ts",
+      "packages/api/src/**/*.tsx"
+    ],
+    "lowLevelQueryAllowlist": [
+      {
+        "id": "api-profile-advisory-session-fence",
+        "path": "packages/api/src/db.ts",
+        "reason": "This helper must reserve and release a PostgreSQL session advisory lock on one physical connection before handing work to Drizzle.",
+        "validation": "packages/api/src/db.test.ts exercises lock release and failed handoff behavior."
+      },
+      {
+        "id": "web-readiness-probe",
+        "path": "apps/web/src/lib/readiness.ts",
+        "reason": "Readiness needs a bounded connection-level liveness probe rather than an application data read.",
+        "validation": "apps/web/src/lib/readiness.test.ts covers configured, unavailable, and timeout states."
+      }
+    ],
+    "rawSqlExecuteExceptions": [
+      {
+        "id": "messaging-conversation-aggregation",
+        "path": "packages/api/src/routers/messaging.ts",
+        "allowedKinds": ["complex-cte", "complex-query"],
+        "reason": "Conversation summaries require a reviewed multi-relation aggregation that the typed builder cannot express without duplicating window semantics.",
+        "validation": "packages/api/src/routers/__tests__/messaging.test.ts verifies ordering, visibility, and unread counts."
+      },
+      {
+        "id": "profile-access-revocation-cte",
+        "path": "packages/api/src/routers/account/profile-access.ts",
+        "allowedKinds": ["complex-cte", "complex-query"],
+        "reason": "Access revocation must coordinate related rows atomically in one reviewed CTE.",
+        "validation": "packages/api/src/routers/__tests__/delegated-profile-access.live-db.test.ts verifies authorization and revocation."
+      },
+      {
+        "id": "threshold-provenance-cte",
+        "path": "packages/api/src/repositories/threshold-repository.ts",
+        "allowedKinds": ["complex-cte", "complex-query"],
+        "reason": "Threshold provenance reconstruction uses reviewed recursive and aggregate SQL beyond the typed builder's query shape.",
+        "validation": "packages/api/src/repositories/threshold-repository.test.ts verifies threshold provenance results."
+      },
+      {
+        "id": "athlete-state-replay-cte",
+        "path": "packages/api/src/repositories/athlete-state-repository.ts",
+        "allowedKinds": ["complex-cte"],
+        "reason": "Athlete-state replay requires an atomic ordered CTE to preserve state progression.",
+        "validation": "packages/api/src/repositories/athlete-state-repository.test.ts verifies ordered state updates."
+      },
+      {
+        "id": "wahoo-sync-claim-cte",
+        "path": "packages/api/src/infrastructure/repositories/drizzle-wahoo-sync-repository.ts",
+        "allowedKinds": ["complex-cte"],
+        "reason": "Sync job claiming uses a reviewed locking CTE to atomically select and claim one queue item.",
+        "validation": "packages/api/src/infrastructure/repositories/drizzle-wahoo-sync-repository.test.ts verifies claim concurrency behavior."
+      },
+      {
+        "id": "athlete-read-access-function",
+        "path": "packages/api/src/repositories/athlete-read-access-repository.ts",
+        "allowedKinds": ["stored-function"],
+        "reason": "The authorization decision is intentionally delegated to a reviewed database function.",
+        "validation": "packages/api/src/repositories/athlete-read-access-repository.test.ts verifies the function-backed access decision."
+      },
+      {
+        "id": "artifact-lifecycle-functions",
+        "path": "packages/api/src/application/activity-file-ingestion/artifact-retention.ts",
+        "allowedKinds": ["stored-function"],
+        "reason": "Artifact lifecycle transitions use reviewed database functions so storage cleanup cannot bypass the durable state machine.",
+        "validation": "packages/api/src/application/activity-file-ingestion/artifact-retention.test.ts verifies retention state transitions."
+      },
+      {
+        "id": "artifact-promotion-cleanup-functions",
+        "path": "packages/api/src/application/activity-file-ingestion/finalize-activity-artifact-ingestion.ts",
+        "allowedKinds": ["stored-function"],
+        "reason": "Failed-promotion cleanup invokes reviewed lifecycle functions only after ownership is rechecked.",
+        "validation": "packages/api/src/application/activity-file-ingestion/finalize-activity-artifact-ingestion.test.ts verifies failed-promotion cleanup."
+      },
+      {
+        "id": "artifact-recreate-purge-function",
+        "path": "packages/api/src/application/activities/submit-activity.ts",
+        "allowedKinds": ["stored-function"],
+        "reason": "Recreating immutable artifact bytes requires the reviewed purge function while the artifact identity lock is held.",
+        "validation": "packages/api/src/application/activities/submit-activity.test.ts verifies retry-safe artifact submission."
+      }
+    ]
+  },
+  "exceptions": [
+    {
+      "id": "phase0-core-fit-sdk-direction",
+      "category": "dependency-direction",
+      "path": "packages/core/lib/fit-sdk-parser.ts",
+      "maxCount": 1,
+      "owner": "architecture-working-group",
+      "expiresOn": "2027-07-01",
+      "reason": "Server-only FIT SDK adapter is retained in core during Phase 0 and is not a workspace dependency reversal."
+    },
+    {
+      "id": "better-auth-expo-storage-cast",
+      "category": "unsafe-as-any",
+      "path": "packages/auth/src/client/expo.ts",
+      "maxCount": 1,
+      "owner": "auth",
+      "expiresOn": "2027-07-01",
+      "reason": "Better Auth's Expo storage adapter types do not expose the React Native storage shape; the runtime adapter is constrained at this platform boundary."
+    }
+  ],
+  "reviewedIgnores": [
+    {
+      "id": "architecture-fixtures",
+      "path": "tooling/architecture/fixtures/**/*",
+      "owner": "architecture-working-group",
+      "expiresOn": "2027-07-01",
+      "reason": "Deliberately invalid scanner fixtures are validated by the architecture test harness rather than repository verification commands."
+    }
+  ],
+  "scanExcludes": ["tooling/architecture/fixtures/**/*"]
+}

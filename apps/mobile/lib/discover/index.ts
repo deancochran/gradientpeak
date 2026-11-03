@@ -1,3 +1,6 @@
+import type { AppRouter, inferRouterOutputs } from "@repo/api/client";
+import type { ActivityPlanSummary } from "@repo/core";
+import { getActivityPlanQuantitySummary } from "@/lib/activityPlanMetrics";
 import type { GroupListItem } from "@/lib/groups";
 
 export const SEARCH_QUERY_MAX_LENGTH = 80;
@@ -10,7 +13,7 @@ export const ACTIVITY_CATEGORY_OPTIONS = [
   { id: "other", label: "Other" },
 ] as const;
 
-export const TRAINING_PLAN_SPORT_OPTIONS = [
+export const TRAINING_PLAN_ACTIVITY_CATEGORY_OPTIONS = [
   { id: "run", label: "Running" },
   { id: "bike", label: "Cycling" },
   { id: "swim", label: "Swimming" },
@@ -39,8 +42,8 @@ export type SortDirection = "asc" | "desc";
 export type ActivityPlanSortField =
   | "created_at"
   | "estimated_duration"
-  | "estimated_tss"
-  | "intensity_factor";
+  | "common_load"
+  | "objective_intensity";
 export type RouteSortField = "created_at" | "distance" | "ascent";
 export type TrainingPlanSortField = "created_at" | "duration_weeks" | "sessions_per_week";
 export type GroupSortField = "created_at";
@@ -48,16 +51,16 @@ export type ProfileSortField = "created_at" | "username";
 
 export type ActivityPlanFilters = {
   categoryIds: DiscoverCategoryId[];
-  minTss: number | null;
-  maxTss: number | null;
+  minCommonLoad: number | null;
+  maxCommonLoad: number | null;
   minDurationMinutes: number | null;
   maxDurationMinutes: number | null;
-  minIf: number | null;
-  maxIf: number | null;
+  minObjectiveIntensity: number | null;
+  maxObjectiveIntensity: number | null;
 };
 
 export type TrainingPlanFilters = {
-  sport: DiscoverCategoryId | null;
+  activity_category: DiscoverCategoryId | null;
   experienceLevel: "beginner" | "intermediate" | "advanced" | null;
   minWeeks: number | null;
   maxWeeks: number | null;
@@ -77,29 +80,10 @@ export type SortState<TField extends string> = {
   direction: SortDirection;
 };
 
-export type DiscoverActivityPlanItem = {
-  id: string;
-  name: string;
-  description?: string | null;
-  activity_category: string;
-  created_at?: string;
-  updated_at?: string;
-  authoritative_metrics?: {
-    estimated_duration?: number | null;
-    estimated_tss?: number | null;
-    intensity_factor?: number | null;
-  } | null;
-};
+export type DiscoverActivityPlanItem = ActivityPlanSummary;
 
-export type DiscoverTrainingPlanItem = {
-  id: string;
-  name: string;
-  description?: string | null;
-  sport?: string[] | string | null;
-  experienceLevel?: string[] | string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-};
+export type DiscoverTrainingPlanItem =
+  inferRouterOutputs<AppRouter>["trainingPlans"]["listTemplates"]["items"][number];
 
 export type DiscoverRouteItem = {
   id: string;
@@ -119,6 +103,7 @@ export type DiscoverUserItem = {
   username?: string | null;
   full_name?: string | null;
   avatar_url?: string | null;
+  follow_status: "pending" | "accepted" | null;
   is_public?: boolean | null;
   created_at?: string | Date | null;
   updated_at?: string | Date | null;
@@ -146,16 +131,16 @@ export type DiscoverFeedItem =
 
 export const DEFAULT_ACTIVITY_PLAN_FILTERS: ActivityPlanFilters = {
   categoryIds: [],
-  minTss: null,
-  maxTss: null,
+  minCommonLoad: null,
+  maxCommonLoad: null,
   minDurationMinutes: null,
   maxDurationMinutes: null,
-  minIf: null,
-  maxIf: null,
+  minObjectiveIntensity: null,
+  maxObjectiveIntensity: null,
 };
 
 export const DEFAULT_TRAINING_PLAN_FILTERS: TrainingPlanFilters = {
-  sport: null,
+  activity_category: null,
   experienceLevel: null,
   minWeeks: null,
   maxWeeks: null,
@@ -198,18 +183,18 @@ export const DEFAULT_PROFILE_SORT: SortState<ProfileSortField> = {
 export function hasActivityPlanFilters(filters: ActivityPlanFilters) {
   return Boolean(
     filters.categoryIds.length > 0 ||
-      filters.minTss !== null ||
-      filters.maxTss !== null ||
+      filters.minCommonLoad !== null ||
+      filters.maxCommonLoad !== null ||
       filters.minDurationMinutes !== null ||
       filters.maxDurationMinutes !== null ||
-      filters.minIf !== null ||
-      filters.maxIf !== null,
+      filters.minObjectiveIntensity !== null ||
+      filters.maxObjectiveIntensity !== null,
   );
 }
 
 export function hasTrainingPlanFilters(filters: TrainingPlanFilters) {
   return Boolean(
-    filters.sport ||
+    filters.activity_category ||
       filters.experienceLevel ||
       filters.minWeeks !== null ||
       filters.maxWeeks !== null ||
@@ -236,16 +221,15 @@ export function sanitizeSearchInput(value: string) {
 }
 
 export function parseNumericInput(value: string, options?: { allowDecimal?: boolean }) {
-  const sanitized = options?.allowDecimal
-    ? value.replace(/[^0-9.]/g, "")
-    : value.replace(/[^0-9]/g, "");
-  if (!sanitized) {
+  const trimmed = value.trim();
+  if (!trimmed) {
     return null;
   }
 
-  const parsed = options?.allowDecimal
-    ? Number.parseFloat(sanitized)
-    : Number.parseInt(sanitized, 10);
+  const isValid = options?.allowDecimal ? /^\d+(?:\.\d+)?$/.test(trimmed) : /^\d+$/.test(trimmed);
+  if (!isValid) return null;
+
+  const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
@@ -317,21 +301,15 @@ function scoreActivityPlanSearch(query: string, item: DiscoverActivityPlanItem) 
   return (
     scoreSearchTextMatch(query, item.name) +
     scoreSearchTextMatch(query, item.description) * 0.65 +
+    scoreSearchTextMatch(query, item.activityCategory) * 0.4 +
     TYPE_WEIGHT.activityPlans
   );
 }
 
 function scoreTrainingPlanSearch(query: string, item: DiscoverTrainingPlanItem) {
-  const sportText = Array.isArray(item.sport) ? item.sport.join(" ") : item.sport;
-  const experienceText = Array.isArray(item.experienceLevel)
-    ? item.experienceLevel.join(" ")
-    : item.experienceLevel;
-
   return (
     scoreSearchTextMatch(query, item.name) +
     scoreSearchTextMatch(query, item.description) * 0.65 +
-    scoreSearchTextMatch(query, sportText) * 0.4 +
-    scoreSearchTextMatch(query, experienceText) * 0.25 +
     TYPE_WEIGHT.trainingPlans
   );
 }
@@ -383,10 +361,17 @@ function getTimestampValue(value: string | null) {
 }
 
 function getSortDate(item: {
+  createdAt?: string | null;
+  updatedAt?: string | null;
   created_at?: string | Date | null;
   updated_at?: string | Date | null;
 }) {
-  return toIsoDateString(item.created_at) ?? toIsoDateString(item.updated_at);
+  return (
+    toIsoDateString(item.createdAt) ??
+    toIsoDateString(item.created_at) ??
+    toIsoDateString(item.updatedAt) ??
+    toIsoDateString(item.updated_at)
+  );
 }
 
 export function getRangeValidationMessage(
@@ -404,8 +389,12 @@ export function getRangeValidationMessage(
 export function getActivityPlanFilterErrors(filters: ActivityPlanFilters) {
   return [
     getRangeValidationMessage("Duration", filters.minDurationMinutes, filters.maxDurationMinutes),
-    getRangeValidationMessage("TSS", filters.minTss, filters.maxTss),
-    getRangeValidationMessage("IF", filters.minIf, filters.maxIf),
+    getRangeValidationMessage("Common Load", filters.minCommonLoad, filters.maxCommonLoad),
+    getRangeValidationMessage(
+      "Intensity",
+      filters.minObjectiveIntensity,
+      filters.maxObjectiveIntensity,
+    ),
   ].filter((value): value is string => Boolean(value));
 }
 
@@ -427,17 +416,13 @@ export function matchesActivityPlanDerivedFilters(
   item: DiscoverActivityPlanItem,
   filters: ActivityPlanFilters,
 ) {
-  const metrics = item.authoritative_metrics;
+  const quantities = getActivityPlanQuantitySummary(item);
   const durationMinutes =
-    typeof metrics?.estimated_duration === "number" ? metrics.estimated_duration / 60 : null;
-  const estimatedTss = typeof metrics?.estimated_tss === "number" ? metrics.estimated_tss : null;
-  const intensityFactor =
-    typeof metrics?.intensity_factor === "number" ? metrics.intensity_factor : null;
+    typeof quantities.durationSeconds === "number" ? quantities.durationSeconds / 60 : null;
+  const commonLoad = quantities.commonLoad;
+  const objectiveIntensity = quantities.objectiveIntensity;
 
-  if (
-    filters.categoryIds.length > 0 &&
-    !filters.categoryIds.includes(item.activity_category as DiscoverCategoryId)
-  ) {
+  if (filters.categoryIds.length > 0 && !filters.categoryIds.includes(item.activityCategory)) {
     return false;
   }
 
@@ -455,19 +440,31 @@ export function matchesActivityPlanDerivedFilters(
     return false;
   }
 
-  if (filters.minTss !== null && (estimatedTss === null || estimatedTss < filters.minTss)) {
+  if (
+    filters.minCommonLoad !== null &&
+    (commonLoad === null || commonLoad < filters.minCommonLoad)
+  ) {
     return false;
   }
 
-  if (filters.maxTss !== null && (estimatedTss === null || estimatedTss > filters.maxTss)) {
+  if (
+    filters.maxCommonLoad !== null &&
+    (commonLoad === null || commonLoad > filters.maxCommonLoad)
+  ) {
     return false;
   }
 
-  if (filters.minIf !== null && (intensityFactor === null || intensityFactor < filters.minIf)) {
+  if (
+    filters.minObjectiveIntensity !== null &&
+    (objectiveIntensity === null || objectiveIntensity < filters.minObjectiveIntensity)
+  ) {
     return false;
   }
 
-  if (filters.maxIf !== null && (intensityFactor === null || intensityFactor > filters.maxIf)) {
+  if (
+    filters.maxObjectiveIntensity !== null &&
+    (objectiveIntensity === null || objectiveIntensity > filters.maxObjectiveIntensity)
+  ) {
     return false;
   }
 
@@ -623,24 +620,28 @@ export function buildDiscoverFeedItems({
       left.type === "activityPlans" &&
       right.type === "activityPlans"
     ) {
-      const leftMetrics = left.item.authoritative_metrics;
-      const rightMetrics = right.item.authoritative_metrics;
+      const leftQuantities = getActivityPlanQuantitySummary(left.item);
+      const rightQuantities = getActivityPlanQuantitySummary(right.item);
+      const leftCommonLoad = leftQuantities.commonLoad;
+      const rightCommonLoad = rightQuantities.commonLoad;
+      const leftObjectiveIntensity = leftQuantities.objectiveIntensity;
+      const rightObjectiveIntensity = rightQuantities.objectiveIntensity;
       const metricDelta =
         currentSort.field === "estimated_duration"
           ? currentSort.direction === "desc"
-            ? (rightMetrics?.estimated_duration ?? -1) - (leftMetrics?.estimated_duration ?? -1)
-            : (leftMetrics?.estimated_duration ?? Number.MAX_SAFE_INTEGER) -
-              (rightMetrics?.estimated_duration ?? Number.MAX_SAFE_INTEGER)
-          : currentSort.field === "estimated_tss"
+            ? (rightQuantities.durationSeconds ?? -1) - (leftQuantities.durationSeconds ?? -1)
+            : (leftQuantities.durationSeconds ?? Number.MAX_SAFE_INTEGER) -
+              (rightQuantities.durationSeconds ?? Number.MAX_SAFE_INTEGER)
+          : currentSort.field === "common_load"
             ? currentSort.direction === "desc"
-              ? (rightMetrics?.estimated_tss ?? -1) - (leftMetrics?.estimated_tss ?? -1)
-              : (leftMetrics?.estimated_tss ?? Number.MAX_SAFE_INTEGER) -
-                (rightMetrics?.estimated_tss ?? Number.MAX_SAFE_INTEGER)
-            : currentSort.field === "intensity_factor"
+              ? (rightCommonLoad ?? -1) - (leftCommonLoad ?? -1)
+              : (leftCommonLoad ?? Number.MAX_SAFE_INTEGER) -
+                (rightCommonLoad ?? Number.MAX_SAFE_INTEGER)
+            : currentSort.field === "objective_intensity"
               ? currentSort.direction === "desc"
-                ? (rightMetrics?.intensity_factor ?? -1) - (leftMetrics?.intensity_factor ?? -1)
-                : (leftMetrics?.intensity_factor ?? Number.MAX_SAFE_INTEGER) -
-                  (rightMetrics?.intensity_factor ?? Number.MAX_SAFE_INTEGER)
+                ? (rightObjectiveIntensity ?? -1) - (leftObjectiveIntensity ?? -1)
+                : (leftObjectiveIntensity ?? Number.MAX_SAFE_INTEGER) -
+                  (rightObjectiveIntensity ?? Number.MAX_SAFE_INTEGER)
               : 0;
 
       if (metricDelta !== 0) {
