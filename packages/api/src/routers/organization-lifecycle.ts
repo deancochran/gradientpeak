@@ -8,6 +8,11 @@ import {
   OrganizationLifecycleError,
   withdrawAthleteConsent,
 } from "../application/organizations/manage-organization-lifecycle";
+import {
+  OrganizationStaffSuspensionError,
+  resumeOrganizationMembership,
+  suspendOrganizationMembership,
+} from "../application/organizations/manage-staff-suspension";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
@@ -43,8 +48,34 @@ const commandInput = z
     correlationId: z.string().uuid(),
   })
   .strict();
+const staffSuspensionInput = z
+  .object({
+    organizationId: z.string().uuid(),
+    membershipId: z.string().uuid(),
+    operationId: z.string().uuid(),
+    reason: z.string().regex(/^[a-z0-9][a-z0-9_]{0,63}$/),
+  })
+  .strict();
+const staffSuspensionOutput = z
+  .object({
+    membershipId: z.string().uuid(),
+    operationId: z.string().uuid(),
+    status: z.enum(["suspended", "resumed"]),
+  })
+  .strict();
 
 function fail(error: unknown): never {
+  if (error instanceof OrganizationStaffSuspensionError)
+    throw new TRPCError({
+      code:
+        error.reason === "not_found"
+          ? "NOT_FOUND"
+          : error.reason === "conflict"
+            ? "CONFLICT"
+            : "FORBIDDEN",
+      message: "Organization staff suspension request could not be completed",
+      cause: error,
+    });
   if (error instanceof OrganizationLifecycleError)
     throw new TRPCError({
       code:
@@ -154,6 +185,30 @@ export const organizationLifecycleRouter = createTRPCRouter({
     .mutation(({ ctx, input }) =>
       run(
         endOrganizationMembership({
+          db: getRequiredDb(ctx),
+          actorProfileId: ctx.session.user.id,
+          ...input,
+        }),
+      ),
+    ),
+  suspendMembership: protectedProcedure
+    .input(staffSuspensionInput)
+    .output(staffSuspensionOutput)
+    .mutation(({ ctx, input }) =>
+      run(
+        suspendOrganizationMembership({
+          db: getRequiredDb(ctx),
+          actorProfileId: ctx.session.user.id,
+          ...input,
+        }),
+      ),
+    ),
+  resumeMembership: protectedProcedure
+    .input(staffSuspensionInput)
+    .output(staffSuspensionOutput)
+    .mutation(({ ctx, input }) =>
+      run(
+        resumeOrganizationMembership({
           db: getRequiredDb(ctx),
           actorProfileId: ctx.session.user.id,
           ...input,
