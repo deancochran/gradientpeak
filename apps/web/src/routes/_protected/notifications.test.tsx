@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Route } from "./notifications";
 
@@ -10,6 +10,9 @@ const NOTIFICATION_ID = "33333333-3333-4333-8333-333333333333";
 const mocks = vi.hoisted(() => ({
   notifications: [] as Array<Record<string, unknown>>,
   navigate: vi.fn(),
+  fetchNextPage: vi.fn(),
+  historyError: false,
+  nextCursor: null as { createdAt: string; id: string } | null,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -36,7 +39,17 @@ vi.mock("../../lib/social/server-actions", () => ({
 vi.mock("../../lib/api/client", () => ({
   api: {
     notifications: {
-      getRecent: { useQuery: () => ({ data: mocks.notifications, isLoading: false }) },
+      getHistory: {
+        useInfiniteQuery: () => ({
+          data: { pages: [{ items: mocks.notifications, nextCursor: mocks.nextCursor }] },
+          fetchNextPage: mocks.fetchNextPage,
+          hasNextPage: mocks.nextCursor !== null,
+          isError: mocks.historyError,
+          isFetchingNextPage: false,
+          isLoading: false,
+          refetch: vi.fn(),
+        }),
+      },
     },
   },
 }));
@@ -45,6 +58,8 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   mocks.notifications = [];
+  mocks.historyError = false;
+  mocks.nextCursor = null;
 });
 
 describe("follow-request notifications", () => {
@@ -105,5 +120,27 @@ describe("notification history states", () => {
     expect(
       screen.getByText("Updates about messages, follows, and invitations will appear here."),
     ).toBeTruthy();
+  });
+
+  it("keeps cached notifications visible while loading the next page", () => {
+    mocks.notifications = [
+      {
+        id: NOTIFICATION_ID,
+        user_id: "11111111-1111-4111-8111-111111111111",
+        actor_id: ACTOR_ID,
+        type: "new_follower",
+        entity_id: null,
+        read_at: null,
+        created_at: "2026-07-20T10:00:00.000Z",
+      },
+    ];
+    mocks.nextCursor = { createdAt: "2026-07-20T10:00:00.000Z", id: NOTIFICATION_ID };
+    const NotificationsPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<NotificationsPage />);
+
+    expect(screen.getByText("Load more notifications")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Load more notifications" }));
+    expect(mocks.fetchNextPage).toHaveBeenCalledOnce();
+    expect(screen.getByText("New Follower")).toBeTruthy();
   });
 });

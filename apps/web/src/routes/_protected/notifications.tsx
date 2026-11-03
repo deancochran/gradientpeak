@@ -32,7 +32,7 @@ export const Route = createFileRoute("/_protected/notifications")({
       search.flashType === "success" || search.flashType === "error" || search.flashType === "info"
         ? (search.flashType as RouteFlashType)
         : undefined,
-    view: search.view === "unread" ? "unread" : "all",
+    view: search.view === "unread" ? ("unread" as const) : ("all" as const),
   }),
   component: NotificationsPage,
 });
@@ -40,10 +40,11 @@ export const Route = createFileRoute("/_protected/notifications")({
 function NotificationsPage() {
   const navigate = Route.useNavigate();
   const { flash, flashType, view } = Route.useSearch();
-  const notificationsQuery = api.notifications.getRecent.useQuery({
-    limit: 50,
-  });
-  const notifications = notificationsQuery.data ?? [];
+  const notificationsQuery = api.notifications.getHistory.useInfiniteQuery(
+    { limit: 50, view },
+    { getNextPageParam: (page) => page.nextCursor ?? undefined },
+  );
+  const notifications = notificationsQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const normalizedNotifications = notifications
     .map((notification) => normalizeNotificationListItem(notification))
     .filter(
@@ -145,6 +146,33 @@ function NotificationsPage() {
               <NotificationsEmptyState unreadOnly={view === "unread"} />
             )}
           </ScrollArea>
+          {notificationsQuery.isError && notifications.length > 0 ? (
+            <div className="flex items-center justify-between gap-3 border-t p-3" role="alert">
+              <span className="text-sm">More notifications could not be loaded.</span>
+              <Button
+                onClick={() => void notificationsQuery.refetch()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Retry
+              </Button>
+            </div>
+          ) : null}
+          {notificationsQuery.hasNextPage ? (
+            <div className="flex justify-center border-t p-3">
+              <Button
+                disabled={notificationsQuery.isFetchingNextPage}
+                onClick={() => void notificationsQuery.fetchNextPage()}
+                type="button"
+                variant="outline"
+              >
+                {notificationsQuery.isFetchingNextPage
+                  ? "Loading more..."
+                  : "Load more notifications"}
+              </Button>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
     </div>

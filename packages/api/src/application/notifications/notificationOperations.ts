@@ -1,6 +1,6 @@
 import { notifications, publicNotificationsRowSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { getRequiredDb } from "../../db";
 
@@ -19,6 +19,8 @@ const notificationRowSchema = z.object({
 });
 
 type NotificationRow = z.infer<typeof notificationRowSchema>;
+
+type NotificationHistoryCursor = { createdAt: Date; id: string };
 
 function normalizeTimestamp(value: string | Date | null): string | null {
   return value instanceof Date ? value.toISOString() : value;
@@ -75,6 +77,54 @@ export function createNotificationOperations(db: Database) {
           .limit(input.limit);
 
         return notificationRowSchema.array().parse(rows).map(normalizeNotificationRow);
+      } catch (error) {
+        throw databaseError(error);
+      }
+    },
+
+    async getHistory(input: {
+      recipientProfileId: string;
+      limit: number;
+      cursor?: NotificationHistoryCursor | null;
+      view: "all" | "unread";
+    }) {
+      try {
+        const filters = [eq(notifications.user_id, input.recipientProfileId)];
+        if (input.view === "unread") filters.push(isNull(notifications.read_at));
+        if (input.cursor) {
+          const cursorFilter = or(
+            lt(notifications.created_at, input.cursor.createdAt),
+            and(
+              eq(notifications.created_at, input.cursor.createdAt),
+              lt(notifications.id, input.cursor.id),
+            ),
+          );
+          if (cursorFilter) filters.push(cursorFilter);
+        }
+
+        const rows = await db
+          .select({
+            id: notifications.id,
+            user_id: notifications.user_id,
+            actor_id: notifications.actor_id,
+            type: notifications.type,
+            entity_id: notifications.entity_id,
+            read_at: notifications.read_at,
+            created_at: notifications.created_at,
+          })
+          .from(notifications)
+          .where(and(...filters))
+          .orderBy(desc(notifications.created_at), desc(notifications.id))
+          .limit(input.limit + 1);
+        const page = notificationRowSchema.array().parse(rows);
+        const hasMore = page.length > input.limit;
+        const items = page.slice(0, input.limit).map(normalizeNotificationRow);
+        const last = items.at(-1);
+
+        return {
+          items,
+          nextCursor: hasMore && last ? { createdAt: last.created_at, id: last.id } : null,
+        };
       } catch (error) {
         throw databaseError(error);
       }
