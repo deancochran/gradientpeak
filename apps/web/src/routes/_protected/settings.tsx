@@ -392,7 +392,7 @@ function MyGroupsCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle id="profile-heading" className="flex items-center gap-2">
+        <CardTitle className="flex items-center gap-2">
           <UsersRound className="h-5 w-5" />
           My Groups
         </CardTitle>
@@ -456,7 +456,7 @@ function ProfileInformationCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle id="account-heading" className="flex items-center gap-2">
+        <CardTitle id="profile-heading" className="flex items-center gap-2">
           <UserRound className="h-5 w-5" />
           Profile Information
         </CardTitle>
@@ -752,7 +752,7 @@ function AccountInformationCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle id="security-heading" className="flex items-center gap-2">
+        <CardTitle id="account-heading" className="flex items-center gap-2">
           <Mail className="h-5 w-5" />
           Account Information
         </CardTitle>
@@ -893,7 +893,7 @@ function SecurityCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <CardTitle id="security-heading" className="flex items-center gap-2">
           <Shield className="h-5 w-5" />
           Password and sessions
         </CardTitle>

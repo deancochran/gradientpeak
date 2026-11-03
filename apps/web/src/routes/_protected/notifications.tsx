@@ -57,6 +57,7 @@ function NotificationsPage() {
     (notification) => getNotificationViewModel(notification).isUnread,
   );
   const unreadIds = getUnreadNotificationIds(normalizedNotifications);
+  const bulkUnreadIds = unreadIds.slice(0, 100);
   const visibleNotifications = view === "unread" ? unreadNotifications : normalizedNotifications;
 
   return (
@@ -80,7 +81,7 @@ function NotificationsPage() {
         <form action={markNotificationsReadAction.url} method="post">
           <input {...contractEpochFormInputProps} />
           <input type="hidden" name="redirectTo" value="/notifications" />
-          {unreadIds.map((notificationId) => (
+          {bulkUnreadIds.map((notificationId) => (
             <input
               key={notificationId}
               type="hidden"
@@ -88,8 +89,8 @@ function NotificationsPage() {
               value={notificationId}
             />
           ))}
-          <Button type="submit" disabled={unreadNotifications.length === 0}>
-            Mark {unreadIds.length} loaded as read
+          <Button type="submit" disabled={bulkUnreadIds.length === 0}>
+            Mark {unreadIds.length > 100 ? "first 100" : bulkUnreadIds.length} loaded as read
           </Button>
         </form>
       </div>
@@ -123,7 +124,7 @@ function NotificationsPage() {
           <ScrollArea className="h-[calc(100vh-22rem)]">
             {notificationsQuery.isLoading ? (
               <div className="p-8 text-center text-muted-foreground">Loading...</div>
-            ) : notificationsQuery.isError ? (
+            ) : notificationsQuery.isError && notifications.length === 0 ? (
               <div className="space-y-3 p-8 text-center" role="alert">
                 <p>Notifications could not be loaded.</p>
                 <Button
@@ -150,7 +151,7 @@ function NotificationsPage() {
             <div className="flex items-center justify-between gap-3 border-t p-3" role="alert">
               <span className="text-sm">More notifications could not be loaded.</span>
               <Button
-                onClick={() => void notificationsQuery.refetch()}
+                onClick={() => void notificationsQuery.fetchNextPage()}
                 size="sm"
                 type="button"
                 variant="outline"
