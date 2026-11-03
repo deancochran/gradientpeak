@@ -205,19 +205,28 @@ describe("web integrations journey", () => {
     expect(screen.queryByRole("button", { name: "Sync now" })).toBeNull();
   });
 
-  it("shows the API-normalized provider recovery message and removes callback details", () => {
+  it("shows allowlisted OAuth recovery copy and removes callback details", () => {
     window.history.replaceState(
       null,
       "",
-      "/integrations?integration=failed&provider=wahoo&error=authorization_limit_reached&error_message=This+account+has+too+many+active+GradientPeak+authorizations.",
+      "/integrations?integration=failed&provider=wahoo&error=wahoo_token_limit_exceeded&error_message=untrusted+provider+detail",
     );
 
     render(<IntegrationsPage />);
 
     expect(mocks.toastError).toHaveBeenCalledWith(
-      "This account has too many active GradientPeak authorizations.",
+      "This Wahoo account has too many active authorizations. Remove an older authorization in Wahoo, then try again.",
     );
     expect(window.location.search).toBe("");
+  });
+
+  it("does not render a valid empty state when loading integrations failed", () => {
+    mocks.error = new Error("network unavailable");
+
+    render(<IntegrationsPage />);
+
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(screen.queryByText("No integrations available")).toBeNull();
   });
 
   it("shows truthful incomplete history and opens the exact imported batch", () => {

@@ -49,13 +49,12 @@ export function ProviderSelectionStep<TProvider extends string>({
   return (
     <section aria-labelledby="provider-selection-heading" className="space-y-6">
       <div className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight" id="provider-selection-heading">
+        <h2 className="text-3xl font-semibold tracking-tight" id="provider-selection-heading">
           Connect your accounts
-        </h1>
+        </h2>
         <p className="text-sm text-muted-foreground">
-          Connect training accounts to import activity history and profile details, so GradientPeak
-          can personalize your starting targets with fewer questions. Connecting is optional, and
-          you control which accounts remain connected.
+          Connect a training account to import only the information that provider supports.
+          Connecting is optional, and you control which accounts remain connected.
         </p>
       </div>
       {error ? (
@@ -80,6 +79,14 @@ export function ProviderSelectionStep<TProvider extends string>({
                   <h2 className="font-semibold">{provider.label}</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {provider.onboarding.summary}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {provider.onboarding.evidence.activityHistory
+                      ? "Can import activity history."
+                      : "Does not import activity history."}{" "}
+                    {provider.onboarding.evidence.profileDetails
+                      ? "Can use profile details."
+                      : "Does not use profile details."}
                   </p>
                 </div>
                 {provider.connected && !reconnect ? (
@@ -144,9 +151,9 @@ export function ProviderProcessingStep({
   return (
     <section aria-labelledby="provider-processing-heading" className="space-y-6">
       <div className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight" id="provider-processing-heading">
+        <h2 className="text-3xl font-semibold tracking-tight" id="provider-processing-heading">
           Preparing your starting point
-        </h1>
+        </h2>
       </div>
       <p aria-live="polite" className="sr-only">
         {`${progress.phase}: ${progress.message}`}
@@ -222,7 +229,7 @@ export function ProviderProcessingState({
         <ProviderProcessingStep isBusy={isBusy} onRecovery={onRecovery} progress={progress} />
       ) : !error ? (
         <div className="space-y-3" role="status">
-          <h1 className="text-3xl font-semibold tracking-tight">Loading preparation progress</h1>
+          <h2 className="text-3xl font-semibold tracking-tight">Loading preparation progress</h2>
           <p className="text-sm text-muted-foreground">
             Checking the latest saved preparation milestone.
           </p>

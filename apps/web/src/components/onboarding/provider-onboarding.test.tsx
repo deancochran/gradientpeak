@@ -42,9 +42,12 @@ describe("provider onboarding compositions", () => {
       />,
     );
     expect(screen.getByRole("heading", { name: "Connect your accounts" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Connect your accounts" }).tagName).toBe("H2");
     expect(screen.getByText("Alpha")).toBeTruthy();
     expect(screen.getByText("Beta")).toBeTruthy();
     expect(screen.queryByText(/imported ·/i)).toBeNull();
+    expect(screen.getAllByText(/Can import activity history/)).toHaveLength(2);
+    expect(screen.getAllByText(/Can use profile details/)).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "Connect" }));
     expect(onConnect).toHaveBeenCalledWith("beta");
   });
@@ -66,6 +69,9 @@ describe("provider onboarding compositions", () => {
       />,
     );
     expect(screen.getByRole("heading", { name: "Preparing your starting point" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Preparing your starting point" }).tagName).toBe(
+      "H2",
+    );
     expect(screen.getByText("Importing your activity history.")).toBeTruthy();
     expect(screen.getByText("50%")).toBeTruthy();
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("50");

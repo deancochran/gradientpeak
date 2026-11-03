@@ -55,6 +55,24 @@ function activityHistoryCopy(status: string) {
   }
 }
 
+function getOAuthCallbackMessage(error: string | null) {
+  switch (error) {
+    case "authorization_denied":
+      return "The provider connection was cancelled or denied. Try again when you are ready.";
+    case "wahoo_token_limit_exceeded":
+      return "This Wahoo account has too many active authorizations. Remove an older authorization in Wahoo, then try again.";
+    case "invalid_state":
+    case "missing_code":
+    case "token_exchange_failed":
+    case "provider_identity_failed":
+    case "store_integration_failed":
+    case "disconnect_in_progress":
+      return "The provider could not be connected safely. Try again in a moment.";
+    default:
+      return "Integration connection failed. Try again.";
+  }
+}
+
 function IntegrationsPage() {
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
@@ -106,7 +124,7 @@ function IntegrationsPage() {
     if (!outcome) return;
 
     if (outcome === "connected") toast.success("Integration connected");
-    else toast.error(url.searchParams.get("error_message") ?? "Integration connection failed");
+    else toast.error(getOAuthCallbackMessage(url.searchParams.get("error")));
     url.searchParams.delete("error");
     url.searchParams.delete("integration");
     url.searchParams.delete("error_message");
@@ -166,7 +184,7 @@ function IntegrationsPage() {
           <div className="flex min-h-[240px] items-center justify-center">
             <Loader2 aria-label="Checking integrations" className="h-8 w-8 animate-spin" />
           </div>
-        ) : integrations.length === 0 ? (
+        ) : !overviewQuery.error && integrations.length === 0 ? (
           <Card>
             <CardHeader>
               <CardTitle>No integrations available</CardTitle>
