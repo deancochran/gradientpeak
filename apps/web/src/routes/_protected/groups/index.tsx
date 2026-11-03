@@ -1,7 +1,7 @@
 import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   GroupCard,
@@ -29,6 +29,7 @@ function GroupsLibraryPage() {
   const utils = api.useUtils();
   const [tab, setTab] = useState<LibraryTab>("upcoming");
   const [search, setSearch] = useState("");
+  const upcomingWindowStart = useMemo(() => new Date().toISOString(), []);
   const mine = api.groups.myGroups.useInfiniteQuery(
     { limit: 30 },
     { getNextPageParam: (page) => page.nextCursor },
@@ -46,8 +47,8 @@ function GroupsLibraryPage() {
     { enabled: tab === "requests", getNextPageParam: (page) => page.nextCursor },
   );
   const upcoming = api.groups.events.myUpcomingGroupEvents.useInfiniteQuery(
-    { limit: 30, startsAfter: new Date().toISOString() },
-    { enabled: tab === "upcoming", getNextPageParam: (page) => page.nextCursor },
+    { limit: 30, startsAfter: upcomingWindowStart },
+    { enabled: tab === "upcoming", getNextPageParam: (page) => page.nextCursor, retry: 2 },
   );
   const joinMutation = api.groups.joinOrRequest.useMutation({
     onSuccess: () => utils.groups.invalidate(),
@@ -243,28 +244,32 @@ function GroupsLibraryPage() {
           isLoading={upcoming.isLoading}
           onRetry={() => void upcoming.refetch()}
         >
-          <div className="grid gap-4 md:grid-cols-2">
-            {(upcoming.data?.pages.flatMap((page) => page.items) ?? []).map((event) => (
-              <article className="space-y-2 rounded-xl border p-4" key={event.id}>
-                <p className="text-sm text-muted-foreground">{event.group?.name}</p>
-                <h2 className="text-lg font-semibold">{event.title}</h2>
-                <p>{new Date(event.starts_at).toLocaleString()}</p>
-                <Button
-                  onClick={() =>
-                    void navigate({
-                      // biome-ignore lint/security/noSecrets: Typed route template, not a secret.
-                      to: "/groups/events/$groupEventId",
-                      params: { groupEventId: event.id },
-                    })
-                  }
-                  type="button"
-                  variant="outline"
-                >
-                  View event
-                </Button>
-              </article>
-            ))}
-          </div>
+          {(upcoming.data?.pages.flatMap((page) => page.items) ?? []).length ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              {(upcoming.data?.pages.flatMap((page) => page.items) ?? []).map((event) => (
+                <article className="space-y-2 rounded-xl border p-4" key={event.id}>
+                  <p className="text-sm text-muted-foreground">{event.group?.name}</p>
+                  <h2 className="text-lg font-semibold">{event.title}</h2>
+                  <p>{new Date(event.starts_at).toLocaleString()}</p>
+                  <Button
+                    onClick={() =>
+                      void navigate({
+                        // biome-ignore lint/security/noSecrets: Typed route template, not a secret.
+                        to: "/groups/events/$groupEventId",
+                        params: { groupEventId: event.id },
+                      })
+                    }
+                    type="button"
+                    variant="outline"
+                  >
+                    View event
+                  </Button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <EmptyGroupList message="No upcoming group events. Join a group or create an event to plan your next session together." />
+          )}
           <LoadMore query={upcoming} />
         </QueryState>
       ) : null}

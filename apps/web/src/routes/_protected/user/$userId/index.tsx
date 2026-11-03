@@ -53,7 +53,25 @@ function UserProfilePage() {
     );
   }
 
-  if (profileQuery.error || !profile) {
+  if (profileQuery.error) {
+    return (
+      <div className="container max-w-3xl py-8">
+        <Card>
+          <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
+            <div role="alert">
+              <h2 className="mb-2 text-xl font-semibold">Unable to load this profile</h2>
+              <p className="text-muted-foreground">Check your connection and try again.</p>
+            </div>
+            <Button type="button" variant="outline" onClick={() => void profileQuery.refetch()}>
+              Try again
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!profile) {
     return (
       <div className="container max-w-3xl py-8">
         <Card>
