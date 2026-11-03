@@ -341,11 +341,24 @@ describe("API chatbot executor", () => {
           id: "66666666-6666-4666-8666-666666666666",
           name: "Easy",
           duration: { type: "time", seconds: 60 },
-          targets: [],
+          targets: [{ type: "RPE", intensity: 3 }],
         },
       ],
     };
 
+    await expect(
+      executor.execute({
+        name: "api.activity-plans.create",
+        input: {
+          name: "Plan",
+          structure: {
+            ...activityPlanStructure,
+            items: activityPlanStructure.items.map((step) => ({ ...step, targets: [] })),
+          },
+          operationId: "a".repeat(32),
+        },
+      }),
+    ).rejects.toMatchObject({ code: "invalid_tool_call" });
     await expect(
       executor.execute({
         name: "api.activity-plans.create",

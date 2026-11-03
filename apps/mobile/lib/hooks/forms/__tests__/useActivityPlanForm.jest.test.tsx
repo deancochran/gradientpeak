@@ -57,7 +57,7 @@ function validStructure(): ActivityPlanDraftStructure {
         id: ids.root,
         name: "Warm up",
         duration: { type: "time", seconds: 300 },
-        targets: [],
+        targets: [{ type: "%FTP", intensity: 50 }],
       },
       {
         type: "repeat",
@@ -95,6 +95,18 @@ describe("useActivityPlanForm V5", () => {
       activityCategory: "bike",
       structure: { version: 5, activity_category: "bike", items: [] },
     });
+  });
+
+  it("rejects a targetless step without writing or discarding the repairable draft", async () => {
+    const structure = validStructure();
+    const first = structure.items[0];
+    if (!first || first.type !== "step") throw new Error("missing warm-up");
+    first.targets = [];
+    useActivityPlanCreationStore.setState({ structure });
+    const { result } = await renderHook(() => useActivityPlanForm());
+    await act(async () => expect(await result.current.submit()).toBeNull());
+    expect(createMock).not.toHaveBeenCalled();
+    expect(useActivityPlanCreationStore.getState().structure).toEqual(structure);
   });
 
   it("retains separate V5 repair locations for incompatible targets", async () => {
