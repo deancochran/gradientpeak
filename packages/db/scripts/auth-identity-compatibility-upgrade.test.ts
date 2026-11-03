@@ -54,6 +54,31 @@ async function main() {
       await pool.query(
         'create unique index "accounts_issuer_accountId_uidx" on public.accounts using btree (issuer, account_id)',
       );
+      // The pinned upgrade predecessor predates the import-run ownership repair.
+      // Reconstruct that predecessor only in this guarded disposable fixture so
+      // the approved upgrade's immutable precondition remains meaningful.
+      await pool.query(`
+         alter table public.activity_source_references
+           drop constraint activity_source_refs_last_import_run_profile_fk,
+           drop constraint activity_source_refs_material_import_run_profile_fk;
+         alter table public.provider_sync_jobs
+           drop constraint provider_sync_jobs_import_run_profile_fkey;
+         drop trigger activity_import_runs_clear_material_source_references
+           on public.activity_import_runs;
+         drop function public.clear_material_import_run_reference();
+         alter table public.activity_source_references
+           add constraint activity_source_refs_last_import_run_profile_fk
+             foreign key (last_import_run_id, profile_id)
+             references public.activity_import_runs(id, profile_id) on delete set null;
+         alter table public.activity_source_references
+           add constraint activity_source_refs_material_import_run_profile_fk
+             foreign key (last_material_import_run_id, profile_id)
+             references public.activity_import_runs(id, profile_id) on delete set null;
+         alter table public.provider_sync_jobs
+           add constraint provider_sync_jobs_import_run_profile_fkey
+             foreign key (import_run_id, profile_id)
+             references public.activity_import_runs(id, profile_id) on delete set null;
+       `);
       await createLegacyAccount(pool, {
         email: "legacy-one@example.test",
         issuer: "https://legacy.example/issuer",

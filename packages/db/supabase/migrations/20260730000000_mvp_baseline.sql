@@ -17,7 +17,7 @@ CREATE FUNCTION public.activity_plan_jsonb_has_exact_keys(input jsonb, required_
 CREATE FUNCTION public.activity_plan_jsonb_is_uuid(input jsonb) RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$ SELECT true $$;
 CREATE FUNCTION public.activity_plan_jsonb_is_string(input jsonb, minimum integer, maximum integer) RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$ SELECT true $$;
 CREATE FUNCTION public.activity_plan_jsonb_is_integer_between(input jsonb, minimum numeric, maximum numeric) RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$ SELECT true $$;
-CREATE FUNCTION public.activity_plan_target_is_canonical(input jsonb, activity_category text) RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$ SELECT true $$;
+CREATE OR REPLACE FUNCTION public.activity_plan_target_is_canonical(input jsonb, activity_category text) RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$ SELECT true $$;
 CREATE FUNCTION public.activity_plan_duration_is_canonical(input jsonb, rest_only boolean DEFAULT false) RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$ SELECT true $$;
 CREATE FUNCTION public.activity_plan_segment_is_canonical(input jsonb) RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$ SELECT true $$;
 
@@ -1815,6 +1815,7 @@ CREATE OR REPLACE FUNCTION "public"."activity_plan_duration_is_canonical"("input
   end
 $$;
 
+-- activity-plan-v5:exact-keys-helper:start
 CREATE OR REPLACE FUNCTION "public"."activity_plan_jsonb_has_exact_keys"("input" "jsonb", "required_keys" "text"[], "optional_keys" "text"[] DEFAULT '{}'::"text"[]) RETURNS boolean
     LANGUAGE "sql" IMMUTABLE PARALLEL SAFE
     SET "search_path" TO 'pg_catalog'
@@ -1823,6 +1824,7 @@ CREATE OR REPLACE FUNCTION "public"."activity_plan_jsonb_has_exact_keys"("input"
     and required_keys <@ array(select pg_catalog.jsonb_object_keys(input))
     and array(select pg_catalog.jsonb_object_keys(input)) <@ (required_keys || optional_keys)
 $$;
+-- activity-plan-v5:exact-keys-helper:end
 
 CREATE OR REPLACE FUNCTION "public"."activity_plan_jsonb_is_integer_between"("input" "jsonb", "minimum" numeric, "maximum" numeric) RETURNS boolean
     LANGUAGE "sql" IMMUTABLE PARALLEL SAFE
@@ -1953,6 +1955,7 @@ begin
 end
 $$;
 
+-- activity-plan-v5:target-helper:start
 CREATE OR REPLACE FUNCTION "public"."activity_plan_target_is_canonical"("input" "jsonb", "activity_category" "text") RETURNS boolean
     LANGUAGE "sql" IMMUTABLE PARALLEL SAFE
     SET "search_path" TO 'pg_catalog'
@@ -1972,6 +1975,7 @@ CREATE OR REPLACE FUNCTION "public"."activity_plan_target_is_canonical"("input" 
       else false
     end
 $$;
+-- activity-plan-v5:target-helper:end
 
 CREATE OR REPLACE FUNCTION "public"."activity_segment_set_constraint_trigger"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -4400,11 +4404,34 @@ alter table "public"."activity_source_references"
 
 alter table "public"."activity_source_references"
   add constraint "activity_source_refs_last_import_run_profile_fk" foreign key (last_import_run_id, profile_id)
-    references public.activity_import_runs(id, profile_id) on delete set null;
+    references public.activity_import_runs(id, profile_id) on delete set null (last_import_run_id);
 
 alter table "public"."activity_source_references"
   add constraint "activity_source_refs_material_import_run_profile_fk" foreign key (last_material_import_run_id, profile_id)
-    references public.activity_import_runs(id, profile_id) on delete set null;
+    references public.activity_import_runs(id, profile_id) on delete set null (last_material_import_run_id);
+
+alter table "public"."provider_sync_jobs"
+  add constraint "provider_sync_jobs_import_run_profile_fkey" foreign key (import_run_id, profile_id)
+    references public.activity_import_runs(id, profile_id) on delete set null (import_run_id);
+
+create or replace function public.clear_material_import_run_reference()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, public
+as $$
+begin
+  update public.activity_source_references
+  set last_material_import_run_id = null,
+      last_material_effective_at = null
+  where last_material_import_run_id = old.id
+    and profile_id = old.profile_id;
+  return old;
+end;
+$$;
+
+create trigger activity_import_runs_clear_material_source_references
+before delete on public.activity_import_runs
+for each row execute function public.clear_material_import_run_reference();
 
 alter table "public"."events"
   add constraint "events_planned_session_kind_check" check (((planned_session_id IS NULL) OR ((event_type = 'planned'::public.event_type) AND (activity_plan_id IS NOT NULL))));
@@ -4450,10 +4477,6 @@ alter table "public"."planned_sessions"
     (source_session_id IS NOT NULL) AND
     (idempotency_key = ((((('training-plan:'::text || (training_plan_id)::text) || ':'::text) || (training_plan_revision)::text) || ':'::text) || (source_session_id)::text)) AND
     (direct_operation_id IS NULL))));
-
-alter table "public"."provider_sync_jobs"
-  add constraint "provider_sync_jobs_import_run_profile_fkey" foreign key (import_run_id, profile_id)
-    references public.activity_import_runs(id, profile_id) on delete set null;
 
 alter table "public"."threshold_evidence"
   add constraint "threshold_evidence_profile_category_activity_unique" unique (profile_id, activity_category, metric, activity_id);
@@ -4892,6 +4915,7 @@ alter table public.training_plan_application_command_receipts
 
 -- Separate current-authoring authority. Do not tighten the historical validator:
 -- old rows and captured resolution manifests have a different compatibility contract.
+-- activity-plan-v5:hash-helpers:start
 -- activity-plan-authoring:functions:start
 CREATE OR REPLACE FUNCTION public.activity_plan_js_trim(input text)
 RETURNS text LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE SET search_path = pg_catalog AS $$
@@ -5008,6 +5032,7 @@ BEGIN
   END CASE;
 END;
 $$;
+-- activity-plan-v5:hash-helpers:end
 
 CREATE OR REPLACE FUNCTION public.activity_plan_core_normalize_adaptation(input jsonb)
 RETURNS jsonb LANGUAGE plpgsql STABLE PARALLEL SAFE SET search_path = pg_catalog AS $$
@@ -5132,10 +5157,12 @@ EXCEPTION WHEN data_exception THEN RETURN false;
 END;
 $$;
 
+-- activity-plan-v5:authoring-uuid-helper:start
 CREATE OR REPLACE FUNCTION public.activity_plan_authoring_uuid_is_valid(input jsonb)
 RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog AS $$
   SELECT coalesce(jsonb_typeof(input) = 'string' AND (input #>> '{}') ~* '^([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$', false)
 $$;
+-- activity-plan-v5:authoring-uuid-helper:end
 
 CREATE OR REPLACE FUNCTION public.activity_plan_authoring_content_is_valid(input jsonb, adaptation jsonb, intent text)
 RETURNS boolean LANGUAGE plpgsql STABLE PARALLEL SAFE SET search_path = pg_catalog AS $$
@@ -5329,12 +5356,14 @@ ALTER TABLE public.activity_plans ADD CONSTRAINT activity_plans_structure_canoni
   CHECK (public.activity_plan_structure_is_canonical(structure) OR public.activity_plan_authoring_structure_is_valid(structure)) NOT VALID;
 
 -- activity-plan-authoring:triggers:start
+-- activity-plan-v5:triggers:start
 DROP TRIGGER IF EXISTS activity_plans_authoring_guard ON public.activity_plans;
 CREATE TRIGGER activity_plans_authoring_guard BEFORE INSERT OR UPDATE ON public.activity_plans
 FOR EACH ROW EXECUTE FUNCTION public.enforce_activity_plan_authoring();
 DROP TRIGGER IF EXISTS activity_plans_enforce_revision ON public.activity_plans;
 CREATE TRIGGER activity_plans_enforce_revision BEFORE UPDATE ON public.activity_plans
 FOR EACH ROW EXECUTE FUNCTION public.enforce_activity_plan_revision();
+-- activity-plan-v5:triggers:end
 -- activity-plan-authoring:triggers:end
 
 -- activity-plan-authoring:acl:start
@@ -6123,10 +6152,12 @@ $$;
 
 -- PostgreSQL's trim() only removes ASCII space by default. This exactly matches
 -- ECMAScript String.prototype.trim() for persisted V4 name canonicality.
+-- activity-plan-v5:trim-helper:start
 CREATE OR REPLACE FUNCTION public.activity_plan_ecmascript_trim(input text)
 RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog AS $$
   SELECT btrim(input, U&'\0009\000A\000B\000C\000D\0020\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000\FEFF')
 $$;
+-- activity-plan-v5:trim-helper:end
 
 CREATE OR REPLACE FUNCTION public.activity_plan_v4_name_is_canonical(input text, maximum integer)
 RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog AS $$
@@ -6461,7 +6492,9 @@ CREATE TRIGGER planned_sessions_identity_immutable
 BEFORE UPDATE ON public.planned_sessions
 FOR EACH ROW EXECUTE FUNCTION public.prevent_planned_session_identity_mutation();
 
+-- activity-plan-v5:retirements:start
 DROP FUNCTION IF EXISTS public.planned_session_resolution_manifest_is_valid(jsonb, uuid, integer);
+-- activity-plan-v5:retirements:end
 
 -- Backend-only chatbot history and action recovery fence. RLS is deliberately
 -- default-deny; application code accesses these rows through the service DB role.
