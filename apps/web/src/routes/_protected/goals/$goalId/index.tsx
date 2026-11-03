@@ -34,7 +34,8 @@ export const Route = createFileRoute("/_protected/goals/$goalId/")({
 
 function GoalDetailPage() {
   const { goalId } = Route.useParams();
-  const search = Route.useSearch() as { flash?: string; flashType?: RouteFlashType };
+  const navigate = Route.useNavigate();
+  const search = Route.useSearch();
   const goalQuery = api.goals.getById.useQuery(
     { id: goalId },
     { enabled: Boolean(goalId), retry: false },
@@ -74,7 +75,12 @@ function GoalDetailPage() {
       <RouteFlashToast
         {...(search.flash !== undefined ? { message: search.flash } : {})}
         {...(search.flashType !== undefined ? { type: search.flashType } : {})}
-        clear={() => window.history.replaceState(null, "", `/goals/${goalId}`)}
+        clear={() =>
+          void navigate({
+            replace: true,
+            search: (previous) => ({ ...previous, flash: undefined, flashType: undefined }),
+          })
+        }
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>

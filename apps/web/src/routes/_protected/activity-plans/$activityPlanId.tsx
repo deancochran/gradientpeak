@@ -240,10 +240,10 @@ function ActivityPlanDetailPage() {
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
-            <a href="/activity-plans">
+            <Link to="/activity-plans" search={{ activity_category: undefined, q: undefined }}>
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to activity plans
-            </a>
+            </Link>
           </Button>
           <Button onClick={() => void planQuery.refetch()} type="button" variant="ghost">
             Retry
@@ -279,10 +279,10 @@ function ActivityPlanDetailPage() {
   return (
     <div className="container mx-auto max-w-5xl space-y-6 py-4 print:max-w-none print:py-0">
       <Button asChild className="print:hidden" size="sm" variant="ghost">
-        <a href="/activity-plans">
+        <Link to="/activity-plans" search={{ activity_category: undefined, q: undefined }}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to activity plans
-        </a>
+        </Link>
       </Button>
 
       <DetailPageIntro

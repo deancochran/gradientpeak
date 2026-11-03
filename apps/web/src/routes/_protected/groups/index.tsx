@@ -1,7 +1,7 @@
 import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   GroupCard,
@@ -10,10 +10,10 @@ import {
   type WebGroupSummary,
 } from "../../../components/groups/group-ui";
 import { api } from "../../../lib/api/client";
+import { GROUP_SEARCH_MAX_LENGTH, normalizeGroupSearch } from "../../../lib/groups-search";
 
-export const Route = createFileRoute("/_protected/groups/")({ component: GroupsLibraryPage });
-
-type LibraryTab = "upcoming" | "joined" | "owned" | "discover" | "invitations" | "requests";
+const libraryTabs = ["upcoming", "joined", "owned", "discover", "invitations", "requests"] as const;
+type LibraryTab = (typeof libraryTabs)[number];
 
 const tabs: Array<[LibraryTab, string]> = [
   ["upcoming", "Upcoming events"],
@@ -24,18 +24,47 @@ const tabs: Array<[LibraryTab, string]> = [
   ["requests", "Requests"],
 ];
 
+function isLibraryTab(value: unknown): value is LibraryTab {
+  return typeof value === "string" && libraryTabs.includes(value as LibraryTab);
+}
+
+export const Route = createFileRoute("/_protected/groups/")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    q: normalizeGroupSearch(search.q),
+    tab: isLibraryTab(search.tab) ? search.tab : undefined,
+  }),
+  component: GroupsLibraryPage,
+});
+
 function GroupsLibraryPage() {
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
-  const [tab, setTab] = useState<LibraryTab>("upcoming");
-  const [search, setSearch] = useState("");
+  const { q: search, tab: selectedTab } = Route.useSearch();
+  const tab = selectedTab ?? "upcoming";
+  const [searchDraft, setSearchDraft] = useState(search ?? "");
   const upcomingWindowStart = useMemo(() => new Date().toISOString(), []);
+
+  useEffect(() => {
+    setSearchDraft(search ?? "");
+  }, [search]);
+
+  useEffect(() => {
+    if (tab !== "discover" || searchDraft === (search ?? "")) return;
+
+    const timeout = window.setTimeout(() => {
+      void navigate({
+        replace: true,
+        search: (previous) => ({ ...previous, q: normalizeGroupSearch(searchDraft) }),
+      });
+    }, 300);
+    return () => window.clearTimeout(timeout);
+  }, [navigate, search, searchDraft, tab]);
   const mine = api.groups.myGroups.useInfiniteQuery(
     { limit: 30 },
     { getNextPageParam: (page) => page.nextCursor },
   );
   const discover = api.groups.listDiscoverable.useInfiniteQuery(
-    { limit: 30, search: search.trim() || undefined },
+    { limit: 30, search },
     { enabled: tab === "discover", getNextPageParam: (page) => page.nextCursor },
   );
   const invitations = api.groups.myInvitations.useInfiniteQuery(
@@ -95,7 +124,7 @@ function GroupsLibraryPage() {
           <Button
             aria-selected={tab === value}
             key={value}
-            onClick={() => setTab(value)}
+            onClick={() => void navigate({ search: (previous) => ({ ...previous, tab: value }) })}
             role="tab"
             type="button"
             variant={tab === value ? "default" : "outline"}
@@ -107,9 +136,10 @@ function GroupsLibraryPage() {
       {tab === "discover" ? (
         <Input
           aria-label="Search groups"
+          maxLength={GROUP_SEARCH_MAX_LENGTH}
           placeholder="Search groups"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          value={searchDraft}
+          onChange={(event) => setSearchDraft(event.target.value)}
         />
       ) : null}
       <MutationError error={mutationError} />
