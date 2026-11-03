@@ -10,9 +10,7 @@ function CreateTrainingPlanPage() {
   const navigate = Route.useNavigate();
   return (
     <TrainingPlanEditor
-      onCancel={() =>
-        void navigate({ to: "/training-plans", search: { q: undefined, tab: "owned" } })
-      }
+      onCancel={() => void navigate({ to: "/training-plans", search: { tab: "owned" } })}
       onSaved={(planId) =>
         void navigate({
           to: "/training-plans/$planId",

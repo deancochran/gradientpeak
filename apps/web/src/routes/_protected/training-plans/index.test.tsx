@@ -40,7 +40,6 @@ it("preserves the selected library tab in the URL contract and library props", (
     tab: "templates",
   });
   expect(route.validateSearch({ tab: "unexpected" })).toEqual({
-    q: undefined,
     tab: "owned",
   });
 

@@ -6,7 +6,7 @@ export const Route = createFileRoute("/_protected/training-plans/")({
   validateSearch: (
     search: Record<string, unknown>,
   ): { q?: string; tab: "owned" | "templates" } => ({
-    q: typeof search.q === "string" && search.q ? search.q.slice(0, 100) : undefined,
+    ...(typeof search.q === "string" && search.q ? { q: search.q.slice(0, 100) } : {}),
     tab: search.tab === "templates" ? "templates" : "owned",
   }),
   component: TrainingPlansPage,
@@ -22,11 +22,19 @@ function TrainingPlansPage() {
         void navigate({ to: "/training-plans/$planId", params: { planId } } as never)
       }
       onSearchChange={(nextQuery) =>
-        void navigate({ search: { q: nextQuery || undefined, tab }, replace: true })
+        void navigate({
+          search: { ...(nextQuery ? { q: nextQuery } : {}), tab },
+          replace: true,
+        })
       }
       searchValue={q ?? ""}
       tab={tab}
-      onTabChange={(nextTab) => void navigate({ search: { q, tab: nextTab }, replace: true })}
+      onTabChange={(nextTab) =>
+        void navigate({
+          search: { ...(q ? { q } : {}), tab: nextTab },
+          replace: true,
+        })
+      }
     />
   );
 }

@@ -101,16 +101,17 @@ export function PlanDashboard() {
         </div>
       ) : null}
       <TrainingLoadPath
-        errorMessage={
-          profileUnavailable
-            ? "Training path is unavailable because your planning profile could not be loaded."
-            : undefined
-        }
+        {...(profileUnavailable
+          ? {
+              errorMessage:
+                "Training path is unavailable because your planning profile could not be loaded.",
+              retryLabel: "Retry planning profile",
+            }
+          : {})}
         isError={trainingPathUnavailable}
         isLoading={trainingPathLoading}
         onRetry={() => void (profileUnavailable ? profileQuery.refetch() : planTabQuery.refetch())}
         projection={planTabQuery.data}
-        retryLabel={profileUnavailable ? "Retry planning profile" : undefined}
       />
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
         <Card>
@@ -303,7 +304,7 @@ export function PlanDashboard() {
       </Card>
       <div className="flex flex-wrap gap-2">
         <Button asChild variant="outline">
-          <Link to="/training-plans" search={{ q: undefined, tab: "owned" }}>
+          <Link to="/training-plans" search={{ tab: "owned" }}>
             Open training-plan library
           </Link>
         </Button>

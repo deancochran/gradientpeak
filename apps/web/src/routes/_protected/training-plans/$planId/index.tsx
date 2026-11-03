@@ -14,7 +14,7 @@ function TrainingPlanDetailPage() {
       onDeleted={() =>
         void navigate({
           to: "/training-plans",
-          search: { q: undefined, tab: "owned" },
+          search: { tab: "owned" },
           replace: true,
         })
       }
