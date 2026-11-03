@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createDbClient, type DrizzleDbClient } from "@repo/db/client";
 import {
   athleteDataSharingConsents,
   coachingEngagements,
+  organizationAuditEvents,
   organizationGroupAthletes,
   organizationGroupCoachAssignments,
   organizationInvitations,
@@ -545,6 +546,259 @@ describe("organization management against a disposable migrated PostgreSQL datab
               .from(organizations)
               .where(eq(organizations.id, rollbackOrganizationId)),
           ).resolves.toHaveLength(0);
+        } finally {
+          await client.close();
+        }
+      },
+    );
+  }, 90_000);
+
+  it("keeps token previews and recipient declines private, canonical, and serialized", async () => {
+    await withDisposableDatabase(
+      ["--disposable", "--local"],
+      "organization_invitation_response",
+      async (pool, url) => {
+        await bootstrapSupabaseSchemas(pool);
+        for (const migration of requireFreshBaseline().migrationPaths)
+          await applySqlFile(pool, migration);
+        const client = createDbClient({ url });
+        try {
+          const owner = await person(client.db, "response-owner");
+          const recipient = await person(client.db, "response-recipient");
+          const outsider = await person(client.db, "response-outsider");
+          const unverified = await person(client.db, "response-unverified", false);
+          const organizationId = randomUUID();
+          const ownerCaller = caller(client.db, owner.id);
+          const created = await ownerCaller.create({
+            organizationId,
+            name: "Response Peak",
+            slug: `response-${organizationId}`,
+            timezone: "UTC",
+          });
+          const invite = await ownerCaller.invitations.create({
+            organizationId,
+            kind: "athlete",
+            requestedRole: null,
+            recipientProfileId: null,
+            recipientEmail: recipient.email,
+            expiresAt: new Date(Date.now() + 60_000),
+          });
+          const recipientCaller = caller(client.db, recipient.id);
+          await expect(
+            recipientCaller.invitations.preview({ token: invite.token }),
+          ).resolves.toEqual(
+            expect.objectContaining({
+              invitationId: invite.invitationId,
+              organizationId,
+              organizationName: "Response Peak",
+              kind: "athlete",
+              requestedRole: null,
+            }),
+          );
+          // The caller's session email is deliberately untrusted; canonical
+          // users.email/emailVerified determines recipient authorization.
+          await expect(
+            caller(client.db, outsider.id).invitations.preview({ token: invite.token }),
+          ).rejects.toMatchObject({
+            code: "FORBIDDEN",
+          });
+          await expect(
+            caller(client.db, unverified.id).invitations.preview({ token: invite.token }),
+          ).rejects.toMatchObject({
+            code: "FORBIDDEN",
+          });
+          await expect(
+            recipientCaller.invitations.preview({ token: "x".repeat(43) }),
+          ).rejects.toMatchObject({
+            code: "FORBIDDEN",
+          });
+          await expect(
+            recipientCaller.invitations.decline({ token: invite.token }),
+          ).resolves.toEqual({
+            invitationId: invite.invitationId,
+            status: "declined",
+          });
+          await expect(
+            recipientCaller.invitations.decline({ token: invite.token }),
+          ).resolves.toEqual({
+            invitationId: invite.invitationId,
+            status: "declined",
+          });
+          await expect(
+            caller(client.db, outsider.id).invitations.decline({ token: invite.token }),
+          ).rejects.toMatchObject({
+            code: "FORBIDDEN",
+          });
+          await expect(
+            recipientCaller.invitations.preview({ token: invite.token }),
+          ).rejects.toMatchObject({
+            code: "FORBIDDEN",
+          });
+          const [declined] = await client.db
+            .select({
+              status: organizationInvitations.status,
+              actor: organizationInvitations.declined_by_profile_id,
+            })
+            .from(organizationInvitations)
+            .where(eq(organizationInvitations.id, invite.invitationId));
+          expect(declined).toEqual({ status: "declined", actor: recipient.id });
+          await expect(
+            client.db
+              .select({
+                actor: organizationAuditEvents.actor_profile_id,
+                action: organizationAuditEvents.action,
+                resourceId: organizationAuditEvents.resource_id,
+                details: organizationAuditEvents.details,
+              })
+              .from(organizationAuditEvents)
+              .where(eq(organizationAuditEvents.resource_id, invite.invitationId)),
+          ).resolves.toEqual([
+            {
+              actor: recipient.id,
+              action: "organization_invitation.declined",
+              resourceId: invite.invitationId,
+              details: {},
+            },
+          ]);
+
+          const expiredToken = `${randomUUID()}${randomUUID()}`;
+          const expiredInvitationId = randomUUID();
+          const expiredAt = new Date(Date.now() - 60_000);
+          await client.db.insert(organizationInvitations).values({
+            id: expiredInvitationId,
+            organization_id: organizationId,
+            invited_by_membership_id: created.membershipId,
+            invitation_kind: "athlete",
+            invited_profile_id: recipient.id,
+            token_digest: createHash("sha256").update(expiredToken).digest("hex"),
+            created_at: new Date(Date.now() - 120_000),
+            expires_at: expiredAt,
+          });
+          await expect(
+            recipientCaller.invitations.decline({ token: expiredToken }),
+          ).rejects.toMatchObject({
+            code: "FORBIDDEN",
+          });
+
+          const assertUnavailablePending = async (token: string, invitationId: string) => {
+            await expect(recipientCaller.invitations.preview({ token })).rejects.toMatchObject({
+              code: "FORBIDDEN",
+            });
+            await expect(recipientCaller.invitations.decline({ token })).rejects.toMatchObject({
+              code: "FORBIDDEN",
+            });
+            await expect(
+              client.db
+                .select({ status: organizationInvitations.status })
+                .from(organizationInvitations)
+                .where(eq(organizationInvitations.id, invitationId)),
+            ).resolves.toEqual([{ status: "pending" }]);
+            await expect(
+              client.db
+                .select({ id: organizationAuditEvents.id })
+                .from(organizationAuditEvents)
+                .where(eq(organizationAuditEvents.resource_id, invitationId)),
+            ).resolves.toEqual([]);
+          };
+          const createAuthorityFixture = async (label: string) => {
+            const id = randomUUID();
+            const result = await ownerCaller.create({
+              organizationId: id,
+              name: `${label} Peak`,
+              slug: `${label}-${id}`,
+              timezone: "UTC",
+            });
+            const invitation = await ownerCaller.invitations.create({
+              organizationId: id,
+              kind: "athlete",
+              requestedRole: null,
+              recipientProfileId: recipient.id,
+              recipientEmail: null,
+              expiresAt: new Date(Date.now() + 60_000),
+            });
+            return { id, invitation, membershipId: result.membershipId };
+          };
+          const suspendedOrganization = await createAuthorityFixture("suspended-response");
+          await client.db
+            .update(organizations)
+            .set({ suspended_at: new Date() })
+            .where(eq(organizations.id, suspendedOrganization.id));
+          await assertUnavailablePending(
+            suspendedOrganization.invitation.token,
+            suspendedOrganization.invitation.invitationId,
+          );
+          const closedOrganization = await createAuthorityFixture("closed-response");
+          await client.db
+            .update(organizations)
+            .set({ closed_at: new Date() })
+            .where(eq(organizations.id, closedOrganization.id));
+          await assertUnavailablePending(
+            closedOrganization.invitation.token,
+            closedOrganization.invitation.invitationId,
+          );
+
+          for (const state of ["ended", "suspended", "revoked"] as const) {
+            const inviter = await person(client.db, `response-inviter-${state}`);
+            const authority = await createAuthorityFixture(`inviter-${state}`);
+            const inviterCaller = caller(client.db, inviter.id);
+            const adminInvite = await ownerCaller.invitations.create({
+              organizationId: authority.id,
+              kind: "staff",
+              requestedRole: "admin",
+              recipientProfileId: inviter.id,
+              recipientEmail: null,
+              expiresAt: new Date(Date.now() + 60_000),
+            });
+            await inviterCaller.invitations.accept({ token: adminInvite.token });
+            const target = await inviterCaller.invitations.create({
+              organizationId: authority.id,
+              kind: "athlete",
+              requestedRole: null,
+              recipientProfileId: recipient.id,
+              recipientEmail: null,
+              expiresAt: new Date(Date.now() + 60_000),
+            });
+            const [inviterMembership] = await client.db
+              .select({ id: organizationMemberships.id })
+              .from(organizationMemberships)
+              .where(
+                and(
+                  eq(organizationMemberships.organization_id, authority.id),
+                  eq(organizationMemberships.profile_id, inviter.id),
+                ),
+              );
+            if (!inviterMembership) throw new Error("expected inviter membership");
+            if (state === "revoked")
+              await client.db
+                .update(organizationMembershipRoleGrants)
+                .set({ revoked_at: new Date() })
+                .where(eq(organizationMembershipRoleGrants.membership_id, inviterMembership.id));
+            else
+              await client.db
+                .update(organizationMemberships)
+                .set(state === "ended" ? { ended_at: new Date() } : { suspended_at: new Date() })
+                .where(eq(organizationMemberships.id, inviterMembership.id));
+            await assertUnavailablePending(target.token, target.invitationId);
+          }
+
+          const raced = await ownerCaller.invitations.create({
+            organizationId,
+            kind: "athlete",
+            requestedRole: null,
+            recipientProfileId: recipient.id,
+            recipientEmail: null,
+            expiresAt: new Date(Date.now() + 60_000),
+          });
+          const results = await Promise.allSettled([
+            recipientCaller.invitations.accept({ token: raced.token }),
+            recipientCaller.invitations.decline({ token: raced.token }),
+          ]);
+          expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+          const [terminal] = await client.db
+            .select({ status: organizationInvitations.status })
+            .from(organizationInvitations)
+            .where(eq(organizationInvitations.id, raced.invitationId));
+          expect(terminal?.status).toMatch(/^(accepted|declined)$/);
         } finally {
           await client.close();
         }

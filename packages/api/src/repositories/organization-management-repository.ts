@@ -1,5 +1,6 @@
 import {
   coachingEngagements,
+  organizationAuditEvents,
   organizationInvitations,
   organizationMembershipRoleGrants,
   organizationMemberships,
@@ -34,6 +35,7 @@ export function createOrganizationManagementRepository(db: DrizzleQueryExecutor)
           .select({
             id: organizations.id,
             root: organizations.root_owner_membership_id,
+            name: organizations.name,
             suspended: organizations.suspended_at,
             closed: organizations.closed_at,
           })
@@ -347,6 +349,22 @@ export function createOrganizationManagementRepository(db: DrizzleQueryExecutor)
         .where(
           and(eq(organizationInvitations.id, id), eq(organizationInvitations.status, "pending")),
         ),
+    decline: (id: string, profileId: string) =>
+      db
+        .update(organizationInvitations)
+        .set({ status: "declined", declined_by_profile_id: profileId })
+        .where(
+          and(eq(organizationInvitations.id, id), eq(organizationInvitations.status, "pending")),
+        ),
+    recordRecipientDecline: (organizationId: string, invitationId: string, profileId: string) =>
+      db.insert(organizationAuditEvents).values({
+        organization_id: organizationId,
+        actor_profile_id: profileId,
+        action: "organization_invitation.declined",
+        resource_type: "organization_invitation",
+        resource_id: invitationId,
+        details: {},
+      }),
     createEngagement: (organizationId: string, profileId: string) =>
       db
         .insert(coachingEngagements)

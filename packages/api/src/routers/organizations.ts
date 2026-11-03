@@ -13,10 +13,12 @@ import {
   acceptOrganizationInvitation,
   createOrganization,
   createOrganizationInvitation,
+  declineOrganizationInvitation,
   decodeInvitationListCursor,
   listMyOrganizationInvitations,
   listOrganizationInvitations,
   OrganizationManagementError,
+  previewOrganizationInvitation,
   revokeOrganizationInvitation,
 } from "../application/organizations/manage-organizations";
 import {
@@ -92,6 +94,16 @@ const invitationCreateInputSchema = z
       });
   });
 const invitationAcceptInputSchema = z.object({ token: z.string().min(43).max(256) }).strict();
+const invitationPreviewOutputSchema = z
+  .object({
+    invitationId: z.string().uuid(),
+    organizationId: z.string().uuid(),
+    organizationName: z.string().min(1).max(120),
+    kind: z.enum(["staff", "athlete"]),
+    requestedRole: z.enum(["admin", "coach"]).nullable(),
+    expiresAt: z.date(),
+  })
+  .strict();
 const invitationRevokeInputSchema = z
   .object({
     organizationId: z.string().uuid(),
@@ -154,6 +166,9 @@ const invitationAcceptOutputSchema = z
     organizationId: z.string().uuid(),
     status: z.literal("accepted"),
   })
+  .strict();
+const invitationDeclineOutputSchema = z
+  .object({ invitationId: z.string().uuid(), status: z.literal("declined") })
   .strict();
 const invitationRevokeOutputSchema = z
   .object({ invitationId: z.string().uuid(), status: z.literal("revoked") })
@@ -279,6 +294,34 @@ export function createOrganizationsRouter(
         .mutation(async ({ ctx, input }) => {
           try {
             return await acceptOrganizationInvitation({
+              db: getRequiredDb(ctx),
+              actorProfileId: ctx.session.user.id,
+              token: input.token,
+            });
+          } catch (error) {
+            return managementError(error);
+          }
+        }),
+      preview: protectedProcedure
+        .input(invitationAcceptInputSchema)
+        .output(invitationPreviewOutputSchema)
+        .query(async ({ ctx, input }) => {
+          try {
+            return await previewOrganizationInvitation({
+              db: getRequiredDb(ctx),
+              actorProfileId: ctx.session.user.id,
+              token: input.token,
+            });
+          } catch (error) {
+            return managementError(error);
+          }
+        }),
+      decline: protectedProcedure
+        .input(invitationAcceptInputSchema)
+        .output(invitationDeclineOutputSchema)
+        .mutation(async ({ ctx, input }) => {
+          try {
+            return await declineOrganizationInvitation({
               db: getRequiredDb(ctx),
               actorProfileId: ctx.session.user.id,
               token: input.token,

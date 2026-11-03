@@ -105,6 +105,59 @@ export class OrganizationManagementError extends Error {
 }
 const tokenDigest = (token: string) => createHash("sha256").update(token).digest("hex");
 
+/** Token-bound recipient failures deliberately collapse to one public error. */
+function unavailableInvitation(): never {
+  throw new OrganizationManagementError("invalid_recipient");
+}
+
+async function lockRecipientInvitation(
+  repo: OrganizationManagementRepository,
+  token: string,
+  actorProfileId: string,
+) {
+  const digest = tokenDigest(token);
+  const candidate = await repo.findInvitation(digest);
+  if (!candidate) return unavailableInvitation();
+  // Keep the organization-first ordering used by acceptance so accept/decline
+  // transitions serialize before the invitation is re-read and locked.
+  const organization = await repo.lockOrganization(candidate.organizationId);
+  const invitation = await repo.lockInvitation(digest);
+  const recipient = await repo.recipient(actorProfileId);
+  if (!organization || !invitation || !recipient?.verified) return unavailableInvitation();
+  const matches =
+    invitation.invited_profile_id === actorProfileId ||
+    (invitation.invited_email !== null &&
+      invitation.invited_email.toLowerCase() === recipient.email.toLowerCase());
+  if (!matches) return unavailableInvitation();
+  return { organization, invitation };
+}
+
+async function requirePendingInvitationAuthority(
+  repo: OrganizationManagementRepository,
+  organization: Awaited<ReturnType<OrganizationManagementRepository["lockOrganization"]>>,
+  invitation: NonNullable<Awaited<ReturnType<OrganizationManagementRepository["lockInvitation"]>>>,
+) {
+  const inviter = await repo.lockMembershipById(
+    invitation.organization_id,
+    invitation.invited_by_membership_id,
+  );
+  const inviterRoles = await repo.roles(
+    invitation.organization_id,
+    invitation.invited_by_membership_id,
+  );
+  if (
+    !organization ||
+    organization.suspended ||
+    organization.closed ||
+    !inviter ||
+    inviter.suspended ||
+    inviter.ended ||
+    (organization.root !== invitation.invited_by_membership_id &&
+      !inviterRoles.some((r) => r.role === "admin"))
+  )
+    return unavailableInvitation();
+}
+
 async function requireAdmin(
   repo: OrganizationManagementRepository,
   organizationId: string,
@@ -288,6 +341,71 @@ export async function acceptOrganizationInvitation(input: {
       organizationId: invitation.organization_id,
       status: "accepted" as const,
     };
+  });
+}
+
+export async function previewOrganizationInvitation(input: {
+  db: DrizzleDbClient;
+  actorProfileId: string;
+  token: string;
+}) {
+  return input.db.transaction(async (tx) => {
+    const repo = createOrganizationManagementRepository(tx);
+    const { organization, invitation } = await lockRecipientInvitation(
+      repo,
+      input.token,
+      input.actorProfileId,
+    );
+    if (
+      invitation.status !== "pending" ||
+      (await repo.isExpired(invitation.organization_id, invitation.expires_at))
+    )
+      return unavailableInvitation();
+    await requirePendingInvitationAuthority(repo, organization, invitation);
+    return {
+      invitationId: invitation.id,
+      organizationId: invitation.organization_id,
+      organizationName: organization.name,
+      kind: invitation.invitation_kind,
+      requestedRole: invitation.requested_role_key,
+      expiresAt: invitation.expires_at,
+    };
+  });
+}
+
+export async function declineOrganizationInvitation(input: {
+  db: DrizzleDbClient;
+  actorProfileId: string;
+  token: string;
+}) {
+  return input.db.transaction(async (tx) => {
+    const repo = createOrganizationManagementRepository(tx);
+    const { organization, invitation } = await lockRecipientInvitation(
+      repo,
+      input.token,
+      input.actorProfileId,
+    );
+    if (
+      invitation.status === "declined" &&
+      invitation.declined_by_profile_id === input.actorProfileId
+    )
+      return { invitationId: invitation.id, status: "declined" as const };
+    if (
+      invitation.status !== "pending" ||
+      (await repo.isExpired(invitation.organization_id, invitation.expires_at))
+    )
+      return unavailableInvitation();
+    await requirePendingInvitationAuthority(repo, organization, invitation);
+    await repo.decline(invitation.id, input.actorProfileId);
+    // This occurs only for the durable pending-to-declined transition. The
+    // invitation trigger permits decline without inviter authority, so the
+    // application check above is required before recording the recipient act.
+    await repo.recordRecipientDecline(
+      invitation.organization_id,
+      invitation.id,
+      input.actorProfileId,
+    );
+    return { invitationId: invitation.id, status: "declined" as const };
   });
 }
 
