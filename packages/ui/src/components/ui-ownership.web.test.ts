@@ -133,9 +133,10 @@ describe("UI ownership guardrails", () => {
       "providers/auth-provider.tsx",
       "providers/recording-storage-boundary.tsx",
       "providers/theme-provider.tsx",
-      // Recording feature composition and app-owned opt-in street-map policy.
+      // Recording feature composition, including plan-review actions, and app-owned opt-in street-map policy.
       "recording/geographic-route-map.tsx",
       "recording/recording-cockpit.tsx",
+      "recording/recording-plan-review.tsx",
       "recording/route-preview-map.tsx",
       "route-flash-toast.tsx",
       "routes/route-edit-form.tsx",
