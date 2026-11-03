@@ -48,6 +48,19 @@ describe("resolveActivityPlanTargetPresentation", () => {
     ).toEqual({ kind: "exact_authored", label: "240 W", sourceLabel: "240 W" });
   });
 
+  it.each([
+    ["run", 160, "160 spm"],
+    ["bike", 80, "80 rpm"],
+  ] as const)("presents %s cadence using its authored unit", (activityCategory, intensity, label) => {
+    expect(
+      resolveActivityPlanTargetPresentation({
+        target: { type: "cadence", intensity },
+        activityCategory,
+        asOf,
+      }),
+    ).toEqual({ kind: "exact_authored", label, sourceLabel: label });
+  });
+
   it("resolves confirmed, current FTP and HR targets while preserving their authored context", () => {
     const performanceTargets = confirmedFacts();
     expect(

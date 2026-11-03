@@ -116,6 +116,42 @@ describe("ActivityPlanComposer draft boundary", () => {
       expect.objectContaining({ structure: expect.objectContaining({ activity_category: "run" }) }),
     );
   });
+  it.each([
+    ["run", 160, "spm"],
+    ["bike", 80, "rpm"],
+  ] as const)("shows existing %s cadence in its authored unit", (activityCategory, intensity, unit) => {
+    const [step] = strictStructure.items;
+    if (!step || step.type !== "step") throw new Error("Expected root step fixture");
+    const structure = activityPlanStructureSchema.parse({
+      ...strictStructure,
+      activity_category: activityCategory,
+      items: [{ ...step, targets: [{ type: "cadence", intensity }] }],
+    });
+    render(
+      <ActivityPlanComposer
+        initial={{ name: "Existing", structure }}
+        mode="edit"
+        onCancel={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(`60 sec · ${intensity} ${unit}`)).toBeTruthy();
+  });
+  it.each([
+    ["run", "160", "spm"],
+    ["bike", "80", "rpm"],
+  ] as const)("uses the %s default when cadence is newly selected", (activityCategory, intensity, unit) => {
+    renderCreate();
+    fireEvent.change(screen.getByLabelText("Activity category"), {
+      target: { value: activityCategory },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    fireEvent.change(screen.getByLabelText("Completion"), { target: { value: "time" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add target" }));
+    fireEvent.change(screen.getByLabelText("Target type 1"), { target: { value: "cadence" } });
+    expect((screen.getByLabelText("Target intensity 1") as HTMLInputElement).value).toBe(intensity);
+    expect(screen.getByText(unit)).toBeTruthy();
+  });
   it("rejects a completed targetless step until a semantic target is added", () => {
     const onSave = renderCreate();
     fireEvent.change(screen.getByLabelText("Activity category"), { target: { value: "run" } });

@@ -368,7 +368,7 @@ export function StepEditorFields({
             />
           </View>
           <View className="flex-row items-center gap-3" testID="step-notes-section">
-            <Text className="w-32 shrink-0 text-sm">Coaching cue (optional)</Text>
+            <Text className="w-32 shrink-0 text-sm">Cue (optional)</Text>
             <Controller
               control={form.control}
               name="instructions"

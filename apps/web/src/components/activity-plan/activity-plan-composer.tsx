@@ -14,6 +14,7 @@ import {
   activityPlanDraftStructureSchema,
   activityPlanStepNoteSchema,
   createUnavailableAthletePerformanceTargetFacts,
+  getActivityPlanTargetTypeDefault,
   normalizeActivityPlanAuthoringStructure,
   resolveActivityPlanDraft,
 } from "@repo/core";
@@ -852,7 +853,7 @@ function ItemEditor({
                 <p className="text-sm text-muted-foreground">
                   {step.duration ? formatActivityPlanDuration(step.duration) : "Set duration"}
                   {step.targets.length
-                    ? ` · ${step.targets.map((target) => (target.type === "rest" ? "Rest" : `${target.intensity ?? "Set"} ${activityTargetAuthoringUnitLabels[activityTargetDefinitionByType[target.type].unit]}`)).join(", ")}`
+                    ? ` · ${step.targets.map((target) => (target.type === "rest" ? "Rest" : `${target.intensity ?? "Set"} ${target.type === "cadence" ? getActivityTargetCadenceUnitLabel(category ?? "bike") : activityTargetAuthoringUnitLabels[activityTargetDefinitionByType[target.type].unit]}`)).join(", ")}`
                     : ""}
                 </p>
               </button>
@@ -1227,7 +1228,11 @@ function StepEditor({
                       : {
                           ...item,
                           targets: item.targets.map((value, itemIndex) =>
-                            itemIndex === index ? { type, intensity: null } : value,
+                            itemIndex === index
+                              ? type === "cadence"
+                                ? getActivityPlanTargetTypeDefault(type, category ?? undefined)
+                                : { type, intensity: null }
+                              : value,
                           ),
                         },
                   );
