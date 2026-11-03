@@ -25,22 +25,27 @@ export const Route = createFileRoute("/auth/verify")({
   },
   beforeLoad: async ({ serverContext }) => {
     const session = await resolveRouteAuthSession(serverContext);
-    return { authenticatedEmail: session?.user.email, accountIdentity: session?.user.id };
+    return {
+      authenticatedEmail: session?.user.email,
+      accountIdentity: session?.user.id,
+      emailVerified: session?.user.emailVerified ?? false,
+    };
   },
   component: VerifyEmailPage,
 });
 
 function VerifyEmailPage() {
   const { email } = Route.useSearch();
-  const { authenticatedEmail, accountIdentity } = Route.useRouteContext();
+  const { authenticatedEmail, accountIdentity, emailVerified } = Route.useRouteContext();
   return (
     <VerificationForm
       key={`${accountIdentity ?? "anonymous"}:${getVerificationEmail(email, authenticatedEmail) ?? ""}`}
+      emailVerified={emailVerified}
     />
   );
 }
 
-function VerificationForm() {
+function VerificationForm({ emailVerified }: { emailVerified: boolean }) {
   const navigate = Route.useNavigate();
   const { email, flash, flashType, source } = Route.useSearch();
   const { authenticatedEmail } = Route.useRouteContext();
@@ -96,25 +101,29 @@ function VerificationForm() {
               Open the verification email on this device. If you already verified this account, you
               can return to sign in.
             </p>
-            <form
-              action={sendVerificationEmailAction.url}
-              method="post"
-              className="space-y-3"
-              onSubmit={(event) => void handleResend(event)}
-            >
-              <input {...contractEpochFormInputProps} />
-              <input type="hidden" name="email" value={verificationEmail ?? ""} />
-              <input type="hidden" name="source" value={source ?? ""} />
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={!verificationEmail || resendPending}
+            {emailVerified ? (
+              <p role="status">This email is already verified. You can sign in to continue.</p>
+            ) : (
+              <form
+                action={sendVerificationEmailAction.url}
+                method="post"
+                className="space-y-3"
+                onSubmit={(event) => void handleResend(event)}
               >
-                {resendPending ? "Sending verification email..." : "Resend Verification Email"}
-              </Button>
-              {resendStatus ? <p role="status">{resendStatus}</p> : null}
-              {resendError ? <p role="alert">{resendError}</p> : null}
-            </form>
+                <input {...contractEpochFormInputProps} />
+                <input type="hidden" name="email" value={verificationEmail ?? ""} />
+                <input type="hidden" name="source" value={source ?? ""} />
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={!verificationEmail || resendPending}
+                >
+                  {resendPending ? "Sending verification email..." : "Resend Verification Email"}
+                </Button>
+                {resendStatus ? <p role="status">{resendStatus}</p> : null}
+                {resendError ? <p role="alert">{resendError}</p> : null}
+              </form>
+            )}
             <Button asChild variant="link" className="w-full px-0">
               <Link
                 to="/auth/login"

@@ -9,4 +9,16 @@ describe("getSafeAppRedirectTarget", () => {
   it("rejects protocol-relative external destinations", () => {
     expect(getSafeAppRedirectTarget("//attacker.example/path", "/")).toBe("/");
   });
+
+  it.each([
+    "/\\attacker.example/path",
+    "/%5Cattacker.example/path",
+    "/%255Cattacker.example/path",
+  ])("rejects literal and encoded backslash redirect targets: %s", (target) => {
+    expect(getSafeAppRedirectTarget(target, "/")).toBe("/");
+  });
+
+  it("rejects cross-origin absolute destinations", () => {
+    expect(getSafeAppRedirectTarget("https://attacker.example/path", "/")).toBe("/");
+  });
 });

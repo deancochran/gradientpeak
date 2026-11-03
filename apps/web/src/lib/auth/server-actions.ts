@@ -202,7 +202,7 @@ export const signUpWithEmailAction = createServerFn({ method: "POST" })
     }
 
     throw redirect({
-      href: `/auth/sign-up-success?email=${encodeURIComponent(data.email)}`,
+      href: buildVerifyEmailRedirectHref(data.email, "sign-up"),
       statusCode: 303,
     });
   });

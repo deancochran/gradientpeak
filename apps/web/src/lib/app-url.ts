@@ -30,6 +30,22 @@ export function getSafeAppRedirectTarget(
     return fallback;
   }
 
+  // WHATWG URL treats backslashes as path separators for special schemes. Do not
+  // accept them in an internal path, including when a caller supplies one encoded.
+  // A bounded decode also catches nested query-string encoding without changing the
+  // path we return to callers.
+  let decodedTarget = redirectTarget;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    if (decodedTarget.includes("\\")) return fallback;
+    try {
+      const next = decodeURIComponent(decodedTarget);
+      if (next === decodedTarget) break;
+      decodedTarget = next;
+    } catch {
+      break;
+    }
+  }
+
   if (redirectTarget.startsWith("/") && !redirectTarget.startsWith("//")) {
     return redirectTarget;
   }

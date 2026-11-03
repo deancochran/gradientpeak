@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   resend: vi.fn(),
   email: "first@example.test",
   accountIdentity: "account-a",
+  emailVerified: false,
 }));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
@@ -15,6 +16,7 @@ vi.mock("@tanstack/react-router", () => ({
     useRouteContext: () => ({
       authenticatedEmail: state.email,
       accountIdentity: state.accountIdentity,
+      emailVerified: state.emailVerified,
     }),
   }),
   Link: ({ children }: { children: React.ReactNode }) => <a href="/auth/login">{children}</a>,
@@ -48,6 +50,7 @@ beforeEach(() => {
   state.resend.mockReset().mockResolvedValue({ ok: true });
   state.email = "first@example.test";
   state.accountIdentity = "account-a";
+  state.emailVerified = false;
 });
 describe("verification recovery", () => {
   it("captures one request and announces a generic success, with the POST fallback intact", async () => {
@@ -87,6 +90,13 @@ describe("verification recovery", () => {
     await screen.findByRole("status");
     expect(state.resend).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+  it("does not offer resend for an already verified session", () => {
+    state.emailVerified = true;
+    render(<Page />);
+
+    expect(screen.getByRole("status").textContent).toMatch(/already verified/i);
+    expect(screen.queryByRole("button", { name: "Resend Verification Email" })).toBeNull();
   });
   it("ignores the prior verification context when its request settles", async () => {
     let reject!: (error: Error) => void;
