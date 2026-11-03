@@ -123,40 +123,6 @@ async function readPersistedGoalTitle(goalId: string) {
   return goals.rows[0]?.title;
 }
 
-async function waitForRelationshipLock(blockerPid: number, timeoutMs = 2_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const result = await pool.query<{ count: number }>(
-      `
-      select count(*)::int as count
-      from pg_stat_activity
-      where datname = current_database()
-        and wait_event_type = 'Lock'
-        and query ilike '%coaching_assignments%'
-        and $1 = any(pg_blocking_pids(pid))
-    `,
-      [blockerPid],
-    );
-    if (Number(result.rows[0]?.count) > 0) return;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error("Timed out waiting for the procedure to block on coaching_assignments");
-}
-
-async function within<T>(promise: Promise<T>, timeoutMs = 5_000): Promise<T> {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timeout = setTimeout(() => reject(new Error(`Timed out after ${timeoutMs}ms`)), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
-}
-
 afterEach(async () => {
   const seededProfileIds = ids.splice(0);
   const seededOrganizationIds = organizationIds.splice(0);
@@ -235,8 +201,8 @@ afterEach(async () => {
 
 afterAll(async () => pool.end());
 
-describe("delegated profile write revocation through appRouter", () => {
-  it("uses the production goal resolver for published athlete state and hides denied goals", async () => {
+describe("delegated profile access and retired legacy revoke through appRouter", () => {
+  it("preserves delegated reads when the retired operation is rejected", async () => {
     const athleteId = await seedProfile("Intelligence athlete");
     const coachId = await seedProfile("Intelligence coach");
     const unrelatedId = await seedProfile("Unrelated intelligence caller");
@@ -263,13 +229,17 @@ describe("delegated profile write revocation through appRouter", () => {
 
     await expect(
       coach.profileAccess.revoke({ coach_id: coachId, athlete_id: athleteId }),
-    ).resolves.toEqual({ revoked: true });
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     await expect(
       coach.athleteIntelligence.getGoalAssessment({ goalId: goal.id }),
-    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    ).resolves.toMatchObject({
+      freshness: "unavailable",
+      rebuildStatus: "unavailable",
+      assessment: null,
+    });
   });
 
-  it("persists owner and active coach writes, then fails closed for every revoked delegated mutation", async () => {
+  it("does not mutate roles, engagements, or delegated writes", async () => {
     const athleteId = await seedProfile("Athlete");
     const coachId = await seedProfile("Coach");
     const relationship = await activeRelationship(coachId, athleteId);
@@ -281,7 +251,7 @@ describe("delegated profile write revocation through appRouter", () => {
 
     await expect(
       coach.profileAccess.revoke({ coach_id: coachId, athlete_id: athleteId }),
-    ).resolves.toEqual({ revoked: true });
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     await expect(
       db.execute(sql`
         select
@@ -292,29 +262,25 @@ describe("delegated profile write revocation through appRouter", () => {
     ).resolves.toMatchObject({
       rows: [
         expect.objectContaining({
-          engagement_ended: true,
-          active_assignments: 0,
-          active_coach_grants: 0,
+          engagement_ended: false,
+          active_assignments: 1,
+          active_coach_grants: 1,
         }),
       ],
     });
 
     await expect(
-      coach.goals.create(goalInput(athleteId, "Revoked coach goal")),
-    ).rejects.toMatchObject({
-      code: "FORBIDDEN",
-    });
+      coach.goals.create(goalInput(athleteId, "Still active coach goal")),
+    ).resolves.toMatchObject({ title: "Still active coach goal" });
     await expect(
-      coach.goals.update({ id: goal.id, data: { title: "Revoked update" } }),
-    ).rejects.toMatchObject({
-      code: "NOT_FOUND",
-    });
-    await expect(coach.goals.delete({ id: goal.id })).rejects.toMatchObject({ code: "NOT_FOUND" });
+      coach.goals.update({ id: goal.id, data: { title: "Still active update" } }),
+    ).resolves.toMatchObject({ title: "Still active update" });
+    await expect(coach.goals.delete({ id: goal.id })).resolves.toMatchObject({ id: goal.id });
 
-    expect(await readPersistedGoalTitle(goal.id)).toBe("Active coach goal");
+    expect(await readPersistedGoalTitle(goal.id)).toBeUndefined();
   });
 
-  it("rejects an unrelated caller from revoking an exact coach-athlete relationship", async () => {
+  it("retires the operation for an unrelated authenticated caller", async () => {
     const athleteId = await seedProfile("Athlete");
     const coachId = await seedProfile("Coach");
     const unrelatedId = await seedProfile("Unrelated");
@@ -325,16 +291,15 @@ describe("delegated profile write revocation through appRouter", () => {
         coach_id: coachId,
         athlete_id: athleteId,
       }),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
   });
 
-  it("commits a waiting delegated procedure before a later revoke", async () => {
+  it("does not wait on a relationship lock before rejecting the retired operation", async () => {
     const athleteId = await seedProfile("Athlete");
     const coachId = await seedProfile("Coach");
     const relationship = await activeRelationship(coachId, athleteId);
     const coach = await createCaller(coachId);
     const held = await pool.connect();
-    const blockerPid = Number((await held.query("select pg_backend_pid() as pid")).rows[0]?.pid);
     let committed = false;
 
     try {
@@ -343,13 +308,12 @@ describe("delegated profile write revocation through appRouter", () => {
         relationship.engagementId,
       ]);
       const write = coach.goals.create(goalInput(athleteId, "Committed before revoke"));
-      await waitForRelationshipLock(blockerPid);
       const revoke = coach.profileAccess.revoke({ coach_id: coachId, athlete_id: athleteId });
 
       await held.query("commit");
       committed = true;
-      await expect(within(write)).resolves.toMatchObject({ title: "Committed before revoke" });
-      await expect(within(revoke)).resolves.toEqual({ revoked: true });
+      await expect(revoke).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+      await expect(write).resolves.toMatchObject({ title: "Committed before revoke" });
     } finally {
       if (!committed) await held.query("rollback").catch(() => undefined);
       held.release();
@@ -361,36 +325,24 @@ describe("delegated profile write revocation through appRouter", () => {
     expect(goals.rows[0]?.title).toBe("Committed before revoke");
   }, 15_000);
 
-  it("commits revoke before a later waiting delegated procedure, which then fails closed", async () => {
+  it("leaves later delegated writes authorized after the retired operation", async () => {
     const athleteId = await seedProfile("Athlete");
     const coachId = await seedProfile("Coach");
-    const relationship = await activeRelationship(coachId, athleteId);
+    await activeRelationship(coachId, athleteId);
     const coach = await createCaller(coachId);
-    const held = await pool.connect();
-    const blockerPid = Number((await held.query("select pg_backend_pid() as pid")).rows[0]?.pid);
-    let committed = false;
 
-    try {
-      await held.query("begin");
-      await held.query("select id from coaching_assignments where engagement_id = $1 for update", [
-        relationship.engagementId,
-      ]);
-      const revoke = coach.profileAccess.revoke({ coach_id: coachId, athlete_id: athleteId });
-      await waitForRelationshipLock(blockerPid);
-      const write = coach.goals.create(goalInput(athleteId, "Blocked by revoke"));
-
-      await held.query("commit");
-      committed = true;
-      await expect(within(revoke)).resolves.toEqual({ revoked: true });
-      await expect(within(write)).rejects.toMatchObject({ code: "FORBIDDEN" });
-    } finally {
-      if (!committed) await held.query("rollback").catch(() => undefined);
-      held.release();
-    }
+    await expect(
+      coach.profileAccess.revoke({ coach_id: coachId, athlete_id: athleteId }),
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    await expect(
+      coach.goals.create(goalInput(athleteId, "Still authorized after retirement")),
+    ).resolves.toMatchObject({
+      title: "Still authorized after retirement",
+    });
 
     const goals = await db.execute(
       sql`select count(*)::int as count from profile_goals where profile_id = ${athleteId}::uuid`,
     );
-    expect(goals.rows[0]?.count).toBe(0);
-  }, 15_000);
+    expect(goals.rows[0]?.count).toBe(1);
+  });
 });
