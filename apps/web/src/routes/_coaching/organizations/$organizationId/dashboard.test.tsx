@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
+  organizationId: "33333333-3333-4333-8333-333333333333",
   overview: {
     status: "granted" as const,
     canReadAdministrativeRoster: true,
@@ -33,8 +34,17 @@ vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
     useLoaderData: () => state.overview,
+    useParams: () => ({ organizationId: state.organizationId }),
   }),
-  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
+  Link: ({
+    children,
+    to,
+    params,
+  }: {
+    children: ReactNode;
+    to: string;
+    params?: { organizationId: string };
+  }) => <a href={to.replace("$organizationId", params?.organizationId ?? "")}>{children}</a>,
 }));
 
 import { Route } from "./dashboard";
@@ -58,6 +68,12 @@ describe("coach dashboard", () => {
     expect(screen.getByRole("list", { name: "Staff" }).textContent).toContain("Casey Coach");
     expect(screen.getByRole("list", { name: "Athletes" }).textContent).toContain("Alex Athlete");
     expect(screen.getByText(/does not grant access to private athlete training/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Manage staff" }).getAttribute("href")).toBe(
+      `/organizations/${state.organizationId}/staff`,
+    );
+    expect(screen.getByRole("link", { name: "Manage athletes" }).getAttribute("href")).toBe(
+      `/organizations/${state.organizationId}/athletes`,
+    );
   });
 
   it("renders an explicit access-lost state instead of organization data", () => {
@@ -67,5 +83,7 @@ describe("coach dashboard", () => {
 
     expect(screen.getByRole("heading", { name: "Coaching access required" })).toBeTruthy();
     expect(screen.queryByText("Casey Coach")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Manage staff" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Manage athletes" })).toBeNull();
   });
 });
