@@ -20,7 +20,7 @@ or its servers. Coordinator owns verification, commits, preview and publication.
 | W01 | Live in preview | `2f2002c0`; 9 feature tests, desktop/mobile create/reload proof; 10 integrated tests |
 | W02 | Live in preview | `e778227e`; 17 web tests, API/web types, exact guarded lifecycle test, both staff browser journeys; 17 integrated tests |
 | W03 | Live in preview | `afd89bfc`; web types, 28 combined focused tests, four browser journeys, 19 integrated athlete tests |
-| W04 | Implementing | Separate `feat/organization-group-workflows` lane; create/archive only, immutable metadata |
+| W04 | Verified checkpoint preparation | Build/web types/13 focused tests and both desktop/mobile journeys passed in `acceptance-1578876-1793733146563`; preview integration pending |
 | W05 | Waiting on W04 | Group athlete links; scoped detail contract required |
 | W06 | Waiting on W04 | Group coach links; separate implementation ownership |
 | W07 | Waiting on W08 | Invitation creation/revocation needs complete discovery contract |
@@ -42,11 +42,16 @@ The coordination activation record is authoritative for subsequent integrations.
 
 - E01–E12, E14–E17, E19–E20, E22, E24–E25 and E27–E29 have preliminary
   source observations only; these are not accepted audit completion or runtime proof.
-- E13 worker found the actual import route already handles navigation failures.
-  Proposed component recovery has 16 passing tests/types but is under independent
-  necessity review; do not integrate redundant hypothetical-caller behavior.
-- E23 follow duplicate-submit and E26 onboarding transport-error candidates need
-  bounded implementation/caller verification and independent acceptance.
+- E13 audited: no product change needed. Independent review confirmed actual route
+  owns committed-import/navigation recovery; original route/component suites passed
+  23 tests. Speculative component changes were removed, leaving that lane clean.
+  The existing recovery test proves no repeated signed URL/upload/process calls.
+- E23 follow duplicate-submit guard (`452d851f`) and E26 outcome-neutral onboarding
+  rejection handling (`2e9e916b`) are live in preview `3498325c`. Independent review
+  found no blockers; coordinator reran 3 follow and 4 onboarding tests. Integrated
+  16 tests including staff regression, ancestry, health and protected onboarding
+  route rendering passed. Real transport-fault browser proof remains unverified;
+  normal publication is pending.
 - E18, E21, E28 and incomplete portions of E19/E20/E25/E27 require further audit.
 - E08 and E29 share one security/sign-out owner, not duplicate workers.
 
