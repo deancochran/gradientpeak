@@ -56,6 +56,12 @@ test("administrator confirms staff termination while owner identity remains prot
   });
   await athletePage.getByRole("button", { name: /^End membership for/ }).click();
   await athletePage.getByRole("button", { name: "End membership", exact: true }).click();
+  // Modal accessibility hides background row actions before the write commits;
+  // their absence alone is not a completion signal.
+  await expect(
+    athletePage.getByRole("status").filter({ hasText: "membership ended." }),
+  ).toBeVisible();
+  await expect(athletePage.getByRole("alertdialog")).toHaveCount(0);
   await expect(athletePage.getByRole("button", { name: /^End membership for/ })).toHaveCount(0);
   await withLocalE2EDatabase(async (database) => {
     const [row] = await database.db
