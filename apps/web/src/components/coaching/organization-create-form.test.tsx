@@ -77,4 +77,10 @@ describe("OrganizationCreateForm", () => {
       expect.objectContaining({ data: expect.objectContaining({ organizationId: firstId }) }),
     );
   });
+
+  it("keeps the time-zone control readable in the coaching dark shell", () => {
+    const { container } = render(<OrganizationCreateForm />);
+
+    expect(container.querySelector('[class*="border-slate-700"]')).toBeTruthy();
+  });
 });

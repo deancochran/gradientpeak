@@ -106,15 +106,17 @@ export function OrganizationCreateForm() {
             </FormItem>
           )}
         />
-        <FormTimezoneField
-          control={form.control}
-          deviceTimeZone={initialTimezone()}
-          label="Organization time zone"
-          name="timezone"
-          rules={{ required: "Choose an organization time zone." }}
-        />
+        <div className="[&_button]:border-slate-700 [&_button]:bg-slate-950 [&_button]:text-slate-100 [&_button:hover]:bg-slate-800 [&_button:hover]:text-white">
+          <FormTimezoneField
+            control={form.control}
+            deviceTimeZone={initialTimezone()}
+            label="Organization time zone"
+            name="timezone"
+            rules={{ required: "Choose an organization time zone." }}
+          />
+        </div>
         {submissionError ? (
-          <p role="alert" className="text-sm text-red-300">
+          <p role="alert" className="text-sm text-red-200">
             {submissionError}
           </p>
         ) : null}
