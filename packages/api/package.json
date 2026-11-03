@@ -128,7 +128,8 @@
     "test:chatbot-writes:disposable": "tsx scripts/chatbot-writes.disposable.test.ts --disposable --local",
     "test:chatbot-host:disposable": "tsx scripts/chatbot-host.disposable.test.ts --disposable --local",
     "test:garmin-training-sync:disposable": "tsx scripts/garmin-training-sync.disposable.test.ts --disposable --local",
-    "test:calibration-history:disposable": "tsx scripts/completed-activity-calibration-history.disposable.test.ts --disposable --local"
+    "test:calibration-history:disposable": "tsx scripts/completed-activity-calibration-history.disposable.test.ts --disposable --local",
+    "test:notifications:disposable": "tsx scripts/notifications.disposable.test.ts --disposable --local"
   },
   "dependencies": {
     "@ai-sdk/openai": "4.0.106",

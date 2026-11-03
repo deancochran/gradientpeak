@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-
+import { MarkNotificationReadSchema } from "../../schemas/notifications";
 import {
   getNotificationViewModel,
   getUnreadNotificationIds,
@@ -8,6 +8,17 @@ import {
 } from "../index";
 
 describe("notification helpers", () => {
+  it("rejects a bulk read request with more than 100 IDs", () => {
+    const notificationIds = Array.from(
+      { length: 101 },
+      (_, index) => `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    );
+
+    expect(
+      MarkNotificationReadSchema.safeParse({ notification_ids: notificationIds }).success,
+    ).toBe(false);
+  });
+
   it("normalizes notification records used by app screens", () => {
     const notification = normalizeNotificationListItem({
       id: "n-1",

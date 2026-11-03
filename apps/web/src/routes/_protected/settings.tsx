@@ -456,9 +456,11 @@ function ProfileInformationCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle id="profile-heading" className="flex items-center gap-2">
-          <UserRound className="h-5 w-5" />
-          Profile Information
+        <CardTitle>
+          <h2 id="profile-heading" className="flex items-center gap-2">
+            <UserRound className="h-5 w-5" />
+            Profile Information
+          </h2>
         </CardTitle>
         <CardDescription>Update your profile information and avatar.</CardDescription>
       </CardHeader>
@@ -752,9 +754,11 @@ function AccountInformationCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle id="account-heading" className="flex items-center gap-2">
-          <Mail className="h-5 w-5" />
-          Account Information
+        <CardTitle>
+          <h2 id="account-heading" className="flex items-center gap-2">
+            <Mail className="h-5 w-5" />
+            Account Information
+          </h2>
         </CardTitle>
         <CardDescription>View your account details and manage your session.</CardDescription>
       </CardHeader>
@@ -893,9 +897,11 @@ function SecurityCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle id="security-heading" className="flex items-center gap-2">
-          <Shield className="h-5 w-5" />
-          Password and sessions
+        <CardTitle>
+          <h2 id="security-heading" className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            Password and sessions
+          </h2>
         </CardTitle>
         <CardDescription>
           Password changes keep this session active and revoke every other session.

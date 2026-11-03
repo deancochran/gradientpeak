@@ -12,7 +12,9 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   fetchNextPage: vi.fn(),
   historyError: false,
+  isFetchingNextPage: false,
   nextCursor: null as { createdAt: string; id: string } | null,
+  refetch: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -45,9 +47,9 @@ vi.mock("../../lib/api/client", () => ({
           fetchNextPage: mocks.fetchNextPage,
           hasNextPage: mocks.nextCursor !== null,
           isError: mocks.historyError,
-          isFetchingNextPage: false,
+          isFetchingNextPage: mocks.isFetchingNextPage,
           isLoading: false,
-          refetch: vi.fn(),
+          refetch: mocks.refetch,
         }),
       },
     },
@@ -59,6 +61,7 @@ afterEach(() => {
   vi.clearAllMocks();
   mocks.notifications = [];
   mocks.historyError = false;
+  mocks.isFetchingNextPage = false;
   mocks.nextCursor = null;
 });
 
@@ -142,5 +145,59 @@ describe("notification history states", () => {
     fireEvent.click(screen.getByRole("button", { name: "Load more notifications" }));
     expect(mocks.fetchNextPage).toHaveBeenCalledOnce();
     expect(screen.getByText("New Follower")).toBeTruthy();
+  });
+
+  it("retries an initial history error with a full refetch", () => {
+    mocks.historyError = true;
+    const NotificationsPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<NotificationsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(mocks.refetch).toHaveBeenCalledOnce();
+    expect(mocks.fetchNextPage).not.toHaveBeenCalled();
+  });
+
+  it("retains cached rows and retries only the failed next page", () => {
+    mocks.historyError = true;
+    mocks.notifications = [
+      {
+        id: NOTIFICATION_ID,
+        user_id: "11111111-1111-4111-8111-111111111111",
+        actor_id: ACTOR_ID,
+        type: "new_follower",
+        entity_id: null,
+        read_at: null,
+        created_at: "2026-07-20T10:00:00.000Z",
+      },
+    ];
+    const NotificationsPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<NotificationsPage />);
+
+    expect(screen.getByText("New Follower")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(mocks.fetchNextPage).toHaveBeenCalledOnce();
+    expect(mocks.refetch).not.toHaveBeenCalled();
+  });
+
+  it("submits only the first 100 loaded unread IDs and labels that bounded scope truthfully", () => {
+    mocks.notifications = Array.from({ length: 101 }, (_, index) => ({
+      id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      user_id: "11111111-1111-4111-8111-111111111111",
+      actor_id: ACTOR_ID,
+      type: "new_follower",
+      entity_id: null,
+      read_at: null,
+      created_at: "2026-07-20T10:00:00.000Z",
+    }));
+    const NotificationsPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<NotificationsPage />);
+
+    const button = screen.getByRole("button", { name: "Mark first 100 loaded as read" });
+    const form = button.closest("form");
+    if (!form) throw new Error("Expected bulk-read form");
+    const ids = new FormData(form).getAll("notification_ids");
+    expect(ids).toHaveLength(100);
+    expect(ids.at(-1)).toBe("00000000-0000-4000-8000-000000000100");
+    expect(ids).not.toContain("00000000-0000-4000-8000-000000000101");
   });
 });
