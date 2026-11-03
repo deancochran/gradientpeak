@@ -23,7 +23,10 @@ const pageInput = z
   })
   .strict();
 const organizationPageInput = z
-  .object({ organizationId: z.string().uuid() })
+  .object({
+    organizationId: z.string().uuid(),
+    status: z.enum(["active", "suspended"]).default("active"),
+  })
   .merge(pageInput)
   .strict();
 const identity = z
@@ -108,7 +111,8 @@ export const organizationLifecycleRouter = createTRPCRouter({
               membershipId: z.string().uuid(),
               identity,
               roleKeys: z.array(z.enum(["admin", "coach"])),
-              status: z.literal("active"),
+              status: z.enum(["active", "suspended"]),
+              suspendedAt: z.date().nullable(),
               endMembership: z
                 .object({
                   eligible: z.boolean(),
@@ -137,7 +141,8 @@ export const organizationLifecycleRouter = createTRPCRouter({
               username: item.username,
             },
             roleKeys: item.roleKeys as ("admin" | "coach")[],
-            status: "active" as const,
+            status: input.status,
+            suspendedAt: item.suspendedAt,
             endMembership: item.endMembership,
           })),
         };

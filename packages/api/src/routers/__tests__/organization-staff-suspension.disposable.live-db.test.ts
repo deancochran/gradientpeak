@@ -79,15 +79,23 @@ describe("organization staff suspension API against a fresh disposable PostgreSQ
         const client = createDbClient({ url });
         try {
           const owner = await person(client.db, "owner");
+          const foreignOwner = await person(client.db, "foreign-owner");
           const admin = await person(client.db, "admin");
           const coach = await person(client.db, "coach");
           const athlete = await person(client.db, "athlete");
           const organizationId = randomUUID();
+          const foreignOrganizationId = randomUUID();
           const ownerCaller = caller(client.db, owner);
           const created = await ownerCaller.create({
             organizationId,
             name: "Staff suspension",
             slug: `staff-suspension-${organizationId}`,
+            timezone: "UTC",
+          });
+          await caller(client.db, foreignOwner).create({
+            organizationId: foreignOrganizationId,
+            name: "Foreign staff suspension",
+            slug: `foreign-staff-suspension-${foreignOrganizationId}`,
             timezone: "UTC",
           });
           await staff(client.db, organizationId, admin, "admin");
@@ -170,6 +178,46 @@ describe("organization staff suspension API against a fresh disposable PostgreSQ
               reason: "administrative_review",
             }),
           ).rejects.toMatchObject({ code: "CONFLICT" });
+          await expect(
+            ownerCaller.lifecycle.staff.list({ organizationId, limit: 50 }),
+          ).resolves.toMatchObject({
+            items: expect.not.arrayContaining([
+              expect.objectContaining({ membershipId: coachMembershipId }),
+            ]),
+          });
+          await expect(
+            ownerCaller.lifecycle.staff.list({ organizationId, status: "suspended", limit: 50 }),
+          ).resolves.toMatchObject({
+            items: [
+              expect.objectContaining({
+                membershipId: coachMembershipId,
+                status: "suspended",
+                suspendedAt: expect.any(Date),
+              }),
+            ],
+          });
+          await expect(
+            ownerCaller.lifecycle.staff.list({
+              organizationId,
+              status: "suspended",
+              cursor: created.membershipId,
+              limit: 50,
+            }),
+          ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+          await expect(
+            caller(client.db, coach).lifecycle.staff.list({
+              organizationId,
+              status: "suspended",
+              limit: 50,
+            }),
+          ).rejects.toMatchObject({ code: "FORBIDDEN" });
+          await expect(
+            ownerCaller.lifecycle.staff.list({
+              organizationId: foreignOrganizationId,
+              status: "suspended",
+              limit: 50,
+            }),
+          ).rejects.toMatchObject({ code: "FORBIDDEN" });
           await expect(
             client.db
               .select({ suspendedAt: organizationMemberships.suspended_at })
