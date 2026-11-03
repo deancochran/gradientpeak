@@ -34,6 +34,48 @@ describe("StepEditorFields screen form", () => {
     await act(() => expect(ref.current?.validate()).toBeNull());
     expect(screen.getByText(/Choose a target before saving this step\./)).toBeTruthy();
   });
+  it("shows one duration error only after save validation of a selected blank value", async () => {
+    const ref = createRef<StepEditorFieldsHandle>();
+    await renderNative(
+      <StepEditorFields
+        ref={ref}
+        activityCategory="bike"
+        onDirtyChange={() => undefined}
+        step={{ ...step, duration: null, targets: [{ type: "RPE", intensity: 5 }] }}
+      />,
+    );
+    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "distance");
+    expect(screen.queryAllByRole("alert")).toHaveLength(0);
+    await act(() => expect(ref.current?.validate()).toBeNull());
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getByText("Correct the completion value before saving.")).toBeTruthy();
+  });
+  it("allows Rest after choosing Time before its value is entered", async () => {
+    await renderNative(
+      <StepEditorFields
+        activityCategory="bike"
+        onDirtyChange={() => undefined}
+        step={{ ...step, duration: null, targets: [{ type: "RPE", intensity: 5 }] }}
+      />,
+    );
+    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "time");
+    await fireEvent.press(screen.getByLabelText("Target type"));
+    const values = Children.toArray(screen.getByTestId("Target type-picker").props.children)
+      .filter(isValidElement<{ value: string }>)
+      .map((child) => child.props.value);
+    expect(values).toContain("rest");
+  });
+  it("labels the first target action without the redundant another copy", async () => {
+    await renderNative(
+      <StepEditorFields
+        activityCategory="bike"
+        onDirtyChange={() => undefined}
+        step={{ ...step, targets: [] }}
+      />,
+    );
+    expect(screen.getByText("Add target")).toBeTruthy();
+    expect(screen.queryByText("Add another target")).toBeNull();
+  });
   it("validates timed rest without an intensity input or another target", async () => {
     const ref = createRef<StepEditorFieldsHandle>();
     await renderNative(
@@ -53,24 +95,71 @@ describe("StepEditorFields screen form", () => {
       });
     });
   });
-  it("keeps a chosen distance visible when rest is selected and requires an intentional timed repair", async () => {
+  it.each([
+    { type: "distance" as const, meters: 800 },
+    { type: "repetitions" as const, count: 8 },
+  ])("does not offer or accept rest for a $type step", async (duration) => {
     const ref = createRef<StepEditorFieldsHandle>();
     await renderNative(
       <StepEditorFields
         ref={ref}
-        activityCategory="bike"
+        activityCategory={duration.type === "repetitions" ? "strength" : "bike"}
         onDirtyChange={() => undefined}
         step={{
           ...step,
-          duration: { type: "distance", meters: 800 },
-          targets: [{ type: "bpm", intensity: 120 }],
+          duration,
+          targets: [{ type: "RPE", intensity: 5 }],
         }}
       />,
     );
     await fireEvent.press(screen.getByLabelText("Target type"));
+    const picker = screen.getByTestId("Target type-picker");
+    const values = Children.toArray(picker.props.children)
+      .filter(isValidElement<{ value: string }>)
+      .map((child) => child.props.value);
+    expect(values).not.toContain("rest");
+    await fireEvent(picker, "valueChange", "rest");
+    expect(screen.getByLabelText("Target type: RPE")).toBeTruthy();
+  });
+  it("keeps a legacy rest mismatch repairable and unlocks duration choices after changing rest", async () => {
+    await renderNative(
+      <StepEditorFields
+        activityCategory="bike"
+        onDirtyChange={() => undefined}
+        step={{ ...step, duration: { type: "distance", meters: 800 }, targets: [{ type: "rest" }] }}
+      />,
+    );
+    await fireEvent.press(screen.getByLabelText("Target type"));
     await fireEvent(screen.getByTestId("Target type-picker"), "valueChange", "rest");
-    expect(screen.getByText("800 m")).toBeTruthy();
-    await act(() => expect(ref.current?.validate()).toBeNull());
+    expect(
+      screen
+        .getAllByLabelText("Target type")
+        .some((node) => node.props.accessibilityValue?.text === "Rest"),
+    ).toBe(true);
+    await fireEvent(screen.getByTestId("Target type-picker"), "valueChange", "bpm");
+    expect(screen.getByLabelText("Target type: Heart rate · bpm")).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Duration type"));
+    const picker = screen.getByTestId("Duration type-picker");
+    const options = Children.toArray(picker.props.children)
+      .filter(isValidElement<{ value: string; disabled?: boolean }>)
+      .map((child) => ({ disabled: child.props.disabled, value: child.props.value }));
+    expect(options.find((option) => option.value === "distance")?.disabled).not.toBe(true);
+  });
+  it("locks completion to time while rest is selected and unlocks it after removal", async () => {
+    await renderNative(
+      <StepEditorFields
+        activityCategory="bike"
+        onDirtyChange={() => undefined}
+        step={{ ...step, targets: [{ type: "rest" }] }}
+      />,
+    );
+    await fireEvent.press(screen.getByLabelText("Duration type"));
+    const picker = screen.getByTestId("Duration type-picker");
+    await fireEvent(picker, "valueChange", "distance");
+    expect(screen.getByLabelText("Duration type: Time")).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Remove target 1"));
+    await fireEvent(screen.getByTestId("Duration type-picker"), "valueChange", "distance");
+    expect(screen.getByLabelText("Duration type: Distance")).toBeTruthy();
   });
   it("keeps populated optional step details open with persistent current-value rows", async () => {
     const { container } = await renderNative(

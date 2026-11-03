@@ -89,6 +89,10 @@ describe("StepDurationField compact rows", () => {
     await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "distance");
     expect(screen.getByLabelText("Distance unit")).toBeTruthy();
     expect(screen.getByLabelText("Duration value").props.accessibilityValue.text).toBe("Not set");
+    expect(screen.queryByText("Correct the completion value before saving.")).toBeNull();
+    expect(screen.queryAllByRole("alert")).toHaveLength(0);
+    expect(screen.getByTestId("completion-type-row").props.className).toContain("flex-row");
+    expect(screen.getByTestId("distance-value-unit-row").props.className).toContain("flex-1");
     await fireEvent.press(screen.getByLabelText("Duration value"));
     await fireEvent(screen.getByLabelText("Duration value units"), "valueChange", 1);
     expect(setValue).toHaveBeenLastCalledWith(

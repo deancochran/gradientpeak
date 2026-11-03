@@ -123,6 +123,24 @@ describe("NativeQuantityInput", () => {
     expect(onChange).toHaveBeenLastCalledWith("");
   });
 
+  it("can suppress its own required error when an owner provides consolidated validation", async () => {
+    const view = await renderNative(
+      <NativeQuantityInput
+        label="Distance"
+        value=""
+        min={1}
+        max={100}
+        decimals={0}
+        required
+        showError={false}
+        onChange={jest.fn()}
+      />,
+    );
+    await fireEvent.press(view.getByLabelText("Distance"));
+    await fireEvent.press(view.getByLabelText("Done Distance"));
+    expect(view.queryByRole("alert")).toBeNull();
+  });
+
   it("uses the active dark scheme for an overlay body without changing panel callers", async () => {
     const scheme = useColorScheme as jest.Mock;
     scheme.mockReturnValue("dark");

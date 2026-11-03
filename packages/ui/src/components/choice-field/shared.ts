@@ -35,6 +35,8 @@ export interface ChoiceFieldProps<T extends ChoiceValue> extends TestProps {
   density?: "default" | "compact" | undefined;
   /** Hide the visible label while retaining the control's accessible name. */
   hideVisibleLabel?: boolean | undefined;
+  /** Render a persisted disabled value as the current selection so it can be repaired. */
+  retainDisabledValue?: boolean | undefined;
 }
 
 export function resolveChoice<T extends ChoiceValue>(

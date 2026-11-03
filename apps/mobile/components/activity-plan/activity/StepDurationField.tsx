@@ -43,6 +43,8 @@ export function StepDurationField({
   form,
   activityCategory = "run",
   onExactEntryInvalidChange,
+  onSelectedTypeChange,
+  lockToTime = false,
   active = true,
   draft,
 }: {
@@ -50,6 +52,9 @@ export function StepDurationField({
   form: DurationFormAdapter;
   activityCategory?: CanonicalActivityCategory;
   onExactEntryInvalidChange?: (invalid: boolean) => void;
+  onSelectedTypeChange?: (type: EditableDurationType | null) => void;
+  /** A rest target is only meaningful for timed steps; old mismatches stay repairable. */
+  lockToTime?: boolean;
   /** Retained for compatibility with callers that previously rendered a compact editor. */
   compact?: boolean;
   active?: boolean;
@@ -72,6 +77,7 @@ export function StepDurationField({
   );
   const [distanceDraft, setDistanceDraft] = useState(() => draft?.exactByType?.distance);
   const [invalid, setLocalInvalid] = useState(draft?.invalid ?? false);
+  const [valueTouched, setValueTouched] = useState(false);
   const permitted = getPermissibleActivityPlanDurationTypes(activityCategory);
   const [selectedType, setSelectedType] = useState<EditableDurationType | null>(() =>
     duration && permitted.includes(duration.type as EditableDurationType)
@@ -92,10 +98,19 @@ export function StepDurationField({
     if (duration && permitted.includes(duration.type as EditableDurationType))
       setSelectedType(duration.type as EditableDurationType);
   }, [duration, permitted]);
+  useEffect(() => onSelectedTypeChange?.(selectedType), [onSelectedTypeChange, selectedType]);
   useImperativeHandle(ref, () => ({
     focus: () => valueRef.current?.focus?.(),
     settle: () => valueRef.current?.settle?.(),
     cancel: () => valueRef.current?.cancel?.(),
+    validate: () => {
+      if (selectedType !== null && duration === null) {
+        setValueTouched(true);
+        setInvalid(true);
+        return true;
+      }
+      return false;
+    },
   }));
   const usable = () => mounted.current && active;
   const setInvalid = (next: boolean) => {
@@ -107,6 +122,7 @@ export function StepDurationField({
   const setDuration = (next: StepDurationValue | null) => {
     if (!usable()) return;
     setInvalid(false);
+    setValueTouched(false);
     form.setValue("duration", next, { shouldDirty: true, shouldValidate: true });
   };
   const setUnit = (next: string) => {
@@ -123,7 +139,7 @@ export function StepDurationField({
   const chooseType = (nextType: string) => {
     if (!usable()) return;
     const type = permitted.find((candidate) => candidate === nextType);
-    if (!type || type === duration?.type) return;
+    if (!type || (lockToTime && type !== "time") || type === duration?.type) return;
     if (draft) {
       delete draft.segments;
       delete draft.exact;
@@ -153,18 +169,19 @@ export function StepDurationField({
     .map((option) => ({
       value: option.type,
       label: option.type === "distance" ? "Distance" : option.label,
+      disabled: lockToTime && option.type !== "time",
     }));
 
   return (
-    <View className="gap-2 rounded-xl bg-card p-3.5" testID="step-duration-field">
+    <View className="gap-2" testID="step-duration-field">
       {duration && !permitted.some((type) => type === duration.type) ? (
         <Text accessibilityRole="alert" className="text-destructive">
           {duration.type} is not permitted for new {activityCategory} activity plans. Choose a
           supported completion type; the existing value is retained.
         </Text>
       ) : null}
-      <View className="flex-row flex-wrap items-center gap-3" testID="completion-type-row">
-        <View className="min-w-[132px] flex-1">
+      <View className="flex-row flex-wrap items-end gap-2" testID="completion-type-row">
+        <View className="min-w-[104px] flex-1">
           <ChoiceField
             density="compact"
             required={false}
@@ -180,7 +197,7 @@ export function StepDurationField({
         {selectedType === null ? (
           <Text className="min-h-12 flex-1 pt-3 text-sm text-muted-foreground">Choose a value</Text>
         ) : selectedType === "time" ? (
-          <View className="min-w-[120px] flex-1">
+          <View className="min-w-[96px] flex-1">
             <SegmentedDurationField
               ref={valueRef}
               label="Duration value"
@@ -196,6 +213,7 @@ export function StepDurationField({
               }}
               onChangeSeconds={(seconds) => setDuration({ type: "time", seconds })}
               onEmpty={() => {
+                setValueTouched(true);
                 setDuration(null);
                 setInvalid(true);
               }}
@@ -203,9 +221,10 @@ export function StepDurationField({
             />
           </View>
         ) : selectedType === "repetitions" ? (
-          <View className="min-w-[120px] flex-1">
+          <View className="min-w-[96px] flex-1">
             <NativeQuantityInput
               required
+              showError={false}
               ref={valueRef}
               presentation="overlay"
               id="step-duration-repetitions"
@@ -222,6 +241,7 @@ export function StepDurationField({
               value={draft?.exact ?? draft?.exactByType?.repetitions ?? countDraft}
               onChange={(raw) => {
                 if (!usable()) return;
+                setValueTouched(true);
                 setCountDraft(raw);
                 if (draft) {
                   draft.exact = raw;
@@ -244,11 +264,12 @@ export function StepDurationField({
             />
           </View>
         ) : (
-          <View className="flex-row flex-wrap items-center gap-2" testID="distance-value-unit-row">
-            <View className="min-w-[120px] flex-1">
+          <>
+            <View className="min-w-[80px] flex-1" testID="distance-value-unit-row">
               <NativeQuantityInput
                 ref={valueRef}
                 required
+                showError={false}
                 presentation="overlay"
                 label="Duration value"
                 unitLabel={unit === "km" ? "km" : "m"}
@@ -270,6 +291,7 @@ export function StepDurationField({
                     : "")
                 }
                 onChange={(raw) => {
+                  setValueTouched(true);
                   setDistanceDraft(raw);
                   if (draft) draft.exactByType = { ...draft.exactByType, distance: raw };
                   const value = Number(raw);
@@ -296,10 +318,11 @@ export function StepDurationField({
                 }}
               />
             </View>
-            <View className="min-w-[120px] flex-1">
+            <View className="min-w-[76px] flex-1">
               <ChoiceField
                 density="compact"
                 label="Distance unit"
+                hideVisibleLabel
                 nativePresentation="menu"
                 value={unit === "km" ? "km" : "meters"}
                 options={[
@@ -310,10 +333,10 @@ export function StepDurationField({
                 onChange={setUnit}
               />
             </View>
-          </View>
+          </>
         )}
       </View>
-      {invalid ? (
+      {invalid && valueTouched ? (
         <Text accessibilityRole="alert" className="text-destructive">
           Correct the completion value before saving.
         </Text>

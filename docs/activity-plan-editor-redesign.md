@@ -1,6 +1,46 @@
 # Activity plan editor redesign
 
+Latest screenshot correction implementation: mobile/web guard Rest/non-Time
+transitions at selection, track selected Time separately from unfinished numeric
+values, and preserve legacy mismatch repair. Compact distance type/value/unit
+siblings and inline metadata replace stacked controls; first-target copy is fixed.
+Native quantity error visibility is opt-in so duration owns one consolidated error
+without disabling invalidity callbacks. Rest removal shares the selector row.
+
+Coordinator found Picker.Item.enabled is not implemented in installed iOS picker
+source. Disabled alternatives are omitted from native picker items, not merely
+rejected by callbacks; existing disabled selections may remain visible for repair.
+Added omission/callback/repair regression. Corrected exact-optional option typing
+and asserted a single duration error in dialog coverage. Node24 coordinator checks:
+mobile editor59 tests, native picker/choice/quantity37 tests, web activity-plan43
+tests and UI exact-optional types passed. Browser acceptance and independent review
+are pending. Rendered iPhone appearance remains unverified. No dependencies,
+native binaries, schemas or preserved data changed.
+
 ## User corrections — authoritative over the earlier concept
+
+### Follow-up iPhone screenshots: prevent invalid choices, not only saves
+
+The user's next screenshots reject the current interaction: Distance can still
+select Rest, distance controls wrap into a tall panel, empty values immediately
+show duplicate errors, and zero targets show Add another target. Step metadata
+also remains oversized/stacked rather than the requested compact rows. Prior
+automated row checks did not establish rendered iOS acceptance.
+
+Rest must be unavailable when duration is Distance, Repetitions or unset. While
+Rest is selected, non-Time duration choices must be unavailable until Rest is
+changed/removed. Guard handlers as well as picker options; never silently rewrite
+values. Legacy inconsistent drafts must retain a repair path, including changing
+or removing Rest. Keep authoritative save validation as defense in depth.
+
+Use a compact distance selector/value/unit row at normal phone widths, intentional
+large-text wrapping, directly editable label/value metadata, less redundant cue
+copy, Add target for the first target, and one duration error after interaction
+or save rather than immediate duplicate blank errors. Investigate native overlay
+spacing without claiming class-name assertions prove iPhone geometry. Publication
+was paused again before these changes; current preview checkpoint2597cddf remains
+live but does not satisfy this latest correction. Coordinator owns new checkpoint
+verification/integration; implementation in progress, not live.
 
 Correction checkpoint evidence: mobile plan metadata now uses always-visible
 semantic fields; creation state supplies a real New plan title once and permits

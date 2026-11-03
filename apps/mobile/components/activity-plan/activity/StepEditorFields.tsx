@@ -20,18 +20,23 @@ import {
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { ChoiceField } from "@repo/ui/components/choice-field";
-import { Form, FormTextField } from "@repo/ui/components/form";
+import { Form } from "@repo/ui/components/form";
+import { Input } from "@repo/ui/components/input";
 import { NativeQuantityInput } from "@repo/ui/components/native-quantity-input";
 import { PaceInput } from "@repo/ui/components/pace-input";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
 import * as Haptics from "expo-haptics";
-import { Plus, X } from "lucide-react-native";
+import { X } from "lucide-react-native";
 import { type Ref, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Controller, useFieldArray } from "react-hook-form";
 import { View } from "react-native";
 import { z } from "zod";
-import { type StepDurationDraft, StepDurationField } from "./StepDurationField";
+import {
+  type StepDurationDraft,
+  StepDurationField,
+  type StepDurationValue,
+} from "./StepDurationField";
 
 export interface StepEditorFieldsHandle {
   validate: () => ActivityPlanDraftStep | null | undefined;
@@ -100,7 +105,12 @@ export function StepEditorFields({
   const invalidExactEntries = useRef(new Set<string>());
   const targetDrafts = useRef(new Map<string, string>());
   const durationDraft = useRef<StepDurationDraft>({});
-  const durationRef = useRef<{ focus: () => void; settle?: () => void; cancel?: () => void }>(null);
+  const durationRef = useRef<{
+    focus: () => void;
+    settle?: () => void;
+    cancel?: () => void;
+    validate?: () => boolean;
+  }>(null);
   const targetRefs = useRef(
     new Map<string, { focus: () => void; settle?: () => void; cancel?: () => void }>(),
   );
@@ -121,10 +131,32 @@ export function StepEditorFields({
   } = useFieldArray({ control: form.control, name: "targets" });
   const duration = form.watch("duration");
   const targets = form.watch("targets");
+  const [selectedDurationType, setSelectedDurationType] = useState<
+    StepDurationValue["type"] | null
+  >(step.duration?.type ?? null);
   const dirty = form.formState.isDirty || invalidExactEntries.current.size > 0;
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
   const permittedTargetTypes: readonly ActivityPlanDraftTarget["type"][] =
     duration?.type === "repetitions" ? ["RPE"] : getPermissibleTargetTypes(activityCategory);
+  const hasRestTarget = targets.some((target) => target.type === "rest");
+  const selectableTargetTypes = permittedTargetTypes.filter(
+    (type) => type !== "rest" || selectedDurationType === "time",
+  );
+  const targetTypeOptions = (currentType: ActivityPlanDraftTarget["type"]) => [
+    ...(currentType === "rest" && !selectableTargetTypes.includes("rest")
+      ? [
+          {
+            value: "rest" as const,
+            label: targetTypePresentationLabel("rest", activityCategory),
+            disabled: true,
+          },
+        ]
+      : []),
+    ...selectableTargetTypes.map((type) => ({
+      value: type,
+      label: targetTypePresentationLabel(type, activityCategory),
+    })),
+  ];
   const maximumTargets = duration?.type === "repetitions" ? 1 : 3;
   const setExactEntryValidity = (key: string, invalid: boolean) => {
     if (invalid) invalidExactEntries.current.add(key);
@@ -143,6 +175,10 @@ export function StepEditorFields({
     const next = nextValue as ActivityPlanDraftTarget["type"];
     const current = targets[index];
     if (!current || next === current.type) return;
+    if (next === "rest" && selectedDurationType !== "time") {
+      setSaveError("Rest is available only for a timed step.");
+      return;
+    }
     if (!permittedTargetTypes.includes(next)) {
       setSaveError(`${next} is not supported for ${activityCategory}.`);
       return;
@@ -181,7 +217,7 @@ export function StepEditorFields({
   };
   const addTarget = () => {
     if (targetFields.length >= maximumTargets) return;
-    const available = permittedTargetTypes.find(
+    const available = selectableTargetTypes.find(
       (type) => !targets.some((target) => target.type === type),
     );
     if (!available) return;
@@ -196,10 +232,6 @@ export function StepEditorFields({
       setSaveError(note.error.issues[0]?.message ?? "Correct the step note before saving.");
       return null;
     }
-    if (invalidExactEntries.current.size) {
-      setSaveError("Finish or correct the exact value before saving.");
-      return null;
-    }
     const result = formSchema.safeParse({
       ...values,
       name: normalizeOptionalText(values.name),
@@ -207,6 +239,15 @@ export function StepEditorFields({
     });
     if (!result.success) {
       setSaveError("Check the completion and target values before saving.");
+      return null;
+    }
+    if (!result.data.duration) {
+      if (!durationRef.current?.validate?.())
+        setSaveError("Choose a completion type and value before saving.");
+      return null;
+    }
+    if (invalidExactEntries.current.size) {
+      setSaveError("Finish or correct the exact value before saving.");
       return null;
     }
     for (const target of result.data.targets) {
@@ -248,10 +289,6 @@ export function StepEditorFields({
         return null;
       }
     }
-    if (!result.data.duration) {
-      setSaveError("Choose a completion type and value before saving.");
-      return null;
-    }
     if (
       result.data.duration.type === "distance" &&
       !Number.isInteger(result.data.duration.meters)
@@ -290,21 +327,38 @@ export function StepEditorFields({
   return (
     <View className="gap-4" testID="step-editor-fields">
       <Form {...form}>
-        <View className="gap-3 border-b border-border pb-4" testID="step-details-section">
-          <FormTextField
-            control={form.control}
-            label="Name (optional)"
-            name="name"
-            placeholder="Step name"
-          />
-          <View testID="step-notes-section">
-            <FormTextField
+        <View className="gap-2 border-b border-border pb-3" testID="step-details-section">
+          <View className="flex-row flex-wrap items-center gap-2">
+            <Text className="text-sm">Name (optional)</Text>
+            <Controller
               control={form.control}
-              label="Coaching cue (optional)"
+              name="name"
+              render={({ field }) => (
+                <Input
+                  accessibilityLabel="Name (optional)"
+                  className="min-w-[160px] flex-1"
+                  onBlur={field.onBlur}
+                  onChangeText={field.onChange}
+                  value={field.value}
+                />
+              )}
+            />
+          </View>
+          <View className="flex-row flex-wrap items-center gap-2" testID="step-notes-section">
+            <Text className="text-sm">Coaching cue (optional)</Text>
+            <Controller
+              control={form.control}
               name="instructions"
-              placeholder="One short cue, up to 160 characters"
-              testId="step-notes-input"
-              description="One line, up to 160 characters. Put details in the activity plan description."
+              render={({ field }) => (
+                <Input
+                  accessibilityLabel="Coaching cue (optional)"
+                  className="min-w-[160px] flex-1"
+                  onBlur={field.onBlur}
+                  onChangeText={field.onChange}
+                  testID="step-notes-input"
+                  value={field.value}
+                />
+              )}
             />
           </View>
         </View>
@@ -316,6 +370,8 @@ export function StepEditorFields({
             form={form}
             draft={durationDraft.current}
             activityCategory={activityCategory}
+            lockToTime={hasRestTarget}
+            onSelectedTypeChange={setSelectedDurationType}
             onExactEntryInvalidChange={(invalid) => setExactEntryValidity("duration", invalid)}
           />
         </Form>
@@ -327,26 +383,33 @@ export function StepEditorFields({
           if (target.type === "rest") {
             return (
               <View key={targetField.id} testID={`target-row-${index}`} className="gap-2 py-2">
-                <View className="flex-row items-start gap-3">
-                  <Text className="min-h-11 flex-1 pt-2 text-sm font-semibold">Target</Text>
-                  <View className="min-w-[148px] flex-1">
+                <View
+                  className="flex-row flex-wrap items-center gap-3"
+                  testID={`target-controls-${index}`}
+                >
+                  <View className="min-w-[132px] flex-1">
                     <ChoiceField
                       density="compact"
                       required
-                      label="Target type"
+                      label={targetFields.length === 1 ? "Target type" : `Target ${index + 1} type`}
+                      hideVisibleLabel
                       nativePresentation="menu"
+                      retainDisabledValue
                       value="rest"
-                      options={[
-                        {
-                          value: "rest",
-                          label: targetTypePresentationLabel("rest", activityCategory),
-                        },
-                      ]}
-                      onChange={() => undefined}
+                      options={targetTypeOptions("rest")}
+                      onChange={(value) => changeTargetType(index, value)}
                     />
                   </View>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="min-h-11 min-w-11"
+                    accessibilityLabel={`Remove target ${index + 1}`}
+                    onPress={() => removeTarget(index)}
+                  >
+                    <X size={18} />
+                  </Button>
                 </View>
-                <Text className="text-sm text-muted-foreground">Rest has no intensity target.</Text>
               </View>
             );
           }
@@ -370,10 +433,7 @@ export function StepEditorFields({
                     hideVisibleLabel
                     nativePresentation="menu"
                     value={target.type}
-                    options={permittedTargetTypes.map((type) => ({
-                      value: type,
-                      label: targetTypePresentationLabel(type, activityCategory),
-                    }))}
+                    options={targetTypeOptions(target.type)}
                     onChange={(value) => changeTargetType(index, value)}
                   />
                 </View>
@@ -518,8 +578,7 @@ export function StepEditorFields({
             accessibilityLabel="Add target"
             onPress={addTarget}
           >
-            <Plus size={14} />
-            <Text>Add another target</Text>
+            <Text>{targetFields.length === 0 ? "Add target" : "Add another target"}</Text>
           </Button>
         ) : null}
       </View>

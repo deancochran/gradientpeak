@@ -209,7 +209,7 @@ describe("StepEditorDialog", () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ name: "Main set" }));
   });
 
-  it("rejects a missing completion while still allowing a step with no targets", async () => {
+  it("rejects an incomplete draft with missing completion and targets", async () => {
     const onSave = jest.fn();
     await renderNative(
       <StepEditorDialog
@@ -357,7 +357,8 @@ describe("StepEditorDialog", () => {
     await fireEvent.press(screen.getByLabelText("Clear Duration value"));
     await fireEvent.press(screen.getByTestId("step-editor-save-button"));
     expect(onSave).not.toHaveBeenCalled();
-    expect(screen.getByText("Choose a completion type and value before saving.")).toBeTruthy();
+    expect(screen.getByText("Correct the completion value before saving.")).toBeTruthy();
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
 
   it("confirms whole-screen cancel and does not save", async () => {

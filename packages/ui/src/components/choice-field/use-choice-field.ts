@@ -39,7 +39,14 @@ export function useChoiceField<T extends ChoiceValue>(
       alive.current = false;
     };
   }, []);
-  const result = resolveChoice(props.value, props.options);
+  const resolved = resolveChoice(props.value, props.options);
+  const retainedDisabledOption = props.retainDisabledValue
+    ? props.options.find((option) => option.value === props.value && option.disabled)
+    : undefined;
+  const result =
+    resolved.status === "invalid" && retainedDisabledOption
+      ? { status: "valid" as const, option: retainedDisabledOption }
+      : resolved;
   const message =
     result.status === "invalid"
       ? `${result.label} is unavailable. Choose a supported ${props.label.toLowerCase()}.`

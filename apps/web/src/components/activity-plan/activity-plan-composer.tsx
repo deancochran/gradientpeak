@@ -1053,6 +1053,15 @@ function StepEditor({
   const targets = category ? getPermissibleTargetTypes(category) : [];
   const quantityKey = key(step.id);
   const selectedDurationType = step.duration?.type ?? drafts[completionTypeKey(step.id)] ?? "";
+  const hasRestTarget = step.targets.some((target) => target.type === "rest");
+  const restAvailable = selectedDurationType === "time";
+  const selectableTargets = targets.filter((type) => type !== "rest" || restAvailable);
+  const targetOptions = (currentType: ActivityTargetType) => [
+    ...(currentType === "rest" && !selectableTargets.includes("rest")
+      ? [{ value: "rest" as const, label: "rest (available for timed steps)", disabled: true }]
+      : []),
+    ...selectableTargets.map((type) => ({ value: type, label: type, disabled: false })),
+  ];
   const durationUnavailable =
     selectedDurationType !== "" &&
     !durations.includes(
@@ -1085,9 +1094,8 @@ function StepEditor({
           id={`step-instructions-${step.id}`}
           className="min-w-40 flex-1"
           value={step.instructions ?? ""}
-          placeholder="One short cue, up to 160 characters"
+          placeholder="Cue"
           aria-invalid={Boolean(noteError)}
-          aria-describedby={`step-instructions-help-${step.id}`}
           onKeyDown={(event) => {
             if (event.key === "Enter") event.preventDefault();
           }}
@@ -1107,10 +1115,7 @@ function StepEditor({
             onChange((item) => ({ ...item, instructions: event.target.value || undefined }));
           }}
         />
-        <span id={`step-instructions-help-${step.id}`} role={noteError ? "alert" : undefined}>
-          {noteError ??
-            "One line, up to 160 characters. Put details in the activity plan description."}
-        </span>
+        {noteError ? <span role="alert">{noteError}</span> : null}
       </div>
       <div className="flex flex-wrap items-end gap-3" data-testid={`step-duration-row-${step.id}`}>
         <label className="min-w-32 flex-1 text-sm" htmlFor={`step-completion-${step.id}`}>
@@ -1123,6 +1128,7 @@ function StepEditor({
             value={selectedDurationType}
             onChange={(event) => {
               const type = event.target.value as ActivityPlanDuration["type"] | "";
+              if (hasRestTarget && type !== "time") return;
               setDrafts((current) => ({ ...current, [completionTypeKey(step.id)]: type }));
               onChange((item) => ({
                 ...item,
@@ -1137,7 +1143,7 @@ function StepEditor({
               </option>
             ) : null}
             {durations.map((type) => (
-              <option key={type} value={type}>
+              <option key={type} value={type} disabled={hasRestTarget && type !== "time"}>
                 {type}
               </option>
             ))}
@@ -1157,7 +1163,7 @@ function StepEditor({
               type="text"
               inputMode="numeric"
               value={quantityRaw}
-              aria-invalid={Boolean(numericError(quantityRaw))}
+              aria-invalid={Boolean(quantityRaw && numericError(quantityRaw))}
               onChange={(event) => {
                 const raw = event.target.value;
                 setDrafts((current) => ({ ...current, [quantityKey]: raw }));
@@ -1194,6 +1200,7 @@ function StepEditor({
                 value={target.type}
                 onChange={(event) => {
                   const type = event.target.value as ActivityTargetType;
+                  if (type === "rest" && !restAvailable) return;
                   onChange((item) =>
                     type === "rest"
                       ? {
@@ -1214,9 +1221,9 @@ function StepEditor({
                     {target.type} (not available for {category})
                   </option>
                 ) : null}
-                {targets.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
+                {targetOptions(target.type).map((option) => (
+                  <option key={option.value} value={option.value} disabled={option.disabled}>
+                    {option.label}
                   </option>
                 ))}
               </select>
@@ -1227,7 +1234,7 @@ function StepEditor({
                   type="text"
                   inputMode="decimal"
                   value={raw}
-                  aria-invalid={Boolean(targetError(target.type, raw))}
+                  aria-invalid={Boolean(raw && targetError(target.type, raw))}
                   onChange={(event) => {
                     const next = event.target.value;
                     setDrafts((current) => ({ ...current, [targetKey]: next }));
@@ -1281,7 +1288,7 @@ function StepEditor({
             variant="ghost"
             disabled={!category}
             onClick={() => {
-              const type = targets[0];
+              const type = selectableTargets[0];
               if (type)
                 onChange((item) => ({
                   ...item,

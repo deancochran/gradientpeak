@@ -4,7 +4,7 @@ import { type Ref, useEffect, useImperativeHandle, useMemo, useRef } from "react
 export interface NativePickerProps<T extends string | number> {
   label: string;
   value: T;
-  options: readonly { value: T; label: string }[];
+  options: readonly { value: T; label: string; disabled?: boolean | undefined }[];
   onChange: (value: T) => void;
   disabled?: boolean;
   isCurrent?: () => boolean;
@@ -47,10 +47,20 @@ export function NativePicker<T extends string | number>({
   useImperativeHandle(ref, () => ({ focus: () => picker.current?.focus?.() }));
   const items = useMemo(
     () =>
-      options.map((option) => (
-        <Picker.Item key={option.value} label={option.label} value={option.value} />
-      )),
-    [options],
+      // iOS UIPickerView does not implement Picker.Item.enabled. Omit disabled
+      // alternatives rather than displaying choices that only fail on selection.
+      // Keep a disabled current value visible so legacy drafts can be repaired.
+      options
+        .filter((option) => !option.disabled || option.value === value)
+        .map((option) => (
+          <Picker.Item
+            key={option.value}
+            label={option.label}
+            value={option.value}
+            enabled={option.disabled !== true}
+          />
+        )),
+    [options, value],
   );
   return (
     <Picker
@@ -73,7 +83,8 @@ export function NativePicker<T extends string | number>({
           (isCurrent && !isCurrent())
         )
           return;
-        if (next !== value && options.some((option) => option.value === next)) onChange(next);
+        if (next !== value && options.some((option) => option.value === next && !option.disabled))
+          onChange(next);
       }}
     >
       {!options.some((option) => option.value === value) ? (

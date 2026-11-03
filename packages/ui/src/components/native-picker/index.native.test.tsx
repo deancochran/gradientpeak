@@ -3,6 +3,30 @@ import { act } from "@testing-library/react-native/pure";
 import { nativePickerFixtures } from "./fixtures";
 import { NativePicker } from "./index.native";
 
+it("omits disabled alternatives on iOS while retaining a legacy current value for repair", async () => {
+  const change = jest.fn();
+  const options = [
+    { value: "time", label: "Time" },
+    { value: "distance", label: "Distance", disabled: true },
+  ];
+  const view = await renderNative(
+    <NativePicker label="Duration" value="time" options={options} onChange={change} />,
+  );
+  const values = () =>
+    screen
+      .getByLabelText("Duration")
+      .children.map((child) => (typeof child === "string" ? child : child.props.value));
+  expect(values()).toEqual(["time"]);
+  await fireEvent(screen.getByLabelText("Duration"), "valueChange", "distance");
+  expect(change).not.toHaveBeenCalled();
+  await view.rerender(
+    <NativePicker label="Duration" value="distance" options={options} onChange={change} />,
+  );
+  expect(values()).toEqual(["time", "distance"]);
+  await fireEvent(screen.getByLabelText("Duration"), "valueChange", "time");
+  expect(change).toHaveBeenCalledWith("time");
+});
+
 it("passes the selected value and all half-points to the native library without JS selection geometry", async () => {
   const change = jest.fn();
   await renderNative(<NativePicker {...nativePickerFixtures.rpe} onChange={change} />);

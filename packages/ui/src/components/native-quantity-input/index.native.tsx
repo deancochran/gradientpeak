@@ -39,6 +39,8 @@ export interface NativeQuantityInputProps extends BoundedNumberInputProps {
   fractionLabel?: string;
   /** Compact, labelled summary row for a form that owns the surrounding section. */
   triggerVariant?: "input" | "row" | "value";
+  /** Defaults to visible; owners with a consolidated validation message can opt out. */
+  showError?: boolean;
 }
 
 type PickerParts = { fraction: string; groups: number[]; sign: "+" | "-" };
@@ -336,7 +338,7 @@ export function NativeQuantityInput(props: NativeQuantityInputProps) {
           </View>
         ) : null}
       </View>
-      {error ? (
+      {props.showError !== false && error ? (
         <Text accessibilityRole="alert" className="mt-3 text-destructive" style={overlayStyle}>
           {error}
         </Text>
@@ -397,7 +399,7 @@ export function NativeQuantityInput(props: NativeQuantityInputProps) {
           </Text>
         </Pressable>
       ) : null}
-      {error && !active ? (
+      {props.showError !== false && error && !active ? (
         <Text accessibilityRole="alert" className="text-destructive">
           {error}
         </Text>
@@ -422,7 +424,7 @@ export function NativeQuantityInput(props: NativeQuantityInputProps) {
               className="overflow-hidden rounded-t-2xl"
               style={{ backgroundColor: theme.card, flexShrink: 1, maxHeight: "80%", minHeight: 0 }}
             >
-              <View className="flex-row items-center justify-between border-b border-border p-4">
+              <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
                 <Button
                   variant="ghost"
                   accessibilityLabel={`Cancel ${props.label}`}
@@ -432,7 +434,7 @@ export function NativeQuantityInput(props: NativeQuantityInputProps) {
                 </Button>
                 <Text
                   accessibilityRole="header"
-                  className="text-xl font-semibold"
+                  className="text-base font-semibold"
                   style={{ color: theme.foreground }}
                 >
                   {props.label}

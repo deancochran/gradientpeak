@@ -52,38 +52,28 @@ describe("ActivityPlanComposer draft boundary", () => {
     expect(onSave).not.toHaveBeenCalled();
     expect((input as HTMLInputElement).value).toHaveLength(161);
   });
-  it("keeps an explicit duration when selecting rest and requires an intentional timed repair", () => {
-    const onSave = renderCreate();
+  it("only offers rest for timed steps and blocks duration changes while rest is selected", () => {
+    renderCreate();
     fireEvent.change(screen.getByLabelText("Activity category"), { target: { value: "run" } });
     fireEvent.change(screen.getByLabelText("Plan name"), { target: { value: "Rest" } });
     fireEvent.click(screen.getByRole("button", { name: "Add step" }));
     fireEvent.change(screen.getByLabelText("Completion"), { target: { value: "distance" } });
     fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "500" } });
     fireEvent.click(screen.getByRole("button", { name: "Add target" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add target" }));
-    fireEvent.change(screen.getByLabelText("Target type 1"), { target: { value: "rest" } });
-    expect(screen.queryByLabelText("Target type 2")).toBeNull();
-    expect(screen.queryByLabelText("Target intensity 1")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Add target" })).toBeNull();
-    expect((screen.getByLabelText("Completion") as HTMLSelectElement).value).toBe("distance");
-    fireEvent.submit(screen.getByTestId("activity-plan-composer"));
-    expect(onSave).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert").textContent).toContain("rest target requires a positive time");
+    expect(screen.queryByRole("option", { name: "rest" })).toBeNull();
     fireEvent.change(screen.getByLabelText("Completion"), { target: { value: "time" } });
     fireEvent.change(screen.getByLabelText("Quantity"), { target: { value: "60" } });
-    fireEvent.submit(screen.getByTestId("activity-plan-composer"));
-    expect(onSave).toHaveBeenCalledWith(
-      expect.objectContaining({
-        structure: expect.objectContaining({
-          items: [
-            expect.objectContaining({
-              duration: { type: "time", seconds: 60 },
-              targets: [{ type: "rest" }],
-            }),
-          ],
-        }),
-      }),
-    );
+    fireEvent.change(screen.getByLabelText("Target type 1"), { target: { value: "rest" } });
+    expect((screen.getByLabelText("Target type 1") as HTMLSelectElement).value).toBe("rest");
+    fireEvent.change(screen.getByLabelText("Completion"), { target: { value: "distance" } });
+    expect((screen.getByLabelText("Completion") as HTMLSelectElement).value).toBe("time");
+    expect(
+      (
+        screen
+          .getByLabelText("Completion")
+          .querySelector('option[value="distance"]') as HTMLOptionElement
+      ).disabled,
+    ).toBe(true);
   });
   it("starts intentionally blank without a silent category, name, block, step, duration, or target", () => {
     const onSave = renderCreate();
@@ -236,6 +226,45 @@ describe("ActivityPlanComposer draft boundary", () => {
         }),
       }),
     );
+  });
+  it("keeps a legacy rest-duration mismatch repairable", () => {
+    const [strictStep] = strictStructure.items;
+    if (!strictStep || strictStep.type !== "step") throw new Error("Expected root step fixture");
+    render(
+      <ActivityPlanComposer
+        initial={{
+          name: "Legacy rest",
+          structure: {
+            ...strictStructure,
+            items: [
+              {
+                ...strictStep,
+                duration: { type: "distance", meters: 800 },
+                targets: [{ type: "rest" }],
+              },
+            ],
+          },
+        }}
+        mode="edit"
+        onCancel={vi.fn()}
+        onSave={vi.fn()}
+      />,
+    );
+    const completion = screen.getByLabelText("Completion") as HTMLSelectElement;
+    expect(
+      (completion.querySelector('option[value="distance"]') as HTMLOptionElement).disabled,
+    ).toBe(true);
+    expect(
+      (
+        screen
+          .getByLabelText("Target type 1")
+          .querySelector('option[value="rest"]') as HTMLOptionElement
+      ).disabled,
+    ).toBe(true);
+    fireEvent.change(screen.getByLabelText("Target type 1"), { target: { value: "RPE" } });
+    expect(
+      (completion.querySelector('option[value="distance"]') as HTMLOptionElement).disabled,
+    ).toBe(false);
   });
   it("does not auto-open a duplicate and keeps a sole-step drag and delete action available", () => {
     render(
