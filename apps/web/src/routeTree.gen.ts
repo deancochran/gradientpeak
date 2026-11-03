@@ -18,6 +18,7 @@ import { Route as ProtectedGoalsRouteImport } from './routes/_protected/goals'
 import { Route as ProtectedIntegrationsRouteImport } from './routes/_protected/integrations'
 import { Route as ProtectedMessagesRouteImport } from './routes/_protected/messages'
 import { Route as ProtectedNotificationsRouteImport } from './routes/_protected/notifications'
+import { Route as ProtectedOrganizationInvitationsRouteImport } from './routes/_protected/organization-invitations'
 import { Route as ProtectedPlanRouteImport } from './routes/_protected/plan'
 import { Route as ProtectedRecordRouteImport } from './routes/_protected/record'
 import { Route as ProtectedSearchRouteImport } from './routes/_protected/search'
@@ -139,6 +140,12 @@ const ProtectedNotificationsRoute = ProtectedNotificationsRouteImport.update({
   path: '/notifications',
   getParentRoute: () => ProtectedRoute,
 } as any)
+const ProtectedOrganizationInvitationsRoute =
+  ProtectedOrganizationInvitationsRouteImport.update({
+    id: '/organization-invitations',
+    path: '/organization-invitations',
+    getParentRoute: () => ProtectedRoute,
+  } as any)
 const ProtectedPlanRoute = ProtectedPlanRouteImport.update({
   id: '/plan',
   path: '/plan',
@@ -576,6 +583,7 @@ export interface FileRoutesByFullPath {
   '/integrations': typeof ProtectedIntegrationsRoute
   '/messages': typeof ProtectedMessagesRoute
   '/notifications': typeof ProtectedNotificationsRoute
+  '/organization-invitations': typeof ProtectedOrganizationInvitationsRoute
   '/plan': typeof ProtectedPlanRoute
   '/record': typeof ProtectedRecordRouteWithChildren
   '/search': typeof ProtectedSearchRoute
@@ -660,6 +668,7 @@ export interface FileRoutesByTo {
   '/integrations': typeof ProtectedIntegrationsRoute
   '/messages': typeof ProtectedMessagesRoute
   '/notifications': typeof ProtectedNotificationsRoute
+  '/organization-invitations': typeof ProtectedOrganizationInvitationsRoute
   '/plan': typeof ProtectedPlanRoute
   '/search': typeof ProtectedSearchRoute
   '/settings': typeof ProtectedSettingsRoute
@@ -746,6 +755,7 @@ export interface FileRoutesById {
   '/_protected/integrations': typeof ProtectedIntegrationsRoute
   '/_protected/messages': typeof ProtectedMessagesRoute
   '/_protected/notifications': typeof ProtectedNotificationsRoute
+  '/_protected/organization-invitations': typeof ProtectedOrganizationInvitationsRoute
   '/_protected/plan': typeof ProtectedPlanRoute
   '/_protected/record': typeof ProtectedRecordRouteWithChildren
   '/_protected/search': typeof ProtectedSearchRoute
@@ -835,6 +845,7 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/messages'
     | '/notifications'
+    | '/organization-invitations'
     | '/plan'
     | '/record'
     | '/search'
@@ -919,6 +930,7 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/messages'
     | '/notifications'
+    | '/organization-invitations'
     | '/plan'
     | '/search'
     | '/settings'
@@ -1004,6 +1016,7 @@ export interface FileRouteTypes {
     | '/_protected/integrations'
     | '/_protected/messages'
     | '/_protected/notifications'
+    | '/_protected/organization-invitations'
     | '/_protected/plan'
     | '/_protected/record'
     | '/_protected/search'
@@ -1179,6 +1192,13 @@ declare module '@tanstack/react-router' {
       path: '/notifications'
       fullPath: '/notifications'
       preLoaderRoute: typeof ProtectedNotificationsRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/organization-invitations': {
+      id: '/_protected/organization-invitations'
+      path: '/organization-invitations'
+      fullPath: '/organization-invitations'
+      preLoaderRoute: typeof ProtectedOrganizationInvitationsRouteImport
       parentRoute: typeof ProtectedRoute
     }
     '/_protected/plan': {
@@ -1832,6 +1852,7 @@ interface ProtectedRouteChildren {
   ProtectedIntegrationsRoute: typeof ProtectedIntegrationsRoute
   ProtectedMessagesRoute: typeof ProtectedMessagesRoute
   ProtectedNotificationsRoute: typeof ProtectedNotificationsRoute
+  ProtectedOrganizationInvitationsRoute: typeof ProtectedOrganizationInvitationsRoute
   ProtectedPlanRoute: typeof ProtectedPlanRoute
   ProtectedRecordRoute: typeof ProtectedRecordRouteWithChildren
   ProtectedSearchRoute: typeof ProtectedSearchRoute
@@ -1870,6 +1891,7 @@ const ProtectedRouteChildren: ProtectedRouteChildren = {
   ProtectedIntegrationsRoute: ProtectedIntegrationsRoute,
   ProtectedMessagesRoute: ProtectedMessagesRoute,
   ProtectedNotificationsRoute: ProtectedNotificationsRoute,
+  ProtectedOrganizationInvitationsRoute: ProtectedOrganizationInvitationsRoute,
   ProtectedPlanRoute: ProtectedPlanRoute,
   ProtectedRecordRoute: ProtectedRecordRouteWithChildren,
   ProtectedSearchRoute: ProtectedSearchRoute,
