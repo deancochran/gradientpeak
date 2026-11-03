@@ -1,9 +1,30 @@
+import { accounts } from "@repo/db/schema";
+import { eq } from "drizzle-orm";
 import { expect, test } from "../fixtures";
+import { withLocalE2EDatabase } from "../support/database";
 
 test("[P0] ordinary email sign-in survives reload and sign-out ends the session", async ({
   athleteActor,
   page,
 }) => {
+  await withLocalE2EDatabase(async (database) => {
+    const actor = await database.requireActorByEmail(athleteActor.email);
+    const rows = await database.db
+      .select({
+        issuer: accounts.issuer,
+        providerId: accounts.providerId,
+        accountId: accounts.accountId,
+      })
+      .from(accounts)
+      .where(eq(accounts.userId, actor.profileId));
+    expect(rows).toEqual([{ issuer: null, providerId: "credential", accountId: actor.profileId }]);
+    // This test owns this synthetic actor. Prove retained legacy issuer values
+    // do not prevent the new adapter from signing in an existing account.
+    await database.db
+      .update(accounts)
+      .set({ issuer: "https://legacy.example.test" })
+      .where(eq(accounts.userId, actor.profileId));
+  });
   await page.goto("/auth/login?redirect=%2Fsettings");
   await page.getByLabel(/^email/i).fill(athleteActor.email);
   await page.getByLabel(/^password/i).fill(athleteActor.password);
