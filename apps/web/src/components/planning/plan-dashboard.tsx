@@ -49,7 +49,7 @@ export function PlanDashboard() {
       startDate: today,
       endDate: shiftDateKey(today, 89),
     },
-    { enabled: profileQuery.data !== undefined },
+    { enabled: Boolean(profileQuery.data) },
   );
   const trainingPlansQuery = api.trainingPlans.list.useQuery({ ownerScope: "own", limit: 6 });
   const upcomingEventsQuery = api.calendar.range.useQuery({
@@ -75,7 +75,11 @@ export function PlanDashboard() {
     [upcomingEventsQuery.data?.items],
   );
   const nextGoal = goalsQuery.data?.items[0] ?? null;
-  const planningUnavailable = profileQuery.isError || !profileQuery.data;
+  const profileUnavailable = profileQuery.isError || (profileQuery.isSuccess && !profileQuery.data);
+  const profileLoading = profileQuery.isLoading;
+  const trainingPathLoading = profileLoading || planTabQuery.isLoading;
+  const trainingPathUnavailable =
+    profileUnavailable || (planTabQuery.isError && !planTabQuery.data);
 
   return (
     <>
@@ -97,10 +101,16 @@ export function PlanDashboard() {
         </div>
       ) : null}
       <TrainingLoadPath
-        isError={planTabQuery.isError}
-        isLoading={planTabQuery.isLoading}
-        onRetry={() => void planTabQuery.refetch()}
+        errorMessage={
+          profileUnavailable
+            ? "Training path is unavailable because your planning profile could not be loaded."
+            : undefined
+        }
+        isError={trainingPathUnavailable}
+        isLoading={trainingPathLoading}
+        onRetry={() => void (profileUnavailable ? profileQuery.refetch() : planTabQuery.refetch())}
         projection={planTabQuery.data}
+        retryLabel={profileUnavailable ? "Retry planning profile" : undefined}
       />
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
         <Card>
@@ -124,7 +134,9 @@ export function PlanDashboard() {
                   </Badge>
                 </div>
               </>
-            ) : planningUnavailable || (planTabQuery.isError && !planTabQuery.data) ? (
+            ) : profileLoading || planTabQuery.isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading active plan...</p>
+            ) : profileUnavailable || (planTabQuery.isError && !planTabQuery.data) ? (
               <p className="text-sm text-muted-foreground">Active plan is unavailable.</p>
             ) : (
               <p className="text-sm text-muted-foreground">
@@ -140,7 +152,7 @@ export function PlanDashboard() {
           <CardContent className="space-y-3">
             {profileQuery.isLoading || goalsQuery.isLoading ? (
               <p className="text-sm text-muted-foreground">Loading goals...</p>
-            ) : planningUnavailable || (goalsQuery.isError && !goalsQuery.data) ? (
+            ) : profileUnavailable || (goalsQuery.isError && !goalsQuery.data) ? (
               <p className="text-sm text-muted-foreground">Goal anchors are unavailable.</p>
             ) : nextGoal ? (
               <>
@@ -240,7 +252,7 @@ export function PlanDashboard() {
           <CardContent>
             {profileQuery.isLoading || goalsQuery.isLoading ? (
               <p className="text-sm text-muted-foreground">Loading goals...</p>
-            ) : planningUnavailable || (goalsQuery.isError && !goalsQuery.data) ? (
+            ) : profileUnavailable || (goalsQuery.isError && !goalsQuery.data) ? (
               <p className="text-sm text-muted-foreground">Goals are unavailable.</p>
             ) : nextGoal ? (
               <div className="space-y-3">
