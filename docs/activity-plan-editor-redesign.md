@@ -1,5 +1,38 @@
 # Activity plan editor redesign
 
+## Current correction: rendered iPhone rows and running cadence
+
+The latest physical-iPhone screenshots reject the rendered compactness claim:
+SwiftUI selected labels hyphenate/wrap into multiple lines, target remove actions
+fall below the value with inconsistent contrast, and metadata inputs have unequal
+label columns and oversized grey surfaces. Running cadence incorrectly says rpm.
+User explicitly requested implementation and immediate preview update.
+
+Acceptance: short readable selected labels with full picker descriptions; aligned
+type/value/remove rows with accessible touch targets; consistent directly editable
+metadata; Run cadence spm (steps/minute), cycling rpm across selector/value/editor
+and web parity. Preserve existing numeric values without conversion, required
+targets, Rest/Time restrictions, legacy repair and stale-callback guards. Inspect
+new cadence defaults without narrowing shared save ranges. Scope styling locally;
+do not overwrite separately owned global theme work. Focused native/shared/web
+checks and exact served-bundle evidence permit preview feedback, not a claim of
+rendered iPhone visual acceptance. Coordinator owns locked preview integration.
+
+The previously recorded retained-E2E publication prerequisite was independently
+repaired (coordination shared-preview record); do not reset or migrate that target
+as part of this UI correction. Normal publication must be retried after the useful
+preview checkpoint, without delaying preview on unrelated release gates.
+
+Implemented: shared selected-label support and existing native choice overlays
+for target types/distance units, bounded same-row target controls/removal, aligned
+metadata labels with scoped card inputs, shared themed remove icons, no redundant
+pace helper, run cadence spm/new-choice160 versus cycling rpm/80. Existing saved
+cadence remains unchanged; no schema/range conversion. Coordinator verification:
+61 mobile editor tests,25 shared picker tests,43 web activity-plan tests,11 Core
+target tests, mobile types and exact-optional UI types passed. Overlay regression
+still proves stale removed-target callbacks cannot edit a replacement target.
+Actual physical-iPhone layout remains unverified until refreshed-device feedback.
+
 Latest screenshot correction implementation: mobile/web guard Rest/non-Time
 transitions at selection, track selected Time separately from unfinished numeric
 values, and preserve legacy mismatch repair. Compact distance type/value/unit

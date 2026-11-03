@@ -21,6 +21,7 @@ import { getPermissibleActivityPlanDurationTypes } from "@repo/core/activity-pla
 import {
   activityTargetAuthoringUnitLabels,
   activityTargetDefinitionByType,
+  getActivityTargetCadenceUnitLabel,
   getPermissibleTargetTypes,
 } from "@repo/core/targets";
 import { parseNumericInput } from "@repo/core/utils/numeric-ux-policy";
@@ -161,6 +162,18 @@ function targetError(type: ActivityTargetType, raw: string) {
   return type === "RPE" && !Number.isInteger(result.value * 2)
     ? "RPE must use whole or half-point increments."
     : null;
+}
+
+function targetTypeLabel(type: ActivityTargetType, category: CanonicalActivityCategory | null) {
+  if (type === "cadence")
+    return `Cadence · ${getActivityTargetCadenceUnitLabel(category ?? "bike")}`;
+  if (type === "%ThresholdHR") return "Heart rate · Threshold HR %";
+  if (type === "%MaxHR") return "Heart rate · Max HR %";
+  if (type === "%FTP") return "Power · FTP %";
+  if (type === "watts") return "Power · watts";
+  if (type === "bpm") return "Heart rate · bpm";
+  if (type === "speed") return category === "run" ? "Pace" : "Speed · km/h";
+  return type;
 }
 
 /** Local draft state is permissive; only Core's resolver yields the strict saved V5 structure. */
@@ -1060,7 +1073,11 @@ function StepEditor({
     ...(currentType === "rest" && !selectableTargets.includes("rest")
       ? [{ value: "rest" as const, label: "rest (available for timed steps)", disabled: true }]
       : []),
-    ...selectableTargets.map((type) => ({ value: type, label: type, disabled: false })),
+    ...selectableTargets.map((type) => ({
+      value: type,
+      label: targetTypeLabel(type, category),
+      disabled: false,
+    })),
   ];
   const durationUnavailable =
     selectedDurationType !== "" &&
@@ -1261,7 +1278,9 @@ function StepEditor({
               )}
               {target.type === "rest" ? null : (
                 <span className="text-sm text-muted-foreground">
-                  {activityTargetAuthoringUnitLabels[definition.unit]}
+                  {target.type === "cadence"
+                    ? getActivityTargetCadenceUnitLabel(category ?? "bike")
+                    : activityTargetAuthoringUnitLabels[definition.unit]}
                 </span>
               )}
               <Button

@@ -10,6 +10,7 @@ import {
   activityTargetDefinitionByType,
   activityTargetUnitLabels,
   getActivityPlanTargetTypeDefault,
+  getActivityTargetCadenceUnitLabel,
   getPermissibleTargetTypes,
   isTargetTypePermittedForActivity,
   kilometersPerHourToPaceSeconds,
@@ -21,6 +22,7 @@ import {
 import { Button } from "@repo/ui/components/button";
 import { ChoiceField } from "@repo/ui/components/choice-field";
 import { Form } from "@repo/ui/components/form";
+import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { NativeQuantityInput } from "@repo/ui/components/native-quantity-input";
 import { PaceInput } from "@repo/ui/components/pace-input";
@@ -65,7 +67,7 @@ const targetTypeLabel: Record<ActivityPlanDraftTarget["type"], string> = {
   "%MaxHR": "Heart rate · Max HR %",
   "%ThresholdHR": "Heart rate · Threshold HR %",
   speed: "Speed · km/h",
-  cadence: "Cadence · rpm",
+  cadence: "Cadence",
   RPE: "RPE",
   rest: "Rest",
 };
@@ -74,7 +76,20 @@ function targetTypePresentationLabel(
   type: ActivityPlanDraftTarget["type"],
   activityCategory: ActivityTargetCategory,
 ): string {
-  return type === "speed" && activityCategory === "run" ? "Pace" : targetTypeLabel[type];
+  if (type === "speed" && activityCategory === "run") return "Pace";
+  if (type === "cadence") return `Cadence · ${getActivityTargetCadenceUnitLabel(activityCategory)}`;
+  return targetTypeLabel[type];
+}
+
+function targetTypeSelectedLabel(
+  type: ActivityPlanDraftTarget["type"],
+  activityCategory: ActivityTargetCategory,
+): string {
+  if (type === "%ThresholdHR") return "Threshold HR";
+  if (type === "%MaxHR") return "Max HR";
+  if (type === "%FTP") return "FTP";
+  if (type === "cadence") return "Cadence";
+  return targetTypePresentationLabel(type, activityCategory);
 }
 
 const normalizeOptionalText = (value: string | undefined) => value?.trim() || undefined;
@@ -155,6 +170,7 @@ export function StepEditorFields({
     ...selectableTargetTypes.map((type) => ({
       value: type,
       label: targetTypePresentationLabel(type, activityCategory),
+      selectedLabel: targetTypeSelectedLabel(type, activityCategory),
     })),
   ];
   const maximumTargets = duration?.type === "repetitions" ? 1 : 3;
@@ -188,7 +204,9 @@ export function StepEditorFields({
       return;
     }
     const replacement =
-      next === "rest" ? { type: "rest" as const } : getActivityPlanTargetTypeDefault(next);
+      next === "rest"
+        ? { type: "rest" as const }
+        : getActivityPlanTargetTypeDefault(next, activityCategory);
     if (next === "rest") {
       form.setValue("targets", [replacement], { shouldDirty: true, shouldValidate: true });
       // Keep the author's chosen duration visible. Rest requires time at validation,
@@ -221,7 +239,11 @@ export function StepEditorFields({
       (type) => !targets.some((target) => target.type === type),
     );
     if (!available) return;
-    append(available === "rest" ? { type: "rest" } : getActivityPlanTargetTypeDefault(available));
+    append(
+      available === "rest"
+        ? { type: "rest" }
+        : getActivityPlanTargetTypeDefault(available, activityCategory),
+    );
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
   };
   const validate = () => {
@@ -328,15 +350,16 @@ export function StepEditorFields({
     <View className="gap-4" testID="step-editor-fields">
       <Form {...form}>
         <View className="gap-2 border-b border-border pb-3" testID="step-details-section">
-          <View className="flex-row flex-wrap items-center gap-2">
-            <Text className="text-sm">Name (optional)</Text>
+          <View className="flex-row items-center gap-3">
+            <Text className="w-32 shrink-0 text-sm">Name (optional)</Text>
             <Controller
               control={form.control}
               name="name"
               render={({ field }) => (
                 <Input
                   accessibilityLabel="Name (optional)"
-                  className="min-w-[160px] flex-1"
+                  className="flex-1 rounded-lg bg-card dark:bg-card"
+                  style={{ minHeight: 44 }}
                   onBlur={field.onBlur}
                   onChangeText={field.onChange}
                   value={field.value}
@@ -344,15 +367,16 @@ export function StepEditorFields({
               )}
             />
           </View>
-          <View className="flex-row flex-wrap items-center gap-2" testID="step-notes-section">
-            <Text className="text-sm">Coaching cue (optional)</Text>
+          <View className="flex-row items-center gap-3" testID="step-notes-section">
+            <Text className="w-32 shrink-0 text-sm">Coaching cue (optional)</Text>
             <Controller
               control={form.control}
               name="instructions"
               render={({ field }) => (
                 <Input
                   accessibilityLabel="Coaching cue (optional)"
-                  className="min-w-[160px] flex-1"
+                  className="flex-1 rounded-lg bg-card dark:bg-card"
+                  style={{ minHeight: 44 }}
                   onBlur={field.onBlur}
                   onChangeText={field.onChange}
                   testID="step-notes-input"
@@ -383,17 +407,14 @@ export function StepEditorFields({
           if (target.type === "rest") {
             return (
               <View key={targetField.id} testID={`target-row-${index}`} className="gap-2 py-2">
-                <View
-                  className="flex-row flex-wrap items-center gap-3"
-                  testID={`target-controls-${index}`}
-                >
-                  <View className="min-w-[132px] flex-1">
+                <View className="flex-row items-center gap-2" testID={`target-controls-${index}`}>
+                  <View className="w-[132px] shrink-0">
                     <ChoiceField
                       density="compact"
                       required
                       label={targetFields.length === 1 ? "Target type" : `Target ${index + 1} type`}
                       hideVisibleLabel
-                      nativePresentation="menu"
+                      nativePresentation="searchable"
                       retainDisabledValue
                       value="rest"
                       options={targetTypeOptions("rest")}
@@ -407,7 +428,7 @@ export function StepEditorFields({
                     accessibilityLabel={`Remove target ${index + 1}`}
                     onPress={() => removeTarget(index)}
                   >
-                    <X size={18} />
+                    <Icon as={X} size={18} className="text-foreground" />
                   </Button>
                 </View>
               </View>
@@ -421,29 +442,28 @@ export function StepEditorFields({
           const key = `target-${targetField.id}`;
           return (
             <View key={targetField.id} testID={`target-row-${index}`} className="gap-2 py-2">
-              <View
-                className="flex-row flex-wrap items-center gap-3"
-                testID={`target-controls-${index}`}
-              >
-                <View className="min-w-[132px] flex-1">
+              <View className="flex-row items-center gap-2" testID={`target-controls-${index}`}>
+                <View className="w-[132px] shrink-0">
                   <ChoiceField
                     density="compact"
                     required
                     label={targetFields.length === 1 ? "Target type" : `Target ${index + 1} type`}
                     hideVisibleLabel
-                    nativePresentation="menu"
+                    nativePresentation="searchable"
                     value={target.type}
                     options={targetTypeOptions(target.type)}
                     onChange={(value) => changeTargetType(index, value)}
                   />
                 </View>
-                <View className="min-w-[120px] flex-1">
+                <View className="min-w-[96px] flex-1">
                   <Controller
                     control={form.control}
                     name={`targets.${index}.intensity` as never}
                     render={({ field }) =>
                       target.type === "RPE" ? (
                         <ChoiceField
+                          density="compact"
+                          hideVisibleLabel
                           label={
                             targetFields.length === 1
                               ? "Target value"
@@ -482,7 +502,6 @@ export function StepEditorFields({
                             required
                             unitLabel="/km"
                             value={paceTextForSpeed(field.value) ?? ""}
-                            helperText="Enter minutes and seconds per kilometer."
                             onChange={(value) => {
                               try {
                                 setExactEntryValidity(key, parsePace(value) <= 0);
@@ -530,7 +549,11 @@ export function StepEditorFields({
                           label={
                             targetFields.length === 1 ? "Target value" : `Target ${index + 1} value`
                           }
-                          unitLabel={activityTargetUnitLabels[target.type]}
+                          unitLabel={
+                            target.type === "cadence"
+                              ? getActivityTargetCadenceUnitLabel(activityCategory)
+                              : activityTargetUnitLabels[target.type]
+                          }
                           triggerVariant="value"
                           min={minimum}
                           max={target.type === "%MaxHR" ? 100 : definition.saveableMaximum}
@@ -554,8 +577,6 @@ export function StepEditorFields({
                     }
                   />
                 </View>
-              </View>
-              <View className="items-end">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -563,7 +584,7 @@ export function StepEditorFields({
                   accessibilityLabel={`Remove target ${index + 1}`}
                   onPress={() => removeTarget(index)}
                 >
-                  <X size={18} />
+                  <Icon as={X} size={18} className="text-foreground" />
                 </Button>
               </View>
             </View>

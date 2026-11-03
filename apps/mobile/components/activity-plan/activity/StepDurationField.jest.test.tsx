@@ -196,17 +196,21 @@ describe("StepDurationField compact rows", () => {
     await fireEvent(screen.getByLabelText("Duration value units"), "valueChange", 0);
     expect(screen.getByLabelText("Duration value").props.accessibilityValue.text).toBe("0");
     expect(screen.getByText("Correct the completion value before saving.")).toBeTruthy();
-    await fireEvent(screen.getByLabelText("Distance unit"), "valueChange", "meters");
-    expect(screen.getByLabelText("Distance unit: Kilometers")).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Distance unit"));
+    await fireEvent(screen.getByTestId("Distance unit-picker"), "valueChange", "meters");
+    expect(screen.getByLabelText("Distance unit").props.accessibilityValue.text).toBe("km");
     expect(screen.getByLabelText("Duration value").props.accessibilityValue.text).toBe("0");
 
+    // Opening another native choice invalidates the old quantity callback; reopen it before editing.
+    await fireEvent.press(screen.getByLabelText("Duration value"));
     await fireEvent(screen.getByLabelText("Duration value units"), "valueChange", 1);
     expect(setValue).toHaveBeenLastCalledWith(
       "duration",
       { type: "distance", meters: 1000 },
       { shouldDirty: true, shouldValidate: true },
     );
-    await fireEvent(screen.getByLabelText("Distance unit"), "valueChange", "meters");
+    await fireEvent.press(screen.getByLabelText("Distance unit"));
+    await fireEvent(screen.getByTestId("Distance unit-picker"), "valueChange", "meters");
     expect(screen.getByLabelText("Duration value").props.accessibilityValue.text).toBe("1000");
   });
 

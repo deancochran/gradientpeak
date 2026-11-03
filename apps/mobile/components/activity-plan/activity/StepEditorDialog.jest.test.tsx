@@ -28,6 +28,15 @@ const step: ActivityPlanStep = {
   targets: [{ type: "RPE", intensity: 4 }],
 };
 
+async function chooseTargetType(label: string, value: string) {
+  await fireEvent.press(screen.getByLabelText(label));
+  await fireEvent(screen.getByTestId(`${label}-picker`), "valueChange", value);
+}
+
+function targetTypeValue(label: string) {
+  return screen.getByLabelText(label).props.accessibilityValue.text;
+}
+
 describe("StepEditorDialog", () => {
   it("uses one keyboard-aware page-sheet transaction with all applicable form inputs visible", async () => {
     await renderNative(
@@ -44,7 +53,7 @@ describe("StepEditorDialog", () => {
     expect(screen.getByLabelText("Coaching cue (optional)")).toBeTruthy();
     expect(screen.getByLabelText("Duration type: Time")).toBeTruthy();
     expect(screen.getByLabelText("Duration value")).toBeTruthy();
-    expect(screen.getByLabelText("Target type: RPE")).toBeTruthy();
+    expect(targetTypeValue("Target type")).toBe("RPE");
     expect(screen.getByLabelText("Target value")).toBeTruthy();
     expect(screen.queryByText("Hide instructions")).toBeNull();
     expect(screen.queryByText("Change target type")).toBeNull();
@@ -61,8 +70,8 @@ describe("StepEditorDialog", () => {
         step={step}
       />,
     );
-    await fireEvent(screen.getByLabelText("Target type"), "valueChange", "bpm");
-    expect(screen.getByLabelText("Target type: Heart rate · bpm")).toBeTruthy();
+    await chooseTargetType("Target type", "bpm");
+    expect(targetTypeValue("Target type")).toBe("Heart rate · bpm");
     expect(screen.getByLabelText("Target value")).toBeTruthy();
     expect(screen.queryByTestId("step-picker-modal")).toBeNull();
   });
@@ -78,7 +87,7 @@ describe("StepEditorDialog", () => {
         step={{ ...step, targets: [{ type: "speed", intensity: 10 }] }}
       />,
     );
-    expect(screen.getByLabelText("Target type: Pace")).toBeTruthy();
+    expect(targetTypeValue("Target type")).toBe("Pace");
     expect(screen.getByLabelText("Target pace").props.accessibilityValue.text).toBe("6:00 /km");
     expect(screen.queryByLabelText("Target pace minutes")).toBeNull();
     await fireEvent.press(screen.getByLabelText("Target pace"));
@@ -131,9 +140,9 @@ describe("StepEditorDialog", () => {
         step={{ ...step, targets: [{ type: "speed", intensity: 25 }] }}
       />,
     );
-    expect(screen.getByLabelText("Target type: Speed · km/h")).toBeTruthy();
-    await fireEvent(screen.getByLabelText("Target type"), "valueChange", "bpm");
-    expect(screen.getByLabelText("Target type: Heart rate · bpm")).toBeTruthy();
+    expect(targetTypeValue("Target type")).toBe("Speed · km/h");
+    await chooseTargetType("Target type", "bpm");
+    expect(targetTypeValue("Target type")).toBe("Heart rate · bpm");
     expect(screen.getByLabelText("Target value").props.accessibilityValue.text).toBe("120");
   });
 
@@ -149,7 +158,7 @@ describe("StepEditorDialog", () => {
     );
     await fireEvent.press(screen.getByLabelText("Add target"));
     expect(screen.getAllByTestId(/target-row-/)).toHaveLength(2);
-    expect(screen.getByLabelText("Target 2 type: Pace")).toBeTruthy();
+    expect(targetTypeValue("Target 2 type")).toBe("Pace");
     await fireEvent.press(screen.getByLabelText("Remove target 2"));
     expect(screen.getAllByTestId(/target-row-/)).toHaveLength(1);
   });
@@ -165,11 +174,12 @@ describe("StepEditorDialog", () => {
       />,
     );
     await fireEvent.press(screen.getByLabelText("Add target"));
-    const stale = screen.getByLabelText("Target 2 type").props.onValueChange;
+    await fireEvent.press(screen.getByLabelText("Target 2 type"));
+    const stale = screen.getByTestId("Target 2 type-picker").props.onValueChange;
     await fireEvent.press(screen.getByLabelText("Remove target 2"));
     await fireEvent.press(screen.getByLabelText("Add target"));
     stale("bpm");
-    expect(screen.getByLabelText("Target 2 type: Pace")).toBeTruthy();
+    expect(targetTypeValue("Target 2 type")).toBe("Pace");
   });
 
   it.each([

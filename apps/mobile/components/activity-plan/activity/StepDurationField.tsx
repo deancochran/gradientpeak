@@ -180,8 +180,8 @@ export function StepDurationField({
           supported completion type; the existing value is retained.
         </Text>
       ) : null}
-      <View className="flex-row flex-wrap items-end gap-2" testID="completion-type-row">
-        <View className="min-w-[104px] flex-1">
+      <View className="flex-row items-center gap-2" testID="completion-type-row">
+        <View className="w-[112px] shrink-0">
           <ChoiceField
             density="compact"
             required={false}
@@ -318,16 +318,16 @@ export function StepDurationField({
                 }}
               />
             </View>
-            <View className="min-w-[76px] flex-1">
+            <View className="w-[72px] shrink-0">
               <ChoiceField
                 density="compact"
                 label="Distance unit"
                 hideVisibleLabel
-                nativePresentation="menu"
+                nativePresentation="searchable"
                 value={unit === "km" ? "km" : "meters"}
                 options={[
-                  { label: "Kilometers", value: "km" },
-                  { label: "Meters", value: "meters" },
+                  { label: "Kilometers", selectedLabel: "km", value: "km" },
+                  { label: "Meters", selectedLabel: "m", value: "meters" },
                 ]}
                 disabled={!active}
                 onChange={setUnit}

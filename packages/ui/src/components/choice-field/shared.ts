@@ -6,6 +6,8 @@ export type NativeChoicePresentation = "automatic" | "segmented" | "menu" | "sea
 export interface ChoiceOption<T extends ChoiceValue> {
   value: T;
   label: string;
+  /** Compact trigger copy; the full label remains available in the native choice list. */
+  selectedLabel?: string | undefined;
   description?: string | undefined;
   disabled?: boolean | undefined;
 }

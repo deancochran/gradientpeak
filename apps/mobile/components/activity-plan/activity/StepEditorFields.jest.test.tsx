@@ -119,7 +119,7 @@ describe("StepEditorFields screen form", () => {
       .map((child) => child.props.value);
     expect(values).not.toContain("rest");
     await fireEvent(picker, "valueChange", "rest");
-    expect(screen.getByLabelText("Target type: RPE")).toBeTruthy();
+    expect(screen.getAllByLabelText("Target type")[0]?.props.accessibilityValue.text).toBe("RPE");
   });
   it("keeps a legacy rest mismatch repairable and unlocks duration choices after changing rest", async () => {
     await renderNative(
@@ -137,7 +137,9 @@ describe("StepEditorFields screen form", () => {
         .some((node) => node.props.accessibilityValue?.text === "Rest"),
     ).toBe(true);
     await fireEvent(screen.getByTestId("Target type-picker"), "valueChange", "bpm");
-    expect(screen.getByLabelText("Target type: Heart rate · bpm")).toBeTruthy();
+    expect(screen.getByLabelText("Target type").props.accessibilityValue.text).toBe(
+      "Heart rate · bpm",
+    );
     await fireEvent.press(screen.getByLabelText("Duration type"));
     const picker = screen.getByTestId("Duration type-picker");
     const options = Children.toArray(picker.props.children)
@@ -175,9 +177,7 @@ describe("StepEditorFields screen form", () => {
     );
     expect(screen.getByLabelText("Target 1 value").props.accessibilityValue.text).toBe("250");
     expect(screen.getByText("250 watts")).toBeTruthy();
-    expect(screen.getByLabelText("Target 2 type").props.accessibilityValue.text).toBe(
-      "Cadence · rpm",
-    );
+    expect(screen.getByLabelText("Target 2 type").props.accessibilityValue.text).toBe("Cadence");
     expect(screen.getByLabelText("Target 2 value")).toBeTruthy();
     expect(screen.getByText("90 rpm")).toBeTruthy();
     expect(
@@ -222,7 +222,32 @@ describe("StepEditorFields screen form", () => {
     expect(screen.getByLabelText("Name (optional)").props.value).toBe("Warm up");
     expect(screen.getByLabelText("Coaching cue (optional)").props.value).toBe("Easy cadence.");
     expect(screen.getByTestId("target-controls-0").props.className).toContain("flex-row");
+    expect(screen.getByTestId("target-controls-0").props.className).not.toContain("flex-wrap");
     expect(screen.getByLabelText("Remove target 1").props.className).toContain("min-h-11");
+  });
+
+  it("uses spm and a new-only running cadence default without changing saved values", async () => {
+    await renderNative(
+      <StepEditorFields
+        activityCategory="run"
+        onDirtyChange={() => undefined}
+        step={{ ...step, targets: [{ type: "RPE", intensity: 5 }] }}
+      />,
+    );
+    await fireEvent.press(screen.getByLabelText("Target type"));
+    await fireEvent(screen.getByTestId("Target type-picker"), "valueChange", "cadence");
+    expect(screen.getByText("160 spm")).toBeTruthy();
+  });
+
+  it("renders persisted running cadence values in spm without converting them", async () => {
+    await renderNative(
+      <StepEditorFields
+        activityCategory="run"
+        onDirtyChange={() => undefined}
+        step={{ ...step, targets: [{ type: "cadence", intensity: 80 }] }}
+      />,
+    );
+    expect(screen.getByText("80 spm")).toBeTruthy();
   });
 
   it("keeps empty optional details directly editable", async () => {
@@ -295,7 +320,7 @@ describe("StepEditorFields screen form", () => {
         }}
       />,
     );
-    expect(screen.getByLabelText("Target type: RPE")).toBeTruthy();
+    expect(screen.getByLabelText("Target type").props.accessibilityValue.text).toBe("RPE");
     expect(screen.queryByLabelText("Add target")).toBeNull();
   });
 

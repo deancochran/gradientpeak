@@ -66,7 +66,7 @@ export function useChoiceField<T extends ChoiceValue>(
     error: props.error ?? message,
     display:
       result.status === "valid"
-        ? result.option.label
+        ? (result.option.selectedLabel ?? result.option.label)
         : result.status === "invalid"
           ? `${result.label} (unavailable)`
           : (props.placeholder ?? "Choose…"),
