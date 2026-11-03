@@ -98,7 +98,14 @@ function CalendarIndexPage() {
   const projectionItems = useMemo(() => {
     return [...(eventsQuery.data?.items ?? [])].sort(compareCalendarProjectionItems);
   }, [eventsQuery.data?.items]);
-  const plannedSessions = projectionItems.flatMap((item) =>
+  const visibleProjectionItems = useMemo(
+    () =>
+      view === "week"
+        ? projectionItems
+        : projectionItems.filter((item) => item.calendarDate.startsWith(month)),
+    [month, projectionItems, view],
+  );
+  const plannedSessions = visibleProjectionItems.flatMap((item) =>
     item.plannedSession ? [{ session: item.plannedSession, title: item.title }] : [],
   );
   const weekComparison = useMemo(
@@ -265,6 +272,10 @@ function CalendarIndexPage() {
                 </div>
               ))}
             </div>
+          ) : eventsQuery.isError && !eventsQuery.data ? (
+            <p className="text-sm text-muted-foreground">
+              Personal planned sessions are unavailable until the calendar can be loaded.
+            </p>
           ) : (
             <p className="text-sm text-muted-foreground">
               No personal planned sessions in this period.
@@ -405,12 +416,16 @@ function CalendarIndexPage() {
             <CardContent>
               {eventsQuery.isLoading ? (
                 <p className="text-sm text-muted-foreground">Loading agenda...</p>
-              ) : projectionItems.length > 0 ? (
+              ) : visibleProjectionItems.length > 0 ? (
                 <div className="space-y-3">
-                  {projectionItems.map((item) => (
+                  {visibleProjectionItems.map((item) => (
                     <CalendarProjectionCard item={item} key={`${item.kind}-${item.id}`} />
                   ))}
                 </div>
+              ) : eventsQuery.isError && !eventsQuery.data ? (
+                <p className="text-sm text-muted-foreground">
+                  The agenda is unavailable until the calendar can be loaded.
+                </p>
               ) : (
                 <p className="text-sm text-muted-foreground">No events scheduled this month.</p>
               )}

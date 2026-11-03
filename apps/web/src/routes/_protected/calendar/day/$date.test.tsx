@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   summaryRefetch: vi.fn(),
   summaryInputs: [] as Array<Record<string, unknown>>,
   linkClick: vi.fn(),
+  linkProps: [] as Array<Record<string, unknown>>,
   routeDate: "2026-07-27",
 }));
 
@@ -101,22 +102,27 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({
     children,
     params,
+    search,
     to,
   }: {
     children: React.ReactNode;
     params?: { eventId?: string };
+    search?: Record<string, unknown>;
     to: string;
-  }) => (
-    <a
-      href={params?.eventId ? `/calendar/events/${params.eventId}` : to}
-      onClick={(event) => {
-        event.preventDefault();
-        mocks.linkClick();
-      }}
-    >
-      {children}
-    </a>
-  ),
+  }) => {
+    mocks.linkProps.push({ params, search, to });
+    return (
+      <a
+        href={params?.eventId ? `/calendar/events/${params.eventId}` : to}
+        onClick={(event) => {
+          event.preventDefault();
+          mocks.linkClick();
+        }}
+      >
+        {children}
+      </a>
+    );
+  },
 }));
 
 vi.mock("../../../../lib/api/client", () => ({
@@ -206,6 +212,7 @@ beforeEach(() => {
   mocks.summaryError = false;
   mocks.summaryLoading = false;
   mocks.summaryInputs = [];
+  mocks.linkProps = [];
   mocks.routeDate = "2026-07-27";
   vi.clearAllMocks();
 });
@@ -340,5 +347,22 @@ describe("CalendarDayPage", () => {
 
     expect(() => beforeLoad({ params: { date: mocks.routeDate } })).toThrow("not found");
     expect(mocks.summaryInputs).toEqual([]);
+  });
+
+  it("moves the calendar month context with day navigation across a month boundary", () => {
+    mocks.routeDate = "2026-07-31";
+
+    render(<CalendarDayPage />);
+
+    expect(mocks.linkProps).toContainEqual({
+      params: { date: "2026-08-01" },
+      search: { month: "2026-08", view: "month" },
+      to: "/calendar/day/$date",
+    });
+    expect(mocks.linkProps).toContainEqual({
+      params: undefined,
+      search: { date: "2026-07-31", month: "2026-07", view: "month" },
+      to: "/calendar/new",
+    });
   });
 });
