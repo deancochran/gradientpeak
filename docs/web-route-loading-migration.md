@@ -43,14 +43,20 @@ acceptance. Compare task changes against that checkpoint, not the legacy main tr
   use one-minute buckets, intentionally allowing at most 60 seconds of overlap.
 - Dynamic backend hrefs use AppHrefLink to split pathname/search/hash; external
   URLs and fragment links retain native behavior.
-- Verification: production builds and client boundary scans passed at earlier
-  checkpoints; authenticated disposable SSR/hydration test passed. Expanded
-  browser navigation, final full suite/types and independent review in progress.
+- Verification: web typecheck passed; full web Vitest passed 210 files / 1,114
+  tests with `--maxWorkers=2`; production build and client boundary marker scan
+  passed. Authenticated disposable SSR/hydration plus hover/click/back/forward
+  navigation passed in `acceptance-1840398-1793738365056`. Final independent
+  review found one internal-download edge case in AppHrefLink; native download
+  handling and a regression test were added. Repository publication gates remain
+  in progress.
 - Production-mode authenticated runtime proof remains unavailable: the loopback
   acceptance runner uses HTTP while production auth correctly requires HTTPS.
   No security constraint was bypassed; temporary runner changes were reverted.
-- Broad-loader preview integration and publication are pending; coordinator owns
-  the exact checkpoint and locked runtime evidence before handoff.
+- Broad-loader checkpoint `cd66b4ba7ad1ab16d46332770b5b546d4462dbe7` is live in
+  preview at merge `9013842860c2af189bf0d647fe63bff08f62c040`: exact ancestry,
+  44 integrated focused tests, HTTP health/login and Metro probes passed under
+  lock. Publication is in progress through normal hooks; no bypass authorized.
 
 ## Acceptance evidence required
 

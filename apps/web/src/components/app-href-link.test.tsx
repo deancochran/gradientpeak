@@ -12,6 +12,18 @@ import { AppHrefLink } from "./app-href-link";
 
 afterEach(cleanup);
 
+it("preserves browser-native downloads for internal hrefs", () => {
+  render(
+    <AppHrefLink href="/exports/activity.fit" download="activity.fit">
+      Download activity
+    </AppHrefLink>,
+  );
+  const link = screen.getByRole("link", { name: "Download activity" });
+  expect(link.getAttribute("href")).toBe("/exports/activity.fit");
+  expect(link.getAttribute("download")).toBe("activity.fit");
+  expect(link.hasAttribute("data-status")).toBe(false);
+});
+
 it("navigates href DTOs with parsed search and hash without document navigation", async () => {
   const root = createRootRoute();
   const home = createRoute({
