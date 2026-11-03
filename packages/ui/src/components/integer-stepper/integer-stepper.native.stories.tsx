@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-native";
 import * as React from "react";
 import { View } from "react-native";
 
@@ -25,6 +25,18 @@ export const Playground: Story = {
     return (
       <View className="bg-background p-6">
         <IntegerStepper {...args} onChange={setValue} value={value} />
+      </View>
+    );
+  },
+};
+
+export const Tactile: Story = {
+  args: { ...integerStepperFixtures.reps, presentation: "tactile" },
+  render: (args) => {
+    const [value, setValue] = React.useState(args.value);
+    return (
+      <View className="bg-background p-6">
+        <IntegerStepper {...args} value={value} onChange={setValue} />
       </View>
     );
   },

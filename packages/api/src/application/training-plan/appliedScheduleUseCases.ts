@@ -1,620 +1,330 @@
-import { addDaysDateOnlyUtc, formatDateOnlyUtc } from "@repo/core";
-import { schema, type TrainingPlanRow } from "@repo/db";
+import { createHash } from "node:crypto";
+import { formatDateOnlyInTimeZone, ianaTimezoneSchema } from "@repo/core";
+import { stringifyCanonicalJson } from "@repo/core/athlete-intelligence";
+import { schema, trainingPlanApplicationCommandReceipts, trainingPlanApplications } from "@repo/db";
 import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
-import { and, asc, eq, gte, ne, sql } from "drizzle-orm";
-import { logger } from "../../lib/logger";
-import { enqueuePlannedWorkoutSyncAfterCalendarMutation } from "../../lib/provider-sync/planned-workouts";
-import { needsContentGrantForRow } from "../../permissions/content-access";
-import type { TrainingPlanRepository } from "../../repositories";
-import {
-  materializeAppliedTrainingPlan,
-  type TrainingPlanApplicationMode,
-} from "./schedulingUtils";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { z } from "zod";
+import type { DrizzleQueryExecutor, DrizzleTransactionClient } from "../../db";
+import { createDrizzlePlannedSessionRepository } from "../../infrastructure/repositories";
+import { enqueueWahooPlannedSessionSyncAfterMutation } from "../../lib/provider-sync/planned-activities";
+import type { PlannedSessionRepositoryPort } from "../../repositories";
+import { cancelPlannedSession } from "../calendar/cancel-planned-session";
 
-const plannedEventType = "planned_activity" as const;
+function getRequiredPlanningTimezone(value: string | null | undefined): string {
+  const parsed = ianaTimezoneSchema.safeParse(value);
+  if (parsed.success) return parsed.data;
 
-type ContentPermissions = {
-  grantEventContentAccess(input: {
-    actorProfileId: string;
-    activityPlanId: string | null;
-    eventId: string;
-    granteeProfileId: string;
-    trainingPlanId: string | null;
-  }): Promise<unknown>;
-  revokeEventGrants(eventId: string): Promise<unknown>;
-};
-
-type UserTrainingPlanApplication = typeof schema.userTrainingPlans.$inferSelect;
-
-function getSqlRows<T>(result: unknown) {
-  return ((result as { rows?: T[] }).rows ?? []) as T[];
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: "A valid planning timezone is required to manage a training schedule.",
+  });
 }
 
-function toDayStartIso(dateOnly: string): string {
-  return `${dateOnly}T00:00:00.000Z`;
+export function getPlanningDateForClock(input: { now: Date; planningTimezone: string }) {
+  return formatDateOnlyInTimeZone(input.now, input.planningTimezone);
 }
 
-function todayDateOnlyUtc(): string {
-  return formatDateOnlyUtc(new Date());
-}
-
-function todayStartIsoUtc(): string {
-  return toDayStartIso(todayDateOnlyUtc());
-}
-
-function getApplicationModeFromSnapshot(snapshot: unknown): TrainingPlanApplicationMode {
-  const snapshotRecord = snapshot as { _application?: { application_mode?: unknown } } | null;
-
-  if (snapshotRecord?._application?.application_mode === "remaining") {
-    return "remaining";
-  }
-
-  return "full";
-}
-
-async function enqueuePlannedWorkoutSyncForCalendarWrite(input: {
-  db: DrizzleDbClient;
-  eventIds: string[];
-  operation: "publish" | "unsync";
+export async function getCurrentAthletePlanningDate(input: {
+  db: DrizzleQueryExecutor;
+  now?: Date;
   profileId: string;
 }) {
-  try {
-    await enqueuePlannedWorkoutSyncAfterCalendarMutation(input);
-  } catch (error) {
-    logger.error("Failed to enqueue planned workout sync after calendar write", {
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
-  }
+  const [profile] = await input.db
+    .select({ planningTimezone: schema.profiles.planning_timezone })
+    .from(schema.profiles)
+    .where(eq(schema.profiles.id, input.profileId))
+    .limit(1);
+  const planningTimezone = getRequiredPlanningTimezone(profile?.planningTimezone);
+  return getPlanningDateForClock({ now: input.now ?? new Date(), planningTimezone });
 }
 
-async function getOwnedUserTrainingPlan(input: {
+export async function getAppliedScheduleUseCase(input: {
   db: DrizzleDbClient;
   profileId: string;
-  userTrainingPlanId: string;
+  trainingPlanId: string;
 }) {
-  const rows = await input.db
-    .select()
-    .from(schema.userTrainingPlans)
+  const todayDate = await getCurrentAthletePlanningDate(input);
+  const [schedule] = await input.db
+    .select({
+      applicationId: trainingPlanApplications.id,
+      planningDate: schema.plannedSessions.planning_date,
+      trainingPlanRevision: schema.plannedSessions.training_plan_revision,
+    })
+    .from(trainingPlanApplications)
+    .innerJoin(
+      schema.plannedSessions,
+      eq(schema.plannedSessions.training_plan_application_id, trainingPlanApplications.id),
+    )
     .where(
       and(
-        eq(schema.userTrainingPlans.id, input.userTrainingPlanId),
-        eq(schema.userTrainingPlans.profile_id, input.profileId),
+        eq(trainingPlanApplications.profile_id, input.profileId),
+        eq(trainingPlanApplications.training_plan_id, input.trainingPlanId),
+        gt(schema.plannedSessions.planning_date, todayDate),
+        eq(schema.plannedSessions.status, "scheduled"),
+      ),
+    )
+    .orderBy(asc(schema.plannedSessions.planning_date), asc(schema.plannedSessions.id))
+    .limit(1);
+
+  if (!schedule) return null;
+
+  return {
+    application_id: schedule.applicationId,
+    application_receipt: schedule.applicationId,
+    planning_date: schedule.planningDate,
+    training_plan_id: input.trainingPlanId,
+  };
+}
+
+export async function listAppliedSchedulesUseCase(input: {
+  cursor?: string;
+  db: DrizzleDbClient;
+  limit: number;
+  profileId: string;
+  trainingPlanId: string;
+}) {
+  const todayDate = await getCurrentAthletePlanningDate(input);
+  const futureScheduled = sql<boolean>`${schema.plannedSessions.status} = 'scheduled' and ${schema.plannedSessions.planning_date} > ${todayDate}`;
+  const rows = await input.db
+    .select({
+      applicationId: trainingPlanApplications.id,
+      applicationRevision: trainingPlanApplications.application_revision,
+      eligibleFutureCount: sql<number>`count(*) filter (where ${futureScheduled})::int`,
+      nextPlanningDate: sql<
+        string | null
+      >`min(${schema.plannedSessions.planning_date}) filter (where ${futureScheduled})`,
+      protectedCount: sql<number>`count(*) filter (where not (${futureScheduled}))::int`,
+      sourceRevision: trainingPlanApplications.source_revision,
+      startDate: trainingPlanApplications.start_date,
+    })
+    .from(trainingPlanApplications)
+    .innerJoin(
+      schema.plannedSessions,
+      eq(schema.plannedSessions.training_plan_application_id, trainingPlanApplications.id),
+    )
+    .where(
+      and(
+        eq(trainingPlanApplications.profile_id, input.profileId),
+        eq(trainingPlanApplications.training_plan_id, input.trainingPlanId),
+        input.cursor ? gt(trainingPlanApplications.id, input.cursor) : undefined,
+      ),
+    )
+    .groupBy(
+      trainingPlanApplications.id,
+      trainingPlanApplications.start_date,
+      trainingPlanApplications.source_revision,
+      trainingPlanApplications.application_revision,
+    )
+    .orderBy(asc(trainingPlanApplications.id))
+    .limit(input.limit + 1);
+  const page = rows.slice(0, input.limit);
+  return {
+    items: page.map((row) => ({
+      application_id: row.applicationId,
+      application_revision: row.applicationRevision,
+      eligible_future_count: row.eligibleFutureCount,
+      next_planning_date: row.nextPlanningDate,
+      protected_count: row.protectedCount,
+      source_revision: row.sourceRevision,
+      start_date: row.startDate,
+    })),
+    nextCursor: rows.length > input.limit ? (page.at(-1)?.applicationId ?? null) : null,
+  };
+}
+
+const operationIdSchema = z
+  .string()
+  .min(32)
+  .max(128)
+  .regex(/^[A-Za-z0-9_-]+$/);
+const hashSchema = z.string().regex(/^v1:sha256:[0-9a-f]{64}$/);
+export const appliedScheduleRemovalPreviewInputSchema = z
+  .object({ applicationId: z.string().uuid() })
+  .strict();
+export const appliedScheduleRemovalInputSchema = appliedScheduleRemovalPreviewInputSchema
+  .extend({ operationId: operationIdSchema, previewFingerprint: hashSchema })
+  .strict();
+
+export function removalFingerprint(input: {
+  applicationId: string;
+  applicationRevision: number;
+  todayDate: string;
+  sessions: Array<{ id: string; sessionRevision: number }>;
+}) {
+  return `v1:sha256:${createHash("sha256").update(stringifyCanonicalJson(input)).digest("hex")}`;
+}
+
+async function loadRemovalPreview(input: {
+  db: DrizzleDbClient | DrizzleTransactionClient;
+  profileId: string;
+  applicationId: string;
+  todayDate: string;
+  lock: boolean;
+}) {
+  const applicationQuery = input.db
+    .select({ applicationRevision: trainingPlanApplications.application_revision })
+    .from(trainingPlanApplications)
+    .where(
+      and(
+        eq(trainingPlanApplications.id, input.applicationId),
+        eq(trainingPlanApplications.profile_id, input.profileId),
       ),
     )
     .limit(1);
-
-  return (rows[0] as UserTrainingPlanApplication | undefined) ?? null;
-}
-
-export async function updateActivePlanStatusUseCase(input: {
-  db: DrizzleDbClient;
-  id: string;
-  permissions: ContentPermissions;
-  profileId: string;
-  repository: TrainingPlanRepository;
-  status: "active" | "paused" | "completed" | "abandoned";
-}) {
-  const windowStartIso = todayStartIsoUtc();
-  const activePlanLookup = await input.repository.getActivePlanFromFutureEvents(input.profileId);
-
-  const futurePlanEvents = await input.db
-    .select({ id: schema.events.id, training_plan_id: schema.eventScheduleLinks.training_plan_id })
-    .from(schema.events)
-    .innerJoin(schema.eventScheduleLinks, eq(schema.eventScheduleLinks.event_id, schema.events.id))
+  const lockableApplicationQuery = applicationQuery as typeof applicationQuery & {
+    for?: (strength: "update") => typeof applicationQuery;
+  };
+  const [application] =
+    input.lock && lockableApplicationQuery.for
+      ? await lockableApplicationQuery.for("update")
+      : await applicationQuery;
+  if (!application) return null;
+  const sessionsQuery = input.db
+    .select({
+      id: schema.plannedSessions.id,
+      sessionRevision: schema.plannedSessions.session_revision,
+    })
+    .from(schema.plannedSessions)
     .where(
       and(
-        eq(schema.events.profile_id, input.profileId),
-        eq(schema.events.event_type, plannedEventType),
-        eq(schema.eventScheduleLinks.training_plan_id, input.id),
-        gte(schema.events.starts_at, new Date(windowStartIso)),
-      ),
-    );
-
-  const hasFutureEventsForPlan = futurePlanEvents.length > 0;
-  if (!hasFutureEventsForPlan && (input.status === "active" || input.status === "paused")) {
-    throw new TRPCError({ code: "NOT_FOUND", message: "Active training plan not found" });
-  }
-
-  if (input.status === "active" || input.status === "paused") {
-    const allFuturePlanEvents = await input.db
-      .select({ training_plan_id: schema.eventScheduleLinks.training_plan_id })
-      .from(schema.events)
-      .innerJoin(
-        schema.eventScheduleLinks,
-        eq(schema.eventScheduleLinks.event_id, schema.events.id),
-      )
-      .where(
-        and(
-          eq(schema.events.profile_id, input.profileId),
-          eq(schema.events.event_type, plannedEventType),
-          gte(schema.events.starts_at, new Date(windowStartIso)),
-        ),
-      )
-      .limit(200);
-
-    const hasOtherActivePlan = allFuturePlanEvents.some(
-      (event) => typeof event.training_plan_id === "string" && event.training_plan_id !== input.id,
-    );
-
-    if (hasOtherActivePlan) {
-      throw new TRPCError({
-        code: "CONFLICT",
-        message:
-          "You already have another active or paused training plan. Please complete or abandon it first.",
-      });
-    }
-
-    return {
-      id: input.id,
-      training_plan_id: input.id,
-      user_training_plan_id: activePlanLookup?.userTrainingPlanId ?? null,
-      profile_id: input.profileId,
-      status: input.status,
-      scheduled_sessions_removed: 0,
-    };
-  }
-
-  const deletedEvents = await input.db
-    .delete(schema.events)
-    .where(
-      and(
-        eq(schema.events.profile_id, input.profileId),
-        eq(schema.events.event_type, plannedEventType),
-        activePlanLookup?.trainingPlanId === input.id && activePlanLookup.scheduleBatchId
-          ? sql`exists (
-              select 1
-              from event_schedule_links
-              where event_schedule_links.event_id = events.id
-                and event_schedule_links.profile_id = ${input.profileId}::uuid
-                and event_schedule_links.schedule_batch_id = ${activePlanLookup.scheduleBatchId}::uuid
-            )`
-          : sql`exists (
-              select 1
-              from event_schedule_links
-              where event_schedule_links.event_id = events.id
-                and event_schedule_links.profile_id = ${input.profileId}::uuid
-                and event_schedule_links.training_plan_id = ${input.id}::uuid
-            )`,
-        gte(schema.events.starts_at, new Date(windowStartIso)),
-        ne(schema.events.status, "completed"),
+        eq(schema.plannedSessions.profile_id, input.profileId),
+        eq(schema.plannedSessions.training_plan_application_id, input.applicationId),
+        eq(schema.plannedSessions.status, "scheduled"),
+        gt(schema.plannedSessions.planning_date, input.todayDate),
       ),
     )
-    .returning({ id: schema.events.id });
-
-  await Promise.all(deletedEvents.map((event) => input.permissions.revokeEventGrants(event.id)));
-  await enqueuePlannedWorkoutSyncForCalendarWrite({
-    db: input.db,
-    eventIds: deletedEvents.map((event) => event.id),
-    operation: "unsync",
-    profileId: input.profileId,
+    .orderBy(asc(schema.plannedSessions.planning_date), asc(schema.plannedSessions.id));
+  const lockable = sessionsQuery as typeof sessionsQuery & {
+    for?: (strength: "update") => typeof sessionsQuery;
+  };
+  const sessions = input.lock && lockable.for ? await lockable.for("update") : await sessionsQuery;
+  const fingerprint = removalFingerprint({
+    applicationId: input.applicationId,
+    applicationRevision: application.applicationRevision,
+    todayDate: input.todayDate,
+    sessions,
   });
+  return { applicationRevision: application.applicationRevision, sessions, fingerprint };
+}
 
-  if (activePlanLookup?.userTrainingPlanId) {
-    await input.db
-      .update(schema.userTrainingPlans)
-      .set({ status: input.status, updated_at: new Date() })
-      .where(eq(schema.userTrainingPlans.id, activePlanLookup.userTrainingPlanId));
-  }
-
+export async function previewRemoveAppliedScheduleUseCase(input: {
+  db: DrizzleDbClient;
+  profileId: string;
+  applicationId: string;
+  now?: Date;
+}) {
+  const todayDate = await getCurrentAthletePlanningDate(input);
+  const preview = await loadRemovalPreview({ ...input, todayDate, lock: false });
+  if (!preview)
+    throw new TRPCError({ code: "NOT_FOUND", message: "Scheduled plan application not found" });
   return {
-    id: input.id,
-    training_plan_id: input.id,
-    user_training_plan_id: activePlanLookup?.userTrainingPlanId ?? null,
-    profile_id: input.profileId,
-    status: input.status,
-    scheduled_sessions_removed: deletedEvents.length,
+    status: "available" as const,
+    applicationId: input.applicationId,
+    applicationRevision: preview.applicationRevision,
+    affected: preview.sessions,
+    protected: [],
+    cutoffDate: todayDate,
+    previewFingerprint: preview.fingerprint,
   };
 }
 
 export async function removeAppliedScheduleUseCase(input: {
   db: DrizzleDbClient;
-  permissions: ContentPermissions;
+  plannedSessionRepositoryFactory?: (db: DrizzleTransactionClient) => PlannedSessionRepositoryPort;
+  enqueueWahooPlannedSessionSyncAfterMutation?: typeof enqueueWahooPlannedSessionSyncAfterMutation;
   profileId: string;
-  userTrainingPlanId: string;
+  applicationId: string;
+  operationId: string;
+  previewFingerprint: string;
+  now?: Date;
 }) {
-  const application = await getOwnedUserTrainingPlan(input);
-
-  if (!application) {
-    throw new TRPCError({ code: "NOT_FOUND", message: "Scheduled plan not found" });
-  }
-
-  const deletedEvents = await input.db
-    .delete(schema.events)
-    .where(
-      and(
-        eq(schema.events.profile_id, input.profileId),
-        eq(schema.events.event_type, plannedEventType),
-        sql`exists (
-            select 1
-            from event_schedule_links
-            where event_schedule_links.event_id = events.id
-              and event_schedule_links.profile_id = ${input.profileId}::uuid
-              and event_schedule_links.user_training_plan_id = ${application.id}::uuid
-          )`,
-        gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
-        ne(schema.events.status, "completed"),
-      ),
-    )
-    .returning({ id: schema.events.id });
-
-  await Promise.all(deletedEvents.map((event) => input.permissions.revokeEventGrants(event.id)));
-  await enqueuePlannedWorkoutSyncForCalendarWrite({
-    db: input.db,
-    eventIds: deletedEvents.map((event) => event.id),
-    operation: "unsync",
-    profileId: input.profileId,
+  const values = appliedScheduleRemovalInputSchema.parse({
+    applicationId: input.applicationId,
+    operationId: input.operationId,
+    previewFingerprint: input.previewFingerprint,
   });
-  await input.db
-    .update(schema.userTrainingPlans)
-    .set({ status: "abandoned", updated_at: new Date() })
-    .where(eq(schema.userTrainingPlans.id, application.id));
-
-  return {
-    success: true,
-    user_training_plan_id: application.id,
-    scheduled_sessions_removed: deletedEvents.length,
-  };
-}
-
-export async function shiftAppliedScheduleUseCase(input: {
-  days: number;
-  db: DrizzleDbClient;
-  profileId: string;
-  userTrainingPlanId: string;
-}) {
-  const application = await getOwnedUserTrainingPlan(input);
-
-  if (!application) {
-    throw new TRPCError({ code: "NOT_FOUND", message: "Scheduled plan not found" });
-  }
-
-  const futureEvents = await input.db
-    .select({
-      id: schema.events.id,
-      activity_plan_id: schema.eventScheduleLinks.activity_plan_id,
-      starts_at: schema.events.starts_at,
-      ends_at: schema.events.ends_at,
-    })
-    .from(schema.events)
-    .innerJoin(schema.eventScheduleLinks, eq(schema.eventScheduleLinks.event_id, schema.events.id))
-    .where(
-      and(
-        eq(schema.events.profile_id, input.profileId),
-        eq(schema.events.event_type, plannedEventType),
-        eq(schema.eventScheduleLinks.user_training_plan_id, application.id),
-        gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
-        ne(schema.events.status, "completed"),
-      ),
-    )
-    .orderBy(asc(schema.events.starts_at));
-
-  if (futureEvents.length === 0) {
-    throw new TRPCError({ code: "NOT_FOUND", message: "No future scheduled sessions found" });
-  }
-
-  for (const event of futureEvents) {
-    const currentScheduledDate = formatDateOnlyUtc(event.starts_at);
-    const nextScheduledDate = addDaysDateOnlyUtc(currentScheduledDate, input.days);
-    await input.db
-      .update(schema.events)
-      .set({
-        starts_at: new Date(toDayStartIso(nextScheduledDate)),
-        ends_at: new Date(toDayStartIso(addDaysDateOnlyUtc(nextScheduledDate, 1))),
-        status: "scheduled",
-        updated_at: new Date(),
+  const todayDate = await getCurrentAthletePlanningDate(input);
+  const cancelledSessions = await input.db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${input.profileId}, 0))`);
+    const [receipt] = await tx
+      .select({
+        fingerprint: trainingPlanApplicationCommandReceipts.request_fingerprint,
+        result: trainingPlanApplicationCommandReceipts.result,
       })
-      .where(eq(schema.events.id, event.id));
-  }
-
-  await enqueuePlannedWorkoutSyncForCalendarWrite({
-    db: input.db,
-    eventIds: futureEvents
-      .filter((event) => Boolean(event.activity_plan_id))
-      .map((event) => event.id),
-    operation: "publish",
-    profileId: input.profileId,
-  });
-
-  await input.db
-    .update(schema.userTrainingPlans)
-    .set({
-      start_date: addDaysDateOnlyUtc(application.start_date, input.days),
-      target_date: application.target_date
-        ? addDaysDateOnlyUtc(application.target_date, input.days)
-        : null,
-      updated_at: new Date(),
-    })
-    .where(eq(schema.userTrainingPlans.id, application.id));
-
-  return {
-    success: true,
-    days_shifted: input.days,
-    affected_count: futureEvents.length,
-    user_training_plan_id: application.id,
-  };
-}
-
-export async function regenerateAppliedScheduleUseCase(input: {
-  db: DrizzleDbClient;
-  permissions: ContentPermissions;
-  profileId: string;
-  repository: TrainingPlanRepository;
-  userTrainingPlanId: string;
-}) {
-  const application = await getOwnedUserTrainingPlan(input);
-
-  if (!application) {
-    throw new TRPCError({ code: "NOT_FOUND", message: "Scheduled plan not found" });
-  }
-
-  const trainingPlan = await input.repository.getAccessibleTrainingPlan({
-    id: application.training_plan_id,
-    profileId: input.profileId,
-  });
-
-  if (!trainingPlan) {
-    throw new TRPCError({ code: "NOT_FOUND", message: "Training plan not found" });
-  }
-
-  const snapshotStructure =
-    application.snapshot_structure && typeof application.snapshot_structure === "object"
-      ? ({ ...(application.snapshot_structure as Record<string, unknown>) } as Record<
-          string,
-          unknown
-        >)
-      : trainingPlan.structure && typeof trainingPlan.structure === "object"
-        ? ({ ...(trainingPlan.structure as Record<string, unknown>) } as Record<string, unknown>)
-        : {};
-  const applicationMode = getApplicationModeFromSnapshot(snapshotStructure);
-  const snapshotApplication =
-    snapshotStructure._application && typeof snapshotStructure._application === "object"
-      ? (snapshotStructure._application as Record<string, unknown>)
-      : null;
-  const targetDate =
-    typeof snapshotApplication?.target_date === "string"
-      ? snapshotApplication.target_date
-      : undefined;
-  const resolved = materializeAppliedTrainingPlan({
-    applicationMode,
-    startDate: application.start_date,
-    targetDate,
-    structure: snapshotStructure,
-    todayDate: todayDateOnlyUtc(),
-  });
-
-  const removedEvents = await input.db
-    .delete(schema.events)
-    .where(
-      and(
-        eq(schema.events.profile_id, input.profileId),
-        eq(schema.events.event_type, plannedEventType),
-        sql`exists (
-            select 1
-            from event_schedule_links
-            where event_schedule_links.event_id = events.id
-              and event_schedule_links.profile_id = ${input.profileId}::uuid
-              and event_schedule_links.user_training_plan_id = ${application.id}::uuid
-          )`,
-        gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
-        ne(schema.events.status, "completed"),
-      ),
-    )
-    .returning({ id: schema.events.id });
-
-  await Promise.all(removedEvents.map((event) => input.permissions.revokeEventGrants(event.id)));
-  await enqueuePlannedWorkoutSyncForCalendarWrite({
-    db: input.db,
-    eventIds: removedEvents.map((event) => event.id),
-    operation: "unsync",
-    profileId: input.profileId,
-  });
-
-  const candidatePlanIds = Array.from(
-    new Set(
-      resolved.materializedSessions
-        .map((session) => session.activity_plan_id)
-        .filter((id): id is string => Boolean(id)),
-    ),
-  );
-  let allowedPlanIds = new Set<string>();
-  const allowedPlanNameById = new Map<string, string>();
-  const allowedPlanAccessById = new Map<
-    string,
-    {
-      ownerProfileId?: string | null;
-      isPublic?: boolean | null;
-      isSystem?: boolean | null;
-      routeId?: string | null;
+      .from(trainingPlanApplicationCommandReceipts)
+      .where(
+        and(
+          eq(trainingPlanApplicationCommandReceipts.profile_id, input.profileId),
+          eq(trainingPlanApplicationCommandReceipts.operation_id, values.operationId),
+        ),
+      )
+      .limit(1);
+    if (receipt) {
+      if (receipt.fingerprint !== values.previewFingerprint)
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Operation ID was already used for another request",
+        });
+      return receipt.result;
     }
-  >();
-
-  if (candidatePlanIds.length > 0) {
-    const accessiblePlans = await input.db.execute(sql<{
-      id: string;
-      name: string;
-      ownerProfileId: string | null;
-      isPublic: boolean | null;
-      isSystem: boolean | null;
-      routeId: string | null;
-    }>`
-      select
-        id,
-        name,
-        profile_id as "ownerProfileId",
-        template_visibility = 'public' as "isPublic",
-        is_system_template as "isSystem",
-        route_id as "routeId"
-      from activity_plans
-      where id in (${sql.join(
-        candidatePlanIds.map((id) => sql`${id}::uuid`),
-        sql`, `,
-      )})
-        and (
-          profile_id = ${input.profileId}::uuid
-          or is_system_template = true
-          or template_visibility = 'public'
-          or exists (
-            select 1
-            from content_access_grants
-            where content_access_grants.content_type = 'activity_plan'
-              and content_access_grants.content_id = activity_plans.id
-              and content_access_grants.grantee_profile_id = ${input.profileId}::uuid
-              and content_access_grants.access_level = 'read'
-              and content_access_grants.revoked_at is null
-              and (content_access_grants.expires_at is null or content_access_grants.expires_at > now())
-          )
-        )
-    `);
-
-    const accessiblePlanRows = getSqlRows<{
-      id: string;
-      name: string;
-      ownerProfileId?: string | null;
-      isPublic?: boolean | null;
-      isSystem?: boolean | null;
-      routeId?: string | null;
-    }>(accessiblePlans);
-    allowedPlanIds = new Set(accessiblePlanRows.map((row) => row.id));
-    accessiblePlanRows.forEach((row) => {
-      allowedPlanNameById.set(row.id, row.name);
-      allowedPlanAccessById.set(row.id, {
-        ownerProfileId: row.ownerProfileId,
-        isPublic: row.isPublic,
-        isSystem: row.isSystem,
-        routeId: row.routeId,
-      });
+    const preview = await loadRemovalPreview({
+      db: tx,
+      profileId: input.profileId,
+      applicationId: values.applicationId,
+      todayDate,
+      lock: true,
     });
-  }
-
-  const eventRows = resolved.materializedSessions
-    .filter((session) => !session.activity_plan_id || allowedPlanIds.has(session.activity_plan_id))
-    .map((session) => ({
+    if (!preview)
+      throw new TRPCError({ code: "NOT_FOUND", message: "Scheduled plan application not found" });
+    if (preview.fingerprint !== values.previewFingerprint)
+      throw new TRPCError({ code: "CONFLICT", message: "Schedule review is stale" });
+    const plannedSessions = preview.sessions;
+    if (plannedSessions.length === 0)
+      throw new TRPCError({ code: "NOT_FOUND", message: "No future scheduled sessions found" });
+    const plannedSessionRepository = input.plannedSessionRepositoryFactory
+      ? input.plannedSessionRepositoryFactory(tx)
+      : createDrizzlePlannedSessionRepository(tx);
+    const cancelledAt = (input.now ?? new Date()).toISOString();
+    for (const session of plannedSessions) {
+      await cancelPlannedSession({
+        repository: plannedSessionRepository,
+        profileId: input.profileId,
+        sessionId: session.id,
+        expectedRevision: session.sessionRevision,
+        reason: "user_requested",
+        cancelledAt,
+      });
+    }
+    const providerQueue = await (
+      input.enqueueWahooPlannedSessionSyncAfterMutation ??
+      enqueueWahooPlannedSessionSyncAfterMutation
+    )({
+      db: input.db,
+      transaction: tx,
+      plannedSessionIds: plannedSessions.map((session) => session.id),
+      operation: "unsync",
+      profileId: input.profileId,
+    });
+    if (providerQueue?.success === false) {
+      throw new Error("Unable to durably enqueue planned-session provider cleanup");
+    }
+    const result = {
+      success: true,
+      application_id: values.applicationId,
+      scheduled_sessions_removed: plannedSessions.length,
+    };
+    await tx.insert(trainingPlanApplicationCommandReceipts).values({
       profile_id: input.profileId,
-      event_type: plannedEventType,
-      title:
-        session.event_title_override ??
-        (session.activity_plan_id
-          ? allowedPlanNameById.get(session.activity_plan_id)
-          : undefined) ??
-        session.title,
-      all_day: session.all_day,
-      timezone: "UTC",
-      starts_at: session.starts_at,
-      ends_at: session.ends_at,
-      status: "scheduled" as const,
-      activity_plan_id: session.activity_plan_id,
-      training_plan_id: trainingPlan.id,
-      user_training_plan_id: application.id,
-      payload: {
-        training_plan_generation: {
-          application_mode: resolved.applicationMode,
-          applied_start_date: resolved.appliedPlanStartDate,
-          source_day_offset: session.source_day_offset,
-          source_path: session.source_path,
-          target_date: resolved.targetDate,
-          user_training_plan_id: application.id,
-        },
-      },
-    }));
-
-  if (eventRows.length === 0) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "This scheduled plan no longer has any future sessions to regenerate.",
+      operation_id: values.operationId,
+      command: "remove",
+      request_fingerprint: values.previewFingerprint,
+      application_id: values.applicationId,
+      result,
     });
-  }
-
-  const schedule_batch_id = crypto.randomUUID();
-  const insertedEvents = await input.db
-    .insert(schema.events)
-    .values(eventRows.map((row) => ({ ...row, schedule_batch_id })) as any)
-    .returning({ id: schema.events.id });
-
-  await Promise.all(
-    insertedEvents.map((event, index) => {
-      const eventRow = eventRows[index];
-      if (!eventRow) {
-        return Promise.resolve();
-      }
-
-      const linkedPlanAccess = eventRow.activity_plan_id
-        ? allowedPlanAccessById.get(eventRow.activity_plan_id)
-        : null;
-      const shouldGrantLinkedPlan = linkedPlanAccess
-        ? needsContentGrantForRow(linkedPlanAccess, input.profileId)
-        : false;
-      const shouldGrantTrainingPlan = needsContentGrantForRow(
-        {
-          ownerProfileId: trainingPlan.profile_id,
-          isPublic: trainingPlan.template_visibility === "public",
-          isSystem: trainingPlan.is_system_template,
-        },
-        input.profileId,
-      );
-
-      if (!shouldGrantLinkedPlan && !linkedPlanAccess?.routeId && !shouldGrantTrainingPlan) {
-        return Promise.resolve();
-      }
-
-      return input.permissions.grantEventContentAccess({
-        actorProfileId: input.profileId,
-        granteeProfileId: input.profileId,
-        eventId: event.id,
-        activityPlanId: eventRow.activity_plan_id,
-        trainingPlanId: shouldGrantTrainingPlan ? trainingPlan.id : null,
-      });
-    }),
-  );
-
-  await enqueuePlannedWorkoutSyncForCalendarWrite({
-    db: input.db,
-    eventIds: insertedEvents
-      .filter((_, index) => Boolean(eventRows[index]?.activity_plan_id))
-      .map((event) => event.id),
-    operation: "publish",
-    profileId: input.profileId,
+    return result;
   });
 
-  await input.db
-    .update(schema.userTrainingPlans)
-    .set({
-      start_date: resolved.appliedPlanStartDate,
-      target_date: resolved.targetDate,
-      snapshot_structure: resolved.snapshotStructure,
-      status: "active",
-      updated_at: new Date(),
-    })
-    .where(eq(schema.userTrainingPlans.id, application.id));
-
-  return {
-    success: true,
-    schedule_batch_id,
-    scheduled_sessions_created: insertedEvents.length,
-    scheduled_sessions_replaced: removedEvents.length,
-    scheduled_sessions_skipped: resolved.skippedSessions,
-    user_training_plan_id: application.id,
-  };
-}
-
-export async function getActivePlanUseCase(input: {
-  profileId: string;
-  repository: TrainingPlanRepository;
-}) {
-  const activePlanLookup = await input.repository.getActivePlanFromFutureEvents(input.profileId);
-
-  if (!activePlanLookup) {
-    return null;
-  }
-
-  return {
-    id: activePlanLookup.trainingPlanId,
-    profile_id: input.profileId,
-    training_plan_id: activePlanLookup.trainingPlanId,
-    user_training_plan_id: activePlanLookup.userTrainingPlanId,
-    schedule_batch_id: activePlanLookup.scheduleBatchId,
-    status: "active",
-    next_event_at: activePlanLookup.nextEventAt,
-    training_plan: activePlanLookup.trainingPlan as TrainingPlanRow,
-  };
+  return cancelledSessions;
 }

@@ -13,17 +13,12 @@ export type EndpointPerformanceBudget = {
 };
 
 type RouterWithProcedures = {
-  _def: {
-    procedures: Record<
-      string,
-      {
-        _def: {
-          inputs?: unknown[];
-          type: EndpointPerformanceBudget["type"];
-        };
-      }
-    >;
-  };
+  _def: object;
+};
+
+type EndpointProcedure = {
+  inputs?: unknown[];
+  type: EndpointPerformanceBudget["type"];
 };
 
 const UUID_VALUE = "11111111-1111-4111-8111-111111111111";
@@ -32,22 +27,73 @@ const OTHER_UUID_VALUE = "22222222-2222-4222-8222-222222222222";
 export const ENDPOINT_PERFORMANCE_TIMEOUT_MS = 2_000;
 
 export function getEndpointPerformanceBudgets(router: RouterWithProcedures) {
-  return Object.entries(router._def.procedures)
+  return getPerformanceProcedures(getRouterRecord(router))
     .map(([path, procedure]) => ({
       path,
-      type: procedure._def.type,
-      budgetMs: getBudgetMs(path, procedure._def.type),
+      type: procedure.type,
+      budgetMs: getBudgetMs(path, procedure.type),
     }))
     .sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export function createMockInputForProcedure(
-  procedure: RouterWithProcedures["_def"]["procedures"][string],
-) {
-  const inputSchema = procedure._def.inputs?.[0];
+export function createMockInputForProcedure(procedure: EndpointProcedure) {
+  const inputSchema = procedure.inputs?.[0];
   if (!inputSchema) return undefined;
 
   return createMockValue(inputSchema, "input");
+}
+
+export function getEndpointPerformanceProcedure(router: RouterWithProcedures, path: string) {
+  const endpointProcedure = getPerformanceProcedures(getRouterRecord(router)).find(
+    ([candidate]) => candidate === path,
+  )?.[1];
+  if (!endpointProcedure) {
+    throw new Error(`Unable to resolve procedure ${path}`);
+  }
+  return endpointProcedure;
+}
+
+function getRouterRecord(router: RouterWithProcedures): object {
+  const procedures = Reflect.get(router._def, "procedures");
+  if (procedures && typeof procedures === "object" && Object.keys(procedures).length > 0) {
+    return procedures;
+  }
+  const record = Reflect.get(router._def, "record");
+  return record && typeof record === "object" ? record : {};
+}
+
+function getPerformanceProcedures(record: object, prefix = ""): Array<[string, EndpointProcedure]> {
+  return Object.entries(record).flatMap(([name, value]) => {
+    const path = prefix ? `${prefix}.${name}` : name;
+    const procedure = toEndpointProcedure(value);
+    if (procedure) return [[path, procedure]];
+    if (!value || (typeof value !== "object" && typeof value !== "function")) return [];
+    const definition = Reflect.get(value, "_def");
+    const nestedRecord =
+      definition && typeof definition === "object" ? Reflect.get(definition, "record") : undefined;
+    return nestedRecord && typeof nestedRecord === "object"
+      ? getPerformanceProcedures(nestedRecord, path)
+      : [];
+  });
+}
+
+function toEndpointProcedure(value: unknown): EndpointProcedure | null {
+  if (!value || (typeof value !== "object" && typeof value !== "function")) return null;
+  const definition = "_def" in value ? value._def : value;
+  if (!definition || typeof definition !== "object" || !("type" in definition)) return null;
+  if (
+    definition.type !== "query" &&
+    definition.type !== "mutation" &&
+    definition.type !== "subscription"
+  ) {
+    return null;
+  }
+  return {
+    type: definition.type,
+    ...("inputs" in definition && Array.isArray(definition.inputs)
+      ? { inputs: definition.inputs }
+      : {}),
+  };
 }
 
 export async function measureEndpointPerformance(
@@ -71,11 +117,11 @@ export async function measureEndpointPerformance(
       status: "fulfilled",
     };
   } catch (error) {
-    return {
+    const result = {
       durationMs: performance.now() - startedAt,
-      status: "rejected",
-      error,
+      status: "rejected" as const,
     };
+    return error === undefined ? result : { ...result, error };
   }
 }
 
