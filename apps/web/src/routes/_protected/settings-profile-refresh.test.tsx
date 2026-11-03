@@ -16,12 +16,14 @@ const state = vi.hoisted(() => ({
     string,
     unknown
   > | null,
-  removeMedia: vi.fn(async () => ({ field: "avatar_url" })) as ReturnType<typeof vi.fn>,
-  save: vi.fn(async () => undefined) as ReturnType<typeof vi.fn>,
-  uploadMedia: vi.fn(async () => ({
+  removeMedia: vi.fn<(args: unknown) => Promise<{ field: string }>>(async () => ({
+    field: "avatar_url",
+  })),
+  save: vi.fn<(args: unknown) => Promise<void>>(async () => {}),
+  uploadMedia: vi.fn<(args: unknown) => Promise<{ field: string; url: string }>>(async () => ({
     field: "avatar_url",
     url: "https://images.example.test/new.jpg",
-  })) as ReturnType<typeof vi.fn>,
+  })),
 }));
 let blockerOptions:
   | { enableBeforeUnload?: () => boolean; shouldBlockFn?: () => boolean }

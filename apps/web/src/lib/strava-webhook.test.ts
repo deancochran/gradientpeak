@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import type { StravaWebhookPayload } from "@repo/api/strava-webhook";
+import { afterEach, describe, expect, it, type Mock, vi } from "vitest";
 import { createStravaWebhookHandlers } from "./strava-webhook";
 
 const payload = {
@@ -11,8 +12,15 @@ const payload = {
   updates: { title: "Morning run" },
 } as const;
 
-function createHandlers(input: { persist?: ReturnType<typeof vi.fn>; maxBodyBytes?: number } = {}) {
-  const persist = input.persist ?? vi.fn(async () => undefined);
+type StoreAndEnqueueReceipt = (
+  payload: StravaWebhookPayload,
+  deliveryId: string,
+) => Promise<unknown>;
+
+function createHandlers(
+  input: { persist?: Mock<StoreAndEnqueueReceipt>; maxBodyBytes?: number } = {},
+) {
+  const persist = input.persist ?? vi.fn<StoreAndEnqueueReceipt>(async () => undefined);
   return {
     handlers: createStravaWebhookHandlers({
       getSubscriptionId: () => "789",

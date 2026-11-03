@@ -113,6 +113,6 @@
     "chokidar-cli": "^3.0.0",
     "concurrently": "^9.2.4",
     "typescript": "6.0.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   }
 }
