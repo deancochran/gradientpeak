@@ -86,12 +86,15 @@ describe("UI ownership guardrails", () => {
       // Chatbot composition and its app-owned session persistence.
       "chatbot/chatbot-panel.tsx",
       "chatbot/use-chatbot.ts",
+      // Web-only organization roster commands compose shared primitives and request-bound actions.
+      "coaching/athletes/administrative-athlete-roster.tsx",
       "coaching/coach-access-denied.tsx",
       "coaching/coach-shell.tsx",
       // Web-only organization creation and API-backed administrative composition.
       "coaching/organization-create-form.tsx",
       "coaching/organization-management-overview.tsx",
       "coaching/organization-selector.tsx",
+      "coaching/staff/staff-roster.tsx",
       "discover/discovery-explorer.tsx",
       "feed/activity-feed.tsx",
       "forgot-password-form.tsx",
