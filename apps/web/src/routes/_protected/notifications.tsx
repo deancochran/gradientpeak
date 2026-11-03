@@ -18,6 +18,7 @@ import { Bell, Mail, UserPlus } from "lucide-react";
 import { NotificationsEmptyState } from "../../components/notifications/notifications-empty-state";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
+import { loadRouteQuery } from "../../lib/api/route-loading";
 import { contractEpochFormInputProps } from "../../lib/contract-epoch";
 import { markNotificationsReadAction } from "../../lib/notifications/server-actions";
 import {
@@ -34,6 +35,14 @@ export const Route = createFileRoute("/_protected/notifications")({
         : undefined,
     view: search.view === "unread" ? ("unread" as const) : ("all" as const),
   }),
+  loaderDeps: ({ search }) => ({ view: search.view }),
+  loader: ({ context, deps }) => {
+    const input = { limit: 50, view: deps.view };
+    return loadRouteQuery(
+      () => context.apiUtils.notifications.getHistory.getInfiniteData(input),
+      () => context.apiUtils.notifications.getHistory.fetchInfinite(input),
+    );
+  },
   component: NotificationsPage,
 });
 

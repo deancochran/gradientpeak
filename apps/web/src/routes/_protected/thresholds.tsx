@@ -7,8 +7,14 @@ import {
 } from "@repo/ui/components/card";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { api } from "../../lib/api/client";
+import { loadRouteQuery } from "../../lib/api/route-loading";
 
 export const Route = createFileRoute("/_protected/thresholds")({
+  loader: ({ context }) =>
+    loadRouteQuery(
+      () => context.apiUtils.athleteIntelligence.getThresholdOverview.getData({}),
+      () => context.apiUtils.athleteIntelligence.getThresholdOverview.fetch({}),
+    ),
   component: ThresholdsPage,
 });
 

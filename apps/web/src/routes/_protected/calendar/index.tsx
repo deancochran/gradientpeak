@@ -22,6 +22,7 @@ import { useMemo } from "react";
 import { CalendarProjectionCard } from "../../../components/calendar/calendar-projection-card";
 import { RouteFlashToast, type RouteFlashType } from "../../../components/route-flash-toast";
 import { api } from "../../../lib/api/client";
+import { loadRouteQuery } from "../../../lib/api/route-loading";
 import {
   formatMonthLabel,
   formatShortDayLabel,
@@ -63,6 +64,29 @@ export const Route = createFileRoute("/_protected/calendar/")({
       : {}),
     view: search.view === "agenda" || search.view === "week" ? search.view : "month",
   }),
+  loaderDeps: ({ search }) => ({ date: search.date, month: search.month, view: search.view }),
+  loader: ({ context, deps }) => {
+    const date = deps.date ?? getTodayDateKey();
+    const gridDays = getCalendarGrid(deps.month);
+    const firstDay = gridDays[0];
+    const lastDay = gridDays.at(-1);
+    const window =
+      deps.view === "week"
+        ? getWeekWindow(date)
+        : firstDay && lastDay
+          ? { startKey: toDateKey(firstDay), endKey: toDateKey(lastDay) }
+          : getMonthWindow(deps.month);
+    const input = {
+      startDate: window.startKey,
+      endDateExclusive: shiftDateKey(window.endKey, 1),
+      includeAdhoc: true,
+      limit: 500,
+    };
+    return loadRouteQuery(
+      () => context.apiUtils.calendar.range.getData(input),
+      () => context.apiUtils.calendar.range.fetch(input),
+    );
+  },
   component: CalendarIndexPage,
 });
 

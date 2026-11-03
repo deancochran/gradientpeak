@@ -8,6 +8,7 @@ import { useRef, useState } from "react";
 
 import { RouteFlashToast, type RouteFlashType } from "../../../components/route-flash-toast";
 import { api } from "../../../lib/api/client";
+import { loadRouteQuery } from "../../../lib/api/route-loading";
 import { formatShortDayLabel } from "../../../lib/planning";
 
 export const Route = createFileRoute("/_protected/goals/")({
@@ -21,6 +22,35 @@ export const Route = createFileRoute("/_protected/goals/")({
       sort:
         search.sort === "priority" || search.sort === "created_at" ? search.sort : "target_date",
     };
+  },
+  loaderDeps: ({ search }) => ({
+    category: search.category,
+    q: search.q,
+    sort: search.sort,
+  }),
+  loader: async ({ context, deps }) => {
+    let profile: Awaited<ReturnType<typeof context.apiUtils.profiles.get.fetch>> | undefined;
+    await loadRouteQuery(
+      () => context.apiUtils.profiles.get.getData(undefined),
+      async () => {
+        profile = await context.apiUtils.profiles.get.fetch(undefined);
+        return profile;
+      },
+    );
+    profile ??= context.apiUtils.profiles.get.getData(undefined);
+    if (!profile) return;
+    const input = {
+      profile_id: profile.id,
+      ...(deps.q.trim() ? { search: deps.q.trim() } : {}),
+      ...(deps.category ? { activity_category: deps.category } : {}),
+      sort_by: deps.sort as "created_at" | "priority" | "target_date",
+      sort_order: (deps.sort === "priority" ? "desc" : "asc") as "asc" | "desc",
+      limit: 50,
+    };
+    await loadRouteQuery(
+      () => context.apiUtils.goals.list.getInfiniteData(input),
+      () => context.apiUtils.goals.list.fetchInfinite(input),
+    );
   },
   component: GoalsPage,
 });

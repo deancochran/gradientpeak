@@ -15,6 +15,7 @@ import { isNotFoundError } from "../../../../components/protected/profile-query-
 import { useAuth } from "../../../../components/providers/auth-provider";
 import { RouteFlashToast, type RouteFlashType } from "../../../../components/route-flash-toast";
 import { api } from "../../../../lib/api/client";
+import { loadRouteQuery } from "../../../../lib/api/route-loading";
 
 export const Route = createFileRoute("/_protected/user/$userId/")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -24,6 +25,13 @@ export const Route = createFileRoute("/_protected/user/$userId/")({
         ? (search.flashType as RouteFlashType)
         : undefined,
   }),
+  loader: ({ context, params }) => {
+    const input = { id: params.userId };
+    return loadRouteQuery(
+      () => context.apiUtils.profiles.getPublicById.getData(input),
+      () => context.apiUtils.profiles.getPublicById.fetch(input),
+    );
+  },
   component: UserProfilePage,
 });
 

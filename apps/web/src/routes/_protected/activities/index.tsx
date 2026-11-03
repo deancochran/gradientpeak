@@ -10,6 +10,7 @@ import {
   DetailPageIntro,
 } from "../../../components/protected/activity-route-primitives";
 import { api } from "../../../lib/api/client";
+import { loadRouteQuery } from "../../../lib/api/route-loading";
 
 type ActivityHistorySearch = {
   importRunId?: string;
@@ -44,9 +45,36 @@ export function validateActivityHistorySearch(
 }
 
 export const Route = createFileRoute("/_protected/activities/")({
-  component: ActivitiesPage,
   validateSearch: validateActivityHistorySearch,
+  loaderDeps: ({ search }) => ({
+    category: search.category,
+    from: search.from,
+    importRunId: search.importRunId,
+    order: search.order,
+    sort: search.sort,
+    to: search.to,
+  }),
+  loader: ({ context, deps }) => {
+    const input = getActivitiesInput(deps);
+    return loadRouteQuery(
+      () => context.apiUtils.activities.listPaginated.getInfiniteData(input),
+      () => context.apiUtils.activities.listPaginated.fetchInfinite(input),
+    );
+  },
+  component: ActivitiesPage,
 });
+
+function getActivitiesInput(search: ActivityHistorySearch) {
+  return {
+    limit: 20,
+    importRunId: search.importRunId,
+    sort_by: search.sort ?? "date",
+    sort_order: search.order ?? "desc",
+    activity_category: search.category,
+    date_from: search.from ? `${search.from}T00:00:00.000Z` : undefined,
+    date_to: search.to ? `${search.to}T23:59:59.999Z` : undefined,
+  };
+}
 
 function ActivitiesPage() {
   const navigate = Route.useNavigate();
@@ -66,15 +94,7 @@ function ActivitiesPage() {
     }
   }, [dateDraft.from, dateDraft.to, hasPendingDateDraft, search.from, search.to]);
   const activitiesQuery = api.activities.listPaginated.useInfiniteQuery(
-    {
-      limit: 20,
-      importRunId: search.importRunId,
-      sort_by: search.sort ?? "date",
-      sort_order: search.order ?? "desc",
-      activity_category: search.category,
-      date_from: search.from ? `${search.from}T00:00:00.000Z` : undefined,
-      date_to: search.to ? `${search.to}T23:59:59.999Z` : undefined,
-    },
+    getActivitiesInput(search),
     { getNextPageParam: (lastPage) => lastPage.nextCursor },
   );
   const activities = activitiesQuery.data?.pages.flatMap((page) => page.items) ?? [];
