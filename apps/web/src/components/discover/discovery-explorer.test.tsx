@@ -3,7 +3,12 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DiscoveryExplorer } from "./discovery-explorer";
 
-const mocks = vi.hoisted(() => ({ navigate: vi.fn(), routeError: false, routeQuery: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  activityPlanQuery: vi.fn(),
+  navigate: vi.fn(),
+  routeError: false,
+  routeQuery: vi.fn(),
+}));
 const emptyQuery = {
   data: { pages: [{ items: [] }] },
   fetchNextPage: vi.fn(),
@@ -30,54 +35,57 @@ vi.mock("../../lib/api/client", () => ({
   api: {
     activityPlans: {
       list: {
-        useInfiniteQuery: () => ({
-          ...emptyQuery,
-          data: {
-            pages: [
-              {
-                items: [
-                  {
-                    contractVersion: "activity-plan-summary-v1",
-                    id: "plan-1",
-                    href: "/activity-plans/plan-1",
-                    name: "Tempo ride",
-                    description: "A focused tempo session",
-                    createdAt: "2026-08-19T10:00:00.000Z",
-                    updatedAt: "2026-08-19T10:00:00.000Z",
-                    owner: null,
-                    activityCategory: "bike",
-                    activityPlanRevision: 1,
-                    structure: {
-                      version: 5,
-                      activity_category: "bike",
-                      items: [
-                        {
-                          type: "step",
-                          id: "00000000-0000-4000-8000-000000000003",
-                          name: "Work",
-                          duration: { type: "time", seconds: 900 },
-                          targets: [{ type: "%FTP", intensity: 85 }],
-                        },
-                      ],
+        useInfiniteQuery: (input: unknown) => {
+          mocks.activityPlanQuery(input);
+          return {
+            ...emptyQuery,
+            data: {
+              pages: [
+                {
+                  items: [
+                    {
+                      contractVersion: "activity-plan-summary-v1",
+                      id: "plan-1",
+                      href: "/activity-plans/plan-1",
+                      name: "Tempo ride",
+                      description: "A focused tempo session",
+                      createdAt: "2026-08-19T10:00:00.000Z",
+                      updatedAt: "2026-08-19T10:00:00.000Z",
+                      owner: null,
+                      activityCategory: "bike",
+                      activityPlanRevision: 1,
+                      structure: {
+                        version: 5,
+                        activity_category: "bike",
+                        items: [
+                          {
+                            type: "step",
+                            id: "00000000-0000-4000-8000-000000000003",
+                            name: "Work",
+                            duration: { type: "time", seconds: 900 },
+                            targets: [{ type: "%FTP", intensity: 85 }],
+                          },
+                        ],
+                      },
+                      metrics: [],
+                      visibility: "public",
+                      isSystemTemplate: false,
+                      engagement: { likes: 2, viewerHasLiked: false },
+                      capabilities: {
+                        canLike: true,
+                        canEdit: false,
+                        canDelete: false,
+                        canDuplicate: false,
+                        canSchedule: true,
+                        canRecord: false,
+                      },
                     },
-                    metrics: [],
-                    visibility: "public",
-                    isSystemTemplate: false,
-                    engagement: { likes: 2, viewerHasLiked: false },
-                    capabilities: {
-                      canLike: true,
-                      canEdit: false,
-                      canDelete: false,
-                      canDuplicate: false,
-                      canSchedule: true,
-                      canRecord: false,
-                    },
-                  },
-                ],
-              },
-            ],
-          },
-        }),
+                  ],
+                },
+              ],
+            },
+          };
+        },
       },
     },
     groups: {
@@ -103,6 +111,7 @@ vi.mock("../../lib/api/client", () => ({
 afterEach(() => {
   cleanup();
   mocks.navigate.mockClear();
+  mocks.activityPlanQuery.mockClear();
   mocks.routeQuery.mockClear();
   mocks.routeError = false;
 });
@@ -138,13 +147,38 @@ describe("DiscoveryExplorer", () => {
   });
   it("persists the active scope category and sort filters when applied", () => {
     render(<DiscoveryExplorer />);
+    expect(mocks.activityPlanQuery).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        activityCategories: undefined,
+        search: undefined,
+        sort_by: "newest",
+      }),
+    );
+    fireEvent.change(screen.getByLabelText("Search activity plans"), {
+      target: { value: "tempo" },
+    });
     fireEvent.change(screen.getByLabelText("Activity category"), { target: { value: "bike" } });
     fireEvent.change(screen.getByLabelText("Sort activity plans"), { target: { value: "oldest" } });
+    expect(mocks.activityPlanQuery).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        activityCategories: undefined,
+        search: undefined,
+        sort_by: "newest",
+      }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
     expect(mocks.navigate).toHaveBeenCalledWith(
       expect.objectContaining({
-        search: { activityCategory: "bike", activitySort: "oldest", scope: "activityPlans" },
+        search: {
+          activityCategory: "bike",
+          activitySort: "oldest",
+          q: "tempo",
+          scope: "activityPlans",
+        },
       }),
+    );
+    expect(mocks.activityPlanQuery).toHaveBeenLastCalledWith(
+      expect.objectContaining({ activityCategories: ["bike"], search: "tempo", sort_by: "oldest" }),
     );
   });
   it("keeps invalid route-distance drafts out of the applied query and clears bounds", () => {

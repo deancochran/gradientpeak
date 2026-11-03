@@ -14,9 +14,26 @@ const mocks = vi.hoisted(() => ({
   eventListInput: undefined as unknown,
   plan: undefined as unknown,
   planInputs: [] as unknown[],
+  recordPlanSearch: undefined as unknown,
   activityPlanId: "invalid-plan",
 }));
 vi.mock("@tanstack/react-router", () => ({
+  Link: ({
+    children,
+    search,
+    to,
+  }: {
+    children: React.ReactNode;
+    search?: Record<string, string>;
+    to: string;
+  }) => {
+    if (to === "/record/plan") mocks.recordPlanSearch = search;
+    return (
+      <a href={`${to}${search?.activityPlanId ? `?activityPlanId=${search.activityPlanId}` : ""}`}>
+        {children}
+      </a>
+    );
+  },
   createFileRoute: () => (options: object) => ({
     ...options,
     useNavigate: () => vi.fn(),
@@ -125,6 +142,7 @@ beforeEach(() => {
   mocks.refetchSchedule.mockReset();
   mocks.eventListInput = undefined;
   mocks.planInputs = [];
+  mocks.recordPlanSearch = undefined;
   mocks.activityPlanId = "invalid-plan";
   mocks.plan = {
     content_visibility: "private",
@@ -480,5 +498,43 @@ describe("ActivityPlanDetailPage print", () => {
     expect(screen.queryByText("Plan intent")).toBeNull();
     expect(screen.queryByText("Personalized")).toBeNull();
     expect(mocks.planInputs).not.toContainEqual({ id: "invalid-plan", personalize: true });
+  });
+  it("offers recording only when the authoritative capability permits it", () => {
+    mocks.plan = {
+      detail: {
+        id: "invalid-plan",
+        name: "Recordable plan",
+        description: null,
+        activityCategory: "run",
+        visibility: "private",
+        createdAt: "2026-07-01T00:00:00.000Z",
+        owner: null,
+        capabilities: { canDuplicate: false, canEdit: false, canRecord: true, canSchedule: false },
+        engagement: { likes: 0, viewerHasLiked: false },
+        metrics: [],
+        structure: null,
+      },
+      edit: null,
+    };
+    const ActivityPlanDetailPage = (Route as unknown as { component: React.ComponentType })
+      .component;
+    const view = render(<ActivityPlanDetailPage />);
+    expect(screen.getByRole("link", { name: "Record this plan" }).getAttribute("href")).toBe(
+      "/record/plan?activityPlanId=invalid-plan",
+    );
+    expect(mocks.recordPlanSearch).toEqual({
+      activityPlanId: "invalid-plan",
+      activity_category: "run",
+      gps: "off",
+    });
+    mocks.plan = {
+      ...(mocks.plan as object),
+      detail: {
+        ...(mocks.plan as { detail: object }).detail,
+        capabilities: { canDuplicate: false, canEdit: false, canRecord: false, canSchedule: false },
+      },
+    };
+    view.rerender(<ActivityPlanDetailPage />);
+    expect(screen.queryByRole("link", { name: "Record this plan" })).toBeNull();
   });
 });

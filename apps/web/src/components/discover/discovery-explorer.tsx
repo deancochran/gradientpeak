@@ -75,11 +75,21 @@ export function DiscoveryExplorer({
   const [search, setSearch] = useState(initialQuery.trim());
   const [activityPlanCategory, setActivityPlanCategory] = useState(initialActivityCategory);
   const [activitySort, setActivitySort] = useState(initialActivitySort);
+  const [appliedActivityPlanCategory, setAppliedActivityPlanCategory] =
+    useState(initialActivityCategory);
+  const [appliedActivitySort, setAppliedActivitySort] = useState(initialActivitySort);
   const [trainingPlanCategory, setTrainingPlanCategory] = useState(initialTrainingPlanCategory);
   const [experience, setExperience] = useState(initialExperience);
   const [routeSort, setRouteSort] = useState(initialRouteSort);
   const [profileSort, setProfileSort] = useState(initialProfileSort);
   const [trainingSort, setTrainingSort] = useState(initialTrainingSort);
+  const [appliedTrainingPlanCategory, setAppliedTrainingPlanCategory] = useState(
+    initialTrainingPlanCategory,
+  );
+  const [appliedExperience, setAppliedExperience] = useState(initialExperience);
+  const [appliedRouteSort, setAppliedRouteSort] = useState(initialRouteSort);
+  const [appliedProfileSort, setAppliedProfileSort] = useState(initialProfileSort);
+  const [appliedTrainingSort, setAppliedTrainingSort] = useState(initialTrainingSort);
   const [minDistance, setMinDistance] = useState(initialMinDistanceKm);
   const [maxDistance, setMaxDistance] = useState(initialMaxDistanceKm);
   const [appliedMinDistance, setAppliedMinDistance] = useState(initialMinDistanceKm);
@@ -90,13 +100,13 @@ export function DiscoveryExplorer({
     draftSearch.trim() !== search ||
     minDistance !== appliedMinDistance ||
     maxDistance !== appliedMaxDistance ||
-    activityPlanCategory !== initialActivityCategory ||
-    activitySort !== initialActivitySort ||
-    trainingPlanCategory !== initialTrainingPlanCategory ||
-    experience !== initialExperience ||
-    routeSort !== initialRouteSort ||
-    profileSort !== initialProfileSort ||
-    trainingSort !== initialTrainingSort;
+    activityPlanCategory !== appliedActivityPlanCategory ||
+    activitySort !== appliedActivitySort ||
+    trainingPlanCategory !== appliedTrainingPlanCategory ||
+    experience !== appliedExperience ||
+    routeSort !== appliedRouteSort ||
+    profileSort !== appliedProfileSort ||
+    trainingSort !== appliedTrainingSort;
   const numericError = getDistanceRangeError(minDistance, maxDistance);
 
   useEffect(() => {
@@ -105,13 +115,13 @@ export function DiscoveryExplorer({
       initialScope === scope &&
       initialMinDistanceKm === appliedMinDistance &&
       initialMaxDistanceKm === appliedMaxDistance &&
-      initialActivityCategory === activityPlanCategory &&
-      initialActivitySort === activitySort &&
-      initialTrainingPlanCategory === trainingPlanCategory &&
-      initialExperience === experience &&
-      initialRouteSort === routeSort &&
-      initialProfileSort === profileSort &&
-      initialTrainingSort === trainingSort;
+      initialActivityCategory === appliedActivityPlanCategory &&
+      initialActivitySort === appliedActivitySort &&
+      initialTrainingPlanCategory === appliedTrainingPlanCategory &&
+      initialExperience === appliedExperience &&
+      initialRouteSort === appliedRouteSort &&
+      initialProfileSort === appliedProfileSort &&
+      initialTrainingSort === appliedTrainingSort;
     if (awaitingUrlSync) {
       if (urlMatchesAppliedState) setAwaitingUrlSync(false);
       return;
@@ -126,11 +136,18 @@ export function DiscoveryExplorer({
     setAppliedMaxDistance(initialMaxDistanceKm);
     setActivityPlanCategory(initialActivityCategory);
     setActivitySort(initialActivitySort);
+    setAppliedActivityPlanCategory(initialActivityCategory);
+    setAppliedActivitySort(initialActivitySort);
     setTrainingPlanCategory(initialTrainingPlanCategory);
     setExperience(initialExperience);
     setRouteSort(initialRouteSort);
     setProfileSort(initialProfileSort);
     setTrainingSort(initialTrainingSort);
+    setAppliedTrainingPlanCategory(initialTrainingPlanCategory);
+    setAppliedExperience(initialExperience);
+    setAppliedRouteSort(initialRouteSort);
+    setAppliedProfileSort(initialProfileSort);
+    setAppliedTrainingSort(initialTrainingSort);
   }, [
     appliedMaxDistance,
     appliedMinDistance,
@@ -146,26 +163,26 @@ export function DiscoveryExplorer({
     initialTrainingSort,
     initialQuery,
     initialScope,
-    activityPlanCategory,
-    activitySort,
+    appliedActivityPlanCategory,
+    appliedActivitySort,
+    appliedExperience,
+    appliedProfileSort,
+    appliedRouteSort,
+    appliedTrainingPlanCategory,
+    appliedTrainingSort,
     awaitingUrlSync,
-    experience,
-    profileSort,
-    routeSort,
     scope,
     search,
-    trainingPlanCategory,
-    trainingSort,
   ]);
 
   const activityPlans = api.activityPlans.list.useInfiniteQuery(
     {
       ownerScope: "discoverable",
       search: search || undefined,
-      activityCategories: activityPlanCategory
-        ? [activityPlanCategory as "run" | "bike" | "swim" | "strength" | "other"]
+      activityCategories: appliedActivityPlanCategory
+        ? [appliedActivityPlanCategory as "run" | "bike" | "swim" | "strength" | "other"]
         : undefined,
-      sort_by: activitySort as "newest" | "oldest",
+      sort_by: appliedActivitySort as "newest" | "oldest",
       limit: 20,
     },
     {
@@ -177,13 +194,13 @@ export function DiscoveryExplorer({
   const trainingPlans = api.trainingPlans.listTemplates.useInfiniteQuery(
     {
       search: search || undefined,
-      activity_category: trainingPlanCategory
-        ? (trainingPlanCategory as "bike" | "run" | "other" | "swim" | "strength")
+      activity_category: appliedTrainingPlanCategory
+        ? (appliedTrainingPlanCategory as "bike" | "run" | "other" | "swim" | "strength")
         : undefined,
-      experience_level: experience
-        ? (experience as "beginner" | "intermediate" | "advanced")
+      experience_level: appliedExperience
+        ? (appliedExperience as "beginner" | "intermediate" | "advanced")
         : undefined,
-      sort_by: trainingSort as
+      sort_by: appliedTrainingSort as
         | "newest"
         | "oldest"
         | "duration_desc"
@@ -204,7 +221,7 @@ export function DiscoveryExplorer({
       search: search || undefined,
       min_distance_m: appliedMinDistance ? Number(appliedMinDistance) * 1000 : undefined,
       max_distance_m: appliedMaxDistance ? Number(appliedMaxDistance) * 1000 : undefined,
-      sort_by: routeSort as "newest" | "oldest" | "distance_desc" | "distance_asc",
+      sort_by: appliedRouteSort as "newest" | "oldest" | "distance_desc" | "distance_asc",
       limit: 20,
     },
     { enabled: scope === "routes", getNextPageParam: (page) => page.nextCursor, retry: false },
@@ -212,13 +229,13 @@ export function DiscoveryExplorer({
   const users = api.social.searchUsers.useInfiniteQuery(
     {
       query: search || undefined,
-      sort_by: profileSort as "newest" | "oldest" | "username_asc" | "username_desc",
+      sort_by: appliedProfileSort as "newest" | "oldest" | "username_asc" | "username_desc",
       limit: 20,
     },
     { enabled: scope === "users", getNextPageParam: (page) => page.nextCursor, retry: false },
   );
   const groups = api.groups.listDiscoverable.useInfiniteQuery(
-    { search: search || undefined, sort_by: profileSort as "newest" | "oldest", limit: 20 },
+    { search: search || undefined, sort_by: appliedProfileSort as "newest" | "oldest", limit: 20 },
     {
       enabled: scope === "groups",
       getNextPageParam: (page) => page.nextCursor ?? undefined,
@@ -237,11 +254,18 @@ export function DiscoveryExplorer({
   const resetScopeFilters = () => {
     setActivityPlanCategory("");
     setActivitySort("newest");
+    setAppliedActivityPlanCategory("");
+    setAppliedActivitySort("newest");
     setTrainingPlanCategory("");
     setExperience("");
     setRouteSort("newest");
     setProfileSort("newest");
     setTrainingSort("newest");
+    setAppliedTrainingPlanCategory("");
+    setAppliedExperience("");
+    setAppliedRouteSort("newest");
+    setAppliedProfileSort("newest");
+    setAppliedTrainingSort("newest");
     setMinDistance("");
     setMaxDistance("");
     setAppliedMinDistance("");
@@ -253,6 +277,13 @@ export function DiscoveryExplorer({
     setSearch(nextSearch);
     setAppliedMinDistance(minDistance);
     setAppliedMaxDistance(maxDistance);
+    setAppliedActivityPlanCategory(activityPlanCategory);
+    setAppliedActivitySort(activitySort);
+    setAppliedTrainingPlanCategory(trainingPlanCategory);
+    setAppliedExperience(experience);
+    setAppliedRouteSort(routeSort);
+    setAppliedProfileSort(profileSort);
+    setAppliedTrainingSort(trainingSort);
     setAwaitingUrlSync(true);
     void navigate({
       to: "/search",
