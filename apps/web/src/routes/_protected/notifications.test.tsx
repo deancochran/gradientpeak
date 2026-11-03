@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   fetchNextPage: vi.fn(),
   historyError: false,
+  isFetchNextPageError: false,
   isFetchingNextPage: false,
   nextCursor: null as { createdAt: string; id: string } | null,
   refetch: vi.fn(),
@@ -47,6 +48,7 @@ vi.mock("../../lib/api/client", () => ({
           fetchNextPage: mocks.fetchNextPage,
           hasNextPage: mocks.nextCursor !== null,
           isError: mocks.historyError,
+          isFetchNextPageError: mocks.isFetchNextPageError,
           isFetchingNextPage: mocks.isFetchingNextPage,
           isLoading: false,
           refetch: mocks.refetch,
@@ -61,6 +63,7 @@ afterEach(() => {
   vi.clearAllMocks();
   mocks.notifications = [];
   mocks.historyError = false;
+  mocks.isFetchNextPageError = false;
   mocks.isFetchingNextPage = false;
   mocks.nextCursor = null;
 });
@@ -157,8 +160,9 @@ describe("notification history states", () => {
     expect(mocks.fetchNextPage).not.toHaveBeenCalled();
   });
 
-  it("retains cached rows and retries only the failed next page", () => {
+  it("retains cached rows and retries only a failed next page", () => {
     mocks.historyError = true;
+    mocks.isFetchNextPageError = true;
     mocks.notifications = [
       {
         id: NOTIFICATION_ID,
@@ -177,6 +181,31 @@ describe("notification history states", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(mocks.fetchNextPage).toHaveBeenCalledOnce();
     expect(mocks.refetch).not.toHaveBeenCalled();
+  });
+
+  it("retains cached rows after a refresh error and retries the full history without next page", () => {
+    mocks.historyError = true;
+    mocks.notifications = [
+      {
+        id: NOTIFICATION_ID,
+        user_id: "11111111-1111-4111-8111-111111111111",
+        actor_id: ACTOR_ID,
+        type: "new_follower",
+        entity_id: null,
+        read_at: null,
+        created_at: "2026-07-20T10:00:00.000Z",
+      },
+    ];
+    const NotificationsPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<NotificationsPage />);
+
+    expect(screen.getByText("New Follower")).toBeTruthy();
+    expect(screen.getByText("Notifications could not be refreshed.")).toBeTruthy();
+    expect(screen.queryByText("More notifications could not be loaded.")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Load more notifications" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(mocks.refetch).toHaveBeenCalledOnce();
+    expect(mocks.fetchNextPage).not.toHaveBeenCalled();
   });
 
   it("submits only the first 100 loaded unread IDs and labels that bounded scope truthfully", () => {

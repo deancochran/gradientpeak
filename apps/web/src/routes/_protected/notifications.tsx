@@ -147,11 +147,23 @@ function NotificationsPage() {
               <NotificationsEmptyState unreadOnly={view === "unread"} />
             )}
           </ScrollArea>
-          {notificationsQuery.isError && notifications.length > 0 ? (
+          {notificationsQuery.isFetchNextPageError && notifications.length > 0 ? (
             <div className="flex items-center justify-between gap-3 border-t p-3" role="alert">
               <span className="text-sm">More notifications could not be loaded.</span>
               <Button
                 onClick={() => void notificationsQuery.fetchNextPage()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Retry
+              </Button>
+            </div>
+          ) : notificationsQuery.isError && notifications.length > 0 ? (
+            <div className="flex items-center justify-between gap-3 border-t p-3" role="alert">
+              <span className="text-sm">Notifications could not be refreshed.</span>
+              <Button
+                onClick={() => void notificationsQuery.refetch()}
                 size="sm"
                 type="button"
                 variant="outline"
