@@ -5,8 +5,17 @@ import { toast } from "sonner";
 import { GroupEventForm } from "../../../../../components/groups/group-event-form";
 import { QueryState } from "../../../../../components/groups/group-ui";
 import { api } from "../../../../../lib/api/client";
+import { loadRouteQuery } from "../../../../../lib/api/route-loading";
+import { createGroupDetailInput } from "../../../../../lib/groups-query-inputs";
 
 export const Route = createFileRoute("/_protected/groups/$groupId/events/new")({
+  loader: ({ context, params }) => {
+    const input = createGroupDetailInput(params.groupId);
+    return loadRouteQuery(
+      () => context.apiUtils.groups.detail.getData(input),
+      () => context.apiUtils.groups.detail.fetch(input),
+    );
+  },
   component: CreateGroupEventPage,
 });
 
@@ -14,7 +23,7 @@ function CreateGroupEventPage() {
   const { groupId } = Route.useParams();
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
-  const detail = api.groups.detail.useQuery({ groupId });
+  const detail = api.groups.detail.useQuery(createGroupDetailInput(groupId));
   const createMutation = api.groups.events.create.useMutation();
   const recurringMutation = api.groups.events.createRecurringEventSeries.useMutation();
   const isSubmitting = createMutation.isPending || recurringMutation.isPending;

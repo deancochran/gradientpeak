@@ -14,8 +14,52 @@ import {
   QueryState,
 } from "../../../../../components/groups/group-ui";
 import { api } from "../../../../../lib/api/client";
+import { loadRouteQuery } from "../../../../../lib/api/route-loading";
+import { prefetchSecondary } from "../../../../../lib/api/secondary-prefetch";
+import {
+  createActivityPlansInput,
+  createGroupDetailInput,
+  createGroupEventDetailInput,
+  createGroupEventOccurrencesInput,
+  createRouteInput,
+} from "../../../../../lib/groups-query-inputs";
 
 export const Route = createFileRoute("/_protected/groups/events/$groupEventId/")({
+  loader: async ({ context, params }) => {
+    const occurrencesStart = new Date().toISOString();
+    const eventInput = createGroupEventDetailInput(params.groupEventId);
+    await loadRouteQuery(
+      () => context.apiUtils.groups.events.detail.getData(eventInput),
+      () => context.apiUtils.groups.events.detail.fetch(eventInput),
+    );
+    const event = context.apiUtils.groups.events.detail.getData(eventInput)?.event;
+    if (event) {
+      const groupInput = createGroupDetailInput(event.group_id);
+      await loadRouteQuery(
+        () => context.apiUtils.groups.detail.getData(groupInput),
+        () => context.apiUtils.groups.detail.fetch(groupInput),
+      );
+      if (event.is_recurring_occurrence || event.is_recurring_series) {
+        prefetchSecondary(() =>
+          context.apiUtils.groups.events.seriesOccurrences.prefetch(
+            createGroupEventOccurrencesInput(params.groupEventId, occurrencesStart),
+          ),
+        );
+      }
+      const routeId = event.route_id;
+      if (routeId) {
+        prefetchSecondary(() => context.apiUtils.routes.get.prefetch(createRouteInput(routeId)));
+      }
+      if (event.activity_plan_id) {
+        prefetchSecondary(() =>
+          context.apiUtils.activityPlans.getManyByIds.prefetch(
+            createActivityPlansInput(event.activity_plan_id),
+          ),
+        );
+      }
+    }
+    return { occurrencesStart };
+  },
   component: GroupEventDetailPage,
 });
 
@@ -23,22 +67,23 @@ function GroupEventDetailPage() {
   const { groupEventId } = Route.useParams();
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
-  const detail = api.groups.events.detail.useQuery({ groupEventId });
+  const { occurrencesStart } = Route.useLoaderData();
+  const detail = api.groups.events.detail.useQuery(createGroupEventDetailInput(groupEventId));
   const event = detail.data?.event as GroupEventSummary | undefined;
   const group = api.groups.detail.useQuery(
-    { groupId: event?.group_id ?? "00000000-0000-4000-8000-000000000000" },
+    createGroupDetailInput(event?.group_id ?? "00000000-0000-4000-8000-000000000000"),
     { enabled: Boolean(event) },
   );
   const occurrences = api.groups.events.seriesOccurrences.useQuery(
-    { groupEventId, limit: 30, startsAfter: new Date().toISOString() },
+    createGroupEventOccurrencesInput(groupEventId, occurrencesStart),
     { enabled: Boolean(event?.is_recurring_occurrence || event?.is_recurring_series) },
   );
   const route = api.routes.get.useQuery(
-    { id: event?.route_id ?? "00000000-0000-4000-8000-000000000000" },
+    createRouteInput(event?.route_id ?? "00000000-0000-4000-8000-000000000000"),
     { enabled: Boolean(event?.route_id), retry: false },
   );
   const plan = api.activityPlans.getManyByIds.useQuery(
-    { ids: event?.activity_plan_id ? [event.activity_plan_id] : [] },
+    createActivityPlansInput(event?.activity_plan_id),
     { enabled: Boolean(event?.activity_plan_id), retry: false },
   );
   const rsvpMutation = api.groups.events.rsvp.useMutation({

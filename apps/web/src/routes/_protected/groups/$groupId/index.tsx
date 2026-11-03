@@ -2,7 +2,7 @@ import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader } from "@repo/ui/components/card";
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   GroupEventCard,
   type GroupEventSummary,
@@ -11,8 +11,23 @@ import {
   type WebGroupSummary,
 } from "../../../../components/groups/group-ui";
 import { api } from "../../../../lib/api/client";
+import { loadRouteQuery } from "../../../../lib/api/route-loading";
+import {
+  createGroupDetailInput,
+  createGroupEventsAfterInput,
+  createGroupEventsBeforeInput,
+} from "../../../../lib/groups-query-inputs";
 
 export const Route = createFileRoute("/_protected/groups/$groupId/")({
+  loader: async ({ context, params }) => {
+    const eventsWindowStart = new Date().toISOString();
+    const input = createGroupDetailInput(params.groupId);
+    await loadRouteQuery(
+      () => context.apiUtils.groups.detail.getData(input),
+      () => context.apiUtils.groups.detail.fetch(input),
+    );
+    return { eventsWindowStart };
+  },
   component: RouteComponent,
 });
 
@@ -21,18 +36,18 @@ function RouteComponent() {
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
   const [eventTimeframe, setEventTimeframe] = useState<"upcoming" | "past">("upcoming");
-  const now = useMemo(() => new Date().toISOString(), []);
-  const detail = api.groups.detail.useQuery({ groupId });
+  const { eventsWindowStart } = Route.useLoaderData();
+  const detail = api.groups.detail.useQuery(createGroupDetailInput(groupId));
   const viewer = detail.data?.viewer;
   const upcomingEvents = api.groups.events.list.useInfiniteQuery(
-    { groupId, limit: 20, startsAfter: now },
+    createGroupEventsAfterInput(groupId, eventsWindowStart),
     {
       enabled: Boolean(viewer?.canViewGroupEvents),
       getNextPageParam: (page) => page.nextCursor,
     },
   );
   const pastEvents = api.groups.events.list.useInfiniteQuery(
-    { groupId, limit: 20, startsBefore: now },
+    createGroupEventsBeforeInput(groupId, eventsWindowStart),
     {
       enabled: Boolean(viewer?.canViewGroupEvents),
       getNextPageParam: (page) => page.nextCursor,

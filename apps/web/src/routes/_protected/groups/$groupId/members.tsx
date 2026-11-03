@@ -9,8 +9,20 @@ import {
   QueryState,
 } from "../../../../components/groups/group-ui";
 import { api } from "../../../../lib/api/client";
+import { loadRouteQuery } from "../../../../lib/api/route-loading";
+import {
+  createGroupDetailInput,
+  createGroupMembersInput,
+} from "../../../../lib/groups-query-inputs";
 
 export const Route = createFileRoute("/_protected/groups/$groupId/members")({
+  loader: ({ context, params }) => {
+    const input = createGroupDetailInput(params.groupId);
+    return loadRouteQuery(
+      () => context.apiUtils.groups.detail.getData(input),
+      () => context.apiUtils.groups.detail.fetch(input),
+    );
+  },
   component: GroupMembersPage,
 });
 
@@ -18,14 +30,11 @@ function GroupMembersPage() {
   const { groupId } = Route.useParams();
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
-  const detail = api.groups.detail.useQuery({ groupId });
-  const members = api.groups.members.useInfiniteQuery(
-    { groupId, limit: 30 },
-    {
-      enabled: Boolean(detail.data?.viewer.canViewMembers),
-      getNextPageParam: (page) => page.nextCursor,
-    },
-  );
+  const detail = api.groups.detail.useQuery(createGroupDetailInput(groupId));
+  const members = api.groups.members.useInfiniteQuery(createGroupMembersInput(groupId), {
+    enabled: Boolean(detail.data?.viewer.canViewMembers),
+    getNextPageParam: (page) => page.nextCursor,
+  });
   const roleMutation = api.groups.updateMemberRole.useMutation({
     onSuccess: () => utils.groups.invalidate(),
   });

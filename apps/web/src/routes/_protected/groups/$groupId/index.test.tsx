@@ -9,6 +9,7 @@ const fetchNextPage = vi.fn();
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
+    useLoaderData: () => ({ eventsWindowStart: "2026-11-03T00:00:00.000Z" }),
     useNavigate: () => vi.fn(),
     useParams: () => ({ groupId: "group-1" }),
   }),

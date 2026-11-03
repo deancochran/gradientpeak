@@ -9,8 +9,21 @@ import {
   QueryState,
 } from "../../../../components/groups/group-ui";
 import { api } from "../../../../lib/api/client";
+import { loadRouteQuery } from "../../../../lib/api/route-loading";
+import {
+  createGroupDetailInput,
+  createPendingInvitationsInput,
+  createPendingJoinRequestsInput,
+} from "../../../../lib/groups-query-inputs";
 
 export const Route = createFileRoute("/_protected/groups/$groupId/requests")({
+  loader: ({ context, params }) => {
+    const input = createGroupDetailInput(params.groupId);
+    return loadRouteQuery(
+      () => context.apiUtils.groups.detail.getData(input),
+      () => context.apiUtils.groups.detail.fetch(input),
+    );
+  },
   component: GroupRequestsPage,
 });
 
@@ -19,14 +32,14 @@ function GroupRequestsPage() {
   const utils = api.useUtils();
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const detail = api.groups.detail.useQuery({ groupId });
+  const detail = api.groups.detail.useQuery(createGroupDetailInput(groupId));
   const viewer = detail.data?.viewer;
   const inviteQueue = api.groups.pendingInvitations.useQuery(
-    { groupId, limit: 50 },
+    createPendingInvitationsInput(groupId),
     { enabled: Boolean(viewer?.canInvite) },
   );
   const requestQueue = api.groups.pendingJoinRequests.useQuery(
-    { groupId, limit: 50 },
+    createPendingJoinRequestsInput(groupId),
     { enabled: Boolean(viewer?.canManageJoinRequests) },
   );
   const profiles = api.social.searchUsers.useQuery(
