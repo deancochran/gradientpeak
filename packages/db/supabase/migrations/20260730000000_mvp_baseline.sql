@@ -50,7 +50,7 @@ CREATE TYPE "public"."profile_metric_type" AS ENUM('weight_kg', 'resting_hr', 's
 CREATE TYPE "public"."threshold_evidence_status" AS ENUM('active', 'superseded', 'deleted');
 CREATE TABLE "accounts" (
 	"id" uuid DEFAULT pg_catalog.gen_random_uuid() PRIMARY KEY NOT NULL,
-	"issuer" text NOT NULL,
+	"issuer" text,
 	"account_id" text NOT NULL,
 	"provider_id" text NOT NULL,
 	"user_id" uuid NOT NULL,
@@ -1598,7 +1598,7 @@ ALTER TABLE "provider_webhook_receipts" ADD CONSTRAINT "provider_webhook_receipt
 ALTER TABLE "provider_webhook_receipts" ADD CONSTRAINT "provider_webhook_receipts_job_id_provider_sync_jobs_id_fk" FOREIGN KEY ("job_id") REFERENCES "public"."provider_sync_jobs"("id") ON DELETE set null ON UPDATE no action;
 ALTER TABLE "training_plans" ADD CONSTRAINT "training_plans_profile_id_profiles_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE cascade ON UPDATE no action;
 CREATE INDEX "accounts_userId_idx" ON "accounts" USING btree ("user_id");
-CREATE UNIQUE INDEX "accounts_issuer_accountId_uidx" ON "accounts" USING btree ("issuer","account_id");
+CREATE UNIQUE INDEX "accounts_providerId_accountId_uidx" ON "accounts" USING btree ("provider_id","account_id");
 CREATE INDEX "sessions_userId_idx" ON "sessions" USING btree ("user_id");
 CREATE INDEX "verifications_identifier_idx" ON "verifications" USING btree ("identifier");
 CREATE INDEX "idx_activities_activity_plan" ON "activities" USING btree ("activity_plan_id") WHERE "activities"."activity_plan_id" is not null;
