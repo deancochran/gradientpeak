@@ -135,7 +135,12 @@ export function isAllowedMobileCallbackUrl(
     if (!allowedProtocols.has(parsed.protocol.toLowerCase())) return false;
     if (parsed.username || parsed.password || parsed.port) return false;
 
-    const expectedHost = options.callbackPath.replace(/^\/+|\/+$/g, "").toLowerCase();
+    const callbackPath = options.callbackPath;
+    let start = 0;
+    let end = callbackPath.length;
+    while (start < end && callbackPath[start] === "/") start += 1;
+    while (end > start && callbackPath[end - 1] === "/") end -= 1;
+    const expectedHost = callbackPath.slice(start, end).toLowerCase();
     return (
       parsed.hostname.toLowerCase() === expectedHost &&
       (parsed.pathname === "" || parsed.pathname === "/") &&

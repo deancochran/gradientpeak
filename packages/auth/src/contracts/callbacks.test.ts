@@ -94,6 +94,31 @@ describe("isAllowedMobileCallbackUrl", () => {
   });
 
   it.each([
+    "callback",
+    "/callback",
+    "callback/",
+    "///CALLBACK///",
+  ])("preserves callback-path slash normalization for %s", (callbackPath) => {
+    expect(
+      isAllowedMobileCallbackUrl("gradientpeak://callback", { ...options, callbackPath }),
+    ).toBe(true);
+  });
+
+  it("handles long slash runs without regex backtracking and preserves internal paths", () => {
+    const padding = "/".repeat(100_000);
+    for (const [callbackPath, allowed] of [
+      [`${padding}callback${padding}`, true],
+      [padding, false],
+      [`callback${padding}extra`, false],
+      ["callback/extra", false],
+    ] as const) {
+      expect(
+        isAllowedMobileCallbackUrl("gradientpeak://callback", { ...options, callbackPath }),
+      ).toBe(allowed);
+    }
+  });
+
+  it.each([
     "javascript://callback/%0AglobalThis.compromised=true",
     "data://callback/text/html,pwned",
     "file://callback/etc/passwd",
