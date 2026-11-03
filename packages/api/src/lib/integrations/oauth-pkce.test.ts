@@ -20,6 +20,13 @@ const config: ResolvedWahooOAuthConfig = {
 };
 
 describe("local OAuth PKCE adapter", () => {
+  it("matches the public RFC 7636 Appendix B S256 vector", () => {
+    // Published protocol test values, not application credentials.
+    expect(createOAuthCodeChallenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")).toBe(
+      "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+    );
+  });
+
   it("redeems a signed authorization code only with its S256 verifier", () => {
     const verifier = deriveOAuthCodeVerifier({
       clientSecret: config.clientSecret,
