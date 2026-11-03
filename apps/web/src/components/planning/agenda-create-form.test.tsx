@@ -85,4 +85,19 @@ describe("AgendaCreateForm", () => {
     expect(formData.get("event_type")).toBe("custom");
     expect(formData.has("activity_plan_id")).toBe(false);
   });
+
+  it("preserves the originating calendar context in the create redirect", async () => {
+    render(
+      <AgendaCreateForm
+        initialDate="2026-10-26"
+        redirectTo="/calendar?date=2026-10-26&month=2026-10&view=week"
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Morning ride" } });
+    fireEvent.submit(getForm());
+
+    await waitFor(() => expect(mocks.action).toHaveBeenCalledTimes(1));
+    const formData = mocks.action.mock.calls[0]?.[0]?.data as FormData;
+    expect(formData.get("redirectTo")).toBe("/calendar?date=2026-10-26&month=2026-10&view=week");
+  });
 });

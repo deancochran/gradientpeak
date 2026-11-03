@@ -37,6 +37,9 @@ function CalendarDayPage() {
   const { date: routeDate } = Route.useParams();
   const { month, view } = Route.useSearch();
   const eventsQuery = api.calendar.day.useQuery({ date: routeDate });
+  const previousDate = shiftDateKey(routeDate, -1);
+  const nextDate = shiftDateKey(routeDate, 1);
+  const monthForDate = (date: string) => getMonthKey(new Date(`${date}T12:00:00`));
 
   const projectionItems = (eventsQuery.data?.projection.items ?? []).filter(
     (item) => item.calendarDate === routeDate,
@@ -68,23 +71,23 @@ function CalendarDayPage() {
       <div className="flex flex-wrap gap-2">
         <Link
           to="/calendar/day/$date"
-          params={{ date: shiftDateKey(routeDate, -1) }}
-          search={{ month, view }}
+          params={{ date: previousDate }}
+          search={{ month: monthForDate(previousDate), view }}
           className={buttonVariants({ variant: "outline", size: "sm" })}
         >
           Previous day
         </Link>
         <Link
           to="/calendar/day/$date"
-          params={{ date: shiftDateKey(routeDate, 1) }}
-          search={{ month, view }}
+          params={{ date: nextDate }}
+          search={{ month: monthForDate(nextDate), view }}
           className={buttonVariants({ variant: "outline", size: "sm" })}
         >
           Next day
         </Link>
         <Link
           to="/calendar/new"
-          search={{ date: routeDate }}
+          search={{ date: routeDate, month, view }}
           className={buttonVariants({ variant: "outline", size: "sm" })}
         >
           Create event for this day
@@ -131,6 +134,10 @@ function CalendarDayPage() {
         <CardContent>
           {eventsQuery.isLoading ? (
             <p className="text-sm text-muted-foreground">Loading day agenda...</p>
+          ) : eventsQuery.isError && agendaCount === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              The agenda is unavailable until it can be loaded.
+            </p>
           ) : agendaCount > 0 ? (
             <div className="space-y-3">
               {agendaItems.map((item) => (

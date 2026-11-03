@@ -75,7 +75,15 @@ function CalendarIndexPage() {
   const view = search.view === "agenda" || search.view === "week" ? search.view : "month";
   const monthWindow = useMemo(() => getMonthWindow(month), [month]);
   const weekWindow = useMemo(() => getWeekWindow(date), [date]);
-  const { startKey, endKey } = view === "week" ? weekWindow : monthWindow;
+  const gridDays = useMemo(() => getCalendarGrid(month), [month]);
+  const visibleMonthWindow = useMemo(() => {
+    const firstDay = gridDays[0];
+    const lastDay = gridDays.at(-1);
+    return firstDay && lastDay
+      ? { endKey: toDateKey(lastDay), startKey: toDateKey(firstDay) }
+      : monthWindow;
+  }, [gridDays, monthWindow]);
+  const { startKey, endKey } = view === "week" ? weekWindow : visibleMonthWindow;
   const todayKey = getTodayDateKey();
   const eventsQuery = api.calendar.range.useQuery({
     startDate: startKey,
@@ -109,7 +117,6 @@ function CalendarIndexPage() {
     }
     return grouped;
   }, [projectionItems]);
-  const gridDays = useMemo(() => getCalendarGrid(month), [month]);
   const formatDistance = (value: number | null) =>
     value === null
       ? null
@@ -138,7 +145,7 @@ function CalendarIndexPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
           <Button asChild>
-            <Link to="/calendar/new" search={{ date }}>
+            <Link to="/calendar/new" search={{ date, month, view }}>
               <Plus className="mr-2 h-4 w-4" />
               Create
             </Link>
@@ -217,10 +224,10 @@ function CalendarIndexPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {eventsQuery.data?.truncation.plannedSessions ? (
+          {eventsQuery.data && Object.values(eventsQuery.data.truncation).some(Boolean) ? (
             <p role="alert" className="text-sm text-destructive">
-              This range is too large to show completely. Narrow the calendar period before making
-              decisions from this list.
+              This calendar period could not be shown completely. Narrow the period before making
+              decisions from these results.
             </p>
           ) : null}
           {eventsQuery.isLoading ? (
@@ -272,7 +279,7 @@ function CalendarIndexPage() {
           void navigate({
             to: "/calendar",
             search: {
-              date,
+              date: nextView === "week" && !date.startsWith(month) ? monthWindow.startKey : date,
               month,
               view: nextView === "agenda" || nextView === "week" ? nextView : "month",
             },
