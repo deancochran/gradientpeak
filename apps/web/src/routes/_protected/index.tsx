@@ -13,10 +13,11 @@ import { SearchLauncher } from "../../components/protected/search-launcher";
 import { useAuth } from "../../components/providers/auth-provider";
 import { api } from "../../lib/api/client";
 import { loadRouteQuery } from "../../lib/api/route-loading";
+import { prefetchSecondary } from "../../lib/api/secondary-prefetch";
 
 export const Route = createFileRoute("/_protected/")({
   loader: async ({ context }) => {
-    void context.apiUtils.athleteIntelligence.getThresholdOverview.prefetch({});
+    prefetchSecondary(() => context.apiUtils.athleteIntelligence.getThresholdOverview.prefetch({}));
     await loadRouteQuery(
       () => context.apiUtils.home.getDashboard.getData(undefined),
       () => context.apiUtils.home.getDashboard.fetch(undefined),

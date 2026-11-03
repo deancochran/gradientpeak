@@ -27,6 +27,7 @@ import {
 import { useAuth } from "../../components/providers/auth-provider";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
+import { loadRouteQuery } from "../../lib/api/route-loading";
 import { contractEpochFormInputProps } from "../../lib/contract-epoch";
 import { sendMessageAction } from "../../lib/messaging/server-actions";
 
@@ -103,6 +104,31 @@ export const Route = createFileRoute("/_protected/messages")({
         ? (search.flashType as RouteFlashType)
         : undefined,
   }),
+  loaderDeps: ({ search }) => ({ compose: search.compose, conversationId: search.conversationId }),
+  loader: async ({ context, deps }) => {
+    let conversations:
+      | Awaited<ReturnType<typeof context.apiUtils.messaging.getConversations.fetch>>
+      | undefined;
+    await loadRouteQuery(
+      () => context.apiUtils.messaging.getConversations.getData(undefined),
+      async () => {
+        conversations = await context.apiUtils.messaging.getConversations.fetch(undefined);
+        return conversations;
+      },
+    );
+    conversations ??= context.apiUtils.messaging.getConversations.getData(undefined);
+    if (
+      !deps.compose &&
+      deps.conversationId &&
+      conversations?.some(({ id }) => id === deps.conversationId)
+    ) {
+      const input = { conversation_id: deps.conversationId };
+      await loadRouteQuery(
+        () => context.apiUtils.messaging.getMessages.getData(input),
+        () => context.apiUtils.messaging.getMessages.fetch(input),
+      );
+    }
+  },
   component: MessagesPage,
 });
 

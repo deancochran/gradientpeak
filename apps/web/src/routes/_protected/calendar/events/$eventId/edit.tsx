@@ -11,6 +11,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { CalendarEventForm } from "../../../../../components/protected/calendar-event-form";
 import { api } from "../../../../../lib/api/client";
+import { loadRouteQuery } from "../../../../../lib/api/route-loading";
 import { getMonthKey, isValidMonthKey } from "../../../../../lib/planning";
 
 export const Route = createFileRoute("/_protected/calendar/events/$eventId/edit")({
@@ -21,6 +22,13 @@ export const Route = createFileRoute("/_protected/calendar/events/$eventId/edit"
         : getMonthKey(new Date()),
     view: search.view === "agenda" || search.view === "week" ? search.view : "month",
   }),
+  loader: ({ context, params }) => {
+    const input = { id: params.eventId };
+    return loadRouteQuery(
+      () => context.apiUtils.events.getById.getData(input),
+      () => context.apiUtils.events.getById.fetch(input),
+    );
+  },
   component: EventEditPage,
 });
 

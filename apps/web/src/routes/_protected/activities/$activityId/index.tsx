@@ -62,6 +62,7 @@ import {
 } from "../../../../lib/activity-route-helpers";
 import { api } from "../../../../lib/api/client";
 import { loadRouteQuery } from "../../../../lib/api/route-loading";
+import { prefetchSecondary } from "../../../../lib/api/secondary-prefetch";
 import { summarizeRecordingExecution } from "../../../../lib/recording/execution-review";
 
 type ContentVisibility = "private" | "followers" | "public";
@@ -86,7 +87,7 @@ function formatEffortValue(value: number, unit: string) {
 
 export const Route = createFileRoute("/_protected/activities/$activityId/")({
   loader: async ({ context, params }) => {
-    void context.apiUtils.activities.listPaginated.prefetch({ limit: 20 }).catch(() => undefined);
+    prefetchSecondary(() => context.apiUtils.activities.listPaginated.prefetch({ limit: 20 }));
     const input = { id: params.activityId };
     const efforts = loadRouteQuery(
       () => context.apiUtils.activities.getEfforts.getData(input),
