@@ -206,6 +206,18 @@ describe("RecordPlanPage", () => {
       search: { activity_category: "run", gps: "off", activityPlanId: PLAN_ID },
     });
   });
+  it("keeps the selected plan review and action adjacent to its library card", () => {
+    render(<RecordPlanPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Select Tempo run" }));
+
+    const selectedCard = screen.getByTestId(`activity-plan-card-${PLAN_ID}`);
+    const review = screen.getByTestId("recording-plan-review");
+    expect(selectedCard.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(screen.getByRole("button", { name: "Use this plan" })).toBeTruthy();
+  });
   it("shows a zero-result failure rather than empty and retries without losing search", () => {
     mocks.listError = true;
     mocks.listEmpty = true;
