@@ -35,7 +35,7 @@ export function GoalsPage() {
     sort: "created_at" | "priority" | "target_date";
   };
   const profileQuery = api.profiles.get.useQuery();
-  const goalsQuery = api.goals.list.useQuery(
+  const goalsQuery = api.goals.list.useInfiniteQuery(
     {
       profile_id: profileQuery.data?.id ?? "00000000-0000-0000-0000-000000000000",
       ...(search.q.trim() ? { search: search.q.trim() } : {}),
@@ -44,8 +44,14 @@ export function GoalsPage() {
       sort_order: search.sort === "priority" ? "desc" : "asc",
       limit: 50,
     },
-    { enabled: Boolean(profileQuery.data?.id), retry: false },
+    {
+      enabled: Boolean(profileQuery.data?.id),
+      getNextPageParam: (page) => page.nextCursor ?? undefined,
+      retry: false,
+    },
   );
+  const goals = goalsQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const totalGoals = goalsQuery.data?.pages[0]?.total ?? 0;
   const isProfileUnavailable = profileQuery.isSuccess && !profileQuery.data;
   const hasQueryError = profileQuery.isError || isProfileUnavailable || goalsQuery.isError;
   const isQueryLoading = profileQuery.isLoading || goalsQuery.isLoading;
@@ -184,13 +190,13 @@ export function GoalsPage() {
       ) : null}
       <Card>
         <CardHeader>
-          <CardTitle>{goalsQuery.data?.total ?? 0} goals</CardTitle>
+          <CardTitle>{totalGoals} goals</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {isQueryLoading ? (
             <p className="text-sm text-muted-foreground">Loading goals...</p>
           ) : null}
-          {(goalsQuery.data?.items ?? []).map((goal) => (
+          {goals.map((goal) => (
             <Link
               data-testid={`goal-card-${goal.id}`}
               key={goal.id}
@@ -211,8 +217,22 @@ export function GoalsPage() {
               </div>
             </Link>
           ))}
-          {!isQueryLoading && !hasQueryError && goalsQuery.data?.items.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No goals match these filters.</p>
+          {!isQueryLoading && !hasQueryError && goals.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {search.q || search.category
+                ? "No goals match these filters."
+                : "No goals yet. Create your first goal to anchor your training."}
+            </p>
+          ) : null}
+          {goalsQuery.hasNextPage ? (
+            <Button
+              disabled={goalsQuery.isFetchingNextPage}
+              onClick={() => void goalsQuery.fetchNextPage()}
+              type="button"
+              variant="outline"
+            >
+              {goalsQuery.isFetchingNextPage ? "Loading more goals..." : "Load more goals"}
+            </Button>
           ) : null}
         </CardContent>
       </Card>

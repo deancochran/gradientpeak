@@ -7,6 +7,7 @@ import {
 } from "@repo/ui/components/card";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { api } from "../../lib/api/client";
+import { formatRunningPace } from "../../lib/units/presentation";
 
 export const Route = createFileRoute("/_protected/thresholds")({
   component: ThresholdsPage,
@@ -15,9 +16,7 @@ export const Route = createFileRoute("/_protected/thresholds")({
 function formatThreshold(value: number, unit: "watts" | "meters_per_second" | "bpm") {
   if (unit === "watts") return `${Math.round(value)} W`;
   if (unit === "bpm") return `${Math.round(value)} bpm`;
-  const secondsPerKilometer = Math.round(1_000 / value);
-  const minutes = Math.floor(secondsPerKilometer / 60);
-  return `${minutes}:${String(secondsPerKilometer % 60).padStart(2, "0")} /km`;
+  return formatRunningPace(1_000 / value, "metric");
 }
 
 function ThresholdsPage() {

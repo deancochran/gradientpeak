@@ -264,7 +264,11 @@ export function PlanDashboard() {
           <CardTitle>Available training plans</CardTitle>
         </CardHeader>
         <CardContent>
-          {trainingPlansQuery.data?.items?.length ? (
+          {trainingPlansQuery.isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading training plans...</p>
+          ) : trainingPlansQuery.isError && !trainingPlansQuery.data ? (
+            <p className="text-sm text-muted-foreground">Training plans are unavailable.</p>
+          ) : trainingPlansQuery.data?.items?.length ? (
             <div className="flex flex-wrap gap-2">
               {trainingPlansQuery.data.items.map((plan) => (
                 <Badge key={plan.id} variant="outline">
@@ -278,6 +282,11 @@ export function PlanDashboard() {
         </CardContent>
       </Card>
       <div className="flex flex-wrap gap-2">
+        <Button asChild variant="outline">
+          <Link to="/training-plans" search={{ q: undefined, tab: "owned" }}>
+            Open training-plan library
+          </Link>
+        </Button>
         <Button asChild variant="outline">
           <Link to="/calendar" search={{ month: getMonthKey(new Date()), view: "month" }}>
             Open calendar

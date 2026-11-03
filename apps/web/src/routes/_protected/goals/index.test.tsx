@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   goalsRefetch: vi.fn(),
+  fetchNextPage: vi.fn(),
   navigate: vi.fn(() => Promise.resolve()),
   profile: {
     data: { id: "profile-1" },
@@ -39,8 +40,11 @@ vi.mock("../../../lib/api/client", () => ({
     profiles: { get: { useQuery: () => state.profile } },
     goals: {
       list: {
-        useQuery: () => ({
-          data: { items: [], total: 0 },
+        useInfiniteQuery: () => ({
+          data: { pages: [{ items: [], nextCursor: null, total: 0 }] },
+          fetchNextPage: state.fetchNextPage,
+          hasNextPage: false,
+          isFetchingNextPage: false,
           isError: false,
           isLoading: false,
           refetch: state.goalsRefetch,
@@ -55,6 +59,7 @@ import { GoalsPage } from "./index";
 afterEach(() => {
   cleanup();
   state.goalsRefetch.mockReset();
+  state.fetchNextPage.mockReset();
   state.navigate.mockReset();
   state.navigate.mockResolvedValue(undefined);
   state.profile = {
