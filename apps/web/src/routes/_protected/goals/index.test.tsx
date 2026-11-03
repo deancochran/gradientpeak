@@ -21,6 +21,11 @@ const state = vi.hoisted(() => ({
     q: "marathon",
     sort: "priority",
   },
+  goals: {
+    data: { pages: [{ items: [], nextCursor: null as string | null, total: 0 }] },
+    hasNextPage: false,
+    isFetchingNextPage: false,
+  },
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -41,10 +46,10 @@ vi.mock("../../../lib/api/client", () => ({
     goals: {
       list: {
         useInfiniteQuery: () => ({
-          data: { pages: [{ items: [], nextCursor: null, total: 0 }] },
+          data: state.goals.data,
           fetchNextPage: state.fetchNextPage,
-          hasNextPage: false,
-          isFetchingNextPage: false,
+          hasNextPage: state.goals.hasNextPage,
+          isFetchingNextPage: state.goals.isFetchingNextPage,
           isError: false,
           isLoading: false,
           refetch: state.goalsRefetch,
@@ -75,6 +80,11 @@ afterEach(() => {
     flashType: undefined,
     q: "marathon",
     sort: "priority",
+  };
+  state.goals = {
+    data: { pages: [{ items: [], nextCursor: null as string | null, total: 0 }] },
+    hasNextPage: false,
+    isFetchingNextPage: false,
   };
 });
 
@@ -139,5 +149,17 @@ describe("GoalsPage query controls", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("requests the next cursor page from the visible pagination control", () => {
+    state.goals = {
+      data: { pages: [{ items: [], nextCursor: "50", total: 51 }] },
+      hasNextPage: true,
+      isFetchingNextPage: false,
+    };
+    render(<GoalsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Load more goals" }));
+    expect(state.fetchNextPage).toHaveBeenCalledOnce();
   });
 });

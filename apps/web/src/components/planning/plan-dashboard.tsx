@@ -11,7 +11,7 @@ import {
 } from "@repo/ui/components/dialog";
 import { Link } from "@tanstack/react-router";
 import { CalendarDays, Flag } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { PlanGoalForm } from "../../components/protected/plan-goal-form";
 import { api } from "../../lib/api/client";
 import {
@@ -58,18 +58,44 @@ export function PlanDashboard() {
     includeAdhoc: false,
     limit: 12,
   });
-  const goalsQuery = api.goals.list.useQuery(
-    { profile_id: profileQuery.data?.id ?? "00000000-0000-0000-0000-000000000000", limit: 200 },
-    { enabled: Boolean(profileQuery.data?.id) },
+  const goalsQuery = api.goals.list.useInfiniteQuery(
+    {
+      profile_id: profileQuery.data?.id ?? "00000000-0000-0000-0000-000000000000",
+      limit: 50,
+      sort_by: "target_date",
+      sort_order: "asc",
+    },
+    {
+      enabled: Boolean(profileQuery.data?.id),
+      getNextPageParam: (page) => page.nextCursor ?? undefined,
+    },
   );
   const upcomingEvents = useMemo(
     () => getUpcomingScheduledWorkItems(upcomingEventsQuery.data?.items ?? []),
     [upcomingEventsQuery.data?.items],
   );
   const nextGoal = useMemo(() => {
-    const goals = (goalsQuery.data?.items ?? []).filter((goal) => goal.target_date >= today);
+    const goals = (goalsQuery.data?.pages.flatMap((page) => page.items) ?? []).filter(
+      (goal) => goal.target_date >= today,
+    );
     return goals.sort((a, b) => a.target_date.localeCompare(b.target_date))[0] ?? null;
-  }, [goalsQuery.data?.items, today]);
+  }, [goalsQuery.data?.pages, today]);
+  useEffect(() => {
+    if (
+      !nextGoal &&
+      !goalsQuery.isError &&
+      goalsQuery.hasNextPage &&
+      !goalsQuery.isFetchingNextPage
+    ) {
+      void goalsQuery.fetchNextPage();
+    }
+  }, [
+    goalsQuery.fetchNextPage,
+    goalsQuery.hasNextPage,
+    goalsQuery.isError,
+    goalsQuery.isFetchingNextPage,
+    nextGoal,
+  ]);
 
   return (
     <>
@@ -232,24 +258,26 @@ export function PlanDashboard() {
           <CardContent>
             {goalsQuery.isLoading ? (
               <p className="text-sm text-muted-foreground">Loading goals...</p>
-            ) : goalsQuery.data?.items?.length ? (
+            ) : goalsQuery.data?.pages.some((page) => page.items.length > 0) ? (
               <div className="space-y-3">
-                {goalsQuery.data.items.map((goal) => (
-                  <div key={goal.id} className="rounded-xl border p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-medium">{goal.title}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {formatShortDayLabel(goal.target_date)}
-                        </p>
+                {goalsQuery.data.pages
+                  .flatMap((page) => page.items)
+                  .map((goal) => (
+                    <div key={goal.id} className="rounded-xl border p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium">{goal.title}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {formatShortDayLabel(goal.target_date)}
+                          </p>
+                        </div>
+                        <Badge variant="outline">{goal.priority}/10</Badge>
                       </div>
-                      <Badge variant="outline">{goal.priority}/10</Badge>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Badge>{goal.activity_category}</Badge>
+                      </div>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Badge>{goal.activity_category}</Badge>
-                    </div>
-                  </div>
-                ))}
+                  ))}
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">

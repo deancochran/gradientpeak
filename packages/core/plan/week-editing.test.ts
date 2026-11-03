@@ -56,36 +56,17 @@ describe("training-plan week editing", () => {
     ).toEqual({ status: "rejected", reason: "session_limit" });
   });
 
-  it("rejects an empty source or a destination that would overwrite an authored week", () => {
-    expect(
-      copyTrainingPlanWeek({
-        sessions: [session("1", 2)],
-        sourceWeekIndex: 1,
-        destinationWeekIndex: 2,
-        createId: () => id("2"),
-      }),
-    ).toEqual({ status: "rejected", reason: "source_empty" });
-    expect(
-      copyTrainingPlanWeek({
-        sessions: [session("1", 2)],
-        sourceWeekIndex: 0,
-        destinationWeekIndex: 0,
-        createId: () => id("2"),
-      }),
-    ).toEqual({ status: "rejected", reason: "destination_not_empty" });
-  });
-
-  it("copies only into an empty destination week", () => {
+  it("permits finite same-week duplication with fresh identities", () => {
     const result = copyTrainingPlanWeek({
       sessions: [session("1", 2)],
       sourceWeekIndex: 0,
-      destinationWeekIndex: 1,
+      destinationWeekIndex: 0,
       createId: () => id("2"),
     });
     expect(result).toMatchObject({ status: "copied" });
     if (result.status !== "copied") throw new Error("Expected copy");
     expect(result.sessions.map((item) => item.id)).toEqual([id("1"), id("2")]);
-    expect(result.sessions.map((item) => item.offset_days)).toEqual([2, 9]);
+    expect(result.sessions.map((item) => item.offset_days)).toEqual([2, 2]);
   });
 
   it("keeps unknown durations explicit in per-activity-category summaries", () => {
