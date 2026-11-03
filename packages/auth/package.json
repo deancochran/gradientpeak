@@ -23,11 +23,11 @@
     "generate": "pnpm exec auth generate --config script/auth-cli.ts --output ../db/src/auth-schema.ts"
   },
   "dependencies": {
-    "@better-auth/drizzle-adapter": "1.7.1",
-    "@better-auth/expo": "1.7.1",
+    "@better-auth/drizzle-adapter": "1.7.15",
+    "@better-auth/expo": "1.7.15",
     "@repo/db": "workspace:*",
     "bcryptjs": "^3.0.3",
-    "better-auth": "1.7.1",
+    "better-auth": "1.7.15",
     "drizzle-orm": "^0.45.2",
     "nodemailer": "^9.0.5",
     "pg": "^8.23.0",
@@ -38,7 +38,7 @@
     "@types/node": "24.13.3",
     "@types/nodemailer": "^6.4.24",
     "@types/pg": "^8.23.1",
-    "auth": "1.7.1",
+    "auth": "1.7.15",
     "typescript": "6.0.3",
     "vitest": "^4.1.11"
   }
