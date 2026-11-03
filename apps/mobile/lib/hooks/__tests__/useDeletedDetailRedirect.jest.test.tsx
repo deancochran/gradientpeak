@@ -15,11 +15,11 @@ function useHarness(
 }
 
 describe("useDeletedDetailRedirect", () => {
-  it("redirects once when a delete flow begins", () => {
+  it("redirects once when a delete flow begins", async () => {
     const onRedirect = jest.fn();
-    const { result } = renderHook(() => useHarness(undefined, onRedirect));
+    const { result } = await renderHook(() => useHarness(undefined, onRedirect));
 
-    act(() => {
+    await act(() => {
       result.current.beginRedirect();
       result.current.beginRedirect();
     });
@@ -28,17 +28,21 @@ describe("useDeletedDetailRedirect", () => {
     expect(result.current.isRedirecting).toBe(true);
   });
 
-  it("redirects when the detail query returns NOT_FOUND", () => {
+  it("redirects when the detail query returns NOT_FOUND", async () => {
     const onRedirect = jest.fn();
-    const { result } = renderHook(() => useHarness({ data: { code: "NOT_FOUND" } }, onRedirect));
+    const { result } = await renderHook(() =>
+      useHarness({ data: { code: "NOT_FOUND" } }, onRedirect),
+    );
 
     expect(onRedirect).toHaveBeenCalledTimes(1);
     expect(result.current.isRedirecting).toBe(true);
   });
 
-  it("ignores non-NOT_FOUND query errors", () => {
+  it("ignores non-NOT_FOUND query errors", async () => {
     const onRedirect = jest.fn();
-    const { result } = renderHook(() => useHarness({ data: { code: "FORBIDDEN" } }, onRedirect));
+    const { result } = await renderHook(() =>
+      useHarness({ data: { code: "FORBIDDEN" } }, onRedirect),
+    );
 
     expect(onRedirect).not.toHaveBeenCalled();
     expect(result.current.isRedirecting).toBe(false);

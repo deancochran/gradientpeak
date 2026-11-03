@@ -34,7 +34,6 @@ import { TouchableOpacity } from "react-native";
  *
  * SCHEDULED ACTIVITIES:
  * - schedule-activity - Schedule activity to calendar
- * - scheduled-activities-list - View all scheduled activities
  *
  * GOALS:
  * - goals-list - Browse and filter athlete goals
@@ -43,6 +42,7 @@ import { TouchableOpacity } from "react-native";
  * - goal-edit - Edit a goal
  *
  * GROUPS:
+ * - my-groups - Personal group and event management
  * - group-detail - Group profile and viewer actions
  * - group-create - Create a group
  * - group-edit - Edit group details
@@ -63,9 +63,11 @@ import { TouchableOpacity } from "react-native";
  * - user/[userId] - Universal user profile
  *
  * SETTINGS:
+ * - trends - Analytics and performance insights
  * - integrations - Connected services
  * - notifications - Notification preferences
  * - profile-edit - Edit user profile
+ * - settings - Account settings entry point
  *
  * OTHER:
  * (none currently)
@@ -83,7 +85,13 @@ export default function StandardLayout() {
         gestureDirection: "horizontal",
         presentation: "card",
         headerLeft: () => (
-          <TouchableOpacity onPress={() => router.back()} className="ml-2 p-2 -ml-2">
+          <TouchableOpacity
+            accessibilityLabel="Go back"
+            accessibilityRole="button"
+            onPress={() => router.back()}
+            className="ml-2 p-2 -ml-2"
+            testID="standard-header-back"
+          >
             <Icon as={ChevronLeft} size={24} className="text-foreground" />
           </TouchableOpacity>
         ),
@@ -109,6 +117,12 @@ export default function StandardLayout() {
           title: "Activity Details",
         }}
       />
+      <Stack.Screen
+        name="thresholds"
+        options={{
+          title: "Thresholds",
+        }}
+      />
 
       {/* ROUTES */}
       <Stack.Screen
@@ -124,31 +138,16 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
+        name="route-edit"
+        options={{
+          title: "Edit Route",
+        }}
+      />
+      <Stack.Screen
         name="route-upload"
         options={{
           title: "Upload Route",
           presentation: "modal",
-        }}
-      />
-
-      {/* ACTIVITY EFFORTS */}
-      <Stack.Screen
-        name="activity-efforts-list"
-        options={{
-          title: "My Activity Efforts",
-        }}
-      />
-      <Stack.Screen
-        name="activity-effort-create"
-        options={{
-          title: "Add Effort",
-          presentation: "modal",
-        }}
-      />
-      <Stack.Screen
-        name="activity-effort-detail"
-        options={{
-          title: "Activity Effort",
         }}
       />
 
@@ -173,12 +172,6 @@ export default function StandardLayout() {
       />
       {/* SCHEDULED ACTIVITIES */}
       <Stack.Screen
-        name="scheduled-activities-list"
-        options={{
-          title: "Scheduled Activities",
-        }}
-      />
-      <Stack.Screen
         name="event-detail"
         options={{
           title: "Event Details",
@@ -194,6 +187,12 @@ export default function StandardLayout() {
         name="calendar-day"
         options={{
           title: "Day Agenda",
+        }}
+      />
+      <Stack.Screen
+        name="plan-analysis"
+        options={{
+          title: "Training Analysis",
         }}
       />
       <Stack.Screen
@@ -228,6 +227,12 @@ export default function StandardLayout() {
       />
 
       {/* GROUPS */}
+      <Stack.Screen
+        name="my-groups"
+        options={{
+          title: "My Groups",
+        }}
+      />
       <Stack.Screen
         name="group-detail"
         options={{
@@ -314,13 +319,6 @@ export default function StandardLayout() {
           title: "Edit Training Plan",
         }}
       />
-      <Stack.Screen
-        name="activities-reorder"
-        options={{
-          title: "Reorder Activities",
-        }}
-      />
-
       {/* USER */}
       <Stack.Screen
         name="user/[userId]"
@@ -330,6 +328,24 @@ export default function StandardLayout() {
       />
 
       {/* SETTINGS */}
+      <Stack.Screen
+        name="me"
+        options={{
+          title: "Me",
+        }}
+      />
+      <Stack.Screen
+        name="inbox"
+        options={{
+          title: "Inbox",
+        }}
+      />
+      <Stack.Screen
+        name="chat"
+        options={{
+          title: "Assistant",
+        }}
+      />
       <Stack.Screen
         name="search"
         options={{
@@ -353,7 +369,7 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
-        name="notifications"
+        name="notifications/index"
         options={{
           title: "Notifications",
         }}
@@ -371,21 +387,9 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
-        name="profile-metrics-list"
+        name="settings"
         options={{
-          title: "My Profile Metrics",
-        }}
-      />
-      <Stack.Screen
-        name="profile-metric-detail"
-        options={{
-          title: "Profile Metric",
-        }}
-      />
-      <Stack.Screen
-        name="training-preferences"
-        options={{
-          title: "Training Preferences",
+          title: "Settings",
         }}
       />
     </Stack>

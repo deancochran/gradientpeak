@@ -4,6 +4,7 @@ import * as tablesModule from "./tables";
 
 export * from "../auth-schema";
 export * from "./enums";
+export * from "./import-run-ownership";
 export * from "./relations";
 export * as relations from "./relations";
 export { relationsSchema } from "./relations";

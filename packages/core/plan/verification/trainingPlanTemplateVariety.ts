@@ -42,7 +42,7 @@ function getPlanStartDate(plan: SystemTrainingPlanTemplate): string {
 }
 
 function collectResolvedTemplateIds(plan: SystemTrainingPlanTemplate): string[] {
-  return materializePlanToEvents(plan.structure, getPlanStartDate(plan))
+  return materializePlanToEvents(plan.structure, getPlanStartDate(plan), "UTC")
     .filter((event) => event.event_type === "planned")
     .flatMap((event) => (event.activity_plan_id ? [event.activity_plan_id] : []));
 }

@@ -3,6 +3,29 @@ import { describe, expect, it } from "vitest";
 import { resolveMetricSource, resolveMetricSources } from "../recording-source-resolver";
 
 describe("recording source resolver", () => {
+  it("accepts an actual generic HR sensor without inventing its modality or preferring manual fallback", () => {
+    const selection = resolveMetricSource("heart_rate", [
+      {
+        metricFamily: "heart_rate",
+        sourceId: "manual",
+        sourceType: "manual",
+        provenance: "defaulted",
+        isAvailable: true,
+      },
+      {
+        metricFamily: "heart_rate",
+        sourceId: "ble-hr",
+        sourceType: "heart_rate_sensor",
+        provenance: "actual",
+        isAvailable: true,
+      },
+    ]);
+    expect(selection).toMatchObject({
+      sourceId: "ble-hr",
+      sourceType: "heart_rate_sensor",
+      provenance: "actual",
+    });
+  });
   it("selects the highest priority available source deterministically", () => {
     const selection = resolveMetricSource("heart_rate", [
       {

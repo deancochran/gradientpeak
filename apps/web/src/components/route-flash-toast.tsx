@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 export type RouteFlashType = "success" | "error" | "info";
@@ -12,6 +12,9 @@ export function RouteFlashToast({
   message?: string;
   type?: RouteFlashType;
 }) {
+  const clearRef = useRef(clear);
+  clearRef.current = clear;
+
   useEffect(() => {
     if (!message) {
       return;
@@ -25,8 +28,8 @@ export function RouteFlashToast({
       toast(message);
     }
 
-    clear();
-  }, [clear, message, type]);
+    clearRef.current();
+  }, [message, type]);
 
   return null;
 }
