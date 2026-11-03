@@ -9,6 +9,7 @@ vi.mock("@tanstack/react-start/server", () => ({
 
 import {
   contractEpochFunctionMiddleware,
+  contractEpochRequestMiddleware,
   getServerActionTrpcSource,
 } from "./contract-epoch-middleware";
 
@@ -19,9 +20,53 @@ function requireMiddleware<T>(middleware: T | undefined): T {
 
 const clientMiddleware = requireMiddleware(contractEpochFunctionMiddleware.options.client);
 const serverMiddleware = requireMiddleware(contractEpochFunctionMiddleware.options.server);
+const requestMiddleware = requireMiddleware(contractEpochRequestMiddleware.options.server);
 const FUTURE_CONTRACT_EPOCH = String(CURRENT_CONTRACT_EPOCH + 1);
 
 describe("contract epoch server-function middleware", () => {
+  it("accepts SSR only with a trusted document request proof, without forwarded headers", async () => {
+    request.headers = new Headers();
+    const next = vi.fn(async () => ({ accepted: true }));
+    const documentRequest = new Request("http://localhost/organizations/example/dashboard");
+    await requestMiddleware({
+      handlerType: "router",
+      request: documentRequest,
+      next: async () => serverMiddleware({ request: documentRequest, next } as never),
+    } as never);
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    "GET",
+    "POST",
+  ])("rejects markerless %s RPC even with forged document context", async (method) => {
+    request.headers = new Headers();
+    const next = vi.fn();
+    const rpcRequest = new Request("http://localhost/_server/function", { method });
+    await expect(
+      requestMiddleware({
+        handlerType: "serverFn",
+        request: rpcRequest,
+        next: async () => serverMiddleware({ request: rpcRequest, next } as never),
+      } as never),
+    ).rejects.toThrow("Client contract epoch is unsupported");
+    await expect(
+      serverMiddleware({ context: { contractEpochDocumentRequest: {} }, next } as never),
+    ).rejects.toThrow("Client contract epoch is unsupported");
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("does not treat a router POST as an SSR document read", async () => {
+    request.headers = new Headers();
+    const postRequest = new Request("http://localhost/organizations", { method: "POST" });
+    await expect(
+      requestMiddleware({
+        handlerType: "router",
+        request: postRequest,
+        next: async () => serverMiddleware({ request: postRequest, next: vi.fn() } as never),
+      } as never),
+    ).rejects.toThrow("Client contract epoch is unsupported");
+  });
   it("emits the exact current epoch header", async () => {
     const next = vi.fn(async (options) => options);
 

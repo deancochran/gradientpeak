@@ -4,7 +4,10 @@ import {
 } from "@sentry/tanstackstart-react";
 import { createCsrfMiddleware, createStart } from "@tanstack/react-start";
 
-import { contractEpochFunctionMiddleware } from "./lib/contract-epoch-middleware";
+import {
+  contractEpochFunctionMiddleware,
+  contractEpochRequestMiddleware,
+} from "./lib/contract-epoch-middleware";
 
 export const webCsrfMiddleware = createCsrfMiddleware({
   filter: (context) => context.handlerType === "serverFn",
@@ -12,5 +15,9 @@ export const webCsrfMiddleware = createCsrfMiddleware({
 
 export const startInstance = createStart(() => ({
   functionMiddleware: [sentryGlobalFunctionMiddleware, contractEpochFunctionMiddleware],
-  requestMiddleware: [webCsrfMiddleware, sentryGlobalRequestMiddleware],
+  requestMiddleware: [
+    webCsrfMiddleware,
+    contractEpochRequestMiddleware,
+    sentryGlobalRequestMiddleware,
+  ],
 }));

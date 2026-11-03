@@ -8,7 +8,23 @@ export const TANSTACK_SERVER_FUNCTION_HEADER = "x-tsr-serverFn";
 type ServerFunctionMiddlewareOptions = {
   data?: unknown;
   headers?: HeadersInit;
+  request?: Request;
 };
+
+// Request identity cannot be manufactured by serialized browser context. Keep
+// this proof server-local instead of adding transport metadata to route context.
+const documentRequests = new WeakSet<Request>();
+
+export const contractEpochRequestMiddleware = createMiddleware().server(
+  async ({ handlerType, request, next }) => {
+    if (handlerType === "router" && (request.method === "GET" || request.method === "HEAD")) {
+      documentRequests.add(request);
+    } else {
+      documentRequests.delete(request);
+    }
+    return next();
+  },
+);
 
 export function hasCurrentContractEpoch(headers: HeadersInit | undefined): boolean {
   return new Headers(headers).get(CONTRACT_EPOCH_HEADER) === CURRENT_CONTRACT_EPOCH_VALUE;
@@ -36,13 +52,17 @@ export const contractEpochFunctionMiddleware = createMiddleware({ type: "functio
     const formData = (options as ServerFunctionMiddlewareOptions).data;
 
     // Transported functions must carry the epoch in their actual HTTP request.
-    // Direct SSR invocations retain the client middleware headers in-process;
-    // these headers are not browser-serializable context or payload data.
+    // Direct SSR is identified by trusted request middleware: current Start
+    // executors do not forward client middleware headers into __executeServer.
+    const internalRequest = (options as ServerFunctionMiddlewareOptions).request;
+    const isDocumentRequest =
+      internalRequest !== undefined && documentRequests.has(internalRequest);
     const isTransported = isTransportedServerFunctionRequest(requestHeaders);
     if (
       isTransported
         ? !hasCurrentContractEpoch(requestHeaders)
         : !hasCurrentContractEpoch(requestHeaders) &&
+          !isDocumentRequest &&
           !hasCurrentContractEpoch(internalHeaders) &&
           !hasCurrentContractEpochFormData(formData)
     ) {
