@@ -1,18 +1,23 @@
 import { PostHogProvider } from "@posthog/react";
 import { invalidateProfileIdentityQueries } from "@repo/api/profile-identity-cache";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useEffect } from "react";
 
-import { api, createApiClient, getQueryClient } from "../../lib/api/client";
+import { api, type createApiClient } from "../../lib/api/client";
 import { posthogOptions, posthogProjectToken } from "../../lib/telemetry";
 
 import { AuthProvider } from "./auth-provider";
 import { ThemeProvider } from "./theme-provider";
 
-export function AppProviders({ children }: { children: React.ReactNode }) {
-  const queryClient = getQueryClient();
-  const [apiClient] = useState(() => createApiClient());
-
+export function AppProviders({
+  children,
+  queryClient,
+  apiClient,
+}: {
+  children: React.ReactNode;
+  queryClient: QueryClient;
+  apiClient: ReturnType<typeof createApiClient>;
+}) {
   return (
     <MaybePostHogProvider>
       <QueryClientProvider client={queryClient}>
