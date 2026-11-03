@@ -52,6 +52,24 @@ function initialTimezone() {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
 
+function createOrganizationId(): string {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  if (!globalThis.crypto?.getRandomValues) {
+    throw new Error("Secure UUID generation is unavailable in this runtime.");
+  }
+
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  const versionByte = bytes[6];
+  const variantByte = bytes[8];
+  if (versionByte === undefined || variantByte === undefined) {
+    throw new Error("Secure UUID generation returned insufficient entropy.");
+  }
+  bytes[6] = (versionByte & 0x0f) | 0x40;
+  bytes[8] = (variantByte & 0x3f) | 0x80;
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export function OrganizationCreateForm() {
   const router = useRouter();
   const { user } = useAuth();
@@ -181,11 +199,21 @@ export function OrganizationCreateForm() {
       );
       return;
     }
+    let organizationId: string;
+    try {
+      organizationId =
+        uncertainCreate?.actorId === actorId
+          ? uncertainCreate.organizationId
+          : createOrganizationId();
+    } catch {
+      setSubmissionError("We could not securely prepare this organization. Try again.");
+      return;
+    }
+
     const operation: CreateOperation = {
       actorId,
       fingerprint,
-      organizationId:
-        uncertainCreate?.actorId === actorId ? uncertainCreate.organizationId : crypto.randomUUID(),
+      organizationId,
       result: null,
       state: "creating",
     };

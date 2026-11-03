@@ -44,6 +44,77 @@ afterEach(() => {
 });
 
 describe("OrganizationCreateForm", () => {
+  it("creates and retries with a secure fallback UUID when randomUUID is unavailable", async () => {
+    const getRandomValues = vi.fn((bytes: Uint8Array) => {
+      bytes.fill(0x11);
+      return bytes;
+    });
+    vi.stubGlobal("crypto", { getRandomValues });
+    mocks.create
+      .mockRejectedValueOnce(new Error("connection lost"))
+      .mockResolvedValueOnce({ organizationId: firstId });
+    render(<OrganizationCreateForm />);
+
+    fireEvent.change(screen.getByLabelText("Organization name"), {
+      target: { value: "Summit Coaching" },
+    });
+    fireEvent.change(screen.getByLabelText("Organization URL name"), {
+      target: { value: "summit-coaching" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create organization" }));
+
+    await screen.findByRole("alert");
+    const fallbackId = mocks.create.mock.calls[0]?.[0].data.organizationId;
+    expect(fallbackId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Create organization" }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
+    expect(mocks.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ organizationId: fallbackId }) }),
+    );
+    expect(getRandomValues).toHaveBeenCalledOnce();
+  });
+
+  it("shows a retryable error without submitting when secure UUID generation fails", async () => {
+    const getRandomValues = vi
+      .fn<(bytes: Uint8Array) => Uint8Array>()
+      .mockImplementationOnce(() => {
+        throw new Error("entropy unavailable");
+      })
+      .mockImplementation((bytes) => {
+        bytes.fill(0x22);
+        return bytes;
+      });
+    vi.stubGlobal("crypto", { getRandomValues });
+    mocks.create.mockResolvedValueOnce({ organizationId: secondId });
+    render(<OrganizationCreateForm />);
+
+    fireEvent.change(screen.getByLabelText("Organization name"), {
+      target: { value: "Summit Coaching" },
+    });
+    fireEvent.change(screen.getByLabelText("Organization URL name"), {
+      target: { value: "summit-coaching" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create organization" }));
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(/securely prepare/);
+    expect(mocks.create).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create organization" }));
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
+    expect(mocks.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          organizationId: expect.stringMatching(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+          ),
+        }),
+      }),
+    );
+  });
+
   it("retries an uncertain submission with the same organization ID and blocks changed details until a new draft is explicit", async () => {
     vi.stubGlobal("crypto", {
       randomUUID: vi.fn().mockReturnValueOnce(firstId).mockReturnValue(secondId),
