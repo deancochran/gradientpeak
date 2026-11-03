@@ -16,6 +16,7 @@ import {
   routeSortValues,
 } from "../../../components/routes/route-library-controls";
 import { api } from "../../../lib/api/client";
+import { loadRouteQuery } from "../../../lib/api/route-loading";
 
 const ownerScopes: RouteOwnerScope[] = ["own", "public", "system", "all"];
 
@@ -52,6 +53,23 @@ export function validateRouteLibrarySearch(search: Record<string, unknown>) {
 
 export const Route = createFileRoute("/_protected/routes/")({
   validateSearch: validateRouteLibrarySearch,
+  loaderDeps: ({ search }) => ({
+    maxAscentM: search.maxAscentM,
+    maxDistanceKm: search.maxDistanceKm,
+    minAscentM: search.minAscentM,
+    minDistanceKm: search.minDistanceKm,
+    ownerScope: search.ownerScope,
+    page: search.page,
+    search: search.search,
+    sort: search.sort,
+  }),
+  loader: ({ context, deps }) => {
+    const input = getRouteListInput(deps);
+    return loadRouteQuery(
+      () => context.apiUtils.routes.list.getData(input),
+      () => context.apiUtils.routes.list.fetch(input),
+    );
+  },
   component: RoutesLibraryPage,
 });
 
@@ -63,21 +81,25 @@ function toOptionalNumber(value: string, multiplier = 1) {
   return Number.isFinite(parsed) ? parsed * multiplier : undefined;
 }
 
+function getRouteListInput(search: ReturnType<typeof validateRouteLibrarySearch>) {
+  return {
+    limit: PAGE_SIZE,
+    cursor: search.page > 1 ? `index:${(search.page - 1) * PAGE_SIZE}` : undefined,
+    ownerScope: search.ownerScope,
+    search: search.search.trim() || undefined,
+    sort_by: search.sort,
+    min_distance_m: toOptionalNumber(search.minDistanceKm, 1000),
+    max_distance_m: toOptionalNumber(search.maxDistanceKm, 1000),
+    min_ascent_m: toOptionalNumber(search.minAscentM),
+    max_ascent_m: toOptionalNumber(search.maxAscentM),
+  };
+}
+
 function RoutesLibraryPage() {
   const navigate = Route.useNavigate();
   const routeSearch = Route.useSearch();
   const filters: RouteLibraryFilters = routeSearch;
-  const routesQuery = api.routes.list.useQuery({
-    limit: PAGE_SIZE,
-    cursor: routeSearch.page > 1 ? `index:${(routeSearch.page - 1) * PAGE_SIZE}` : undefined,
-    ownerScope: routeSearch.ownerScope,
-    search: routeSearch.search.trim() || undefined,
-    sort_by: routeSearch.sort,
-    min_distance_m: toOptionalNumber(routeSearch.minDistanceKm, 1000),
-    max_distance_m: toOptionalNumber(routeSearch.maxDistanceKm, 1000),
-    min_ascent_m: toOptionalNumber(routeSearch.minAscentM),
-    max_ascent_m: toOptionalNumber(routeSearch.maxAscentM),
-  });
+  const routesQuery = api.routes.list.useQuery(getRouteListInput(routeSearch));
   const routes = routesQuery.data?.items ?? [];
 
   const replaceFilters = (nextFilters: RouteLibraryFilters) =>

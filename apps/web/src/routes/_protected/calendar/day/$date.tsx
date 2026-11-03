@@ -12,6 +12,7 @@ import { ArrowLeft } from "lucide-react";
 
 import { CalendarProjectionCard } from "../../../../components/calendar/calendar-projection-card";
 import { api } from "../../../../lib/api/client";
+import { loadRouteQuery } from "../../../../lib/api/route-loading";
 import {
   formatDayLabel,
   getMonthKey,
@@ -29,6 +30,13 @@ export const Route = createFileRoute("/_protected/calendar/day/$date")({
   }),
   beforeLoad: ({ params }) => {
     if (!isValidDateOnlyUtc(params.date)) throw notFound();
+  },
+  loader: ({ context, params }) => {
+    const input = { date: params.date };
+    return loadRouteQuery(
+      () => context.apiUtils.calendar.day.getData(input),
+      () => context.apiUtils.calendar.day.fetch(input),
+    );
   },
   component: CalendarDayPage,
 });
