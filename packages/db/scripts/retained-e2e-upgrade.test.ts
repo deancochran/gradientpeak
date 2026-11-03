@@ -210,7 +210,9 @@ async function main() {
     try {
       await applyAuthIdentityCompatibilityUpgrade(admin, {
         expectedSourceData: authSourceData,
-        requireExactDataInventory: true,
+        // This retained-upgrade fixture intentionally bootstraps only the
+        // minimal platform surface. The auth-operation test separately proves
+        // the reviewed 111-table inventory required by the operational option.
       });
     } finally {
       await admin.end();

@@ -16,6 +16,7 @@ const directory = resolve(dbPackageRoot, "supabase/approved-upgrades/auth-identi
 const beforePath = resolve(directory, "before-fingerprint.json");
 const afterPath = resolve(directory, "after-fingerprint.json");
 const sqlPath = resolve(directory, "upgrade.sql");
+const inventoryPath = resolve(directory, "table-inventory.json");
 const advisoryLockName = "gradientpeak:auth-identity-compatibility-upgrade";
 
 export const sha256Hex = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -44,6 +45,40 @@ export function expectedAuthIdentityCompatibilityBeforeFingerprint() {
 
 export function expectedAuthIdentityCompatibilityAfterFingerprint() {
   return JSON.parse(readFileSync(afterPath, "utf8"));
+}
+
+/** Immutable schema-name inventory: retained E2E's 102 tables plus this upgrade's nine tables. */
+export function expectedAuthIdentityCompatibilityTableInventory() {
+  const value: unknown = JSON.parse(readFileSync(inventoryPath, "utf8"));
+  if (
+    !Array.isArray(value) ||
+    !value.every((entry) => typeof entry === "string") ||
+    new Set(value).size !== value.length ||
+    value.length !== 111 ||
+    !same(value, [...value].sort())
+  )
+    throw new Error("reviewed auth identity table inventory is invalid");
+  return value;
+}
+
+export function assertAuthIdentityCompatibilityTableInventory(
+  tables: ReadonlyArray<{ schema: string; table: string }>,
+) {
+  const actual = tables.map(({ schema, table }) => `"${schema}"."${table}"`).sort();
+  if (!same(actual, expectedAuthIdentityCompatibilityTableInventory()))
+    throw new Error("auth identity table inventory mismatch");
+}
+
+export function assertAuthIdentityCompatibilityDataInventory(data: RetainedDataMap) {
+  assertAuthIdentityCompatibilityTableInventory(
+    Object.keys(data).map((key) => {
+      const match = key.match(/^"(.+)"\."(.+)"$/);
+      if (!match) throw new Error("auth identity digest table key is invalid");
+      const [, schema, table] = match;
+      if (!schema || !table) throw new Error("auth identity digest table key is invalid");
+      return { schema, table };
+    }),
+  );
 }
 
 async function accountRowsDigest(pool: Pick<Pool, "query">) {
@@ -94,6 +129,10 @@ export async function applyAuthIdentityCompatibilityUpgrade(
       throw new Error("auth identity compatibility upgrade already running");
     const tablesBefore = await retainedDataTables(client);
     await lockRetainedDataTables(client, tablesBefore);
+    // This must be after every platform/application table lock and before any
+    // source digest: an unseen auth, storage, or ledger table is a refusal.
+    if (options.requireExactDataInventory)
+      assertAuthIdentityCompatibilityTableInventory(tablesBefore);
     await client.query("set local role postgres");
     if ((await client.query("select current_user as role")).rows[0]?.role !== "postgres")
       throw new Error("auth identity compatibility upgrade requires postgres DDL role after locks");
@@ -113,8 +152,7 @@ export async function applyAuthIdentityCompatibilityUpgrade(
     const afterRows = await accountRowsDigest(client);
     if (!same(beforeRows, afterRows)) throw new Error("accounts row preservation mismatch");
     const afterData = await createRetainedDataDigest(client);
-    if (options.requireExactDataInventory && !same(Object.keys(afterData), Object.keys(beforeData)))
-      throw new Error("post-upgrade table inventory mismatch");
+    if (options.requireExactDataInventory) assertAuthIdentityCompatibilityDataInventory(afterData);
     const preexistingAfterData = Object.fromEntries(
       Object.keys(beforeData).map((table) => [table, afterData[table]]),
     );

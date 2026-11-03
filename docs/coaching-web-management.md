@@ -240,3 +240,20 @@ Frozen install passed. Current local audit reports zero Better Auth advisory
 records, but totals remain 10 critical, 54 high, 71 moderate, and 17 low; this is
 not a general audit clearance. The guarded CI environment helper passed 7 tests
 and actual local-container derivation without revealing credential values.
+
+Operational review hardening pins the complete 111-table inventory and rejects
+unexpected platform/ledger tables. Private recovery directories/files must be
+owned and non-symlinked; outputs use exclusive no-follow 0600 temporary files,
+fsync, and atomic rename, with unsafe-existing-file refusal tests. Node 24 auth
+upgrade/operation/chain tests passed. Fresh full archive rehearsals after these
+fixes passed for both targets using cache auth-identity-final-zPpJqT.
+
+A separate actual runtime proof created a synthetic credential account under the
+exact legacy schema before upgrading, using the application's bcrypt cost-10
+password format. After the guarded upgrade, createGradientPeakAuth 1.7.15's
+sign-in handler returned 200 and cookie-session lookup returned the same user.
+The child runtime exited before guarded disposable cleanup. This does not require
+or expose any preserved user's password. Initial scratch attempts uncovered test
+setup omissions (pgcrypto and the application's custom bcrypt format); only the
+corrected successful run is acceptance evidence. It complements—not replaces—the
+full archive data-preservation rehearsals.

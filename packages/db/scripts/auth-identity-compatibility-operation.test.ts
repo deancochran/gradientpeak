@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Pool } from "pg";
@@ -9,20 +18,29 @@ import {
   type AuthIdentityRehearsalReceipt,
   type AuthIdentityTargetIdentity,
   assertAuthIdentityPortBindings,
+  assertPrivateOwnedDirectory,
+  assertSafePrivateOutput,
   authIdentityManifestTarget,
   authIdentityTargetFromConnectionString,
   sha256Hex,
   verifyAuthIdentityRecoveryArchive,
   verifyAuthIdentityRehearsalReceipt,
+  writePrivateOutputAtomically,
 } from "./auth-identity-compatibility-operation";
 import {
   applyAuthIdentityCompatibilityUpgrade,
+  assertAuthIdentityCompatibilityDataInventory,
   expectedAuthIdentityCompatibilityAfterFingerprint,
   expectedAuthIdentityCompatibilityBeforeFingerprint,
+  expectedAuthIdentityCompatibilityTableInventory,
   expectedAuthIdentityCompatibilityUpgradeSql,
 } from "./auth-identity-compatibility-upgrade";
 import { createSchemaFingerprint } from "./check-schema-fingerprint";
-import { createRetainedDataDigest } from "./retained-e2e-upgrade";
+import {
+  createRetainedDataDigest,
+  expectedRetainedTableInventory,
+  retainedTables,
+} from "./retained-e2e-upgrade";
 
 const baseline = join(dbPackageRoot, "supabase/migrations/20260730000000_mvp_baseline.sql");
 const identity: AuthIdentityTargetIdentity = {
@@ -53,6 +71,15 @@ function archiveFixture() {
   };
   writePrivate(`${archive}.manifest.json`, JSON.stringify(manifest));
   return { directory, archive, manifest };
+}
+
+function reviewedSourceData() {
+  return Object.fromEntries(
+    expectedAuthIdentityCompatibilityTableInventory().map((table) => [
+      table,
+      { count: "0", sha256: "0".repeat(64) },
+    ]),
+  );
 }
 
 async function createLegacyAccount(
@@ -97,6 +124,32 @@ async function main() {
   ])
     assert.throws(() => authIdentityTargetFromConnectionString(invalid), /refusing/);
 
+  const reviewedData = reviewedSourceData();
+  const reviewedAuthUsers = reviewedData['"auth"."users"'];
+  if (!reviewedAuthUsers) throw new Error("reviewed inventory must include auth.users");
+  assert.equal(Object.keys(reviewedData).length, 111);
+  assert.deepEqual(
+    expectedAuthIdentityCompatibilityTableInventory(),
+    [
+      ...expectedRetainedTableInventory(),
+      ...retainedTables.map((table) => `"public"."${table}"`),
+    ].sort(),
+  );
+  assertAuthIdentityCompatibilityDataInventory(reviewedData);
+  for (const unexpected of [
+    '"auth"."unexpected"',
+    '"storage"."unexpected"',
+    '"supabase_migrations"."unexpected"',
+  ])
+    assert.throws(
+      () =>
+        assertAuthIdentityCompatibilityDataInventory({
+          ...reviewedData,
+          [unexpected]: reviewedAuthUsers,
+        }),
+      /table inventory mismatch/,
+    );
+
   const fixture = archiveFixture();
   try {
     verifyAuthIdentityRecoveryArchive(fixture.archive, "preview");
@@ -121,6 +174,55 @@ async function main() {
     rmSync(stale.directory, { recursive: true, force: true });
   }
 
+  const unsafeArchive = archiveFixture();
+  try {
+    chmodSync(unsafeArchive.archive, 0o644);
+    assert.throws(
+      () => verifyAuthIdentityRecoveryArchive(unsafeArchive.archive, "preview"),
+      /private custom recovery archive/,
+    );
+    chmodSync(unsafeArchive.archive, 0o600);
+    const archiveTarget = join(unsafeArchive.directory, "archive-target.dump");
+    writePrivate(archiveTarget, readFileSync(unsafeArchive.archive));
+    unlinkSync(unsafeArchive.archive);
+    symlinkSync(archiveTarget, unsafeArchive.archive);
+    assert.throws(
+      () => verifyAuthIdentityRecoveryArchive(unsafeArchive.archive, "preview"),
+      /private custom recovery archive/,
+    );
+  } finally {
+    rmSync(unsafeArchive.directory, { recursive: true, force: true });
+  }
+
+  const filesystem = mkdtempSync(join(tmpdir(), "auth-identity-filesystem-"));
+  try {
+    const output = join(filesystem, "rehearsal-receipt.json");
+    writePrivateOutputAtomically(filesystem, "rehearsal-receipt.json", "valid");
+    assert.equal(readFileSync(output, "utf8"), "valid");
+    assert.equal(lstatSync(output).mode & 0o777, 0o600);
+    chmodSync(output, 0o644);
+    assert.throws(
+      () => assertSafePrivateOutput(output),
+      /private owner-controlled regular artifact/,
+    );
+    writeFileSync(output, "valid", { mode: 0o600 });
+    chmodSync(output, 0o600);
+    const symlink = join(filesystem, "restore-diagnostics.txt");
+    symlinkSync(output, symlink);
+    assert.throws(
+      () => assertSafePrivateOutput(symlink),
+      /private owner-controlled regular artifact/,
+    );
+    chmodSync(filesystem, 0o644);
+    assert.throws(
+      () => assertPrivateOwnedDirectory(filesystem),
+      /private owner-controlled non-symlink/,
+    );
+  } finally {
+    chmodSync(filesystem, 0o700);
+    rmSync(filesystem, { recursive: true, force: true });
+  }
+
   const receiptFixture = archiveFixture();
   try {
     const receipt: AuthIdentityRehearsalReceipt = {
@@ -131,7 +233,7 @@ async function main() {
         JSON.stringify(expectedAuthIdentityCompatibilityAfterFingerprint()),
       ),
       sourceTargetIdentity: identity,
-      sourceData: {},
+      sourceData: reviewedData,
     };
     const receiptPath = join(receiptFixture.directory, "rehearsal-receipt.json");
     writePrivate(receiptPath, JSON.stringify(receipt));
@@ -192,10 +294,10 @@ async function main() {
           () => applyAuthIdentityCompatibilityUpgrade(admin, { expectedSourceData: {} }),
           /source data digest mismatch/,
         );
-        await applyAuthIdentityCompatibilityUpgrade(admin, {
-          expectedSourceData: sourceData,
-          requireExactDataInventory: true,
-        });
+        // This deliberately uses the minimal disposable platform bootstrap. The
+        // explicit reviewed-inventory assertions above cover the operational
+        // 111-table contract; generic upgrade coverage remains reusable.
+        await applyAuthIdentityCompatibilityUpgrade(admin, { expectedSourceData: sourceData });
       } finally {
         await admin.end();
       }

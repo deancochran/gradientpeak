@@ -5,14 +5,26 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  chmodSync,
+  closeSync,
+  constants,
+  fsyncSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Pool } from "pg";
 import { withDisposableDatabase } from "./_disposable-target";
 import {
   applyAuthIdentityCompatibilityUpgrade,
+  assertAuthIdentityCompatibilityDataInventory,
   expectedAuthIdentityCompatibilityAfterFingerprint,
   expectedAuthIdentityCompatibilityBeforeFingerprint,
   expectedAuthIdentityCompatibilityUpgradeSql,
@@ -49,7 +61,65 @@ export type AuthIdentityRehearsalReceipt = AuthIdentityArchiveManifest & {
 export const sha256Hex = (value: string | Buffer) =>
   createHash("sha256").update(value).digest("hex");
 const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
-const privateFile = (path: string) => (statSync(path).mode & 0o077) === 0;
+
+function currentUid() {
+  const uid = process.getuid?.();
+  if (uid === undefined) throw new Error("private auth identity artifacts require a POSIX owner");
+  return uid;
+}
+
+export function assertPrivateOwnedDirectory(path: string) {
+  const stat = lstatSync(path);
+  if (!stat.isDirectory() || stat.uid !== currentUid() || (stat.mode & 0o077) !== 0)
+    throw new Error("private owner-controlled non-symlink recovery directory required");
+}
+
+export function assertPrivateOwnedRegularFile(path: string) {
+  const stat = lstatSync(path);
+  if (!stat.isFile() || stat.uid !== currentUid() || (stat.mode & 0o077) !== 0)
+    throw new Error("private owner-controlled regular artifact file required");
+}
+
+export function assertSafePrivateOutput(path: string) {
+  assertPrivateOwnedDirectory(dirname(path));
+  try {
+    assertPrivateOwnedRegularFile(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+}
+
+export function writePrivateOutputAtomically(directory: string, name: string, content: string) {
+  assertPrivateOwnedDirectory(directory);
+  const output = resolve(directory, name);
+  if (dirname(output) !== resolve(directory)) throw new Error("unsafe private output name");
+  assertSafePrivateOutput(output);
+  const temporary = resolve(directory, `.${name}.${randomUUID()}.tmp`);
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(
+      temporary,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+      0o600,
+    );
+    writeFileSync(descriptor, content, { encoding: "utf8" });
+    fsyncSync(descriptor);
+    chmodSync(temporary, 0o600);
+    closeSync(descriptor);
+    descriptor = undefined;
+    assertPrivateOwnedRegularFile(temporary);
+    renameSync(temporary, output);
+    assertPrivateOwnedRegularFile(output);
+  } catch (error) {
+    if (descriptor !== undefined) closeSync(descriptor);
+    try {
+      unlinkSync(temporary);
+    } catch (cleanupError) {
+      if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT") throw cleanupError;
+    }
+    throw error;
+  }
+}
 
 export function authIdentityTargetFromConnectionString(
   connectionString: string,
@@ -158,9 +228,17 @@ export async function deriveAuthIdentityTargetIdentity(
 
 export function verifyAuthIdentityRecoveryArchive(archive: string, target: AuthIdentityTargetName) {
   const manifestPath = `${archive}.manifest.json`;
+  assertPrivateOwnedDirectory(dirname(archive));
   if (
-    !privateFile(archive) ||
-    !privateFile(manifestPath) ||
+    (() => {
+      try {
+        assertPrivateOwnedRegularFile(archive);
+        assertPrivateOwnedRegularFile(manifestPath);
+        return false;
+      } catch {
+        return true;
+      }
+    })() ||
     readFileSync(archive).subarray(0, 5).toString() !== "PGDMP"
   )
     throw new Error("private custom recovery archive and manifest required");
@@ -184,8 +262,12 @@ export function verifyAuthIdentityRehearsalReceipt(
   archive: string,
   identity: AuthIdentityTargetIdentity,
 ) {
-  if (!privateFile(receiptPath))
+  assertPrivateOwnedDirectory(dirname(receiptPath));
+  try {
+    assertPrivateOwnedRegularFile(receiptPath);
+  } catch {
     throw new Error("private successful auth identity rehearsal receipt required");
+  }
   const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as AuthIdentityRehearsalReceipt;
   const manifest = verifyAuthIdentityRecoveryArchive(archive, identity.target);
   if (
@@ -201,6 +283,7 @@ export function verifyAuthIdentityRehearsalReceipt(
     !same(receipt.sourceTargetIdentity, identity)
   )
     throw new Error("auth identity rehearsal receipt is not bound to this archive and target");
+  assertAuthIdentityCompatibilityDataInventory(receipt.sourceData);
   return receipt;
 }
 
@@ -275,7 +358,11 @@ function restoreArchiveIntoDisposableDatabase(
       maxBuffer: 32 * 1024 * 1024,
     },
   );
-  writeFileSync(diagnostics, String(schema.stderr ?? ""), { mode: 0o600 });
+  writePrivateOutputAtomically(
+    dirname(diagnostics),
+    "restore-diagnostics.txt",
+    String(schema.stderr ?? ""),
+  );
   assert.equal(schema.status, 0, "schema restoration failed; diagnostics kept private");
   const restored = spawnSync(
     "docker",
@@ -298,11 +385,18 @@ function restoreArchiveIntoDisposableDatabase(
       maxBuffer: 32 * 1024 * 1024,
     },
   );
-  writeFileSync(diagnostics, `${restored.stdout}\n${restored.stderr}`, { mode: 0o600 });
+  writePrivateOutputAtomically(
+    dirname(diagnostics),
+    "restore-diagnostics.txt",
+    `${restored.stdout}\n${restored.stderr}`,
+  );
   assert.equal(restored.status, 0, "archive restoration failed; diagnostics kept private");
 }
 
 async function rehearse(directory: string, sourceUrl: string) {
+  assertPrivateOwnedDirectory(directory);
+  assertSafePrivateOutput(resolve(directory, "restore-diagnostics.txt"));
+  assertSafePrivateOutput(resolve(directory, "rehearsal-receipt.json"));
   const target = authIdentityTargetFromConnectionString(sourceUrl);
   const archivePath = resolve(directory, "postgres.dump");
   const manifest = verifyAuthIdentityRecoveryArchive(archivePath, target);
@@ -321,6 +415,7 @@ async function rehearse(directory: string, sourceUrl: string) {
       "source fingerprint differs",
     );
     const sourceData = await createRetainedDataDigest(source);
+    assertAuthIdentityCompatibilityDataInventory(sourceData);
     await source.query("commit");
     await withDisposableDatabase(
       ["--disposable", "--local"],
@@ -375,9 +470,11 @@ async function rehearse(directory: string, sourceUrl: string) {
       sourceTargetIdentity: sourceIdentity,
       sourceData,
     };
-    writeFileSync(resolve(directory, "rehearsal-receipt.json"), JSON.stringify(receipt, null, 2), {
-      mode: 0o600,
-    });
+    writePrivateOutputAtomically(
+      directory,
+      "rehearsal-receipt.json",
+      JSON.stringify(receipt, null, 2),
+    );
     console.log(
       "[auth-identity:operation] full archive restore rehearsal succeeded; private receipt written",
     );
@@ -413,7 +510,6 @@ async function main() {
     const source = process.env.AUTH_IDENTITY_SOURCE_DATABASE_URL;
     if (!directory || !source)
       throw new Error("explicit private recovery directory and source target required");
-    mkdirSync(directory, { recursive: true, mode: 0o700 });
     return rehearse(directory, source);
   }
   const url = process.env.AUTH_IDENTITY_DATABASE_URL;
