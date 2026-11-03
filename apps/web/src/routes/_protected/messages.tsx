@@ -20,7 +20,10 @@ import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-
+import {
+  MessagesEmptyState,
+  MessagesInboxErrorState,
+} from "../../components/messages/messages-inbox-state";
 import { useAuth } from "../../components/providers/auth-provider";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
@@ -117,9 +120,10 @@ function MessagesPage() {
     flash,
     flashType,
   } = Route.useSearch();
-  const { data: conversations = [] } = api.messaging.getConversations.useQuery(undefined, {
+  const conversationsQuery = api.messaging.getConversations.useQuery(undefined, {
     refetchInterval: 5000,
   });
+  const conversations = conversationsQuery.data ?? [];
   const selectedConversation = compose
     ? null
     : (conversations.find((conversation) => conversation.id === conversationId) ?? null);
@@ -364,76 +368,74 @@ function MessagesPage() {
             </div>
             <Separator />
             <ScrollArea className="flex-1">
-              <div className="flex flex-col gap-2 p-4">
-                {conversations.map((conversation) => {
-                  const unreadCount = conversation.unread_count ?? 0;
+              {!conversationsQuery.isError ? (
+                <div className="flex flex-col gap-2 p-4">
+                  {conversations.map((conversation) => {
+                    const unreadCount = conversation.unread_count ?? 0;
 
-                  return (
-                    <Link
-                      key={conversation.id}
-                      to="/messages"
-                      search={{
-                        compose: false,
-                        composeGroup: undefined,
-                        composeQuery: undefined,
-                        composeRecipients: [],
-                        conversationId: conversation.id,
-                        flash: undefined,
-                        flashType: undefined,
-                      }}
-                      className={cn(
-                        "flex flex-col items-start gap-2 rounded-lg border p-3 text-left text-sm transition-all hover:bg-accent",
-                        selectedId === conversation.id && "bg-accent",
-                      )}
-                    >
-                      <div className="flex w-full items-start gap-3">
-                        <Avatar className="h-10 w-10">
-                          <AvatarImage
-                            src={conversation.peer_profile?.avatar_url || ""}
-                            alt={getConversationDisplayName(conversation)}
-                          />
-                          <AvatarFallback>{getConversationInitials(conversation)}</AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
+                    return (
+                      <Link
+                        key={conversation.id}
+                        to="/messages"
+                        search={{
+                          compose: false,
+                          composeGroup: undefined,
+                          composeQuery: undefined,
+                          composeRecipients: [],
+                          conversationId: conversation.id,
+                          flash: undefined,
+                          flashType: undefined,
+                        }}
+                        className={cn(
+                          "flex flex-col items-start gap-2 rounded-lg border p-3 text-left text-sm transition-all hover:bg-accent",
+                          selectedId === conversation.id && "bg-accent",
+                        )}
+                      >
+                        <div className="flex w-full items-start gap-3">
+                          <Avatar className="h-10 w-10">
+                            <AvatarImage
+                              src={conversation.peer_profile?.avatar_url || ""}
+                              alt={getConversationDisplayName(conversation)}
+                            />
+                            <AvatarFallback>{getConversationInitials(conversation)}</AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <div
+                                className={cn(
+                                  "truncate font-medium",
+                                  unreadCount > 0 && "font-semibold",
+                                )}
+                              >
+                                {getConversationDisplayName(conversation)}
+                              </div>
+                              {unreadCount > 0 ? (
+                                <Badge className="h-5 min-w-5 justify-center px-1.5">
+                                  {unreadCount > 9 ? "9+" : unreadCount}
+                                </Badge>
+                              ) : null}
+                              <div className="ml-auto shrink-0 text-xs text-muted-foreground">
+                                {conversation.last_message_at
+                                  ? new Date(conversation.last_message_at).toLocaleDateString()
+                                  : ""}
+                              </div>
+                            </div>
                             <div
                               className={cn(
-                                "truncate font-medium",
-                                unreadCount > 0 && "font-semibold",
+                                "line-clamp-2 text-xs text-muted-foreground",
+                                unreadCount > 0 && "text-foreground",
                               )}
                             >
-                              {getConversationDisplayName(conversation)}
+                              {getConversationPreviewText(conversation)}
                             </div>
-                            {unreadCount > 0 ? (
-                              <Badge className="h-5 min-w-5 justify-center px-1.5">
-                                {unreadCount > 9 ? "9+" : unreadCount}
-                              </Badge>
-                            ) : null}
-                            <div className="ml-auto shrink-0 text-xs text-muted-foreground">
-                              {conversation.last_message_at
-                                ? new Date(conversation.last_message_at).toLocaleDateString()
-                                : ""}
-                            </div>
-                          </div>
-                          <div
-                            className={cn(
-                              "line-clamp-2 text-xs text-muted-foreground",
-                              unreadCount > 0 && "text-foreground",
-                            )}
-                          >
-                            {getConversationPreviewText(conversation)}
                           </div>
                         </div>
-                      </div>
-                    </Link>
-                  );
-                })}
-                {conversations.length === 0 ? (
-                  <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                    No conversations yet. Start a new message to create one.
-                  </div>
-                ) : null}
-              </div>
+                      </Link>
+                    );
+                  })}
+                  {conversations.length === 0 ? <MessagesEmptyState /> : null}
+                </div>
+              ) : null}
             </ScrollArea>
           </div>
         </div>
@@ -460,7 +462,7 @@ function MessagesPage() {
               </Button>
             </div>
           ) : null}
-          {!compose && conversations.length > 0 ? (
+          {!compose && !conversationsQuery.isError && conversations.length > 0 ? (
             <div className="border-b p-3 xl:hidden">
               <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Conversations
@@ -678,6 +680,8 @@ function MessagesPage() {
                 </div>
               </ScrollArea>
             </div>
+          ) : conversationsQuery.isError ? (
+            <MessagesInboxErrorState onRetry={() => void conversationsQuery.refetch()} />
           ) : selectedId && selectedConversation ? (
             <div className="flex h-full flex-col">
               <div className="flex items-center border-b p-4">
@@ -782,26 +786,11 @@ function MessagesPage() {
                 </Form>
               </div>
             </div>
+          ) : conversations.length === 0 ? (
+            <MessagesEmptyState />
           ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-4 text-center text-muted-foreground">
-              <div>Select a conversation or start a new one.</div>
-              <Button asChild>
-                <Link
-                  to="/messages"
-                  search={{
-                    compose: true,
-                    composeGroup: undefined,
-                    composeQuery: undefined,
-                    composeRecipients: [],
-                    conversationId: undefined,
-                    flash: undefined,
-                    flashType: undefined,
-                  }}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  New message
-                </Link>
-              </Button>
+            <div className="flex h-full items-center justify-center p-6 text-center text-muted-foreground">
+              Select a conversation or start a new one.
             </div>
           )}
         </div>

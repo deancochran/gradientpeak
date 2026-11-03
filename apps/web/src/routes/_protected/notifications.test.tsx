@@ -92,3 +92,18 @@ describe("follow-request notifications", () => {
     expect(screen.queryByRole("button", { name: "Reject" })).toBeNull();
   });
 });
+
+describe("notification history states", () => {
+  it("makes the bulk action's loaded scope explicit and presents a compact empty state", () => {
+    const NotificationsPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<NotificationsPage />);
+
+    expect(
+      screen.getByRole("button", { name: "Mark 0 loaded as read" }).hasAttribute("disabled"),
+    ).toBe(true);
+    expect(screen.getByText("No notifications yet")).toBeTruthy();
+    expect(
+      screen.getByText("Updates about messages, follows, and invitations will appear here."),
+    ).toBeTruthy();
+  });
+});

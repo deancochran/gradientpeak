@@ -1,5 +1,4 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { usePostHog } from "@posthog/react";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
@@ -27,7 +26,6 @@ import {
 } from "@repo/ui/components/form";
 import { Label } from "@repo/ui/components/label";
 import { LoadingButton } from "@repo/ui/components/loading";
-import { Switch } from "@repo/ui/components/switch";
 import { useZodForm } from "@repo/ui/hooks";
 import { createFileRoute, isRedirect } from "@tanstack/react-router";
 import {
@@ -43,8 +41,12 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { type UseFormReturn, useForm } from "react-hook-form";
 import { useAuth } from "../../components/providers/auth-provider";
-import { useTheme } from "../../components/providers/theme-provider";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
+import {
+  AppearanceCard,
+  ProductAnalyticsCard,
+} from "../../components/settings/settings-preferences-cards";
+import { SettingsSectionNavigation } from "../../components/settings/settings-section-navigation";
 import { api } from "../../lib/api/client";
 import { signOutAction } from "../../lib/auth/server-actions";
 import { contractEpochFormInputProps } from "../../lib/contract-epoch";
@@ -334,93 +336,55 @@ export function SettingsPage() {
           />
           <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
           <p className="text-muted-foreground">Manage your account settings and preferences.</p>
+          <div className="mt-4">
+            <SettingsSectionNavigation />
+          </div>
         </div>
-        <ProfileInformationCard
-          avatarBlobUrl={avatarBlobUrl}
-          avatarFiles={avatarFiles}
-          coverBlobUrl={coverBlobUrl}
-          coverFiles={coverFiles}
-          coverError={mediaErrors.cover_url ?? null}
-          coverPending={mediaOperations.cover_url ?? null}
-          form={form}
-          profileSaveError={profileSaveError}
-          {...(profile?.username === undefined ? {} : { profileUsername: profile.username })}
-          submittingProfile={submittingProfile}
-          {...(user?.email === undefined ? {} : { userEmail: user.email })}
-          avatarError={mediaErrors.avatar_url ?? null}
-          avatarPending={mediaOperations.avatar_url ?? null}
-          onAvatarFilesChange={setAvatarFiles}
-          onCoverFilesChange={setCoverFiles}
-          onMediaSubmit={handleMediaSubmit}
-          onProfileSubmit={handleProfileSubmit}
-        />
+        <section id="profile" aria-labelledby="profile-heading" className="scroll-mt-6">
+          <ProfileInformationCard
+            avatarBlobUrl={avatarBlobUrl}
+            avatarFiles={avatarFiles}
+            coverBlobUrl={coverBlobUrl}
+            coverFiles={coverFiles}
+            coverError={mediaErrors.cover_url ?? null}
+            coverPending={mediaOperations.cover_url ?? null}
+            form={form}
+            profileSaveError={profileSaveError}
+            {...(profile?.username === undefined ? {} : { profileUsername: profile.username })}
+            submittingProfile={submittingProfile}
+            {...(user?.email === undefined ? {} : { userEmail: user.email })}
+            avatarError={mediaErrors.avatar_url ?? null}
+            avatarPending={mediaOperations.avatar_url ?? null}
+            onAvatarFilesChange={setAvatarFiles}
+            onCoverFilesChange={setCoverFiles}
+            onMediaSubmit={handleMediaSubmit}
+            onProfileSubmit={handleProfileSubmit}
+          />
+        </section>
         <MyGroupsCard />
-        <AccountInformationCard
-          key={`account:${user?.id}`}
-          {...(user?.id === undefined ? {} : { accountId: user.id })}
-          createdAt={createdAt}
-          {...(user?.email === undefined ? {} : { email: user.email })}
-          {...(user?.emailVerified === undefined ? {} : { emailVerified: user.emailVerified })}
-        />
-        <ProductAnalyticsCard />
-        <AppearanceCard />
-        <SecurityCard
-          key={`security:${user?.id}`}
-          {...(user?.id === undefined ? {} : { accountId: user.id })}
-          {...(user?.email !== undefined ? { email: user.email } : {})}
-          {...(user?.emailVerified !== undefined ? { emailVerified: user.emailVerified } : {})}
-        />
+        <section id="account" aria-labelledby="account-heading" className="scroll-mt-6">
+          <AccountInformationCard
+            key={`account:${user?.id}`}
+            {...(user?.id === undefined ? {} : { accountId: user.id })}
+            createdAt={createdAt}
+            {...(user?.email === undefined ? {} : { email: user.email })}
+            {...(user?.emailVerified === undefined ? {} : { emailVerified: user.emailVerified })}
+          />
+        </section>
+        <section id="preferences" aria-label="Preferences" className="scroll-mt-6 space-y-8">
+          <ProductAnalyticsCard />
+          <AppearanceCard />
+        </section>
+        <section id="security" aria-labelledby="security-heading" className="scroll-mt-6">
+          <SecurityCard
+            key={`security:${user?.id}`}
+            {...(user?.id === undefined ? {} : { accountId: user.id })}
+            {...(user?.email !== undefined ? { email: user.email } : {})}
+            {...(user?.emailVerified !== undefined ? { emailVerified: user.emailVerified } : {})}
+          />
+        </section>
       </div>
     </div>
-  );
-}
-
-const productAnalyticsConsentStorageKey = "gradientpeak-product-analytics-consent";
-
-function ProductAnalyticsCard() {
-  const posthog = usePostHog();
-  const [enabled, setEnabled] = useState(false);
-
-  useEffect(() => {
-    const storedConsent = window.localStorage.getItem(productAnalyticsConsentStorageKey);
-    setEnabled(
-      storedConsent === "granted" ||
-        (storedConsent === null && posthog?.has_opted_out_capturing?.() === false),
-    );
-  }, [posthog]);
-
-  const updateConsent = (nextEnabled: boolean) => {
-    window.localStorage.setItem(
-      productAnalyticsConsentStorageKey,
-      nextEnabled ? "granted" : "denied",
-    );
-    if (nextEnabled) {
-      posthog?.opt_in_capturing?.({ captureEventName: false });
-    } else {
-      posthog?.opt_out_capturing?.();
-    }
-    setEnabled(nextEnabled);
-  };
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Product analytics</CardTitle>
-        <CardDescription>
-          Opt in to anonymous product usage and page navigation analytics.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-center justify-between gap-4">
-          <Label htmlFor="product-analytics-consent">Product analytics</Label>
-          <Switch
-            checked={enabled}
-            id="product-analytics-consent"
-            onCheckedChange={updateConsent}
-          />
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -428,7 +392,7 @@ function MyGroupsCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <CardTitle id="profile-heading" className="flex items-center gap-2">
           <UsersRound className="h-5 w-5" />
           My Groups
         </CardTitle>
@@ -492,7 +456,7 @@ function ProfileInformationCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <CardTitle id="account-heading" className="flex items-center gap-2">
           <UserRound className="h-5 w-5" />
           Profile Information
         </CardTitle>
@@ -788,7 +752,7 @@ function AccountInformationCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        <CardTitle id="security-heading" className="flex items-center gap-2">
           <Mail className="h-5 w-5" />
           Account Information
         </CardTitle>
@@ -837,35 +801,6 @@ function AccountInformationCard({
             {signOutError}
           </p>
         ) : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function AppearanceCard() {
-  const { theme, setTheme } = useTheme();
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Theme</CardTitle>
-        <CardDescription>Choose a light, dark, or system-matched appearance.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <fieldset className="grid grid-cols-3 gap-2" aria-label="Theme preference">
-          {(["light", "dark", "system"] as const).map((option) => (
-            <Button
-              key={option}
-              type="button"
-              variant={theme === option ? "default" : "outline"}
-              aria-pressed={theme === option}
-              onClick={() => setTheme(option)}
-              className="capitalize"
-            >
-              {option}
-            </Button>
-          ))}
-        </fieldset>
       </CardContent>
     </Card>
   );

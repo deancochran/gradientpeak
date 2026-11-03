@@ -15,7 +15,7 @@ import { ScrollArea } from "@repo/ui/components/scroll-area";
 import { cn } from "@repo/ui/lib/cn";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Bell, Mail, UserPlus } from "lucide-react";
-
+import { NotificationsEmptyState } from "../../components/notifications/notifications-empty-state";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
 import { contractEpochFormInputProps } from "../../lib/contract-epoch";
@@ -74,7 +74,7 @@ function NotificationsPage() {
       <div className="flex items-center justify-between space-y-2">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Notifications</h2>
-          <p className="text-muted-foreground">Open, review, and clear the latest activity.</p>
+          <p className="text-muted-foreground">Open and review your latest activity.</p>
         </div>
         <form action={markNotificationsReadAction.url} method="post">
           <input {...contractEpochFormInputProps} />
@@ -88,7 +88,7 @@ function NotificationsPage() {
             />
           ))}
           <Button type="submit" disabled={unreadNotifications.length === 0}>
-            Mark all as read
+            Mark {unreadIds.length} loaded as read
           </Button>
         </form>
       </div>
@@ -142,9 +142,7 @@ function NotificationsPage() {
                 />
               ))
             ) : (
-              <div className="p-8 text-center text-muted-foreground">
-                {view === "unread" ? "No unread notifications." : "No notifications yet."}
-              </div>
+              <NotificationsEmptyState unreadOnly={view === "unread"} />
             )}
           </ScrollArea>
         </CardContent>

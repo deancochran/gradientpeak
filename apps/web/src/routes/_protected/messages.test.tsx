@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   getOrCreateDM: vi.fn(),
   sendMessage: vi.fn(),
   routeSearch: {
-    compose: true,
+    compose: true as boolean,
     composeGroup: "Paceline",
     composeQuery: "coach" as string | undefined,
     composeRecipients: [{ id: "user-1", username: "rider", is_public: true, avatar_url: null }],
@@ -18,6 +18,8 @@ const mocks = vi.hoisted(() => ({
     flash: undefined,
     flashType: undefined,
   },
+  inboxError: false,
+  refetchInbox: vi.fn(),
 }));
 
 vi.mock("@repo/api/react", () => ({
@@ -48,7 +50,9 @@ vi.mock("../../lib/api/client", () => ({
   api: {
     useUtils: () => ({}),
     messaging: {
-      getConversations: { useQuery: () => ({ data: [] }) },
+      getConversations: {
+        useQuery: () => ({ data: [], isError: mocks.inboxError, refetch: mocks.refetchInbox }),
+      },
       getMessages: { useQuery: () => ({ data: [] }) },
       markAsRead: { useMutation: () => ({ mutate: vi.fn() }) },
       getOrCreateDM: {
@@ -80,6 +84,7 @@ afterEach(() => {
   mocks.routeSearch.composeRecipients = [
     { id: "user-1", username: "rider", is_public: true, avatar_url: null },
   ];
+  mocks.inboxError = false;
 });
 
 describe("messages recipient GET form", () => {
@@ -147,5 +152,21 @@ describe("messages recipient GET form", () => {
       }),
     );
     expect(mocks.getOrCreateDM).not.toHaveBeenCalled();
+  });
+});
+
+describe("messages inbox state", () => {
+  it("keeps an inbox failure distinct from an empty inbox and offers retry", () => {
+    mocks.routeSearch.compose = false;
+    mocks.inboxError = true;
+    const MessagesPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<MessagesPage />);
+
+    expect(screen.getByRole("alert").textContent).toContain("Conversations could not be loaded");
+    expect(screen.queryByText("No conversations yet")).toBeNull();
+    const retry = screen.getAllByRole("button", { name: "Retry inbox" })[0];
+    if (!retry) throw new Error("Expected an inbox retry button");
+    fireEvent.click(retry);
+    expect(mocks.refetchInbox).toHaveBeenCalledOnce();
   });
 });
