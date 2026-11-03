@@ -257,3 +257,20 @@ or expose any preserved user's password. Initial scratch attempts uncovered test
 setup omissions (pgcrypto and the application's custom bcrypt format); only the
 corrected successful run is acceptance evidence. It complements—not replaces—the
 full archive data-preservation rehearsals.
+
+## Auth compatibility activated
+
+After independent review found no remaining source blocker and fresh hardened
+rehearsals passed, coordinator activated E2E under its recovery lock and preview
+under the shared-preview lock. Both committed only after exact schema, immutable
+111-table inventory and all pre-existing data digests matched the receipts.
+No account/issuer values or ledger rows were changed. E2E status passes with
+one ledger migration and fingerprint a50696bcf0ed.
+
+Preview contains checkpoint 24179eaf7d88ede26b8a5e4672767732529a6f65 at merge
+e6d4a3d69c09f5e53ebb3c72dd36b19f7870b8eb. Owned web/Metro were stopped before
+frozen dependency installation and returned to their prior active state.
+Ancestry, web health, Metro status and unauthenticated auth session lookup with
+the current epoch-3 header passed (returns null). Missing/stale epoch probes
+correctly returned 412. No native binary was replaced. This is live preview
+delivery, not main merge or clearance of the remaining release checks.
