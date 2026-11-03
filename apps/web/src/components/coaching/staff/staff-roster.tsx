@@ -47,7 +47,7 @@ export function StaffRoster({
       key={organizationId}
       organizationId={organizationId}
       page={page}
-      cursor={cursor}
+      {...(cursor === undefined ? {} : { cursor })}
     />
   );
 }
@@ -246,7 +246,7 @@ function StaffRosterContents({
       </Card>
       <StaffPagination
         organizationId={organizationId}
-        cursor={cursor}
+        {...(cursor === undefined ? {} : { cursor })}
         hasMore={page.hasMore}
         nextCursor={page.nextCursor}
       />

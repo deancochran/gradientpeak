@@ -3,6 +3,7 @@ import {
   evaluateOrganizationOperationRoleEligibility,
   ORGANIZATION_OPERATIONS,
   organizationContextSchema,
+  organizationInvitationSummarySchema,
   organizationOperationRoleEligibilityDecisionSchema,
   organizationStaffMembershipSummarySchema,
 } from "@repo/core/organizations";
@@ -12,6 +13,9 @@ import {
   acceptOrganizationInvitation,
   createOrganization,
   createOrganizationInvitation,
+  decodeInvitationListCursor,
+  listMyOrganizationInvitations,
+  listOrganizationInvitations,
   OrganizationManagementError,
   revokeOrganizationInvitation,
 } from "../application/organizations/manage-organizations";
@@ -94,6 +98,42 @@ const invitationRevokeInputSchema = z
     invitationId: z.string().uuid(),
   })
   .strict();
+const invitationListCursorSchema = z.string().min(1).max(512).nullable().default(null);
+const invitationListInputSchema = z
+  .object({
+    organizationId: z.string().uuid(),
+    limit: z.number().int().min(1).max(50).default(20),
+    cursor: invitationListCursorSchema,
+  })
+  .strict()
+  .transform((value, ctx) => {
+    const cursor = value.cursor === null ? null : decodeInvitationListCursor(value.cursor);
+    if (
+      value.cursor !== null &&
+      (!cursor || cursor.scope !== "organization" || cursor.organizationId !== value.organizationId)
+    ) {
+      ctx.addIssue({ code: "custom", message: "Unsupported invitation cursor" });
+      return z.NEVER;
+    }
+    return { ...value, cursor };
+  });
+const myInvitationListInputSchema = z
+  .object({
+    limit: z.number().int().min(1).max(50).default(20),
+    cursor: invitationListCursorSchema,
+  })
+  .strict()
+  .transform((value, ctx) => {
+    const cursor = value.cursor === null ? null : decodeInvitationListCursor(value.cursor);
+    if (
+      value.cursor !== null &&
+      (!cursor || cursor.scope !== "recipient" || cursor.organizationId !== null)
+    ) {
+      ctx.addIssue({ code: "custom", message: "Unsupported invitation cursor" });
+      return z.NEVER;
+    }
+    return { ...value, cursor };
+  });
 const organizationCreateOutputSchema = z
   .object({
     organizationId: z.string().uuid(),
@@ -117,6 +157,13 @@ const invitationAcceptOutputSchema = z
   .strict();
 const invitationRevokeOutputSchema = z
   .object({ invitationId: z.string().uuid(), status: z.literal("revoked") })
+  .strict();
+const invitationListOutputSchema = z
+  .object({
+    items: z.array(organizationInvitationSummarySchema),
+    nextCursor: z.string().nullable(),
+    hasMore: z.boolean(),
+  })
   .strict();
 const organizationMembershipContextSchema = z
   .object({
@@ -246,6 +293,34 @@ export function createOrganizationsRouter(
         .mutation(async ({ ctx, input }) => {
           try {
             return await revokeOrganizationInvitation({
+              db: getRequiredDb(ctx),
+              actorProfileId: ctx.session.user.id,
+              ...input,
+            });
+          } catch (error) {
+            return managementError(error);
+          }
+        }),
+      listForOrganization: protectedProcedure
+        .input(invitationListInputSchema)
+        .output(invitationListOutputSchema)
+        .query(async ({ ctx, input }) => {
+          try {
+            return await listOrganizationInvitations({
+              db: getRequiredDb(ctx),
+              actorProfileId: ctx.session.user.id,
+              ...input,
+            });
+          } catch (error) {
+            return managementError(error);
+          }
+        }),
+      listMine: protectedProcedure
+        .input(myInvitationListInputSchema)
+        .output(invitationListOutputSchema)
+        .query(async ({ ctx, input }) => {
+          try {
+            return await listMyOrganizationInvitations({
               db: getRequiredDb(ctx),
               actorProfileId: ctx.session.user.id,
               ...input,

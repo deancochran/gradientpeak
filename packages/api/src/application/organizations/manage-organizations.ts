@@ -1,11 +1,93 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import type { OrganizationRoleKey } from "@repo/core/organizations";
+import {
+  type OrganizationInvitationSummary,
+  type OrganizationRoleKey,
+  organizationInvitationSummarySchema,
+} from "@repo/core/organizations";
 import type { DrizzleDbClient } from "@repo/db/client";
+import { z } from "zod";
 import { withRepeatableReadSnapshot } from "../../db";
 import {
   createOrganizationManagementRepository,
+  type OrganizationInvitationSummaryRow,
   type OrganizationManagementRepository,
 } from "../../repositories/organization-management-repository";
+
+const invitationListCursorVersion = 1;
+const invitationCursorTimestampSchema = z
+  .string()
+  .datetime({ offset: true, precision: 6 })
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/);
+const invitationListCursorPayloadSchema = z
+  .object({
+    v: z.literal(invitationListCursorVersion),
+    s: z.enum(["organization", "recipient"]),
+    o: z.string().uuid().nullable(),
+    c: invitationCursorTimestampSchema,
+    i: z.string().uuid(),
+  })
+  .strict();
+
+export type InvitationListCursor = {
+  scope: "organization" | "recipient";
+  organizationId: string | null;
+  createdAtCursor: string;
+  invitationId: string;
+};
+
+export type OrganizationInvitationListPage = {
+  items: OrganizationInvitationSummary[];
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
+export function decodeInvitationListCursor(value: string): InvitationListCursor | null {
+  try {
+    const parsed = invitationListCursorPayloadSchema.safeParse(
+      JSON.parse(Buffer.from(value, "base64url").toString("utf8")),
+    );
+    if (!parsed.success) return null;
+    return {
+      scope: parsed.data.s,
+      organizationId: parsed.data.o,
+      createdAtCursor: parsed.data.c,
+      invitationId: parsed.data.i,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function encodeInvitationListCursor(input: {
+  scope: InvitationListCursor["scope"];
+  organizationId: string | null;
+  createdAtCursor: string;
+  invitationId: string;
+}): string {
+  return Buffer.from(
+    JSON.stringify({
+      v: invitationListCursorVersion,
+      s: input.scope,
+      o: input.organizationId,
+      c: input.createdAtCursor,
+      i: input.invitationId,
+    }),
+  ).toString("base64url");
+}
+
+export function mapOrganizationInvitationSummary(
+  row: OrganizationInvitationSummaryRow,
+): OrganizationInvitationSummary {
+  return organizationInvitationSummarySchema.parse({
+    invitationId: row.invitationId,
+    organizationId: row.organizationId,
+    kind: row.kind,
+    requestedRole: row.requestedRole,
+    status: row.status,
+    expiresAt: row.expiresAt.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+  });
+}
 
 export type OrganizationManagementFailure =
   | "forbidden"
@@ -234,4 +316,72 @@ export async function revokeOrganizationInvitation(input: {
     },
     { accessMode: "read write" },
   );
+}
+
+export async function listOrganizationInvitations(input: {
+  db: DrizzleDbClient;
+  actorProfileId: string;
+  organizationId: string;
+  limit: number;
+  cursor: InvitationListCursor | null;
+}): Promise<OrganizationInvitationListPage> {
+  return withRepeatableReadSnapshot(input.db, async (tx) => {
+    const repository = createOrganizationManagementRepository(tx);
+    const administrator = await repository.findActiveAdminMembership(
+      input.organizationId,
+      input.actorProfileId,
+    );
+    if (!administrator) throw new OrganizationManagementError("forbidden");
+    const rows = await repository.listOrganizationInvitations({
+      organizationId: input.organizationId,
+      limit: input.limit,
+      cursor: input.cursor,
+    });
+    const pageRows = rows.slice(0, input.limit);
+    const last = pageRows.at(-1);
+    return {
+      items: pageRows.map(mapOrganizationInvitationSummary),
+      hasMore: rows.length > input.limit,
+      nextCursor:
+        rows.length > input.limit && last
+          ? encodeInvitationListCursor({
+              scope: "organization",
+              organizationId: input.organizationId,
+              createdAtCursor: last.createdAtCursor,
+              invitationId: last.invitationId,
+            })
+          : null,
+    };
+  });
+}
+
+export async function listMyOrganizationInvitations(input: {
+  db: DrizzleDbClient;
+  actorProfileId: string;
+  limit: number;
+  cursor: InvitationListCursor | null;
+}): Promise<OrganizationInvitationListPage> {
+  return withRepeatableReadSnapshot(input.db, async (tx) => {
+    const repository = createOrganizationManagementRepository(tx);
+    const rows = await repository.listRecipientInvitations({
+      profileId: input.actorProfileId,
+      limit: input.limit,
+      cursor: input.cursor,
+    });
+    const pageRows = rows.slice(0, input.limit);
+    const last = pageRows.at(-1);
+    return {
+      items: pageRows.map(mapOrganizationInvitationSummary),
+      hasMore: rows.length > input.limit,
+      nextCursor:
+        rows.length > input.limit && last
+          ? encodeInvitationListCursor({
+              scope: "recipient",
+              organizationId: null,
+              createdAtCursor: last.createdAtCursor,
+              invitationId: last.invitationId,
+            })
+          : null,
+    };
+  });
 }

@@ -13,13 +13,20 @@ function OrganizationGroupDetailPage() {
   if (result.status === "forbidden") return <CoachAccessDenied />;
   return (
     <OrganizationGroupDetail group={result.group} organizationId={organizationId}>
-      <nav aria-label="Organization group management">
+      <nav aria-label="Organization group management" className="flex flex-wrap gap-3">
         <Link
           to="/organizations/$organizationId/groups/$groupId/coaches"
           params={{ organizationId, groupId }}
           className="text-sm text-cyan-300 hover:text-cyan-200"
         >
           Manage group coaches
+        </Link>
+        <Link
+          to="/organizations/$organizationId/groups/$groupId/athletes"
+          params={{ organizationId, groupId }}
+          className="text-sm text-cyan-300 hover:text-cyan-200"
+        >
+          Manage group athletes
         </Link>
       </nav>
       <Outlet />

@@ -842,4 +842,253 @@ describe("organization management against a disposable migrated PostgreSQL datab
       },
     );
   }, 90_000);
+
+  it("discovers only safe invitation summaries with scoped keyset cursors", async () => {
+    await withDisposableDatabase(
+      ["--disposable", "--local"],
+      "organization_invitation_discovery",
+      async (pool, url) => {
+        await bootstrapSupabaseSchemas(pool);
+        for (const migration of requireFreshBaseline().migrationPaths)
+          await applySqlFile(pool, migration);
+        const client = createDbClient({ url });
+        try {
+          const owner = await person(client.db, "discovery-owner");
+          const recipient = await person(client.db, "discovery-recipient");
+          const unverified = await person(client.db, "discovery-unverified", false);
+          const outsider = await person(client.db, "discovery-outsider");
+          const administrator = await person(client.db, "discovery-administrator");
+          const organizationId = randomUUID();
+          const otherOrganizationId = randomUUID();
+          const ownerCaller = caller(client.db, owner.id);
+          const created = await ownerCaller.create({
+            organizationId,
+            name: "Invitation discovery",
+            slug: `invitation-discovery-${organizationId}`,
+            timezone: "UTC",
+          });
+          const administratorMembershipId = randomUUID();
+          await client.db.insert(organizationMemberships).values({
+            id: administratorMembershipId,
+            organization_id: organizationId,
+            profile_id: administrator.id,
+          });
+          await client.db.insert(organizationMembershipRoleGrants).values({
+            organization_id: organizationId,
+            membership_id: administratorMembershipId,
+            role_key: "admin",
+          });
+          await ownerCaller.create({
+            organizationId: otherOrganizationId,
+            name: "Other invitation discovery",
+            slug: `other-invitation-discovery-${otherOrganizationId}`,
+            timezone: "UTC",
+          });
+          const direct = await ownerCaller.invitations.create({
+            organizationId,
+            kind: "staff",
+            requestedRole: "coach",
+            recipientProfileId: recipient.id,
+            recipientEmail: null,
+            expiresAt: new Date(Date.now() + 60_000),
+          });
+          const byVerifiedEmail = await ownerCaller.invitations.create({
+            organizationId,
+            kind: "athlete",
+            requestedRole: null,
+            recipientProfileId: null,
+            recipientEmail: recipient.email.toUpperCase(),
+            expiresAt: new Date(Date.now() + 60_000),
+          });
+          const expiredInvitationId = randomUUID();
+          const expiredCreatedAt = new Date(Date.now() - 120_000);
+          const expiredAt = new Date(Date.now() - 60_000);
+          await client.db.insert(organizationInvitations).values({
+            id: expiredInvitationId,
+            organization_id: organizationId,
+            invited_by_membership_id: created.membershipId,
+            invitation_kind: "athlete",
+            invited_profile_id: recipient.id,
+            token_digest: `expired-${randomUUID()}`,
+            expires_at: expiredAt,
+            created_at: expiredCreatedAt,
+          });
+          const precisionInvitationIds = [randomUUID(), randomUUID(), randomUUID()];
+          await client.db.insert(organizationInvitations).values([
+            {
+              id: precisionInvitationIds[0],
+              organization_id: organizationId,
+              invited_by_membership_id: created.membershipId,
+              invitation_kind: "athlete",
+              invited_profile_id: recipient.id,
+              token_digest: `precision-${randomUUID()}`,
+              expires_at: sql`'2020-01-01T00:00:00.124000Z'::timestamptz`,
+              created_at: sql`'2020-01-01T00:00:00.123456Z'::timestamptz`,
+            },
+            {
+              id: precisionInvitationIds[1],
+              organization_id: organizationId,
+              invited_by_membership_id: created.membershipId,
+              invitation_kind: "athlete",
+              invited_profile_id: recipient.id,
+              token_digest: `precision-${randomUUID()}`,
+              expires_at: sql`'2020-01-01T00:00:00.124000Z'::timestamptz`,
+              created_at: sql`'2020-01-01T00:00:00.123456Z'::timestamptz`,
+            },
+            {
+              id: precisionInvitationIds[2],
+              organization_id: organizationId,
+              invited_by_membership_id: created.membershipId,
+              invitation_kind: "athlete",
+              invited_profile_id: recipient.id,
+              token_digest: `precision-${randomUUID()}`,
+              expires_at: sql`'2020-01-01T00:00:00.124000Z'::timestamptz`,
+              created_at: sql`'2020-01-01T00:00:00.123789Z'::timestamptz`,
+            },
+          ]);
+          const revoked = await ownerCaller.invitations.create({
+            organizationId,
+            kind: "athlete",
+            requestedRole: null,
+            recipientProfileId: recipient.id,
+            recipientEmail: null,
+            expiresAt: new Date(Date.now() + 60_000),
+          });
+          const unverifiedInvitation = await ownerCaller.invitations.create({
+            organizationId,
+            kind: "athlete",
+            requestedRole: null,
+            recipientProfileId: unverified.id,
+            recipientEmail: null,
+            expiresAt: new Date(Date.now() + 60_000),
+          });
+          await ownerCaller.invitations.revoke({
+            organizationId,
+            invitationId: revoked.invitationId,
+          });
+          await caller(client.db, recipient.id).invitations.accept({ token: direct.token });
+
+          const firstAdminPage = await ownerCaller.invitations.listForOrganization({
+            organizationId,
+            limit: 1,
+          });
+          expect(firstAdminPage).toMatchObject({ hasMore: true, items: [{ organizationId }] });
+          expect(firstAdminPage.nextCursor).toEqual(expect.any(String));
+          const adminInvitationIds = firstAdminPage.items.map((item) => item.invitationId);
+          let cursor = firstAdminPage.nextCursor;
+          while (cursor) {
+            const page = await ownerCaller.invitations.listForOrganization({
+              organizationId,
+              limit: 1,
+              cursor,
+            });
+            for (const item of page.items) adminInvitationIds.push(item.invitationId);
+            cursor = page.nextCursor;
+          }
+          expect(new Set(adminInvitationIds).size).toBe(adminInvitationIds.length);
+          expect(new Set(adminInvitationIds)).toEqual(
+            new Set([
+              direct.invitationId,
+              byVerifiedEmail.invitationId,
+              expiredInvitationId,
+              revoked.invitationId,
+              unverifiedInvitation.invitationId,
+              ...precisionInvitationIds,
+            ]),
+          );
+          const allAdminItems = await ownerCaller.invitations.listForOrganization({
+            organizationId,
+          });
+          await expect(
+            caller(client.db, administrator.id).invitations.listForOrganization({ organizationId }),
+          ).resolves.toMatchObject({ items: expect.any(Array) });
+          expect(
+            allAdminItems.items.find((item) => item.invitationId === expiredInvitationId),
+          ).toMatchObject({
+            status: "expired",
+          });
+          await expect(
+            client.db
+              .select({ status: organizationInvitations.status })
+              .from(organizationInvitations)
+              .where(eq(organizationInvitations.id, expiredInvitationId)),
+          ).resolves.toEqual([{ status: "pending" }]);
+          for (const item of allAdminItems.items) {
+            expect(Object.keys(item).sort()).toEqual([
+              "createdAt",
+              "expiresAt",
+              "invitationId",
+              "kind",
+              "organizationId",
+              "requestedRole",
+              "status",
+            ]);
+            expect(JSON.stringify(item)).not.toContain(recipient.email);
+            expect(JSON.stringify(item)).not.toContain(direct.token);
+          }
+          await expect(
+            caller(client.db, outsider.id).invitations.listForOrganization({ organizationId }),
+          ).rejects.toMatchObject({ code: "FORBIDDEN" });
+          await client.db
+            .update(organizationMembershipRoleGrants)
+            .set({ revoked_at: new Date() })
+            .where(eq(organizationMembershipRoleGrants.membership_id, administratorMembershipId));
+          await expect(
+            caller(client.db, administrator.id).invitations.listForOrganization({ organizationId }),
+          ).rejects.toMatchObject({ code: "FORBIDDEN" });
+          await expect(
+            ownerCaller.invitations.listForOrganization({
+              organizationId: otherOrganizationId,
+              cursor: firstAdminPage.nextCursor,
+            }),
+          ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+          const recipientItems = [] as (typeof firstAdminPage.items)[number][];
+          let recipientCursor: string | null = null;
+          do {
+            const page = await caller(client.db, recipient.id).invitations.listMine({
+              limit: 1,
+              cursor: recipientCursor,
+            });
+            recipientItems.push(...page.items);
+            recipientCursor = page.nextCursor;
+          } while (recipientCursor);
+          expect(new Set(recipientItems.map((item) => item.invitationId)).size).toBe(
+            recipientItems.length,
+          );
+          expect(recipientItems.map((item) => item.invitationId)).toEqual(
+            expect.arrayContaining([
+              direct.invitationId,
+              byVerifiedEmail.invitationId,
+              expiredInvitationId,
+              revoked.invitationId,
+              ...precisionInvitationIds,
+            ]),
+          );
+          expect(
+            recipientItems.find((item) => item.invitationId === direct.invitationId),
+          ).toMatchObject({
+            status: "accepted",
+          });
+          expect(
+            recipientItems.find((item) => item.invitationId === revoked.invitationId),
+          ).toMatchObject({
+            status: "revoked",
+          });
+          await expect(caller(client.db, unverified.id).invitations.listMine({})).resolves.toEqual({
+            items: [],
+            hasMore: false,
+            nextCursor: null,
+          });
+          await expect(
+            caller(client.db, recipient.id).invitations.listMine({
+              cursor: firstAdminPage.nextCursor,
+            }),
+          ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+        } finally {
+          await client.close();
+        }
+      },
+    );
+  }, 90_000);
 });
