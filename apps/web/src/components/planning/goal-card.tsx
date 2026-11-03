@@ -1,5 +1,6 @@
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Target } from "lucide-react";
+import { AppHrefLink } from "../app-href-link";
 
 export type WebGoalCardData = {
   id: string;
@@ -27,7 +28,7 @@ export function GoalCard({ goal, href }: { goal: WebGoalCardData; href: string }
       data-testid={`goal-card-${goal.id}`}
     >
       <CardContent className="p-0">
-        <a
+        <AppHrefLink
           aria-label={`Open goal ${goal.title}`}
           className="flex items-start gap-3 rounded-xl p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           href={href}
@@ -47,7 +48,7 @@ export function GoalCard({ goal, href }: { goal: WebGoalCardData; href: string }
               {goal.targetDate ? <span>{formatTargetDate(goal.targetDate)}</span> : null}
             </span>
           </span>
-        </a>
+        </AppHrefLink>
       </CardContent>
     </Card>
   );

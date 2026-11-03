@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
+vi.mock("../app-href-link", () => ({
+  AppHrefLink: (props: React.ComponentProps<"a">) => <a {...props} />,
+}));
 
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { GoalCard } from "./goal-card";
 
 describe("GoalCard", () => {

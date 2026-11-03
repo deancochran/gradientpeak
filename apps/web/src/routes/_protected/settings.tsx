@@ -48,6 +48,7 @@ import {
 } from "../../components/settings/settings-preferences-cards";
 import { SettingsSectionNavigation } from "../../components/settings/settings-section-navigation";
 import { api } from "../../lib/api/client";
+import { loadRouteQuery } from "../../lib/api/route-loading";
 import { signOutAction } from "../../lib/auth/server-actions";
 import { contractEpochFormInputProps } from "../../lib/contract-epoch";
 import {
@@ -79,6 +80,11 @@ function isAbsoluteUrl(value: string) {
 }
 
 export const Route = createFileRoute("/_protected/settings")({
+  loader: ({ context }) =>
+    loadRouteQuery(
+      () => context.apiUtils.profiles.get.getData(),
+      () => context.apiUtils.profiles.get.fetch(),
+    ),
   validateSearch: (search: Record<string, unknown>) => ({
     flash: typeof search.flash === "string" ? search.flash : undefined,
     flashType:

@@ -1,6 +1,7 @@
 import type { CalendarProjectionItem } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
 import { PlannedActivityCard } from "../activity-plan/planned-activity-card";
+import { AppHrefLink } from "../app-href-link";
 import { GoalCard } from "../planning/goal-card";
 import { ActivityListCard } from "../protected/activity-route-primitives";
 
@@ -48,7 +49,7 @@ export function CalendarProjectionCard({ item }: { item: CalendarProjectionItem 
     );
   }
   return (
-    <a
+    <AppHrefLink
       className="block rounded-xl border p-4 transition-colors hover:border-primary hover:bg-accent/40"
       href={item.navigation.href}
     >
@@ -59,6 +60,6 @@ export function CalendarProjectionCard({ item }: { item: CalendarProjectionItem 
         </span>
         <Badge variant="outline">{item.status}</Badge>
       </span>
-    </a>
+    </AppHrefLink>
   );
 }

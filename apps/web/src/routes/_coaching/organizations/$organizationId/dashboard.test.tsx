@@ -33,6 +33,7 @@ vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     ...options,
     useLoaderData: () => state.overview,
+    useParams: () => ({ organizationId: "organization-1" }),
   }),
   Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
 }));

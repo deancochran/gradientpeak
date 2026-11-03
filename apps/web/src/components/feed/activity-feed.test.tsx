@@ -5,6 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ActivityFeed } from "./activity-feed";
 
+vi.mock("../app-href-link", () => ({
+  AppHrefLink: (props: React.ComponentProps<"a">) => <a {...props} />,
+}));
+
 const mocks = vi.hoisted(() => ({
   query: vi.fn(),
   fetchNextPage: vi.fn(),
@@ -13,9 +17,12 @@ const mocks = vi.hoisted(() => ({
   toggleLike: vi.fn(),
 }));
 
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
-    <a href={to}>{children}</a>
+vi.mock("@tanstack/react-router", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-router")>()),
+  Link: ({ children, to, ...props }: { children: React.ReactNode; to: string }) => (
+    <a {...props} href={to}>
+      {children}
+    </a>
   ),
   useNavigate: () => mocks.navigate,
 }));

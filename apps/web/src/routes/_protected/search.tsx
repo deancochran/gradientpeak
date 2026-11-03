@@ -1,11 +1,18 @@
 import { Badge } from "@repo/ui/components/badge";
 import { createFileRoute } from "@tanstack/react-router";
 import { Compass } from "lucide-react";
-
 import {
   DiscoveryExplorer,
   type WebDiscoverScope,
 } from "../../components/discover/discovery-explorer";
+import {
+  discoveryActivityInput,
+  discoveryGroupsInput,
+  discoveryRoutesInput,
+  discoveryTrainingInput,
+  discoveryUsersInput,
+} from "../../components/discover/discovery-query-inputs";
+import { loadRouteQuery } from "../../lib/api/route-loading";
 
 const DISCOVERY_SCOPES = new Set<WebDiscoverScope>([
   "activityPlans",
@@ -67,6 +74,91 @@ export const Route = createFileRoute("/_protected/search")({
       ...optionalSetValue(search.routeSort, ROUTE_SORTS, "routeSort"),
       ...optionalSetValue(search.profileSort, PROFILE_SORTS, "profileSort"),
     };
+  },
+  loaderDeps: ({ search }) => search,
+  loader: ({ context: { apiUtils }, deps }) => {
+    const q = deps.q ?? "";
+    switch (deps.scope ?? "activityPlans") {
+      case "trainingPlans": {
+        const input = discoveryTrainingInput(
+          q,
+          deps.trainingPlanCategory ?? "",
+          deps.experience ?? "",
+          deps.trainingSort ?? "newest",
+        );
+        const utils = apiUtils.trainingPlans.listTemplates;
+        return loadRouteQuery(
+          () => utils.getInfiniteData(input),
+          () =>
+            utils.fetchInfinite(input, {
+              pages: utils.getInfiniteData(input)?.pages.length || 1,
+              getNextPageParam: (page) => page.nextCursor,
+              retry: false,
+            }),
+        );
+      }
+      case "routes": {
+        const input = discoveryRoutesInput(
+          q,
+          deps.minDistanceKm ?? "",
+          deps.maxDistanceKm ?? "",
+          deps.routeSort ?? "newest",
+        );
+        const utils = apiUtils.routes.list;
+        return loadRouteQuery(
+          () => utils.getInfiniteData(input),
+          () =>
+            utils.fetchInfinite(input, {
+              pages: utils.getInfiniteData(input)?.pages.length || 1,
+              getNextPageParam: (page) => page.nextCursor,
+              retry: false,
+            }),
+        );
+      }
+      case "users": {
+        const input = discoveryUsersInput(q, deps.profileSort ?? "newest");
+        const utils = apiUtils.social.searchUsers;
+        return loadRouteQuery(
+          () => utils.getInfiniteData(input),
+          () =>
+            utils.fetchInfinite(input, {
+              pages: utils.getInfiniteData(input)?.pages.length || 1,
+              getNextPageParam: (page) => page.nextCursor,
+              retry: false,
+            }),
+        );
+      }
+      case "groups": {
+        const input = discoveryGroupsInput(q, deps.profileSort ?? "newest");
+        const utils = apiUtils.groups.listDiscoverable;
+        return loadRouteQuery(
+          () => utils.getInfiniteData(input),
+          () =>
+            utils.fetchInfinite(input, {
+              pages: utils.getInfiniteData(input)?.pages.length || 1,
+              getNextPageParam: (page) => page.nextCursor ?? undefined,
+              retry: false,
+            }),
+        );
+      }
+      default: {
+        const input = discoveryActivityInput(
+          q,
+          deps.activityCategory ?? "",
+          deps.activitySort ?? "newest",
+        );
+        const utils = apiUtils.activityPlans.list;
+        return loadRouteQuery(
+          () => utils.getInfiniteData(input),
+          () =>
+            utils.fetchInfinite(input, {
+              pages: utils.getInfiniteData(input)?.pages.length || 1,
+              getNextPageParam: (page) => page.nextCursor,
+              retry: false,
+            }),
+        );
+      }
+    }
   },
   component: SearchPage,
 });

@@ -2,6 +2,7 @@ import type { CalendarProjectionItem } from "@repo/core";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { CalendarDays } from "lucide-react";
 import { formatDayLabel } from "../../lib/planning";
+import { AppHrefLink } from "../app-href-link";
 import { ActivityPlanCard } from "./activity-plan-card";
 import { ActivityPlanEstimateRow } from "./activity-plan-estimates";
 
@@ -34,7 +35,7 @@ export function PlannedActivityCard({ item }: { item: PlannedActivityCardData })
       data-testid={`planned-activity-card-${item.id}`}
     >
       <CardContent className="p-0">
-        <a
+        <AppHrefLink
           aria-label={`Open planned activity ${item.title}`}
           className="flex items-start gap-3 rounded-xl p-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           href={item.navigation.href}
@@ -53,7 +54,7 @@ export function PlannedActivityCard({ item }: { item: PlannedActivityCardData })
               <span>{statusLabel(item.status)}</span>
             </span>
           </span>
-        </a>
+        </AppHrefLink>
       </CardContent>
     </Card>
   );

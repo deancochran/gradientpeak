@@ -10,6 +10,7 @@ import type { inferRouterInputs } from "@trpc/server";
 import { useMemo, useRef, useState } from "react";
 
 import { api } from "../../lib/api/client";
+import { AppHrefLink } from "../app-href-link";
 import { summarizeTrainingPlan, toTrainingPlanSessionDrafts } from "./training-plan-model";
 import { TrainingPlanPlannedPreview } from "./training-plan-planned-preview";
 
@@ -378,7 +379,7 @@ export function TrainingPlanDetail({
                 </div>
               ) : null}
               {linkedPlans.data?.items.map((activity) => (
-                <a
+                <AppHrefLink
                   className="block rounded-lg border p-3 hover:bg-muted/50"
                   key={activity.id}
                   href={`/activity-plans/${activity.id}`}
@@ -388,7 +389,7 @@ export function TrainingPlanDetail({
                   <p className="text-sm text-muted-foreground">
                     {activity.description || "No description"}
                   </p>
-                </a>
+                </AppHrefLink>
               ))}
             </CardContent>
           </Card>

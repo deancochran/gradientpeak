@@ -7,6 +7,7 @@ import { Route } from "./index";
 
 const mocks = vi.hoisted(() => ({
   cancel: vi.fn(),
+  loaderData: undefined as { date: string; month: string; todayKey: string } | undefined,
   navigate: vi.fn(),
   onViewChange: undefined as ((value: string) => void) | undefined,
   query: undefined as Record<string, unknown> | undefined,
@@ -20,6 +21,12 @@ vi.mock("@tanstack/react-router", () => ({
     ...options,
     useNavigate: () => mocks.navigate,
     useSearch: () => mocks.search,
+    useLoaderData: () =>
+      mocks.loaderData ?? {
+        date: mocks.search.date ?? "2026-11-02",
+        month: mocks.search.month,
+        todayKey: "2026-11-02",
+      },
   }),
   Link: ({ children, ...props }: React.ComponentProps<"a">) => <a {...props}>{children}</a>,
 }));
@@ -135,6 +142,7 @@ function query(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   mocks.cancel.mockReset();
+  mocks.loaderData = undefined;
   mocks.navigate.mockReset();
   mocks.onViewChange = undefined;
   mocks.rangeInputs = [];
@@ -142,10 +150,33 @@ beforeEach(() => {
   mocks.search = { date: "2026-11-02", month: "2026-12", view: "month" };
   mocks.query = query();
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe("CalendarIndexPage", () => {
   const CalendarIndexPage = (Route as unknown as { component: React.ComponentType }).component;
+
+  it("reuses the server calendar snapshot when the client clock is on another day", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 2, 23, 59));
+    mocks.search = { month: "2026-11", view: "week" };
+    const fetch = vi.fn().mockResolvedValue({ items: [] });
+    const loader = (
+      Route as unknown as {
+        loader: (args: unknown) => Promise<{ date: string; month: string; todayKey: string }>;
+      }
+    ).loader;
+    mocks.loaderData = await loader({
+      deps: mocks.search,
+      context: { apiUtils: { calendar: { range: { getData: () => undefined, fetch } } } },
+    });
+    vi.setSystemTime(new Date(2026, 10, 3, 1));
+    render(<CalendarIndexPage />);
+    expect(mocks.loaderData.date).toBe("2026-11-02");
+    expect(mocks.rangeInputs.at(-1)).toEqual(fetch.mock.calls[0]?.[0]);
+  });
 
   it("queries the entire visible grid while restricting month agenda and session actions to its month", () => {
     mocks.query = query({

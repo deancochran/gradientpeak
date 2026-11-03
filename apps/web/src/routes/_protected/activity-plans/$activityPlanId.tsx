@@ -38,9 +38,19 @@ import {
 } from "../../../components/protected/activity-route-primitives";
 import { formatDate } from "../../../lib/activity-route-helpers";
 import { api } from "../../../lib/api/client";
+import { loadRouteQuery } from "../../../lib/api/route-loading";
+import { prefetchSecondary } from "../../../lib/api/secondary-prefetch";
 import { getTodayDateKey, shiftDateKey } from "../../../lib/planning";
 
 export const Route = createFileRoute("/_protected/activity-plans/$activityPlanId")({
+  loader: ({ context, params }) => {
+    const input = { id: params.activityPlanId, personalize: false };
+    prefetchSecondary(() => context.apiUtils.profiles.get.prefetch());
+    return loadRouteQuery(
+      () => context.apiUtils.activityPlans.getById.getData(input),
+      () => context.apiUtils.activityPlans.getById.fetch(input, { retry: false }),
+    );
+  },
   validateSearch: (search: Record<string, unknown>) => ({
     edit: search.edit === true || search.edit === "true" ? true : undefined,
   }),

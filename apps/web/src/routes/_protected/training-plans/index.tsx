@@ -23,8 +23,11 @@ export const Route = createFileRoute("/_protected/training-plans/")({
         () => context.apiUtils.trainingPlans.listTemplates.getInfiniteData(input),
         () =>
           context.apiUtils.trainingPlans.listTemplates.fetchInfinite(input, {
+            pages:
+              context.apiUtils.trainingPlans.listTemplates.getInfiniteData(input)?.pages.length ||
+              1,
             getNextPageParam: (page) => page.nextCursor,
-          } as never),
+          }),
       );
     }
     const input = getOwnedTrainingPlansInput(search);
@@ -32,8 +35,9 @@ export const Route = createFileRoute("/_protected/training-plans/")({
       () => context.apiUtils.trainingPlans.list.getInfiniteData(input),
       () =>
         context.apiUtils.trainingPlans.list.fetchInfinite(input, {
+          pages: context.apiUtils.trainingPlans.list.getInfiniteData(input)?.pages.length || 1,
           getNextPageParam: (page) => page.nextCursor,
-        } as never),
+        }),
     );
   },
   component: TrainingPlansPage,

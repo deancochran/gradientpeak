@@ -179,15 +179,7 @@ export function DiscoveryExplorer({
   ]);
 
   const activityPlans = api.activityPlans.list.useInfiniteQuery(
-    {
-      ownerScope: "discoverable",
-      search: search || undefined,
-      activityCategories: appliedActivityPlanCategory
-        ? [appliedActivityPlanCategory as "run" | "bike" | "swim" | "strength" | "other"]
-        : undefined,
-      sort_by: appliedActivitySort as "newest" | "oldest",
-      limit: 20,
-    },
+    discoveryActivityInput(search, appliedActivityPlanCategory, appliedActivitySort),
     {
       enabled: scope === "activityPlans",
       getNextPageParam: (page) => page.nextCursor,
@@ -195,23 +187,12 @@ export function DiscoveryExplorer({
     },
   );
   const trainingPlans = api.trainingPlans.listTemplates.useInfiniteQuery(
-    {
-      search: search || undefined,
-      activity_category: appliedTrainingPlanCategory
-        ? (appliedTrainingPlanCategory as "bike" | "run" | "other" | "swim" | "strength")
-        : undefined,
-      experience_level: appliedExperience
-        ? (appliedExperience as "beginner" | "intermediate" | "advanced")
-        : undefined,
-      sort_by: appliedTrainingSort as
-        | "newest"
-        | "oldest"
-        | "duration_desc"
-        | "duration_asc"
-        | "sessions_desc"
-        | "sessions_asc",
-      limit: 20,
-    },
+    discoveryTrainingInput(
+      search,
+      appliedTrainingPlanCategory,
+      appliedExperience,
+      appliedTrainingSort,
+    ),
     {
       enabled: scope === "trainingPlans",
       getNextPageParam: (page) => page.nextCursor,
@@ -219,26 +200,15 @@ export function DiscoveryExplorer({
     },
   );
   const routes = api.routes.list.useInfiniteQuery(
-    {
-      ownerScope: "all",
-      search: search || undefined,
-      min_distance_m: appliedMinDistance ? Number(appliedMinDistance) * 1000 : undefined,
-      max_distance_m: appliedMaxDistance ? Number(appliedMaxDistance) * 1000 : undefined,
-      sort_by: appliedRouteSort as "newest" | "oldest" | "distance_desc" | "distance_asc",
-      limit: 20,
-    },
+    discoveryRoutesInput(search, appliedMinDistance, appliedMaxDistance, appliedRouteSort),
     { enabled: scope === "routes", getNextPageParam: (page) => page.nextCursor, retry: false },
   );
   const users = api.social.searchUsers.useInfiniteQuery(
-    {
-      query: search || undefined,
-      sort_by: appliedProfileSort as "newest" | "oldest" | "username_asc" | "username_desc",
-      limit: 20,
-    },
+    discoveryUsersInput(search, appliedProfileSort),
     { enabled: scope === "users", getNextPageParam: (page) => page.nextCursor, retry: false },
   );
   const groups = api.groups.listDiscoverable.useInfiniteQuery(
-    { search: search || undefined, sort_by: appliedProfileSort as "newest" | "oldest", limit: 20 },
+    discoveryGroupsInput(search, appliedProfileSort),
     {
       enabled: scope === "groups",
       getNextPageParam: (page) => page.nextCursor ?? undefined,
@@ -715,3 +685,11 @@ function DiscoveryCard({ scope, item }: { scope: WebDiscoverScope; item: Discove
     </Card>
   );
 }
+
+import {
+  discoveryActivityInput,
+  discoveryGroupsInput,
+  discoveryRoutesInput,
+  discoveryTrainingInput,
+  discoveryUsersInput,
+} from "./discovery-query-inputs";

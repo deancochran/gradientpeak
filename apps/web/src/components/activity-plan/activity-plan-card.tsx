@@ -5,6 +5,7 @@ import { Badge } from "@repo/ui/components/badge";
 import { Heart } from "lucide-react";
 
 import { getActivityBadgeLabel } from "../../lib/activity-route-helpers";
+import { AppHrefLink } from "../app-href-link";
 import { ActivityPlanEstimateRow } from "./activity-plan-estimates";
 import { ActivityPlanTimelineChart } from "./activity-plan-timeline-chart";
 
@@ -79,14 +80,14 @@ export function ActivityPlanCard({
   const accessibilityLabel = openLabel ?? `Open activity plan ${plan.name}`;
   if (href) {
     return (
-      <a
+      <AppHrefLink
         aria-label={accessibilityLabel}
         className={className}
         data-testid={`activity-plan-card-${plan.id}`}
         href={href}
       >
         {content}
-      </a>
+      </AppHrefLink>
     );
   }
   return (

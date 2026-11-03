@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+vi.mock("../../../../components/app-href-link", () => ({
+  AppHrefLink: (props: React.ComponentProps<"a">) => <a {...props} />,
+}));
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

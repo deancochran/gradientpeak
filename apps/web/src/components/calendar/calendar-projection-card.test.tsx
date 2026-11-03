@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+vi.mock("../app-href-link", () => ({
+  AppHrefLink: (props: React.ComponentProps<"a">) => <a {...props} />,
+}));
 
 import type { CalendarProjectionItem } from "@repo/core";
 import { cleanup, render, screen } from "@testing-library/react";

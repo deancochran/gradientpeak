@@ -13,6 +13,13 @@ export function getRouter() {
     scrollRestoration: true,
     defaultPreload: "intent",
     defaultPreloadStaleTime: 0,
+    defaultPendingMs: 200,
+    defaultPendingMinMs: 200,
+    defaultPendingComponent: () => (
+      <p role="status" aria-live="polite" className="py-6 text-sm text-muted-foreground">
+        Loading page…
+      </p>
+    ),
     Wrap: ({ children }) => (
       <AppProviders queryClient={context.queryClient} apiClient={context.apiClient}>
         {children}

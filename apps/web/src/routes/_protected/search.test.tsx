@@ -5,6 +5,41 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Route } from "./search";
 
+it.each([
+  "activityPlans",
+  "trainingPlans",
+  "routes",
+  "users",
+  "groups",
+])("loads only the selected discovery scope %s", async (scope) => {
+  const make = () => ({
+    getInfiniteData: vi.fn(),
+    fetchInfinite: vi.fn().mockResolvedValue({ pages: [] }),
+  });
+  const selected = {
+    activityPlans: make(),
+    trainingPlans: make(),
+    routes: make(),
+    users: make(),
+    groups: make(),
+  };
+  const loader = (Route as unknown as { loader: (args: unknown) => Promise<void> }).loader;
+  await loader({
+    deps: { scope, q: " tempo " },
+    context: {
+      apiUtils: {
+        activityPlans: { list: selected.activityPlans },
+        trainingPlans: { listTemplates: selected.trainingPlans },
+        routes: { list: selected.routes },
+        social: { searchUsers: selected.users },
+        groups: { listDiscoverable: selected.groups },
+      },
+    },
+  });
+  for (const [key, utils] of Object.entries(selected))
+    expect(utils.fetchInfinite).toHaveBeenCalledTimes(key === scope ? 1 : 0);
+});
+
 type TestQuery = {
   data?: {
     pages: Array<{ items: Array<Record<string, unknown>>; users: Array<Record<string, unknown>> }>;

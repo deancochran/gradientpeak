@@ -27,6 +27,7 @@ import {
 import { api } from "../../lib/api/client";
 import { CanonicalMetricsRow } from "../activity/canonical-metrics-row";
 import { ActivityCategoryBadges } from "../activity-category-presentation";
+import { AppHrefLink } from "../app-href-link";
 
 type DetailMetricItem = {
   label: string;
@@ -325,13 +326,13 @@ export function ActivityListCard({
           </div>
           {href ? (
             <Button asChild variant="ghost">
-              <a
+              <AppHrefLink
                 aria-label={`Open activity ${activity.title}`}
                 data-testid={`activity-card-${activity.id}-open`}
                 href={href}
               >
                 Open
-              </a>
+              </AppHrefLink>
             </Button>
           ) : onOpen ? (
             <Button
@@ -371,13 +372,13 @@ export function ActivityListCard({
             {likes}
           </Button>
           <Button asChild size="sm" variant="ghost">
-            <a
+            <AppHrefLink
               aria-label={`Comment on activity ${activity.title}, ${activity.engagement.comments} comments`}
               href={activityHref}
             >
               <MessageCircle aria-hidden="true" className="mr-1 size-4" />
               {activity.engagement.comments}
-            </a>
+            </AppHrefLink>
           </Button>
           <Button
             aria-label={`Share activity ${activity.title}`}

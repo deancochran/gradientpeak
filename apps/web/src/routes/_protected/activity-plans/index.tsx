@@ -48,8 +48,9 @@ export const Route = createFileRoute("/_protected/activity-plans/")({
       () => context.apiUtils.activityPlans.list.getInfiniteData(input),
       () =>
         context.apiUtils.activityPlans.list.fetchInfinite(input, {
+          pages: context.apiUtils.activityPlans.list.getInfiniteData(input)?.pages.length || 1,
           getNextPageParam: (page) => page.nextCursor,
-        } as never),
+        }),
     );
   },
   component: ActivityPlansPage,

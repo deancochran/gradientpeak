@@ -18,7 +18,13 @@ const state = vi.hoisted(() => ({
   resend: vi.fn(),
   signOut: vi.fn(),
 }));
-vi.mock("@tanstack/react-router", () => ({
+vi.mock("@tanstack/react-router", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-router")>()),
+  Link: ({ children, to, ...props }: { children: React.ReactNode; to: string }) => (
+    <a {...props} href={to}>
+      {children}
+    </a>
+  ),
   createFileRoute: () => (options: object) => ({
     ...options,
     useNavigate: () => vi.fn(),

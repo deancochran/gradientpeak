@@ -21,10 +21,27 @@ import { GoalProgressChart } from "../../../../components/planning/goal-progress
 import { RecordedGoalHistory } from "../../../../components/planning/recorded-goal-history";
 import { RouteFlashToast, type RouteFlashType } from "../../../../components/route-flash-toast";
 import { api } from "../../../../lib/api/client";
+import { loadRouteQuery } from "../../../../lib/api/route-loading";
+import { prefetchSecondary } from "../../../../lib/api/secondary-prefetch";
 import { formatDayLabel } from "../../../../lib/planning";
 import { deletePlanGoalAction } from "../../../../lib/planning/server-actions";
 
 export const Route = createFileRoute("/_protected/goals/$goalId/")({
+  loader: ({ context, params }) => {
+    const input = { id: params.goalId };
+    // These endpoints authorize independently and need only the URL's goal ID.
+    prefetchSecondary(() =>
+      context.apiUtils.athleteIntelligence.getGoalAssessment.prefetch({ goalId: params.goalId }),
+    );
+    prefetchSecondary(() =>
+      context.apiUtils.athleteIntelligence.getGoalProgress.prefetch({ goalId: params.goalId }),
+    );
+    prefetchSecondary(() => context.apiUtils.profiles.get.prefetch());
+    return loadRouteQuery(
+      () => context.apiUtils.goals.getById.getData(input),
+      () => context.apiUtils.goals.getById.fetch(input, { retry: false }),
+    );
+  },
   validateSearch: (search: Record<string, unknown>) => ({
     flash: typeof search.flash === "string" ? search.flash : undefined,
     flashType: search.flashType as RouteFlashType | undefined,
@@ -51,11 +68,11 @@ function GoalDetailPage() {
   const profileQuery = api.profiles.get.useQuery();
   const assessmentQuery = api.athleteIntelligence.getGoalAssessment.useQuery(
     { goalId },
-    { enabled: Boolean(goal) },
+    { enabled: Boolean(goalId) },
   );
   const progressQuery = api.athleteIntelligence.getGoalProgress.useQuery(
     { goalId },
-    { enabled: Boolean(goal) },
+    { enabled: Boolean(goalId) },
   );
   const historyQuery = api.athleteIntelligence.getThresholdOverview.useQuery(
     { historyLimit: 100 },

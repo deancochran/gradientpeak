@@ -65,8 +65,9 @@ export const Route = createFileRoute("/_protected/calendar/")({
     view: search.view === "agenda" || search.view === "week" ? search.view : "month",
   }),
   loaderDeps: ({ search }) => ({ date: search.date, month: search.month, view: search.view }),
-  loader: ({ context, deps }) => {
-    const date = deps.date ?? getTodayDateKey();
+  loader: async ({ context, deps }) => {
+    const todayKey = getTodayDateKey();
+    const date = deps.date ?? todayKey;
     const gridDays = getCalendarGrid(deps.month);
     const firstDay = gridDays[0];
     const lastDay = gridDays.at(-1);
@@ -82,10 +83,11 @@ export const Route = createFileRoute("/_protected/calendar/")({
       includeAdhoc: true,
       limit: 500,
     };
-    return loadRouteQuery(
+    await loadRouteQuery(
       () => context.apiUtils.calendar.range.getData(input),
       () => context.apiUtils.calendar.range.fetch(input),
     );
+    return { date, month: deps.month, todayKey };
   },
   component: CalendarIndexPage,
 });
@@ -94,8 +96,7 @@ function CalendarIndexPage() {
   const navigate = Route.useNavigate();
   const search = Route.useSearch();
   const { flash, flashType } = search;
-  const month = isValidMonthKey(search.month) ? search.month : getMonthKey(new Date());
-  const date = search.date && isValidDateKey(search.date) ? search.date : getTodayDateKey();
+  const { month, date, todayKey } = Route.useLoaderData();
   const view = search.view === "agenda" || search.view === "week" ? search.view : "month";
   const monthWindow = useMemo(() => getMonthWindow(month), [month]);
   const weekWindow = useMemo(() => getWeekWindow(date), [date]);
@@ -108,7 +109,6 @@ function CalendarIndexPage() {
       : monthWindow;
   }, [gridDays, monthWindow]);
   const { startKey, endKey } = view === "week" ? weekWindow : visibleMonthWindow;
-  const todayKey = getTodayDateKey();
   const eventsQuery = api.calendar.range.useQuery({
     startDate: startKey,
     endDateExclusive: shiftDateKey(endKey, 1),

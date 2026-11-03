@@ -9,6 +9,11 @@ export function createWebQueryClient() {
     ...defaults,
     queries: {
       ...defaults.queries,
+      // No server GC timers should retain a completed request's private cache.
+      gcTime:
+        typeof window === "undefined"
+          ? Number.POSITIVE_INFINITY
+          : (defaults.queries?.gcTime ?? 600_000),
       // Reuse fresh loader data; refresh stale data without hiding cached content.
       refetchOnMount: true,
       refetchOnReconnect: true,

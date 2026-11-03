@@ -1,5 +1,7 @@
 import { CONTRACT_EPOCH_HEADER, CURRENT_CONTRACT_EPOCH } from "@repo/api/client";
-import { api, createApiBatchLink, createApiUrl } from "@repo/api/react";
+import { type AppRouter, api, createApiBatchLink, createApiUrl } from "@repo/api/react";
+import { httpBatchStreamLink, splitLink } from "@trpc/client";
+import superjson from "superjson";
 
 import { getAppBaseUrl } from "../app-url";
 
@@ -27,12 +29,19 @@ const createApiFetch: ApiFetch = (input, init) => {
 };
 
 export function createApiClient() {
+  const options = {
+    url: createApiUrl(getAppBaseUrl()),
+    fetch: createApiFetch,
+    headers: createWebHeaders,
+  };
   return api.createClient({
     links: [
-      createApiBatchLink({
-        url: createApiUrl(getAppBaseUrl()),
-        fetch: createApiFetch,
-        headers: createWebHeaders,
+      splitLink({
+        condition: (operation) => operation.type === "query",
+        // Optional charts in the same batch must not delay primary page content.
+        true: httpBatchStreamLink<AppRouter>({ ...options, transformer: superjson }),
+        // Keep mutation HTTP/header behavior unchanged.
+        false: createApiBatchLink(options),
       }),
     ],
   });

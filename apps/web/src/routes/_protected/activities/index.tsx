@@ -60,8 +60,10 @@ export const Route = createFileRoute("/_protected/activities/")({
       () => context.apiUtils.activities.listPaginated.getInfiniteData(input),
       () =>
         context.apiUtils.activities.listPaginated.fetchInfinite(input, {
+          pages:
+            context.apiUtils.activities.listPaginated.getInfiniteData(input)?.pages.length || 1,
           getNextPageParam: (page) => page.nextCursor,
-        } as never),
+        }),
     );
   },
   component: ActivitiesPage,

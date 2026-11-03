@@ -25,16 +25,32 @@ acceptance. Compare task changes against that checkpoint, not the legacy main tr
 
 ## Work and evidence
 
-- Foundation: router context, request-aware local tRPC SSR transport, SSR cache
-  integration, web-only cache/retry/serialization policy. In progress.
-- Navigation: typed internal links and URL-owned group state. In progress.
-- Pages: critical loaders, canonical inputs and selective secondary prefetch.
-  In progress; recorder routes excluded from mechanical migration.
-- Verification: focused tests, web types, production boundary build, browser
-  loading/hydration evidence, independent review. Pending.
-- Preview disposition: not integrated yet; coordinator owns locked checkpoint
-  integration after focused checks. No runtime or database changes made.
-- Publication: pending; the prerequisite baseline is not yet remote main.
+- Foundation and navigation checkpoints `48a473d8` and `3e21b329` are live in
+  preview with integrated focused tests and web/login/Metro probes.
+- Primary loaders cover dashboard, activities, activity plans, goals, calendar
+  ranges/day/events, routes, integrations, notifications, thresholds, profiles,
+  messages, training plans, groups, and selected discovery scope.
+- Recorder lifecycle, new forms, draft-driven searches/previews and modal-only
+  reads remain demand-driven. Existing access checks and write transport remain.
+- Optional non-Suspense SSR prefetch caused a reproduced hydration mismatch.
+  `prefetchSecondary` now starts optional reads early only on client navigation;
+  initial documents start them on mount. Primary data is awaited on the server.
+- A controlled transport test reproduced batch head-of-line blocking. Web queries
+  use streaming batches; mutations retain the original batch link and headers.
+- Infinite refresh is bounded to the existing cached page count (one when cold),
+  with matching next-page cursors. It never eagerly exhausts pagination.
+- Calendar date/month/today come from the loader snapshot. Group temporal keys
+  use one-minute buckets, intentionally allowing at most 60 seconds of overlap.
+- Dynamic backend hrefs use AppHrefLink to split pathname/search/hash; external
+  URLs and fragment links retain native behavior.
+- Verification: production builds and client boundary scans passed at earlier
+  checkpoints; authenticated disposable SSR/hydration test passed. Expanded
+  browser navigation, final full suite/types and independent review in progress.
+- Production-mode authenticated runtime proof remains unavailable: the loopback
+  acceptance runner uses HTTP while production auth correctly requires HTTPS.
+  No security constraint was bypassed; temporary runner changes were reverted.
+- Broad-loader preview integration and publication are pending; coordinator owns
+  the exact checkpoint and locked runtime evidence before handoff.
 
 ## Acceptance evidence required
 

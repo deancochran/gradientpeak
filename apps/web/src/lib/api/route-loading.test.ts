@@ -1,6 +1,9 @@
 import { QueryClient } from "@tanstack/react-query";
+import { createTRPCClient, unstable_localLink } from "@trpc/client";
 import { createTRPCQueryUtils } from "@trpc/react-query";
+import { initTRPC } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { loadRouteQuery } from "./route-loading";
 
 describe("loadRouteQuery", () => {
@@ -40,31 +43,44 @@ describe("loadRouteQuery", () => {
 
   it("uses tRPC infinite cache keys and refreshes only cached pages", async () => {
     const queryClient = new QueryClient();
-    const query = vi.fn(async (_path: string, input: { cursor?: string | null }) => ({
+    const query = vi.fn(async (input: { cursor?: string | null }) => ({
       items: [input.cursor ?? "first"],
-      nextCursor: input.cursor === "second" ? undefined : "second",
+      nextCursor: input.cursor === "second" ? "third" : "second",
     }));
+    const t = initTRPC.create();
+    const router = t.router({
+      activities: t.router({
+        listPaginated: t.procedure
+          .input(z.object({ limit: z.number(), cursor: z.string().nullish() }))
+          .query(({ input }) => query(input)),
+      }),
+    });
     const apiUtils = createTRPCQueryUtils({
       queryClient,
-      client: { [Symbol.for("trpc_untypedClient")]: { query } } as never,
+      client: createTRPCClient<typeof router>({
+        links: [unstable_localLink({ router, createContext: async () => ({}) })],
+      }),
     });
     const input = { limit: 20 };
-    const options = { getNextPageParam: (page: { nextCursor?: string }) => page.nextCursor };
+    const options = () => ({
+      pages: apiUtils.activities.listPaginated.getInfiniteData(input)?.pages.length || 1,
+      getNextPageParam: (page: { nextCursor?: string }) => page.nextCursor,
+    });
 
-    await apiUtils.activities.listPaginated.fetchInfinite(input, options);
+    await apiUtils.activities.listPaginated.fetchInfinite(input, options());
     expect(query).toHaveBeenCalledTimes(1);
     expect(apiUtils.activities.listPaginated.getInfiniteData(input)?.pages).toHaveLength(1);
 
     apiUtils.activities.listPaginated.setInfiniteData(input, {
       pages: [
         { items: ["first"], nextCursor: "second" },
-        { items: ["second"], nextCursor: undefined },
+        { items: ["second"], nextCursor: "third" },
       ],
       pageParams: [null, "second"],
     });
     query.mockClear();
 
-    await apiUtils.activities.listPaginated.fetchInfinite(input, options);
+    await apiUtils.activities.listPaginated.fetchInfinite(input, options());
     expect(query).toHaveBeenCalledTimes(2);
     expect(apiUtils.activities.listPaginated.getInfiniteData(input)?.pages).toHaveLength(2);
   });

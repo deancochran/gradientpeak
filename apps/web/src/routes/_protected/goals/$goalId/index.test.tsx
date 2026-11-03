@@ -71,6 +71,36 @@ afterEach(() => {
   mocks.search = {};
 });
 
+it("starts independent goal sections before awaiting primary data", async () => {
+  const loader = Route.options.loader;
+  if (typeof loader !== "function") throw new Error("Missing goal loader");
+  let resolvePrimary: (value: object) => void = () => undefined;
+  const primary = new Promise<object>((resolve) => {
+    resolvePrimary = resolve;
+  });
+  const fetchGoal = vi.fn(() => primary);
+  const assessment = vi.fn(() => new Promise<void>(() => undefined));
+  const progress = vi.fn(() => new Promise<void>(() => undefined));
+  const result = loader({
+    params: { goalId: "goal-1" },
+    context: {
+      apiUtils: {
+        goals: { getById: { getData: () => undefined, fetch: fetchGoal } },
+        profiles: { get: { prefetch: vi.fn().mockResolvedValue(undefined) } },
+        athleteIntelligence: {
+          getGoalAssessment: { prefetch: assessment },
+          getGoalProgress: { prefetch: progress },
+        },
+      },
+    },
+  } as never);
+  expect(assessment).toHaveBeenCalledWith({ goalId: "goal-1" });
+  expect(progress).toHaveBeenCalledWith({ goalId: "goal-1" });
+  expect(fetchGoal).toHaveBeenCalledWith({ id: "goal-1" }, { retry: false });
+  resolvePrimary({ title: "Goal" });
+  await expect(result).resolves.toBeUndefined();
+});
+
 it.each<{ objective: CanonicalGoalObjective; expected: string }>([
   {
     objective: {

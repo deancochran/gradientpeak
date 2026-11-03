@@ -4,6 +4,20 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ActivityCategoryBadges } from "../activity-category-presentation";
+
+vi.mock("../app-href-link", () => ({
+  AppHrefLink: (props: React.ComponentProps<"a">) => <a {...props} />,
+}));
+
+vi.mock("@tanstack/react-router", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-router")>()),
+  Link: ({ to, children, ...props }: { to: string; children: React.ReactNode }) => (
+    <a {...props} href={to}>
+      {children}
+    </a>
+  ),
+}));
+
 import {
   ActivityEffortListCard,
   ActivityListCard,
