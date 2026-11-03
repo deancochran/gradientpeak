@@ -13,6 +13,7 @@ import type {
 import {
   activities,
   activityArtifacts,
+  coachingEngagements,
   groups,
   manualTrainingDiaryOperations,
   organizationMemberships,
@@ -259,6 +260,15 @@ export class E2EActorPool {
             .where(eq(organizationMemberships.profile_id, userId))
             .limit(1);
           if (retainedMembership.length) return;
+          // Ended engagements retain athlete identity just as memberships retain
+          // staff identity. The disposable harness owns whole-database teardown;
+          // actor cleanup must not delete identities referenced by that history.
+          const retainedEngagement = await database.db
+            .select({ id: coachingEngagements.id })
+            .from(coachingEngagements)
+            .where(eq(coachingEngagements.athlete_profile_id, userId))
+            .limit(1);
+          if (retainedEngagement.length) return;
           await database.typedTransaction(async (transaction) => {
             await transaction
               .delete(manualTrainingDiaryOperations)

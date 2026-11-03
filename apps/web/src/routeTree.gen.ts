@@ -65,6 +65,7 @@ import { Route as ShareActivityPlansActivityPlanIdRouteImport } from './routes/s
 import { Route as ShareRoutesRouteIdRouteImport } from './routes/share/routes/$routeId'
 import { Route as ShareTrainingPlansTrainingPlanIdRouteImport } from './routes/share/training-plans/$trainingPlanId'
 import { Route as CoachingOrganizationsOrganizationIdIndexRouteImport } from './routes/_coaching/organizations/$organizationId/index'
+import { Route as CoachingOrganizationsOrganizationIdAthletesRouteImport } from './routes/_coaching/organizations/$organizationId/athletes'
 import { Route as CoachingOrganizationsOrganizationIdDashboardRouteImport } from './routes/_coaching/organizations/$organizationId/dashboard'
 import { Route as ProtectedActivitiesActivityIdIndexRouteImport } from './routes/_protected/activities/$activityId/index'
 import { Route as ProtectedCalendarDayDateRouteImport } from './routes/_protected/calendar/day/$date'
@@ -385,6 +386,12 @@ const CoachingOrganizationsOrganizationIdIndexRoute =
     path: '/',
     getParentRoute: () => CoachingOrganizationsOrganizationIdRoute,
   } as any)
+const CoachingOrganizationsOrganizationIdAthletesRoute =
+  CoachingOrganizationsOrganizationIdAthletesRouteImport.update({
+    id: '/athletes',
+    path: '/athletes',
+    getParentRoute: () => CoachingOrganizationsOrganizationIdRoute,
+  } as any)
 const CoachingOrganizationsOrganizationIdDashboardRoute =
   CoachingOrganizationsOrganizationIdDashboardRouteImport.update({
     id: '/dashboard',
@@ -608,6 +615,7 @@ export interface FileRoutesByFullPath {
   '/record/': typeof ProtectedRecordIndexRoute
   '/routes/': typeof ProtectedRoutesIndexRoute
   '/training-plans/': typeof ProtectedTrainingPlansIndexRoute
+  '/organizations/$organizationId/athletes': typeof CoachingOrganizationsOrganizationIdAthletesRoute
   '/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/calendar/day/$date': typeof ProtectedCalendarDayDateRoute
   '/goals/$goalId/edit': typeof ProtectedGoalsGoalIdEditRoute
@@ -688,6 +696,7 @@ export interface FileRoutesByTo {
   '/record': typeof ProtectedRecordIndexRoute
   '/routes': typeof ProtectedRoutesIndexRoute
   '/training-plans': typeof ProtectedTrainingPlansIndexRoute
+  '/organizations/$organizationId/athletes': typeof CoachingOrganizationsOrganizationIdAthletesRoute
   '/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/calendar/day/$date': typeof ProtectedCalendarDayDateRoute
   '/goals/$goalId/edit': typeof ProtectedGoalsGoalIdEditRoute
@@ -775,6 +784,7 @@ export interface FileRoutesById {
   '/_protected/record/': typeof ProtectedRecordIndexRoute
   '/_protected/routes/': typeof ProtectedRoutesIndexRoute
   '/_protected/training-plans/': typeof ProtectedTrainingPlansIndexRoute
+  '/_coaching/organizations/$organizationId/athletes': typeof CoachingOrganizationsOrganizationIdAthletesRoute
   '/_coaching/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/_protected/calendar/day/$date': typeof ProtectedCalendarDayDateRoute
   '/_protected/goals/$goalId/edit': typeof ProtectedGoalsGoalIdEditRoute
@@ -861,6 +871,7 @@ export interface FileRouteTypes {
     | '/record/'
     | '/routes/'
     | '/training-plans/'
+    | '/organizations/$organizationId/athletes'
     | '/organizations/$organizationId/dashboard'
     | '/calendar/day/$date'
     | '/goals/$goalId/edit'
@@ -941,6 +952,7 @@ export interface FileRouteTypes {
     | '/record'
     | '/routes'
     | '/training-plans'
+    | '/organizations/$organizationId/athletes'
     | '/organizations/$organizationId/dashboard'
     | '/calendar/day/$date'
     | '/goals/$goalId/edit'
@@ -1027,6 +1039,7 @@ export interface FileRouteTypes {
     | '/_protected/record/'
     | '/_protected/routes/'
     | '/_protected/training-plans/'
+    | '/_coaching/organizations/$organizationId/athletes'
     | '/_coaching/organizations/$organizationId/dashboard'
     | '/_protected/calendar/day/$date'
     | '/_protected/goals/$goalId/edit'
@@ -1484,6 +1497,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CoachingOrganizationsOrganizationIdIndexRouteImport
       parentRoute: typeof CoachingOrganizationsOrganizationIdRoute
     }
+    '/_coaching/organizations/$organizationId/athletes': {
+      id: '/_coaching/organizations/$organizationId/athletes'
+      path: '/athletes'
+      fullPath: '/organizations/$organizationId/athletes'
+      preLoaderRoute: typeof CoachingOrganizationsOrganizationIdAthletesRouteImport
+      parentRoute: typeof CoachingOrganizationsOrganizationIdRoute
+    }
     '/_coaching/organizations/$organizationId/dashboard': {
       id: '/_coaching/organizations/$organizationId/dashboard'
       path: '/dashboard'
@@ -1684,12 +1704,15 @@ declare module '@tanstack/react-router' {
 }
 
 interface CoachingOrganizationsOrganizationIdRouteChildren {
+  CoachingOrganizationsOrganizationIdAthletesRoute: typeof CoachingOrganizationsOrganizationIdAthletesRoute
   CoachingOrganizationsOrganizationIdDashboardRoute: typeof CoachingOrganizationsOrganizationIdDashboardRoute
   CoachingOrganizationsOrganizationIdIndexRoute: typeof CoachingOrganizationsOrganizationIdIndexRoute
 }
 
 const CoachingOrganizationsOrganizationIdRouteChildren: CoachingOrganizationsOrganizationIdRouteChildren =
   {
+    CoachingOrganizationsOrganizationIdAthletesRoute:
+      CoachingOrganizationsOrganizationIdAthletesRoute,
     CoachingOrganizationsOrganizationIdDashboardRoute:
       CoachingOrganizationsOrganizationIdDashboardRoute,
     CoachingOrganizationsOrganizationIdIndexRoute:
