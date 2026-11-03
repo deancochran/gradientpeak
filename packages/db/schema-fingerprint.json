@@ -646,7 +646,7 @@
       "type": "text",
       "table": "accounts",
       "default": "",
-      "notNull": true,
+      "notNull": false,
       "identity": "",
       "position": 2,
       "generated": ""
@@ -10144,14 +10144,14 @@
   ],
   "indexes": [
     {
-      "name": "accounts_issuer_accountId_uidx",
-      "table": "accounts",
-      "definition": "CREATE UNIQUE INDEX \"accounts_issuer_accountId_uidx\" ON public.accounts USING btree (issuer, account_id)"
-    },
-    {
       "name": "accounts_pkey",
       "table": "accounts",
       "definition": "CREATE UNIQUE INDEX accounts_pkey ON public.accounts USING btree (id)"
+    },
+    {
+      "name": "accounts_providerId_accountId_uidx",
+      "table": "accounts",
+      "definition": "CREATE UNIQUE INDEX \"accounts_providerId_accountId_uidx\" ON public.accounts USING btree (provider_id, account_id)"
     },
     {
       "name": "accounts_userId_idx",

@@ -47,7 +47,9 @@ export const accounts = pgTable(
   "accounts",
   {
     id: uuid("id").default(sql`pg_catalog.gen_random_uuid()`).primaryKey(),
-    issuer: text("issuer").notNull(),
+    // Better Auth 1.7.3+ no longer supplies this deprecated compatibility field.
+    // Preserve legacy values, but do not require it for new account identities.
+    issuer: text("issuer"),
     accountId: text("account_id").notNull(),
     providerId: text("provider_id").notNull(),
     userId: uuid("user_id")
@@ -66,7 +68,7 @@ export const accounts = pgTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex("accounts_issuer_accountId_uidx").on(table.issuer, table.accountId),
+    uniqueIndex("accounts_providerId_accountId_uidx").on(table.providerId, table.accountId),
     index("accounts_userId_idx").on(table.userId),
   ],
 );
