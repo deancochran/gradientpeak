@@ -3,8 +3,14 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { Pool } from "pg";
 import { bootstrapSupabaseSchemas, withDisposableDatabase } from "./_disposable-target";
 import { dbPackageRoot } from "./_helpers";
+import {
+  applyAuthIdentityCompatibilityUpgrade,
+  expectedAuthIdentityCompatibilityAfterFingerprint,
+  expectedAuthIdentityCompatibilityBeforeFingerprint,
+} from "./auth-identity-compatibility-upgrade";
 import { createSchemaFingerprint } from "./check-schema-fingerprint";
 import {
   applyRetainedE2EUpgrade,
@@ -116,10 +122,36 @@ async function main() {
     rmSync(temporary, { recursive: true, force: true });
   }
 
-  await withDisposableDatabase(process.argv.slice(2), "retained_upgrade", async (pool) => {
+  assert.deepEqual(
+    expectedAfterFingerprint(),
+    expectedAuthIdentityCompatibilityBeforeFingerprint(),
+    "retained-E2E postcondition must be the auth compatibility precondition",
+  );
+  assert.deepEqual(
+    JSON.parse(
+      readFileSync(
+        resolve(
+          dbPackageRoot,
+          "supabase/approved-upgrades/coaching-foundation/after-fingerprint.json",
+        ),
+        "utf8",
+      ),
+    ),
+    expectedAuthIdentityCompatibilityBeforeFingerprint(),
+    "coaching postcondition must be the auth compatibility precondition",
+  );
+  await withDisposableDatabase(process.argv.slice(2), "retained_upgrade", async (pool, url) => {
     await bootstrapSupabaseSchemas(pool);
     await pool.query("create extension if not exists pgcrypto with schema extensions");
     await pool.query(readFileSync(baseline, "utf8"));
+    // The retained upgrade's immutable prerequisite predates the auth identity
+    // compatibility baseline. Reconstruct that legacy schema only in this guarded
+    // disposable proof; do not rewrite its historical fingerprint provenance.
+    await pool.query('drop index public."accounts_providerId_accountId_uidx"');
+    await pool.query("alter table public.accounts alter column issuer set not null");
+    await pool.query(
+      'create unique index "accounts_issuer_accountId_uidx" on public.accounts using btree (issuer, account_id)',
+    );
     const previousDecision = (
       expectedBeforeFingerprint().functions as Array<Record<string, unknown>>
     ).find(
@@ -162,6 +194,7 @@ async function main() {
     );
     await applyRetainedE2EUpgrade(pool, { expectedSourceData: sourceData });
     const after = await createSchemaFingerprint(pool);
+    assert.deepEqual(after, expectedAuthIdentityCompatibilityBeforeFingerprint());
     assert.equal(
       Array.isArray(after.publicRelations) &&
         after.publicRelations.some(
@@ -170,6 +203,25 @@ async function main() {
       true,
     );
     await assert.rejects(() => applyRetainedE2EUpgrade(pool), /pre-upgrade fingerprint mismatch/);
+    const authSourceData = await createRetainedDataDigest(pool);
+    const adminUrl = new URL(url);
+    adminUrl.username = "supabase_admin";
+    const admin = new Pool({ connectionString: adminUrl.toString(), max: 1 });
+    try {
+      await applyAuthIdentityCompatibilityUpgrade(admin, {
+        expectedSourceData: authSourceData,
+        // This retained-upgrade fixture intentionally bootstraps only the
+        // minimal platform surface. The auth-operation test separately proves
+        // the reviewed 111-table inventory required by the operational option.
+      });
+    } finally {
+      await admin.end();
+    }
+    assert.deepEqual(
+      await createSchemaFingerprint(pool),
+      expectedAuthIdentityCompatibilityAfterFingerprint(),
+    );
+    assert.deepEqual(await createRetainedDataDigest(pool), authSourceData);
   });
   console.log(
     "[retained-e2e:upgrade:test] generated prerequisite, unknown-schema/replay, artifact-tamper, unsafe-target and reconciliation refusal passed",
