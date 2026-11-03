@@ -54,7 +54,14 @@ beforeEach(() => {
   for (const mock of Object.values(mocks.client)) mock.mockClear();
   setState();
 });
-afterEach(cleanup);
+afterEach(async () => {
+  cleanup();
+  // Radix restores focus in a deferred unmount callback. Let it finish before
+  // Vitest disposes this DOM and restores the global Event constructors.
+  await act(async () => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  });
+});
 
 describe("ChatbotLauncher", () => {
   it("opens a narrow-screen-width sheet, focuses the composer, and restores focus on Escape", async () => {
