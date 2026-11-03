@@ -3,8 +3,16 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 
 import { PlanGoalForm } from "../../../../components/protected/plan-goal-form";
 import { api } from "../../../../lib/api/client";
+import { loadRouteQuery } from "../../../../lib/api/route-loading";
 
 export const Route = createFileRoute("/_protected/goals/$goalId/edit")({
+  loader: ({ context, params }) => {
+    const input = { id: params.goalId };
+    return loadRouteQuery(
+      () => context.apiUtils.goals.getById.getData(input),
+      () => context.apiUtils.goals.getById.fetch(input),
+    );
+  },
   component: GoalEditPage,
 });
 function GoalEditPage() {

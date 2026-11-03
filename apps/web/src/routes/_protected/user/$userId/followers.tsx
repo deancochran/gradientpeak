@@ -7,6 +7,7 @@ import { RelationshipPageShell } from "../../../../components/protected/relation
 import { useAuth } from "../../../../components/providers/auth-provider";
 import { RouteFlashToast, type RouteFlashType } from "../../../../components/route-flash-toast";
 import { api } from "../../../../lib/api/client";
+import { loadRouteQuery } from "../../../../lib/api/route-loading";
 
 export const Route = createFileRoute("/_protected/user/$userId/followers")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -17,6 +18,18 @@ export const Route = createFileRoute("/_protected/user/$userId/followers")({
         ? (search.flashType as RouteFlashType)
         : undefined,
   }),
+  loaderDeps: ({ search }) => ({ cursor: search.cursor }),
+  loader: ({ context, deps, params }) => {
+    const input = {
+      user_id: params.userId,
+      limit: 20,
+      cursor: deps.cursor,
+    };
+    return loadRouteQuery(
+      () => context.apiUtils.social.getFollowers.getData(input),
+      () => context.apiUtils.social.getFollowers.fetch(input),
+    );
+  },
   component: FollowersPage,
 });
 

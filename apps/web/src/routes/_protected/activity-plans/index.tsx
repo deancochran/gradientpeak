@@ -16,6 +16,7 @@ import { ActivityPlanCard } from "../../../components/activity-plan/activity-pla
 import { ActivityPlanComposer } from "../../../components/activity-plan/activity-plan-composer";
 import { DetailPageIntro } from "../../../components/protected/activity-route-primitives";
 import { api } from "../../../lib/api/client";
+import { loadRouteQuery } from "../../../lib/api/route-loading";
 
 const categoryOptions = [
   { label: "All", value: "all" },
@@ -26,6 +27,8 @@ const categoryOptions = [
   { label: "Other", value: "other" },
 ] as const;
 
+type ActivityPlanCategory = Exclude<(typeof categoryOptions)[number]["value"], "all">;
+
 export const Route = createFileRoute("/_protected/activity-plans/")({
   validateSearch: (search: Record<string, unknown>) => ({
     activity_category: categoryOptions.some(
@@ -35,8 +38,28 @@ export const Route = createFileRoute("/_protected/activity-plans/")({
       : undefined,
     q: typeof search.q === "string" && search.q ? search.q.slice(0, 100) : undefined,
   }),
+  loaderDeps: ({ search }) => ({
+    activity_category: search.activity_category === "all" ? undefined : search.activity_category,
+    q: search.q,
+  }),
+  loader: ({ context, deps }) => {
+    const input = getActivityPlansInput(deps);
+    return loadRouteQuery(
+      () => context.apiUtils.activityPlans.list.getInfiniteData(input),
+      () => context.apiUtils.activityPlans.list.fetchInfinite(input),
+    );
+  },
   component: ActivityPlansPage,
 });
+
+function getActivityPlansInput(search: { activity_category?: ActivityPlanCategory; q?: string }) {
+  return {
+    activityCategories: search.activity_category ? [search.activity_category] : undefined,
+    limit: 20,
+    ownerScope: "own" as const,
+    search: search.q?.trim() || undefined,
+  };
+}
 
 function ActivityPlansPage() {
   const navigate = Route.useNavigate();
@@ -60,12 +83,10 @@ function ActivityPlansPage() {
     };
   }, []);
   const plansQuery = api.activityPlans.list.useInfiniteQuery(
-    {
-      activityCategories: activity_category === "all" ? undefined : [activity_category],
-      limit: 20,
-      ownerScope: "own",
-      search: search.trim() || undefined,
-    },
+    getActivityPlansInput({
+      ...(activity_category === "all" ? {} : { activity_category }),
+      ...(search ? { q: search } : {}),
+    }),
     { getNextPageParam: (lastPage) => lastPage.nextCursor },
   );
   const plans = plansQuery.data?.pages.flatMap((page) => page.items) ?? [];
