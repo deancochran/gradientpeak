@@ -217,7 +217,11 @@
           },
           {
             "script": "test:architecture",
-            "patterns": ["tooling/e2e/**/*.test.mjs", "tooling/qa/profiles.test.mjs"]
+            "patterns": [
+              "tooling/e2e/**/*.test.mjs",
+              "tooling/qa/profiles.test.mjs",
+              "tooling/qa/prepare-runtime-web-e2e.test.mjs"
+            ]
           }
         ]
       }
@@ -266,6 +270,7 @@
       "tooling/architecture/**/*.test.mjs",
       "tooling/e2e/**/*.test.mjs",
       "tooling/qa/profiles.test.mjs",
+      "tooling/qa/prepare-runtime-web-e2e.test.mjs",
       "tooling/testing/**/*.test.mjs",
       "tooling/typescript/**/*.test.mjs",
       "tests/parity/**/*.test.ts"
