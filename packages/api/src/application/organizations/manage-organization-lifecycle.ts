@@ -49,8 +49,12 @@ async function requireAdmin(
   organizationId: string,
   actorProfileId: string,
 ) {
-  if (!(await repository.hasCurrentAdministrativeAuthority(organizationId, actorProfileId)))
-    throw new OrganizationLifecycleError("forbidden");
+  const authority = await repository.getCurrentAdministrativeAuthority(
+    organizationId,
+    actorProfileId,
+  );
+  if (!authority) throw new OrganizationLifecycleError("forbidden");
+  return authority;
 }
 
 function page<T extends { membershipId?: string; engagementId?: string }>(
@@ -74,16 +78,33 @@ export async function listOrganizationStaff(input: {
   cursor: string | null;
 }) {
   const repository = createOrganizationLifecycleRepository(input.db);
-  await requireAdmin(repository, input.organizationId, input.actorProfileId);
+  const actor = await requireAdmin(repository, input.organizationId, input.actorProfileId);
   if (
     input.cursor !== null &&
     !(await repository.staffCursorBelongsToOrganization(input.organizationId, input.cursor))
   )
     throw new OrganizationLifecycleError("invalid_cursor");
-  return page(
+  const result = page(
     await repository.listCurrentStaff(input.organizationId, input.limit, input.cursor),
     input.limit,
   );
+  return {
+    ...result,
+    items: result.items.map((item) => {
+      const reason: "self" | "root_owner" | "admin_target" | null =
+        item.membershipId === actor.membershipId
+          ? "self"
+          : item.isRootOwner
+            ? "root_owner"
+            : !actor.isRootOwner && item.roleKeys.includes("admin")
+              ? "admin_target"
+              : null;
+      return {
+        ...item,
+        endMembership: { eligible: reason === null, reason },
+      };
+    }),
+  };
 }
 
 export async function listAdministrativeAthleteRoster(input: {

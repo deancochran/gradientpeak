@@ -79,6 +79,7 @@ describe("organization lifecycle API against a disposable migrated PostgreSQL da
         try {
           const owner = await person(client.db, "owner");
           const admin = await person(client.db, "admin");
+          const otherAdmin = await person(client.db, "other-admin");
           const coach = await person(client.db, "coach");
           const futureCoach = await person(client.db, "future-coach");
           const athlete = await person(client.db, "athlete");
@@ -101,6 +102,12 @@ describe("organization lifecycle API against a disposable migrated PostgreSQL da
             timezone: "UTC",
           });
           const adminMembershipId = await staff(client.db, organizationId, admin.id, "admin");
+          const otherAdminMembershipId = await staff(
+            client.db,
+            organizationId,
+            otherAdmin.id,
+            "admin",
+          );
           const coachMembershipId = await staff(client.db, organizationId, coach.id, "coach");
           const futureCoachMembershipId = randomUUID();
           await client.db.insert(organizationMemberships).values({
@@ -130,17 +137,47 @@ describe("organization lifecycle API against a disposable migrated PostgreSQL da
               expect.objectContaining({
                 membershipId: adminMembershipId,
                 identity: expect.not.objectContaining({ email: expect.anything() }),
+                endMembership: { eligible: true, reason: null },
               }),
               expect.objectContaining({
                 membershipId: coachMembershipId,
                 status: "active",
                 roleKeys: ["coach"],
+                endMembership: { eligible: true, reason: null },
+              }),
+              expect.objectContaining({
+                membershipId: created.membershipId,
+                endMembership: { eligible: false, reason: "self" },
               }),
             ]),
           );
           expect(staffPage.items).not.toEqual(
             expect.arrayContaining([
               expect.objectContaining({ membershipId: futureCoachMembershipId }),
+            ]),
+          );
+          const adminStaffPage = await caller(client.db, admin.id).lifecycle.staff.list({
+            organizationId,
+            limit: 50,
+          });
+          expect(adminStaffPage.items).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                membershipId: adminMembershipId,
+                endMembership: { eligible: false, reason: "self" },
+              }),
+              expect.objectContaining({
+                membershipId: created.membershipId,
+                endMembership: { eligible: false, reason: "root_owner" },
+              }),
+              expect.objectContaining({
+                membershipId: otherAdminMembershipId,
+                endMembership: { eligible: false, reason: "admin_target" },
+              }),
+              expect.objectContaining({
+                membershipId: coachMembershipId,
+                endMembership: { eligible: true, reason: null },
+              }),
             ]),
           );
           await expect(

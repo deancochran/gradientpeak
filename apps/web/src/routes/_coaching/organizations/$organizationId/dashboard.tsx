@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { CoachAccessDenied } from "../../../../components/coaching/coach-access-denied";
 import { OrganizationManagementOverview } from "../../../../components/coaching/organization-management-overview";
 import { loadOrganizationManagementOverview } from "../../../../lib/coaching/server-functions";
@@ -11,8 +11,24 @@ export const Route = createFileRoute("/_coaching/organizations/$organizationId/d
 
 function CoachDashboardPage() {
   const overview = Route.useLoaderData();
+  const { organizationId } = Route.useParams();
 
   if (overview.status === "forbidden") return <CoachAccessDenied />;
 
-  return <OrganizationManagementOverview overview={overview} />;
+  return (
+    <div className="space-y-6">
+      {overview.canReadAdministrativeRoster ? (
+        <nav aria-label="Organization administration">
+          <Link
+            to="/organizations/$organizationId/staff"
+            params={{ organizationId }}
+            className="inline-flex rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            Manage staff
+          </Link>
+        </nav>
+      ) : null}
+      <OrganizationManagementOverview overview={overview} />
+    </div>
+  );
 }

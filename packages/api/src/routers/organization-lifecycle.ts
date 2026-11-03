@@ -78,6 +78,12 @@ export const organizationLifecycleRouter = createTRPCRouter({
               identity,
               roleKeys: z.array(z.enum(["admin", "coach"])),
               status: z.literal("active"),
+              endMembership: z
+                .object({
+                  eligible: z.boolean(),
+                  reason: z.enum(["self", "root_owner", "admin_target"]).nullable(),
+                })
+                .strict(),
             })
             .strict(),
         ),
@@ -101,6 +107,7 @@ export const organizationLifecycleRouter = createTRPCRouter({
             },
             roleKeys: item.roleKeys as ("admin" | "coach")[],
             status: "active" as const,
+            endMembership: item.endMembership,
           })),
         };
       }),

@@ -27,9 +27,12 @@ export function createOrganizationLifecycleRepository(db: DrizzleQueryExecutor) 
   );
 
   return {
-    async hasCurrentAdministrativeAuthority(organizationId: string, profileId: string) {
+    async getCurrentAdministrativeAuthority(organizationId: string, profileId: string) {
       const [row] = await db
-        .select({ membershipId: organizationMemberships.id })
+        .select({
+          membershipId: organizationMemberships.id,
+          isRootOwner: sql<boolean>`${organizations.root_owner_membership_id} = ${organizationMemberships.id}`,
+        })
         .from(organizationMemberships)
         .innerJoin(organizations, eq(organizations.id, organizationMemberships.organization_id))
         .leftJoin(
@@ -54,7 +57,7 @@ export function createOrganizationLifecycleRepository(db: DrizzleQueryExecutor) 
           ),
         )
         .limit(1);
-      return row !== undefined;
+      return row ?? null;
     },
     async staffCursorBelongsToOrganization(organizationId: string, cursor: string) {
       const [row] = await db
@@ -76,6 +79,7 @@ export function createOrganizationLifecycleRepository(db: DrizzleQueryExecutor) 
       return db
         .select({
           membershipId: organizationMemberships.id,
+          isRootOwner: sql<boolean>`${organizations.root_owner_membership_id} = ${organizationMemberships.id}`,
           profileId: profiles.id,
           displayName: profiles.full_name,
           username: profiles.username,
@@ -102,7 +106,13 @@ export function createOrganizationLifecycleRepository(db: DrizzleQueryExecutor) 
             ...(cursor ? [gt(organizationMemberships.id, cursor)] : []),
           ),
         )
-        .groupBy(organizationMemberships.id, profiles.id, profiles.full_name, profiles.username)
+        .groupBy(
+          organizationMemberships.id,
+          organizations.root_owner_membership_id,
+          profiles.id,
+          profiles.full_name,
+          profiles.username,
+        )
         .orderBy(asc(organizationMemberships.id))
         .limit(limit + 1);
     },
