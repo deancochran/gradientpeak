@@ -214,7 +214,10 @@ function CalendarIndexPage() {
           className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/40 p-4"
         >
           <p className="text-sm">
-            Some calendar data could not be loaded. Existing results remain visible.
+            Some calendar data could not be loaded.
+            {eventsQuery.data
+              ? " Available results remain visible."
+              : " Retry to load the calendar."}
           </p>
           <Button size="sm" variant="outline" onClick={() => void eventsQuery.refetch()}>
             Retry
