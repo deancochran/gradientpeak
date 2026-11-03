@@ -1,21 +1,32 @@
 // @vitest-environment jsdom
 import type { CanonicalGoalObjective, ProfileGoalRecord } from "@repo/core";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Route } from "./index";
 
-const mocks = vi.hoisted(() => ({ goal: null as ProfileGoalRecord | null }));
+const mocks = vi.hoisted(() => ({
+  goal: null as ProfileGoalRecord | null,
+  navigate: vi.fn(),
+  search: {} as Record<string, unknown>,
+}));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
     options,
     useParams: () => ({ goalId: "goal-1" }),
-    useSearch: () => ({}),
+    useNavigate: () => mocks.navigate,
+    useSearch: () => mocks.search,
   }),
   Link: ({ children }: { children: React.ReactNode }) => <a href="/goals">{children}</a>,
 }));
 vi.mock("@tanstack/react-start", () => ({ useServerFn: () => vi.fn() }));
 vi.mock("../../../../lib/planning/server-actions", () => ({ deletePlanGoalAction: {} }));
-vi.mock("../../../../components/route-flash-toast", () => ({ RouteFlashToast: () => null }));
+vi.mock("../../../../components/route-flash-toast", () => ({
+  RouteFlashToast: ({ clear }: { clear: () => void }) => (
+    <button onClick={clear} type="button">
+      Clear flash
+    </button>
+  ),
+}));
 vi.mock("../../../../lib/api/client", () => ({
   api: {
     activities: {
@@ -54,7 +65,11 @@ vi.mock("../../../../lib/api/client", () => ({
     },
   },
 }));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  mocks.navigate.mockReset();
+  mocks.search = {};
+});
 
 it.each<{ objective: CanonicalGoalObjective; expected: string }>([
   {
@@ -108,4 +123,33 @@ it.each<{ objective: CanonicalGoalObjective; expected: string }>([
       /What influences your assessment|Your approach|Next step|Evidence and assumptions/,
     ),
   ).toBeNull();
+});
+
+it("clears goal flash state through replacement navigation without dropping other search", () => {
+  mocks.goal = {
+    id: "11111111-1111-4111-8111-111111111111",
+    profile_id: "22222222-2222-4222-8222-222222222222",
+    title: "My goal",
+    target_date: "2026-11-01",
+    priority: 7,
+    activity_category: "run",
+    target_payload: { type: "consistency", target_sessions_per_week: 3, target_weeks: 8 },
+  };
+  mocks.search = { flash: "Saved", flashType: "success", view: "details" };
+  const Component = Route.options.component;
+  if (!Component) throw new Error("Missing route component");
+  render(<Component />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Clear flash" }));
+
+  const options = mocks.navigate.mock.calls[0]?.[0] as {
+    replace: boolean;
+    search: (previous: Record<string, unknown>) => Record<string, unknown>;
+  };
+  expect(options.replace).toBe(true);
+  expect(options.search(mocks.search)).toEqual({
+    flash: undefined,
+    flashType: undefined,
+    view: "details",
+  });
 });

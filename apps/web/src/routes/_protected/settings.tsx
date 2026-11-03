@@ -27,7 +27,7 @@ import {
 import { Label } from "@repo/ui/components/label";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { useZodForm } from "@repo/ui/hooks";
-import { createFileRoute, isRedirect } from "@tanstack/react-router";
+import { createFileRoute, isRedirect, Link } from "@tanstack/react-router";
 import {
   Calendar,
   Camera,
@@ -402,7 +402,9 @@ function MyGroupsCard() {
       </CardHeader>
       <CardContent>
         <Button asChild>
-          <a href="/groups">My Groups</a>
+          <Link to="/groups" search={{ q: undefined, tab: undefined }}>
+            My Groups
+          </Link>
         </Button>
       </CardContent>
     </Card>
