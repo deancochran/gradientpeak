@@ -8,6 +8,9 @@ const getRecentInputSchema = z.object({ limit: z.number().min(1).max(100).defaul
 
 const notificationHistoryInputSchema = z
   .object({
+    // tRPC's infinite-query adapter appends this transport field. History only
+    // exposes descending keyset pagination, so backward traversal is rejected.
+    direction: z.literal("forward").optional(),
     cursor: z
       .object({ createdAt: z.string().datetime(), id: z.string().uuid() })
       .strict()

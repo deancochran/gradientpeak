@@ -64,7 +64,7 @@ describe("notificationsRouter", () => {
     expect(select).toHaveBeenCalledOnce();
   });
 
-  it("reads a stable timestamp-and-id history page without changing getRecent", async () => {
+  it("accepts tRPC's forward direction and reads a stable timestamp-and-id history page", async () => {
     const createdAt = new Date("2026-04-03T10:00:00.000Z");
     const limit = vi.fn().mockResolvedValue([
       {
@@ -99,7 +99,7 @@ describe("notificationsRouter", () => {
     const select = vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ orderBy })) })) }));
     const { caller } = createCaller({ select });
 
-    const page = await caller.getHistory({ limit: 2, view: "all" });
+    const page = await caller.getHistory({ direction: "forward", limit: 2, view: "all" });
     expect(page.items.map((item) => item.id)).toEqual([NOTIFICATION_ID_2, NOTIFICATION_ID]);
     expect(page.nextCursor).toEqual({ createdAt: createdAt.toISOString(), id: NOTIFICATION_ID });
     expect(limit).toHaveBeenCalledWith(3);
@@ -114,6 +114,9 @@ describe("notificationsRouter", () => {
       code: "BAD_REQUEST",
     });
     await expect(caller.getHistory({ limit: 101 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.getHistory({ direction: "backward" } as never)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
     await expect(caller.getHistory({ profileId: ACTOR_ID } as never)).rejects.toMatchObject({
       code: "BAD_REQUEST",
     });
