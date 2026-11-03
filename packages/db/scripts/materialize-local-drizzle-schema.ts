@@ -4,6 +4,11 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Pool } from "pg";
+import {
+  importRunOwnershipFunctionNames,
+  importRunOwnershipSql,
+  importRunOwnershipTriggerNames,
+} from "../src/schema/import-run-ownership";
 import { dbPackageRoot, defaultLocalDatabaseUrl } from "./_local-database-config";
 import {
   activityPlanSqlArtifacts,
@@ -13,6 +18,27 @@ import {
 } from "./activity-plan-sql-artifacts";
 
 const materializedDatabase = "gradientpeak_schema_materialization";
+
+export function exportDrizzleSchemaSql(databaseUrl: string) {
+  const exported = spawnSync(
+    resolve(dbPackageRoot, "../../node_modules/.bin/drizzle-kit"),
+    ["export", "--config", "drizzle.config.ts"],
+    {
+      cwd: dbPackageRoot,
+      encoding: "utf8",
+      env: { ...process.env, DATABASE_URL: databaseUrl, POSTGRES_URL: databaseUrl },
+      stdio: ["ignore", "pipe", "inherit"],
+    },
+  );
+  if (exported.status !== 0 || !exported.stdout?.includes("CREATE TABLE")) {
+    throw new Error("Drizzle schema export failed or returned no tables.");
+  }
+  return exported.stdout;
+}
+
+export async function installImportRunOwnershipSchema(pool: Pick<Pool, "query">) {
+  await pool.query(importRunOwnershipSql);
+}
 
 export function requireGuardedLocalMaterialization(databaseUrl: string) {
   const url = new URL(databaseUrl);
@@ -43,7 +69,7 @@ async function materialize() {
          where namespace.nspname = 'public' and procedure_record.proname <> all($1::text[])
          order by procedure_record.oid
        `,
-        [pinnedActivityPlanFunctionNames],
+        [[...pinnedActivityPlanFunctionNames, ...importRunOwnershipFunctionNames]],
       ),
       adminPool.query<{ definition: string }>(
         `
@@ -54,7 +80,7 @@ async function materialize() {
          where namespace.nspname = 'public' and not trigger_record.tgisinternal and trigger_record.tgname <> all($1::text[])
          order by trigger_record.oid
        `,
-        [pinnedActivityPlanTriggerNames],
+        [[...pinnedActivityPlanTriggerNames, ...importRunOwnershipTriggerNames]],
       ),
     ]);
     functionDefinitions = functions.rows.map(({ definition }) => definition);
@@ -69,19 +95,7 @@ async function materialize() {
     await adminPool.end();
   }
 
-  const exported = spawnSync(
-    resolve(dbPackageRoot, "../../node_modules/.bin/drizzle-kit"),
-    ["export", "--config", "drizzle.config.ts"],
-    {
-      cwd: dbPackageRoot,
-      encoding: "utf8",
-      env: { ...process.env, DATABASE_URL: materializedUrl, POSTGRES_URL: materializedUrl },
-      stdio: ["ignore", "pipe", "inherit"],
-    },
-  );
-  if (exported.status !== 0 || !exported.stdout?.includes("CREATE TABLE")) {
-    throw new Error("Drizzle schema export failed or returned no tables.");
-  }
+  const exportedSql = exportDrizzleSchemaSql(materializedUrl);
 
   const targetPool = new Pool({ connectionString: materializedUrl, max: 1 });
   try {
@@ -91,9 +105,18 @@ async function materialize() {
       create function public.activity_artifact_content_path(target_profile_id uuid, target_digest text)
         returns text language sql immutable strict set search_path = pg_catalog
         as $$ select 'artifacts/sha256/' || target_profile_id::text || '/' || target_digest $$;
+      create function public.activity_plan_v5_structure_is_valid(input jsonb)
+        returns boolean language sql immutable strict set search_path = pg_catalog
+        as $$ select true $$;
     `);
-    await installActivityPlanSqlFunctions(targetPool);
-    await targetPool.query(exported.stdout);
+    await targetPool.query(exportedSql);
+    await targetPool.query("set check_function_bodies = off");
+    try {
+      await installActivityPlanSqlFunctions(targetPool);
+    } finally {
+      await targetPool.query("set check_function_bodies = on");
+    }
+    await installImportRunOwnershipSchema(targetPool);
     for (const definition of functionDefinitions) await targetPool.query(definition);
     for (const definition of triggerDefinitions) await targetPool.query(definition);
     await targetPool.query(activityPlanSqlArtifacts().triggers);
