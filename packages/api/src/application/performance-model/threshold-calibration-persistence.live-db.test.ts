@@ -15,7 +15,12 @@ import {
 } from "@repo/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import { readThresholdsAsOf, thresholdEffortId } from "../../repositories/threshold-repository";
+import {
+  readThresholdImpactForActivity,
+  readThresholdsAsOf,
+  thresholdEffortId,
+} from "../../repositories/threshold-repository";
+import { readyActivityIngestion } from "../../test-support/ready-activity-ingestion";
 import { deleteActivityForProfile } from "../activities/activity-mutations";
 import { submitActivity } from "../activities/submit-activity";
 import type { ActivityArtifactStorage } from "../activity-file-ingestion/artifact-storage";
@@ -404,7 +409,13 @@ describe("threshold calibration persistence", () => {
     const [evaluation] = await db
       .select()
       .from(thresholdEvaluations)
-      .where(eq(thresholdEvaluations.source_activity_id, source.activityId));
+      .where(
+        and(
+          eq(thresholdEvaluations.source_activity_id, source.activityId),
+          eq(thresholdEvaluations.activity_category, "run"),
+          eq(thresholdEvaluations.metric, "speed"),
+        ),
+      );
     if (!evaluation) throw new Error("Expected run threshold evaluation");
     expect(evaluation.diagnostics).toMatchObject({
       selection: {
@@ -433,6 +444,32 @@ describe("threshold calibration persistence", () => {
       .from(thresholdEvaluationEfforts)
       .where(eq(thresholdEvaluationEfforts.evaluation_id, evaluation.id));
     expect(primary?.sourceSeries).toBe(scenario.selectedSeries);
+    const [lthrEvaluation] = await db
+      .select()
+      .from(thresholdEvaluations)
+      .where(
+        and(
+          eq(thresholdEvaluations.source_activity_id, source.activityId),
+          eq(thresholdEvaluations.activity_category, "run"),
+          eq(thresholdEvaluations.metric, "lthr"),
+        ),
+      );
+    expect(lthrEvaluation).toMatchObject({
+      outcome: "rejected",
+      rejection_reason: "series_missing",
+    });
+    if (!lthrEvaluation) throw new Error("Expected missing-heart-rate LTHR rejection");
+    await expect(
+      db
+        .select()
+        .from(thresholdEvaluationEfforts)
+        .where(eq(thresholdEvaluationEfforts.evaluation_id, lthrEvaluation.id)),
+    ).resolves.toEqual([]);
+    await expect(
+      readThresholdImpactForActivity(db, { profileId, activityId: source.activityId }),
+    ).resolves.toEqual([
+      { activityCategory: "run", metric: "speed", effectiveAt: source.finishedAt },
+    ]);
   });
 
   it("persists the measured fallback rejection with its exact source-local effort", async () => {
@@ -448,7 +485,13 @@ describe("threshold calibration persistence", () => {
     const [evaluation] = await db
       .select()
       .from(thresholdEvaluations)
-      .where(eq(thresholdEvaluations.source_activity_id, source.activityId));
+      .where(
+        and(
+          eq(thresholdEvaluations.source_activity_id, source.activityId),
+          eq(thresholdEvaluations.activity_category, "run"),
+          eq(thresholdEvaluations.metric, "speed"),
+        ),
+      );
     expect(evaluation).toMatchObject({
       outcome: "rejected",
       rejection_reason: "value_implausible",
@@ -491,7 +534,13 @@ describe("threshold calibration persistence", () => {
     const evaluations = await db
       .select()
       .from(thresholdEvaluations)
-      .where(eq(thresholdEvaluations.profile_id, profileId))
+      .where(
+        and(
+          eq(thresholdEvaluations.profile_id, profileId),
+          eq(thresholdEvaluations.activity_category, "run"),
+          eq(thresholdEvaluations.metric, "speed"),
+        ),
+      )
       .orderBy(thresholdEvaluations.observed_at);
     expect(evaluations).toHaveLength(2);
     expect(evaluations.map(({ value }) => value)).toEqual([4, 4.01]);
@@ -709,7 +758,13 @@ describe("threshold calibration persistence", () => {
     const [obsoleteEvaluation] = await db
       .select()
       .from(thresholdEvaluations)
-      .where(eq(thresholdEvaluations.source_activity_id, second.activityId));
+      .where(
+        and(
+          eq(thresholdEvaluations.source_activity_id, second.activityId),
+          eq(thresholdEvaluations.activity_category, "run"),
+          eq(thresholdEvaluations.metric, "speed"),
+        ),
+      );
     if (!beforeState || !obsoleteEvaluation) throw new Error("Expected confirmed threshold state");
 
     const replacementDigest = "c".repeat(64);
@@ -741,6 +796,20 @@ describe("threshold calibration persistence", () => {
         normalizedPowerResult: replacement.normalizedPowerResult,
       },
       metrics: replacement,
+    });
+    const replacementArtifact = {
+      sha256: replacementDigest,
+      byteSize: 1_024,
+      bucket: "activity-files",
+      path: `artifacts/sha256/${profileId}/${replacementDigest}`,
+      mediaType: "application/vnd.ant.fit",
+      format: "fit" as const,
+    };
+    const replacementIngestion = await readyActivityIngestion(db, {
+      profileId,
+      operationId: `replacement:${second.activityId}:${replacementDigest}`,
+      source: "manual_import",
+      artifact: replacementArtifact,
     });
     await submitActivity(
       db,
@@ -781,14 +850,8 @@ describe("threshold calibration persistence", () => {
         detectedLTHR: null,
         ingestion: {
           source: "manual_import",
-          artifact: {
-            sha256: replacementDigest,
-            byteSize: 1_024,
-            bucket: "activity-files",
-            path: `artifacts/sha256/${profileId}/${replacementDigest}`,
-            mediaType: "application/vnd.ant.fit",
-            format: "fit",
-          },
+          ...replacementIngestion,
+          artifact: replacementArtifact,
         },
       },
       { deferAthleteStateRefresh: true },
@@ -855,7 +918,13 @@ describe("threshold calibration persistence", () => {
     const replacementEvaluations = await db
       .select()
       .from(thresholdEvaluations)
-      .where(eq(thresholdEvaluations.profile_id, profileId))
+      .where(
+        and(
+          eq(thresholdEvaluations.profile_id, profileId),
+          eq(thresholdEvaluations.activity_category, "run"),
+          eq(thresholdEvaluations.metric, "speed"),
+        ),
+      )
       .orderBy(thresholdEvaluations.observed_at);
     expect(replacementEvaluations).toHaveLength(2);
     expect(replacementEvaluations[1]).toMatchObject({
@@ -883,7 +952,16 @@ describe("threshold calibration persistence", () => {
       dirty_from_at: first.finishedAt,
     });
     await expect(
-      db.select().from(thresholdEvaluations).where(eq(thresholdEvaluations.profile_id, profileId)),
+      db
+        .select()
+        .from(thresholdEvaluations)
+        .where(
+          and(
+            eq(thresholdEvaluations.profile_id, profileId),
+            eq(thresholdEvaluations.activity_category, "run"),
+            eq(thresholdEvaluations.metric, "speed"),
+          ),
+        ),
     ).resolves.toHaveLength(0);
     await expect(
       db

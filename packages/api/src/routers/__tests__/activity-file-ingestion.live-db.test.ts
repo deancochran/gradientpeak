@@ -79,7 +79,28 @@ async function seedAcceptedTargets(
 }
 
 afterEach(async () => {
-  for (const id of profileIds.splice(0)) await db.delete(users).where(eq(users.id, id));
+  for (const id of profileIds.splice(0)) {
+    await db.transaction(async (tx) => {
+      await tx.delete(activities).where(eq(activities.profile_id, id));
+      await tx.execute(
+        sql`select set_config('gradientpeak.artifact_lifecycle_authorized', 'on', true)`,
+      );
+      await tx
+        .update(activityArtifacts)
+        .set({ availability: "deletion_pending", deletion_requested_at: new Date() })
+        .where(eq(activityArtifacts.profile_id, id));
+      await tx
+        .update(activityArtifacts)
+        .set({ availability: "deleted", deleted_at: new Date() })
+        .where(eq(activityArtifacts.profile_id, id));
+      await tx.execute(
+        sql`select set_config('gradientpeak.artifact_hard_delete_authorized', 'on', true)`,
+      );
+      await tx.delete(activityArtifacts).where(eq(activityArtifacts.profile_id, id));
+    });
+    await db.delete(profiles).where(eq(profiles.id, id));
+    await db.delete(users).where(eq(users.id, id));
+  }
 });
 
 afterAll(async () => pool.end());

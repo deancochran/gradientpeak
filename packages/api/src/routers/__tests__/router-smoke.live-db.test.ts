@@ -148,7 +148,7 @@ describe("router live-db smoke", () => {
       description: "Event seeded for live DB smoke test.",
       all_day: false,
       timezone: "UTC",
-      occurrence_key: `live-db-${eventId}`,
+      occurrence_key: "",
       starts_at: new Date("2026-04-02T07:30:00.000Z"),
       ends_at: new Date("2026-04-02T08:15:00.000Z"),
       scheduled_date: "2026-04-02",
@@ -171,8 +171,8 @@ describe("router live-db smoke", () => {
         expect.objectContaining({
           id: eventId,
           title: "Live DB Calendar Event",
-          event_type: "custom",
-          scheduled_date: "2026-04-02",
+          calendarDate: "2026-04-02",
+          event: expect.objectContaining({ type: "custom" }),
         }),
       ]),
     );

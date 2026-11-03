@@ -25,6 +25,7 @@ import {
   type ExistingActivityEnrichmentSubmission,
   submitActivity,
 } from "../../application/activities/submit-activity";
+import { readyActivityIngestion } from "../../test-support/ready-activity-ingestion";
 
 const seededUserIds: string[] = [];
 const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
@@ -47,6 +48,7 @@ async function seedProfile() {
     full_name: "Canonical Activity Test",
     username: `canonical-${id.slice(0, 8)}`,
     onboarding_status: "completed",
+    planning_timezone: "UTC",
     created_at: now,
     updated_at: now,
   });
@@ -155,13 +157,13 @@ function artifact(profileId: string, digestCharacter: string, byteSize: number) 
     byteSize,
     bucket: "activity-files",
     path: `artifacts/sha256/${profileId}/${sha256}`,
-    mediaType: "application/octet-stream",
+    mediaType: "application/vnd.ant.fit",
     format: "fit",
     originalName: "activity.fit",
   } as const;
 }
 
-function manualBikeThresholdSubmission(input: {
+async function manualBikeThresholdSubmission(input: {
   profileId: string;
   finishedAt: Date;
   valueWatts: number;
@@ -178,6 +180,13 @@ function manualBikeThresholdSubmission(input: {
     acceptedArtifact.sha256,
     acceptedArtifact.byteSize,
   );
+  const operationId = `manual-threshold:${activityId}`;
+  const ingestion = await readyActivityIngestion(db, {
+    profileId: input.profileId,
+    operationId,
+    source: "manual_import",
+    artifact: acceptedArtifact,
+  });
   return {
     activityId,
     submission: submission(input.profileId, {
@@ -245,7 +254,7 @@ function manualBikeThresholdSubmission(input: {
         detectedLTHR: null,
         ingestion: {
           source: "manual_import",
-          operationId: `manual-threshold:${activityId}`,
+          ...ingestion,
           artifact: acceptedArtifact,
         },
       },
@@ -306,19 +315,19 @@ describe("canonical activity persistence against PostgreSQL", () => {
   it("serializes same-profile manual thresholds before snapshot capture while other profiles proceed", async () => {
     const profileId = await seedProfile();
     const otherProfileId = await seedProfile();
-    const first = manualBikeThresholdSubmission({
+    const first = await manualBikeThresholdSubmission({
       profileId,
       finishedAt: new Date("2026-01-01T11:00:00.000Z"),
       valueWatts: 300,
       digestCharacter: "a",
     });
-    const second = manualBikeThresholdSubmission({
+    const second = await manualBikeThresholdSubmission({
       profileId,
       finishedAt: new Date("2026-01-02T11:00:00.000Z"),
       valueWatts: 330,
       digestCharacter: "b",
     });
-    const independent = manualBikeThresholdSubmission({
+    const independent = await manualBikeThresholdSubmission({
       profileId: otherProfileId,
       finishedAt: new Date("2026-01-01T11:00:00.000Z"),
       valueWatts: 280,
@@ -417,7 +426,13 @@ describe("canonical activity persistence against PostgreSQL", () => {
     const evaluations = await db
       .select()
       .from(thresholdEvaluations)
-      .where(eq(thresholdEvaluations.profile_id, profileId));
+      .where(
+        and(
+          eq(thresholdEvaluations.profile_id, profileId),
+          eq(thresholdEvaluations.activity_category, "bike"),
+          eq(thresholdEvaluations.metric, "power"),
+        ),
+      );
     expect(evaluations).toHaveLength(2);
     const [secondActivity] = await db
       .select({ snapshot: activities.performance_target_snapshot })
@@ -438,6 +453,12 @@ describe("canonical activity persistence against PostgreSQL", () => {
   it("fails closed while a conflicting content artifact is pending deletion", async () => {
     const profileId = await seedProfile();
     const acceptedArtifact = artifact(profileId, "d", 42);
+    const firstIngestion = await readyActivityIngestion(db, {
+      profileId,
+      operationId: `first:${randomUUID()}`,
+      source: "manual_import",
+      artifact: acceptedArtifact,
+    });
     const first = await submitActivity(db, {
       ...submission(profileId),
       analysis: {
@@ -446,7 +467,7 @@ describe("canonical activity persistence against PostgreSQL", () => {
         ingestion: {
           source: "manual_import",
           artifact: acceptedArtifact,
-          operationId: `first:${randomUUID()}`,
+          ...firstIngestion,
         },
       },
     });
@@ -465,6 +486,12 @@ describe("canonical activity persistence against PostgreSQL", () => {
         .where(eq(activityArtifacts.id, artifactId));
     });
 
+    const retryIngestion = await readyActivityIngestion(db, {
+      profileId,
+      operationId: `retry:${randomUUID()}`,
+      source: "manual_import",
+      artifact: acceptedArtifact,
+    });
     await expect(
       submitActivity(db, {
         ...submission(profileId, { name: "Retry after deletion repair" }),
@@ -474,7 +501,7 @@ describe("canonical activity persistence against PostgreSQL", () => {
           ingestion: {
             source: "manual_import",
             artifact: acceptedArtifact,
-            operationId: `retry:${randomUUID()}`,
+            ...retryIngestion,
           },
         },
       }),
@@ -544,7 +571,7 @@ describe("canonical activity persistence against PostgreSQL", () => {
       .where(eq(activitySegments.activity_id, created.id));
     expect(activity).toMatchObject({
       profile_id: profileId,
-      name: "Enriched activity",
+      name: "morning run",
       notes: "updated",
       content_visibility: "followers",
       activity_plan_id: null,
@@ -595,6 +622,15 @@ describe("canonical activity persistence against PostgreSQL", () => {
       integrationId: integration.id,
       providerUpdatedAt: "2026-01-01T12:00:00.000Z",
     };
+    const firstIngestion = await readyActivityIngestion(db, {
+      profileId,
+      operationId: `provider:${externalId}:one`,
+      source: "provider_sync",
+      provider: "wahoo",
+      externalId,
+      integrationId: integration.id,
+      artifact: artifact(profileId, "a", 42),
+    });
     const first = await submitActivity(db, {
       ...submission(profileId, { name: "Provider revision one" }),
       providerProvenance: provider,
@@ -605,10 +641,19 @@ describe("canonical activity persistence against PostgreSQL", () => {
           source: "provider_sync",
           provider: "wahoo",
           externalId,
-          operationId: `provider:${externalId}:one`,
+          ...firstIngestion,
           artifact: artifact(profileId, "a", 42),
         },
       },
+    });
+    const exactRedeliveryIngestion = await readyActivityIngestion(db, {
+      profileId,
+      operationId: `provider:${externalId}:one`,
+      source: "provider_sync",
+      provider: "wahoo",
+      externalId,
+      integrationId: integration.id,
+      artifact: artifact(profileId, "a", 42),
     });
     const exactRedelivery = await submitActivity(db, {
       ...submission(profileId, { name: "Ignored exact redelivery" }),
@@ -620,10 +665,19 @@ describe("canonical activity persistence against PostgreSQL", () => {
           source: "provider_sync",
           provider: "wahoo",
           externalId,
-          operationId: `provider:${externalId}:one`,
+          ...exactRedeliveryIngestion,
           artifact: artifact(profileId, "a", 42),
         },
       },
+    });
+    const staleIngestion = await readyActivityIngestion(db, {
+      profileId,
+      operationId: `provider:${externalId}:stale`,
+      source: "provider_sync",
+      provider: "wahoo",
+      externalId,
+      integrationId: integration.id,
+      artifact: artifact(profileId, "b", 43),
     });
     const stale = await submitActivity(db, {
       ...submission(profileId, { name: "Ignored stale revision" }),
@@ -635,10 +689,19 @@ describe("canonical activity persistence against PostgreSQL", () => {
           source: "provider_sync",
           provider: "wahoo",
           externalId,
-          operationId: `provider:${externalId}:stale`,
+          ...staleIngestion,
           artifact: artifact(profileId, "b", 43),
         },
       },
+    });
+    const newerRevisionWithSameArtifactIngestion = await readyActivityIngestion(db, {
+      profileId,
+      operationId: `provider:${externalId}:one`,
+      source: "provider_sync",
+      provider: "wahoo",
+      externalId,
+      integrationId: integration.id,
+      artifact: artifact(profileId, "a", 42),
     });
     const newerRevisionWithSameArtifact = await submitActivity(db, {
       ...submission(profileId, { name: "Provider metadata revision" }),
@@ -650,10 +713,19 @@ describe("canonical activity persistence against PostgreSQL", () => {
           source: "provider_sync",
           provider: "wahoo",
           externalId,
-          operationId: `provider:${externalId}:one`,
+          ...newerRevisionWithSameArtifactIngestion,
           artifact: artifact(profileId, "a", 42),
         },
       },
+    });
+    const currentIngestion = await readyActivityIngestion(db, {
+      profileId,
+      operationId: `provider:${externalId}:two`,
+      source: "provider_sync",
+      provider: "wahoo",
+      externalId,
+      integrationId: integration.id,
+      artifact: artifact(profileId, "b", 43),
     });
     const current = await submitActivity(db, {
       ...submission(profileId, { name: "Provider revision two" }),
@@ -665,7 +737,7 @@ describe("canonical activity persistence against PostgreSQL", () => {
           source: "provider_sync",
           provider: "wahoo",
           externalId,
-          operationId: `provider:${externalId}:two`,
+          ...currentIngestion,
           artifact: artifact(profileId, "b", 43),
         },
       },
@@ -678,7 +750,7 @@ describe("canonical activity persistence against PostgreSQL", () => {
     expect(imports).toHaveLength(1);
     expect(imports[0]).toMatchObject({
       id: first.id,
-      name: "Provider revision two",
+      name: "morning bike",
       segments_revision: 3,
     });
     const [sourceReference] = await db
@@ -705,6 +777,12 @@ describe("canonical activity persistence against PostgreSQL", () => {
   it("commits recording artifact, segment, and ready ingestion semantics atomically", async () => {
     const profileId = await seedProfile();
     const acceptedArtifact = artifact(profileId, "c", 42);
+    const ingestion = await readyActivityIngestion(db, {
+      profileId,
+      operationId: `recording:${randomUUID()}`,
+      source: "mobile_recording",
+      artifact: acceptedArtifact,
+    });
     const created = await submitActivity(db, {
       ...submission(profileId, {
         segmentSet: segmentManifest(
@@ -720,7 +798,7 @@ describe("canonical activity persistence against PostgreSQL", () => {
         detectedLTHR: null,
         ingestion: {
           source: "mobile_recording",
-          operationId: `recording:${randomUUID()}`,
+          ...ingestion,
           artifact: acceptedArtifact,
           fileType: "fit",
         },
@@ -732,10 +810,9 @@ describe("canonical activity persistence against PostgreSQL", () => {
       .where(eq(activityFileIngestions.activity_id, created.id));
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
-      status: "ready",
+      status: "succeeded",
       source: "mobile_recording",
       activity_id: created.id,
-      attempt_count: 1,
     });
     expect(rows[0]?.artifact_id).not.toBeNull();
     const [storedArtifact] = await db

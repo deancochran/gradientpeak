@@ -1,8 +1,17 @@
 import { randomUUID } from "node:crypto";
+import { calculateCyclingNormalizedPower } from "@repo/core/calculations";
 import { db, pool } from "@repo/db/client";
-import { activityEfforts, profileMetrics, profiles, users } from "@repo/db/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import {
+  activities,
+  activityArtifacts,
+  activityEfforts,
+  profileMetrics,
+  profiles,
+  users,
+} from "@repo/db/schema";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { activityArtifactId, submitActivity } from "../../application/activities/submit-activity";
 import { getSerializedProfile } from "../../application/profiles/readProfiles";
 import {
   ProfileUpdateNotFoundError,
@@ -12,9 +21,11 @@ import {
 import { createApiContext } from "../../context";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
 import { resolveActivityContextFromEvidence } from "../../lib/activity-analysis";
+import { readyActivityIngestion } from "../../test-support/ready-activity-ingestion";
 import { profilesRouter } from "../profiles";
 
 const seededUserIds: string[] = [];
+const unavailableNormalizedPowerResult = calculateCyclingNormalizedPower({ samples: [] });
 
 async function seedProfile(username: string) {
   const id = randomUUID();
@@ -62,8 +73,26 @@ afterEach(async () => {
   while (seededUserIds.length) {
     const id = seededUserIds.pop();
     if (id) {
-      await db.delete(activityEfforts).where(eq(activityEfforts.profile_id, id));
-      await db.delete(profileMetrics).where(eq(profileMetrics.profile_id, id));
+      await db.transaction(async (tx) => {
+        await tx.delete(activityEfforts).where(eq(activityEfforts.profile_id, id));
+        await tx.delete(activities).where(eq(activities.profile_id, id));
+        await tx.delete(profileMetrics).where(eq(profileMetrics.profile_id, id));
+        await tx.execute(
+          sql`select set_config('gradientpeak.artifact_lifecycle_authorized', 'on', true)`,
+        );
+        await tx
+          .update(activityArtifacts)
+          .set({ availability: "deletion_pending", deletion_requested_at: new Date() })
+          .where(eq(activityArtifacts.profile_id, id));
+        await tx
+          .update(activityArtifacts)
+          .set({ availability: "deleted", deleted_at: new Date() })
+          .where(eq(activityArtifacts.profile_id, id));
+        await tx.execute(
+          sql`select set_config('gradientpeak.artifact_hard_delete_authorized', 'on', true)`,
+        );
+        await tx.delete(activityArtifacts).where(eq(activityArtifacts.profile_id, id));
+      });
       await db.delete(profiles).where(eq(profiles.id, id));
       await db.delete(users).where(eq(users.id, id));
     }
@@ -163,42 +192,111 @@ describe("atomic profile update against PostgreSQL", () => {
 
   it("rejects zero and non-finite activity effort values", async () => {
     const profileId = await seedProfile(`effort-check-${randomUUID().slice(0, 8)}`);
-    const insertEffort = (input: {
-      value: number | string;
-      source: string | null;
-      method: string | null;
-      provenance: Record<string, unknown> | null;
-    }) =>
+    const segmentId = randomUUID();
+    const digest = randomUUID().replaceAll("-", "").repeat(2);
+    const artifact = {
+      sha256: digest,
+      byteSize: 1_024,
+      bucket: "activity-files",
+      path: `artifacts/sha256/${profileId}/${digest}`,
+      mediaType: "application/vnd.ant.fit",
+      format: "fit" as const,
+    };
+    const ingestion = await readyActivityIngestion(db, {
+      profileId,
+      operationId: `profile-effort:${randomUUID()}`,
+      source: "manual_import",
+      artifact,
+    });
+    const created = await submitActivity(db, {
+      profileId,
+      name: "Effort constraint fixture",
+      notes: null,
+      contentVisibility: "private",
+      startedAt: new Date("2026-01-01T10:00:00.000Z"),
+      finishedAt: new Date("2026-01-01T10:20:00.000Z"),
+      elapsedMs: 1_200_000,
+      activeMs: 1_200_000,
+      movingMs: 1_200_000,
+      timingCoverage: "complete",
+      segmentSet: {
+        version: 1,
+        elapsedMs: 1_200_000,
+        segments: [
+          {
+            id: segmentId,
+            ordinal: 0,
+            role: "activity",
+            activity_category: "bike",
+            startOffsetMs: 0,
+            endOffsetMs: 1_200_000,
+            source: {
+              kind: "artifact",
+              artifactId: activityArtifactId(profileId, artifact.sha256, artifact.byteSize),
+              source: { standard: "fit", format: "fit" },
+            },
+            summary: {
+              version: 1,
+              timing: { timingCoverage: "complete", activeMs: 1_200_000, movingMs: 1_200_000 },
+              normalizedPowerResult: unavailableNormalizedPowerResult,
+            },
+          },
+        ],
+      },
+      distanceMeters: 1_000,
+      calories: null,
+      elevationGainMeters: null,
+      avgHeartRate: null,
+      maxHeartRate: null,
+      avgPower: null,
+      maxPower: null,
+      avgCadence: null,
+      maxCadence: null,
+      avgSpeedMps: null,
+      maxSpeedMps: null,
+      normalizedSpeedMps: null,
+      avgTemperature: null,
+      deviceManufacturer: null,
+      deviceProduct: null,
+      laps: null,
+      mapBounds: null,
+      polyline: null,
+      analysis: {
+        efforts: [],
+        detectedLTHR: null,
+        ingestion: { source: "manual_import", ...ingestion, artifact },
+      },
+    });
+    const artifactId = activityArtifactId(profileId, artifact.sha256, artifact.byteSize);
+    const insertEffort = (value: number | string) =>
       pool.query(
         `insert into public.activity_efforts (
-          id, created_at, updated_at, profile_id, recorded_at, activity_category,
-          effort_type, duration_seconds, unit, value, source, method, provenance
-        ) values ($1, now(), now(), $2, now(), 'bike', 'power', 1200, 'watts',
-          $3::real, $4, $5, $6::jsonb)`,
+          id, created_at, profile_id, activity_id, segment_id, recorded_at, activity_category,
+          effort_type, source_series, duration_seconds, source_artifact_id, source_revision,
+          start_offset_ms, end_offset_ms, window_coverage, max_gap_seconds, unit, value,
+          source, method, calculation_version, provenance
+        ) values ($1, now(), $2, $3, $4, now(), 'bike', 'power', 'power', 1200, $5, 1,
+          0, 1200000, 1, 2, 'watts', $6::real, 'imported', 'activity_file_best_effort',
+          'best-effort-extraction-v1', $7::jsonb)`,
         [
           randomUUID(),
           profileId,
-          input.value,
-          input.source,
-          input.method,
-          input.provenance === null ? null : JSON.stringify(input.provenance),
+          created.id,
+          segmentId,
+          artifactId,
+          value,
+          JSON.stringify({ fixture: "profile-update-effort-constraint" }),
         ],
       );
 
-    await expect(
-      insertEffort({ value: 250, source: null, method: null, provenance: null }),
-    ).resolves.toBeDefined();
+    await expect(insertEffort(250)).resolves.toBeDefined();
 
-    await expect(
-      insertEffort({ value: 0, source: "manual", method: null, provenance: null }),
-    ).rejects.toMatchObject({
+    await expect(insertEffort(0)).rejects.toMatchObject({
       code: "23514",
       constraint: "activity_efforts_value_finite_positive_check",
     });
     for (const value of ["NaN", "Infinity", "-Infinity"] as const) {
-      await expect(
-        insertEffort({ value, source: null, method: null, provenance: null }),
-      ).rejects.toMatchObject({ code: "23514" });
+      await expect(insertEffort(value)).rejects.toMatchObject({ code: "23514" });
     }
   });
 

@@ -35,6 +35,7 @@ import {
   IntegrationDisconnectPendingError,
   IntegrationLifecycleChangedError,
 } from "../../repositories/integrations-repository";
+import { readyActivityIngestion } from "../../test-support/ready-activity-ingestion";
 import { createIntegrationsRepositories } from "./drizzle-integrations-repository";
 import { createWahooRepository } from "./drizzle-wahoo-repository";
 import { createWahooSyncRepository } from "./drizzle-wahoo-sync-repository";
@@ -147,12 +148,29 @@ function importedSubmission(profileId: string): ActivitySubmission {
   };
 }
 
-function guardedImportedSubmission(owner: {
+async function guardedImportedSubmission(owner: {
   integrationId: string;
   profileId: string;
-}): ActivitySubmission {
+}): Promise<ActivitySubmission> {
   const externalId = `activity-${randomUUID()}`;
   const digest = "a".repeat(64);
+  const artifact = {
+    bucket: "activity-files",
+    byteSize: 3,
+    format: "fit" as const,
+    mediaType: "application/vnd.ant.fit",
+    path: `artifacts/sha256/${owner.profileId}/${digest}`,
+    sha256: digest,
+  };
+  const ingestion = await readyActivityIngestion(db, {
+    profileId: owner.profileId,
+    operationId: `wahoo:${externalId}`,
+    source: "provider_sync",
+    provider: "wahoo",
+    externalId,
+    integrationId: owner.integrationId,
+    artifact,
+  });
   return {
     ...importedSubmission(owner.profileId),
     providerProvenance: {
@@ -169,14 +187,8 @@ function guardedImportedSubmission(owner: {
         source: "provider_sync",
         provider: "wahoo",
         externalId,
-        artifact: {
-          bucket: "activity-files",
-          byteSize: 3,
-          format: "fit",
-          mediaType: "application/octet-stream",
-          path: `artifacts/sha256/${owner.profileId}/${digest}`,
-          sha256: digest,
-        },
+        ...ingestion,
+        artifact,
       },
     },
   };
@@ -601,7 +613,7 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
     const guardAcquiredPromise = new Promise<void>((resolve) => {
       guardAcquired = resolve;
     });
-    const imported = submitActivity(db, guardedImportedSubmission(owner), {
+    const imported = submitActivity(db, await guardedImportedSubmission(owner), {
       beforePersist: async (tx) => {
         await lockActiveWahooGeneration(tx, owner);
         guardAcquired?.();
@@ -655,6 +667,7 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
         .where(eq(activityFileIngestions.profile_id, owner.profileId)),
     ).toHaveLength(1);
 
+    const staleSubmission = await guardedImportedSubmission(owner);
     const beforeRejectedWrites = await Promise.all([
       db.select().from(activities).where(eq(activities.profile_id, owner.profileId)),
       db.select().from(activityArtifacts).where(eq(activityArtifacts.profile_id, owner.profileId)),
@@ -678,7 +691,7 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
     const staleGuard = (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) =>
       lockActiveWahooGeneration(tx, owner);
     await expect(
-      submitActivity(db, guardedImportedSubmission(owner), { beforePersist: staleGuard }),
+      submitActivity(db, staleSubmission, { beforePersist: staleGuard }),
     ).rejects.toThrow("integration_generation_inactive");
     const existing = beforeRejectedWrites[0][0];
     if (!existing) throw new Error("Expected persisted activity before stale writes");
@@ -744,7 +757,7 @@ describe("Wahoo disconnect PostgreSQL lifecycle", () => {
 
     const unrelated = await seed();
     await expect(
-      submitActivity(db, guardedImportedSubmission(unrelated), {
+      submitActivity(db, await guardedImportedSubmission(unrelated), {
         beforePersist: (tx) => lockActiveWahooGeneration(tx, unrelated),
       }),
     ).resolves.toMatchObject({ id: expect.any(String) });

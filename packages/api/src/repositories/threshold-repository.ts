@@ -1278,6 +1278,7 @@ export async function readThresholdImpactForActivity(
     .where(
       and(
         eq(thresholdEvaluations.profile_id, input.profileId),
+        eq(thresholdEvaluations.outcome, "qualified"),
         sql`(${thresholdEvaluations.source_activity_id} = ${input.activityId}::uuid or ${thresholdEvaluationEfforts.activity_id} = ${input.activityId}::uuid)`,
       ),
     );
