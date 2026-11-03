@@ -3,6 +3,7 @@ import {
   createDiscoverableGroupsInput,
   createGroupEventsAfterInput,
   createUpcomingGroupEventsInput,
+  getGroupRouteWindowStart,
   getInfiniteQueryPageCount,
   isGroupLibraryTab,
 } from "./groups-query-inputs";
@@ -32,5 +33,21 @@ describe("group route query inputs", () => {
   it("refetches every cached infinite page instead of truncating the list", () => {
     expect(getInfiniteQueryPageCount(undefined)).toBe(1);
     expect(getInfiniteQueryPageCount({ pages: [{}, {}, {}] })).toBe(3);
+  });
+
+  it("reuses one event-window key for a preload and navigation in the same minute", () => {
+    const preloadSnapshot = getGroupRouteWindowStart(Date.parse("2026-11-03T15:30:01.001Z"));
+    const navigationSnapshot = getGroupRouteWindowStart(Date.parse("2026-11-03T15:30:59.999Z"));
+
+    expect(preloadSnapshot).toBe("2026-11-03T15:30:00.000Z");
+    expect(createUpcomingGroupEventsInput(navigationSnapshot)).toEqual(
+      createUpcomingGroupEventsInput(preloadSnapshot),
+    );
+  });
+
+  it("intentionally rolls the event-window key at the next minute boundary", () => {
+    expect(getGroupRouteWindowStart(Date.parse("2026-11-03T15:31:00.000Z"))).toBe(
+      "2026-11-03T15:31:00.000Z",
+    );
   });
 });

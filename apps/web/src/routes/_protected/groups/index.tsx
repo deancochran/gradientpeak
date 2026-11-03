@@ -18,6 +18,7 @@ import {
   createMyJoinRequestsInput,
   createUpcomingGroupEventsInput,
   type GroupLibraryTab,
+  getGroupRouteWindowStart,
   getInfiniteQueryPageCount,
   isGroupLibraryTab,
 } from "../../../lib/groups-query-inputs";
@@ -44,7 +45,7 @@ export const Route = createFileRoute("/_protected/groups/")({
     tab: search.tab ?? "upcoming",
   }),
   loader: async ({ context, deps }) => {
-    const upcomingWindowStart = new Date().toISOString();
+    const upcomingWindowStart = getGroupRouteWindowStart();
     if (deps.tab === "discover") {
       const input = createDiscoverableGroupsInput(deps.q);
       const getCached = () => context.apiUtils.groups.listDiscoverable.getInfiniteData(input);

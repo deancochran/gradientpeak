@@ -1,5 +1,6 @@
 export const GROUP_LIBRARY_PAGE_SIZE = 30;
 export const GROUP_EVENT_PAGE_SIZE = 20;
+export const GROUP_ROUTE_WINDOW_MS = 60_000;
 
 export const groupLibraryTabs = [
   "upcoming",
@@ -78,4 +79,17 @@ export function createActivityPlansInput(activityPlanId: string | null | undefin
 
 export function getInfiniteQueryPageCount(cached: { pages: unknown[] } | undefined) {
   return Math.max(cached?.pages.length ?? 0, 1);
+}
+
+/**
+ * Route preloads and navigations share a one-minute event-window snapshot. This
+ * bounds the query-key clock drift without widening "upcoming" to a day: an
+ * event from the preceding minute can remain until the next intentional bucket
+ * rollover, at most 60 seconds later.
+ */
+export function getGroupRouteWindowStart(now: Date | number = Date.now()) {
+  const timestamp = typeof now === "number" ? now : now.getTime();
+  return new Date(
+    Math.floor(timestamp / GROUP_ROUTE_WINDOW_MS) * GROUP_ROUTE_WINDOW_MS,
+  ).toISOString();
 }

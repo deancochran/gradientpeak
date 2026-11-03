@@ -16,11 +16,12 @@ import {
   createGroupDetailInput,
   createGroupEventsAfterInput,
   createGroupEventsBeforeInput,
+  getGroupRouteWindowStart,
 } from "../../../../lib/groups-query-inputs";
 
 export const Route = createFileRoute("/_protected/groups/$groupId/")({
   loader: async ({ context, params }) => {
-    const eventsWindowStart = new Date().toISOString();
+    const eventsWindowStart = getGroupRouteWindowStart();
     const input = createGroupDetailInput(params.groupId);
     await loadRouteQuery(
       () => context.apiUtils.groups.detail.getData(input),
