@@ -1,0 +1,717 @@
+import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
+import { Badge } from "@repo/ui/components/badge";
+import { Button } from "@repo/ui/components/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import { Input } from "@repo/ui/components/input";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { Search } from "lucide-react";
+import { useEffect, useState } from "react";
+
+import { api } from "../../lib/api/client";
+import { ActivityPlanCard } from "../activity-plan/activity-plan-card";
+
+export type WebDiscoverScope = "activityPlans" | "trainingPlans" | "routes" | "users" | "groups";
+
+const SCOPES: Array<{ id: WebDiscoverScope; label: string }> = [
+  { id: "activityPlans", label: "Activity plans" },
+  { id: "trainingPlans", label: "Training plans" },
+  { id: "routes", label: "Routes" },
+  { id: "users", label: "Profiles" },
+  { id: "groups", label: "Groups" },
+];
+
+type DiscoveryItem = {
+  id: string;
+  name?: string | null;
+  full_name?: string | null;
+  username?: string | null;
+  avatar_url?: string | null;
+  description?: string | null;
+  primary_category?: string | null;
+  total_distance?: number | null;
+  sessions_per_week_target?: number | null;
+  member_count?: number | null;
+};
+
+type QueryState = {
+  data?: { pages: Array<{ items?: DiscoveryItem[]; users?: DiscoveryItem[] }> };
+  isLoading: boolean;
+  isError: boolean;
+  isFetching: boolean;
+  isFetchingNextPage: boolean;
+  hasNextPage?: boolean;
+  refetch: () => Promise<unknown>;
+  fetchNextPage: () => Promise<unknown>;
+};
+
+export function DiscoveryExplorer({
+  initialQuery = "",
+  initialScope = "activityPlans",
+  initialMinDistanceKm = "",
+  initialMaxDistanceKm = "",
+  initialActivityCategory = "",
+  initialActivitySort = "newest",
+  initialTrainingPlanCategory = "",
+  initialExperience = "",
+  initialRouteSort = "newest",
+  initialProfileSort = "newest",
+  initialTrainingSort = "newest",
+}: {
+  initialQuery?: string;
+  initialScope?: WebDiscoverScope;
+  initialMinDistanceKm?: string;
+  initialMaxDistanceKm?: string;
+  initialActivityCategory?: string;
+  initialActivitySort?: string;
+  initialTrainingPlanCategory?: string;
+  initialExperience?: string;
+  initialRouteSort?: string;
+  initialProfileSort?: string;
+  initialTrainingSort?: string;
+}) {
+  const navigate = useNavigate();
+  const [scope, setScope] = useState<WebDiscoverScope>(initialScope);
+  const [draftSearch, setDraftSearch] = useState(initialQuery);
+  const [search, setSearch] = useState(initialQuery.trim());
+  const [activityPlanCategory, setActivityPlanCategory] = useState(initialActivityCategory);
+  const [activitySort, setActivitySort] = useState(initialActivitySort);
+  const [appliedActivityPlanCategory, setAppliedActivityPlanCategory] =
+    useState(initialActivityCategory);
+  const [appliedActivitySort, setAppliedActivitySort] = useState(initialActivitySort);
+  const [trainingPlanCategory, setTrainingPlanCategory] = useState(initialTrainingPlanCategory);
+  const [experience, setExperience] = useState(initialExperience);
+  const [routeSort, setRouteSort] = useState(initialRouteSort);
+  const [profileSort, setProfileSort] = useState(initialProfileSort);
+  const [trainingSort, setTrainingSort] = useState(initialTrainingSort);
+  const [appliedTrainingPlanCategory, setAppliedTrainingPlanCategory] = useState(
+    initialTrainingPlanCategory,
+  );
+  const [appliedExperience, setAppliedExperience] = useState(initialExperience);
+  const [appliedRouteSort, setAppliedRouteSort] = useState(initialRouteSort);
+  const [appliedProfileSort, setAppliedProfileSort] = useState(initialProfileSort);
+  const [appliedTrainingSort, setAppliedTrainingSort] = useState(initialTrainingSort);
+  const [minDistance, setMinDistance] = useState(initialMinDistanceKm);
+  const [maxDistance, setMaxDistance] = useState(initialMaxDistanceKm);
+  const [appliedMinDistance, setAppliedMinDistance] = useState(initialMinDistanceKm);
+  const [appliedMaxDistance, setAppliedMaxDistance] = useState(initialMaxDistanceKm);
+  const [awaitingUrlSync, setAwaitingUrlSync] = useState(false);
+  const hasPendingDraft =
+    awaitingUrlSync ||
+    draftSearch.trim() !== search ||
+    minDistance !== appliedMinDistance ||
+    maxDistance !== appliedMaxDistance ||
+    activityPlanCategory !== appliedActivityPlanCategory ||
+    activitySort !== appliedActivitySort ||
+    trainingPlanCategory !== appliedTrainingPlanCategory ||
+    experience !== appliedExperience ||
+    routeSort !== appliedRouteSort ||
+    profileSort !== appliedProfileSort ||
+    trainingSort !== appliedTrainingSort;
+  const numericError = getDistanceRangeError(minDistance, maxDistance);
+
+  useEffect(() => {
+    const activeScopeFiltersMatch =
+      initialScope === "activityPlans"
+        ? initialActivityCategory === appliedActivityPlanCategory &&
+          initialActivitySort === appliedActivitySort
+        : initialScope === "trainingPlans"
+          ? initialTrainingPlanCategory === appliedTrainingPlanCategory &&
+            initialExperience === appliedExperience &&
+            initialTrainingSort === appliedTrainingSort
+          : initialScope === "routes"
+            ? initialMinDistanceKm === appliedMinDistance &&
+              initialMaxDistanceKm === appliedMaxDistance &&
+              initialRouteSort === appliedRouteSort
+            : initialProfileSort === appliedProfileSort;
+    const urlMatchesAppliedState =
+      initialQuery.trim() === search && initialScope === scope && activeScopeFiltersMatch;
+    if (awaitingUrlSync) {
+      if (urlMatchesAppliedState) setAwaitingUrlSync(false);
+      return;
+    }
+    if (hasPendingDraft) return;
+    setScope(initialScope);
+    setDraftSearch(initialQuery);
+    setSearch(initialQuery.trim());
+    setMinDistance(initialMinDistanceKm);
+    setMaxDistance(initialMaxDistanceKm);
+    setAppliedMinDistance(initialMinDistanceKm);
+    setAppliedMaxDistance(initialMaxDistanceKm);
+    setActivityPlanCategory(initialActivityCategory);
+    setActivitySort(initialActivitySort);
+    setAppliedActivityPlanCategory(initialActivityCategory);
+    setAppliedActivitySort(initialActivitySort);
+    setTrainingPlanCategory(initialTrainingPlanCategory);
+    setExperience(initialExperience);
+    setRouteSort(initialRouteSort);
+    setProfileSort(initialProfileSort);
+    setTrainingSort(initialTrainingSort);
+    setAppliedTrainingPlanCategory(initialTrainingPlanCategory);
+    setAppliedExperience(initialExperience);
+    setAppliedRouteSort(initialRouteSort);
+    setAppliedProfileSort(initialProfileSort);
+    setAppliedTrainingSort(initialTrainingSort);
+  }, [
+    appliedMaxDistance,
+    appliedMinDistance,
+    hasPendingDraft,
+    initialMaxDistanceKm,
+    initialMinDistanceKm,
+    initialActivityCategory,
+    initialActivitySort,
+    initialTrainingPlanCategory,
+    initialExperience,
+    initialRouteSort,
+    initialProfileSort,
+    initialTrainingSort,
+    initialQuery,
+    initialScope,
+    appliedActivityPlanCategory,
+    appliedActivitySort,
+    appliedExperience,
+    appliedProfileSort,
+    appliedRouteSort,
+    appliedTrainingPlanCategory,
+    appliedTrainingSort,
+    awaitingUrlSync,
+    scope,
+    search,
+  ]);
+
+  const activityPlans = api.activityPlans.list.useInfiniteQuery(
+    {
+      ownerScope: "discoverable",
+      search: search || undefined,
+      activityCategories: appliedActivityPlanCategory
+        ? [appliedActivityPlanCategory as "run" | "bike" | "swim" | "strength" | "other"]
+        : undefined,
+      sort_by: appliedActivitySort as "newest" | "oldest",
+      limit: 20,
+    },
+    {
+      enabled: scope === "activityPlans",
+      getNextPageParam: (page) => page.nextCursor,
+      retry: false,
+    },
+  );
+  const trainingPlans = api.trainingPlans.listTemplates.useInfiniteQuery(
+    {
+      search: search || undefined,
+      activity_category: appliedTrainingPlanCategory
+        ? (appliedTrainingPlanCategory as "bike" | "run" | "other" | "swim" | "strength")
+        : undefined,
+      experience_level: appliedExperience
+        ? (appliedExperience as "beginner" | "intermediate" | "advanced")
+        : undefined,
+      sort_by: appliedTrainingSort as
+        | "newest"
+        | "oldest"
+        | "duration_desc"
+        | "duration_asc"
+        | "sessions_desc"
+        | "sessions_asc",
+      limit: 20,
+    },
+    {
+      enabled: scope === "trainingPlans",
+      getNextPageParam: (page) => page.nextCursor,
+      retry: false,
+    },
+  );
+  const routes = api.routes.list.useInfiniteQuery(
+    {
+      ownerScope: "all",
+      search: search || undefined,
+      min_distance_m: appliedMinDistance ? Number(appliedMinDistance) * 1000 : undefined,
+      max_distance_m: appliedMaxDistance ? Number(appliedMaxDistance) * 1000 : undefined,
+      sort_by: appliedRouteSort as "newest" | "oldest" | "distance_desc" | "distance_asc",
+      limit: 20,
+    },
+    { enabled: scope === "routes", getNextPageParam: (page) => page.nextCursor, retry: false },
+  );
+  const users = api.social.searchUsers.useInfiniteQuery(
+    {
+      query: search || undefined,
+      sort_by: appliedProfileSort as "newest" | "oldest" | "username_asc" | "username_desc",
+      limit: 20,
+    },
+    { enabled: scope === "users", getNextPageParam: (page) => page.nextCursor, retry: false },
+  );
+  const groups = api.groups.listDiscoverable.useInfiniteQuery(
+    { search: search || undefined, sort_by: appliedProfileSort as "newest" | "oldest", limit: 20 },
+    {
+      enabled: scope === "groups",
+      getNextPageParam: (page) => page.nextCursor ?? undefined,
+      retry: false,
+    },
+  );
+
+  const activeQuery = { activityPlans, trainingPlans, routes, users, groups }[scope] as QueryState;
+  const pages = activeQuery.data?.pages ?? [];
+  const items = pages.flatMap((page) =>
+    scope === "users" ? (page.users ?? []) : (page.items ?? []),
+  );
+  const noun = SCOPES.find((item) => item.id === scope)?.label.toLowerCase() ?? "results";
+  const activityPlanItems = activityPlans.data?.pages.flatMap((page) => page.items) ?? [];
+
+  const resetScopeFilters = () => {
+    setActivityPlanCategory("");
+    setActivitySort("newest");
+    setAppliedActivityPlanCategory("");
+    setAppliedActivitySort("newest");
+    setTrainingPlanCategory("");
+    setExperience("");
+    setRouteSort("newest");
+    setProfileSort("newest");
+    setTrainingSort("newest");
+    setAppliedTrainingPlanCategory("");
+    setAppliedExperience("");
+    setAppliedRouteSort("newest");
+    setAppliedProfileSort("newest");
+    setAppliedTrainingSort("newest");
+    setMinDistance("");
+    setMaxDistance("");
+    setAppliedMinDistance("");
+    setAppliedMaxDistance("");
+  };
+  const applyDraft = () => {
+    if (numericError) return;
+    const nextSearch = draftSearch.trim();
+    setSearch(nextSearch);
+    setAppliedMinDistance(minDistance);
+    setAppliedMaxDistance(maxDistance);
+    setAppliedActivityPlanCategory(activityPlanCategory);
+    setAppliedActivitySort(activitySort);
+    setAppliedTrainingPlanCategory(trainingPlanCategory);
+    setAppliedExperience(experience);
+    setAppliedRouteSort(routeSort);
+    setAppliedProfileSort(profileSort);
+    setAppliedTrainingSort(trainingSort);
+    setAwaitingUrlSync(true);
+    void navigate({
+      to: "/search",
+      search: {
+        scope,
+        ...(nextSearch ? { q: nextSearch } : {}),
+        ...(minDistance ? { minDistanceKm: minDistance } : {}),
+        ...(maxDistance ? { maxDistanceKm: maxDistance } : {}),
+        ...(scope === "activityPlans"
+          ? {
+              ...(activityPlanCategory ? { activityCategory: activityPlanCategory } : {}),
+              ...(activitySort !== "newest" ? { activitySort } : {}),
+            }
+          : {}),
+        ...(scope === "trainingPlans"
+          ? {
+              ...(trainingPlanCategory ? { trainingPlanCategory } : {}),
+              ...(experience ? { experience } : {}),
+              ...(trainingSort !== "newest" ? { trainingSort } : {}),
+            }
+          : {}),
+        ...(scope === "routes" && routeSort !== "newest" ? { routeSort } : {}),
+        ...((scope === "users" || scope === "groups") && profileSort !== "newest"
+          ? { profileSort }
+          : {}),
+      },
+      replace: true,
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <form
+        className="flex gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          applyDraft();
+        }}
+      >
+        <Input
+          aria-label={`Search ${noun}`}
+          value={draftSearch}
+          maxLength={80}
+          onChange={(event) => setDraftSearch(event.target.value)}
+        />
+        <Button type="submit">
+          <Search className="mr-2 h-4 w-4" />
+          Search
+        </Button>
+      </form>
+
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Discovery scopes">
+        {SCOPES.map((option) => (
+          <Button
+            key={option.id}
+            type="button"
+            role="tab"
+            aria-selected={scope === option.id}
+            data-state={scope === option.id ? "active" : "inactive"}
+            variant={scope === option.id ? "default" : "outline"}
+            onClick={() => {
+              setScope(option.id);
+              resetScopeFilters();
+              setAwaitingUrlSync(true);
+              void navigate({
+                to: "/search",
+                search: { scope: option.id, ...(search ? { q: search } : {}) },
+                replace: true,
+              });
+            }}
+          >
+            {option.label}
+          </Button>
+        ))}
+      </div>
+
+      <fieldset className="flex flex-wrap items-end gap-3 rounded-lg border p-4">
+        <legend className="sr-only">{noun} filters</legend>
+        {scope === "activityPlans" ? (
+          <>
+            <Select
+              label="Activity category"
+              value={activityPlanCategory}
+              onChange={setActivityPlanCategory}
+              options={["run", "bike", "swim", "strength", "other"]}
+            />
+            <Select
+              label="Sort activity plans"
+              value={activitySort}
+              onChange={setActivitySort}
+              options={["newest", "oldest"]}
+              allowAny={false}
+            />
+          </>
+        ) : null}
+        {scope === "trainingPlans" ? (
+          <>
+            <Select
+              label="Activity category"
+              value={trainingPlanCategory}
+              onChange={setTrainingPlanCategory}
+              options={["run", "bike", "swim", "strength", "other"]}
+            />
+            <Select
+              label="Experience"
+              value={experience}
+              onChange={setExperience}
+              options={["beginner", "intermediate", "advanced"]}
+            />
+            <Select
+              label="Sort training plans"
+              value={trainingSort}
+              onChange={setTrainingSort}
+              options={[
+                "newest",
+                "oldest",
+                "duration_desc",
+                "duration_asc",
+                "sessions_desc",
+                "sessions_asc",
+              ]}
+              allowAny={false}
+            />
+          </>
+        ) : null}
+        {scope === "routes" ? (
+          <>
+            <NumberFilter
+              label="Minimum distance (km)"
+              value={minDistance}
+              onChange={setMinDistance}
+            />
+            <NumberFilter
+              label="Maximum distance (km)"
+              value={maxDistance}
+              onChange={setMaxDistance}
+            />
+            <Select
+              label="Sort routes"
+              value={routeSort}
+              onChange={setRouteSort}
+              options={["newest", "oldest", "distance_desc", "distance_asc"]}
+              allowAny={false}
+            />
+          </>
+        ) : null}
+        {scope === "users" ? (
+          <Select
+            label="Sort profiles"
+            value={profileSort}
+            onChange={setProfileSort}
+            options={["newest", "oldest", "username_asc", "username_desc"]}
+            allowAny={false}
+          />
+        ) : null}
+        {scope === "groups" ? (
+          <Select
+            label="Sort groups"
+            value={profileSort}
+            onChange={setProfileSort}
+            options={["newest", "oldest"]}
+            allowAny={false}
+          />
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => {
+            resetScopeFilters();
+            setAwaitingUrlSync(true);
+            void navigate({
+              to: "/search",
+              search: { scope, ...(search ? { q: search } : {}) },
+              replace: true,
+            });
+          }}
+        >
+          Clear filters
+        </Button>
+      </fieldset>
+      {hasPendingDraft ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          Discovery edits have not been applied.
+        </p>
+      ) : null}
+      {numericError ? <p role="alert">{numericError}</p> : null}
+      <Button type="button" onClick={applyDraft}>
+        Apply filters
+      </Button>
+
+      {activeQuery.isLoading ? (
+        <p role="status" className="py-8 text-muted-foreground">
+          Loading {noun}...
+        </p>
+      ) : null}
+      {activeQuery.isError && items.length === 0 ? (
+        <Card role="alert">
+          <CardContent className="space-y-3 py-8 text-center">
+            <p>We could not load {noun}.</p>
+            <Button type="button" onClick={() => void activeQuery.refetch()}>
+              Retry {noun}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+      {!activeQuery.isLoading && !activeQuery.isError && items.length === 0 ? (
+        <Card>
+          <CardContent className="space-y-3 py-10 text-center text-muted-foreground">
+            <p>No {noun} match your search and filters.</p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setDraftSearch("");
+                setSearch("");
+                resetScopeFilters();
+                void navigate({ to: "/search", search: { scope }, replace: true });
+              }}
+            >
+              Clear search and filters
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {items.length > 0 ? (
+        <div
+          className="grid gap-4 md:grid-cols-2"
+          aria-busy={activeQuery.isFetching && !activeQuery.isFetchingNextPage}
+        >
+          {scope === "activityPlans"
+            ? activityPlanItems.map((plan) => (
+                <ActivityPlanCard
+                  key={plan.id}
+                  onOpen={() =>
+                    void navigate({
+                      to: "/activity-plans/$activityPlanId",
+                      params: { activityPlanId: plan.id },
+                    } as never)
+                  }
+                  plan={plan}
+                />
+              ))
+            : items.map((item) => <DiscoveryCard key={item.id} scope={scope} item={item} />)}
+        </div>
+      ) : null}
+
+      {activeQuery.isError && items.length > 0 ? (
+        <div role="alert" className="rounded-lg border border-destructive/40 p-3">
+          More {noun} could not be loaded.{" "}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => void activeQuery.refetch()}
+          >
+            Retry
+          </Button>
+        </div>
+      ) : null}
+      {activeQuery.hasNextPage ? (
+        <div className="flex justify-center">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={activeQuery.isFetchingNextPage}
+            onClick={() => void activeQuery.fetchNextPage()}
+          >
+            {activeQuery.isFetchingNextPage ? "Loading more..." : `Load more ${noun}`}
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Select({
+  label,
+  value,
+  onChange,
+  options,
+  allowAny = true,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+  allowAny?: boolean;
+}) {
+  return (
+    <label className="space-y-1 text-sm">
+      <span className="block font-medium">{label}</span>
+      <select
+        className="h-10 rounded-md border bg-background px-3"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {allowAny ? <option value="">Any</option> : null}
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option.replaceAll("_", " ")}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function NumberFilter({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const inputId = `discover-${label.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-")}`;
+  return (
+    <label className="space-y-1 text-sm" htmlFor={inputId}>
+      <span className="block font-medium">{label}</span>
+      <Input
+        id={inputId}
+        className="w-44"
+        inputMode="decimal"
+        type="text"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
+function getDistanceRangeError(minDistance: string, maxDistance: string) {
+  for (const [label, value] of [
+    ["Minimum distance", minDistance],
+    ["Maximum distance", maxDistance],
+  ] as Array<[string, string]>) {
+    if (value.trim() && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+      return `${label} must be a non-negative number.`;
+    }
+  }
+  if (minDistance && maxDistance && Number(minDistance) > Number(maxDistance)) {
+    return "Minimum distance cannot exceed maximum distance.";
+  }
+  return null;
+}
+
+function DiscoveryCard({ scope, item }: { scope: WebDiscoverScope; item: DiscoveryItem }) {
+  const name = item.name ?? item.full_name ?? item.username ?? "Untitled";
+  return (
+    <Card data-testid={`discover-${scope}-${item.id}`}>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-3 text-lg">
+          {scope === "users" ? (
+            <Avatar>
+              <AvatarImage src={item.avatar_url ?? ""} alt="" />
+              <AvatarFallback>{String(name).slice(0, 2).toUpperCase()}</AvatarFallback>
+            </Avatar>
+          ) : null}
+          <span>{scope === "users" && item.username ? `@${item.username}` : name}</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm text-muted-foreground">
+        {item.description ? <p className="line-clamp-2">{item.description}</p> : null}
+        {scope === "activityPlans" && item.primary_category ? (
+          <Badge variant="secondary">{item.primary_category}</Badge>
+        ) : null}
+        {scope === "routes" ? (
+          <p>
+            {typeof item.total_distance === "number"
+              ? `${(item.total_distance / 1000).toFixed(1)} km`
+              : "Distance unavailable"}
+          </p>
+        ) : null}
+        {scope === "trainingPlans" && item.sessions_per_week_target ? (
+          <p>{item.sessions_per_week_target} sessions per week</p>
+        ) : null}
+        {scope === "groups" && item.member_count !== undefined ? (
+          <p>{item.member_count} members</p>
+        ) : null}
+        {scope === "activityPlans" ? (
+          <Button asChild size="sm" variant="outline">
+            <Link
+              to="/activity-plans/$activityPlanId"
+              params={{ activityPlanId: item.id }}
+              search={{ edit: undefined }}
+            >
+              View activity plan
+            </Link>
+          </Button>
+        ) : null}
+        {scope === "trainingPlans" ? (
+          <Button asChild size="sm" variant="outline">
+            <Link to="/training-plans/$planId" params={{ planId: item.id }}>
+              View training plan
+            </Link>
+          </Button>
+        ) : null}
+        {scope === "routes" ? (
+          <Button asChild size="sm" variant="outline">
+            <Link to="/routes/$routeId" params={{ routeId: item.id }}>
+              View route
+            </Link>
+          </Button>
+        ) : null}
+        {scope === "users" ? (
+          <Button asChild size="sm" variant="outline">
+            <Link
+              to="/user/$userId"
+              params={{ userId: item.id }}
+              search={{ flash: undefined, flashType: undefined }}
+            >
+              View profile
+            </Link>
+          </Button>
+        ) : null}
+        {scope === "groups" ? (
+          <Button asChild size="sm" variant="outline">
+            <Link to="/groups/$groupId" params={{ groupId: item.id }}>
+              View group
+            </Link>
+          </Button>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}

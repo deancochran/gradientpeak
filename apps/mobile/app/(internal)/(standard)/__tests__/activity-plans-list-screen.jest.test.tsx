@@ -3,6 +3,27 @@ import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
+const activityPlansListUseQueryMock = jest.fn((_input?: unknown) => ({
+  data: {
+    items: [
+      {
+        id: "plan-1",
+        name: "Tempo Ride",
+        description: "Steady state tempo blocks",
+        activity_category: "bike",
+        content_visibility: "private",
+        owner: { id: "owner-1", username: "Owner", avatar_url: null },
+        summary: {
+          id: "plan-1",
+          name: "Tempo Ride",
+          owner: { id: "owner-1", username: "Owner", avatarUrl: null },
+        },
+      },
+    ],
+  },
+  isLoading: false,
+  error: null,
+}));
 
 type ActivityPlan = {
   id: string;
@@ -19,16 +40,6 @@ type FlatListProps = {
   ListHeaderComponent?: React.ReactNode;
   ListEmptyComponent?: React.ReactNode;
   [key: string]: unknown;
-};
-
-type ActivityPlanCardNode = {
-  props: {
-    activityPlan: ActivityPlan;
-  };
-};
-
-type UnsafeTypeQuery = {
-  UNSAFE_getByType: (type: "ActivityPlanCard") => ActivityPlanCardNode;
 };
 
 jest.mock("react-native", () => ({
@@ -86,6 +97,37 @@ jest.mock("@/components/ErrorBoundary", () => ({
   ScreenErrorFallback: createHost("ScreenErrorFallback"),
 }));
 
+jest.mock("@/components/shared/IndexFilterSheet", () => ({
+  __esModule: true,
+  IndexFilterSheet: ({
+    children,
+    onApply,
+    onReset,
+    testID,
+    visible,
+  }: React.PropsWithChildren<{
+    onApply: () => void;
+    onReset: () => void;
+    testID: string;
+    visible: boolean;
+  }>) =>
+    visible
+      ? React.createElement(
+          "IndexFilterSheet",
+          { testID },
+          children,
+          React.createElement("TouchableOpacity", {
+            onPress: onReset,
+            testID: `${testID}-reset`,
+          }),
+          React.createElement("TouchableOpacity", {
+            onPress: onApply,
+            testID: `${testID}-apply`,
+          }),
+        )
+      : null,
+}));
+
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
   ActivityPlanCard: createHost("ActivityPlanCard"),
@@ -101,26 +143,7 @@ jest.mock("@/lib/api", () => ({
   api: {
     activityPlans: {
       list: {
-        useQuery: () => ({
-          data: {
-            items: [
-              {
-                id: "plan-1",
-                name: "Tempo Ride",
-                description: "Steady state tempo blocks",
-                activity_category: "bike",
-                template_visibility: "private",
-                owner: {
-                  id: "owner-1",
-                  username: "Owner",
-                  avatar_url: null,
-                },
-              },
-            ],
-          },
-          isLoading: false,
-          error: null,
-        }),
+        useQuery: activityPlansListUseQueryMock,
       },
     },
   },
@@ -131,27 +154,52 @@ const ActivityPlansListScreen = require("../activity-plans-list").default;
 describe("activity plans list screen", () => {
   beforeEach(() => {
     pushMock.mockReset();
+    activityPlansListUseQueryMock.mockClear();
   });
 
-  it("opens activity plan detail when tapping a row", () => {
-    renderNative(<ActivityPlansListScreen />);
+  it("queries canonical plans without compatibility filters", async () => {
+    await renderNative(<ActivityPlansListScreen />);
+    expect(activityPlansListUseQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ ownerScope: "own" }),
+    );
 
-    fireEvent.press(screen.getByTestId("activity-plan-list-item-plan-1"));
+    await fireEvent.press(screen.getByTestId("activity-plans-list-filter-button"));
+    await fireEvent.press(screen.getByTestId("activity-plans-list-filter-activity_category-run"));
+    await fireEvent.press(screen.getByTestId("activity-plans-list-filter-sheet-apply"));
+    expect(activityPlansListUseQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ activityCategories: ["run"] }),
+    );
+
+    await fireEvent.press(screen.getByTestId("activity-plans-list-filter-button"));
+    await fireEvent.press(screen.getByTestId("activity-plans-list-filter-sheet-reset"));
+    await fireEvent.press(screen.getByTestId("activity-plans-list-filter-sheet-apply"));
+    expect(activityPlansListUseQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ activityCategories: undefined }),
+    );
+  });
+
+  it("opens activity plan detail when tapping a row", async () => {
+    await renderNative(<ActivityPlansListScreen />);
+
+    await fireEvent.press(screen.getByTestId("activity-plan-list-item-plan-1"));
 
     expect(pushMock).toHaveBeenCalledWith("/activity-plan-detail?id=plan-1");
   });
 
-  it("renders owner identity on each plan card", () => {
-    const rendered = renderNative(<ActivityPlansListScreen />);
+  it("renders each plan with its owner and the rich default card", async () => {
+    const rendered = await renderNative(<ActivityPlansListScreen />);
 
-    expect(
-      (rendered as unknown as UnsafeTypeQuery).UNSAFE_getByType("ActivityPlanCard").props
-        .activityPlan.owner,
-    ).toEqual(
+    const activityPlanCard = rendered.container.queryAll(
+      (node) => node.type === "ActivityPlanCard",
+    )[0];
+    if (!activityPlanCard) throw new Error("Expected an ActivityPlanCard");
+
+    expect(activityPlanCard.props.plan.owner).toEqual(
       expect.objectContaining({
         id: "owner-1",
         username: "Owner",
       }),
     );
+    expect(activityPlanCard.props.variant).toBeUndefined();
   });
 });

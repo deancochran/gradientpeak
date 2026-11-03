@@ -18,6 +18,8 @@ function TimeInput({
   value,
 }: TimeInputProps) {
   const inputId = `${id}-field`;
+  const descriptionId = `${id}-description`;
+  const errorId = `${id}-error`;
 
   return (
     <div className="grid gap-2">
@@ -26,24 +28,47 @@ function TimeInput({
         {required ? <span className="text-destructive"> *</span> : null}
       </Label>
       <Input
+        accessibilityLabel={label}
+        aria-describedby={
+          [helperText ? descriptionId : undefined, error ? errorId : undefined]
+            .filter(Boolean)
+            .join(" ") || undefined
+        }
+        aria-invalid={!!error}
+        aria-required={required}
         disabled={disabled}
         id={inputId}
         name={name}
         onChange={(event) => onChange(event.currentTarget.value || undefined)}
         placeholder={placeholder}
+        required={required}
         testId={testId}
         type="time"
         value={value ?? ""}
       />
-      {helperText ? <p className="text-xs text-muted-foreground">{helperText}</p> : null}
+      {helperText ? (
+        <p id={descriptionId} className="text-xs text-muted-foreground">
+          {helperText}
+        </p>
+      ) : null}
       {clearable && value ? (
         <div>
-          <Button size="sm" type="button" variant="outline" onClick={() => onChange(undefined)}>
+          <Button
+            disabled={disabled}
+            size="sm"
+            type="button"
+            variant="outline"
+            onClick={() => onChange(undefined)}
+          >
             Clear time
           </Button>
         </div>
       ) : null}
-      {error ? <p className="text-xs text-destructive">Adjust this field: {error}</p> : null}
+      {error ? (
+        <p id={errorId} className="text-xs text-destructive">
+          Adjust this field: {error}
+        </p>
+      ) : null}
     </div>
   );
 }

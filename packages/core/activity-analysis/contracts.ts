@@ -1,15 +1,15 @@
 import { z } from "zod";
-
-export const activityDerivedStressSchema = z.object({
-  tss: z.number().nullable(),
-  intensity_factor: z.number().nullable(),
-  trimp: z.number().nullable(),
-  trimp_source: z.enum(["hr", "power_proxy"]).nullable().optional(),
-  training_effect: z
-    .enum(["recovery", "base", "tempo", "threshold", "vo2max"])
-    .nullable()
-    .optional(),
-});
+import { commonLoadAggregateSchema, commonLoadResultSchema } from "../load/common-relative-load";
+export const activityDerivedStressSchema = z
+  .object({
+    // A parent activity combines its segment results into a coverage-aware
+    // aggregate, while a single segment retains the activity-level result.
+    common_load: z.union([commonLoadResultSchema, commonLoadAggregateSchema]),
+    trimp: z.number().nullable(),
+    trimp_source: z.enum(["hr", "power_proxy"]).nullable(),
+    training_effect: z.enum(["recovery", "base", "tempo", "threshold", "vo2max"]).nullable(),
+  })
+  .strict();
 
 export const activityZoneEntrySchema = z.object({
   zone: z.number().int().positive(),
@@ -28,11 +28,12 @@ export const activityDerivedMetricsSchema = z.object({
   computed_as_of: z.string(),
 });
 
-export const activityListDerivedSummarySchema = z.object({
-  tss: z.number().nullable(),
-  intensity_factor: z.number().nullable(),
-  computed_as_of: z.string(),
-});
+export const activityListDerivedSummarySchema = z
+  .object({
+    common_load: z.union([commonLoadResultSchema, commonLoadAggregateSchema]),
+    computed_as_of: z.string(),
+  })
+  .strict();
 
 export type ActivityDerivedStress = z.infer<typeof activityDerivedStressSchema>;
 export type ActivityZoneEntry = z.infer<typeof activityZoneEntrySchema>;
