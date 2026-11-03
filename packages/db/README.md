@@ -176,6 +176,25 @@ RETAINED_E2E_REHEARSAL_RECEIPT=/private/rehearsal-receipt.json \
 pnpm --filter @repo/db exec tsx scripts/retained-e2e-upgrade.ts --apply-retained-e2e-upgrade
 ```
 
+### Approved auth identity compatibility upgrade
+
+`supabase/approved-upgrades/auth-identity-compatibility/` is a separate, one-time
+three-DDL compatibility upgrade for Better Auth 1.7.3+ account identities. It is
+not a fresh-install migration and never merges, deletes, resets, or seeds account
+rows. The guarded apply function locks `accounts`, checks the pinned full legacy
+fingerprint, refuses duplicate `(provider_id, account_id)` identities, preserves an
+ordered row digest, and rolls back unless the complete post-upgrade fingerprint
+matches. Its only checked-in execution proof uses a guarded disposable target:
+
+```bash
+pnpm --filter @repo/db db:auth-identity:upgrade:test
+```
+
+Operational application is coordinator-owned: recheck the target while locks are
+held, bind a private backup and isolated-restore rehearsal to the target and the
+pinned artifacts, then invoke the exported guarded function from that reviewed
+operation. Do not run `upgrade.sql` directly.
+
 ### Activity-plan authoring and revision ownership
 
 `20260929000000_fixed_v4_activity_plan_contract.sql` is a hard V4 cutover: the fixed V4 `blocks` structure replaces V3/adaptive prescriptions, the `adaptation` column is removed, and semantic hashes use the V2 contract. It fails closed with SQLSTATE `55000` if `activity_plans` or `planned_sessions` contains rows, before any destructive DDL. Repository-managed local targets must therefore be reset and reseeded; the migration chain remains valid for a fresh target.

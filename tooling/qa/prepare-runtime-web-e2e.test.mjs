@@ -34,9 +34,13 @@ function inspection(name, ports = {}, environment = []) {
 
 function guardedStack() {
   return [
-    inspection("supabase_db_gradientpeak_e2e", {
-      "5432/tcp": [{ HostIp: "127.0.0.1", HostPort: "55322" }],
-    }),
+    inspection(
+      "supabase_db_gradientpeak_e2e",
+      {
+        "5432/tcp": [{ HostIp: "127.0.0.1", HostPort: "55322" }],
+      },
+      ["POSTGRES_PASSWORD=synthetic-db-password"],
+    ),
     inspection("supabase_kong_gradientpeak_e2e", {
       "8000/tcp": [{ HostIp: "::1", HostPort: "55321" }],
     }),
@@ -52,6 +56,8 @@ test("derives only the browser runtime credential fields from the guarded local 
       random: () => Buffer.alloc(32, 7),
     }),
     {
+      DATABASE_URL: "postgresql://postgres:synthetic-db-password@127.0.0.1:55322/postgres",
+      POSTGRES_URL: "postgresql://postgres:synthetic-db-password@127.0.0.1:55322/postgres",
       BETTER_AUTH_SECRET: `e2e-${Buffer.alloc(32, 7).toString("base64url")}`,
       NEXT_PRIVATE_SUPABASE_SECRET_KEY: serviceKey,
       SUPABASE_SERVICE_ROLE_KEY: serviceKey,
@@ -60,6 +66,13 @@ test("derives only the browser runtime credential fields from the guarded local 
 });
 
 test("refuses missing or mismatched E2E targets without exposing the service credential", () => {
+  const missingDatabaseCredential = guardedStack();
+  missingDatabaseCredential[0].Config.Env = [];
+  assert.throws(
+    () =>
+      deriveRuntimeWebE2EEnvironment({ inspections: missingDatabaseCredential, environment: {} }),
+    /database credential/,
+  );
   const missingTarget = guardedStack().slice(0, 2);
   assert.throws(
     () => deriveRuntimeWebE2EEnvironment({ inspections: missingTarget, environment: {} }),
@@ -89,6 +102,20 @@ test("refuses missing or mismatched E2E targets without exposing the service cre
   );
 });
 
+test("database credentials cannot alter the validated connection destination", () => {
+  const inspections = guardedStack();
+  const password = "synthetic@host/path?host=elsewhere#fragment";
+  inspections[0].Config.Env = [`POSTGRES_PASSWORD=${password}`];
+  const result = deriveRuntimeWebE2EEnvironment({ inspections, environment: {} });
+  const url = new URL(result.DATABASE_URL);
+  assert.equal(url.hostname, "127.0.0.1");
+  assert.equal(url.port, "55322");
+  assert.equal(url.pathname, "/postgres");
+  assert.equal(url.search, "");
+  assert.equal(url.hash, "");
+  assert.equal(decodeURIComponent(url.password), password);
+});
+
 test("masks each value before exporting it to the GitHub Actions environment file", () => {
   const events = [];
   prepareRuntimeWebE2E({
@@ -101,11 +128,17 @@ test("masks each value before exporting it to the GitHub Actions environment fil
 
   assert.deepEqual(
     events.map(([kind]) => kind),
-    ["mask", "export", "mask", "export", "mask", "export"],
+    ["mask", "export", "mask", "export", "mask", "export", "mask", "export", "mask", "export"],
   );
   assert.deepEqual(
     events.filter(([kind]) => kind === "export").map(([, line]) => line.split("=")[0]),
-    ["BETTER_AUTH_SECRET", "NEXT_PRIVATE_SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"],
+    [
+      "DATABASE_URL",
+      "POSTGRES_URL",
+      "BETTER_AUTH_SECRET",
+      "NEXT_PRIVATE_SUPABASE_SECRET_KEY",
+      "SUPABASE_SERVICE_ROLE_KEY",
+    ],
   );
 });
 

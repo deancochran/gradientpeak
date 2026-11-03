@@ -13,7 +13,7 @@ const baselinePath = resolve(dbPackageRoot, "supabase/migrations/20260730000000_
 const beforePath = resolve(directory, "before-fingerprint.json");
 const sqlPath = resolve(directory, "upgrade.sql");
 const inventoryPath = resolve(directory, "table-inventory.json");
-const afterPath = resolve(dbPackageRoot, "schema-fingerprint.json");
+const afterPath = resolve(directory, "after-fingerprint.json");
 export const retainedTables = [
   "chatbot_operation_receipts",
   "organization_invitations",
