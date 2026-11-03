@@ -36,7 +36,7 @@ it("opens the committed saved route after rejected navigation without another up
   const file = new File(["<gpx />"], "fixture.gpx", { type: "application/gpx+xml" });
   const read = vi.fn().mockResolvedValue("<gpx />");
   Object.defineProperty(file, "text", { value: read });
-  fireEvent.change(screen.getByLabelText("GPX or TCX file"), { target: { files: [file] } });
+  fireEvent.change(screen.getByLabelText("GPX, TCX, or XML file"), { target: { files: [file] } });
   fireEvent.submit(screen.getByTestId("route-upload-form"));
   expect((await screen.findByRole("alert")).textContent).toContain("Route saved");
   expect(mocks.navigate).toHaveBeenCalledWith({ to: "/routes/$routeId", params: { routeId: id } });

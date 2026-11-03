@@ -417,9 +417,9 @@ function ActivityPlanDetailPage() {
                 <dt className="text-muted-foreground">Recording</dt>
                 <dd className="font-medium">
                   {detail.gpsRecordingEnabled === undefined
-                    ? detail.capabilities.canDuplicate
-                      ? "Available after duplicating this system template"
-                      : "Available only to the plan owner"
+                    ? detail.capabilities.canRecord
+                      ? "Available to record"
+                      : "Not available for recording"
                     : detail.gpsRecordingEnabled
                       ? "GPS-capable on supported devices"
                       : "Timer only"}

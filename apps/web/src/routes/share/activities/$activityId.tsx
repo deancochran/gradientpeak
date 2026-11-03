@@ -110,31 +110,39 @@ function PublicActivityPage() {
           <Detail
             label="Average heart rate"
             value={
-              performance.averageHeartRate ? `${performance.averageHeartRate} bpm` : "Not shared"
+              performance.averageHeartRate !== null
+                ? `${performance.averageHeartRate} bpm`
+                : "Not shared"
             }
           />
           <Detail
             label="Max heart rate"
             value={
-              performance.maximumHeartRate ? `${performance.maximumHeartRate} bpm` : "Not shared"
+              performance.maximumHeartRate !== null
+                ? `${performance.maximumHeartRate} bpm`
+                : "Not shared"
             }
           />
           <Detail
             label="Average power"
-            value={performance.averagePower ? `${performance.averagePower} W` : "Not shared"}
+            value={
+              performance.averagePower !== null ? `${performance.averagePower} W` : "Not shared"
+            }
           />
           <Detail
             label="Max power"
-            value={performance.maximumPower ? `${performance.maximumPower} W` : "Not shared"}
+            value={
+              performance.maximumPower !== null ? `${performance.maximumPower} W` : "Not shared"
+            }
           />
           <Detail
             label="Calories"
-            value={performance.calories ? `${performance.calories} kcal` : "Not shared"}
+            value={performance.calories !== null ? `${performance.calories} kcal` : "Not shared"}
           />
           <Detail
             label="Elevation gain"
             value={
-              performance.elevationGainMeters
+              performance.elevationGainMeters !== null
                 ? `${performance.elevationGainMeters} m`
                 : "Not shared"
             }

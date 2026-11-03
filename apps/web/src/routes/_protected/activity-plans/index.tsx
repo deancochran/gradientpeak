@@ -183,10 +183,12 @@ function ActivityPlansPage() {
           <Loader2 aria-label="Loading activity plans" className="h-8 w-8 animate-spin" />
         </div>
       ) : plansQuery.isError ? (
-        <Card className="border-destructive/30">
+        <Card className="border-destructive/30" role="alert">
           <CardHeader>
             <CardTitle>Unable to load activity plans</CardTitle>
-            <CardDescription>{plansQuery.error.message}</CardDescription>
+            <CardDescription aria-live="assertive">
+              {plansQuery.error.message || "Try again to load your activity plans."}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Button onClick={() => void plansQuery.refetch()} type="button" variant="outline">

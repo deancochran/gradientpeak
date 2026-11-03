@@ -136,6 +136,17 @@ describe("DiscoveryExplorer", () => {
       expect.objectContaining({ search: { q: "tempo", scope: "activityPlans" } }),
     );
   });
+  it("persists the active scope category and sort filters when applied", () => {
+    render(<DiscoveryExplorer />);
+    fireEvent.change(screen.getByLabelText("Activity category"), { target: { value: "bike" } });
+    fireEvent.change(screen.getByLabelText("Sort activity plans"), { target: { value: "oldest" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+    expect(mocks.navigate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        search: { activityCategory: "bike", activitySort: "oldest", scope: "activityPlans" },
+      }),
+    );
+  });
   it("keeps invalid route-distance drafts out of the applied query and clears bounds", () => {
     render(<DiscoveryExplorer initialScope="routes" />);
     mocks.navigate.mockClear();

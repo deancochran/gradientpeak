@@ -84,6 +84,25 @@ afterEach(() => {
 });
 
 describe("discovery route", () => {
+  it("keeps valid category and sort filters in the URL contract", () => {
+    expect(
+      (
+        Route as unknown as { validateSearch: (search: Record<string, unknown>) => unknown }
+      ).validateSearch({
+        activityCategory: "run",
+        activitySort: "oldest",
+        routeSort: "distance_desc",
+        trainingPlanCategory: "bike",
+        trainingSort: "duration_asc",
+      }),
+    ).toMatchObject({
+      activityCategory: "run",
+      activitySort: "oldest",
+      routeSort: "distance_desc",
+      trainingPlanCategory: "bike",
+      trainingSort: "duration_asc",
+    });
+  });
   it("sends persisted search and scope filters to the active paginated API", () => {
     const SearchPage = (Route as unknown as { component: React.ComponentType }).component;
     const view = render(<SearchPage />);

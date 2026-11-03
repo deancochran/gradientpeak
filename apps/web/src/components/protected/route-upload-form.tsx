@@ -220,9 +220,9 @@ export function RouteUploadForm<TResult = unknown>({
         <FormFileField
           accept={ROUTE_FILE_WEB_ACCEPT_ATTRIBUTE}
           control={form.control}
-          description="Choose one GPX or TCX export from your device."
+          description="Choose one GPX, TCX, or XML export from your device."
           disabled={disabled}
-          label="GPX or TCX file"
+          label="GPX, TCX, or XML file"
           multiple={false}
           name="files"
           required

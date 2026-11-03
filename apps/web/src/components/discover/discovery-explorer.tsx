@@ -49,23 +49,37 @@ export function DiscoveryExplorer({
   initialScope = "activityPlans",
   initialMinDistanceKm = "",
   initialMaxDistanceKm = "",
+  initialActivityCategory = "",
+  initialActivitySort = "newest",
+  initialTrainingPlanCategory = "",
+  initialExperience = "",
+  initialRouteSort = "newest",
+  initialProfileSort = "newest",
+  initialTrainingSort = "newest",
 }: {
   initialQuery?: string;
   initialScope?: WebDiscoverScope;
   initialMinDistanceKm?: string;
   initialMaxDistanceKm?: string;
+  initialActivityCategory?: string;
+  initialActivitySort?: string;
+  initialTrainingPlanCategory?: string;
+  initialExperience?: string;
+  initialRouteSort?: string;
+  initialProfileSort?: string;
+  initialTrainingSort?: string;
 }) {
   const navigate = useNavigate();
   const [scope, setScope] = useState<WebDiscoverScope>(initialScope);
   const [draftSearch, setDraftSearch] = useState(initialQuery);
   const [search, setSearch] = useState(initialQuery.trim());
-  const [activityPlanCategory, setActivityPlanCategory] = useState("");
-  const [activitySort, setActivitySort] = useState("newest");
-  const [trainingPlanCategory, setTrainingPlanCategory] = useState("");
-  const [experience, setExperience] = useState("");
-  const [routeSort, setRouteSort] = useState("newest");
-  const [profileSort, setProfileSort] = useState("newest");
-  const [trainingSort, setTrainingSort] = useState("newest");
+  const [activityPlanCategory, setActivityPlanCategory] = useState(initialActivityCategory);
+  const [activitySort, setActivitySort] = useState(initialActivitySort);
+  const [trainingPlanCategory, setTrainingPlanCategory] = useState(initialTrainingPlanCategory);
+  const [experience, setExperience] = useState(initialExperience);
+  const [routeSort, setRouteSort] = useState(initialRouteSort);
+  const [profileSort, setProfileSort] = useState(initialProfileSort);
+  const [trainingSort, setTrainingSort] = useState(initialTrainingSort);
   const [minDistance, setMinDistance] = useState(initialMinDistanceKm);
   const [maxDistance, setMaxDistance] = useState(initialMaxDistanceKm);
   const [appliedMinDistance, setAppliedMinDistance] = useState(initialMinDistanceKm);
@@ -75,7 +89,14 @@ export function DiscoveryExplorer({
     awaitingUrlSync ||
     draftSearch.trim() !== search ||
     minDistance !== appliedMinDistance ||
-    maxDistance !== appliedMaxDistance;
+    maxDistance !== appliedMaxDistance ||
+    activityPlanCategory !== initialActivityCategory ||
+    activitySort !== initialActivitySort ||
+    trainingPlanCategory !== initialTrainingPlanCategory ||
+    experience !== initialExperience ||
+    routeSort !== initialRouteSort ||
+    profileSort !== initialProfileSort ||
+    trainingSort !== initialTrainingSort;
   const numericError = getDistanceRangeError(minDistance, maxDistance);
 
   useEffect(() => {
@@ -83,7 +104,14 @@ export function DiscoveryExplorer({
       initialQuery.trim() === search &&
       initialScope === scope &&
       initialMinDistanceKm === appliedMinDistance &&
-      initialMaxDistanceKm === appliedMaxDistance;
+      initialMaxDistanceKm === appliedMaxDistance &&
+      initialActivityCategory === activityPlanCategory &&
+      initialActivitySort === activitySort &&
+      initialTrainingPlanCategory === trainingPlanCategory &&
+      initialExperience === experience &&
+      initialRouteSort === routeSort &&
+      initialProfileSort === profileSort &&
+      initialTrainingSort === trainingSort;
     if (awaitingUrlSync) {
       if (urlMatchesAppliedState) setAwaitingUrlSync(false);
       return;
@@ -96,17 +124,38 @@ export function DiscoveryExplorer({
     setMaxDistance(initialMaxDistanceKm);
     setAppliedMinDistance(initialMinDistanceKm);
     setAppliedMaxDistance(initialMaxDistanceKm);
+    setActivityPlanCategory(initialActivityCategory);
+    setActivitySort(initialActivitySort);
+    setTrainingPlanCategory(initialTrainingPlanCategory);
+    setExperience(initialExperience);
+    setRouteSort(initialRouteSort);
+    setProfileSort(initialProfileSort);
+    setTrainingSort(initialTrainingSort);
   }, [
     appliedMaxDistance,
     appliedMinDistance,
     hasPendingDraft,
     initialMaxDistanceKm,
     initialMinDistanceKm,
+    initialActivityCategory,
+    initialActivitySort,
+    initialTrainingPlanCategory,
+    initialExperience,
+    initialRouteSort,
+    initialProfileSort,
+    initialTrainingSort,
     initialQuery,
     initialScope,
+    activityPlanCategory,
+    activitySort,
     awaitingUrlSync,
+    experience,
+    profileSort,
+    routeSort,
     scope,
     search,
+    trainingPlanCategory,
+    trainingSort,
   ]);
 
   const activityPlans = api.activityPlans.list.useInfiniteQuery(
@@ -212,6 +261,23 @@ export function DiscoveryExplorer({
         ...(nextSearch ? { q: nextSearch } : {}),
         ...(minDistance ? { minDistanceKm: minDistance } : {}),
         ...(maxDistance ? { maxDistanceKm: maxDistance } : {}),
+        ...(scope === "activityPlans"
+          ? {
+              ...(activityPlanCategory ? { activityCategory: activityPlanCategory } : {}),
+              ...(activitySort !== "newest" ? { activitySort } : {}),
+            }
+          : {}),
+        ...(scope === "trainingPlans"
+          ? {
+              ...(trainingPlanCategory ? { trainingPlanCategory } : {}),
+              ...(experience ? { experience } : {}),
+              ...(trainingSort !== "newest" ? { trainingSort } : {}),
+            }
+          : {}),
+        ...(scope === "routes" && routeSort !== "newest" ? { routeSort } : {}),
+        ...((scope === "users" || scope === "groups") && profileSort !== "newest"
+          ? { profileSort }
+          : {}),
       },
       replace: true,
     });
@@ -576,6 +642,13 @@ function DiscoveryCard({ scope, item }: { scope: WebDiscoverScope; item: Discove
               search={{ edit: undefined }}
             >
               View activity plan
+            </Link>
+          </Button>
+        ) : null}
+        {scope === "trainingPlans" ? (
+          <Button asChild size="sm" variant="outline">
+            <Link to="/training-plans/$planId" params={{ planId: item.id }}>
+              View training plan
             </Link>
           </Button>
         ) : null}
