@@ -80,19 +80,28 @@ describe("UI ownership guardrails", () => {
       "activity/canonical-metrics-row.tsx",
       "activity/plan-route-simulator.tsx",
       "activity/session-rpe-card.tsx",
+      // Web Router adapter for backend navigation hrefs, not a shared UI primitive.
+      "app-href-link.tsx",
       "auth-card-shell.tsx",
       "calendar/calendar-projection-card.tsx",
       "charts/simple-trend-chart.tsx",
       // Chatbot composition and its app-owned session persistence.
       "chatbot/chatbot-panel.tsx",
       "chatbot/use-chatbot.ts",
+      // Existing prerequisite surfaces compose app-owned coaching server functions.
+      "coaching/athletes/administrative-athlete-roster.tsx",
       "coaching/coach-access-denied.tsx",
       "coaching/coach-shell.tsx",
       // Web-only organization creation and API-backed administrative composition.
       "coaching/organization-create-form.tsx",
+      "coaching/organization-groups/organization-group-detail.tsx",
+      "coaching/organization-groups/organization-group-list.tsx",
       "coaching/organization-management-overview.tsx",
       "coaching/organization-selector.tsx",
+      "coaching/staff/staff-roster.tsx",
       "discover/discovery-explorer.tsx",
+      // Exact web route/query cache inputs, shared with this app's loaders.
+      "discover/discovery-query-inputs.ts",
       "feed/activity-feed.tsx",
       "forgot-password-form.tsx",
       "groups/group-event-form.tsx",
@@ -156,6 +165,7 @@ describe("UI ownership guardrails", () => {
       "sign-up-form.tsx",
       "training-plan/training-plan-detail.tsx",
       "training-plan/training-plan-editor.tsx",
+      "training-plan/training-plan-library-inputs.ts",
       "training-plan/training-plan-library.tsx",
       "training-plan/training-plan-model.ts",
       "training-plan/training-plan-planned-preview.tsx",
