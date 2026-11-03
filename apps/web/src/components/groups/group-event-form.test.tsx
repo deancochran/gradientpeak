@@ -76,10 +76,12 @@ describe("GroupEventForm organizer timezone", () => {
     if (!form) throw new Error("Expected group event form.");
     fireEvent.submit(form);
 
-    await waitFor(() => expect(onSubmit).not.toHaveBeenCalled());
-    expect(document.getElementById("group-event-schedule-error")?.textContent).toContain(
-      "scheduledDate",
+    await waitFor(() =>
+      expect(document.getElementById("group-event-schedule-error")?.textContent).toContain(
+        "scheduledDate",
+      ),
     );
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it("renders and resolves edits in the event zone instead of the device zone", async () => {
