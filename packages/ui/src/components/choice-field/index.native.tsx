@@ -148,6 +148,7 @@ export function ChoiceField<T extends ChoiceValue>(props: ChoiceFieldProps<T>) {
               label={props.label}
               value={props.value}
               options={visibleOptions}
+              retainDisabledValue={props.retainDisabledValue}
               disabled={props.disabled}
               owner={props.formControl}
               isCurrent={() => choice.usable() && (!session || session.isCurrent())}

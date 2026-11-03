@@ -3,6 +3,35 @@ import { act } from "@testing-library/react-native/pure";
 import { nativePickerFixtures } from "./fixtures";
 import { NativePicker } from "./index.native";
 
+it("invalidates queued callbacks when an option is disabled and re-enabled", async () => {
+  const change = jest.fn();
+  const options = [
+    { value: "time", label: "Time" },
+    { value: "distance", label: "Distance" },
+  ];
+  const view = await renderNative(
+    <NativePicker label="Duration" value="time" options={options} onChange={change} />,
+  );
+  const stale = screen.getByLabelText("Duration").props.onValueChange;
+  await view.rerender(
+    <NativePicker
+      label="Duration"
+      value="time"
+      options={options.map((option) => ({ ...option, disabled: option.value === "distance" }))}
+      onChange={change}
+    />,
+  );
+  await act(() => stale("distance"));
+  expect(change).not.toHaveBeenCalled();
+  await view.rerender(
+    <NativePicker label="Duration" value="time" options={options} onChange={change} />,
+  );
+  await act(() => stale("distance"));
+  expect(change).not.toHaveBeenCalled();
+  await fireEvent(screen.getByLabelText("Duration"), "valueChange", "distance");
+  expect(change).toHaveBeenCalledWith("distance");
+});
+
 it("omits disabled alternatives on iOS while retaining a legacy current value for repair", async () => {
   const change = jest.fn();
   const options = [

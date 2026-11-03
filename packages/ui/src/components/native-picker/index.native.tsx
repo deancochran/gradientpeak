@@ -32,9 +32,19 @@ export function NativePicker<T extends string | number>({
 }: NativePickerProps<T>) {
   const picker = useRef<Picker<T>>(null);
   const mounted = useRef(false);
-  const availability = useRef({ disabled, generation: 0 });
-  if (availability.current.disabled !== disabled) {
-    availability.current = { disabled, generation: availability.current.generation + 1 };
+  const optionAvailability = JSON.stringify(
+    options.map((option) => [option.value, Boolean(option.disabled)]),
+  );
+  const availability = useRef({ disabled, optionAvailability, generation: 0 });
+  if (
+    availability.current.disabled !== disabled ||
+    availability.current.optionAvailability !== optionAvailability
+  ) {
+    availability.current = {
+      disabled,
+      optionAvailability,
+      generation: availability.current.generation + 1,
+    };
   }
   // Re-enabling must not authorize a selection queued before the disabled period.
   const generation = availability.current.generation;

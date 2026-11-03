@@ -52,7 +52,14 @@ export function resolveChoice<T extends ChoiceValue>(
 
 export type ChoiceControlProps<T extends ChoiceValue> = Pick<
   ChoiceFieldProps<T>,
-  "label" | "value" | "options" | "onChange" | "disabled" | "testId" | "isCurrent"
+  | "label"
+  | "value"
+  | "options"
+  | "onChange"
+  | "disabled"
+  | "testId"
+  | "isCurrent"
+  | "retainDisabledValue"
 > & {
   mode: "segmented" | "menu" | "list";
   owner?: object | undefined;

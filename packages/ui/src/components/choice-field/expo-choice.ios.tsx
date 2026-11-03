@@ -14,7 +14,7 @@ import { type ChoiceControlProps, type ChoiceValue, resolveChoice } from "./shar
 export function ExpoChoiceControl<T extends ChoiceValue>(props: ChoiceControlProps<T>) {
   const selected = resolveChoice(props.value, props.options);
   const index = props.options.findIndex(
-    (option) => option.value === props.value && !option.disabled,
+    (option) => option.value === props.value && (!option.disabled || props.retainDisabledValue),
   );
   // InlinePickerStyle is contextual to Form/List. Native buttons in a VStack
   // guarantee immediate choices outside those containers, without a nested menu.
@@ -61,7 +61,7 @@ export function ExpoChoiceControl<T extends ChoiceValue>(props: ChoiceControlPro
             if (!props.disabled && option && !option.disabled) props.onChange(option.value);
           }}
         >
-          {props.mode === "menu" && selected.status !== "valid" ? (
+          {props.mode === "menu" && index < 0 ? (
             <Text modifiers={[tag(-1), disabled(true)]}>Choose {props.label.toLowerCase()}</Text>
           ) : null}
           {props.options.map((option, position) => (
