@@ -65,6 +65,7 @@ import { Route as ShareActivityPlansActivityPlanIdRouteImport } from './routes/s
 import { Route as ShareRoutesRouteIdRouteImport } from './routes/share/routes/$routeId'
 import { Route as ShareTrainingPlansTrainingPlanIdRouteImport } from './routes/share/training-plans/$trainingPlanId'
 import { Route as CoachingOrganizationsOrganizationIdIndexRouteImport } from './routes/_coaching/organizations/$organizationId/index'
+import { Route as CoachingOrganizationsOrganizationIdAthletesRouteImport } from './routes/_coaching/organizations/$organizationId/athletes'
 import { Route as CoachingOrganizationsOrganizationIdDashboardRouteImport } from './routes/_coaching/organizations/$organizationId/dashboard'
 import { Route as CoachingOrganizationsOrganizationIdStaffRouteImport } from './routes/_coaching/organizations/$organizationId/staff'
 import { Route as ProtectedActivitiesActivityIdIndexRouteImport } from './routes/_protected/activities/$activityId/index'
@@ -386,6 +387,12 @@ const CoachingOrganizationsOrganizationIdIndexRoute =
     path: '/',
     getParentRoute: () => CoachingOrganizationsOrganizationIdRoute,
   } as any)
+const CoachingOrganizationsOrganizationIdAthletesRoute =
+  CoachingOrganizationsOrganizationIdAthletesRouteImport.update({
+    id: '/athletes',
+    path: '/athletes',
+    getParentRoute: () => CoachingOrganizationsOrganizationIdRoute,
+  } as any)
 const CoachingOrganizationsOrganizationIdDashboardRoute =
   CoachingOrganizationsOrganizationIdDashboardRouteImport.update({
     id: '/dashboard',
@@ -615,6 +622,7 @@ export interface FileRoutesByFullPath {
   '/record/': typeof ProtectedRecordIndexRoute
   '/routes/': typeof ProtectedRoutesIndexRoute
   '/training-plans/': typeof ProtectedTrainingPlansIndexRoute
+  '/organizations/$organizationId/athletes': typeof CoachingOrganizationsOrganizationIdAthletesRoute
   '/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/organizations/$organizationId/staff': typeof CoachingOrganizationsOrganizationIdStaffRoute
   '/calendar/day/$date': typeof ProtectedCalendarDayDateRoute
@@ -696,6 +704,7 @@ export interface FileRoutesByTo {
   '/record': typeof ProtectedRecordIndexRoute
   '/routes': typeof ProtectedRoutesIndexRoute
   '/training-plans': typeof ProtectedTrainingPlansIndexRoute
+  '/organizations/$organizationId/athletes': typeof CoachingOrganizationsOrganizationIdAthletesRoute
   '/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/organizations/$organizationId/staff': typeof CoachingOrganizationsOrganizationIdStaffRoute
   '/calendar/day/$date': typeof ProtectedCalendarDayDateRoute
@@ -784,6 +793,7 @@ export interface FileRoutesById {
   '/_protected/record/': typeof ProtectedRecordIndexRoute
   '/_protected/routes/': typeof ProtectedRoutesIndexRoute
   '/_protected/training-plans/': typeof ProtectedTrainingPlansIndexRoute
+  '/_coaching/organizations/$organizationId/athletes': typeof CoachingOrganizationsOrganizationIdAthletesRoute
   '/_coaching/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/_coaching/organizations/$organizationId/staff': typeof CoachingOrganizationsOrganizationIdStaffRoute
   '/_protected/calendar/day/$date': typeof ProtectedCalendarDayDateRoute
@@ -871,6 +881,7 @@ export interface FileRouteTypes {
     | '/record/'
     | '/routes/'
     | '/training-plans/'
+    | '/organizations/$organizationId/athletes'
     | '/organizations/$organizationId/dashboard'
     | '/organizations/$organizationId/staff'
     | '/calendar/day/$date'
@@ -952,6 +963,7 @@ export interface FileRouteTypes {
     | '/record'
     | '/routes'
     | '/training-plans'
+    | '/organizations/$organizationId/athletes'
     | '/organizations/$organizationId/dashboard'
     | '/organizations/$organizationId/staff'
     | '/calendar/day/$date'
@@ -1039,6 +1051,7 @@ export interface FileRouteTypes {
     | '/_protected/record/'
     | '/_protected/routes/'
     | '/_protected/training-plans/'
+    | '/_coaching/organizations/$organizationId/athletes'
     | '/_coaching/organizations/$organizationId/dashboard'
     | '/_coaching/organizations/$organizationId/staff'
     | '/_protected/calendar/day/$date'
@@ -1497,6 +1510,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CoachingOrganizationsOrganizationIdIndexRouteImport
       parentRoute: typeof CoachingOrganizationsOrganizationIdRoute
     }
+    '/_coaching/organizations/$organizationId/athletes': {
+      id: '/_coaching/organizations/$organizationId/athletes'
+      path: '/athletes'
+      fullPath: '/organizations/$organizationId/athletes'
+      preLoaderRoute: typeof CoachingOrganizationsOrganizationIdAthletesRouteImport
+      parentRoute: typeof CoachingOrganizationsOrganizationIdRoute
+    }
     '/_coaching/organizations/$organizationId/dashboard': {
       id: '/_coaching/organizations/$organizationId/dashboard'
       path: '/dashboard'
@@ -1704,6 +1724,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface CoachingOrganizationsOrganizationIdRouteChildren {
+  CoachingOrganizationsOrganizationIdAthletesRoute: typeof CoachingOrganizationsOrganizationIdAthletesRoute
   CoachingOrganizationsOrganizationIdDashboardRoute: typeof CoachingOrganizationsOrganizationIdDashboardRoute
   CoachingOrganizationsOrganizationIdStaffRoute: typeof CoachingOrganizationsOrganizationIdStaffRoute
   CoachingOrganizationsOrganizationIdIndexRoute: typeof CoachingOrganizationsOrganizationIdIndexRoute
@@ -1711,6 +1732,8 @@ interface CoachingOrganizationsOrganizationIdRouteChildren {
 
 const CoachingOrganizationsOrganizationIdRouteChildren: CoachingOrganizationsOrganizationIdRouteChildren =
   {
+    CoachingOrganizationsOrganizationIdAthletesRoute:
+      CoachingOrganizationsOrganizationIdAthletesRoute,
     CoachingOrganizationsOrganizationIdDashboardRoute:
       CoachingOrganizationsOrganizationIdDashboardRoute,
     CoachingOrganizationsOrganizationIdStaffRoute:
@@ -1927,13 +1950,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

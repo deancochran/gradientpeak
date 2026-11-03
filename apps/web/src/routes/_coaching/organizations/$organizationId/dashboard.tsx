@@ -18,13 +18,20 @@ function CoachDashboardPage() {
   return (
     <div className="space-y-6">
       {overview.canReadAdministrativeRoster ? (
-        <nav aria-label="Organization administration">
+        <nav aria-label="Organization administration" className="flex flex-wrap gap-3">
           <Link
             to="/organizations/$organizationId/staff"
             params={{ organizationId }}
             className="inline-flex rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2"
           >
             Manage staff
+          </Link>
+          <Link
+            to="/organizations/$organizationId/athletes"
+            params={{ organizationId }}
+            className="inline-flex rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            Manage athletes
           </Link>
         </nav>
       ) : null}
