@@ -129,3 +129,69 @@ disposable browser run `acceptance-1994293-1793664466829` passed all11selected
 journeys, including coach/admin dashboard, narrow history, revoked-role denial
 and settings regressions. Actual Vitest output confirms the new creation-retry
 test was collected among28tests/11files; the earlier worker25/10count was stale.
+
+## Authorized retained E2E recovery
+
+User subsequently approved the proposed data-preserving retained-E2E upgrade,
+including private backup, isolated restore rehearsal and before/after checks;
+no reset/reseeding or hook bypass. Target identity was verified as Docker project
+gradientpeak_e2e, database postgres, loopback55322, PostgreSQL17.6. This approval
+does not change preview data or authorize unrelated target upgrades.
+
+Private custom-format recovery archive and inventory are retained outside Git in
+coordination cache `retained-e2e-upgrade-w2zQgH` (archive mode0600). Complete
+schema diff is limited to nine missing tables/dependencies and replacement of
+coaching_athlete_read_access_decision; there are no unrelated changed existing
+columns/indexes/constraints. Migration ledger stays unchanged.
+
+Full archive restoration into a generated disposable database passed exact schema
+comparison and count/content-hash comparison for102public/auth/storage/ledger
+tables. Standard logical restore compacted old dropped-column ordinal gaps;
+rehearsal now reconstructs inert placeholder slots in the disposable copy's
+pre-data CREATE statements, then drops only those placeholders before data restore.
+This preserves physical column positions without weakening the fingerprint or
+changing any retained table. Restoring full platform ownership uses local
+supabase_admin only on the generated disposable database. All rehearsal copies
+were cleaned by the existing guarded disposable lifecycle. The one-time bounded
+upgrade runner is in progress; retained upgrade has not yet been applied.
+
+The complete restore-plus-upgrade rehearsal subsequently passed: exact final
+fingerprint and all102pre-existing table counts/content hashes preserved, with a
+private receipt bound to the archive and SQL/fingerprint digests. Coordinator
+Node24 DB typecheck, scoped Biome, generated-prerequisite refusal/replay tests and
+full `pnpm --filter @repo/db db:verify` passed, including two fresh verification
+runs, schema/security/storage parity, lint, authorization/concurrency and query
+plan checks. Independent operational safety reviews remain in flight; no retained
+upgrade application is claimed yet.
+
+Operational review blocked activation pending stronger URL and archive-data
+binding. Routing query parameters must be rejected; the receipt must include a
+server/container identity and SHA-256 content digests for the reviewed102-table
+inventory. Activation must compare those against its locked live pre-upgrade
+state, not merely compare schema and caller-provided target strings. Rehearsal
+review found no retained-write path but recommended pinning the table inventory.
+These guards are being repaired before activation. Read-only privilege checks
+found four platform tables require the local supabase_admin role for exclusive
+locking; its read-only connection was verified. Any elevated activation must
+restore the postgres DDL role so new object ownership/ACLs remain canonical.
+
+## Retained E2E activation completed
+
+All operational findings were resolved: connection-routing overrides rejected,
+actual container/server/database identity bound to receipt, SHA-256 row/aggregate
+digests for the reviewed102-table inventory compared with locked live data, and
+post-inventory required to equal those102tables plus exactly nine new public
+tables. Reviewer withdrew a mistaken clone-port finding after confirming source
+uses54322for the disposable clone and55322only for retained source. Final targeted
+refusal/replay/post-inventory tests, typecheck and complete restore+upgrade
+rehearsal passed before activation.
+
+Coordinator applied the approved transaction under exclusive recovery lock.
+The runner committed only after full schema and all pre-existing data digests
+matched. `db:e2e:status` now passes: project gradientpeak_e2e running,
+migrations=1, schema-fingerprint=4a976d8f8189. No reset/reseed/ledger edits or data
+replacement occurred. Private backup, bound receipt and activation evidence
+remain in the recovery directory above. Only the verified obsolete E2E Vite
+PID2807873 (verification-user-journeys, port3001, started October30) was stopped
+to quiesce its retained-target access; preview3000was not touched. Normal
+publication dashboard smoke is being rerun on the repaired prerequisite.

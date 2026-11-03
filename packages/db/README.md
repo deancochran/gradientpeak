@@ -114,6 +114,68 @@ notice delivery belong to the next API phase. Database rows alone do not deliver
 notifications or create coaching consent. Group names are currently immutable
 after creation; metadata-edit commands remain a deliberate API/schema follow-up.
 
+### Approved retained-E2E reconciliation
+
+`supabase/approved-upgrades/retained-e2e/` is a separate, one-time reconciliation
+for the preserved `gradientpeak_e2e` database—not a baseline migration and never a
+reset, seed, or ledger edit. Its checked-in `before-fingerprint.json` is the
+canonical schema-only precondition; the guarded runner extracts and byte-compares
+the bounded nine-table SQL from the fresh baseline before use.
+
+The operator must supply a private, fresh custom-format archive and adjacent
+manifest bound to `127.0.0.1:55322/postgres` and the canonical before fingerprint,
+plus a private successful isolated-restore rehearsal receipt bound to that archive,
+the SQL artifact, and both fingerprints. The runner independently verifies the
+literal loopback target, Docker `gradientpeak_e2e` namespace labels, and the
+loopback-published `55322` database port. It takes a transaction-scoped advisory
+lock, then access-exclusive locks on every reviewed pre-existing public, auth,
+storage, and migration-ledger table. The reviewed schema-only table inventory has
+102 entries; it rejects a source, restored copy, or activation target with a different
+inventory. It validates the full before fingerprint and compares per-row SHA-256,
+ordered aggregate SHA-256, and count values for every reviewed table before and after
+DDL. Any mismatch rolls back. It contains no DML, deletion, reset, or seed path.
+Rehearsal/archive creation and operational execution remain coordinator-owned.
+
+The operational connection must be the local `supabase_admin` role because retained
+`postgres` lacks lock privileges on four platform tables (`auth.schema_migrations`,
+`storage.buckets_vectors`, `storage.migrations`, and `storage.vector_indexes`). After
+all locks are obtained, the runner requires `SET LOCAL ROLE postgres` before checking
+the fingerprint or issuing DDL, preserving existing object ownership and default ACL
+behavior. It fails rather than granting privileges or using weaker lock modes.
+
+For a disposable proof only, run:
+
+```bash
+pnpm --filter @repo/db exec tsx scripts/retained-e2e-upgrade.test.ts --disposable --local
+```
+
+The operational command is deliberately not a package shortcut:
+
+Before operational execution, `scripts/rehearse-retained-e2e-restore.ts` restores
+the private `postgres.dump` into a uniquely named database using the existing
+guarded disposable lifecycle. Set `RETAINED_E2E_RECOVERY_DIRECTORY` to the private
+archive directory containing its adjacent manifest. The rehearsal verifies the
+exact original fingerprint and public/auth/storage/ledger table content, applies
+the guarded upgrade only to the restored copy, and writes the bound
+`rehearsal-receipt.json` only after all preservation/fingerprint checks succeed.
+Logical dumps omit dropped-column ordinal gaps; inert placeholder slots are
+created and dropped in this disposable copy before restoring data, preserving
+the strict physical-position fingerprint without changing the retained target.
+Full platform object ownership is restored by the local `supabase_admin` role
+only into that disposable database. Diagnostics and receipts remain private.
+
+```bash
+RETAINED_E2E_RECOVERY_DIRECTORY=/private/recovery-directory \
+pnpm --filter @repo/db exec tsx scripts/rehearse-retained-e2e-restore.ts
+```
+
+```bash
+RETAINED_E2E_DATABASE_URL='postgresql://supabase_admin:…@127.0.0.1:55322/postgres' \
+RETAINED_E2E_BACKUP=/private/postgres.dump \
+RETAINED_E2E_REHEARSAL_RECEIPT=/private/rehearsal-receipt.json \
+pnpm --filter @repo/db exec tsx scripts/retained-e2e-upgrade.ts --apply-retained-e2e-upgrade
+```
+
 ### Activity-plan authoring and revision ownership
 
 `20260929000000_fixed_v4_activity_plan_contract.sql` is a hard V4 cutover: the fixed V4 `blocks` structure replaces V3/adaptive prescriptions, the `adaptation` column is removed, and semantic hashes use the V2 contract. It fails closed with SQLSTATE `55000` if `activity_plans` or `planned_sessions` contains rows, before any destructive DDL. Repository-managed local targets must therefore be reset and reseeded; the migration chain remains valid for a fresh target.
