@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  canonicalSportSchema,
+  canonicalActivityCategorySchema,
   dailyAllocationTargetSchema,
   feasibilityAssessmentSchema,
   referenceTrajectorySchema,
@@ -8,27 +8,27 @@ import {
 } from "../index";
 
 describe("planning domain schemas", () => {
-  it("accepts canonical planning sports including strength", () => {
-    expect(canonicalSportSchema.parse("strength")).toBe("strength");
+  it("accepts canonical planning activity_categories including strength", () => {
+    expect(canonicalActivityCategorySchema.parse("strength")).toBe("strength");
   });
 
   it("rejects unordered reference trajectory points", () => {
     const result = referenceTrajectorySchema.safeParse({
       mode: "target_seeking",
-      sport: "run",
+      activity_category: "run",
       points: [
         {
           date: "2026-03-02",
-          target_ctl: 45,
-          target_tss: 420,
+          target_longTermLoad: 45,
+          target_load: 420,
           phase: "build",
           goal_ids_in_effect: [],
           rationale_codes: [],
         },
         {
           date: "2026-03-01",
-          target_ctl: 44,
-          target_tss: 380,
+          target_longTermLoad: 44,
+          target_load: 380,
           phase: "build",
           goal_ids_in_effect: [],
           rationale_codes: [],
@@ -49,18 +49,18 @@ describe("planning domain schemas", () => {
     expect(
       dailyAllocationTargetSchema.parse({
         date: "2026-03-01",
-        sport: "bike",
-        target_tss: 55,
+        activity_category: "bike",
+        target_load: 55,
         rationale_codes: ["base_target"],
       }),
-    ).toMatchObject({ sport: "bike", target_tss: 55 });
+    ).toMatchObject({ activity_category: "bike", target_load: 55 });
 
     const invalidBudget = weeklyAllocationBudgetSchema.safeParse({
       week_start_date: "2026-03-03",
-      sport: "run",
-      target_tss: 300,
-      min_tss: 320,
-      max_tss: 300,
+      activity_category: "run",
+      target_load: 300,
+      min_load: 320,
+      max_load: 300,
       rationale_codes: [],
     });
 

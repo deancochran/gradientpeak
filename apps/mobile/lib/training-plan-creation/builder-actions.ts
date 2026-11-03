@@ -1,16 +1,9 @@
 import type {
-  AthletePlanningContextFieldKey,
+  AthletePlanningContextEditableFieldKey,
   AthletePlanningContextFieldOverride,
+  CanonicalActivityCategory,
 } from "@repo/core";
 import type { Dispatch } from "react";
-import { addDaysToDateKey } from "./date-utils";
-import {
-  addTrainingPlanPreferenceField,
-  applyTrainingPlanConstraintPreset,
-  applyTrainingPlanPreferenceFieldOverride,
-  type TrainingPlanConstraintPreset,
-  type TrainingPlanPreferenceFieldKey,
-} from "./preferences-context";
 import { selectSessionById } from "./selectors";
 import type {
   TrainingPlanActivityPlanFacts,
@@ -21,32 +14,21 @@ import type {
   TrainingPlanBuilderState,
 } from "./types";
 
-type StructureProposalSession = {
-  offsetDays: number;
-  label: string;
-  intent?: TrainingPlanBuilderSession["intent"];
-};
-
 export function createTrainingPlanBuilderActions(input: {
   dispatch: Dispatch<TrainingPlanBuilderAction>;
   state: TrainingPlanBuilderState;
-  createSession: (
-    offsetDays: number,
-    title?: string,
-    intent?: TrainingPlanBuilderSession["intent"],
-  ) => TrainingPlanBuilderSession;
+  createSession: (offsetDays: number, title?: string) => TrainingPlanBuilderSession;
   createLocalId: () => string;
-  structureProposalSessions: StructureProposalSession[];
   toSelectedGoalBlueprint: (goal: {
     id: string;
     title: string;
     target_date?: string | null;
     priority?: number | null;
-    activity_category?: "run" | "bike" | "swim" | "other" | null;
+    activity_category?: CanonicalActivityCategory | null;
     objective?: TrainingPlanBuilderGoalBlueprint["objective"];
   }) => TrainingPlanBuilderGoalBlueprint;
 }) {
-  const { createLocalId, createSession, dispatch, state, structureProposalSessions } = input;
+  const { createLocalId, createSession, dispatch, state } = input;
 
   return {
     updateDetails: (patch: Partial<typeof state.details>) =>
@@ -65,9 +47,11 @@ export function createTrainingPlanBuilderActions(input: {
       if (!source) {
         return null;
       }
+      const id = createLocalId();
       const session: TrainingPlanBuilderSession = {
         ...source,
-        localId: createLocalId(),
+        id,
+        localId: id,
         offsetDays: offsetDays ?? source.offsetDays,
       };
       dispatch({ type: "session.add", session });
@@ -77,18 +61,6 @@ export function createTrainingPlanBuilderActions(input: {
       });
       return session;
     },
-    addProposedStructure: () => {
-      for (const proposalSession of structureProposalSessions) {
-        dispatch({
-          type: "session.add",
-          session: createSession(
-            proposalSession.offsetDays,
-            proposalSession.label,
-            proposalSession.intent,
-          ),
-        });
-      }
-    },
     assignActivityPlan: (sessionId: string, activityPlan: TrainingPlanActivityPlanFacts | null) =>
       dispatch({ type: "session.assignActivityPlan", sessionId, activityPlan }),
     updateSession: (session: TrainingPlanBuilderSession) =>
@@ -96,19 +68,6 @@ export function createTrainingPlanBuilderActions(input: {
     removeSession: (sessionId: string) => dispatch({ type: "session.remove", sessionId }),
     updateScheduleStartDate: (startDate: string) =>
       dispatch({ type: "scheduling.startDateUpdate", startDate }),
-    togglePreferredScheduleWeekday: (weekday: number) =>
-      dispatch({ type: "scheduling.togglePreferredWeekday", weekday }),
-    moveSessionToScheduleDate: (sessionId: string, date: string) =>
-      dispatch({ type: "scheduling.moveSessionToDate", sessionId, date }),
-    moveSessionByDays: (sessionId: string, currentDate: string, days: number) =>
-      dispatch({
-        type: "scheduling.moveSessionToDate",
-        sessionId,
-        date: addDaysToDateKey(currentDate, days),
-      }),
-    clearSessionScheduleDateOverride: (sessionId: string) =>
-      dispatch({ type: "scheduling.clearSessionDateOverride", sessionId }),
-    shiftSchedulePreview: (days: number) => dispatch({ type: "scheduling.shiftPlan", days }),
     updateSessionEventOverrides: (
       sessionId: string,
       eventOverrides: TrainingPlanBuilderEventOverrides | undefined,
@@ -118,25 +77,10 @@ export function createTrainingPlanBuilderActions(input: {
     getSessionById: (sessionId: string) => selectSessionById(state, sessionId),
     overrideAthleteContextField: (override: AthletePlanningContextFieldOverride) =>
       dispatch({ type: "athleteContext.fieldOverride", override }),
-    removeAthleteContextField: (fieldKey: AthletePlanningContextFieldKey) =>
+    removeAthleteContextField: (fieldKey: AthletePlanningContextEditableFieldKey) =>
       dispatch({ type: "athleteContext.fieldRemove", fieldKey }),
-    addPlanningConstraint: (fieldKey: TrainingPlanPreferenceFieldKey) =>
-      dispatch({
-        type: "planPreferences.update",
-        patch: addTrainingPlanPreferenceField(state.planPreferences, fieldKey),
-      }),
-    applyPlanningConstraintPreset: (preset: TrainingPlanConstraintPreset) =>
-      dispatch({
-        type: "planPreferences.update",
-        patch: applyTrainingPlanConstraintPreset(preset),
-      }),
     updatePlanningPreferences: (preferences: TrainingPlanBuilderState["planPreferences"]) =>
       dispatch({ type: "planPreferences.update", patch: preferences }),
-    updatePlanningConstraint: (fieldKey: TrainingPlanPreferenceFieldKey, value: number | null) =>
-      dispatch({
-        type: "planPreferences.update",
-        patch: applyTrainingPlanPreferenceFieldOverride(state.planPreferences, fieldKey, value),
-      }),
     toggleSelectedGoal: (goal: Parameters<typeof input.toSelectedGoalBlueprint>[0]) =>
       dispatch({
         type: "goalContext.toggleSelectedGoal",
@@ -144,6 +88,7 @@ export function createTrainingPlanBuilderActions(input: {
       }),
     removeSelectedGoal: (sourceProfileGoalId: string) =>
       dispatch({ type: "goalContext.removeSelectedGoal", sourceProfileGoalId }),
+    clearGoals: () => dispatch({ type: "goalContext.replaceSelectedGoals", goals: [] }),
     addLocalGoal: (goal: string | Omit<TrainingPlanBuilderGoalBlueprint, "localId">) =>
       dispatch({
         type: "goalContext.addLocalGoal",

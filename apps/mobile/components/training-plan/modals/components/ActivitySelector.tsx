@@ -1,22 +1,16 @@
 // apps/mobile/app/(internal)/(tabs)/plan/training-plan/modals/components/ActivitySelector.tsx
 
-import { Input } from "@repo/ui/components/input";
+import type { ActivityPlanSummary } from "@repo/core";
+import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { Search } from "lucide-react-native";
+import { CircleCheck } from "lucide-react-native";
 import { useState } from "react";
-import { FlatList, Pressable, View } from "react-native";
-import { formatEstimatedDurationSeconds, formatEstimatedTss } from "@/lib/estimatedMetrics";
+import { FlatList, View } from "react-native";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { EmptyState } from "@/components/shared/ScreenState";
+import { SearchField } from "@/components/shared/SearchField";
 
-export interface ActivityOption {
-  id: string;
-  name: string;
-  activity_category: string;
-  authoritative_metrics?: {
-    estimated_duration?: number | null;
-    estimated_tss?: number | null;
-  } | null;
-  description?: string | null;
-}
+export type ActivityOption = ActivityPlanSummary;
 
 interface ActivitySelectorProps {
   activities: ActivityOption[];
@@ -29,12 +23,11 @@ interface ActivitySelectorProps {
  * ActivitySelector Component
  *
  * Displays a searchable list of activity plans that can be scheduled.
- * Includes search filtering, activity type icons, and activity details.
+ * Includes search filtering and canonical activity plan cards.
  *
  * Features:
  * - Search by activity name
- * - Filter by activity type
- * - Display duration and TSS estimates
+ * - Display compact activity plan cards
  * - Visual selection indicator
  *
  * Usage:
@@ -56,104 +49,35 @@ export function ActivitySelector({
   const [searchQuery, setSearchQuery] = useState("");
 
   // Filter activities based on search query
-  const filteredActivities = activities.filter((activity) => {
-    const matchesSearch = activity.name.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesSearch;
-  });
-
-  const formatDuration = (seconds: number): string => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    }
-    return `${minutes}m`;
-  };
-
-  const getActivityTypeLabel = (type: string): string => {
-    const typeMap: Record<string, string> = {
-      outdoor_run: "Run",
-      outdoor_bike: "Bike",
-      indoor_treadmill: "Treadmill",
-      indoor_bike_trainer: "Bike Trainer",
-      indoor_strength: "Strength",
-      indoor_swim: "Swim",
-    };
-    return typeMap[type] || type;
-  };
-
-  const getActivityTypeIcon = (type: string): string => {
-    const iconMap: Record<string, string> = {
-      outdoor_run: "🏃",
-      outdoor_bike: "🚴",
-      indoor_treadmill: "🏃‍♂️",
-      indoor_bike_trainer: "🚴‍♀️",
-      indoor_strength: "💪",
-      indoor_swim: "🏊",
-    };
-    return iconMap[type] || "🏋️";
-  };
+  const filteredActivities = activities.filter((activity) =>
+    activity.name.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
 
   const renderActivityItem = ({ item }: { item: ActivityOption }) => {
     const isSelected = selectedActivityId === item.id;
-    const estimatedDuration = item.authoritative_metrics?.estimated_duration;
-    const estimatedTss = item.authoritative_metrics?.estimated_tss;
 
     return (
-      <Pressable
-        onPress={() => !disabled && onSelect(item)}
-        disabled={disabled}
-        className={`
-          mb-2 rounded-lg border-2 p-3
-          ${isSelected ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30" : "border-border bg-card"}
-          ${disabled ? "opacity-50" : ""}
-        `}
+      <View
+        accessibilityState={{ disabled, selected: isSelected }}
+        className={`mb-3 rounded-xl ${isSelected ? "border-2 border-primary p-0.5" : ""} ${disabled ? "opacity-50" : ""}`}
+        pointerEvents={disabled ? "none" : "auto"}
+        testID={`activity-selector-option-${item.id}`}
       >
-        <View className="flex-row items-start">
-          {/* Activity Type Icon */}
-          <View className="mr-3 items-center justify-center w-10 h-10 rounded-full bg-muted">
-            <Text className="text-2xl">{getActivityTypeIcon(item.activity_category)}</Text>
+        <ActivityPlanCard
+          plan={item}
+          onPress={() => onSelect(item)}
+          testID={`activity-selector-activity-plan-${item.id}`}
+          variant="compact"
+        />
+        {isSelected ? (
+          <View
+            className="absolute bottom-2 right-2 rounded-full bg-primary p-1"
+            pointerEvents="none"
+          >
+            <Icon as={CircleCheck} className="text-primary-foreground" size={16} />
           </View>
-
-          {/* Activity Details */}
-          <View className="flex-1">
-            <Text
-              className={`font-semibold text-base ${isSelected ? "text-blue-700 dark:text-blue-300" : "text-foreground"}`}
-            >
-              {item.name}
-            </Text>
-            <Text className="text-sm text-muted-foreground mt-0.5">
-              {getActivityTypeLabel(item.activity_category)}
-            </Text>
-            {item.description && (
-              <Text className="text-xs text-muted-foreground mt-1" numberOfLines={2}>
-                {item.description}
-              </Text>
-            )}
-            <View className="flex-row mt-2 space-x-4">
-              {typeof estimatedDuration === "number" ? (
-                <Text className="text-sm text-muted-foreground">
-                  ⏱️{" "}
-                  {formatEstimatedDurationSeconds(estimatedDuration) ??
-                    formatDuration(estimatedDuration)}
-                </Text>
-              ) : null}
-              {typeof estimatedTss === "number" ? (
-                <Text className="text-sm text-muted-foreground">
-                  📊 {formatEstimatedTss(estimatedTss)}
-                </Text>
-              ) : null}
-            </View>
-          </View>
-
-          {/* Selection Indicator */}
-          {isSelected && (
-            <View className="ml-2 items-center justify-center w-6 h-6 rounded-full bg-blue-500">
-              <Text className="text-white text-xs font-bold">✓</Text>
-            </View>
-          )}
-        </View>
-      </Pressable>
+        ) : null}
+      </View>
     );
   };
 
@@ -164,14 +88,13 @@ export function ActivitySelector({
 
       {/* Search Input */}
       <View className="relative mb-3">
-        <View className="absolute left-3 top-3 z-10">
-          <Search size={20} className="text-muted-foreground" />
-        </View>
-        <Input
+        <SearchField
+          accessibilityLabel="Search activities"
           value={searchQuery}
           onChangeText={setSearchQuery}
+          onClear={() => setSearchQuery("")}
           placeholder="Search activities..."
-          className="h-12 pl-10 pr-4 text-base"
+          className="h-12 text-base"
           editable={!disabled}
         />
       </View>
@@ -186,11 +109,12 @@ export function ActivitySelector({
 
       {/* Activity List */}
       {filteredActivities.length === 0 ? (
-        <View className="flex-1 items-center justify-center py-8">
-          <Text className="text-muted-foreground text-center">
-            {searchQuery ? "No activities match your search" : "No activities available"}
-          </Text>
-        </View>
+        <EmptyState
+          description={
+            searchQuery ? "Try a different activity name." : "Add an activity plan to schedule it."
+          }
+          title={searchQuery ? "No activities match your search" : "No activities available"}
+        />
       ) : (
         <FlatList
           data={filteredActivities}
