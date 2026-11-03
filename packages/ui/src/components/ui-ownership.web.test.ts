@@ -99,6 +99,10 @@ describe("UI ownership guardrails", () => {
       "groups/group-form.tsx",
       "groups/group-ui.tsx",
       "login-form.tsx",
+      // Inbox retry/compose navigation uses the messages route search contract.
+      "messages/messages-inbox-state.tsx",
+      // Notification copy and state are specific to product activity views.
+      "notifications/notifications-empty-state.tsx",
       "onboarding/provider-onboarding.tsx",
       "planning/agenda-create-form.tsx",
       "planning/goal-card.tsx",
@@ -141,6 +145,9 @@ describe("UI ownership guardrails", () => {
       "routes/route-edit-form.tsx",
       "routes/route-event-attachment.tsx",
       "routes/route-library-controls.tsx",
+      // Settings-specific analytics consent, theme state, and section anchors.
+      "settings/settings-preferences-cards.tsx",
+      "settings/settings-section-navigation.tsx",
       "sign-up-form.tsx",
       "training-plan/training-plan-detail.tsx",
       "training-plan/training-plan-editor.tsx",
