@@ -22,6 +22,13 @@ export function toAbsoluteAppUrl(path: string) {
   return new URL(path, getConfiguredAppBaseUrl()).toString();
 }
 
+function hasUnsafeRedirectCharacters(value: string) {
+  return [...value].some((character) => {
+    const code = character.charCodeAt(0);
+    return character === "\\" || code <= 0x1f || code === 0x7f;
+  });
+}
+
 export function getSafeAppRedirectTarget(
   redirectTarget: string | null | undefined,
   fallback = "/",
@@ -30,30 +37,25 @@ export function getSafeAppRedirectTarget(
     return fallback;
   }
 
-  // WHATWG URL treats backslashes as path separators for special schemes. Do not
-  // accept them in an internal path, including when a caller supplies one encoded.
-  // A bounded decode also catches nested query-string encoding without changing the
-  // path we return to callers.
+  // WHATWG URL strips ASCII controls and treats backslashes as path separators for
+  // special schemes. Reject both raw and nested-encoded forms before parsing, then
+  // still parse every remaining candidate against the trusted application base.
   let decodedTarget = redirectTarget;
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    if (decodedTarget.includes("\\")) return fallback;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (hasUnsafeRedirectCharacters(decodedTarget)) return fallback;
     try {
       const next = decodeURIComponent(decodedTarget);
       if (next === decodedTarget) break;
       decodedTarget = next;
     } catch {
-      break;
+      return fallback;
     }
-  }
-
-  if (redirectTarget.startsWith("/") && !redirectTarget.startsWith("//")) {
-    return redirectTarget;
   }
 
   try {
     const baseUrl = typeof window !== "undefined" ? getAppBaseUrl() : getConfiguredAppBaseUrl();
-    const parsedTarget = new URL(redirectTarget);
     const parsedBase = new URL(baseUrl);
+    const parsedTarget = new URL(redirectTarget, parsedBase);
 
     if (parsedTarget.origin !== parsedBase.origin) {
       return fallback;
