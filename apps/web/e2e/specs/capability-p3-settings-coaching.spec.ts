@@ -220,7 +220,8 @@ test("coaching.view-dashboard opens an authorized organization dashboard", async
   );
 
   try {
-    await coachPage.goto("/organizations");
+    const organizationSelectorResponse = await coachPage.goto("/organizations");
+    expect(organizationSelectorResponse?.headers()["cache-control"]).toBe("private, no-store");
     await coachPage
       .getByRole("link", { name: `Open ${organization.organizationName} coaching dashboard` })
       .click();
@@ -228,11 +229,41 @@ test("coaching.view-dashboard opens an authorized organization dashboard", async
     await expect(coachPage).toHaveURL(
       new RegExp(`/organizations/${organization.organizationId}/dashboard$`),
     );
-    await expect(coachPage.getByRole("heading", { name: "Coaching workspace" })).toBeVisible();
+    await expect(coachPage.getByText("Coaching workspace", { exact: true })).toBeVisible();
     await expect(
-      coachPage.getByRole("region", { name: "Coaching dashboard readiness" }),
+      coachPage.getByText(/Administrative staff and athlete roster details are available only/),
     ).toBeVisible();
-    await expect(coachPage.getByText("Profiles", { exact: true })).toBeVisible();
+    await expect(coachPage.getByRole("heading", { name: "Organization management" })).toHaveCount(
+      0,
+    );
+  } finally {
+    await organization.cleanup();
+  }
+});
+
+test("coaching.admin-dashboard shows administrative staff and athlete roster records", async ({
+  athleteActor,
+  athletePage,
+  coachActor,
+  e2eIdentity,
+}) => {
+  const organization = await seedCoachOrganization(
+    e2eIdentity,
+    athleteActor.profileId,
+    coachActor.profileId,
+  );
+  try {
+    await athletePage.goto(`/organizations/${organization.organizationId}/dashboard`);
+
+    await expect(
+      athletePage.getByRole("heading", { name: "Organization management" }),
+    ).toBeVisible();
+    await expect(athletePage.getByRole("list", { name: "Staff" })).toBeVisible();
+    await expect(athletePage.getByText("Athletes", { exact: true })).toBeVisible();
+    await expect(athletePage.getByText("No active athlete enrollments are listed.")).toBeVisible();
+    await expect(
+      athletePage.getByText(/does not grant access to private athlete training/),
+    ).toBeVisible();
   } finally {
     await organization.cleanup();
   }
@@ -341,7 +372,7 @@ test("[variation:settings.profile:keyboard-save] keyboard save persists profile 
   }
 });
 
-test("[variation:coaching.dashboard:narrow-history] narrow organization card opens coaching readiness and returns through history", async ({
+test("[variation:coaching.dashboard:narrow-history] narrow organization card opens the role-limited workspace and returns through history", async ({
   athleteActor,
   coachActor,
   coachPage,
@@ -360,13 +391,14 @@ test("[variation:coaching.dashboard:narrow-history] narrow organization card ope
     });
     await open.scrollIntoViewIfNeeded();
     await open.click();
+    await expect(coachPage.getByText("Coaching workspace", { exact: true })).toBeVisible();
     await expect(
-      coachPage.getByRole("region", { name: "Coaching dashboard readiness" }),
+      coachPage.getByText(/Administrative staff and athlete roster details are available only/),
     ).toBeVisible();
     await coachPage.goBack();
     await expect(open).toBeVisible();
     await coachPage.goForward();
-    await expect(coachPage.getByRole("heading", { name: "Coaching workspace" })).toBeVisible();
+    await expect(coachPage.getByText("Coaching workspace", { exact: true })).toBeVisible();
   } finally {
     await organization.cleanup();
   }
@@ -385,15 +417,15 @@ test("[variation:coaching.dashboard:revoked-role] dashboard access fails closed 
   );
   try {
     await coachPage.goto(`/organizations/${organization.organizationId}/dashboard`);
-    await expect(coachPage.getByRole("heading", { name: "Coaching workspace" })).toBeVisible();
+    await expect(coachPage.getByText("Coaching workspace", { exact: true })).toBeVisible();
     await organization.revokeCoach();
     await coachPage.reload();
     await expect(
       coachPage.getByRole("heading", { name: /coaching access required/i }),
     ).toBeVisible();
-    await expect(
-      coachPage.getByRole("region", { name: "Coaching dashboard readiness" }),
-    ).toHaveCount(0);
+    await expect(coachPage.getByRole("heading", { name: "Organization management" })).toHaveCount(
+      0,
+    );
   } finally {
     await organization.cleanup();
   }

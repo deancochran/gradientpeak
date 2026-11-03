@@ -62,7 +62,7 @@ describe("OrganizationSelector", () => {
     expect(screen.getByRole("main").parentElement?.classList.contains("gp-protected-shell")).toBe(
       true,
     );
-    expect(screen.getByRole("link", { name: "Standard app" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Personal workspace" })).toBeTruthy();
     expect(screen.getByRole("list", { name: "Coaching organizations" })).toBeTruthy();
     expect(screen.getByText("Admin")).toBeTruthy();
     expect(screen.getByText("Coach")).toBeTruthy();
@@ -107,7 +107,7 @@ describe("OrganizationSelector", () => {
     expect(screen.getAllByRole("main")).toHaveLength(1);
     expect(screen.getByRole("heading", { name: "Loading organizations" })).toBeTruthy();
     expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
-    expect(screen.getByRole("link", { name: "Standard app" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Personal workspace" })).toBeTruthy();
 
     rerender(<OrganizationSelectorError />);
     expect(screen.getAllByRole("main")).toHaveLength(1);

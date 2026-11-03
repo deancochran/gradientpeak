@@ -49,4 +49,12 @@ describe("ProtectedHeader", () => {
     rerender(<ProtectedHeader />);
     expect(trigger.hasAttribute("disabled")).toBe(false);
   });
+
+  it("keeps a Personal-to-Coaching context destination available in desktop navigation", () => {
+    render(<ProtectedHeader />);
+
+    const coachingLinks = screen.getAllByText("Coaching");
+    expect(coachingLinks).toHaveLength(2);
+    expect(coachingLinks[0]?.closest("a")?.getAttribute("to")).toBe("/organizations");
+  });
 });

@@ -83,6 +83,14 @@ describe("organizationsRouter", () => {
     await expect(
       caller.getContext({ organizationId: ORGANIZATION_ID, profileId: OTHER_PROFILE_ID } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
+    await expect(
+      caller.create({
+        organizationId: ORGANIZATION_ID,
+        name: "Peak Coaching",
+        slug: "peak-coaching",
+        timezone: "Mars/Olympus",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
     expect(harness.getAccessRepository).not.toHaveBeenCalled();
   });
 

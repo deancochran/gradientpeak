@@ -1,3 +1,4 @@
+import { ianaTimezoneSchema } from "@repo/core";
 import {
   evaluateOrganizationOperationRoleEligibility,
   ORGANIZATION_OPERATIONS,
@@ -61,7 +62,7 @@ const organizationCreateInputSchema = z
     organizationId: z.string().uuid(),
     name: z.string().trim().min(1).max(120),
     slug: z.string().trim().min(1).max(120),
-    timezone: z.string().trim().min(1).max(100),
+    timezone: ianaTimezoneSchema,
   })
   .strict();
 const invitationCreateInputSchema = z

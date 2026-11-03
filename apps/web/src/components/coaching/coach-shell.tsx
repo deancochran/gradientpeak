@@ -73,7 +73,7 @@ export function CoachShell({ organization }: CoachShellProps) {
             size="sm"
             className="ml-auto border-slate-700 bg-transparent text-slate-200 hover:bg-slate-900 hover:text-white"
           >
-            <Link to="/">Standard app</Link>
+            <Link to="/">Personal workspace</Link>
           </Button>
         </div>
       </header>
@@ -126,6 +126,14 @@ function CoachMobileNavigation({
             >
               <Building2 className="h-4 w-4" />
               Organizations
+            </Link>
+          </SheetClose>
+          <SheetClose asChild>
+            <Link
+              to="/"
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-900 hover:text-white"
+            >
+              Personal workspace
             </Link>
           </SheetClose>
         </nav>

@@ -34,7 +34,7 @@ describe("CoachShell", () => {
     expect(screen.getByRole("navigation", { name: "Coaching navigation" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Organizations" })).toBeTruthy();
     expect(screen.getByText("Coaching route content")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Standard app" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Personal workspace" })).toBeTruthy();
     expect(screen.queryByText("Record")).toBeNull();
     expect(screen.queryByText("Activities")).toBeNull();
   });

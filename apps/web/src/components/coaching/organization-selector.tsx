@@ -43,7 +43,9 @@ export function OrganizationSelector({
         <h2 id="organization-list-heading" className="text-xl font-semibold text-white">
           Your organizations
         </h2>
-        <p className="mt-1 text-sm text-slate-400">Choose a coaching workspace to continue.</p>
+        <p className="mt-1 text-sm text-slate-400">
+          Choose a coaching workspace to continue. Your Personal workspace stays separate.
+        </p>
       </div>
       <ul className="grid gap-4" aria-label="Coaching organizations">
         {page.items.map(({ organization, membership, isRootOwner }) => (
@@ -105,7 +107,7 @@ export function OrganizationSelectorFrame({
             size="sm"
             className="ml-auto border-slate-700 bg-transparent text-slate-200 hover:bg-slate-900 hover:text-white"
           >
-            <Link to="/">Standard app</Link>
+            <Link to="/">Personal workspace</Link>
           </Button>
         </div>
       </header>
@@ -162,9 +164,18 @@ function NoOrganizations() {
             <h2 id="no-organizations-heading">No coaching organizations</h2>
           </CardTitle>
           <CardDescription className="text-slate-400">
-            No active coaching organization is available for this profile.
+            No active coaching organization is available for this profile. You can create one or
+            return here after accepting an organization invitation.
           </CardDescription>
         </CardHeader>
+        <CardContent className="flex flex-wrap gap-3">
+          <Button asChild>
+            <Link to="/organizations/new">Create organization</Link>
+          </Button>
+          <Button asChild variant="outline" className="border-slate-700 text-slate-100">
+            <Link to="/">Go to Personal workspace</Link>
+          </Button>
+        </CardContent>
       </Card>
     </section>
   );

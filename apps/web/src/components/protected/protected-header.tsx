@@ -10,7 +10,7 @@ import {
 } from "@repo/ui/components/sheet";
 import { cn } from "@repo/ui/lib/cn";
 import { Link, useHydrated, useLocation } from "@tanstack/react-router";
-import { Menu } from "lucide-react";
+import { Building2, Menu } from "lucide-react";
 import { ChatbotLauncher } from "../chatbot/chatbot-panel";
 import { useAuth } from "../providers/auth-provider";
 import { MessagesButton } from "./messages-button";
@@ -67,6 +67,14 @@ export function ProtectedHeader() {
               </Button>
             );
           })}
+          <Button asChild variant="ghost" size="sm">
+            <Link
+              to="/organizations"
+              className="text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Coaching
+            </Link>
+          </Button>
         </nav>
         <div className="ml-auto flex items-center gap-1 sm:gap-2">
           <SearchLauncher />
@@ -151,6 +159,15 @@ function MobileNavigation({
               </SheetClose>
             );
           })}
+          <SheetClose asChild>
+            <Link
+              to="/organizations"
+              className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Building2 className="h-4 w-4" />
+              Coaching
+            </Link>
+          </SheetClose>
         </nav>
       </SheetContent>
     </Sheet>

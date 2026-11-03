@@ -1,6 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { Button } from "@repo/ui/components/button";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { z } from "zod";
-
 import {
   OrganizationSelector,
   OrganizationSelectorError,
@@ -31,8 +31,17 @@ function OrganizationsPage() {
     <OrganizationSelectorFrame heading="Coaching organizations">
       <div className="space-y-6">
         <p className="max-w-2xl text-sm leading-6 text-slate-400">
-          Select an organization explicitly. Athlete views are not available here.
+          Select an organization explicitly. Athlete views are not available here, and your Personal
+          workspace is always separate.
         </p>
+        <div className="flex flex-wrap gap-3">
+          <Button asChild>
+            <Link to="/organizations/new">Create organization</Link>
+          </Button>
+          <Button asChild variant="outline" className="border-slate-700 text-slate-100">
+            <Link to="/">Personal workspace</Link>
+          </Button>
+        </div>
         <OrganizationSelector page={page} {...(cursor === undefined ? {} : { cursor })} />
       </div>
     </OrganizationSelectorFrame>
