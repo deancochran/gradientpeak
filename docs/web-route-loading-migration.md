@@ -54,6 +54,13 @@ acceptance. Compare task changes against that checkpoint, not the legacy main tr
   exact-optional-property mismatches. Fixes preserve omitted anchor targets,
   validated search shape and explicit undefined input contracts; the baseline
   and hook remain unchanged. Publication retry must run all normal gates.
+- A subsequent normal hook passed repository static/types/strictness, workspace
+  tests, parity/architecture, dependency checks and disposable DB verification.
+  Runtime smoke needed guarded local Storage credentials from the existing
+  `deriveRuntimeWebE2EEnvironment` identity-checked workflow. Its old document
+  navigation interception no longer reached SSR reads: smoke now injects failure
+  on client navigation, and dashboard loader errors retain explicit retry UI.
+  No preserved schemas or data were reset to repair these prerequisites.
 - Production-mode authenticated runtime proof remains unavailable: the loopback
   acceptance runner uses HTTP while production auth correctly requires HTTPS.
   No security constraint was bypassed; temporary runner changes were reverted.

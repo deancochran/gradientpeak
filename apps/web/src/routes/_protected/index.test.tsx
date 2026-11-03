@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  invalidate: vi.fn(),
   dashboard: {
     activePlan: null,
     consistency: { streak: 0, weeklyCount: 0 },
@@ -29,6 +30,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
+  useRouter: () => ({ invalidate: mocks.invalidate }),
   createFileRoute: () => (options: object) => ({ ...options }),
   Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
     <a href={to}>{children}</a>
@@ -60,6 +62,14 @@ vi.mock("../../lib/api/client", () => ({
 }));
 
 import { Route } from "./index";
+
+it("keeps cold loader failures actionable through router retry", () => {
+  const ErrorPage = (Route as unknown as { errorComponent: React.ComponentType }).errorComponent;
+  render(<ErrorPage />);
+  expect(screen.getByRole("alert").textContent).toContain("Dashboard unavailable");
+  fireEvent.click(screen.getByRole("button", { name: "Retry dashboard" }));
+  expect(mocks.invalidate).toHaveBeenCalledOnce();
+});
 
 beforeEach(() => {
   mocks.dashboardQuery = {

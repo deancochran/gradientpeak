@@ -35,7 +35,9 @@ test("dashboard presents an explicit error and recovers its server content", asy
   const shell = new ShellPage(athletePage);
   await shell.open("/calendar");
   await withTrpcFailure(athletePage, "home.getDashboard", async () => {
-    await shell.open("/");
+    // Initial documents now read through trusted SSR transport. Navigate through
+    // the router to exercise a real failing browser query and loader recovery.
+    await shell.primaryNavigation.getByRole("link", { name: "Home", exact: true }).click();
     await expect(athletePage.getByRole("alert")).toContainText("Dashboard unavailable", {
       timeout: 15_000,
     });

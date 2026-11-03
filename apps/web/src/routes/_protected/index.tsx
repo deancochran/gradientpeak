@@ -6,7 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { Activity, CalendarDays, Target } from "lucide-react";
 import { ActivityFeed } from "../../components/feed/activity-feed";
 import { SearchLauncher } from "../../components/protected/search-launcher";
@@ -24,7 +24,25 @@ export const Route = createFileRoute("/_protected/")({
     );
   },
   component: DashboardPage,
+  errorComponent: DashboardLoadError,
 });
+
+function DashboardLoadError() {
+  const router = useRouter();
+  return (
+    <Card role="alert">
+      <CardHeader>
+        <CardTitle>Dashboard unavailable</CardTitle>
+        <CardDescription>We could not load your dashboard. Please try again.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Button type="button" onClick={() => void router.invalidate()}>
+          Retry dashboard
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
 
 function ScheduleQuantification({
   objectiveIntensity,
