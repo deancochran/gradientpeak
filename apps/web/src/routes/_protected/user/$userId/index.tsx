@@ -72,7 +72,7 @@ function UserProfilePage() {
     );
   }
 
-  if (!profile) {
+  if (isNotFoundError(profileQuery.error) || !profile) {
     return (
       <div className="container max-w-3xl py-8">
         <Card>
