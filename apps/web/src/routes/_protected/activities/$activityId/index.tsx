@@ -89,15 +89,11 @@ export const Route = createFileRoute("/_protected/activities/$activityId/")({
   loader: async ({ context, params }) => {
     prefetchSecondary(() => context.apiUtils.activities.listPaginated.prefetch({ limit: 20 }));
     const input = { id: params.activityId };
-    const efforts = loadRouteQuery(
-      () => context.apiUtils.activities.getEfforts.getData(input),
-      () => context.apiUtils.activities.getEfforts.fetch(input),
-    );
-    await loadRouteQuery(
+    prefetchSecondary(() => context.apiUtils.activities.getEfforts.prefetch(input));
+    return loadRouteQuery(
       () => context.apiUtils.activities.getById.getData(input),
       () => context.apiUtils.activities.getById.fetch(input),
     );
-    await efforts;
   },
   component: ActivityDetailPage,
 });

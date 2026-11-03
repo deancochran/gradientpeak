@@ -8,34 +8,23 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 import { api } from "../../lib/api/client";
 import { loadRouteQuery } from "../../lib/api/route-loading";
+import { prefetchSecondary } from "../../lib/api/secondary-prefetch";
 import { getIntegrationPollingInterval } from "../../lib/integrations/polling";
 
 export const Route = createFileRoute("/_protected/integrations")({
-  loader: async ({ context }) => {
-    const overview = loadRouteQuery(
+  loader: ({ context }) => {
+    prefetchSecondary(async () => {
+      const profile = await context.apiUtils.profiles.get.fetch(undefined);
+      if (!profile) return;
+      await context.apiUtils.athleteIntelligence.getReadModel.prefetch({
+        profileId: profile.id,
+        sections: { publishedState: true, status: true },
+      });
+    });
+    return loadRouteQuery(
       () => context.apiUtils.integrations.getSyncOverview.getData(undefined),
       () => context.apiUtils.integrations.getSyncOverview.fetch(undefined),
     );
-    let profile: Awaited<ReturnType<typeof context.apiUtils.profiles.get.fetch>> | undefined;
-    await loadRouteQuery(
-      () => context.apiUtils.profiles.get.getData(undefined),
-      async () => {
-        profile = await context.apiUtils.profiles.get.fetch(undefined);
-        return profile;
-      },
-    );
-    profile ??= context.apiUtils.profiles.get.getData(undefined);
-    if (profile) {
-      const input = {
-        profileId: profile.id,
-        sections: { publishedState: true, status: true },
-      };
-      await loadRouteQuery(
-        () => context.apiUtils.athleteIntelligence.getReadModel.getData(input),
-        () => context.apiUtils.athleteIntelligence.getReadModel.fetch(input),
-      );
-    }
-    await overview;
   },
   component: IntegrationsPage,
 });
