@@ -13,7 +13,7 @@ import {
 } from "./__root";
 
 vi.mock("@tanstack/react-router", () => ({
-  createRootRoute: (options: object) => options,
+  createRootRouteWithContext: () => (options: object) => options,
   HeadContent: () => null,
   Link: ({ children, to }: { children: ReactNode; to: string; search?: unknown }) => (
     <a href={to}>{children}</a>

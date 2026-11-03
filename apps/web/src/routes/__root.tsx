@@ -9,7 +9,7 @@ import {
 import { Toaster } from "@repo/ui/components/sonner";
 import { TanStackDevtools } from "@tanstack/react-devtools";
 import {
-  createRootRoute,
+  createRootRouteWithContext,
   type ErrorComponentProps,
   HeadContent,
   Link,
@@ -18,7 +18,7 @@ import {
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { type ReactNode, useEffect, useState } from "react";
 
-import { AppProviders } from "../components/providers/app-providers";
+import type { WebRouterContext } from "../lib/api/router-context";
 
 import "../styles.css";
 
@@ -55,7 +55,7 @@ export function recoverFromVitePreloadError(event: Event, runtime: PreloadRecove
   return true;
 }
 
-export const Route = createRootRoute({
+export const Route = createRootRouteWithContext<WebRouterContext>()({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
@@ -106,16 +106,14 @@ function RootDocument({ children }: { children: ReactNode }) {
         <HeadContent />
       </head>
       <body className="min-h-screen bg-background text-foreground font-sans antialiased">
-        <AppProviders>
-          <div
-            aria-busy={!hydrated}
-            className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-12 pt-8 sm:px-6 lg:px-8 has-[>.gp-protected-shell]:max-w-none has-[>.gp-protected-shell]:px-0 has-[>.gp-protected-shell]:pb-0 has-[>.gp-protected-shell]:pt-0"
-          >
-            {children}
-          </div>
-          <Toaster richColors position="top-right" />
-          <DevelopmentTools />
-        </AppProviders>
+        <div
+          aria-busy={!hydrated}
+          className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-12 pt-8 sm:px-6 lg:px-8 has-[>.gp-protected-shell]:max-w-none has-[>.gp-protected-shell]:px-0 has-[>.gp-protected-shell]:pb-0 has-[>.gp-protected-shell]:pt-0"
+        >
+          {children}
+        </div>
+        <Toaster richColors position="top-right" />
+        <DevelopmentTools />
         <Scripts />
       </body>
     </html>
