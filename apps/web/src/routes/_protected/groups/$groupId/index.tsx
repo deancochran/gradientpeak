@@ -47,7 +47,7 @@ function RouteComponent() {
   const deleteMutation = api.groups.delete.useMutation({
     onSuccess: () => {
       void utils.groups.invalidate();
-      void navigate({ to: "/groups" });
+      void navigate({ to: "/groups", search: { q: undefined, tab: undefined } });
     },
   });
   const mutationError = joinMutation.error ?? leaveMutation.error ?? deleteMutation.error;

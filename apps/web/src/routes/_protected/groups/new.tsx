@@ -27,7 +27,9 @@ function CreateGroupPage() {
         <CardContent>
           <GroupForm
             isSubmitting={createMutation.isPending}
-            onCancel={() => void navigate({ to: "/groups" })}
+            onCancel={() =>
+              void navigate({ to: "/groups", search: { q: undefined, tab: undefined } })
+            }
             onSubmit={async (value) => {
               const result = await createMutation.mutateAsync(value);
               await utils.groups.invalidate();
