@@ -56,7 +56,10 @@ export const Route = createFileRoute("/_protected/activity-plans/")({
   component: ActivityPlansPage,
 });
 
-function getActivityPlansInput(search: { activity_category?: ActivityPlanCategory; q?: string }) {
+function getActivityPlansInput(search: {
+  activity_category?: ActivityPlanCategory | undefined;
+  q?: string | undefined;
+}) {
   return {
     activityCategories: search.activity_category ? [search.activity_category] : undefined,
     limit: 20,

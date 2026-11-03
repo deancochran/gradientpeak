@@ -50,6 +50,10 @@ acceptance. Compare task changes against that checkpoint, not the legacy main tr
   review found one internal-download edge case in AppHrefLink; native download
   handling and a regression test were added. Repository publication gates remain
   in progress.
+- The first normal push stopped at strictness-ratchet growth: four web
+  exact-optional-property mismatches. Fixes preserve omitted anchor targets,
+  validated search shape and explicit undefined input contracts; the baseline
+  and hook remain unchanged. Publication retry must run all normal gates.
 - Production-mode authenticated runtime proof remains unavailable: the loopback
   acceptance runner uses HTTP while production auth correctly requires HTTPS.
   No security constraint was bypassed; temporary runner changes were reverted.

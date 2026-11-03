@@ -6,9 +6,11 @@ export function AppHrefLink({ href, ...props }: ComponentProps<"a"> & { href: st
   if (props.download !== undefined || !href.startsWith("/") || href.startsWith("//"))
     return <a {...props} href={href} />;
   const url = new URL(href, "https://gradientpeak.invalid");
+  const { target, ...anchorProps } = props;
   return (
     <Link
-      {...props}
+      {...anchorProps}
+      {...(target === undefined ? {} : { target })}
       to={url.pathname}
       search={defaultParseSearch(url.search)}
       hash={url.hash.slice(1)}

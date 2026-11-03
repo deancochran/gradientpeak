@@ -43,7 +43,7 @@ describe("loadRouteQuery", () => {
 
   it("uses tRPC infinite cache keys and refreshes only cached pages", async () => {
     const queryClient = new QueryClient();
-    const query = vi.fn(async (input: { cursor?: string | null }) => ({
+    const query = vi.fn(async (input: { cursor?: string | null | undefined }) => ({
       items: [input.cursor ?? "first"],
       nextCursor: input.cursor === "second" ? "third" : "second",
     }));

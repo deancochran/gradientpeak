@@ -46,14 +46,7 @@ export function validateActivityHistorySearch(
 
 export const Route = createFileRoute("/_protected/activities/")({
   validateSearch: validateActivityHistorySearch,
-  loaderDeps: ({ search }) => ({
-    category: search.category,
-    from: search.from,
-    importRunId: search.importRunId,
-    order: search.order,
-    sort: search.sort,
-    to: search.to,
-  }),
+  loaderDeps: ({ search }) => search,
   loader: ({ context, deps }) => {
     const input = getActivitiesInput(deps);
     return loadRouteQuery(
