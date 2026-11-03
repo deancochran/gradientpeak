@@ -77,7 +77,17 @@ export function deriveRuntimeWebE2EEnvironment({
     environment.BETTER_AUTH_SECRET ?? `e2e-${random(32).toString("base64url")}`,
     "Better Auth secret",
   );
+  const databasePassword = requireSafeSecret(
+    database.Config?.Env?.find((entry) => entry.startsWith("POSTGRES_PASSWORD="))?.slice(
+      "POSTGRES_PASSWORD=".length,
+    ),
+    "database credential",
+  );
+  const databaseUrl = new URL("postgresql://postgres@127.0.0.1:55322/postgres");
+  databaseUrl.password = databasePassword;
   return {
+    DATABASE_URL: databaseUrl.toString(),
+    POSTGRES_URL: databaseUrl.toString(),
     BETTER_AUTH_SECRET: authSecret,
     NEXT_PRIVATE_SUPABASE_SECRET_KEY: serviceKey,
     SUPABASE_SERVICE_ROLE_KEY: serviceKey,

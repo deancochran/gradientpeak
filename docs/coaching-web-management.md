@@ -195,3 +195,65 @@ remain in the recovery directory above. Only the verified obsolete E2E Vite
 PID2807873 (verification-user-journeys, port3001, started October30) was stopped
 to quiesce its retained-target access; preview3000was not touched. Normal
 publication dashboard smoke is being rerun on the repaired prerequisite.
+
+## Approved auth identity compatibility (PR #113)
+
+User approved the additional auth schema/source and preserved preview/E2E
+cutover, and subsequently authorized merge without another manual approval.
+Required checks and branch protections remain mandatory; no bypass is authorized.
+
+Better Auth 1.7.1 introduced required issuer values that 1.7.3+ no longer writes.
+The coordinated 1.7.15 update retains issuer values/column, relaxes nullability,
+and replaces issuer/account uniqueness with provider/account uniqueness. Both
+preserved targets had zero duplicate provider/account identities in read-only
+preflight; activation repeats the check under locks. No account merge/deletion,
+reset/reseed, or ledger modification is part of this change.
+
+The aligned dependency graph uses better-call 1.4.4 and Zod ^4.5.4. Coordinator
+checks passed: 65 auth tests, shared/web/mobile typechecks, 6 native-client Jest
+tests, and 19 disposable browser journeys covering sign-up, verification expiry
+and replay, sign-in, persistence, logout, password reset and session revocation.
+The full DB verification passed on the initial DB implementation; the final
+operational tooling and dependency graph are undergoing the same gate again.
+
+Distinct private archives and full isolated restore-plus-upgrade rehearsals for
+preview and E2E passed, preserving all 111 public/auth/storage/ledger table
+counts and SHA-256 digests for each target. Private artifacts live in coordination
+cache auth-identity-upgrade-noBVl2, not Git. Activation requires the same source
+identity and locked data map; a stale/different target refuses before DDL. No
+live auth compatibility activation is claimed at this checkpoint.
+
+Latest published CI also exposed missing DATABASE_URL in the browser test
+process; the guarded CI helper now derives/masks both database URL variables
+from the verified E2E container, rather than only configuring its web child.
+Other latest CI blockers remain: live-DB fixture/contract failures (activity
+ingestion operation identity, artifact cleanup, retired activity_efforts column,
+event occurrence identity), audit/image vulnerabilities, and CodeQL findings.
+These are not cleared by auth/browser evidence or by merge authorization.
+
+Final Node 24 DB verification, DB typecheck, and architecture check passed with
+operational and sequential-upgrade proofs included. The strengthened public
+browser regression passed 2/2: it inspects the actual adapter-created credential
+row (null issuer and expected provider/account identity), then sets a legacy
+issuer on its owned synthetic actor and proves sign-in/reload/logout still work.
+Frozen install passed. Current local audit reports zero Better Auth advisory
+records, but totals remain 10 critical, 54 high, 71 moderate, and 17 low; this is
+not a general audit clearance. The guarded CI environment helper passed 7 tests
+and actual local-container derivation without revealing credential values.
+
+Operational review hardening pins the complete 111-table inventory and rejects
+unexpected platform/ledger tables. Private recovery directories/files must be
+owned and non-symlinked; outputs use exclusive no-follow 0600 temporary files,
+fsync, and atomic rename, with unsafe-existing-file refusal tests. Node 24 auth
+upgrade/operation/chain tests passed. Fresh full archive rehearsals after these
+fixes passed for both targets using cache auth-identity-final-zPpJqT.
+
+A separate actual runtime proof created a synthetic credential account under the
+exact legacy schema before upgrading, using the application's bcrypt cost-10
+password format. After the guarded upgrade, createGradientPeakAuth 1.7.15's
+sign-in handler returned 200 and cookie-session lookup returned the same user.
+The child runtime exited before guarded disposable cleanup. This does not require
+or expose any preserved user's password. Initial scratch attempts uncovered test
+setup omissions (pgcrypto and the application's custom bcrypt format); only the
+corrected successful run is acceptance evidence. It complements—not replaces—the
+full archive data-preservation rehearsals.

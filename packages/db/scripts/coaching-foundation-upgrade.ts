@@ -11,6 +11,7 @@ import { createSchemaFingerprint } from "./check-schema-fingerprint";
 export const prerequisite = "1d5ac63ab7ad7a89b25bdfd1dec9a63f5b770ce4";
 const directory = resolve(dbPackageRoot, "supabase/approved-upgrades/coaching-foundation");
 const baselinePath = "packages/db/supabase/migrations/20260730000000_mvp_baseline.sql";
+const afterPath = resolve(directory, "after-fingerprint.json");
 export const groupTables = [
   "organization_invitations",
   "organization_groups",
@@ -139,9 +140,9 @@ export async function applyCoachingUpgrade(pool: Pool) {
     if (!sql.includes("\nBEGIN;\n") || !sql.endsWith("COMMIT;\n"))
       throw new Error("upgrade transaction envelope missing");
     await client.query(sql.replace("\nBEGIN;\n", "\n").replace(/COMMIT;\n$/, ""));
-    const expected = JSON.parse(
-      readFileSync(resolve(dbPackageRoot, "schema-fingerprint.json"), "utf8"),
-    );
+    // This one-time upgrade must remain pinned to its own reviewed historical
+    // result even as the fresh baseline evolves through later compatibility work.
+    const expected = JSON.parse(readFileSync(afterPath, "utf8"));
     const after = await createSchemaFingerprint(client);
     if (JSON.stringify(expected) !== JSON.stringify(after)) {
       const keys = Object.keys(expected).filter(
