@@ -78,9 +78,9 @@ function DashboardPage() {
           description={
             dashboard?.currentLoadStatus
               ? `Long-term load · ${dashboard.currentLoadStatus.maturity} maturity`
-              : dashboard
-                ? "Complete Common Load history is unavailable"
-                : "Loading Common Load history"
+              : dashboardQuery.isLoading
+                ? "Loading Common Load history"
+                : "Complete Common Load history is unavailable"
           }
           icon={<Activity className="h-4 w-4" />}
         />
@@ -92,7 +92,9 @@ function DashboardPage() {
           description={
             dashboard?.currentLoadStatus
               ? "Recent load"
-              : "Complete Common Load history is unavailable"
+              : dashboardQuery.isLoading
+                ? "Loading Common Load history"
+                : "Complete Common Load history is unavailable"
           }
           icon={<Activity className="h-4 w-4" />}
         />
@@ -104,7 +106,9 @@ function DashboardPage() {
           description={
             dashboard?.currentLoadStatus
               ? `Load balance · ${dashboard.currentLoadStatus.coverageStatus} coverage`
-              : "Complete Common Load history is unavailable"
+              : dashboardQuery.isLoading
+                ? "Loading Common Load history"
+                : "Complete Common Load history is unavailable"
           }
           icon={<Activity className="h-4 w-4" />}
         />
@@ -120,8 +124,12 @@ function DashboardPage() {
         />
         <MetricCard
           title="Active Plan"
-          value={dashboard?.activePlan?.name ?? "No active plan"}
-          description="Create or assign a plan to see progress here"
+          value={dashboard?.activePlan?.name ?? (dashboardQuery.isLoading ? "…" : "No active plan")}
+          description={
+            dashboardQuery.isLoading
+              ? "Loading active plan"
+              : "Create or assign a plan to see progress here"
+          }
           icon={<CalendarDays className="h-4 w-4" />}
         />
         <Card>
@@ -130,9 +138,11 @@ function DashboardPage() {
             <CardDescription>
               {thresholdOverviewQuery.isLoading
                 ? "Loading calculated thresholds"
-                : thresholdOverviewQuery.data?.publication.status === "unavailable"
-                  ? "Calculated thresholds are not available yet"
-                  : "Calculated thresholds are available"}
+                : thresholdOverviewQuery.isError
+                  ? "Threshold status is unavailable"
+                  : thresholdOverviewQuery.data?.publication.status === "unavailable"
+                    ? "Calculated thresholds are not available yet"
+                    : "Calculated thresholds are available"}
             </CardDescription>
           </CardHeader>
           <CardContent>

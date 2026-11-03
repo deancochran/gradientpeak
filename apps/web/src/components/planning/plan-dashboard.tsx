@@ -67,9 +67,9 @@ export function PlanDashboard() {
     [upcomingEventsQuery.data?.items],
   );
   const nextGoal = useMemo(() => {
-    const goals = [...(goalsQuery.data?.items ?? [])];
+    const goals = (goalsQuery.data?.items ?? []).filter((goal) => goal.target_date >= today);
     return goals.sort((a, b) => a.target_date.localeCompare(b.target_date))[0] ?? null;
-  }, [goalsQuery.data?.items]);
+  }, [goalsQuery.data?.items, today]);
 
   return (
     <>
@@ -130,7 +130,11 @@ export function PlanDashboard() {
             <CardTitle>Next goal anchor</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {nextGoal ? (
+            {goalsQuery.isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading goals...</p>
+            ) : goalsQuery.isError && !goalsQuery.data ? (
+              <p className="text-sm text-muted-foreground">Goal anchors are unavailable.</p>
+            ) : nextGoal ? (
               <>
                 <div className="rounded-xl border p-4">
                   <p className="font-medium">{nextGoal.title}</p>
@@ -160,6 +164,8 @@ export function PlanDashboard() {
           <CardContent>
             {upcomingEventsQuery.isLoading ? (
               <p className="text-sm text-muted-foreground">Loading scheduled work...</p>
+            ) : upcomingEventsQuery.isError && !upcomingEventsQuery.data ? (
+              <p className="text-sm text-muted-foreground">Scheduled work is unavailable.</p>
             ) : upcomingEvents.length > 0 ? (
               <div className="space-y-3">
                 {upcomingEvents.slice(0, 8).map((event) => (

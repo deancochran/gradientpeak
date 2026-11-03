@@ -15,7 +15,9 @@ export const Route = createFileRoute("/_protected/thresholds")({
 function formatThreshold(value: number, unit: "watts" | "meters_per_second" | "bpm") {
   if (unit === "watts") return `${Math.round(value)} W`;
   if (unit === "bpm") return `${Math.round(value)} bpm`;
-  return `${value.toFixed(2)} m/s`;
+  const secondsPerKilometer = Math.round(1_000 / value);
+  const minutes = Math.floor(secondsPerKilometer / 60);
+  return `${minutes}:${String(secondsPerKilometer % 60).padStart(2, "0")} /km`;
 }
 
 function ThresholdsPage() {
@@ -104,7 +106,16 @@ function ThresholdsPage() {
             )}
           </section>
         </>
-      ) : null}
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Build your threshold history</CardTitle>
+            <CardDescription>
+              Record eligible completed activities to calculate thresholds and pace zones here.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      )}
     </div>
   );
 }

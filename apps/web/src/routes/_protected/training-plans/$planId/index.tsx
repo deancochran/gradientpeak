@@ -12,7 +12,11 @@ function TrainingPlanDetailPage() {
   return (
     <TrainingPlanDetail
       onDeleted={() =>
-        void navigate({ to: "/training-plans", search: { q: undefined }, replace: true })
+        void navigate({
+          to: "/training-plans",
+          search: { q: undefined, tab: "owned" },
+          replace: true,
+        })
       }
       onEdit={() =>
         void navigate({ to: "/training-plans/$planId/edit", params: { planId } } as never)
