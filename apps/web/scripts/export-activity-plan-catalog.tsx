@@ -23,6 +23,7 @@ import {
   ActivityPlanCatalogPdfDocument,
   getActivityPlanCatalogExpectedPageCount,
 } from "../src/lib/activity-plan-export/activity-plan-catalog-pdf-document";
+import { decodeXmlText } from "../src/lib/activity-plan-export/decode-xml-text";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const worktreeRoot = resolve(scriptDirectory, "../../..");
@@ -36,19 +37,6 @@ const outputPath = process.env.ACTIVITY_PLAN_CATALOG_OUTPUT_PATH
   : defaultOutputPath;
 const outputDirectory = dirname(outputPath);
 const execFileAsync = promisify(execFile);
-
-function decodeXmlText(value: string): string {
-  return value
-    .replaceAll("&amp;", "&")
-    .replaceAll("&lt;", "<")
-    .replaceAll("&gt;", ">")
-    .replaceAll("&quot;", '"')
-    .replaceAll("&apos;", "'")
-    .replace(/&#(\d+);/gu, (_, code: string) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([\da-f]+);/giu, (_, code: string) =>
-      String.fromCodePoint(Number.parseInt(code, 16)),
-    );
-}
 
 function normalizeExtractedText(value: string): string {
   return value
