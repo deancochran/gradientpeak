@@ -2,8 +2,14 @@ import { Children, isValidElement, useState } from "react";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 import { StepDurationField, type StepDurationValue } from "./StepDurationField";
 
-function pickerValues(label: string) {
-  return Children.toArray(screen.getByLabelText(label).props.children)
+async function chooseDurationType(value: string) {
+  await fireEvent.press(screen.getByLabelText("Duration type"));
+  await fireEvent(screen.getByTestId("Duration type-picker"), "valueChange", value);
+}
+
+async function pickerValues() {
+  await fireEvent.press(screen.getByLabelText("Duration type"));
+  return Children.toArray(screen.getByTestId("Duration type-picker").props.children)
     .filter(isValidElement<{ value: string }>)
     .map((child) => child.props.value);
 }
@@ -25,10 +31,37 @@ describe("StepDurationField compact rows", () => {
         }}
       />,
     );
-    expect(pickerValues("Duration type")).toEqual(expect.arrayContaining(expected));
-    expect(pickerValues("Duration type")).not.toContain("untilFinished");
+    const values = await pickerValues();
+    expect(values).toEqual(expect.arrayContaining(expected));
+    expect(values).not.toContain("untilFinished");
     expect(screen.getByLabelText("Duration value")).toBeTruthy();
     expect(screen.queryByText("Change completion type")).toBeNull();
+  });
+
+  it("shows an empty duration type trigger and activates value inputs after a selection", async () => {
+    function Owner() {
+      const [duration, setDuration] = useState<StepDurationValue | null>(null);
+      return (
+        <StepDurationField
+          form={{
+            getValues: () => ({ duration }),
+            setValue: (_name, next) => setDuration(next),
+          }}
+        />
+      );
+    }
+    await renderNative(<Owner />);
+    expect(screen.getByLabelText("Duration type").props.accessibilityValue.text).toBe(
+      "Duration type",
+    );
+    expect(screen.getByText("Choose a value")).toBeTruthy();
+
+    await chooseDurationType("time");
+    expect(screen.getByLabelText("Duration value")).toBeTruthy();
+
+    await chooseDurationType("distance");
+    expect(screen.getByLabelText("Duration value")).toBeTruthy();
+    expect(screen.getByLabelText("Distance unit")).toBeTruthy();
   });
 
   it("changes type in-place and gives repetitions its existing default", async () => {
@@ -49,7 +82,7 @@ describe("StepDurationField compact rows", () => {
       );
     }
     await renderNative(<Owner />);
-    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "repetitions");
+    await chooseDurationType("repetitions");
     expect(setValue).toHaveBeenLastCalledWith(
       "duration",
       { type: "repetitions", count: 1 },
@@ -76,7 +109,7 @@ describe("StepDurationField compact rows", () => {
       );
     }
     await renderNative(<Owner />);
-    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "time");
+    await chooseDurationType("time");
     expect(screen.getByLabelText("Duration value").props.accessibilityValue.text).toBe("Not set");
     await fireEvent.press(screen.getByLabelText("Duration value"));
     await fireEvent(screen.getByLabelText("Duration value minutes"), "valueChange", 5);
@@ -86,7 +119,7 @@ describe("StepDurationField compact rows", () => {
       { shouldDirty: true, shouldValidate: true },
     );
 
-    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "distance");
+    await chooseDurationType("distance");
     expect(screen.getByLabelText("Distance unit")).toBeTruthy();
     expect(screen.getByLabelText("Duration value").props.accessibilityValue.text).toBe("Not set");
     expect(screen.queryByText("Correct the completion value before saving.")).toBeNull();
@@ -123,10 +156,10 @@ describe("StepDurationField compact rows", () => {
       );
     }
     await renderNative(<Owner />);
-    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "time");
+    expect(screen.getByLabelText("Duration type").props.accessibilityValue.text).toBe("Time");
     expect(setValue).not.toHaveBeenCalled();
-    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "repetitions");
-    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "time");
+    await chooseDurationType("repetitions");
+    await chooseDurationType("time");
     expect(setValue).toHaveBeenLastCalledWith("duration", null, {
       shouldDirty: true,
       shouldValidate: true,
@@ -154,13 +187,13 @@ describe("StepDurationField compact rows", () => {
       );
     }
     await renderNative(<Owner />);
-    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "distance");
+    await chooseDurationType("distance");
     expect(setValue).toHaveBeenLastCalledWith("duration", null, {
       shouldDirty: true,
       shouldValidate: true,
     });
     expect(screen.getByLabelText("Distance unit")).toBeTruthy();
-    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "time");
+    await chooseDurationType("time");
     expect(setValue).toHaveBeenLastCalledWith("duration", null, {
       shouldDirty: true,
       shouldValidate: true,

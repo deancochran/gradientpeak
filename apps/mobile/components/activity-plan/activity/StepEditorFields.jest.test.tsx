@@ -20,6 +20,11 @@ const step: ActivityPlanStep = {
   ],
 };
 
+async function chooseDurationType(value: string) {
+  await fireEvent.press(screen.getByLabelText("Duration type"));
+  await fireEvent(screen.getByTestId("Duration type-picker"), "valueChange", value);
+}
+
 describe("StepEditorFields screen form", () => {
   it("keeps a targetless draft editable but rejects it on save", async () => {
     const ref = createRef<StepEditorFieldsHandle>();
@@ -44,7 +49,7 @@ describe("StepEditorFields screen form", () => {
         step={{ ...step, duration: null, targets: [{ type: "RPE", intensity: 5 }] }}
       />,
     );
-    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "distance");
+    await chooseDurationType("distance");
     expect(screen.queryAllByRole("alert")).toHaveLength(0);
     await act(() => expect(ref.current?.validate()).toBeNull());
     expect(screen.getAllByRole("alert")).toHaveLength(1);
@@ -58,7 +63,7 @@ describe("StepEditorFields screen form", () => {
         step={{ ...step, duration: null, targets: [{ type: "RPE", intensity: 5 }] }}
       />,
     );
-    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "time");
+    await chooseDurationType("time");
     await fireEvent.press(screen.getByLabelText("Target type"));
     const values = Children.toArray(screen.getByTestId("Target type-picker").props.children)
       .filter(isValidElement<{ value: string }>)
@@ -158,10 +163,14 @@ describe("StepEditorFields screen form", () => {
     await fireEvent.press(screen.getByLabelText("Duration type"));
     const picker = screen.getByTestId("Duration type-picker");
     await fireEvent(picker, "valueChange", "distance");
-    expect(screen.getByLabelText("Duration type: Time")).toBeTruthy();
+    expect(screen.getAllByLabelText("Duration type")[0]?.props.accessibilityValue.text).toBe(
+      "Time",
+    );
     await fireEvent.press(screen.getByLabelText("Remove target 1"));
-    await fireEvent(screen.getByTestId("Duration type-picker"), "valueChange", "distance");
-    expect(screen.getByLabelText("Duration type: Distance")).toBeTruthy();
+    await chooseDurationType("distance");
+    expect(screen.getAllByLabelText("Duration type")[0]?.props.accessibilityValue.text).toBe(
+      "Distance",
+    );
   });
   it("keeps populated optional step details open with persistent current-value rows", async () => {
     const { container } = await renderNative(
@@ -169,7 +178,7 @@ describe("StepEditorFields screen form", () => {
     );
     expect(screen.getByLabelText("Name (optional)")).toBeTruthy();
     expect(screen.getByLabelText("Coaching cue (optional)")).toBeTruthy();
-    expect(screen.getByLabelText("Duration type: Time")).toBeTruthy();
+    expect(screen.getByLabelText("Duration type").props.accessibilityValue.text).toBe("Time");
     expect(screen.getByLabelText("Duration value").props.accessibilityValue.text).toBe("0:01:00");
     expect(screen.getByText("0:01:00")).toBeTruthy();
     expect(screen.getByLabelText("Target 1 type").props.accessibilityValue.text).toBe(

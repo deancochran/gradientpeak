@@ -169,6 +169,7 @@ export function StepDurationField({
     .map((option) => ({
       value: option.type,
       label: option.type === "distance" ? "Distance" : option.label,
+      ...(option.type === "repetitions" ? { selectedLabel: "Reps" } : {}),
       disabled: lockToTime && option.type !== "time",
     }));
 
@@ -187,7 +188,8 @@ export function StepDurationField({
             required={false}
             label="Duration type"
             hideVisibleLabel
-            nativePresentation="menu"
+            nativePresentation="searchable"
+            placeholder="Duration type"
             value={selectedType ?? ""}
             options={options}
             disabled={!active}

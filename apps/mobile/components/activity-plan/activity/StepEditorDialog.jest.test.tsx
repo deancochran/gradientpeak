@@ -33,6 +33,11 @@ async function chooseTargetType(label: string, value: string) {
   await fireEvent(screen.getByTestId(`${label}-picker`), "valueChange", value);
 }
 
+async function chooseDurationType(value: string) {
+  await fireEvent.press(screen.getByLabelText("Duration type"));
+  await fireEvent(screen.getByTestId("Duration type-picker"), "valueChange", value);
+}
+
 function targetTypeValue(label: string) {
   return screen.getByLabelText(label).props.accessibilityValue.text;
 }
@@ -51,7 +56,7 @@ describe("StepEditorDialog", () => {
     expect(screen.getByTestId("step-editor-modal").props.presentationStyle).toBe("pageSheet");
     expect(screen.getByLabelText("Name (optional)")).toBeTruthy();
     expect(screen.getByLabelText("Coaching cue (optional)")).toBeTruthy();
-    expect(screen.getByLabelText("Duration type: Time")).toBeTruthy();
+    expect(screen.getByLabelText("Duration type").props.accessibilityValue.text).toBe("Time");
     expect(screen.getByLabelText("Duration value")).toBeTruthy();
     expect(targetTypeValue("Target type")).toBe("RPE");
     expect(screen.getByLabelText("Target value")).toBeTruthy();
@@ -249,7 +254,7 @@ describe("StepEditorDialog", () => {
         step={{ ...step, duration: null, targets: [] }}
       />,
     );
-    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", kind);
+    await chooseDurationType(kind);
     await fireEvent.press(screen.getByLabelText("Duration value"));
     if (kind === "time")
       await fireEvent(screen.getByLabelText("Duration value minutes"), "valueChange", 5);
@@ -277,7 +282,7 @@ describe("StepEditorDialog", () => {
         step={{ ...step, duration: null, targets: [] }}
       />,
     );
-    await fireEvent(screen.getByLabelText("Duration type"), "valueChange", "distance");
+    await chooseDurationType("distance");
     await fireEvent.press(screen.getByTestId("step-editor-save-button"));
     expect(onSave).not.toHaveBeenCalled();
     expect(screen.getAllByRole("alert").length).toBeGreaterThan(0);
