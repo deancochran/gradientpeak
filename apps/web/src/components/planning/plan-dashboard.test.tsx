@@ -1,30 +1,15 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
-  fetchNextPage: vi.fn(),
+  goalInput: vi.fn(),
+  profile: { data: { id: "profile" }, isError: false, isLoading: false },
+  projection: { data: {} as unknown, isError: false, isLoading: false, refetch: vi.fn() },
   goals: {
-    data: {
-      pages: [
-        {
-          items: [
-            {
-              activity_category: "run",
-              id: "past-goal",
-              priority: 4,
-              target_date: "2020-01-01",
-              title: "Past goal",
-            },
-          ],
-        },
-      ],
-    },
-    fetchNextPage: null as unknown,
-    hasNextPage: true,
+    data: { items: [] },
     isError: false,
-    isFetchingNextPage: false,
     isLoading: false,
     refetch: vi.fn(),
   },
@@ -41,10 +26,10 @@ vi.mock("../../lib/planning", () => ({
 }));
 vi.mock("../../lib/api/client", () => ({
   api: {
-    profiles: { get: { useQuery: () => ({ data: { id: "profile" } }) } },
+    profiles: { get: { useQuery: () => state.profile } },
     trainingPlans: {
       getPlanTabProjection: {
-        useQuery: () => ({ data: {}, isError: false, isLoading: false, refetch: vi.fn() }),
+        useQuery: () => state.projection,
       },
       list: { useQuery: () => ({ data: { items: [] }, isError: false, isLoading: false }) },
     },
@@ -59,7 +44,12 @@ vi.mock("../../lib/api/client", () => ({
       },
     },
     goals: {
-      list: { useInfiniteQuery: () => ({ ...state.goals, fetchNextPage: state.fetchNextPage }) },
+      list: {
+        useQuery: (input: unknown) => {
+          state.goalInput(input);
+          return state.goals;
+        },
+      },
     },
   },
 }));
@@ -70,10 +60,37 @@ import { PlanDashboard } from "./plan-dashboard";
 
 afterEach(() => {
   cleanup();
-  state.fetchNextPage.mockReset();
+  state.goalInput.mockReset();
+  state.profile = { data: { id: "profile" }, isError: false, isLoading: false };
+  state.projection = { data: {}, isError: false, isLoading: false, refetch: vi.fn() };
 });
 
-it("continues the sorted goal cursor instead of missing a future goal after a full past page", async () => {
+it("does not turn a failed profile dependency into absent planning data", () => {
+  state.profile = { data: undefined, isError: true, isLoading: false } as never;
   render(<PlanDashboard />);
-  await waitFor(() => expect(state.fetchNextPage).toHaveBeenCalledOnce());
+
+  expect(screen.getByText("Active plan is unavailable.")).toBeTruthy();
+  expect(screen.getByText("Goal anchors are unavailable.")).toBeTruthy();
+  expect(screen.queryByText("No upcoming goals.")).toBeNull();
+});
+
+it("does not label an initial projection failure as no active plan", () => {
+  state.projection = { data: undefined, isError: true, isLoading: false, refetch: vi.fn() };
+  render(<PlanDashboard />);
+
+  expect(screen.getByText("Active plan is unavailable.")).toBeTruthy();
+  expect(screen.queryByText("No active plan detected from future planned sessions.")).toBeNull();
+});
+
+it("requests the first future goal with a bounded server-side date predicate", () => {
+  render(<PlanDashboard />);
+  expect(screen.getByText("No upcoming goals.")).toBeTruthy();
+  expect(state.goalInput).toHaveBeenCalledWith(
+    expect.objectContaining({
+      limit: 1,
+      sort_by: "target_date",
+      sort_order: "asc",
+      target_date_on_or_after: "2026-04-01",
+    }),
+  );
 });

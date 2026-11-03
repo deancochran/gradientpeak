@@ -37,7 +37,7 @@ function DashboardPage() {
   const dashboardQuery = api.home.getDashboard.useQuery(undefined, { retry: false });
   const thresholdOverviewQuery = api.athleteIntelligence.getThresholdOverview.useQuery({});
 
-  if (dashboardQuery.isError) {
+  if (dashboardQuery.isError && !dashboardQuery.data) {
     return (
       <div className="space-y-8">
         <h1 className="text-3xl font-semibold tracking-tight">Welcome back</h1>
@@ -68,6 +68,20 @@ function DashboardPage() {
         </div>
         <SearchLauncher mode="bar" />
       </section>
+
+      {dashboardQuery.isError ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/40 p-4"
+        >
+          <p className="text-sm">
+            Dashboard updates are unavailable. Showing the most recent data.
+          </p>
+          <Button type="button" variant="outline" onClick={() => void dashboardQuery.refetch()}>
+            Retry dashboard
+          </Button>
+        </div>
+      ) : null}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <MetricCard

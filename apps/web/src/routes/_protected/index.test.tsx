@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   dashboard: {
@@ -19,6 +19,12 @@ const mocks = vi.hoisted(() => ({
         objectiveIntensity: 0.7,
       },
     ],
+  },
+  dashboardQuery: {
+    data: null as unknown,
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
   },
 }));
 
@@ -45,10 +51,8 @@ vi.mock("../../lib/api/client", () => ({
     home: {
       getDashboard: {
         useQuery: () => ({
-          data: mocks.dashboard,
-          isError: false,
-          isLoading: false,
-          refetch: vi.fn(),
+          ...mocks.dashboardQuery,
+          data: mocks.dashboardQuery.data,
         }),
       },
     },
@@ -57,7 +61,24 @@ vi.mock("../../lib/api/client", () => ({
 
 import { Route } from "./index";
 
-afterEach(cleanup);
+beforeEach(() => {
+  mocks.dashboardQuery = {
+    data: mocks.dashboard,
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  };
+});
+
+afterEach(() => {
+  cleanup();
+  mocks.dashboardQuery = {
+    data: mocks.dashboard,
+    isError: false,
+    isLoading: false,
+    refetch: vi.fn(),
+  };
+});
 
 describe("Dashboard schedule", () => {
   it("labels the explicit objective-intensity field without a normalized-intensity alias", () => {
@@ -66,5 +87,28 @@ describe("Dashboard schedule", () => {
 
     expect(screen.getByText(/Common Load 64 · Intensity 0\.70/)).toBeTruthy();
     expect(screen.queryByText(/Normalized intensity/i)).toBeNull();
+  });
+
+  it("keeps cached dashboard content visible when a refresh fails", () => {
+    mocks.dashboardQuery = {
+      data: mocks.dashboard,
+      isError: true,
+      isLoading: false,
+      refetch: vi.fn(),
+    };
+    const DashboardPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<DashboardPage />);
+
+    expect(screen.getByText("Endurance swim")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("most recent data");
+  });
+
+  it("shows an initial dashboard failure instead of empty dashboard cards", () => {
+    mocks.dashboardQuery = { data: undefined, isError: true, isLoading: false, refetch: vi.fn() };
+    const DashboardPage = (Route as unknown as { component: React.ComponentType }).component;
+    render(<DashboardPage />);
+
+    expect(screen.getByRole("alert").textContent).toContain("Dashboard unavailable");
+    expect(screen.queryByText("Endurance swim")).toBeNull();
   });
 });

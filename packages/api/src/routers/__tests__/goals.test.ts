@@ -296,6 +296,23 @@ describe("goalsRouter", () => {
     ).resolves.toMatchObject({ items: [goal] });
   });
 
+  it("accepts a bounded future-goal query without changing profile ownership", async () => {
+    const goal = createGoalRow({ target_date: "2026-06-01" });
+    const { caller } = createCaller({
+      queryMap: { profileGoalsSelect: [goal], profileGoalsCount: [{ total: 1 }] },
+    });
+
+    await expect(
+      caller.list({
+        profile_id: OWNER_ID,
+        limit: 1,
+        sort_by: "target_date",
+        sort_order: "asc",
+        target_date_on_or_after: "2026-05-01",
+      }),
+    ).resolves.toMatchObject({ items: [goal], total: 1 });
+  });
+
   it("rejects list input with unexpected keys", async () => {
     const { caller } = createCaller();
 

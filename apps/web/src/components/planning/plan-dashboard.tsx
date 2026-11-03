@@ -11,7 +11,7 @@ import {
 } from "@repo/ui/components/dialog";
 import { Link } from "@tanstack/react-router";
 import { CalendarDays, Flag } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { PlanGoalForm } from "../../components/protected/plan-goal-form";
 import { api } from "../../lib/api/client";
 import {
@@ -58,44 +58,24 @@ export function PlanDashboard() {
     includeAdhoc: false,
     limit: 12,
   });
-  const goalsQuery = api.goals.list.useInfiniteQuery(
+  const goalsQuery = api.goals.list.useQuery(
     {
       profile_id: profileQuery.data?.id ?? "00000000-0000-0000-0000-000000000000",
-      limit: 50,
+      limit: 1,
       sort_by: "target_date",
       sort_order: "asc",
+      target_date_on_or_after: today,
     },
     {
       enabled: Boolean(profileQuery.data?.id),
-      getNextPageParam: (page) => page.nextCursor ?? undefined,
     },
   );
   const upcomingEvents = useMemo(
     () => getUpcomingScheduledWorkItems(upcomingEventsQuery.data?.items ?? []),
     [upcomingEventsQuery.data?.items],
   );
-  const nextGoal = useMemo(() => {
-    const goals = (goalsQuery.data?.pages.flatMap((page) => page.items) ?? []).filter(
-      (goal) => goal.target_date >= today,
-    );
-    return goals.sort((a, b) => a.target_date.localeCompare(b.target_date))[0] ?? null;
-  }, [goalsQuery.data?.pages, today]);
-  useEffect(() => {
-    if (
-      !nextGoal &&
-      !goalsQuery.isError &&
-      goalsQuery.hasNextPage &&
-      !goalsQuery.isFetchingNextPage
-    ) {
-      void goalsQuery.fetchNextPage();
-    }
-  }, [
-    goalsQuery.fetchNextPage,
-    goalsQuery.hasNextPage,
-    goalsQuery.isError,
-    goalsQuery.isFetchingNextPage,
-    nextGoal,
-  ]);
+  const nextGoal = goalsQuery.data?.items[0] ?? null;
+  const planningUnavailable = profileQuery.isError || !profileQuery.data;
 
   return (
     <>
@@ -144,6 +124,8 @@ export function PlanDashboard() {
                   </Badge>
                 </div>
               </>
+            ) : planningUnavailable || (planTabQuery.isError && !planTabQuery.data) ? (
+              <p className="text-sm text-muted-foreground">Active plan is unavailable.</p>
             ) : (
               <p className="text-sm text-muted-foreground">
                 No active plan detected from future planned sessions.
@@ -156,9 +138,9 @@ export function PlanDashboard() {
             <CardTitle>Next goal anchor</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {goalsQuery.isLoading ? (
+            {profileQuery.isLoading || goalsQuery.isLoading ? (
               <p className="text-sm text-muted-foreground">Loading goals...</p>
-            ) : goalsQuery.isError && !goalsQuery.data ? (
+            ) : planningUnavailable || (goalsQuery.isError && !goalsQuery.data) ? (
               <p className="text-sm text-muted-foreground">Goal anchors are unavailable.</p>
             ) : nextGoal ? (
               <>
@@ -174,7 +156,7 @@ export function PlanDashboard() {
                 </div>
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">No goals created yet.</p>
+              <p className="text-sm text-muted-foreground">No upcoming goals.</p>
             )}
           </CardContent>
         </Card>
@@ -256,32 +238,30 @@ export function PlanDashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            {goalsQuery.isLoading ? (
+            {profileQuery.isLoading || goalsQuery.isLoading ? (
               <p className="text-sm text-muted-foreground">Loading goals...</p>
-            ) : goalsQuery.data?.pages.some((page) => page.items.length > 0) ? (
+            ) : planningUnavailable || (goalsQuery.isError && !goalsQuery.data) ? (
+              <p className="text-sm text-muted-foreground">Goals are unavailable.</p>
+            ) : nextGoal ? (
               <div className="space-y-3">
-                {goalsQuery.data.pages
-                  .flatMap((page) => page.items)
-                  .map((goal) => (
-                    <div key={goal.id} className="rounded-xl border p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-medium">{goal.title}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {formatShortDayLabel(goal.target_date)}
-                          </p>
-                        </div>
-                        <Badge variant="outline">{goal.priority}/10</Badge>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Badge>{goal.activity_category}</Badge>
-                      </div>
+                <div className="rounded-xl border p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium">{nextGoal.title}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {formatShortDayLabel(nextGoal.target_date)}
+                      </p>
                     </div>
-                  ))}
+                    <Badge variant="outline">{nextGoal.priority}/10</Badge>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge>{nextGoal.activity_category}</Badge>
+                  </div>
+                </div>
               </div>
             ) : (
               <p className="text-sm text-muted-foreground">
-                No goals yet. Add one to anchor your plan.
+                No upcoming goals. Add one to anchor your plan.
               </p>
             )}
           </CardContent>
