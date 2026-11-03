@@ -110,18 +110,21 @@ export function DiscoveryExplorer({
   const numericError = getDistanceRangeError(minDistance, maxDistance);
 
   useEffect(() => {
+    const activeScopeFiltersMatch =
+      initialScope === "activityPlans"
+        ? initialActivityCategory === appliedActivityPlanCategory &&
+          initialActivitySort === appliedActivitySort
+        : initialScope === "trainingPlans"
+          ? initialTrainingPlanCategory === appliedTrainingPlanCategory &&
+            initialExperience === appliedExperience &&
+            initialTrainingSort === appliedTrainingSort
+          : initialScope === "routes"
+            ? initialMinDistanceKm === appliedMinDistance &&
+              initialMaxDistanceKm === appliedMaxDistance &&
+              initialRouteSort === appliedRouteSort
+            : initialProfileSort === appliedProfileSort;
     const urlMatchesAppliedState =
-      initialQuery.trim() === search &&
-      initialScope === scope &&
-      initialMinDistanceKm === appliedMinDistance &&
-      initialMaxDistanceKm === appliedMaxDistance &&
-      initialActivityCategory === appliedActivityPlanCategory &&
-      initialActivitySort === appliedActivitySort &&
-      initialTrainingPlanCategory === appliedTrainingPlanCategory &&
-      initialExperience === appliedExperience &&
-      initialRouteSort === appliedRouteSort &&
-      initialProfileSort === appliedProfileSort &&
-      initialTrainingSort === appliedTrainingSort;
+      initialQuery.trim() === search && initialScope === scope && activeScopeFiltersMatch;
     if (awaitingUrlSync) {
       if (urlMatchesAppliedState) setAwaitingUrlSync(false);
       return;

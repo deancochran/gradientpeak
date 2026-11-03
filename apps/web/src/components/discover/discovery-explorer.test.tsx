@@ -181,6 +181,39 @@ describe("DiscoveryExplorer", () => {
       expect.objectContaining({ activityCategories: ["bike"], search: "tempo", sort_by: "oldest" }),
     );
   });
+  it("clears pending apply state after dropping an inactive bookmarked filter and accepts back navigation", () => {
+    const view = render(
+      <DiscoveryExplorer initialScope="activityPlans" initialTrainingPlanCategory="bike" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+    expect(mocks.navigate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ search: { scope: "activityPlans" } }),
+    );
+
+    view.rerender(<DiscoveryExplorer initialScope="activityPlans" />);
+    expect(screen.queryByText("Discovery edits have not been applied.")).toBeNull();
+
+    view.rerender(
+      <DiscoveryExplorer
+        initialMaxDistanceKm="20"
+        initialMinDistanceKm="10"
+        initialQuery="ridge"
+        initialRouteSort="distance_desc"
+        initialScope="routes"
+      />,
+    );
+    expect((screen.getByLabelText("Search routes") as HTMLInputElement).value).toBe("ridge");
+    expect((screen.getByLabelText("Minimum distance (km)") as HTMLInputElement).value).toBe("10");
+    expect((screen.getByLabelText("Sort routes") as HTMLSelectElement).value).toBe("distance_desc");
+    expect(mocks.routeQuery).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        max_distance_m: 20000,
+        min_distance_m: 10000,
+        search: "ridge",
+        sort_by: "distance_desc",
+      }),
+    );
+  });
   it("keeps invalid route-distance drafts out of the applied query and clears bounds", () => {
     render(<DiscoveryExplorer initialScope="routes" />);
     mocks.navigate.mockClear();
