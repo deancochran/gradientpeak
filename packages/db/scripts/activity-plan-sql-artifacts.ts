@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import type { Pool } from "pg";
 
 export const pinnedActivityPlanFunctionNames = [
+  "activity_plan_jsonb_has_exact_keys",
   "activity_plan_target_is_canonical",
   "activity_plan_ecmascript_trim",
   "activity_plan_utf16_key",
@@ -11,6 +12,7 @@ export const pinnedActivityPlanFunctionNames = [
   "activity_plan_core_canonical_json",
   "activity_plan_core_structure_hash",
   "activity_plan_core_semantic_hash",
+  "activity_plan_authoring_uuid_is_valid",
   "activity_plan_v5_has_exact_keys",
   "activity_plan_v5_uuid_is_valid",
   "activity_plan_v5_structure_is_valid",
@@ -41,11 +43,15 @@ export function activityPlanSqlArtifacts() {
   };
   return {
     functions: [
+      extractRegion("exact-keys-helper"),
       extractRegion("target-helper"),
       extractRegion("trim-helper"),
+      extractRegion("hash-helpers"),
+      extractRegion("authoring-uuid-helper"),
       extractRegion("functions"),
+      extractRegion("retirements"),
     ].join("\n"),
-    triggers: "",
+    triggers: extractRegion("triggers"),
     acl: "",
   };
 }

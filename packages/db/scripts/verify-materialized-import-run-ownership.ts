@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import type { Pool } from "pg";
 import { bootstrapSupabaseSchemas, withDisposableDatabase } from "./_disposable-target";
-import { installActivityPlanSqlFunctions } from "./activity-plan-sql-artifacts";
+import {
+  activityPlanSqlArtifacts,
+  installActivityPlanSqlFunctions,
+} from "./activity-plan-sql-artifacts";
 import {
   exportDrizzleSchemaSql,
   installImportRunOwnershipSchema,
@@ -46,6 +49,7 @@ await withDisposableDatabase(process.argv.slice(2), "materialized_import_run", a
   } finally {
     await db.query("set check_function_bodies = on");
   }
+  await db.query(activityPlanSqlArtifacts().triggers);
   await installImportRunOwnershipSchema(db);
 
   const validStructure = {
@@ -82,6 +86,37 @@ await withDisposableDatabase(process.argv.slice(2), "materialized_import_run", a
   );
   assert.match(validatorSource.rows[0]?.definition ?? "", /activity_plan_ecmascript_trim/);
   assert.doesNotMatch(validatorSource.rows[0]?.definition ?? "", /select true/i);
+  const targetHelperSource = await db.query<{ definition: string }>(
+    "select pg_get_functiondef('public.activity_plan_target_is_canonical(jsonb,text)'::regprocedure) as definition",
+  );
+  assert.match(targetHelperSource.rows[0]?.definition ?? "", /when 'watts'/);
+  assert.doesNotMatch(targetHelperSource.rows[0]?.definition ?? "", /select true/i);
+  const exactKeysHelperSource = await db.query<{ definition: string }>(
+    "select pg_get_functiondef('public.activity_plan_jsonb_has_exact_keys(jsonb,text[],text[])'::regprocedure) as definition",
+  );
+  assert.match(exactKeysHelperSource.rows[0]?.definition ?? "", /jsonb_object_keys/);
+  const targetSemantics = await db.query<{ valid: boolean }>(
+    `select public.activity_plan_target_is_canonical($1::jsonb, $2::text) as valid
+     union all select public.activity_plan_target_is_canonical($3::jsonb, $4::text)
+     union all select public.activity_plan_target_is_canonical($5::jsonb, $6::text)
+     union all select public.activity_plan_target_is_canonical($7::jsonb, $8::text)`,
+    [
+      JSON.stringify({ type: "watts", intensity: 250 }),
+      "run",
+      JSON.stringify({ type: "watts", intensity: 250 }),
+      "bike",
+      JSON.stringify({ type: "watts", intensity: 250, unit: "watts" }),
+      "bike",
+      JSON.stringify({ type: "watts", intensity: 3001 }),
+      "bike",
+    ],
+  );
+  assert.deepEqual(targetSemantics.rows, [
+    { valid: false },
+    { valid: true },
+    { valid: false },
+    { valid: false },
+  ]);
 
   await db.query(
     `insert into public.users (id, name, email) values
@@ -90,6 +125,64 @@ await withDisposableDatabase(process.argv.slice(2), "materialized_import_run", a
     [profileA, profileB],
   );
   await db.query("insert into public.profiles (id) values ($1), ($2)", [profileA, profileB]);
+  const hashes = await db.query<{ structure: string; semantic: string }>(
+    `select public.activity_plan_core_structure_hash($1::jsonb) as structure,
+      public.activity_plan_core_semantic_hash($1::jsonb, 'general_maintenance') as semantic`,
+    [JSON.stringify(validStructure)],
+  );
+  const initialHashes = hashes.rows[0];
+  assert.match(initialHashes?.structure ?? "", /^v1:sha256:[0-9a-f]{64}$/);
+  assert.match(initialHashes?.semantic ?? "", /^v2:sha256:[0-9a-f]{64}$/);
+  const activityPlanId = "77000000-0000-4000-8000-000000000001";
+  await db.query(
+    `insert into public.activity_plans
+      (id, profile_id, name, structure, structure_hash, semantic_hash, training_intent)
+     values ($1, $2, 'Materialized plan', $3::jsonb, $4, $5, 'general_maintenance')`,
+    [
+      activityPlanId,
+      profileA,
+      JSON.stringify(validStructure),
+      initialHashes?.structure,
+      initialHashes?.semantic,
+    ],
+  );
+  const revisedStructure = {
+    ...validStructure,
+    items: [{ ...validStructure.items[0], duration: { type: "time", seconds: 601 } }],
+  };
+  const revisedHashes = await db.query<{ structure: string; semantic: string }>(
+    `select public.activity_plan_core_structure_hash($1::jsonb) as structure,
+      public.activity_plan_core_semantic_hash($1::jsonb, 'general_maintenance') as semantic`,
+    [JSON.stringify(revisedStructure)],
+  );
+  await db.query(
+    `update public.activity_plans set structure = $2::jsonb, structure_hash = $3,
+      semantic_hash = $4, revision = 999 where id = $1`,
+    [
+      activityPlanId,
+      JSON.stringify(revisedStructure),
+      revisedHashes.rows[0]?.structure,
+      revisedHashes.rows[0]?.semantic,
+    ],
+  );
+  const revisedPlan = await db.query<{ revision: number }>(
+    "select revision from public.activity_plans where id = $1",
+    [activityPlanId],
+  );
+  assert.deepEqual(revisedPlan.rows, [{ revision: 2 }]);
+  await assert.rejects(
+    db.query("update public.activity_plans set semantic_hash = structure_hash where id = $1", [
+      activityPlanId,
+    ]),
+    (error: unknown) =>
+      (error as { constraint?: string }).constraint === "activity_plans_hash_guard",
+  );
+  const retiredManifestValidator = await db.query<{ removed: boolean }>(
+    `select to_regprocedure(
+      'public.planned_session_resolution_manifest_is_valid(jsonb,uuid,integer)'
+    ) is null as removed`,
+  );
+  assert.deepEqual(retiredManifestValidator.rows, [{ removed: true }]);
   await db.query(
     `insert into public.integrations (id, profile_id, provider, external_id) values
       ($1, $2, 'wahoo', 'materialized-owner-a'),
