@@ -33,7 +33,7 @@ export const Route = createFileRoute("/_protected/activities/import")({
   validateSearch: validateActivityImportSearch,
 });
 
-export function ActivityImportPage() {
+function ActivityImportPage() {
   const navigate = Route.useNavigate();
   const search = Route.useSearch();
   const queryClient = useQueryClient();

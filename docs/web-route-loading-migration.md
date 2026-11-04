@@ -26,6 +26,44 @@ navigation need browser verification. This does not alter auth, queries, recorde
 ownership, or stored history. Useful preview delivery must not be called resolution
 of the broader performance report.
 
+Second startup slice removes test-only component exports from Goals, Settings,
+and Activity Import. TanStack documents that exported route component identifiers
+cannot be split, and the build emitted that exact warning for these pages. Tests
+now obtain components from their existing mocked route definitions; access checks,
+loader policies, forms and recorder code are unchanged. Verify generated lazy
+component references and browser navigation before preview delivery.
+
+The first splitting browser run passed the authenticated Goals regression but
+crashed on repeat Activities navigation. Kernel evidence at 20:58:38 local time
+on November 3 confirms a global out-of-memory kill of `chrome-headless` (PID
+2906118). This establishes the browser termination cause, not the cause of the
+preceding wait or the earlier 106-second outlier. The failed run is preserved at
+`acceptance-2904462-1793757308224`; its chained build never ran. A standalone
+timing rerun followed sequentially by the build is required before acceptance.
+The standalone rerun `acceptance-2913230-1793757631028` also reached repeat
+Activities and crashed: the kernel recorded another global OOM kill of
+`chrome-headless` (PID 2914311) at 21:01:46 local time. No speed acceptance can be
+drawn from either run. Identical retries stopped after two failures; the build is
+being run separately. Browser verification needs sufficient isolated host memory
+and failure-time resource observation; unrelated processes/shared services must
+not be stopped implicitly. The three-page slice is not yet accepted or in preview.
+The separately executed production build passed. Inspection of emitted client
+`index-C2vnzdCQ.js` confirms component dynamic imports for Goals
+(`goals-BsWn4So8.js`), Settings (`settings-XML_EqwP.js`) and Activity Import
+(`import-3L3KIP0q.js`). These hashes identify this verification only, not stable
+contracts. Focused 29 tests, strict types and independent review passed; the
+authenticated Goals regression passed before the timing browser failed. Publish
+as an incomplete draft checkpoint, with preview blocked on browser verification.
+
+Read-only preserved-preview diagnostics also identified a separate active manual
+import linked to a failed/retrying provider job. The related published athlete
+state was fresh, but active import status intentionally blocks Common Load history.
+The worker service was active; sanitized logs included provider request timeouts.
+Client drain disconnects do not abort the lease-owned worker. No import state was
+changed and no provider calls were initiated by the investigation. This explains
+a possible unavailable-history state, not all-page latency or a proven upstream
+root cause; account attribution to the screenshot remains unverified.
+
 ## Contract
 
 Router starts route-critical reads; Query owns their cache. The router, loaders and

@@ -95,7 +95,7 @@ export const Route = createFileRoute("/_protected/settings")({
   component: SettingsPage,
 });
 
-export function SettingsPage() {
+function SettingsPage() {
   const { user, isLoading: authLoading } = useAuth();
   const navigate = Route.useNavigate();
   const { flash, flashType } = Route.useSearch();

@@ -86,7 +86,9 @@ vi.mock("../../lib/use-form-server-fn", () => ({
   },
 }));
 
-import { SettingsPage } from "./settings";
+import { Route } from "./settings";
+
+const SettingsPage = (Route as unknown as { component: React.ComponentType }).component;
 
 const profile = (id: string, full_name: string, bio: string) => ({
   avatar_url: null,

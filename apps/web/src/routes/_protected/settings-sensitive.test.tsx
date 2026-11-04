@@ -72,7 +72,9 @@ vi.mock("../../lib/auth/server-actions", () => ({
   signOutAction: Object.assign(() => state.signOut(), { url: "/sign-out" }),
 }));
 
-import { SettingsPage } from "./settings";
+import { Route } from "./settings";
+
+const SettingsPage = (Route as unknown as { component: React.ComponentType }).component;
 
 function passwordDraft(current = "OldPass123!", next = "NewPass456!") {
   fireEvent.change(screen.getByLabelText("Current password"), { target: { value: current } });

@@ -3,7 +3,9 @@
 import { readFileSync } from "node:fs";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ActivityImportPage, validateActivityImportSearch } from "./import";
+import { Route, validateActivityImportSearch } from "./import";
+
+const ActivityImportPage = (Route as unknown as { component: React.ComponentType }).component;
 
 const mocks = vi.hoisted(() => ({
   activitiesInvalidate: vi.fn(),

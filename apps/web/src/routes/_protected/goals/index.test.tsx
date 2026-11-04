@@ -59,7 +59,9 @@ vi.mock("../../../lib/api/client", () => ({
   },
 }));
 
-import { GoalsPage } from "./index";
+import { Route } from "./index";
+
+const GoalsPage = (Route as unknown as { component: React.ComponentType }).component;
 
 afterEach(() => {
   cleanup();

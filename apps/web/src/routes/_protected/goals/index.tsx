@@ -59,7 +59,7 @@ export const Route = createFileRoute("/_protected/goals/")({
   component: GoalsPage,
 });
 
-export function GoalsPage() {
+function GoalsPage() {
   const navigate = Route.useNavigate();
   const search = Route.useSearch() as {
     category?: CanonicalActivityCategory;
