@@ -1,5 +1,9 @@
 import React from "react";
-import { createButtonComponent, createHost } from "../../test/mock-components";
+import {
+  createButtonComponent,
+  createHost,
+  type PressableHostProps,
+} from "../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../test/render-native";
 import { ProfileSummaryCard } from "./ProfileSummaryCard";
 
@@ -7,7 +11,7 @@ jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   Image: createHost("Image"),
-  TouchableOpacity: ({ children, disabled, onPress, ...props }: any) =>
+  TouchableOpacity: ({ children, disabled, onPress, ...props }: PressableHostProps) =>
     React.createElement("TouchableOpacity", { disabled, onPress, ...props }, children),
   View: createHost("View"),
 }));
@@ -41,20 +45,20 @@ jest.mock("@/lib/server-config", () => ({
 }));
 
 describe("ProfileSummaryCard", () => {
-  it("renders safe identity and privacy fallbacks for sparse profiles", () => {
-    renderNative(<ProfileSummaryCard emailFallback="fallback@example.com" profile={{}} />);
+  it("renders safe identity and privacy fallbacks for sparse profiles", async () => {
+    await renderNative(<ProfileSummaryCard emailFallback="fallback@example.com" profile={{}} />);
 
     expect(screen.getByText("fallback")).toBeTruthy();
     expect(screen.getByText("F")).toBeTruthy();
     expect(screen.getByText("Private profile")).toBeTruthy();
-    expect(screen.getAllByText("0")).toHaveLength(2);
+    expect(screen.getAllByText("—")).toHaveLength(2);
   });
 
-  it("uses remote social counts and keeps follower actions tappable when available", () => {
+  it("uses remote social counts and keeps follower actions tappable when available", async () => {
     const onFollowersPress = jest.fn();
     const onFollowingPress = jest.fn();
 
-    renderNative(
+    await renderNative(
       <ProfileSummaryCard
         onFollowersPress={onFollowersPress}
         onFollowingPress={onFollowingPress}
@@ -63,8 +67,8 @@ describe("ProfileSummaryCard", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("profile-summary-followers"));
-    fireEvent.press(screen.getByTestId("profile-summary-following"));
+    await fireEvent.press(screen.getByTestId("profile-summary-followers"));
+    await fireEvent.press(screen.getByTestId("profile-summary-following"));
 
     expect(screen.getByText("8")).toBeTruthy();
     expect(screen.getByText("13")).toBeTruthy();
@@ -72,8 +76,8 @@ describe("ProfileSummaryCard", () => {
     expect(onFollowingPress).toHaveBeenCalledTimes(1);
   });
 
-  it("ignores invalid birth dates while still rendering available metadata", () => {
-    renderNative(
+  it("ignores invalid birth dates while still rendering available metadata", async () => {
+    await renderNative(
       <ProfileSummaryCard
         profile={{
           bio: "Chasing mountain mornings.",

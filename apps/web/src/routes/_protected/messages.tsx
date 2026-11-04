@@ -11,10 +11,10 @@ import { Button } from "@repo/ui/components/button";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
 import { ScrollArea } from "@repo/ui/components/scroll-area";
+import { SearchField } from "@repo/ui/components/search-field";
 import { Separator } from "@repo/ui/components/separator";
 import { cn } from "@repo/ui/lib/cn";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { Loader2, Plus, Search, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -24,6 +24,7 @@ import { z } from "zod";
 import { useAuth } from "../../components/providers/auth-provider";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
+import { contractEpochFormInputProps } from "../../lib/contract-epoch";
 import { sendMessageAction } from "../../lib/messaging/server-actions";
 
 const messageComposerSchema = z.object({
@@ -88,7 +89,7 @@ function serializeComposeRecipients(recipients: ComposeRecipient[]) {
 
 export const Route = createFileRoute("/_protected/messages")({
   validateSearch: (search: Record<string, unknown>) => ({
-    compose: search.compose === "true",
+    compose: search.compose === true || search.compose === "true",
     composeGroup: typeof search.composeGroup === "string" ? search.composeGroup : undefined,
     composeQuery: typeof search.composeQuery === "string" ? search.composeQuery : undefined,
     composeRecipients: parseComposeRecipients(search.composeRecipients),
@@ -105,7 +106,7 @@ export const Route = createFileRoute("/_protected/messages")({
 function MessagesPage() {
   const { user } = useAuth();
   const utils = api.useUtils();
-  const sendMessage = useServerFn(sendMessageAction);
+
   const navigate = Route.useNavigate();
   const {
     compose,
@@ -121,12 +122,10 @@ function MessagesPage() {
   });
   const selectedConversation = compose
     ? null
-    : (conversations.find((conversation) => conversation.id === conversationId) ??
-      conversations[0] ??
-      null);
+    : (conversations.find((conversation) => conversation.id === conversationId) ?? null);
   const selectedId = selectedConversation?.id ?? null;
   const { data: messages = [] } = api.messaging.getMessages.useQuery(
-    { conversation_id: selectedId! },
+    { conversation_id: selectedId ?? "" },
     { enabled: Boolean(selectedId), refetchInterval: 5000 },
   );
   const trimmedComposeQuery = composeQuery?.trim() ?? "";
@@ -145,12 +144,21 @@ function MessagesPage() {
   const [selectedRecipients, setSelectedRecipients] =
     useState<ComposeRecipient[]>(composeRecipients);
   const [groupName, setGroupName] = useState(composeGroup ?? "");
+  const [composeSearchValue, setComposeSearchValue] = useState(composeQuery ?? "");
   const [composeError, setComposeError] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const lastMarkedConversationRef = useRef<string | null>(null);
+  const sendInFlightRef = useRef(false);
   const form = useForm<MessageComposerValues>({
     resolver: zodResolver(messageComposerSchema),
     defaultValues: {
       content: "",
+    },
+  });
+  const sendMessageMutation = api.messaging.sendMessage.useMutation({
+    onSuccess: async (_message, variables) => {
+      await invalidateConversationQueries(utils, variables.conversation_id);
+      if (form.getValues("content") === variables.content) form.reset({ content: "" });
     },
   });
 
@@ -190,21 +198,26 @@ function MessagesPage() {
     setGroupName(composeGroup ?? "");
   }, [composeGroup]);
 
+  useEffect(() => {
+    setComposeSearchValue(composeQuery ?? "");
+  }, [composeQuery]);
+
   const handleSend = form.handleSubmit(async (values) => {
-    if (!selectedId) {
+    if (!selectedId || sendInFlightRef.current) {
       return;
     }
 
+    sendInFlightRef.current = true;
+    setSendError(null);
     try {
-      await sendMessage({
-        data: {
-          content: values.content,
-          conversation_id: selectedId,
-          redirectTo: `/messages?conversationId=${selectedId}`,
-        },
+      await sendMessageMutation.mutateAsync({
+        content: values.content,
+        conversation_id: selectedId,
       });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Unable to send message");
+      setSendError(error instanceof Error ? error.message : "Unable to send message");
+    } finally {
+      sendInFlightRef.current = false;
     }
   });
 
@@ -234,15 +247,13 @@ function MessagesPage() {
 
   const toggleRecipient = (recipient: ComposeRecipient) => {
     setComposeError(null);
-    setSelectedRecipients((current) => {
-      const isSelected = current.some((entry) => entry.id === recipient.id);
-      const nextRecipients = isSelected
-        ? current.filter((entry) => entry.id !== recipient.id)
-        : [...current, recipient];
+    const isSelected = selectedRecipients.some((entry) => entry.id === recipient.id);
+    const nextRecipients = isSelected
+      ? selectedRecipients.filter((entry) => entry.id !== recipient.id)
+      : [...selectedRecipients, recipient];
 
-      updateComposeSearch({ composeRecipients: nextRecipients });
-      return nextRecipients;
-    });
+    setSelectedRecipients(nextRecipients);
+    updateComposeSearch({ composeRecipients: nextRecipients });
   };
 
   const openConversation = async (id: string, successMessage: string) => {
@@ -304,8 +315,8 @@ function MessagesPage() {
   return (
     <div className="h-[calc(100vh-8rem)] w-full overflow-hidden rounded-lg border bg-background">
       <RouteFlashToast
-        message={flash}
-        type={flashType}
+        {...(flash === undefined ? {} : { message: flash })}
+        {...(flashType === undefined ? {} : { type: flashType })}
         clear={() =>
           void navigate({
             to: "/messages",
@@ -327,7 +338,7 @@ function MessagesPage() {
           <div className="flex h-full flex-col">
             <div className="flex items-center justify-between gap-3 p-4">
               <div>
-                <div className="font-semibold">Messages</div>
+                <h1 className="font-semibold">Messages</h1>
                 <div className="text-xs text-muted-foreground">
                   {conversations.length}{" "}
                   {conversations.length === 1 ? "conversation" : "conversations"}
@@ -427,34 +438,65 @@ function MessagesPage() {
           </div>
         </div>
         <div className="flex-1">
-          {!compose && conversations.length > 1 ? (
+          {!compose ? (
+            <div className="flex items-center justify-between border-b p-4 xl:hidden">
+              <h1 className="font-semibold">Messages</h1>
+              <Button asChild size="sm" variant="outline">
+                <Link
+                  to="/messages"
+                  search={{
+                    compose: true,
+                    composeGroup: undefined,
+                    composeQuery: undefined,
+                    composeRecipients: [],
+                    conversationId: undefined,
+                    flash: undefined,
+                    flashType: undefined,
+                  }}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  New
+                </Link>
+              </Button>
+            </div>
+          ) : null}
+          {!compose && conversations.length > 0 ? (
             <div className="border-b p-3 xl:hidden">
               <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Conversations
               </div>
               <ScrollArea className="w-full whitespace-nowrap">
                 <div className="flex gap-2">
-                  {conversations.map((conversation) => (
-                    <Link
-                      key={`mobile-${conversation.id}`}
-                      to="/messages"
-                      search={{
-                        compose: false,
-                        composeGroup: undefined,
-                        composeQuery: undefined,
-                        composeRecipients: [],
-                        conversationId: conversation.id,
-                        flash: undefined,
-                        flashType: undefined,
-                      }}
-                      className={cn(
-                        "rounded-full border px-3 py-1.5 text-sm transition-colors hover:bg-accent",
-                        selectedId === conversation.id && "bg-accent",
-                      )}
-                    >
-                      {getConversationDisplayName(conversation)}
-                    </Link>
-                  ))}
+                  {conversations.map((conversation) => {
+                    const unreadCount = conversation.unread_count ?? 0;
+
+                    return (
+                      <Link
+                        key={`mobile-${conversation.id}`}
+                        to="/messages"
+                        search={{
+                          compose: false,
+                          composeGroup: undefined,
+                          composeQuery: undefined,
+                          composeRecipients: [],
+                          conversationId: conversation.id,
+                          flash: undefined,
+                          flashType: undefined,
+                        }}
+                        className={cn(
+                          "flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors hover:bg-accent",
+                          selectedId === conversation.id && "bg-accent",
+                        )}
+                      >
+                        {getConversationDisplayName(conversation)}
+                        {unreadCount > 0 ? (
+                          <Badge className="h-5 min-w-5 justify-center px-1.5">
+                            {unreadCount > 9 ? "9+" : unreadCount}
+                          </Badge>
+                        ) : null}
+                      </Link>
+                    );
+                  })}
                 </div>
               </ScrollArea>
             </div>
@@ -463,7 +505,7 @@ function MessagesPage() {
             <div className="flex h-full flex-col">
               <div className="flex items-center justify-between border-b p-4">
                 <div>
-                  <div className="font-semibold">New message</div>
+                  <h1 className="font-semibold">New message</h1>
                   <div className="text-sm text-muted-foreground">
                     Search for athletes, coaches, or friends and start a conversation.
                   </div>
@@ -496,11 +538,19 @@ function MessagesPage() {
                       name="composeRecipients"
                       value={serializeComposeRecipients(selectedRecipients) ?? ""}
                     />
-                    <Input
-                      name="composeQuery"
-                      defaultValue={composeQuery ?? ""}
-                      placeholder="Search by username"
-                    />
+                    <div className="flex-1">
+                      <SearchField
+                        accessibilityLabel="Search message recipients"
+                        clearTestId="messages-compose-search-clear"
+                        loading={searchUsersLoading}
+                        loadingLabel="Searching people"
+                        name="composeQuery"
+                        onValueChange={setComposeSearchValue}
+                        placeholder="Search by username"
+                        testId="messages-compose-search-input"
+                        value={composeSearchValue}
+                      />
+                    </div>
                     <Button type="submit">
                       <Search className="mr-2 h-4 w-4" />
                       Search
@@ -515,6 +565,7 @@ function MessagesPage() {
                           <button
                             key={recipient.id}
                             type="button"
+                            aria-label={`Remove @${recipient.username ?? "user"} from recipients`}
                             onClick={() => toggleRecipient(recipient)}
                             className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary"
                           >
@@ -605,7 +656,9 @@ function MessagesPage() {
                   </div>
 
                   {composeError ? (
-                    <div className="text-sm text-destructive">{composeError}</div>
+                    <div className="text-sm text-destructive" role="alert">
+                      {composeError}
+                    </div>
                   ) : null}
 
                   <div className="flex justify-end">
@@ -676,6 +729,7 @@ function MessagesPage() {
               <div className="border-t p-4">
                 <Form {...form}>
                   <form action={sendMessageAction.url} method="post" onSubmit={handleSend}>
+                    <input {...contractEpochFormInputProps} />
                     <input type="hidden" name="conversation_id" value={selectedId ?? ""} />
                     <input
                       type="hidden"
@@ -691,6 +745,8 @@ function MessagesPage() {
                             <FormControl>
                               <Input
                                 {...field}
+                                aria-label="Message"
+                                disabled={sendMessageMutation.isPending}
                                 placeholder="Type a message..."
                                 onKeyDown={(event) => {
                                   if (event.key === "Enter" && !event.shiftKey) {
@@ -705,13 +761,23 @@ function MessagesPage() {
                         )}
                       />
                       <Button
+                        aria-label="Send message"
                         size="icon"
                         type="submit"
-                        disabled={!selectedId || form.formState.isSubmitting}
+                        disabled={
+                          !selectedId ||
+                          form.formState.isSubmitting ||
+                          sendMessageMutation.isPending
+                        }
                       >
                         <Send className="h-4 w-4" />
                       </Button>
                     </div>
+                    {sendError ? (
+                      <p className="mt-2 text-sm text-destructive" role="alert">
+                        {sendError}. Your message is still in the field.
+                      </p>
+                    ) : null}
                   </form>
                 </Form>
               </div>

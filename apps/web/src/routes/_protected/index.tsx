@@ -1,3 +1,4 @@
+import { Button } from "@repo/ui/components/button";
 import {
   Card,
   CardContent,
@@ -5,9 +6,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Activity, CalendarDays, Target } from "lucide-react";
-
+import { ActivityFeed } from "../../components/feed/activity-feed";
 import { SearchLauncher } from "../../components/protected/search-launcher";
 import { useAuth } from "../../components/providers/auth-provider";
 import { api } from "../../lib/api/client";
@@ -16,9 +17,44 @@ export const Route = createFileRoute("/_protected/")({
   component: DashboardPage,
 });
 
+function ScheduleQuantification({
+  objectiveIntensity,
+  load,
+}: {
+  objectiveIntensity: number | null;
+  load: number | null;
+}) {
+  return (
+    <p>
+      Common Load {load === null ? "unavailable" : Math.round(load * 10) / 10} · Intensity{" "}
+      {objectiveIntensity === null ? "unavailable" : objectiveIntensity.toFixed(2)}
+    </p>
+  );
+}
+
 function DashboardPage() {
   const { user } = useAuth();
-  const dashboardQuery = api.home.getDashboard.useQuery();
+  const dashboardQuery = api.home.getDashboard.useQuery(undefined, { retry: false });
+  const thresholdOverviewQuery = api.athleteIntelligence.getThresholdOverview.useQuery({});
+
+  if (dashboardQuery.isError) {
+    return (
+      <div className="space-y-8">
+        <h1 className="text-3xl font-semibold tracking-tight">Welcome back</h1>
+        <Card role="alert">
+          <CardHeader>
+            <CardTitle>Dashboard unavailable</CardTitle>
+            <CardDescription>We could not load your dashboard. Please try again.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button type="button" onClick={() => void dashboardQuery.refetch()}>
+              Retry dashboard
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   const dashboard = dashboardQuery.data;
   const schedule = dashboard?.schedule.slice(0, 4) ?? [];
@@ -35,12 +71,40 @@ function DashboardPage() {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <MetricCard
-          title="Current Form"
-          value={dashboard ? dashboard.currentStatus.form : "..."}
+          title="Fitness"
+          value={
+            dashboard?.currentLoadStatus ? dashboard.currentLoadStatus.longTermLoad.toFixed(1) : "—"
+          }
           description={
-            dashboard
-              ? `CTL ${dashboard.currentStatus.ctl} / ATL ${dashboard.currentStatus.atl}`
-              : "Loading dashboard status"
+            dashboard?.currentLoadStatus
+              ? `Long-term load · ${dashboard.currentLoadStatus.maturity} maturity`
+              : dashboard
+                ? "Complete Common Load history is unavailable"
+                : "Loading Common Load history"
+          }
+          icon={<Activity className="h-4 w-4" />}
+        />
+        <MetricCard
+          title="Fatigue"
+          value={
+            dashboard?.currentLoadStatus ? dashboard.currentLoadStatus.recentLoad.toFixed(1) : "—"
+          }
+          description={
+            dashboard?.currentLoadStatus
+              ? "Recent load"
+              : "Complete Common Load history is unavailable"
+          }
+          icon={<Activity className="h-4 w-4" />}
+        />
+        <MetricCard
+          title="Form"
+          value={
+            dashboard?.currentLoadStatus ? dashboard.currentLoadStatus.loadBalance.toFixed(1) : "—"
+          }
+          description={
+            dashboard?.currentLoadStatus
+              ? `Load balance · ${dashboard.currentLoadStatus.coverageStatus} coverage`
+              : "Complete Common Load history is unavailable"
           }
           icon={<Activity className="h-4 w-4" />}
         />
@@ -57,14 +121,29 @@ function DashboardPage() {
         <MetricCard
           title="Active Plan"
           value={dashboard?.activePlan?.name ?? "No active plan"}
-          description={
-            dashboard?.activePlan?.phase
-              ? `Phase: ${dashboard.activePlan.phase}`
-              : "Create or assign a plan to see progress here"
-          }
+          description="Create or assign a plan to see progress here"
           icon={<CalendarDays className="h-4 w-4" />}
         />
+        <Card>
+          <CardHeader>
+            <CardTitle>Performance</CardTitle>
+            <CardDescription>
+              {thresholdOverviewQuery.isLoading
+                ? "Loading calculated thresholds"
+                : thresholdOverviewQuery.data?.publication.status === "unavailable"
+                  ? "Calculated thresholds are not available yet"
+                  : "Calculated thresholds are available"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild variant="outline">
+              <Link to="/thresholds">Manage thresholds</Link>
+            </Button>
+          </CardContent>
+        </Card>
       </section>
+
+      <ActivityFeed />
 
       <section className="grid gap-6 lg:grid-cols-[1.7fr_1fr]">
         <Card>
@@ -85,12 +164,19 @@ function DashboardPage() {
                     <div>
                       <p className="font-medium">{item.activityName}</p>
                       <p className="text-sm text-muted-foreground">
-                        {item.activityType} on {item.date}
+                        {item.activity_category} on {item.date}
                       </p>
                     </div>
                     <div className="text-right text-sm text-muted-foreground">
-                      <p>{Math.round(item.estimatedDuration / 60)} min</p>
-                      <p>{Math.round(item.estimatedTSS)} TSS</p>
+                      <p>
+                        {item.estimatedDuration === null
+                          ? "Duration unavailable"
+                          : `${Math.round(item.estimatedDuration / 60)} min`}
+                      </p>
+                      <ScheduleQuantification
+                        objectiveIntensity={item.objectiveIntensity}
+                        load={item.load}
+                      />
                     </div>
                   </div>
                 ))}
@@ -113,9 +199,8 @@ function DashboardPage() {
                 {dashboard?.activePlan?.name ?? "No active plan"}
               </div>
               <p className="mt-2 text-sm text-muted-foreground">
-                {dashboard?.activePlan?.phase
-                  ? `Phase: ${dashboard.activePlan.phase}`
-                  : "Use search to jump directly into planning, messages, settings, or calendar workflows."}
+                Use search to jump directly into planning, messages, settings, or calendar
+                workflows.
               </p>
             </div>
             <p className="text-xs text-muted-foreground">

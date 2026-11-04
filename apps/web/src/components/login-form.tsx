@@ -12,11 +12,13 @@ import { Input } from "@repo/ui/components/input";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { cn } from "@repo/ui/lib/cn";
 import { Link } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { useForm } from "react-hook-form";
+import { getSafeAppRedirectTarget } from "../lib/app-url";
+import { authClient } from "../lib/auth/client";
 import { getLoginFormError } from "../lib/auth/form-errors";
 import { type LoginFormValues, loginFormSchema } from "../lib/auth/form-schemas";
 import { signInWithEmailAction } from "../lib/auth/server-actions";
+import { contractEpochFormInputProps } from "../lib/contract-epoch";
 import { AuthCardShell } from "./auth-card-shell";
 
 type LoginFormProps = React.ComponentPropsWithoutRef<"div"> & {
@@ -24,7 +26,6 @@ type LoginFormProps = React.ComponentPropsWithoutRef<"div"> & {
 };
 
 export function LoginForm({ className, redirectTo, ...props }: LoginFormProps) {
-  const signIn = useServerFn(signInWithEmailAction);
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginFormSchema),
     defaultValues: {
@@ -37,7 +38,14 @@ export function LoginForm({ className, redirectTo, ...props }: LoginFormProps) {
     form.clearErrors();
 
     try {
-      await signIn({ data: { ...values, redirect: redirectTo } });
+      const result = await authClient.signIn.email(values);
+      if (result.error) {
+        const formError = getLoginFormError(new Error(result.error.message));
+        form.setError(formError.target, { message: formError.message });
+        return;
+      }
+
+      window.location.assign(getSafeAppRedirectTarget(redirectTo, "/"));
     } catch (error: unknown) {
       const formError = getLoginFormError(error);
 
@@ -55,6 +63,7 @@ export function LoginForm({ className, redirectTo, ...props }: LoginFormProps) {
       <AuthCardShell title="Login" description="Enter your email below to login to your account">
         <Form {...form}>
           <form action={signInWithEmailAction.url} method="post" onSubmit={handleLogin}>
+            <input {...contractEpochFormInputProps} />
             <input type="hidden" name="redirect" value={redirectTo ?? ""} />
             <div className="flex flex-col gap-6">
               <FormTextField
@@ -91,7 +100,9 @@ export function LoginForm({ className, redirectTo, ...props }: LoginFormProps) {
               />
 
               {form.formState.errors.root ? (
-                <p className="text-destructive text-sm">{form.formState.errors.root.message}</p>
+                <p className="text-destructive text-sm" role="alert">
+                  {form.formState.errors.root.message}
+                </p>
               ) : null}
 
               <LoadingButton

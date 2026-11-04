@@ -1,0 +1,58 @@
+appId: com.deancochran.gradientpeak.dev
+name: Native athlete schedules the UI-created activity plan through its visible detail action
+---
+# Navigation boundary: the first schedule begins at the just-created detail;
+# later schedules deliberately rediscover the plan through the visible library.
+- runFlow:
+    when:
+      true: ${MAESTRO_ACCEPTANCE_SCHEDULE_FROM_LIBRARY == "true"}
+    commands:
+      - tapOn:
+          id: app-header-avatar-button
+      - extendedWaitUntil:
+          visible:
+            id: profile-tab-activity-plans-button
+          timeout: 30000
+      - tapOn:
+          id: profile-tab-activity-plans-button
+      - extendedWaitUntil:
+          visible: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
+          timeout: 30000
+      - tapOn: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
+- extendedWaitUntil:
+    visible: ${MAESTRO_ACCEPTANCE_PLAN_NAME}
+    timeout: 30000
+- extendedWaitUntil:
+    visible:
+      id: activity-plan-options-trigger
+    timeout: 30000
+- tapOn:
+    id: activity-plan-options-trigger
+- tapOn:
+    id: activity-plan-options-schedule
+- extendedWaitUntil:
+    visible:
+      id: event-detail-selected-activity-plan
+    timeout: 30000
+- tapOn:
+    id: event-detail-start-date-button
+- extendedWaitUntil:
+    visible:
+      id: android:id/date_picker_header_date
+    timeout: 10000
+- runFlow:
+    when:
+      true: ${MAESTRO_ACCEPTANCE_SCHEDULE_MONTH_DELTA == "1"}
+    commands:
+      - tapOn:
+          id: android:id/next
+- tapOn: ${MAESTRO_ACCEPTANCE_SCHEDULE_DAY}
+- assertVisible:
+    id: android:id/date_picker_header_date
+- tapOn: "OK"
+- tapOn:
+    id: event-detail-save-button
+- extendedWaitUntil:
+    visible:
+      id: calendar-screen-ready
+    timeout: 30000

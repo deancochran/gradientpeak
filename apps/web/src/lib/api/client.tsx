@@ -1,3 +1,4 @@
+import { CONTRACT_EPOCH_HEADER, CURRENT_CONTRACT_EPOCH } from "@repo/api/client";
 import { api, createApiBatchLink, createApiUrl, createQueryClient } from "@repo/api/react";
 import type { QueryClient } from "@tanstack/react-query";
 
@@ -12,22 +13,33 @@ export function getQueryClient() {
     return createQueryClient();
   }
 
-  return (clientQueryClientSingleton ??= createQueryClient());
+  if (!clientQueryClientSingleton) {
+    clientQueryClientSingleton = createQueryClient();
+  }
+
+  return clientQueryClientSingleton;
 }
 
-function createWebHeaders() {
+export function createWebHeaders() {
   const headers = new Headers();
+  headers.set(CONTRACT_EPOCH_HEADER, String(CURRENT_CONTRACT_EPOCH));
   headers.set("x-api-source", "tanstack-start");
   headers.set("x-client-type", "web");
   return headers;
 }
 
-function createApiFetch(input: RequestInfo | URL, init?: RequestInit) {
+type ApiFetch = NonNullable<Parameters<typeof createApiBatchLink>[0]["fetch"]>;
+
+const createApiFetch: ApiFetch = (input, init) => {
+  const { body, headers, method, signal } = init ?? {};
   return fetch(input, {
-    ...init,
+    ...(body === undefined ? {} : { body }),
+    ...(headers === undefined ? {} : { headers }),
+    ...(method === undefined ? {} : { method }),
+    ...(signal === undefined ? {} : { signal }),
     credentials: "include",
   });
-}
+};
 
 export function createApiClient() {
   return api.createClient({

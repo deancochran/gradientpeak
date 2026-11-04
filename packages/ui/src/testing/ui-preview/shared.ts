@@ -21,8 +21,8 @@ export const uiPreviewFixtures = {
   errorStateCard: errorStateCardFixtures.generic,
   input: inputFixtures.email,
   loadingSkeleton: loadingSkeletonFixtures,
-  radioGroup: radioGroupFixtures.sport,
-  select: selectFixtures.workoutType,
+  radioGroup: radioGroupFixtures.activityCategory,
+  select: selectFixtures.sessionFocus,
   switch: switchFixtures.notifications,
   tabs: tabsFixtures.settings,
 } as const;

@@ -8,11 +8,7 @@ export function getAppBaseUrl() {
 
 export function getConfiguredAppBaseUrl() {
   if (typeof process !== "undefined") {
-    return (
-      process.env.APP_URL ??
-      process.env.NEXT_PUBLIC_APP_URL ??
-      `http://localhost:${process.env.PORT ?? 3000}`
-    );
+    return process.env.APP_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
   }
 
   return getAppBaseUrl();
@@ -34,7 +30,7 @@ export function getSafeAppRedirectTarget(
     return fallback;
   }
 
-  if (redirectTarget.startsWith("/")) {
+  if (redirectTarget.startsWith("/") && !redirectTarget.startsWith("//")) {
     return redirectTarget;
   }
 

@@ -61,7 +61,7 @@ export function PlanningGoalCard({
 
 function formatGoalMeta(goal: PlanningGoalCardProps["goal"]) {
   const parts = [
-    goal.activityCategory ? formatCategory(goal.activityCategory) : "Any sport",
+    goal.activityCategory ? formatCategory(goal.activityCategory) : "Any activity category",
     goal.targetDate ??
       (goal.targetOffsetDays !== null && goal.targetOffsetDays !== undefined
         ? `Week ${Math.floor(goal.targetOffsetDays / 7) + 1}`

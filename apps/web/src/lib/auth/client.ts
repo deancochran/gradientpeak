@@ -1,3 +1,4 @@
+import { CONTRACT_EPOCH_HEADER, CURRENT_CONTRACT_EPOCH } from "@repo/api/contract-epoch";
 import {
   normalizeGradientPeakAuthClientSession,
   resolveGradientPeakAuthBaseUrl,
@@ -11,6 +12,9 @@ export const authClient = createGradientPeakWebAuthClient({
   baseURL: resolveGradientPeakAuthBaseUrl({
     appBaseUrl: getAppBaseUrl(),
   }),
+  fixedHeaders: {
+    [CONTRACT_EPOCH_HEADER]: String(CURRENT_CONTRACT_EPOCH),
+  },
 });
 
 export function normalizeWebAuthSession(session: unknown) {
