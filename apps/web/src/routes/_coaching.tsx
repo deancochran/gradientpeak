@@ -24,7 +24,7 @@ export const Route = createFileRoute("/_coaching")({
         search: { flash: undefined, flashType: undefined, redirect: location.href },
       });
     }
-    return { authViewer: toPublicAuthViewer(session) };
+    return { actorProfileId: session.user.id, authViewer: toPublicAuthViewer(session) };
   },
   component: CoachingAuthenticatedBoundary,
 });

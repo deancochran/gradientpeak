@@ -65,7 +65,10 @@ describe("coaching authentication boundary", () => {
         location: { href: "/organizations/org-1/dashboard" },
         serverContext,
       }),
-    ).resolves.toEqual({ authViewer: { version: 1, user: serverContext.session.user } });
+    ).resolves.toEqual({
+      actorProfileId: "profile-1",
+      authViewer: { version: 1, user: serverContext.session.user },
+    });
     expect(mocks.resolveRouteAuthSession).toHaveBeenCalledWith(serverContext);
   });
 });
