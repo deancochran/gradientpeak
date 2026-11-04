@@ -8,6 +8,11 @@ import {
   OrganizationLifecycleError,
   withdrawAthleteConsent,
 } from "../application/organizations/manage-organization-lifecycle";
+import {
+  OrganizationStaffSuspensionError,
+  resumeOrganizationMembership,
+  suspendOrganizationMembership,
+} from "../application/organizations/manage-staff-suspension";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
@@ -18,7 +23,10 @@ const pageInput = z
   })
   .strict();
 const organizationPageInput = z
-  .object({ organizationId: z.string().uuid() })
+  .object({
+    organizationId: z.string().uuid(),
+    status: z.enum(["active", "suspended"]).default("active"),
+  })
   .merge(pageInput)
   .strict();
 const identity = z
@@ -43,8 +51,34 @@ const commandInput = z
     correlationId: z.string().uuid(),
   })
   .strict();
+const staffSuspensionInput = z
+  .object({
+    organizationId: z.string().uuid(),
+    membershipId: z.string().uuid(),
+    operationId: z.string().uuid(),
+    reason: z.string().regex(/^[a-z0-9][a-z0-9_]{0,63}$/),
+  })
+  .strict();
+const staffSuspensionOutput = z
+  .object({
+    membershipId: z.string().uuid(),
+    operationId: z.string().uuid(),
+    status: z.enum(["suspended", "resumed"]),
+  })
+  .strict();
 
 function fail(error: unknown): never {
+  if (error instanceof OrganizationStaffSuspensionError)
+    throw new TRPCError({
+      code:
+        error.reason === "not_found"
+          ? "NOT_FOUND"
+          : error.reason === "conflict"
+            ? "CONFLICT"
+            : "FORBIDDEN",
+      message: "Organization staff suspension request could not be completed",
+      cause: error,
+    });
   if (error instanceof OrganizationLifecycleError)
     throw new TRPCError({
       code:
@@ -77,7 +111,8 @@ export const organizationLifecycleRouter = createTRPCRouter({
               membershipId: z.string().uuid(),
               identity,
               roleKeys: z.array(z.enum(["admin", "coach"])),
-              status: z.literal("active"),
+              status: z.enum(["active", "suspended"]),
+              suspendedAt: z.date().nullable(),
               endMembership: z
                 .object({
                   eligible: z.boolean(),
@@ -106,7 +141,8 @@ export const organizationLifecycleRouter = createTRPCRouter({
               username: item.username,
             },
             roleKeys: item.roleKeys as ("admin" | "coach")[],
-            status: "active" as const,
+            status: input.status,
+            suspendedAt: item.suspendedAt,
             endMembership: item.endMembership,
           })),
         };
@@ -154,6 +190,30 @@ export const organizationLifecycleRouter = createTRPCRouter({
     .mutation(({ ctx, input }) =>
       run(
         endOrganizationMembership({
+          db: getRequiredDb(ctx),
+          actorProfileId: ctx.session.user.id,
+          ...input,
+        }),
+      ),
+    ),
+  suspendMembership: protectedProcedure
+    .input(staffSuspensionInput)
+    .output(staffSuspensionOutput)
+    .mutation(({ ctx, input }) =>
+      run(
+        suspendOrganizationMembership({
+          db: getRequiredDb(ctx),
+          actorProfileId: ctx.session.user.id,
+          ...input,
+        }),
+      ),
+    ),
+  resumeMembership: protectedProcedure
+    .input(staffSuspensionInput)
+    .output(staffSuspensionOutput)
+    .mutation(({ ctx, input }) =>
+      run(
+        resumeOrganizationMembership({
           db: getRequiredDb(ctx),
           actorProfileId: ctx.session.user.id,
           ...input,
