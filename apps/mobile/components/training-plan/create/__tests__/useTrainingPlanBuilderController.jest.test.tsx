@@ -1,5 +1,7 @@
 import { act, renderHook } from "@testing-library/react-native";
 import { Alert } from "react-native";
+import type { TrainingPlanBuilderSession } from "@/lib/training-plan-creation/types";
+import { createActivityPlanSummary } from "../../../../test/activity-plan-projection-fixture";
 import { useTrainingPlanBuilderController } from "../useTrainingPlanBuilderController";
 
 const mockBuilder = {
@@ -7,11 +9,13 @@ const mockBuilder = {
     addProposedStructure: jest.fn(),
     addSession: jest.fn(),
     assignActivityPlan: jest.fn(),
-    getSessionById: jest.fn(() => null),
+    getSessionById: jest.fn<TrainingPlanBuilderSession | null, [string]>(() => null),
+    updateSession: jest.fn(),
     removeSession: jest.fn(),
   },
   activityPlanEstimateById: new Map(),
   activityPlanItems: [],
+  linkedActivityPlansQuery: { data: undefined },
   derived: {
     projection: {
       chart: {
@@ -48,6 +52,35 @@ jest.mock("@/lib/training-plan-creation/useTrainingPlanCreationService", () => (
 }));
 
 describe("useTrainingPlanBuilderController chart selection", () => {
+  it("changes category from the prescription without replacing saved demand or schedule overrides", async () => {
+    const existing: TrainingPlanBuilderSession = {
+      id: "session-one",
+      localId: "session-one",
+      offsetDays: 10,
+      activityPlan: null,
+      demand: {
+        activity_category: "bike",
+        training_intent: "aerobic_base",
+        importance: "key",
+        target_duration_minutes: 75,
+        target_common_load: 60,
+      },
+      eventOverrides: { title: "My session", start_time: "08:30" },
+    };
+    mockBuilder.actions.getSessionById.mockReturnValue(existing);
+    const { result } = await renderHook(() => useTrainingPlanBuilderController({ mode: "create" }));
+    await act(() => result.current.selection.setSessionId(existing.localId));
+    await act(() =>
+      result.current.activityPicker.selectPlan(
+        createActivityPlanSummary({ activityCategory: "run" }),
+      ),
+    );
+    expect(mockBuilder.actions.updateSession).toHaveBeenCalledWith({
+      ...existing,
+      demand: { ...existing.demand, activity_category: "run" },
+    });
+    mockBuilder.actions.getSessionById.mockReturnValue(null);
+  });
   it("checks new invalid text synchronously even through a previously captured save callback", async () => {
     const { result } = await renderHook(() => useTrainingPlanBuilderController({ mode: "create" }));
     const save = result.current.actions.handleSave;

@@ -1028,60 +1028,34 @@ describe("TrainingPlanBuilderScreen", () => {
     alert.mockRestore();
   });
 
-  it("retains invalid session values on Back and clears blockers after explicit correction", async () => {
+  it("schedules a prescription with week and day without exposing demand authoring", async () => {
     await renderNative(<TrainingPlanBuilderScreen />);
-    const initialSaveDisabled = screen.getByTestId("training-plan-save-button").props.disabled;
     await fireEvent.press(screen.getByTestId("builder-sessions-workspace-add"));
     await fireEvent.press(
       screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
     );
-    await selectBudget("Planned duration", 0, 45);
-    await selectQuantity("Target common load", 20);
-    await selectBudget("Planned duration", 0, 0);
-    await fireEvent.press(screen.getByLabelText("Target common load"));
-    await fireEvent(screen.getByLabelText("Target common load thousands"), "valueChange", 10);
-    await fireEvent(screen.getByLabelText("Target common load units"), "valueChange", 1);
-    await fireEvent.press(screen.getByLabelText("Done Target common load"));
-    await fireEvent.press(screen.getByLabelText("Planned duration"));
-    expect(screen.getByLabelText("Planned duration minutes").props.selectedValue).toBe(0);
-    await fireEvent.press(screen.getByLabelText("Done Planned duration"));
-    expect(screen.getByLabelText("Target common load").props.accessibilityValue).toEqual({
-      text: "10001",
-    });
+    expect(screen.getByTestId("builder-simple-session")).toBeTruthy();
+    for (const label of [
+      "Session demand",
+      "Training intent",
+      "Planned duration",
+      "Target common load",
+      "Activity title",
+      "Duplicate",
+      "Remove",
+    ])
+      expect(screen.queryByText(label)).toBeNull();
+    expect(screen.queryByLabelText("Custom title")).toBeNull();
+    expect(screen.getAllByText(activityPlan.name)).toHaveLength(1);
+    await fireEvent.press(screen.getByLabelText("Next week"));
+    await fireEvent.press(screen.getByLabelText("Day 3"));
+    expect(screen.getByLabelText("Day 3").props.accessibilityState.checked).toBe(true);
     expect(screen.queryByTestId("training-plan-save-button")).toBeNull();
-    await fireEvent.press(screen.getByLabelText("Back"));
-    expect(screen.getByTestId("training-plan-save-button").props.disabled).toBe(true);
+    await fireEvent.press(screen.getByLabelText("Add to plan"));
     await fireEvent.press(screen.getByTestId(/builder-timeline-activity-/));
-    await fireEvent.press(screen.getByLabelText("Planned duration"));
-    expect(screen.getByLabelText("Planned duration minutes").props.selectedValue).toBe(0);
-    await fireEvent.press(screen.getByLabelText("Done Planned duration"));
-    expect(screen.getByLabelText("Target common load").props.accessibilityValue).toEqual({
-      text: "10001",
-    });
-    await selectBudget("Planned duration", 0, 45);
-    await fireEvent.press(screen.getByLabelText("Target common load"));
-    await fireEvent.press(screen.getByLabelText("Clear Target common load"));
-    await fireEvent.press(screen.getByLabelText("Done Target common load"));
-    await selectQuantity("Target common load", 20);
-    await fireEvent.press(screen.getByLabelText("Back"));
-    expect(screen.getByTestId("training-plan-save-button").props.disabled).toBe(
-      initialSaveDisabled,
-    );
-    await fireEvent.press(screen.getByTestId(/builder-timeline-activity-/));
-    await fireEvent.press(screen.getByLabelText("Planned duration"));
-    await fireEvent.press(screen.getByLabelText("Clear Planned duration"));
-    await fireEvent.press(screen.getByLabelText("Done Planned duration"));
-    await fireEvent.press(screen.getByLabelText("Target common load"));
-    await fireEvent.press(screen.getByLabelText("Clear Target common load"));
-    await fireEvent.press(screen.getByLabelText("Done Target common load"));
-    await fireEvent.press(screen.getByLabelText("Back"));
-    await fireEvent.press(screen.getByTestId(/builder-timeline-activity-/));
-    expect(screen.getByLabelText("Planned duration").props.accessibilityValue).toEqual({
-      text: "Not set",
-    });
-    expect(screen.getByLabelText("Target common load").props.accessibilityValue).toEqual({
-      text: "Not set",
-    });
+    expect(screen.getByText("Week 2")).toBeTruthy();
+    expect(screen.getByLabelText("Day 3").props.accessibilityState.checked).toBe(true);
+    expect(screen.getByLabelText("Done")).toBeTruthy();
   });
 
   it("keeps athlete context available from the edit plan", async () => {
@@ -1136,7 +1110,7 @@ describe("TrainingPlanBuilderScreen", () => {
     );
 
     expect(screen.getByTestId("builder-session-screen")).toBeTruthy();
-    await fireEvent.press(screen.getByLabelText("Back"));
+    await fireEvent.press(screen.getByLabelText("Add to plan"));
     expect(screen.getByTestId("builder-sessions-workspace")).toBeTruthy();
     expect(screen.getByTestId(/builder-timeline-activity-/)).toBeTruthy();
   });
@@ -1157,7 +1131,7 @@ describe("TrainingPlanBuilderScreen", () => {
     await fireEvent.press(
       screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
     );
-    await fireEvent.press(screen.getByLabelText("Back"));
+    await fireEvent.press(screen.getByLabelText("Add to plan"));
     await fireEvent.press(screen.getByText("Create"));
 
     await waitFor(() => expect(mockMutations.create).toHaveBeenCalledTimes(1));
@@ -1170,6 +1144,20 @@ describe("TrainingPlanBuilderScreen", () => {
         }),
       }),
     );
+  });
+
+  it("cancels a newly selected activity on Back until Add to plan is pressed", async () => {
+    await renderNative(<TrainingPlanBuilderScreen />);
+    await fireEvent.changeText(screen.getByLabelText("Plan name"), "Keep plan details");
+    await fireEvent.press(screen.getByTestId("builder-add-activity"));
+    await fireEvent.press(
+      screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
+    );
+    await fireEvent.press(screen.getByLabelText("Next week"));
+    await fireEvent.press(screen.getByLabelText("Back"));
+    expect(screen.queryByTestId(/builder-timeline-activity-/)).toBeNull();
+    expect(screen.getByLabelText("Plan name").props.value).toBe("Keep plan details");
+    expect(mockMutations.create).not.toHaveBeenCalled();
   });
 
   it("uses hardware Back for repeated picker/filter/session navigation without exiting the draft", async () => {
@@ -1204,7 +1192,7 @@ describe("TrainingPlanBuilderScreen", () => {
     await fireEvent.press(
       screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
     );
-    await fireEvent.press(screen.getByLabelText("Reassign activity"));
+    await fireEvent.press(screen.getByLabelText("Change activity"));
     await act(() => {
       expect(hardwareBack?.()).toBe(true);
     });
@@ -1222,42 +1210,38 @@ describe("TrainingPlanBuilderScreen", () => {
     alert.mockRestore();
   });
 
-  it("retains invalid numeric drafts when reassign is cancelled using header Back", async () => {
+  it("retains optional title and scheduling when changing activity is cancelled", async () => {
     await renderNative(<TrainingPlanBuilderScreen />);
     await fireEvent.press(screen.getByTestId("builder-add-activity"));
     await fireEvent.press(
       screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
     );
-    await selectBudget("Planned duration", 0, 0);
-    await fireEvent.press(screen.getByLabelText("Target common load"));
-    await fireEvent(screen.getByLabelText("Target common load thousands"), "valueChange", 10);
-    await fireEvent(screen.getByLabelText("Target common load units"), "valueChange", 1);
-    await fireEvent.press(screen.getByLabelText("Done Target common load"));
-    await fireEvent.press(screen.getByLabelText("Reassign activity"));
+    await fireEvent.press(screen.getByLabelText("Day 4"));
+    await fireEvent.press(screen.getByText("Optional details"));
+    await fireEvent.changeText(screen.getByLabelText("Custom title"), "My easy day");
+    await fireEvent.press(screen.getByLabelText("Change activity"));
     await fireEvent.press(screen.getByLabelText("Back"));
     expect(screen.getByTestId("builder-session-screen")).toBeTruthy();
-    expect(screen.getByLabelText("Target common load").props.accessibilityValue).toEqual({
-      text: "10001",
-    });
-    await fireEvent.press(screen.getByLabelText("Planned duration"));
-    expect(screen.getByLabelText("Planned duration minutes").props.selectedValue).toBe(0);
-    await fireEvent.press(screen.getByLabelText("Done Planned duration"));
-    await fireEvent.press(screen.getByLabelText("Back"));
-    expect(screen.getByTestId("training-plan-save-button").props.disabled).toBe(true);
-    expect(screen.getByText(/Some activity or plan settings contain invalid values/)).toBeTruthy();
+    expect(screen.getByLabelText("Custom title").props.value).toBe("My easy day");
+    expect(screen.getByLabelText("Day 4").props.accessibilityState.checked).toBe(true);
+    await fireEvent.press(screen.getByLabelText("Add to plan"));
+    await fireEvent.press(screen.getByTestId(/builder-timeline-activity-/));
+    expect(screen.getByLabelText("Custom title").props.value).toBe("My easy day");
+    await fireEvent.changeText(screen.getByLabelText("Custom title"), "");
+    await fireEvent.press(screen.getByLabelText("Done"));
+    await fireEvent.press(screen.getByTestId(/builder-timeline-activity-/));
+    expect(screen.queryByLabelText("Custom title")).toBeNull();
   });
 
-  it("opens root duplicates in the session page and blocks saving their invalid drafts", async () => {
+  it("keeps duplicate actions on the schedule and opens the simple scheduling page", async () => {
     mockAuthoritativePreviewData = { status: "available", simulation: authoritativeSimulation };
     await renderNative(<TrainingPlanBuilderScreen mode="edit" planId={editableTrainingPlan.id} />);
     await fireEvent.press(screen.getByTestId("duplicate-33333333-3333-4333-8333-333333333333"));
     expect(screen.getByTestId("builder-session-screen")).toBeTruthy();
-    await fireEvent.press(screen.getByLabelText("Target common load"));
-    await fireEvent(screen.getByLabelText("Target common load thousands"), "valueChange", 10);
-    await fireEvent(screen.getByLabelText("Target common load units"), "valueChange", 1);
-    await fireEvent.press(screen.getByLabelText("Done Target common load"));
-    await fireEvent.press(screen.getByLabelText("Back"));
-    expect(screen.getByTestId("training-plan-save-button").props.disabled).toBe(true);
+    expect(screen.queryByLabelText("Target common load")).toBeNull();
+    expect(screen.queryByText("Duplicate")).toBeNull();
+    await fireEvent.press(screen.getByLabelText("Day 2"));
+    await fireEvent.press(screen.getByLabelText("Done"));
     expect(screen.queryByTestId("builder-session-editor-modal")).toBeNull();
     const duplicateRow = screen
       .getAllByTestId(/builder-timeline-activity-/)
@@ -1265,14 +1249,8 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(duplicateRow).toBeTruthy();
     if (!duplicateRow) throw new Error("Duplicated activity is missing from the schedule");
     await fireEvent.press(duplicateRow);
-    expect(screen.getByLabelText("Target common load").props.accessibilityValue).toEqual({
-      text: "10001",
-    });
-    await fireEvent.press(screen.getByLabelText("Target common load"));
-    await fireEvent.press(screen.getByLabelText("Clear Target common load"));
-    await fireEvent.press(screen.getByLabelText("Done Target common load"));
-    await selectQuantity("Target common load", 20);
-    await fireEvent.press(screen.getByLabelText("Back"));
+    expect(screen.getByLabelText("Day 2").props.accessibilityState.checked).toBe(true);
+    await fireEvent.press(screen.getByLabelText("Done"));
     expect(screen.queryByText(/Some activity or plan settings contain invalid values/)).toBeNull();
     expect(screen.getAllByTestId(/builder-timeline-activity-/)).toHaveLength(2);
     // Existing one-session weekly constraints still apply; correcting a raw field
@@ -1312,7 +1290,7 @@ describe("TrainingPlanBuilderScreen", () => {
     await fireEvent.press(
       screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
     );
-    await fireEvent.press(screen.getByLabelText("Back"));
+    await fireEvent.press(screen.getByLabelText("Add to plan"));
     await waitFor(() => {
       expect(screen.getByText("Create")).toBeTruthy();
     });
@@ -1333,6 +1311,11 @@ describe("TrainingPlanBuilderScreen", () => {
               expect.objectContaining({
                 activity_plan_id: activityPlan.id,
                 offset_days: 0,
+                demand: expect.objectContaining({
+                  activity_category: activityPlan.activityCategory,
+                  target_duration_minutes: null,
+                  target_common_load: null,
+                }),
               }),
             ],
           }),
@@ -1354,7 +1337,7 @@ describe("TrainingPlanBuilderScreen", () => {
     await fireEvent.press(
       screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
     );
-    await fireEvent.press(screen.getByLabelText("Back"));
+    await fireEvent.press(screen.getByLabelText("Add to plan"));
     await waitFor(() => {
       expect(screen.getByText("Create")).toBeTruthy();
     });
@@ -1375,7 +1358,7 @@ describe("TrainingPlanBuilderScreen", () => {
     await fireEvent.press(
       screen.getByTestId(`training-plan-builder-activity-row-${activityPlan.id}`),
     );
-    await fireEvent.press(screen.getByLabelText("Back"));
+    await fireEvent.press(screen.getByLabelText("Add to plan"));
     await fireEvent.press(screen.getByTestId("training-plan-save-button"));
     await waitFor(() => expect(mockMutations.create).toHaveBeenCalledTimes(1));
     // An uncertain commit intentionally locks editing until the same write is retried.

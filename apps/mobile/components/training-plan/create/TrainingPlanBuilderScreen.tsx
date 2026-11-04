@@ -75,7 +75,7 @@ function TrainingPlanBuilderScreenSession({
       : activeSurface === "activityFilters"
         ? "Activity filters"
         : activeSurface === "session"
-          ? "Edit activity"
+          ? "Schedule activity"
           : controller.header.title;
   const leaveSurface = useCallback(() => {
     if (builder.derived.savePlan.isLocked) return;
@@ -165,7 +165,21 @@ function TrainingPlanBuilderScreenSession({
             activeSurface === "session"
           ),
           headerRight: isChildSurface
-            ? () => null
+            ? () =>
+                activeSurface === "session" ? (
+                  <Button
+                    accessibilityLabel={controller.isNewSession ? "Add to plan" : "Done"}
+                    disabled={
+                      builder.derived.savePlan.isLocked ||
+                      !controller.selection.session?.activityPlan
+                    }
+                    onPress={controller.actions.acceptSession}
+                    size="sm"
+                    variant="ghost"
+                  >
+                    <Text>{controller.isNewSession ? "Add to plan" : "Done"}</Text>
+                  </Button>
+                ) : null
             : () => (
                 <Button
                   accessibilityLabel={controller.header.primaryLabel}

@@ -184,12 +184,15 @@ export function useTrainingPlanBuilderController({
   const activityPlansById = useMemo(
     () =>
       Object.fromEntries(
-        builder.activityPlanItems.map((activityPlan) => [activityPlan.id, activityPlan] as const),
+        [...(builder.linkedActivityPlansQuery.data?.items ?? []), ...builder.activityPlanItems].map(
+          (activityPlan) => [activityPlan.id, activityPlan] as const,
+        ),
       ),
-    [builder.activityPlanItems],
+    [builder.activityPlanItems, builder.linkedActivityPlansQuery.data],
   );
 
   const addSession = useCallback(() => {
+    setActivityPickerReturnsToSession(false);
     const nextOffsetDays =
       builder.derived.summary.sessionCount === 0 ? 0 : builder.derived.summary.durationDays;
     const session = builder.actions.addSession(nextOffsetDays);
@@ -205,6 +208,7 @@ export function useTrainingPlanBuilderController({
 
   const addSessionAtOffset = useCallback(
     (offsetDays: number) => {
+      setActivityPickerReturnsToSession(false);
       const session = builder.actions.addSession(Math.max(0, offsetDays));
       setSelectedSessionId(session.localId);
       setPendingSessionDraftId(session.localId);
@@ -266,6 +270,12 @@ export function useTrainingPlanBuilderController({
   const selectActivityPlan = useCallback(
     (activityPlan: ActivityPlanListItem) => {
       if (!selectedSessionId) return;
+      const session = builder.actions.getSessionById(selectedSessionId);
+      if (!session) return;
+      builder.actions.updateSession({
+        ...session,
+        demand: { ...session.demand, activity_category: activityPlan.activityCategory },
+      });
       builder.actions.assignActivityPlan(
         selectedSessionId,
         toEstimatedActivityPlanFacts(
@@ -273,25 +283,16 @@ export function useTrainingPlanBuilderController({
           builder.activityPlanEstimateById.get(activityPlan.id),
         ),
       );
-      if (pendingSessionDraftId === selectedSessionId) {
-        setPendingSessionDraftId(null);
-      }
       setActivityPickerReturnsToSession(false);
       sheetStack.openSheet("session");
     },
-    [
-      builder.activityPlanEstimateById,
-      builder.actions,
-      pendingSessionDraftId,
-      selectedSessionId,
-      sheetStack.openSheet,
-    ],
+    [builder.activityPlanEstimateById, builder.actions, selectedSessionId, sheetStack.openSheet],
   );
 
   const cancelPendingSessionDraft = useCallback(() => {
     if (!pendingSessionDraftId) return;
     const pendingSession = builder.actions.getSessionById(pendingSessionDraftId);
-    if (pendingSession && !pendingSession.activityPlan) {
+    if (pendingSession) {
       builder.actions.removeSession(pendingSessionDraftId);
       clearNumericDraftErrors(`session:${pendingSessionDraftId}:`);
       clearSessionDrafts(pendingSessionDraftId);
@@ -423,6 +424,13 @@ export function useTrainingPlanBuilderController({
         sheetStack.closeSheet();
       },
       exitSession: () => {
+        cancelPendingSessionDraft();
+        setSelectedSessionId(null);
+        sheetStack.closeSheet();
+      },
+      acceptSession: () => {
+        if (!selectedSession?.activityPlan) return;
+        setPendingSessionDraftId(null);
         setSelectedSessionId(null);
         sheetStack.closeSheet();
       },
@@ -434,6 +442,7 @@ export function useTrainingPlanBuilderController({
       cancelPendingSessionDraft,
       confirmRemoveSession,
       handleSave,
+      selectedSession,
       sheetStack.closeSheet,
       sheetStack.openSheet,
     ],
@@ -447,6 +456,7 @@ export function useTrainingPlanBuilderController({
     header,
     isSaving,
     mode,
+    isNewSession: pendingSessionDraftId !== null && pendingSessionDraftId === selectedSessionId,
     numericDrafts: {
       clearErrors: clearNumericDraftErrors,
       hasInvalid: hasInvalidNumericDrafts,

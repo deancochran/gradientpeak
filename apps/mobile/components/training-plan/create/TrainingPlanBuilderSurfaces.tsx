@@ -8,7 +8,7 @@ import {
 import { BuilderAuthoritativeProjectionCard } from "@/components/training-plan/create/BuilderAuthoritativeProjectionCard";
 import { BuilderScheduleEditor } from "@/components/training-plan/create/BuilderScheduleEditor";
 import { BuilderStrategyComposer } from "@/components/training-plan/create/BuilderStrategyComposer";
-import { TrainingPlanBuilderEventEditor } from "@/components/training-plan/create/TrainingPlanBuilderEventCard";
+import { TrainingPlanSessionPage } from "@/components/training-plan/create/TrainingPlanSessionPage";
 import { useScheduleEditorController } from "@/components/training-plan/create/useScheduleEditorController";
 import { useStrategyComposerController } from "@/components/training-plan/create/useStrategyComposerController";
 import type { TrainingPlanBuilderController } from "@/components/training-plan/create/useTrainingPlanBuilderController";
@@ -109,23 +109,16 @@ export function TrainingPlanBuilderSurfaces({ controller }: TrainingPlanBuilderS
     return (
       <View className="flex-1 bg-background" testID="builder-session-screen">
         <ScrollView className="flex-1" contentContainerClassName="gap-4 px-4 py-4 pb-10">
-          <TrainingPlanBuilderEventEditor
+          <TrainingPlanSessionPage
+            key={session.localId}
             activityPlan={
               session.activityPlan
                 ? (controller.activityPicker.plansById[session.activityPlan.id] ?? null)
                 : null
             }
-            event={session}
+            session={session}
             onChange={controller.builder.actions.updateSession}
-            onDuplicate={(sessionId) => {
-              const duplicate = controller.builder.actions.duplicateSession(sessionId);
-              if (duplicate) controller.selection.setSessionId(duplicate.localId);
-            }}
-            onOpenActivityPicker={controller.actions.openActivityPicker}
-            onRemove={controller.actions.confirmRemoveSession}
-            onNumericDraftError={controller.numericDrafts.setError}
-            rawDrafts={controller.sessionDrafts.rawDrafts}
-            onRawDraftChange={controller.sessionDrafts.setRawDraft}
+            onChangeActivity={controller.actions.openActivityPicker}
           />
         </ScrollView>
       </View>
