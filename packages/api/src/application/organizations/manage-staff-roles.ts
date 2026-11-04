@@ -107,6 +107,7 @@ export async function manageStaffRole(input: {
       return {
         membershipId: input.targetMembershipId,
         role: input.role,
+        operationId: input.operationId,
         status: input.mutation === "grant" ? ("granted" as const) : ("revoked" as const),
       };
     }
@@ -144,6 +145,7 @@ export async function manageStaffRole(input: {
       return {
         membershipId: input.targetMembershipId,
         role: input.role,
+        operationId: input.operationId,
         status: "granted" as const,
       };
     }
@@ -177,6 +179,11 @@ export async function manageStaffRole(input: {
       endedGroupAssignments: endedGroupAssignments.length,
     });
     if (!recorded[0]) throw new OrganizationStaffRoleError("conflict");
-    return { membershipId: input.targetMembershipId, role: input.role, status: "revoked" as const };
+    return {
+      membershipId: input.targetMembershipId,
+      role: input.role,
+      operationId: input.operationId,
+      status: "revoked" as const,
+    };
   });
 }

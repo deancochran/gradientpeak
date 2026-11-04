@@ -16,6 +16,8 @@ const ids = {
   actor: "00000000-0000-4000-8000-000000000001",
   organization: "00000000-0000-4000-8000-000000000002",
   membership: "00000000-0000-4000-8000-000000000003",
+  root: "00000000-0000-4000-8000-000000000004",
+  coach: "00000000-0000-4000-8000-000000000005",
 };
 
 describe("organization staff discovery", () => {
@@ -24,6 +26,7 @@ describe("organization staff discovery", () => {
       getCurrentAdministrativeAuthority: vi.fn().mockResolvedValue({
         membershipId: ids.actor,
         isRootOwner: true,
+        rootMembershipId: ids.actor,
       }),
       staffCursorBelongsToOrganization: vi.fn().mockResolvedValue(true),
       listCurrentStaff: vi.fn().mockResolvedValue([
@@ -92,5 +95,107 @@ describe("organization staff discovery", () => {
         status: "suspended",
       }),
     ).rejects.toMatchObject({ reason: "forbidden" });
+  });
+
+  it("exposes action eligibility from the role and suspension policies", async () => {
+    state.repository.getCurrentAdministrativeAuthority.mockResolvedValue({
+      membershipId: ids.actor,
+      isRootOwner: false,
+      rootMembershipId: ids.root,
+    });
+    state.repository.listCurrentStaff.mockResolvedValue([
+      {
+        membershipId: ids.actor,
+        isRootOwner: false,
+        profileId: ids.actor,
+        displayName: "Admin actor",
+        username: "admin-actor",
+        roleKeys: ["admin"],
+        suspendedAt: null,
+      },
+      {
+        membershipId: ids.root,
+        isRootOwner: true,
+        profileId: ids.root,
+        displayName: "Root owner",
+        username: "root-owner",
+        roleKeys: ["admin"],
+        suspendedAt: null,
+      },
+      {
+        membershipId: ids.membership,
+        isRootOwner: false,
+        profileId: ids.membership,
+        displayName: "Suspended coach",
+        username: "suspended-coach",
+        roleKeys: ["coach"],
+        suspendedAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+      {
+        membershipId: ids.coach,
+        isRootOwner: false,
+        profileId: ids.coach,
+        displayName: "Active coach",
+        username: "active-coach",
+        roleKeys: ["coach"],
+        suspendedAt: null,
+      },
+    ]);
+
+    const result = await listOrganizationStaff({
+      db: {} as never,
+      actorProfileId: ids.actor,
+      organizationId: ids.organization,
+      limit: 4,
+      cursor: null,
+      status: "suspended",
+    });
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        membershipId: ids.actor,
+        actions: {
+          suspend: { eligible: false },
+          resume: { eligible: false },
+          grantAdmin: { eligible: false },
+          revokeAdmin: { eligible: false },
+          grantCoach: { eligible: true },
+          revokeCoach: { eligible: false },
+        },
+      }),
+      expect.objectContaining({
+        membershipId: ids.root,
+        actions: {
+          suspend: { eligible: false },
+          resume: { eligible: false },
+          grantAdmin: { eligible: false },
+          revokeAdmin: { eligible: false },
+          grantCoach: { eligible: false },
+          revokeCoach: { eligible: false },
+        },
+      }),
+      expect.objectContaining({
+        membershipId: ids.membership,
+        actions: {
+          suspend: { eligible: true },
+          resume: { eligible: true },
+          grantAdmin: { eligible: false },
+          revokeAdmin: { eligible: false },
+          grantCoach: { eligible: false },
+          revokeCoach: { eligible: false },
+        },
+      }),
+      expect.objectContaining({
+        membershipId: ids.coach,
+        actions: {
+          suspend: { eligible: true },
+          resume: { eligible: true },
+          grantAdmin: { eligible: false },
+          revokeAdmin: { eligible: false },
+          grantCoach: { eligible: true },
+          revokeCoach: { eligible: true },
+        },
+      }),
+    ]);
   });
 });

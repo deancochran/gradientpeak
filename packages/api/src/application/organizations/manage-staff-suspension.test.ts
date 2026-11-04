@@ -17,6 +17,7 @@ vi.mock("../../repositories/organization-staff-suspension-repository", () => ({
 }));
 
 import {
+  canManageStaffSuspension,
   resumeOrganizationMembership,
   suspendOrganizationMembership,
 } from "./manage-staff-suspension";
@@ -46,6 +47,28 @@ function command(action: "suspend" | "resume") {
 }
 
 describe("staff suspension management", () => {
+  it("keeps inactive actors and protected memberships ineligible", () => {
+    expect(
+      canManageStaffSuspension({
+        actorMembershipId: ids.actorMembershipId,
+        actorIsActive: false,
+        rootMembershipId: ids.rootMembershipId,
+        targetMembershipId: ids.targetMembershipId,
+        targetIsEnded: false,
+      }),
+    ).toBe(false);
+    for (const targetMembershipId of [ids.actorMembershipId, ids.rootMembershipId])
+      expect(
+        canManageStaffSuspension({
+          actorMembershipId: ids.actorMembershipId,
+          actorIsActive: true,
+          rootMembershipId: ids.rootMembershipId,
+          targetMembershipId,
+          targetIsEnded: false,
+        }),
+      ).toBe(false);
+  });
+
   beforeEach(() => {
     state.repository = {
       // The organization lock is deliberately first in the use case, before

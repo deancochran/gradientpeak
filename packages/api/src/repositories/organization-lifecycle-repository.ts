@@ -32,6 +32,7 @@ export function createOrganizationLifecycleRepository(db: DrizzleQueryExecutor) 
         .select({
           membershipId: organizationMemberships.id,
           isRootOwner: sql<boolean>`${organizations.root_owner_membership_id} = ${organizationMemberships.id}`,
+          rootMembershipId: organizations.root_owner_membership_id,
         })
         .from(organizationMemberships)
         .innerJoin(organizations, eq(organizations.id, organizationMemberships.organization_id))

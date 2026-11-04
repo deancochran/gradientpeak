@@ -126,6 +126,7 @@ const staffRoleMutationOutputSchema = z
   .object({
     membershipId: z.string().uuid(),
     role: z.enum(["admin", "coach"]),
+    operationId: z.string().uuid(),
     status: z.enum(["granted", "revoked"]),
   })
   .strict();
